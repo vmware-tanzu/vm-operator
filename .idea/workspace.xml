@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="a72328f7-5834-42af-8c9b-dc151619f5f6" name="Default Changelist" comment="" />
+    <list default="true" id="a72328f7-5834-42af-8c9b-dc151619f5f6" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Makefile" beforeDir="false" afterPath="$PROJECT_DIR$/Makefile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brscli/src/kubevsphere" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/pkg/vmprovider/providers/vsphere/vsphere_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/pkg/vmprovider/providers/vsphere/vsphere_manager.go" afterDir="false" />
+    </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -52,20 +57,33 @@
         </entry>
       </file>
       <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/pkg/vmprovider/providers/vsphere/vsphere_manager.go">
+        <entry file="file://$PROJECT_DIR$/pkg/apis/vmoperator/zz_generated.api.register.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="-205" />
+            <state relative-caret-position="2715">
+              <caret line="181" column="5" selection-start-line="181" selection-start-column="5" selection-end-line="181" selection-end-column="5" />
+              <folding>
+                <element signature="e#668#1008#0" expanded="true" />
+              </folding>
+            </state>
           </provider>
         </entry>
       </file>
       <file pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/pkg/vmprovider/providers/vsphere/vsphere_manager.go">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="-1">
+              <folding>
+                <element signature="e#17#306#0" expanded="true" />
+              </folding>
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/pkg/vmprovider/providers/vsphere/vmprovider.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="230">
-              <caret line="27" column="25" selection-start-line="27" selection-start-column="25" selection-end-line="27" selection-end-column="25" />
-              <folding>
-                <element signature="e#219#281#0" expanded="true" />
-              </folding>
+            <state relative-caret-position="113">
+              <caret line="8" column="7" selection-start-line="8" selection-start-column="7" selection-end-line="8" selection-end-column="7" />
             </state>
           </provider>
         </entry>
@@ -98,6 +116,9 @@
     </option>
   </component>
   <component name="GOROOT" path="/usr/local/Cellar/go/1.11.2/libexec" />
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
   <component name="IdeDocumentHistory">
     <option name="CHANGED_PATHS">
       <list>
@@ -115,11 +136,12 @@
     </option>
   </component>
   <component name="ProjectFrameBounds">
-    <option name="x" value="640" />
-    <option name="y" value="209" />
-    <option name="width" value="1400" />
-    <option name="height" value="837" />
+    <option name="x" value="70" />
+    <option name="y" value="130" />
+    <option name="width" value="1753" />
+    <option name="height" value="1005" />
   </component>
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="ProjectView">
     <navigator proportions="" version="1">
       <foldersAlwaysOnTop value="true" />
@@ -170,46 +192,6 @@
             <path>
               <item name="kubevsphere" type="b2602c69:ProjectViewProjectNode" />
               <item name="kubevsphere" type="462c0819:PsiDirectoryNode" />
-              <item name="pkg" type="462c0819:PsiDirectoryNode" />
-              <item name="client" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="kubevsphere" type="b2602c69:ProjectViewProjectNode" />
-              <item name="kubevsphere" type="462c0819:PsiDirectoryNode" />
-              <item name="pkg" type="462c0819:PsiDirectoryNode" />
-              <item name="client" type="462c0819:PsiDirectoryNode" />
-              <item name="clientset_generated" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="kubevsphere" type="b2602c69:ProjectViewProjectNode" />
-              <item name="kubevsphere" type="462c0819:PsiDirectoryNode" />
-              <item name="pkg" type="462c0819:PsiDirectoryNode" />
-              <item name="client" type="462c0819:PsiDirectoryNode" />
-              <item name="clientset_generated" type="462c0819:PsiDirectoryNode" />
-              <item name="clientset" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="kubevsphere" type="b2602c69:ProjectViewProjectNode" />
-              <item name="kubevsphere" type="462c0819:PsiDirectoryNode" />
-              <item name="pkg" type="462c0819:PsiDirectoryNode" />
-              <item name="controller" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="kubevsphere" type="b2602c69:ProjectViewProjectNode" />
-              <item name="kubevsphere" type="462c0819:PsiDirectoryNode" />
-              <item name="pkg" type="462c0819:PsiDirectoryNode" />
-              <item name="vmprovider" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="kubevsphere" type="b2602c69:ProjectViewProjectNode" />
-              <item name="kubevsphere" type="462c0819:PsiDirectoryNode" />
-              <item name="pkg" type="462c0819:PsiDirectoryNode" />
-              <item name="vmprovider" type="462c0819:PsiDirectoryNode" />
-              <item name="providers" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="kubevsphere" type="b2602c69:ProjectViewProjectNode" />
-              <item name="kubevsphere" type="462c0819:PsiDirectoryNode" />
               <item name="vendor" type="462c0819:PsiDirectoryNode" />
             </path>
           </expand>
@@ -248,10 +230,10 @@
     </option>
   </component>
   <component name="ToolWindowManager">
-    <frame x="640" y="209" width="1400" height="837" extended-state="0" />
+    <frame x="70" y="130" width="1753" height="1005" extended-state="0" />
     <editor active="true" />
     <layout>
-      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.2533137" />
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.20105201" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="Favorites" order="2" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
@@ -299,13 +281,6 @@
     <entry file="file://$PROJECT_DIR$/pkg/apis/vmoperator/v1beta1/virtualmachine_types.go">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="-100" />
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/pkg/apis/vmoperator/zz_generated.api.register.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="360">
-          <caret line="181" column="5" selection-start-line="181" selection-start-column="5" selection-end-line="181" selection-end-column="5" />
-        </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/pkg/controller/sharedinformers/zz_generated.api.register.go">
@@ -428,11 +403,6 @@
     <entry file="file://$PROJECT_DIR$/pkg/client/clientset_generated/clientset/clientset.go">
       <provider selected="true" editor-type-id="text-editor" />
     </entry>
-    <entry file="file://$PROJECT_DIR$/pkg/vmprovider/providers/vsphere/vsphere_manager.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-205" />
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/WORKSPACE">
       <provider selected="true" editor-type-id="text-editor" />
     </entry>
@@ -449,6 +419,20 @@
     <entry file="file://$PROJECT_DIR$/BUILD.bazel">
       <provider selected="true" editor-type-id="text-editor" />
     </entry>
+    <entry file="file://$PROJECT_DIR$/cmd/controller-manager/main.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="285">
+          <caret line="26" column="40" selection-start-line="26" selection-start-column="40" selection-end-line="26" selection-end-column="40" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pkg/vmprovider/providers/vsphere/vmprovider.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="113">
+          <caret line="8" column="7" selection-start-line="8" selection-start-column="7" selection-end-line="8" selection-end-column="7" />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/pkg/vmprovider/vmprovidermgr.go">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="405">
@@ -459,19 +443,21 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/cmd/controller-manager/main.go">
+    <entry file="file://$PROJECT_DIR$/pkg/apis/vmoperator/zz_generated.api.register.go">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="285">
-          <caret line="26" column="40" selection-start-line="26" selection-start-column="40" selection-end-line="26" selection-end-column="40" />
+        <state relative-caret-position="2715">
+          <caret line="181" column="5" selection-start-line="181" selection-start-column="5" selection-end-line="181" selection-end-column="5" />
+          <folding>
+            <element signature="e#668#1008#0" expanded="true" />
+          </folding>
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/pkg/vmprovider/providers/vsphere/vmprovider.go">
+    <entry file="file://$PROJECT_DIR$/pkg/vmprovider/providers/vsphere/vsphere_manager.go">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="230">
-          <caret line="27" column="25" selection-start-line="27" selection-start-column="25" selection-end-line="27" selection-end-column="25" />
+        <state relative-caret-position="-1">
           <folding>
-            <element signature="e#219#281#0" expanded="true" />
+            <element signature="e#17#306#0" expanded="true" />
           </folding>
         </state>
       </provider>

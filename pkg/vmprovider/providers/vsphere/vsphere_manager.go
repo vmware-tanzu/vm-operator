@@ -9,7 +9,7 @@ import (
 	"log"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	vmv1 "vmware.com/vm_operator/pkg/apis/vm/v1"
+	vmv1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
 )
 
 type VSphereManager struct {

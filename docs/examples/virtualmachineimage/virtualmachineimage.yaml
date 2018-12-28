@@ -1,0 +1,7 @@
+note: VirtualMachineImage Example
+sample: |
+  apiVersion: vmoperator.vmware.com/v1beta1
+  kind: VirtualMachineImage
+  metadata:
+    name: virtualmachineimage-example
+  spec:

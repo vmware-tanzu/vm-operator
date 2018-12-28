@@ -18,8 +18,6 @@ type ClientBuilder interface {
 	ClientOrDie(name string) clientset.Interface
 }
 
-asf
-
 // Pluggable interface for VM Providers
 type VirtualMachineProviderInterface interface {
 	// Initialize provides the cloud with a kubernetes client builder and may spawn goroutines

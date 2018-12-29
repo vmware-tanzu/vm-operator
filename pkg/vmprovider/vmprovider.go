@@ -18,6 +18,7 @@ type ClientBuilder interface {
 	ClientOrDie(name string) clientset.Interface
 }
 
+
 // Pluggable interface for VM Providers
 type VirtualMachineProviderInterface interface {
 	// Initialize provides the cloud with a kubernetes client builder and may spawn goroutines
@@ -46,6 +47,6 @@ type VirtualMachine struct {
 }
 
 type VirtualMachines interface {
-	ListVirtualMachine(ctx context.Context, namespace string) ([]*VirtualMachine, error)
+	ListVirtualMachines(ctx context.Context, namespace string) ([]*VirtualMachine, error)
 	GetVirtualMachine(ctx context.Context, name string) (*VirtualMachine, error)
 }

@@ -7,13 +7,12 @@ package vsphere
 import (
 	"context"
 	"io"
-	"runtime"
 	"vmware.com/kubevsphere/pkg/vmprovider"
 )
 
 func init() {
 	vmprovider.RegisterVmProvider("vsphere", func(config io.Reader) (vmprovider.VirtualMachineProviderInterface, error) {
-		providerConfig := NewVsphereVmProviderConfig
+		providerConfig := NewVsphereVmProviderConfig()
 		return newVSphereVmProvider(providerConfig)
 	})
 }
@@ -24,12 +23,20 @@ func newVSphereVmProvider(providerConfig *VSphereVmProviderConfig) (*VSphereVmPr
 	//if err != nil {
 	//	return nil, err
 	//}
-	vmProvider := &VSphereVmProvider{providerConfig}
+	vmProvider := &VSphereVmProvider{*providerConfig}
 	return vmProvider, nil
 }
 
 type VSphereVmProvider struct {
 	Config VSphereVmProviderConfig
+}
+
+func (vs *VSphereVmProvider) VirtualMachines() (vmprovider.VirtualMachines, bool) {
+	return vs, true
+}
+
+func (vs *VSphereVmProvider) VirtualMachineImages() (vmprovider.VirtualMachineImages, bool) {
+	return vs, true
 }
 
 func (vs *VSphereVmProvider) Initialize(clientBuilder vmprovider.ClientBuilder, stop <-chan struct{}) {
@@ -43,7 +50,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 	return nil, nil
 }
 
-func (vs *VSphereVmProvider) ListVirtualMachine(ctx context.Context, namespace string) ([]*vmprovider.VirtualMachine, error) {
+func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace string) ([]*vmprovider.VirtualMachine, error) {
 	return nil, nil
 }
 

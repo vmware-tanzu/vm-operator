@@ -19,10 +19,11 @@ limitations under the License.
 package sharedinformers
 
 import (
+	"time"
+
 	"github.com/kubernetes-incubator/apiserver-builder/pkg/controller"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	"time"
 	"vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
 	"vmware.com/kubevsphere/pkg/client/informers_generated/externalversions"
 )

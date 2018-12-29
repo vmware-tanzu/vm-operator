@@ -19,13 +19,14 @@ limitations under the License.
 package vmoperator
 
 import (
+	"context"
 	"fmt"
+
 	"github.com/kubernetes-incubator/apiserver-builder/pkg/builders"
 	"k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
 )
 
@@ -85,17 +86,6 @@ func Resource(resource string) schema.GroupResource {
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-type VirtualMachine struct {
-	metav1.TypeMeta
-	metav1.ObjectMeta
-	Spec   VirtualMachineSpec
-	Status VirtualMachineStatus
-}
-
-// +genclient
-// +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
 type VirtualMachineImage struct {
 	metav1.TypeMeta
 	metav1.ObjectMeta
@@ -103,16 +93,27 @@ type VirtualMachineImage struct {
 	Status VirtualMachineImageStatus
 }
 
-type VirtualMachineStatus struct {
+// +genclient
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type VirtualMachine struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	Spec   VirtualMachineSpec
+	Status VirtualMachineStatus
 }
 
 type VirtualMachineImageStatus struct {
 }
 
-type VirtualMachineImageSpec struct {
+type VirtualMachineStatus struct {
 }
 
 type VirtualMachineSpec struct {
+}
+
+type VirtualMachineImageSpec struct {
 }
 
 //
@@ -171,11 +172,11 @@ func (pc VirtualMachine) GetGeneration() int64 {
 // Registry is an interface for things that know how to store VirtualMachine.
 // +k8s:deepcopy-gen=false
 type VirtualMachineRegistry interface {
-	ListVirtualMachines(ctx request.Context, options *internalversion.ListOptions) (*VirtualMachineList, error)
-	GetVirtualMachine(ctx request.Context, id string, options *metav1.GetOptions) (*VirtualMachine, error)
-	CreateVirtualMachine(ctx request.Context, id *VirtualMachine) (*VirtualMachine, error)
-	UpdateVirtualMachine(ctx request.Context, id *VirtualMachine) (*VirtualMachine, error)
-	DeleteVirtualMachine(ctx request.Context, id string) (bool, error)
+	ListVirtualMachines(ctx context.Context, options *internalversion.ListOptions) (*VirtualMachineList, error)
+	GetVirtualMachine(ctx context.Context, id string, options *metav1.GetOptions) (*VirtualMachine, error)
+	CreateVirtualMachine(ctx context.Context, id *VirtualMachine) (*VirtualMachine, error)
+	UpdateVirtualMachine(ctx context.Context, id *VirtualMachine) (*VirtualMachine, error)
+	DeleteVirtualMachine(ctx context.Context, id string) (bool, error)
 }
 
 // NewRegistry returns a new Registry interface for the given Storage. Any mismatched types will panic.
@@ -190,7 +191,7 @@ type storageVirtualMachine struct {
 	builders.StandardStorageProvider
 }
 
-func (s *storageVirtualMachine) ListVirtualMachines(ctx request.Context, options *internalversion.ListOptions) (*VirtualMachineList, error) {
+func (s *storageVirtualMachine) ListVirtualMachines(ctx context.Context, options *internalversion.ListOptions) (*VirtualMachineList, error) {
 	if options != nil && options.FieldSelector != nil && !options.FieldSelector.Empty() {
 		return nil, fmt.Errorf("field selector not supported yet")
 	}
@@ -202,7 +203,7 @@ func (s *storageVirtualMachine) ListVirtualMachines(ctx request.Context, options
 	return obj.(*VirtualMachineList), err
 }
 
-func (s *storageVirtualMachine) GetVirtualMachine(ctx request.Context, id string, options *metav1.GetOptions) (*VirtualMachine, error) {
+func (s *storageVirtualMachine) GetVirtualMachine(ctx context.Context, id string, options *metav1.GetOptions) (*VirtualMachine, error) {
 	st := s.GetStandardStorage()
 	obj, err := st.Get(ctx, id, options)
 	if err != nil {
@@ -211,27 +212,27 @@ func (s *storageVirtualMachine) GetVirtualMachine(ctx request.Context, id string
 	return obj.(*VirtualMachine), nil
 }
 
-func (s *storageVirtualMachine) CreateVirtualMachine(ctx request.Context, object *VirtualMachine) (*VirtualMachine, error) {
+func (s *storageVirtualMachine) CreateVirtualMachine(ctx context.Context, object *VirtualMachine) (*VirtualMachine, error) {
 	st := s.GetStandardStorage()
-	obj, err := st.Create(ctx, object, nil, true)
+	obj, err := st.Create(ctx, object, nil, &metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return obj.(*VirtualMachine), nil
 }
 
-func (s *storageVirtualMachine) UpdateVirtualMachine(ctx request.Context, object *VirtualMachine) (*VirtualMachine, error) {
+func (s *storageVirtualMachine) UpdateVirtualMachine(ctx context.Context, object *VirtualMachine) (*VirtualMachine, error) {
 	st := s.GetStandardStorage()
-	obj, _, err := st.Update(ctx, object.Name, rest.DefaultUpdatedObjectInfo(object), nil, nil)
+	obj, _, err := st.Update(ctx, object.Name, rest.DefaultUpdatedObjectInfo(object), nil, nil, false, &metav1.UpdateOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return obj.(*VirtualMachine), nil
 }
 
-func (s *storageVirtualMachine) DeleteVirtualMachine(ctx request.Context, id string) (bool, error) {
+func (s *storageVirtualMachine) DeleteVirtualMachine(ctx context.Context, id string) (bool, error) {
 	st := s.GetStandardStorage()
-	_, sync, err := st.Delete(ctx, id, nil)
+	_, sync, err := st.Delete(ctx, id, &metav1.DeleteOptions{})
 	return sync, err
 }
 
@@ -291,11 +292,11 @@ func (pc VirtualMachineImage) GetGeneration() int64 {
 // Registry is an interface for things that know how to store VirtualMachineImage.
 // +k8s:deepcopy-gen=false
 type VirtualMachineImageRegistry interface {
-	ListVirtualMachineImages(ctx request.Context, options *internalversion.ListOptions) (*VirtualMachineImageList, error)
-	GetVirtualMachineImage(ctx request.Context, id string, options *metav1.GetOptions) (*VirtualMachineImage, error)
-	CreateVirtualMachineImage(ctx request.Context, id *VirtualMachineImage) (*VirtualMachineImage, error)
-	UpdateVirtualMachineImage(ctx request.Context, id *VirtualMachineImage) (*VirtualMachineImage, error)
-	DeleteVirtualMachineImage(ctx request.Context, id string) (bool, error)
+	ListVirtualMachineImages(ctx context.Context, options *internalversion.ListOptions) (*VirtualMachineImageList, error)
+	GetVirtualMachineImage(ctx context.Context, id string, options *metav1.GetOptions) (*VirtualMachineImage, error)
+	CreateVirtualMachineImage(ctx context.Context, id *VirtualMachineImage) (*VirtualMachineImage, error)
+	UpdateVirtualMachineImage(ctx context.Context, id *VirtualMachineImage) (*VirtualMachineImage, error)
+	DeleteVirtualMachineImage(ctx context.Context, id string) (bool, error)
 }
 
 // NewRegistry returns a new Registry interface for the given Storage. Any mismatched types will panic.
@@ -310,7 +311,7 @@ type storageVirtualMachineImage struct {
 	builders.StandardStorageProvider
 }
 
-func (s *storageVirtualMachineImage) ListVirtualMachineImages(ctx request.Context, options *internalversion.ListOptions) (*VirtualMachineImageList, error) {
+func (s *storageVirtualMachineImage) ListVirtualMachineImages(ctx context.Context, options *internalversion.ListOptions) (*VirtualMachineImageList, error) {
 	if options != nil && options.FieldSelector != nil && !options.FieldSelector.Empty() {
 		return nil, fmt.Errorf("field selector not supported yet")
 	}
@@ -322,7 +323,7 @@ func (s *storageVirtualMachineImage) ListVirtualMachineImages(ctx request.Contex
 	return obj.(*VirtualMachineImageList), err
 }
 
-func (s *storageVirtualMachineImage) GetVirtualMachineImage(ctx request.Context, id string, options *metav1.GetOptions) (*VirtualMachineImage, error) {
+func (s *storageVirtualMachineImage) GetVirtualMachineImage(ctx context.Context, id string, options *metav1.GetOptions) (*VirtualMachineImage, error) {
 	st := s.GetStandardStorage()
 	obj, err := st.Get(ctx, id, options)
 	if err != nil {
@@ -331,26 +332,26 @@ func (s *storageVirtualMachineImage) GetVirtualMachineImage(ctx request.Context,
 	return obj.(*VirtualMachineImage), nil
 }
 
-func (s *storageVirtualMachineImage) CreateVirtualMachineImage(ctx request.Context, object *VirtualMachineImage) (*VirtualMachineImage, error) {
+func (s *storageVirtualMachineImage) CreateVirtualMachineImage(ctx context.Context, object *VirtualMachineImage) (*VirtualMachineImage, error) {
 	st := s.GetStandardStorage()
-	obj, err := st.Create(ctx, object, nil, true)
+	obj, err := st.Create(ctx, object, nil, &metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return obj.(*VirtualMachineImage), nil
 }
 
-func (s *storageVirtualMachineImage) UpdateVirtualMachineImage(ctx request.Context, object *VirtualMachineImage) (*VirtualMachineImage, error) {
+func (s *storageVirtualMachineImage) UpdateVirtualMachineImage(ctx context.Context, object *VirtualMachineImage) (*VirtualMachineImage, error) {
 	st := s.GetStandardStorage()
-	obj, _, err := st.Update(ctx, object.Name, rest.DefaultUpdatedObjectInfo(object), nil, nil)
+	obj, _, err := st.Update(ctx, object.Name, rest.DefaultUpdatedObjectInfo(object), nil, nil, false, &metav1.UpdateOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return obj.(*VirtualMachineImage), nil
 }
 
-func (s *storageVirtualMachineImage) DeleteVirtualMachineImage(ctx request.Context, id string) (bool, error) {
+func (s *storageVirtualMachineImage) DeleteVirtualMachineImage(ctx context.Context, id string) (bool, error) {
 	st := s.GetStandardStorage()
-	_, sync, err := st.Delete(ctx, id, nil)
+	_, sync, err := st.Delete(ctx, id, &metav1.DeleteOptions{})
 	return sync, err
 }

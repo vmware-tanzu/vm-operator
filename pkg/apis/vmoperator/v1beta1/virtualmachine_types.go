@@ -7,12 +7,11 @@
 package v1beta1
 
 import (
+	"context"
 	"log"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apiserver/pkg/endpoints/request"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"vmware.com/kubevsphere/pkg/apis/vmoperator"
@@ -41,7 +40,7 @@ type VirtualMachineStatus struct {
 }
 
 // Validate checks that an instance of VirtualMachine is well formed
-func (VirtualMachineStrategy) Validate(ctx request.Context, obj runtime.Object) field.ErrorList {
+func (VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	o := obj.(*vmoperator.VirtualMachine)
 	log.Printf("Validating fields for VirtualMachine %s\n", o.Name)
 	errors := field.ErrorList{}

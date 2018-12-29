@@ -19,16 +19,11 @@ limitations under the License.
 package install
 
 import (
-	"k8s.io/apimachinery/pkg/apimachinery/announced"
-	"k8s.io/apimachinery/pkg/apimachinery/registered"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"vmware.com/kubevsphere/pkg/apis"
 )
 
-func Install(
-	groupFactoryRegistry announced.APIGroupFactoryRegistry,
-	registry *registered.APIRegistrationManager,
-	scheme *runtime.Scheme) {
-
-	apis.GetVmoperatorAPIBuilder().Install(groupFactoryRegistry, registry, scheme)
+func Install(scheme *runtime.Scheme) {
+	utilruntime.Must(apis.GetVmoperatorAPIBuilder().AddToScheme(scheme))
 }

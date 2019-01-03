@@ -1306,6 +1306,7 @@
     "k8s.io/apimachinery/pkg/util/runtime",
     "k8s.io/apimachinery/pkg/util/validation/field",
     "k8s.io/apimachinery/pkg/watch",
+    "k8s.io/apiserver/pkg/endpoints/request",
     "k8s.io/apiserver/pkg/registry/rest",
     "k8s.io/client-go/discovery",
     "k8s.io/client-go/discovery/fake",

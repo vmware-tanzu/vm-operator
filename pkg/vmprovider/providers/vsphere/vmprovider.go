@@ -7,10 +7,13 @@ package vsphere
 import (
 	"context"
 	"io"
+	"log"
 	"vmware.com/kubevsphere/pkg/vmprovider"
 )
 
-func init() {
+var _ = &VSphereVmProvider{}
+
+func InitProvider() {
 	vmprovider.RegisterVmProvider("vsphere", func(config io.Reader) (vmprovider.VirtualMachineProviderInterface, error) {
 		providerConfig := NewVsphereVmProviderConfig()
 		return newVSphereVmProvider(providerConfig)
@@ -42,18 +45,36 @@ func (vs *VSphereVmProvider) VirtualMachineImages() (vmprovider.VirtualMachineIm
 func (vs *VSphereVmProvider) Initialize(clientBuilder vmprovider.ClientBuilder, stop <-chan struct{}) {
 }
 
-func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*vmprovider.VirtualMachineImage, error) {
+func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]vmprovider.VirtualMachineImage, error) {
+	log.Print("Listing VM images")
+	return NewVirtualMachineImageListFake(), nil
+}
+
+func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name string) (vmprovider.VirtualMachineImage, error) {
+	log.Print("Getting VM images")
+	return NewVirtualMachineImageFake(name), nil
+}
+
+func NewVirtualMachineImageFake(name string) vmprovider.VirtualMachineImage {
+	return vmprovider.VirtualMachineImage{Name: name}
+}
+
+func NewVirtualMachineImageListFake() []vmprovider.VirtualMachineImage {
+	//func NewVirtualMachineImageFake() runtime.Object {
+	images := []vmprovider.VirtualMachineImage{}
+
+	fake1 := NewVirtualMachineImageFake("Fake")
+	fake2 := NewVirtualMachineImageFake("Fake2")
+	images = append(images, fake1)
+	images = append(images, fake2)
+	return images
+}
+func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace string) ([]vmprovider.VirtualMachine, error) {
 	return nil, nil
 }
 
-func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name string) (*vmprovider.VirtualMachineImage, error) {
-	return nil, nil
+func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string) (vmprovider.VirtualMachine, error) {
+	return vmprovider.VirtualMachine{}, nil
 }
 
-func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace string) ([]*vmprovider.VirtualMachine, error) {
-	return nil, nil
-}
 
-func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string) (*vmprovider.VirtualMachine, error) {
-	return nil, nil
-}

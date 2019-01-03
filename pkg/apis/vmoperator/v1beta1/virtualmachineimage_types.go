@@ -8,13 +8,11 @@ package v1beta1
 
 import (
 	"context"
-	"k8s.io/apiserver/pkg/registry/rest"
-	"log"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-
+	"k8s.io/apiserver/pkg/registry/rest"
+	"log"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator"
 )
 
@@ -54,18 +52,6 @@ func (VirtualMachineImageSchemeFns) DefaultingFunction(o interface{}) {
 	obj := o.(*VirtualMachineImage)
 	// set default field values here
 	log.Printf("Defaulting fields for VirtualMachineImage %s\n", obj.Name)
-}
-
-func NewVirtualMachineImageFake() runtime.Object {
-	return &VirtualMachineImage{
-		metav1.TypeMeta{
-			"VirtualMachineImage",
-			"v1Beta",
-		},
-		metav1.ObjectMeta{Name:"Fake"},
-		VirtualMachineImageSpec{},
-		VirtualMachineImageStatus{},
-	}
 }
 
 func NewVirtualMachineImagesREST() rest.Storage {

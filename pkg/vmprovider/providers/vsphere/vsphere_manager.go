@@ -1,23 +1,24 @@
+/* **********************************************************
+ * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * **********************************************************/
 package vsphere
 
 import (
 	"context"
-	"fmt"
+	"github.com/coreos/etcd/client"
 	"github.com/vmware/govmomi"
-	"github.com/vmware/govmomi/object"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	//"github.com/vmware/govmomi/object"
+	//vimTypes "github.com/vmware/govmomi/vim25/types"
 	"log"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	vmv1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	//vmv1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
 )
 
 type VSphereManager struct {
-	Config VSphereManagerConfig
+	Config VSphereVmProviderConfig
 }
 
 func NewVSphereManager() *VSphereManager {
-	return &VSphereManager{Config: *NewVsphereManagerConfig()}
+	return &VSphereManager{Config: *NewVsphereVmProviderConfig()}
 }
 
 func (v *VSphereManager) refreshResources(ctxt context.Context, client *govmomi.Client) (*ResourceContext, error) {
@@ -72,13 +73,23 @@ func (v *VSphereManager) refreshResources(ctxt context.Context, client *govmomi.
 	return &rc, nil
 }
 
-func (v *VSphereManager) LookupVm(ctx context.Context, kClient client.Client, vClient *govmomi.Client, request reconcile.Request) (*VM, error) {
+func (v *VSphereManager) ListVms(ctx context.Context, vClient *govmomi.Client, vmFolder string) ([]*VM, error) {
+	vms := []*VM{}
+	_, err := v.refreshResources(ctx, vClient)
+	if err != nil {
+		return nil, err
+	}
+
+	return vms, nil
+}
+
+func (v *VSphereManager) LookupVm(ctx context.Context, kClient client.Client, vClient *govmomi.Client, vmName string) (*VM, error) {
 	rc, err := v.refreshResources(ctx, vClient)
 	if err != nil {
 		return nil, err
 	}
 
-	vm, err := NewVM(*vClient, rc.datacenter, request.Name)
+	vm, err := NewVM(*vClient, rc.datacenter, vmName)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +104,7 @@ func (v *VSphereManager) LookupVm(ctx context.Context, kClient client.Client, vC
 	return vm, nil
 }
 
+/*
 func (v *VSphereManager) deleteVmInvoke(ctx context.Context, client *govmomi.Client, name string) (*object.Task, error) {
 	rc, err := v.refreshResources(ctx, client)
 	if err != nil {
@@ -209,7 +221,7 @@ func (v *VSphereManager) CreateVm(ctx context.Context, kClient client.Client, vC
 }
 
 func (v *VSphereManager) updatePowerState(ctx context.Context, instance *vmv1.VM, vm *VM) error {
-	log.Printf("Checking power state: desired state %s", instance.Spec.PowerState)
+
 
 	ps, err := vm.VirtualMachine.PowerState(ctx)
 	if err != nil {
@@ -272,3 +284,4 @@ func (v *VSphereManager) UpdateVm(ctx context.Context, kClient client.Client, vC
 	log.Printf("Udpated VM %s!", request.Name)
 	return vm, nil
 }
+*/

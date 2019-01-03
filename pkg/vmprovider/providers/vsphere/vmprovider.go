@@ -20,18 +20,20 @@ func InitProvider() {
 	})
 }
 
+type VSphereVmProvider struct {
+	Config VSphereVmProviderConfig
+	manager *VSphereManager
+}
+
 // Creates new Controller node interface and returns
 func newVSphereVmProvider(providerConfig *VSphereVmProviderConfig) (*VSphereVmProvider, error) {
 	//vs, err := buildVSphereFromConfig(cfg)
 	//if err != nil {
 	//	return nil, err
 	//}
-	vmProvider := &VSphereVmProvider{*providerConfig}
+	vs := NewVSphereManager()
+	vmProvider := &VSphereVmProvider{*providerConfig, vs}
 	return vmProvider, nil
-}
-
-type VSphereVmProvider struct {
-	Config VSphereVmProviderConfig
 }
 
 func (vs *VSphereVmProvider) VirtualMachines() (vmprovider.VirtualMachines, bool) {
@@ -47,7 +49,30 @@ func (vs *VSphereVmProvider) Initialize(clientBuilder vmprovider.ClientBuilder, 
 
 func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]vmprovider.VirtualMachineImage, error) {
 	log.Print("Listing VM images")
-	return NewVirtualMachineImageListFake(), nil
+
+	vMan := vs.manager
+
+	vClient, err := NewClient(ctx, vs.Config.VcUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	defer vClient.Logout(ctx)
+
+	vms, err := vMan.ListVms(ctx, vClient, "")
+	if err != nil {
+		return nil, err
+	}
+
+	newImages := []vmprovider.VirtualMachineImage{}
+	for _, vm := range vms {
+		// include only vm templates
+		newImages = append(newImages, vmprovider.VirtualMachineImage{Name: vm.VirtualMachine.Name()})
+	}
+
+	return newImages, nil
+
+	//return NewVirtualMachineImageListFake(), nil
 }
 
 func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name string) (vmprovider.VirtualMachineImage, error) {

@@ -31,7 +31,7 @@ func NewVsphereVmProviderConfig() *VSphereVmProviderConfig {
 		VcUrl:        vcUrl,
 		Datacenter:   "Datacenter",
 		ResourcePool: "Resources",
-		Folder:       "vmFolder",
+		Folder:       "vm",
 		Datastore:    "datastore1",
 	}
 }

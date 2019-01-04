@@ -622,6 +622,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"k8s.io/client-go/pkg/apis/clientauthentication/v1beta1.ExecCredentialSpec":            schema_pkg_apis_clientauthentication_v1beta1_ExecCredentialSpec(ref),
 		"k8s.io/client-go/pkg/apis/clientauthentication/v1beta1.ExecCredentialStatus":          schema_pkg_apis_clientauthentication_v1beta1_ExecCredentialStatus(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachine":                    schema_pkg_apis_vmoperator_v1beta1_VirtualMachine(ref),
+		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineConfigStatus":        schema_pkg_apis_vmoperator_v1beta1_VirtualMachineConfigStatus(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineImage":               schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImage(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineImageList":           schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImageList(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineImageSchemeFns":      schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImageSchemeFns(ref),
@@ -631,6 +632,9 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineImageStrategy":       schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImageStrategy(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineImagesREST":          schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImagesREST(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineList":                schema_pkg_apis_vmoperator_v1beta1_VirtualMachineList(ref),
+		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourceSpec":        schema_pkg_apis_vmoperator_v1beta1_VirtualMachineResourceSpec(ref),
+		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourcesSpec":       schema_pkg_apis_vmoperator_v1beta1_VirtualMachineResourcesSpec(ref),
+		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineRuntimeStatus":       schema_pkg_apis_vmoperator_v1beta1_VirtualMachineRuntimeStatus(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineSchemeFns":           schema_pkg_apis_vmoperator_v1beta1_VirtualMachineSchemeFns(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineSpec":                schema_pkg_apis_vmoperator_v1beta1_VirtualMachineSpec(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineStatus":              schema_pkg_apis_vmoperator_v1beta1_VirtualMachineStatus(ref),
@@ -28720,6 +28724,43 @@ func schema_pkg_apis_vmoperator_v1beta1_VirtualMachine(ref common.ReferenceCallb
 	}
 }
 
+func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineConfigStatus(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Properties: map[string]spec.Schema{
+					"uuid": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"internalId": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"createDate": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"modifiedDate": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+				},
+				Required: []string{"internalId", "createDate", "modifiedDate"},
+			},
+		},
+		Dependencies: []string{},
+	}
+}
+
 func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImage(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -28845,7 +28886,27 @@ func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImageStatus(ref common.Ref
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "VirtualMachineImageStatus defines the observed state of VirtualMachineImage",
-				Properties:  map[string]spec.Schema{},
+				Properties: map[string]spec.Schema{
+					"uuid": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"internalId": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"powerState": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+				},
+				Required: []string{"internalId"},
 			},
 		},
 		Dependencies: []string{},
@@ -28946,6 +29007,86 @@ func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineList(ref common.ReferenceC
 	}
 }
 
+func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineResourceSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Properties: map[string]spec.Schema{
+					"cpu": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"integer"},
+							Format: "int32",
+						},
+					},
+					"memory": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"integer"},
+							Format: "int32",
+						},
+					},
+				},
+				Required: []string{"cpu", "memory"},
+			},
+		},
+		Dependencies: []string{},
+	}
+}
+
+func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineResourcesSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Properties: map[string]spec.Schema{
+					"capacity": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourceSpec"),
+						},
+					},
+					"limits": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourceSpec"),
+						},
+					},
+					"requests": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourceSpec"),
+						},
+					},
+				},
+				Required: []string{"capacity"},
+			},
+		},
+		Dependencies: []string{
+			"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourceSpec"},
+	}
+}
+
+func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineRuntimeStatus(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "VirtualMachineStatus defines the observed state of VirtualMachine",
+				Properties: map[string]spec.Schema{
+					"host": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"powerState": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+				},
+				Required: []string{"host", "powerState"},
+			},
+		},
+		Dependencies: []string{},
+	}
+}
+
 func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineSchemeFns(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -28971,10 +29112,30 @@ func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineSpec(ref common.ReferenceC
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "VirtualMachineSpec defines the desired state of VirtualMachine",
-				Properties:  map[string]spec.Schema{},
+				Properties: map[string]spec.Schema{
+					"image": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"resources": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourcesSpec"),
+						},
+					},
+					"powerState": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+				},
+				Required: []string{"image", "resources", "powerState"},
 			},
 		},
-		Dependencies: []string{},
+		Dependencies: []string{
+			"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourcesSpec"},
 	}
 }
 
@@ -28982,11 +29143,29 @@ func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineStatus(ref common.Referenc
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "VirtualMachineStatus defines the observed state of VirtualMachine",
-				Properties:  map[string]spec.Schema{},
+				Properties: map[string]spec.Schema{
+					"state": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"ConfigStatus": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineConfigStatus"),
+						},
+					},
+					"runtimeStatus": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineRuntimeStatus"),
+						},
+					},
+				},
+				Required: []string{"state", "ConfigStatus", "runtimeStatus"},
 			},
 		},
-		Dependencies: []string{},
+		Dependencies: []string{
+			"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineConfigStatus", "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineRuntimeStatus"},
 	}
 }
 

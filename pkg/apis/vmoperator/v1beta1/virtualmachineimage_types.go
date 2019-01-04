@@ -36,6 +36,9 @@ type VirtualMachineImageSpec struct {
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage
 type VirtualMachineImageStatus struct {
+	Uuid string `json:"uuid,omitempty"`
+	InternalId string `json:"internalId"`
+	PowerState string `json:"powerState,omitempty"`
 }
 
 // Validate checks that an instance of VirtualMachineImage is well formed

@@ -77,11 +77,4 @@ func (f *Folder) Lookup() error {
 	return nil
 }
 
-func (f *Folder) ListVms(ctx context.Context) ([]*object.VirtualMachine, error) {
-	vms, err := f.finder.VirtualMachineList(ctx, f.Folder.InventoryPath)
-	if err != nil {
-		return nil, err
-	}
 
-	return vms, nil
-}

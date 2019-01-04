@@ -75,8 +75,12 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 					Name: image.Name,
 					Namespace: namespace,
 				},
-				//Spec: VirtualMachineImageSpec{},
-				//Status: VirtualMachineImageStatus{},
+				Spec: VirtualMachineImageSpec{},
+				Status: VirtualMachineImageStatus{
+					Uuid: image.Uuid,
+					PowerState: image.PowerState,
+					InternalId: image.InternalId,
+				},
 			}
 			newImages = append(newImages, ni)
 		}
@@ -129,6 +133,12 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 			ObjectMeta: metav1.ObjectMeta{
 				Name: image.Name,
 				Namespace: namespace,
+			},
+			Spec: VirtualMachineImageSpec{},
+			Status: VirtualMachineImageStatus{
+				Uuid: image.Uuid,
+				PowerState: image.PowerState,
+				InternalId: image.InternalId,
 			},
 		}
 	}

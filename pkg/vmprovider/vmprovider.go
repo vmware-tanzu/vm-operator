@@ -38,12 +38,19 @@ type VirtualMachineProviderInterface interface {
 	VirtualMachineImages() (VirtualMachineImages, bool)
 }
 
+// DWB: Need to get rid of these intermediate types and resolve the import cycle for the k8s types
 type VirtualMachineImage struct {
 	Name string
+	PowerState string
+	Uuid string
+	InternalId string
 }
 
 type VirtualMachine struct {
 	Name string
+	PowerState string
+	Uuid string
+	InternalId string
 }
 
 type VirtualMachineImages interface {
@@ -54,6 +61,8 @@ type VirtualMachineImages interface {
 type VirtualMachines interface {
 	ListVirtualMachines(ctx context.Context, namespace string) ([]VirtualMachine, error)
 	GetVirtualMachine(ctx context.Context, name string) (VirtualMachine, error)
+	CreateVirtualMachine(ctx context.Context, virtualMachine VirtualMachine) (error)
+	DeleteVirtualMachine(ctx context.Context, name string) (error)
 }
 
 // Factory is a function that returns a vmprovider.Interface.

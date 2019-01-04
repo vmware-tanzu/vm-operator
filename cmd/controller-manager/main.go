@@ -9,7 +9,7 @@ package main
 import (
 	"flag"
 	"log"
-	"vmware.com/kubevsphere/pkg/vmprovider"
+	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
 
 	controllerlib "github.com/kubernetes-incubator/apiserver-builder/pkg/controller"
 
@@ -25,8 +25,11 @@ func main() {
 		log.Fatalf("Could not create Config for talking to the apiserver: %v", err)
 	}
 
+	// Init the vsphere provider
+	vsphere.InitProvider()
+
 	// Initialize VM providers
-	vmprovider.InitVmProvider("vsphere", "")
+	//vmprovider.InitVmProvider("vsphere", "")
 
 	controllers, _ := controller.GetAllControllers(config)
 	controllerlib.StartControllerManager(controllers...)

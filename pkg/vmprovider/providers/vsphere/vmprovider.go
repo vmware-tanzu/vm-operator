@@ -56,6 +56,7 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 	if err != nil {
 		return nil, err
 	}
+	log.Print("Listing VM images 1")
 
 	defer vClient.Logout(ctx)
 
@@ -64,20 +65,55 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 		return nil, err
 	}
 
+	log.Print("Listing VM images 2")
+
 	newImages := []vmprovider.VirtualMachineImage{}
 	for _, vm := range vms {
-		// include only vm templates
-		newImages = append(newImages, vmprovider.VirtualMachineImage{Name: vm.VirtualMachine.Name()})
+		powerState, _ := vm.VirtualMachine.PowerState(ctx)
+		ps := string(powerState)
+		newImages = append(newImages,
+			vmprovider.VirtualMachineImage{
+				Name: vm.VirtualMachine.Name(),
+				PowerState: ps,
+				Uuid: vm.VirtualMachine.UUID(ctx),
+				InternalId: vm.VirtualMachine.Reference().Value,
+			},
+		)
 	}
+	log.Print("Listing VM images 3")
 
 	return newImages, nil
-
-	//return NewVirtualMachineImageListFake(), nil
 }
 
 func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name string) (vmprovider.VirtualMachineImage, error) {
 	log.Print("Getting VM images")
-	return NewVirtualMachineImageFake(name), nil
+	//return NewVirtualMachineImageFake(name), nil
+	vMan := vs.manager
+
+	vClient, err := NewClient(ctx, vs.Config.VcUrl)
+	if err != nil {
+		return vmprovider.VirtualMachineImage{}, err
+	}
+	log.Print("Getting VM image 1")
+
+	defer vClient.Logout(ctx)
+
+	vm, err := vMan.LookupVm(ctx, vClient, name)
+	if err != nil {
+		return vmprovider.VirtualMachineImage{}, err
+	}
+
+	log.Print("Getting VM image 2")
+
+	powerState, _ := vm.VirtualMachine.PowerState(ctx)
+	ps := string(powerState)
+
+	return vmprovider.VirtualMachineImage{
+		Name: vm.VirtualMachine.Name(),
+		PowerState: ps,
+		Uuid: vm.VirtualMachine.UUID(ctx),
+		InternalId: vm.VirtualMachine.Reference().Value,
+	}, nil
 }
 
 func NewVirtualMachineImageFake(name string) vmprovider.VirtualMachineImage {
@@ -85,7 +121,6 @@ func NewVirtualMachineImageFake(name string) vmprovider.VirtualMachineImage {
 }
 
 func NewVirtualMachineImageListFake() []vmprovider.VirtualMachineImage {
-	//func NewVirtualMachineImageFake() runtime.Object {
 	images := []vmprovider.VirtualMachineImage{}
 
 	fake1 := NewVirtualMachineImageFake("Fake")
@@ -94,12 +129,66 @@ func NewVirtualMachineImageListFake() []vmprovider.VirtualMachineImage {
 	images = append(images, fake2)
 	return images
 }
+
 func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace string) ([]vmprovider.VirtualMachine, error) {
 	return nil, nil
 }
 
 func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string) (vmprovider.VirtualMachine, error) {
-	return vmprovider.VirtualMachine{}, nil
+	log.Print("Getting VMs")
+	vMan := vs.manager
+
+	vClient, err := NewClient(ctx, vs.Config.VcUrl)
+	if err != nil {
+		return vmprovider.VirtualMachine{}, err
+	}
+	log.Print("Getting VM 1")
+
+	defer vClient.Logout(ctx)
+
+	vm, err := vMan.LookupVm(ctx, vClient, name)
+	if err != nil {
+		return vmprovider.VirtualMachine{}, err
+	}
+
+	log.Print("Getting VM image 2")
+
+	powerState, _ := vm.VirtualMachine.PowerState(ctx)
+	ps := string(powerState)
+
+	return vmprovider.VirtualMachine{
+		Name: vm.VirtualMachine.Name(),
+		PowerState: ps,
+		Uuid: vm.VirtualMachine.UUID(ctx),
+		InternalId: vm.VirtualMachine.Reference().Value,
+	}, nil
+}
+
+func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm vmprovider.VirtualMachine) (error) {
+	log.Printf("Creating Vm: %s", vm.Name)
+	/*
+	vMan := vs.manager
+
+
+	vClient, err := NewClient(ctx, vs.Config.VcUrl)
+	if err != nil {
+		return err
+	}
+	log.Print("Creating VM 1")
+
+	defer vClient.Logout(ctx)
+
+	_, err = vMan.CreateVm(ctx, r.Client, vClient, request, instance)
+	if err != nil {
+		log.Printf("Create VM failed %s!", err)
+		return reconcile.Result{}, err
+	}
+	*/
+	return nil
+}
+
+func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, name string) (error) {
+	return nil
 }
 
 

@@ -5,7 +5,6 @@ package vsphere
 
 import (
 	"context"
-	"github.com/coreos/etcd/client"
 	"github.com/vmware/govmomi"
 	//"github.com/vmware/govmomi/object"
 	//vimTypes "github.com/vmware/govmomi/vim25/types"
@@ -14,14 +13,18 @@ import (
 )
 
 type VSphereManager struct {
-	Config VSphereVmProviderConfig
+	Config 			VSphereVmProviderConfig
+	ResourceContext *ResourceContext
 }
 
 func NewVSphereManager() *VSphereManager {
 	return &VSphereManager{Config: *NewVsphereVmProviderConfig()}
 }
 
-func (v *VSphereManager) refreshResources(ctxt context.Context, client *govmomi.Client) (*ResourceContext, error) {
+func (v *VSphereManager) resolveResources(ctx context.Context, client *govmomi.Client) (*ResourceContext, error) {
+	if v.ResourceContext != nil {
+		return v.ResourceContext, nil
+	}
 
 	dc, err := NewDatacenter(*client, v.Config.Datacenter)
 	if err != nil {
@@ -70,36 +73,57 @@ func (v *VSphereManager) refreshResources(ctxt context.Context, client *govmomi.
 		datastore:    ds,
 	}
 
-	return &rc, nil
+	v.ResourceContext = &rc
+
+	return v.ResourceContext, nil
 }
 
 func (v *VSphereManager) ListVms(ctx context.Context, vClient *govmomi.Client, vmFolder string) ([]*VM, error) {
 	vms := []*VM{}
-	_, err := v.refreshResources(ctx, vClient)
+	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
+		log.Printf("Failed to resolve resources Vms: %d", err)
 		return nil, err
+	}
+
+	list, err := rc.datacenter.ListVms(ctx, "*")
+	if err != nil {
+		log.Printf("Failed to list Vms: %d", err)
+		return nil, err
+	}
+
+	for _, vmiter := range list {
+		log.Printf("Found VM: %s %s %s", vmiter.Name(), vmiter.Reference().Type, vmiter.Reference().Value)
+		vm, err := v.LookupVm(ctx, vClient, vmiter.Name())
+		if err == nil {
+			log.Printf("Append VM: %s", vm.name)
+			vms = append(vms, vm)
+		}
 	}
 
 	return vms, nil
 }
 
-func (v *VSphereManager) LookupVm(ctx context.Context, kClient client.Client, vClient *govmomi.Client, vmName string) (*VM, error) {
-	rc, err := v.refreshResources(ctx, vClient)
+func (v *VSphereManager) LookupVm(ctx context.Context, vClient *govmomi.Client, vmName string) (*VM, error) {
+	log.Printf("Lookup VM")
+	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("New VM")
 
 	vm, err := NewVM(*vClient, rc.datacenter, vmName)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("VM.lookup")
 
 	err = vm.Lookup()
 	if err != nil {
 		return nil, err
 	}
 
-	log.Printf("%s", vm.VirtualMachine.InventoryPath)
+	log.Printf("vm: %s path: %s", vm.name, vm.VirtualMachine.InventoryPath)
 
 	return vm, nil
 }

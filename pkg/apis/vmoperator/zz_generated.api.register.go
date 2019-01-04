@@ -86,17 +86,6 @@ func Resource(resource string) schema.GroupResource {
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-type VirtualMachineImage struct {
-	metav1.TypeMeta
-	metav1.ObjectMeta
-	Spec   VirtualMachineImageSpec
-	Status VirtualMachineImageStatus
-}
-
-// +genclient
-// +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
 type VirtualMachine struct {
 	metav1.TypeMeta
 	metav1.ObjectMeta
@@ -104,16 +93,59 @@ type VirtualMachine struct {
 	Status VirtualMachineStatus
 }
 
-type VirtualMachineImageStatus struct {
+// +genclient
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type VirtualMachineImage struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	Spec   VirtualMachineImageSpec
+	Status VirtualMachineImageStatus
 }
 
 type VirtualMachineStatus struct {
+	State         string
+	ConfigStatus  VirtualMachineConfigStatus
+	RuntimeStatus VirtualMachineRuntimeStatus
 }
 
-type VirtualMachineSpec struct {
+type VirtualMachineImageStatus struct {
+	Uuid       string
+	InternalId string
+	PowerState string
+}
+
+type VirtualMachineRuntimeStatus struct {
+	Host       string
+	PowerState string
+}
+
+type VirtualMachineConfigStatus struct {
+	Uuid         string
+	InternalId   string
+	CreateDate   string
+	ModifiedDate string
 }
 
 type VirtualMachineImageSpec struct {
+}
+
+type VirtualMachineSpec struct {
+	Image      string
+	Resources  VirtualMachineResourcesSpec
+	PowerState string
+}
+
+type VirtualMachineResourcesSpec struct {
+	Capacity VirtualMachineResourceSpec
+	Limits   VirtualMachineResourceSpec
+	Requests VirtualMachineResourceSpec
+}
+
+type VirtualMachineResourceSpec struct {
+	Cpu    int
+	Memory int
 }
 
 //

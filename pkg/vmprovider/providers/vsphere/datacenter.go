@@ -5,6 +5,7 @@ import (
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"log"
 )
 
 type Datacenter struct {
@@ -36,4 +37,15 @@ func (dc *Datacenter) Lookup() error {
 	dc.finder.SetDatacenter(dc.Datacenter)
 
 	return nil
+}
+
+func (dc *Datacenter) ListVms(ctx context.Context, path string) ([]*object.VirtualMachine, error) {
+	log.Printf("Listing VMs for folder: %s", dc.name)
+	vms, err := dc.finder.VirtualMachineList(ctx, path)
+	if err != nil {
+		log.Printf("Failed to list Vms: %s", err)
+		return nil, err
+	}
+
+	return vms, nil
 }

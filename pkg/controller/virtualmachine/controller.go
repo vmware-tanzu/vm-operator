@@ -110,7 +110,7 @@ func (c *VirtualMachineControllerImpl) Reconcile(u *v1beta1.VirtualMachine) erro
 	case err != nil:
 		glog.Infof("Unable to retrieve vm %v from store: %v", u.Name, err)
 	default:
-		err = c.processVmUpdate(vm)
+		err = c.processVmCreateOrUpdate(vm)
 	}
 
 	return err
@@ -208,7 +208,7 @@ func (c *VirtualMachineControllerImpl) processVmDeletion(u *v1beta1.VirtualMachi
 	return nil
 }
 
-func (c *VirtualMachineControllerImpl) processVmUpdate(u *v1beta1.VirtualMachine) error {
+func (c *VirtualMachineControllerImpl) processVmCreateOrUpdate(u *v1beta1.VirtualMachine) error {
 	glog.Infof("Process VM Update for vm %s", u.Name)
 
 	vmprovider, err := vmprovider.NewVmProvider(u.Namespace)
@@ -225,12 +225,40 @@ func (c *VirtualMachineControllerImpl) processVmUpdate(u *v1beta1.VirtualMachine
 
 	ctx := context.TODO()
 	vm, err := vmsProvider.GetVirtualMachine(ctx, u.Name)
-	if err != nil {
-		glog.Errorf("Failed to get vm")
-		return errors.NewInternalError(err)
+	switch {
+		// For now, treat any error as not found
+	case err != nil:
+	//case errors.IsNotFound(err):
+		glog.Infof("VM doesn't exist in backend provider.  Creating now")
+		err = c.processVmCreate(ctx, vmprovider, vmsProvider, u)
+	//case err != nil:
+	//	glog.Infof("Unable to retrieve vm %v from store: %v", u.Name, err)
+	default:
+		glog.V(4).Infof("Acquired VM %s %s", vm.Name, vm.InternalId)
+		glog.Infof("Updating Vm %s", vm.Name)
+		err = c.processVmUpdate(ctx, vmprovider, vmsProvider, u)
 	}
 
-	glog.V(4).Infof("Acquired VM %s %s", vm.Name, vm.InternalId)
+	return nil
+}
+
+func VirtualMachineApiToProvider(vm v1beta1.VirtualMachine) vmprovider.VirtualMachine {
+	return vmprovider.VirtualMachine{
+		Name: vm.Name,
+		PowerState: vm.Spec.PowerState,
+	}
+}
+
+func (c *VirtualMachineControllerImpl) processVmCreate(ctx context.Context, vmprovider vmprovider.VirtualMachineProviderInterface, vmsProvider vmprovider.VirtualMachines, vm *v1beta1.VirtualMachine) error {
+	glog.Infof("Creating VM: %s", vm.Name)
+	err := vmsProvider.CreateVirtualMachine(ctx, VirtualMachineApiToProvider(*vm))
+	if err != nil {
+		glog.Errorf("Provider Failed to Create VM %s: %s", vm.Name, err)
+	}
+	return err
+}
+
+func (c *VirtualMachineControllerImpl) processVmUpdate(ctx context.Context, vmprovider vmprovider.VirtualMachineProviderInterface, vmsProvider vmprovider.VirtualMachines, vm *v1beta1.VirtualMachine) error {
 	return nil
 }
 

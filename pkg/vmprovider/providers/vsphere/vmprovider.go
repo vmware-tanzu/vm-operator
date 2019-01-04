@@ -165,10 +165,8 @@ func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string)
 }
 
 func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm vmprovider.VirtualMachine) (error) {
-	glog.Info("Creating Vm: %s", vm.Name)
-	/*
+	glog.Infof("Creating Vm: %s", vm.Name)
 	vMan := vs.manager
-
 
 	vClient, err := NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
@@ -178,12 +176,11 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm vmprov
 
 	defer vClient.Logout(ctx)
 
-	_, err = vMan.CreateVm(ctx, r.Client, vClient, request, instance)
+	_, err = vMan.CreateVm(ctx, vClient, vm)
 	if err != nil {
-		log.Printf("Create VM failed %s!", err)
-		return reconcile.Result{}, err
+		glog.Infof("Create VM failed %s!", err)
+		return err
 	}
-	*/
 	return nil
 }
 

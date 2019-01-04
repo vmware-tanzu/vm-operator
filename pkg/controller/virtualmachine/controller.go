@@ -239,7 +239,7 @@ func (c *VirtualMachineControllerImpl) processVmCreateOrUpdate(u *v1beta1.Virtua
 		err = c.processVmUpdate(ctx, vmprovider, vmsProvider, u)
 	}
 
-	return nil
+	return err
 }
 
 func VirtualMachineApiToProvider(vm v1beta1.VirtualMachine) vmprovider.VirtualMachine {

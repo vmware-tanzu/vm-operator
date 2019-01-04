@@ -5,8 +5,12 @@ package vsphere
 
 import (
 	"context"
+	"fmt"
 	"github.com/golang/glog"
 	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/object"
+	vimTypes "github.com/vmware/govmomi/vim25/types"
+	"vmware.com/kubevsphere/pkg/vmprovider"
 
 	//vmv1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
 )
@@ -162,6 +166,7 @@ func (v *VSphereManager) DeleteVm(ctx context.Context, kClient client.Client, vC
 
 	return nil
 }
+*/
 
 func (v *VSphereManager) createVmInvoke(ctx context.Context, client *govmomi.Client, rc *ResourceContext, vmSpec vimTypes.VirtualMachineConfigSpec) (*object.Task, error) {
 
@@ -177,6 +182,7 @@ func (v *VSphereManager) createVmInvoke(ctx context.Context, client *govmomi.Cli
 	return vm.Create(ctx, rc.folder.Folder, rc.resourcePool.ResourcePool, vmSpec)
 }
 
+/*
 func (v *VSphereManager) updateVmStatus(ctx context.Context, kClient client.Client, instance *vmv1.VM, vm *VM) error {
 	instance.Status.State = "Created"
 	ps, err := vm.VirtualMachine.PowerState(ctx)
@@ -195,54 +201,58 @@ func (v *VSphereManager) updateVmStatus(ctx context.Context, kClient client.Clie
 	}
 	return nil
 }
+*/
 
-func (v *VSphereManager) CreateVm(ctx context.Context, kClient client.Client, vClient *govmomi.Client, request reconcile.Request, instance *vmv1.VM) (*VM, error) {
-	rc, err := v.refreshResources(ctx, vClient)
+func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, vm vmprovider.VirtualMachine) (*VM, error) {
+	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
 		return nil, err
 	}
 
 	vmSpec := vimTypes.VirtualMachineConfigSpec{
-		Name:     request.Name,
-		NumCPUs:  int32(instance.Spec.CpuReqs.CpuCount),
-		MemoryMB: int64(instance.Spec.MemoryReqs.MemoryCapacity),
+		Name:     vm.Name,
+		//NumCPUs:  int32(instance.Spec.CpuReqs.CpuCount),
+		//MemoryMB: int64(instance.Spec.MemoryReqs.MemoryCapacity),
 	}
 
 	task, err := v.createVmInvoke(ctx, vClient, rc, vmSpec)
 	if err != nil {
-		log.Printf("Failed to create VM: %s", err.Error())
+		glog.Errorf("Failed to create VM: %s", err.Error())
 		return nil, err
 	}
 
 	//info, err := task.WaitForResult(ctx, nil)
 	_, err = task.WaitForResult(ctx, nil)
 	if err != nil {
-		log.Printf("VM Create task failed %s", err.Error())
+		glog.Errorf("VM Create task failed %s", err.Error())
 		return nil, err
 	}
 
-	vm, err := NewVM(*vClient, rc.datacenter, vmSpec.Name)
+	newVm, err := NewVM(*vClient, rc.datacenter, vmSpec.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	// DWB: Need resolve from info rather than lookup
-	err = vm.Lookup()
+	err = newVm.Lookup()
 	if err != nil {
 		return nil, err
 	}
 
+	/*
 	err = v.updateVmStatus(ctx, kClient, instance, vm)
 	if err != nil {
 		return nil, err
 	}
+	*/
 
-	log.Printf("Created VM %s!", vmSpec.Name)
-	return vm, nil
+	glog.Infof("Created VM %s!", vmSpec.Name)
+	return newVm, nil
 
 	//return object.NewVirtualMachine(client.Client, info.Result.(vimTypes.ManagedObjectReference)), nil
 }
 
+/*
 func (v *VSphereManager) updatePowerState(ctx context.Context, instance *vmv1.VM, vm *VM) error {
 
 

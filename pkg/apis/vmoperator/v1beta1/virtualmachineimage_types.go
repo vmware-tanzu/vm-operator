@@ -8,11 +8,11 @@ package v1beta1
 
 import (
 	"context"
+	"github.com/golang/glog"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apiserver/pkg/registry/rest"
-	"log"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator"
 )
 
@@ -44,7 +44,7 @@ type VirtualMachineImageStatus struct {
 // Validate checks that an instance of VirtualMachineImage is well formed
 func (VirtualMachineImageStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	o := obj.(*vmoperator.VirtualMachineImage)
-	log.Printf("Validating fields for VirtualMachineImage %s\n", o.Name)
+	glog.Infof("Validating fields for VirtualMachineImage %s\n", o.Name)
 	errors := field.ErrorList{}
 	// perform validation here and add to errors using field.Invalid
 	return errors
@@ -54,7 +54,7 @@ func (VirtualMachineImageStrategy) Validate(ctx context.Context, obj runtime.Obj
 func (VirtualMachineImageSchemeFns) DefaultingFunction(o interface{}) {
 	obj := o.(*VirtualMachineImage)
 	// set default field values here
-	log.Printf("Defaulting fields for VirtualMachineImage %s\n", obj.Name)
+	glog.Infof("Defaulting fields for VirtualMachineImage %s\n", obj.Name)
 }
 
 func NewVirtualMachineImagesREST() rest.Storage {

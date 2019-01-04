@@ -7,13 +7,12 @@
 package virtualmachineimage
 
 import (
-	"log"
-
+	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/apiserver-builder/pkg/builders"
 
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
-	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
 	listers "vmware.com/kubevsphere/pkg/client/listers_generated/vmoperator/v1beta1"
+	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
 )
 
 // +controller:group=vmoperator,version=v1beta1,kind=VirtualMachineImage,resource=virtualmachineimages
@@ -34,7 +33,7 @@ func (c *VirtualMachineImageControllerImpl) Init(arguments sharedinformers.Contr
 // Reconcile handles enqueued messages
 func (c *VirtualMachineImageControllerImpl) Reconcile(u *v1beta1.VirtualMachineImage) error {
 	// Implement controller logic here
-	log.Printf("Running reconcile VirtualMachineImage for %s\n", u.Name)
+	glog.Infof("Running reconcile VirtualMachineImage for %s\n", u.Name)
 	return nil
 }
 

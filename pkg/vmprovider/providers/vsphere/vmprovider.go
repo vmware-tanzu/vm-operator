@@ -6,8 +6,8 @@ package vsphere
 
 import (
 	"context"
+	"github.com/golang/glog"
 	"io"
-	"log"
 	"vmware.com/kubevsphere/pkg/vmprovider"
 )
 
@@ -48,7 +48,7 @@ func (vs *VSphereVmProvider) Initialize(clientBuilder vmprovider.ClientBuilder, 
 }
 
 func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]vmprovider.VirtualMachineImage, error) {
-	log.Print("Listing VM images")
+	glog.Info("Listing VM images")
 
 	vMan := vs.manager
 
@@ -56,7 +56,7 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 	if err != nil {
 		return nil, err
 	}
-	log.Print("Listing VM images 1")
+	glog.Info("Listing VM images 1")
 
 	defer vClient.Logout(ctx)
 
@@ -65,7 +65,7 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 		return nil, err
 	}
 
-	log.Print("Listing VM images 2")
+	glog.Info("Listing VM images 2")
 
 	newImages := []vmprovider.VirtualMachineImage{}
 	for _, vm := range vms {
@@ -80,13 +80,13 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 			},
 		)
 	}
-	log.Print("Listing VM images 3")
+	glog.Info("Listing VM images 3")
 
 	return newImages, nil
 }
 
 func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name string) (vmprovider.VirtualMachineImage, error) {
-	log.Print("Getting VM images")
+	glog.Info("Getting VM images")
 	//return NewVirtualMachineImageFake(name), nil
 	vMan := vs.manager
 
@@ -94,7 +94,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 	if err != nil {
 		return vmprovider.VirtualMachineImage{}, err
 	}
-	log.Print("Getting VM image 1")
+	glog.Info("Getting VM image 1")
 
 	defer vClient.Logout(ctx)
 
@@ -103,7 +103,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 		return vmprovider.VirtualMachineImage{}, err
 	}
 
-	log.Print("Getting VM image 2")
+	glog.Info("Getting VM image 2")
 
 	powerState, _ := vm.VirtualMachine.PowerState(ctx)
 	ps := string(powerState)
@@ -135,14 +135,14 @@ func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace 
 }
 
 func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string) (vmprovider.VirtualMachine, error) {
-	log.Print("Getting VMs")
+	glog.Info("Getting VMs")
 	vMan := vs.manager
 
 	vClient, err := NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
 		return vmprovider.VirtualMachine{}, err
 	}
-	log.Print("Getting VM 1")
+	glog.Info("Getting VM 1")
 
 	defer vClient.Logout(ctx)
 
@@ -151,7 +151,7 @@ func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string)
 		return vmprovider.VirtualMachine{}, err
 	}
 
-	log.Print("Getting VM image 2")
+	glog.Info("Getting VM image 2")
 
 	powerState, _ := vm.VirtualMachine.PowerState(ctx)
 	ps := string(powerState)
@@ -165,7 +165,7 @@ func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string)
 }
 
 func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm vmprovider.VirtualMachine) (error) {
-	log.Printf("Creating Vm: %s", vm.Name)
+	glog.Info("Creating Vm: %s", vm.Name)
 	/*
 	vMan := vs.manager
 
@@ -174,7 +174,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm vmprov
 	if err != nil {
 		return err
 	}
-	log.Print("Creating VM 1")
+	glog.Info("Creating VM 1")
 
 	defer vClient.Logout(ctx)
 

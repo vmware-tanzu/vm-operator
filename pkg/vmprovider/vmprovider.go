@@ -11,7 +11,6 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/klog"
-	"log"
 	"os"
 	"sync"
 )
@@ -141,6 +140,5 @@ func InitVmProvider(name string, configFilePath string) (VirtualMachineProviderI
 }
 
 func NewVmProvider(namespace string) (VirtualMachineProviderInterface, error) {
-	log.Print("Lookup VM provider")
 	return InitVmProvider("vsphere", "")
 }

@@ -2,10 +2,10 @@ package vsphere
 
 import (
 	"context"
+	"github.com/golang/glog"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
-	"log"
 )
 
 type Datacenter struct {
@@ -40,10 +40,10 @@ func (dc *Datacenter) Lookup() error {
 }
 
 func (dc *Datacenter) ListVms(ctx context.Context, path string) ([]*object.VirtualMachine, error) {
-	log.Printf("Listing VMs for folder: %s", dc.name)
+	glog.Infof("Listing VMs for folder: %s", dc.name)
 	vms, err := dc.finder.VirtualMachineList(ctx, path)
 	if err != nil {
-		log.Printf("Failed to list Vms: %s", err)
+		glog.Errorf("Failed to list Vms: %s", err)
 		return nil, err
 	}
 

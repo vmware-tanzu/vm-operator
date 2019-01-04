@@ -8,8 +8,7 @@ package v1beta1
 
 import (
 	"context"
-	"log"
-
+	"github.com/golang/glog"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -83,7 +82,7 @@ func (v VirtualMachineStrategy) PrepareForCreate(ctx context.Context, obj runtim
 // Validate checks that an instance of VirtualMachine is well formed
 func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	o := obj.(*vmoperator.VirtualMachine)
-	log.Printf("Validating fields for VirtualMachine %s\n", o.Name)
+	glog.Infof("Validating fields for VirtualMachine %s\n", o.Name)
 	errors := field.ErrorList{}
 	// perform validation here and add to errors using field.Invalid
 	return errors
@@ -93,5 +92,5 @@ func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object
 func (VirtualMachineSchemeFns) DefaultingFunction(o interface{}) {
 	obj := o.(*VirtualMachine)
 	// set default field values here
-	log.Printf("Defaulting fields for VirtualMachine %s\n", obj.Name)
+	glog.Infof("Defaulting fields for VirtualMachine %s\n", obj.Name)
 }

@@ -5,10 +5,9 @@ package vsphere
 
 import (
 	"context"
+	"github.com/golang/glog"
 	"github.com/vmware/govmomi"
-	//"github.com/vmware/govmomi/object"
-	//vimTypes "github.com/vmware/govmomi/vim25/types"
-	"log"
+
 	//vmv1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
 )
 
@@ -82,21 +81,21 @@ func (v *VSphereManager) ListVms(ctx context.Context, vClient *govmomi.Client, v
 	vms := []*VM{}
 	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
-		log.Printf("Failed to resolve resources Vms: %d", err)
+		glog.Infof("Failed to resolve resources Vms: %d", err)
 		return nil, err
 	}
 
 	list, err := rc.datacenter.ListVms(ctx, "*")
 	if err != nil {
-		log.Printf("Failed to list Vms: %d", err)
+		glog.Infof("Failed to list Vms: %d", err)
 		return nil, err
 	}
 
 	for _, vmiter := range list {
-		log.Printf("Found VM: %s %s %s", vmiter.Name(), vmiter.Reference().Type, vmiter.Reference().Value)
+		glog.Infof("Found VM: %s %s %s", vmiter.Name(), vmiter.Reference().Type, vmiter.Reference().Value)
 		vm, err := v.LookupVm(ctx, vClient, vmiter.Name())
 		if err == nil {
-			log.Printf("Append VM: %s", vm.name)
+			glog.Infof("Append VM: %s", vm.name)
 			vms = append(vms, vm)
 		}
 	}
@@ -105,25 +104,25 @@ func (v *VSphereManager) ListVms(ctx context.Context, vClient *govmomi.Client, v
 }
 
 func (v *VSphereManager) LookupVm(ctx context.Context, vClient *govmomi.Client, vmName string) (*VM, error) {
-	log.Printf("Lookup VM")
+	glog.Info("Lookup VM")
 	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("New VM")
+	glog.Info("New VM")
 
 	vm, err := NewVM(*vClient, rc.datacenter, vmName)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("VM.lookup")
+	glog.Info("VM.lookup")
 
 	err = vm.Lookup()
 	if err != nil {
 		return nil, err
 	}
 
-	log.Printf("vm: %s path: %s", vm.name, vm.VirtualMachine.InventoryPath)
+	glog.Infof("vm: %s path: %s", vm.name, vm.VirtualMachine.InventoryPath)
 
 	return vm, nil
 }

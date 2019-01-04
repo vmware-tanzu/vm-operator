@@ -6,6 +6,7 @@ package v1beta1
 
 import (
 	"context"
+	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,7 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
-	"log"
 	"vmware.com/kubevsphere/pkg/vmprovider"
 )
 
@@ -33,7 +33,7 @@ func (r *VirtualMachineImagesREST) NewList() runtime.Object {
 
 // List selects resources in the storage which match to the selector. 'options' can be nil.
 func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
-	log.Printf("Listing VirtualMachineImage")
+	glog.Info("Listing VirtualMachineImage")
 
 	// Get the namespace from the context (populated from the URL).
 	// The namespace in the object can be empty until StandardStorage.Create()->BeforeCreate() populates it from the context.
@@ -47,23 +47,23 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 		return nil, errors.NewBadRequest("user is required")
 	}
 
-	log.Printf("Listing VirtualMachineImage ns=%s, user=%s", namespace, user)
+	glog.Infof("Listing VirtualMachineImage ns=%s, user=%s", namespace, user)
 
 	vmprovider, err := vmprovider.NewVmProvider(namespace)
 	if err != nil {
-		log.Printf("Failed to find vmprovider")
+		glog.Errorf("Failed to find vmprovider: %s", err)
 		return nil, errors.NewBadRequest("namespace is invalid")
 	}
 
 	imagesProvider, supported := vmprovider.VirtualMachineImages()
 	if !supported {
-		log.Printf("Provider doesn't support images func")
+		glog.Error("Provider doesn't support images func")
 		return nil, errors.NewMethodNotSupported(schema.GroupResource{"vmoperator", "VirtualMachineImages"}, "list")
 	}
 
 	images, err := imagesProvider.ListVirtualMachineImages(ctx, namespace)
 	if err != nil {
-		log.Printf("Failed to list images")
+		glog.Errorf("Failed to list images: %s", err)
 		return nil, errors.NewInternalError(err)
 	}
 
@@ -88,13 +88,13 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 	}
 
 	converted := convertImages()
-	log.Printf("Images: %s", converted)
+	glog.Infof("Images: %s", converted)
 	return converted, nil
 }
 
 // Get retrieves the object from the storage. It is required to support Patch.
 func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
-	log.Printf("Getting VirtualMachineImage %s", name)
+	glog.Infof("Getting VirtualMachineImage %s", name)
 
 	// Get the namespace from the context (populated from the URL).
 	// The namespace in the object can be empty until StandardStorage.Create()->BeforeCreate() populates it from the context.
@@ -108,23 +108,23 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 		return nil, errors.NewBadRequest("user is required")
 	}
 
-	log.Printf("Getting VirtualMachineImage name=%s, ns=%s, user=%s", name, namespace, user)
+	glog.Infof("Getting VirtualMachineImage name=%s, ns=%s, user=%s", name, namespace, user)
 
 	vmprovider, err := vmprovider.NewVmProvider(namespace)
 	if err != nil {
-		log.Printf("Failed to find vmprovider")
+		glog.Errorf("Failed to find vmprovider: %s", err)
 		return nil, errors.NewBadRequest("namespace is invalid")
 	}
 
 	imagesProvider, supported := vmprovider.VirtualMachineImages()
 	if !supported {
-		log.Printf("Provider doesn't support images func")
+		glog.Error("Provider doesn't support images func")
 		return nil, errors.NewMethodNotSupported(schema.GroupResource{"vmoperator", "VirtualMachineImages"}, "list")
 	}
 
 	image, err := imagesProvider.GetVirtualMachineImage(ctx, name)
 	if err != nil {
-		log.Printf("Failed to list images")
+		glog.Errorf("Failed to list images: %s", err)
 		return nil, errors.NewInternalError(err)
 	}
 
@@ -144,7 +144,7 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 	}
 
 	converted := convertImage()
-	log.Printf("Image: %s", converted)
+	glog.Infof("Image: %s", converted)
 	return converted, nil
 }
 

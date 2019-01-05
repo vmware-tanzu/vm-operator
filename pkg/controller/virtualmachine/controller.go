@@ -116,68 +116,6 @@ func (c *VirtualMachineControllerImpl) Reconcile(u *v1beta1.VirtualMachine) erro
 	return err
 }
 
-	//c.lister.VirtualMachines(u.Namespace).Get(u.Name)
-
-	/*
-	instance := &vmv1.VM{}
-	ctx := context.TODO()
-	vMan := r.manager
-
-	vClient, err := vsphere.NewClient(ctx, r.manager.Config.VcUrl)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-
-	defer vClient.Logout(ctx)
-
-	// Fetch the VM instance
-	err = r.Get(ctx, request.NamespacedName, instance)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Object not found, return.  Created objects are automatically garbage collected.
-			// For additional cleanup logic use finalizers.
-
-			log.Printf("Deleting VM %s %s", request.Name, instance.Name)
-			vMan.DeleteVm(ctx, r.Client, vClient, request)
-			return reconcile.Result{}, nil
-		}
-		// Error reading the object - requeue the request.
-		return reconcile.Result{}, err
-	}
-	log.Printf("Acquired VM %s %s", request.Name, instance.Name)
-
-	// Check if the VM already exists in the backing Sddc
-	vm, err := vMan.LookupVm(ctx, r.Client, vClient, request)
-	if err == nil {
-		log.Printf("VM exists")
-
-		// Noop for now
-		// If so, difference the spec with the VM config and reconfigure if necessary
-		_, err := vMan.UpdateVm(ctx, r.Client, vClient, request, instance, vm)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-		return reconcile.Result{}, nil
-	}
-
-	if err != nil {
-		if _, ok := err.(*find.NotFoundError); !ok {
-			log.Printf("VM Lookup failed: %s!", err.Error())
-			return reconcile.Result{}, err
-		}
-	}
-
-	// VM Doesn't exist, create it
-	log.Printf("VM does not exist")
-
-	_, err = vMan.CreateVm(ctx, r.Client, vClient, request, instance)
-	if err != nil {
-		log.Printf("Create VM failed %s!", err)
-		return reconcile.Result{}, err
-	}
-	*/
-	//return nil
-
 func (c *VirtualMachineControllerImpl) processVmDeletion(u *v1beta1.VirtualMachine) error {
 	glog.Infof("Process VM Deletion for vm %s", u.Name)
 

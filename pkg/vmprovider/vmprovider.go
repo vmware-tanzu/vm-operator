@@ -47,6 +47,7 @@ type VirtualMachineImage struct {
 
 type VirtualMachine struct {
 	Name string
+	Image string
 	PowerState string
 	Uuid string
 	InternalId string

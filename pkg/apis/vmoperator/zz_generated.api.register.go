@@ -86,17 +86,6 @@ func Resource(resource string) schema.GroupResource {
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-type VirtualMachine struct {
-	metav1.TypeMeta
-	metav1.ObjectMeta
-	Spec   VirtualMachineSpec
-	Status VirtualMachineStatus
-}
-
-// +genclient
-// +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
 type VirtualMachineImage struct {
 	metav1.TypeMeta
 	metav1.ObjectMeta
@@ -104,10 +93,15 @@ type VirtualMachineImage struct {
 	Status VirtualMachineImageStatus
 }
 
-type VirtualMachineStatus struct {
-	State         string
-	ConfigStatus  VirtualMachineConfigStatus
-	RuntimeStatus VirtualMachineRuntimeStatus
+// +genclient
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type VirtualMachine struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	Spec   VirtualMachineSpec
+	Status VirtualMachineStatus
 }
 
 type VirtualMachineImageStatus struct {
@@ -116,24 +110,20 @@ type VirtualMachineImageStatus struct {
 	PowerState string
 }
 
-type VirtualMachineRuntimeStatus struct {
-	Host       string
-	PowerState string
-}
-
-type VirtualMachineConfigStatus struct {
-	Uuid         string
-	InternalId   string
-	CreateDate   string
-	ModifiedDate string
-}
-
-type VirtualMachineImageSpec struct {
+type VirtualMachineStatus struct {
+	State         string
+	ConfigStatus  VirtualMachineConfigStatus
+	RuntimeStatus VirtualMachineRuntimeStatus
 }
 
 type VirtualMachineSpec struct {
 	Image      string
 	Resources  VirtualMachineResourcesSpec
+	PowerState string
+}
+
+type VirtualMachineRuntimeStatus struct {
+	Host       string
 	PowerState string
 }
 
@@ -143,9 +133,19 @@ type VirtualMachineResourcesSpec struct {
 	Requests VirtualMachineResourceSpec
 }
 
+type VirtualMachineConfigStatus struct {
+	Uuid         string
+	InternalId   string
+	CreateDate   string
+	ModifiedDate string
+}
+
 type VirtualMachineResourceSpec struct {
 	Cpu    int
 	Memory int
+}
+
+type VirtualMachineImageSpec struct {
 }
 
 //

@@ -11,9 +11,9 @@ import (
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"vmware.com/kubevsphere/pkg/vmprovider"
-
-	//vmv1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
 )
+
+// TODO: Make task tracking funcs async via goroutines
 
 type VSphereManager struct {
 	Config 			VSphereVmProviderConfig
@@ -131,9 +131,8 @@ func (v *VSphereManager) LookupVm(ctx context.Context, vClient *govmomi.Client, 
 	return vm, nil
 }
 
-/*
 func (v *VSphereManager) deleteVmInvoke(ctx context.Context, client *govmomi.Client, name string) (*object.Task, error) {
-	rc, err := v.refreshResources(ctx, client)
+	rc, err := v.resolveResources(ctx, client)
 	if err != nil {
 		return nil, err
 	}
@@ -151,22 +150,23 @@ func (v *VSphereManager) deleteVmInvoke(ctx context.Context, client *govmomi.Cli
 	return vm.Delete(ctx)
 }
 
-func (v *VSphereManager) DeleteVm(ctx context.Context, kClient client.Client, vClient *govmomi.Client, request reconcile.Request) error {
-	task, err := v.deleteVmInvoke(ctx, vClient, request.Name)
+func (v *VSphereManager) DeleteVm(ctx context.Context, vClient *govmomi.Client, vm vmprovider.VirtualMachine) error {
+	glog.Infof("DeleteVm %s", vm.Name)
+
+	task, err := v.deleteVmInvoke(ctx, vClient, vm.Name)
 	if err != nil {
-		log.Printf("Failed to delete VM: %s", err.Error())
+		glog.Infof("Failed to delete VM: %s", err.Error())
 		return err
 	}
 
 	_, err = task.WaitForResult(ctx, nil)
 	if err != nil {
-		log.Printf("VM delete task failed %s", err.Error())
+		glog.Infof("VM delete task failed %s", err.Error())
 		return err
 	}
 
 	return nil
 }
-*/
 
 func (v *VSphereManager) createVmInvoke(ctx context.Context, client *govmomi.Client, rc *ResourceContext, vmSpec vimTypes.VirtualMachineConfigSpec) (*object.Task, error) {
 
@@ -204,6 +204,71 @@ func (v *VSphereManager) updateVmStatus(ctx context.Context, kClient client.Clie
 */
 
 func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, vm vmprovider.VirtualMachine) (*VM, error) {
+	glog.Infof("CreateVm %s", vm.Name)
+
+	rc, err := v.resolveResources(ctx, vClient)
+	if err != nil {
+		return nil, err
+	}
+
+	vmSpec := vimTypes.VirtualMachineConfigSpec{
+		Name:     vm.Name,
+		//NumCPUs:  int32(instance.Spec.CpuReqs.CpuCount),
+		//MemoryMB: int64(instance.Spec.MemoryReqs.MemoryCapacity),
+	}
+
+	task, err := v.createVmInvoke(ctx, vClient, rc, vmSpec)
+	if err != nil {
+		glog.Errorf("Failed to create VM: %s", err.Error())
+		return nil, err
+	}
+
+	_, err = task.WaitForResult(ctx, nil)
+	if err != nil {
+		glog.Errorf("VM Create task failed %s", err.Error())
+		return nil, err
+	}
+
+	newVm, err := NewVM(*vClient, rc.datacenter, vmSpec.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	// DWB: Need resolve from info rather than lookup
+	err = newVm.Lookup()
+	if err != nil {
+		return nil, err
+	}
+
+	// DWB: Caller needs to update status of K8s resource
+	/*
+	err = v.updateVmStatus(ctx, kClient, instance, vm)
+	if err != nil {
+		return nil, err
+	}
+	*/
+
+	glog.Infof("Created VM %s!", vmSpec.Name)
+	return newVm, nil
+}
+
+func (v *VSphereManager) cloneVmInvoke(ctx context.Context, client *govmomi.Client, rc *ResourceContext, vmSpec vimTypes.VirtualMachineConfigSpec) (*object.Task, error) {
+
+	vm, err := NewVM(*client, rc.datacenter, vmSpec.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	vmSpec.Files = &vimTypes.VirtualMachineFileInfo{
+		VmPathName: fmt.Sprintf("[%s]", rc.datastore.Datastore.Name()),
+	}
+
+	return vm.Create(ctx, rc.folder.Folder, rc.resourcePool.ResourcePool, vmSpec)
+}
+
+func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, vm vmprovider.VirtualMachine) (*VM, error) {
+	glog.Infof("CloneVm %s", vm.Name)
+
 	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
 		return nil, err

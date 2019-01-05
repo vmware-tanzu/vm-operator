@@ -58,7 +58,8 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 	}
 	glog.Info("Listing VM images 1")
 
-	defer vClient.Logout(ctx)
+	// DWB: Reason about how to handle client management and logout
+	//defer vClient.Logout(ctx)
 
 	vms, err := vMan.ListVms(ctx, vClient, "")
 	if err != nil {
@@ -96,7 +97,8 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 	}
 	glog.Info("Getting VM image 1")
 
-	defer vClient.Logout(ctx)
+	// DWB: Reason about how to handle client management and logout
+	//defer vClient.Logout(ctx)
 
 	vm, err := vMan.LookupVm(ctx, vClient, name)
 	if err != nil {
@@ -144,7 +146,8 @@ func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string)
 	}
 	glog.Info("Getting VM 1")
 
-	defer vClient.Logout(ctx)
+	// DWB: Reason about how to handle client management and logout
+	//defer vClient.Logout(ctx)
 
 	vm, err := vMan.LookupVm(ctx, vClient, name)
 	if err != nil {
@@ -174,9 +177,18 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm vmprov
 	}
 	glog.Info("Creating VM 1")
 
-	defer vClient.Logout(ctx)
+	// DWB: Reason about how to handle client management and logout
+	//defer vClient.Logout(ctx)
 
-	_, err = vMan.CreateVm(ctx, vClient, vm)
+	switch {
+	case vm.Image != "":
+		glog.Infof("Cloning VM from %s", vm.Image)
+		_, err = vMan.CloneVm(ctx, vClient, vm)
+	default:
+		glog.Info("Creating new VM")
+		_, err = vMan.CreateVm(ctx, vClient, vm)
+	}
+
 	if err != nil {
 		glog.Infof("Create VM failed %s!", err)
 		return err

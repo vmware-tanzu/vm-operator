@@ -5,39 +5,30 @@
 package vmprovider
 
 import (
-	"context"
 	"fmt"
+	"github.com/golang/glog"
 	"io"
-	clientset "k8s.io/client-go/kubernetes"
-	restclient "k8s.io/client-go/rest"
-	"k8s.io/klog"
 	"os"
 	"sync"
+	"vmware.com/kubevsphere/pkg/vmprovider/iface"
 )
 
-// ClientBuilder allows you to get clients and configs for controllers
-type ClientBuilder interface {
-	Config(name string) (*restclient.Config, error)
-	ConfigOrDie(name string) *restclient.Config
-	Client(name string) (clientset.Interface, error)
-	ClientOrDie(name string) clientset.Interface
-}
-
 // Pluggable interface for VM Providers
-type VirtualMachineProviderInterface interface {
+//type VirtualMachineProviderInterface interface {
 	// Initialize provides the cloud with a kubernetes client builder and may spawn goroutines
 	// to perform housekeeping or run custom controllers specific to the cloud provider.
 	// Any tasks started here should be cleaned up when the stop channel closes.
-	Initialize(clientBuilder ClientBuilder, stop <-chan struct{})
+//	Initialize(stop <-chan struct{})
 
 	// VirtualMachines Provides a provider-specific VirtualMachines interface
-	VirtualMachines() (VirtualMachines, bool)
+//	VirtualMachines() (VirtualMachines, bool)
 
 	// VirtualMachinesImages Provides a provider-specific VirtualMachinesImages interface
-	VirtualMachineImages() (VirtualMachineImages, bool)
-}
+//	VirtualMachineImages() (VirtualMachineImages, bool)
+//}
 
-// DWB: Need to get rid of these intermediate types and resolve the import cycle for the k8s types
+// TODO: Need to get rid of these intermediate types and resolve the import cycle when including the k8s types
+/*
 type VirtualMachineImage struct {
 	Name string
 	PowerState string
@@ -62,14 +53,15 @@ type VirtualMachines interface {
 	ListVirtualMachines(ctx context.Context, namespace string) ([]VirtualMachine, error)
 	GetVirtualMachine(ctx context.Context, name string) (VirtualMachine, error)
 	CreateVirtualMachine(ctx context.Context, virtualMachine VirtualMachine) (error)
-	DeleteVirtualMachine(ctx context.Context, name string) (error)
+	DeleteVirtualMachine(ctx context.Context, virtualMachine VirtualMachine) (error)
 }
+*/
 
 // Factory is a function that returns a vmprovider.Interface.
 // The config parameter provides an io.Reader handler to the factory in
 // order to load specific configurations. If no configuration is provided
 // the parameter is nil.
-type Factory func(config io.Reader) (VirtualMachineProviderInterface, error)
+type Factory func(config io.Reader) (iface.VirtualMachineProviderInterface, error)
 
 // All registered VM providers.
 var (
@@ -83,9 +75,9 @@ func RegisterVmProvider(name string, vmProvider Factory) {
 	providersMutex.Lock()
 	defer providersMutex.Unlock()
 	if _, found := providers[name]; found {
-		klog.Fatalf("VM provider %q was registered twice", name)
+		glog.Fatalf("VM provider %q was registered twice", name)
 	}
-	klog.V(1).Infof("Registered VM provider %q", name)
+	glog.V(1).Infof("Registered VM provider %q", name)
 	providers[name] = vmProvider
 }
 
@@ -94,7 +86,7 @@ func RegisterVmProvider(name string, vmProvider Factory) {
 // was known but failed to initialize. The config parameter specifies the
 // io.Reader handler of the configuration file for the vm provider, or nil
 // for no configuration.
-func GetVmProvider(name string, config io.Reader) (VirtualMachineProviderInterface, error) {
+func GetVmProvider(name string, config io.Reader) (iface.VirtualMachineProviderInterface, error) {
 	providersMutex.Lock()
 	defer providersMutex.Unlock()
 	f, found := providers[name]
@@ -105,12 +97,12 @@ func GetVmProvider(name string, config io.Reader) (VirtualMachineProviderInterfa
 }
 
 // InitVmProvider creates an instance of the named VM provider.
-func InitVmProvider(name string, configFilePath string) (VirtualMachineProviderInterface, error) {
-	var vmProvider VirtualMachineProviderInterface
+func InitVmProvider(name string, configFilePath string) (iface.VirtualMachineProviderInterface, error) {
+	var vmProvider iface.VirtualMachineProviderInterface
 	var err error
 
 	if name == "" {
-		klog.Info("No VM provider specified.")
+		glog.Info("No VM provider specified.")
 		return nil, nil
 	}
 
@@ -118,7 +110,7 @@ func InitVmProvider(name string, configFilePath string) (VirtualMachineProviderI
 		var config *os.File
 		config, err = os.Open(configFilePath)
 		if err != nil {
-			klog.Fatalf("Couldn't open VM provider configuration %s: %#v",
+			glog.Fatalf("Couldn't open VM provider configuration %s: %#v",
 				configFilePath, err)
 		}
 
@@ -140,6 +132,6 @@ func InitVmProvider(name string, configFilePath string) (VirtualMachineProviderI
 	return vmProvider, nil
 }
 
-func NewVmProvider(namespace string) (VirtualMachineProviderInterface, error) {
+func NewVmProvider() (iface.VirtualMachineProviderInterface, error) {
 	return InitVmProvider("vsphere", "")
 }

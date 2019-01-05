@@ -28,9 +28,6 @@ func main() {
 	// Init the vsphere provider
 	vsphere.InitProvider()
 
-	// Initialize VM providers
-	//vmprovider.InitVmProvider("vsphere", "")
-
 	controllers, _ := controller.GetAllControllers(config)
 	controllerlib.StartControllerManager(controllers...)
 

@@ -2,7 +2,7 @@
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
-package v1beta1
+package rest
 
 import (
 	"context"
@@ -15,11 +15,14 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
-	"vmware.com/kubevsphere/pkg/vmprovider"
+	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	"vmware.com/kubevsphere/pkg/vmprovider/iface"
 )
 
 // +k8s:deepcopy-gen=false
-type VirtualMachineImagesREST struct {}
+type VirtualMachineImagesREST struct {
+	provider iface.VirtualMachineProviderInterface
+}
 
 // Provide a Read only interface for now
 var _ rest.Getter = &VirtualMachineImagesREST{}
@@ -28,7 +31,7 @@ var _ rest.Watcher = &VirtualMachineImagesREST{}
 
 
 func (r *VirtualMachineImagesREST) NewList() runtime.Object {
-	return &VirtualMachineImageList{}
+	return &v1beta1.VirtualMachineImageList{}
 }
 
 // List selects resources in the storage which match to the selector. 'options' can be nil.
@@ -49,13 +52,7 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 
 	glog.Infof("Listing VirtualMachineImage ns=%s, user=%s", namespace, user)
 
-	vmprovider, err := vmprovider.NewVmProvider(namespace)
-	if err != nil {
-		glog.Errorf("Failed to find vmprovider: %s", err)
-		return nil, errors.NewBadRequest("namespace is invalid")
-	}
-
-	imagesProvider, supported := vmprovider.VirtualMachineImages()
+	imagesProvider, supported := r.provider.VirtualMachineImages()
 	if !supported {
 		glog.Error("Provider doesn't support images func")
 		return nil, errors.NewMethodNotSupported(schema.GroupResource{"vmoperator", "VirtualMachineImages"}, "list")
@@ -67,29 +64,10 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 		return nil, errors.NewInternalError(err)
 	}
 
-	var convertImages = func() *VirtualMachineImageList {
-		newImages := []VirtualMachineImage{}
-		for _, image := range images {
-			ni := VirtualMachineImage{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: image.Name,
-					Namespace: namespace,
-				},
-				Spec: VirtualMachineImageSpec{},
-				Status: VirtualMachineImageStatus{
-					Uuid: image.Uuid,
-					PowerState: image.PowerState,
-					InternalId: image.InternalId,
-				},
-			}
-			newImages = append(newImages, ni)
-		}
-		return &VirtualMachineImageList{Items: newImages}
+	imageList := v1beta1.VirtualMachineImageList{
+		Items: images,
 	}
-
-	converted := convertImages()
-	glog.Infof("Images: %s", converted)
-	return converted, nil
+	return &imageList, nil
 }
 
 // Get retrieves the object from the storage. It is required to support Patch.
@@ -110,13 +88,7 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 
 	glog.Infof("Getting VirtualMachineImage name=%s, ns=%s, user=%s", name, namespace, user)
 
-	vmprovider, err := vmprovider.NewVmProvider(namespace)
-	if err != nil {
-		glog.Errorf("Failed to find vmprovider: %s", err)
-		return nil, errors.NewBadRequest("namespace is invalid")
-	}
-
-	imagesProvider, supported := vmprovider.VirtualMachineImages()
+	imagesProvider, supported := r.provider.VirtualMachineImages()
 	if !supported {
 		glog.Error("Provider doesn't support images func")
 		return nil, errors.NewMethodNotSupported(schema.GroupResource{"vmoperator", "VirtualMachineImages"}, "list")
@@ -128,24 +100,7 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 		return nil, errors.NewInternalError(err)
 	}
 
-	var convertImage = func() *VirtualMachineImage {
-		return &VirtualMachineImage{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: image.Name,
-				Namespace: namespace,
-			},
-			Spec: VirtualMachineImageSpec{},
-			Status: VirtualMachineImageStatus{
-				Uuid: image.Uuid,
-				PowerState: image.PowerState,
-				InternalId: image.InternalId,
-			},
-		}
-	}
-
-	converted := convertImage()
-	glog.Infof("Image: %s", converted)
-	return converted, nil
+	return &image, nil
 }
 
 func (r *VirtualMachineImagesREST) Watch(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {
@@ -153,10 +108,16 @@ func (r *VirtualMachineImagesREST) Watch(ctx context.Context, options *metainter
 }
 
 func (r *VirtualMachineImagesREST) New() runtime.Object {
-	return &VirtualMachineImage{}
+	return &v1beta1.VirtualMachineImage{}
 }
 
 func (r *VirtualMachineImagesREST) NamespaceScoped() bool {
 	return true
+}
+
+func NewVirtualMachineImagesREST(vmprov iface.VirtualMachineProviderInterface) v1beta1.RestProvider {
+	return v1beta1.RestProvider{
+		&VirtualMachineImagesREST{vmprov},
+	}
 }
 

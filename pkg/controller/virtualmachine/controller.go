@@ -19,7 +19,8 @@ import (
 	vmclientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1beta1"
 	listers "vmware.com/kubevsphere/pkg/client/listers_generated/vmoperator/v1beta1"
 	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
-	"vmware.com/kubevsphere/pkg/vmprovider"
+	vmprov "vmware.com/kubevsphere/pkg/vmprovider"
+	"vmware.com/kubevsphere/pkg/vmprovider/iface"
 )
 
 // +controller:group=vmoperator,version=v1beta1,kind=VirtualMachine,resource=virtualmachines
@@ -31,6 +32,8 @@ type VirtualMachineControllerImpl struct {
 
 	clientSet clientSet.Interface
 	vmClientSet vmclientSet.VirtualMachineInterface
+
+	vmProvider iface.VirtualMachineProviderInterface
 }
 
 // Init initializes the controller and is called by the generated code
@@ -46,8 +49,16 @@ func (c *VirtualMachineControllerImpl) Init(arguments sharedinformers.Controller
 	c.clientSet = clientSet
 
 	c.vmClientSet = clientSet.VmoperatorV1beta1().VirtualMachines(corev1.NamespaceDefault)
+
+	// Get a vmprovider instance
+	vmProvider, err := vmprov.NewVmProvider()
+	if err != nil {
+		glog.Fatalf("Failed to find vmprovider: %s", err)
+	}
+	c.vmProvider = vmProvider
 }
 
+// Function to filter a string from a list. Returns the filtered list
 func (c *VirtualMachineControllerImpl) filter(list []string, strToFilter string) (newList []string) {
 	for _, item := range list {
 		if item != strToFilter {
@@ -57,6 +68,7 @@ func (c *VirtualMachineControllerImpl) filter(list []string, strToFilter string)
 	return
 }
 
+// Function to determine if a list contains s specific string
 func (c *VirtualMachineControllerImpl) contains(list []string, strToSearch string) bool {
 	for _, item := range list {
 		if item == strToSearch {
@@ -69,8 +81,7 @@ func (c *VirtualMachineControllerImpl) contains(list []string, strToSearch strin
 // Reconcile handles enqueued messages
 func (c *VirtualMachineControllerImpl) Reconcile(u *v1beta1.VirtualMachine) error {
 	// Implement controller logic here
-	//glog.V(0).Infof("Running reconcile VirtualMachine for %s\n", u.Name)
-	glog.Infof("Running reconcile VirtualMachine for %s\n", u.Name)
+	glog.V(0).Infof("Running reconcile VirtualMachine for %s\n", u.Name)
 
 	startTime := time.Now()
 	defer func() {
@@ -102,6 +113,7 @@ func (c *VirtualMachineControllerImpl) Reconcile(u *v1beta1.VirtualMachine) erro
 			glog.Errorf("Error removing finalizer from machine object %v; %v", u.Name, err)
 			return err
 		}
+		return nil
 	}
 
 	// vm holds the latest vm info from apiserver
@@ -119,20 +131,15 @@ func (c *VirtualMachineControllerImpl) Reconcile(u *v1beta1.VirtualMachine) erro
 func (c *VirtualMachineControllerImpl) processVmDeletion(u *v1beta1.VirtualMachine) error {
 	glog.Infof("Process VM Deletion for vm %s", u.Name)
 
-	vmprovider, err := vmprovider.NewVmProvider(u.Namespace)
-	if err != nil {
-		glog.Errorf("Failed to find vmprovider")
-		return errors.NewBadRequest("Namespace is invalid")
-	}
-
-	vmsProvider, supported := vmprovider.VirtualMachines()
+	vmsProvider, supported := c.vmProvider.VirtualMachines()
 	if !supported {
 		glog.Errorf("Provider doesn't support vms func")
 		return errors.NewMethodNotSupported(schema.GroupResource{"vmoperator", "VirtualMachines"}, "list")
 	}
 
 	ctx := context.TODO()
-	err = vmsProvider.DeleteVirtualMachine(ctx, u.Name)
+
+	err := vmsProvider.DeleteVirtualMachine(ctx, *u)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			glog.Infof("Failed to delete vm %s, already deleted?", u.Name)
@@ -147,15 +154,9 @@ func (c *VirtualMachineControllerImpl) processVmDeletion(u *v1beta1.VirtualMachi
 }
 
 func (c *VirtualMachineControllerImpl) processVmCreateOrUpdate(u *v1beta1.VirtualMachine) error {
-	glog.Infof("Process VM Update for vm %s", u.Name)
+	glog.Infof("Process VM Create or Update for vm %s", u.Name)
 
-	vmprovider, err := vmprovider.NewVmProvider(u.Namespace)
-	if err != nil {
-		glog.Errorf("Failed to find vmprovider")
-		return errors.NewBadRequest("Namespace is invalid")
-	}
-
-	vmsProvider, supported := vmprovider.VirtualMachines()
+	vmsProvider, supported := c.vmProvider.VirtualMachines()
 	if !supported {
 		glog.Errorf("Provider doesn't support vms func")
 		return errors.NewMethodNotSupported(schema.GroupResource{"vmoperator", "VirtualMachines"}, "list")
@@ -168,35 +169,40 @@ func (c *VirtualMachineControllerImpl) processVmCreateOrUpdate(u *v1beta1.Virtua
 	case err != nil:
 	//case errors.IsNotFound(err):
 		glog.Infof("VM doesn't exist in backend provider.  Creating now")
-		err = c.processVmCreate(ctx, vmprovider, vmsProvider, u)
+		err = c.processVmCreate(ctx, vmsProvider, u)
 	//case err != nil:
 	//	glog.Infof("Unable to retrieve vm %v from store: %v", u.Name, err)
 	default:
-		glog.V(4).Infof("Acquired VM %s %s", vm.Name, vm.InternalId)
+		glog.V(4).Infof("Acquired VM %s %s", vm.Name, vm.Status.ConfigStatus.InternalId)
 		glog.Infof("Updating Vm %s", vm.Name)
-		err = c.processVmUpdate(ctx, vmprovider, vmsProvider, u)
+		err = c.processVmUpdate(ctx, vmsProvider, u)
 	}
 
 	return err
 }
 
-func VirtualMachineApiToProvider(vm v1beta1.VirtualMachine) vmprovider.VirtualMachine {
-	return vmprovider.VirtualMachine{
-		Name: vm.Name,
-		PowerState: vm.Spec.PowerState,
-	}
-}
-
-func (c *VirtualMachineControllerImpl) processVmCreate(ctx context.Context, vmprovider vmprovider.VirtualMachineProviderInterface, vmsProvider vmprovider.VirtualMachines, vm *v1beta1.VirtualMachine) error {
+func (c *VirtualMachineControllerImpl) processVmCreate(ctx context.Context, vmsProvider iface.VirtualMachines, vm *v1beta1.VirtualMachine) error {
 	glog.Infof("Creating VM: %s", vm.Name)
-	err := vmsProvider.CreateVirtualMachine(ctx, VirtualMachineApiToProvider(*vm))
+	//err := vmsProvider.CreateVirtualMachine(ctx, VirtualMachineApiToProvider(*vm))
+	newVm, err := vmsProvider.CreateVirtualMachine(ctx, *vm)
 	if err != nil {
 		glog.Errorf("Provider Failed to Create VM %s: %s", vm.Name, err)
 	}
+
+	newVm.DeepCopyInto(vm)
+	// Update status from returned object
+
+	// TODO: Have provider pass back a set of annotations
+	// TODO: Apply annotations to the object and update
+
+	// Add an Annotation to indicate origin by the vmoperator
+	//annotations := vm.GetAnnotations()
+	//annotations[pkg.VmOperatorVcUuidKey] = "test"
+	//vm.SetAnnotations(annotations)
 	return err
 }
 
-func (c *VirtualMachineControllerImpl) processVmUpdate(ctx context.Context, vmprovider vmprovider.VirtualMachineProviderInterface, vmsProvider vmprovider.VirtualMachines, vm *v1beta1.VirtualMachine) error {
+func (c *VirtualMachineControllerImpl) processVmUpdate(ctx context.Context, vmsProvider iface.VirtualMachines, vm *v1beta1.VirtualMachine) error {
 	return nil
 }
 

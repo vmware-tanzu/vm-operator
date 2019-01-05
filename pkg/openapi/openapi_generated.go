@@ -621,6 +621,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"k8s.io/client-go/pkg/apis/clientauthentication/v1beta1.ExecCredential":                schema_pkg_apis_clientauthentication_v1beta1_ExecCredential(ref),
 		"k8s.io/client-go/pkg/apis/clientauthentication/v1beta1.ExecCredentialSpec":            schema_pkg_apis_clientauthentication_v1beta1_ExecCredentialSpec(ref),
 		"k8s.io/client-go/pkg/apis/clientauthentication/v1beta1.ExecCredentialStatus":          schema_pkg_apis_clientauthentication_v1beta1_ExecCredentialStatus(ref),
+		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.RestProvider":                      schema_pkg_apis_vmoperator_v1beta1_RestProvider(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachine":                    schema_pkg_apis_vmoperator_v1beta1_VirtualMachine(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineConfigStatus":        schema_pkg_apis_vmoperator_v1beta1_VirtualMachineConfigStatus(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineImage":               schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImage(ref),
@@ -630,7 +631,6 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineImageStatus":         schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImageStatus(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineImageStatusStrategy": schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImageStatusStrategy(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineImageStrategy":       schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImageStrategy(ref),
-		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineImagesREST":          schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImagesREST(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineList":                schema_pkg_apis_vmoperator_v1beta1_VirtualMachineList(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourceSpec":        schema_pkg_apis_vmoperator_v1beta1_VirtualMachineResourceSpec(ref),
 		"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourcesSpec":       schema_pkg_apis_vmoperator_v1beta1_VirtualMachineResourcesSpec(ref),
@@ -28681,6 +28681,25 @@ func schema_pkg_apis_clientauthentication_v1beta1_ExecCredentialStatus(ref commo
 	}
 }
 
+func schema_pkg_apis_vmoperator_v1beta1_RestProvider(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Properties: map[string]spec.Schema{
+					"ImagesProvider": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.RestProviderInterface"),
+						},
+					},
+				},
+				Required: []string{"ImagesProvider"},
+			},
+		},
+		Dependencies: []string{
+			"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.RestProviderInterface"},
+	}
+}
+
 func schema_pkg_apis_vmoperator_v1beta1_VirtualMachine(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -28948,17 +28967,6 @@ func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImageStrategy(ref common.R
 		},
 		Dependencies: []string{
 			"github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStorageStrategy"},
-	}
-}
-
-func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineImagesREST(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Properties: map[string]spec.Schema{},
-			},
-		},
-		Dependencies: []string{},
 	}
 }
 

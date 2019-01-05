@@ -10,9 +10,17 @@ import (
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-	"vmware.com/kubevsphere/pkg/vmprovider"
+	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
 )
 
+// DWB: These defaults likely belong with the API as Default Values.  Adding here for now until we have
+//      the spec better filled out.
+var (
+	DefaultNumCpus = 4
+	DefaultMemCapacity = 1024
+)
+
+// TODO: Merge this code with vsphere vmprovider, and/or decouple it into smaller modules to avoid this monolith.
 // TODO: Make task tracking funcs async via goroutines
 
 type VSphereManager struct {
@@ -150,7 +158,7 @@ func (v *VSphereManager) deleteVmInvoke(ctx context.Context, client *govmomi.Cli
 	return vm.Delete(ctx)
 }
 
-func (v *VSphereManager) DeleteVm(ctx context.Context, vClient *govmomi.Client, vm vmprovider.VirtualMachine) error {
+func (v *VSphereManager) DeleteVm(ctx context.Context, vClient *govmomi.Client, vm v1beta1.VirtualMachine) error {
 	glog.Infof("DeleteVm %s", vm.Name)
 
 	task, err := v.deleteVmInvoke(ctx, vClient, vm.Name)
@@ -165,7 +173,7 @@ func (v *VSphereManager) DeleteVm(ctx context.Context, vClient *govmomi.Client, 
 		return err
 	}
 
-	return nil
+	return err
 }
 
 func (v *VSphereManager) createVmInvoke(ctx context.Context, client *govmomi.Client, rc *ResourceContext, vmSpec vimTypes.VirtualMachineConfigSpec) (*object.Task, error) {
@@ -203,7 +211,7 @@ func (v *VSphereManager) updateVmStatus(ctx context.Context, kClient client.Clie
 }
 */
 
-func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, vm vmprovider.VirtualMachine) (*VM, error) {
+func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, vm v1beta1.VirtualMachine) (*VM, error) {
 	glog.Infof("CreateVm %s", vm.Name)
 
 	rc, err := v.resolveResources(ctx, vClient)
@@ -213,8 +221,8 @@ func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, 
 
 	vmSpec := vimTypes.VirtualMachineConfigSpec{
 		Name:     vm.Name,
-		//NumCPUs:  int32(instance.Spec.CpuReqs.CpuCount),
-		//MemoryMB: int64(instance.Spec.MemoryReqs.MemoryCapacity),
+		NumCPUs:  int32(DefaultNumCpus),
+		MemoryMB: int64(DefaultMemCapacity),
 	}
 
 	task, err := v.createVmInvoke(ctx, vClient, rc, vmSpec)
@@ -234,7 +242,7 @@ func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, 
 		return nil, err
 	}
 
-	// DWB: Need resolve from info rather than lookup
+	// DWB: Need to resolve from info rather than lookup
 	err = newVm.Lookup()
 	if err != nil {
 		return nil, err
@@ -252,35 +260,47 @@ func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, 
 	return newVm, nil
 }
 
-func (v *VSphereManager) cloneVmInvoke(ctx context.Context, client *govmomi.Client, rc *ResourceContext, vmSpec vimTypes.VirtualMachineConfigSpec) (*object.Task, error) {
+func (v *VSphereManager) cloneVmInvoke(ctx context.Context, client *govmomi.Client, rc *ResourceContext, sourceVm *VM, cloneSpec vimTypes.VirtualMachineCloneSpec) (*object.Task, error) {
 
-	vm, err := NewVM(*client, rc.datacenter, vmSpec.Name)
+	vm, err := NewVM(*client, rc.datacenter, cloneSpec.Config.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	vmSpec.Files = &vimTypes.VirtualMachineFileInfo{
-		VmPathName: fmt.Sprintf("[%s]", rc.datastore.Datastore.Name()),
-	}
-
-	return vm.Create(ctx, rc.folder.Folder, rc.resourcePool.ResourcePool, vmSpec)
+	return vm.Clone(ctx, sourceVm.VirtualMachine, rc.folder.Folder, cloneSpec)
 }
 
-func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, vm vmprovider.VirtualMachine) (*VM, error) {
-	glog.Infof("CloneVm %s", vm.Name)
+func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, newVm v1beta1.VirtualMachine) (*VM, error) {
+	glog.Infof("CloneVm %s", newVm.Name)
 
 	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
 		return nil, err
 	}
 
-	vmSpec := vimTypes.VirtualMachineConfigSpec{
-		Name:     vm.Name,
-		//NumCPUs:  int32(instance.Spec.CpuReqs.CpuCount),
-		//MemoryMB: int64(instance.Spec.MemoryReqs.MemoryCapacity),
+	// Find existing VM or template matching the image name
+	sourceVm, err := v.LookupVm(ctx, vClient, newVm.Spec.Image)
+	if err != nil {
+		glog.Errorf("Failed to find source VM %s: %s", newVm.Spec.Image, err)
+		return nil, err
 	}
 
-	task, err := v.createVmInvoke(ctx, vClient, rc, vmSpec)
+	configSpec := &vimTypes.VirtualMachineConfigSpec{
+		Name: newVm.Name,
+		NumCPUs:  int32(DefaultNumCpus),
+		MemoryMB: int64(DefaultMemCapacity),
+	}
+
+	// No mem-full clones
+	memory := false
+
+	cloneSpec := vimTypes.VirtualMachineCloneSpec{
+		Config: configSpec,
+		PowerOn: true, // hack to on for now
+		Memory: &memory,
+	}
+
+	task, err := v.cloneVmInvoke(ctx, vClient, rc, sourceVm, cloneSpec)
 	if err != nil {
 		glog.Errorf("Failed to create VM: %s", err.Error())
 		return nil, err
@@ -293,28 +313,20 @@ func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, v
 		return nil, err
 	}
 
-	newVm, err := NewVM(*vClient, rc.datacenter, vmSpec.Name)
+	clonedVm, err := NewVM(*vClient, rc.datacenter, cloneSpec.Config.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	// DWB: Need resolve from info rather than lookup
-	err = newVm.Lookup()
+	// DWB: Need to resolve from info rather than lookup
+	err = clonedVm.Lookup()
 	if err != nil {
 		return nil, err
 	}
 
-	/*
-	err = v.updateVmStatus(ctx, kClient, instance, vm)
-	if err != nil {
-		return nil, err
-	}
-	*/
+	glog.Infof("Clone VM %s from %s!", cloneSpec.Config.Name)
 
-	glog.Infof("Created VM %s!", vmSpec.Name)
-	return newVm, nil
-
-	//return object.NewVirtualMachine(client.Client, info.Result.(vimTypes.ManagedObjectReference)), nil
+	return clonedVm, nil
 }
 
 /*

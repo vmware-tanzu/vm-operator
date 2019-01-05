@@ -38,8 +38,13 @@ func (vm *VM) Lookup() error {
 
 	return nil
 }
+
 func (vm *VM) Create(ctx context.Context, folder *object.Folder, rp *object.ResourcePool, vmSpec types.VirtualMachineConfigSpec) (*object.Task, error) {
 	return folder.CreateVM(ctx, vmSpec, rp, nil)
+}
+
+func (vm *VM) Clone(ctx context.Context, sourceVm *object.VirtualMachine, folder *object.Folder, cloneSpec types.VirtualMachineCloneSpec) (*object.Task, error) {
+	return sourceVm.Clone(ctx, folder, cloneSpec.Config.Name, cloneSpec)
 }
 
 func (vm *VM) Delete(ctx context.Context) (*object.Task, error) {

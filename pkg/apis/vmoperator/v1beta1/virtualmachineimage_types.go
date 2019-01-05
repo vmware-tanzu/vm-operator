@@ -1,4 +1,3 @@
-
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
@@ -58,6 +57,6 @@ func (VirtualMachineImageSchemeFns) DefaultingFunction(o interface{}) {
 }
 
 func NewVirtualMachineImagesREST() rest.Storage {
-	return &VirtualMachineImagesREST{}
+	return GetRestProvider().ImagesProvider
 }
 

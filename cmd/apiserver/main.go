@@ -8,6 +8,10 @@ package main
 
 import (
 	_ "github.com/go-openapi/loads"
+	"github.com/golang/glog"
+	"vmware.com/kubevsphere/pkg/apis/vmoperator/rest"
+	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	"vmware.com/kubevsphere/pkg/vmprovider"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
 
 	// Make sure dep tools picks up these dependencies
@@ -25,6 +29,18 @@ func main() {
 
 	// Init the vsphere provider
 	vsphere.InitProvider()
+
+	// Get a vmprovider instance
+	vmprovider, err := vmprovider.NewVmProvider()
+	if err != nil {
+		glog.Fatalf("Failed to find vmprovider: %s", err)
+	}
+
+	// Provide the vm provider interface to the custom REST implementations
+	err = v1beta1.RegisterRestProvider(rest.NewVirtualMachineImagesREST(vmprovider))
+	if err != nil {
+		glog.Fatalf("Failed to register REST provider: %s", err)
+	}
 
 	server.StartApiServer("/registry/vmware.com", apis.GetAllApiBuilders(), openapi.GetOpenAPIDefinitions, "Api", version)
 }

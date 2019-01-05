@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-
+	"vmware.com/kubevsphere/pkg"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator"
 )
 
@@ -73,8 +73,15 @@ func (v VirtualMachineStrategy) PrepareForCreate(ctx context.Context, obj runtim
 	// Invoke the parent implementation to strip the Status
 	v.DefaultStorageStrategy.PrepareForCreate(ctx, obj)
 
-	// Add a finalizer so that our controllers can process deletion
 	o := obj.(*vmoperator.VirtualMachine)
+
+	// Add an Annotation to indicate the creating provider
+	annotations := o.GetAnnotations()
+	// TODO: This needs to come from the vmprovider layer
+	annotations[pkg.VmOperatorVmProviderKey] = "vsphere"
+	o.SetAnnotations(annotations)
+
+	// Add a finalizer so that our controllers can process deletion
 	finalizers := append(o.GetFinalizers(), VirtualMachineFinalizer)
 	o.SetFinalizers(finalizers)
 }

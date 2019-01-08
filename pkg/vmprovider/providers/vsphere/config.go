@@ -1,3 +1,6 @@
+/* **********************************************************
+ * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * **********************************************************/
 package vsphere
 
 import "fmt"
@@ -21,7 +24,7 @@ func NewVsphereVmProviderConfig() *VSphereVmProviderConfig {
 
 	vcUser := "Administrator@vsphere.local"
 	vcPassword := "Admin!23"
-	vcIp := "10.192.147.241"
+	vcIp := "10.161.48.144"
 
 	vcUrl := fmt.Sprintf("https://%s:%s@%s", vcUser, vcPassword, vcIp)
 	return &VSphereVmProviderConfig{

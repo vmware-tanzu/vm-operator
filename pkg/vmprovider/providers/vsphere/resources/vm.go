@@ -1,4 +1,4 @@
-package vsphere
+package resources
 
 import (
 	"context"
@@ -11,14 +11,19 @@ import (
 
 type VM struct {
 	client         govmomi.Client
-	name           string
-	datacenter     *Datacenter
+	Name           string
+	Datacenter     *Datacenter
 	VirtualMachine *object.VirtualMachine
 	finder         *find.Finder
 }
 
 func NewVM(client govmomi.Client, datacenter *Datacenter, name string) (*VM, error) {
-	return &VM{client: client, datacenter: datacenter, name: name}, nil
+	return &VM{client: client, Datacenter: datacenter, Name: name}, nil
+}
+
+func NewVMFromReference(client govmomi.Client, datacenter *Datacenter, reference types.ManagedObjectReference) (*VM, error) {
+	vm := object.NewVirtualMachine(client.Client, reference)
+	return &VM{client: client, Datacenter: datacenter, Name: vm.Name(), VirtualMachine: vm}, nil
 }
 
 func (vm *VM) Lookup() error {
@@ -27,9 +32,9 @@ func (vm *VM) Lookup() error {
 		vm.finder = find.NewFinder(vm.client.Client, false)
 	}
 
-	vm.finder.SetDatacenter(vm.datacenter.Datacenter)
+	vm.finder.SetDatacenter(vm.Datacenter.Datacenter)
 
-	virtualMachine, err := vm.finder.VirtualMachine(context.TODO(), vm.name)
+	virtualMachine, err := vm.finder.VirtualMachine(context.TODO(), vm.Name)
 	if err != nil {
 		return err
 	}

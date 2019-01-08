@@ -1,4 +1,3 @@
-
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
@@ -12,11 +11,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"vmware.com/kubevsphere/pkg"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator"
 )
 
-const VirtualMachineFinalizer string = "virtualmachine.vmoperator.vmware.com"
+const (
+	VirtualMachineFinalizer string = "virtualmachine.vmoperator.vmware.com"
+)
+
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -31,6 +32,13 @@ type VirtualMachine struct {
 	Spec   VirtualMachineSpec   `json:"spec,omitempty"`
 	Status VirtualMachineStatus `json:"status,omitempty"`
 }
+
+type VirtualMachinePowerState string
+
+const (
+	VirtualMachinePoweredOff = "poweredOff"
+	VirtualMachinePoweredOn = "poweredOn"
+)
 
 type VirtualMachineResourceSpec struct {
 	Cpu int `json:"cpu"`
@@ -65,7 +73,7 @@ type VirtualMachineRuntimeStatus struct {
 
 type VirtualMachineStatus struct {
 	State 		string `json:"state"`
-	ConfigStatus VirtualMachineConfigStatus `json:"configStatus`
+	ConfigStatus VirtualMachineConfigStatus `json:"configStatus"`
 	RuntimeStatus VirtualMachineRuntimeStatus `json:"runtimeStatus"`
 }
 
@@ -74,12 +82,6 @@ func (v VirtualMachineStrategy) PrepareForCreate(ctx context.Context, obj runtim
 	v.DefaultStorageStrategy.PrepareForCreate(ctx, obj)
 
 	o := obj.(*vmoperator.VirtualMachine)
-
-	// Add an Annotation to indicate the creating provider
-	annotations := o.GetAnnotations()
-	// TODO: This needs to come from the vmprovider layer
-	annotations[pkg.VmOperatorVmProviderKey] = "vsphere"
-	o.SetAnnotations(annotations)
 
 	// Add a finalizer so that our controllers can process deletion
 	finalizers := append(o.GetFinalizers(), VirtualMachineFinalizer)

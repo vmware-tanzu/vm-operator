@@ -7,12 +7,17 @@ package vsphere
 import (
 	"context"
 	"github.com/golang/glog"
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/types"
 	"io"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"vmware.com/kubevsphere/pkg"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
 	"vmware.com/kubevsphere/pkg/vmprovider"
 	"vmware.com/kubevsphere/pkg/vmprovider/iface"
+	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
+	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/sequence"
 )
 
 var _ = &VSphereVmProvider{}
@@ -31,14 +36,6 @@ type VSphereVmProvider struct {
 	manager *VSphereManager
 }
 
-func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, moRef string) {
-	// Add vSphere provider annotations to the object meta
-	annotations := objectMeta.GetAnnotations()
-	annotations[pkg.VmOperatorVmProviderKey] = VsphereVmProviderName
-	annotations[pkg.VmOperatorVcUuidKey] = vs.Config.VcUrl
-	annotations[pkg.VmOperatorMorefKey] = moRef
-	objectMeta.SetAnnotations(annotations)
-}
 
 // Creates new Controller node interface and returns
 func newVSphereVmProvider(providerConfig *VSphereVmProviderConfig) (*VSphereVmProvider, error) {
@@ -51,6 +48,7 @@ func newVSphereVmProvider(providerConfig *VSphereVmProviderConfig) (*VSphereVmPr
 	return vmProvider, nil
 }
 
+
 func (vs *VSphereVmProvider) VirtualMachines() (iface.VirtualMachines, bool) {
 	return vs, true
 }
@@ -62,14 +60,13 @@ func (vs *VSphereVmProvider) VirtualMachineImages() (iface.VirtualMachineImages,
 func (vs *VSphereVmProvider) Initialize(stop <-chan struct{}) {
 }
 
-func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]v1beta1.VirtualMachineImage, error) {
+func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1beta1.VirtualMachineImage, error) {
 	glog.Info("Listing VM images")
 
-	vClient, err := NewClient(ctx, vs.Config.VcUrl)
+	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
 		return nil, err
 	}
-	glog.Info("Listing VM images 1")
 
 	// DWB: Reason about how to handle client management and logout
 	//defer vClient.Logout(ctx)
@@ -79,14 +76,12 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 		return nil, err
 	}
 
-	glog.Info("Listing VM images 2")
-
-	newImages := []v1beta1.VirtualMachineImage{}
+	newImages := []*v1beta1.VirtualMachineImage{}
 	for _, vm := range vms {
 		powerState, _ := vm.VirtualMachine.PowerState(ctx)
 		ps := string(powerState)
 		newImages = append(newImages,
-			v1beta1.VirtualMachineImage{
+			&v1beta1.VirtualMachineImage{
 				ObjectMeta: v1.ObjectMeta{Name: vm.VirtualMachine.Name()},
 				Status: v1beta1.VirtualMachineImageStatus{
 					Uuid: vm.VirtualMachine.UUID(ctx),
@@ -96,18 +91,16 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 			},
 		)
 	}
-	glog.Info("Listing VM images 3")
 
 	return newImages, nil
 }
 
-func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name string) (v1beta1.VirtualMachineImage, error) {
+func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name string) (*v1beta1.VirtualMachineImage, error) {
 	glog.Info("Getting VM images")
-	//return NewVirtualMachineImageFake(name), nil
 
-	vClient, err := NewClient(ctx, vs.Config.VcUrl)
+	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
-		return v1beta1.VirtualMachineImage{}, err
+		return nil, err
 	}
 	glog.Info("Getting VM image 1")
 
@@ -116,7 +109,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 
 	vm, err := vs.manager.LookupVm(ctx, vClient, name)
 	if err != nil {
-		return v1beta1.VirtualMachineImage{}, err
+		return nil, err
 	}
 
 	glog.Info("Getting VM image 2")
@@ -124,7 +117,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 	powerState, _ := vm.VirtualMachine.PowerState(ctx)
 	ps := string(powerState)
 
-	return v1beta1.VirtualMachineImage{
+	return &v1beta1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{Name: vm.VirtualMachine.Name()},
 		Status: v1beta1.VirtualMachineImageStatus{
 			Uuid: vm.VirtualMachine.UUID(ctx),
@@ -134,14 +127,14 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 	}, nil
 }
 
-func NewVirtualMachineImageFake(name string) v1beta1.VirtualMachineImage {
-	return v1beta1.VirtualMachineImage{
+func NewVirtualMachineImageFake(name string) *v1beta1.VirtualMachineImage {
+	return &v1beta1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{Name: name},
 	}
 }
 
-func NewVirtualMachineImageListFake() []v1beta1.VirtualMachineImage {
-	images := []v1beta1.VirtualMachineImage{}
+func NewVirtualMachineImageListFake() []*v1beta1.VirtualMachineImage {
+	images := []*v1beta1.VirtualMachineImage{}
 
 	fake1 := NewVirtualMachineImageFake("Fake")
 	fake2 := NewVirtualMachineImageFake("Fake2")
@@ -150,95 +143,194 @@ func NewVirtualMachineImageListFake() []v1beta1.VirtualMachineImage {
 	return images
 }
 
-func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace string) ([]v1beta1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *resources.VM) (*v1beta1.VirtualMachine, error) {
+	powerState, _ := actualVm.VirtualMachine.PowerState(ctx)
+	ps := string(powerState)
+
+	vm := &v1beta1.VirtualMachine{
+		Status: v1beta1.VirtualMachineStatus{
+			State: "",
+			ConfigStatus: v1beta1.VirtualMachineConfigStatus{
+				Uuid: actualVm.VirtualMachine.UUID(ctx),
+				InternalId: actualVm.VirtualMachine.Reference().Value,
+			},
+			RuntimeStatus: v1beta1.VirtualMachineRuntimeStatus{
+				//Host: actualVm.VirtualMachine.HostSystem(ctx),
+				PowerState: ps,
+			},
+		},
+	}
+
+	glog.Infof("Generated VM status: %s", vm)
+
+	return vm, nil
+}
+
+func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, desiredVm *v1beta1.VirtualMachine, actualVm *resources.VM) (*v1beta1.VirtualMachine, error) {
+
+	statusVm, err := vs.generateVmStatus(ctx, actualVm)
+	if err != nil {
+		return nil, err
+	}
+
+	return &v1beta1.VirtualMachine{
+		TypeMeta: desiredVm.TypeMeta,
+		ObjectMeta: desiredVm.ObjectMeta,
+		Spec: desiredVm.Spec,
+		Status: *statusVm.Status.DeepCopy(),
+	}, nil
+}
+
+func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace string) ([]*v1beta1.VirtualMachine, error) {
 	return nil, nil
 }
 
-func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string) (v1beta1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string) (*v1beta1.VirtualMachine, error) {
 	glog.Info("Getting VMs")
 
-	vClient, err := NewClient(ctx, vs.Config.VcUrl)
+	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
-		return v1beta1.VirtualMachine{}, err
+		return nil, err
 	}
-	glog.Info("Getting VM 1")
 
 	// DWB: Reason about how to handle client management and logout
 	//defer vClient.Logout(ctx)
 
 	vm, err := vs.manager.LookupVm(ctx, vClient, name)
 	if err != nil {
-		return v1beta1.VirtualMachine{}, err
+		return nil, err
 	}
 
-	glog.Info("Getting VM image 2")
-
-	powerState, _ := vm.VirtualMachine.PowerState(ctx)
-	ps := string(powerState)
-
-	return v1beta1.VirtualMachine{
-		Spec: v1beta1.VirtualMachineSpec{},
-		Status: v1beta1.VirtualMachineStatus{
-			ConfigStatus: v1beta1.VirtualMachineConfigStatus{
-				Uuid: vm.VirtualMachine.UUID(ctx),
-				InternalId: vm.VirtualMachine.Reference().Value,
-			},
-			RuntimeStatus: v1beta1.VirtualMachineRuntimeStatus{
-				PowerState: ps,
-			},
-		},
-	}, nil
+	return vs.generateVmStatus(ctx, vm)
 }
 
-func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm v1beta1.VirtualMachine) (v1beta1.VirtualMachine, error) {
-	glog.Infof("Creating Vm: %s", vm.Name)
+func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, moRef string) {
+	// Add vSphere provider annotations to the object meta
+	annotations := objectMeta.GetAnnotations()
 
-	vClient, err := NewClient(ctx, vs.Config.VcUrl)
+	annotations[pkg.VmOperatorVmProviderKey] = VsphereVmProviderName
+	//annotations[pkg.VmOperatorVcUuidKey] = vs.Config.VcUrl
+	annotations[pkg.VmOperatorMorefKey] = moRef
+
+	objectMeta.SetAnnotations(annotations)
+}
+
+func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vmToCreate *v1beta1.VirtualMachine) (*v1beta1.VirtualMachine, error) {
+	glog.Infof("Creating Vm: %s", vmToCreate.Name)
+
+	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
-		return v1beta1.VirtualMachine{}, err
+		return nil, err
 	}
-	glog.Info("Creating VM 1")
 
 	// DWB: Reason about how to handle client management and logout
 	//defer vClient.Logout(ctx)
 
 	// Determine if we should clone from an existing image or create from scratch.  Create from scratch is really
 	// only useful for dummy VMs at the moment.
-	var newVm *VM
+	var newVm *resources.VM
 	switch {
-	case vm.Spec.Image != "":
-		glog.Infof("Cloning VM from %s", vm.Spec.Image)
-		newVm, err = vs.manager.CloneVm(ctx, vClient, vm)
+	case vmToCreate.Spec.Image != "":
+		glog.Infof("Cloning VM from %s", vmToCreate.Spec.Image)
+		newVm, err = vs.manager.CloneVm(ctx, vClient, vmToCreate)
 	default:
 		glog.Info("Creating new VM")
-		newVm, err = vs.manager.CreateVm(ctx, vClient, vm)
+		newVm, err = vs.manager.CreateVm(ctx, vClient, vmToCreate)
 	}
 
 	if err != nil {
 		glog.Infof("Create VM failed %s!", err)
+		return nil, err
+	}
+
+	vs.addProviderAnnotations(&vmToCreate.ObjectMeta, newVm.VirtualMachine.Reference().Value)
+	return vs.mergeVmStatus(ctx, vmToCreate, newVm)
+}
+
+func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govmomi.Client, vmToUpdate *v1beta1.VirtualMachine, vm *resources.VM) (*resources.VM, error) {
+
+	ps, err := vm.VirtualMachine.PowerState(ctx)
+	if err != nil {
+		glog.Errorf("Failed to acquire power state: %s", err.Error())
+		return nil, err
+	}
+
+	glog.Infof("Current power state: %s, desired power state", ps, vmToUpdate.Spec.PowerState)
+
+	if string(ps) == string(vmToUpdate.Spec.PowerState) {
+		glog.Infof("Power state already at desired state of %s", ps)
+		return vm, nil
+	}
+
+	// Bring PowerState into conformance
+	var task *object.Task
+	switch vmToUpdate.Spec.PowerState {
+	case v1beta1.VirtualMachinePoweredOff:
+		task, err = vm.VirtualMachine.PowerOff(ctx)
+	case v1beta1.VirtualMachinePoweredOn:
+		task, err = vm.VirtualMachine.PowerOn(ctx)
+	}
+
+	if err != nil {
+		glog.Errorf("Failed to change power state to %s", vmToUpdate.Spec.PowerState)
+		return nil, err
+	}
+
+	taskInfo, err := task.WaitForResult(ctx, nil)
+	if err != nil {
+		glog.Errorf("VM Power State change task failed %s", err.Error())
+		return nil, err
+	}
+
+	return resources.NewVMFromReference(*vclient, vm.Datacenter, taskInfo.Result.(types.ManagedObjectReference))
+}
+
+func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vmToUpdate *v1beta1.VirtualMachine) (*v1beta1.VirtualMachine, error) {
+	glog.Infof("Updating Vm: %s", vmToUpdate.Name)
+
+	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	vm, err := vs.manager.LookupVm(ctx, vClient, vmToUpdate.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	/*
+	err = vs.updateCapacity(ctx, vmToUpdate, vm)
+	if err != nil {
 		return v1beta1.VirtualMachine{}, err
 	}
+	*/
 
-	vs.addProviderAnnotations(&vm.ObjectMeta, newVm.VirtualMachine.Reference().Value)
+	newVm, err := vs.updatePowerState(ctx, vClient, vmToUpdate, vm)
+	if err != nil {
+		return nil, err
+	}
 
-	return vm, nil
+	// Update spec
+	return vs.mergeVmStatus(ctx, vmToUpdate, newVm)
 }
 
-func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vm v1beta1.VirtualMachine) (error) {
-	glog.Infof("Deleting Vm: %s", vm.Name)
+func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1beta1.VirtualMachine) (error) {
+	glog.Infof("Deleting Vm: %s", vmToDelete.Name)
 
-	vClient, err := NewClient(ctx, vs.Config.VcUrl)
+	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
 		return err
 	}
-	glog.Info("Deleting VM 1")
 
-	err = vs.manager.DeleteVm(ctx, vClient, vm)
+	vm, err := vs.manager.LookupVm(ctx, vClient, vmToDelete.Name)
 	if err != nil {
-		glog.Infof("Delete VM failed %s!", err)
 		return err
 	}
-	return nil
-}
 
+	deleteSequence := sequence.NewVirtualMachineDeleteSequence(vmToDelete, vm)
+	err = deleteSequence.Execute(ctx)
+
+	glog.Infof("Delete sequence completed: %s", err)
+	return err
+}
 

@@ -11,13 +11,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
-)
-
-// DWB: These defaults likely belong with the API as Default Values.  Adding here for now until we have
-//      the spec better filled out.
-var (
-	DefaultNumCpus = 4
-	DefaultMemCapacity = 1024
+	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
 )
 
 // TODO: Merge this code with vsphere vmprovider, and/or decouple it into smaller modules to avoid this monolith.
@@ -37,7 +31,7 @@ func (v *VSphereManager) resolveResources(ctx context.Context, client *govmomi.C
 		return v.ResourceContext, nil
 	}
 
-	dc, err := NewDatacenter(*client, v.Config.Datacenter)
+	dc, err := resources.NewDatacenter(*client, v.Config.Datacenter)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +41,7 @@ func (v *VSphereManager) resolveResources(ctx context.Context, client *govmomi.C
 		return nil, err
 	}
 
-	folder, err := NewFolder(*client, dc.Datacenter, v.Config.Folder)
+	folder, err := resources.NewFolder(*client, dc.Datacenter, v.Config.Folder)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +51,7 @@ func (v *VSphereManager) resolveResources(ctx context.Context, client *govmomi.C
 		return nil, err
 	}
 
-	rp, err := NewResourcePool(*client, dc.Datacenter, v.Config.ResourcePool)
+	rp, err := resources.NewResourcePool(*client, dc.Datacenter, v.Config.ResourcePool)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +61,7 @@ func (v *VSphereManager) resolveResources(ctx context.Context, client *govmomi.C
 		return nil, err
 	}
 
-	ds, err := NewDatastore(*client, dc.Datacenter, v.Config.Datastore)
+	ds, err := resources.NewDatastore(*client, dc.Datacenter, v.Config.Datastore)
 	if err != nil {
 		return nil, err
 	}
@@ -89,8 +83,8 @@ func (v *VSphereManager) resolveResources(ctx context.Context, client *govmomi.C
 	return v.ResourceContext, nil
 }
 
-func (v *VSphereManager) ListVms(ctx context.Context, vClient *govmomi.Client, vmFolder string) ([]*VM, error) {
-	vms := []*VM{}
+func (v *VSphereManager) ListVms(ctx context.Context, vClient *govmomi.Client, vmFolder string) ([]*resources.VM, error) {
+	vms := []*resources.VM{}
 	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
 		glog.Infof("Failed to resolve resources Vms: %d", err)
@@ -107,7 +101,7 @@ func (v *VSphereManager) ListVms(ctx context.Context, vClient *govmomi.Client, v
 		glog.Infof("Found VM: %s %s %s", vmiter.Name(), vmiter.Reference().Type, vmiter.Reference().Value)
 		vm, err := v.LookupVm(ctx, vClient, vmiter.Name())
 		if err == nil {
-			glog.Infof("Append VM: %s", vm.name)
+			glog.Infof("Append VM: %s", vm.Name)
 			vms = append(vms, vm)
 		}
 	}
@@ -115,7 +109,7 @@ func (v *VSphereManager) ListVms(ctx context.Context, vClient *govmomi.Client, v
 	return vms, nil
 }
 
-func (v *VSphereManager) LookupVm(ctx context.Context, vClient *govmomi.Client, vmName string) (*VM, error) {
+func (v *VSphereManager) LookupVm(ctx context.Context, vClient *govmomi.Client, vmName string) (*resources.VM, error) {
 	glog.Info("Lookup VM")
 	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
@@ -123,7 +117,7 @@ func (v *VSphereManager) LookupVm(ctx context.Context, vClient *govmomi.Client, 
 	}
 	glog.Info("New VM")
 
-	vm, err := NewVM(*vClient, rc.datacenter, vmName)
+	vm, err := resources.NewVM(*vClient, rc.datacenter, vmName)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +128,7 @@ func (v *VSphereManager) LookupVm(ctx context.Context, vClient *govmomi.Client, 
 		return nil, err
 	}
 
-	glog.Infof("vm: %s path: %s", vm.name, vm.VirtualMachine.InventoryPath)
+	glog.Infof("vm: %s path: %s", vm.Name, vm.VirtualMachine.InventoryPath)
 
 	return vm, nil
 }
@@ -145,7 +139,7 @@ func (v *VSphereManager) deleteVmInvoke(ctx context.Context, client *govmomi.Cli
 		return nil, err
 	}
 
-	vm, err := NewVM(*client, rc.datacenter, name)
+	vm, err := resources.NewVM(*client, rc.datacenter, name)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +172,7 @@ func (v *VSphereManager) DeleteVm(ctx context.Context, vClient *govmomi.Client, 
 
 func (v *VSphereManager) createVmInvoke(ctx context.Context, client *govmomi.Client, rc *ResourceContext, vmSpec vimTypes.VirtualMachineConfigSpec) (*object.Task, error) {
 
-	vm, err := NewVM(*client, rc.datacenter, vmSpec.Name)
+	vm, err := resources.NewVM(*client, rc.datacenter, vmSpec.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -190,29 +184,8 @@ func (v *VSphereManager) createVmInvoke(ctx context.Context, client *govmomi.Cli
 	return vm.Create(ctx, rc.folder.Folder, rc.resourcePool.ResourcePool, vmSpec)
 }
 
-/*
-func (v *VSphereManager) updateVmStatus(ctx context.Context, kClient client.Client, instance *vmv1.VM, vm *VM) error {
-	instance.Status.State = "Created"
-	ps, err := vm.VirtualMachine.PowerState(ctx)
-	if err != nil {
-		return err
-	}
-
-	instance.Status.RuntimeStatus.PowerState = string(ps)
-	//instance.Status.PowerStatus = string(ps)
-	//instance.Status.Created = vm.VirtualMachine.
-
-	err = kClient.Status().Update(context.Background(), instance)
-	if err != nil {
-		log.Printf("Update failed: %s", err.Error())
-		return err
-	}
-	return nil
-}
-*/
-
-func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, vm v1beta1.VirtualMachine) (*VM, error) {
-	glog.Infof("CreateVm %s", vm.Name)
+func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, vmToCreate *v1beta1.VirtualMachine) (*resources.VM, error) {
+	glog.Infof("CreateVm %s", vmToCreate.Name)
 
 	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
@@ -220,9 +193,9 @@ func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, 
 	}
 
 	vmSpec := vimTypes.VirtualMachineConfigSpec{
-		Name:     vm.Name,
-		NumCPUs:  int32(DefaultNumCpus),
-		MemoryMB: int64(DefaultMemCapacity),
+		Name:     vmToCreate.Name,
+		NumCPUs:  int32(vmToCreate.Spec.Resources.Capacity.Cpu),
+		MemoryMB: int64(vmToCreate.Spec.Resources.Capacity.Memory),
 	}
 
 	task, err := v.createVmInvoke(ctx, vClient, rc, vmSpec)
@@ -237,7 +210,7 @@ func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, 
 		return nil, err
 	}
 
-	newVm, err := NewVM(*vClient, rc.datacenter, vmSpec.Name)
+	newVm, err := resources.NewVM(*vClient, rc.datacenter, vmSpec.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -248,21 +221,13 @@ func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, 
 		return nil, err
 	}
 
-	// DWB: Caller needs to update status of K8s resource
-	/*
-	err = v.updateVmStatus(ctx, kClient, instance, vm)
-	if err != nil {
-		return nil, err
-	}
-	*/
-
 	glog.Infof("Created VM %s!", vmSpec.Name)
 	return newVm, nil
 }
 
-func (v *VSphereManager) cloneVmInvoke(ctx context.Context, client *govmomi.Client, rc *ResourceContext, sourceVm *VM, cloneSpec vimTypes.VirtualMachineCloneSpec) (*object.Task, error) {
+func (v *VSphereManager) cloneVmInvoke(ctx context.Context, client *govmomi.Client, rc *ResourceContext, sourceVm *resources.VM, cloneSpec vimTypes.VirtualMachineCloneSpec) (*object.Task, error) {
 
-	vm, err := NewVM(*client, rc.datacenter, cloneSpec.Config.Name)
+	vm, err := resources.NewVM(*client, rc.datacenter, cloneSpec.Config.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -270,8 +235,8 @@ func (v *VSphereManager) cloneVmInvoke(ctx context.Context, client *govmomi.Clie
 	return vm.Clone(ctx, sourceVm.VirtualMachine, rc.folder.Folder, cloneSpec)
 }
 
-func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, newVm v1beta1.VirtualMachine) (*VM, error) {
-	glog.Infof("CloneVm %s", newVm.Name)
+func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, vmToClone *v1beta1.VirtualMachine) (*resources.VM, error) {
+	glog.Infof("CloneVm %s", vmToClone.Name)
 
 	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
@@ -279,16 +244,16 @@ func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, n
 	}
 
 	// Find existing VM or template matching the image name
-	sourceVm, err := v.LookupVm(ctx, vClient, newVm.Spec.Image)
+	sourceVm, err := v.LookupVm(ctx, vClient, vmToClone.Spec.Image)
 	if err != nil {
-		glog.Errorf("Failed to find source VM %s: %s", newVm.Spec.Image, err)
+		glog.Errorf("Failed to find source VM %s: %s", vmToClone.Spec.Image, err)
 		return nil, err
 	}
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{
-		Name: newVm.Name,
-		NumCPUs:  int32(DefaultNumCpus),
-		MemoryMB: int64(DefaultMemCapacity),
+		Name:     vmToClone.Name,
+		NumCPUs:  int32(vmToClone.Spec.Resources.Capacity.Cpu),
+		MemoryMB: int64(vmToClone.Spec.Resources.Capacity.Memory),
 	}
 
 	// No mem-full clones
@@ -313,7 +278,7 @@ func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, n
 		return nil, err
 	}
 
-	clonedVm, err := NewVM(*vClient, rc.datacenter, cloneSpec.Config.Name)
+	clonedVm, err := resources.NewVM(*vClient, rc.datacenter, cloneSpec.Config.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -324,74 +289,32 @@ func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, n
 		return nil, err
 	}
 
-	glog.Infof("Clone VM %s from %s!", cloneSpec.Config.Name)
+	glog.Infof("Clone VM %s from %s!", vmToClone.Name, cloneSpec.Config.Name)
 
 	return clonedVm, nil
 }
 
 /*
-func (v *VSphereManager) updatePowerState(ctx context.Context, instance *vmv1.VM, vm *VM) error {
-
-
-	ps, err := vm.VirtualMachine.PowerState(ctx)
-	if err != nil {
-		log.Printf("Failed to acquire power state: %s", err.Error())
-		return err
-	}
-
-	log.Printf("Current power state: %s", ps)
-
-	if string(ps) != string(instance.Spec.PowerState) {
-		// Bring PowerState into conformance
-		var task *object.Task
-		switch instance.Spec.PowerState {
-		case vmv1.PoweredOff:
-			task, err = vm.VirtualMachine.PowerOff(ctx)
-		case vmv1.PoweredOn:
-			task, err = vm.VirtualMachine.PowerOn(ctx)
-		}
-
-		if err != nil {
-			log.Printf("Failed to change power state to %s", instance.Spec.PowerState)
-			return err
-		}
-
-		_, err = task.WaitForResult(ctx, nil)
-		if err != nil {
-			log.Printf("VM Power State change task failed %s", err.Error())
-			return err
-		}
-	} else {
-		log.Printf("Power state already at desired state of %s", ps)
-	}
-
-	return nil
-}
-
-func (v *VSphereManager) UpdateVm(ctx context.Context, kClient client.Client, vClient *govmomi.Client, request reconcile.Request, instance *vmv1.VM, vm *VM) (*VM, error) {
+func (v *VSphereManager) UpdateVm(ctx context.Context, vClient *govmomi.Client, vmToUpdate *v1beta1.VirtualMachine, vm *VM) (*VM, error) {
 	// Diff instance with VM config on backend
 	// DWB: Make this a table of prop actors
 	// Update VM Config first
 	// Perform Power Ops second
 
-	_, err := v.refreshResources(ctx, vClient)
+	_, err := v.resolveResources(ctx, vClient)
 	if err != nil {
 		return nil, err
 	}
 
 	//vmSpec := vimTypes.VirtualMachineConfigSpec{
 	//}
+	/*
 	err = v.updatePowerState(ctx, instance, vm)
 	if err != nil {
 		return nil, err
 	}
 
-	err = v.updateVmStatus(ctx, kClient, instance, vm)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Printf("Udpated VM %s!", request.Name)
+	glog.Infof("Udpated VM %s!", vmToUpdate.Name)
 	return vm, nil
 }
 */

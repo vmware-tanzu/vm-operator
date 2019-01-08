@@ -23,15 +23,15 @@ type VirtualMachineProviderInterface interface {
 }
 
 type VirtualMachineImages interface {
-	ListVirtualMachineImages(ctx context.Context, namespace string) ([]v1beta1.VirtualMachineImage, error)
-	GetVirtualMachineImage(ctx context.Context, name string) (v1beta1.VirtualMachineImage, error)
+	ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1beta1.VirtualMachineImage, error)
+	GetVirtualMachineImage(ctx context.Context, name string) (*v1beta1.VirtualMachineImage, error)
 }
 
 type VirtualMachines interface {
-	ListVirtualMachines(ctx context.Context, namespace string) ([]v1beta1.VirtualMachine, error)
-	GetVirtualMachine(ctx context.Context, name string) (v1beta1.VirtualMachine, error)
-	CreateVirtualMachine(ctx context.Context, virtualMachine v1beta1.VirtualMachine) (v1beta1.VirtualMachine, error)
-	// Need Update API
-	DeleteVirtualMachine(ctx context.Context, virtualMachine v1beta1.VirtualMachine) (error)
+	ListVirtualMachines(ctx context.Context, namespace string) ([]*v1beta1.VirtualMachine, error)
+	GetVirtualMachine(ctx context.Context, name string) (*v1beta1.VirtualMachine, error)
+	CreateVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) (*v1beta1.VirtualMachine, error)
+	UpdateVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) (*v1beta1.VirtualMachine, error)
+	DeleteVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) (error)
 }
 

@@ -1,4 +1,4 @@
-package vsphere
+package resources
 
 import (
 	"github.com/vmware/govmomi"

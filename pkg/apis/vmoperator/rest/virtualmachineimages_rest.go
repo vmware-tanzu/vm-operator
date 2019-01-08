@@ -64,8 +64,13 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 		return nil, errors.NewInternalError(err)
 	}
 
+	items := []v1beta1.VirtualMachineImage{}
+	for _, item := range images {
+		items = append(items, *item)
+	}
+
 	imageList := v1beta1.VirtualMachineImageList{
-		Items: images,
+		Items: items,
 	}
 	return &imageList, nil
 }
@@ -100,7 +105,7 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 		return nil, errors.NewInternalError(err)
 	}
 
-	return &image, nil
+	return image, nil
 }
 
 func (r *VirtualMachineImagesREST) Watch(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error) {

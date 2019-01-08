@@ -29158,7 +29158,7 @@ func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineStatus(ref common.Referenc
 							Format: "",
 						},
 					},
-					"ConfigStatus": {
+					"configStatus": {
 						SchemaProps: spec.SchemaProps{
 							Ref: ref("vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineConfigStatus"),
 						},
@@ -29169,7 +29169,7 @@ func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineStatus(ref common.Referenc
 						},
 					},
 				},
-				Required: []string{"state", "ConfigStatus", "runtimeStatus"},
+				Required: []string{"state", "configStatus", "runtimeStatus"},
 			},
 		},
 		Dependencies: []string{

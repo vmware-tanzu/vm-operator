@@ -80,7 +80,9 @@ rules:
   - "vmoperator.vmware.com"
   resources:
   - virtualmachines
+  - virtualmachines/status
   - virtualmachineimages
+  - virtualmachineimages/status
   verbs:
   - get
   - list

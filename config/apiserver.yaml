@@ -52,8 +52,8 @@ spec:
     spec:
       containers:
       - name: apiserver
-        image: derekbeard/vmoperator:vmop
-        imagePullPolicy: Always
+        image: vmoperator:vmop
+        imagePullPolicy: Never
         volumeMounts:
         - name: apiserver-certs
           mountPath: /apiserver.local.config/certificates
@@ -75,8 +75,8 @@ spec:
             cpu: 100m
             memory: 30Mi
       - name: controller
-        image: derekbeard/vmoperator:vmop
-        imagePullPolicy: Always
+        image: vmoperator:vmop
+        imagePullPolicy: Never
         command:
         - "./controller-manager"
         args:

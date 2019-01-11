@@ -54,6 +54,7 @@ func NewSharedInformers(config *rest.Config, shutdown <-chan struct{}) *SharedIn
 func (si *SharedInformers) startInformers(shutdown <-chan struct{}) {
 	go si.Factory.Vmoperator().V1beta1().VirtualMachines().Informer().Run(shutdown)
 	go si.Factory.Vmoperator().V1beta1().VirtualMachineImages().Informer().Run(shutdown)
+	go si.Factory.Vmoperator().V1beta1().VirtualMachineServices().Informer().Run(shutdown)
 }
 
 // ControllerInitArguments are arguments provided to the Init function for a new controller.

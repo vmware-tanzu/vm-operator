@@ -17,6 +17,7 @@ type VmoperatorV1beta1Interface interface {
 	RESTClient() rest.Interface
 	VirtualMachinesGetter
 	VirtualMachineImagesGetter
+	VirtualMachineServicesGetter
 }
 
 // VmoperatorV1beta1Client is used to interact with features provided by the vmoperator.vmware.com group.
@@ -30,6 +31,10 @@ func (c *VmoperatorV1beta1Client) VirtualMachines(namespace string) VirtualMachi
 
 func (c *VmoperatorV1beta1Client) VirtualMachineImages(namespace string) VirtualMachineImageInterface {
 	return newVirtualMachineImages(c, namespace)
+}
+
+func (c *VmoperatorV1beta1Client) VirtualMachineServices(namespace string) VirtualMachineServiceInterface {
+	return newVirtualMachineServices(c, namespace)
 }
 
 // NewForConfig creates a new VmoperatorV1beta1Client for the given config.

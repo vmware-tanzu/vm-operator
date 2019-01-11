@@ -3,9 +3,11 @@ package resources
 import (
 	"context"
 	"errors"
+	"github.com/golang/glog"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -57,4 +59,21 @@ func (vm *VM) Delete(ctx context.Context) (*object.Task, error) {
 		return nil, errors.New("VM is not set")
 	}
 	return vm.VirtualMachine.Destroy(ctx)
+}
+
+// Just get some IP from guest
+func (vm *VM) IpAddress(ctx context.Context) (string, error) {
+	var o mo.VirtualMachine
+
+	err := vm.VirtualMachine.Properties(ctx, vm.VirtualMachine.Reference(), []string{"guest.ipAddress"}, &o)
+	if err != nil {
+		return "", err
+	}
+
+	if o.Guest == nil {
+		glog.Infof("Guest info is empty: tools not installed?")
+		return "", errors.New("WTF")
+	}
+
+	return o.Guest.IpAddress, nil
 }

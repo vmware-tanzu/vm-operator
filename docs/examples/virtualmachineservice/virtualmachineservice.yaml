@@ -1,0 +1,7 @@
+note: VirtualMachineService Example
+sample: |
+  apiVersion: vmoperator.vmware.com/v1beta1
+  kind: VirtualMachineService
+  metadata:
+    name: virtualmachineservice-example
+  spec:

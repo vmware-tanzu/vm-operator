@@ -9,3 +9,5 @@ package v1beta1
 type VirtualMachineExpansion interface{}
 
 type VirtualMachineImageExpansion interface{}
+
+type VirtualMachineServiceExpansion interface{}

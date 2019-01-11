@@ -11,6 +11,7 @@ package v1beta1
 import (
 	unsafe "unsafe"
 
+	v1 "k8s.io/api/core/v1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	vmoperator "vmware.com/kubevsphere/pkg/apis/vmoperator"
@@ -33,13 +34,13 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineConfigStatus)(nil), (*vmoperator.VirtualMachineConfigStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_VirtualMachineConfigStatus_To_vmoperator_VirtualMachineConfigStatus(a.(*VirtualMachineConfigStatus), b.(*vmoperator.VirtualMachineConfigStatus), scope)
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineCondition)(nil), (*vmoperator.VirtualMachineCondition)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_VirtualMachineCondition_To_vmoperator_VirtualMachineCondition(a.(*VirtualMachineCondition), b.(*vmoperator.VirtualMachineCondition), scope)
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineConfigStatus)(nil), (*VirtualMachineConfigStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_vmoperator_VirtualMachineConfigStatus_To_v1beta1_VirtualMachineConfigStatus(a.(*vmoperator.VirtualMachineConfigStatus), b.(*VirtualMachineConfigStatus), scope)
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineCondition)(nil), (*VirtualMachineCondition)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineCondition_To_v1beta1_VirtualMachineCondition(a.(*vmoperator.VirtualMachineCondition), b.(*VirtualMachineCondition), scope)
 	}); err != nil {
 		return err
 	}
@@ -113,6 +114,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachinePort)(nil), (*vmoperator.VirtualMachinePort)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_VirtualMachinePort_To_vmoperator_VirtualMachinePort(a.(*VirtualMachinePort), b.(*vmoperator.VirtualMachinePort), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachinePort)(nil), (*VirtualMachinePort)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachinePort_To_v1beta1_VirtualMachinePort(a.(*vmoperator.VirtualMachinePort), b.(*VirtualMachinePort), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineResourceSpec)(nil), (*vmoperator.VirtualMachineResourceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(a.(*VirtualMachineResourceSpec), b.(*vmoperator.VirtualMachineResourceSpec), scope)
 	}); err != nil {
@@ -133,13 +144,73 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineRuntimeStatus)(nil), (*vmoperator.VirtualMachineRuntimeStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_VirtualMachineRuntimeStatus_To_vmoperator_VirtualMachineRuntimeStatus(a.(*VirtualMachineRuntimeStatus), b.(*vmoperator.VirtualMachineRuntimeStatus), scope)
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineService)(nil), (*vmoperator.VirtualMachineService)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_VirtualMachineService_To_vmoperator_VirtualMachineService(a.(*VirtualMachineService), b.(*vmoperator.VirtualMachineService), scope)
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineRuntimeStatus)(nil), (*VirtualMachineRuntimeStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_vmoperator_VirtualMachineRuntimeStatus_To_v1beta1_VirtualMachineRuntimeStatus(a.(*vmoperator.VirtualMachineRuntimeStatus), b.(*VirtualMachineRuntimeStatus), scope)
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineService)(nil), (*VirtualMachineService)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineService_To_v1beta1_VirtualMachineService(a.(*vmoperator.VirtualMachineService), b.(*VirtualMachineService), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineServiceList)(nil), (*vmoperator.VirtualMachineServiceList)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_VirtualMachineServiceList_To_vmoperator_VirtualMachineServiceList(a.(*VirtualMachineServiceList), b.(*vmoperator.VirtualMachineServiceList), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineServiceList)(nil), (*VirtualMachineServiceList)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineServiceList_To_v1beta1_VirtualMachineServiceList(a.(*vmoperator.VirtualMachineServiceList), b.(*VirtualMachineServiceList), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineServicePort)(nil), (*vmoperator.VirtualMachineServicePort)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_VirtualMachineServicePort_To_vmoperator_VirtualMachineServicePort(a.(*VirtualMachineServicePort), b.(*vmoperator.VirtualMachineServicePort), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineServicePort)(nil), (*VirtualMachineServicePort)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineServicePort_To_v1beta1_VirtualMachineServicePort(a.(*vmoperator.VirtualMachineServicePort), b.(*VirtualMachineServicePort), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineServiceSpec)(nil), (*vmoperator.VirtualMachineServiceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_VirtualMachineServiceSpec_To_vmoperator_VirtualMachineServiceSpec(a.(*VirtualMachineServiceSpec), b.(*vmoperator.VirtualMachineServiceSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineServiceSpec)(nil), (*VirtualMachineServiceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineServiceSpec_To_v1beta1_VirtualMachineServiceSpec(a.(*vmoperator.VirtualMachineServiceSpec), b.(*VirtualMachineServiceSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineServiceStatus)(nil), (*vmoperator.VirtualMachineServiceStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_VirtualMachineServiceStatus_To_vmoperator_VirtualMachineServiceStatus(a.(*VirtualMachineServiceStatus), b.(*vmoperator.VirtualMachineServiceStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineServiceStatus)(nil), (*VirtualMachineServiceStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineServiceStatus_To_v1beta1_VirtualMachineServiceStatus(a.(*vmoperator.VirtualMachineServiceStatus), b.(*VirtualMachineServiceStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineServiceStatusStrategy)(nil), (*vmoperator.VirtualMachineServiceStatusStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_VirtualMachineServiceStatusStrategy_To_vmoperator_VirtualMachineServiceStatusStrategy(a.(*VirtualMachineServiceStatusStrategy), b.(*vmoperator.VirtualMachineServiceStatusStrategy), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineServiceStatusStrategy)(nil), (*VirtualMachineServiceStatusStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineServiceStatusStrategy_To_v1beta1_VirtualMachineServiceStatusStrategy(a.(*vmoperator.VirtualMachineServiceStatusStrategy), b.(*VirtualMachineServiceStatusStrategy), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineServiceStrategy)(nil), (*vmoperator.VirtualMachineServiceStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_VirtualMachineServiceStrategy_To_vmoperator_VirtualMachineServiceStrategy(a.(*VirtualMachineServiceStrategy), b.(*vmoperator.VirtualMachineServiceStrategy), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineServiceStrategy)(nil), (*VirtualMachineServiceStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineServiceStrategy_To_v1beta1_VirtualMachineServiceStrategy(a.(*vmoperator.VirtualMachineServiceStrategy), b.(*VirtualMachineServiceStrategy), scope)
 	}); err != nil {
 		return err
 	}
@@ -218,30 +289,34 @@ func Convert_vmoperator_VirtualMachine_To_v1beta1_VirtualMachine(in *vmoperator.
 	return autoConvert_vmoperator_VirtualMachine_To_v1beta1_VirtualMachine(in, out, s)
 }
 
-func autoConvert_v1beta1_VirtualMachineConfigStatus_To_vmoperator_VirtualMachineConfigStatus(in *VirtualMachineConfigStatus, out *vmoperator.VirtualMachineConfigStatus, s conversion.Scope) error {
-	out.Uuid = in.Uuid
-	out.InternalId = in.InternalId
-	out.CreateDate = in.CreateDate
-	out.ModifiedDate = in.ModifiedDate
+func autoConvert_v1beta1_VirtualMachineCondition_To_vmoperator_VirtualMachineCondition(in *VirtualMachineCondition, out *vmoperator.VirtualMachineCondition, s conversion.Scope) error {
+	out.LastProbeTime = in.LastProbeTime
+	out.LastTransitionTime = in.LastTransitionTime
+	out.Message = in.Message
+	out.Reason = in.Reason
+	out.Status = in.Status
+	out.Type = in.Type
 	return nil
 }
 
-// Convert_v1beta1_VirtualMachineConfigStatus_To_vmoperator_VirtualMachineConfigStatus is an autogenerated conversion function.
-func Convert_v1beta1_VirtualMachineConfigStatus_To_vmoperator_VirtualMachineConfigStatus(in *VirtualMachineConfigStatus, out *vmoperator.VirtualMachineConfigStatus, s conversion.Scope) error {
-	return autoConvert_v1beta1_VirtualMachineConfigStatus_To_vmoperator_VirtualMachineConfigStatus(in, out, s)
+// Convert_v1beta1_VirtualMachineCondition_To_vmoperator_VirtualMachineCondition is an autogenerated conversion function.
+func Convert_v1beta1_VirtualMachineCondition_To_vmoperator_VirtualMachineCondition(in *VirtualMachineCondition, out *vmoperator.VirtualMachineCondition, s conversion.Scope) error {
+	return autoConvert_v1beta1_VirtualMachineCondition_To_vmoperator_VirtualMachineCondition(in, out, s)
 }
 
-func autoConvert_vmoperator_VirtualMachineConfigStatus_To_v1beta1_VirtualMachineConfigStatus(in *vmoperator.VirtualMachineConfigStatus, out *VirtualMachineConfigStatus, s conversion.Scope) error {
-	out.Uuid = in.Uuid
-	out.InternalId = in.InternalId
-	out.CreateDate = in.CreateDate
-	out.ModifiedDate = in.ModifiedDate
+func autoConvert_vmoperator_VirtualMachineCondition_To_v1beta1_VirtualMachineCondition(in *vmoperator.VirtualMachineCondition, out *VirtualMachineCondition, s conversion.Scope) error {
+	out.LastProbeTime = in.LastProbeTime
+	out.LastTransitionTime = in.LastTransitionTime
+	out.Message = in.Message
+	out.Reason = in.Reason
+	out.Status = in.Status
+	out.Type = in.Type
 	return nil
 }
 
-// Convert_vmoperator_VirtualMachineConfigStatus_To_v1beta1_VirtualMachineConfigStatus is an autogenerated conversion function.
-func Convert_vmoperator_VirtualMachineConfigStatus_To_v1beta1_VirtualMachineConfigStatus(in *vmoperator.VirtualMachineConfigStatus, out *VirtualMachineConfigStatus, s conversion.Scope) error {
-	return autoConvert_vmoperator_VirtualMachineConfigStatus_To_v1beta1_VirtualMachineConfigStatus(in, out, s)
+// Convert_vmoperator_VirtualMachineCondition_To_v1beta1_VirtualMachineCondition is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineCondition_To_v1beta1_VirtualMachineCondition(in *vmoperator.VirtualMachineCondition, out *VirtualMachineCondition, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineCondition_To_v1beta1_VirtualMachineCondition(in, out, s)
 }
 
 func autoConvert_v1beta1_VirtualMachineImage_To_vmoperator_VirtualMachineImage(in *VirtualMachineImage, out *vmoperator.VirtualMachineImage, s conversion.Scope) error {
@@ -402,6 +477,32 @@ func Convert_vmoperator_VirtualMachineList_To_v1beta1_VirtualMachineList(in *vmo
 	return autoConvert_vmoperator_VirtualMachineList_To_v1beta1_VirtualMachineList(in, out, s)
 }
 
+func autoConvert_v1beta1_VirtualMachinePort_To_vmoperator_VirtualMachinePort(in *VirtualMachinePort, out *vmoperator.VirtualMachinePort, s conversion.Scope) error {
+	out.Port = in.Port
+	out.Ip = in.Ip
+	out.Name = in.Name
+	out.Protocol = v1.Protocol(in.Protocol)
+	return nil
+}
+
+// Convert_v1beta1_VirtualMachinePort_To_vmoperator_VirtualMachinePort is an autogenerated conversion function.
+func Convert_v1beta1_VirtualMachinePort_To_vmoperator_VirtualMachinePort(in *VirtualMachinePort, out *vmoperator.VirtualMachinePort, s conversion.Scope) error {
+	return autoConvert_v1beta1_VirtualMachinePort_To_vmoperator_VirtualMachinePort(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachinePort_To_v1beta1_VirtualMachinePort(in *vmoperator.VirtualMachinePort, out *VirtualMachinePort, s conversion.Scope) error {
+	out.Port = in.Port
+	out.Ip = in.Ip
+	out.Name = in.Name
+	out.Protocol = v1.Protocol(in.Protocol)
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachinePort_To_v1beta1_VirtualMachinePort is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachinePort_To_v1beta1_VirtualMachinePort(in *vmoperator.VirtualMachinePort, out *VirtualMachinePort, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachinePort_To_v1beta1_VirtualMachinePort(in, out, s)
+}
+
 func autoConvert_v1beta1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(in *VirtualMachineResourceSpec, out *vmoperator.VirtualMachineResourceSpec, s conversion.Scope) error {
 	out.Cpu = in.Cpu
 	out.Memory = in.Memory
@@ -460,26 +561,170 @@ func Convert_vmoperator_VirtualMachineResourcesSpec_To_v1beta1_VirtualMachineRes
 	return autoConvert_vmoperator_VirtualMachineResourcesSpec_To_v1beta1_VirtualMachineResourcesSpec(in, out, s)
 }
 
-func autoConvert_v1beta1_VirtualMachineRuntimeStatus_To_vmoperator_VirtualMachineRuntimeStatus(in *VirtualMachineRuntimeStatus, out *vmoperator.VirtualMachineRuntimeStatus, s conversion.Scope) error {
-	out.Host = in.Host
-	out.PowerState = in.PowerState
+func autoConvert_v1beta1_VirtualMachineService_To_vmoperator_VirtualMachineService(in *VirtualMachineService, out *vmoperator.VirtualMachineService, s conversion.Scope) error {
+	out.ObjectMeta = in.ObjectMeta
+	if err := Convert_v1beta1_VirtualMachineServiceSpec_To_vmoperator_VirtualMachineServiceSpec(&in.Spec, &out.Spec, s); err != nil {
+		return err
+	}
+	if err := Convert_v1beta1_VirtualMachineServiceStatus_To_vmoperator_VirtualMachineServiceStatus(&in.Status, &out.Status, s); err != nil {
+		return err
+	}
 	return nil
 }
 
-// Convert_v1beta1_VirtualMachineRuntimeStatus_To_vmoperator_VirtualMachineRuntimeStatus is an autogenerated conversion function.
-func Convert_v1beta1_VirtualMachineRuntimeStatus_To_vmoperator_VirtualMachineRuntimeStatus(in *VirtualMachineRuntimeStatus, out *vmoperator.VirtualMachineRuntimeStatus, s conversion.Scope) error {
-	return autoConvert_v1beta1_VirtualMachineRuntimeStatus_To_vmoperator_VirtualMachineRuntimeStatus(in, out, s)
+// Convert_v1beta1_VirtualMachineService_To_vmoperator_VirtualMachineService is an autogenerated conversion function.
+func Convert_v1beta1_VirtualMachineService_To_vmoperator_VirtualMachineService(in *VirtualMachineService, out *vmoperator.VirtualMachineService, s conversion.Scope) error {
+	return autoConvert_v1beta1_VirtualMachineService_To_vmoperator_VirtualMachineService(in, out, s)
 }
 
-func autoConvert_vmoperator_VirtualMachineRuntimeStatus_To_v1beta1_VirtualMachineRuntimeStatus(in *vmoperator.VirtualMachineRuntimeStatus, out *VirtualMachineRuntimeStatus, s conversion.Scope) error {
-	out.Host = in.Host
-	out.PowerState = in.PowerState
+func autoConvert_vmoperator_VirtualMachineService_To_v1beta1_VirtualMachineService(in *vmoperator.VirtualMachineService, out *VirtualMachineService, s conversion.Scope) error {
+	out.ObjectMeta = in.ObjectMeta
+	if err := Convert_vmoperator_VirtualMachineServiceSpec_To_v1beta1_VirtualMachineServiceSpec(&in.Spec, &out.Spec, s); err != nil {
+		return err
+	}
+	if err := Convert_vmoperator_VirtualMachineServiceStatus_To_v1beta1_VirtualMachineServiceStatus(&in.Status, &out.Status, s); err != nil {
+		return err
+	}
 	return nil
 }
 
-// Convert_vmoperator_VirtualMachineRuntimeStatus_To_v1beta1_VirtualMachineRuntimeStatus is an autogenerated conversion function.
-func Convert_vmoperator_VirtualMachineRuntimeStatus_To_v1beta1_VirtualMachineRuntimeStatus(in *vmoperator.VirtualMachineRuntimeStatus, out *VirtualMachineRuntimeStatus, s conversion.Scope) error {
-	return autoConvert_vmoperator_VirtualMachineRuntimeStatus_To_v1beta1_VirtualMachineRuntimeStatus(in, out, s)
+// Convert_vmoperator_VirtualMachineService_To_v1beta1_VirtualMachineService is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineService_To_v1beta1_VirtualMachineService(in *vmoperator.VirtualMachineService, out *VirtualMachineService, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineService_To_v1beta1_VirtualMachineService(in, out, s)
+}
+
+func autoConvert_v1beta1_VirtualMachineServiceList_To_vmoperator_VirtualMachineServiceList(in *VirtualMachineServiceList, out *vmoperator.VirtualMachineServiceList, s conversion.Scope) error {
+	out.ListMeta = in.ListMeta
+	out.Items = *(*[]vmoperator.VirtualMachineService)(unsafe.Pointer(&in.Items))
+	return nil
+}
+
+// Convert_v1beta1_VirtualMachineServiceList_To_vmoperator_VirtualMachineServiceList is an autogenerated conversion function.
+func Convert_v1beta1_VirtualMachineServiceList_To_vmoperator_VirtualMachineServiceList(in *VirtualMachineServiceList, out *vmoperator.VirtualMachineServiceList, s conversion.Scope) error {
+	return autoConvert_v1beta1_VirtualMachineServiceList_To_vmoperator_VirtualMachineServiceList(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachineServiceList_To_v1beta1_VirtualMachineServiceList(in *vmoperator.VirtualMachineServiceList, out *VirtualMachineServiceList, s conversion.Scope) error {
+	out.ListMeta = in.ListMeta
+	out.Items = *(*[]VirtualMachineService)(unsafe.Pointer(&in.Items))
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachineServiceList_To_v1beta1_VirtualMachineServiceList is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineServiceList_To_v1beta1_VirtualMachineServiceList(in *vmoperator.VirtualMachineServiceList, out *VirtualMachineServiceList, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineServiceList_To_v1beta1_VirtualMachineServiceList(in, out, s)
+}
+
+func autoConvert_v1beta1_VirtualMachineServicePort_To_vmoperator_VirtualMachineServicePort(in *VirtualMachineServicePort, out *vmoperator.VirtualMachineServicePort, s conversion.Scope) error {
+	out.Name = in.Name
+	out.Protocol = in.Protocol
+	out.Port = in.Port
+	out.TargetPort = in.TargetPort
+	return nil
+}
+
+// Convert_v1beta1_VirtualMachineServicePort_To_vmoperator_VirtualMachineServicePort is an autogenerated conversion function.
+func Convert_v1beta1_VirtualMachineServicePort_To_vmoperator_VirtualMachineServicePort(in *VirtualMachineServicePort, out *vmoperator.VirtualMachineServicePort, s conversion.Scope) error {
+	return autoConvert_v1beta1_VirtualMachineServicePort_To_vmoperator_VirtualMachineServicePort(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachineServicePort_To_v1beta1_VirtualMachineServicePort(in *vmoperator.VirtualMachineServicePort, out *VirtualMachineServicePort, s conversion.Scope) error {
+	out.Name = in.Name
+	out.Protocol = in.Protocol
+	out.Port = in.Port
+	out.TargetPort = in.TargetPort
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachineServicePort_To_v1beta1_VirtualMachineServicePort is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineServicePort_To_v1beta1_VirtualMachineServicePort(in *vmoperator.VirtualMachineServicePort, out *VirtualMachineServicePort, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineServicePort_To_v1beta1_VirtualMachineServicePort(in, out, s)
+}
+
+func autoConvert_v1beta1_VirtualMachineServiceSpec_To_vmoperator_VirtualMachineServiceSpec(in *VirtualMachineServiceSpec, out *vmoperator.VirtualMachineServiceSpec, s conversion.Scope) error {
+	out.Type = in.Type
+	out.Ports = *(*[]vmoperator.VirtualMachineServicePort)(unsafe.Pointer(&in.Ports))
+	out.Selector = *(*map[string]string)(unsafe.Pointer(&in.Selector))
+	out.ClusterIP = in.ClusterIP
+	out.ExternalName = in.ExternalName
+	return nil
+}
+
+// Convert_v1beta1_VirtualMachineServiceSpec_To_vmoperator_VirtualMachineServiceSpec is an autogenerated conversion function.
+func Convert_v1beta1_VirtualMachineServiceSpec_To_vmoperator_VirtualMachineServiceSpec(in *VirtualMachineServiceSpec, out *vmoperator.VirtualMachineServiceSpec, s conversion.Scope) error {
+	return autoConvert_v1beta1_VirtualMachineServiceSpec_To_vmoperator_VirtualMachineServiceSpec(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachineServiceSpec_To_v1beta1_VirtualMachineServiceSpec(in *vmoperator.VirtualMachineServiceSpec, out *VirtualMachineServiceSpec, s conversion.Scope) error {
+	out.Type = in.Type
+	out.Ports = *(*[]VirtualMachineServicePort)(unsafe.Pointer(&in.Ports))
+	out.Selector = *(*map[string]string)(unsafe.Pointer(&in.Selector))
+	out.ClusterIP = in.ClusterIP
+	out.ExternalName = in.ExternalName
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachineServiceSpec_To_v1beta1_VirtualMachineServiceSpec is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineServiceSpec_To_v1beta1_VirtualMachineServiceSpec(in *vmoperator.VirtualMachineServiceSpec, out *VirtualMachineServiceSpec, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineServiceSpec_To_v1beta1_VirtualMachineServiceSpec(in, out, s)
+}
+
+func autoConvert_v1beta1_VirtualMachineServiceStatus_To_vmoperator_VirtualMachineServiceStatus(in *VirtualMachineServiceStatus, out *vmoperator.VirtualMachineServiceStatus, s conversion.Scope) error {
+	return nil
+}
+
+// Convert_v1beta1_VirtualMachineServiceStatus_To_vmoperator_VirtualMachineServiceStatus is an autogenerated conversion function.
+func Convert_v1beta1_VirtualMachineServiceStatus_To_vmoperator_VirtualMachineServiceStatus(in *VirtualMachineServiceStatus, out *vmoperator.VirtualMachineServiceStatus, s conversion.Scope) error {
+	return autoConvert_v1beta1_VirtualMachineServiceStatus_To_vmoperator_VirtualMachineServiceStatus(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachineServiceStatus_To_v1beta1_VirtualMachineServiceStatus(in *vmoperator.VirtualMachineServiceStatus, out *VirtualMachineServiceStatus, s conversion.Scope) error {
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachineServiceStatus_To_v1beta1_VirtualMachineServiceStatus is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineServiceStatus_To_v1beta1_VirtualMachineServiceStatus(in *vmoperator.VirtualMachineServiceStatus, out *VirtualMachineServiceStatus, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineServiceStatus_To_v1beta1_VirtualMachineServiceStatus(in, out, s)
+}
+
+func autoConvert_v1beta1_VirtualMachineServiceStatusStrategy_To_vmoperator_VirtualMachineServiceStatusStrategy(in *VirtualMachineServiceStatusStrategy, out *vmoperator.VirtualMachineServiceStatusStrategy, s conversion.Scope) error {
+	out.DefaultStatusStorageStrategy = in.DefaultStatusStorageStrategy
+	return nil
+}
+
+// Convert_v1beta1_VirtualMachineServiceStatusStrategy_To_vmoperator_VirtualMachineServiceStatusStrategy is an autogenerated conversion function.
+func Convert_v1beta1_VirtualMachineServiceStatusStrategy_To_vmoperator_VirtualMachineServiceStatusStrategy(in *VirtualMachineServiceStatusStrategy, out *vmoperator.VirtualMachineServiceStatusStrategy, s conversion.Scope) error {
+	return autoConvert_v1beta1_VirtualMachineServiceStatusStrategy_To_vmoperator_VirtualMachineServiceStatusStrategy(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachineServiceStatusStrategy_To_v1beta1_VirtualMachineServiceStatusStrategy(in *vmoperator.VirtualMachineServiceStatusStrategy, out *VirtualMachineServiceStatusStrategy, s conversion.Scope) error {
+	out.DefaultStatusStorageStrategy = in.DefaultStatusStorageStrategy
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachineServiceStatusStrategy_To_v1beta1_VirtualMachineServiceStatusStrategy is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineServiceStatusStrategy_To_v1beta1_VirtualMachineServiceStatusStrategy(in *vmoperator.VirtualMachineServiceStatusStrategy, out *VirtualMachineServiceStatusStrategy, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineServiceStatusStrategy_To_v1beta1_VirtualMachineServiceStatusStrategy(in, out, s)
+}
+
+func autoConvert_v1beta1_VirtualMachineServiceStrategy_To_vmoperator_VirtualMachineServiceStrategy(in *VirtualMachineServiceStrategy, out *vmoperator.VirtualMachineServiceStrategy, s conversion.Scope) error {
+	out.DefaultStorageStrategy = in.DefaultStorageStrategy
+	return nil
+}
+
+// Convert_v1beta1_VirtualMachineServiceStrategy_To_vmoperator_VirtualMachineServiceStrategy is an autogenerated conversion function.
+func Convert_v1beta1_VirtualMachineServiceStrategy_To_vmoperator_VirtualMachineServiceStrategy(in *VirtualMachineServiceStrategy, out *vmoperator.VirtualMachineServiceStrategy, s conversion.Scope) error {
+	return autoConvert_v1beta1_VirtualMachineServiceStrategy_To_vmoperator_VirtualMachineServiceStrategy(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachineServiceStrategy_To_v1beta1_VirtualMachineServiceStrategy(in *vmoperator.VirtualMachineServiceStrategy, out *VirtualMachineServiceStrategy, s conversion.Scope) error {
+	out.DefaultStorageStrategy = in.DefaultStorageStrategy
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachineServiceStrategy_To_v1beta1_VirtualMachineServiceStrategy is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineServiceStrategy_To_v1beta1_VirtualMachineServiceStrategy(in *vmoperator.VirtualMachineServiceStrategy, out *VirtualMachineServiceStrategy, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineServiceStrategy_To_v1beta1_VirtualMachineServiceStrategy(in, out, s)
 }
 
 func autoConvert_v1beta1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(in *VirtualMachineSpec, out *vmoperator.VirtualMachineSpec, s conversion.Scope) error {
@@ -488,6 +733,8 @@ func autoConvert_v1beta1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(in 
 		return err
 	}
 	out.PowerState = in.PowerState
+	out.Env = in.Env
+	out.Ports = *(*[]vmoperator.VirtualMachinePort)(unsafe.Pointer(&in.Ports))
 	return nil
 }
 
@@ -502,6 +749,8 @@ func autoConvert_vmoperator_VirtualMachineSpec_To_v1beta1_VirtualMachineSpec(in 
 		return err
 	}
 	out.PowerState = in.PowerState
+	out.Env = in.Env
+	out.Ports = *(*[]VirtualMachinePort)(unsafe.Pointer(&in.Ports))
 	return nil
 }
 
@@ -511,13 +760,11 @@ func Convert_vmoperator_VirtualMachineSpec_To_v1beta1_VirtualMachineSpec(in *vmo
 }
 
 func autoConvert_v1beta1_VirtualMachineStatus_To_vmoperator_VirtualMachineStatus(in *VirtualMachineStatus, out *vmoperator.VirtualMachineStatus, s conversion.Scope) error {
-	out.State = in.State
-	if err := Convert_v1beta1_VirtualMachineConfigStatus_To_vmoperator_VirtualMachineConfigStatus(&in.ConfigStatus, &out.ConfigStatus, s); err != nil {
-		return err
-	}
-	if err := Convert_v1beta1_VirtualMachineRuntimeStatus_To_vmoperator_VirtualMachineRuntimeStatus(&in.RuntimeStatus, &out.RuntimeStatus, s); err != nil {
-		return err
-	}
+	out.Conditions = *(*[]vmoperator.VirtualMachineCondition)(unsafe.Pointer(&in.Conditions))
+	out.Host = in.Host
+	out.PowerState = in.PowerState
+	out.Phase = in.Phase
+	out.VmIp = in.VmIp
 	return nil
 }
 
@@ -527,13 +774,11 @@ func Convert_v1beta1_VirtualMachineStatus_To_vmoperator_VirtualMachineStatus(in 
 }
 
 func autoConvert_vmoperator_VirtualMachineStatus_To_v1beta1_VirtualMachineStatus(in *vmoperator.VirtualMachineStatus, out *VirtualMachineStatus, s conversion.Scope) error {
-	out.State = in.State
-	if err := Convert_vmoperator_VirtualMachineConfigStatus_To_v1beta1_VirtualMachineConfigStatus(&in.ConfigStatus, &out.ConfigStatus, s); err != nil {
-		return err
-	}
-	if err := Convert_vmoperator_VirtualMachineRuntimeStatus_To_v1beta1_VirtualMachineRuntimeStatus(&in.RuntimeStatus, &out.RuntimeStatus, s); err != nil {
-		return err
-	}
+	out.Conditions = *(*[]VirtualMachineCondition)(unsafe.Pointer(&in.Conditions))
+	out.Host = in.Host
+	out.PowerState = in.PowerState
+	out.Phase = in.Phase
+	out.VmIp = in.VmIp
 	return nil
 }
 

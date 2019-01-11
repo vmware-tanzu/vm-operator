@@ -22,11 +22,11 @@ import (
 // +k8s:openapi-gen=true
 // +resource:path=virtualmachineimages,strategy=VirtualMachineImageStrategy,rest=VirtualMachineImagesREST
 type VirtualMachineImage struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta   					`json:",inline"`
+	metav1.ObjectMeta 					`json:"metadata,omitempty"`
 
-	Spec   VirtualMachineImageSpec   `json:"spec,omitempty"`
-	Status VirtualMachineImageStatus `json:"status,omitempty"`
+	Spec   VirtualMachineImageSpec   	`json:"spec,omitempty"`
+	Status VirtualMachineImageStatus 	`json:"status,omitempty"`
 }
 
 // VirtualMachineImageSpec defines the desired state of VirtualMachineImage
@@ -35,9 +35,9 @@ type VirtualMachineImageSpec struct {
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage
 type VirtualMachineImageStatus struct {
-	Uuid string `json:"uuid,omitempty"`
-	InternalId string `json:"internalId"`
-	PowerState string `json:"powerState,omitempty"`
+	Uuid string 		`json:"uuid,omitempty"`
+	InternalId string 	`json:"internalId"`
+	PowerState string 	`json:"powerState,omitempty"`
 }
 
 // Validate checks that an instance of VirtualMachineImage is well formed

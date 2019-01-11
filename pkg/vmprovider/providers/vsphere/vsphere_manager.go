@@ -87,13 +87,13 @@ func (v *VSphereManager) ListVms(ctx context.Context, vClient *govmomi.Client, v
 	vms := []*resources.VM{}
 	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
-		glog.Infof("Failed to resolve resources Vms: %d", err)
+		glog.Infof("Failed to resolve resources Vms: %s", err)
 		return nil, err
 	}
 
 	list, err := rc.datacenter.ListVms(ctx, "*")
 	if err != nil {
-		glog.Infof("Failed to list Vms: %d", err)
+		glog.Infof("Failed to list Vms: %s", err)
 		return nil, err
 	}
 

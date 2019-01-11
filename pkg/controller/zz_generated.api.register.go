@@ -24,6 +24,7 @@ import (
 	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
 	"vmware.com/kubevsphere/pkg/controller/virtualmachine"
 	"vmware.com/kubevsphere/pkg/controller/virtualmachineimage"
+	"vmware.com/kubevsphere/pkg/controller/virtualmachineservice"
 )
 
 func GetAllControllers(config *rest.Config) ([]controller.Controller, chan struct{}) {
@@ -32,5 +33,6 @@ func GetAllControllers(config *rest.Config) ([]controller.Controller, chan struc
 	return []controller.Controller{
 		virtualmachine.NewVirtualMachineController(config, si),
 		virtualmachineimage.NewVirtualMachineImageController(config, si),
+		virtualmachineservice.NewVirtualMachineServiceController(config, si),
 	}, shutdown
 }

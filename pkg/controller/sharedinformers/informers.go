@@ -18,7 +18,7 @@ func (si *SharedInformers) StartAdditionalInformers(shutdown <-chan struct{}) {
     // Start specific Kubernetes API informers here.  Note, it is only necessary
     // to start 1 informer for each Kind. (e.g. only 1 Deployment informer)
 
-    // Uncomment this to start listening for Deployment Create / Update / Deletes
-    //go si.KubernetesFactory.Apps().V1beta1().Deployments().Informer().Run(shutdown)
-	go si.KubernetesFactory.Apps().V1beta1().Deployments().Informer().Run(shutdown)
+    // Listen to Service and Endpoint events
+	go si.KubernetesFactory.Core().V1().Services().Informer().Run(shutdown)
+	go si.KubernetesFactory.Core().V1().Endpoints().Informer().Run(shutdown)
 }

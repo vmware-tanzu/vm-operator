@@ -147,17 +147,34 @@ func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *res
 	powerState, _ := actualVm.VirtualMachine.PowerState(ctx)
 	ps := string(powerState)
 
+	host, err := actualVm.VirtualMachine.HostSystem(ctx)
+	if err != nil {
+		glog.Infof("Failed to acquire host system for VM %s: %s", err, actualVm.Name)
+		return nil, err
+	}
+
+	vmIp, err := actualVm.IpAddress(ctx)
+	if err != nil {
+		glog.Infof("Failed to acquire host system for VM %s: %s", err, actualVm.Name)
+		return nil, err
+	}
+
+	glog.Infof("VM Host/IP is %s/%s", host.Name(), vmIp)
+
 	vm := &v1beta1.VirtualMachine{
 		Status: v1beta1.VirtualMachineStatus{
-			State: "",
+			Phase: "",
+			PowerState: ps,
+			//Host: host.Name(),
+			Host: vmIp,
+			VmIp: vmIp,
+			/*
 			ConfigStatus: v1beta1.VirtualMachineConfigStatus{
 				Uuid: actualVm.VirtualMachine.UUID(ctx),
 				InternalId: actualVm.VirtualMachine.Reference().Value,
 			},
-			RuntimeStatus: v1beta1.VirtualMachineRuntimeStatus{
+			*/
 				//Host: actualVm.VirtualMachine.HostSystem(ctx),
-				PowerState: ps,
-			},
 		},
 	}
 

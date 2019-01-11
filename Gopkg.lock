@@ -1242,14 +1242,6 @@
   revision = "fdcf9f9480fdd5bf2b3c3df9bf4ecd22b25b87e2"
 
 [[projects]]
-  digest = "1:c1a50ad12d7da12c62dae9003a380639fbf8cf3a90fc0758c2fba72c5760ff00"
-  name = "k8s.io/klog"
-  packages = ["."]
-  pruneopts = "NU"
-  revision = "a5bc97fbc634d635061f3146511332c7e313a55a"
-  version = "v0.1.0"
-
-[[projects]]
   digest = "1:64da5e8f078d076691f1814eba2bfb3ff63ecf896d3140a9c16a82ace9177ee2"
   name = "k8s.io/kube-openapi"
   packages = [
@@ -1287,11 +1279,13 @@
     "github.com/vmware/govmomi",
     "github.com/vmware/govmomi/find",
     "github.com/vmware/govmomi/object",
+    "github.com/vmware/govmomi/vim25/mo",
     "github.com/vmware/govmomi/vim25/soap",
     "github.com/vmware/govmomi/vim25/types",
     "golang.org/x/net/context",
     "google.golang.org/genproto",
     "google.golang.org/grpc",
+    "k8s.io/api/core/v1",
     "k8s.io/apimachinery/pkg/api/errors",
     "k8s.io/apimachinery/pkg/api/resource",
     "k8s.io/apimachinery/pkg/apis/meta/internalversion",
@@ -1310,14 +1304,13 @@
     "k8s.io/apiserver/pkg/registry/rest",
     "k8s.io/client-go/discovery",
     "k8s.io/client-go/discovery/fake",
-    "k8s.io/client-go/kubernetes",
+    "k8s.io/client-go/listers/core/v1",
     "k8s.io/client-go/plugin/pkg/client/auth",
     "k8s.io/client-go/rest",
     "k8s.io/client-go/testing",
     "k8s.io/client-go/tools/cache",
     "k8s.io/client-go/util/flowcontrol",
     "k8s.io/client-go/util/workqueue",
-    "k8s.io/klog",
     "k8s.io/kube-openapi/cmd/openapi-gen",
     "k8s.io/kube-openapi/pkg/common",
   ]

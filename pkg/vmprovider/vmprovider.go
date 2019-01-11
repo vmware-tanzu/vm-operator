@@ -13,50 +13,6 @@ import (
 	"vmware.com/kubevsphere/pkg/vmprovider/iface"
 )
 
-// Pluggable interface for VM Providers
-//type VirtualMachineProviderInterface interface {
-	// Initialize provides the cloud with a kubernetes client builder and may spawn goroutines
-	// to perform housekeeping or run custom controllers specific to the cloud provider.
-	// Any tasks started here should be cleaned up when the stop channel closes.
-//	Initialize(stop <-chan struct{})
-
-	// VirtualMachines Provides a provider-specific VirtualMachines interface
-//	VirtualMachines() (VirtualMachines, bool)
-
-	// VirtualMachinesImages Provides a provider-specific VirtualMachinesImages interface
-//	VirtualMachineImages() (VirtualMachineImages, bool)
-//}
-
-// TODO: Need to get rid of these intermediate types and resolve the import cycle when including the k8s types
-/*
-type VirtualMachineImage struct {
-	Name string
-	PowerState string
-	Uuid string
-	InternalId string
-}
-
-type VirtualMachine struct {
-	Name string
-	Image string
-	PowerState string
-	Uuid string
-	InternalId string
-}
-
-type VirtualMachineImages interface {
-	ListVirtualMachineImages(ctx context.Context, namespace string) ([]VirtualMachineImage, error)
-	GetVirtualMachineImage(ctx context.Context, name string) (VirtualMachineImage, error)
-}
-
-type VirtualMachines interface {
-	ListVirtualMachines(ctx context.Context, namespace string) ([]VirtualMachine, error)
-	GetVirtualMachine(ctx context.Context, name string) (VirtualMachine, error)
-	CreateVirtualMachine(ctx context.Context, virtualMachine VirtualMachine) (error)
-	DeleteVirtualMachine(ctx context.Context, virtualMachine VirtualMachine) (error)
-}
-*/
-
 // Factory is a function that returns a vmprovider.Interface.
 // The config parameter provides an io.Reader handler to the factory in
 // order to load specific configurations. If no configuration is provided

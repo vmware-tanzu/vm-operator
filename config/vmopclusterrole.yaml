@@ -14,41 +14,10 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - pods
-  - pods/attach
-  - pods/exec
-  - pods/portforward
-  - pods/proxy
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - configmaps
-  - endpoints
-  - persistentvolumeclaims
   - secrets
   - serviceaccounts
-  - services
-  - services/proxy
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - bindings
   - events
-  - limitranges
-  - namespaces/status
-  - pods/log
-  - pods/status
-  - replicationcontrollers/status
-  - resourcequotas
-  - resourcequotas/status
   verbs:
   - get
   - list
@@ -56,11 +25,15 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - namespaces
+  - services
+  - endpoints
   verbs:
   - get
   - list
   - watch
+  - create
+  - update
+  - patch
 - apiGroups:
   - ""
   resources:
@@ -68,21 +41,14 @@ rules:
   verbs:
   - impersonate
 - apiGroups:
-  - "apps"
-  - "extensions"
-  resources:
-  - deployments
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
   - "vmoperator.vmware.com"
   resources:
   - virtualmachines
   - virtualmachines/status
   - virtualmachineimages
   - virtualmachineimages/status
+  - virtualmachineservices
+  - virtualmachineservices/status
   verbs:
   - get
   - list

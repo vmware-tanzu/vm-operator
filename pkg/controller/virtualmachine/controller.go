@@ -11,7 +11,9 @@ import (
 	"github.com/kubernetes-incubator/apiserver-builder/pkg/builders"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/cache"
 	"time"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
 	clientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
@@ -26,8 +28,12 @@ import (
 type VirtualMachineControllerImpl struct {
 	builders.DefaultControllerFns
 
+	informers *sharedinformers.SharedInformers
+
+	vmServiceLister listers.VirtualMachineServiceLister
+
 	// lister indexes properties about VirtualMachine
-	lister listers.VirtualMachineLister
+	vmLister listers.VirtualMachineLister
 
 	clientSet clientSet.Interface
 	vmClientSet vmclientSet.VirtualMachineInterface
@@ -35,15 +41,22 @@ type VirtualMachineControllerImpl struct {
 	vmProvider iface.VirtualMachineProviderInterface
 }
 
+
+
 // Init initializes the controller and is called by the generated code
 // Register watches for additional resource types here.
 func (c *VirtualMachineControllerImpl) Init(arguments sharedinformers.ControllerInitArguments) {
+
+	c.informers = arguments.GetSharedInformers()
+
+	vmOperator := arguments.GetSharedInformers().Factory.Vmoperator().V1beta1()
 	// Use the lister for indexing virtualmachines labels
-	c.lister = arguments.GetSharedInformers().Factory.Vmoperator().V1beta1().VirtualMachines().Lister()
+	c.vmLister = vmOperator.VirtualMachines().Lister()
+	c.vmServiceLister = vmOperator.VirtualMachineServices().Lister()
 
 	clientSet, err := clientSet.NewForConfig(arguments.GetRestConfig())
 	if err != nil {
-		glog.Fatalf("error creating virtual machine client: %v", err)
+		glog.Fatalf("Failed to create the virtual machine client: %v", err)
 	}
 	c.clientSet = clientSet
 
@@ -55,6 +68,7 @@ func (c *VirtualMachineControllerImpl) Init(arguments sharedinformers.Controller
 		glog.Fatalf("Failed to find vmprovider: %s", err)
 	}
 	c.vmProvider = vmProvider
+
 }
 
 // Function to filter a string from a list. Returns the filtered list
@@ -77,15 +91,36 @@ func (c *VirtualMachineControllerImpl) contains(list []string, strToSearch strin
 	return false
 }
 
+func (c *VirtualMachineControllerImpl) postVmServiceEventsToWorkqueue(vm *v1beta1.VirtualMachine) error {
+
+	glog.V(4).Infof("VM update: %v", vm.Name)
+
+	vmServices, err := c.vmServiceLister.VirtualMachineServices(vm.Namespace).List(labels.Everything())
+	if err != nil {
+		return err
+	}
+
+	for _, vmService := range vmServices {
+		key, err := cache.MetaNamespaceKeyFunc(vmService)
+		if err == nil {
+			c.informers.WorkerQueues["VirtualMachineService"].Queue.Add(key)
+		}
+	}
+
+	return nil
+}
+
 // Reconcile handles enqueued messages
 func (c *VirtualMachineControllerImpl) Reconcile(vmToReconcile *v1beta1.VirtualMachine) error {
-	// Implement controller logic here
 	glog.V(0).Infof("Running reconcile VirtualMachine for %s\n", vmToReconcile.Name)
 
 	startTime := time.Now()
 	defer func() {
 		glog.V(0).Infof("Finished syncing vm %q (%v)", vmToReconcile.Name, time.Since(startTime))
 	}()
+
+	// Trigger vmservice evaluation
+	err := c.postVmServiceEventsToWorkqueue(vmToReconcile)
 
 	// We hold a Finalizer on the VM, so it must be present
 	if !vmToReconcile.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -116,7 +151,7 @@ func (c *VirtualMachineControllerImpl) Reconcile(vmToReconcile *v1beta1.VirtualM
 	}
 
 	// vm holds the latest vm info from apiserver
-	vm, err := c.lister.VirtualMachines(vmToReconcile.Namespace).Get(vmToReconcile.Name)
+	vm, err := c.vmLister.VirtualMachines(vmToReconcile.Namespace).Get(vmToReconcile.Name)
 	if err != nil {
 		glog.Infof("Unable to retrieve vm %v from store: %v", vmToReconcile.Name, err)
 		return err
@@ -174,12 +209,13 @@ func (c *VirtualMachineControllerImpl) processVmCreateOrUpdate(vmToUpdate *v1bet
 		// For now, treat any error as not found
 	case err != nil:
 	//case errors.IsNotFound(err):
+		glog.Infof("VM Lookup Error is %s", err)
 		glog.Infof("VM doesn't exist in backend provider.  Creating now")
 		newVm, err = c.processVmCreate(ctx, vmsProvider, vmToUpdate)
 	//case err != nil:
 	//	glog.Infof("Unable to retrieve vm %v from store: %v", u.Name, err)
 	default:
-		glog.V(4).Infof("Acquired VM %s %s", vm.Name, vm.Status.ConfigStatus.InternalId)
+		//glog.V(4).Infof("Acquired VM %s %s", vm.Name, vm.Status.ConfigStatus.InternalId)
 		glog.Infof("Updating Vm %s", vm.Name)
 		newVm, err = c.processVmUpdate(ctx, vmsProvider, vmToUpdate)
 	}
@@ -220,5 +256,5 @@ func (c *VirtualMachineControllerImpl) processVmUpdate(ctx context.Context, vmsP
 }
 
 func (c *VirtualMachineControllerImpl) Get(namespace, name string) (*v1beta1.VirtualMachine, error) {
-	return c.lister.VirtualMachines(namespace).Get(name)
+	return c.vmLister.VirtualMachines(namespace).Get(name)
 }

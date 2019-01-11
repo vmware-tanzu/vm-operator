@@ -16,6 +16,8 @@ type Interface interface {
 	VirtualMachines() VirtualMachineInformer
 	// VirtualMachineImages returns a VirtualMachineImageInformer.
 	VirtualMachineImages() VirtualMachineImageInformer
+	// VirtualMachineServices returns a VirtualMachineServiceInformer.
+	VirtualMachineServices() VirtualMachineServiceInformer
 }
 
 type version struct {
@@ -37,4 +39,9 @@ func (v *version) VirtualMachines() VirtualMachineInformer {
 // VirtualMachineImages returns a VirtualMachineImageInformer.
 func (v *version) VirtualMachineImages() VirtualMachineImageInformer {
 	return &virtualMachineImageInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// VirtualMachineServices returns a VirtualMachineServiceInformer.
+func (v *version) VirtualMachineServices() VirtualMachineServiceInformer {
+	return &virtualMachineServiceInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }

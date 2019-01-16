@@ -73,7 +73,7 @@ const (
 // VirtualMachineServiceSpec defines the desired state of VirtualMachineService
 type VirtualMachineServiceSpec struct {
 	Type 			string 							`json:"type"`
-	Ports 			[]VirtualMachineServicePort 	`json:"ports,omitempty""`
+	Ports 			[]VirtualMachineServicePort 	`json:"ports,omitempty"`
 	Selector 		map[string]string 				`json:"selector,omitempty"`
 
 	// Just support cluster IP for now

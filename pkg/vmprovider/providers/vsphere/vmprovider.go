@@ -178,7 +178,7 @@ func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *res
 		},
 	}
 
-	glog.Infof("Generated VM status: %s", vm)
+	glog.Infof("Generated VM status: %+v", vm.Status)
 
 	return vm, nil
 }
@@ -272,7 +272,7 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govm
 		return nil, err
 	}
 
-	glog.Infof("Current power state: %s, desired power state", ps, vmToUpdate.Spec.PowerState)
+	glog.Infof("Current power state: %s, desired power state: %s", ps, vmToUpdate.Spec.PowerState)
 
 	if string(ps) == string(vmToUpdate.Spec.PowerState) {
 		glog.Infof("Power state already at desired state of %s", ps)

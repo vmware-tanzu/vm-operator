@@ -24,7 +24,7 @@ func (step VirtualMachinePowerOffStep) Execute(ctx context.Context) error {
 		return err
 	}
 
-	glog.Infof("Current power state: %s, desired power state", ps, step.desiredVm.Spec.PowerState)
+	glog.Infof("Current power state: %s, desired power state: %s", ps, step.desiredVm.Spec.PowerState)
 
 	if string(ps) == string(v1beta1.VirtualMachinePoweredOff) {
 		glog.Info("Vm is already powered off")
@@ -85,7 +85,7 @@ func (seq VirtualMachineDeleteSequence) Execute(ctx context.Context) error {
 		err := step.Execute(ctx)
 		glog.Infof("Executing step %s", step.Name())
 		if err != nil {
-			glog.Infof("Step %s failed", step.Name(), err)
+			glog.Infof("Step %s failed %s", step.Name(), err)
 			return err
 		}
 		glog.Infof("Step %s succeeded", step.Name())

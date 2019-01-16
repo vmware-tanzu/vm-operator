@@ -172,7 +172,7 @@ func (c *VirtualMachineControllerImpl) processVmDeletion(vmToDelete *v1beta1.Vir
 	vmsProvider, supported := c.vmProvider.VirtualMachines()
 	if !supported {
 		glog.Errorf("Provider doesn't support vms func")
-		return errors.NewMethodNotSupported(schema.GroupResource{"vmoperator", "VirtualMachines"}, "list")
+		return errors.NewMethodNotSupported(schema.GroupResource{Group: "vmoperator", Resource: "VirtualMachines"}, "list")
 	}
 
 	ctx := context.TODO()
@@ -199,7 +199,7 @@ func (c *VirtualMachineControllerImpl) processVmCreateOrUpdate(vmToUpdate *v1bet
 	vmsProvider, supported := c.vmProvider.VirtualMachines()
 	if !supported {
 		glog.Errorf("Provider doesn't support vms func")
-		return nil, errors.NewMethodNotSupported(schema.GroupResource{"vmoperator", "VirtualMachines"}, "list")
+		return nil, errors.NewMethodNotSupported(schema.GroupResource{Group: "vmoperator", Resource: "VirtualMachines"}, "list")
 	}
 
 	ctx := context.TODO()

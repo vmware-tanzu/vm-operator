@@ -55,7 +55,7 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 	imagesProvider, supported := r.provider.VirtualMachineImages()
 	if !supported {
 		glog.Error("Provider doesn't support images func")
-		return nil, errors.NewMethodNotSupported(schema.GroupResource{"vmoperator", "VirtualMachineImages"}, "list")
+		return nil, errors.NewMethodNotSupported(schema.GroupResource{Group: "vmoperator", Resource: "VirtualMachineImages"}, "list")
 	}
 
 	images, err := imagesProvider.ListVirtualMachineImages(ctx, namespace)
@@ -96,7 +96,7 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 	imagesProvider, supported := r.provider.VirtualMachineImages()
 	if !supported {
 		glog.Error("Provider doesn't support images func")
-		return nil, errors.NewMethodNotSupported(schema.GroupResource{"vmoperator", "VirtualMachineImages"}, "list")
+		return nil, errors.NewMethodNotSupported(schema.GroupResource{Group: "vmoperator", Resource: "VirtualMachineImages"}, "list")
 	}
 
 	image, err := imagesProvider.GetVirtualMachineImage(ctx, name)
@@ -122,7 +122,6 @@ func (r *VirtualMachineImagesREST) NamespaceScoped() bool {
 
 func NewVirtualMachineImagesREST(vmprov iface.VirtualMachineProviderInterface) v1beta1.RestProvider {
 	return v1beta1.RestProvider{
-		&VirtualMachineImagesREST{vmprov},
+		ImagesProvider: &VirtualMachineImagesREST{vmprov},
 	}
 }
-

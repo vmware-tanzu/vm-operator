@@ -1,6 +1,7 @@
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
+
 package iface
 
 import (
@@ -34,4 +35,3 @@ type VirtualMachines interface {
 	UpdateVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) (*v1beta1.VirtualMachine, error)
 	DeleteVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) (error)
 }
-

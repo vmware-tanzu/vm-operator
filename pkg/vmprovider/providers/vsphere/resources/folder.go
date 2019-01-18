@@ -76,5 +76,3 @@ func (f *Folder) Lookup() error {
 	f.Folder = folders.VmFolder
 	return nil
 }
-
-

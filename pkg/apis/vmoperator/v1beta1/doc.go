@@ -1,8 +1,6 @@
-
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
-
 
 // Api versions allow the api contract for a resource to be changed while keeping
 // backward compatibility by support multiple concurrent versions
@@ -14,4 +12,3 @@
 // +k8s:defaulter-gen=TypeMeta
 // +groupName=vmoperator.vmware.com
 package v1beta1 // import "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
-

@@ -29,7 +29,6 @@ var _ rest.Getter = &VirtualMachineImagesREST{}
 var _ rest.Lister = &VirtualMachineImagesREST{}
 var _ rest.Watcher = &VirtualMachineImagesREST{}
 
-
 func (r *VirtualMachineImagesREST) NewList() runtime.Object {
 	return &v1beta1.VirtualMachineImageList{}
 }

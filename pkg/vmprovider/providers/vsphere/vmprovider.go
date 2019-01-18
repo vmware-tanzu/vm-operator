@@ -36,7 +36,6 @@ type VSphereVmProvider struct {
 	manager *VSphereManager
 }
 
-
 // Creates new Controller node interface and returns
 func newVSphereVmProvider(providerConfig *VSphereVmProviderConfig) (*VSphereVmProvider, error) {
 	//vs, err := buildVSphereFromConfig(cfg)
@@ -47,7 +46,6 @@ func newVSphereVmProvider(providerConfig *VSphereVmProviderConfig) (*VSphereVmPr
 	vmProvider := &VSphereVmProvider{*providerConfig, vs}
 	return vmProvider, nil
 }
-
 
 func (vs *VSphereVmProvider) VirtualMachines() (iface.VirtualMachines, bool) {
 	return vs, true
@@ -350,4 +348,3 @@ func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelet
 	glog.Infof("Delete sequence completed: %s", err)
 	return err
 }
-

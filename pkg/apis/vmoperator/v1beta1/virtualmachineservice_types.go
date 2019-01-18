@@ -1,8 +1,6 @@
-
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
-
 
 package v1beta1
 
@@ -21,7 +19,6 @@ import (
 const (
 	VirtualMachineServiceFinalizer string = "virtualmachineservice.vmoperator.vmware.com"
 )
-
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

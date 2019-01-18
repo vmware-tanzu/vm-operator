@@ -2,7 +2,6 @@
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
-
 package virtualmachine
 
 import (
@@ -40,8 +39,6 @@ type VirtualMachineControllerImpl struct {
 
 	vmProvider iface.VirtualMachineProviderInterface
 }
-
-
 
 // Init initializes the controller and is called by the generated code
 // Register watches for additional resource types here.

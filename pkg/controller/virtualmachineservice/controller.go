@@ -1,8 +1,6 @@
-
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
-
 
 package virtualmachineservice
 
@@ -327,7 +325,6 @@ func (c *VirtualMachineServiceControllerImpl) updateEndpoints(ctx context.Contex
 	}
 
 	glog.V(0).Infof("VMs: %s match labels %s", vms, service.Spec.Selector)
-
 
 	// Determine if any endpoints match
 	subsets := []corev1.EndpointSubset{}

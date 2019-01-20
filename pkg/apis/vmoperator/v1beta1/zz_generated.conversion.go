@@ -529,10 +529,10 @@ func autoConvert_v1beta1_VirtualMachineResourcesSpec_To_vmoperator_VirtualMachin
 	if err := Convert_v1beta1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(&in.Capacity, &out.Capacity, s); err != nil {
 		return err
 	}
-	if err := Convert_v1beta1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
+	if err := Convert_v1beta1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(&in.Requests, &out.Requests, s); err != nil {
 		return err
 	}
-	if err := Convert_v1beta1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(&in.Requests, &out.Requests, s); err != nil {
+	if err := Convert_v1beta1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
 		return err
 	}
 	return nil
@@ -547,10 +547,10 @@ func autoConvert_vmoperator_VirtualMachineResourcesSpec_To_v1beta1_VirtualMachin
 	if err := Convert_vmoperator_VirtualMachineResourceSpec_To_v1beta1_VirtualMachineResourceSpec(&in.Capacity, &out.Capacity, s); err != nil {
 		return err
 	}
-	if err := Convert_vmoperator_VirtualMachineResourceSpec_To_v1beta1_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
+	if err := Convert_vmoperator_VirtualMachineResourceSpec_To_v1beta1_VirtualMachineResourceSpec(&in.Requests, &out.Requests, s); err != nil {
 		return err
 	}
-	if err := Convert_vmoperator_VirtualMachineResourceSpec_To_v1beta1_VirtualMachineResourceSpec(&in.Requests, &out.Requests, s); err != nil {
+	if err := Convert_vmoperator_VirtualMachineResourceSpec_To_v1beta1_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
 		return err
 	}
 	return nil

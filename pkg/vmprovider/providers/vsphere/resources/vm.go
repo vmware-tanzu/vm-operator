@@ -71,9 +71,34 @@ func (vm *VM) IpAddress(ctx context.Context) (string, error) {
 	}
 
 	if o.Guest == nil {
-		glog.Infof("Guest info is empty: tools not installed?")
-		return "", errors.New("WTF")
+		glog.Infof("Guest info is empty")
+		return "", &find.NotFoundError{}
 	}
 
 	return o.Guest.IpAddress, nil
 }
+
+// Acquire the current cpu resource settings from the VM
+func (vm *VM) CpuAllocation(ctx context.Context) (*types.ResourceAllocationInfo, error) {
+	var o mo.VirtualMachine
+
+	err := vm.VirtualMachine.Properties(ctx, vm.VirtualMachine.Reference(), []string{"config.cpuAllocation"}, &o)
+	if err != nil {
+		return nil, err
+	}
+
+	return o.Config.CpuAllocation, nil
+}
+
+// Acquire the current memory resource settings from the VM
+func (vm *VM) MemoryAllocation(ctx context.Context) (*types.ResourceAllocationInfo, error) {
+	var o mo.VirtualMachine
+
+	err := vm.VirtualMachine.Properties(ctx, vm.VirtualMachine.Reference(), []string{"config.memoryAllocation"}, &o)
+	if err != nil {
+		return nil, err
+	}
+
+	return o.Config.MemoryAllocation, nil
+}
+

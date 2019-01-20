@@ -220,8 +220,8 @@ func (in *VirtualMachineResourceSpec) DeepCopy() *VirtualMachineResourceSpec {
 func (in *VirtualMachineResourcesSpec) DeepCopyInto(out *VirtualMachineResourcesSpec) {
 	*out = *in
 	out.Capacity = in.Capacity
-	out.Limits = in.Limits
 	out.Requests = in.Requests
+	out.Limits = in.Limits
 	return
 }
 

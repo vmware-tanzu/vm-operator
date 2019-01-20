@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
 	"time"
+	"vmware.com/kubevsphere/pkg"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
 	clientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
 	vmclientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1beta1"
@@ -203,14 +204,12 @@ func (c *VirtualMachineControllerImpl) processVmCreateOrUpdate(vmToUpdate *v1bet
 	vm, err := vmsProvider.GetVirtualMachine(ctx, vmToUpdate.Name)
 	var newVm *v1beta1.VirtualMachine
 	switch {
-		// For now, treat any error as not found
-	case err != nil:
-	//case errors.IsNotFound(err):
+	case errors.IsNotFound(err):
 		glog.Infof("VM Lookup Error is %s", err)
 		glog.Infof("VM doesn't exist in backend provider.  Creating now")
 		newVm, err = c.processVmCreate(ctx, vmsProvider, vmToUpdate)
-	//case err != nil:
-	//	glog.Infof("Unable to retrieve vm %v from store: %v", u.Name, err)
+	case err != nil:
+		glog.Infof("Unable to retrieve vm %v from store: %v", vmToUpdate.Name, err)
 	default:
 		//glog.V(4).Infof("Acquired VM %s %s", vm.Name, vm.Status.ConfigStatus.InternalId)
 		glog.Infof("Updating Vm %s", vm.Name)
@@ -236,8 +235,10 @@ func (c *VirtualMachineControllerImpl) processVmCreate(ctx context.Context, vmsP
 	newVm, err := vmsProvider.CreateVirtualMachine(ctx, vmToCreate)
 	if err != nil {
 		glog.Errorf("Provider Failed to Create VM %s: %s", vmToCreate.Name, err)
+		return nil, err
 	}
 
+	pkg.AddAnnotations(&newVm.ObjectMeta)
 	return newVm, err
 }
 

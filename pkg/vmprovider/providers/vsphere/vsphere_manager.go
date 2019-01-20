@@ -84,6 +84,7 @@ func (v *VSphereManager) resolveResources(ctx context.Context, client *govmomi.C
 }
 
 func (v *VSphereManager) ListVms(ctx context.Context, vClient *govmomi.Client, vmFolder string) ([]*resources.VM, error) {
+	glog.Info("Listing VMs")
 	vms := []*resources.VM{}
 	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
@@ -115,13 +116,11 @@ func (v *VSphereManager) LookupVm(ctx context.Context, vClient *govmomi.Client, 
 	if err != nil {
 		return nil, err
 	}
-	glog.Info("New VM")
 
 	vm, err := resources.NewVM(*vClient, rc.datacenter, vmName)
 	if err != nil {
 		return nil, err
 	}
-	glog.Info("VM.lookup")
 
 	err = vm.Lookup()
 	if err != nil {
@@ -167,7 +166,7 @@ func (v *VSphereManager) DeleteVm(ctx context.Context, vClient *govmomi.Client, 
 		return err
 	}
 
-	return err
+	return nil
 }
 
 func (v *VSphereManager) createVmInvoke(ctx context.Context, client *govmomi.Client, rc *ResourceContext, vmSpec vimTypes.VirtualMachineConfigSpec) (*object.Task, error) {

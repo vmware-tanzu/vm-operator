@@ -24,7 +24,7 @@ func NewVsphereVmProviderConfig() *VSphereVmProviderConfig {
 
 	vcUser := "Administrator@vsphere.local"
 	vcPassword := "Admin!23"
-	vcIp := "10.161.48.144"
+	vcIp := "10.161.164.210"
 
 	vcUrl := fmt.Sprintf("https://%s:%s@%s", vcUser, vcPassword, vcIp)
 	return &VSphereVmProviderConfig{

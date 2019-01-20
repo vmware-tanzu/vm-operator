@@ -4,14 +4,33 @@
 
 package pkg
 
-// Base FQDN for the vmoperator
-const VmOperatorKey string = "vmoperator.vmware.com"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
-// Annotation Key for VM provider
-const VmOperatorVmProviderKey string = "vmoperator.vmware.com/vmprovider"
+const (
+	// Base FQDN for the vmoperator
+	VmOperatorKey string = "vmoperator.vmware.com"
 
-// Annotation Key for vSphere VC Id.
-const VmOperatorVcUuidKey string = "vmoperator.vmware.com/vcuuid"
+	// VM Operator version key
+	VmOperatorVersionKey string = "vmoperator.vmware.com/version"
 
-// Annotation Key for vSphere Mo Ref
-const VmOperatorMorefKey string = "vmoperator.vmware.com/moref"
+	// Annotation Key for VM provider
+	VmOperatorVmProviderKey string = "vmoperator.vmware.com/vmprovider"
+
+	// Annotation Key for vSphere VC Id.
+	VmOperatorVcUuidKey string = "vmoperator.vmware.com/vcuuid"
+
+	// Annotation Key for vSphere Mo Ref
+	VmOperatorMorefKey string = "vmoperator.vmware.com/moref"
+)
+
+func AddAnnotations(objectMeta *metav1.ObjectMeta) {
+	// Add vSphere provider annotations to the object meta
+	annotations := objectMeta.GetAnnotations()
+
+	// TODO: Make this version dynamic
+	annotations[VmOperatorVersionKey] = "v1"
+
+	objectMeta.SetAnnotations(annotations)
+}

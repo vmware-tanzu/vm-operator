@@ -40,14 +40,14 @@ const (
 )
 
 type VirtualMachineResourceSpec struct {
-	Cpu 	int `json:"cpu"`
-	Memory 	int `json:"memory"`
+	Cpu 	int64 `json:"cpu,omitempty"`
+	Memory 	int64 `json:"memory,omitempty"`
 }
 
 type VirtualMachineResourcesSpec struct {
 	Capacity 	VirtualMachineResourceSpec `json:"capacity"`
-	Limits 		VirtualMachineResourceSpec `json:"limits,omitempty"`
 	Requests 	VirtualMachineResourceSpec `json:"requests,omitempty"`
+	Limits 		VirtualMachineResourceSpec `json:"limits,omitempty"`
 }
 
 type VirtualMachinePort struct {
@@ -66,7 +66,7 @@ type VirtualMachineSpec struct {
 	Ports 		[]VirtualMachinePort 		`json:"ports,omitempty"`
 }
 
-// Make these annotations
+// TODO: Make these annotations
 /*
 type VirtualMachineConfigStatus struct {
 	Uuid 			string `json:"uuid,omitempty"`

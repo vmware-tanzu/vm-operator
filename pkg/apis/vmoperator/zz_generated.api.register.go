@@ -171,8 +171,8 @@ type VirtualMachinePort struct {
 
 type VirtualMachineResourcesSpec struct {
 	Capacity VirtualMachineResourceSpec
-	Limits   VirtualMachineResourceSpec
 	Requests VirtualMachineResourceSpec
+	Limits   VirtualMachineResourceSpec
 }
 
 // +genclient
@@ -187,8 +187,8 @@ type VirtualMachineImage struct {
 }
 
 type VirtualMachineResourceSpec struct {
-	Cpu    int
-	Memory int
+	Cpu    int64
+	Memory int64
 }
 
 type VirtualMachineImageStatus struct {

@@ -8,11 +8,14 @@ import (
 	"context"
 	"github.com/golang/glog"
 	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
 	"io"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"vmware.com/kubevsphere/pkg"
+	"vmware.com/kubevsphere/pkg/apis/vmoperator"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
 	"vmware.com/kubevsphere/pkg/vmprovider"
 	"vmware.com/kubevsphere/pkg/vmprovider/iface"
@@ -32,8 +35,22 @@ func InitProvider() {
 }
 
 type VSphereVmProvider struct {
-	Config VSphereVmProviderConfig
+	Config  VSphereVmProviderConfig
 	manager *VSphereManager
+}
+
+// Transform Govmomi error to Kubernetes error
+// TODO: Fill out with VIM fault types
+func transformError(resourceType string, resource string, err error) error {
+	var transformed error = nil
+	switch err.(type) {
+	case *find.NotFoundError:
+		transformed = errors.NewNotFound(vmoperator.Resource(resourceType), resource)
+	default:
+		transformed = err
+	}
+
+	return transformed
 }
 
 // Creates new Controller node interface and returns
@@ -71,7 +88,7 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 
 	vms, err := vs.manager.ListVms(ctx, vClient, "")
 	if err != nil {
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	newImages := []*v1beta1.VirtualMachineImage{}
@@ -82,7 +99,7 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 			&v1beta1.VirtualMachineImage{
 				ObjectMeta: v1.ObjectMeta{Name: vm.VirtualMachine.Name()},
 				Status: v1beta1.VirtualMachineImageStatus{
-					Uuid: vm.VirtualMachine.UUID(ctx),
+					Uuid:       vm.VirtualMachine.UUID(ctx),
 					PowerState: ps,
 					InternalId: vm.VirtualMachine.Reference().Value,
 				},
@@ -98,7 +115,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 
 	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 	glog.Info("Getting VM image 1")
 
@@ -107,7 +124,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 
 	vm, err := vs.manager.LookupVm(ctx, vClient, name)
 	if err != nil {
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	glog.Info("Getting VM image 2")
@@ -118,7 +135,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 	return &v1beta1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{Name: vm.VirtualMachine.Name()},
 		Status: v1beta1.VirtualMachineImageStatus{
-			Uuid: vm.VirtualMachine.UUID(ctx),
+			Uuid:       vm.VirtualMachine.UUID(ctx),
 			PowerState: ps,
 			InternalId: vm.VirtualMachine.Reference().Value,
 		},
@@ -148,31 +165,38 @@ func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *res
 	host, err := actualVm.VirtualMachine.HostSystem(ctx)
 	if err != nil {
 		glog.Infof("Failed to acquire host system for VM %s: %s", err, actualVm.Name)
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
-	vmIp, err := actualVm.IpAddress(ctx)
-	if err != nil {
-		glog.Infof("Failed to acquire host system for VM %s: %s", err, actualVm.Name)
-		return nil, err
+	// If guest is powered off, IP acquisition will fail.  For now, require IP acquisition for powered on VMs
+	// TODO: Consider separating vm status collection into powered off and powered on versions
+	// TODO: Consider how to balance between wanting to acquire the IP and supporting a VM without IPs.
+	// TODO: Queue a go routine to poll for the IP update?
+	vmIp := ""
+	if powerState == types.VirtualMachinePowerStatePoweredOn {
+		vmIp, err = actualVm.IpAddress(ctx)
+		if err != nil {
+			glog.Infof("Failed to acquire IP for VM %s: %s", err, actualVm.Name)
+			return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
+		}
 	}
 
 	glog.Infof("VM Host/IP is %s/%s", host.Name(), vmIp)
 
 	vm := &v1beta1.VirtualMachine{
 		Status: v1beta1.VirtualMachineStatus{
-			Phase: "",
+			Phase:      "",
 			PowerState: ps,
 			//Host: host.Name(),
 			Host: vmIp,
 			VmIp: vmIp,
 			/*
-			ConfigStatus: v1beta1.VirtualMachineConfigStatus{
-				Uuid: actualVm.VirtualMachine.UUID(ctx),
-				InternalId: actualVm.VirtualMachine.Reference().Value,
-			},
+
+					Uuid: actualVm.VirtualMachine.UUID(ctx),
+					InternalId: actualVm.VirtualMachine.Reference().Value,
+				},
 			*/
-				//Host: actualVm.VirtualMachine.HostSystem(ctx),
+			//Host: actualVm.VirtualMachine.HostSystem(ctx),
 		},
 	}
 
@@ -185,14 +209,14 @@ func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, desiredVm *v1bet
 
 	statusVm, err := vs.generateVmStatus(ctx, actualVm)
 	if err != nil {
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	return &v1beta1.VirtualMachine{
-		TypeMeta: desiredVm.TypeMeta,
+		TypeMeta:   desiredVm.TypeMeta,
 		ObjectMeta: desiredVm.ObjectMeta,
-		Spec: desiredVm.Spec,
-		Status: *statusVm.Status.DeepCopy(),
+		Spec:       desiredVm.Spec,
+		Status:     *statusVm.Status.DeepCopy(),
 	}, nil
 }
 
@@ -205,7 +229,7 @@ func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string)
 
 	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	// DWB: Reason about how to handle client management and logout
@@ -213,7 +237,7 @@ func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string)
 
 	vm, err := vs.manager.LookupVm(ctx, vClient, name)
 	if err != nil {
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	return vs.generateVmStatus(ctx, vm)
@@ -235,7 +259,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vmToCreat
 
 	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	// DWB: Reason about how to handle client management and logout
@@ -255,11 +279,73 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vmToCreat
 
 	if err != nil {
 		glog.Infof("Create VM failed %s!", err)
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	vs.addProviderAnnotations(&vmToCreate.ObjectMeta, newVm.VirtualMachine.Reference().Value)
 	return vs.mergeVmStatus(ctx, vmToCreate, newVm)
+}
+
+func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vclient *govmomi.Client, vmToUpdate *v1beta1.VirtualMachine, vm *resources.VM) (*resources.VM, error) {
+
+	cpu, err := vm.CpuAllocation(ctx)
+	if err != nil {
+		glog.Errorf("Failed to acquire cpu allocation info: %s", err.Error())
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
+	}
+
+	mem, err := vm.MemoryAllocation(ctx)
+	if err != nil {
+		glog.Errorf("Failed to acquire memory allocation info: %s", err.Error())
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
+	}
+
+	glog.Infof("Current CPU allocation: %d/%d", *cpu.Reservation, *cpu.Limit)
+	glog.Infof("Current Memory allocation: %d/%d", *mem.Reservation, *mem.Limit)
+
+	// TODO: Only processing memory RLS for now
+	needUpdate := false
+
+	newRes := vmToUpdate.Spec.Resources.Limits.Memory
+	newLimit := vmToUpdate.Spec.Resources.Requests.Memory
+	glog.Infof("New Memory allocation: %d/%d", newRes, newLimit)
+
+	if newRes != 0 && newRes != *mem.Reservation {
+		glog.Infof("Updating mem reservation from %d to %d", *mem.Reservation, newRes)
+		*mem.Reservation = newRes
+		needUpdate = true
+	}
+
+	if newLimit != 0 && newLimit != *mem.Limit {
+		glog.Infof("Updating mem limit from %d to %d", *mem.Limit, newLimit)
+		*mem.Limit = newLimit
+		needUpdate = true
+	}
+
+	if needUpdate {
+		configSpec := types.VirtualMachineConfigSpec{}
+		configSpec.CpuAllocation = cpu
+		configSpec.MemoryAllocation = mem
+
+		task, err := vm.VirtualMachine.Reconfigure(ctx, configSpec)
+		if err != nil {
+			glog.Errorf("Failed to change power state to %s", vmToUpdate.Spec.PowerState)
+			return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
+		}
+
+		//taskInfo, err := task.WaitForResult(ctx, nil)
+		err = task.Wait(ctx)
+		if err != nil {
+			glog.Errorf("VM RLS change task failed %s", err.Error())
+			return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
+		}
+
+		// TODO: Resolve the issue with TaskResult and reconfigure
+		return vm, nil
+		//return resources.NewVMFromReference(*vclient, vm.Datacenter, taskInfo.Result.(types.ManagedObjectReference))
+	}
+
+	return vm, nil
 }
 
 func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govmomi.Client, vmToUpdate *v1beta1.VirtualMachine, vm *resources.VM) (*resources.VM, error) {
@@ -267,14 +353,14 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govm
 	ps, err := vm.VirtualMachine.PowerState(ctx)
 	if err != nil {
 		glog.Errorf("Failed to acquire power state: %s", err.Error())
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	glog.Infof("Current power state: %s, desired power state: %s", ps, vmToUpdate.Spec.PowerState)
 
 	if string(ps) == string(vmToUpdate.Spec.PowerState) {
 		glog.Infof("Power state already at desired state of %s", ps)
-		return vm, nil
+		return vm, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	// Bring PowerState into conformance
@@ -288,13 +374,13 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govm
 
 	if err != nil {
 		glog.Errorf("Failed to change power state to %s", vmToUpdate.Spec.PowerState)
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	taskInfo, err := task.WaitForResult(ctx, nil)
 	if err != nil {
 		glog.Errorf("VM Power State change task failed %s", err.Error())
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	return resources.NewVMFromReference(*vclient, vm.Datacenter, taskInfo.Result.(types.ManagedObjectReference))
@@ -305,41 +391,39 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vmToUpdat
 
 	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	vm, err := vs.manager.LookupVm(ctx, vClient, vmToUpdate.Name)
 	if err != nil {
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
-	/*
-	err = vs.updateCapacity(ctx, vmToUpdate, vm)
+	newVm, err := vs.updateResourceSettings(ctx, vClient, vmToUpdate, vm)
 	if err != nil {
-		return v1beta1.VirtualMachine{}, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
-	*/
 
-	newVm, err := vs.updatePowerState(ctx, vClient, vmToUpdate, vm)
+	newVm, err = vs.updatePowerState(ctx, vClient, vmToUpdate, vm)
 	if err != nil {
-		return nil, err
+		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	// Update spec
 	return vs.mergeVmStatus(ctx, vmToUpdate, newVm)
 }
 
-func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1beta1.VirtualMachine) (error) {
+func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1beta1.VirtualMachine) error {
 	glog.Infof("Deleting Vm: %s", vmToDelete.Name)
 
 	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
 	if err != nil {
-		return err
+		return transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	vm, err := vs.manager.LookupVm(ctx, vClient, vmToDelete.Name)
 	if err != nil {
-		return err
+		return transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	deleteSequence := sequence.NewVirtualMachineDeleteSequence(vmToDelete, vm)

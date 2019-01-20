@@ -10,6 +10,7 @@ import (
 )
 
 // Pluggable interface for VM Providers
+// Error types should use the k8s builtins
 type VirtualMachineProviderInterface interface {
 	// Initialize provides the cloud with a kubernetes client builder and may spawn goroutines
 	// to perform housekeeping or run custom controllers specific to the cloud provider.

@@ -29079,17 +29079,16 @@ func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineResourceSpec(ref common.Re
 					"cpu": {
 						SchemaProps: spec.SchemaProps{
 							Type:   []string{"integer"},
-							Format: "int32",
+							Format: "int64",
 						},
 					},
 					"memory": {
 						SchemaProps: spec.SchemaProps{
 							Type:   []string{"integer"},
-							Format: "int32",
+							Format: "int64",
 						},
 					},
 				},
-				Required: []string{"cpu", "memory"},
 			},
 		},
 		Dependencies: []string{},
@@ -29106,12 +29105,12 @@ func schema_pkg_apis_vmoperator_v1beta1_VirtualMachineResourcesSpec(ref common.R
 							Ref: ref("vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourceSpec"),
 						},
 					},
-					"limits": {
+					"requests": {
 						SchemaProps: spec.SchemaProps{
 							Ref: ref("vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourceSpec"),
 						},
 					},
-					"requests": {
+					"limits": {
 						SchemaProps: spec.SchemaProps{
 							Ref: ref("vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1.VirtualMachineResourceSpec"),
 						},

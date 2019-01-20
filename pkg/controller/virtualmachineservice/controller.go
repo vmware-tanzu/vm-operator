@@ -124,7 +124,7 @@ func (c *VirtualMachineServiceControllerImpl) Reconcile(vmService *v1beta1.Virtu
 		}
 
 		glog.Infof("reconciling virtual machine service object %v triggers delete.", vmService.Name)
-		if err := c.processVmDeletion(vmService); err != nil {
+		if err := c.processVmServiceDeletion(vmService); err != nil {
 			glog.Errorf("Error deleting virtual machine service object %v; %v", vmService.Name, err)
 			return err
 		}
@@ -146,7 +146,7 @@ func (c *VirtualMachineServiceControllerImpl) Reconcile(vmService *v1beta1.Virtu
 		return err
 	}
 
-	_, err = c.processVmCreateOrUpdate(vmService)
+	_, err = c.processVmServiceCreateOrUpdate(vmService)
 	if err != nil {
 		glog.Infof("Failed to process Create or Update for %s: %s", vmService.Name, err)
 		return err
@@ -155,7 +155,7 @@ func (c *VirtualMachineServiceControllerImpl) Reconcile(vmService *v1beta1.Virtu
 	return err
 }
 
-func (c *VirtualMachineServiceControllerImpl) processVmDeletion(vmService *v1beta1.VirtualMachineService) error {
+func (c *VirtualMachineServiceControllerImpl) processVmServiceDeletion(vmService *v1beta1.VirtualMachineService) error {
 	glog.Infof("Process VM Service Deletion for vm service %s", vmService.Name)
 
 	glog.V(4).Infof("Deleted VM Service%s", vmService.Name)
@@ -163,7 +163,7 @@ func (c *VirtualMachineServiceControllerImpl) processVmDeletion(vmService *v1bet
 }
 
 // Process a level trigger for this VM Service.
-func (c *VirtualMachineServiceControllerImpl) processVmCreateOrUpdate(vmService *v1beta1.VirtualMachineService) (*v1beta1.VirtualMachineService, error) {
+func (c *VirtualMachineServiceControllerImpl) processVmServiceCreateOrUpdate(vmService *v1beta1.VirtualMachineService) (*v1beta1.VirtualMachineService, error) {
 	glog.Infof("Process VM Service Create or Update for vm service %s", vmService.Name)
 
 	ns := vmService.Namespace
@@ -173,33 +173,19 @@ func (c *VirtualMachineServiceControllerImpl) processVmCreateOrUpdate(vmService 
 	var updated *v1beta1.VirtualMachineService
 	switch {
 	case err != nil:
-		updated, err = c.processVmCreate(ctx, vmService)
+		updated, err = c.processVmServiceCreate(ctx, vmService)
 	//case NotFound:
 	//glog.Errorf("Failed to get service %s: %s", vmService.Name, err)
 	default:
-		updated, err = c.processVmUpdate(ctx, vmService)
+		updated, err = c.processVmServiceUpdate(ctx, vmService)
 	}
 
 	return updated, err
 }
 
-func (c *VirtualMachineServiceControllerImpl) vmToEndpointAddress(vm *v1beta1.VirtualMachine) *corev1.EndpointAddress {
-	return &corev1.EndpointAddress{
-		IP:       vm.Status.VmIp,
-		NodeName: &vm.Status.Host,
-		TargetRef: &corev1.ObjectReference{
-			Kind:            "VirtualMachine",
-			Namespace:       vm.ObjectMeta.Namespace,
-			Name:            vm.ObjectMeta.Name,
-			UID:             vm.ObjectMeta.UID,
-			ResourceVersion: vm.ObjectMeta.ResourceVersion,
-		}}
-}
-
-func (c *VirtualMachineServiceControllerImpl) vmServiceToService(vmService *v1beta1.VirtualMachineService) *corev1.Service {
-
+func (c *VirtualMachineServiceControllerImpl) makeObjectMeta(vmService *v1beta1.VirtualMachineService) *metav1.ObjectMeta {
 	t := true
-	om := metav1.ObjectMeta{
+	om := &metav1.ObjectMeta{
 		Namespace: vmService.GetNamespace(),
 		Name:      vmService.GetName(),
 		Labels:    vmService.GetLabels(),
@@ -215,6 +201,33 @@ func (c *VirtualMachineServiceControllerImpl) vmServiceToService(vmService *v1be
 			},
 		},
 	}
+	pkg.AddAnnotations(om)
+	return om
+}
+
+func (c *VirtualMachineServiceControllerImpl) makeEndpoints(vmService *v1beta1.VirtualMachineService, currentEndpoints *corev1.Endpoints, subsets []corev1.EndpointSubset) *corev1.Endpoints {
+	newEndpoints := currentEndpoints.DeepCopy()
+	newEndpoints.ObjectMeta = *c.makeObjectMeta(vmService)
+	newEndpoints.Subsets = subsets
+	return newEndpoints
+}
+
+func (c *VirtualMachineServiceControllerImpl) makeEndpointAddress(vmService *v1beta1.VirtualMachineService, vm *v1beta1.VirtualMachine) *corev1.EndpointAddress {
+	return &corev1.EndpointAddress{
+		IP:       vm.Status.VmIp,
+		NodeName: &vm.Status.Host,
+		TargetRef: &corev1.ObjectReference{
+			Kind:            vmService.Kind,
+			Namespace:       vmService.GetNamespace(),
+			Name:            vmService.GetName(),
+			UID:             vmService.GetUID(),
+			ResourceVersion: vmService.GetResourceVersion(),
+		}}
+}
+
+func (c *VirtualMachineServiceControllerImpl) vmServiceToService(vmService *v1beta1.VirtualMachineService) *corev1.Service {
+
+	om := c.makeObjectMeta(vmService)
 
 	servicePorts := []corev1.ServicePort{}
 	for _, vmPort := range vmService.Spec.Ports {
@@ -232,16 +245,16 @@ func (c *VirtualMachineServiceControllerImpl) vmServiceToService(vmService *v1be
 			Kind:       "Service",
 			APIVersion: "core/v1",
 		},
-		ObjectMeta: om,
+		ObjectMeta: *om,
 		Spec: corev1.ServiceSpec{
-			Selector: vmService.Spec.Selector,
+			// Don't specicfy selector to keep endppoints controller from interfering
 			Type:     corev1.ServiceTypeClusterIP, // TODO: Pull this from VM Service
 			Ports:    servicePorts,
 		},
 	}
 }
 
-func FindPort(vm *v1beta1.VirtualMachine, svcPort *corev1.ServicePort) (int, error) {
+func findPort(vm *v1beta1.VirtualMachine, svcPort *corev1.ServicePort) (int, error) {
 	portName := svcPort.TargetPort
 	switch portName.Type {
 	case intstr.String:
@@ -298,6 +311,7 @@ func (c *VirtualMachineServiceControllerImpl) updateService(ctx context.Context,
 	if newService.Annotations == nil {
 		newService.Annotations = make(map[string]string)
 	}
+	pkg.AddAnnotations(&newService.ObjectMeta)
 
 	if createService {
 		// No previous service, create one
@@ -343,7 +357,7 @@ func (c *VirtualMachineServiceControllerImpl) updateEndpoints(ctx context.Contex
 			continue
 		}
 
-		epa := *c.vmToEndpointAddress(vm)
+		epa := *c.makeEndpointAddress(vmService, vm)
 
 		// TODO: Headless support
 		for i := range service.Spec.Ports {
@@ -355,7 +369,7 @@ func (c *VirtualMachineServiceControllerImpl) updateEndpoints(ctx context.Contex
 
 			glog.Infof("Port for VM %s: %s %s", vm.Name, portName, portProto)
 
-			portNum, err := FindPort(vm, servicePort)
+			portNum, err := findPort(vm, servicePort)
 			if err != nil {
 				glog.V(4).Infof("Failed to find port for service %s/%s: %v", service.Namespace, service.Name, err)
 				continue
@@ -383,12 +397,7 @@ func (c *VirtualMachineServiceControllerImpl) updateEndpoints(ctx context.Contex
 
 		createEndpoints := len(currentEndpoints.ResourceVersion) == 0
 
-		newEndpoints := currentEndpoints.DeepCopy()
-		newEndpoints.Subsets = subsets
-		newEndpoints.Labels = service.Labels
-		if newEndpoints.Annotations == nil {
-			newEndpoints.Annotations = make(map[string]string)
-		}
+		newEndpoints := c.makeEndpoints(vmService, currentEndpoints, subsets)
 
 		if createEndpoints {
 			// No previous endpoints, create them
@@ -417,8 +426,8 @@ func (c *VirtualMachineServiceControllerImpl) updateEndpoints(ctx context.Contex
 	return nil
 }
 
-// Process a create event for a new VM.
-func (c *VirtualMachineServiceControllerImpl) processVmCreate(ctx context.Context, vmService *v1beta1.VirtualMachineService) (*v1beta1.VirtualMachineService, error) {
+// Process a create event for a new Virtual Machine Service
+func (c *VirtualMachineServiceControllerImpl) processVmServiceCreate(ctx context.Context, vmService *v1beta1.VirtualMachineService) (*v1beta1.VirtualMachineService, error) {
 	glog.Infof("Creating VM Service: %s", vmService.Name)
 	// Create Service
 	service := c.vmServiceToService(vmService)
@@ -435,11 +444,13 @@ func (c *VirtualMachineServiceControllerImpl) processVmCreate(ctx context.Contex
 		return nil, err
 	}
 
+	pkg.AddAnnotations(&vmService.ObjectMeta)
+
 	return nil, nil
 }
 
-// Process an update event for an existing VM.
-func (c *VirtualMachineServiceControllerImpl) processVmUpdate(ctx context.Context, vmService *v1beta1.VirtualMachineService) (*v1beta1.VirtualMachineService, error) {
+// Process an update event for an existing Virtual Machine Service.
+func (c *VirtualMachineServiceControllerImpl) processVmServiceUpdate(ctx context.Context, vmService *v1beta1.VirtualMachineService) (*v1beta1.VirtualMachineService, error) {
 	glog.Infof("Updating VM Service: %s", vmService.Name)
 	// Ensure Service and Endpoints are correct
 	// Determine if Service matches any VMs

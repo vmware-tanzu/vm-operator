@@ -41,10 +41,16 @@ func (dc *Datacenter) Lookup() error {
 
 func (dc *Datacenter) ListVms(ctx context.Context, path string) ([]*object.VirtualMachine, error) {
 	glog.Infof("Listing VMs for folder: %s", dc.name)
+
 	vms, err := dc.finder.VirtualMachineList(ctx, path)
 	if err != nil {
-		glog.Errorf("Failed to list Vms: %s", err)
-		return nil, err
+		switch err.(type) {
+		case *find.NotFoundError:
+			glog.Infof("No Vms were found")
+			return vms, nil
+		default:
+			return nil, err
+		}
 	}
 
 	return vms, nil

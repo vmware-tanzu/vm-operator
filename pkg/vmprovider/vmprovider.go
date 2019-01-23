@@ -21,8 +21,8 @@ type Factory func(config io.Reader) (iface.VirtualMachineProviderInterface, erro
 
 // All registered VM providers.
 var (
-	providersMutex           sync.Mutex
-	providers                = make(map[string]Factory)
+	providersMutex sync.Mutex
+	providers      = make(map[string]Factory)
 )
 
 // RegisterVmProvider registers a vmprovider.Factory by name.  This

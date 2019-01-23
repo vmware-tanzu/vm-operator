@@ -12,10 +12,10 @@ import (
 
 type VirtualMachinePowerOffStep struct {
 	desiredVm *v1beta1.VirtualMachine
-	actualVm *resources.VM
+	actualVm  *resources.VM
 }
 
-func (step VirtualMachinePowerOffStep) Name() string {return "PowerOff"}
+func (step VirtualMachinePowerOffStep) Name() string { return "PowerOff" }
 
 func (step VirtualMachinePowerOffStep) Execute(ctx context.Context) error {
 	ps, err := step.actualVm.VirtualMachine.PowerState(ctx)
@@ -49,10 +49,10 @@ func (step VirtualMachinePowerOffStep) Execute(ctx context.Context) error {
 
 type VirtualMachineDeleteStep struct {
 	desiredVm *v1beta1.VirtualMachine
-	actualVm *resources.VM
+	actualVm  *resources.VM
 }
 
-func (step VirtualMachineDeleteStep) Name() string {return "Delete Vm"}
+func (step VirtualMachineDeleteStep) Name() string { return "Delete Vm" }
 
 func (step VirtualMachineDeleteStep) Execute(ctx context.Context) error {
 	task, err := step.actualVm.Delete(ctx)
@@ -72,8 +72,8 @@ func (step VirtualMachineDeleteStep) Execute(ctx context.Context) error {
 
 type VirtualMachineDeleteSequence struct {
 	desiredVm *v1beta1.VirtualMachine
-	actualVm *resources.VM
-	steps []SequenceStep
+	actualVm  *resources.VM
+	steps     []SequenceStep
 }
 
 func (seq VirtualMachineDeleteSequence) GetName() string {

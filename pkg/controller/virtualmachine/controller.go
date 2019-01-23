@@ -35,7 +35,7 @@ type VirtualMachineControllerImpl struct {
 	// lister indexes properties about VirtualMachine
 	vmLister listers.VirtualMachineLister
 
-	clientSet clientSet.Interface
+	clientSet   clientSet.Interface
 	vmClientSet vmclientSet.VirtualMachineInterface
 
 	vmProvider iface.VirtualMachineProviderInterface

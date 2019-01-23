@@ -18,7 +18,7 @@ import (
 // TODO: Make task tracking funcs async via goroutines
 
 type VSphereManager struct {
-	Config 			VSphereVmProviderConfig
+	Config          VSphereVmProviderConfig
 	ResourceContext *ResourceContext
 }
 
@@ -259,9 +259,9 @@ func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, v
 	memory := false
 
 	cloneSpec := vimTypes.VirtualMachineCloneSpec{
-		Config: configSpec,
+		Config:  configSpec,
 		PowerOn: true, // hack to on for now
-		Memory: &memory,
+		Memory:  &memory,
 	}
 
 	task, err := v.cloneVmInvoke(ctx, vClient, rc, sourceVm, cloneSpec)

@@ -11,8 +11,8 @@ import (
 
 // Registered rest provider.  Only one is allowed.
 var (
-	providerMutex            sync.Mutex
-	provider                 *RestProvider
+	providerMutex sync.Mutex
+	provider      *RestProvider
 )
 
 type RestProviderInterface interface {

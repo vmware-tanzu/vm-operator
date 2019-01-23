@@ -25,8 +25,8 @@ const (
 // +k8s:openapi-gen=true
 // +resource:path=virtualmachines,strategy=VirtualMachineStrategy
 type VirtualMachine struct {
-	metav1.TypeMeta   			`json:",inline"`
-	metav1.ObjectMeta 			`json:"metadata,omitempty"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   VirtualMachineSpec   `json:"spec,omitempty"`
 	Status VirtualMachineStatus `json:"status,omitempty"`
@@ -35,35 +35,35 @@ type VirtualMachine struct {
 type VirtualMachinePowerState string
 
 const (
-	VirtualMachinePoweredOff 	= "poweredOff"
-	VirtualMachinePoweredOn 	= "poweredOn"
+	VirtualMachinePoweredOff = "poweredOff"
+	VirtualMachinePoweredOn  = "poweredOn"
 )
 
 type VirtualMachineResourceSpec struct {
-	Cpu 	int64 `json:"cpu,omitempty"`
-	Memory 	int64 `json:"memory,omitempty"`
+	Cpu    int64 `json:"cpu,omitempty"`
+	Memory int64 `json:"memory,omitempty"`
 }
 
 type VirtualMachineResourcesSpec struct {
-	Capacity 	VirtualMachineResourceSpec `json:"capacity"`
-	Requests 	VirtualMachineResourceSpec `json:"requests,omitempty"`
-	Limits 		VirtualMachineResourceSpec `json:"limits,omitempty"`
+	Capacity VirtualMachineResourceSpec `json:"capacity"`
+	Requests VirtualMachineResourceSpec `json:"requests,omitempty"`
+	Limits   VirtualMachineResourceSpec `json:"limits,omitempty"`
 }
 
 type VirtualMachinePort struct {
-	Port 		int 				`json:"port"`
-	Ip 			string 				`json:"ip"`
-	Name 		string 				`json:"name"`
-	Protocol 	corev1.Protocol 	`json:"protocol"`
+	Port     int             `json:"port"`
+	Ip       string          `json:"ip"`
+	Name     string          `json:"name"`
+	Protocol corev1.Protocol `json:"protocol"`
 }
 
 // VirtualMachineSpec defines the desired state of VirtualMachine
 type VirtualMachineSpec struct {
-	Image 		string 						`json:"image"`
-	Resources 	VirtualMachineResourcesSpec `json:"resources"`
-	PowerState 	string 						`json:"powerState"`
-	Env 		corev1.EnvVar 				`json:"env,omitempty"`
-	Ports 		[]VirtualMachinePort 		`json:"ports,omitempty"`
+	Image      string                      `json:"image"`
+	Resources  VirtualMachineResourcesSpec `json:"resources"`
+	PowerState string                      `json:"powerState"`
+	Env        corev1.EnvVar               `json:"env,omitempty"`
+	Ports      []VirtualMachinePort        `json:"ports,omitempty"`
 }
 
 // TODO: Make these annotations
@@ -77,20 +77,20 @@ type VirtualMachineConfigStatus struct {
 */
 
 type VirtualMachineCondition struct {
-	LastProbeTime 		metav1.Time `json:"lastProbeTime"`
-	LastTransitionTime 	metav1.Time `json:"lastTransitionTime"`
-	Message 			string 		`json:"message"`
-	Reason 				string 		`json:"reason"`
-	Status 				string 		`json:"status"`
-	Type 				string 		`json:"type"`
+	LastProbeTime      metav1.Time `json:"lastProbeTime"`
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+	Message            string      `json:"message"`
+	Reason             string      `json:"reason"`
+	Status             string      `json:"status"`
+	Type               string      `json:"type"`
 }
 
 type VirtualMachineStatus struct {
-	Conditions 	[]VirtualMachineCondition 	`json:"conditions"`
-	Host       	string 						`json:"host"`
-	PowerState 	string 						`json:"powerState"`
-	Phase 		string 						`json:"phase"`
-	VmIp 		string 						`json:"vmip"`
+	Conditions []VirtualMachineCondition `json:"conditions"`
+	Host       string                    `json:"host"`
+	PowerState string                    `json:"powerState"`
+	Phase      string                    `json:"phase"`
+	VmIp       string                    `json:"vmip"`
 }
 
 func (v VirtualMachineStrategy) PrepareForCreate(ctx context.Context, obj runtime.Object) {

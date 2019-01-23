@@ -41,12 +41,12 @@ type VirtualMachineServiceControllerImpl struct {
 
 	// lister indexes properties about VirtualMachineService
 	vmServiceLister listers.VirtualMachineServiceLister
-	vmLister listers.VirtualMachineLister
-	serviceLister corev1listers.ServiceLister
+	vmLister        listers.VirtualMachineLister
+	serviceLister   corev1listers.ServiceLister
 	endpointsLister corev1listers.EndpointsLister
 
-	coreClientSet corev1client.CoreV1Interface
-	clientSet clientSet.Interface
+	coreClientSet      corev1client.CoreV1Interface
+	clientSet          clientSet.Interface
 	vmServiceClientSet vmclientSet.VirtualMachineServiceInterface
 }
 
@@ -186,9 +186,9 @@ func (c *VirtualMachineServiceControllerImpl) processVmServiceCreateOrUpdate(vmS
 func (c *VirtualMachineServiceControllerImpl) makeObjectMeta(vmService *v1beta1.VirtualMachineService) *metav1.ObjectMeta {
 	t := true
 	om := &metav1.ObjectMeta{
-		Namespace: vmService.GetNamespace(),
-		Name:      vmService.GetName(),
-		Labels:    vmService.GetLabels(),
+		Namespace:   vmService.GetNamespace(),
+		Name:        vmService.GetName(),
+		Labels:      vmService.GetLabels(),
 		Annotations: vmService.GetAnnotations(),
 		OwnerReferences: []metav1.OwnerReference{
 			metav1.OwnerReference{
@@ -232,9 +232,9 @@ func (c *VirtualMachineServiceControllerImpl) vmServiceToService(vmService *v1be
 	servicePorts := []corev1.ServicePort{}
 	for _, vmPort := range vmService.Spec.Ports {
 		sport := corev1.ServicePort{
-			Name: vmPort.Name,
-			Protocol: corev1.Protocol(vmPort.Protocol),
-			Port: vmPort.Port,
+			Name:       vmPort.Name,
+			Protocol:   corev1.Protocol(vmPort.Protocol),
+			Port:       vmPort.Port,
 			TargetPort: intstr.FromInt(int(vmPort.Port)),
 		}
 		servicePorts = append(servicePorts, sport)
@@ -248,8 +248,8 @@ func (c *VirtualMachineServiceControllerImpl) vmServiceToService(vmService *v1be
 		ObjectMeta: *om,
 		Spec: corev1.ServiceSpec{
 			// Don't specicfy selector to keep endppoints controller from interfering
-			Type:     corev1.ServiceTypeClusterIP, // TODO: Pull this from VM Service
-			Ports:    servicePorts,
+			Type:  corev1.ServiceTypeClusterIP, // TODO: Pull this from VM Service
+			Ports: servicePorts,
 		},
 	}
 }
@@ -271,7 +271,7 @@ func findPort(vm *v1beta1.VirtualMachine, svcPort *corev1.ServicePort) (int, err
 	return 0, fmt.Errorf("no suitable port for manifest: %s", vm.UID)
 }
 
-func addEndpointSubset(subsets []corev1.EndpointSubset, vm *v1beta1.VirtualMachine, epa corev1.EndpointAddress, epp *corev1.EndpointPort) ([]corev1.EndpointSubset) {
+func addEndpointSubset(subsets []corev1.EndpointSubset, vm *v1beta1.VirtualMachine, epa corev1.EndpointAddress, epp *corev1.EndpointPort) []corev1.EndpointSubset {
 	ports := []corev1.EndpointPort{}
 	if epp != nil {
 		ports = append(ports, *epp)

@@ -34,5 +34,5 @@ type VirtualMachines interface {
 	GetVirtualMachine(ctx context.Context, name string) (*v1beta1.VirtualMachine, error)
 	CreateVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) (*v1beta1.VirtualMachine, error)
 	UpdateVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) (*v1beta1.VirtualMachine, error)
-	DeleteVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) (error)
+	DeleteVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) error
 }

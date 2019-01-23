@@ -1,18 +1,16 @@
-
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
-
 
 package virtualmachineimage_test
 
 import (
 	"time"
 
-	. "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
-	. "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1beta1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	. "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	. "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1beta1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

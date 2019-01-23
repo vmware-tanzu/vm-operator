@@ -1,24 +1,22 @@
-
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
-
 
 package virtualmachine_test
 
 import (
 	"testing"
 
+	"github.com/kubernetes-incubator/apiserver-builder/pkg/test"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/rest"
-	"github.com/kubernetes-incubator/apiserver-builder/pkg/test"
 
 	"vmware.com/kubevsphere/pkg/apis"
 	"vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
-	"vmware.com/kubevsphere/pkg/openapi"
 	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
 	"vmware.com/kubevsphere/pkg/controller/virtualmachine"
+	"vmware.com/kubevsphere/pkg/openapi"
 )
 
 var testenv *test.TestEnvironment

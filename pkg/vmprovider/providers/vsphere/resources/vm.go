@@ -101,4 +101,3 @@ func (vm *VM) MemoryAllocation(ctx context.Context) (*types.ResourceAllocationIn
 
 	return o.Config.MemoryAllocation, nil
 }
-

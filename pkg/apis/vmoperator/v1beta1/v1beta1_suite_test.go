@@ -7,9 +7,9 @@ package v1beta1_test
 import (
 	"testing"
 
+	"github.com/kubernetes-incubator/apiserver-builder/pkg/test"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/kubernetes-incubator/apiserver-builder/pkg/test"
 	"k8s.io/client-go/rest"
 
 	"vmware.com/kubevsphere/pkg/apis"

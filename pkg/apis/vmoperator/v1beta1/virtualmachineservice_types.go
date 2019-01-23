@@ -27,24 +27,24 @@ const (
 // +k8s:openapi-gen=true
 // +resource:path=virtualmachineservices,strategy=VirtualMachineServiceStrategy
 type VirtualMachineService struct {
-	metav1.TypeMeta   					`json:",inline"`
-	metav1.ObjectMeta 					`json:"metadata,omitempty"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   VirtualMachineServiceSpec   `json:"spec,omitempty"`
 	Status VirtualMachineServiceStatus `json:"status,omitempty"`
 }
 
 type VirtualMachineServicePort struct {
-	Name string 	 	`json:"name"`
+	Name string `json:"name"`
 
 	// The IP protocol for this port.  Supports "TCP", "UDP", and "SCTP".
 	//Protocol corev1.Protocol
-	Protocol string   	`json:"protocol"`
+	Protocol string `json:"protocol"`
 
 	// The port that will be exposed on the service.
-	Port int32 			`json:"port"`
+	Port int32 `json:"port"`
 
-	TargetPort int32 	`json:"targetPort"`
+	TargetPort int32 `json:"targetPort"`
 }
 
 // VirtualMachineService Type string describes ingress methods for a service
@@ -69,13 +69,13 @@ const (
 
 // VirtualMachineServiceSpec defines the desired state of VirtualMachineService
 type VirtualMachineServiceSpec struct {
-	Type 			string 							`json:"type"`
-	Ports 			[]VirtualMachineServicePort 	`json:"ports,omitempty"`
-	Selector 		map[string]string 				`json:"selector,omitempty"`
+	Type     string                      `json:"type"`
+	Ports    []VirtualMachineServicePort `json:"ports,omitempty"`
+	Selector map[string]string           `json:"selector,omitempty"`
 
 	// Just support cluster IP for now
-	ClusterIP 		string 							`json:"clusterIp,omitempty"`
-	ExternalName 	string 							`json:"externalName,omitempty"`
+	ClusterIP    string `json:"clusterIp,omitempty"`
+	ExternalName string `json:"externalName,omitempty"`
 }
 
 // VirtualMachineServiceStatus defines the observed state of VirtualMachineService

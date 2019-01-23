@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 
-set -e
-set -x
+set -o errexit
+set -o pipefail
+set -o nounset
 
 COMMIT=09ac1e0d568438dbf3f0825b617eea516b5e02a6
 VERSION=1.12
 TARGETS=darwin:amd64
 
-#go get -d github.com/kubernetes-incubator/apiserver-builder/...
+go get -d github.com/kubernetes-incubator/apiserver-builder/...
 cd "$(go env GOPATH)/src/github.com/kubernetes-incubator/apiserver-builder"
 
 go run ./cmd/apiserver-builder-release/main.go vendor --version ${VERSION}.alpha.0 --commit $COMMIT --kubernetesVersion $VERSION

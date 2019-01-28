@@ -69,7 +69,7 @@ func NewVirtualMachineController(config *rest.Config, si *sharedinformers.Shared
 		c.Informers.WorkerQueues = map[string]*controller.QueueWorker{}
 	}
 	c.Informers.WorkerQueues["VirtualMachine"] = queue
-	si.Factory.Vmoperator().V1beta1().VirtualMachines().Informer().
+	si.Factory.Vmoperator().V1alpha1().VirtualMachines().Informer().
 		AddEventHandler(&controller.QueueingEventHandler{q, nil, false})
 	return c
 }

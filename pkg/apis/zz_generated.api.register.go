@@ -21,7 +21,7 @@ package apis
 import (
 	"github.com/kubernetes-incubator/apiserver-builder/pkg/builders"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator"
-	vmoperatorv1beta1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	vmoperatorv1alpha1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 )
 
 // GetAllApiBuilders returns all known APIGroupBuilders
@@ -37,7 +37,7 @@ var vmoperatorApiGroup = builders.NewApiGroupBuilder(
 	"vmware.com/kubevsphere/pkg/apis/vmoperator").
 	WithUnVersionedApi(vmoperator.ApiVersion).
 	WithVersionedApis(
-		vmoperatorv1beta1.ApiVersion,
+		vmoperatorv1alpha1.ApiVersion,
 	).
 	WithRootScopedKinds()
 

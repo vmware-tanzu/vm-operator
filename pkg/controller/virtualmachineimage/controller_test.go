@@ -9,8 +9,8 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	. "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
-	. "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1beta1"
+	. "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
+	. "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -34,7 +34,7 @@ var _ = Describe("VirtualMachineImage controller", func() {
 
 	Describe("when creating a new object", func() {
 		It("invoke the reconcile method", func() {
-			client = cs.VmoperatorV1beta1().VirtualMachineImages("virtualmachineimage-controller-test-handler")
+			client = cs.VmoperatorV1alpha1().VirtualMachineImages("virtualmachineimage-controller-test-handler")
 			before = make(chan struct{})
 			after = make(chan struct{})
 

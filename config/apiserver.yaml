@@ -2,12 +2,12 @@
 apiVersion: apiregistration.k8s.io/v1beta1
 kind: APIService
 metadata:
-  name: v1beta1.vmoperator.vmware.com
+  name: v1alpha1.vmoperator.vmware.com
   labels:
     api: vmoperator
     apiserver: "true"
 spec:
-  version: v1beta1
+  version: v1alpha1
   group: vmoperator.vmware.com
   groupPriorityMinimum: 2000
   priority: 200

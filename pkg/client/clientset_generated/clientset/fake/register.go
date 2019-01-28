@@ -12,14 +12,14 @@ import (
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	vmoperatorv1beta1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	vmoperatorv1alpha1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 )
 
 var scheme = runtime.NewScheme()
 var codecs = serializer.NewCodecFactory(scheme)
 var parameterCodec = runtime.NewParameterCodec(scheme)
 var localSchemeBuilder = runtime.SchemeBuilder{
-	vmoperatorv1beta1.AddToScheme,
+	vmoperatorv1alpha1.AddToScheme,
 }
 
 // AddToScheme adds all types of this clientset into the given scheme. This allows composition

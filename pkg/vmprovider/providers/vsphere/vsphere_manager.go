@@ -10,7 +10,7 @@ import (
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
 )
 
@@ -151,7 +151,7 @@ func (v *VSphereManager) deleteVmInvoke(ctx context.Context, client *govmomi.Cli
 	return vm.Delete(ctx)
 }
 
-func (v *VSphereManager) DeleteVm(ctx context.Context, vClient *govmomi.Client, vm v1beta1.VirtualMachine) error {
+func (v *VSphereManager) DeleteVm(ctx context.Context, vClient *govmomi.Client, vm v1alpha1.VirtualMachine) error {
 	glog.Infof("DeleteVm %s", vm.Name)
 
 	task, err := v.deleteVmInvoke(ctx, vClient, vm.Name)
@@ -183,7 +183,7 @@ func (v *VSphereManager) createVmInvoke(ctx context.Context, client *govmomi.Cli
 	return vm.Create(ctx, rc.folder.Folder, rc.resourcePool.ResourcePool, vmSpec)
 }
 
-func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, vmToCreate *v1beta1.VirtualMachine) (*resources.VM, error) {
+func (v *VSphereManager) CreateVm(ctx context.Context, vClient *govmomi.Client, vmToCreate *v1alpha1.VirtualMachine) (*resources.VM, error) {
 	glog.Infof("CreateVm %s", vmToCreate.Name)
 
 	rc, err := v.resolveResources(ctx, vClient)
@@ -234,7 +234,7 @@ func (v *VSphereManager) cloneVmInvoke(ctx context.Context, client *govmomi.Clie
 	return vm.Clone(ctx, sourceVm.VirtualMachine, rc.folder.Folder, cloneSpec)
 }
 
-func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, vmToClone *v1beta1.VirtualMachine) (*resources.VM, error) {
+func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, vmToClone *v1alpha1.VirtualMachine) (*resources.VM, error) {
 	glog.Infof("CloneVm %s", vmToClone.Name)
 
 	rc, err := v.resolveResources(ctx, vClient)
@@ -294,7 +294,7 @@ func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, v
 }
 
 /*
-func (v *VSphereManager) UpdateVm(ctx context.Context, vClient *govmomi.Client, vmToUpdate *v1beta1.VirtualMachine, vm *VM) (*VM, error) {
+func (v *VSphereManager) UpdateVm(ctx context.Context, vClient *govmomi.Client, vmToUpdate *v1alpha1.VirtualMachine, vm *VM) (*VM, error) {
 	// Diff instance with VM config on backend
 	// DWB: Make this a table of prop actors
 	// Update VM Config first

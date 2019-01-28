@@ -11,7 +11,7 @@ import (
 
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
-	v1beta1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	v1alpha1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 )
 
 // GenericInformer is type of SharedIndexInformer which will locate and delegate to other
@@ -40,13 +40,13 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=vmoperator.vmware.com, Version=v1beta1
-	case v1beta1.SchemeGroupVersion.WithResource("virtualmachines"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Vmoperator().V1beta1().VirtualMachines().Informer()}, nil
-	case v1beta1.SchemeGroupVersion.WithResource("virtualmachineimages"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Vmoperator().V1beta1().VirtualMachineImages().Informer()}, nil
-	case v1beta1.SchemeGroupVersion.WithResource("virtualmachineservices"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Vmoperator().V1beta1().VirtualMachineServices().Informer()}, nil
+	// Group=vmoperator.vmware.com, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithResource("virtualmachines"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Vmoperator().V1alpha1().VirtualMachines().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("virtualmachineimages"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Vmoperator().V1alpha1().VirtualMachineImages().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("virtualmachineservices"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Vmoperator().V1alpha1().VirtualMachineServices().Informer()}, nil
 
 	}
 

@@ -6,12 +6,12 @@ package sequence
 import (
 	"context"
 	"github.com/golang/glog"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
 )
 
 type VirtualMachinePowerOffStep struct {
-	desiredVm *v1beta1.VirtualMachine
+	desiredVm *v1alpha1.VirtualMachine
 	actualVm  *resources.VM
 }
 
@@ -26,7 +26,7 @@ func (step VirtualMachinePowerOffStep) Execute(ctx context.Context) error {
 
 	glog.Infof("Current power state: %s, desired power state: %s", ps, step.desiredVm.Spec.PowerState)
 
-	if string(ps) == string(v1beta1.VirtualMachinePoweredOff) {
+	if string(ps) == string(v1alpha1.VirtualMachinePoweredOff) {
 		glog.Info("Vm is already powered off")
 		return nil
 	}
@@ -34,7 +34,7 @@ func (step VirtualMachinePowerOffStep) Execute(ctx context.Context) error {
 	// Bring PowerState into conformance
 	task, err := step.actualVm.VirtualMachine.PowerOff(ctx)
 	if err != nil {
-		glog.Errorf("Failed to change power state to %s", v1beta1.VirtualMachinePoweredOff)
+		glog.Errorf("Failed to change power state to %s", v1alpha1.VirtualMachinePoweredOff)
 		return err
 	}
 
@@ -48,7 +48,7 @@ func (step VirtualMachinePowerOffStep) Execute(ctx context.Context) error {
 }
 
 type VirtualMachineDeleteStep struct {
-	desiredVm *v1beta1.VirtualMachine
+	desiredVm *v1alpha1.VirtualMachine
 	actualVm  *resources.VM
 }
 
@@ -71,7 +71,7 @@ func (step VirtualMachineDeleteStep) Execute(ctx context.Context) error {
 }
 
 type VirtualMachineDeleteSequence struct {
-	desiredVm *v1beta1.VirtualMachine
+	desiredVm *v1alpha1.VirtualMachine
 	actualVm  *resources.VM
 	steps     []SequenceStep
 }
@@ -93,7 +93,7 @@ func (seq VirtualMachineDeleteSequence) Execute(ctx context.Context) error {
 	return nil
 }
 
-func NewVirtualMachineDeleteSequence(desiredVm *v1beta1.VirtualMachine, actualVm *resources.VM) VirtualMachineDeleteSequence {
+func NewVirtualMachineDeleteSequence(desiredVm *v1alpha1.VirtualMachine, actualVm *resources.VM) VirtualMachineDeleteSequence {
 	m := []SequenceStep{
 		VirtualMachinePowerOffStep{desiredVm, actualVm},
 		VirtualMachineDeleteStep{desiredVm, actualVm},

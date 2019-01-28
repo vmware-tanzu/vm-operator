@@ -16,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"vmware.com/kubevsphere/pkg"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/vmprovider"
 	"vmware.com/kubevsphere/pkg/vmprovider/iface"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
@@ -75,7 +75,7 @@ func (vs *VSphereVmProvider) VirtualMachineImages() (iface.VirtualMachineImages,
 func (vs *VSphereVmProvider) Initialize(stop <-chan struct{}) {
 }
 
-func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1beta1.VirtualMachineImage, error) {
+func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
 	glog.Info("Listing VM images")
 
 	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
@@ -91,14 +91,14 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
-	newImages := []*v1beta1.VirtualMachineImage{}
+	newImages := []*v1alpha1.VirtualMachineImage{}
 	for _, vm := range vms {
 		powerState, _ := vm.VirtualMachine.PowerState(ctx)
 		ps := string(powerState)
 		newImages = append(newImages,
-			&v1beta1.VirtualMachineImage{
+			&v1alpha1.VirtualMachineImage{
 				ObjectMeta: v1.ObjectMeta{Name: vm.VirtualMachine.Name()},
-				Status: v1beta1.VirtualMachineImageStatus{
+				Status: v1alpha1.VirtualMachineImageStatus{
 					Uuid:       vm.VirtualMachine.UUID(ctx),
 					PowerState: ps,
 					InternalId: vm.VirtualMachine.Reference().Value,
@@ -110,7 +110,7 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 	return newImages, nil
 }
 
-func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name string) (*v1beta1.VirtualMachineImage, error) {
+func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name string) (*v1alpha1.VirtualMachineImage, error) {
 	glog.Info("Getting VM images")
 
 	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
@@ -132,9 +132,9 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 	powerState, _ := vm.VirtualMachine.PowerState(ctx)
 	ps := string(powerState)
 
-	return &v1beta1.VirtualMachineImage{
+	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{Name: vm.VirtualMachine.Name()},
-		Status: v1beta1.VirtualMachineImageStatus{
+		Status: v1alpha1.VirtualMachineImageStatus{
 			Uuid:       vm.VirtualMachine.UUID(ctx),
 			PowerState: ps,
 			InternalId: vm.VirtualMachine.Reference().Value,
@@ -142,14 +142,14 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 	}, nil
 }
 
-func NewVirtualMachineImageFake(name string) *v1beta1.VirtualMachineImage {
-	return &v1beta1.VirtualMachineImage{
+func NewVirtualMachineImageFake(name string) *v1alpha1.VirtualMachineImage {
+	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{Name: name},
 	}
 }
 
-func NewVirtualMachineImageListFake() []*v1beta1.VirtualMachineImage {
-	images := []*v1beta1.VirtualMachineImage{}
+func NewVirtualMachineImageListFake() []*v1alpha1.VirtualMachineImage {
+	images := []*v1alpha1.VirtualMachineImage{}
 
 	fake1 := NewVirtualMachineImageFake("Fake")
 	fake2 := NewVirtualMachineImageFake("Fake2")
@@ -158,7 +158,7 @@ func NewVirtualMachineImageListFake() []*v1beta1.VirtualMachineImage {
 	return images
 }
 
-func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *resources.VM) (*v1beta1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *resources.VM) (*v1alpha1.VirtualMachine, error) {
 	powerState, _ := actualVm.VirtualMachine.PowerState(ctx)
 	ps := string(powerState)
 
@@ -183,8 +183,8 @@ func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *res
 
 	glog.Infof("VM Host/IP is %s/%s", host.Name(), vmIp)
 
-	vm := &v1beta1.VirtualMachine{
-		Status: v1beta1.VirtualMachineStatus{
+	vm := &v1alpha1.VirtualMachine{
+		Status: v1alpha1.VirtualMachineStatus{
 			Phase:      "",
 			PowerState: ps,
 			//Host: host.Name(),
@@ -205,14 +205,14 @@ func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *res
 	return vm, nil
 }
 
-func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, desiredVm *v1beta1.VirtualMachine, actualVm *resources.VM) (*v1beta1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, desiredVm *v1alpha1.VirtualMachine, actualVm *resources.VM) (*v1alpha1.VirtualMachine, error) {
 
 	statusVm, err := vs.generateVmStatus(ctx, actualVm)
 	if err != nil {
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
-	return &v1beta1.VirtualMachine{
+	return &v1alpha1.VirtualMachine{
 		TypeMeta:   desiredVm.TypeMeta,
 		ObjectMeta: desiredVm.ObjectMeta,
 		Spec:       desiredVm.Spec,
@@ -220,11 +220,11 @@ func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, desiredVm *v1bet
 	}, nil
 }
 
-func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace string) ([]*v1beta1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachine, error) {
 	return nil, nil
 }
 
-func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string) (*v1beta1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string) (*v1alpha1.VirtualMachine, error) {
 	glog.Info("Getting VMs")
 
 	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
@@ -254,7 +254,7 @@ func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, m
 	objectMeta.SetAnnotations(annotations)
 }
 
-func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vmToCreate *v1beta1.VirtualMachine) (*v1beta1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vmToCreate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 	glog.Infof("Creating Vm: %s", vmToCreate.Name)
 
 	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
@@ -286,7 +286,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vmToCreat
 	return vs.mergeVmStatus(ctx, vmToCreate, newVm)
 }
 
-func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vclient *govmomi.Client, vmToUpdate *v1beta1.VirtualMachine, vm *resources.VM) (*resources.VM, error) {
+func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vclient *govmomi.Client, vmToUpdate *v1alpha1.VirtualMachine, vm *resources.VM) (*resources.VM, error) {
 
 	cpu, err := vm.CpuAllocation(ctx)
 	if err != nil {
@@ -348,7 +348,7 @@ func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vclient
 	return vm, nil
 }
 
-func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govmomi.Client, vmToUpdate *v1beta1.VirtualMachine, vm *resources.VM) (*resources.VM, error) {
+func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govmomi.Client, vmToUpdate *v1alpha1.VirtualMachine, vm *resources.VM) (*resources.VM, error) {
 
 	ps, err := vm.VirtualMachine.PowerState(ctx)
 	if err != nil {
@@ -366,9 +366,9 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govm
 	// Bring PowerState into conformance
 	var task *object.Task
 	switch vmToUpdate.Spec.PowerState {
-	case v1beta1.VirtualMachinePoweredOff:
+	case v1alpha1.VirtualMachinePoweredOff:
 		task, err = vm.VirtualMachine.PowerOff(ctx)
-	case v1beta1.VirtualMachinePoweredOn:
+	case v1alpha1.VirtualMachinePoweredOn:
 		task, err = vm.VirtualMachine.PowerOn(ctx)
 	}
 
@@ -386,7 +386,7 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govm
 	return resources.NewVMFromReference(*vclient, vm.Datacenter, taskInfo.Result.(types.ManagedObjectReference))
 }
 
-func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vmToUpdate *v1beta1.VirtualMachine) (*v1beta1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vmToUpdate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 	glog.Infof("Updating Vm: %s", vmToUpdate.Name)
 
 	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
@@ -413,7 +413,7 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vmToUpdat
 	return vs.mergeVmStatus(ctx, vmToUpdate, newVm)
 }
 
-func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1beta1.VirtualMachine) error {
+func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
 	glog.Infof("Deleting Vm: %s", vmToDelete.Name)
 
 	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)

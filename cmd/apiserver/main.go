@@ -8,7 +8,7 @@ import (
 	_ "github.com/go-openapi/loads"
 	"github.com/golang/glog"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/rest"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/vmprovider"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
 
@@ -35,7 +35,7 @@ func main() {
 	}
 
 	// Provide the vm provider interface to the custom REST implementations
-	err = v1beta1.RegisterRestProvider(rest.NewVirtualMachineImagesREST(vmprovider))
+	err = v1alpha1.RegisterRestProvider(rest.NewVirtualMachineImagesREST(vmprovider))
 	if err != nil {
 		glog.Fatalf("Failed to register REST provider: %s", err)
 	}

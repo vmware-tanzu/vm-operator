@@ -1,6 +1,6 @@
 note: VirtualMachine Example
 sample: |
-  apiVersion: vmoperator.vmware.com/v1beta1
+  apiVersion: vmoperator.vmware.com/v1alpha1
   kind: VirtualMachine
   metadata:
     name: virtualmachine-example

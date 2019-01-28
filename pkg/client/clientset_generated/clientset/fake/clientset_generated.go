@@ -13,8 +13,8 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
 	clientset "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
-	vmoperatorv1beta1 "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1beta1"
-	fakevmoperatorv1beta1 "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1beta1/fake"
+	vmoperatorv1alpha1 "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
+	fakevmoperatorv1alpha1 "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
@@ -59,12 +59,12 @@ func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 
 var _ clientset.Interface = &Clientset{}
 
-// VmoperatorV1beta1 retrieves the VmoperatorV1beta1Client
-func (c *Clientset) VmoperatorV1beta1() vmoperatorv1beta1.VmoperatorV1beta1Interface {
-	return &fakevmoperatorv1beta1.FakeVmoperatorV1beta1{Fake: &c.Fake}
+// VmoperatorV1alpha1 retrieves the VmoperatorV1alpha1Client
+func (c *Clientset) VmoperatorV1alpha1() vmoperatorv1alpha1.VmoperatorV1alpha1Interface {
+	return &fakevmoperatorv1alpha1.FakeVmoperatorV1alpha1{Fake: &c.Fake}
 }
 
-// Vmoperator retrieves the VmoperatorV1beta1Client
-func (c *Clientset) Vmoperator() vmoperatorv1beta1.VmoperatorV1beta1Interface {
-	return &fakevmoperatorv1beta1.FakeVmoperatorV1beta1{Fake: &c.Fake}
+// Vmoperator retrieves the VmoperatorV1alpha1Client
+func (c *Clientset) Vmoperator() vmoperatorv1alpha1.VmoperatorV1alpha1Interface {
+	return &fakevmoperatorv1alpha1.FakeVmoperatorV1alpha1{Fake: &c.Fake}
 }

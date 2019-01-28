@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/vmprovider/iface"
 )
 
@@ -30,7 +30,7 @@ var _ rest.Lister = &VirtualMachineImagesREST{}
 var _ rest.Watcher = &VirtualMachineImagesREST{}
 
 func (r *VirtualMachineImagesREST) NewList() runtime.Object {
-	return &v1beta1.VirtualMachineImageList{}
+	return &v1alpha1.VirtualMachineImageList{}
 }
 
 // List selects resources in the storage which match to the selector. 'options' can be nil.
@@ -63,12 +63,12 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 		return nil, errors.NewInternalError(err)
 	}
 
-	items := []v1beta1.VirtualMachineImage{}
+	items := []v1alpha1.VirtualMachineImage{}
 	for _, item := range images {
 		items = append(items, *item)
 	}
 
-	imageList := v1beta1.VirtualMachineImageList{
+	imageList := v1alpha1.VirtualMachineImageList{
 		Items: items,
 	}
 	return &imageList, nil
@@ -112,15 +112,15 @@ func (r *VirtualMachineImagesREST) Watch(ctx context.Context, options *metainter
 }
 
 func (r *VirtualMachineImagesREST) New() runtime.Object {
-	return &v1beta1.VirtualMachineImage{}
+	return &v1alpha1.VirtualMachineImage{}
 }
 
 func (r *VirtualMachineImagesREST) NamespaceScoped() bool {
 	return true
 }
 
-func NewVirtualMachineImagesREST(vmprov iface.VirtualMachineProviderInterface) v1beta1.RestProvider {
-	return v1beta1.RestProvider{
+func NewVirtualMachineImagesREST(vmprov iface.VirtualMachineProviderInterface) v1alpha1.RestProvider {
+	return v1alpha1.RestProvider{
 		ImagesProvider: &VirtualMachineImagesREST{vmprov},
 	}
 }

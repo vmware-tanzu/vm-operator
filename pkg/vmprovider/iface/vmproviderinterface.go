@@ -6,7 +6,7 @@ package iface
 
 import (
 	"context"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1beta1"
+	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 )
 
 // Pluggable interface for VM Providers
@@ -25,14 +25,14 @@ type VirtualMachineProviderInterface interface {
 }
 
 type VirtualMachineImages interface {
-	ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1beta1.VirtualMachineImage, error)
-	GetVirtualMachineImage(ctx context.Context, name string) (*v1beta1.VirtualMachineImage, error)
+	ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error)
+	GetVirtualMachineImage(ctx context.Context, name string) (*v1alpha1.VirtualMachineImage, error)
 }
 
 type VirtualMachines interface {
-	ListVirtualMachines(ctx context.Context, namespace string) ([]*v1beta1.VirtualMachine, error)
-	GetVirtualMachine(ctx context.Context, name string) (*v1beta1.VirtualMachine, error)
-	CreateVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) (*v1beta1.VirtualMachine, error)
-	UpdateVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) (*v1beta1.VirtualMachine, error)
-	DeleteVirtualMachine(ctx context.Context, virtualMachine *v1beta1.VirtualMachine) error
+	ListVirtualMachines(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachine, error)
+	GetVirtualMachine(ctx context.Context, name string) (*v1alpha1.VirtualMachine, error)
+	CreateVirtualMachine(ctx context.Context, virtualMachine *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error)
+	UpdateVirtualMachine(ctx context.Context, virtualMachine *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error)
+	DeleteVirtualMachine(ctx context.Context, virtualMachine *v1alpha1.VirtualMachine) error
 }

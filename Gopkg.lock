@@ -443,6 +443,20 @@
   revision = "a0d98a5f288019575c6d1f4bb1573fef2d1fcdc4"
 
 [[projects]]
+  digest = "1:05c30842adeeae21984a43d8c988de0ed393b7e688650b9e1b0bf443d468b3c7"
+  name = "github.com/hpcloud/tail"
+  packages = [
+    ".",
+    "ratelimiter",
+    "util",
+    "watch",
+    "winfile",
+  ]
+  pruneopts = "NU"
+  revision = "a30252cb686a21eb2d0b98132633053ec2f7f1e5"
+  version = "v1.0.0"
+
+[[projects]]
   digest = "1:905ebed3e176c5eb28fa1b8e083aace9a76d8086415954bf808ee78e262796d8"
   name = "github.com/imdario/mergo"
   packages = ["."]
@@ -531,11 +545,12 @@
   version = "1.0.1"
 
 [[projects]]
-  digest = "1:b13b29c476c0bfce8971c20690595423ae61f3739f075d24a37ce156938e2eac"
+  digest = "1:cb80664b8912828fb7f6770c79c4730083c4190bb35f0465917e54942f43037c"
   name = "github.com/onsi/ginkgo"
   packages = [
     ".",
     "config",
+    "extensions/table",
     "internal/codelocation",
     "internal/containernode",
     "internal/failer",
@@ -554,11 +569,11 @@
     "types",
   ]
   pruneopts = "NU"
-  revision = "9eda700730cba42af70d53180f9dcce9266bc2bc"
-  version = "v1.4.0"
+  revision = "2e1be8f7d90e9d3e3e58b0ce470f2f14d075406f"
+  version = "v1.7.0"
 
 [[projects]]
-  digest = "1:9b9d93b4eed06917cda129ff8ce4a101f9bd8ec7b3c57c99b629f08534334691"
+  digest = "1:d0743aa791fa3ea623259255a02c82773672f80ecb65eb7b88024b99639b76fc"
   name = "github.com/onsi/gomega"
   packages = [
     ".",
@@ -575,8 +590,8 @@
     "types",
   ]
   pruneopts = "NU"
-  revision = "c893efa28eb45626cdaa76c9f653b62488858837"
-  version = "v1.2.0"
+  revision = "65fb64232476ad9046e57c26cd0bff3d3a8dc6cd"
+  version = "v1.4.3"
 
 [[projects]]
   digest = "1:3e6edf30061fbdbb55f0e99a78891cad4c4cb0307bdbb42f5f02813c431c2fcc"
@@ -857,6 +872,15 @@
   version = "v1.7.5"
 
 [[projects]]
+  digest = "1:c1f6f595ca22967c11ddb38ae055a82530476e12c4092d9c21b1ff76444b0ba6"
+  name = "gopkg.in/fsnotify.v1"
+  packages = ["."]
+  pruneopts = "NU"
+  revision = "c2828203cd70a50dcccfb2761f8b1f8ceef9a8e9"
+  source = "https://github.com/fsnotify/fsnotify/archive/v1.4.7.tar.gz"
+  version = "v1.4.7"
+
+[[projects]]
   digest = "1:e5d1fb981765b6f7513f793a3fcaac7158408cca77f75f7311ac82cc88e9c445"
   name = "gopkg.in/inf.v0"
   packages = ["."]
@@ -870,6 +894,14 @@
   packages = ["."]
   pruneopts = "NU"
   revision = "20b71e5b60d756d3d2f80def009790325acc2b23"
+
+[[projects]]
+  branch = "v1"
+  digest = "1:c722b4b221ae84e9c483d015223147c3f84a419b8ca2fe7f4b5a7b8fbf3768ed"
+  name = "gopkg.in/tomb.v1"
+  packages = ["."]
+  pruneopts = "NU"
+  revision = "dd632973f1e7218eb1089048e0798ec9ae7dceb8"
 
 [[projects]]
   digest = "1:321f4736d599b30c9c6287d8e454c4852d9c4f37581618e6c4de663dede42dd5"
@@ -1275,6 +1307,7 @@
     "github.com/kubernetes-incubator/apiserver-builder/pkg/test",
     "github.com/modern-go/reflect2",
     "github.com/onsi/ginkgo",
+    "github.com/onsi/ginkgo/extensions/table",
     "github.com/onsi/gomega",
     "github.com/vmware/govmomi",
     "github.com/vmware/govmomi/find",

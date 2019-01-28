@@ -32,7 +32,7 @@ var _ = Describe("VirtualMachineImage controller", func() {
 		client.Delete(instance.Name, &metav1.DeleteOptions{})
 	})
 
-	Describe("when creating a new object", func() {
+	XDescribe("when creating a new object", func() {
 		It("invoke the reconcile method", func() {
 			client = cs.VmoperatorV1alpha1().VirtualMachineImages("virtualmachineimage-controller-test-handler")
 			before = make(chan struct{})

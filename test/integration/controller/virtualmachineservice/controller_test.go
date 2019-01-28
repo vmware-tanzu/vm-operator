@@ -2,7 +2,7 @@
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
-package virtualmachine_test
+package virtualmachineservice_test
 
 import (
 	"time"
@@ -15,26 +15,26 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ = Describe("VirtualMachine controller", func() {
-	var instance VirtualMachine
+var _ = Describe("VirtualMachineService controller", func() {
+	var instance VirtualMachineService
 	var expectedKey string
-	var client VirtualMachineInterface
+	var client VirtualMachineServiceInterface
 	var before chan struct{}
 	var after chan struct{}
 
 	BeforeEach(func() {
-		instance = VirtualMachine{}
+		instance = VirtualMachineService{}
 		instance.Name = "instance-1"
-		expectedKey = "virtualmachine-controller-test-handler/instance-1"
+		expectedKey = "virtualmachineservice-controller-test-handler/instance-1"
 	})
 
 	AfterEach(func() {
 		client.Delete(instance.Name, &metav1.DeleteOptions{})
 	})
 
-	Describe("when creating a new object", func() {
+	XDescribe("when creating a new object", func() {
 		It("invoke the reconcile method", func() {
-			client = cs.VmoperatorV1alpha1().VirtualMachines("virtualmachine-controller-test-handler")
+			client = cs.VmoperatorV1alpha1().VirtualMachineServices("virtualmachineservice-controller-test-handler")
 			before = make(chan struct{})
 			after = make(chan struct{})
 

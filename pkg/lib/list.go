@@ -1,6 +1,7 @@
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
+
 package lib
 
 // Function to filter a string from a list. Returns the filtered list

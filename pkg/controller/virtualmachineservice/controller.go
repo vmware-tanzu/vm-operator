@@ -338,7 +338,7 @@ func (c *VirtualMachineServiceControllerImpl) updateEndpoints(ctx context.Contex
 		return err
 	}
 
-	glog.V(0).Infof("VMs: %s match labels %s", vms, service.Spec.Selector)
+	//glog.V(0).Infof("VMs: %s match labels %s", vms, service.Spec.Selector)
 
 	// Determine if any endpoints match
 	subsets := []corev1.EndpointSubset{}

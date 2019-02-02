@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -o errexit
+set -o pipefail
 set -o nounset
 
 isInstalled() {
@@ -19,9 +20,7 @@ installApps() {
 installGo() {
     isInstalled "go" || brew install golang
 
-    isInstalled "dep"    || go get -u github.com/golang/dep/cmd/dep
-    isInstalled "golint" || go get -u github.com/golang/lint/golint
-    isInstalled "ginkgo" || go get -u github.com/onsi/ginkgo/ginkgo
+    hack/install-go-tools.sh
 }
 
 if ! isInstalled "brew" ; then
@@ -31,3 +30,5 @@ fi
 
 installApps
 installGo
+
+# vim: tabstop=4 shiftwidth=4 expandtab softtabstop=4 filetype=sh

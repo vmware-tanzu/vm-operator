@@ -14,7 +14,7 @@ CONFIG_YAMLS=(
 APISERVER_YAML=config/apiserver.yaml
 
 usage () {
-    echo "Usage: hack/deploy-vm-operator.sh [deploy|undeploy|redeploy]"
+    echo "Usage: $(basename $0) [deploy|undeploy|redeploy]"
     exit 1
 }
 
@@ -59,3 +59,5 @@ case $COMMAND in
     "redeploy" ) redeploy ;;
     * ) usage
 esac
+
+# vim: tabstop=4 shiftwidth=4 expandtab softtabstop=4 filetype=sh

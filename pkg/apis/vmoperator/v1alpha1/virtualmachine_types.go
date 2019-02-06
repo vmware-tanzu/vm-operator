@@ -106,10 +106,16 @@ func (v VirtualMachineStrategy) PrepareForCreate(ctx context.Context, obj runtim
 
 // Validate checks that an instance of VirtualMachine is well formed
 func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
-	o := obj.(*vmoperator.VirtualMachine)
-	glog.Infof("Validating fields for VirtualMachine %s\n", o.Name)
+	vm := obj.(*vmoperator.VirtualMachine)
+	glog.V(4).Infof("Validating fields for VirtualMachine %s\n", vm.Name)
 	errors := field.ErrorList{}
-	// perform validation here and add to errors using field.Invalid
+
+	// Confirm that the required fields are present and within valid ranges, if applicable
+	if vm.Spec.Image == "" {
+		glog.Errorf("Image empty for VM %s", vm.Name)
+		errors = append(errors, field.Required(field.NewPath("spec", "image"), ""))
+	}
+
 	return errors
 }
 
@@ -117,5 +123,5 @@ func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object
 func (VirtualMachineSchemeFns) DefaultingFunction(o interface{}) {
 	obj := o.(*VirtualMachine)
 	// set default field values here
-	glog.Infof("Defaulting fields for VirtualMachine %s\n", obj.Name)
+	glog.V(4).Infof("Defaulting fields for VirtualMachine %s\n", obj.Name)
 }

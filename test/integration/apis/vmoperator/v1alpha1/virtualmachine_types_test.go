@@ -20,7 +20,7 @@ var _ = Describe("VirtualMachine", func() {
 	var client VirtualMachineInterface
 
 	BeforeEach(func() {
-		instance = VirtualMachine{}
+		instance = VirtualMachine{Spec: VirtualMachineSpec{Image: "foo"}}
 		instance.Name = "instance-1"
 
 		expected = instance
@@ -31,6 +31,16 @@ var _ = Describe("VirtualMachine", func() {
 	})
 
 	Describe("when sending a storage request", func() {
+		Context("for an invalid config", func() {
+			It("should fail to create the object", func() {
+				client = cs.VmoperatorV1alpha1().VirtualMachines("virtualmachine-test-invalid")
+
+				By("returning failure from the create request when image isn't specified")
+				imageInvalid := VirtualMachine{}
+				_, err := client.Create(&imageInvalid)
+				Expect(err).Should(HaveOccurred())
+			})
+		})
 		Context("for a valid config", func() {
 			It("should provide CRUD access to the object", func() {
 				client = cs.VmoperatorV1alpha1().VirtualMachines("virtualmachine-test-valid")

@@ -6,8 +6,7 @@ package v1alpha1
 
 import (
 	"context"
-	"log"
-
+	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -70,8 +69,8 @@ const (
 // VirtualMachineServiceSpec defines the desired state of VirtualMachineService
 type VirtualMachineServiceSpec struct {
 	Type     string                      `json:"type"`
-	Ports    []VirtualMachineServicePort `json:"ports,omitempty"`
-	Selector map[string]string           `json:"selector,omitempty"`
+	Ports    []VirtualMachineServicePort `json:"ports"`
+	Selector map[string]string           `json:"selector"`
 
 	// Just support cluster IP for now
 	ClusterIP    string `json:"clusterIp,omitempty"`
@@ -95,10 +94,25 @@ func (v VirtualMachineServiceStrategy) PrepareForCreate(ctx context.Context, obj
 
 // Validate checks that an instance of VirtualMachineService is well formed
 func (VirtualMachineServiceStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
-	o := obj.(*vmoperator.VirtualMachineService)
-	log.Printf("Validating fields for VirtualMachineService %s\n", o.Name)
+	service := obj.(*vmoperator.VirtualMachineService)
+	glog.V(4).Infof("Validating fields for VirtualMachineService %s\n", service.Name)
 	errors := field.ErrorList{}
-	// perform validation here and add to errors using field.Invalid
+
+	// Confirm that the required fields are present and within valid ranges, if applicable
+	if service.Spec.Type == "" {
+		glog.Errorf("Type empty for service %s", service.Name)
+		errors = append(errors, field.Required(field.NewPath("spec", "type"), ""))
+	}
+
+	if len(service.Spec.Ports) == 0 {
+		glog.Errorf("Ports empty for service %s", service.Name)
+		errors = append(errors, field.Required(field.NewPath("spec", "ports"), ""))
+	}
+
+	if len(service.Spec.Selector) == 0 {
+		glog.Errorf("Label selector empty for service %s", service.Name)
+		errors = append(errors, field.Required(field.NewPath("spec", "selector"), ""))
+	}
 	return errors
 }
 
@@ -106,5 +120,5 @@ func (VirtualMachineServiceStrategy) Validate(ctx context.Context, obj runtime.O
 func (VirtualMachineServiceSchemeFns) DefaultingFunction(o interface{}) {
 	obj := o.(*VirtualMachineService)
 	// set default field values here
-	log.Printf("Defaulting fields for VirtualMachineService %s\n", obj.Name)
+	glog.V(4).Infof("Defaulting fields for VirtualMachineService %s\n", obj.Name)
 }

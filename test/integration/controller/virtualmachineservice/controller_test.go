@@ -21,9 +21,21 @@ var _ = Describe("VirtualMachineService controller", func() {
 	var client VirtualMachineServiceInterface
 	var before chan struct{}
 	var after chan struct{}
+	typ := "ClusterIP"
+	port := VirtualMachineServicePort{
+		Name:       "foo",
+		Protocol:   "TCP",
+		Port:       22,
+		TargetPort: 22,
+	}
+	selector := map[string]string{"foo": "bar"}
 
 	BeforeEach(func() {
-		instance = VirtualMachineService{}
+		instance = VirtualMachineService{Spec: VirtualMachineServiceSpec{
+			Type:     typ,
+			Ports:    []VirtualMachineServicePort{port},
+			Selector: selector,
+		}}
 		instance.Name = "instance-1"
 		expectedKey = "virtualmachineservice-controller-test-handler/instance-1"
 	})

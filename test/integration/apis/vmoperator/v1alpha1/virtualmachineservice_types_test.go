@@ -18,9 +18,21 @@ var _ = Describe("VirtualMachineService", func() {
 	var instance VirtualMachineService
 	var expected VirtualMachineService
 	var client VirtualMachineServiceInterface
+	typ := "ClusterIP"
+	port := VirtualMachineServicePort{
+		Name:       "foo",
+		Protocol:   "TCP",
+		Port:       22,
+		TargetPort: 22,
+	}
+	selector := map[string]string{"foo": "bar"}
 
 	BeforeEach(func() {
-		instance = VirtualMachineService{}
+		instance = VirtualMachineService{Spec: VirtualMachineServiceSpec{
+			Type:     typ,
+			Ports:    []VirtualMachineServicePort{port},
+			Selector: selector,
+		}}
 		instance.Name = "instance-1"
 
 		expected = instance
@@ -31,6 +43,41 @@ var _ = Describe("VirtualMachineService", func() {
 	})
 
 	Describe("when sending a storage request", func() {
+		Context("for an invalid config", func() {
+			It("should fail to create the object", func() {
+				client = cs.VmoperatorV1alpha1().VirtualMachineServices("virtualmachineservice-test-invalid")
+
+				By("returning failure from the create request when type not specified")
+				typeInvalid := VirtualMachineService{
+					Spec: VirtualMachineServiceSpec{
+						Ports:    []VirtualMachineServicePort{port},
+						Selector: selector,
+					},
+				}
+				_, err := client.Create(&typeInvalid)
+				Expect(err).Should(HaveOccurred())
+
+				By("returning failure from the create request when port not specified")
+				portInvalid := VirtualMachineService{
+					Spec: VirtualMachineServiceSpec{
+						Type:     typ,
+						Selector: selector,
+					},
+				}
+				_, err = client.Create(&portInvalid)
+				Expect(err).Should(HaveOccurred())
+
+				By("returning failure from the create request when selector not specified")
+				selectorInvalid := VirtualMachineService{
+					Spec: VirtualMachineServiceSpec{
+						Type:  typ,
+						Ports: []VirtualMachineServicePort{port},
+					},
+				}
+				_, err = client.Create(&selectorInvalid)
+				Expect(err).Should(HaveOccurred())
+			})
+		})
 		Context("for a valid config", func() {
 			It("should provide CRUD access to the object", func() {
 				client = cs.VmoperatorV1alpha1().VirtualMachineServices("virtualmachineservice-test-valid")

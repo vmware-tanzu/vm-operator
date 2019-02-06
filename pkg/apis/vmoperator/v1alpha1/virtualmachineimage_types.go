@@ -41,10 +41,9 @@ type VirtualMachineImageStatus struct {
 
 // Validate checks that an instance of VirtualMachineImage is well formed
 func (VirtualMachineImageStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
-	o := obj.(*vmoperator.VirtualMachineImage)
-	glog.Infof("Validating fields for VirtualMachineImage %s\n", o.Name)
+	image := obj.(*vmoperator.VirtualMachineImage)
+	glog.V(4).Infof("Validating fields for VirtualMachineImage %s\n", image.Name)
 	errors := field.ErrorList{}
-	// perform validation here and add to errors using field.Invalid
 	return errors
 }
 
@@ -52,7 +51,7 @@ func (VirtualMachineImageStrategy) Validate(ctx context.Context, obj runtime.Obj
 func (VirtualMachineImageSchemeFns) DefaultingFunction(o interface{}) {
 	obj := o.(*VirtualMachineImage)
 	// set default field values here
-	glog.Infof("Defaulting fields for VirtualMachineImage %s\n", obj.Name)
+	glog.V(4).Infof("Defaulting fields for VirtualMachineImage %s\n", obj.Name)
 }
 
 func NewVirtualMachineImagesREST() rest.Storage {

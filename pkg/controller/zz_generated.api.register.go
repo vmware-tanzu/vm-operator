@@ -19,7 +19,7 @@ limitations under the License.
 package controller
 
 import (
-	"github.com/kubernetes-incubator/apiserver-builder/pkg/controller"
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
 	"k8s.io/client-go/rest"
 	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
 	"vmware.com/kubevsphere/pkg/controller/virtualmachine"

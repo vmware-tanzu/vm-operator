@@ -19,7 +19,7 @@ limitations under the License.
 package apis
 
 import (
-	"github.com/kubernetes-incubator/apiserver-builder/pkg/builders"
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator"
 	vmoperatorv1alpha1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 )

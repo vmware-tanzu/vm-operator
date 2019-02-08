@@ -9,7 +9,7 @@ import (
 	"log"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
 
-	controllerlib "github.com/kubernetes-incubator/apiserver-builder/pkg/controller"
+	controllerlib "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
 
 	"vmware.com/kubevsphere/pkg/controller"
 )

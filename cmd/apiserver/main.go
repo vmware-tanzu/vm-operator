@@ -15,7 +15,7 @@ import (
 	// Make sure dep tools picks up these dependencies
 	_ "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kubernetes-incubator/apiserver-builder/pkg/cmd/server"
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/cmd/server"
 	_ "k8s.io/client-go/plugin/pkg/client/auth" // Enable cloud provider auth
 
 	"vmware.com/kubevsphere/pkg/apis"

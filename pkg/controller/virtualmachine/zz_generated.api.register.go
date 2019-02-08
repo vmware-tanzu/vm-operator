@@ -20,7 +20,7 @@ package virtualmachine
 
 import (
 	"github.com/golang/glog"
-	"github.com/kubernetes-incubator/apiserver-builder/pkg/controller"
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"

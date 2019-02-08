@@ -28895,7 +28895,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageSchemeFns(ref common
 				Properties: map[string]spec.Schema{
 					"DefaultSchemeFns": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultSchemeFns"),
+							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultSchemeFns"),
 						},
 					},
 				},
@@ -28903,7 +28903,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageSchemeFns(ref common
 			},
 		},
 		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultSchemeFns"},
+			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultSchemeFns"},
 	}
 }
 
@@ -28958,7 +28958,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatusStrategy(ref c
 				Properties: map[string]spec.Schema{
 					"DefaultStatusStorageStrategy": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStatusStorageStrategy"),
+							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"),
 						},
 					},
 				},
@@ -28966,7 +28966,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatusStrategy(ref c
 			},
 		},
 		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStatusStorageStrategy"},
+			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"},
 	}
 }
 
@@ -28977,7 +28977,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStrategy(ref common.
 				Properties: map[string]spec.Schema{
 					"DefaultStorageStrategy": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStorageStrategy"),
+							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"),
 						},
 					},
 				},
@@ -28985,7 +28985,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStrategy(ref common.
 			},
 		},
 		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStorageStrategy"},
+			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"},
 	}
 }
 
@@ -29132,7 +29132,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSchemeFns(ref common.Refe
 				Properties: map[string]spec.Schema{
 					"DefaultSchemeFns": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultSchemeFns"),
+							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultSchemeFns"),
 						},
 					},
 				},
@@ -29140,7 +29140,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSchemeFns(ref common.Refe
 			},
 		},
 		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultSchemeFns"},
+			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultSchemeFns"},
 	}
 }
 
@@ -29279,7 +29279,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSchemeFns(ref comm
 				Properties: map[string]spec.Schema{
 					"DefaultSchemeFns": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultSchemeFns"),
+							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultSchemeFns"),
 						},
 					},
 				},
@@ -29287,7 +29287,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSchemeFns(ref comm
 			},
 		},
 		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultSchemeFns"},
+			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultSchemeFns"},
 	}
 }
 
@@ -29369,7 +29369,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatusStrategy(ref
 				Properties: map[string]spec.Schema{
 					"DefaultStatusStorageStrategy": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStatusStorageStrategy"),
+							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"),
 						},
 					},
 				},
@@ -29377,7 +29377,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatusStrategy(ref
 			},
 		},
 		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStatusStorageStrategy"},
+			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"},
 	}
 }
 
@@ -29388,7 +29388,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStrategy(ref commo
 				Properties: map[string]spec.Schema{
 					"DefaultStorageStrategy": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStorageStrategy"),
+							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"),
 						},
 					},
 				},
@@ -29396,7 +29396,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStrategy(ref commo
 			},
 		},
 		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStorageStrategy"},
+			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"},
 	}
 }
 
@@ -29506,7 +29506,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatusStrategy(ref common
 				Properties: map[string]spec.Schema{
 					"DefaultStatusStorageStrategy": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStatusStorageStrategy"),
+							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"),
 						},
 					},
 				},
@@ -29514,7 +29514,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatusStrategy(ref common
 			},
 		},
 		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStatusStorageStrategy"},
+			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"},
 	}
 }
 
@@ -29525,7 +29525,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStrategy(ref common.Refer
 				Properties: map[string]spec.Schema{
 					"DefaultStorageStrategy": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStorageStrategy"),
+							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"),
 						},
 					},
 				},
@@ -29533,6 +29533,6 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStrategy(ref common.Refer
 			},
 		},
 		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder/pkg/builders.DefaultStorageStrategy"},
+			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"},
 	}
 }

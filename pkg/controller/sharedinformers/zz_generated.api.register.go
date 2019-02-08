@@ -21,7 +21,7 @@ package sharedinformers
 import (
 	"time"
 
-	"github.com/kubernetes-incubator/apiserver-builder/pkg/controller"
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"

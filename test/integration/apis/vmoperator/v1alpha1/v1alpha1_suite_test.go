@@ -10,7 +10,7 @@ import (
 	"vmware.com/kubevsphere/pkg/vmprovider"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
 
-	"github.com/kubernetes-incubator/apiserver-builder/pkg/test"
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/rest"

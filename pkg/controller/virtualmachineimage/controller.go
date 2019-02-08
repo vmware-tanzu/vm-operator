@@ -6,7 +6,7 @@ package virtualmachineimage
 
 import (
 	"github.com/golang/glog"
-	"github.com/kubernetes-incubator/apiserver-builder/pkg/builders"
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	listers "vmware.com/kubevsphere/pkg/client/listers_generated/vmoperator/v1alpha1"

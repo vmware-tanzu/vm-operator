@@ -12,6 +12,7 @@ installApps() {
     isInstalled "git" 	    || brew install git
     isInstalled "hg" 	    || brew install mercurial
     isInstalled "kubectl"   || brew install kubernetes-cli
+    isInstalled "etcd"      || brew install etcd
 
     isInstalled "docker"    || brew cask install docker
     isInstalled "minikube"  || brew cask install minikube

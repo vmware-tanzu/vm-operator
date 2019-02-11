@@ -5,6 +5,7 @@ set -o pipefail
 set -o nounset
 
 COMMIT=09ac1e0d568438dbf3f0825b617eea516b5e02a6
+INSTALL=1
 DEFAULT_K8S_VERSION="1.12"
 
 # No need for cross compile.
@@ -12,7 +13,10 @@ GOOS=$(uname -s | awk '{print tolower($0)}')
 GOARCH=amd64
 
 usage() {
-    echo "Usage: $(basename $0) [-k k8sVersion]"
+    echo "\
+Usage: $(basename $0) [-I] [-k k8sVersion]
+    -I: Do not install to \$GOPATH
+"
     exit 1
 }
 
@@ -24,9 +28,6 @@ checkout() {
 }
 
 build() {
-    # HEAD is busted. Use working commit.
-    #git checkout -b build 7c92455d9530fa6a4c65bf32e943976d8022a459
-
     go run ./cmd/apiserver-builder-release/main.go vendor --version $VERSION --commit $COMMIT --kubernetesVersion $K8S_VERSION
     go run ./cmd/apiserver-builder-release/main.go build --version $VERSION --targets $GOOS:$GOARCH
 }
@@ -36,9 +37,10 @@ install() {
     GOOS=$GOOS GOARCH=$GOARCH go run ./cmd/apiserver-builder-release/main.go install --version $VERSION
 }
 
-while getopts ":k:" opt ; do
+while getopts ":k:I" opt ; do
     case $opt in
         "k" ) k8sVersion=$OPTARG ;;
+        "I" ) INSTALL= ;;
         \? ) usage ;;
     esac
 done
@@ -58,6 +60,11 @@ cd "$DIR"
 
 checkout
 build
-install
+
+if [[ -n $INSTALL ]] ; then
+    install
+else
+    echo "Add $DIR/release/$VERSION/bin to your PATH"
+fi
 
 # vim: tabstop=4 shiftwidth=4 expandtab softtabstop=4 filetype=sh

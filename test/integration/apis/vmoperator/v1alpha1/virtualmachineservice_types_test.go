@@ -2,7 +2,7 @@
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
-package v1alpha1_test
+package v1alpha1
 
 import (
 	. "github.com/onsi/ginkgo"
@@ -39,7 +39,7 @@ var _ = Describe("VirtualMachineService", func() {
 	})
 
 	AfterEach(func() {
-		client.Delete(instance.Name, &metav1.DeleteOptions{})
+		_ = client.Delete(instance.Name, &metav1.DeleteOptions{})
 	})
 
 	Describe("when sending a storage request", func() {

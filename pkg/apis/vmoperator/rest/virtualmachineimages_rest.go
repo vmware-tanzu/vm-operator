@@ -47,7 +47,7 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 
 	// TODO: Determine how we can pass a user from our integration tests
 	// TODO: Until then, just ignore the user
-	user, ok := genericapirequest.UserFrom(ctx)
+	user, _ := genericapirequest.UserFrom(ctx)
 	//if !ok {
 	//return nil, errors.NewBadRequest("user is required")
 	//}
@@ -90,7 +90,7 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 
 	// TODO: Determine how we can pass a user from our integration tests
 	// TODO: Until then, just ignore the user
-	user, ok := genericapirequest.UserFrom(ctx)
+	user, _ := genericapirequest.UserFrom(ctx)
 	//if !ok {
 	//	return nil, errors.NewBadRequest("user is required")
 	//}

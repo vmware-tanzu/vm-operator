@@ -2,7 +2,7 @@
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
-package v1alpha1_test
+package v1alpha1
 
 import (
 	"github.com/golang/glog"

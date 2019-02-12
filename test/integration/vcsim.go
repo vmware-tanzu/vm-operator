@@ -19,7 +19,6 @@ import (
 var (
 	vcsimPortBase = 8989
 	vcsimIp       = "127.0.0.1"
-	vcsimUrl      = "https://127.0.0.1:8989/about"
 )
 
 func makeAddress(port int) string {

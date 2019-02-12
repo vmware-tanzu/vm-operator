@@ -59,7 +59,7 @@ type VSphereVmProvider struct {
 // Transform Govmomi error to Kubernetes error
 // TODO: Fill out with VIM fault types
 func transformError(resourceType string, resource string, err error) error {
-	var transformed error = nil
+	var transformed error
 	switch err.(type) {
 	case *find.NotFoundError:
 		transformed = errors.NewNotFound(vmoperator.Resource(resourceType), resource)

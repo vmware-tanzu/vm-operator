@@ -109,12 +109,15 @@ func (c *VirtualMachineControllerImpl) Reconcile(vmToReconcile *v1alpha1.Virtual
 
 	startTime := time.Now()
 	defer func() {
-		c.postVmEventsToWorkqueue(vmToReconcile)
+		_ = c.postVmEventsToWorkqueue(vmToReconcile)
 		glog.V(0).Infof("Finished syncing vm %q duration(%v) err(%s)", vmToReconcile.Name, time.Since(startTime), err)
 	}()
 
 	// Trigger vmservice evaluation
 	err = c.postVmServiceEventsToWorkqueue(vmToReconcile)
+	if err != nil {
+		glog.Errorf("Error posting service event to workqueue for virtual machine object: %v; %v", vmToReconcile.Name, err)
+	}
 
 	// We hold a Finalizer on the VM, so it must be present
 	if !vmToReconcile.ObjectMeta.DeletionTimestamp.IsZero() {

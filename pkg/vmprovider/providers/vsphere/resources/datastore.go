@@ -27,9 +27,8 @@ func (ds *Datastore) Lookup() error {
 
 	ds.finder.SetDatacenter(ds.datacenter)
 
-	var err error = nil
+	var err error
 	ds.Datastore, err = ds.finder.DatastoreOrDefault(context.TODO(), ds.name)
-
 	if err != nil {
 		return err
 	}

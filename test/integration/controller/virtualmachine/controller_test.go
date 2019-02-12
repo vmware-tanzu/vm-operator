@@ -32,7 +32,7 @@ var _ = XDescribe("VirtualMachine controller", func() {
 	})
 
 	AfterEach(func() {
-		vmClient.Delete(instanceName, &metav1.DeleteOptions{})
+		_ = vmClient.Delete(instanceName, &metav1.DeleteOptions{})
 	})
 
 	Describe("when creating a new object", func() {

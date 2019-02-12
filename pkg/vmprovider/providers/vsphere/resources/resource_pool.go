@@ -27,7 +27,7 @@ func (rp *ResourcePool) Lookup() error {
 
 	rp.finder.SetDatacenter(rp.datacenter)
 
-	var err error = nil
+	var err error
 	rp.ResourcePool, err = rp.finder.ResourcePoolOrDefault(context.TODO(), rp.Name)
 	if err != nil {
 		return err

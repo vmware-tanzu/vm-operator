@@ -29,7 +29,7 @@ func (dc *Datacenter) Lookup() error {
 	// Set for relative func if dc flag is given or
 	// if there is a single (default) Datacenter
 	ctx := context.TODO()
-	var err error = nil
+	var err error
 	if dc.Datacenter, err = dc.finder.Datacenter(ctx, dc.name); err != nil {
 		return err
 	}

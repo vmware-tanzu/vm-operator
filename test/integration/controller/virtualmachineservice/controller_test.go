@@ -41,7 +41,7 @@ var _ = XDescribe("VirtualMachineService controller", func() {
 	})
 
 	AfterEach(func() {
-		client.Delete(instance.Name, &metav1.DeleteOptions{})
+		_ = client.Delete(instance.Name, &metav1.DeleteOptions{})
 	})
 
 	XDescribe("when creating a new object", func() {

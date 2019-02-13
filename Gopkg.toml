@@ -35,32 +35,9 @@ required = [
 
 # Comment to update deps with dep tool
 [[constraint]]
-  #version = "v0.1-alpha.28"
+  name = "github.com/kubernetes-incubator/apiserver-builder-alpha"
   #version = "v1.12.alpha.0"
-  version = "v1.12.alpha.28"
-  name = "github.com/kubernetes-incubator/apiserver-builder"
-
-[[constraint]]
-  name = "github.com/emicklei/go-restful"
-
-[[constraint]]
-  name = "github.com/go-openapi/loads"
-
-[[constraint]]
-  name = "github.com/go-openapi/runtime"
-
-[[constraint]]
-  name = "github.com/go-openapi/spec"
-
-[[constraint]]
-  name = "github.com/go-openapi/validate"
-
-[[constraint]]
-  name = "github.com/golang/glog"
-
-[[constraint]]
   branch = "master"
-  name = "github.com/markbates/inflect"
 
 [[constraint]]
   name = "github.com/onsi/ginkgo"
@@ -71,24 +48,8 @@ required = [
   version = "1.4.3"
 
 [[constraint]]
-  name = "github.com/pkg/errors"
-
-[[constraint]]
-  name = "github.com/spf13/cobra"
-
-[[constraint]]
-  name = "github.com/spf13/pflag"
-
-[[constraint]]
-  name = "github.com/spf13/viper"
-
-[[constraint]]
   version = "kubernetes-1.12.3"
   name = "k8s.io/api"
-
-[[constraint]]
-  version = "kubernetes-1.12.3"
-  name = "k8s.io/apiextensions-apiserver"
 
 [[constraint]]
   version = "kubernetes-1.12.3"
@@ -101,10 +62,6 @@ required = [
 [[constraint]]
   branch = "release-9.0"
   name = "k8s.io/client-go"
-
-[[constraint]]
-  name = "k8s.io/gengo"
-  revision = "fdcf9f9480fdd5bf2b3c3df9bf4ecd22b25b87e2"
 
 [[constraint]]
   name = "k8s.io/kube-openapi"
@@ -123,10 +80,6 @@ required = [
   revision = "09f6ed296fc66555a25fe4ce95173148778dfa85"
 
 [[constraint]]
-  name = "github.com/golang/protobuf"
-  revision = "b4deda0973fb4c70b50d226b1af49f3da59f5265"
-
-[[constraint]]
   name = "google.golang.org/grpc"
   version = "=1.7.5"
 
@@ -137,10 +90,6 @@ required = [
 [[constraint]]
   name = "github.com/modern-go/reflect2"
   version = "1.0.1"
-
-[[constraint]]
-  name = "github.com/Azure/go-autorest"
-  version = "=10.14.0"
 
 [[override]]
   source = "https://github.com/fsnotify/fsnotify/archive/v1.4.7.tar.gz"

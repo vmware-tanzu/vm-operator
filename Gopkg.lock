@@ -348,7 +348,7 @@
   revision = "c65c006176ff7ff98bb916961c7abbc6b0afc0aa"
 
 [[projects]]
-  digest = "1:bfd020e58813bb9342eb916958e51956b512c9e61a02f0a0411a85f38d87775b"
+  digest = "1:b82e8a89ad3487a249ebec14bb623519b5bf7220b1ccf1863714ff795e55e3ce"
   name = "github.com/golang/protobuf"
   packages = [
     "jsonpb",
@@ -361,7 +361,7 @@
     "ptypes/timestamp",
   ]
   pruneopts = "NU"
-  revision = "b4deda0973fb4c70b50d226b1af49f3da59f5265"
+  revision = "c823c79ea1570fb5ff454033735a8e68575d1d0f"
 
 [[projects]]
   digest = "1:5a412468abcc86a49c20c6dda23da9c4bbdfdf03bd70c63c04dc9787c095972e"

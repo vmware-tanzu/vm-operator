@@ -5,10 +5,12 @@
 package v1alpha1_test
 
 import (
+	"github.com/golang/glog"
 	"testing"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/vmprovider"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
+	"vmware.com/kubevsphere/test/integration"
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
 	. "github.com/onsi/ginkgo"
@@ -24,6 +26,7 @@ import (
 var testenv *test.TestEnvironment
 var config *rest.Config
 var cs *clientset.Clientset
+var vcsim *integration.VcSimInstance
 
 func TestV1alpha1(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -31,9 +34,21 @@ func TestV1alpha1(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	vsphere.InitProvider()
-	vmprovider, _ := vmprovider.NewVmProvider()
-	v1alpha1.RegisterRestProvider(vmrest.NewVirtualMachineImagesREST(vmprovider))
+	vcsim = integration.NewVcSimInstance()
+	address, port := vcsim.Start()
+
+	if err := vsphere.InitProviderWithConfig(integration.NewIntegrationVmOperatorConfig(address, port)); err != nil {
+		glog.Fatalf("Failed to install vsphere provider config: %s", err)
+	}
+
+	vmprovider, err := vmprovider.NewVmProvider()
+	if err != nil {
+		glog.Fatalf("Failed to acquire vm provider: %s", err)
+	}
+
+	if err := v1alpha1.RegisterRestProvider(vmrest.NewVirtualMachineImagesREST(vmprovider)); err != nil {
+		glog.Fatalf("Failed to register REST provider: %s", err)
+	}
 
 	testenv = test.NewTestEnvironment()
 	config = testenv.Start(apis.GetAllApiBuilders(), openapi.GetOpenAPIDefinitions)
@@ -42,4 +57,5 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	testenv.Stop()
+	vcsim.Stop()
 })

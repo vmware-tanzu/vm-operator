@@ -10,7 +10,6 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -18,9 +17,9 @@ import (
 	"vmware.com/kubevsphere/pkg"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	clientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
-	vmclientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
 	listers "vmware.com/kubevsphere/pkg/client/listers_generated/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
+	"vmware.com/kubevsphere/pkg/lib"
 	vmprov "vmware.com/kubevsphere/pkg/vmprovider"
 	"vmware.com/kubevsphere/pkg/vmprovider/iface"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
@@ -37,8 +36,7 @@ type VirtualMachineControllerImpl struct {
 	// lister indexes properties about VirtualMachine
 	vmLister listers.VirtualMachineLister
 
-	clientSet   clientSet.Interface
-	vmClientSet vmclientSet.VirtualMachineInterface
+	clientSet clientSet.Interface
 
 	vmProvider iface.VirtualMachineProviderInterface
 }
@@ -60,9 +58,9 @@ func (c *VirtualMachineControllerImpl) Init(arguments sharedinformers.Controller
 	}
 	c.clientSet = clientSet
 
-	c.vmClientSet = clientSet.VmoperatorV1alpha1().VirtualMachines(corev1.NamespaceDefault)
-
-	vsphere.InitProvider(arguments.GetSharedInformers().KubernetesClientSet)
+	if err := vsphere.InitProvider(arguments.GetSharedInformers().KubernetesClientSet); err != nil {
+		glog.Fatalf("Failed to initialize vSphere provider: %s", err)
+	}
 
 	// Get a vmprovider instance
 	vmProvider, err := vmprov.NewVmProvider()
@@ -73,29 +71,18 @@ func (c *VirtualMachineControllerImpl) Init(arguments sharedinformers.Controller
 
 }
 
-// Function to filter a string from a list. Returns the filtered list
-func (c *VirtualMachineControllerImpl) filter(list []string, strToFilter string) (newList []string) {
-	for _, item := range list {
-		if item != strToFilter {
-			newList = append(newList, item)
-		}
-	}
-	return
-}
+// Used to reconcile VM status periodically to discover async changes from the VM provider backend
+func (c *VirtualMachineControllerImpl) postVmEventsToWorkqueue(vm *v1alpha1.VirtualMachine) error {
 
-// Function to determine if a list contains s specific string
-func (c *VirtualMachineControllerImpl) contains(list []string, strToSearch string) bool {
-	for _, item := range list {
-		if item == strToSearch {
-			return true
-		}
+	key, err := cache.MetaNamespaceKeyFunc(vm)
+	if err == nil {
+		c.informers.WorkerQueues["VirtualMachine"].Queue.AddAfter(key, time.Second)
 	}
-	return false
+
+	return nil
 }
 
 func (c *VirtualMachineControllerImpl) postVmServiceEventsToWorkqueue(vm *v1alpha1.VirtualMachine) error {
-
-	glog.V(4).Infof("VM update: %v", vm.Name)
 
 	vmServices, err := c.vmServiceLister.VirtualMachineServices(vm.Namespace).List(labels.Everything())
 	if err != nil {
@@ -105,7 +92,7 @@ func (c *VirtualMachineControllerImpl) postVmServiceEventsToWorkqueue(vm *v1alph
 	for _, vmService := range vmServices {
 		key, err := cache.MetaNamespaceKeyFunc(vmService)
 		if err == nil {
-			c.informers.WorkerQueues["VirtualMachineService"].Queue.Add(key)
+			c.informers.WorkerQueues["VirtualMachineService"].Queue.AddRateLimited(key)
 		}
 	}
 
@@ -115,14 +102,19 @@ func (c *VirtualMachineControllerImpl) postVmServiceEventsToWorkqueue(vm *v1alph
 // Reconcile handles enqueued messages
 func (c *VirtualMachineControllerImpl) Reconcile(vmToReconcile *v1alpha1.VirtualMachine) error {
 	glog.V(0).Infof("Running reconcile VirtualMachine for %s\n", vmToReconcile.Name)
+	var err error = nil
+
+	// Acquire a namespace-scoped client
+	vmClientSet := c.clientSet.VmoperatorV1alpha1().VirtualMachines(vmToReconcile.Namespace)
 
 	startTime := time.Now()
 	defer func() {
-		glog.V(0).Infof("Finished syncing vm %q (%v)", vmToReconcile.Name, time.Since(startTime))
+		c.postVmEventsToWorkqueue(vmToReconcile)
+		glog.V(0).Infof("Finished syncing vm %q duration(%v) err(%s)", vmToReconcile.Name, time.Since(startTime), err)
 	}()
 
 	// Trigger vmservice evaluation
-	err := c.postVmServiceEventsToWorkqueue(vmToReconcile)
+	err = c.postVmServiceEventsToWorkqueue(vmToReconcile)
 
 	// We hold a Finalizer on the VM, so it must be present
 	if !vmToReconcile.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -131,7 +123,7 @@ func (c *VirtualMachineControllerImpl) Reconcile(vmToReconcile *v1alpha1.Virtual
 
 		// Noop if our finalizer is not present
 		//if u.ObjectMeta.Finalizers()
-		if !c.contains(vmToReconcile.ObjectMeta.Finalizers, v1alpha1.VirtualMachineFinalizer) {
+		if !lib.Contains(vmToReconcile.ObjectMeta.Finalizers, v1alpha1.VirtualMachineFinalizer) {
 			glog.Infof("reconciling virtual machine object %v causes a no-op as there is no finalizer.", vmToReconcile.Name)
 			return nil
 		}
@@ -144,8 +136,8 @@ func (c *VirtualMachineControllerImpl) Reconcile(vmToReconcile *v1alpha1.Virtual
 
 		// Remove finalizer on successful deletion.
 		glog.Infof("virtual machine object %v deletion successful, removing finalizer.", vmToReconcile.Name)
-		vmToReconcile.ObjectMeta.Finalizers = c.filter(vmToReconcile.ObjectMeta.Finalizers, v1alpha1.VirtualMachineFinalizer)
-		if _, err := c.vmClientSet.Update(vmToReconcile); err != nil {
+		vmToReconcile.ObjectMeta.Finalizers = lib.Filter(vmToReconcile.ObjectMeta.Finalizers, v1alpha1.VirtualMachineFinalizer)
+		if _, err := vmClientSet.Update(vmToReconcile); err != nil {
 			glog.Errorf("Error removing finalizer from machine object %v; %v", vmToReconcile.Name, err)
 			return err
 		}
@@ -198,6 +190,8 @@ func (c *VirtualMachineControllerImpl) processVmDeletion(vmToDelete *v1alpha1.Vi
 func (c *VirtualMachineControllerImpl) processVmCreateOrUpdate(vmToUpdate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 	glog.Infof("Process VM Create or Update for vm %s", vmToUpdate.Name)
 
+	vmClientSet := c.clientSet.VmoperatorV1alpha1().VirtualMachines(vmToUpdate.Namespace)
+
 	vmsProvider, supported := c.vmProvider.VirtualMachines()
 	if !supported {
 		glog.Errorf("Provider doesn't support vms func")
@@ -226,7 +220,7 @@ func (c *VirtualMachineControllerImpl) processVmCreateOrUpdate(vmToUpdate *v1alp
 	}
 
 	// Update object
-	_, err = c.vmClientSet.UpdateStatus(newVm)
+	_, err = vmClientSet.UpdateStatus(newVm)
 	if err != nil {
 		glog.Errorf("Failed to update VM Resource in Storage %s: %s", newVm.Name, err)
 	}

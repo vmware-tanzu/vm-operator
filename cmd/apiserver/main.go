@@ -26,7 +26,9 @@ func main() {
 	version := "v0"
 
 	// Init the vsphere provider
-	vsphere.InitProvider(nil)
+	if err := vsphere.InitProvider(nil); err != nil {
+		glog.Fatalf("Failed to initialize vSphere provider: %s", err)
+	}
 
 	// Get a vmprovider instance
 	vmprovider, err := vmprovider.NewVmProvider()

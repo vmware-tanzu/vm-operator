@@ -235,8 +235,8 @@ func (v *VSphereManager) cloneVmInvoke(ctx context.Context, client *govmomi.Clie
 	return vm.Clone(ctx, sourceVm.VirtualMachine, rc.folder.Folder, cloneSpec)
 }
 
-func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, vmToClone *v1alpha1.VirtualMachine) (*resources.VM, error) {
-	glog.Infof("CloneVm %s", vmToClone.Name)
+func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, vmToCreate *v1alpha1.VirtualMachine) (*resources.VM, error) {
+	glog.Infof("CloneVm %s", vmToCreate.Name)
 
 	rc, err := v.resolveResources(ctx, vClient)
 	if err != nil {
@@ -244,16 +244,16 @@ func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, v
 	}
 
 	// Find existing VM or template matching the image name
-	sourceVm, err := v.LookupVm(ctx, vClient, vmToClone.Spec.Image)
+	sourceVm, err := v.LookupVm(ctx, vClient, vmToCreate.Spec.Image)
 	if err != nil {
-		glog.Errorf("Failed to find source VM %s: %s", vmToClone.Spec.Image, err)
+		glog.Errorf("Failed to find source VM %s: %s", vmToCreate.Spec.Image, err)
 		return nil, err
 	}
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{
-		Name:     vmToClone.Name,
-		NumCPUs:  int32(vmToClone.Spec.Resources.Capacity.Cpu),
-		MemoryMB: int64(vmToClone.Spec.Resources.Capacity.Memory),
+		Name:     vmToCreate.Name,
+		NumCPUs:  int32(vmToCreate.Spec.Resources.Capacity.Cpu),
+		MemoryMB: int64(vmToCreate.Spec.Resources.Capacity.Memory),
 	}
 
 	// No mem-full clones
@@ -289,7 +289,7 @@ func (v *VSphereManager) CloneVm(ctx context.Context, vClient *govmomi.Client, v
 		return nil, err
 	}
 
-	glog.Infof("Clone VM %s from %s!", vmToClone.Name, cloneSpec.Config.Name)
+	glog.Infof("Clone VM %s from %s!", vmToCreate.Name, vmToCreate.Spec.Image)
 
 	return clonedVm, nil
 }

@@ -33,7 +33,7 @@ var _ = Describe("VirtualMachineService", func() {
 			Ports:    []VirtualMachineServicePort{port},
 			Selector: selector,
 		}}
-		instance.Name = "instance-1"
+		instance.Name = "instance-vm-service"
 
 		expected = instance
 	})
@@ -105,7 +105,9 @@ var _ = Describe("VirtualMachineService", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 				result, err = client.List(metav1.ListOptions{})
 				Expect(err).ShouldNot(HaveOccurred())
-				//Expect(result.Items).To(HaveLen(0))
+				// Object must still exist due to use of finalizer
+				Expect(result.Items).To(HaveLen(1))
+				Expect(result.Items[0].DeletionTimestamp.IsZero()).Should(BeFalse())
 			})
 		})
 	})

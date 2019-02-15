@@ -5,36 +5,38 @@
 package virtualmachine_test
 
 import (
+	"github.com/golang/glog"
 	"time"
+	"vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	. "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	. "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	. "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 )
 
-var _ = Describe("VirtualMachine controller", func() {
-	var instance VirtualMachine
+var _ = XDescribe("VirtualMachine controller", func() {
+	var instanceName string
 	var expectedKey string
-	var client VirtualMachineInterface
 	var before chan struct{}
 	var after chan struct{}
+	ns := "virtualmachine-controller-test-handler"
+	var imageClient v1alpha1.VirtualMachineImageInterface
+	var vmClient v1alpha1.VirtualMachineInterface
 
 	BeforeEach(func() {
-		instance = VirtualMachine{Spec: VirtualMachineSpec{Image: "foo"}}
-		instance.Name = "instance-1"
+		imageClient = cs.VmoperatorV1alpha1().VirtualMachineImages(ns)
+		vmClient = cs.VmoperatorV1alpha1().VirtualMachines(ns)
+		instanceName = "instance-1"
 		expectedKey = "virtualmachine-controller-test-handler/instance-1"
 	})
 
 	AfterEach(func() {
-		client.Delete(instance.Name, &metav1.DeleteOptions{})
+		vmClient.Delete(instanceName, &metav1.DeleteOptions{})
 	})
 
-	XDescribe("when creating a new object", func() {
+	Describe("when creating a new object", func() {
 		It("invoke the reconcile method", func() {
-			client = cs.VmoperatorV1alpha1().VirtualMachines("virtualmachine-controller-test-handler")
 			before = make(chan struct{})
 			after = make(chan struct{})
 
@@ -43,17 +45,31 @@ var _ = Describe("VirtualMachine controller", func() {
 
 			// Setup test callbacks to be called when the message is reconciled
 			controller.BeforeReconcile = func(key string) {
+				controller.BeforeReconcile = nil
 				defer close(before)
 				actualKey = key
 			}
 			controller.AfterReconcile = func(key string, err error) {
+				controller.AfterReconcile = nil
 				defer close(after)
 				actualKey = key
 				actualErr = err
 			}
 
+			// Pick the first VM image
+			list, err := imageClient.List(metav1.ListOptions{})
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(len(list.Items)).ShouldNot(BeZero())
+			first := list.Items[0]
+
+			glog.Infof("Cloning %s from %s", instanceName, first.Name)
+
+			instance := VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{Name: instanceName},
+				Spec:       VirtualMachineSpec{Image: first.Name},
+			}
 			// Create an instance
-			_, err := client.Create(&instance)
+			_, err = vmClient.Create(&instance)
 			Expect(err).ShouldNot(HaveOccurred())
 
 			// Verify reconcile function is called against the correct key
@@ -70,7 +86,7 @@ var _ = Describe("VirtualMachine controller", func() {
 				Expect(actualKey).To(Equal(expectedKey))
 				Expect(actualErr).ShouldNot(HaveOccurred())
 			case <-time.After(time.Second * 2):
-				//Fail("reconcile never finished")
+				Fail("reconcile never finished")
 			}
 		})
 	})

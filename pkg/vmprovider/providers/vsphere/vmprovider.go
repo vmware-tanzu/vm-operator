@@ -29,13 +29,26 @@ var _ = &VSphereVmProvider{}
 
 const VsphereVmProviderName string = "vsphere"
 
-func InitProvider(clientSet *kubernetes.Clientset) {
-	SetVSphereVmProviderConfig(clientSet)
+func InitProviderWithConfig(providerConfig *VSphereVmProviderConfig) error {
+	SetProviderConfigWithConfig(providerConfig)
+
+	vmprovider.RegisterVmProvider(VsphereVmProviderName, func(config io.Reader) (iface.VirtualMachineProviderInterface, error) {
+		return newVSphereVmProvider(providerConfig)
+	})
+
+	return nil
+}
+func InitProvider(clientSet *kubernetes.Clientset) error {
+	if err := SetProviderConfigWithClientset(clientSet); err != nil {
+		return err
+	}
 
 	vmprovider.RegisterVmProvider(VsphereVmProviderName, func(config io.Reader) (iface.VirtualMachineProviderInterface, error) {
 		providerConfig := GetVsphereVmProviderConfig()
 		return newVSphereVmProvider(providerConfig)
 	})
+
+	return nil
 }
 
 type VSphereVmProvider struct {
@@ -121,7 +134,6 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 	if err != nil {
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
-	glog.Info("Getting VM image 1")
 
 	// DWB: Reason about how to handle client management and logout
 	//defer vClient.Logout(ctx)
@@ -130,8 +142,6 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name st
 	if err != nil {
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
-
-	glog.Info("Getting VM image 2")
 
 	powerState, _ := vm.VirtualMachine.PowerState(ctx)
 	ps := string(powerState)
@@ -172,16 +182,15 @@ func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *res
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
-	// If guest is powered off, IP acquisition will fail.  For now, require IP acquisition for powered on VMs
+	// If guest is powered off, IP acquisition will fail.
+	// If guest is powered on, IP acquisition may fail.  Subsequenty reconcilitaion will resolve it.
 	// TODO: Consider separating vm status collection into powered off and powered on versions
 	// TODO: Consider how to balance between wanting to acquire the IP and supporting a VM without IPs.
-	// TODO: Queue a go routine to poll for the IP update?
 	vmIp := ""
 	if powerState == types.VirtualMachinePowerStatePoweredOn {
 		vmIp, err = actualVm.IpAddress(ctx)
 		if err != nil {
 			glog.Infof("Failed to acquire IP for VM %s: %s", err, actualVm.Name)
-			return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 		}
 	}
 
@@ -191,16 +200,8 @@ func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *res
 		Status: v1alpha1.VirtualMachineStatus{
 			Phase:      "",
 			PowerState: ps,
-			//Host: host.Name(),
-			Host: vmIp,
-			VmIp: vmIp,
-			/*
-
-					Uuid: actualVm.VirtualMachine.UUID(ctx),
-					InternalId: actualVm.VirtualMachine.Reference().Value,
-				},
-			*/
-			//Host: actualVm.VirtualMachine.HostSystem(ctx),
+			Host:       vmIp,
+			VmIp:       vmIp,
 		},
 	}
 
@@ -250,6 +251,9 @@ func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string)
 func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, moRef string) {
 	// Add vSphere provider annotations to the object meta
 	annotations := objectMeta.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
 
 	annotations[pkg.VmOperatorVmProviderKey] = VsphereVmProviderName
 	//annotations[pkg.VmOperatorVcUuidKey] = vs.Config.VcUrl
@@ -353,6 +357,11 @@ func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vclient
 }
 
 func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govmomi.Client, vmToUpdate *v1alpha1.VirtualMachine, vm *resources.VM) (*resources.VM, error) {
+	// Default to Powered On
+	desiredPowerState := v1alpha1.VirtualMachinePoweredOn
+	if vmToUpdate.Spec.PowerState != "" {
+		desiredPowerState = vmToUpdate.Spec.PowerState
+	}
 
 	ps, err := vm.VirtualMachine.PowerState(ctx)
 	if err != nil {
@@ -362,18 +371,20 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govm
 
 	glog.Infof("Current power state: %s, desired power state: %s", ps, vmToUpdate.Spec.PowerState)
 
-	if string(ps) == string(vmToUpdate.Spec.PowerState) {
+	if string(ps) == string(desiredPowerState) {
 		glog.Infof("Power state already at desired state of %s", ps)
 		return vm, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	// Bring PowerState into conformance
 	var task *object.Task
-	switch vmToUpdate.Spec.PowerState {
-	case v1alpha1.VirtualMachinePoweredOff:
-		task, err = vm.VirtualMachine.PowerOff(ctx)
+	switch desiredPowerState {
 	case v1alpha1.VirtualMachinePoweredOn:
 		task, err = vm.VirtualMachine.PowerOn(ctx)
+	case v1alpha1.VirtualMachinePoweredOff:
+		task, err = vm.VirtualMachine.PowerOff(ctx)
+	default:
+		glog.Errorf("Impossible %s", desiredPowerState)
 	}
 
 	if err != nil {
@@ -403,18 +414,18 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vmToUpdat
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
-	newVm, err := vs.updateResourceSettings(ctx, vClient, vmToUpdate, vm)
+	vm, err = vs.updateResourceSettings(ctx, vClient, vmToUpdate, vm)
 	if err != nil {
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
-	newVm, err = vs.updatePowerState(ctx, vClient, vmToUpdate, vm)
+	vm, err = vs.updatePowerState(ctx, vClient, vmToUpdate, vm)
 	if err != nil {
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
 	// Update spec
-	return vs.mergeVmStatus(ctx, vmToUpdate, newVm)
+	return vs.mergeVmStatus(ctx, vmToUpdate, vm)
 }
 
 func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {

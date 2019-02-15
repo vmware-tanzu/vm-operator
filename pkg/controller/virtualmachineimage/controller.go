@@ -28,7 +28,9 @@ func (c *VirtualMachineImageControllerImpl) Init(arguments sharedinformers.Contr
 	// Use the lister for indexing virtualmachineimages labels
 	c.lister = arguments.GetSharedInformers().Factory.Vmoperator().V1alpha1().VirtualMachineImages().Lister()
 
-	vsphere.InitProvider(arguments.GetSharedInformers().KubernetesClientSet)
+	if err := vsphere.InitProvider(arguments.GetSharedInformers().KubernetesClientSet); err != nil {
+		glog.Fatalf("Failed to initialize vSphere provider: %s", err)
+	}
 }
 
 // Reconcile handles enqueued messages

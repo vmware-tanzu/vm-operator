@@ -21,7 +21,7 @@ var _ = Describe("VirtualMachine", func() {
 
 	BeforeEach(func() {
 		instance = VirtualMachine{Spec: VirtualMachineSpec{Image: "foo"}}
-		instance.Name = "instance-1"
+		instance.Name = "instance-vm"
 
 		expected = instance
 	})
@@ -68,7 +68,9 @@ var _ = Describe("VirtualMachine", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 				result, err = client.List(metav1.ListOptions{})
 				Expect(err).ShouldNot(HaveOccurred())
-				//Expect(result.Items).To(HaveLen(0))
+				// Object must still exist due to use of finalizer
+				Expect(result.Items).To(HaveLen(1))
+				Expect(result.Items[0].DeletionTimestamp.IsZero()).Should(BeFalse())
 			})
 		})
 	})

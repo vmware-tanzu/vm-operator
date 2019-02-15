@@ -6,6 +6,7 @@ package vsphere
 import (
 	"github.com/golang/glog"
 	controllerlib "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -43,7 +44,58 @@ func GetVsphereVmProviderConfig() *VSphereVmProviderConfig {
 	return nil
 }
 
-func SetVSphereVmProviderConfig(clientSet *kubernetes.Clientset) error {
+const (
+	vcUserKey       = "VcUser"
+	vcPasswordKey   = "VcPassword"
+	vcIpKey         = "VcIP"
+	vcUrlKey        = "VcUrl"
+	datacenterKey   = "Datacenter"
+	resourcePoolKey = "ResourcePool"
+	folderKey       = "Folder"
+	datastoreKey    = "Datastore"
+)
+
+func configMapToProviderConfig(configMap *v1.ConfigMap) *VSphereVmProviderConfig {
+	dataMap := configMap.Data
+
+	return &VSphereVmProviderConfig{
+		VcUser:       dataMap[vcUserKey],
+		VcPassword:   dataMap[vcPasswordKey],
+		VcIP:         dataMap[vcIpKey],
+		VcUrl:        dataMap[vcUrlKey],
+		Datacenter:   dataMap[datacenterKey],
+		ResourcePool: dataMap[resourcePoolKey],
+		Folder:       dataMap[folderKey],
+		Datastore:    dataMap[datastoreKey],
+	}
+}
+
+func providerConfigToConfigMap(config VSphereVmProviderConfig) *v1.ConfigMap {
+	dataMap := make(map[string]string)
+
+	dataMap[vcUserKey] = config.VcUser
+	dataMap[vcPasswordKey] = config.VcPassword
+	dataMap[vcIpKey] = config.VcIP
+	dataMap[vcUrlKey] = config.VcUrl
+	dataMap[datacenterKey] = config.Datacenter
+	dataMap[resourcePoolKey] = config.ResourcePool
+	dataMap[folderKey] = config.Folder
+	dataMap[datastoreKey] = config.Datastore
+
+	return &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: vSphereConfigMapName,
+		},
+		Data: dataMap,
+	}
+}
+
+func SetProviderConfigWithConfig(vsphereConfig *VSphereVmProviderConfig) {
+	vSphereVmProviderConfig = vsphereConfig
+}
+
+func SetProviderConfigWithClientset(clientSet *kubernetes.Clientset) error {
+
 	// Get the vSphere Provider ConfigMap from the API Master.
 	if clientSet == nil {
 		// The Caller didn't provide a ClientSet. Thus, a default ClientSet
@@ -67,18 +119,14 @@ func SetVSphereVmProviderConfig(clientSet *kubernetes.Clientset) error {
 		glog.Fatalf("Could not retrieve %v configMap from API Master: %v", vSphereConfigMapName, err)
 	}
 
-	vSphereConfigData := vSphereConfig.Data
+	vSphereVmProviderConfig = configMapToProviderConfig(vSphereConfig)
+	return err
+}
 
-	vSphereVmProviderConfig = &VSphereVmProviderConfig{
-		VcUser:       vSphereConfigData["VcUser"],
-		VcPassword:   vSphereConfigData["VcPassword"],
-		VcIP:         vSphereConfigData["VcIP"],
-		VcUrl:        vSphereConfigData["VcUrl"],
-		Datacenter:   vSphereConfigData["Datacenter"],
-		ResourcePool: vSphereConfigData["ResourcePool"],
-		Folder:       vSphereConfigData["Folder"],
-		Datastore:    vSphereConfigData["Datastore"],
-	}
-
+// Install the Config Map for the VM operator in the API master
+func InstallVSphereVmProviderConfig(clientSet *kubernetes.Clientset, config VSphereVmProviderConfig) error {
+	// TODO: Fix hardcoded namespace
+	configMap := providerConfigToConfigMap(config)
+	_, err := clientSet.CoreV1().ConfigMaps(vSphereConfigK8sNamespace).Update(configMap)
 	return err
 }

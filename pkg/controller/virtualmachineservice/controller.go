@@ -25,7 +25,6 @@ import (
 
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	clientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
-	vmclientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
 	listers "vmware.com/kubevsphere/pkg/client/listers_generated/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
 )
@@ -47,9 +46,8 @@ type VirtualMachineServiceControllerImpl struct {
 	serviceLister   corev1listers.ServiceLister
 	endpointsLister corev1listers.EndpointsLister
 
-	coreClientSet      corev1client.CoreV1Interface
-	clientSet          clientSet.Interface
-	vmServiceClientSet vmclientSet.VirtualMachineServiceInterface
+	coreClientSet corev1client.CoreV1Interface
+	clientSet     clientSet.Interface
 }
 
 func (c *VirtualMachineServiceControllerImpl) ServiceToVirtualMachineService(i interface{}) (string, error) {
@@ -88,8 +86,6 @@ func (c *VirtualMachineServiceControllerImpl) Init(arguments sharedinformers.Con
 
 	c.coreClientSet = arguments.GetSharedInformers().KubernetesClientSet.CoreV1()
 
-	c.vmServiceClientSet = clientSet.VmoperatorV1alpha1().VirtualMachineServices(corev1.NamespaceDefault)
-
 	vmOperator := arguments.GetSharedInformers().Factory.Vmoperator().V1alpha1()
 	c.vmServiceLister = vmOperator.VirtualMachineServices().Lister()
 	c.vmLister = vmOperator.VirtualMachines().Lister()
@@ -100,7 +96,9 @@ func (c *VirtualMachineServiceControllerImpl) Init(arguments sharedinformers.Con
 	endpoints := arguments.GetSharedInformers().KubernetesFactory.Core().V1().Endpoints()
 	c.endpointsLister = endpoints.Lister()
 
-	vsphere.InitProvider(arguments.GetSharedInformers().KubernetesClientSet)
+	if err := vsphere.InitProvider(arguments.GetSharedInformers().KubernetesClientSet); err != nil {
+		glog.Fatalf("Failed to initialize vSphere provider: %s", err)
+	}
 
 	arguments.Watch("Service", services.Informer(), c.ServiceToVirtualMachineService)
 	arguments.Watch("Endpoint", endpoints.Informer(), c.EndpointsToVirtualMachineService)
@@ -109,6 +107,9 @@ func (c *VirtualMachineServiceControllerImpl) Init(arguments sharedinformers.Con
 // Reconcile handles enqueued messages
 func (c *VirtualMachineServiceControllerImpl) Reconcile(vmService *v1alpha1.VirtualMachineService) error {
 	glog.V(0).Infof("Running reconcile VirtualMachineService for %s\n", vmService.Name)
+
+	// Acquire a namespace-scoped client
+	vmServiceClientSet := c.clientSet.VmoperatorV1alpha1().VirtualMachineServices(vmService.Namespace)
 
 	startTime := time.Now()
 	defer func() {
@@ -136,7 +137,7 @@ func (c *VirtualMachineServiceControllerImpl) Reconcile(vmService *v1alpha1.Virt
 		// Remove finalizer on successful deletion.
 		glog.Infof("virtual machine service object %v deletion successful, removing finalizer.", vmService.Name)
 		vmService.ObjectMeta.Finalizers = lib.Filter(vmService.ObjectMeta.Finalizers, v1alpha1.VirtualMachineServiceFinalizer)
-		if _, err := c.vmServiceClientSet.Update(vmService); err != nil {
+		if _, err := vmServiceClientSet.Update(vmService); err != nil {
 			glog.Errorf("Error removing finalizer from virtual machine service object %v; %v", vmService.Name, err)
 			return err
 		}
@@ -190,14 +191,14 @@ func (c *VirtualMachineServiceControllerImpl) processVmServiceCreateOrUpdate(vmS
 func (c *VirtualMachineServiceControllerImpl) makeObjectMeta(vmService *v1alpha1.VirtualMachineService) *metav1.ObjectMeta {
 	t := true
 	om := &metav1.ObjectMeta{
-		Namespace:   vmService.GetNamespace(),
-		Name:        vmService.GetName(),
-		Labels:      vmService.GetLabels(),
-		Annotations: vmService.GetAnnotations(),
+		Namespace:   vmService.Namespace,
+		Name:        vmService.Name,
+		Labels:      vmService.Labels,
+		Annotations: vmService.Annotations,
 		OwnerReferences: []metav1.OwnerReference{
 			metav1.OwnerReference{
-				UID:                vmService.GetUID(),
-				Name:               vmService.GetName(),
+				UID:                vmService.UID,
+				Name:               vmService.Name,
 				Controller:         &t,
 				BlockOwnerDeletion: &t,
 				Kind:               ServiceOwnerRefKind,
@@ -222,10 +223,10 @@ func (c *VirtualMachineServiceControllerImpl) makeEndpointAddress(vmService *v1a
 		NodeName: &vm.Status.Host,
 		TargetRef: &corev1.ObjectReference{
 			Kind:            vmService.Kind,
-			Namespace:       vmService.GetNamespace(),
-			Name:            vmService.GetName(),
-			UID:             vmService.GetUID(),
-			ResourceVersion: vmService.GetResourceVersion(),
+			Namespace:       vmService.Namespace,
+			Name:            vmService.Name,
+			UID:             vmService.UID,
+			ResourceVersion: vmService.ResourceVersion,
 		}}
 }
 

@@ -497,7 +497,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "0:"
+  digest = "1:cb37e2591186bd2a2acd362938f37bbbe5427caa402438077ef4f668772bdbbc"
   name = "github.com/kubernetes-incubator/apiserver-builder-alpha"
   packages = [
     "pkg/apiserver",
@@ -887,6 +887,14 @@
   pruneopts = "NU"
   revision = "3887ee99ecf07df5b447e9b00d9c0b2adaa9f3e4"
   version = "v0.9.0"
+
+[[projects]]
+  digest = "1:1b86af10bf61e29add0df47a6a8d51790599411318fcb8916ba4ffa628ca4824"
+  name = "gopkg.in/matryer/try.v1"
+  packages = ["."]
+  pruneopts = "NU"
+  revision = "312d2599e12e89ca89b52a09597394f449235d80"
+  version = "v1"
 
 [[projects]]
   digest = "1:31b5443a48ef5d7ae4e88e08cf108b47a4d2b886a559a6ae41a3adc52c8ee60c"
@@ -1307,6 +1315,7 @@
     "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test",
     "github.com/modern-go/reflect2",
     "github.com/onsi/ginkgo",
+    "github.com/onsi/ginkgo/config",
     "github.com/onsi/ginkgo/extensions/table",
     "github.com/onsi/gomega",
     "github.com/vmware/govmomi",
@@ -1318,6 +1327,7 @@
     "golang.org/x/net/context",
     "google.golang.org/genproto",
     "google.golang.org/grpc",
+    "gopkg.in/matryer/try.v1",
     "k8s.io/api/core/v1",
     "k8s.io/apimachinery/pkg/api/errors",
     "k8s.io/apimachinery/pkg/api/resource",

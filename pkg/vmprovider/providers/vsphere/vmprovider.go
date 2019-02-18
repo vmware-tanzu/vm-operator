@@ -1,19 +1,21 @@
 /* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
 package vsphere
 
 import (
 	"context"
+	"io"
+
 	"github.com/golang/glog"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
-	"io"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"vmware.com/kubevsphere/pkg"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
@@ -27,9 +29,11 @@ var _ = &VSphereVmProvider{}
 
 const VsphereVmProviderName string = "vsphere"
 
-func InitProvider() {
+func InitProvider(clientSet *kubernetes.Clientset) {
+	SetVSphereVmProviderConfig(clientSet)
+
 	vmprovider.RegisterVmProvider(VsphereVmProviderName, func(config io.Reader) (iface.VirtualMachineProviderInterface, error) {
-		providerConfig := NewVsphereVmProviderConfig()
+		providerConfig := GetVsphereVmProviderConfig()
 		return newVSphereVmProvider(providerConfig)
 	})
 }

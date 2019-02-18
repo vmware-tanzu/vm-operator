@@ -1,15 +1,17 @@
 /* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
 package vmprovider
 
 import (
 	"fmt"
-	"github.com/golang/glog"
 	"io"
 	"os"
+	"reflect"
 	"sync"
+
+	"github.com/golang/glog"
 	"vmware.com/kubevsphere/pkg/vmprovider/iface"
 )
 
@@ -30,8 +32,12 @@ var (
 func RegisterVmProvider(name string, vmProvider Factory) {
 	providersMutex.Lock()
 	defer providersMutex.Unlock()
-	if _, found := providers[name]; found {
-		glog.Fatalf("VM provider %q was registered twice", name)
+	if provider, found := providers[name]; found {
+		if reflect.ValueOf(provider) == reflect.ValueOf(vmProvider) {
+			glog.Infof("VM provider %q already registered", name)
+			return
+		}
+		glog.Fatalf("VM provider %q already registered and new registration is different", name)
 	}
 	glog.V(1).Infof("Registered VM provider %q", name)
 	providers[name] = vmProvider

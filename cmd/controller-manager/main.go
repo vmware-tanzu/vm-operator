@@ -1,30 +1,27 @@
 /* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
 package main
 
 import (
 	"flag"
-	"log"
-	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
 
+	"github.com/golang/glog"
 	controllerlib "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
 
 	"vmware.com/kubevsphere/pkg/controller"
 )
 
-var kubeconfig = flag.String("kubeconfig", "", "path to kubeconfig")
-
 func main() {
+	// This isn't used
+	kubeconfig := flag.String("kubeconfig", "", "path to kubeconfig")
 	flag.Parse()
+
 	config, err := controllerlib.GetConfig(*kubeconfig)
 	if err != nil {
-		log.Fatalf("Could not create Config for talking to the apiserver: %v", err)
+		glog.Fatalf("Could not create Config for talking to the apiserver: %v", err)
 	}
-
-	// Init the vsphere provider
-	vsphere.InitProvider()
 
 	controllers, _ := controller.GetAllControllers(config)
 	controllerlib.StartControllerManager(controllers...)

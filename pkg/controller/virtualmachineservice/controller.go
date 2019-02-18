@@ -1,5 +1,5 @@
 /* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
 package virtualmachineservice
@@ -7,6 +7,8 @@ package virtualmachineservice
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -15,9 +17,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	corev1listers "k8s.io/client-go/listers/core/v1"
-	"time"
 	"vmware.com/kubevsphere/pkg"
 	"vmware.com/kubevsphere/pkg/lib"
+	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 
@@ -97,6 +99,8 @@ func (c *VirtualMachineServiceControllerImpl) Init(arguments sharedinformers.Con
 
 	endpoints := arguments.GetSharedInformers().KubernetesFactory.Core().V1().Endpoints()
 	c.endpointsLister = endpoints.Lister()
+
+	vsphere.InitProvider(arguments.GetSharedInformers().KubernetesClientSet)
 
 	arguments.Watch("Service", services.Informer(), c.ServiceToVirtualMachineService)
 	arguments.Watch("Endpoint", endpoints.Informer(), c.EndpointsToVirtualMachineService)

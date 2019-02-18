@@ -1,11 +1,12 @@
 /* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 package vsphere
 
 import (
 	"context"
 	"fmt"
+
 	"github.com/golang/glog"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
@@ -23,7 +24,7 @@ type VSphereManager struct {
 }
 
 func NewVSphereManager() *VSphereManager {
-	return &VSphereManager{Config: *NewVsphereVmProviderConfig()}
+	return &VSphereManager{Config: *GetVsphereVmProviderConfig()}
 }
 
 func (v *VSphereManager) resolveResources(ctx context.Context, client *govmomi.Client) (*ResourceContext, error) {

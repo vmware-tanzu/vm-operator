@@ -1,9 +1,14 @@
 /* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 package vsphere
 
-import "fmt"
+import (
+	"github.com/golang/glog"
+	controllerlib "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+)
 
 /*
  * Configuration for a Vsphere VM Provider instance.  Contains information enabling integration with a backend
@@ -20,22 +25,60 @@ type VSphereVmProviderConfig struct {
 	Datastore    string
 }
 
-func NewVsphereVmProviderConfig() *VSphereVmProviderConfig {
+const (
+	vSphereConfigMapName      = "vsphere.provider.config.vmoperator.vmware.com"
+	vSphereConfigK8sNamespace = "default"
+)
 
-	vcUser := "Administrator@vsphere.local"
-	//vcPassword := "Admin!23"
-	vcPassword := "Vmoperator1!"
-	vcIp := "10.161.164.210"
+var vSphereVmProviderConfig *VSphereVmProviderConfig = nil
 
-	vcUrl := fmt.Sprintf("https://%s:%s@%s", vcUser, vcPassword, vcIp)
-	return &VSphereVmProviderConfig{
-		VcUser:       vcUser,
-		VcPassword:   vcPassword,
-		VcIP:         vcIp,
-		VcUrl:        vcUrl,
-		Datacenter:   "Datacenter",
-		ResourcePool: "Resources",
-		Folder:       "vm",
-		Datastore:    "datastore1",
+func GetVsphereVmProviderConfig() *VSphereVmProviderConfig {
+	if vSphereVmProviderConfig != nil {
+		glog.Info("Returning vSphere config")
+		return vSphereVmProviderConfig
 	}
+
+	glog.Fatalf("vSphere config has not been set")
+
+	return nil
+}
+
+func SetVSphereVmProviderConfig(clientSet *kubernetes.Clientset) error {
+	// Get the vSphere Provider ConfigMap from the API Master.
+	if clientSet == nil {
+		// The Caller didn't provide a ClientSet. Thus, a default ClientSet
+		// is generated from the Kubernetes config provided to this container
+		// through environment variables.
+		config, err := controllerlib.GetConfig("")
+		if err != nil {
+			glog.Fatalf("Could not retrieve the default Kubernetes config: %v", err)
+		}
+
+		clientSet = kubernetes.NewForConfigOrDie(config)
+
+		glog.Info("Setting vSphereVmProviderConfig using the default Kubernetes config")
+	} else {
+		glog.Info("Setting vSphereVmProviderConfig using the provided Kubernetes config")
+	}
+
+	vSphereConfig, err := clientSet.CoreV1().ConfigMaps(vSphereConfigK8sNamespace).Get(vSphereConfigMapName, metav1.GetOptions{})
+
+	if err != nil {
+		glog.Fatalf("Could not retrieve %v configMap from API Master: %v", vSphereConfigMapName, err)
+	}
+
+	vSphereConfigData := vSphereConfig.Data
+
+	vSphereVmProviderConfig = &VSphereVmProviderConfig{
+		VcUser:       vSphereConfigData["VcUser"],
+		VcPassword:   vSphereConfigData["VcPassword"],
+		VcIP:         vSphereConfigData["VcIP"],
+		VcUrl:        vSphereConfigData["VcUrl"],
+		Datacenter:   vSphereConfigData["Datacenter"],
+		ResourcePool: vSphereConfigData["ResourcePool"],
+		Folder:       vSphereConfigData["Folder"],
+		Datastore:    vSphereConfigData["Datastore"],
+	}
+
+	return err
 }

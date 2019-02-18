@@ -1,11 +1,13 @@
 /* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
 package virtualmachine
 
 import (
 	"context"
+	"time"
+
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 	corev1 "k8s.io/api/core/v1"
@@ -13,7 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
-	"time"
 	"vmware.com/kubevsphere/pkg"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	clientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
@@ -22,6 +23,7 @@ import (
 	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
 	vmprov "vmware.com/kubevsphere/pkg/vmprovider"
 	"vmware.com/kubevsphere/pkg/vmprovider/iface"
+	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
 )
 
 // +controller:group=vmoperator,version=v1alpha1,kind=VirtualMachine,resource=virtualmachines
@@ -59,6 +61,8 @@ func (c *VirtualMachineControllerImpl) Init(arguments sharedinformers.Controller
 	c.clientSet = clientSet
 
 	c.vmClientSet = clientSet.VmoperatorV1alpha1().VirtualMachines(corev1.NamespaceDefault)
+
+	vsphere.InitProvider(arguments.GetSharedInformers().KubernetesClientSet)
 
 	// Get a vmprovider instance
 	vmProvider, err := vmprov.NewVmProvider()

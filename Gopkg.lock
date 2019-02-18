@@ -497,15 +497,15 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:cb37e2591186bd2a2acd362938f37bbbe5427caa402438077ef4f668772bdbbc"
+  digest = "0:"
   name = "github.com/kubernetes-incubator/apiserver-builder-alpha"
   packages = [
     "pkg/apiserver",
     "pkg/builders",
     "pkg/cmd/server",
     "pkg/controller",
-    "pkg/validators",
     "pkg/test",
+    "pkg/validators",
   ]
   pruneopts = "NU"
   revision = "e0924a26187c32641d0512836cd5673d2b6a022b"
@@ -1337,6 +1337,7 @@
     "k8s.io/apiserver/pkg/registry/rest",
     "k8s.io/client-go/discovery",
     "k8s.io/client-go/discovery/fake",
+    "k8s.io/client-go/kubernetes",
     "k8s.io/client-go/kubernetes/typed/core/v1",
     "k8s.io/client-go/listers/core/v1",
     "k8s.io/client-go/plugin/pkg/client/auth",

@@ -1,5 +1,5 @@
 /* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
 package main
@@ -26,7 +26,7 @@ func main() {
 	version := "v0"
 
 	// Init the vsphere provider
-	vsphere.InitProvider()
+	vsphere.InitProvider(nil)
 
 	// Get a vmprovider instance
 	vmprovider, err := vmprovider.NewVmProvider()

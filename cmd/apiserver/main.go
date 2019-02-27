@@ -7,6 +7,7 @@ package main
 import (
 	_ "github.com/go-openapi/loads"
 	"github.com/golang/glog"
+	"net/http"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/rest"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/vmprovider"
@@ -21,6 +22,20 @@ import (
 	"vmware.com/kubevsphere/pkg/apis"
 	"vmware.com/kubevsphere/pkg/openapi"
 )
+
+func runHealthServer() {
+	// Setup health check handler and corresponding listener on a custom port
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		_, err := w.Write([]byte("ok"))
+		if err != nil {
+			glog.Fatalf("ResponseWriter error: %s", err)
+		}
+	})
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		glog.Fatalf("ListenAndServe error: %s", err)
+	}
+}
 
 func main() {
 	version := "v0"
@@ -41,6 +56,8 @@ func main() {
 	if err != nil {
 		glog.Fatalf("Failed to register REST provider: %s", err)
 	}
+
+	go runHealthServer()
 
 	server.StartApiServer("/registry/vmware.com", apis.GetAllApiBuilders(), openapi.GetOpenAPIDefinitions, "Api", version)
 }

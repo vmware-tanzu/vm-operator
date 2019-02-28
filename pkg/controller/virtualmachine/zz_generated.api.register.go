@@ -19,12 +19,12 @@ limitations under the License.
 package virtualmachine
 
 import (
-	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
 )
 
@@ -100,13 +100,13 @@ func (c *VirtualMachineController) reconcile(key string) (err error) {
 
 	u, err := c.controller.Get(namespace, name)
 	if errors.IsNotFound(err) {
-		glog.Infof("Not doing work for VirtualMachine %v because it has been deleted", key)
+		klog.Infof("Not doing work for VirtualMachine %v because it has been deleted", key)
 		// Set error so it is picked up by AfterReconcile and the return function
 		err = nil
 		return
 	}
 	if err != nil {
-		glog.Errorf("Unable to retrieve VirtualMachine %v from store: %v", key, err)
+		klog.Errorf("Unable to retrieve VirtualMachine %v from store: %v", key, err)
 		return
 	}
 

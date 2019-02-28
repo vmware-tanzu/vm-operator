@@ -1,78 +1,33 @@
+/* **********************************************************
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * **********************************************************/
+
 package resources
 
 import (
 	"context"
-	"github.com/vmware/govmomi"
+
+	"github.com/golang/glog"
+
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 )
 
-/*
-import "github.com/vmware/govmomi/object"
-
-func Folder(kind string) (*object.Folder, error) {
-
-	// RootFolder, no dc required
-	if kind == "/" {
-		client, err := Client()
-		if err != nil {
-			return nil, err
-		}
-
-		folder := object.NewRootFolder(client.Client)
-		return folder, nil
-	}
-
-	dc, err := Datacenter()
-	if err != nil {
-		return nil, err
-	}
-
-	folders, err := dc.Folders(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
-	switch kind {
-	case "vm":
-		flag.folder = folders.VmFolder
-	case "host":
-		flag.folder = folders.HostFolder
-	case "datastore":
-		flag.folder = folders.DatastoreFolder
-	case "network":
-		flag.folder = folders.NetworkFolder
-	default:
-		panic(kind)
-	}
-
-	return flag.folder, nil
-}
-*/
-
 type Folder struct {
-	client govmomi.Client
-	name   string
-	dc     *object.Datacenter
+	Name   string
 	Folder *object.Folder
-	finder *find.Finder
 }
 
-func NewFolder(client govmomi.Client, dc *object.Datacenter, name string) (*Folder, error) {
-	return &Folder{client: client, dc: dc, name: name}, nil
-}
-
-func (f *Folder) Lookup() error {
-
-	if f.finder == nil {
-		f.finder = find.NewFinder(f.client.Client, false)
-	}
-
-	folders, err := f.dc.Folders(context.TODO())
+// Lookup a Folder with a given name in the given datacenter. If success, return a resources.Folder, error otherwise.
+func NewFolder(ctx context.Context, finder *find.Finder, dc *object.Datacenter, name string) (*Folder, error) {
+	folders, err := dc.Folders(ctx)
 	if err != nil {
-		return err
+		glog.Errorf("No Folders with name: [%s] found.", name)
+		return nil, err
 	}
 
-	f.Folder = folders.VmFolder
-	return nil
+	return &Folder {
+		Name: name,
+		Folder: folders.VmFolder,
+	}, nil
 }

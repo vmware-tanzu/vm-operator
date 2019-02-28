@@ -1,9 +1,15 @@
+/* **********************************************************
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * **********************************************************/
+
 package resources
 
 import (
 	"context"
 	"errors"
+
 	"github.com/golang/glog"
+
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -11,50 +17,39 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 )
 
-type VM struct {
-	client         govmomi.Client
+type VirtualMachine struct {
 	Name           string
-	Datacenter     *Datacenter
 	VirtualMachine *object.VirtualMachine
-	finder         *find.Finder
 }
 
-func NewVM(client govmomi.Client, datacenter *Datacenter, name string) (*VM, error) {
-	return &VM{client: client, Datacenter: datacenter, Name: name}, nil
-}
-
-func NewVMFromReference(client govmomi.Client, datacenter *Datacenter, reference types.ManagedObjectReference) (*VM, error) {
-	vm := object.NewVirtualMachine(client.Client, reference)
-	return &VM{client: client, Datacenter: datacenter, Name: vm.Name(), VirtualMachine: vm}, nil
-}
-
-func (vm *VM) Lookup() error {
-
-	if vm.finder == nil {
-		vm.finder = find.NewFinder(vm.client.Client, false)
-	}
-
-	vm.finder.SetDatacenter(vm.Datacenter.Datacenter)
-
-	virtualMachine, err := vm.finder.VirtualMachine(context.TODO(), vm.Name)
+// Lookup a VM with a given name. If success, return a resources.VirtualMachine, error otherwise.
+func NewVM(ctx context.Context, finder *find.Finder, name string) (*VirtualMachine, error) {
+	vm, err := finder.VirtualMachine(ctx, name)
 	if err != nil {
-		return err
+		glog.Errorf("Error while creating VM: %s [%s]", name, err)
+		return nil, err
 	}
 
-	vm.VirtualMachine = virtualMachine
-
-	return nil
+	return &VirtualMachine{
+		Name: name,
+		VirtualMachine:vm,
+	}, nil
 }
 
-func (vm *VM) Create(ctx context.Context, folder *object.Folder, rp *object.ResourcePool, vmSpec types.VirtualMachineConfigSpec) (*object.Task, error) {
+func NewVMFromReference(client govmomi.Client, reference types.ManagedObjectReference) (*VirtualMachine, error) {
+	vm := object.NewVirtualMachine(client.Client, reference)
+	return &VirtualMachine{Name: vm.Name(), VirtualMachine: vm}, nil
+}
+
+func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, rp *object.ResourcePool, vmSpec types.VirtualMachineConfigSpec) (*object.Task, error) {
 	return folder.CreateVM(ctx, vmSpec, rp, nil)
 }
 
-func (vm *VM) Clone(ctx context.Context, sourceVm *object.VirtualMachine, folder *object.Folder, cloneSpec types.VirtualMachineCloneSpec) (*object.Task, error) {
+func (vm *VirtualMachine) Clone(ctx context.Context, sourceVm *object.VirtualMachine, folder *object.Folder, cloneSpec types.VirtualMachineCloneSpec) (*object.Task, error) {
 	return sourceVm.Clone(ctx, folder, cloneSpec.Config.Name, cloneSpec)
 }
 
-func (vm *VM) Delete(ctx context.Context) (*object.Task, error) {
+func (vm *VirtualMachine) Delete(ctx context.Context) (*object.Task, error) {
 	if vm.VirtualMachine == nil {
 		return nil, errors.New("VM is not set")
 	}
@@ -62,7 +57,7 @@ func (vm *VM) Delete(ctx context.Context) (*object.Task, error) {
 }
 
 // Just get some IP from guest
-func (vm *VM) IpAddress(ctx context.Context) (string, error) {
+func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
 	var o mo.VirtualMachine
 
 	err := vm.VirtualMachine.Properties(ctx, vm.VirtualMachine.Reference(), []string{"guest.ipAddress"}, &o)
@@ -79,7 +74,7 @@ func (vm *VM) IpAddress(ctx context.Context) (string, error) {
 }
 
 // Acquire the current cpu resource settings from the VM
-func (vm *VM) CpuAllocation(ctx context.Context) (*types.ResourceAllocationInfo, error) {
+func (vm *VirtualMachine) CpuAllocation(ctx context.Context) (*types.ResourceAllocationInfo, error) {
 	var o mo.VirtualMachine
 
 	err := vm.VirtualMachine.Properties(ctx, vm.VirtualMachine.Reference(), []string{"config.cpuAllocation"}, &o)
@@ -91,7 +86,7 @@ func (vm *VM) CpuAllocation(ctx context.Context) (*types.ResourceAllocationInfo,
 }
 
 // Acquire the current memory resource settings from the VM
-func (vm *VM) MemoryAllocation(ctx context.Context) (*types.ResourceAllocationInfo, error) {
+func (vm *VirtualMachine) MemoryAllocation(ctx context.Context) (*types.ResourceAllocationInfo, error) {
 	var o mo.VirtualMachine
 
 	err := vm.VirtualMachine.Properties(ctx, vm.VirtualMachine.Reference(), []string{"config.memoryAllocation"}, &o)

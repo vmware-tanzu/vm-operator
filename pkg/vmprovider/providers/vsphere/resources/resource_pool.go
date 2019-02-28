@@ -1,37 +1,33 @@
+/* **********************************************************
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * **********************************************************/
+
 package resources
 
 import (
 	"context"
-	"github.com/vmware/govmomi"
+
+	"github.com/golang/glog"
+
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 )
 
 type ResourcePool struct {
-	client       govmomi.Client
-	finder       *find.Finder
 	Name         string
-	datacenter   *object.Datacenter
 	ResourcePool *object.ResourcePool
 }
 
-func NewResourcePool(client govmomi.Client, datacenter *object.Datacenter, name string) (*ResourcePool, error) {
-	return &ResourcePool{client: client, datacenter: datacenter, Name: name}, nil
-}
-
-func (rp *ResourcePool) Lookup() error {
-
-	if rp.finder == nil {
-		rp.finder = find.NewFinder(rp.client.Client, false)
-	}
-
-	rp.finder.SetDatacenter(rp.datacenter)
-
-	var err error
-	rp.ResourcePool, err = rp.finder.ResourcePoolOrDefault(context.TODO(), rp.Name)
+// Lookup a ResourcePool with a given name. If success, return a resources.ResourcePool, error otherwise.
+func NewResourcePool(ctx context.Context, finder *find.Finder, rpName string) (*ResourcePool, error) {
+	rp, err := finder.ResourcePoolOrDefault(ctx, rpName)
 	if err != nil {
-		return err
+		glog.Errorf("No ResourcePool with name: [%s] found. Error: [%s]", rpName, err)
+		return nil, err
 	}
 
-	return nil
+	return &ResourcePool{
+		Name:rpName,
+		ResourcePool:rp,
+	}, nil
 }

@@ -28,6 +28,8 @@ checkout() {
 }
 
 build() {
+    [[ -d "release/$VERSION" ]] && rm -r "release/$VERSION"
+
     go run ./cmd/apiserver-builder-release/main.go vendor --version $VERSION --commit $COMMIT --kubernetesVersion $K8S_VERSION
     go run ./cmd/apiserver-builder-release/main.go build --version $VERSION --targets $GOOS:$GOARCH
 }

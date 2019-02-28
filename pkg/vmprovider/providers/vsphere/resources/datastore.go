@@ -1,38 +1,33 @@
+/* **********************************************************
+ * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * **********************************************************/
+
 package resources
 
 import (
 	"context"
-	"github.com/vmware/govmomi"
+
+	"github.com/golang/glog"
+
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 )
 
 type Datastore struct {
-	client     govmomi.Client
-	name       string
-	datacenter *object.Datacenter
 	Datastore  *object.Datastore
-	finder     *find.Finder
+	name       string
 }
 
-func NewDatastore(client govmomi.Client, datacenter *object.Datacenter, name string) (*Datastore, error) {
-	return &Datastore{client: client, datacenter: datacenter, name: name}, nil
-}
-
-func (ds *Datastore) Lookup() error {
-
-	if ds.finder == nil {
-		ds.finder = find.NewFinder(ds.client.Client, false)
-	}
-
-	ds.finder.SetDatacenter(ds.datacenter)
-
-	var err error
-	ds.Datastore, err = ds.finder.DatastoreOrDefault(context.TODO(), ds.name)
+// Lookup a Datastore with a given name. If success, return a resources.Datastore, error otherwise.
+func NewDatastore(ctx context.Context, finder *find.Finder, dsName string) (*Datastore, error) {
+	ds, err := finder.DatastoreOrDefault(ctx, dsName)
 	if err != nil {
-		return err
+		glog.Errorf("No Datastores with name: %s found. Error: [%s]", dsName, err)
+		return nil, err
 	}
 
-	return nil
-
+	return &Datastore{
+		name: dsName,
+		Datastore: ds,
+	}, nil
 }

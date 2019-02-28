@@ -9,13 +9,14 @@ import (
 	"io"
 
 	"github.com/golang/glog"
-	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
+
 	"k8s.io/apimachinery/pkg/api/errors"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
 	"vmware.com/kubevsphere/pkg"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
@@ -23,6 +24,7 @@ import (
 	"vmware.com/kubevsphere/pkg/vmprovider/iface"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/sequence"
+	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/session"
 )
 
 var _ = &VSphereVmProvider{}
@@ -72,10 +74,6 @@ func transformError(resourceType string, resource string, err error) error {
 
 // Creates new Controller node interface and returns
 func newVSphereVmProvider(providerConfig *VSphereVmProviderConfig) (*VSphereVmProvider, error) {
-	//vs, err := buildVSphereFromConfig(cfg)
-	//if err != nil {
-	//	return nil, err
-	//}
 	vs := NewVSphereManager()
 	vmProvider := &VSphereVmProvider{*providerConfig, vs}
 	return vmProvider, nil
@@ -95,15 +93,14 @@ func (vs *VSphereVmProvider) Initialize(stop <-chan struct{}) {
 func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
 	glog.Info("Listing VM images")
 
-	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
+	// Get a session from the config. Return the cached session if any. This assumes that there is ONLY ONE session per vspheremanager.
+	// If we want to extend it, then we can create multiple sessions based on namespace/vcurl/username and cache them in the vspheremanager
+	sc, err := vs.manager.GetSession()
 	if err != nil {
 		return nil, err
 	}
 
-	// DWB: Reason about how to handle client management and logout
-	//defer vClient.Logout(ctx)
-
-	vms, err := vs.manager.ListVms(ctx, vClient, "")
+	vms, err := vs.manager.ListVms(ctx, sc, "")
 	if err != nil {
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
@@ -130,15 +127,17 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, name string) (*v1alpha1.VirtualMachineImage, error) {
 	glog.Info("Getting VM images")
 
-	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
+	// Get a session from the config. Return the cached session if any. This assumes that there is ONLY ONE session per vspheremanager.
+	// If we want to extend it, then we can create multiple sessions based on namespace/vcurl/username and cache them in the vspheremanager
+	sc, err := vs.manager.GetSession()
 	if err != nil {
-		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
+		return nil, err
 	}
 
 	// DWB: Reason about how to handle client management and logout
 	//defer vClient.Logout(ctx)
 
-	vm, err := vs.manager.LookupVm(ctx, vClient, name)
+	vm, err := vs.manager.LookupVm(ctx, sc, name)
 	if err != nil {
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
@@ -172,7 +171,7 @@ func NewVirtualMachineImageListFake() []*v1alpha1.VirtualMachineImage {
 	return images
 }
 
-func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *resources.VM) (*v1alpha1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *resources.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 	powerState, _ := actualVm.VirtualMachine.PowerState(ctx)
 	ps := string(powerState)
 
@@ -210,7 +209,7 @@ func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, actualVm *res
 	return vm, nil
 }
 
-func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, desiredVm *v1alpha1.VirtualMachine, actualVm *resources.VM) (*v1alpha1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, desiredVm *v1alpha1.VirtualMachine, actualVm *resources.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 
 	statusVm, err := vs.generateVmStatus(ctx, actualVm)
 	if err != nil {
@@ -232,15 +231,17 @@ func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace 
 func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, name string) (*v1alpha1.VirtualMachine, error) {
 	glog.Info("Getting VMs")
 
-	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
+	// Get a session from the config. Return the cached session if any. This assumes that there is ONLY ONE session per vspheremanager.
+	// If we want to extend it, then we can create multiple sessions based on namespace/vcurl/username and cache them in the vspheremanager
+	sc, err := vs.manager.GetSession()
 	if err != nil {
-		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
+		return nil, err
 	}
 
 	// DWB: Reason about how to handle client management and logout
 	//defer vClient.Logout(ctx)
 
-	vm, err := vs.manager.LookupVm(ctx, vClient, name)
+	vm, err := vs.manager.LookupVm(ctx, sc, name)
 	if err != nil {
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
@@ -265,24 +266,23 @@ func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, m
 func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vmToCreate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 	glog.Infof("Creating Vm: %s", vmToCreate.Name)
 
-	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
+	// Get a session from the config. Return the cached session if any. This assumes that there is ONLY ONE session per vspheremanager.
+	// If we want to extend it, then we can create multiple sessions based on namespace/vcurl/username and cache them in the vspheremanager
+	sc, err := vs.manager.GetSession()
 	if err != nil {
-		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
+		return nil, err
 	}
-
-	// DWB: Reason about how to handle client management and logout
-	//defer vClient.Logout(ctx)
 
 	// Determine if we should clone from an existing image or create from scratch.  Create from scratch is really
 	// only useful for dummy VMs at the moment.
-	var newVm *resources.VM
+	var newVm *resources.VirtualMachine
 	switch {
 	case vmToCreate.Spec.Image != "":
 		glog.Infof("Cloning VM from %s", vmToCreate.Spec.Image)
-		newVm, err = vs.manager.CloneVm(ctx, vClient, vmToCreate)
+		newVm, err = vs.manager.CloneVm(ctx, sc, vmToCreate)
 	default:
 		glog.Info("Creating new VM")
-		newVm, err = vs.manager.CreateVm(ctx, vClient, vmToCreate)
+		newVm, err = vs.manager.CreateVm(ctx, sc, vmToCreate)
 	}
 
 	if err != nil {
@@ -294,8 +294,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vmToCreat
 	return vs.mergeVmStatus(ctx, vmToCreate, newVm)
 }
 
-func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vclient *govmomi.Client, vmToUpdate *v1alpha1.VirtualMachine, vm *resources.VM) (*resources.VM, error) {
-
+func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, sc *session.SessionContext, vmToUpdate *v1alpha1.VirtualMachine, vm *resources.VirtualMachine) (*resources.VirtualMachine, error) {
 	cpu, err := vm.CpuAllocation(ctx)
 	if err != nil {
 		glog.Errorf("Failed to acquire cpu allocation info: %s", err.Error())
@@ -356,7 +355,7 @@ func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vclient
 	return vm, nil
 }
 
-func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govmomi.Client, vmToUpdate *v1alpha1.VirtualMachine, vm *resources.VM) (*resources.VM, error) {
+func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, sc *session.SessionContext, vmToUpdate *v1alpha1.VirtualMachine, vm *resources.VirtualMachine) (*resources.VirtualMachine, error) {
 	// Default to Powered On
 	desiredPowerState := v1alpha1.VirtualMachinePoweredOn
 	if vmToUpdate.Spec.PowerState != "" {
@@ -398,28 +397,30 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vclient *govm
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
-	return resources.NewVMFromReference(*vclient, vm.Datacenter, taskInfo.Result.(types.ManagedObjectReference))
+	return resources.NewVMFromReference(*sc.Client, taskInfo.Result.(types.ManagedObjectReference))
 }
 
 func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vmToUpdate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 	glog.Infof("Updating Vm: %s", vmToUpdate.Name)
 
-	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
+	// Get a session from the config. Return the cached session if any. This assumes that there is ONLY ONE session per vspheremanager.
+	// If we want to extend it, then we can create multiple sessions based on namespace/vcurl/username and cache them in the vspheremanager
+	sc, err := vs.manager.GetSession()
+	if err != nil {
+		return nil, err
+	}
+
+	vm, err := vs.manager.LookupVm(ctx, sc, vmToUpdate.Name)
 	if err != nil {
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
-	vm, err := vs.manager.LookupVm(ctx, vClient, vmToUpdate.Name)
+	vm, err = vs.updateResourceSettings(ctx, sc, vmToUpdate, vm)
 	if err != nil {
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
 
-	vm, err = vs.updateResourceSettings(ctx, vClient, vmToUpdate, vm)
-	if err != nil {
-		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
-	}
-
-	vm, err = vs.updatePowerState(ctx, vClient, vmToUpdate, vm)
+	vm, err = vs.updatePowerState(ctx, sc, vmToUpdate, vm)
 	if err != nil {
 		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}
@@ -431,12 +432,14 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vmToUpdat
 func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
 	glog.Infof("Deleting Vm: %s", vmToDelete.Name)
 
-	vClient, err := resources.NewClient(ctx, vs.Config.VcUrl)
+	// Get a session from the config. Return the cached session if any. This assumes that there is ONLY ONE session per vspheremanager.
+	// If we want to extend it, then we can create multiple sessions based on namespace/vcurl/username and cache them in the vspheremanager
+	sc, err := vs.manager.GetSession()
 	if err != nil {
-		return transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
+		return err
 	}
 
-	vm, err := vs.manager.LookupVm(ctx, vClient, vmToDelete.Name)
+	vm, err := vs.manager.LookupVm(ctx, sc, vmToDelete.Name)
 	if err != nil {
 		return transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 	}

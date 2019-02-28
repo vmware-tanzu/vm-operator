@@ -6,8 +6,8 @@ package vsphere
 import "vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
 
 type ResourceContext struct {
-	datacenter   *resources.Datacenter
-	folder       *resources.Folder
-	resourcePool *resources.ResourcePool
-	datastore    *resources.Datastore
+	Datacenter   *resources.Datacenter
+	Folder       *resources.Folder
+	ResourcePool *resources.ResourcePool
+	Datastore    *resources.Datastore
 }

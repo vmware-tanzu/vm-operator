@@ -14,8 +14,8 @@ import (
 )
 
 type Datastore struct {
-	Datastore  *object.Datastore
-	name       string
+	Datastore *object.Datastore
+	name      string
 }
 
 // Lookup a Datastore with a given name. If success, return a resources.Datastore, error otherwise.
@@ -27,7 +27,7 @@ func NewDatastore(ctx context.Context, finder *find.Finder, dsName string) (*Dat
 	}
 
 	return &Datastore{
-		name: dsName,
+		name:      dsName,
 		Datastore: ds,
 	}, nil
 }

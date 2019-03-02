@@ -6,10 +6,11 @@ package iface
 
 import (
 	"context"
+
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 )
 
-// Pluggable interface for VM Providers
+// VirtualMachineProviderInterface is a plugable interface for VM Providers
 // Error types should use the k8s builtins
 type VirtualMachineProviderInterface interface {
 	// Initialize provides the cloud with a kubernetes client builder and may spawn goroutines

@@ -13,10 +13,11 @@ import (
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/session"
 )
 
+// TODO(bryanv) vmFolder isn't used?
 func (v *VSphereManager) ListVms(ctx context.Context, sc *session.SessionContext, vmFolder string) ([]*resources.VirtualMachine, error) {
 	glog.Info("Listing VMs")
 
-	vms := []*resources.VirtualMachine{}
+	var vms []*resources.VirtualMachine
 	rc := v.ResourceContext
 
 	list, err := rc.Datacenter.ListVms(ctx, sc.Finder, "*")

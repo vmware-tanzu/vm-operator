@@ -20,7 +20,7 @@ import (
 
 func (v *VSphereManager) createVmInvoke(ctx context.Context, sc *session.SessionContext, vmSpec vimTypes.VirtualMachineConfigSpec) (*object.Task, error) {
 	rc := v.ResourceContext
-	vm := &resources.VirtualMachine{Name:vmSpec.Name}
+	vm := &resources.VirtualMachine{Name: vmSpec.Name}
 	vmSpec.Files = &vimTypes.VirtualMachineFileInfo{
 		VmPathName: fmt.Sprintf("[%s]", rc.Datastore.Datastore.Name()),
 	}
@@ -61,7 +61,7 @@ func (v *VSphereManager) CreateVm(ctx context.Context, sc *session.SessionContex
 }
 
 func (v *VSphereManager) cloneVmInvoke(ctx context.Context, sc *session.SessionContext, sourceVm *resources.VirtualMachine, cloneSpec vimTypes.VirtualMachineCloneSpec) (*object.Task, error) {
-	vm := &resources.VirtualMachine{Name:cloneSpec.Config.Name}
+	vm := &resources.VirtualMachine{Name: cloneSpec.Config.Name}
 	rc := v.ResourceContext
 
 	return vm.Clone(ctx, sourceVm.VirtualMachine, rc.Folder.Folder, cloneSpec)

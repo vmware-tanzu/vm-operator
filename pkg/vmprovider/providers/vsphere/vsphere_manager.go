@@ -1,40 +1,41 @@
 /* **********************************************************
  * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
+
 package vsphere
 
 import (
 	"context"
+
+	"github.com/pkg/errors"
 
 	"github.com/golang/glog"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/session"
 )
 
-// TODO: Make task tracking funcs async via goroutines
-
 type VSphereManager struct {
-	Config        VSphereVmProviderConfig
+	Config VSphereVmProviderConfig
 
-	// cached Session Context
-	Session       *session.SessionContext
+	// Cached SessionContext
+	Session *session.SessionContext
 
-	//cache Resource Context
+	// Cached ResourceContext
 	ResourceContext *ResourceContext
 }
 
 // Construct a ResourceContext from VSphereVMProviderConfig. This will implicitly validate the config as well
 // since we create the objects here. Any ambiguity on the VC will return an error failing the operation.
-// TODO (parunesh): This should be retried?
-func InitResourceContext(sc *session.SessionContext, config *VSphereVmProviderConfig) (*ResourceContext, error) {
-	glog.Infof("Initializing Resource Context")
-	ctx, close := context.WithCancel(context.Background())
-	defer close()
+func initResourceContext(sc *session.SessionContext, config *VSphereVmProviderConfig) (*ResourceContext, error) {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	dc, err := resources.NewDatacenter(ctx, sc.Finder, config.Datacenter)
 	if err != nil {
 		return nil, err
 	}
+
 	sc.Finder.SetDatacenter(dc.Datacenter)
 
 	folder, err := resources.NewFolder(ctx, sc.Finder, dc.Datacenter, config.Folder)
@@ -60,43 +61,45 @@ func InitResourceContext(sc *session.SessionContext, config *VSphereVmProviderCo
 	}, nil
 }
 
-// Initialize a new VSphereManager. Create and cache a new SessionContext, ResourceContext
-func NewVSphereManager() *VSphereManager {
-	glog.Infof("Initializing VSphereManager!!")
-	// TODO(Arunesh): Should we defer a session start to when someone actually makes a call?
-	config := GetVsphereVmProviderConfig()
+// NewVSphereManager creates a new VSphereManager. Create and cache the SessionContext and ResourceContext.
+func NewVSphereManager(config *VSphereVmProviderConfig) (*VSphereManager, error) {
+	glog.Infof("Initializing VSphereManager")
 
 	sc, err := session.NewSessionContext(config.VcUrl)
 	if err != nil {
-		// TODO(Arunesh): Should this be non fatal and retried later?
-		glog.Fatalf("Error in creating the Session Context [%s]", err)
+		return nil, errors.Wrap(err, "cannot create SessionContext")
 	}
 
-	rc, err := InitResourceContext(sc, config)
+	rc, err := initResourceContext(sc, config)
 	if err != nil {
-		glog.Errorf("Error in initializing Resource Context [%s]", err)
+		return nil, errors.Wrap(err, "cannot initialize the session ResourceContext")
 	}
 
 	return &VSphereManager{
-		Config: *config,
-		Session:sc,
-		ResourceContext:rc,
-	}
+		Config:          *config,
+		Session:         sc,
+		ResourceContext: rc,
+	}, nil
 }
 
-// Return a cached session if exists. Create, cache and return a new one otherwise.
+// GetSession returns a cached session if exists. Create, cache and return a new one otherwise.
 // This should be the only entry point for getting a session to ensure we dont duplicate govmomi clients.
 // TODO(parunesh): Handle thread safety; Should we check ResourceContext here as well?
-func (vs *VSphereManager) GetSession() (*session.SessionContext, error) {
-	if vs.Session != nil {
-		return vs.Session, nil
+func (v *VSphereManager) GetSession() (*session.SessionContext, error) {
+
+	if v.Session != nil {
+		return v.Session, nil
 	}
-	sc, err := session.NewSessionContext(vs.Config.VcUrl)
+
+	// BMV: This is dead code, right? NewVSphereManager() always initializes the SessionContext so
+	// when do we get here? The new SessionContext is missing the sc.Finder.SetDatacenter(dc.Datacenter)
+	// call from initResourceContext() would this work anyways?
+	sc, err := session.NewSessionContext(v.Config.VcUrl)
 	if err != nil {
-		glog.Errorf("Error creating a new Session: [%s]", err)
-		return nil, err
+		return nil, errors.Wrap(err, "cannot create new session")
 	}
-	vs.Session = sc
+
+	v.Session = sc
 
 	return sc, nil
 }

@@ -31,8 +31,8 @@ func NewVM(ctx context.Context, finder *find.Finder, name string) (*VirtualMachi
 	}
 
 	return &VirtualMachine{
-		Name: name,
-		VirtualMachine:vm,
+		Name:           name,
+		VirtualMachine: vm,
 	}, nil
 }
 

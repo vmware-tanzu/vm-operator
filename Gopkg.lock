@@ -617,6 +617,14 @@
   version = "v2.0.1"
 
 [[projects]]
+  digest = "1:e3d58a9737a5511bee4963813b528f59530866478c33825d3a0054d2edb4cae3"
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  pruneopts = "NU"
+  revision = "ba968bfe8b2f7e042a574c888954fccecfa385b4"
+  version = "v0.8.1"
+
+[[projects]]
   digest = "1:a2bd8a2e14cf60759a4cbb7faa64d89b0cc8ca58d14ebf07d5f667b504d38734"
   name = "github.com/prometheus/client_golang"
   packages = ["prometheus"]
@@ -1326,13 +1334,13 @@
     "github.com/onsi/ginkgo/config",
     "github.com/onsi/ginkgo/extensions/table",
     "github.com/onsi/gomega",
+    "github.com/pkg/errors",
     "github.com/vmware/govmomi",
     "github.com/vmware/govmomi/find",
     "github.com/vmware/govmomi/object",
     "github.com/vmware/govmomi/vim25/mo",
     "github.com/vmware/govmomi/vim25/soap",
     "github.com/vmware/govmomi/vim25/types",
-    "golang.org/x/net/context",
     "google.golang.org/genproto",
     "google.golang.org/grpc",
     "gopkg.in/matryer/try.v1",

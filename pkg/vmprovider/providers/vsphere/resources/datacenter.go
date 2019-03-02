@@ -27,7 +27,7 @@ func NewDatacenter(ctx context.Context, finder *find.Finder, dsName string) (*Da
 	}
 
 	return &Datacenter{
-		name: dsName,
+		name:       dsName,
 		Datacenter: dc,
 	}, nil
 }

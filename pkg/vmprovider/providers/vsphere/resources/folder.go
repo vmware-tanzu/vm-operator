@@ -26,8 +26,8 @@ func NewFolder(ctx context.Context, finder *find.Finder, dc *object.Datacenter, 
 		return nil, err
 	}
 
-	return &Folder {
-		Name: name,
+	return &Folder{
+		Name:   name,
 		Folder: folders.VmFolder,
 	}, nil
 }

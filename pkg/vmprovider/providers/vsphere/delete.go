@@ -20,6 +20,7 @@ func (v *VSphereManager) DeleteVm(ctx context.Context, sc *session.SessionContex
 	resVM, err := resources.NewVM(ctx, sc.Finder, vm.Name)
 	if err != nil {
 		glog.Errorf("Error retrieving VM: %s [%s]", vm.Name, err)
+		return err
 	}
 
 	destroyTask, err := resVM.Delete(ctx)
@@ -27,6 +28,7 @@ func (v *VSphereManager) DeleteVm(ctx context.Context, sc *session.SessionContex
 		glog.Infof("Error while invoking delete VM task [%s]", err)
 		return err
 	}
+
 	_, err = destroyTask.WaitForResult(ctx, nil)
 	if err != nil {
 		glog.Infof("VM delete task failed %s", err.Error())

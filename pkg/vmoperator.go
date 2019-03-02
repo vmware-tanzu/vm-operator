@@ -22,7 +22,7 @@ const (
 	VmOperatorVcUuidKey string = "vmoperator.vmware.com/vcuuid"
 
 	// Annotation Key for vSphere Mo Ref
-	VmOperatorMorefKey string = "vmoperator.vmware.com/moref"
+	VmOperatorMoRefKey string = "vmoperator.vmware.com/moref"
 )
 
 func AddAnnotations(objectMeta *metav1.ObjectMeta) {

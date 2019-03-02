@@ -7,6 +7,8 @@ package rest
 import (
 	"context"
 
+	"k8s.io/apiserver/pkg/registry/rest"
+
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
@@ -15,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
-	"k8s.io/apiserver/pkg/registry/rest"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/vmprovider/iface"
 )
@@ -25,7 +26,13 @@ type VirtualMachineImagesREST struct {
 	provider iface.VirtualMachineProviderInterface
 }
 
-// Provide a Read only interface for now
+func NewVirtualMachineImagesREST(provider iface.VirtualMachineProviderInterface) v1alpha1.RestProvider {
+	return v1alpha1.RestProvider{
+		ImagesProvider: &VirtualMachineImagesREST{provider},
+	}
+}
+
+// Provide a Read only interface for now.
 var _ rest.Getter = &VirtualMachineImagesREST{}
 var _ rest.Lister = &VirtualMachineImagesREST{}
 var _ rest.Watcher = &VirtualMachineImagesREST{}
@@ -35,11 +42,12 @@ func (r *VirtualMachineImagesREST) NewList() runtime.Object {
 }
 
 // List selects resources in the storage which match to the selector. 'options' can be nil.
+// TODO(bryanv) Honor ListOptions?
 func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
-	glog.Info("Listing VirtualMachineImage")
+	glog.Infof("Listing VirtualMachineImages options: %v", options)
 
-	// Get the namespace from the context (populated from the URL).
-	// The namespace in the object can be empty until StandardStorage.Create()->BeforeCreate() populates it from the context.
+	// Get the namespace from the context (populated from the URL). The namespace in the object can
+	// be empty until StandardStorage.Create()->BeforeCreate() populates it from the context.
 	namespace, ok := genericapirequest.NamespaceFrom(ctx)
 	if !ok {
 		return nil, errors.NewBadRequest("namespace is required")
@@ -66,15 +74,18 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 		return nil, errors.NewInternalError(err)
 	}
 
-	items := []v1alpha1.VirtualMachineImage{}
+	var items []v1alpha1.VirtualMachineImage
 	for _, item := range images {
 		items = append(items, *item)
 	}
 
-	imageList := v1alpha1.VirtualMachineImageList{
+	return &v1alpha1.VirtualMachineImageList{
 		Items: items,
-	}
-	return &imageList, nil
+	}, nil
+}
+
+func (r *VirtualMachineImagesREST) New() runtime.Object {
+	return &v1alpha1.VirtualMachineImage{}
 }
 
 // Get retrieves the object from the storage. It is required to support Patch.
@@ -100,13 +111,13 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 	imagesProvider, supported := r.provider.VirtualMachineImages()
 	if !supported {
 		glog.Error("Provider doesn't support images func")
-		return nil, errors.NewMethodNotSupported(schema.GroupResource{Group: "vmoperator", Resource: "VirtualMachineImages"}, "list")
+		return nil, errors.NewMethodNotSupported(schema.GroupResource{Group: "vmoperator", Resource: "VirtualMachineImages"}, "get")
 	}
 
 	image, err := imagesProvider.GetVirtualMachineImage(ctx, name)
 	if err != nil {
 		glog.Errorf("Failed to list images: %s", err)
-		return nil, errors.NewInternalError(err)
+		return nil, errors.NewInternalError(err) // TODO(bryanv) Do not convert NotFound errors?
 	}
 
 	return image, nil
@@ -116,16 +127,6 @@ func (r *VirtualMachineImagesREST) Watch(ctx context.Context, options *metainter
 	return watch.NewFake(), nil
 }
 
-func (r *VirtualMachineImagesREST) New() runtime.Object {
-	return &v1alpha1.VirtualMachineImage{}
-}
-
 func (r *VirtualMachineImagesREST) NamespaceScoped() bool {
 	return true
-}
-
-func NewVirtualMachineImagesREST(vmprov iface.VirtualMachineProviderInterface) v1alpha1.RestProvider {
-	return v1alpha1.RestProvider{
-		ImagesProvider: &VirtualMachineImagesREST{vmprov},
-	}
 }

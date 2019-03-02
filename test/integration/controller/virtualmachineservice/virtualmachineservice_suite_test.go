@@ -48,9 +48,7 @@ var _ = BeforeSuite(func() {
 
 	address, port := vcsim.Start()
 
-	if err := vsphere.InitProviderWithConfig(integration.NewIntegrationVmOperatorConfig(address, port)); err != nil {
-		glog.Fatalf("Failed to install vsphere provider config: %s", err)
-	}
+	vsphere.InitProviderWithConfig(integration.NewIntegrationVmOperatorConfig(address, port))
 
 	vmprovider, err := vmprovider.NewVmProvider()
 	if err != nil {

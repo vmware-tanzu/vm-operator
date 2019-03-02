@@ -5,6 +5,7 @@ package sequence
 
 import (
 	"context"
+
 	"github.com/golang/glog"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"

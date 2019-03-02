@@ -27,7 +27,7 @@ func NewResourcePool(ctx context.Context, finder *find.Finder, rpName string) (*
 	}
 
 	return &ResourcePool{
-		Name:rpName,
-		ResourcePool:rp,
+		Name:         rpName,
+		ResourcePool: rp,
 	}, nil
 }

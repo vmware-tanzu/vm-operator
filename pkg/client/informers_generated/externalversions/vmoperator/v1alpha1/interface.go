@@ -14,6 +14,8 @@ import (
 type Interface interface {
 	// VirtualMachines returns a VirtualMachineInformer.
 	VirtualMachines() VirtualMachineInformer
+	// VirtualMachineClasses returns a VirtualMachineClassInformer.
+	VirtualMachineClasses() VirtualMachineClassInformer
 	// VirtualMachineImages returns a VirtualMachineImageInformer.
 	VirtualMachineImages() VirtualMachineImageInformer
 	// VirtualMachineServices returns a VirtualMachineServiceInformer.
@@ -34,6 +36,11 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // VirtualMachines returns a VirtualMachineInformer.
 func (v *version) VirtualMachines() VirtualMachineInformer {
 	return &virtualMachineInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// VirtualMachineClasses returns a VirtualMachineClassInformer.
+func (v *version) VirtualMachineClasses() VirtualMachineClassInformer {
+	return &virtualMachineClassInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // VirtualMachineImages returns a VirtualMachineImageInformer.

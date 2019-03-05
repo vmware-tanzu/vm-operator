@@ -8,6 +8,8 @@ package v1alpha1
 
 type VirtualMachineExpansion interface{}
 
+type VirtualMachineClassExpansion interface{}
+
 type VirtualMachineImageExpansion interface{}
 
 type VirtualMachineServiceExpansion interface{}

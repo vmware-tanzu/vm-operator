@@ -56,10 +56,10 @@ func (vm *VirtualMachine) Delete(ctx context.Context) (*object.Task, error) {
 	return vm.VirtualMachine.Destroy(ctx)
 }
 
-// Just get some IP from guest
 func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
 	var o mo.VirtualMachine
 
+	// Just get some IP from guest
 	err := vm.VirtualMachine.Properties(ctx, vm.VirtualMachine.Reference(), []string{"guest.ipAddress"}, &o)
 	if err != nil {
 		return "", err

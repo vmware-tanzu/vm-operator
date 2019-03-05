@@ -43,6 +43,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 	// Group=vmoperator.vmware.com, Version=v1alpha1
 	case v1alpha1.SchemeGroupVersion.WithResource("virtualmachines"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Vmoperator().V1alpha1().VirtualMachines().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("virtualmachineclasses"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Vmoperator().V1alpha1().VirtualMachineClasses().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("virtualmachineimages"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Vmoperator().V1alpha1().VirtualMachineImages().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("virtualmachineservices"):

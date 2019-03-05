@@ -49,6 +49,8 @@ rules:
   - virtualmachineimages/status
   - virtualmachineservices
   - virtualmachineservices/status
+  - virtualmachineclasses
+  - virtualmachineclasses/status
   verbs:
   - get
   - list

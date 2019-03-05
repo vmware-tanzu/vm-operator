@@ -23,6 +23,7 @@ import (
 	"k8s.io/client-go/rest"
 	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
 	"vmware.com/kubevsphere/pkg/controller/virtualmachine"
+	"vmware.com/kubevsphere/pkg/controller/virtualmachineclass"
 	"vmware.com/kubevsphere/pkg/controller/virtualmachineimage"
 	"vmware.com/kubevsphere/pkg/controller/virtualmachineservice"
 )
@@ -32,6 +33,7 @@ func GetAllControllers(config *rest.Config) ([]controller.Controller, chan struc
 	si := sharedinformers.NewSharedInformers(config, shutdown)
 	return []controller.Controller{
 		virtualmachine.NewVirtualMachineController(config, si),
+		virtualmachineclass.NewVirtualMachineClassController(config, si),
 		virtualmachineimage.NewVirtualMachineImageController(config, si),
 		virtualmachineservice.NewVirtualMachineServiceController(config, si),
 	}, shutdown

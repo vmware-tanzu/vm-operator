@@ -1,0 +1,7 @@
+note: VirtualMachineClass Example
+sample: |
+  apiVersion: vmoperator.vmware.com/v1alpha1
+  kind: VirtualMachineClass
+  metadata:
+    name: virtualmachineclass-example
+  spec:

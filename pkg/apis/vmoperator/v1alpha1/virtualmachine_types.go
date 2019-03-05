@@ -39,17 +39,6 @@ const (
 	VirtualMachinePoweredOn  = "poweredOn"
 )
 
-type VirtualMachineResourceSpec struct {
-	Cpu    int64 `json:"cpu,omitempty"`
-	Memory int64 `json:"memory,omitempty"`
-}
-
-type VirtualMachineResourcesSpec struct {
-	Capacity VirtualMachineResourceSpec `json:"capacity"`
-	Requests VirtualMachineResourceSpec `json:"requests,omitempty"`
-	Limits   VirtualMachineResourceSpec `json:"limits,omitempty"`
-}
-
 type VirtualMachinePort struct {
 	Port     int             `json:"port"`
 	Ip       string          `json:"ip"`
@@ -59,11 +48,11 @@ type VirtualMachinePort struct {
 
 // VirtualMachineSpec defines the desired state of VirtualMachine
 type VirtualMachineSpec struct {
-	Image      string                      `json:"image"`
-	Resources  VirtualMachineResourcesSpec `json:"resources"`
-	PowerState string                      `json:"powerState"`
-	Env        corev1.EnvVar               `json:"env,omitempty"`
-	Ports      []VirtualMachinePort        `json:"ports,omitempty"`
+	Image                   string               `json:"image"`
+	VirtualMachineClassName string               `json:"virtualmachineclassName,omitempty"`
+	PowerState              string               `json:"powerState"`
+	Env                     corev1.EnvVar        `json:"env,omitempty"`
+	Ports                   []VirtualMachinePort `json:"ports,omitempty"`
 }
 
 // TODO: Make these annotations
@@ -107,7 +96,7 @@ func (v VirtualMachineStrategy) PrepareForCreate(ctx context.Context, obj runtim
 // Validate checks that an instance of VirtualMachine is well formed
 func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	vm := obj.(*vmoperator.VirtualMachine)
-	glog.V(4).Infof("Validating fields for VirtualMachine %s\n", vm.Name)
+	glog.V(4).Infof("Validating fields for VirtualMachine %s", vm.Name)
 	errors := field.ErrorList{}
 
 	// Confirm that the required fields are present and within valid ranges, if applicable
@@ -123,5 +112,5 @@ func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object
 func (VirtualMachineSchemeFns) DefaultingFunction(o interface{}) {
 	obj := o.(*VirtualMachine)
 	// set default field values here
-	glog.V(4).Infof("Defaulting fields for VirtualMachine %s\n", obj.Name)
+	glog.V(4).Infof("Defaulting fields for VirtualMachine %s", obj.Name)
 }

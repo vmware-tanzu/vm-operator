@@ -16,6 +16,7 @@ import (
 type VmoperatorV1alpha1Interface interface {
 	RESTClient() rest.Interface
 	VirtualMachinesGetter
+	VirtualMachineClassesGetter
 	VirtualMachineImagesGetter
 	VirtualMachineServicesGetter
 }
@@ -27,6 +28,10 @@ type VmoperatorV1alpha1Client struct {
 
 func (c *VmoperatorV1alpha1Client) VirtualMachines(namespace string) VirtualMachineInterface {
 	return newVirtualMachines(c, namespace)
+}
+
+func (c *VmoperatorV1alpha1Client) VirtualMachineClasses(namespace string) VirtualMachineClassInterface {
+	return newVirtualMachineClasses(c, namespace)
 }
 
 func (c *VmoperatorV1alpha1Client) VirtualMachineImages(namespace string) VirtualMachineImageInterface {

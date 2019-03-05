@@ -34,6 +34,13 @@ var (
 		func() runtime.Object { return &VirtualMachineList{} }, // Register versioned resource list
 		&VirtualMachineStrategy{builders.StorageStrategySingleton},
 	)
+	vmoperatorVirtualMachineClassStorage = builders.NewApiResource( // Resource status endpoint
+		vmoperator.InternalVirtualMachineClass,
+		VirtualMachineClassSchemeFns{},
+		func() runtime.Object { return &VirtualMachineClass{} },     // Register versioned resource
+		func() runtime.Object { return &VirtualMachineClassList{} }, // Register versioned resource list
+		&VirtualMachineClassStrategy{builders.StorageStrategySingleton},
+	)
 	vmoperatorVirtualMachineImageStorage = builders.NewApiResourceWithStorage( // Resource status endpoint
 		vmoperator.InternalVirtualMachineImage,
 		VirtualMachineImageSchemeFns{},
@@ -56,6 +63,13 @@ var (
 			func() runtime.Object { return &VirtualMachine{} },     // Register versioned resource
 			func() runtime.Object { return &VirtualMachineList{} }, // Register versioned resource list
 			&VirtualMachineStatusStrategy{builders.StatusStorageStrategySingleton},
+		), vmoperatorVirtualMachineClassStorage,
+		builders.NewApiResource( // Resource status endpoint
+			vmoperator.InternalVirtualMachineClassStatus,
+			VirtualMachineClassSchemeFns{},
+			func() runtime.Object { return &VirtualMachineClass{} },     // Register versioned resource
+			func() runtime.Object { return &VirtualMachineClassList{} }, // Register versioned resource list
+			&VirtualMachineClassStatusStrategy{builders.StatusStorageStrategySingleton},
 		), vmoperatorVirtualMachineImageStorage,
 		vmoperatorVirtualMachineServiceStorage,
 		builders.NewApiResource( // Resource status endpoint
@@ -109,6 +123,32 @@ type VirtualMachineList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []VirtualMachine `json:"items"`
+}
+
+//
+// VirtualMachineClass Functions and Structs
+//
+// +k8s:deepcopy-gen=false
+type VirtualMachineClassSchemeFns struct {
+	builders.DefaultSchemeFns
+}
+
+// +k8s:deepcopy-gen=false
+type VirtualMachineClassStrategy struct {
+	builders.DefaultStorageStrategy
+}
+
+// +k8s:deepcopy-gen=false
+type VirtualMachineClassStatusStrategy struct {
+	builders.DefaultStatusStorageStrategy
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type VirtualMachineClassList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []VirtualMachineClass `json:"items"`
 }
 
 //

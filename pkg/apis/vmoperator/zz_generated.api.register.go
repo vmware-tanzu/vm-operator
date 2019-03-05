@@ -44,6 +44,18 @@ var (
 		func() runtime.Object { return &VirtualMachine{} },
 		func() runtime.Object { return &VirtualMachineList{} },
 	)
+	InternalVirtualMachineClass = builders.NewInternalResource(
+		"virtualmachineclasses",
+		"VirtualMachineClass",
+		func() runtime.Object { return &VirtualMachineClass{} },
+		func() runtime.Object { return &VirtualMachineClassList{} },
+	)
+	InternalVirtualMachineClassStatus = builders.NewInternalResourceStatus(
+		"virtualmachineclasses",
+		"VirtualMachineClassStatus",
+		func() runtime.Object { return &VirtualMachineClass{} },
+		func() runtime.Object { return &VirtualMachineClassList{} },
+	)
 	InternalVirtualMachineImage = builders.NewInternalResource(
 		"virtualmachineimages",
 		"VirtualMachineImage",
@@ -72,6 +84,8 @@ var (
 	ApiVersion = builders.NewApiGroup("vmoperator.vmware.com").WithKinds(
 		InternalVirtualMachine,
 		InternalVirtualMachineStatus,
+		InternalVirtualMachineClass,
+		InternalVirtualMachineClassStatus,
 		InternalVirtualMachineImage,
 		InternalVirtualMachineImageStatus,
 		InternalVirtualMachineService,
@@ -148,11 +162,11 @@ type VirtualMachineServiceSpec struct {
 }
 
 type VirtualMachineSpec struct {
-	Image      string
-	Resources  VirtualMachineResourcesSpec
-	PowerState string
-	Env        corev1.EnvVar
-	Ports      []VirtualMachinePort
+	Image                   string
+	VirtualMachineClassName string
+	PowerState              string
+	Env                     corev1.EnvVar
+	Ports                   []VirtualMachinePort
 }
 
 type VirtualMachineServicePort struct {
@@ -169,12 +183,6 @@ type VirtualMachinePort struct {
 	Protocol corev1.Protocol
 }
 
-type VirtualMachineResourcesSpec struct {
-	Capacity VirtualMachineResourceSpec
-	Requests VirtualMachineResourceSpec
-	Limits   VirtualMachineResourceSpec
-}
-
 // +genclient
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -186,9 +194,15 @@ type VirtualMachineImage struct {
 	Status VirtualMachineImageStatus
 }
 
-type VirtualMachineResourceSpec struct {
-	Cpu    int64
-	Memory int64
+// +genclient
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type VirtualMachineClass struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	Spec   VirtualMachineClassSpec
+	Status VirtualMachineClassStatus
 }
 
 type VirtualMachineImageStatus struct {
@@ -197,7 +211,35 @@ type VirtualMachineImageStatus struct {
 	PowerState string
 }
 
+type VirtualMachineClassStatus struct {
+}
+
+type VirtualMachineClassSpec struct {
+	Hardware VirtualMachineClassHardware
+	Policies VirtualMachineClassPolicies
+}
+
 type VirtualMachineImageSpec struct {
+}
+
+type VirtualMachineClassPolicies struct {
+	Resources    VirtualMachineClassResources
+	StorageClass string
+}
+
+type VirtualMachineClassHardware struct {
+	Cpus   int64
+	Memory int64
+}
+
+type VirtualMachineClassResources struct {
+	Requests VirtualMachineClassResourceSpec
+	Limits   VirtualMachineClassResourceSpec
+}
+
+type VirtualMachineClassResourceSpec struct {
+	Cpu    int64
+	Memory int64
 }
 
 //
@@ -315,6 +357,126 @@ func (s *storageVirtualMachine) UpdateVirtualMachine(ctx context.Context, object
 }
 
 func (s *storageVirtualMachine) DeleteVirtualMachine(ctx context.Context, id string) (bool, error) {
+	st := s.GetStandardStorage()
+	_, sync, err := st.Delete(ctx, id, &metav1.DeleteOptions{})
+	return sync, err
+}
+
+//
+// VirtualMachineClass Functions and Structs
+//
+// +k8s:deepcopy-gen=false
+type VirtualMachineClassStrategy struct {
+	builders.DefaultStorageStrategy
+}
+
+// +k8s:deepcopy-gen=false
+type VirtualMachineClassStatusStrategy struct {
+	builders.DefaultStatusStorageStrategy
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type VirtualMachineClassList struct {
+	metav1.TypeMeta
+	metav1.ListMeta
+	Items []VirtualMachineClass
+}
+
+func (VirtualMachineClass) NewStatus() interface{} {
+	return VirtualMachineClassStatus{}
+}
+
+func (pc *VirtualMachineClass) GetStatus() interface{} {
+	return pc.Status
+}
+
+func (pc *VirtualMachineClass) SetStatus(s interface{}) {
+	pc.Status = s.(VirtualMachineClassStatus)
+}
+
+func (pc *VirtualMachineClass) GetSpec() interface{} {
+	return pc.Spec
+}
+
+func (pc *VirtualMachineClass) SetSpec(s interface{}) {
+	pc.Spec = s.(VirtualMachineClassSpec)
+}
+
+func (pc *VirtualMachineClass) GetObjectMeta() *metav1.ObjectMeta {
+	return &pc.ObjectMeta
+}
+
+func (pc *VirtualMachineClass) SetGeneration(generation int64) {
+	pc.ObjectMeta.Generation = generation
+}
+
+func (pc VirtualMachineClass) GetGeneration() int64 {
+	return pc.ObjectMeta.Generation
+}
+
+// Registry is an interface for things that know how to store VirtualMachineClass.
+// +k8s:deepcopy-gen=false
+type VirtualMachineClassRegistry interface {
+	ListVirtualMachineClasss(ctx context.Context, options *internalversion.ListOptions) (*VirtualMachineClassList, error)
+	GetVirtualMachineClass(ctx context.Context, id string, options *metav1.GetOptions) (*VirtualMachineClass, error)
+	CreateVirtualMachineClass(ctx context.Context, id *VirtualMachineClass) (*VirtualMachineClass, error)
+	UpdateVirtualMachineClass(ctx context.Context, id *VirtualMachineClass) (*VirtualMachineClass, error)
+	DeleteVirtualMachineClass(ctx context.Context, id string) (bool, error)
+}
+
+// NewRegistry returns a new Registry interface for the given Storage. Any mismatched types will panic.
+func NewVirtualMachineClassRegistry(sp builders.StandardStorageProvider) VirtualMachineClassRegistry {
+	return &storageVirtualMachineClass{sp}
+}
+
+// Implement Registry
+// storage puts strong typing around storage calls
+// +k8s:deepcopy-gen=false
+type storageVirtualMachineClass struct {
+	builders.StandardStorageProvider
+}
+
+func (s *storageVirtualMachineClass) ListVirtualMachineClasss(ctx context.Context, options *internalversion.ListOptions) (*VirtualMachineClassList, error) {
+	if options != nil && options.FieldSelector != nil && !options.FieldSelector.Empty() {
+		return nil, fmt.Errorf("field selector not supported yet")
+	}
+	st := s.GetStandardStorage()
+	obj, err := st.List(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+	return obj.(*VirtualMachineClassList), err
+}
+
+func (s *storageVirtualMachineClass) GetVirtualMachineClass(ctx context.Context, id string, options *metav1.GetOptions) (*VirtualMachineClass, error) {
+	st := s.GetStandardStorage()
+	obj, err := st.Get(ctx, id, options)
+	if err != nil {
+		return nil, err
+	}
+	return obj.(*VirtualMachineClass), nil
+}
+
+func (s *storageVirtualMachineClass) CreateVirtualMachineClass(ctx context.Context, object *VirtualMachineClass) (*VirtualMachineClass, error) {
+	st := s.GetStandardStorage()
+	obj, err := st.Create(ctx, object, nil, &metav1.CreateOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return obj.(*VirtualMachineClass), nil
+}
+
+func (s *storageVirtualMachineClass) UpdateVirtualMachineClass(ctx context.Context, object *VirtualMachineClass) (*VirtualMachineClass, error) {
+	st := s.GetStandardStorage()
+	obj, _, err := st.Update(ctx, object.Name, rest.DefaultUpdatedObjectInfo(object), nil, nil, false, &metav1.UpdateOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return obj.(*VirtualMachineClass), nil
+}
+
+func (s *storageVirtualMachineClass) DeleteVirtualMachineClass(ctx context.Context, id string) (bool, error) {
 	st := s.GetStandardStorage()
 	_, sync, err := st.Delete(ctx, id, &metav1.DeleteOptions{})
 	return sync, err

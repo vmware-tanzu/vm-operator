@@ -33,7 +33,7 @@ type VirtualMachineImages interface {
 type VirtualMachines interface {
 	ListVirtualMachines(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachine, error)
 	GetVirtualMachine(ctx context.Context, name string) (*v1alpha1.VirtualMachine, error)
-	CreateVirtualMachine(ctx context.Context, virtualMachine *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error)
-	UpdateVirtualMachine(ctx context.Context, virtualMachine *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error)
-	DeleteVirtualMachine(ctx context.Context, virtualMachine *v1alpha1.VirtualMachine) error
+	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass *v1alpha1.VirtualMachineClass) (*v1alpha1.VirtualMachine, error)
+	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error)
+	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 }

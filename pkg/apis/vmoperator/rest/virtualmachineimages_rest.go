@@ -14,7 +14,6 @@ import (
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
@@ -62,13 +61,7 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 
 	glog.Infof("Listing VirtualMachineImage ns=%s, user=%s", namespace, user)
 
-	imagesProvider, supported := r.provider.VirtualMachineImages()
-	if !supported {
-		glog.Error("Provider doesn't support images func")
-		return nil, errors.NewMethodNotSupported(schema.GroupResource{Group: "vmoperator", Resource: "VirtualMachineImages"}, "list")
-	}
-
-	images, err := imagesProvider.ListVirtualMachineImages(ctx, namespace)
+	images, err := r.provider.ListVirtualMachineImages(ctx, namespace)
 	if err != nil {
 		glog.Errorf("Failed to list images: %s", err)
 		return nil, errors.NewInternalError(err)
@@ -108,13 +101,7 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 
 	glog.Infof("Getting VirtualMachineImage name=%s, ns=%s, user=%s", name, namespace, user)
 
-	imagesProvider, supported := r.provider.VirtualMachineImages()
-	if !supported {
-		glog.Error("Provider doesn't support images func")
-		return nil, errors.NewMethodNotSupported(schema.GroupResource{Group: "vmoperator", Resource: "VirtualMachineImages"}, "get")
-	}
-
-	image, err := imagesProvider.GetVirtualMachineImage(ctx, name)
+	image, err := r.provider.GetVirtualMachineImage(ctx, name)
 	if err != nil {
 		glog.Errorf("Failed to list images: %s", err)
 		return nil, errors.NewInternalError(err) // TODO(bryanv) Do not convert NotFound errors?

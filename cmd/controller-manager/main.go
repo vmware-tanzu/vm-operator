@@ -6,43 +6,60 @@ package main
 
 import (
 	"flag"
+	"io"
+	"k8s.io/client-go/kubernetes"
 	"net/http"
+	"vmware.com/kubevsphere/pkg/vmprovider"
+	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
 
 	"github.com/golang/glog"
 	controllerlib "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
+	"k8s.io/client-go/rest"
 
 	"vmware.com/kubevsphere/pkg/controller"
 )
 
 func runHealthServer() {
-	// Setup health check handler and corresponding listener on a custom port
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-                _, err := w.Write([]byte("ok"))
-                if err != nil {
-                        glog.Fatalf("ResponseWriter error: %s", err)
-                }
+		_, _ = io.WriteString(w, "ok")
 	})
-	err := http.ListenAndServe(":8081", nil)
-	if err != nil {
+
+	if err := http.ListenAndServe(":8081", nil); err != nil {
 		glog.Fatalf("ListenAndServe error: %s", err)
 	}
 }
 
+// Assume this will always be our provider.
+func registerVsphereVmProvider(restConfig *rest.Config) error {
+	clientSet := kubernetes.NewForConfigOrDie(restConfig)
+
+	provider, err := vsphere.NewVSphereVmProvider(clientSet)
+	if err != nil {
+		return err
+	}
+
+	vmprovider.RegisterVmProvider(provider)
+	return nil
+}
+
 func main() {
-	// This isn't used
 	kubeconfig := flag.String("kubeconfig", "", "path to kubeconfig")
 	flag.Parse()
 
-	config, err := controllerlib.GetConfig(*kubeconfig)
+	restConfig, err := controllerlib.GetConfig(*kubeconfig)
 	if err != nil {
-		glog.Fatalf("Could not create Config for talking to the apiserver: %v", err)
+		glog.Fatalf("Failed to get rest client config: %v", err)
 	}
 
-	controllers, _ := controller.GetAllControllers(config)
+	if err := registerVsphereVmProvider(restConfig); err != nil {
+		glog.Fatalf("Failed to register vSphere VM provider: %v", err)
+	}
+
+	controllers, _ := controller.GetAllControllers(restConfig)
 	controllerlib.StartControllerManager(controllers...)
 
 	go runHealthServer()
 
-	// Blockforever
+	// Block forever.
 	select {}
 }

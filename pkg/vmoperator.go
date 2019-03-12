@@ -17,12 +17,6 @@ const (
 
 	// Annotation Key for VM provider
 	VmOperatorVmProviderKey string = "vmoperator.vmware.com/vmprovider"
-
-	// Annotation Key for vSphere VC Id.
-	VmOperatorVcUuidKey string = "vmoperator.vmware.com/vcuuid"
-
-	// Annotation Key for vSphere Mo Ref
-	VmOperatorMoRefKey string = "vmoperator.vmware.com/moref"
 )
 
 func AddAnnotations(objectMeta *metav1.ObjectMeta) {
@@ -31,6 +25,7 @@ func AddAnnotations(objectMeta *metav1.ObjectMeta) {
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
+
 	// TODO: Make this version dynamic
 	annotations[VmOperatorVersionKey] = "v1"
 

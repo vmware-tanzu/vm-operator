@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,9 +20,6 @@ import (
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	"vmware.com/kubevsphere/pkg"
 	"vmware.com/kubevsphere/pkg/lib"
-	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
-
-	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	clientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
@@ -95,10 +93,6 @@ func (c *VirtualMachineServiceControllerImpl) Init(arguments sharedinformers.Con
 
 	endpoints := arguments.GetSharedInformers().KubernetesFactory.Core().V1().Endpoints()
 	c.endpointsLister = endpoints.Lister()
-
-	if err := vsphere.InitProvider(arguments.GetSharedInformers().KubernetesClientSet); err != nil {
-		glog.Fatalf("Failed to initialize vSphere provider: %s", err)
-	}
 
 	arguments.Watch("Service", services.Informer(), c.ServiceToVirtualMachineService)
 	arguments.Watch("Endpoint", endpoints.Informer(), c.EndpointsToVirtualMachineService)
@@ -252,7 +246,7 @@ func (c *VirtualMachineServiceControllerImpl) vmServiceToService(vmService *v1al
 		},
 		ObjectMeta: *om,
 		Spec: corev1.ServiceSpec{
-			// Don't specicfy selector to keep endppoints controller from interfering
+			// Don't specify selector to keep endpoints controller from interfering
 			Type:  corev1.ServiceTypeClusterIP, // TODO: Pull this from VM Service
 			Ports: servicePorts,
 		},

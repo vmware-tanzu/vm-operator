@@ -47,14 +47,14 @@ var _ = BeforeSuite(func() {
 	vcsim = integration.NewVcSimInstance()
 	address, port := vcsim.Start()
 
-	vsphere.InitProviderWithConfig(integration.NewIntegrationVmOperatorConfig(address, port))
-
-	vmprovider, err := vmprovider.NewVmProvider()
+	provider, err := vsphere.NewVSphereVmProviderFromConfig(integration.NewIntegrationVmOperatorConfig(address, port))
 	if err != nil {
-		glog.Fatalf("Failed to acquire vm provider: %s", err)
+		glog.Fatalf("Failed to create vSphere provider: %v", err)
 	}
 
-	if err := v1alpha1.RegisterRestProvider(vmrest.NewVirtualMachineImagesREST(vmprovider)); err != nil {
+	vmprovider.RegisterVmProvider(provider)
+
+	if err := v1alpha1.RegisterRestProvider(vmrest.NewVirtualMachineImagesREST(provider)); err != nil {
 		glog.Fatalf("Failed to register REST provider: %s", err)
 	}
 

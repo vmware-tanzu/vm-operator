@@ -4,8 +4,6 @@
 package vsphere
 
 import (
-	"github.com/golang/glog"
-	controllerlib "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -76,20 +74,8 @@ func providerConfigToConfigMap(config VSphereVmProviderConfig) *v1.ConfigMap {
 	}
 }
 
+// GetProviderConfigFromConfigMap gets the vSphere Provider ConfigMap from the API Master.
 func GetProviderConfigFromConfigMap(clientSet *kubernetes.Clientset) (*VSphereVmProviderConfig, error) {
-	if clientSet == nil {
-		// Create the Clientset from the Kubernetes config provided to this container
-		// through environment variables.
-		// TODO(bryanv) Have all callers create their ClientSet.
-		config, err := controllerlib.GetConfig("")
-		if err != nil {
-			glog.Fatalf("Could not retrieve the default Kubernetes config: %v", err)
-		}
-
-		clientSet = kubernetes.NewForConfigOrDie(config)
-	}
-
-	// Get the vSphere Provider ConfigMap from the API Master.
 	vSphereConfig, err := clientSet.CoreV1().ConfigMaps(vSphereConfigK8sNamespace).Get(vSphereConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not get provider ConfigMap %q", vSphereConfigMapName)

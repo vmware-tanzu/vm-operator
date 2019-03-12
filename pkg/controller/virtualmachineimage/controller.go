@@ -11,7 +11,6 @@ import (
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	listers "vmware.com/kubevsphere/pkg/client/listers_generated/vmoperator/v1alpha1"
 	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
-	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
 )
 
 // +controller:group=vmoperator,version=v1alpha1,kind=VirtualMachineImage,resource=virtualmachineimages
@@ -27,10 +26,6 @@ type VirtualMachineImageControllerImpl struct {
 func (c *VirtualMachineImageControllerImpl) Init(arguments sharedinformers.ControllerInitArguments) {
 	// Use the lister for indexing virtualmachineimages labels
 	c.lister = arguments.GetSharedInformers().Factory.Vmoperator().V1alpha1().VirtualMachineImages().Lister()
-
-	if err := vsphere.InitProvider(arguments.GetSharedInformers().KubernetesClientSet); err != nil {
-		glog.Fatalf("Failed to initialize vSphere provider: %s", err)
-	}
 }
 
 // Reconcile handles enqueued messages

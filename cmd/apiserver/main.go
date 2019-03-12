@@ -5,11 +5,17 @@
 package main
 
 import (
+	"github.com/pkg/errors"
+	"io"
+	"net/http"
+
 	_ "github.com/go-openapi/loads"
 	"github.com/golang/glog"
-	"net/http"
+	"k8s.io/client-go/kubernetes"
+	"vmware.com/kubevsphere/pkg/apis"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/rest"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
+	"vmware.com/kubevsphere/pkg/openapi"
 	"vmware.com/kubevsphere/pkg/vmprovider"
 	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
 
@@ -18,43 +24,47 @@ import (
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/cmd/server"
 	_ "k8s.io/client-go/plugin/pkg/client/auth" // Enable cloud provider auth
-
-	"vmware.com/kubevsphere/pkg/apis"
-	"vmware.com/kubevsphere/pkg/openapi"
+	clientRest "k8s.io/client-go/rest"
 )
 
 func runHealthServer() {
-	// Setup health check handler and corresponding listener on a custom port
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		_, err := w.Write([]byte("ok"))
-		if err != nil {
-			glog.Fatalf("ResponseWriter error: %s", err)
-		}
+		_, _ = io.WriteString(w, "ok")
 	})
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		glog.Fatalf("ListenAndServe error: %s", err)
+
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		glog.Fatalf("ListenAndServe error: %v", err)
 	}
+}
+
+// Assume this will always be our provider.
+func registerVsphereVmProvider() error {
+	restConfig, err := clientRest.InClusterConfig()
+	if err != nil {
+		return errors.Wrap(err, "failed to get rest client config")
+	}
+	clientSet := kubernetes.NewForConfigOrDie(restConfig)
+
+	provider, err := vsphere.NewVSphereVmProvider(clientSet)
+	if err != nil {
+		return err
+	}
+
+	vmprovider.RegisterVmProvider(provider)
+	return nil
 }
 
 func main() {
 	version := "v0"
 
-	// Init the vsphere provider
-	if err := vsphere.InitProvider(nil); err != nil {
-		glog.Fatalf("Failed to initialize vSphere provider: %s", err)
+	if err := registerVsphereVmProvider(); err != nil {
+		glog.Fatalf("Failed to register vSphere VM provider: %v", err)
 	}
 
-	// Get a vmprovider instance
-	vmprovider, err := vmprovider.NewVmProvider()
-	if err != nil {
-		glog.Fatalf("Failed to find vmprovider: %s", err)
-	}
-
-	// Provide the vm provider interface to the custom REST implementations
-	err = v1alpha1.RegisterRestProvider(rest.NewVirtualMachineImagesREST(vmprovider))
-	if err != nil {
-		glog.Fatalf("Failed to register REST provider: %s", err)
+	// Use the registered VM provider in the custom REST implementations.
+	provider := vmprovider.GetVmProviderOrDie()
+	if err := v1alpha1.RegisterRestProvider(rest.NewVirtualMachineImagesREST(provider)); err != nil {
+		glog.Fatalf("Failed to register REST provider: %v", err)
 	}
 
 	go runHealthServer()

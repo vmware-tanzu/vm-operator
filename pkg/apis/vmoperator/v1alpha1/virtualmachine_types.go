@@ -34,6 +34,7 @@ type VirtualMachine struct {
 
 type VirtualMachinePowerState string
 
+// See govmomi.vim25.types.VirtualMachinePowerState
 const (
 	VirtualMachinePoweredOff = "poweredOff"
 	VirtualMachinePoweredOn  = "poweredOn"

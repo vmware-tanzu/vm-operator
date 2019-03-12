@@ -1,6 +1,7 @@
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
+
 package sequence
 
 import (
@@ -12,36 +13,16 @@ import (
 )
 
 type VirtualMachinePowerOffStep struct {
-	desiredVm *v1alpha1.VirtualMachine
-	actualVm  *resources.VirtualMachine
+	vm    *v1alpha1.VirtualMachine
+	resVm *resources.VirtualMachine
 }
 
 func (step VirtualMachinePowerOffStep) Name() string { return "PowerOff" }
 
 func (step VirtualMachinePowerOffStep) Execute(ctx context.Context) error {
-	ps, err := step.actualVm.VirtualMachine.PowerState(ctx)
+
+	err := step.resVm.SetPowerState(ctx, v1alpha1.VirtualMachinePoweredOff)
 	if err != nil {
-		glog.Errorf("Failed to acquire power state: %s", err.Error())
-		return err
-	}
-
-	glog.Infof("Current power state: %s, desired power state: %s", ps, step.desiredVm.Spec.PowerState)
-
-	if string(ps) == string(v1alpha1.VirtualMachinePoweredOff) {
-		glog.Info("Vm is already powered off")
-		return nil
-	}
-
-	// Bring PowerState into conformance
-	task, err := step.actualVm.VirtualMachine.PowerOff(ctx)
-	if err != nil {
-		glog.Errorf("Failed to change power state to %s", v1alpha1.VirtualMachinePoweredOff)
-		return err
-	}
-
-	_, err = task.WaitForResult(ctx, nil)
-	if err != nil {
-		glog.Errorf("VM Power State change task failed %s", err.Error())
 		return err
 	}
 
@@ -49,20 +30,14 @@ func (step VirtualMachinePowerOffStep) Execute(ctx context.Context) error {
 }
 
 type VirtualMachineDeleteStep struct {
-	desiredVm *v1alpha1.VirtualMachine
-	actualVm  *resources.VirtualMachine
+	vm    *v1alpha1.VirtualMachine
+	resVm *resources.VirtualMachine
 }
 
 func (step VirtualMachineDeleteStep) Name() string { return "Delete Vm" }
 
 func (step VirtualMachineDeleteStep) Execute(ctx context.Context) error {
-	task, err := step.actualVm.Delete(ctx)
-	if err != nil {
-		glog.Errorf("Failed to delete Vm: %s", err)
-		return err
-	}
-
-	_, err = task.WaitForResult(ctx, nil)
+	err := step.resVm.Delete(ctx)
 	if err != nil {
 		glog.Errorf("Failed to delete Vm: %s", err)
 		return err
@@ -72,9 +47,7 @@ func (step VirtualMachineDeleteStep) Execute(ctx context.Context) error {
 }
 
 type VirtualMachineDeleteSequence struct {
-	desiredVm *v1alpha1.VirtualMachine
-	actualVm  *resources.VirtualMachine
-	steps     []SequenceStep
+	steps []SequenceStep
 }
 
 func (seq VirtualMachineDeleteSequence) GetName() string {
@@ -94,11 +67,11 @@ func (seq VirtualMachineDeleteSequence) Execute(ctx context.Context) error {
 	return nil
 }
 
-func NewVirtualMachineDeleteSequence(desiredVm *v1alpha1.VirtualMachine, actualVm *resources.VirtualMachine) VirtualMachineDeleteSequence {
+func NewVirtualMachineDeleteSequence(vm *v1alpha1.VirtualMachine, resVm *resources.VirtualMachine) VirtualMachineDeleteSequence {
 	m := []SequenceStep{
-		VirtualMachinePowerOffStep{desiredVm, actualVm},
-		VirtualMachineDeleteStep{desiredVm, actualVm},
+		VirtualMachinePowerOffStep{vm, resVm},
+		VirtualMachineDeleteStep{vm, resVm},
 	}
 
-	return VirtualMachineDeleteSequence{desiredVm, actualVm, m}
+	return VirtualMachineDeleteSequence{m}
 }

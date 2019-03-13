@@ -7,11 +7,13 @@ package vsphere
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 	res "vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
 )
@@ -121,7 +123,7 @@ func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	class *v1alpha1.VirtualMachineClass) (*res.VirtualMachine, error) {
 
-	resSrcVm, err := s.lookupVm(ctx, vm.Spec.Image)
+	resSrcVm, err := s.lookupVm(ctx, vm.Spec.ImageName)
 	if err != nil {
 		return nil, err
 	}
@@ -162,12 +164,16 @@ func (s *Session) lookupVm(ctx context.Context, name string) (*res.VirtualMachin
 	return res.NewVMFromObject(objVm)
 }
 
+func memoryQuantityToMb(q resource.Quantity) int64 {
+	return int64(math.Ceil(float64(q.Value()) / float64(1024*1024)))
+}
+
 func configSpecFromClassSpec(name string, classSpec *v1alpha1.VirtualMachineClassSpec) vimTypes.VirtualMachineConfigSpec {
 
 	configSpec := vimTypes.VirtualMachineConfigSpec{
 		Name:     name,
 		NumCPUs:  int32(classSpec.Hardware.Cpus),
-		MemoryMB: int64(classSpec.Hardware.Memory),
+		MemoryMB: memoryQuantityToMb(classSpec.Hardware.Memory),
 	}
 
 	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{
@@ -175,9 +181,16 @@ func configSpecFromClassSpec(name string, classSpec *v1alpha1.VirtualMachineClas
 		Limit:       &classSpec.Policies.Resources.Limits.Cpu,
 	}
 
-	configSpec.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
-		Reservation: &classSpec.Policies.Resources.Requests.Memory,
-		Limit:       &classSpec.Policies.Resources.Limits.Memory,
+	configSpec.MemoryAllocation = &vimTypes.ResourceAllocationInfo{}
+
+	if !classSpec.Policies.Resources.Requests.Memory.IsZero() {
+		res := memoryQuantityToMb(classSpec.Policies.Resources.Requests.Memory)
+		configSpec.MemoryAllocation.Reservation = &res
+	}
+
+	if !classSpec.Policies.Resources.Limits.Memory.IsZero() {
+		lim := memoryQuantityToMb(classSpec.Policies.Resources.Limits.Memory)
+		configSpec.MemoryAllocation.Limit = &lim
 	}
 
 	return configSpec

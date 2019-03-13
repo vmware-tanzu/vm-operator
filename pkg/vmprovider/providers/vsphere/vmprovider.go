@@ -159,7 +159,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 	// Determine if this is a clone of an existing image or creation from scratch.
 	// The later is really only useful for dummy VMs at the moment.
 	var resVm *res.VirtualMachine
-	if vm.Spec.Image == "" {
+	if vm.Spec.ImageName == "" {
 		resVm, err = ses.CreateVirtualMachine(ctx, vm, vmClass)
 	} else {
 		resVm, err = ses.CloneVirtualMachine(ctx, vm, vmClass)
@@ -321,7 +321,7 @@ func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, resVm *res.Vi
 func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 	vmStatus, err := vs.generateVmStatus(ctx, resVm)
 	if err != nil {
-		return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
+		return nil, transformVmError(resVm.Name, err)
 	}
 
 	return &v1alpha1.VirtualMachine{
@@ -336,7 +336,7 @@ func resVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine) 
 	powerState, uuid, reference := resVm.ImageFields(ctx)
 
 	return &v1alpha1.VirtualMachineImage{
-		ObjectMeta: v1.ObjectMeta{Name: resVm.Name},
+		ObjectMeta: v1.ObjectMeta{Name: resVm.Name}, // TODO(bryanv) Namespace?
 		Status: v1alpha1.VirtualMachineImageStatus{
 			Uuid:       uuid,
 			InternalId: reference,

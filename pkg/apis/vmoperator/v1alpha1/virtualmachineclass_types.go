@@ -7,6 +7,7 @@ package v1alpha1
 import (
 	"context"
 	"github.com/golang/glog"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,13 +31,13 @@ type VirtualMachineClass struct {
 }
 
 type VirtualMachineClassHardware struct {
-	Cpus   int64 `json:"cpus,omitempty"`
-	Memory int64 `json:"memory,omitempty"`
+	Cpus   int64             `json:"cpus,omitempty"`
+	Memory resource.Quantity `json:"memory,omitempty"`
 }
 
 type VirtualMachineClassResourceSpec struct {
-	Cpu    int64 `json:"cpu,omitempty"`
-	Memory int64 `json:"memory,omitempty"`
+	Cpu    int64             `json:"cpu,omitempty"`
+	Memory resource.Quantity `json:"memory,omitempty"`
 }
 
 type VirtualMachineClassResources struct {

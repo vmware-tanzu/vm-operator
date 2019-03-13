@@ -992,8 +992,8 @@ func Convert_vmoperator_VirtualMachineServiceStrategy_To_v1alpha1_VirtualMachine
 }
 
 func autoConvert_v1alpha1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(in *VirtualMachineSpec, out *vmoperator.VirtualMachineSpec, s conversion.Scope) error {
-	out.Image = in.Image
-	out.VirtualMachineClassName = in.VirtualMachineClassName
+	out.ImageName = in.ImageName
+	out.ClassName = in.ClassName
 	out.PowerState = in.PowerState
 	out.Env = in.Env
 	out.Ports = *(*[]vmoperator.VirtualMachinePort)(unsafe.Pointer(&in.Ports))
@@ -1006,8 +1006,8 @@ func Convert_v1alpha1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(in *Vi
 }
 
 func autoConvert_vmoperator_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *vmoperator.VirtualMachineSpec, out *VirtualMachineSpec, s conversion.Scope) error {
-	out.Image = in.Image
-	out.VirtualMachineClassName = in.VirtualMachineClassName
+	out.ImageName = in.ImageName
+	out.ClassName = in.ClassName
 	out.PowerState = in.PowerState
 	out.Env = in.Env
 	out.Ports = *(*[]VirtualMachinePort)(unsafe.Pointer(&in.Ports))

@@ -24,6 +24,7 @@ import (
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 	corev1 "k8s.io/api/core/v1"
+	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -162,11 +163,11 @@ type VirtualMachineServiceSpec struct {
 }
 
 type VirtualMachineSpec struct {
-	Image                   string
-	VirtualMachineClassName string
-	PowerState              string
-	Env                     corev1.EnvVar
-	Ports                   []VirtualMachinePort
+	ImageName  string
+	ClassName  string
+	PowerState string
+	Env        corev1.EnvVar
+	Ports      []VirtualMachinePort
 }
 
 type VirtualMachineServicePort struct {
@@ -229,7 +230,7 @@ type VirtualMachineClassPolicies struct {
 
 type VirtualMachineClassHardware struct {
 	Cpus   int64
-	Memory int64
+	Memory apiresource.Quantity
 }
 
 type VirtualMachineClassResources struct {
@@ -239,7 +240,7 @@ type VirtualMachineClassResources struct {
 
 type VirtualMachineClassResourceSpec struct {
 	Cpu    int64
-	Memory int64
+	Memory apiresource.Quantity
 }
 
 //

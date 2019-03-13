@@ -28816,14 +28816,14 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassHardware(ref common.
 					},
 					"memory": {
 						SchemaProps: spec.SchemaProps{
-							Type:   []string{"integer"},
-							Format: "int64",
+							Ref: ref("k8s.io/apimachinery/pkg/api/resource.Quantity"),
 						},
 					},
 				},
 			},
 		},
-		Dependencies: []string{},
+		Dependencies: []string{
+			"k8s.io/apimachinery/pkg/api/resource.Quantity"},
 	}
 }
 
@@ -28909,14 +28909,14 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassResourceSpec(ref com
 					},
 					"memory": {
 						SchemaProps: spec.SchemaProps{
-							Type:   []string{"integer"},
-							Format: "int64",
+							Ref: ref("k8s.io/apimachinery/pkg/api/resource.Quantity"),
 						},
 					},
 				},
 			},
 		},
-		Dependencies: []string{},
+		Dependencies: []string{
+			"k8s.io/apimachinery/pkg/api/resource.Quantity"},
 	}
 }
 
@@ -29639,13 +29639,13 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.Reference
 			SchemaProps: spec.SchemaProps{
 				Description: "VirtualMachineSpec defines the desired state of VirtualMachine",
 				Properties: map[string]spec.Schema{
-					"image": {
+					"imageName": {
 						SchemaProps: spec.SchemaProps{
 							Type:   []string{"string"},
 							Format: "",
 						},
 					},
-					"virtualmachineclassName": {
+					"className": {
 						SchemaProps: spec.SchemaProps{
 							Type:   []string{"string"},
 							Format: "",
@@ -29675,7 +29675,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.Reference
 						},
 					},
 				},
-				Required: []string{"image", "powerState"},
+				Required: []string{"imageName", "className", "powerState"},
 			},
 		},
 		Dependencies: []string{
@@ -29718,14 +29718,14 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref common.Referen
 							Format: "",
 						},
 					},
-					"vmip": {
+					"vmIp": {
 						SchemaProps: spec.SchemaProps{
 							Type:   []string{"string"},
 							Format: "",
 						},
 					},
 				},
-				Required: []string{"conditions", "host", "powerState", "phase", "vmip"},
+				Required: []string{"conditions", "host", "powerState", "phase", "vmIp"},
 			},
 		},
 		Dependencies: []string{

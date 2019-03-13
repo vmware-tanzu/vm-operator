@@ -20,7 +20,7 @@ var _ = Describe("VirtualMachine", func() {
 	var client VirtualMachineInterface
 
 	BeforeEach(func() {
-		instance = VirtualMachine{Spec: VirtualMachineSpec{Image: "foo"}}
+		instance = VirtualMachine{Spec: VirtualMachineSpec{ImageName: "foo"}}
 		instance.Name = "instance-vm"
 
 		expected = instance

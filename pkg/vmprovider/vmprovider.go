@@ -22,7 +22,7 @@ func RegisterVmProvider(vmProvider iface.VirtualMachineProviderInterface) {
 	defer mutex.Unlock()
 
 	if registeredVmProvider != nil {
-		glog.Fatal("VM provider is already registered")
+		glog.Fatalf("VM provider %q is already registered", registeredVmProvider.Name())
 	}
 
 	registeredVmProvider = vmProvider

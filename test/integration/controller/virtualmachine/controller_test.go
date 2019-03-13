@@ -66,7 +66,7 @@ var _ = XDescribe("VirtualMachine controller", func() {
 
 			instance := VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{Name: instanceName},
-				Spec:       VirtualMachineSpec{Image: first.Name},
+				Spec:       VirtualMachineSpec{ImageName: first.Name},
 			}
 			// Create an instance
 			_, err = vmClient.Create(&instance)

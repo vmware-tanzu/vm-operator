@@ -193,9 +193,9 @@ func (c *VirtualMachineControllerImpl) processVmCreateOrUpdate(vmToUpdate *v1alp
 // Process a create event for a new VM.
 func (c *VirtualMachineControllerImpl) processVmCreate(ctx context.Context, vmToCreate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 
-	vmClass, err := c.vmClassLister.VirtualMachineClasses(vmToCreate.Namespace).Get(vmToCreate.Spec.VirtualMachineClassName)
+	vmClass, err := c.vmClassLister.VirtualMachineClasses(vmToCreate.Namespace).Get(vmToCreate.Spec.ClassName)
 	if err != nil {
-		glog.Errorf("Failed to get VirtualMachineClass %q: %v", vmToCreate.Spec.VirtualMachineClassName, err)
+		glog.Errorf("Failed to get VirtualMachineClass %q: %v", vmToCreate.Spec.ClassName, err)
 		return nil, err
 	}
 

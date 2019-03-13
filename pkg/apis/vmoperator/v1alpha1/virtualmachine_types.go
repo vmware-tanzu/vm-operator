@@ -49,18 +49,18 @@ type VirtualMachinePort struct {
 
 // VirtualMachineSpec defines the desired state of VirtualMachine
 type VirtualMachineSpec struct {
-	Image                   string               `json:"image"`
-	VirtualMachineClassName string               `json:"virtualmachineclassName,omitempty"`
-	PowerState              string               `json:"powerState"`
-	Env                     corev1.EnvVar        `json:"env,omitempty"`
-	Ports                   []VirtualMachinePort `json:"ports,omitempty"`
+	ImageName  string               `json:"imageName"`
+	ClassName  string               `json:"className"`
+	PowerState string               `json:"powerState"`
+	Env        corev1.EnvVar        `json:"env,omitempty"`
+	Ports      []VirtualMachinePort `json:"ports,omitempty"`
 }
 
 // TODO: Make these annotations
 /*
 type VirtualMachineConfigStatus struct {
-	Uuid 			string `json:"uuid,omitempty"`
-	InternalId 		string `json:"internalId"`
+	Uuid 		string `json:"uuid,omitempty"`
+	InternalId 	string `json:"internalId"`
 	CreateDate  	string `json:"createDate"`
 	ModifiedDate 	string `json:"modifiedDate"`
 }
@@ -80,7 +80,7 @@ type VirtualMachineStatus struct {
 	Host       string                    `json:"host"`
 	PowerState string                    `json:"powerState"`
 	Phase      string                    `json:"phase"`
-	VmIp       string                    `json:"vmip"`
+	VmIp       string                    `json:"vmIp"`
 }
 
 func (v VirtualMachineStrategy) PrepareForCreate(ctx context.Context, obj runtime.Object) {
@@ -101,7 +101,7 @@ func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object
 	errors := field.ErrorList{}
 
 	// Confirm that the required fields are present and within valid ranges, if applicable
-	if vm.Spec.Image == "" {
+	if vm.Spec.ImageName == "" {
 		glog.Errorf("Image empty for VM %s", vm.Name)
 		errors = append(errors, field.Required(field.NewPath("spec", "image"), ""))
 	}

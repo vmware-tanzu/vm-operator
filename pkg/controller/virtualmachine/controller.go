@@ -56,7 +56,7 @@ func (c *VirtualMachineControllerImpl) Init(arguments sharedinformers.Controller
 func (c *VirtualMachineControllerImpl) postVmEventsToWorkqueue(vm *v1alpha1.VirtualMachine) error {
 
 	if key, err := cache.MetaNamespaceKeyFunc(vm); err == nil {
-		c.informers.WorkerQueues["VirtualMachine"].Queue.AddAfter(key, time.Second)
+		c.informers.WorkerQueues["VirtualMachine"].Queue.AddAfter(key, 10 * time.Second)
 	}
 
 	return nil

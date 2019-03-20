@@ -7,15 +7,16 @@ package virtualmachineclass_test
 import (
 	"time"
 
-	. "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	. "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	. "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
+	. "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ = XDescribe("VirtualMachineClass controller", func() {
+var _ = Describe("VirtualMachineClass controller", func() {
 	var instance VirtualMachineClass
 	var expectedKey string
 	var client VirtualMachineClassInterface
@@ -25,6 +26,11 @@ var _ = XDescribe("VirtualMachineClass controller", func() {
 	BeforeEach(func() {
 		instance = VirtualMachineClass{}
 		instance.Name = "instance-1"
+		instance.Spec = VirtualMachineClassSpec{}
+		instance.Spec.Hardware.Memory, _ = resource.ParseQuantity("1Mi")
+		instance.Spec.Policies.Resources.Limits.Memory, _ = resource.ParseQuantity("1Mi")
+		instance.Spec.Policies.Resources.Requests.Memory, _ = resource.ParseQuantity("1Mi")
+
 		expectedKey = "virtualmachineclass-controller-test-handler/instance-1"
 	})
 

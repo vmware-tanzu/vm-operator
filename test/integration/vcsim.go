@@ -7,17 +7,17 @@ import (
 	"crypto/tls"
 	"fmt"
 	"github.com/golang/glog"
-	"github.com/onsi/ginkgo/config"
-	"gopkg.in/matryer/try.v1"
+	"net"
 	"net/http"
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 	"vmware.com/kubevsphere"
 )
 
 var (
-	vcsimPortBase = 8989
 	vcsimIp       = "127.0.0.1"
 )
 
@@ -33,6 +33,17 @@ func NewVcSimInstance() *VcSimInstance {
 	return &VcSimInstance{}
 }
 
+func (v *VcSimInstance) getPort() int {
+	l, _ := net.Listen("tcp", ":0")
+	defer l.Close()
+	pieces := strings.Split(l.Addr().String(), ":")
+	i, err := strconv.Atoi(pieces[len(pieces)-1])
+	if err != nil {
+		panic(err)
+	}
+	return i
+}
+
 // Wait for a vcsim instance to start by polling its "about" REST endpoint until
 // we see a successful reply.  Sleep for a second between attempts
 func (v *VcSimInstance) waitForStart(address string) error {
@@ -40,20 +51,20 @@ func (v *VcSimInstance) waitForStart(address string) error {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{Transport: tr}
-	err := try.Do(func(attempt int) (bool, error) {
-		var e error
-		_, e = client.Get(fmt.Sprintf("https://%s/about", address))
-		if e != nil {
-			time.Sleep(1 * time.Second)
+	var err error
+	for i := 0; i < 20; i++ {
+		_, err = client.Get(fmt.Sprintf("https://%s/about", address))
+		if err == nil {
+			return nil
 		}
-		return attempt < 20, e // try 20 times for 20 seconds
-	})
+		time.Sleep(1 * time.Second)
+	}
 	return err
 }
 
 func (v *VcSimInstance) Start() (vcAddress string, vcPort int) {
 	glog.V(4).Infof("Basepath is %s", kubevsphere.Rootpath)
-	vcsimPort := vcsimPortBase + config.GinkgoConfig.ParallelNode - 1 // Nodes start at 1
+	vcsimPort := v.getPort()
 
 	var address = makeAddress(vcsimPort)
 	glog.Infof("Starting vcsim on address %s", address)

@@ -32,7 +32,6 @@ var shutdown chan struct{}
 var controller *virtualmachine.VirtualMachineController
 var si *sharedinformers.SharedInformers
 var vcsim *integration.VcSimInstance
-var execute = false
 
 func TestVirtualMachine(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -40,9 +39,6 @@ func TestVirtualMachine(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	if !execute {
-		return
-	}
 	vcsim = integration.NewVcSimInstance()
 	address, port := vcsim.Start()
 
@@ -69,9 +65,6 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	if !execute {
-		return
-	}
 	close(shutdown)
 	testenv.Stop()
 	vcsim.Stop()

@@ -7,6 +7,7 @@ package v1alpha1
 import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -22,6 +23,10 @@ var _ = Describe("VirtualMachineClass", func() {
 	BeforeEach(func() {
 		instance = VirtualMachineClass{}
 		instance.Name = "instance-1"
+		instance.Spec = VirtualMachineClassSpec{}
+		instance.Spec.Hardware.Memory, _ = resource.ParseQuantity("1Mi")
+		instance.Spec.Policies.Resources.Limits.Memory, _ = resource.ParseQuantity("1Mi")
+		instance.Spec.Policies.Resources.Requests.Memory, _ = resource.ParseQuantity("1Mi")
 
 		expected = instance
 	})

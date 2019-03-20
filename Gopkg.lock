@@ -897,14 +897,6 @@
   version = "v0.9.0"
 
 [[projects]]
-  digest = "1:1b86af10bf61e29add0df47a6a8d51790599411318fcb8916ba4ffa628ca4824"
-  name = "gopkg.in/matryer/try.v1"
-  packages = ["."]
-  pruneopts = "NU"
-  revision = "312d2599e12e89ca89b52a09597394f449235d80"
-  version = "v1"
-
-[[projects]]
   digest = "1:31b5443a48ef5d7ae4e88e08cf108b47a4d2b886a559a6ae41a3adc52c8ee60c"
   name = "gopkg.in/natefinch/lumberjack.v2"
   packages = ["."]
@@ -1338,13 +1330,14 @@
     "github.com/vmware/govmomi",
     "github.com/vmware/govmomi/find",
     "github.com/vmware/govmomi/object",
+    "github.com/vmware/govmomi/session",
     "github.com/vmware/govmomi/vim25",
+    "github.com/vmware/govmomi/vim25/methods",
     "github.com/vmware/govmomi/vim25/mo",
     "github.com/vmware/govmomi/vim25/soap",
     "github.com/vmware/govmomi/vim25/types",
     "google.golang.org/genproto",
     "google.golang.org/grpc",
-    "gopkg.in/matryer/try.v1",
     "k8s.io/api/core/v1",
     "k8s.io/apimachinery/pkg/api/errors",
     "k8s.io/apimachinery/pkg/api/resource",

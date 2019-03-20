@@ -105,6 +105,10 @@ func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object
 		glog.Errorf("Image empty for VM %s", vm.Name)
 		errors = append(errors, field.Required(field.NewPath("spec", "image"), ""))
 	}
+	if vm.Spec.ClassName == "" {
+		glog.Errorf("Class empty for VM %s", vm.Name)
+		errors = append(errors, field.Required(field.NewPath("spec", "class"), ""))
+	}
 
 	return errors
 }

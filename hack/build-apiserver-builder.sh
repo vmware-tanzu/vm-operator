@@ -4,7 +4,7 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-COMMIT=09ac1e0d568438dbf3f0825b617eea516b5e02a6
+COMMIT=96cd45ed788f4d861c636ced7a047f7ef3379b26
 INSTALL=1
 DEFAULT_K8S_VERSION="1.12"
 
@@ -25,6 +25,7 @@ checkout() {
     # missing packages.
     [[ -d ".git" ]] ||
         git clone https://github.com/kubernetes-incubator/apiserver-builder-alpha.git .
+    git checkout $COMMIT
 }
 
 build() {

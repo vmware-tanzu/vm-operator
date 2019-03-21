@@ -94,12 +94,12 @@ func (s *Session) ListVirtualMachines(ctx context.Context, path string) ([]*res.
 	}
 
 	for _, objVm := range objVms {
-		if vm, err := s.lookupVm(ctx, objVm.Name()); err == nil {
-			vms = append(vms, vm)
+		if resVm, err := res.NewVMFromObject(objVm); err == nil {
+			vms = append(vms, resVm)
 		}
 	}
 
-	return nil, nil
+	return vms, nil
 }
 
 func (s *Session) GetVirtualMachine(ctx context.Context, name string) (*res.VirtualMachine, error) {
@@ -110,7 +110,7 @@ func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 	class *v1alpha1.VirtualMachineClass) (*res.VirtualMachine, error) {
 
 	name := vm.Name
-	configSpec := configSpecFromClassSpec(name, &class.Spec)
+	configSpec := s.configSpecFromClassSpec(name, &class.Spec)
 
 	resVm, err := s.createVm(ctx, name, configSpec)
 	if err != nil {
@@ -130,7 +130,7 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 
 	name := vm.Name
 	powerOn := vm.Spec.PowerState == v1alpha1.VirtualMachinePoweredOn
-	cloneSpec := cloneSpecFromClassSpec(name, powerOn, &class.Spec)
+	cloneSpec := s.cloneSpecFromClassSpec(name, powerOn, &class.Spec)
 
 	cloneResVm, err := s.cloneVm(ctx, resSrcVm, cloneSpec)
 	if err != nil {
@@ -168,7 +168,7 @@ func memoryQuantityToMb(q resource.Quantity) int64 {
 	return int64(math.Ceil(float64(q.Value()) / float64(1024*1024)))
 }
 
-func configSpecFromClassSpec(name string, classSpec *v1alpha1.VirtualMachineClassSpec) vimTypes.VirtualMachineConfigSpec {
+func (s *Session) configSpecFromClassSpec(name string, classSpec *v1alpha1.VirtualMachineClassSpec) vimTypes.VirtualMachineConfigSpec {
 
 	configSpec := vimTypes.VirtualMachineConfigSpec{
 		Name:     name,
@@ -184,8 +184,8 @@ func configSpecFromClassSpec(name string, classSpec *v1alpha1.VirtualMachineClas
 	configSpec.MemoryAllocation = &vimTypes.ResourceAllocationInfo{}
 
 	if !classSpec.Policies.Resources.Requests.Memory.IsZero() {
-		res := memoryQuantityToMb(classSpec.Policies.Resources.Requests.Memory)
-		configSpec.MemoryAllocation.Reservation = &res
+		rsv := memoryQuantityToMb(classSpec.Policies.Resources.Requests.Memory)
+		configSpec.MemoryAllocation.Reservation = &rsv
 	}
 
 	if !classSpec.Policies.Resources.Limits.Memory.IsZero() {
@@ -193,12 +193,18 @@ func configSpecFromClassSpec(name string, classSpec *v1alpha1.VirtualMachineClas
 		configSpec.MemoryAllocation.Limit = &lim
 	}
 
+	configSpec.Annotation = fmt.Sprint("Virtual Machine managed by VM Operator")
+
 	return configSpec
 }
 
-func cloneSpecFromClassSpec(name string, powerOn bool, classSpec *v1alpha1.VirtualMachineClassSpec) vimTypes.VirtualMachineCloneSpec {
+func (s *Session) cloneSpecFromClassSpec(name string, powerOn bool, classSpec *v1alpha1.VirtualMachineClassSpec) vimTypes.VirtualMachineCloneSpec {
 
-	configSpec := configSpecFromClassSpec(name, classSpec)
+	// TODO(bryanv) CloneSpec's config is deprecated:
+	//    as of vSphere API 6.0. Use deviceChange in location instead for specifying any virtual
+	//    device changes for disks and networks. All other VM configuration changes should use
+	//    ReconfigVM_Task API after the clone operation finishes.
+	configSpec := s.configSpecFromClassSpec(name, classSpec)
 	memory := false // No full memory clones
 
 	cloneSpec := vimTypes.VirtualMachineCloneSpec{
@@ -206,6 +212,10 @@ func cloneSpecFromClassSpec(name string, powerOn bool, classSpec *v1alpha1.Virtu
 		PowerOn: powerOn,
 		Memory:  &memory,
 	}
+
+	cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
+	cloneSpec.Location.Pool = vimTypes.NewReference(s.resourcepool.Reference())
+	//cloneSpec.Location.DiskMoveType = string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndConsolidate)
 
 	return cloneSpec
 }

@@ -78,7 +78,7 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 		return nil, err
 	}
 
-	resVms, err := ses.ListVirtualMachines(ctx, "")
+	resVms, err := ses.ListVirtualMachines(ctx, "*")
 	if err != nil {
 		return nil, transformVmImageError("", err)
 	}

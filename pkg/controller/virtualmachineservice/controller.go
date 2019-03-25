@@ -94,8 +94,8 @@ func (c *VirtualMachineServiceControllerImpl) Init(arguments sharedinformers.Con
 	endpoints := arguments.GetSharedInformers().KubernetesFactory.Core().V1().Endpoints()
 	c.endpointsLister = endpoints.Lister()
 
-	arguments.Watch("Service", services.Informer(), c.ServiceToVirtualMachineService)
-	arguments.Watch("Endpoint", endpoints.Informer(), c.EndpointsToVirtualMachineService)
+	//arguments.Watch("Service", services.Informer(), c.ServiceToVirtualMachineService)
+	//arguments.Watch("Endpoint", endpoints.Informer(), c.EndpointsToVirtualMachineService)
 }
 
 // Reconcile handles enqueued messages

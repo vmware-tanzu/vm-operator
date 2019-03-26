@@ -9,8 +9,8 @@ import (
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
 	listers "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
 )
 
 // +controller:group=vmoperator,version=v1alpha1,kind=VirtualMachineImage,resource=virtualmachineimages

@@ -7,6 +7,7 @@ package resources
 import (
 	"context"
 	"fmt"
+
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
 
 	"github.com/golang/glog"

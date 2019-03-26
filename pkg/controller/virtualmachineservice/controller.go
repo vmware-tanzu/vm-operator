@@ -7,11 +7,12 @@ package virtualmachineservice
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg"
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/lib"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"

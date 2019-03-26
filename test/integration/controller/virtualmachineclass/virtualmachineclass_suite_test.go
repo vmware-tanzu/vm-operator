@@ -5,11 +5,12 @@
 package virtualmachineclass_test
 
 import (
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachineclass"
 	"testing"
 
-	vmrest "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/rest"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachineclass"
+
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis"
+	vmrest "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/rest"
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
@@ -18,8 +19,8 @@ import (
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere"
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/test/integration"
 
-	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
 	"github.com/golang/glog"
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/rest"
@@ -42,7 +43,7 @@ var _ = BeforeSuite(func() {
 	vcsim = integration.NewVcSimInstance()
 	address, port := vcsim.Start()
 
-	provider, err := vsphere.NewVSphereVmProviderFromConfig(integration.NewIntegrationVmOperatorConfig(address, port))
+	provider, err := vsphere.NewVSphereVmProviderFromConfig(integration.DefaultNamespace, integration.NewIntegrationVmOperatorConfig(address, port))
 	if err != nil {
 		glog.Fatalf("Failed to create vSphere provider: %v", err)
 	}

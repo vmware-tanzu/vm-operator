@@ -5,17 +5,20 @@ package integration
 
 import (
 	"fmt"
+
 	"github.com/golang/glog"
-	"k8s.io/client-go/kubernetes"
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere"
+	"k8s.io/client-go/kubernetes"
 )
+
+const DefaultNamespace = "default"
 
 // Support for bootstrapping VM operator resource requirements in Kubernetes.
 // Generate a fake vsphere provider config that is suitable for the integration test environment.
 // Post the resultant config map to the API Master for consumption by the VM operator
 func InstallVmOperatorConfig(clientSet *kubernetes.Clientset, vcAddress string, vcPort int) error {
 	glog.Infof("Installing a bootstrap config map for use in integration tests.")
-	return vsphere.InstallVSphereVmProviderConfig(clientSet, *NewIntegrationVmOperatorConfig(vcAddress, vcPort))
+	return vsphere.InstallVSphereVmProviderConfig(clientSet, DefaultNamespace, *NewIntegrationVmOperatorConfig(vcAddress, vcPort))
 }
 
 func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphereVmProviderConfig {

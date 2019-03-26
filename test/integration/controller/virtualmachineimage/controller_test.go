@@ -7,6 +7,8 @@ package virtualmachineimage_test
 import (
 	"time"
 
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/test/integration"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	. "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
@@ -22,10 +24,12 @@ var _ = XDescribe("VirtualMachineImage controller", func() {
 	var before chan struct{}
 	var after chan struct{}
 
+	namespace := integration.DefaultNamespace
+
 	BeforeEach(func() {
 		instance = VirtualMachineImage{}
 		instance.Name = "instance-1"
-		expectedKey = "virtualmachineimage-controller-test-handler/instance-1"
+		expectedKey = namespace + "/instance-1"
 	})
 
 	AfterEach(func() {
@@ -34,7 +38,8 @@ var _ = XDescribe("VirtualMachineImage controller", func() {
 
 	XDescribe("when creating a new object", func() {
 		It("invoke the reconcile method", func() {
-			client = cs.VmoperatorV1alpha1().VirtualMachineImages("virtualmachineimage-controller-test-handler")
+			client = cs.VmoperatorV1alpha1().VirtualMachineImages(namespace)
+
 			before = make(chan struct{})
 			after = make(chan struct{})
 

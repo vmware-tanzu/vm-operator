@@ -26,8 +26,7 @@ type VSphereVmProviderConfig struct {
 }
 
 const (
-	vSphereConfigMapName      = "vsphere.provider.config.vmoperator.vmware.com"
-	vSphereConfigK8sNamespace = "default"
+	vSphereConfigMapName = "vsphere.provider.config.vmoperator.vmware.com"
 
 	vcUserKey       = "VcUser"
 	vcPasswordKey   = "VcPassword"
@@ -54,7 +53,7 @@ func configMapToProviderConfig(configMap *v1.ConfigMap) *VSphereVmProviderConfig
 	}
 }
 
-func providerConfigToConfigMap(config VSphereVmProviderConfig) *v1.ConfigMap {
+func providerConfigToConfigMap(namespace string, config VSphereVmProviderConfig) *v1.ConfigMap {
 	dataMap := make(map[string]string)
 
 	dataMap[vcUserKey] = config.VcUser
@@ -68,26 +67,26 @@ func providerConfigToConfigMap(config VSphereVmProviderConfig) *v1.ConfigMap {
 
 	return &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: vSphereConfigMapName,
+			Name:      vSphereConfigMapName,
+			Namespace: namespace,
 		},
 		Data: dataMap,
 	}
 }
 
 // GetProviderConfigFromConfigMap gets the vSphere Provider ConfigMap from the API Master.
-func GetProviderConfigFromConfigMap(clientSet *kubernetes.Clientset) (*VSphereVmProviderConfig, error) {
-	vSphereConfig, err := clientSet.CoreV1().ConfigMaps(vSphereConfigK8sNamespace).Get(vSphereConfigMapName, metav1.GetOptions{})
+func GetProviderConfigFromConfigMap(clientSet *kubernetes.Clientset, namespace string) (*VSphereVmProviderConfig, error) {
+	vSphereConfig, err := clientSet.CoreV1().ConfigMaps(namespace).Get(vSphereConfigMapName, metav1.GetOptions{})
 	if err != nil {
-		return nil, errors.Wrapf(err, "could not get provider ConfigMap %q", vSphereConfigMapName)
+		return nil, errors.Wrapf(err, "could not get provider ConfigMap %v/%v", namespace, vSphereConfigMapName)
 	}
 
 	return configMapToProviderConfig(vSphereConfig), nil
 }
 
 // Install the Config Map for the VM operator in the API master
-func InstallVSphereVmProviderConfig(clientSet *kubernetes.Clientset, config VSphereVmProviderConfig) error {
-	// TODO: Fix hardcoded namespace
-	configMap := providerConfigToConfigMap(config)
-	_, err := clientSet.CoreV1().ConfigMaps(vSphereConfigK8sNamespace).Update(configMap)
+func InstallVSphereVmProviderConfig(clientSet *kubernetes.Clientset, namespace string, config VSphereVmProviderConfig) error {
+	configMap := providerConfigToConfigMap(namespace, config)
+	_, err := clientSet.CoreV1().ConfigMaps(namespace).Update(configMap)
 	return err
 }

@@ -6,12 +6,13 @@ package v1alpha1
 
 import (
 	"context"
+
 	"github.com/golang/glog"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
 )
 
 const (
@@ -30,6 +31,10 @@ type VirtualMachine struct {
 
 	Spec   VirtualMachineSpec   `json:"spec,omitempty"`
 	Status VirtualMachineStatus `json:"status,omitempty"`
+}
+
+func (vm VirtualMachine) GetFullName() string {
+	return vm.Namespace + "/" + vm.Name
 }
 
 type VirtualMachinePowerState string

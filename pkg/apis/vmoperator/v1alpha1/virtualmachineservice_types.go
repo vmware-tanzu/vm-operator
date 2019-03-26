@@ -6,12 +6,13 @@ package v1alpha1
 
 import (
 	"context"
+
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
 )
 
 const (

@@ -6,6 +6,7 @@ package iface
 
 import (
 	"context"
+
 	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
 )
 
@@ -19,10 +20,11 @@ type VirtualMachineProviderInterface interface {
 	Initialize(stop <-chan struct{})
 
 	ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error)
-	GetVirtualMachineImage(ctx context.Context, name string) (*v1alpha1.VirtualMachineImage, error)
+	GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error)
 
 	ListVirtualMachines(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachine, error)
-	GetVirtualMachine(ctx context.Context, name string) (*v1alpha1.VirtualMachine, error)
+	GetVirtualMachine(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachine, error)
+
 	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass *v1alpha1.VirtualMachineClass) (*v1alpha1.VirtualMachine, error)
 	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error)
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error

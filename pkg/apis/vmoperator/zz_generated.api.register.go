@@ -112,7 +112,77 @@ func Resource(resource string) schema.GroupResource {
 	return SchemeGroupVersion.WithResource(resource).GroupResource()
 }
 
-type Protocol string
+// +genclient
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type VirtualMachine struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	Spec   VirtualMachineSpec
+	Status VirtualMachineStatus
+}
+
+// +genclient
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type VirtualMachineService struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	Spec   VirtualMachineServiceSpec
+	Status VirtualMachineServiceStatus
+}
+
+type VirtualMachineStatus struct {
+	Conditions []VirtualMachineCondition
+	Host       string
+	PowerState string
+	Phase      string
+	VmIp       string
+}
+
+type VirtualMachineServiceStatus struct {
+}
+
+type VirtualMachineCondition struct {
+	LastProbeTime      metav1.Time
+	LastTransitionTime metav1.Time
+	Message            string
+	Reason             string
+	Status             string
+	Type               string
+}
+
+type VirtualMachineServiceSpec struct {
+	Type         string
+	Ports        []VirtualMachineServicePort
+	Selector     map[string]string
+	ClusterIP    string
+	ExternalName string
+}
+
+type VirtualMachineSpec struct {
+	ImageName  string
+	ClassName  string
+	PowerState string
+	Env        corev1.EnvVar
+	Ports      []VirtualMachinePort
+}
+
+type VirtualMachineServicePort struct {
+	Name       string
+	Protocol   string
+	Port       int32
+	TargetPort int32
+}
+
+type VirtualMachinePort struct {
+	Port     int
+	Ip       string
+	Name     string
+	Protocol corev1.Protocol
+}
 
 // +genclient
 // +genclient
@@ -168,81 +238,9 @@ type VirtualMachineClassResources struct {
 	Limits   VirtualMachineClassResourceSpec
 }
 
-// +genclient
-// +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-type VirtualMachine struct {
-	metav1.TypeMeta
-	metav1.ObjectMeta
-	Spec   VirtualMachineSpec
-	Status VirtualMachineStatus
-}
-
 type VirtualMachineClassResourceSpec struct {
 	Cpu    int64
 	Memory apiresource.Quantity
-}
-
-type VirtualMachineStatus struct {
-	Conditions []VirtualMachineCondition
-	Host       string
-	PowerState string
-	Phase      string
-	VmIp       string
-}
-
-type VirtualMachineSpec struct {
-	ImageName  string
-	ClassName  string
-	PowerState string
-	Env        corev1.EnvVar
-	Ports      []VirtualMachinePort
-}
-
-type VirtualMachineCondition struct {
-	LastProbeTime      metav1.Time
-	LastTransitionTime metav1.Time
-	Message            string
-	Reason             string
-	Status             string
-	Type               string
-}
-
-type VirtualMachinePort struct {
-	Port     int
-	Ip       string
-	Name     string
-	Protocol corev1.Protocol
-}
-
-// +genclient
-// +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-type VirtualMachineService struct {
-	metav1.TypeMeta
-	metav1.ObjectMeta
-	Spec   VirtualMachineServiceSpec
-	Status VirtualMachineServiceStatus
-}
-
-type VirtualMachineServiceSpec struct {
-	Type         string
-	Ports        []VirtualMachineServicePort
-	Selector     map[string]string
-	ClusterIP    string
-	ExternalName string
-}
-
-type VirtualMachineServiceStatus struct {
-}
-
-type VirtualMachineServicePort struct {
-	Name       string
-	Protocol   string
-	Port       int32
-	TargetPort int32
 }
 
 //

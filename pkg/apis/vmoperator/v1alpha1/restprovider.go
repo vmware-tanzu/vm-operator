@@ -4,9 +4,10 @@
 package v1alpha1
 
 import (
+	"sync"
+
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/runtime"
-	"sync"
 )
 
 // Registered rest provider.  Only one is allowed.

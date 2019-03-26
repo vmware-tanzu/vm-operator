@@ -6,7 +6,6 @@ package integration
 import (
 	"crypto/tls"
 	"fmt"
-	"github.com/golang/glog"
 	"net"
 	"net/http"
 	"os/exec"
@@ -14,11 +13,13 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator"
+
+	"github.com/golang/glog"
+	vmoperator "gitlab.eng.vmware.com/iaas-platform/vm-operator"
 )
 
 var (
-	vcsimIp       = "127.0.0.1"
+	vcsimIp = "127.0.0.1"
 )
 
 func makeAddress(port int) string {

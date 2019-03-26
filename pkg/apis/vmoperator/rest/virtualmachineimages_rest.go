@@ -10,14 +10,14 @@ import (
 	"k8s.io/apiserver/pkg/registry/rest"
 
 	"github.com/golang/glog"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/iface"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/iface"
 )
 
 // +k8s:deepcopy-gen=false
@@ -61,6 +61,10 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 
 	glog.Infof("Listing VirtualMachineImage ns=%s, user=%s", namespace, user)
 
+	if namespace == "" {
+		return &v1alpha1.VirtualMachineImageList{}, nil
+	}
+
 	images, err := r.provider.ListVirtualMachineImages(ctx, namespace)
 	if err != nil {
 		glog.Errorf("Failed to list images: %s", err)
@@ -101,7 +105,7 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 
 	glog.Infof("Getting VirtualMachineImage name=%s, ns=%s, user=%s", name, namespace, user)
 
-	image, err := r.provider.GetVirtualMachineImage(ctx, name)
+	image, err := r.provider.GetVirtualMachineImage(ctx, namespace, name)
 	if err != nil {
 		glog.Errorf("Failed to list images: %s", err)
 		return nil, errors.NewInternalError(err) // TODO(bryanv) Do not convert NotFound errors?

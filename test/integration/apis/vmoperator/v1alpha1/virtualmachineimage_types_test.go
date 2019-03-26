@@ -7,6 +7,7 @@ package v1alpha1
 import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/test/integration"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -21,6 +22,8 @@ var _ = Describe("VirtualMachineImage", func() {
 	BeforeEach(func() {
 		instance = VirtualMachineImage{}
 		instance.Name = "instance-vm-image"
+
+		client = cs.VmoperatorV1alpha1().VirtualMachineImages(integration.DefaultNamespace)
 	})
 
 	AfterEach(func() {
@@ -30,13 +33,12 @@ var _ = Describe("VirtualMachineImage", func() {
 	Describe("when sending a storage request", func() {
 		Context("for a valid config", func() {
 			It("should provide read-only CRUD access to the object", func() {
-				client = cs.VmoperatorV1alpha1().VirtualMachineImages("virtualmachineimage-test-valid")
 
 				By("returning failure from the create request")
 				_, err := client.Create(&instance)
 				Expect(err).Should(HaveOccurred())
 
-				By("returning failure fromn a delete requests")
+				By("returning failure from a delete requests")
 				err = client.Delete(instance.Name, &metav1.DeleteOptions{})
 				Expect(err).Should(HaveOccurred())
 

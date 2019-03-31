@@ -16,8 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	"vmware.com/kubevsphere/pkg/vmprovider/iface"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/iface"
 )
 
 // +k8s:deepcopy-gen=false

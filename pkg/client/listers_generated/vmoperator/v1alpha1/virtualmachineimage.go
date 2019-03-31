@@ -7,10 +7,10 @@
 package v1alpha1
 
 import (
+	v1alpha1 "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
-	v1alpha1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 )
 
 // VirtualMachineImageLister helps list VirtualMachineImages.

@@ -5,16 +5,16 @@
 package virtualmachine_test
 
 import (
+	. "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
 	"time"
 
 	"github.com/golang/glog"
-	"vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	. "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
 )
 
 var _ = Describe("VirtualMachine controller", func() {

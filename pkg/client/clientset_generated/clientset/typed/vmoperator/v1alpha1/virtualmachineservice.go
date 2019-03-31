@@ -7,12 +7,12 @@
 package v1alpha1
 
 import (
+	v1alpha1 "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	scheme "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	rest "k8s.io/client-go/rest"
-	v1alpha1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	scheme "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset/scheme"
 )
 
 // VirtualMachineServicesGetter has a method to return a VirtualMachineServiceInterface.

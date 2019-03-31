@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	"k8s.io/client-go/kubernetes"
-	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
 // Support for bootstrapping VM operator resource requirements in Kubernetes.

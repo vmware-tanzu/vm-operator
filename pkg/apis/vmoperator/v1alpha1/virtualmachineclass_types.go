@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	"vmware.com/kubevsphere/pkg/apis/vmoperator"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
 )
 
 // +genclient

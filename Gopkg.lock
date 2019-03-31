@@ -1282,14 +1282,6 @@
   revision = "fdcf9f9480fdd5bf2b3c3df9bf4ecd22b25b87e2"
 
 [[projects]]
-  digest = "1:d872664ea7a69768d128d9cc61cfec53814d2908c7dc2422cb10fccdfe1f2e91"
-  name = "k8s.io/klog"
-  packages = ["."]
-  pruneopts = "NU"
-  revision = "71442cd4037d612096940ceb0f3fec3f7fff66e0"
-  version = "v0.2.0"
-
-[[projects]]
   digest = "1:64da5e8f078d076691f1814eba2bfb3ff63ecf896d3140a9c16a82ace9177ee2"
   name = "k8s.io/kube-openapi"
   packages = [
@@ -1323,7 +1315,6 @@
     "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test",
     "github.com/modern-go/reflect2",
     "github.com/onsi/ginkgo",
-    "github.com/onsi/ginkgo/config",
     "github.com/onsi/ginkgo/extensions/table",
     "github.com/onsi/gomega",
     "github.com/pkg/errors",
@@ -1366,7 +1357,6 @@
     "k8s.io/client-go/tools/cache",
     "k8s.io/client-go/util/flowcontrol",
     "k8s.io/client-go/util/workqueue",
-    "k8s.io/klog",
     "k8s.io/kube-openapi/cmd/openapi-gen",
     "k8s.io/kube-openapi/pkg/common",
   ]

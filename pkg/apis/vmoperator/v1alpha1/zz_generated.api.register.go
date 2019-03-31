@@ -20,10 +20,10 @@ package v1alpha1
 
 import (
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator"
 )
 
 var (

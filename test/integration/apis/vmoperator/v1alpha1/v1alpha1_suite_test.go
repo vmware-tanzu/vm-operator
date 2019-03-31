@@ -6,21 +6,21 @@ package v1alpha1
 
 import (
 	"github.com/golang/glog"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/openapi"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/test/integration"
 	"testing"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	"vmware.com/kubevsphere/pkg/vmprovider"
-	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
-	"vmware.com/kubevsphere/test/integration"
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/rest"
 
-	"vmware.com/kubevsphere/pkg/apis"
-	vmrest "vmware.com/kubevsphere/pkg/apis/vmoperator/rest"
-	"vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
-	"vmware.com/kubevsphere/pkg/openapi"
+	vmrest "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/rest"
 )
 
 var testenv *test.TestEnvironment

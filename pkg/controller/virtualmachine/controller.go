@@ -6,22 +6,21 @@ package virtualmachine
 
 import (
 	"context"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/lib"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/iface"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider"
 	"time"
-
-	"vmware.com/kubevsphere/pkg/vmprovider"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
-	"vmware.com/kubevsphere/pkg"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	clientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
-	listers "vmware.com/kubevsphere/pkg/client/listers_generated/vmoperator/v1alpha1"
-	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
-	"vmware.com/kubevsphere/pkg/lib"
-	"vmware.com/kubevsphere/pkg/vmprovider/iface"
+	clientSet "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
+	listers "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
 )
 
 // +controller:group=vmoperator,version=v1alpha1,kind=VirtualMachine,resource=virtualmachines

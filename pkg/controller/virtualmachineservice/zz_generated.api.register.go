@@ -19,13 +19,13 @@ limitations under the License.
 package virtualmachineservice
 
 import (
+	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog"
-	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
 )
 
 // VirtualMachineServiceController implements the controller.VirtualMachineServiceController interface
@@ -100,13 +100,13 @@ func (c *VirtualMachineServiceController) reconcile(key string) (err error) {
 
 	u, err := c.controller.Get(namespace, name)
 	if errors.IsNotFound(err) {
-		klog.Infof("Not doing work for VirtualMachineService %v because it has been deleted", key)
+		glog.Infof("Not doing work for VirtualMachineService %v because it has been deleted", key)
 		// Set error so it is picked up by AfterReconcile and the return function
 		err = nil
 		return
 	}
 	if err != nil {
-		klog.Errorf("Unable to retrieve VirtualMachineService %v from store: %v", key, err)
+		glog.Errorf("Unable to retrieve VirtualMachineService %v from store: %v", key, err)
 		return
 	}
 

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"vmware.com/kubevsphere"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator"
 )
 
 var (
@@ -63,13 +63,13 @@ func (v *VcSimInstance) waitForStart(address string) error {
 }
 
 func (v *VcSimInstance) Start() (vcAddress string, vcPort int) {
-	glog.V(4).Infof("Basepath is %s", kubevsphere.Rootpath)
+	glog.V(4).Infof("Basepath is %s", vmoperator.Rootpath)
 	vcsimPort := v.getPort()
 
 	var address = makeAddress(vcsimPort)
 	glog.Infof("Starting vcsim on address %s", address)
 
-	path := fmt.Sprintf("%s/hack/run-vcsim.sh", kubevsphere.Rootpath)
+	path := fmt.Sprintf("%s/hack/run-vcsim.sh", vmoperator.Rootpath)
 	v.cmd = exec.Command(path, address)
 	v.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := v.cmd.Start(); err != nil {

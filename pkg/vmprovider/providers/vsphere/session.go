@@ -7,6 +7,7 @@ package vsphere
 import (
 	"context"
 	"fmt"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"math"
 
 	"github.com/pkg/errors"
@@ -14,8 +15,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	res "vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
+	res "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
 type Session struct {

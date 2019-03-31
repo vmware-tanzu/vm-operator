@@ -11,10 +11,10 @@ package v1alpha1
 import (
 	unsafe "unsafe"
 
+	vmoperator "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
 	v1 "k8s.io/api/core/v1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
-	vmoperator "vmware.com/kubevsphere/pkg/apis/vmoperator"
 )
 
 func init() {

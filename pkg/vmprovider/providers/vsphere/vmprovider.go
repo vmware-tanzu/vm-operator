@@ -6,10 +6,12 @@ package vsphere
 
 import (
 	"context"
-
-	"vmware.com/kubevsphere/pkg"
-
-	"vmware.com/kubevsphere/pkg/vmprovider/iface"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/iface"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
+	res "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere/resources"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere/sequence"
 
 	"github.com/pkg/errors"
 
@@ -18,10 +20,6 @@ import (
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	res "vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
-	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/sequence"
 )
 
 const (

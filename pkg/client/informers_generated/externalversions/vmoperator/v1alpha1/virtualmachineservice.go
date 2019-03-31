@@ -9,14 +9,14 @@ package v1alpha1
 import (
 	time "time"
 
+	vmoperatorv1alpha1 "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	clientset "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
+	internalinterfaces "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/informers_generated/externalversions/internalinterfaces"
+	v1alpha1 "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	cache "k8s.io/client-go/tools/cache"
-	vmoperatorv1alpha1 "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	clientset "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
-	internalinterfaces "vmware.com/kubevsphere/pkg/client/informers_generated/externalversions/internalinterfaces"
-	v1alpha1 "vmware.com/kubevsphere/pkg/client/listers_generated/vmoperator/v1alpha1"
 )
 
 // VirtualMachineServiceInformer provides access to a shared informer and lister for

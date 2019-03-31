@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apiserver/pkg/registry/rest"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
 )
 
 // +genclient

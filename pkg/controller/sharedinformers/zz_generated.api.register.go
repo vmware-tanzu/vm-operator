@@ -22,10 +22,10 @@ import (
 	"time"
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/informers_generated/externalversions"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	"vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
-	"vmware.com/kubevsphere/pkg/client/informers_generated/externalversions"
 )
 
 // SharedInformers wraps all informers used by controllers so that

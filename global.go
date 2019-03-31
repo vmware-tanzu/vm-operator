@@ -1,7 +1,7 @@
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
-package kubevsphere
+package vmoperator
 
 import (
 	"path/filepath"

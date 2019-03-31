@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/golang/glog"
-	"vmware.com/kubevsphere/pkg/vmprovider/iface"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/iface"
 )
 
 var (

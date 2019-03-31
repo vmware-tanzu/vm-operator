@@ -6,10 +6,10 @@ package sequence
 
 import (
 	"context"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 
 	"github.com/golang/glog"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere/resources"
 )
 
 type VirtualMachinePowerOffStep struct {

@@ -20,12 +20,12 @@ package controller
 
 import (
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachine"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachineclass"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachineimage"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachineservice"
 	"k8s.io/client-go/rest"
-	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
-	"vmware.com/kubevsphere/pkg/controller/virtualmachine"
-	"vmware.com/kubevsphere/pkg/controller/virtualmachineclass"
-	"vmware.com/kubevsphere/pkg/controller/virtualmachineimage"
-	"vmware.com/kubevsphere/pkg/controller/virtualmachineservice"
 )
 
 func GetAllControllers(config *rest.Config) ([]controller.Controller, chan struct{}) {

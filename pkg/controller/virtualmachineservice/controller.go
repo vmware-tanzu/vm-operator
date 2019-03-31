@@ -7,6 +7,10 @@ package virtualmachineservice
 import (
 	"context"
 	"fmt"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/lib"
 	"time"
 
 	"github.com/golang/glog"
@@ -18,13 +22,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	corev1listers "k8s.io/client-go/listers/core/v1"
-	"vmware.com/kubevsphere/pkg"
-	"vmware.com/kubevsphere/pkg/lib"
 
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	clientSet "vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
-	listers "vmware.com/kubevsphere/pkg/client/listers_generated/vmoperator/v1alpha1"
-	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
+	clientSet "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
+	listers "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
 )
 
 const (

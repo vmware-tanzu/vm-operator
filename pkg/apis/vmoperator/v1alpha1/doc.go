@@ -8,7 +8,7 @@
 
 // +k8s:openapi-gen=true
 // +k8s:deepcopy-gen=package,register
-// +k8s:conversion-gen=vmware.com/kubevsphere/pkg/apis/vmoperator
+// +k8s:conversion-gen=gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator
 // +k8s:defaulter-gen=TypeMeta
 // +groupName=vmoperator.vmware.com
-package v1alpha1 // import "vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
+package v1alpha1 // import "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"

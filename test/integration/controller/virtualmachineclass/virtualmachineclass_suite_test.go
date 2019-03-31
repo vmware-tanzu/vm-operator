@@ -5,25 +5,24 @@
 package virtualmachineclass_test
 
 import (
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachineclass"
 	"testing"
 
-	"github.com/golang/glog"
-	vmrest "vmware.com/kubevsphere/pkg/apis/vmoperator/rest"
-	"vmware.com/kubevsphere/pkg/apis/vmoperator/v1alpha1"
-	"vmware.com/kubevsphere/pkg/vmprovider"
-	"vmware.com/kubevsphere/pkg/vmprovider/providers/vsphere"
-	"vmware.com/kubevsphere/test/integration"
+	vmrest "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/rest"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/openapi"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere"
+	"gitlab.eng.vmware.com/iaas-platform/vm-operator/test/integration"
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
+	"github.com/golang/glog"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/rest"
-
-	"vmware.com/kubevsphere/pkg/apis"
-	"vmware.com/kubevsphere/pkg/client/clientset_generated/clientset"
-	"vmware.com/kubevsphere/pkg/controller/sharedinformers"
-	"vmware.com/kubevsphere/pkg/controller/virtualmachineclass"
-	"vmware.com/kubevsphere/pkg/openapi"
 )
 
 var testenv *test.TestEnvironment

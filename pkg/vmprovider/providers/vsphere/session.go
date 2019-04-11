@@ -30,8 +30,7 @@ type Session struct {
 }
 
 func NewSession(ctx context.Context, config *VSphereVmProviderConfig) (*Session, error) {
-
-	c, err := NewClient(ctx, config.VcUrl)
+	c, err := NewClient(ctx, config)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create client for new session")
 	}

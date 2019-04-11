@@ -4,7 +4,7 @@
 package integration
 
 import (
-	"fmt"
+	"strconv"
 
 	"github.com/golang/glog"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -27,12 +27,11 @@ func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphe
 	vcUser := "Administrator@vsphere.local"
 	vcPassword := "Admin!23"
 
-	vcUrl := fmt.Sprintf("https://%s:%s@%s:%d", vcUser, vcPassword, vcAddress, vcPort)
 	return &vsphere.VSphereVmProviderConfig{
 		VcUser:       vcUser,
 		VcPassword:   vcPassword,
-		VcIP:         vcAddress,
-		VcUrl:        vcUrl,
+		VcPNID:       vcAddress,
+		VcPort:       strconv.Itoa(vcPort),
 		Datacenter:   "/DC0",
 		ResourcePool: "/DC0/host/DC0_C0/Resources",
 		Folder:       "/DC0/vm",

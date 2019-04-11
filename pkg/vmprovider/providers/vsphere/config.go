@@ -15,10 +15,11 @@ import (
  * vSphere instance for VM management.
  */
 type VSphereVmProviderConfig struct {
-	VcUser       string
-	VcPassword   string
-	VcIP         string
-	VcUrl        string
+	VcUser     string
+	VcPassword string
+	VcPNID     string
+	VcPort     string
+
 	Datacenter   string
 	ResourcePool string
 	Folder       string
@@ -30,8 +31,8 @@ const (
 
 	vcUserKey       = "VcUser"
 	vcPasswordKey   = "VcPassword"
-	vcIpKey         = "VcIP"
-	vcUrlKey        = "VcUrl"
+	vcPNIDKey       = "VcPNID"
+	vcPortKey       = "VcPort"
 	datacenterKey   = "Datacenter"
 	resourcePoolKey = "ResourcePool"
 	folderKey       = "Folder"
@@ -41,11 +42,16 @@ const (
 func configMapToProviderConfig(configMap *v1.ConfigMap) *VSphereVmProviderConfig {
 	dataMap := configMap.Data
 
+	port, ok := dataMap[vcPortKey]
+	if !ok {
+		port = "443"
+	}
+
 	return &VSphereVmProviderConfig{
 		VcUser:       dataMap[vcUserKey],
 		VcPassword:   dataMap[vcPasswordKey],
-		VcIP:         dataMap[vcIpKey],
-		VcUrl:        dataMap[vcUrlKey],
+		VcPNID:       dataMap[vcPNIDKey],
+		VcPort:       port,
 		Datacenter:   dataMap[datacenterKey],
 		ResourcePool: dataMap[resourcePoolKey],
 		Folder:       dataMap[folderKey],
@@ -58,8 +64,8 @@ func providerConfigToConfigMap(namespace string, config VSphereVmProviderConfig)
 
 	dataMap[vcUserKey] = config.VcUser
 	dataMap[vcPasswordKey] = config.VcPassword
-	dataMap[vcIpKey] = config.VcIP
-	dataMap[vcUrlKey] = config.VcUrl
+	dataMap[vcPNIDKey] = config.VcPNID
+	dataMap[vcPortKey] = config.VcPort
 	dataMap[datacenterKey] = config.Datacenter
 	dataMap[resourcePoolKey] = config.ResourcePool
 	dataMap[folderKey] = config.Folder

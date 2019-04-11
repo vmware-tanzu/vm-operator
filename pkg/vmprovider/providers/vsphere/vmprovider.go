@@ -143,14 +143,14 @@ func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, v
 	}
 
 	annotations[pkg.VmOperatorVmProviderKey] = VsphereVmProviderName
-	//annotations[VmOperatorVcUuidKey] = vs.Config.VcUrl
+	//annotations[VmOperatorVcUuidKey] = vs.Config.VcPNID
 	annotations[VmOperatorMoRefKey] = vmRes.ReferenceValue()
 
 	objectMeta.SetAnnotations(annotations)
 }
 
 func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass *v1alpha1.VirtualMachineClass) (*v1alpha1.VirtualMachine, error) {
-	vmName := vm.GetFullName()
+	vmName := vm.NamespacedName()
 
 	glog.Infof("Creating VirtualMachine %v", vmName)
 
@@ -195,7 +195,7 @@ func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vm *v1a
 		return errors.Wrap(err, "failed to get VirtualMachine memory allocation")
 	}
 
-	glog.Infof("VirtualMachine %q reservation/limit CPU: %d/%d Memory: %d/%d", vm.GetFullName(),
+	glog.Infof("VirtualMachine %q reservation/limit CPU: %d/%d Memory: %d/%d", vm.NamespacedName(),
 		*cpu.Reservation, *cpu.Limit, *mem.Reservation, *mem.Limit)
 
 	/*
@@ -264,7 +264,7 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 
 // UpdateVirtualMachine updates the VM status, power state, phase etc
 func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
-	vmName := vm.GetFullName()
+	vmName := vm.NamespacedName()
 
 	glog.Infof("Updating VirtualMachine %v", vmName)
 
@@ -297,7 +297,7 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 }
 
 func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
-	vmName := vmToDelete.GetFullName()
+	vmName := vmToDelete.NamespacedName()
 
 	glog.Infof("Deleting VirtualMachine %v", vmName)
 

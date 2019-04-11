@@ -53,16 +53,14 @@ func (c *VirtualMachineControllerImpl) Init(arguments sharedinformers.Controller
 
 // Used to reconcile VM status periodically to discover async changes from the VM provider backend
 func (c *VirtualMachineControllerImpl) postVmEventsToWorkqueue(vm *v1alpha1.VirtualMachine) error {
-
 	if key, err := cache.MetaNamespaceKeyFunc(vm); err == nil {
-		c.informers.WorkerQueues["VirtualMachine"].Queue.AddAfter(key, 10*time.Second)
+		c.informers.WorkerQueues["VirtualMachine"].Queue.AddAfter(key, 10 * time.Second)
 	}
 
 	return nil
 }
 
 func (c *VirtualMachineControllerImpl) postVmServiceEventsToWorkqueue(vm *v1alpha1.VirtualMachine) error {
-
 	vmServices, err := c.vmServiceLister.VirtualMachineServices(vm.Namespace).List(labels.Everything())
 	if err != nil {
 		return err
@@ -78,11 +76,11 @@ func (c *VirtualMachineControllerImpl) postVmServiceEventsToWorkqueue(vm *v1alph
 }
 
 // Reconcile handles enqueued messages
-func (c *VirtualMachineControllerImpl) Reconcile(vmToReconcile *v1alpha1.VirtualMachine) error {
+func (c *VirtualMachineControllerImpl) Reconcile(originalVm *v1alpha1.VirtualMachine) error {
 	var err error
-	ctx := context.Background()
-	vm := vmToReconcile.DeepCopy()
-	vmName := vm.GetFullName()
+
+	vm := originalVm.DeepCopy()
+	vmName := vm.NamespacedName()
 
 	startTime := time.Now()
 	defer func() {
@@ -99,9 +97,12 @@ func (c *VirtualMachineControllerImpl) Reconcile(vmToReconcile *v1alpha1.Virtual
 		glog.Errorf("Error posting service event to workqueue for VirtualMachine %v: %v", vmName, err)
 	}
 
+	ctx := context.Background()
+
 	// VM is being deleted, remove the finalizer and update the status
 	if !vm.ObjectMeta.DeletionTimestamp.IsZero() {
-		finalizer := v1alpha1.VirtualMachineFinalizer
+		const finalizer = v1alpha1.VirtualMachineFinalizer
+
 		if !lib.Contains(vm.ObjectMeta.Finalizers, finalizer) {
 			glog.Infof("Reconciling deleted VirtualMachine %v is a no-op since there is no finalizer", vmName)
 			return nil
@@ -109,65 +110,64 @@ func (c *VirtualMachineControllerImpl) Reconcile(vmToReconcile *v1alpha1.Virtual
 
 		glog.Infof("Reconciling VirtualMachine %v marked for deletion", vmName)
 		if err := c.deleteVm(ctx, vm); err != nil {
-			glog.Infof("Failed to delete the VM: %v, error: %v", vmName, err)
+			glog.Infof("Failed to delete VirtualMachine %v: %v", vmName, err)
 			return err
 		}
+
 		// Remove the finalizer and update the VM
 		vm.ObjectMeta.Finalizers = lib.Filter(vm.ObjectMeta.Finalizers, finalizer)
 		vm.Status.Phase = v1alpha1.Deleted
 
-		err = c.updateVirtualMachineStatus(vm)
+		// TODO(bryanv) Shouldn't ignore these errors
+		_ = c.updateVirtualMachineStatus(vm)
+
 		return nil
 	}
 
 	if _, err := c.reconcileVm(ctx, vm); err != nil {
-		glog.Errorf("Error in reconciling VM: %v, err: %v", vmName, err)
+		glog.Errorf("Error reconciling VirtualMachine %v: %v", vmName, err)
 		return err
 	}
 
 	return nil
 }
 
-// deleteVm handles a deletion of a VM resource from the invt as well as the backend.
-func (c *VirtualMachineControllerImpl) deleteVm(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
-	vmName := vmToDelete.Name
+func (c *VirtualMachineControllerImpl) deleteVm(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
 
-	err := c.vmProvider.DeleteVirtualMachine(ctx, vmToDelete)
+	err := c.vmProvider.DeleteVirtualMachine(ctx, vm)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			glog.Infof("Failed to delete VirtualMachine %v because it was not found", vmName)
+			glog.Infof("Failed to delete VirtualMachine %v because it was not found", vm.NamespacedName())
 			return nil
 		}
-		glog.Errorf("Failed to delete VirtualMachine %v: %v", vmName, err)
+
+		glog.Errorf("Failed to delete VirtualMachine %v: %v", vm.NamespacedName(), err)
 		return err
 	}
 
-	glog.V(4).Infof("Deleted VirtualMachine %v", vmName)
+	glog.V(4).Infof("Deleted VirtualMachine %v", vm.NamespacedName())
+
 	return nil
 }
 
-// updateVirtualMachine updates the apiserver with status of the given VM, returns the updated VM
+// updateVirtualMachine updates the VirtualMachine status
 func (c *VirtualMachineControllerImpl) updateVirtualMachineStatus(vm *v1alpha1.VirtualMachine) error {
-	glog.V(4).Infof("Status update requested for VM: %v", vm.Name)
-
 	vmClientSet := c.clientSet.VmoperatorV1alpha1().VirtualMachines(vm.Namespace)
 	if vm, err := vmClientSet.UpdateStatus(vm); err != nil {
-		glog.Errorf("Failed to update the status of VM Object: %v, error: %v", vm, err)
+		glog.Errorf("Failed to update VirtualMachine %v status: %v", vm.NamespacedName(), err)
 		return err
 	}
-	glog.V(4).Infof("Status updated for VM: %v", vm.Name)
 
 	return nil
 }
 
 // reconcileVm updates a VM if it exists, creates a new one if it doesn't. Update the status phase to reflect the transition
 func (c *VirtualMachineControllerImpl) reconcileVm(ctx context.Context, vmToUpdate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
-	vmName := vmToUpdate.GetFullName()
+	vmName := vmToUpdate.NamespacedName()
 
 	glog.Infof("Process VirtualMachine %v CreateOrUpdate", vmName)
 
 	_, err := c.vmProvider.GetVirtualMachine(ctx, vmToUpdate.Namespace, vmToUpdate.Name)
-
 	switch {
 	case errors.IsNotFound(err):
 		vmToUpdate.Status.Phase = v1alpha1.Creating
@@ -179,25 +179,24 @@ func (c *VirtualMachineControllerImpl) reconcileVm(ctx context.Context, vmToUpda
 	}
 
 	// update the status even in case of failure to reflect which operation failed
+	// TODO(bryanv) Shouldn't ignore these errors
 	_ = c.updateVirtualMachineStatus(vmToUpdate)
 
 	// return the original error
 	return vmToUpdate, err
 }
 
-// Process a create event for a new VM.
-func (c *VirtualMachineControllerImpl) createVm(ctx context.Context, vmToCreate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
-
-	vmClass, err := c.vmClassLister.VirtualMachineClasses(vmToCreate.Namespace).Get(vmToCreate.Spec.ClassName)
+func (c *VirtualMachineControllerImpl) createVm(ctx context.Context, vm *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
+	vmClass, err := c.vmClassLister.VirtualMachineClasses(vm.Namespace).Get(vm.Spec.ClassName)
 	if err != nil {
-		glog.Errorf("Failed to get VirtualMachineClass %q: %v", vmToCreate.Spec.ClassName, err)
-		return nil, err
+		glog.Errorf("Failed to get VirtualMachineClass %q: %v", vm.Spec.ClassName, err)
+		return vm, err
 	}
 
-	newVm, err := c.vmProvider.CreateVirtualMachine(ctx, vmToCreate, vmClass)
+	newVm, err := c.vmProvider.CreateVirtualMachine(ctx, vm, vmClass)
 	if err != nil {
-		glog.Errorf("Provider failed to create VirtualMachine %v: %v", vmToCreate.GetFullName(), err)
-		return nil, err
+		glog.Errorf("Provider failed to create VirtualMachine %v: %v", vm.NamespacedName(), err)
+		return vm, err
 	}
 
 	pkg.AddAnnotations(&newVm.ObjectMeta)
@@ -210,7 +209,7 @@ func (c *VirtualMachineControllerImpl) updateVm(ctx context.Context, vmToUpdate 
 
 	newVm, err := c.vmProvider.UpdateVirtualMachine(ctx, vmToUpdate)
 	if err != nil {
-		glog.Errorf("Provider failed to update VirtualMachine %v: %v", vmToUpdate.GetFullName(), err)
+		glog.Errorf("Provider failed to update VirtualMachine %v: %v", vmToUpdate.NamespacedName(), err)
 		return nil, err
 	}
 

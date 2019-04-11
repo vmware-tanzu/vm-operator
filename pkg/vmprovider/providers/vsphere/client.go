@@ -6,7 +6,10 @@ package vsphere
 
 import (
 	"context"
+	"net"
 	"time"
+
+	"net/url"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -22,20 +25,20 @@ type Client struct {
 	client *govmomi.Client
 }
 
+const idleTime = 5 * time.Minute
+
 // NewClient creates a new govmomi client; sets a keepalive handler to re-login on not authenticated errors.
-// TODO(bryanv) Password should be separate from the url
-func NewClient(ctx context.Context, url string) (*Client, error) {
-	soapUrl, err := soap.ParseURL(url)
-	if soapUrl == nil || err != nil {
-		return nil, errors.Wrapf(err, "failed to parse soap url: %s", soapUrl)
+func NewClient(ctx context.Context, config *VSphereVmProviderConfig) (*Client, error) {
+	soapUrl, err := soap.ParseURL(net.JoinHostPort(config.VcPNID, config.VcPort))
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse %s:%s", config.VcPNID, config.VcPort)
 	}
 
 	// Decompose govmomi.NewClient so we can create a client with a custom keepalive handler which
 	// logs in on NotAuthenticated errors.
-	soapClient := soap.NewClient(soapUrl, true)
-	vimClient, err := vim25.NewClient(ctx, soapClient)
+	vimClient, err := vim25.NewClient(ctx, soap.NewClient(soapUrl, true))
 	if err != nil {
-		return nil, errors.Wrapf(err, "error creating a new vim client for soap url: %s", soapUrl)
+		return nil, errors.Wrapf(err, "error creating a new vim client for url: %v", soapUrl)
 	}
 
 	vcClient := &govmomi.Client{
@@ -43,43 +46,27 @@ func NewClient(ctx context.Context, url string) (*Client, error) {
 		SessionManager: session.NewManager(vimClient),
 	}
 
-	const idleTime = 5 * time.Minute
-	k := session.KeepAliveHandler(vimClient.RoundTripper, idleTime, func(rt soap.RoundTripper) error {
-		_, err := methods.GetCurrentTime(ctx, rt)
+	userInfo := url.UserPassword(config.VcUser, config.VcPassword)
 
-		if err != nil {
-			if isNotAuthenticatedError(err) {
-				if err = vcClient.Login(ctx, soapUrl.User); err != nil {
-					if isInvalidLogin(err) {
-						glog.Error("error in session re-authentication. Quitting Keep alive handler.")
-						return err
-					}
-				} else {
-					glog.Info("successfully reauthenticated the session")
+	vimClient.RoundTripper = session.KeepAliveHandler(vimClient.RoundTripper, idleTime, func(rt soap.RoundTripper) error {
+		if _, err := methods.GetCurrentTime(ctx, rt); err != nil && isNotAuthenticatedError(err) {
+			if err = vcClient.Login(ctx, userInfo); err != nil {
+				if isInvalidLogin(err) {
+					glog.Errorf("Invalid login in keep alive handler for url: %v", soapUrl)
+					return err
 				}
 			}
 		}
 		return nil
 	})
-	vimClient.RoundTripper = k
 
-	if err = vcClient.Login(ctx, soapUrl.User); err != nil {
-		return nil, errors.Wrapf(err, "error logging in the new client using soapUrl: %s", soapUrl)
+	if err = vcClient.Login(ctx, userInfo); err != nil {
+		return nil, errors.Wrapf(err, "login failed for url: %v", soapUrl)
 	}
 
 	return &Client{
 		client: vcClient,
 	}, nil
-}
-
-func isInvalidLogin(err error) bool {
-	if soap.IsSoapFault(err) {
-		switch soap.ToSoapFault(err).VimFault().(type) {
-		case types.InvalidLogin:
-			return true
-		}
-	}
-	return false
 }
 
 func isNotAuthenticatedError(err error) bool {
@@ -92,12 +79,23 @@ func isNotAuthenticatedError(err error) bool {
 	return false
 }
 
+func isInvalidLogin(err error) bool {
+	if soap.IsSoapFault(err) {
+		switch soap.ToSoapFault(err).VimFault().(type) {
+		case types.InvalidLogin:
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Client) VimClient() *vim25.Client {
 	return c.client.Client
 }
 
 func (c *Client) Logout(ctx context.Context) {
 	if err := c.client.Logout(ctx); err != nil {
-		glog.Errorf("Error logging out url %q: %v", c.client.URL(), err)
+		url := c.client.URL()
+		glog.Errorf("Error logging out url %s@%s: %v", url.User.Username(), url.Host, err)
 	}
 }

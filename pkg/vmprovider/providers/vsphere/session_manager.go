@@ -8,6 +8,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/pkg/errors"
+
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -29,7 +31,7 @@ func NewSessionManager(clientset *kubernetes.Clientset) SessionManager {
 func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProviderConfig) (*Session, error) {
 	ses, err := NewSession(context.TODO(), config)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to create session for namespace %s", namespace)
 	}
 
 	sm.mutex.Lock()

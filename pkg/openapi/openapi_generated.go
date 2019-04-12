@@ -20,42 +20,42 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.RestProvider":                        schema_pkg_apis_vmoperator_v1alpha1_RestProvider(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachine":                      schema_pkg_apis_vmoperator_v1alpha1_VirtualMachine(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClass":                 schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClass(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassHardware":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassHardware(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassList":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassList(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassPolicies":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassPolicies(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResourceSpec":     schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassResourceSpec(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResources":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassResources(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSchemeFns":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassSchemeFns(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSpec":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassSpec(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStatus":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStatus(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStatusStrategy":   schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStatusStrategy(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStrategy":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStrategy(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineCondition":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineCondition(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImage":                 schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImage(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageList":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageList(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSchemeFns":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageSchemeFns(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSpec":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageSpec(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatus":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatus(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatusStrategy":   schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatusStrategy(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStrategy":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStrategy(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineList":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineList(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachinePort(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSchemeFns":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSchemeFns(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineService":               schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineService(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceList":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceList(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServicePort":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServicePort(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSchemeFns":      schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSchemeFns(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSpec":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSpec(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatus":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatus(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatusStrategy": schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatusStrategy(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStrategy":       schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStrategy(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSpec":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatus":                schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatusStrategy":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatusStrategy(ref),
-		"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStrategy":              schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStrategy(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.RestProvider":                        schema_pkg_apis_vmoperator_v1alpha1_RestProvider(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachine":                      schema_pkg_apis_vmoperator_v1alpha1_VirtualMachine(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClass":                 schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClass(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassHardware":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassHardware(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassList":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassList(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassPolicies":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassPolicies(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResourceSpec":     schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassResourceSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResources":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassResources(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSchemeFns":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassSchemeFns(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSpec":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStatus":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStatus(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStatusStrategy":   schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStatusStrategy(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStrategy":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStrategy(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineCondition":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineCondition(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImage":                 schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImage(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageList":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageList(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSchemeFns":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageSchemeFns(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSpec":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatus":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatus(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatusStrategy":   schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatusStrategy(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStrategy":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStrategy(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineList":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineList(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachinePort(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSchemeFns":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSchemeFns(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineService":               schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineService(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceList":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceList(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServicePort":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServicePort(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSchemeFns":      schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSchemeFns(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSpec":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatus":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatus(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatusStrategy": schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatusStrategy(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStrategy":       schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStrategy(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSpec":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatus":                schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatusStrategy":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatusStrategy(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStrategy":              schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStrategy(ref),
 		"k8s.io/api/admissionregistration/v1alpha1.Initializer":                                                            schema_k8sio_api_admissionregistration_v1alpha1_Initializer(ref),
 		"k8s.io/api/admissionregistration/v1alpha1.InitializerConfiguration":                                               schema_k8sio_api_admissionregistration_v1alpha1_InitializerConfiguration(ref),
 		"k8s.io/api/admissionregistration/v1alpha1.InitializerConfigurationList":                                           schema_k8sio_api_admissionregistration_v1alpha1_InitializerConfigurationList(ref),
@@ -667,7 +667,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_RestProvider(ref common.ReferenceCallba
 				Properties: map[string]spec.Schema{
 					"ImagesProvider": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.RestProviderInterface"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.RestProviderInterface"),
 						},
 					},
 				},
@@ -675,7 +675,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_RestProvider(ref common.ReferenceCallba
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.RestProviderInterface"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.RestProviderInterface"},
 	}
 }
 
@@ -706,19 +706,19 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachine(ref common.ReferenceCall
 					},
 					"spec": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSpec"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSpec"),
 						},
 					},
 					"status": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatus"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatus"),
 						},
 					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSpec", "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatus", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSpec", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatus", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
 	}
 }
 
@@ -749,19 +749,19 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClass(ref common.Referenc
 					},
 					"spec": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSpec"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSpec"),
 						},
 					},
 					"status": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStatus"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStatus"),
 						},
 					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSpec", "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStatus", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSpec", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStatus", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
 	}
 }
 
@@ -819,7 +819,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassList(ref common.Refe
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClass"),
+										Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClass"),
 									},
 								},
 							},
@@ -830,7 +830,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassList(ref common.Refe
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClass", "k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClass", "k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"},
 	}
 }
 
@@ -841,7 +841,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassPolicies(ref common.
 				Properties: map[string]spec.Schema{
 					"resources": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResources"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResources"),
 						},
 					},
 					"storageClass": {
@@ -854,7 +854,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassPolicies(ref common.
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResources"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResources"},
 	}
 }
 
@@ -889,19 +889,19 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassResources(ref common
 				Properties: map[string]spec.Schema{
 					"requests": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResourceSpec"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResourceSpec"),
 						},
 					},
 					"limits": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResourceSpec"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResourceSpec"),
 						},
 					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResourceSpec"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResourceSpec"},
 	}
 }
 
@@ -933,19 +933,19 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassSpec(ref common.Refe
 				Properties: map[string]spec.Schema{
 					"hardware": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassHardware"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassHardware"),
 						},
 					},
 					"policies": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassPolicies"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassPolicies"),
 						},
 					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassHardware", "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassPolicies"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassHardware", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassPolicies"},
 	}
 }
 
@@ -1074,19 +1074,19 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImage(ref common.Referenc
 					},
 					"spec": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSpec"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSpec"),
 						},
 					},
 					"status": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatus"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatus"),
 						},
 					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSpec", "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatus", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSpec", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatus", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
 	}
 }
 
@@ -1120,7 +1120,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageList(ref common.Refe
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImage"),
+										Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImage"),
 									},
 								},
 							},
@@ -1131,7 +1131,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageList(ref common.Refe
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImage", "k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImage", "k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"},
 	}
 }
 
@@ -1267,7 +1267,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineList(ref common.Reference
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachine"),
+										Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachine"),
 									},
 								},
 							},
@@ -1278,7 +1278,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineList(ref common.Reference
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachine", "k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachine", "k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"},
 	}
 }
 
@@ -1366,19 +1366,19 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineService(ref common.Refere
 					},
 					"spec": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSpec"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSpec"),
 						},
 					},
 					"status": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatus"),
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatus"),
 						},
 					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSpec", "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatus", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSpec", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatus", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
 	}
 }
 
@@ -1412,7 +1412,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceList(ref common.Re
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineService"),
+										Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineService"),
 									},
 								},
 							},
@@ -1423,7 +1423,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceList(ref common.Re
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineService", "k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineService", "k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"},
 	}
 }
 
@@ -1504,7 +1504,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSpec(ref common.Re
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServicePort"),
+										Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServicePort"),
 									},
 								},
 							},
@@ -1541,7 +1541,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSpec(ref common.Re
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServicePort"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServicePort"},
 	}
 }
 
@@ -1630,7 +1630,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.Reference
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort"),
+										Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort"),
 									},
 								},
 							},
@@ -1641,7 +1641,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.Reference
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort", "k8s.io/api/core/v1.EnvVar"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort", "k8s.io/api/core/v1.EnvVar"},
 	}
 }
 
@@ -1656,7 +1656,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref common.Referen
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Ref: ref("gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineCondition"),
+										Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineCondition"),
 									},
 								},
 							},
@@ -1691,7 +1691,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref common.Referen
 			},
 		},
 		Dependencies: []string{
-			"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineCondition"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineCondition"},
 	}
 }
 

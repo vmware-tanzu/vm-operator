@@ -20,11 +20,11 @@ package controller
 
 import (
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachine"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachineclass"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachineimage"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachineservice"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/sharedinformers"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineclass"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineimage"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineservice"
 	"k8s.io/client-go/rest"
 )
 

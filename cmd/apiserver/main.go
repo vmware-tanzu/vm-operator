@@ -6,18 +6,18 @@ package main
 
 import (
 	"github.com/pkg/errors"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"io"
 	"net/http"
 
 	_ "github.com/go-openapi/loads"
 	"github.com/golang/glog"
 	"k8s.io/client-go/kubernetes"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/rest"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/openapi"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/rest"
+	"github.com/vmware-tanzu/vm-operator/pkg/openapi"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 
 	// Make sure dep tools picks up these dependencies
 	_ "k8s.io/apimachinery/pkg/apis/meta/v1"

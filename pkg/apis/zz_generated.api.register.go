@@ -20,8 +20,8 @@ package apis
 
 import (
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
-	vmoperatorv1alpha1 "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 )
 
 // GetAllApiBuilders returns all known APIGroupBuilders
@@ -34,7 +34,7 @@ func GetAllApiBuilders() []*builders.APIGroupBuilder {
 
 var vmoperatorApiGroup = builders.NewApiGroupBuilder(
 	"vmoperator.vmware.com",
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator").
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator").
 	WithUnVersionedApi(vmoperator.ApiVersion).
 	WithVersionedApis(
 		vmoperatorv1alpha1.ApiVersion,

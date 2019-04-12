@@ -7,12 +7,12 @@ package virtualmachineclass
 import (
 	"log"
 
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/sharedinformers"
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 
-	listers "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
+	listers "github.com/vmware-tanzu/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
 )
 
 // +controller:group=vmoperator,version=v1alpha1,kind=VirtualMachineClass,resource=virtualmachineclasses

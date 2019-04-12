@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/golang/glog"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"k8s.io/client-go/kubernetes"
 )
 

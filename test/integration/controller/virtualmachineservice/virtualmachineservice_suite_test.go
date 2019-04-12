@@ -8,22 +8,22 @@ import (
 	"testing"
 
 	"github.com/golang/glog"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachineservice"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/openapi"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/test/integration"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/sharedinformers"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineservice"
+	"github.com/vmware-tanzu/vm-operator/pkg/openapi"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/test/integration"
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/rest"
 
-	vmrest "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/rest"
+	vmrest "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/rest"
 )
 
 var testenv *test.TestEnvironment

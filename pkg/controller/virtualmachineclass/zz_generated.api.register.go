@@ -20,7 +20,7 @@ package virtualmachineclass
 
 import (
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/sharedinformers"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"

@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	vmoperator "gitlab.eng.vmware.com/iaas-platform/vm-operator"
+	vmoperator "github.com/vmware-tanzu/vm-operator"
 )
 
 var (

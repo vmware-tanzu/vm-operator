@@ -8,12 +8,12 @@ import (
 	"context"
 	"fmt"
 
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/iface"
-	res "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere/resources"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere/sequence"
+	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/iface"
+	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/sequence"
 
 	"github.com/pkg/errors"
 

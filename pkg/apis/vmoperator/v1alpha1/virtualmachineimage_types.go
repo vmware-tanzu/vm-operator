@@ -8,7 +8,7 @@ import (
 	"context"
 
 	"github.com/golang/glog"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"

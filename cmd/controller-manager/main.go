@@ -9,9 +9,9 @@ import (
 	"io"
 	"k8s.io/client-go/kubernetes"
 	"net/http"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller"
 
 	"github.com/golang/glog"
 	controllerlib "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"

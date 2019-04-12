@@ -7,7 +7,7 @@ package iface
 import (
 	"context"
 
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 )
 
 // VirtualMachineProviderInterface is a plugable interface for VM Providers

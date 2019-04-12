@@ -9,10 +9,10 @@ package v1alpha1
 import (
 	time "time"
 
-	vmoperatorv1alpha1 "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	clientset "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
-	internalinterfaces "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/informers_generated/externalversions/internalinterfaces"
-	v1alpha1 "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	clientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
+	internalinterfaces "github.com/vmware-tanzu/vm-operator/pkg/client/informers_generated/externalversions/internalinterfaces"
+	v1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"

@@ -7,9 +7,9 @@
 package fake
 
 import (
-	clientset "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
-	vmoperatorv1alpha1 "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
-	fakevmoperatorv1alpha1 "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1/fake"
+	clientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
+	fakevmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"

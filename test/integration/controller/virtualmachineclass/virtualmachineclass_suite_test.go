@@ -7,17 +7,17 @@ package virtualmachineclass_test
 import (
 	"testing"
 
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/virtualmachineclass"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineclass"
 
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis"
-	vmrest "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/rest"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/openapi"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/vmprovider/providers/vsphere"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/test/integration"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis"
+	vmrest "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/rest"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/sharedinformers"
+	"github.com/vmware-tanzu/vm-operator/pkg/openapi"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/test/integration"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"

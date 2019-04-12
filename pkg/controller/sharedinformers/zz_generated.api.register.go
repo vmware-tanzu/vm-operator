@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/controller"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/informers_generated/externalversions"
+	"github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
+	"github.com/vmware-tanzu/vm-operator/pkg/client/informers_generated/externalversions"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 )

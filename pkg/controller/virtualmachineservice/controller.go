@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"time"
 
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/controller/sharedinformers"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/sharedinformers"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
@@ -24,8 +24,8 @@ import (
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 
-	clientSet "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
-	listers "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
+	clientSet "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
+	listers "github.com/vmware-tanzu/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
 )
 
 const (

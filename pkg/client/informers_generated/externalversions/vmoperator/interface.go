@@ -7,8 +7,8 @@
 package vmoperator
 
 import (
-	internalinterfaces "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/informers_generated/externalversions/internalinterfaces"
-	v1alpha1 "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/informers_generated/externalversions/vmoperator/v1alpha1"
+	internalinterfaces "github.com/vmware-tanzu/vm-operator/pkg/client/informers_generated/externalversions/internalinterfaces"
+	v1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/client/informers_generated/externalversions/vmoperator/v1alpha1"
 )
 
 // Interface provides access to each of this group's versions.

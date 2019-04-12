@@ -7,7 +7,7 @@
 package fake
 
 import (
-	v1alpha1 "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
+	v1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset/typed/vmoperator/v1alpha1"
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
 )

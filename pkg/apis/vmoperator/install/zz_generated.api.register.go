@@ -19,7 +19,7 @@ limitations under the License.
 package install
 
 import (
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/apis"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 )

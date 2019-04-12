@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
-	"gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 var _ = Describe("List Utilities", func() {

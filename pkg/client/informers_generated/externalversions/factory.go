@@ -11,9 +11,9 @@ import (
 	sync "sync"
 	time "time"
 
-	clientset "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/clientset_generated/clientset"
-	internalinterfaces "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/informers_generated/externalversions/internalinterfaces"
-	vmoperator "gitlab.eng.vmware.com/iaas-platform/vm-operator/pkg/client/informers_generated/externalversions/vmoperator"
+	clientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
+	internalinterfaces "github.com/vmware-tanzu/vm-operator/pkg/client/informers_generated/externalversions/internalinterfaces"
+	vmoperator "github.com/vmware-tanzu/vm-operator/pkg/client/informers_generated/externalversions/vmoperator"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

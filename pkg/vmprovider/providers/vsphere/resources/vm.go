@@ -149,6 +149,14 @@ func (vm *VirtualMachine) ReferenceValue() string {
 	return vm.virtualMachine.Reference().Value
 }
 
+func (vm *VirtualMachine) ManagedObject(ctx context.Context) (*mo.VirtualMachine, error) {
+	var props mo.VirtualMachine
+	if err := vm.virtualMachine.Properties(ctx, vm.virtualMachine.Reference(), nil, &props); err != nil {
+		return nil, err
+	}
+	return &props, nil
+}
+
 func (vm *VirtualMachine) ImageFields(ctx context.Context) (powerState, uuid, reference string) {
 	ps, _ := vm.virtualMachine.PowerState(ctx)
 

@@ -25,7 +25,7 @@ type VirtualMachineProviderInterface interface {
 	ListVirtualMachines(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachine, error)
 	GetVirtualMachine(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachine, error)
 
-	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass *v1alpha1.VirtualMachineClass) (*v1alpha1.VirtualMachine, error)
+	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass *v1alpha1.VirtualMachineClass, metadata map[string]string) (*v1alpha1.VirtualMachine, error)
 	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error)
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 }

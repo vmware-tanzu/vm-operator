@@ -121,7 +121,7 @@ func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 }
 
 func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	class *v1alpha1.VirtualMachineClass) (*res.VirtualMachine, error) {
+	class *v1alpha1.VirtualMachineClass, metadata map[string]string) (*res.VirtualMachine, error) {
 
 	resSrcVm, err := s.lookupVm(ctx, vm.Spec.ImageName)
 	if err != nil {
@@ -129,8 +129,10 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 	}
 
 	name := vm.Name
-	powerOn := vm.Spec.PowerState == v1alpha1.VirtualMachinePoweredOn
-	cloneSpec := s.cloneSpecFromClassSpec(name, powerOn, &class.Spec)
+	cloneSpec, err := s.cloneSpecFromClassSpec(ctx, name, vm, resSrcVm, &class.Spec, metadata)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to create clone spec from %q", resSrcVm.Name)
+	}
 
 	cloneResVm, err := s.cloneVm(ctx, resSrcVm, cloneSpec)
 	if err != nil {
@@ -141,7 +143,6 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 }
 
 func (s *Session) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
-
 	resVm, err := s.lookupVm(ctx, vm.Name)
 	if err != nil {
 		return err
@@ -198,16 +199,19 @@ func (s *Session) configSpecFromClassSpec(name string, classSpec *v1alpha1.Virtu
 	return configSpec
 }
 
-func (s *Session) cloneSpecFromClassSpec(name string, powerOn bool, classSpec *v1alpha1.VirtualMachineClassSpec) vimTypes.VirtualMachineCloneSpec {
+func (s *Session) cloneSpecFromClassSpec(ctx context.Context, name string, vm *v1alpha1.VirtualMachine,
+	resSrcVm *res.VirtualMachine, classSpec *v1alpha1.VirtualMachineClassSpec, metadata map[string]string) (*vimTypes.VirtualMachineCloneSpec, error) {
 
-	// TODO(bryanv) CloneSpec's config is deprecated:
-	//    as of vSphere API 6.0. Use deviceChange in location instead for specifying any virtual
+	// TODO(bryanv) The CloneSpec Config is deprecated:
+	//   "as of vSphere API 6.0. Use deviceChange in location instead for specifying any virtual
 	//    device changes for disks and networks. All other VM configuration changes should use
-	//    ReconfigVM_Task API after the clone operation finishes.
+	//    ReConfigVM_Task API after the clone operation finishes."
 	configSpec := s.configSpecFromClassSpec(name, classSpec)
+
+	powerOn := vm.Spec.PowerState == v1alpha1.VirtualMachinePoweredOn
 	memory := false // No full memory clones
 
-	cloneSpec := vimTypes.VirtualMachineCloneSpec{
+	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
 		Config:  &configSpec,
 		PowerOn: powerOn,
 		Memory:  &memory,
@@ -217,11 +221,24 @@ func (s *Session) cloneSpecFromClassSpec(name string, powerOn bool, classSpec *v
 	cloneSpec.Location.Pool = vimTypes.NewReference(s.resourcepool.Reference())
 	//cloneSpec.Location.DiskMoveType = string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndConsolidate)
 
-	return cloneSpec
+	if len(metadata) > 0 {
+		var extraConfigs []vimTypes.BaseOptionValue
+		for k, v := range metadata {
+			extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: k, Value: v})
+		}
+		/*
+			extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: "guestinfo.metadata", Value: customization.MetaData})
+			extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: "guestinfo.metadata.encoding", Value: customization.MetaDataEncoding})
+			extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: "guestinfo.userdata", Value: customization.UserData})
+			extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: "guestinfo.userdata.encoding", Value: customization.UserDataEncoding})
+		*/
+		cloneSpec.Config.ExtraConfig = extraConfigs
+	}
+
+	return cloneSpec, nil
 }
 
 func (s *Session) createVm(ctx context.Context, name string, configSpec vimTypes.VirtualMachineConfigSpec) (*res.VirtualMachine, error) {
-
 	configSpec.Files = &vimTypes.VirtualMachineFileInfo{
 		VmPathName: fmt.Sprintf("[%s]", s.datastore.Name()),
 	}
@@ -235,9 +252,8 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec vimTypes
 	return resVm, nil
 }
 
-func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, cloneSpec vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
-
-	cloneResVm, err := resSrcVm.Clone(ctx, s.dcFolders.VmFolder, &cloneSpec)
+func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
+	cloneResVm, err := resSrcVm.Clone(ctx, s.dcFolders.VmFolder, cloneSpec)
 	if err != nil {
 		return nil, err
 	}

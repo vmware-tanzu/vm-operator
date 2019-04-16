@@ -74,6 +74,16 @@ var _ = Describe("VirtualMachine controller", func() {
 				actualKey = key
 			}
 			controller.AfterReconcile = func(key string, err error) {
+				// To catch and log any exceptions in a goroutine
+				defer GinkgoRecover()
+
+				// Log and ignore the error since we want to return the actual error during reconciliation
+				vm, e := vmClient.Get(instanceName, metav1.GetOptions{})
+				if e != nil {
+					glog.Errorf("Error verifying the phase of VM. %v not found.", instanceName)
+				}
+				Expect(vm.Status.Phase).Should(Equal(Created))
+
 				controller.AfterReconcile = nil
 				defer close(after)
 				actualKey = key

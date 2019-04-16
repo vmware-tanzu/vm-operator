@@ -128,12 +128,12 @@ func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, namespace, n
 		return nil, transformVmError(vmName, err)
 	}
 
-	vmStatus := vs.generateVmStatus(ctx, resVm)
+	vm, err := vs.mergeVmStatus(ctx, &v1alpha1.VirtualMachine{}, resVm)
+	if err != nil {
+		return nil, errors.Wrapf(err, "error in creating the VM: %v", name)
+	}
 
-	// BMV: Only need to set Status here?
-	return &v1alpha1.VirtualMachine{
-		Status: *vmStatus.DeepCopy(),
-	}, nil
+	return vm, nil
 }
 
 func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, vmRes *res.VirtualMachine) {
@@ -173,14 +173,14 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 		return nil, transformVmError(vmName, err)
 	}
 
-	vmStatus, err := vs.mergeVmStatus(ctx, vm, resVm)
+	vm, err = vs.mergeVmStatus(ctx, vm, resVm)
 	if err != nil {
 		return nil, transformVmError(vmName, err)
 	}
 
-	vs.addProviderAnnotations(&vmStatus.ObjectMeta, resVm)
+	vs.addProviderAnnotations(&vm.ObjectMeta, resVm)
 
-	return vmStatus, nil
+	return vm, nil
 }
 
 func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
@@ -262,6 +262,7 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 	return nil
 }
 
+// UpdateVirtualMachine updates the VM status, power state, phase etc
 func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 	vmName := vm.GetFullName()
 
@@ -287,8 +288,12 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 		return nil, transformVmError(vmName, err)
 	}
 
-	// Update status
-	return vs.mergeVmStatus(ctx, vm, resVm)
+	vm, err = vs.mergeVmStatus(ctx, vm, resVm)
+	if err != nil {
+		return nil, transformVmError(vmName, err)
+	}
+
+	return vm, nil
 }
 
 func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
@@ -317,27 +322,16 @@ func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelet
 	return nil
 }
 
-func (vs *VSphereVmProvider) generateVmStatus(ctx context.Context, resVm *res.VirtualMachine) v1alpha1.VirtualMachineStatus {
-	powerState, hostSystemName, ip := resVm.StatusFields(ctx)
-	_ = hostSystemName
-
-	return v1alpha1.VirtualMachineStatus{
-		Phase:      "",
-		PowerState: powerState,
-		Host:       ip, // TODO(bryanv) Use hostSystemName?
-		VmIp:       ip,
-	}
-}
-
+//mergeVmStatus merges the v1alpha1 VM's status with resource VM's status
 func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
-	vmStatus := vs.generateVmStatus(ctx, resVm)
+	vmStatus, err := resVm.GetStatus(ctx)
+	if err != nil {
+		glog.Infof("GetStatus returned error: %v", err)
+		return nil, errors.Wrapf(err, "unable to get status of the VM")
+	}
 
-	return &v1alpha1.VirtualMachine{
-		TypeMeta:   vm.TypeMeta,
-		ObjectMeta: vm.ObjectMeta,
-		Spec:       vm.Spec,
-		Status:     *vmStatus.DeepCopy(),
-	}, nil
+	vm.Status = *vmStatus
+	return vm, nil
 }
 
 func resVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *res.VirtualMachine) *v1alpha1.VirtualMachineImage {

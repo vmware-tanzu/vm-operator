@@ -40,7 +40,6 @@ func NewVMFromObject(objVm *object.VirtualMachine) (*VirtualMachine, error) {
 }
 
 func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, pool *object.ResourcePool, vmSpec *types.VirtualMachineConfigSpec) error {
-
 	if vm.virtualMachine != nil {
 		glog.Errorf("Failed to create VM %q because the VM object is already set", vm.Name)
 		return fmt.Errorf("failed to create VM %q because the VM object is already set", vm.Name)
@@ -99,11 +98,17 @@ func (vm *VirtualMachine) Delete(ctx context.Context) error {
 	return nil
 }
 
+// IpAddress returns the IpAddress of the VM if powered on, error otherwise
 func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
 	var o mo.VirtualMachine
 
+	ps, err := vm.virtualMachine.PowerState(ctx)
+	if err != nil || ps == types.VirtualMachinePowerStatePoweredOff {
+		return "", err
+	}
+
 	// Just get some IP from guest
-	err := vm.virtualMachine.Properties(ctx, vm.virtualMachine.Reference(), []string{"guest.ipAddress"}, &o)
+	err = vm.virtualMachine.Properties(ctx, vm.virtualMachine.Reference(), []string{"guest.ipAddress"}, &o)
 	if err != nil {
 		return "", err
 	}
@@ -154,20 +159,33 @@ func (vm *VirtualMachine) ImageFields(ctx context.Context) (powerState, uuid, re
 	return
 }
 
-func (vm *VirtualMachine) StatusFields(ctx context.Context) (powerState, hostSystemName, ip string) {
-
-	ps, _ := vm.virtualMachine.PowerState(ctx)
-	powerState = string(ps)
-
-	if host, err := vm.virtualMachine.HostSystem(ctx); err == nil {
-		hostSystemName = host.Name()
+// GetStatus returns a VirtualMachine's Status
+func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachineStatus, error) {
+	ps, err := vm.virtualMachine.PowerState(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "error in getting the powerstate of the VM: %v", vm.Name)
 	}
 
-	if ps == types.VirtualMachinePowerStatePoweredOn {
-		ip, _ = vm.IpAddress(ctx)
+	host, err := vm.virtualMachine.HostSystem(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "error in getting the HostSystem of the VM: %v", vm.Name)
 	}
 
-	return
+	// Since guest info is empty, IpAddress returns not found error which fails the operation.
+	// Comment this until we figure out what to do with the IP address.
+	// TODO (parunesh): Uncomment when we have a way to get the IP address of a Vm.
+
+	// ip, err := vm.IpAddress(ctx)
+	// if err != nil {
+	// 	return nil, errors.Wrapf(err, "error in getting the IP of the V M: %v", vm.Name)
+	//}
+
+	return &v1alpha1.VirtualMachineStatus{
+		PowerState: string(ps),
+		Host:       host.Name(),
+		VmIp:       "",
+		Phase:      v1alpha1.Created,
+	}, nil
 }
 
 func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState string) error {

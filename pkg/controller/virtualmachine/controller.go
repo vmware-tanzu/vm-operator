@@ -8,17 +8,16 @@ import (
 	"context"
 	"time"
 
+	"github.com/golang/glog"
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	clientSet "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
+	listers "github.com/vmware-tanzu/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/controller/sharedinformers"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/iface"
-
-	"github.com/golang/glog"
-	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
-	clientSet "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
-	listers "github.com/vmware-tanzu/vm-operator/pkg/client/listers_generated/vmoperator/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
@@ -81,11 +80,13 @@ func (c *VirtualMachineControllerImpl) postVmServiceEventsToWorkqueue(vm *v1alph
 // Reconcile handles enqueued messages
 func (c *VirtualMachineControllerImpl) Reconcile(vmToReconcile *v1alpha1.VirtualMachine) error {
 	var err error
-	vmName := vmToReconcile.GetFullName()
+	ctx := context.Background()
+	vm := vmToReconcile.DeepCopy()
+	vmName := vm.GetFullName()
 
 	startTime := time.Now()
 	defer func() {
-		_ = c.postVmEventsToWorkqueue(vmToReconcile)
+		_ = c.postVmEventsToWorkqueue(vm)
 		glog.V(0).Infof("Finished reconciling VirtualMachine %v duration: %s err: %v",
 			vmName, time.Since(startTime), err)
 	}()
@@ -93,58 +94,45 @@ func (c *VirtualMachineControllerImpl) Reconcile(vmToReconcile *v1alpha1.Virtual
 	glog.V(0).Infof("Reconciling VirtualMachine %v", vmName)
 
 	// Trigger VirtualMachineService evaluation
-	if err := c.postVmServiceEventsToWorkqueue(vmToReconcile); err != nil {
+	if err := c.postVmServiceEventsToWorkqueue(vm); err != nil {
 		// Keep going in case of an error.
 		glog.Errorf("Error posting service event to workqueue for VirtualMachine %v: %v", vmName, err)
 	}
 
-	if !vmToReconcile.ObjectMeta.DeletionTimestamp.IsZero() {
-		// This VM has been deleted, sync with backend.
+	// VM is being deleted, remove the finalizer and update the status
+	if !vm.ObjectMeta.DeletionTimestamp.IsZero() {
 		finalizer := v1alpha1.VirtualMachineFinalizer
-
-		if !lib.Contains(vmToReconcile.ObjectMeta.Finalizers, finalizer) {
+		if !lib.Contains(vm.ObjectMeta.Finalizers, finalizer) {
 			glog.Infof("Reconciling deleted VirtualMachine %v is a no-op since there is no finalizer", vmName)
 			return nil
 		}
 
 		glog.Infof("Reconciling VirtualMachine %v marked for deletion", vmName)
-
-		if err := c.processVmDeletion(vmToReconcile); err != nil {
-			glog.Errorf("Failed deleting VirtualMachine %v: %v", vmName, err)
+		if err := c.deleteVm(ctx, vm); err != nil {
+			glog.Infof("Failed to delete the VM: %v, error: %v", vmName, err)
 			return err
 		}
+		// Remove the finalizer and update the VM
+		vm.ObjectMeta.Finalizers = lib.Filter(vm.ObjectMeta.Finalizers, finalizer)
+		vm.Status.Phase = v1alpha1.Deleted
 
-		vmToReconcile.ObjectMeta.Finalizers = lib.Filter(vmToReconcile.ObjectMeta.Finalizers, finalizer)
-
-		vmClientSet := c.clientSet.VmoperatorV1alpha1().VirtualMachines(vmToReconcile.Namespace)
-		if _, err := vmClientSet.Update(vmToReconcile); err != nil {
-			glog.Errorf("Failed updating VirtualMachine %v after removing finalizer: %v", vmName, err)
-			return err
-		}
-
+		err = c.updateVirtualMachineStatus(vm)
 		return nil
 	}
 
-	// vm holds the latest VirtualMachine object from apiserver
-	vm, err := c.vmLister.VirtualMachines(vmToReconcile.Namespace).Get(vmToReconcile.Name)
-	if err != nil {
-		glog.Infof("Failed to get latest VirtualMachine %v from Lister: %v", vmName, err)
-		return err
-	}
-
-	_, err = c.processVmCreateOrUpdate(vm)
-	if err != nil {
-		glog.Infof("Failed to process VirtualMachine %v CreateOrUpdate: %v", vmName, err)
+	if _, err := c.reconcileVm(ctx, vm); err != nil {
+		glog.Errorf("Error in reconciling VM: %v, err: %v", vmName, err)
 		return err
 	}
 
 	return nil
 }
 
-func (c *VirtualMachineControllerImpl) processVmDeletion(vmToDelete *v1alpha1.VirtualMachine) error {
-	vmName := vmToDelete.GetFullName()
+// deleteVm handles a deletion of a VM resource from the invt as well as the backend.
+func (c *VirtualMachineControllerImpl) deleteVm(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
+	vmName := vmToDelete.Name
 
-	err := c.vmProvider.DeleteVirtualMachine(context.TODO(), vmToDelete)
+	err := c.vmProvider.DeleteVirtualMachine(ctx, vmToDelete)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			glog.Infof("Failed to delete VirtualMachine %v because it was not found", vmName)
@@ -155,43 +143,50 @@ func (c *VirtualMachineControllerImpl) processVmDeletion(vmToDelete *v1alpha1.Vi
 	}
 
 	glog.V(4).Infof("Deleted VirtualMachine %v", vmName)
+	return nil
+}
+
+// updateVirtualMachine updates the apiserver with status of the given VM, returns the updated VM
+func (c *VirtualMachineControllerImpl) updateVirtualMachineStatus(vm *v1alpha1.VirtualMachine) error {
+	glog.V(4).Infof("Status update requested for VM: %v", vm.Name)
+
+	vmClientSet := c.clientSet.VmoperatorV1alpha1().VirtualMachines(vm.Namespace)
+	if vm, err := vmClientSet.UpdateStatus(vm); err != nil {
+		glog.Errorf("Failed to update the status of VM Object: %v, error: %v", vm, err)
+		return err
+	}
+	glog.V(4).Infof("Status updated for VM: %v", vm.Name)
 
 	return nil
 }
 
-// Process a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
-func (c *VirtualMachineControllerImpl) processVmCreateOrUpdate(vmToUpdate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
+// reconcileVm updates a VM if it exists, creates a new one if it doesn't. Update the status phase to reflect the transition
+func (c *VirtualMachineControllerImpl) reconcileVm(ctx context.Context, vmToUpdate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 	vmName := vmToUpdate.GetFullName()
 
 	glog.Infof("Process VirtualMachine %v CreateOrUpdate", vmName)
 
-	var vm *v1alpha1.VirtualMachine
-	ctx := context.TODO()
 	_, err := c.vmProvider.GetVirtualMachine(ctx, vmToUpdate.Namespace, vmToUpdate.Name)
+
 	switch {
 	case errors.IsNotFound(err):
-		vm, err = c.processVmCreate(ctx, vmToUpdate)
+		vmToUpdate.Status.Phase = v1alpha1.Creating
+		vmToUpdate, err = c.createVm(ctx, vmToUpdate)
 	case err != nil:
 		glog.Infof("Failed to get VirtualMachine %v from provider: %v", vmName, err)
 	default:
-		vm, err = c.processVmUpdate(ctx, vmToUpdate)
+		vmToUpdate, err = c.updateVm(ctx, vmToUpdate)
 	}
 
-	if err != nil {
-		return nil, err
-	}
+	// update the status even in case of failure to reflect which operation failed
+	_ = c.updateVirtualMachineStatus(vmToUpdate)
 
-	vmClientSet := c.clientSet.VmoperatorV1alpha1().VirtualMachines(vmToUpdate.Namespace)
-	if _, err = vmClientSet.UpdateStatus(vm); err != nil {
-		glog.Errorf("Failed to update VirtualMachine %v Object: %v", vmName, err)
-		//return nil, err ???
-	}
-
-	return vm, nil
+	// return the original error
+	return vmToUpdate, err
 }
 
 // Process a create event for a new VM.
-func (c *VirtualMachineControllerImpl) processVmCreate(ctx context.Context, vmToCreate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
+func (c *VirtualMachineControllerImpl) createVm(ctx context.Context, vmToCreate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 
 	vmClass, err := c.vmClassLister.VirtualMachineClasses(vmToCreate.Namespace).Get(vmToCreate.Spec.ClassName)
 	if err != nil {
@@ -211,7 +206,7 @@ func (c *VirtualMachineControllerImpl) processVmCreate(ctx context.Context, vmTo
 }
 
 // Process an update event for an existing VM.
-func (c *VirtualMachineControllerImpl) processVmUpdate(ctx context.Context, vmToUpdate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
+func (c *VirtualMachineControllerImpl) updateVm(ctx context.Context, vmToUpdate *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 
 	newVm, err := c.vmProvider.UpdateVirtualMachine(ctx, vmToUpdate)
 	if err != nil {

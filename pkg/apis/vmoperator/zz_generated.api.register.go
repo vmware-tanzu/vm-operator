@@ -119,11 +119,68 @@ type VMStatusPhase string
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+type VirtualMachineClass struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	Spec   VirtualMachineClassSpec
+	Status VirtualMachineClassStatus
+}
+
+// +genclient
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
 type VirtualMachine struct {
 	metav1.TypeMeta
 	metav1.ObjectMeta
 	Spec   VirtualMachineSpec
 	Status VirtualMachineStatus
+}
+
+type VirtualMachineClassStatus struct {
+}
+
+type VirtualMachineStatus struct {
+	Conditions []VirtualMachineCondition
+	Host       string
+	PowerState string
+	Phase      VMStatusPhase
+	VmIp       string
+}
+
+type VirtualMachineSpec struct {
+	ImageName  string
+	ClassName  string
+	PowerState string
+	Env        corev1.EnvVar
+	Ports      []VirtualMachinePort
+	VmMetadata *VirtualMachineMetadata
+}
+
+type VirtualMachineCondition struct {
+	LastProbeTime      metav1.Time
+	LastTransitionTime metav1.Time
+	Message            string
+	Reason             string
+	Status             string
+	Type               string
+}
+
+type VirtualMachineMetadata struct {
+	ConfigMapName string
+	Transport     string
+}
+
+type VirtualMachinePort struct {
+	Port     int
+	Ip       string
+	Name     string
+	Protocol corev1.Protocol
+}
+
+type VirtualMachineClassSpec struct {
+	Hardware VirtualMachineClassHardware
+	Policies VirtualMachineClassPolicies
 }
 
 // +genclient
@@ -137,24 +194,17 @@ type VirtualMachineService struct {
 	Status VirtualMachineServiceStatus
 }
 
-type VirtualMachineStatus struct {
-	Conditions []VirtualMachineCondition
-	Host       string
-	PowerState string
-	Phase      VMStatusPhase
-	VmIp       string
+type VirtualMachineClassPolicies struct {
+	Resources    VirtualMachineClassResources
+	StorageClass string
 }
 
 type VirtualMachineServiceStatus struct {
 }
 
-type VirtualMachineCondition struct {
-	LastProbeTime      metav1.Time
-	LastTransitionTime metav1.Time
-	Message            string
-	Reason             string
-	Status             string
-	Type               string
+type VirtualMachineClassResources struct {
+	Requests VirtualMachineClassResourceSpec
+	Limits   VirtualMachineClassResourceSpec
 }
 
 type VirtualMachineServiceSpec struct {
@@ -165,12 +215,9 @@ type VirtualMachineServiceSpec struct {
 	ExternalName string
 }
 
-type VirtualMachineSpec struct {
-	ImageName  string
-	ClassName  string
-	PowerState string
-	Env        corev1.EnvVar
-	Ports      []VirtualMachinePort
+type VirtualMachineClassResourceSpec struct {
+	Cpu    int64
+	Memory apiresource.Quantity
 }
 
 type VirtualMachineServicePort struct {
@@ -180,11 +227,9 @@ type VirtualMachineServicePort struct {
 	TargetPort int32
 }
 
-type VirtualMachinePort struct {
-	Port     int
-	Ip       string
-	Name     string
-	Protocol corev1.Protocol
+type VirtualMachineClassHardware struct {
+	Cpus   int64
+	Memory apiresource.Quantity
 }
 
 // +genclient
@@ -198,52 +243,13 @@ type VirtualMachineImage struct {
 	Status VirtualMachineImageStatus
 }
 
-// +genclient
-// +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-type VirtualMachineClass struct {
-	metav1.TypeMeta
-	metav1.ObjectMeta
-	Spec   VirtualMachineClassSpec
-	Status VirtualMachineClassStatus
+type VirtualMachineImageSpec struct {
 }
 
 type VirtualMachineImageStatus struct {
 	Uuid       string
 	InternalId string
 	PowerState string
-}
-
-type VirtualMachineClassStatus struct {
-}
-
-type VirtualMachineClassSpec struct {
-	Hardware VirtualMachineClassHardware
-	Policies VirtualMachineClassPolicies
-}
-
-type VirtualMachineImageSpec struct {
-}
-
-type VirtualMachineClassPolicies struct {
-	Resources    VirtualMachineClassResources
-	StorageClass string
-}
-
-type VirtualMachineClassHardware struct {
-	Cpus   int64
-	Memory apiresource.Quantity
-}
-
-type VirtualMachineClassResources struct {
-	Requests VirtualMachineClassResourceSpec
-	Limits   VirtualMachineClassResourceSpec
-}
-
-type VirtualMachineClassResourceSpec struct {
-	Cpu    int64
-	Memory apiresource.Quantity
 }
 
 //

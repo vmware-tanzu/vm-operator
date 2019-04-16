@@ -19,6 +19,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/iface"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
 )
@@ -54,7 +55,7 @@ func (c *VirtualMachineControllerImpl) Init(arguments sharedinformers.Controller
 // Used to reconcile VM status periodically to discover async changes from the VM provider backend
 func (c *VirtualMachineControllerImpl) postVmEventsToWorkqueue(vm *v1alpha1.VirtualMachine) error {
 	if key, err := cache.MetaNamespaceKeyFunc(vm); err == nil {
-		c.informers.WorkerQueues["VirtualMachine"].Queue.AddAfter(key, 10 * time.Second)
+		c.informers.WorkerQueues["VirtualMachine"].Queue.AddAfter(key, 10*time.Second)
 	}
 
 	return nil
@@ -193,7 +194,17 @@ func (c *VirtualMachineControllerImpl) createVm(ctx context.Context, vm *v1alpha
 		return vm, err
 	}
 
-	newVm, err := c.vmProvider.CreateVirtualMachine(ctx, vm, vmClass)
+	var metadata map[string]string
+	if vm.Spec.VmMetadata != nil && vm.Spec.VmMetadata.ConfigMapName != "" {
+		cm, err := c.informers.KubernetesClientSet.CoreV1().ConfigMaps(vm.Namespace).Get(vm.Spec.VmMetadata.ConfigMapName, metav1.GetOptions{})
+		if err != nil {
+			glog.Errorf("Failed to get ConfigMap %s for VmMetadata %q: %v", vm.Spec.VmMetadata.ConfigMapName, vm.Spec.ClassName, err)
+			return vm, err
+		}
+		metadata = cm.Data
+	}
+
+	newVm, err := c.vmProvider.CreateVirtualMachine(ctx, vm, vmClass, metadata)
 	if err != nil {
 		glog.Errorf("Provider failed to create VirtualMachine %v: %v", vm.NamespacedName(), err)
 		return vm, err

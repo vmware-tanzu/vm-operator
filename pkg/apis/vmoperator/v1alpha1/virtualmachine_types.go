@@ -45,6 +45,17 @@ const (
 	VirtualMachinePoweredOn  = "poweredOn"
 )
 
+type VMStatusPhase string
+
+const (
+	// controller has received a request to create the VM
+	Creating VMStatusPhase = "Creating"
+	// VM is created
+	Created VMStatusPhase = "Created"
+	// VM is Deleted
+	Deleted VMStatusPhase = "Deleted"
+)
+
 type VirtualMachinePort struct {
 	Port     int             `json:"port"`
 	Ip       string          `json:"ip"`
@@ -84,7 +95,7 @@ type VirtualMachineStatus struct {
 	Conditions []VirtualMachineCondition `json:"conditions"`
 	Host       string                    `json:"host"`
 	PowerState string                    `json:"powerState"`
-	Phase      string                    `json:"phase"`
+	Phase      VMStatusPhase             `json:"phase"`
 	VmIp       string                    `json:"vmIp"`
 }
 

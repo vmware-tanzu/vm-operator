@@ -35,7 +35,7 @@ func NewClient(ctx context.Context, url string) (*Client, error) {
 	soapClient := soap.NewClient(soapUrl, true)
 	vimClient, err := vim25.NewClient(ctx, soapClient)
 	if err != nil {
-		return nil, errors.Wrapf(err, "erorr creating a new vim client for soap url: %s", soapUrl)
+		return nil, errors.Wrapf(err, "error creating a new vim client for soap url: %s", soapUrl)
 	}
 
 	vcClient := &govmomi.Client{
@@ -43,7 +43,7 @@ func NewClient(ctx context.Context, url string) (*Client, error) {
 		SessionManager: session.NewManager(vimClient),
 	}
 
-	const idleTime time.Duration = 5 * time.Minute
+	const idleTime = 5 * time.Minute
 	k := session.KeepAliveHandler(vimClient.RoundTripper, idleTime, func(rt soap.RoundTripper) error {
 		_, err := methods.GetCurrentTime(ctx, rt)
 

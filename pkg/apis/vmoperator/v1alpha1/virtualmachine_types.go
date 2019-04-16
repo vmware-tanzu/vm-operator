@@ -65,11 +65,18 @@ type VirtualMachinePort struct {
 
 // VirtualMachineSpec defines the desired state of VirtualMachine
 type VirtualMachineSpec struct {
-	ImageName  string               `json:"imageName"`
-	ClassName  string               `json:"className"`
-	PowerState string               `json:"powerState"`
-	Env        corev1.EnvVar        `json:"env,omitempty"`
-	Ports      []VirtualMachinePort `json:"ports,omitempty"`
+	ImageName  string                  `json:"imageName"`
+	ClassName  string                  `json:"className"`
+	PowerState string                  `json:"powerState"`
+	Env        corev1.EnvVar           `json:"env,omitempty"`
+	Ports      []VirtualMachinePort    `json:"ports,omitempty"`
+	VmMetadata *VirtualMachineMetadata `json:"vmMetadata,omitempty"`
+}
+
+// VirtualMachineMetadata defines the guest customization
+type VirtualMachineMetadata struct {
+	ConfigMapName string `json:"configMapName,omitempty"`
+	Transport     string `json:"transport,omitempty"`
 }
 
 // TODO: Make these annotations

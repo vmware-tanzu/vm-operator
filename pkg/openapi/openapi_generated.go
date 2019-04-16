@@ -42,6 +42,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatusStrategy":   schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatusStrategy(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStrategy":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStrategy(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineList":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineList(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineMetadata":              schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineMetadata(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachinePort(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSchemeFns":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSchemeFns(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineService":               schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineService(ref),
@@ -1282,6 +1283,31 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineList(ref common.Reference
 	}
 }
 
+func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineMetadata(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "VirtualMachineMetadata defines the guest customization",
+				Properties: map[string]spec.Schema{
+					"configMapName": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"transport": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{},
+	}
+}
+
 func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachinePort(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -1636,12 +1662,17 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.Reference
 							},
 						},
 					},
+					"vmMetadata": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineMetadata"),
+						},
+					},
 				},
 				Required: []string{"imageName", "className", "powerState"},
 			},
 		},
 		Dependencies: []string{
-			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort", "k8s.io/api/core/v1.EnvVar"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineMetadata", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort", "k8s.io/api/core/v1.EnvVar"},
 	}
 }
 

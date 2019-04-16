@@ -149,7 +149,7 @@ func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, v
 	objectMeta.SetAnnotations(annotations)
 }
 
-func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass *v1alpha1.VirtualMachineClass) (*v1alpha1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass *v1alpha1.VirtualMachineClass, metadata map[string]string) (*v1alpha1.VirtualMachine, error) {
 	vmName := vm.NamespacedName()
 
 	glog.Infof("Creating VirtualMachine %v", vmName)
@@ -165,7 +165,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 	if vm.Spec.ImageName == "" {
 		resVm, err = ses.CreateVirtualMachine(ctx, vm, vmClass)
 	} else {
-		resVm, err = ses.CloneVirtualMachine(ctx, vm, vmClass)
+		resVm, err = ses.CloneVirtualMachine(ctx, vm, vmClass, metadata)
 	}
 
 	if err != nil {

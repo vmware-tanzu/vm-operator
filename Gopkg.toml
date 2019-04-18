@@ -99,6 +99,11 @@ required = [
   source = "https://github.com/fsnotify/fsnotify/archive/v1.4.7.tar.gz"
   name = "gopkg.in/fsnotify.v1"
 
+# Github mirror of goautoneg, original repo uses Mercurial which build system doesn't have
+[[override]]
+  name = "bitbucket.org/ww/goautoneg"
+  source = "github.com/rancher/goautoneg"
+
 [prune]
   unused-packages = true
   non-go = true

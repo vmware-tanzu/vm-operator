@@ -32,7 +32,7 @@ func runHealthServer() {
 		_, _ = io.WriteString(w, "ok")
 	})
 
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(":49200", nil); err != nil {
 		glog.Fatalf("ListenAndServe error: %v", err)
 	}
 }

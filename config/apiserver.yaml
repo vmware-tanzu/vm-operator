@@ -70,7 +70,7 @@ spec:
         livenessProbe:
           httpGet:
             path: /healthz
-            port: 8080
+            port: 49200
           initialDelaySeconds: 15
           periodSeconds: 3
         resources:
@@ -89,7 +89,7 @@ spec:
         livenessProbe:
           httpGet:
             path: /healthz
-            port: 8081
+            port: 49201
           initialDelaySeconds: 15
           periodSeconds: 3
         resources:

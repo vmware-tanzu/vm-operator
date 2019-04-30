@@ -1023,7 +1023,7 @@ func autoConvert_v1alpha1_VirtualMachineStatus_To_vmoperator_VirtualMachineStatu
 	out.Conditions = *(*[]vmoperator.VirtualMachineCondition)(unsafe.Pointer(&in.Conditions))
 	out.Host = in.Host
 	out.PowerState = in.PowerState
-	out.Phase = in.Phase
+	out.Phase = vmoperator.VMStatusPhase(in.Phase)
 	out.VmIp = in.VmIp
 	return nil
 }
@@ -1037,7 +1037,7 @@ func autoConvert_vmoperator_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatu
 	out.Conditions = *(*[]VirtualMachineCondition)(unsafe.Pointer(&in.Conditions))
 	out.Host = in.Host
 	out.PowerState = in.PowerState
-	out.Phase = in.Phase
+	out.Phase = VMStatusPhase(in.Phase)
 	out.VmIp = in.VmIp
 	return nil
 }

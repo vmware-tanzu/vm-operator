@@ -112,6 +112,9 @@ func Resource(resource string) schema.GroupResource {
 	return SchemeGroupVersion.WithResource(resource).GroupResource()
 }
 
+type Protocol string
+type VMStatusPhase string
+
 // +genclient
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -138,7 +141,7 @@ type VirtualMachineStatus struct {
 	Conditions []VirtualMachineCondition
 	Host       string
 	PowerState string
-	Phase      string
+	Phase      VMStatusPhase
 	VmIp       string
 }
 

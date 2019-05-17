@@ -7,10 +7,12 @@ package vsphere
 import (
 	"context"
 	"net"
-	"net/url"
 	"time"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
+
+	"net/url"
+
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/session"
@@ -51,7 +53,7 @@ func NewClient(ctx context.Context, config *VSphereVmProviderConfig, credentials
 		if _, err := methods.GetCurrentTime(ctx, rt); err != nil && isNotAuthenticatedError(err) {
 			if err = vcClient.Login(ctx, userInfo); err != nil {
 				if isInvalidLogin(err) {
-					glog.Errorf("Invalid login in keep alive handler for url: %v", soapUrl)
+					klog.Errorf("Invalid login in keep alive handler for url: %v", soapUrl)
 					return err
 				}
 			}
@@ -95,6 +97,6 @@ func (c *Client) VimClient() *vim25.Client {
 func (c *Client) Logout(ctx context.Context) {
 	if err := c.client.Logout(ctx); err != nil {
 		url := c.client.URL()
-		glog.Errorf("Error logging out url %s@%s: %v", url.User.Username(), url.Host, err)
+		klog.Errorf("Error logging out url %s@%s: %v", url.User.Username(), url.Host, err)
 	}
 }

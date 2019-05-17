@@ -7,29 +7,28 @@ package vmprovider
 import (
 	"sync"
 
-	"github.com/golang/glog"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/iface"
+	"k8s.io/klog"
 )
 
 var (
 	mutex                sync.Mutex
-	registeredVmProvider iface.VirtualMachineProviderInterface
+	registeredVmProvider VirtualMachineProviderInterface
 )
 
 // RegisterVmProvider registers the provider.
-func RegisterVmProvider(vmProvider iface.VirtualMachineProviderInterface) {
+func RegisterVmProvider(vmProvider VirtualMachineProviderInterface) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	if registeredVmProvider != nil {
-		glog.Fatalf("VM provider %q is already registered", registeredVmProvider.Name())
+		klog.Fatalf("VM provider %q is already registered", registeredVmProvider.Name())
 	}
 
 	registeredVmProvider = vmProvider
 }
 
 // GetVmProvider returns the registered provider or nil.
-func GetVmProvider() iface.VirtualMachineProviderInterface {
+func GetVmProvider() VirtualMachineProviderInterface {
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -37,12 +36,12 @@ func GetVmProvider() iface.VirtualMachineProviderInterface {
 }
 
 // GetVmProviderOrDie returns the registered provider or dies if not registered.
-func GetVmProviderOrDie() iface.VirtualMachineProviderInterface {
+func GetVmProviderOrDie() VirtualMachineProviderInterface {
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	if registeredVmProvider == nil {
-		glog.Fatal("No VM provider registered")
+		klog.Fatal("No VM provider registered")
 	}
 
 	return registeredVmProvider

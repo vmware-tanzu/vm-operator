@@ -8,9 +8,10 @@ import (
 	"context"
 	"fmt"
 
+	"k8s.io/klog"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
 	"github.com/vmware/govmomi/find"
@@ -41,7 +42,7 @@ func NewVMFromObject(objVm *object.VirtualMachine) (*VirtualMachine, error) {
 
 func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, pool *object.ResourcePool, vmSpec *types.VirtualMachineConfigSpec) error {
 	if vm.virtualMachine != nil {
-		glog.Errorf("Failed to create VM %q because the VM object is already set", vm.Name)
+		klog.Errorf("Failed to create VM %q because the VM object is already set", vm.Name)
 		return fmt.Errorf("failed to create VM %q because the VM object is already set", vm.Name)
 	}
 
@@ -114,7 +115,7 @@ func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
 	}
 
 	if o.Guest == nil {
-		glog.Infof("VM %q Guest info is empty", vm.Name)
+		klog.Infof("VM %q Guest info is empty", vm.Name)
 		return "", &find.NotFoundError{}
 	}
 
@@ -200,11 +201,11 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState s
 
 	ps, err := vm.virtualMachine.PowerState(ctx)
 	if err != nil {
-		glog.Errorf("Failed to get VM %q power state: %v", vm.Name, err)
+		klog.Errorf("Failed to get VM %q power state: %v", vm.Name, err)
 		return err
 	}
 
-	glog.Infof("VM %q current power state: %s, desired: %s", vm.Name, ps, desiredPowerState)
+	klog.Infof("VM %q current power state: %s, desired: %s", vm.Name, ps, desiredPowerState)
 
 	if string(ps) == desiredPowerState {
 		return nil
@@ -223,13 +224,13 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState s
 	}
 
 	if err != nil {
-		glog.Errorf("Failed to change VM %q to power state %s: %v", vm.Name, desiredPowerState, err)
+		klog.Errorf("Failed to change VM %q to power state %s: %v", vm.Name, desiredPowerState, err)
 		return err
 	}
 
 	_, err = task.WaitForResult(ctx, nil)
 	if err != nil {
-		glog.Errorf("VM %q change power state task failed: %v", vm.Name, err)
+		klog.Errorf("VM %q change power state task failed: %v", vm.Name, err)
 		return err
 	}
 

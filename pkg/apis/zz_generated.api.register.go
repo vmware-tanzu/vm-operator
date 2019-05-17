@@ -22,6 +22,14 @@ import (
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"k8s.io/apimachinery/pkg/runtime"
+)
+
+var (
+	localSchemeBuilder = runtime.SchemeBuilder{
+		vmoperatorv1alpha1.AddToScheme,
+	}
+	AddToScheme = localSchemeBuilder.AddToScheme
 )
 
 // GetAllApiBuilders returns all known APIGroupBuilders

@@ -13,58 +13,58 @@ import (
 
 var _ = Describe("List Utilities", func() {
 
-	Context("filter", func() {
+	Context("remove string", func() {
 		It("a nil list", func() {
 			var list []string = nil
-			Expect(lib.Filter(list, "")).Should(BeEmpty())
+			Expect(lib.RemoveString(list, "")).Should(BeEmpty())
 		})
 
 		It("an empty list", func() {
 			list := make([]string, 0)
-			Expect(lib.Filter(list, "")).Should(BeEmpty())
+			Expect(lib.RemoveString(list, "")).Should(BeEmpty())
 		})
 
 		It("one element list contains match", func() {
 			list := []string{"one"}
-			Expect(lib.Filter(list, "one")).Should(BeEmpty())
+			Expect(lib.RemoveString(list, "one")).Should(BeEmpty())
 		})
 
 		It("multiple element list contains match", func() {
 			list := []string{"one", "two"}
-			Expect(lib.Filter(list, "one")).Should(ConsistOf("two"))
+			Expect(lib.RemoveString(list, "one")).Should(ConsistOf("two"))
 		})
 
 		It("multiple element list does not contain match", func() {
 			list := []string{"one", "two"}
-			Expect(lib.Filter(list, "three")).Should(ConsistOf("one", "two"))
+			Expect(lib.RemoveString(list, "three")).Should(ConsistOf("one", "two"))
 		})
 	})
 
-	Context("contains", func() {
+	Context("contains string", func() {
 		It("a nil list", func() {
 			var list []string = nil
-			Expect(lib.Contains(list, "")).To(BeFalse())
+			Expect(lib.ContainsString(list, "")).To(BeFalse())
 		})
 
 		It("an empty list", func() {
 			list := make([]string, 0)
-			Expect(lib.Contains(list, "")).To(BeFalse())
+			Expect(lib.ContainsString(list, "")).To(BeFalse())
 		})
 
 		It("list contains match", func() {
 			list := []string{"one", "two"}
-			Expect(lib.Contains(list, "one")).Should(BeTrue())
+			Expect(lib.ContainsString(list, "one")).Should(BeTrue())
 		})
 
 		It("list does not contain match", func() {
 			list := []string{"one", "two"}
-			Expect(lib.Contains(list, "three")).Should(BeFalse())
+			Expect(lib.ContainsString(list, "three")).Should(BeFalse())
 		})
 
 		// Test table example:
 		DescribeTable("contains (table)",
 			func(list []string, strToSearch string, expected bool) {
-				Expect(lib.Contains(list, strToSearch)).To(Equal(expected))
+				Expect(lib.ContainsString(list, strToSearch)).To(Equal(expected))
 			},
 			Entry("a nil list", nil, "", false),
 			Entry("an empty list", make([]string, 0), "", false),

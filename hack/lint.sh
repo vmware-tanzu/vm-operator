@@ -4,4 +4,5 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-golangci-lint run --fast
+# Default 1m0s sometimes timeouts in Jenkins.
+golangci-lint run --fast --deadline 2m0s

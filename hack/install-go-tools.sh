@@ -11,10 +11,8 @@ goInstall() {
 }
 
 goInstall "dep"             "github.com/golang/dep/cmd/dep"
-goInstall "golint"          "github.com/golang/lint/golint"
 goInstall "ginkgo"          "github.com/onsi/ginkgo/ginkgo"
 goInstall "go-junit-report" "github.com/jstemmer/go-junit-report"
-goInstall "go2xunit"        "github.com/tebeka/go2xunit"
 goInstall "golangci-lint"   "github.com/golangci/golangci-lint/cmd/golangci-lint"
 goInstall "vcsim"           "github.com/vmware/govmomi/vcsim"
 

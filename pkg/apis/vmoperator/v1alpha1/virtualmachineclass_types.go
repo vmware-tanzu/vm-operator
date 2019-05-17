@@ -5,16 +5,8 @@
 package v1alpha1
 
 import (
-	"context"
-
-	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/runtime"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/validation/field"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 )
 
 // +genclient
@@ -61,18 +53,8 @@ type VirtualMachineClassSpec struct {
 type VirtualMachineClassStatus struct {
 }
 
-// Validate checks that an instance of VirtualMachineClass is well formed
-func (VirtualMachineClassStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
-	o := obj.(*vmoperator.VirtualMachineClass)
-	glog.V(4).Infof("Validating fields for VirtualMachineClass %s", o.Name)
-	errors := field.ErrorList{}
-	// perform validation here and add to errors using field.Invalid
-	return errors
-}
-
 // DefaultingFunction sets default VirtualMachineClass field values
 func (VirtualMachineClassSchemeFns) DefaultingFunction(o interface{}) {
-	obj := o.(*VirtualMachineClass)
+	//obj := o.(*VirtualMachineClass)
 	// set default field values here
-	glog.V(4).Infof("Defaulting fields for VirtualMachineClass %s", obj.Name)
 }

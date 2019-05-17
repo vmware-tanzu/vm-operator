@@ -114,26 +114,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineClassStatusStrategy)(nil), (*vmoperator.VirtualMachineClassStatusStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha1_VirtualMachineClassStatusStrategy_To_vmoperator_VirtualMachineClassStatusStrategy(a.(*VirtualMachineClassStatusStrategy), b.(*vmoperator.VirtualMachineClassStatusStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineClassStatusStrategy)(nil), (*VirtualMachineClassStatusStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_vmoperator_VirtualMachineClassStatusStrategy_To_v1alpha1_VirtualMachineClassStatusStrategy(a.(*vmoperator.VirtualMachineClassStatusStrategy), b.(*VirtualMachineClassStatusStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineClassStrategy)(nil), (*vmoperator.VirtualMachineClassStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha1_VirtualMachineClassStrategy_To_vmoperator_VirtualMachineClassStrategy(a.(*VirtualMachineClassStrategy), b.(*vmoperator.VirtualMachineClassStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineClassStrategy)(nil), (*VirtualMachineClassStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_vmoperator_VirtualMachineClassStrategy_To_v1alpha1_VirtualMachineClassStrategy(a.(*vmoperator.VirtualMachineClassStrategy), b.(*VirtualMachineClassStrategy), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineCondition)(nil), (*vmoperator.VirtualMachineCondition)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha1_VirtualMachineCondition_To_vmoperator_VirtualMachineCondition(a.(*VirtualMachineCondition), b.(*vmoperator.VirtualMachineCondition), scope)
 	}); err != nil {
@@ -181,26 +161,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineImageStatus)(nil), (*VirtualMachineImageStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_vmoperator_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageStatus(a.(*vmoperator.VirtualMachineImageStatus), b.(*VirtualMachineImageStatus), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineImageStatusStrategy)(nil), (*vmoperator.VirtualMachineImageStatusStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha1_VirtualMachineImageStatusStrategy_To_vmoperator_VirtualMachineImageStatusStrategy(a.(*VirtualMachineImageStatusStrategy), b.(*vmoperator.VirtualMachineImageStatusStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineImageStatusStrategy)(nil), (*VirtualMachineImageStatusStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_vmoperator_VirtualMachineImageStatusStrategy_To_v1alpha1_VirtualMachineImageStatusStrategy(a.(*vmoperator.VirtualMachineImageStatusStrategy), b.(*VirtualMachineImageStatusStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineImageStrategy)(nil), (*vmoperator.VirtualMachineImageStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha1_VirtualMachineImageStrategy_To_vmoperator_VirtualMachineImageStrategy(a.(*VirtualMachineImageStrategy), b.(*vmoperator.VirtualMachineImageStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineImageStrategy)(nil), (*VirtualMachineImageStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_vmoperator_VirtualMachineImageStrategy_To_v1alpha1_VirtualMachineImageStrategy(a.(*vmoperator.VirtualMachineImageStrategy), b.(*VirtualMachineImageStrategy), scope)
 	}); err != nil {
 		return err
 	}
@@ -284,26 +244,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineServiceStatusStrategy)(nil), (*vmoperator.VirtualMachineServiceStatusStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha1_VirtualMachineServiceStatusStrategy_To_vmoperator_VirtualMachineServiceStatusStrategy(a.(*VirtualMachineServiceStatusStrategy), b.(*vmoperator.VirtualMachineServiceStatusStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineServiceStatusStrategy)(nil), (*VirtualMachineServiceStatusStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_vmoperator_VirtualMachineServiceStatusStrategy_To_v1alpha1_VirtualMachineServiceStatusStrategy(a.(*vmoperator.VirtualMachineServiceStatusStrategy), b.(*VirtualMachineServiceStatusStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineServiceStrategy)(nil), (*vmoperator.VirtualMachineServiceStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha1_VirtualMachineServiceStrategy_To_vmoperator_VirtualMachineServiceStrategy(a.(*VirtualMachineServiceStrategy), b.(*vmoperator.VirtualMachineServiceStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineServiceStrategy)(nil), (*VirtualMachineServiceStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_vmoperator_VirtualMachineServiceStrategy_To_v1alpha1_VirtualMachineServiceStrategy(a.(*vmoperator.VirtualMachineServiceStrategy), b.(*VirtualMachineServiceStrategy), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineSpec)(nil), (*vmoperator.VirtualMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(a.(*VirtualMachineSpec), b.(*vmoperator.VirtualMachineSpec), scope)
 	}); err != nil {
@@ -321,26 +261,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineStatus)(nil), (*VirtualMachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_vmoperator_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(a.(*vmoperator.VirtualMachineStatus), b.(*VirtualMachineStatus), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineStatusStrategy)(nil), (*vmoperator.VirtualMachineStatusStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha1_VirtualMachineStatusStrategy_To_vmoperator_VirtualMachineStatusStrategy(a.(*VirtualMachineStatusStrategy), b.(*vmoperator.VirtualMachineStatusStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineStatusStrategy)(nil), (*VirtualMachineStatusStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_vmoperator_VirtualMachineStatusStrategy_To_v1alpha1_VirtualMachineStatusStrategy(a.(*vmoperator.VirtualMachineStatusStrategy), b.(*VirtualMachineStatusStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineStrategy)(nil), (*vmoperator.VirtualMachineStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha1_VirtualMachineStrategy_To_vmoperator_VirtualMachineStrategy(a.(*VirtualMachineStrategy), b.(*vmoperator.VirtualMachineStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineStrategy)(nil), (*VirtualMachineStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_vmoperator_VirtualMachineStrategy_To_v1alpha1_VirtualMachineStrategy(a.(*vmoperator.VirtualMachineStrategy), b.(*VirtualMachineStrategy), scope)
 	}); err != nil {
 		return err
 	}
@@ -581,46 +501,6 @@ func Convert_vmoperator_VirtualMachineClassStatus_To_v1alpha1_VirtualMachineClas
 	return autoConvert_vmoperator_VirtualMachineClassStatus_To_v1alpha1_VirtualMachineClassStatus(in, out, s)
 }
 
-func autoConvert_v1alpha1_VirtualMachineClassStatusStrategy_To_vmoperator_VirtualMachineClassStatusStrategy(in *VirtualMachineClassStatusStrategy, out *vmoperator.VirtualMachineClassStatusStrategy, s conversion.Scope) error {
-	out.DefaultStatusStorageStrategy = in.DefaultStatusStorageStrategy
-	return nil
-}
-
-// Convert_v1alpha1_VirtualMachineClassStatusStrategy_To_vmoperator_VirtualMachineClassStatusStrategy is an autogenerated conversion function.
-func Convert_v1alpha1_VirtualMachineClassStatusStrategy_To_vmoperator_VirtualMachineClassStatusStrategy(in *VirtualMachineClassStatusStrategy, out *vmoperator.VirtualMachineClassStatusStrategy, s conversion.Scope) error {
-	return autoConvert_v1alpha1_VirtualMachineClassStatusStrategy_To_vmoperator_VirtualMachineClassStatusStrategy(in, out, s)
-}
-
-func autoConvert_vmoperator_VirtualMachineClassStatusStrategy_To_v1alpha1_VirtualMachineClassStatusStrategy(in *vmoperator.VirtualMachineClassStatusStrategy, out *VirtualMachineClassStatusStrategy, s conversion.Scope) error {
-	out.DefaultStatusStorageStrategy = in.DefaultStatusStorageStrategy
-	return nil
-}
-
-// Convert_vmoperator_VirtualMachineClassStatusStrategy_To_v1alpha1_VirtualMachineClassStatusStrategy is an autogenerated conversion function.
-func Convert_vmoperator_VirtualMachineClassStatusStrategy_To_v1alpha1_VirtualMachineClassStatusStrategy(in *vmoperator.VirtualMachineClassStatusStrategy, out *VirtualMachineClassStatusStrategy, s conversion.Scope) error {
-	return autoConvert_vmoperator_VirtualMachineClassStatusStrategy_To_v1alpha1_VirtualMachineClassStatusStrategy(in, out, s)
-}
-
-func autoConvert_v1alpha1_VirtualMachineClassStrategy_To_vmoperator_VirtualMachineClassStrategy(in *VirtualMachineClassStrategy, out *vmoperator.VirtualMachineClassStrategy, s conversion.Scope) error {
-	out.DefaultStorageStrategy = in.DefaultStorageStrategy
-	return nil
-}
-
-// Convert_v1alpha1_VirtualMachineClassStrategy_To_vmoperator_VirtualMachineClassStrategy is an autogenerated conversion function.
-func Convert_v1alpha1_VirtualMachineClassStrategy_To_vmoperator_VirtualMachineClassStrategy(in *VirtualMachineClassStrategy, out *vmoperator.VirtualMachineClassStrategy, s conversion.Scope) error {
-	return autoConvert_v1alpha1_VirtualMachineClassStrategy_To_vmoperator_VirtualMachineClassStrategy(in, out, s)
-}
-
-func autoConvert_vmoperator_VirtualMachineClassStrategy_To_v1alpha1_VirtualMachineClassStrategy(in *vmoperator.VirtualMachineClassStrategy, out *VirtualMachineClassStrategy, s conversion.Scope) error {
-	out.DefaultStorageStrategy = in.DefaultStorageStrategy
-	return nil
-}
-
-// Convert_vmoperator_VirtualMachineClassStrategy_To_v1alpha1_VirtualMachineClassStrategy is an autogenerated conversion function.
-func Convert_vmoperator_VirtualMachineClassStrategy_To_v1alpha1_VirtualMachineClassStrategy(in *vmoperator.VirtualMachineClassStrategy, out *VirtualMachineClassStrategy, s conversion.Scope) error {
-	return autoConvert_vmoperator_VirtualMachineClassStrategy_To_v1alpha1_VirtualMachineClassStrategy(in, out, s)
-}
-
 func autoConvert_v1alpha1_VirtualMachineCondition_To_vmoperator_VirtualMachineCondition(in *VirtualMachineCondition, out *vmoperator.VirtualMachineCondition, s conversion.Scope) error {
 	out.LastProbeTime = in.LastProbeTime
 	out.LastTransitionTime = in.LastTransitionTime
@@ -745,46 +625,6 @@ func autoConvert_vmoperator_VirtualMachineImageStatus_To_v1alpha1_VirtualMachine
 // Convert_vmoperator_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageStatus is an autogenerated conversion function.
 func Convert_vmoperator_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageStatus(in *vmoperator.VirtualMachineImageStatus, out *VirtualMachineImageStatus, s conversion.Scope) error {
 	return autoConvert_vmoperator_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageStatus(in, out, s)
-}
-
-func autoConvert_v1alpha1_VirtualMachineImageStatusStrategy_To_vmoperator_VirtualMachineImageStatusStrategy(in *VirtualMachineImageStatusStrategy, out *vmoperator.VirtualMachineImageStatusStrategy, s conversion.Scope) error {
-	out.DefaultStatusStorageStrategy = in.DefaultStatusStorageStrategy
-	return nil
-}
-
-// Convert_v1alpha1_VirtualMachineImageStatusStrategy_To_vmoperator_VirtualMachineImageStatusStrategy is an autogenerated conversion function.
-func Convert_v1alpha1_VirtualMachineImageStatusStrategy_To_vmoperator_VirtualMachineImageStatusStrategy(in *VirtualMachineImageStatusStrategy, out *vmoperator.VirtualMachineImageStatusStrategy, s conversion.Scope) error {
-	return autoConvert_v1alpha1_VirtualMachineImageStatusStrategy_To_vmoperator_VirtualMachineImageStatusStrategy(in, out, s)
-}
-
-func autoConvert_vmoperator_VirtualMachineImageStatusStrategy_To_v1alpha1_VirtualMachineImageStatusStrategy(in *vmoperator.VirtualMachineImageStatusStrategy, out *VirtualMachineImageStatusStrategy, s conversion.Scope) error {
-	out.DefaultStatusStorageStrategy = in.DefaultStatusStorageStrategy
-	return nil
-}
-
-// Convert_vmoperator_VirtualMachineImageStatusStrategy_To_v1alpha1_VirtualMachineImageStatusStrategy is an autogenerated conversion function.
-func Convert_vmoperator_VirtualMachineImageStatusStrategy_To_v1alpha1_VirtualMachineImageStatusStrategy(in *vmoperator.VirtualMachineImageStatusStrategy, out *VirtualMachineImageStatusStrategy, s conversion.Scope) error {
-	return autoConvert_vmoperator_VirtualMachineImageStatusStrategy_To_v1alpha1_VirtualMachineImageStatusStrategy(in, out, s)
-}
-
-func autoConvert_v1alpha1_VirtualMachineImageStrategy_To_vmoperator_VirtualMachineImageStrategy(in *VirtualMachineImageStrategy, out *vmoperator.VirtualMachineImageStrategy, s conversion.Scope) error {
-	out.DefaultStorageStrategy = in.DefaultStorageStrategy
-	return nil
-}
-
-// Convert_v1alpha1_VirtualMachineImageStrategy_To_vmoperator_VirtualMachineImageStrategy is an autogenerated conversion function.
-func Convert_v1alpha1_VirtualMachineImageStrategy_To_vmoperator_VirtualMachineImageStrategy(in *VirtualMachineImageStrategy, out *vmoperator.VirtualMachineImageStrategy, s conversion.Scope) error {
-	return autoConvert_v1alpha1_VirtualMachineImageStrategy_To_vmoperator_VirtualMachineImageStrategy(in, out, s)
-}
-
-func autoConvert_vmoperator_VirtualMachineImageStrategy_To_v1alpha1_VirtualMachineImageStrategy(in *vmoperator.VirtualMachineImageStrategy, out *VirtualMachineImageStrategy, s conversion.Scope) error {
-	out.DefaultStorageStrategy = in.DefaultStorageStrategy
-	return nil
-}
-
-// Convert_vmoperator_VirtualMachineImageStrategy_To_v1alpha1_VirtualMachineImageStrategy is an autogenerated conversion function.
-func Convert_vmoperator_VirtualMachineImageStrategy_To_v1alpha1_VirtualMachineImageStrategy(in *vmoperator.VirtualMachineImageStrategy, out *VirtualMachineImageStrategy, s conversion.Scope) error {
-	return autoConvert_vmoperator_VirtualMachineImageStrategy_To_v1alpha1_VirtualMachineImageStrategy(in, out, s)
 }
 
 func autoConvert_v1alpha1_VirtualMachineList_To_vmoperator_VirtualMachineList(in *VirtualMachineList, out *vmoperator.VirtualMachineList, s conversion.Scope) error {
@@ -983,46 +823,6 @@ func Convert_vmoperator_VirtualMachineServiceStatus_To_v1alpha1_VirtualMachineSe
 	return autoConvert_vmoperator_VirtualMachineServiceStatus_To_v1alpha1_VirtualMachineServiceStatus(in, out, s)
 }
 
-func autoConvert_v1alpha1_VirtualMachineServiceStatusStrategy_To_vmoperator_VirtualMachineServiceStatusStrategy(in *VirtualMachineServiceStatusStrategy, out *vmoperator.VirtualMachineServiceStatusStrategy, s conversion.Scope) error {
-	out.DefaultStatusStorageStrategy = in.DefaultStatusStorageStrategy
-	return nil
-}
-
-// Convert_v1alpha1_VirtualMachineServiceStatusStrategy_To_vmoperator_VirtualMachineServiceStatusStrategy is an autogenerated conversion function.
-func Convert_v1alpha1_VirtualMachineServiceStatusStrategy_To_vmoperator_VirtualMachineServiceStatusStrategy(in *VirtualMachineServiceStatusStrategy, out *vmoperator.VirtualMachineServiceStatusStrategy, s conversion.Scope) error {
-	return autoConvert_v1alpha1_VirtualMachineServiceStatusStrategy_To_vmoperator_VirtualMachineServiceStatusStrategy(in, out, s)
-}
-
-func autoConvert_vmoperator_VirtualMachineServiceStatusStrategy_To_v1alpha1_VirtualMachineServiceStatusStrategy(in *vmoperator.VirtualMachineServiceStatusStrategy, out *VirtualMachineServiceStatusStrategy, s conversion.Scope) error {
-	out.DefaultStatusStorageStrategy = in.DefaultStatusStorageStrategy
-	return nil
-}
-
-// Convert_vmoperator_VirtualMachineServiceStatusStrategy_To_v1alpha1_VirtualMachineServiceStatusStrategy is an autogenerated conversion function.
-func Convert_vmoperator_VirtualMachineServiceStatusStrategy_To_v1alpha1_VirtualMachineServiceStatusStrategy(in *vmoperator.VirtualMachineServiceStatusStrategy, out *VirtualMachineServiceStatusStrategy, s conversion.Scope) error {
-	return autoConvert_vmoperator_VirtualMachineServiceStatusStrategy_To_v1alpha1_VirtualMachineServiceStatusStrategy(in, out, s)
-}
-
-func autoConvert_v1alpha1_VirtualMachineServiceStrategy_To_vmoperator_VirtualMachineServiceStrategy(in *VirtualMachineServiceStrategy, out *vmoperator.VirtualMachineServiceStrategy, s conversion.Scope) error {
-	out.DefaultStorageStrategy = in.DefaultStorageStrategy
-	return nil
-}
-
-// Convert_v1alpha1_VirtualMachineServiceStrategy_To_vmoperator_VirtualMachineServiceStrategy is an autogenerated conversion function.
-func Convert_v1alpha1_VirtualMachineServiceStrategy_To_vmoperator_VirtualMachineServiceStrategy(in *VirtualMachineServiceStrategy, out *vmoperator.VirtualMachineServiceStrategy, s conversion.Scope) error {
-	return autoConvert_v1alpha1_VirtualMachineServiceStrategy_To_vmoperator_VirtualMachineServiceStrategy(in, out, s)
-}
-
-func autoConvert_vmoperator_VirtualMachineServiceStrategy_To_v1alpha1_VirtualMachineServiceStrategy(in *vmoperator.VirtualMachineServiceStrategy, out *VirtualMachineServiceStrategy, s conversion.Scope) error {
-	out.DefaultStorageStrategy = in.DefaultStorageStrategy
-	return nil
-}
-
-// Convert_vmoperator_VirtualMachineServiceStrategy_To_v1alpha1_VirtualMachineServiceStrategy is an autogenerated conversion function.
-func Convert_vmoperator_VirtualMachineServiceStrategy_To_v1alpha1_VirtualMachineServiceStrategy(in *vmoperator.VirtualMachineServiceStrategy, out *VirtualMachineServiceStrategy, s conversion.Scope) error {
-	return autoConvert_vmoperator_VirtualMachineServiceStrategy_To_v1alpha1_VirtualMachineServiceStrategy(in, out, s)
-}
-
 func autoConvert_v1alpha1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(in *VirtualMachineSpec, out *vmoperator.VirtualMachineSpec, s conversion.Scope) error {
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
@@ -1079,44 +879,4 @@ func autoConvert_vmoperator_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatu
 // Convert_vmoperator_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus is an autogenerated conversion function.
 func Convert_vmoperator_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(in *vmoperator.VirtualMachineStatus, out *VirtualMachineStatus, s conversion.Scope) error {
 	return autoConvert_vmoperator_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(in, out, s)
-}
-
-func autoConvert_v1alpha1_VirtualMachineStatusStrategy_To_vmoperator_VirtualMachineStatusStrategy(in *VirtualMachineStatusStrategy, out *vmoperator.VirtualMachineStatusStrategy, s conversion.Scope) error {
-	out.DefaultStatusStorageStrategy = in.DefaultStatusStorageStrategy
-	return nil
-}
-
-// Convert_v1alpha1_VirtualMachineStatusStrategy_To_vmoperator_VirtualMachineStatusStrategy is an autogenerated conversion function.
-func Convert_v1alpha1_VirtualMachineStatusStrategy_To_vmoperator_VirtualMachineStatusStrategy(in *VirtualMachineStatusStrategy, out *vmoperator.VirtualMachineStatusStrategy, s conversion.Scope) error {
-	return autoConvert_v1alpha1_VirtualMachineStatusStrategy_To_vmoperator_VirtualMachineStatusStrategy(in, out, s)
-}
-
-func autoConvert_vmoperator_VirtualMachineStatusStrategy_To_v1alpha1_VirtualMachineStatusStrategy(in *vmoperator.VirtualMachineStatusStrategy, out *VirtualMachineStatusStrategy, s conversion.Scope) error {
-	out.DefaultStatusStorageStrategy = in.DefaultStatusStorageStrategy
-	return nil
-}
-
-// Convert_vmoperator_VirtualMachineStatusStrategy_To_v1alpha1_VirtualMachineStatusStrategy is an autogenerated conversion function.
-func Convert_vmoperator_VirtualMachineStatusStrategy_To_v1alpha1_VirtualMachineStatusStrategy(in *vmoperator.VirtualMachineStatusStrategy, out *VirtualMachineStatusStrategy, s conversion.Scope) error {
-	return autoConvert_vmoperator_VirtualMachineStatusStrategy_To_v1alpha1_VirtualMachineStatusStrategy(in, out, s)
-}
-
-func autoConvert_v1alpha1_VirtualMachineStrategy_To_vmoperator_VirtualMachineStrategy(in *VirtualMachineStrategy, out *vmoperator.VirtualMachineStrategy, s conversion.Scope) error {
-	out.DefaultStorageStrategy = in.DefaultStorageStrategy
-	return nil
-}
-
-// Convert_v1alpha1_VirtualMachineStrategy_To_vmoperator_VirtualMachineStrategy is an autogenerated conversion function.
-func Convert_v1alpha1_VirtualMachineStrategy_To_vmoperator_VirtualMachineStrategy(in *VirtualMachineStrategy, out *vmoperator.VirtualMachineStrategy, s conversion.Scope) error {
-	return autoConvert_v1alpha1_VirtualMachineStrategy_To_vmoperator_VirtualMachineStrategy(in, out, s)
-}
-
-func autoConvert_vmoperator_VirtualMachineStrategy_To_v1alpha1_VirtualMachineStrategy(in *vmoperator.VirtualMachineStrategy, out *VirtualMachineStrategy, s conversion.Scope) error {
-	out.DefaultStorageStrategy = in.DefaultStorageStrategy
-	return nil
-}
-
-// Convert_vmoperator_VirtualMachineStrategy_To_v1alpha1_VirtualMachineStrategy is an autogenerated conversion function.
-func Convert_vmoperator_VirtualMachineStrategy_To_v1alpha1_VirtualMachineStrategy(in *vmoperator.VirtualMachineStrategy, out *VirtualMachineStrategy, s conversion.Scope) error {
-	return autoConvert_vmoperator_VirtualMachineStrategy_To_v1alpha1_VirtualMachineStrategy(in, out, s)
 }

@@ -4,7 +4,7 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-COMMIT=96cd45ed788f4d861c636ced7a047f7ef3379b26
+COMMIT=a1abecd3833a0188bab06e41aeca0559115b3007
 INSTALL=1
 DEFAULT_K8S_VERSION="1.12"
 
@@ -21,10 +21,13 @@ Usage: $(basename $0) [-I] [-k k8sVersion]
 }
 
 checkout() {
-    # go get -d github.com/kubernetes-incubator/apiserver-builder-alpha/... complains about
-    # missing packages.
-    [[ -d ".git" ]] ||
-        git clone https://github.com/kubernetes-incubator/apiserver-builder-alpha.git .
+    url=git@gitlab.eng.vmware.com:core-build/mirrors_github_apiserver-builder-alpha.git
+    if [[ ! -d ".git" ]] ; then
+        git clone $url .
+    else
+        git remote set-url origin $url
+        git fetch origin
+    fi
     git checkout $COMMIT
 }
 

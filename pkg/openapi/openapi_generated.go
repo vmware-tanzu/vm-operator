@@ -20,58 +20,49 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.RestProvider":                        schema_pkg_apis_vmoperator_v1alpha1_RestProvider(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachine":                      schema_pkg_apis_vmoperator_v1alpha1_VirtualMachine(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClass":                 schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClass(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassHardware":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassHardware(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassList":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassList(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassPolicies":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassPolicies(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResourceSpec":     schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassResourceSpec(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResources":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassResources(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSchemeFns":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassSchemeFns(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSpec":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassSpec(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStatus":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStatus(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStatusStrategy":   schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStatusStrategy(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStrategy":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStrategy(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineCondition":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineCondition(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImage":                 schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImage(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageList":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageList(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSchemeFns":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageSchemeFns(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSpec":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageSpec(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatus":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatus(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatusStrategy":   schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatusStrategy(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStrategy":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStrategy(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineList":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineList(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineMetadata":              schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineMetadata(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachinePort(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSchemeFns":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSchemeFns(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineService":               schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineService(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceList":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceList(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServicePort":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServicePort(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSchemeFns":      schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSchemeFns(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSpec":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSpec(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatus":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatus(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatusStrategy": schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatusStrategy(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStrategy":       schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStrategy(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSpec":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatus":                schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatusStrategy":        schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatusStrategy(ref),
-		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStrategy":              schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStrategy(ref),
-		"k8s.io/api/admissionregistration/v1alpha1.Initializer":                                                         schema_k8sio_api_admissionregistration_v1alpha1_Initializer(ref),
-		"k8s.io/api/admissionregistration/v1alpha1.InitializerConfiguration":                                            schema_k8sio_api_admissionregistration_v1alpha1_InitializerConfiguration(ref),
-		"k8s.io/api/admissionregistration/v1alpha1.InitializerConfigurationList":                                        schema_k8sio_api_admissionregistration_v1alpha1_InitializerConfigurationList(ref),
-		"k8s.io/api/admissionregistration/v1alpha1.Rule":                                                                schema_k8sio_api_admissionregistration_v1alpha1_Rule(ref),
-		"k8s.io/api/admissionregistration/v1beta1.MutatingWebhookConfiguration":                                         schema_k8sio_api_admissionregistration_v1beta1_MutatingWebhookConfiguration(ref),
-		"k8s.io/api/admissionregistration/v1beta1.MutatingWebhookConfigurationList":                                     schema_k8sio_api_admissionregistration_v1beta1_MutatingWebhookConfigurationList(ref),
-		"k8s.io/api/admissionregistration/v1beta1.Rule":                                                                 schema_k8sio_api_admissionregistration_v1beta1_Rule(ref),
-		"k8s.io/api/admissionregistration/v1beta1.RuleWithOperations":                                                   schema_k8sio_api_admissionregistration_v1beta1_RuleWithOperations(ref),
-		"k8s.io/api/admissionregistration/v1beta1.ServiceReference":                                                     schema_k8sio_api_admissionregistration_v1beta1_ServiceReference(ref),
-		"k8s.io/api/admissionregistration/v1beta1.ValidatingWebhookConfiguration":                                       schema_k8sio_api_admissionregistration_v1beta1_ValidatingWebhookConfiguration(ref),
-		"k8s.io/api/admissionregistration/v1beta1.ValidatingWebhookConfigurationList":                                   schema_k8sio_api_admissionregistration_v1beta1_ValidatingWebhookConfigurationList(ref),
-		"k8s.io/api/admissionregistration/v1beta1.Webhook":                                                              schema_k8sio_api_admissionregistration_v1beta1_Webhook(ref),
-		"k8s.io/api/admissionregistration/v1beta1.WebhookClientConfig":                                                  schema_k8sio_api_admissionregistration_v1beta1_WebhookClientConfig(ref),
-		"k8s.io/api/apps/v1.ControllerRevision":                                                                         schema_k8sio_api_apps_v1_ControllerRevision(ref),
-		"k8s.io/api/apps/v1.ControllerRevisionList":                                                                     schema_k8sio_api_apps_v1_ControllerRevisionList(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachine":                  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachine(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClass":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClass(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassHardware":     schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassHardware(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassList":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassList(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassPolicies":     schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassPolicies(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResourceSpec": schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassResourceSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResources":    schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassResources(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSchemeFns":    schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassSchemeFns(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassSpec":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassStatus":       schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStatus(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineCondition":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineCondition(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImage":             schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImage(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageList":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageList(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSchemeFns":    schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageSchemeFns(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageSpec":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineImageStatus":       schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatus(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineList":              schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineList(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineMetadata":          schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineMetadata(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort":              schema_pkg_apis_vmoperator_v1alpha1_VirtualMachinePort(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSchemeFns":         schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSchemeFns(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineService":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineService(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceList":       schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceList(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServicePort":       schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServicePort(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSchemeFns":  schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSchemeFns(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceSpec":       schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatus":     schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatus(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSpec":              schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatus":            schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref),
+		"k8s.io/api/admissionregistration/v1alpha1.Initializer":                                                     schema_k8sio_api_admissionregistration_v1alpha1_Initializer(ref),
+		"k8s.io/api/admissionregistration/v1alpha1.InitializerConfiguration":                                        schema_k8sio_api_admissionregistration_v1alpha1_InitializerConfiguration(ref),
+		"k8s.io/api/admissionregistration/v1alpha1.InitializerConfigurationList":                                    schema_k8sio_api_admissionregistration_v1alpha1_InitializerConfigurationList(ref),
+		"k8s.io/api/admissionregistration/v1alpha1.Rule":                                                            schema_k8sio_api_admissionregistration_v1alpha1_Rule(ref),
+		"k8s.io/api/admissionregistration/v1beta1.MutatingWebhookConfiguration":                                     schema_k8sio_api_admissionregistration_v1beta1_MutatingWebhookConfiguration(ref),
+		"k8s.io/api/admissionregistration/v1beta1.MutatingWebhookConfigurationList":                                 schema_k8sio_api_admissionregistration_v1beta1_MutatingWebhookConfigurationList(ref),
+		"k8s.io/api/admissionregistration/v1beta1.Rule":                                                             schema_k8sio_api_admissionregistration_v1beta1_Rule(ref),
+		"k8s.io/api/admissionregistration/v1beta1.RuleWithOperations":                                               schema_k8sio_api_admissionregistration_v1beta1_RuleWithOperations(ref),
+		"k8s.io/api/admissionregistration/v1beta1.ServiceReference":                                                 schema_k8sio_api_admissionregistration_v1beta1_ServiceReference(ref),
+		"k8s.io/api/admissionregistration/v1beta1.ValidatingWebhookConfiguration":                                   schema_k8sio_api_admissionregistration_v1beta1_ValidatingWebhookConfiguration(ref),
+		"k8s.io/api/admissionregistration/v1beta1.ValidatingWebhookConfigurationList":                               schema_k8sio_api_admissionregistration_v1beta1_ValidatingWebhookConfigurationList(ref),
+		"k8s.io/api/admissionregistration/v1beta1.Webhook":                                                          schema_k8sio_api_admissionregistration_v1beta1_Webhook(ref),
+		"k8s.io/api/admissionregistration/v1beta1.WebhookClientConfig":                                              schema_k8sio_api_admissionregistration_v1beta1_WebhookClientConfig(ref),
+		"k8s.io/api/apps/v1.ControllerRevision":                                                                     schema_k8sio_api_apps_v1_ControllerRevision(ref),
+		"k8s.io/api/apps/v1.ControllerRevisionList":                                                                 schema_k8sio_api_apps_v1_ControllerRevisionList(ref),
 		"k8s.io/api/apps/v1.DaemonSet":                                                 schema_k8sio_api_apps_v1_DaemonSet(ref),
 		"k8s.io/api/apps/v1.DaemonSetCondition":                                        schema_k8sio_api_apps_v1_DaemonSetCondition(ref),
 		"k8s.io/api/apps/v1.DaemonSetList":                                             schema_k8sio_api_apps_v1_DaemonSetList(ref),
@@ -661,25 +652,6 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 	}
 }
 
-func schema_pkg_apis_vmoperator_v1alpha1_RestProvider(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Properties: map[string]spec.Schema{
-					"ImagesProvider": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.RestProviderInterface"),
-						},
-					},
-				},
-				Required: []string{"ImagesProvider"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.RestProviderInterface"},
-	}
-}
-
 func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachine(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -962,44 +934,6 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStatus(ref common.Re
 	}
 }
 
-func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStatusStrategy(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Properties: map[string]spec.Schema{
-					"DefaultStatusStorageStrategy": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"),
-						},
-					},
-				},
-				Required: []string{"DefaultStatusStorageStrategy"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"},
-	}
-}
-
-func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassStrategy(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Properties: map[string]spec.Schema{
-					"DefaultStorageStrategy": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"),
-						},
-					},
-				},
-				Required: []string{"DefaultStorageStrategy"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"},
-	}
-}
-
 func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineCondition(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -1197,44 +1131,6 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatus(ref common.Re
 			},
 		},
 		Dependencies: []string{},
-	}
-}
-
-func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStatusStrategy(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Properties: map[string]spec.Schema{
-					"DefaultStatusStorageStrategy": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"),
-						},
-					},
-				},
-				Required: []string{"DefaultStatusStorageStrategy"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"},
-	}
-}
-
-func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineImageStrategy(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Properties: map[string]spec.Schema{
-					"DefaultStorageStrategy": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"),
-						},
-					},
-				},
-				Required: []string{"DefaultStorageStrategy"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"},
 	}
 }
 
@@ -1583,44 +1479,6 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatus(ref common.
 	}
 }
 
-func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatusStrategy(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Properties: map[string]spec.Schema{
-					"DefaultStatusStorageStrategy": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"),
-						},
-					},
-				},
-				Required: []string{"DefaultStatusStorageStrategy"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"},
-	}
-}
-
-func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStrategy(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Properties: map[string]spec.Schema{
-					"DefaultStorageStrategy": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"),
-						},
-					},
-				},
-				Required: []string{"DefaultStorageStrategy"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"},
-	}
-}
-
 func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -1723,44 +1581,6 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref common.Referen
 		},
 		Dependencies: []string{
 			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineCondition"},
-	}
-}
-
-func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatusStrategy(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Properties: map[string]spec.Schema{
-					"DefaultStatusStorageStrategy": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"),
-						},
-					},
-				},
-				Required: []string{"DefaultStatusStorageStrategy"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStatusStorageStrategy"},
-	}
-}
-
-func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStrategy(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Properties: map[string]spec.Schema{
-					"DefaultStorageStrategy": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"),
-						},
-					},
-				},
-				Required: []string{"DefaultStorageStrategy"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders.DefaultStorageStrategy"},
 	}
 }
 

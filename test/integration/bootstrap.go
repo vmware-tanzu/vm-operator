@@ -4,9 +4,13 @@
 package integration
 
 import (
+	"fmt"
 	"strconv"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"k8s.io/client-go/kubernetes"
 )
@@ -17,13 +21,11 @@ const DefaultNamespace = "default"
 // Generate a fake vsphere provider config that is suitable for the integration test environment.
 // Post the resultant config map to the API Master for consumption by the VM operator
 func InstallVmOperatorConfig(clientSet *kubernetes.Clientset, vcAddress string, vcPort int) error {
-	glog.Infof("Installing a bootstrap config map for use in integration tests.")
+	klog.Infof("Installing a bootstrap config map for use in integration tests.")
 	return vsphere.InstallVSphereVmProviderConfig(clientSet, DefaultNamespace, *NewIntegrationVmOperatorConfig(vcAddress, vcPort))
 }
 
 func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphereVmProviderConfig {
-	// Configure for vcsim by default
-
 	return &vsphere.VSphereVmProviderConfig{
 		VcPNID:           vcAddress,
 		VcPort:           strconv.Itoa(vcPort),
@@ -36,11 +38,26 @@ func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphe
 }
 
 func NewIntegrationVmOperatorCredentials() *vsphere.VSphereVmProviderCredentials {
-
-	// User and Pass can be anything for vcsim
+	// User and password can be anything for vcSim
 	return &vsphere.VSphereVmProviderCredentials{
 		Username: "Administrator@vsphere.local",
 		Password: "Admin!23",
 	}
+}
 
+func SetupEnv() (func(), error) {
+	vcSim := NewVcSimInstance()
+	address, port := vcSim.Start()
+
+	config := NewIntegrationVmOperatorConfig(address, port)
+	credentials := NewIntegrationVmOperatorCredentials()
+	provider, err := vsphere.NewVSphereVmProviderFromConfig(DefaultNamespace, config, credentials)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create vSphere provider: %v", err)
+	}
+	vmprovider.RegisterVmProvider(provider)
+
+	cleanup := func() { vcSim.Stop() }
+
+	return cleanup, nil
 }

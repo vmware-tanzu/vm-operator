@@ -7,11 +7,13 @@ package rest
 import (
 	"context"
 
-	"k8s.io/apiserver/pkg/registry/rest"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 
-	"github.com/golang/glog"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	"k8s.io/apiserver/pkg/registry/rest"
+	"k8s.io/klog"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/iface"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,11 +24,11 @@ import (
 
 // +k8s:deepcopy-gen=false
 type VirtualMachineImagesREST struct {
-	provider iface.VirtualMachineProviderInterface
+	provider vmprovider.VirtualMachineProviderInterface
 }
 
-func NewVirtualMachineImagesREST(provider iface.VirtualMachineProviderInterface) v1alpha1.RestProvider {
-	return v1alpha1.RestProvider{
+func NewVirtualMachineImagesREST(provider vmprovider.VirtualMachineProviderInterface) vmoperator.RestProvider {
+	return vmoperator.RestProvider{
 		ImagesProvider: &VirtualMachineImagesREST{provider},
 	}
 }
@@ -43,8 +45,6 @@ func (r *VirtualMachineImagesREST) NewList() runtime.Object {
 // List selects resources in the storage which match to the selector. 'options' can be nil.
 // TODO(bryanv) Honor ListOptions?
 func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
-	glog.Infof("Listing VirtualMachineImages options: %v", options)
-
 	// Get the namespace from the context (populated from the URL). The namespace in the object can
 	// be empty until StandardStorage.Create()->BeforeCreate() populates it from the context.
 	namespace, ok := genericapirequest.NamespaceFrom(ctx)
@@ -59,7 +59,7 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 	//return nil, errors.NewBadRequest("user is required")
 	//}
 
-	glog.Infof("Listing VirtualMachineImage ns=%s, user=%s", namespace, user)
+	klog.Infof("Listing VirtualMachineImages namespace: %s options: %v user: %v", namespace, options, user)
 
 	if namespace == "" {
 		return &v1alpha1.VirtualMachineImageList{}, nil
@@ -67,7 +67,7 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 
 	images, err := r.provider.ListVirtualMachineImages(ctx, namespace)
 	if err != nil {
-		glog.Errorf("Failed to list images: %s", err)
+		klog.Errorf("Failed to list images: %v", err)
 		return nil, errors.NewInternalError(err)
 	}
 
@@ -87,7 +87,7 @@ func (r *VirtualMachineImagesREST) New() runtime.Object {
 
 // Get retrieves the object from the storage. It is required to support Patch.
 func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
-	glog.Infof("Getting VirtualMachineImage %s", name)
+	klog.Infof("Getting VirtualMachineImage name: %s options: %v", name, options)
 
 	// Get the namespace from the context (populated from the URL).
 	// The namespace in the object can be empty until StandardStorage.Create()->BeforeCreate() populates it from the context.
@@ -103,11 +103,11 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 	//	return nil, errors.NewBadRequest("user is required")
 	//}
 
-	glog.Infof("Getting VirtualMachineImage name=%s, ns=%s, user=%s", name, namespace, user)
+	klog.Infof("Getting VirtualMachineImage name: %s namespace: %s user: %v", name, namespace, user)
 
 	image, err := r.provider.GetVirtualMachineImage(ctx, namespace, name)
 	if err != nil {
-		glog.Errorf("Failed to list images: %s", err)
+		klog.Errorf("Failed to get image: %v", err)
 		return nil, errors.NewInternalError(err) // TODO(bryanv) Do not convert NotFound errors?
 	}
 

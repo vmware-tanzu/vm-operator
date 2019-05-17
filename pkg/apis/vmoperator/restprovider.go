@@ -1,15 +1,18 @@
 /* **********************************************************
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
-package v1alpha1
+
+package vmoperator
 
 import (
+	"errors"
 	"sync"
 
-	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog"
 )
 
+// This is in this package to avoid an import cycle.
 // Registered rest provider.  Only one is allowed.
 var (
 	providerMutex sync.Mutex
@@ -28,10 +31,12 @@ type RestProvider struct {
 func RegisterRestProvider(restProvider RestProvider) error {
 	providerMutex.Lock()
 	defer providerMutex.Unlock()
+
 	if provider != nil {
-		glog.Fatal("Rest provider is already registered")
+		return errors.New("REST provider already registered")
 	}
-	glog.V(1).Infof("Registered Rest provider")
+
+	klog.V(1).Info("REST provider registered")
 	provider = &restProvider
 	return nil
 }

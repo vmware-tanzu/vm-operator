@@ -1,5 +1,5 @@
 
-apiVersion: apiregistration.k8s.io/v1beta1
+apiVersion: apiregistration.k8s.io/v1
 kind: APIService
 metadata:
   name: v1alpha1.vmoperator.vmware.com
@@ -10,11 +10,10 @@ spec:
   version: v1alpha1
   group: vmoperator.vmware.com
   groupPriorityMinimum: 2000
-  priority: 200
+  versionPriority: 10
   service:
     name: vmoperator
     namespace: default
-  versionPriority: 10
   caBundle: "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURVRENDQWpnQ0NRQ3A1Vmtob0lRcm5UQU5CZ2txaGtpRzl3MEJBUXNGQURCcU1Rc3dDUVlEVlFRR0V3SjEKYmpFTE1Ba0dBMVVFQ0F3Q2MzUXhDakFJQmdOVkJBY01BV3d4Q2pBSUJnTlZCQW9NQVc4eEN6QUpCZ05WQkFzTQpBbTkxTVNrd0p3WURWUVFERENCMmJXOXdaWEpoZEc5eUxXTmxjblJwWm1sallYUmxMV0YxZEdodmNtbDBlVEFlCkZ3MHhPREV5TVRneU1qQTBNREJhRncweE9URXlNVGd5TWpBME1EQmFNR294Q3pBSkJnTlZCQVlUQW5WdU1Rc3cKQ1FZRFZRUUlEQUp6ZERFS01BZ0dBMVVFQnd3QmJERUtNQWdHQTFVRUNnd0JiekVMTUFrR0ExVUVDd3dDYjNVeApLVEFuQmdOVkJBTU1JSFp0YjNCbGNtRjBiM0l0WTJWeWRHbG1hV05oZEdVdFlYVjBhRzl5YVhSNU1JSUJJakFOCkJna3Foa2lHOXcwQkFRRUZBQU9DQVE4QU1JSUJDZ0tDQVFFQXloSnRiYXFHeExvelZBZDhDL09xaUZZdTh1T3oKc215QVRjZ3ltb3U4Z3V5cE1DN3dyRVFrUlJ3SkJaTUtIcDAxcTFWY0QzTW9UK3NTeXgxd0hNMTNFT2hMa3FnOQpRc1RxQWNnUWNQekxrTXlqNHNwbzAvdndTVU5vYkxlaWxiKzdzaldpNml1cUV4NWNjbXpOMUE2VWZxdkJ2TjRsCmxHU2FwVWhyNTJpb0ZPTWVVWFVBWnc4MnAwQklENkVneEFROWdyWDNlV0hUR20zRTZBWHJSdFBBVHBaRitrSWkKZzFTVGU5S3l5Y2xzRzU0Wm15MGw5TUJOOFpRSXlveUQ0c2Q5NFZVK29BS3VETUxlNXhjWGlxUVh0dmNwY2Rxdgo1QUYybW93ZHNsSkdhak8yOUNZeHR1SzBSNnB4aGZqSnVLSU1hZ3pKNTg4MC9GTHhocE9Ta3I4Qm13SURBUUFCCk1BMEdDU3FHU0liM0RRRUJDd1VBQTRJQkFRQkM3RXdrcHA5Zlg0U3ZRcGx5S0M1Q21UanpLcnJyTjJTMXFyMVQKMnphdldFWCtnNmJpWWpUenFMNWJ3YXZFV09jUU9PY0ZOOHFYQzhnbFFSMFJZa3RzVnB6WDdSZUNORzhYczdLdgozL1NPcUdqSjZ0bDBQa3ZUVkJscVRMNVhmNmo3ZGlsRGVFYnFpbkFOUlQwL2ZPWXFwbTBsQldiSUVDYVViN3JOCjg1OGUrendyLzFyT2xlMlBWRldyaWlQRXRraTdVZHVhTGZqYTJ2bStKd2tLaU5aT2RPQ2F6bWRnS3A3UHhDWmsKN3RPYU9iZjAzVXhydmxMZWIzeHNiTWJGeDEwY2NreVJQSUJaQlJGNGk2YmtBZ3czR29xSzZybTNvUFY3N2pLNwpIekJpdm93U0lmcjNEc25DdjJDK05kQmJoaGp1aWlIeU03c2hIcURDSEVQSndTdHkKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo="
 ---
 apiVersion: v1
@@ -34,7 +33,7 @@ spec:
     api: vmoperator
     apiserver: "true"
 ---
-apiVersion: apps/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: vmoperator
@@ -44,6 +43,10 @@ metadata:
     apiserver: "true"
 spec:
   replicas: 1
+  selector:
+    matchLabels:
+      api: vmoperator
+      apiserver: "true"
   template:
     metadata:
       labels:
@@ -70,9 +73,11 @@ spec:
         livenessProbe:
           httpGet:
             path: /healthz
-            port: 49200
-          initialDelaySeconds: 15
-          periodSeconds: 3
+            port: 443
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 15
         resources:
           requests:
             cpu: 100m
@@ -84,13 +89,14 @@ spec:
         image: vmoperator:vmop
         imagePullPolicy: Never
         command:
-        - "./controller-manager"
+        - "./manager"
         args:
+          - "health-addr=:49201"
         livenessProbe:
           httpGet:
             path: /healthz
             port: 49201
-          initialDelaySeconds: 15
+          initialDelaySeconds: 25
           periodSeconds: 3
         resources:
           requests:
@@ -104,7 +110,7 @@ spec:
         secret:
           secretName: vmoperator
 ---
-apiVersion: apps/v1beta1
+apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: etcd
@@ -112,6 +118,9 @@ metadata:
 spec:
   serviceName: "etcd"
   replicas: 1
+  selector:
+    matchLabels:
+      app: etcd
   template:
     metadata:
       labels:

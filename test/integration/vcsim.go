@@ -1,6 +1,7 @@
 /* **********************************************************
  * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
+
 package integration
 
 import (
@@ -9,22 +10,20 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
+
 	vmoperator "github.com/vmware-tanzu/vm-operator"
 )
 
-var (
-	vcsimIp = "127.0.0.1"
+const (
+	vcSimIp = "127.0.0.1"
 )
-
-func makeAddress(port int) string {
-	return fmt.Sprintf("127.0.0.1:%d", port)
-}
 
 type VcSimInstance struct {
 	cmd *exec.Cmd
@@ -34,9 +33,9 @@ func NewVcSimInstance() *VcSimInstance {
 	return &VcSimInstance{}
 }
 
-func (v *VcSimInstance) getPort() int {
+func getPort() int {
 	l, _ := net.Listen("tcp", ":0")
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	pieces := strings.Split(l.Addr().String(), ":")
 	i, err := strconv.Atoi(pieces[len(pieces)-1])
 	if err != nil {
@@ -45,47 +44,43 @@ func (v *VcSimInstance) getPort() int {
 	return i
 }
 
-// Wait for a vcsim instance to start by polling its "about" REST endpoint until
+// Wait for a vcSim instance to start by polling its "about" REST endpoint until
 // we see a successful reply.  Sleep for a second between attempts
-func (v *VcSimInstance) waitForStart(address string) error {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+func waitForStart(hostPort string) error {
+	addr := fmt.Sprintf("https://%s/about", hostPort)
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
 	}
-	client := &http.Client{Transport: tr}
-	var err error
+
 	for i := 0; i < 20; i++ {
-		_, err = client.Get(fmt.Sprintf("https://%s/about", address))
-		if err == nil {
+		if _, err := client.Get(addr); err == nil {
 			return nil
 		}
 		time.Sleep(1 * time.Second)
 	}
-	return err
+
+	return fmt.Errorf("timedout waiting for vcSim to start")
 }
 
 func (v *VcSimInstance) Start() (vcAddress string, vcPort int) {
-	glog.V(4).Infof("Basepath is %s", vmoperator.Rootpath)
-	vcsimPort := v.getPort()
+	host, port := vcSimIp, getPort()
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 
-	var address = makeAddress(vcsimPort)
-	glog.Infof("Starting vcsim on address %s", address)
-
-	path := fmt.Sprintf("%s/hack/run-vcsim.sh", vmoperator.Rootpath)
-	v.cmd = exec.Command(path, address)
+	vcSimPath := path.Join(vmoperator.Rootpath, "hack/run-vcsim.sh")
+	v.cmd = exec.Command(vcSimPath, address)
 	v.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := v.cmd.Start(); err != nil {
-		glog.Fatalf("Failed to start vcsim: %s", err)
+		klog.Fatalf("Failed to start vcSim: %v", err)
 	}
 
-	glog.Infof("vcsim started as pid %d", v.cmd.Process.Pid)
-
-	err := v.waitForStart(address)
-	if err != nil {
-		glog.Fatalf("Failed to wait until vcsim was ready")
+	if err := waitForStart(address); err != nil {
+		klog.Fatalf("Failed to wait until vcSim was ready")
 	}
 
-	glog.Infof("vcsim running as pid %d", v.cmd.Process.Pid)
-	return vcsimIp, vcsimPort
+	klog.Infof("vcSim running as pid %d on %s", v.cmd.Process.Pid, address)
+	return vcSimIp, port
 }
 
 func (v *VcSimInstance) Stop() {
@@ -93,17 +88,16 @@ func (v *VcSimInstance) Stop() {
 		return
 	}
 
-	glog.Infof("Send SIGKILL to vcsim running as process group for pid %d", v.cmd.Process.Pid)
+	klog.Infof("Send SIGKILL to vcSim running as process group for pid %d", v.cmd.Process.Pid)
 	if err := syscall.Kill(-v.cmd.Process.Pid, syscall.SIGKILL); err != nil {
-		glog.Fatalf("Failed to kill %d: %s", v.cmd.Process.Pid, err)
+		klog.Fatalf("Failed to kill %d: %v", v.cmd.Process.Pid, err)
 	}
 
 	state, err := v.cmd.Process.Wait()
 	if err != nil {
-		glog.Fatalf("Failed to wait for process: state %s err %s", state, err)
-	} else {
-		glog.Infof("Waited for terminating process: %s", state)
+		klog.Fatalf("Failed to wait for process state %s: %v", state, err)
 	}
-	time.Sleep(5 * time.Second)
 
+	// TODO(bryanv) Needed?
+	time.Sleep(5 * time.Second)
 }

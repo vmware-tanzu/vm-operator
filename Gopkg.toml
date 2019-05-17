@@ -34,10 +34,11 @@ required = [
 ]
 
 # Comment to update deps with dep tool
-[[constraint]]
+[[override]]
   name = "github.com/kubernetes-incubator/apiserver-builder-alpha"
+  source = "ssh://git@gitlab.eng.vmware.com/bventeicher/apiserver-builder-alpha.git"
   #version = "v1.12.alpha.0"
-  branch = "master"
+  revision = "a1abecd3833a0188bab06e41aeca0559115b3007"
 
 [[constraint]]
   name = "github.com/onsi/ginkgo"
@@ -47,25 +48,35 @@ required = [
   name = "github.com/onsi/gomega"
   version = "1.4.3"
 
-[[constraint]]
-  version = "kubernetes-1.12.3"
-  name = "k8s.io/api"
+# v0.1.1 does not shutdown etcd
+[[override]]
+  revision = "57f07443c2d47d9c7f932a9a4fc87fbf3408215d"
+  name = "sigs.k8s.io/testing_frameworks"
+
+[[override]]
+  revision = "6101f6954a042342f1153c9b938813ad6995052c"
+  name = "sigs.k8s.io/controller-runtime"
+
+#[[constraint]]
+#  version = "kubernetes-1.13.1"
+#  name = "k8s.io/api"
+
+#[[constraint]]
+#  version = "kubernetes-1.13.1"
+#  name = "k8s.io/apimachinery"
+
+#[[constraint]]
+#  version = "kubernetes-1.13.1"
+#  name = "k8s.io/apiserver"
 
 [[constraint]]
   version = "kubernetes-1.12.3"
-  name = "k8s.io/apimachinery"
-
-[[constraint]]
-  version = "kubernetes-1.12.3"
-  name = "k8s.io/apiserver"
-
-[[constraint]]
-  branch = "release-9.0"
+  #revision = "d380bc8c2d7c70a805ae9fb5fa5a780eb5cff630"
   name = "k8s.io/client-go"
 
-[[constraint]]
-  name = "k8s.io/kube-openapi"
-  revision = "0cf8f7e6ed1d2e3d47d02e3b6e559369af24d803"
+#[[constraint]]
+#  name = "k8s.io/kube-openapi"
+#  revision = "0cf8f7e6ed1d2e3d47d02e3b6e559369af24d803"
 
 [[constraint]]
   version = "v0.2.0"

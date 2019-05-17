@@ -4,22 +4,21 @@
 
 package lib
 
-// Function to filter a string from a list. Returns the filtered list
-func Filter(list []string, strToFilter string) (newList []string) {
-	for _, item := range list {
-		if item != strToFilter {
-			newList = append(newList, item)
-		}
-	}
-	return
-}
-
-// Function to determine if a list contains s specific string
-func Contains(list []string, strToSearch string) bool {
-	for _, item := range list {
-		if item == strToSearch {
+func ContainsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
 			return true
 		}
 	}
 	return false
+}
+
+func RemoveString(slice []string, s string) (result []string) {
+	for _, item := range slice {
+		if item == s {
+			continue
+		}
+		result = append(result, item)
+	}
+	return
 }

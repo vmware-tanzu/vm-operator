@@ -5,18 +5,7 @@
 package v1alpha1
 
 import (
-	"context"
-
-	"github.com/golang/glog"
-	"k8s.io/apimachinery/pkg/runtime"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/validation/field"
-)
-
-const (
-	VirtualMachineServiceFinalizer string = "virtualmachineservice.vmoperator.vmware.com"
 )
 
 // +genclient
@@ -31,6 +20,10 @@ type VirtualMachineService struct {
 
 	Spec   VirtualMachineServiceSpec   `json:"spec,omitempty"`
 	Status VirtualMachineServiceStatus `json:"status,omitempty"`
+}
+
+func (s *VirtualMachineService) NamespacedName() string {
+	return s.Namespace + "/" + s.Name
 }
 
 type VirtualMachineServicePort struct {
@@ -81,44 +74,8 @@ type VirtualMachineServiceSpec struct {
 type VirtualMachineServiceStatus struct {
 }
 
-func (v VirtualMachineServiceStrategy) PrepareForCreate(ctx context.Context, obj runtime.Object) {
-	// Invoke the parent implementation to strip the Status
-	v.DefaultStorageStrategy.PrepareForCreate(ctx, obj)
-
-	o := obj.(*vmoperator.VirtualMachineService)
-
-	// Add a finalizer so that our controllers can process deletion
-	finalizers := append(o.GetFinalizers(), VirtualMachineServiceFinalizer)
-	o.SetFinalizers(finalizers)
-}
-
-// Validate checks that an instance of VirtualMachineService is well formed
-func (VirtualMachineServiceStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
-	service := obj.(*vmoperator.VirtualMachineService)
-	glog.V(4).Infof("Validating fields for VirtualMachineService %s\n", service.Name)
-	errors := field.ErrorList{}
-
-	// Confirm that the required fields are present and within valid ranges, if applicable
-	if service.Spec.Type == "" {
-		glog.Errorf("Type empty for service %s", service.Name)
-		errors = append(errors, field.Required(field.NewPath("spec", "type"), ""))
-	}
-
-	if len(service.Spec.Ports) == 0 {
-		glog.Errorf("Ports empty for service %s", service.Name)
-		errors = append(errors, field.Required(field.NewPath("spec", "ports"), ""))
-	}
-
-	if len(service.Spec.Selector) == 0 {
-		glog.Errorf("Label selector empty for service %s", service.Name)
-		errors = append(errors, field.Required(field.NewPath("spec", "selector"), ""))
-	}
-	return errors
-}
-
 // DefaultingFunction sets default VirtualMachineService field values
 func (VirtualMachineServiceSchemeFns) DefaultingFunction(o interface{}) {
-	obj := o.(*VirtualMachineService)
+	//obj := o.(*VirtualMachineService)
 	// set default field values here
-	glog.V(4).Infof("Defaulting fields for VirtualMachineService %s\n", obj.Name)
 }

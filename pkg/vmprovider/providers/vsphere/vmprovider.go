@@ -8,16 +8,18 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+
+	"k8s.io/klog"
+
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/iface"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/sequence"
 
 	"github.com/pkg/errors"
 
-	"github.com/golang/glog"
 	"github.com/vmware/govmomi/find"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,7 +40,7 @@ type VSphereVmProvider struct {
 	sessions SessionManager
 }
 
-var _ iface.VirtualMachineProviderInterface = &VSphereVmProvider{}
+var _ vmprovider.VirtualMachineProviderInterface = &VSphereVmProvider{}
 
 func NewVSphereVmProvider(clientset *kubernetes.Clientset) (*VSphereVmProvider, error) {
 	vmProvider := &VSphereVmProvider{
@@ -53,7 +55,8 @@ func NewVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderC
 		sessions: NewSessionManager(nil),
 	}
 
-	// Support existing behavior by setting up a Session for whatever namespace we're using.
+	// Support existing behavior by setting up a Session for whatever namespace we're using. This is
+	// used in the integration tests.
 	_, err := vmProvider.sessions.NewSession(namespace, config, credentials)
 	if err != nil {
 		return nil, err
@@ -70,7 +73,7 @@ func (vs *VSphereVmProvider) Initialize(stop <-chan struct{}) {
 }
 
 func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
-	glog.Infof("Listing VirtualMachineImages in namespace %q", namespace)
+	klog.Infof("Listing VirtualMachineImages in namespace %q", namespace)
 
 	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
@@ -94,7 +97,7 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error) {
 	vmName := fmt.Sprintf("%v/%v", namespace, name)
 
-	glog.Infof("Getting image for VirtualMachine %v", vmName)
+	klog.Infof("Getting image for VirtualMachine %v", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
@@ -116,7 +119,7 @@ func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace 
 func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachine, error) {
 	vmName := fmt.Sprintf("%v/%v", namespace, name)
 
-	glog.Infof("Getting VirtualMachine %v", vmName)
+	klog.Infof("Getting VirtualMachine %v", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
@@ -149,10 +152,11 @@ func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, v
 	objectMeta.SetAnnotations(annotations)
 }
 
-func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass *v1alpha1.VirtualMachineClass, metadata map[string]string) (*v1alpha1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
+	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) (*v1alpha1.VirtualMachine, error) {
 	vmName := vm.NamespacedName()
 
-	glog.Infof("Creating VirtualMachine %v", vmName)
+	klog.Infof("Creating VirtualMachine %v", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
 	if err != nil {
@@ -163,13 +167,13 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 	// The later is really only useful for dummy VMs at the moment.
 	var resVm *res.VirtualMachine
 	if vm.Spec.ImageName == "" {
-		resVm, err = ses.CreateVirtualMachine(ctx, vm, vmClass)
+		resVm, err = ses.CreateVirtualMachine(ctx, vm, vmClass, vmMetadata)
 	} else {
-		resVm, err = ses.CloneVirtualMachine(ctx, vm, vmClass, metadata)
+		resVm, err = ses.CloneVirtualMachine(ctx, vm, vmClass, vmMetadata)
 	}
 
 	if err != nil {
-		glog.Errorf("Create VirtualMachine %v failed: %v", vmName, err)
+		klog.Errorf("Create VirtualMachine %v failed: %v", vmName, err)
 		return nil, transformVmError(vmName, err)
 	}
 
@@ -195,7 +199,7 @@ func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vm *v1a
 		return errors.Wrap(err, "failed to get VirtualMachine memory allocation")
 	}
 
-	glog.Infof("VirtualMachine %q reservation/limit CPU: %d/%d Memory: %d/%d", vm.NamespacedName(),
+	klog.Infof("VirtualMachine %q reservation/limit CPU: %d/%d Memory: %d/%d", vm.NamespacedName(),
 		*cpu.Reservation, *cpu.Limit, *mem.Reservation, *mem.Limit)
 
 	/*
@@ -207,16 +211,16 @@ func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vm *v1a
 
 		newRes := vmToUpdate.Spec.Resources.Requests.Memory
 		newLimit := vmToUpdate.Spec.Resources.Limits.Memory
-		glog.Infof("New Memory allocation: %d/%d", newRes, newLimit)
+		klog.Infof("New Memory allocation: %d/%d", newRes, newLimit)
 
 		if newRes != 0 && newRes != *mem.Reservation {
-			glog.Infof("Updating mem reservation from %d to %d", *mem.Reservation, newRes)
+			klog.Infof("Updating mem reservation from %d to %d", *mem.Reservation, newRes)
 			*mem.Reservation = newRes
 			needUpdate = true
 		}
 
 		if newLimit != 0 && newLimit != *mem.Limit {
-			glog.Infof("Updating mem limit from %d to %d", *mem.Limit, newLimit)
+			klog.Infof("Updating mem limit from %d to %d", *mem.Limit, newLimit)
 			*mem.Limit = newLimit
 			needUpdate = true
 		}
@@ -228,14 +232,14 @@ func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vm *v1a
 
 			task, err := vm.VirtualMachine.Reconfigure(ctx, configSpec)
 			if err != nil {
-				glog.Errorf("Failed to change power state to %s", vmToUpdate.Spec.PowerState)
+				klog.Errorf("Failed to change power state to %s", vmToUpdate.Spec.PowerState)
 				return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 			}
 
 			//taskInfo, err := task.WaitForResult(ctx, nil)
 			err = task.Wait(ctx)
 			if err != nil {
-				glog.Errorf("VM RLS change task failed %s", err.Error())
+				klog.Errorf("VM RLS change task failed %s", err.Error())
 				return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
 			}
 
@@ -266,7 +270,7 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 	vmName := vm.NamespacedName()
 
-	glog.Infof("Updating VirtualMachine %v", vmName)
+	klog.Infof("Updating VirtualMachine %v", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
 	if err != nil {
@@ -299,7 +303,7 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
 	vmName := vmToDelete.NamespacedName()
 
-	glog.Infof("Deleting VirtualMachine %v", vmName)
+	klog.Infof("Deleting VirtualMachine %v", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, vmToDelete.Namespace)
 	if err != nil {
@@ -315,7 +319,7 @@ func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelet
 	err = deleteSequence.Execute(ctx)
 
 	if err != nil {
-		glog.Errorf("Delete VirtualMachine %v sequence failed: %v", vmName, err)
+		klog.Errorf("Delete VirtualMachine %v sequence failed: %v", vmName, err)
 		return err
 	}
 
@@ -326,7 +330,7 @@ func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelet
 func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
 	vmStatus, err := resVm.GetStatus(ctx)
 	if err != nil {
-		glog.Infof("GetStatus returned error: %v", err)
+		klog.Infof("GetStatus returned error: %v", err)
 		return nil, errors.Wrapf(err, "unable to get status of the VM")
 	}
 

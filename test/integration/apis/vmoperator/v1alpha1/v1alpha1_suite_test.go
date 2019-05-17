@@ -7,9 +7,11 @@ package v1alpha1
 import (
 	"testing"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/apis"
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/openapi"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -40,13 +42,13 @@ var _ = BeforeSuite(func() {
 
 	provider, err := vsphere.NewVSphereVmProviderFromConfig(integration.DefaultNamespace, integration.NewIntegrationVmOperatorConfig(address, port), integration.NewIntegrationVmOperatorCredentials())
 	if err != nil {
-		glog.Fatalf("Failed to create vSphere provider: %v", err)
+		klog.Fatalf("Failed to create vSphere provider: %v", err)
 	}
 
 	vmprovider.RegisterVmProvider(provider)
 
-	if err := v1alpha1.RegisterRestProvider(vmrest.NewVirtualMachineImagesREST(provider)); err != nil {
-		glog.Fatalf("Failed to register REST provider: %s", err)
+	if err := vmoperator.RegisterRestProvider(vmrest.NewVirtualMachineImagesREST(provider)); err != nil {
+		klog.Fatalf("Failed to register REST provider: %s", err)
 	}
 
 	testenv = test.NewTestEnvironment()

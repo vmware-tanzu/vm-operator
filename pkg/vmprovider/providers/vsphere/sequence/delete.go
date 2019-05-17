@@ -7,10 +7,10 @@ package sequence
 import (
 	"context"
 
+	"k8s.io/klog"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
-
-	"github.com/golang/glog"
 )
 
 type VirtualMachinePowerOffStep struct {
@@ -40,7 +40,7 @@ func (step VirtualMachineDeleteStep) Name() string { return "Delete Vm" }
 func (step VirtualMachineDeleteStep) Execute(ctx context.Context) error {
 	err := step.resVm.Delete(ctx)
 	if err != nil {
-		glog.Errorf("Failed to delete Vm: %s", err)
+		klog.Errorf("Failed to delete Vm: %s", err)
 		return err
 	}
 
@@ -58,12 +58,12 @@ func (seq VirtualMachineDeleteSequence) GetName() string {
 func (seq VirtualMachineDeleteSequence) Execute(ctx context.Context) error {
 	for _, step := range seq.steps {
 		err := step.Execute(ctx)
-		glog.Infof("Executing step %s", step.Name())
+		klog.Infof("Executing step %s", step.Name())
 		if err != nil {
-			glog.Infof("Step %s failed %s", step.Name(), err)
+			klog.Infof("Step %s failed %s", step.Name(), err)
 			return err
 		}
-		glog.Infof("Step %s succeeded", step.Name())
+		klog.Infof("Step %s succeeded", step.Name())
 	}
 	return nil
 }

@@ -2,13 +2,15 @@
  * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
-package iface
+package vmprovider
 
 import (
 	"context"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 )
+
+type VirtualMachineMetadata map[string]string
 
 // VirtualMachineProviderInterface is a plugable interface for VM Providers
 type VirtualMachineProviderInterface interface {
@@ -25,7 +27,8 @@ type VirtualMachineProviderInterface interface {
 	ListVirtualMachines(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachine, error)
 	GetVirtualMachine(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachine, error)
 
-	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass *v1alpha1.VirtualMachineClass, metadata map[string]string) (*v1alpha1.VirtualMachine, error)
+	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass v1alpha1.VirtualMachineClass,
+		vmMetadata VirtualMachineMetadata) (*v1alpha1.VirtualMachine, error)
 	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error)
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 }

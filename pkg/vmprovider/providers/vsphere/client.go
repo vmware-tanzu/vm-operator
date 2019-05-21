@@ -7,9 +7,8 @@ package vsphere
 import (
 	"context"
 	"net"
-	"time"
-
 	"net/url"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -28,7 +27,7 @@ type Client struct {
 const idleTime = 5 * time.Minute
 
 // NewClient creates a new govmomi client; sets a keepalive handler to re-login on not authenticated errors.
-func NewClient(ctx context.Context, config *VSphereVmProviderConfig) (*Client, error) {
+func NewClient(ctx context.Context, config *VSphereVmProviderConfig, credentials *VSphereVmProviderCredentials) (*Client, error) {
 	soapUrl, err := soap.ParseURL(net.JoinHostPort(config.VcPNID, config.VcPort))
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse %s:%s", config.VcPNID, config.VcPort)
@@ -46,7 +45,7 @@ func NewClient(ctx context.Context, config *VSphereVmProviderConfig) (*Client, e
 		SessionManager: session.NewManager(vimClient),
 	}
 
-	userInfo := url.UserPassword(config.VcUser, config.VcPassword)
+	userInfo := url.UserPassword(credentials.Username, credentials.Password)
 
 	vimClient.RoundTripper = session.KeepAliveHandler(vimClient.RoundTripper, idleTime, func(rt soap.RoundTripper) error {
 		if _, err := methods.GetCurrentTime(ctx, rt); err != nil && isNotAuthenticatedError(err) {

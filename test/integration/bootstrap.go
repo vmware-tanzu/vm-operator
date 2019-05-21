@@ -23,18 +23,24 @@ func InstallVmOperatorConfig(clientSet *kubernetes.Clientset, vcAddress string, 
 
 func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphereVmProviderConfig {
 	// Configure for vcsim by default
-	// User and Pass can be anything for vcsim
-	vcUser := "Administrator@vsphere.local"
-	vcPassword := "Admin!23"
 
 	return &vsphere.VSphereVmProviderConfig{
-		VcUser:       vcUser,
-		VcPassword:   vcPassword,
-		VcPNID:       vcAddress,
-		VcPort:       strconv.Itoa(vcPort),
-		Datacenter:   "/DC0",
-		ResourcePool: "/DC0/host/DC0_C0/Resources",
-		Folder:       "/DC0/vm",
-		Datastore:    "/DC0/datastore/LocalDS_0",
+		VcPNID:           vcAddress,
+		VcPort:           strconv.Itoa(vcPort),
+		VcAuthSecretName: "vmop-test-integration-auth",
+		Datacenter:       "/DC0",
+		ResourcePool:     "/DC0/host/DC0_C0/Resources",
+		Folder:           "/DC0/vm",
+		Datastore:        "/DC0/datastore/LocalDS_0",
 	}
+}
+
+func NewIntegrationVmOperatorCredentials() *vsphere.VSphereVmProviderCredentials {
+
+	// User and Pass can be anything for vcsim
+	return &vsphere.VSphereVmProviderCredentials{
+		Username: "Administrator@vsphere.local",
+		Password: "Admin!23",
+	}
+
 }

@@ -29,8 +29,8 @@ type Session struct {
 	datastore    *object.Datastore
 }
 
-func NewSession(ctx context.Context, config *VSphereVmProviderConfig) (*Session, error) {
-	c, err := NewClient(ctx, config)
+func NewSession(ctx context.Context, config *VSphereVmProviderConfig, credentials *VSphereVmProviderCredentials) (*Session, error) {
+	c, err := NewClient(ctx, config, credentials)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create client for new session")
 	}

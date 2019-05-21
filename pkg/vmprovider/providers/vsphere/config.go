@@ -15,28 +15,25 @@ import (
  * vSphere instance for VM management.
  */
 type VSphereVmProviderConfig struct {
-	VcUser     string
-	VcPassword string
-	VcPNID     string
-	VcPort     string
-
-	Datacenter   string
-	ResourcePool string
-	Folder       string
-	Datastore    string
+	VcPNID           string
+	VcPort           string
+	VcAuthSecretName string
+	Datacenter       string
+	ResourcePool     string
+	Folder           string
+	Datastore        string
 }
 
 const (
 	vSphereConfigMapName = "vsphere.provider.config.vmoperator.vmware.com"
 
-	vcUserKey       = "VcUser"
-	vcPasswordKey   = "VcPassword"
-	vcPNIDKey       = "VcPNID"
-	vcPortKey       = "VcPort"
-	datacenterKey   = "Datacenter"
-	resourcePoolKey = "ResourcePool"
-	folderKey       = "Folder"
-	datastoreKey    = "Datastore"
+	vcPNIDKey           = "VcPNID"
+	vcPortKey           = "VcPort"
+	vcAuthSecretNameKey = "VcAuthSecretName"
+	datacenterKey       = "Datacenter"
+	resourcePoolKey     = "ResourcePool"
+	folderKey           = "Folder"
+	datastoreKey        = "Datastore"
 )
 
 func configMapToProviderConfig(configMap *v1.ConfigMap) *VSphereVmProviderConfig {
@@ -48,24 +45,23 @@ func configMapToProviderConfig(configMap *v1.ConfigMap) *VSphereVmProviderConfig
 	}
 
 	return &VSphereVmProviderConfig{
-		VcUser:       dataMap[vcUserKey],
-		VcPassword:   dataMap[vcPasswordKey],
-		VcPNID:       dataMap[vcPNIDKey],
-		VcPort:       port,
-		Datacenter:   dataMap[datacenterKey],
-		ResourcePool: dataMap[resourcePoolKey],
-		Folder:       dataMap[folderKey],
-		Datastore:    dataMap[datastoreKey],
+
+		VcPNID:           dataMap[vcPNIDKey],
+		VcPort:           port,
+		VcAuthSecretName: dataMap[vcAuthSecretNameKey],
+		Datacenter:       dataMap[datacenterKey],
+		ResourcePool:     dataMap[resourcePoolKey],
+		Folder:           dataMap[folderKey],
+		Datastore:        dataMap[datastoreKey],
 	}
 }
 
 func providerConfigToConfigMap(namespace string, config VSphereVmProviderConfig) *v1.ConfigMap {
 	dataMap := make(map[string]string)
 
-	dataMap[vcUserKey] = config.VcUser
-	dataMap[vcPasswordKey] = config.VcPassword
 	dataMap[vcPNIDKey] = config.VcPNID
 	dataMap[vcPortKey] = config.VcPort
+	dataMap[vcAuthSecretNameKey] = config.VcAuthSecretName
 	dataMap[datacenterKey] = config.Datacenter
 	dataMap[resourcePoolKey] = config.ResourcePool
 	dataMap[folderKey] = config.Folder

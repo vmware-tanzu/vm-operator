@@ -48,13 +48,13 @@ func NewVSphereVmProvider(clientset *kubernetes.Clientset) (*VSphereVmProvider, 
 	return vmProvider, nil
 }
 
-func NewVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderConfig) (*VSphereVmProvider, error) {
+func NewVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderConfig, credentials *VSphereVmProviderCredentials) (*VSphereVmProvider, error) {
 	vmProvider := &VSphereVmProvider{
 		sessions: NewSessionManager(nil),
 	}
 
 	// Support existing behavior by setting up a Session for whatever namespace we're using.
-	_, err := vmProvider.sessions.NewSession(namespace, config)
+	_, err := vmProvider.sessions.NewSession(namespace, config, credentials)
 	if err != nil {
 		return nil, err
 	}

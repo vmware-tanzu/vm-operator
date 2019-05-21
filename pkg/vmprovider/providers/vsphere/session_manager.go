@@ -28,8 +28,8 @@ func NewSessionManager(clientset *kubernetes.Clientset) SessionManager {
 	}
 }
 
-func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProviderConfig) (*Session, error) {
-	ses, err := NewSession(context.TODO(), config)
+func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProviderConfig, credentials *VSphereVmProviderCredentials) (*Session, error) {
+	ses, err := NewSession(context.TODO(), config, credentials)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create session for namespace %s", namespace)
 	}
@@ -48,7 +48,12 @@ func (sm *SessionManager) createSession(ctx context.Context, namespace string) (
 		return nil, err
 	}
 
-	ses, err := NewSession(ctx, config)
+	credentials, err := GetProviderCredentials(sm.clientset, namespace, config.VcAuthSecretName)
+	if err != nil {
+		return nil, err
+	}
+
+	ses, err := NewSession(ctx, config, credentials)
 	if err != nil {
 		return nil, err
 	}

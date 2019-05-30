@@ -50,6 +50,7 @@ func NewClient(ctx context.Context, config *VSphereVmProviderConfig) (*Client, e
 	userInfo := url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
 	vimClient.RoundTripper = session.KeepAliveHandler(vimClient.RoundTripper, idleTime, func(rt soap.RoundTripper) error {
+		ctx := context.Background()
 		if _, err := methods.GetCurrentTime(ctx, rt); err != nil && isNotAuthenticatedError(err) {
 			if err = vcClient.Login(ctx, userInfo); err != nil {
 				if isInvalidLogin(err) {

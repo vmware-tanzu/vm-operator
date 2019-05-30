@@ -19,13 +19,14 @@ import (
  * vSphere instance for VM management.
  */
 type VSphereVmProviderConfig struct {
-	VcPNID       string
-	VcPort       string
-	VcCreds      *VSphereVmProviderCredentials
-	Datacenter   string
-	ResourcePool string
-	Folder       string
-	Datastore    string
+	VcPNID        string
+	VcPort        string
+	VcCreds       *VSphereVmProviderCredentials
+	Datacenter    string
+	ResourcePool  string
+	Folder        string
+	Datastore     string
+	ContentSource string
 }
 
 const (
@@ -39,6 +40,7 @@ const (
 	resourcePoolKey      = "ResourcePool"
 	folderKey            = "Folder"
 	datastoreKey         = "Datastore"
+	contentSourceKey     = "ContentSource"
 )
 
 func ConfigMapsToProviderConfig(baseConfigMap *v1.ConfigMap, nsConfigMap *v1.ConfigMap, vcCreds *VSphereVmProviderCredentials) (*VSphereVmProviderConfig, error) {
@@ -71,13 +73,14 @@ func ConfigMapsToProviderConfig(baseConfigMap *v1.ConfigMap, nsConfigMap *v1.Con
 	}
 
 	ret := &VSphereVmProviderConfig{
-		VcPNID:       vcPNID,
-		VcPort:       vcPort,
-		VcCreds:      vcCreds,
-		Datacenter:   dataMap[datacenterKey],
-		ResourcePool: dataMap[resourcePoolKey],
-		Folder:       dataMap[folderKey],
-		Datastore:    dataMap[datastoreKey],
+		VcPNID:        vcPNID,
+		VcPort:        vcPort,
+		VcCreds:       vcCreds,
+		Datacenter:    dataMap[datacenterKey],
+		ResourcePool:  dataMap[resourcePoolKey],
+		Folder:        dataMap[folderKey],
+		Datastore:     dataMap[datastoreKey],
+		ContentSource: dataMap[contentSourceKey],
 	}
 
 	return ret, nil
@@ -143,6 +146,7 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 	dataMap[resourcePoolKey] = config.ResourcePool
 	dataMap[folderKey] = config.Folder
 	dataMap[datastoreKey] = config.Datastore
+	dataMap[contentSourceKey] = config.ContentSource
 
 	return &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

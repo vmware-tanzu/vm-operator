@@ -714,7 +714,8 @@
   revision = "ded73eae5db7e7a0ef6f55aace87a2873c5d2b74"
 
 [[projects]]
-  digest = "1:d189c8ee6387801d3fb0e330bbca8af29dc14ab3478ecdce6fe5abeaee95f23f"
+  branch = "master"
+  digest = "1:18c8444a0c866a4e3d892f4344e19bef58f9c3efcd12f8aadd4681851b9346a8"
   name = "github.com/vmware/govmomi"
   packages = [
     ".",
@@ -725,6 +726,9 @@
     "property",
     "session",
     "task",
+    "vapi/internal",
+    "vapi/library",
+    "vapi/rest",
     "vim25",
     "vim25/debug",
     "vim25/methods",
@@ -735,8 +739,7 @@
     "vim25/xml",
   ]
   pruneopts = "NU"
-  revision = "3617f28d167d448f93f282a867870f109516d2a5"
-  version = "v0.19.0"
+  revision = "161c00c4e1b075c0986991eb5085109d2a5f6baf"
 
 [[projects]]
   digest = "1:93f2507c1e532e27097c890cc431fff10b6e3e90b6a134db8a3047ff6ad75187"
@@ -1509,6 +1512,8 @@
     "github.com/vmware/govmomi/find",
     "github.com/vmware/govmomi/object",
     "github.com/vmware/govmomi/session",
+    "github.com/vmware/govmomi/vapi/library",
+    "github.com/vmware/govmomi/vapi/rest",
     "github.com/vmware/govmomi/vim25",
     "github.com/vmware/govmomi/vim25/methods",
     "github.com/vmware/govmomi/vim25/mo",

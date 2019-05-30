@@ -10,10 +10,12 @@ goInstall() {
     command -v "$1" &> /dev/null || go get -u "$2"
 }
 
-goInstall "dep"             "github.com/golang/dep/cmd/dep"
-goInstall "ginkgo"          "github.com/onsi/ginkgo/ginkgo"
-goInstall "go-junit-report" "github.com/jstemmer/go-junit-report"
-goInstall "golangci-lint"   "github.com/golangci/golangci-lint/cmd/golangci-lint"
-goInstall "vcsim"           "github.com/vmware/govmomi/vcsim"
+goInstall "dep"               "github.com/golang/dep/cmd/dep"
+goInstall "vcsim"             "github.com/vmware/govmomi/vcsim"
+goInstall "ginkgo"            "github.com/onsi/ginkgo/ginkgo"
+goInstall "golangci-lint"     "github.com/golangci/golangci-lint/cmd/golangci-lint"
+goInstall "go-junit-report"   "github.com/jstemmer/go-junit-report"
+goInstall "gocover-cobertura" "github.com/t-yuki/gocover-cobertura"
+goInstall "gocovmerge"        "github.com/wadey/gocovmerge"
 
 # vim: tabstop=4 shiftwidth=4 expandtab softtabstop=4 filetype=sh

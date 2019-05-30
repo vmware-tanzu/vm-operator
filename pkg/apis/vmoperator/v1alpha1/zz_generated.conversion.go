@@ -586,6 +586,10 @@ func Convert_vmoperator_VirtualMachineImageList_To_v1alpha1_VirtualMachineImageL
 }
 
 func autoConvert_v1alpha1_VirtualMachineImageSpec_To_vmoperator_VirtualMachineImageSpec(in *VirtualMachineImageSpec, out *vmoperator.VirtualMachineImageSpec, s conversion.Scope) error {
+	out.Type = in.Type
+	out.ImageSource = in.ImageSource
+	out.ImageSourceType = in.ImageSourceType
+	out.ImagePath = in.ImagePath
 	return nil
 }
 
@@ -595,6 +599,10 @@ func Convert_v1alpha1_VirtualMachineImageSpec_To_vmoperator_VirtualMachineImageS
 }
 
 func autoConvert_vmoperator_VirtualMachineImageSpec_To_v1alpha1_VirtualMachineImageSpec(in *vmoperator.VirtualMachineImageSpec, out *VirtualMachineImageSpec, s conversion.Scope) error {
+	out.Type = in.Type
+	out.ImageSource = in.ImageSource
+	out.ImageSourceType = in.ImageSourceType
+	out.ImagePath = in.ImagePath
 	return nil
 }
 

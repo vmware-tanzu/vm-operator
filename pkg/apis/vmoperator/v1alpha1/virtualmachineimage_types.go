@@ -24,6 +24,10 @@ type VirtualMachineImage struct {
 
 // VirtualMachineImageSpec defines the desired state of VirtualMachineImage
 type VirtualMachineImageSpec struct {
+	Type            string `json:"type"`
+	ImageSource     string `json:"imageSource,omitempty"`
+	ImageSourceType string `json:"imageSourceType,omitempty"`
+	ImagePath       string `json:"imagePath,omitempty"`
 }
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 
 	"k8s.io/klog"
@@ -91,6 +92,16 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 		images = append(images, resVmToVirtualMachineImage(ctx, namespace, resVm))
 	}
 
+	if ses.contentlib != nil {
+		//List images from Content Library
+		imagesFromCL, err := ses.ListVirtualMachineImagesFromCL(ctx, namespace)
+		if err != nil {
+			return nil, err
+		}
+
+		images = append(images, imagesFromCL...)
+	}
+
 	return images, nil
 }
 
@@ -102,6 +113,19 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespa
 	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
 		return nil, err
+	}
+
+	// Find items in Library if Content Lib has been initialized
+	if ses.contentlib != nil {
+		image, err := ses.GetVirtualMachineImageFromCL(ctx, name, namespace)
+		if err != nil {
+			return nil, err
+		}
+
+		// If image is found return image or continue
+		if image != nil {
+			return image, nil
+		}
 	}
 
 	resVm, err := ses.GetVirtualMachine(ctx, name)
@@ -282,7 +306,30 @@ func resVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *re
 			InternalId: reference,
 			PowerState: powerState,
 		},
+		Spec: v1alpha1.VirtualMachineImageSpec{
+			Type:            "VM",
+			ImageSourceType: "Inventory",
+		},
 	}
+}
+
+func libItemToVirtualMachineImage(item *library.Item, namespace string) *v1alpha1.VirtualMachineImage {
+
+	return &v1alpha1.VirtualMachineImage{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      item.Name,
+			Namespace: namespace,
+		},
+		Status: v1alpha1.VirtualMachineImageStatus{
+			Uuid:       item.ID,
+			InternalId: item.Name,
+		},
+		Spec: v1alpha1.VirtualMachineImageSpec{
+			Type:            item.Type,
+			ImageSourceType: "Content Library",
+		},
+	}
+
 }
 
 // Transform Govmomi error to Kubernetes error

@@ -8,7 +8,12 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/url"
 
+	"github.com/vmware/govmomi/vapi/rest"
+	"k8s.io/klog"
+
+	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
@@ -29,6 +34,8 @@ type Session struct {
 	dcFolders    *object.DatacenterFolders
 	resourcepool *object.ResourcePool
 	datastore    *object.Datastore
+	contentlib   *library.Library
+	creds        *VSphereVmProviderCredentials
 }
 
 func NewSession(ctx context.Context, config *VSphereVmProviderConfig) (*Session, error) {
@@ -75,11 +82,68 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		return errors.Wrapf(err, "failed to init Datastore %q", config.Datastore)
 	}
 
+	s.creds = config.VcCreds
+
+	if knownLibrary := config.ContentSource; knownLibrary != "" {
+		if err = s.withRestClient(ctx, func(c *rest.Client) error {
+			s.contentlib, err = library.NewManager(c).GetLibraryByName(ctx, knownLibrary)
+			return err
+		}); err != nil {
+			return errors.Wrapf(err, "failed to init Content Library %q", knownLibrary)
+		}
+	}
+
 	return nil
 }
 
 func (s *Session) Logout(ctx context.Context) {
 	s.client.Logout(ctx)
+}
+
+func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
+	var items []library.Item
+	var err error
+	err = s.withRestClient(ctx, func(c *rest.Client) error {
+		items, err = library.NewManager(c).GetLibraryItems(ctx, s.contentlib.ID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var images []*v1alpha1.VirtualMachineImage
+	for _, item := range items {
+		images = append(images, libItemToVirtualMachineImage(&item, namespace))
+	}
+
+	return images, err
+}
+
+func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string, namespace string) (*v1alpha1.VirtualMachineImage, error) {
+	var item *library.Item
+
+	err := s.withRestClient(ctx, func(c *rest.Client) error {
+		itemIDs, err := library.NewManager(c).FindLibraryItems(ctx, library.FindItem{Name: name})
+		if err != nil {
+			return err
+		}
+
+		if len(itemIDs) > 0 {
+			//Handle multiple IDs found as an error or return the first one?
+			item, err = library.NewManager(c).GetLibraryItem(ctx, itemIDs[0])
+		}
+		return err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	//Return nil when the image with 'name' is not found in CL
+	if item == nil {
+		return nil, nil
+	}
+
+	return libItemToVirtualMachineImage(item, namespace), nil
 }
 
 func (s *Session) ListVirtualMachines(ctx context.Context, path string) ([]*res.VirtualMachine, error) {
@@ -279,4 +343,23 @@ func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, clo
 	}
 
 	return cloneResVm, nil
+}
+
+func (s *Session) withRestClient(ctx context.Context, f func(c *rest.Client) error) error {
+	c := rest.NewClient(s.client.VimClient())
+
+	userInfo := url.UserPassword(s.creds.Username, s.creds.Password)
+
+	err := c.Login(ctx, userInfo)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if err := c.Logout(ctx); err != nil {
+			klog.Errorf("failed to logout: %v", err)
+		}
+	}()
+
+	return f(c)
 }

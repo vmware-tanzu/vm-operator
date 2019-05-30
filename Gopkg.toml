@@ -119,3 +119,7 @@ required = [
 [prune]
   unused-packages = true
   non-go = true
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/vmware/govmomi"

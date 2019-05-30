@@ -230,6 +230,10 @@ type VirtualMachineClassSpec struct {
 }
 
 type VirtualMachineImageSpec struct {
+	Type            string
+	ImageSource     string
+	ImageSourceType string
+	ImagePath       string
 }
 
 type VirtualMachineClassPolicies struct {

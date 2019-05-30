@@ -9,7 +9,7 @@ isInstalled() {
 }
 
 installApps() {
-    isInstalled "git" 	    || brew install git
+    isInstalled "git"       || brew install git
     isInstalled "kubectl"   || brew install kubernetes-cli
 
     isInstalled "docker"    || brew cask install docker

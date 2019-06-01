@@ -20,7 +20,6 @@ const (
 )
 
 func AddAnnotations(objectMeta *metav1.ObjectMeta) {
-	// Add vSphere provider annotations to the object meta
 	annotations := objectMeta.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string)

@@ -116,7 +116,7 @@ func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcil
 	}
 
 	if err := r.reconcileVm(ctx, instance); err != nil {
-		log.Error(err, "failed to reconcile VirtualMachine", "VirtualMachine", instance)
+		log.Error(err, "Failed to reconcile VirtualMachine", "name", instance.NamespacedName())
 		return reconcile.Result{}, err
 	}
 
@@ -124,43 +124,47 @@ func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcil
 }
 
 func (r *ReconcileVirtualMachine) deleteVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
-	// TODO(bryanv) Move inside provider
-	vm.Status.Phase = vmoperatorv1alpha1.Deleted
-
 	err := r.vmProvider.DeleteVirtualMachine(ctx, vm)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			log.Info("Cannot find VirtualMachine that is to be deleted", "name", vm.NamespacedName())
+			log.Info("To be deleted VirtualMachine was not found", "name", vm.NamespacedName())
 			return nil
 		}
 		log.Error(err, "Failed to delete VirtualMachine", "name", vm.NamespacedName())
 		return err
 	}
 
+	vm.Status.Phase = vmoperatorv1alpha1.Deleted
 	log.V(4).Info("Deleted VirtualMachine", "name", vm.NamespacedName())
+
 	return nil
 }
 
 // Process a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
 func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
-	log.Info("Process VirtualMachine CreateOrUpdate", "name", vm.NamespacedName())
+	log.Info("Reconciling VirtualMachine", "name", vm.NamespacedName())
 
-	_, err := r.vmProvider.GetVirtualMachine(ctx, vm.Namespace, vm.Name)
-	switch {
-	case errors.IsNotFound(err):
-		err = r.createVm(ctx, vm)
-	case err != nil:
-		log.Error(err, "Failed to get VirtualMachine from provider", "name", vm.NamespacedName())
-	default:
-		err = r.updateVm(ctx, vm)
-	}
-
+	exists, err := r.vmProvider.DoesVirtualMachineExist(ctx, vm.Namespace, vm.Name)
 	if err != nil {
+		log.Error(err, "Failed to check if VirtualMachine exists from provider", "name", vm.NamespacedName())
 		return err
 	}
 
-	if err := r.Update(ctx, vm); err != nil {
-		log.Error(err, "Failed to update VirtualMachine", "name", vm.NamespacedName())
+	if exists {
+		err = r.updateVm(ctx, vm)
+	} else {
+		err = r.createVm(ctx, vm)
+	}
+
+	if uErr := r.Status().Update(ctx, vm); uErr != nil {
+		log.Error(uErr, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
+		if err != nil {
+			return err
+		}
+		return uErr
+	}
+
+	if err != nil {
 		return err
 	}
 
@@ -168,8 +172,6 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 }
 
 func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
-	vm.Status.Phase = vmoperatorv1alpha1.Creating
-
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
 	err := r.Get(ctx, types.NamespacedName{Name: vm.Spec.ClassName, Namespace: vm.Namespace}, vmClass)
 	if err != nil {
@@ -183,7 +185,7 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 		configMap := &v1.ConfigMap{}
 		err := r.Get(ctx, types.NamespacedName{Name: metadata.ConfigMapName, Namespace: vm.Namespace}, configMap)
 		if err != nil {
-			log.Error(err, "Failed to get ConfigMap for VirtualMachineMetadata",
+			log.Error(err, "Failed to get VirtualMachineMetadata ConfigMap",
 				"vmName", vm.NamespacedName(), "configMapName", metadata.ConfigMapName)
 			return err
 		}
@@ -191,30 +193,26 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 		vmMetadata = configMap.Data
 	}
 
-	tmpVm, err := r.vmProvider.CreateVirtualMachine(ctx, vm, *vmClass, vmMetadata)
+	vm.Status.Phase = vmoperatorv1alpha1.Creating
+
+	err = r.vmProvider.CreateVirtualMachine(ctx, vm, *vmClass, vmMetadata)
 	if err != nil {
 		log.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())
 		return err
 	}
 
-	// TODO(bryanv) Move inside provider
-	tmpVm.Status.Phase = vmoperatorv1alpha1.Created
-
-	// TODO(bryanv) Hack until we fix providers
-	tmpVm.Status.DeepCopyInto(&vm.Status)
+	vm.Status.Phase = vmoperatorv1alpha1.Created
 	pkg.AddAnnotations(&vm.ObjectMeta)
 
 	return nil
 }
 
 func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
-	tmpVm, err := r.vmProvider.UpdateVirtualMachine(ctx, vm)
+	err := r.vmProvider.UpdateVirtualMachine(ctx, vm)
 	if err != nil {
 		log.Error(err, "Provider failed to update VirtualMachine", "name", vm.NamespacedName())
 		return err
 	}
 
-	// TODO(bryanv) Hack until we fix providers
-	tmpVm.Status.DeepCopyInto(&vm.Status)
 	return nil
 }

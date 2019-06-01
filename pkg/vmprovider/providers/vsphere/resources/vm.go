@@ -170,14 +170,16 @@ func (vm *VirtualMachine) ImageFields(ctx context.Context) (powerState, uuid, re
 
 // GetStatus returns a VirtualMachine's Status
 func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachineStatus, error) {
+	// TODO(bryanv) We should get all the needed fields in one call to VC.
+
 	ps, err := vm.virtualMachine.PowerState(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(err, "error in getting the powerstate of the VM: %v", vm.Name)
+		return nil, errors.Wrapf(err, "failed to get VM %v PowerState VM", vm.Name)
 	}
 
 	host, err := vm.virtualMachine.HostSystem(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(err, "error in getting the HostSystem of the VM: %v", vm.Name)
+		return nil, errors.Wrapf(err, "failed to get VM %v HostSystem", vm.Name)
 	}
 
 	// Since guest info is empty, IpAddress returns not found error which fails the operation.
@@ -186,13 +188,12 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 
 	// ip, err := vm.IpAddress(ctx)
 	// if err != nil {
-	// 	return nil, errors.Wrapf(err, "error in getting the IP of the V M: %v", vm.Name)
+	// 	return nil, errors.Wrapf(err, "failed to get VM %v IP", vm.Name)
 	//}
 
 	return &v1alpha1.VirtualMachineStatus{
 		PowerState: string(ps),
 		Host:       host.Name(),
-		VmIp:       "",
 		Phase:      v1alpha1.Created,
 	}, nil
 }

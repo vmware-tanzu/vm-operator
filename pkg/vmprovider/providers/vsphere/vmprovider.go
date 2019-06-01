@@ -116,27 +116,22 @@ func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace 
 	return nil, nil
 }
 
-func (vs *VSphereVmProvider) GetVirtualMachine(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachine, error) {
-	vmName := fmt.Sprintf("%v/%v", namespace, name)
-
-	klog.Infof("Getting VirtualMachine %v", vmName)
-
+func (vs *VSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, namespace, name string) (bool, error) {
 	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
-	resVm, err := ses.GetVirtualMachine(ctx, name)
-	if err != nil {
-		return nil, transformVmError(vmName, err)
+	if _, err = ses.GetVirtualMachine(ctx, name); err != nil {
+		switch err.(type) {
+		case *find.NotFoundError, *find.DefaultNotFoundError:
+			return false, nil
+		default:
+			return false, err
+		}
 	}
 
-	vm, err := vs.mergeVmStatus(ctx, &v1alpha1.VirtualMachine{}, resVm)
-	if err != nil {
-		return nil, errors.Wrapf(err, "error in creating the VM: %v", name)
-	}
-
-	return vm, nil
+	return true, nil
 }
 
 func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, vmRes *res.VirtualMachine) {
@@ -146,24 +141,23 @@ func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, v
 	}
 
 	annotations[pkg.VmOperatorVmProviderKey] = VsphereVmProviderName
-	//annotations[VmOperatorVcUuidKey] = vs.Config.VcPNID
 	annotations[VmOperatorMoRefKey] = vmRes.ReferenceValue()
 
 	objectMeta.SetAnnotations(annotations)
 }
 
 func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) (*v1alpha1.VirtualMachine, error) {
-	vmName := vm.NamespacedName()
+	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) error {
 
+	vmName := vm.NamespacedName()
 	klog.Infof("Creating VirtualMachine %v", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	// Determine if this is a clone of an existing image or creation from scratch.
+	// Determine if this is a clone or create from scratch.
 	// The later is really only useful for dummy VMs at the moment.
 	var resVm *res.VirtualMachine
 	if vm.Spec.ImageName == "" {
@@ -173,81 +167,25 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 	}
 
 	if err != nil {
-		klog.Errorf("Create VirtualMachine %v failed: %v", vmName, err)
-		return nil, transformVmError(vmName, err)
+		klog.Errorf("Create/Clone VirtualMachine %v failed: %v", vmName, err)
+		return transformVmError(vmName, err)
 	}
 
-	vm, err = vs.mergeVmStatus(ctx, vm, resVm)
+	err = vs.mergeVmStatus(ctx, vm, resVm)
 	if err != nil {
-		return nil, transformVmError(vmName, err)
+		return transformVmError(vmName, err)
 	}
 
 	vs.addProviderAnnotations(&vm.ObjectMeta, resVm)
 
-	return vm, nil
+	return nil
 }
 
-func (vs *VSphereVmProvider) updateResourceSettings(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
-
-	cpu, err := resVm.CpuAllocation(ctx)
+func (vs *VSphereVmProvider) updateVm(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
+	err := vs.updatePowerState(ctx, vm, resVm)
 	if err != nil {
-		return errors.Wrap(err, "failed to get VirtualMachine CPU allocation")
+		return err
 	}
-
-	mem, err := resVm.MemoryAllocation(ctx)
-	if err != nil {
-		return errors.Wrap(err, "failed to get VirtualMachine memory allocation")
-	}
-
-	klog.Infof("VirtualMachine %q reservation/limit CPU: %d/%d Memory: %d/%d", vm.NamespacedName(),
-		*cpu.Reservation, *cpu.Limit, *mem.Reservation, *mem.Limit)
-
-	/*
-		// TODO(bryanv) Handle Class changes later. We need to keep track of the current class
-		// TODO: and if it has changed.
-		// TODO: Only processing memory RLS for now
-
-		needUpdate := false
-
-		newRes := vmToUpdate.Spec.Resources.Requests.Memory
-		newLimit := vmToUpdate.Spec.Resources.Limits.Memory
-		klog.Infof("New Memory allocation: %d/%d", newRes, newLimit)
-
-		if newRes != 0 && newRes != *mem.Reservation {
-			klog.Infof("Updating mem reservation from %d to %d", *mem.Reservation, newRes)
-			*mem.Reservation = newRes
-			needUpdate = true
-		}
-
-		if newLimit != 0 && newLimit != *mem.Limit {
-			klog.Infof("Updating mem limit from %d to %d", *mem.Limit, newLimit)
-			*mem.Limit = newLimit
-			needUpdate = true
-		}
-
-		if needUpdate {
-			configSpec := types.VirtualMachineConfigSpec{}
-			configSpec.CpuAllocation = cpu
-			configSpec.MemoryAllocation = mem
-
-			task, err := vm.VirtualMachine.Reconfigure(ctx, configSpec)
-			if err != nil {
-				klog.Errorf("Failed to change power state to %s", vmToUpdate.Spec.PowerState)
-				return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
-			}
-
-			//taskInfo, err := task.WaitForResult(ctx, nil)
-			err = task.Wait(ctx)
-			if err != nil {
-				klog.Errorf("VM RLS change task failed %s", err.Error())
-				return nil, transformError(vmoperator.InternalVirtualMachine.GetKind(), "", err)
-			}
-
-			// TODO: Resolve the issue with TaskResult and reconfigure (nil MoRef?)
-			return vm, nil
-			//return resources.NewVMFromReference(*vclient, vm.Datacenter, taskInfo.Result.(types.ManagedObjectReference))
-		}
-	*/
 
 	return nil
 }
@@ -267,42 +205,35 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 }
 
 // UpdateVirtualMachine updates the VM status, power state, phase etc
-func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
+func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
 	vmName := vm.NamespacedName()
-
 	klog.Infof("Updating VirtualMachine %v", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	resVm, err := ses.GetVirtualMachine(ctx, vm.Name)
 	if err != nil {
-		return nil, transformVmError(vmName, err)
+		return transformVmError(vmName, err)
 	}
 
-	err = vs.updateResourceSettings(ctx, vm, resVm)
+	err = vs.updateVm(ctx, vm, resVm)
 	if err != nil {
-		return nil, transformVmError(vmName, err)
+		return transformVmError(vmName, err)
 	}
 
-	err = vs.updatePowerState(ctx, vm, resVm)
+	err = vs.mergeVmStatus(ctx, vm, resVm)
 	if err != nil {
-		return nil, transformVmError(vmName, err)
+		return transformVmError(vmName, err)
 	}
 
-	vm, err = vs.mergeVmStatus(ctx, vm, resVm)
-	if err != nil {
-		return nil, transformVmError(vmName, err)
-	}
-
-	return vm, nil
+	return nil
 }
 
 func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
 	vmName := vmToDelete.NamespacedName()
-
 	klog.Infof("Deleting VirtualMachine %v", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, vmToDelete.Namespace)
@@ -317,7 +248,6 @@ func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelet
 
 	deleteSequence := sequence.NewVirtualMachineDeleteSequence(vmToDelete, resVm)
 	err = deleteSequence.Execute(ctx)
-
 	if err != nil {
 		klog.Errorf("Delete VirtualMachine %v sequence failed: %v", vmName, err)
 		return err
@@ -326,16 +256,17 @@ func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelet
 	return nil
 }
 
-//mergeVmStatus merges the v1alpha1 VM's status with resource VM's status
-func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) (*v1alpha1.VirtualMachine, error) {
+// mergeVmStatus merges the v1alpha1 VM's status with resource VM's status
+func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
 	vmStatus, err := resVm.GetStatus(ctx)
 	if err != nil {
-		klog.Infof("GetStatus returned error: %v", err)
-		return nil, errors.Wrapf(err, "unable to get status of the VM")
+		return errors.Wrapf(err, "unable to get VirtualMachine status")
 	}
 
-	vm.Status = *vmStatus
-	return vm, nil
+	vmStatus.Phase = vm.Status.Phase
+	vmStatus.DeepCopyInto(&vm.Status)
+
+	return nil
 }
 
 func resVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *res.VirtualMachine) *v1alpha1.VirtualMachineImage {

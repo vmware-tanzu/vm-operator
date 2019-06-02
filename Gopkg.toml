@@ -36,7 +36,7 @@ required = [
 # Comment to update deps with dep tool
 [[override]]
   name = "github.com/kubernetes-incubator/apiserver-builder-alpha"
-  source = "ssh://git@gitlab.eng.vmware.com/bventeicher/apiserver-builder-alpha.git"
+  source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_apiserver-builder-alpha.git"
   #version = "v1.12.alpha.0"
   revision = "a1abecd3833a0188bab06e41aeca0559115b3007"
 

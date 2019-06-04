@@ -29,7 +29,7 @@ type VirtualMachineClassHardware struct {
 }
 
 type VirtualMachineClassResourceSpec struct {
-	Cpu    int64             `json:"cpu,omitempty"`
+	Cpu    resource.Quantity `json:"cpu,omitempty"`
 	Memory resource.Quantity `json:"memory,omitempty"`
 }
 

@@ -29,6 +29,60 @@ var c client.Client
 
 const timeout = time.Second * 5
 
+func TestValidate(t *testing.T) {
+	ns := integration.DefaultNamespace
+	name := "fooVm"
+
+	invalid := &vmoperatorv1alpha1.VirtualMachineClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ns,
+			Name:      name,
+		},
+		Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
+			Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{
+				Cpus:   4,
+				Memory: resource.MustParse("1Mi"),
+			},
+			Policies: vmoperatorv1alpha1.VirtualMachineClassPolicies{
+				Resources: vmoperatorv1alpha1.VirtualMachineClassResources{
+					Requests: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
+						Cpu:    resource.MustParse("2000Mi"),
+						Memory: resource.MustParse("100Mi"),
+					},
+					Limits: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
+						Cpu:    resource.MustParse("1000Mi"),
+						Memory: resource.MustParse("200Mi"),
+					},
+				},
+				StorageClass: "fooStorageClass",
+			},
+		},
+	}
+
+	g := gomega.NewGomegaWithT(t)
+
+	// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
+	// channel when it is finished.
+	mgr, err := manager.New(cfg, manager.Options{})
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	c = mgr.GetClient()
+
+	stopMgr, mgrStopped := StartTestManager(mgr, g)
+
+	defer func() {
+		close(stopMgr)
+		mgrStopped.Wait()
+	}()
+
+	// Create the VM Class object and expect this to fail
+	err = c.Create(context.TODO(), invalid)
+	g.Expect(err).To(gomega.HaveOccurred())
+
+	defer func() {
+		_ = c.Delete(context.TODO(), invalid)
+	}()
+}
+
 func TestReconcile(t *testing.T) {
 	ns := integration.DefaultNamespace
 	name := "fooVmClass"
@@ -46,11 +100,11 @@ func TestReconcile(t *testing.T) {
 			Policies: vmoperatorv1alpha1.VirtualMachineClassPolicies{
 				Resources: vmoperatorv1alpha1.VirtualMachineClassResources{
 					Requests: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
-						Cpu:    1000,
+						Cpu:    resource.MustParse("1000Mi"),
 						Memory: resource.MustParse("100Mi"),
 					},
 					Limits: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
-						Cpu:    2000,
+						Cpu:    resource.MustParse("2000Mi"),
 						Memory: resource.MustParse("200Mi"),
 					},
 				},
@@ -79,10 +133,8 @@ func TestReconcile(t *testing.T) {
 		mgrStopped.Wait()
 	}()
 
-	// Create the Volume object and expect the Reconcile
+	// Create the VM Class object and expect the Reconcile
 	err = c.Create(context.TODO(), instance)
-	// The instance object may not be a valid object because it might be missing some required fields.
-	// Please modify the instance object by adding required fields and then remove the following if statement.
 	if apierrors.IsInvalid(err) {
 		t.Logf("failed to create object, got an invalid object error: %v", err)
 		return

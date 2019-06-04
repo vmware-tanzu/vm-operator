@@ -46,11 +46,11 @@ func TestReconcile(t *testing.T) {
 			Policies: vmoperatorv1alpha1.VirtualMachineClassPolicies{
 				Resources: vmoperatorv1alpha1.VirtualMachineClassResources{
 					Requests: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
-						Cpu:    1000,
+						Cpu:    resource.MustParse("1000Mi"),
 						Memory: resource.MustParse("100Mi"),
 					},
 					Limits: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
-						Cpu:    2000,
+						Cpu:    resource.MustParse("2000Mi"),
 						Memory: resource.MustParse("200Mi"),
 					},
 				},

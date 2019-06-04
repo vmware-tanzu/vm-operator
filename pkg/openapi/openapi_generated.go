@@ -838,8 +838,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassResourceSpec(ref com
 				Properties: map[string]spec.Schema{
 					"cpu": {
 						SchemaProps: spec.SchemaProps{
-							Type:   []string{"integer"},
-							Format: "int64",
+							Ref: ref("k8s.io/apimachinery/pkg/api/resource.Quantity"),
 						},
 					},
 					"memory": {

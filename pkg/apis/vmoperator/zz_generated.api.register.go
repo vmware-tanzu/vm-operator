@@ -248,7 +248,7 @@ type VirtualMachineClassResources struct {
 }
 
 type VirtualMachineClassResourceSpec struct {
-	Cpu    int64
+	Cpu    apiresource.Quantity
 	Memory apiresource.Quantity
 }
 

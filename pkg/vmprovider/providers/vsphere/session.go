@@ -174,6 +174,10 @@ func memoryQuantityToMb(q resource.Quantity) int64 {
 	return int64(math.Ceil(float64(q.Value()) / float64(1024*1024)))
 }
 
+func cpuQuantityToMhz(q resource.Quantity) int64 {
+	return int64(math.Ceil(float64(q.Value()) / float64(1024*1024)))
+}
+
 func (s *Session) configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	metadata vmprovider.VirtualMachineMetadata) (*vimTypes.VirtualMachineConfigSpec, error) {
 
@@ -183,9 +187,16 @@ func (s *Session) configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualM
 		MemoryMB: memoryQuantityToMb(vmClassSpec.Hardware.Memory),
 	}
 
-	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-		Reservation: &vmClassSpec.Policies.Resources.Requests.Cpu,
-		Limit:       &vmClassSpec.Policies.Resources.Limits.Cpu,
+	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
+
+	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
+		rsv := cpuQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu)
+		configSpec.CpuAllocation.Reservation = &rsv
+	}
+
+	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
+		lim := cpuQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu)
+		configSpec.CpuAllocation.Limit = &lim
 	}
 
 	configSpec.MemoryAllocation = &vimTypes.ResourceAllocationInfo{}

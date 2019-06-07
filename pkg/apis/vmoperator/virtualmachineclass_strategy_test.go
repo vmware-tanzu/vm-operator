@@ -101,7 +101,7 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 			}
 
 			err := field.Invalid(field.NewPath("spec", "requests"), requests.Memory.Value(),
-				"Memory Limits must be not be smaller than Memory Requests" )
+				"Memory Limits must be not be smaller than Memory Requests")
 
 			vmClass := genClass(hardware, policies)
 			Expect(validateMemory(vmClass)).ShouldNot(BeEmpty())
@@ -134,10 +134,10 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 			hardware := VirtualMachineClassHardware{}
 
 			requests := VirtualMachineClassResourceSpec{
-				Cpu:    resource.MustParse("1000Mi"),
+				Cpu: resource.MustParse("1000Mi"),
 			}
 			limits := VirtualMachineClassResourceSpec{
-				Cpu:    resource.MustParse("2000Mi"),
+				Cpu: resource.MustParse("2000Mi"),
 			}
 			policies := VirtualMachineClassPolicies{
 				genResources(requests, limits),
@@ -152,10 +152,10 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 			hardware := VirtualMachineClassHardware{}
 
 			requests := VirtualMachineClassResourceSpec{
-				Cpu:    resource.MustParse("1000Mi"),
+				Cpu: resource.MustParse("1000Mi"),
 			}
 			limits := VirtualMachineClassResourceSpec{
-				Cpu:    resource.MustParse("1000Mi"),
+				Cpu: resource.MustParse("1000Mi"),
 			}
 			policies := VirtualMachineClassPolicies{
 				genResources(requests, limits),
@@ -182,7 +182,7 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 			}
 
 			err := field.Invalid(field.NewPath("spec", "requests"), requests.Cpu.Value(),
-				"CPU Limits must be not be smaller than CPU Requests" )
+				"CPU Limits must be not be smaller than CPU Requests")
 
 			vmClass := genClass(hardware, policies)
 			Expect(validateCPU(vmClass)).ShouldNot(BeEmpty())

@@ -40,7 +40,7 @@ var _ = BeforeSuite(func() {
 	vcsim = integration.NewVcSimInstance()
 	address, port := vcsim.Start()
 
-	provider, err := vsphere.NewVSphereVmProviderFromConfig(integration.DefaultNamespace, integration.NewIntegrationVmOperatorConfig(address, port), integration.NewIntegrationVmOperatorCredentials())
+	provider, err := vsphere.NewVSphereVmProviderFromConfig(integration.DefaultNamespace, integration.NewIntegrationVmOperatorConfig(address, port))
 	if err != nil {
 		klog.Fatalf("Failed to create vSphere provider: %v", err)
 	}

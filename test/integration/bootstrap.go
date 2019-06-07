@@ -16,24 +16,30 @@ import (
 )
 
 const DefaultNamespace = "default"
+const SecretName = "vmop-test-integration-auth"
+
+type VSphereVmProviderTestConfig struct {
+	VcCredsSecretName string
+	*vsphere.VSphereVmProviderConfig
+}
 
 // Support for bootstrapping VM operator resource requirements in Kubernetes.
 // Generate a fake vsphere provider config that is suitable for the integration test environment.
 // Post the resultant config map to the API Master for consumption by the VM operator
 func InstallVmOperatorConfig(clientSet *kubernetes.Clientset, vcAddress string, vcPort int) error {
 	klog.Infof("Installing a bootstrap config map for use in integration tests.")
-	return vsphere.InstallVSphereVmProviderConfig(clientSet, DefaultNamespace, *NewIntegrationVmOperatorConfig(vcAddress, vcPort))
+	return vsphere.InstallVSphereVmProviderConfig(clientSet, DefaultNamespace, NewIntegrationVmOperatorConfig(vcAddress, vcPort), SecretName)
 }
 
 func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphereVmProviderConfig {
 	return &vsphere.VSphereVmProviderConfig{
-		VcPNID:           vcAddress,
-		VcPort:           strconv.Itoa(vcPort),
-		VcAuthSecretName: "vmop-test-integration-auth",
-		Datacenter:       "/DC0",
-		ResourcePool:     "/DC0/host/DC0_C0/Resources",
-		Folder:           "/DC0/vm",
-		Datastore:        "/DC0/datastore/LocalDS_0",
+		VcPNID:       vcAddress,
+		VcPort:       strconv.Itoa(vcPort),
+		VcCreds:      NewIntegrationVmOperatorCredentials(),
+		Datacenter:   "/DC0",
+		ResourcePool: "/DC0/host/DC0_C0/Resources",
+		Folder:       "/DC0/vm",
+		Datastore:    "/DC0/datastore/LocalDS_0",
 	}
 }
 
@@ -50,8 +56,7 @@ func SetupEnv() (func(), error) {
 	address, port := vcSim.Start()
 
 	config := NewIntegrationVmOperatorConfig(address, port)
-	credentials := NewIntegrationVmOperatorCredentials()
-	provider, err := vsphere.NewVSphereVmProviderFromConfig(DefaultNamespace, config, credentials)
+	provider, err := vsphere.NewVSphereVmProviderFromConfig(DefaultNamespace, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create vSphere provider: %v", err)
 	}

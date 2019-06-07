@@ -29,7 +29,7 @@ type Client struct {
 const idleTime = 5 * time.Minute
 
 // NewClient creates a new govmomi client; sets a keepalive handler to re-login on not authenticated errors.
-func NewClient(ctx context.Context, config *VSphereVmProviderConfig, credentials *VSphereVmProviderCredentials) (*Client, error) {
+func NewClient(ctx context.Context, config *VSphereVmProviderConfig) (*Client, error) {
 	soapUrl, err := soap.ParseURL(net.JoinHostPort(config.VcPNID, config.VcPort))
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse %s:%s", config.VcPNID, config.VcPort)
@@ -47,7 +47,7 @@ func NewClient(ctx context.Context, config *VSphereVmProviderConfig, credentials
 		SessionManager: session.NewManager(vimClient),
 	}
 
-	userInfo := url.UserPassword(credentials.Username, credentials.Password)
+	userInfo := url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
 	vimClient.RoundTripper = session.KeepAliveHandler(vimClient.RoundTripper, idleTime, func(rt soap.RoundTripper) error {
 		if _, err := methods.GetCurrentTime(ctx, rt); err != nil && isNotAuthenticatedError(err) {

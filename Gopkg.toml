@@ -31,6 +31,7 @@ required = [
   "github.com/imdario/mergo",
   "k8s.io/kube-openapi/cmd/openapi-gen",
   "github.com/modern-go/reflect2",
+  "k8s.io/client-go/kubernetes/fake"
 ]
 
 # Comment to update deps with dep tool

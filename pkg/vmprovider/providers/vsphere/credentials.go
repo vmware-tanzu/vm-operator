@@ -3,7 +3,7 @@ package vsphere
 import (
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -13,8 +13,8 @@ type VSphereVmProviderCredentials struct {
 	Password string
 }
 
-func GetSecret(clientset *kubernetes.Clientset, secretNamespace string, secretName string) (*v1.Secret, error) {
-	secret, err := clientset.CoreV1().Secrets(secretNamespace).Get(secretName, meta_v1.GetOptions{})
+func GetSecret(clientSet kubernetes.Interface, secretNamespace string, secretName string) (*v1.Secret, error) {
+	secret, err := clientSet.CoreV1().Secrets(secretNamespace).Get(secretName, metav1.GetOptions{})
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot find secret %s in namespace %s", secretName, secretNamespace)
 	}
@@ -22,8 +22,8 @@ func GetSecret(clientset *kubernetes.Clientset, secretNamespace string, secretNa
 	return secret, nil
 }
 
-func GetProviderCredentials(clientset *kubernetes.Clientset, namespace string, secretName string) (*VSphereVmProviderCredentials, error) {
-	secret, err := GetSecret(clientset, namespace, secretName)
+func GetProviderCredentials(clientSet kubernetes.Interface, namespace string, secretName string) (*VSphereVmProviderCredentials, error) {
+	secret, err := GetSecret(clientSet, namespace, secretName)
 	if err != nil {
 		return nil, err
 	}
@@ -37,4 +37,25 @@ func GetProviderCredentials(clientset *kubernetes.Clientset, namespace string, s
 	}
 
 	return &credentials, nil
+}
+
+func ProviderCredentialsToSecret(namespace string, credentials *VSphereVmProviderCredentials, vcCredsSecretName string) *v1.Secret {
+	return &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vcCredsSecretName,
+			Namespace: namespace,
+		},
+		Data: map[string][]byte{
+			"username": []byte(credentials.Username),
+			"password": []byte(credentials.Password),
+		},
+	}
+}
+
+func InstallVSphereVmProviderSecret(clientSet *kubernetes.Clientset, namespace string, credentials *VSphereVmProviderCredentials, vcCredsSecretName string) error {
+	secret := ProviderCredentialsToSecret(namespace, credentials, vcCredsSecretName)
+	if _, err := clientSet.CoreV1().Secrets(namespace).Update(secret); err != nil {
+		return err
+	}
+	return nil
 }

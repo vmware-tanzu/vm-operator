@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-controller
+  namespace: default
+  labels:
+    api: vmoperator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      api: vmoperator
+      apiserver: "false"
+  template:
+    metadata:
+      labels:
+        api: vmoperator
+        apiserver: "false"
+    spec:
+      containers:
+      - name: controller
+        image: vmoperator:latest
+        imagePullPolicy: Never
+        command:
+        - "./manager"
+        args:
+          - "--health-addr=:49201"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 49201
+          initialDelaySeconds: 25
+          periodSeconds: 3
+        resources:
+          requests:
+            cpu: 100m
+            memory: 20Mi
+          limits:
+            cpu: 100m
+            memory: 30Mi

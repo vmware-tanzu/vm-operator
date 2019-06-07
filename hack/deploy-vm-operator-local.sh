@@ -4,14 +4,8 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-CONFIG_YAMLS=(
-    config/vmopclusterrole.yaml
-    config/clusterauthdelegaterolebinding.yaml
-    config/authreaderrolebinding.yaml
-    config/vmoprolebinding.yaml
-)
-
-APISERVER_YAML=config/apiserver.yaml
+DEPLOYMENT_YAML=artifacts/local-deployment.yaml
+REDEPLOYMENT_YAML=artifacts/local-redeployment.yaml
 
 usage () {
     echo "Usage: $(basename $0) [deploy|undeploy|redeploy]"
@@ -19,24 +13,18 @@ usage () {
 }
 
 deploy() {
-    for yaml in "${CONFIG_YAMLS[@]}"; do
-        kubectl apply -f "$yaml"
-    done
-    kubectl apply -f "$APISERVER_YAML" --validate=false
+    kubectl kustomize config/local > "$DEPLOYMENT_YAML"
+    kubectl apply -f "$DEPLOYMENT_YAML"
 }
 
 undeploy() {
-    kubectl delete -f "$APISERVER_YAML"
-
-    for (( i=${#CONFIG_YAMLS[@]}-1; i >= 0; i-- )) ; do
-        yaml=${CONFIG_YAMLS[$i]}
-        kubectl delete -f "$yaml"
-    done
+    kubectl delete -f "$DEPLOYMENT_YAML"
 }
 
 redeploy() {
-    kubectl delete -f "$APISERVER_YAML"
-    kubectl apply -f "$APISERVER_YAML" --validate=false
+    kubectl kustomize config/local-redeploy > "$REDEPLOYMENT_YAML"
+    kubectl delete -f "$REDEPLOYMENT_YAML"
+    kubectl apply -f "$REDEPLOYMENT_YAML" --validate=false
 }
 
 while getopts ":" opt ; do

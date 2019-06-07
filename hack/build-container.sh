@@ -25,7 +25,7 @@ build() {
         --build-arg buildTag=${BUILD_TAG} \
         --build-arg commit=${COMMIT} \
         --build-arg branch=${BRANCH} \
-        .
+        bin/
 }
 
 while getopts ":i:t:n:T:c:b:" opt ; do

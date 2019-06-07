@@ -24,7 +24,7 @@ func validateMemory(vmClass VirtualMachineClass) field.ErrorList {
 			errors = append(errors,
 				field.Invalid(
 					field.NewPath("spec", "requests"),
-					resources.Requests.Memory.Value(), "Memory Limits must be not be smaller than Memory Requests" ))
+					resources.Requests.Memory.Value(), "Memory Limits must be not be smaller than Memory Requests"))
 		}
 
 		//TODO: Validate req and limit against hardware configuration of the class
@@ -44,7 +44,7 @@ func validateCPU(vmClass VirtualMachineClass) field.ErrorList {
 			errors = append(errors,
 				field.Invalid(
 					field.NewPath("spec", "requests"),
-					resources.Requests.Cpu.Value(), "CPU Limits must be not be smaller than CPU Requests" ))
+					resources.Requests.Cpu.Value(), "CPU Limits must be not be smaller than CPU Requests"))
 		}
 
 		//TODO: Validate req and limit against hardware configuration of the class

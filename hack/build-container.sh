@@ -10,9 +10,10 @@ BUILD_NUMBER=
 BUILD_TAG=
 COMMIT=
 BRANCH=
+BINDIR=
 
 usage() {
-    echo "Usage: $(basename $0) -i image -t imageTag [-n buildNumber] [-T buildTag] [-c commit] [-b branch]"
+    echo "Usage: $(basename $0) -i image -t imageTag [-n buildNumber] [-T buildTag] [-c commit] [-b branch] [-B binDir]"
     exit 1
 }
 
@@ -25,10 +26,11 @@ build() {
         --build-arg buildTag=${BUILD_TAG} \
         --build-arg commit=${COMMIT} \
         --build-arg branch=${BRANCH} \
-        bin/
+        --rm \
+        $BINDIR
 }
 
-while getopts ":i:t:n:T:c:b:" opt ; do
+while getopts ":i:t:n:T:c:b:B:" opt ; do
     case $opt in
         "i" ) IMAGE=$OPTARG ;;
         "t" ) IMAGE_TAG=$OPTARG ;;
@@ -36,6 +38,7 @@ while getopts ":i:t:n:T:c:b:" opt ; do
         "T" ) BUILD_TAG=$OPTARG ;;
         "c" ) COMMIT=$OPTARG ;;
         "b" ) BRANCH=$OPTARG ;;
+        "B" ) BINDIR=$OPTARG ;;
         \? ) usage ;;
     esac
 done
@@ -46,13 +49,14 @@ if [[ $# -ne 0 ]] ; then
     usage
 fi
 
-if [[ -z $IMAGE || -z $IMAGE_TAG ]] ; then
+if [[ -z ${IMAGE:-} || -z ${IMAGE_TAG:-} ]] ; then
     usage
 fi
 
 BUILD_NUMBER=${BUILD_NUMBER:-0}
 COMMIT=${COMMIT:-$(git rev-parse HEAD)}
 BRANCH=${BRANCH:-$(git rev-parse --abbrev-ref HEAD)}
+BINDIR=${BINDIR:-bin/}
 
 build
 

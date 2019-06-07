@@ -3,18 +3,30 @@
 set -o errexit
 set -o pipefail
 set -o nounset
+set -x
 
-APISERVER_YAML=config/apiserver.yaml
+YAML= # bryanv: Not used (yet?)
 
 usage () {
-    echo "Usage: $(basename $0) [deploy|undeploy|redeploy]"
+    cat <<EOM
+Usage: $(basename $0) [deploy|undeploy|redeploy] [-Y yaml]
+    -Y: k8s yaml deployment configuration
+EOM
     exit 1
 }
 
 verifyEnvironmentVariables() {
     if [[ -z ${WCP_LOAD_K8S_MASTER:-} ]]; then
-        echo "Error: The WCP_LOAD_K8S_MASTER environment variable must be set " \
+        echo "Error: The WCP_LOAD_K8S_MASTER environment variable must be set" \
              "to point to a copy of load-k8s-master"
+        exit 1
+    fi
+
+    if [[ ! -x $WCP_LOAD_K8S_MASTER ]]; then
+        echo "Error: Could not find the load-k8s-master script. Please" \
+             "verify the environment variable WCP_LOAD_K8S_MASTER is set" \
+             "properly. The load-k8s-master script is found at" \
+             "bora/vpx/wcp/support/load-k8s-master in a bora repo."
         exit 1
     fi
 
@@ -32,51 +44,46 @@ verifyEnvironmentVariables() {
     fi
 
     if [[ -z ${WCP_SA_IP:-} ]]; then
-        echo "Error: The WCP_SA_IP environment variable must be set to the " \
-             "WCP Master's IP address"
+        echo "Error: The WCP_SA_IP environment variable must be set to the" \
+             "WCP Supervisor Cluster API Server's IP address"
         exit 1
     fi
 
     if [[ -z ${WCP_SA_PASSWORD:-} ]]; then
-        echo "Error: The WCP_SA_PASSWORD environment variable must be set to "
+        echo "Error: The WCP_SA_PASSWORD environment variable must be set to" \
              "the WCP Supervisor Cluster API Server's root password"
         exit 1
     fi
 
-    if [[ ! -x $WCP_LOAD_K8S_MASTER ]]; then
-        echo "Error: Could not find the load-k8s-master script. Please " \
-             "verify the environment variable WCP_LOAD_K8S_MASTER is set " \
-             "properly. The load-k8s-master script is found at " \
-             "bora/vpx/wcp/support/load-k8s-master in a bora repo."
-        exit 1
-    fi
-
     if ! ping -c 3 -i 0.25 $WCP_SA_IP > /dev/null 2>&1 ; then
-        echo "Error: Could not access WCP Supervisor Cluster API Server at " \
+        echo "Error: Could not access WCP Supervisor Cluster API Server at" \
              "$WCP_SA_IP"
         exit 1
     fi
 }
 
 deploy() {
-   PATH="/usr/local/opt/gnu-getopt/bin:/usr/local/bin:$PATH" \
-     $WCP_LOAD_K8S_MASTER \
-     --component vmop \
-     --binary bin/wcp/apiserver,bin/wcp/manager \
-     --k8s-master-ip $WCP_SA_IP \
-     --k8s-master-password $WCP_SA_PASSWORD
+    PATH="/usr/local/opt/gnu-getopt/bin:/usr/local/bin:$PATH" \
+        $WCP_LOAD_K8S_MASTER \
+        --component vmop \
+        --binary bin/linux/apiserver,bin/linux/manager \
+        --k8s-master-ip $WCP_SA_IP \
+        --k8s-master-password $WCP_SA_PASSWORD
 }
 
 undeploy() {
    echo "Not implemented"
+   exit 1
 }
 
 redeploy() {
    echo "Not implemented"
+   exit 1
 }
 
-while getopts ":" opt ; do
+while getopts ":Y:" opt ; do
     case $opt in
+        "Y" ) YAML=$OPTARG ;;
         \? ) usage ;;
     esac
 done

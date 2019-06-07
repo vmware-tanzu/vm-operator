@@ -1,0 +1,6 @@
+# Per https://github.com/kubernetes-sigs/kubebuilder/issues/595, workaround for kustomize 2.0
+resources:
+- vmoprolebinding.yaml
+- clusterauthdelegaterolebinding.yaml
+- authreaderrolebinding.yaml
+- vmopclusterrole.yaml

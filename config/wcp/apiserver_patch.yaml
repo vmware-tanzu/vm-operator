@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-apiserver
+spec:
+  template:
+    spec:
+      containers:
+      - name: apiserver
+        args:
+        - "--etcd-servers=<etcd_proto_client>://127.0.0.1:2379"
+        - "--etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt"
+        - "--etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt"
+        - "--etcd-keyfile=/etc/kubernetes/pki/apiserver-etcd-client.key"
+        - "--tls-cert-file=/apiserver.local.config/certificates/tls.crt"
+        - "--tls-private-key-file=/apiserver.local.config/certificates/tls.key"
+        - "--audit-log-path=-"
+        - "--audit-log-maxage=0"
+        - "--audit-log-maxbackup=0"
+        - "--secure-port=9443"
+        - "--v=11"
+        livenessProbe:
+          httpGet:
+            port: 9443
+        env:
+        - name: "KUBERNETES_SERVICE_HOST"
+          value: "127.0.0.1"
+        - name: "KUBERNETES_SERVICE_PORT"
+          value: "6443"
+        - mountPath: /etc/kubernetes/pki
+          name: k8s-certs
+          readOnly: true
+      volumes:
+      - name: k8s-certs
+        hostPath:
+          path: /etc/kubernetes/pki
+          type: Directory

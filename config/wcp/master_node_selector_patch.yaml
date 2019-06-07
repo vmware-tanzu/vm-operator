@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-controller
+spec:
+  template:
+    spec:
+      # Add selector to be able to run only on WCP master
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-apiserver
+spec:
+  template:
+    spec:
+      # Add selector to be able to run only on WCP master
+      nodeSelector:
+        node-role.kubernetes.io/master: ""

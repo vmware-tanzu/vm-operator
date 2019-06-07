@@ -1,0 +1,10 @@
+kind: Endpoints
+apiVersion: v1
+metadata:
+  name: vmoperator
+  namespace: vmware-system-vmop
+subsets:
+  - addresses:
+      - ip: <wcp_master_host_ip>
+    ports:
+      - port: 9443

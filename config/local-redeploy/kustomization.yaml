@@ -1,0 +1,7 @@
+# Labels to add to all resources and selectors.
+#commonLabels:
+#  someName: someValue
+
+bases:
+- ../apiserver
+- ../manager

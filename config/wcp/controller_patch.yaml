@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-controller
+spec:
+  template:
+    spec:
+      containers:
+      - name: controller
+        env:
+        - name: "KUBERNETES_SERVICE_HOST"
+          value: "127.0.0.1"
+        - name: "KUBERNETES_SERVICE_PORT"
+          value: "6443"

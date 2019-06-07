@@ -1,0 +1,95 @@
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1alpha1.vmoperator.vmware.com
+  labels:
+    api: vmoperator
+    apiserver: "true"
+spec:
+  version: v1alpha1
+  group: vmoperator.vmware.com
+  groupPriorityMinimum: 2000
+  versionPriority: 10
+  service:
+    name: vmoperator
+    namespace: default
+  caBundle: "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURVRENDQWpnQ0NRQ3A1Vmtob0lRcm5UQU5CZ2txaGtpRzl3MEJBUXNGQURCcU1Rc3dDUVlEVlFRR0V3SjEKYmpFTE1Ba0dBMVVFQ0F3Q2MzUXhDakFJQmdOVkJBY01BV3d4Q2pBSUJnTlZCQW9NQVc4eEN6QUpCZ05WQkFzTQpBbTkxTVNrd0p3WURWUVFERENCMmJXOXdaWEpoZEc5eUxXTmxjblJwWm1sallYUmxMV0YxZEdodmNtbDBlVEFlCkZ3MHhPREV5TVRneU1qQTBNREJhRncweE9URXlNVGd5TWpBME1EQmFNR294Q3pBSkJnTlZCQVlUQW5WdU1Rc3cKQ1FZRFZRUUlEQUp6ZERFS01BZ0dBMVVFQnd3QmJERUtNQWdHQTFVRUNnd0JiekVMTUFrR0ExVUVDd3dDYjNVeApLVEFuQmdOVkJBTU1JSFp0YjNCbGNtRjBiM0l0WTJWeWRHbG1hV05oZEdVdFlYVjBhRzl5YVhSNU1JSUJJakFOCkJna3Foa2lHOXcwQkFRRUZBQU9DQVE4QU1JSUJDZ0tDQVFFQXloSnRiYXFHeExvelZBZDhDL09xaUZZdTh1T3oKc215QVRjZ3ltb3U4Z3V5cE1DN3dyRVFrUlJ3SkJaTUtIcDAxcTFWY0QzTW9UK3NTeXgxd0hNMTNFT2hMa3FnOQpRc1RxQWNnUWNQekxrTXlqNHNwbzAvdndTVU5vYkxlaWxiKzdzaldpNml1cUV4NWNjbXpOMUE2VWZxdkJ2TjRsCmxHU2FwVWhyNTJpb0ZPTWVVWFVBWnc4MnAwQklENkVneEFROWdyWDNlV0hUR20zRTZBWHJSdFBBVHBaRitrSWkKZzFTVGU5S3l5Y2xzRzU0Wm15MGw5TUJOOFpRSXlveUQ0c2Q5NFZVK29BS3VETUxlNXhjWGlxUVh0dmNwY2Rxdgo1QUYybW93ZHNsSkdhak8yOUNZeHR1SzBSNnB4aGZqSnVLSU1hZ3pKNTg4MC9GTHhocE9Ta3I4Qm13SURBUUFCCk1BMEdDU3FHU0liM0RRRUJDd1VBQTRJQkFRQkM3RXdrcHA5Zlg0U3ZRcGx5S0M1Q21UanpLcnJyTjJTMXFyMVQKMnphdldFWCtnNmJpWWpUenFMNWJ3YXZFV09jUU9PY0ZOOHFYQzhnbFFSMFJZa3RzVnB6WDdSZUNORzhYczdLdgozL1NPcUdqSjZ0bDBQa3ZUVkJscVRMNVhmNmo3ZGlsRGVFYnFpbkFOUlQwL2ZPWXFwbTBsQldiSUVDYVViN3JOCjg1OGUrendyLzFyT2xlMlBWRldyaWlQRXRraTdVZHVhTGZqYTJ2bStKd2tLaU5aT2RPQ2F6bWRnS3A3UHhDWmsKN3RPYU9iZjAzVXhydmxMZWIzeHNiTWJGeDEwY2NreVJQSUJaQlJGNGk2YmtBZ3czR29xSzZybTNvUFY3N2pLNwpIekJpdm93U0lmcjNEc25DdjJDK05kQmJoaGp1aWlIeU03c2hIcURDSEVQSndTdHkKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo="
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmoperator
+  namespace: default
+  labels:
+    api: vmoperator
+    apiserver: "true"
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: 443
+  selector:
+    api: vmoperator
+    apiserver: "true"
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-apiserver
+  namespace: default
+  labels:
+    api: vmoperator
+    apiserver: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      api: vmoperator
+      apiserver: "true"
+  template:
+    metadata:
+      labels:
+        api: vmoperator
+        apiserver: "true"
+    spec:
+      containers:
+      - name: apiserver
+        image: vmoperator:latest
+        imagePullPolicy: Never
+        volumeMounts:
+        - name: apiserver-certs
+          mountPath: /apiserver.local.config/certificates
+          readOnly: true
+        command:
+        - "./apiserver"
+        args:
+        - "--etcd-servers=http://etcd-svc:2379"
+        - "--tls-cert-file=/apiserver.local.config/certificates/tls.crt"
+        - "--tls-private-key-file=/apiserver.local.config/certificates/tls.key"
+        - "--audit-log-path=-"
+        - "--audit-log-maxage=0"
+        - "--audit-log-maxbackup=0"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 443
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 15
+        resources:
+          requests:
+            cpu: 100m
+            memory: 20Mi
+          limits:
+            cpu: 100m
+            memory: 30Mi
+      volumes:
+      - name: apiserver-certs
+        secret:
+          secretName: vmoperator
+

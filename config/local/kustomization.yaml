@@ -1,0 +1,9 @@
+# Labels to add to all resources and selectors.
+#commonLabels:
+#  someName: someValue
+
+bases:
+- ../etcd
+- ../rbac
+- ../apiserver
+- ../manager

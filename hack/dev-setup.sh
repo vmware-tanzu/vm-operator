@@ -14,6 +14,17 @@ installApps() {
 
     isInstalled "docker"    || brew cask install docker
     isInstalled "minikube"  || brew cask install minikube
+
+    #
+    # executables required to run load-k8s-master for WCP testbeds
+    #
+
+    # Bash version 4 or higher is required for load-k8s-master
+    isInstalled "/usr/local/bin/bash"          || brew install bash
+    isInstalled "md5sum"                       || brew install md5sum
+    # macOS uses BSD getopt. load-k8s-master assumes GNU getopt.
+    isInstalled "/usr/local/opt/gnu-getop/bin" || brew install gnu-getopt
+    isInstalled "sshpass"                      || brew install http://git.io/sshpass.rb
 }
 
 installGo() {

@@ -34,6 +34,8 @@ func NewVcSimInstance() *VcSimInstance {
 }
 
 func getPort() int {
+	// nolint:gosec
+	// Ignore G102: Binds to all network interfaces (gosec)
 	l, _ := net.Listen("tcp", ":0")
 	defer func() { _ = l.Close() }()
 	pieces := strings.Split(l.Addr().String(), ":")
@@ -50,6 +52,8 @@ func waitForStart(hostPort string) error {
 	addr := fmt.Sprintf("https://%s/about", hostPort)
 	client := &http.Client{
 		Transport: &http.Transport{
+			// nolint:gosec
+			// Ignore the SSL check
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}

@@ -6,19 +6,20 @@ package vmoperator
 
 import (
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
-func genResources(requests VirtualMachineClassResourceSpec, limits VirtualMachineClassResourceSpec) VirtualMachineClassResources {
+func aVirtualMachineClassResources(requests VirtualMachineClassResourceSpec, limits VirtualMachineClassResourceSpec) VirtualMachineClassResources {
 	return VirtualMachineClassResources{
 		Requests: requests,
 		Limits:   limits,
 	}
 }
 
-func genClass(hardware VirtualMachineClassHardware, policies VirtualMachineClassPolicies) VirtualMachineClass {
+func aVirtualMachineClass(hardware VirtualMachineClassHardware, policies VirtualMachineClassPolicies) VirtualMachineClass {
 	return VirtualMachineClass{
 		Spec: VirtualMachineClassSpec{
 			Hardware: hardware,
@@ -28,167 +29,99 @@ func genClass(hardware VirtualMachineClassHardware, policies VirtualMachineClass
 }
 
 var _ = Describe("VirtualMachineClass Validation", func() {
+	var (
+		policies VirtualMachineClassPolicies
 
-	Context("validateMemory", func() {
-		It("empty class", func() {
-			vmClass := VirtualMachineClass{}
-			Expect(validateMemory(vmClass)).Should(BeEmpty())
-		})
+		vmClass  = VirtualMachineClass{}
+		hardware = VirtualMachineClassHardware{}
 
-		It("no reservation or limit", func() {
-			hardware := VirtualMachineClassHardware{}
+		resourceSpecWithMemory100 = VirtualMachineClassResourceSpec{
+			Memory: resource.MustParse("100Mi"),
+		}
+		resourceSpecWithMemory200 = VirtualMachineClassResourceSpec{
+			Memory: resource.MustParse("200Mi"),
+		}
+		resourceSpecWithCpu1000 = VirtualMachineClassResourceSpec{
+			Cpu: resource.MustParse("1000Mi"),
+		}
+		resourceSpecWithCpu2000 = VirtualMachineClassResourceSpec{
+			Cpu: resource.MustParse("2000Mi"),
+		}
+	)
 
-			requests := VirtualMachineClassResourceSpec{}
-			limits := VirtualMachineClassResourceSpec{}
-			policies := VirtualMachineClassPolicies{
-				genResources(requests, limits),
-				"",
-			}
+	type ValidateFunc func(VirtualMachineClass) field.ErrorList
 
-			vmClass := genClass(hardware, policies)
-			Expect(validateMemory(vmClass)).Should(BeEmpty())
-		})
-
-		It("limit larger than reservation", func() {
-			hardware := VirtualMachineClassHardware{}
-
-			requests := VirtualMachineClassResourceSpec{
-				Memory: resource.MustParse("100Mi"),
-			}
-			limits := VirtualMachineClassResourceSpec{
-				Memory: resource.MustParse("200Mi"),
-			}
-			policies := VirtualMachineClassPolicies{
-				genResources(requests, limits),
-				"",
-			}
-
-			vmClass := genClass(hardware, policies)
-			Expect(validateMemory(vmClass)).Should(BeEmpty())
-		})
-
-		It("reservation and limit equal", func() {
-			hardware := VirtualMachineClassHardware{}
-
-			requests := VirtualMachineClassResourceSpec{
-				Memory: resource.MustParse("100Mi"),
-			}
-			limits := VirtualMachineClassResourceSpec{
-				Memory: resource.MustParse("100Mi"),
-			}
-			policies := VirtualMachineClassPolicies{
-				genResources(requests, limits),
-				"",
-			}
-
-			vmClass := genClass(hardware, policies)
-			Expect(validateMemory(vmClass)).Should(BeEmpty())
-		})
-
-		It("reservation larger than limit", func() {
-
-			hardware := VirtualMachineClassHardware{}
-
-			requests := VirtualMachineClassResourceSpec{
-				Memory: resource.MustParse("2000Mi"),
-			}
-			limits := VirtualMachineClassResourceSpec{
-				Memory: resource.MustParse("1000Mi"),
-			}
-			policies := VirtualMachineClassPolicies{
-				genResources(requests, limits),
-				"",
-			}
-
-			err := field.Invalid(field.NewPath("spec", "requests"), requests.Memory.Value(),
-				"Memory Limits must be not be smaller than Memory Requests")
-
-			vmClass := genClass(hardware, policies)
-			Expect(validateMemory(vmClass)).ShouldNot(BeEmpty())
-			Expect(validateMemory(vmClass)).Should(HaveLen(1))
-			Expect(validateMemory(vmClass)[0]).Should(MatchError(err))
-		})
+	BeforeEach(func() {
+		requests := VirtualMachineClassResourceSpec{}
+		limits := VirtualMachineClassResourceSpec{}
+		policies = VirtualMachineClassPolicies{
+			aVirtualMachineClassResources(requests, limits),
+			"",
+		}
 	})
 
-	Context("validateCPU", func() {
-		It("empty class", func() {
-			vmClass := VirtualMachineClass{}
-			Expect(validateCPU(vmClass)).Should(BeEmpty())
-		})
+	DescribeTable("should validate with empty",
+		func(validateFunc ValidateFunc) {
+			Expect(validateFunc(vmClass)).Should(BeEmpty())
+		},
+		Entry("for memory resources", validateMemory),
+		Entry("for CPU resources", validateCPU),
+	)
 
-		It("no reservation or limit", func() {
-			hardware := VirtualMachineClassHardware{}
-
-			requests := VirtualMachineClassResourceSpec{}
-			limits := VirtualMachineClassResourceSpec{}
+	DescribeTable("should validate when no reservation or limit",
+		func(validateFunc ValidateFunc) {
+			vmClass := aVirtualMachineClass(hardware, policies)
+			Expect(validateFunc(vmClass)).Should(BeEmpty())
+		},
+		Entry("for memory resources", validateMemory),
+		Entry("for CPU resources", validateCPU),
+	)
+	DescribeTable("should validate with limit larger than reservation",
+		func(validateFunc ValidateFunc, request *VirtualMachineClassResourceSpec, limit *VirtualMachineClassResourceSpec) {
 			policies := VirtualMachineClassPolicies{
-				genResources(requests, limits),
+				aVirtualMachineClassResources(*request, *limit),
 				"",
 			}
 
-			vmClass := genClass(hardware, policies)
-			Expect(validateCPU(vmClass)).Should(BeEmpty())
-		})
+			vmClass := aVirtualMachineClass(hardware, policies)
+			Expect(validateFunc(vmClass)).Should(BeEmpty())
+		},
+		Entry("for memory resources", validateMemory, &resourceSpecWithMemory100, &resourceSpecWithMemory200),
+		Entry("for CPU resources", validateCPU, &resourceSpecWithCpu1000, &resourceSpecWithCpu2000),
+	)
 
-		It("limit larger than reservation", func() {
-			hardware := VirtualMachineClassHardware{}
-
-			requests := VirtualMachineClassResourceSpec{
-				Cpu: resource.MustParse("1000Mi"),
-			}
-			limits := VirtualMachineClassResourceSpec{
-				Cpu: resource.MustParse("2000Mi"),
-			}
+	DescribeTable("should validate with reservation and limit equal",
+		func(validateFunc ValidateFunc, requestAndLimit *VirtualMachineClassResourceSpec) {
 			policies := VirtualMachineClassPolicies{
-				genResources(requests, limits),
+				aVirtualMachineClassResources(*requestAndLimit, *requestAndLimit),
+				"",
+			}
+			vmClass := aVirtualMachineClass(hardware, policies)
+			Expect(validateFunc(vmClass)).Should(BeEmpty())
+		},
+		Entry("for memory resources", validateMemory, &resourceSpecWithMemory100),
+		Entry("for CPU resources", validateCPU, &resourceSpecWithCpu1000),
+	)
+
+	DescribeTable("should fail if reservation larger than limit",
+		func(validateFunc ValidateFunc, request *VirtualMachineClassResourceSpec, limit *VirtualMachineClassResourceSpec, expectedErr *field.Error) {
+
+			policies := VirtualMachineClassPolicies{
+				aVirtualMachineClassResources(*request, *limit),
 				"",
 			}
 
-			vmClass := genClass(hardware, policies)
-			Expect(validateCPU(vmClass)).Should(BeEmpty())
-		})
+			vmClass := aVirtualMachineClass(hardware, policies)
+			result := validateFunc(vmClass)
 
-		It("reservation and limit equal", func() {
-			hardware := VirtualMachineClassHardware{}
-
-			requests := VirtualMachineClassResourceSpec{
-				Cpu: resource.MustParse("1000Mi"),
-			}
-			limits := VirtualMachineClassResourceSpec{
-				Cpu: resource.MustParse("1000Mi"),
-			}
-			policies := VirtualMachineClassPolicies{
-				genResources(requests, limits),
-				"",
-			}
-
-			vmClass := genClass(hardware, policies)
-			Expect(validateCPU(vmClass)).Should(BeEmpty())
-		})
-
-		It("reservation larger than limit", func() {
-
-			hardware := VirtualMachineClassHardware{}
-
-			requests := VirtualMachineClassResourceSpec{
-				Cpu: resource.MustParse("2000Mi"),
-			}
-			limits := VirtualMachineClassResourceSpec{
-				Cpu: resource.MustParse("1000Mi"),
-			}
-			policies := VirtualMachineClassPolicies{
-				genResources(requests, limits),
-				"",
-			}
-
-			err := field.Invalid(field.NewPath("spec", "requests"), requests.Cpu.Value(),
-				"CPU Limits must be not be smaller than CPU Requests")
-
-			vmClass := genClass(hardware, policies)
-			Expect(validateCPU(vmClass)).ShouldNot(BeEmpty())
-			Expect(validateCPU(vmClass)).Should(HaveLen(1))
-			Expect(validateCPU(vmClass)[0]).Should(MatchError(err))
-		})
-	})
-
+			Expect(result).Should(HaveLen(1))
+			Expect(result[0]).Should(Equal(expectedErr))
+		},
+		Entry("for memory resources", validateMemory, &resourceSpecWithMemory200, &resourceSpecWithMemory100,
+			field.Invalid(field.NewPath("spec", "requests"), resourceSpecWithMemory200.Memory.Value(),
+				"Memory Limits must not be smaller than Memory Requests")),
+		Entry("for CPU resources", validateCPU, &resourceSpecWithCpu2000, &resourceSpecWithCpu1000,
+			field.Invalid(field.NewPath("spec", "requests"), resourceSpecWithCpu2000.Cpu.Value(),
+				"CPU Limits must not be smaller than CPU Requests")),
+	)
 })

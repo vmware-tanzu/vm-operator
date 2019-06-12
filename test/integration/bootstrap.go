@@ -16,7 +16,7 @@ import (
 )
 
 const DefaultNamespace = "default"
-const SecretName = "vmop-test-integration-auth"
+const SecretName = "vmop-test-integration-auth" // nolint:gosec
 
 type VSphereVmProviderTestConfig struct {
 	VcCredsSecretName string

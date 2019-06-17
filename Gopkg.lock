@@ -1397,9 +1397,12 @@
   revision = "fdcf9f9480fdd5bf2b3c3df9bf4ecd22b25b87e2"
 
 [[projects]]
-  digest = "1:d872664ea7a69768d128d9cc61cfec53814d2908c7dc2422cb10fccdfe1f2e91"
+  digest = "1:9b59963f46cfa52da207fb0d68e72ed3b1579b4e9dac501111609e57ed8faec5"
   name = "k8s.io/klog"
-  packages = ["."]
+  packages = [
+    ".",
+    "klogr",
+  ]
   pruneopts = "NU"
   revision = "71442cd4037d612096940ceb0f3fec3f7fff66e0"
   version = "v0.2.0"
@@ -1544,6 +1547,7 @@
     "k8s.io/client-go/tools/cache",
     "k8s.io/client-go/util/flowcontrol",
     "k8s.io/klog",
+    "k8s.io/klog/klogr",
     "k8s.io/kube-openapi/cmd/openapi-gen",
     "k8s.io/kube-openapi/pkg/common",
     "sigs.k8s.io/controller-runtime/pkg/client",

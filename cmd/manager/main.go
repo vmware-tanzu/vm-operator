@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog/klogr"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis"
 	"github.com/vmware-tanzu/vm-operator/pkg/controller"
@@ -80,11 +81,14 @@ func waitForVmOperatorGroupVersion(restConfig *rest.Config) error {
 }
 
 func main() {
+	//klog.InitFlags(nil) Usually needed but already called via an init() somewhere
+
 	var healthAddr string
 	flag.StringVar(&healthAddr, "health-addr", ":49201",
 		"The address on which an http server will listen on for readiness, liveness, etc health checks")
 	flag.Parse()
-	logf.SetLogger(logf.ZapLogger(false)) // TODO(bryanv) Switch to klog as the logger
+
+	logf.SetLogger(klogr.New())
 	log := logf.Log.WithName("entrypoint")
 
 	log.Info("Setting up health HTTP server")

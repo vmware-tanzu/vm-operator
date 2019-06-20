@@ -182,19 +182,16 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 		return nil, errors.Wrapf(err, "failed to get VM %v HostSystem", vm.Name)
 	}
 
-	// Since guest info is empty, IpAddress returns not found error which fails the operation.
-	// Comment this until we figure out what to do with the IP address.
-	// TODO (parunesh): Uncomment when we have a way to get the IP address of a Vm.
-
-	// ip, err := vm.IpAddress(ctx)
-	// if err != nil {
-	// 	return nil, errors.Wrapf(err, "failed to get VM %v IP", vm.Name)
-	//}
+	ip, err := vm.IpAddress(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get VM %v IP address", vm.Name)
+	}
 
 	return &v1alpha1.VirtualMachineStatus{
-		PowerState: string(ps),
 		Host:       host.Name(),
 		Phase:      v1alpha1.Created,
+		PowerState: string(ps),
+		VmIp:       ip,
 	}, nil
 }
 

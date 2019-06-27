@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-apiserver
+  namespace: default
+  labels:
+    api: vmoperator
+    tier: control-plane
+    apiserver: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      api: vmoperator
+      apiserver: "true"
+  template:
+    metadata:
+      labels:
+        api: vmoperator
+        apiserver: "true"
+        tier: node
+        app: vmop
+        name: vmoperator-apiserver
+    spec:
+      containers:
+      - name: apiserver
+        image: vmoperator:latest
+        imagePullPolicy: Never
+        volumeMounts:
+        - name: apiserver-certs
+          mountPath: /apiserver.local.config/certificates
+          readOnly: true
+        command:
+        - "/apiserver"
+        args:
+        - "--etcd-servers=http://etcd-svc:2379"
+        - "--tls-cert-file=/apiserver.local.config/certificates/tls.crt"
+        - "--tls-private-key-file=/apiserver.local.config/certificates/tls.key"
+        - "--audit-log-path=-"
+        - "--audit-log-maxage=0"
+        - "--audit-log-maxbackup=0"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 443
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 15
+        resources:
+          requests:
+            cpu: 250m
+            memory: 100Mi
+          limits:
+            cpu: 250m
+            memory: 100Mi
+        env:
+        - name: "POD_NAMESPACE"
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+      volumes:
+      - name: apiserver-certs
+        secret:
+          secretName: vmoperator-apiserver-certs

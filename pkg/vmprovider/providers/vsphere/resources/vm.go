@@ -21,8 +21,8 @@ import (
 )
 
 type VirtualMachine struct {
-	Name           string
-	virtualMachine *object.VirtualMachine
+	Name             string
+	vcVirtualMachine *object.VirtualMachine
 }
 
 // NewVMForCreate returns a VirtualMachine that Create() can be called on
@@ -35,13 +35,13 @@ func NewVMForCreate(name string) *VirtualMachine {
 
 func NewVMFromObject(objVm *object.VirtualMachine) (*VirtualMachine, error) {
 	return &VirtualMachine{
-		Name:           objVm.Name(),
-		virtualMachine: objVm,
+		Name:             objVm.Name(),
+		vcVirtualMachine: objVm,
 	}, nil
 }
 
 func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, pool *object.ResourcePool, vmSpec *types.VirtualMachineConfigSpec) error {
-	if vm.virtualMachine != nil {
+	if vm.vcVirtualMachine != nil {
 		klog.Errorf("Failed to create VM %q because the VM object is already set", vm.Name)
 		return fmt.Errorf("failed to create VM %q because the VM object is already set", vm.Name)
 	}
@@ -56,13 +56,13 @@ func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, poo
 		return errors.Wrapf(err, "create VM %q task failed", vm.Name)
 	}
 
-	vm.virtualMachine = object.NewVirtualMachine(folder.Client(), result.Result.(types.ManagedObjectReference))
+	vm.vcVirtualMachine = object.NewVirtualMachine(folder.Client(), result.Result.(types.ManagedObjectReference))
 
 	return nil
 }
 
 func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, cloneSpec *types.VirtualMachineCloneSpec) (*VirtualMachine, error) {
-	task, err := vm.virtualMachine.Clone(ctx, folder, cloneSpec.Config.Name, *cloneSpec)
+	task, err := vm.vcVirtualMachine.Clone(ctx, folder, cloneSpec.Config.Name, *cloneSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -73,20 +73,20 @@ func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, clon
 	}
 
 	clonedObjVm := object.NewVirtualMachine(folder.Client(), result.Result.(types.ManagedObjectReference))
-	clonedResVm := VirtualMachine{Name: clonedObjVm.Name(), virtualMachine: clonedObjVm}
+	clonedResVm := VirtualMachine{Name: clonedObjVm.Name(), vcVirtualMachine: clonedObjVm}
 
 	return &clonedResVm, nil
 }
 
 func (vm *VirtualMachine) Delete(ctx context.Context) error {
 
-	if vm.virtualMachine == nil {
+	if vm.vcVirtualMachine == nil {
 		return fmt.Errorf("failed to delete VM because the VM object is not set")
 	}
 
 	// TODO(bryanv) Move power off if needed call here?
 
-	task, err := vm.virtualMachine.Destroy(ctx)
+	task, err := vm.vcVirtualMachine.Destroy(ctx)
 	if err != nil {
 		return err
 	}
@@ -103,13 +103,13 @@ func (vm *VirtualMachine) Delete(ctx context.Context) error {
 func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
 	var o mo.VirtualMachine
 
-	ps, err := vm.virtualMachine.PowerState(ctx)
+	ps, err := vm.vcVirtualMachine.PowerState(ctx)
 	if err != nil || ps == types.VirtualMachinePowerStatePoweredOff {
 		return "", err
 	}
 
 	// Just get some IP from guest
-	err = vm.virtualMachine.Properties(ctx, vm.virtualMachine.Reference(), []string{"guest.ipAddress"}, &o)
+	err = vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"guest.ipAddress"}, &o)
 	if err != nil {
 		return "", err
 	}
@@ -126,7 +126,7 @@ func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
 func (vm *VirtualMachine) CpuAllocation(ctx context.Context) (*types.ResourceAllocationInfo, error) {
 	var o mo.VirtualMachine
 
-	err := vm.virtualMachine.Properties(ctx, vm.virtualMachine.Reference(), []string{"config.cpuAllocation"}, &o)
+	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config.cpuAllocation"}, &o)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (vm *VirtualMachine) CpuAllocation(ctx context.Context) (*types.ResourceAll
 func (vm *VirtualMachine) MemoryAllocation(ctx context.Context) (*types.ResourceAllocationInfo, error) {
 	var o mo.VirtualMachine
 
-	err := vm.virtualMachine.Properties(ctx, vm.virtualMachine.Reference(), []string{"config.memoryAllocation"}, &o)
+	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config.memoryAllocation"}, &o)
 	if err != nil {
 		return nil, err
 	}
@@ -147,22 +147,22 @@ func (vm *VirtualMachine) MemoryAllocation(ctx context.Context) (*types.Resource
 }
 
 func (vm *VirtualMachine) ReferenceValue() string {
-	return vm.virtualMachine.Reference().Value
+	return vm.vcVirtualMachine.Reference().Value
 }
 
 func (vm *VirtualMachine) ManagedObject(ctx context.Context) (*mo.VirtualMachine, error) {
 	var props mo.VirtualMachine
-	if err := vm.virtualMachine.Properties(ctx, vm.virtualMachine.Reference(), nil, &props); err != nil {
+	if err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), nil, &props); err != nil {
 		return nil, err
 	}
 	return &props, nil
 }
 
 func (vm *VirtualMachine) ImageFields(ctx context.Context) (powerState, uuid, reference string) {
-	ps, _ := vm.virtualMachine.PowerState(ctx)
+	ps, _ := vm.vcVirtualMachine.PowerState(ctx)
 
 	powerState = string(ps)
-	uuid = vm.virtualMachine.UUID(ctx)
+	uuid = vm.vcVirtualMachine.UUID(ctx)
 	reference = vm.ReferenceValue()
 
 	return
@@ -172,12 +172,12 @@ func (vm *VirtualMachine) ImageFields(ctx context.Context) (powerState, uuid, re
 func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachineStatus, error) {
 	// TODO(bryanv) We should get all the needed fields in one call to VC.
 
-	ps, err := vm.virtualMachine.PowerState(ctx)
+	ps, err := vm.vcVirtualMachine.PowerState(ctx)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get VM %v PowerState VM", vm.Name)
 	}
 
-	host, err := vm.virtualMachine.HostSystem(ctx)
+	host, err := vm.vcVirtualMachine.HostSystem(ctx)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get VM %v HostSystem", vm.Name)
 	}
@@ -197,7 +197,7 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 
 func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState string) error {
 
-	ps, err := vm.virtualMachine.PowerState(ctx)
+	ps, err := vm.vcVirtualMachine.PowerState(ctx)
 	if err != nil {
 		klog.Errorf("Failed to get VM %q power state: %v", vm.Name, err)
 		return err
@@ -213,9 +213,9 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState s
 
 	switch desiredPowerState {
 	case v1alpha1.VirtualMachinePoweredOn:
-		task, err = vm.virtualMachine.PowerOn(ctx)
+		task, err = vm.vcVirtualMachine.PowerOn(ctx)
 	case v1alpha1.VirtualMachinePoweredOff:
-		task, err = vm.virtualMachine.PowerOff(ctx)
+		task, err = vm.vcVirtualMachine.PowerOff(ctx)
 	default:
 		// TODO(bryanv) Suspend? How would we handle reset?
 		err = fmt.Errorf("invalid desired power state %s", desiredPowerState)

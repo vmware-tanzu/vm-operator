@@ -1,0 +1,17 @@
+# The Service selector will be stripped out in favor of a Endpoint for the wcp kustomization target
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmoperator
+  namespace: default
+  labels:
+    api: vmoperator
+    apiserver: "true"
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: 443
+  selector:
+    api: vmoperator
+    apiserver: "true"

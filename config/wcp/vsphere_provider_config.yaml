@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vsphere.provider.config.vmoperator.vmware.com
+  namespace: vmware-system-vmop
+data:
+  VcPNID: <vc_pnid>
+  VcCredsSecretName: wcp-vmop-vc-auth
+  Datacenter: <datacenter>
+  ResourcePool: Namespaces
+  Folder: Namespaces
+  # TODO: Update this before we ship 1.0
+  Datastore: nfs0-1
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wcp-vmop-vc-auth
+  namespace: vmware-system-vmop
+type: Opaque
+data:
+  username: QWRtaW5pc3RyYXRvckB2c3BoZXJlLmxvY2Fs
+  password: QWRtaW4hMjM=

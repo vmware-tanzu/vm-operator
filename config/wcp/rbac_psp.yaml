@@ -1,3 +1,18 @@
+# Allow the use of privileged resources like "hostNetwork: true"
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: wcp-privileged-psp
+rules:
+- apiGroups:
+  - policy
+  resourceNames:
+  - wcp-privileged-psp
+  resources:
+  - podsecuritypolicies
+  verbs:
+  - use
+---
 # Bind the PSP Role to the VM Operator to allow access to host networking
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

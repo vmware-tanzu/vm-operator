@@ -5,8 +5,10 @@ metadata:
 spec:
   template:
     spec:
+      hostNetwork: true
       containers:
       - name: apiserver
+        image: vmware/vmop:0.0.1
         args:
         - "--etcd-servers=<etcd_proto_client>://127.0.0.1:2379"
         - "--etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt"
@@ -21,15 +23,17 @@ spec:
         - "--v=11"
         livenessProbe:
           httpGet:
+            host: 127.0.0.1
             port: 9443
         env:
         - name: "KUBERNETES_SERVICE_HOST"
           value: "127.0.0.1"
         - name: "KUBERNETES_SERVICE_PORT"
           value: "6443"
-        - mountPath: /etc/kubernetes/pki
-          name: k8s-certs
-          readOnly: true
+        volumeMounts:
+          - mountPath: /etc/kubernetes/pki
+            name: k8s-certs
+            readOnly: true
       volumes:
       - name: k8s-certs
         hostPath:

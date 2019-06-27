@@ -5,8 +5,13 @@ metadata:
 spec:
   template:
     spec:
+      hostNetwork: true
       containers:
       - name: controller
+        image: vmware/vmop:0.0.1
+        livenessProbe:
+          httpGet:
+            host: 127.0.0.1
         env:
         - name: "KUBERNETES_SERVICE_HOST"
           value: "127.0.0.1"

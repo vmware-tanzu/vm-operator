@@ -7,6 +7,7 @@ spec:
     spec:
       # Add selector to be able to run only on WCP master
       nodeSelector:
+        beta.kubernetes.io/arch: amd64
         node-role.kubernetes.io/master: ""
 
 ---
@@ -20,4 +21,5 @@ spec:
     spec:
       # Add selector to be able to run only on WCP master
       nodeSelector:
+        beta.kubernetes.io/arch: amd64
         node-role.kubernetes.io/master: ""

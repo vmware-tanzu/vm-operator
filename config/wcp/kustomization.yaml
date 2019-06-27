@@ -1,13 +1,6 @@
 # Adds namespace to all resources. Note: WCP treats vmware-system-* namespaces as reserved so we need that prefix
 namespace: vmware-system-vmop
 
-# Value of this field is prepended to the
-# names of all resources, e.g. a deployment named
-# "wordpress" becomes "alices-wordpress".
-# Note that it should also match with the prefix (text before '-') of the namespace
-# field above.
-namePrefix: vmware-system-vmop-
-
 bases:
   - ../rbac
   - ../apiserver
@@ -18,14 +11,23 @@ images:
     newName: vmware/vmop
     newTag: 0.0.1
 
+resources:
+  - namespace.yaml
+  - rbac_psp.yaml
+  - endpoints.yaml
+  - vsphere_provider_config.yaml
+
 patchesStrategicMerge:
   - master_node_selector_patch.yaml
   - master_toleration_patch.yaml
   - apiservice_namespace_patch.yaml
   - apiserver_service_patch.yaml
-  - apiserver_patch.yaml
-  - controller_patch.yaml
+  - apiserver_deployment_patch.yaml
+  - controller_deployment_patch.yaml
 
-resources:
-  - rbac_psp.yaml
-  - endpoints.yaml
+patchesJson6902:
+  - target:
+      version: v1
+      kind: Service
+      name: vmoperator
+    path: apiserver_service_remove_selector.yaml

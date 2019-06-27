@@ -10,6 +10,8 @@ import (
 	"math"
 	"net/url"
 
+	"github.com/vmware/govmomi/vapi/vcenter"
+
 	"github.com/vmware/govmomi/vapi/rest"
 	"k8s.io/klog"
 
@@ -192,12 +194,30 @@ func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) (*res.VirtualMachine, error) {
 
+	name := vm.Name
+
+	if s.contentlib != nil {
+		image, err := s.GetVirtualMachineImageFromCL(ctx, vm.Spec.ImageName, vm.Namespace)
+		if err != nil {
+			return nil, err
+		}
+
+		// If image is found, deploy VM from the image
+		if image != nil {
+			deployedVM, err := s.deployOvf(ctx, image.Status.Uuid, name)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
+			}
+
+			return deployedVM, nil
+		}
+	}
+
 	resSrcVm, err := s.lookupVm(ctx, vm.Spec.ImageName)
 	if err != nil {
 		return nil, err
 	}
 
-	name := vm.Name
 	cloneSpec, err := s.cloneSpecFromClassSpec(ctx, name, resSrcVm, &vm.Spec, &vmClass.Spec, vmMetadata)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create clone spec from %q", resSrcVm.Name)
@@ -343,6 +363,47 @@ func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, clo
 	}
 
 	return cloneResVm, nil
+}
+
+func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string) (*res.VirtualMachine, error) {
+
+	var deployment vcenter.Deployment
+	var err error
+	err = s.withRestClient(ctx, func(c *rest.Client) error {
+		manager := vcenter.NewManager(c)
+
+		deploySpec := vcenter.Deploy{
+			DeploymentSpec: vcenter.DeploymentSpec{
+				Name:               vmName,
+				DefaultDatastoreID: s.datastore.Reference().Value,
+				// TODO (): Plumb AcceptAllEULA to this Spec
+				AcceptAllEULA: true,
+			},
+			Target: vcenter.Target{
+				ResourcePoolID: s.resourcepool.Reference().Value,
+			},
+		}
+
+		deployment, err = manager.DeployLibraryItem(ctx, itemID, deploySpec)
+		return err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if !deployment.Succeeded {
+		return nil, deployment.Error
+	}
+
+	ref, err := s.finder.ObjectReference(ctx, vimTypes.ManagedObjectReference{Type: deployment.ResourceID.Type, Value: deployment.ResourceID.ID})
+	if err != nil {
+		return nil, err
+	}
+
+	deployedVM, err := res.NewVMFromObject(ref.(*object.VirtualMachine))
+
+	return deployedVM, nil
 }
 
 func (s *Session) withRestClient(ctx context.Context, f func(c *rest.Client) error) error {

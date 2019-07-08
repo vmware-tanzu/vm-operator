@@ -7,141 +7,130 @@
 package virtualmachineclass
 
 import (
-	"testing"
+	"sync"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/resource"
-
-	"github.com/vmware-tanzu/vm-operator/test/integration"
-
-	"github.com/onsi/gomega"
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"golang.org/x/net/context"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"golang.org/x/net/context"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/test/integration"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var c client.Client
 
 const timeout = time.Second * 5
 
-func TestValidate(t *testing.T) {
+var _ = Describe("VirtualMachineClass controller", func() {
 	ns := integration.DefaultNamespace
 	name := "fooVm"
 
-	invalid := &vmoperatorv1alpha1.VirtualMachineClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: ns,
-			Name:      name,
-		},
-		Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
-			Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{
-				Cpus:   4,
-				Memory: resource.MustParse("1Mi"),
-			},
-			Policies: vmoperatorv1alpha1.VirtualMachineClassPolicies{
-				Resources: vmoperatorv1alpha1.VirtualMachineClassResources{
-					Requests: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
-						Cpu:    resource.MustParse("2000Mi"),
-						Memory: resource.MustParse("100Mi"),
-					},
-					Limits: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
-						Cpu:    resource.MustParse("1000Mi"),
-						Memory: resource.MustParse("200Mi"),
-					},
-				},
-				StorageClass: "fooStorageClass",
-			},
-		},
-	}
+	var (
+		instance   vmoperatorv1alpha1.VirtualMachineClass
+		invalid    vmoperatorv1alpha1.VirtualMachineClass
+		stopMgr    chan struct{}
+		mgrStopped *sync.WaitGroup
+		mgr        manager.Manager
+		err        error
+	)
 
-	g := gomega.NewGomegaWithT(t)
+	BeforeEach(func() {
+		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
+		// channel when it is finished.
+		mgr, err = manager.New(cfg, manager.Options{})
+		Expect(err).NotTo(HaveOccurred())
+		c = mgr.GetClient()
 
-	// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
-	// channel when it is finished.
-	mgr, err := manager.New(cfg, manager.Options{})
-	g.Expect(err).NotTo(gomega.HaveOccurred())
-	c = mgr.GetClient()
+		stopMgr, mgrStopped = StartTestManager(mgr)
+	})
 
-	stopMgr, mgrStopped := StartTestManager(mgr, g)
-
-	defer func() {
+	AfterEach(func() {
 		close(stopMgr)
 		mgrStopped.Wait()
-	}()
+	})
 
-	// Create the VM Class object and expect this to fail
-	err = c.Create(context.TODO(), invalid)
-	g.Expect(err).To(gomega.HaveOccurred())
-
-	defer func() {
-		_ = c.Delete(context.TODO(), invalid)
-	}()
-}
-
-func TestReconcile(t *testing.T) {
-	ns := integration.DefaultNamespace
-	name := "fooVmClass"
-
-	instance := &vmoperatorv1alpha1.VirtualMachineClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: ns,
-			Name:      name,
-		},
-		Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
-			Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{
-				Cpus:   4,
-				Memory: resource.MustParse("1Mi"),
-			},
-			Policies: vmoperatorv1alpha1.VirtualMachineClassPolicies{
-				Resources: vmoperatorv1alpha1.VirtualMachineClassResources{
-					Requests: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
-						Cpu:    resource.MustParse("1000Mi"),
-						Memory: resource.MustParse("100Mi"),
+	Describe("when creating/deleting a VM Class", func() {
+		It("invoke the validate method", func() {
+			// Create the VM Class object and expect this to fail
+			invalid = vmoperatorv1alpha1.VirtualMachineClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      name,
+				},
+				Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
+					Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{
+						Cpus:   4,
+						Memory: resource.MustParse("1Mi"),
 					},
-					Limits: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
-						Cpu:    resource.MustParse("2000Mi"),
-						Memory: resource.MustParse("200Mi"),
+					Policies: vmoperatorv1alpha1.VirtualMachineClassPolicies{
+						Resources: vmoperatorv1alpha1.VirtualMachineClassResources{
+							Requests: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
+								Cpu:    resource.MustParse("2000Mi"),
+								Memory: resource.MustParse("100Mi"),
+							},
+							Limits: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
+								Cpu:    resource.MustParse("1000Mi"),
+								Memory: resource.MustParse("200Mi"),
+							},
+						},
+						StorageClass: "fooStorageClass",
 					},
 				},
-				StorageClass: "fooStorageClass",
-			},
-		},
-	}
+			}
 
-	expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: name}}
+			err = c.Create(context.TODO(), &invalid)
+			Expect(err).To(HaveOccurred())
 
-	g := gomega.NewGomegaWithT(t)
+			err = c.Delete(context.TODO(), &invalid)
+			Expect(err).To(HaveOccurred())
+		})
 
-	// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
-	// channel when it is finished.
-	mgr, err := manager.New(cfg, manager.Options{})
-	g.Expect(err).NotTo(gomega.HaveOccurred())
-	c = mgr.GetClient()
+		It("invoke the reconcile method", func() {
+			instance = vmoperatorv1alpha1.VirtualMachineClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      name,
+				},
+				Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
+					Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{
+						Cpus:   4,
+						Memory: resource.MustParse("1Mi"),
+					},
+					Policies: vmoperatorv1alpha1.VirtualMachineClassPolicies{
+						Resources: vmoperatorv1alpha1.VirtualMachineClassResources{
+							Requests: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
+								Cpu:    resource.MustParse("1000Mi"),
+								Memory: resource.MustParse("100Mi"),
+							},
+							Limits: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
+								Cpu:    resource.MustParse("2000Mi"),
+								Memory: resource.MustParse("200Mi"),
+							},
+						},
+						StorageClass: "fooStorageClass",
+					},
+				},
+			}
 
-	recFn, requests := SetupTestReconcile(newReconciler(mgr))
-	g.Expect(add(mgr, recFn)).To(gomega.Succeed())
-
-	stopMgr, mgrStopped := StartTestManager(mgr, g)
-
-	defer func() {
-		close(stopMgr)
-		mgrStopped.Wait()
-	}()
-
-	// Create the VM Class object and expect the Reconcile
-	err = c.Create(context.TODO(), instance)
-	if apierrors.IsInvalid(err) {
-		t.Logf("failed to create object, got an invalid object error: %v", err)
-		return
-	}
-	g.Expect(err).NotTo(gomega.HaveOccurred())
-	defer func() {
-		_ = c.Delete(context.TODO(), instance)
-	}()
-	g.Eventually(requests, timeout).Should(gomega.Receive(gomega.Equal(expectedRequest)))
-}
+			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: name}}
+			recFn, requests := SetupTestReconcile(newReconciler(mgr))
+			Expect(add(mgr, recFn)).To(Succeed())
+			// Create the VM Class object and expect the Reconcile
+			err = c.Create(context.TODO(), &instance)
+			Expect(err).ShouldNot(HaveOccurred())
+			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+			// Delete the VM Class object and expect the Reconcile
+			err = c.Delete(context.TODO(), &instance)
+			Expect(err).ShouldNot(HaveOccurred())
+			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+		})
+	})
+})

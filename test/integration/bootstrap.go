@@ -51,18 +51,17 @@ func NewIntegrationVmOperatorCredentials() *vsphere.VSphereVmProviderCredentials
 	}
 }
 
-func SetupEnv() (func(), error) {
-	vcSim := NewVcSimInstance()
+func SetupEnv(vcSim *VcSimInstance) error {
 	address, port := vcSim.Start()
-
 	config := NewIntegrationVmOperatorConfig(address, port)
 	provider, err := vsphere.NewVSphereVmProviderFromConfig(DefaultNamespace, config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create vSphere provider: %v", err)
+		return fmt.Errorf("failed to create vSphere provider: %v", err)
 	}
 	vmprovider.RegisterVmProvider(provider)
+	return nil
+}
 
-	cleanup := func() { vcSim.Stop() }
-
-	return cleanup, nil
+func CleanupEnv(vcSim *VcSimInstance) {
+	vcSim.Stop()
 }

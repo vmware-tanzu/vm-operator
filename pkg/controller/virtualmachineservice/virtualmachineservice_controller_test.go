@@ -7,83 +7,87 @@
 package virtualmachineservice
 
 import (
-	"testing"
+	"sync"
 	"time"
 
-	"github.com/vmware-tanzu/vm-operator/test/integration"
-
-	"github.com/onsi/gomega"
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"golang.org/x/net/context"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"golang.org/x/net/context"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/test/integration"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var c client.Client
 
 const timeout = time.Second * 5
 
-func TestReconcile(t *testing.T) {
+var _ = Describe("VirtualMachineService controller", func() {
 	ns := integration.DefaultNamespace
-	name := "fooVmService"
+	name := "fooVm"
 
-	port := vmoperatorv1alpha1.VirtualMachineServicePort{
-		Name:       "foo",
-		Protocol:   "TCP",
-		Port:       42,
-		TargetPort: 42,
-	}
+	var (
+		stopMgr    chan struct{}
+		mgrStopped *sync.WaitGroup
+		mgr        manager.Manager
+		err        error
+	)
 
-	instance := &vmoperatorv1alpha1.VirtualMachineService{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: ns,
-			Name:      name,
-		},
-		Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-			Type:     "ClusterIP",
-			Ports:    []vmoperatorv1alpha1.VirtualMachineServicePort{port},
-			Selector: map[string]string{"foo": "bar"},
-		},
-	}
+	BeforeEach(func() {
+		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
+		// channel when it is finished.
+		mgr, err = manager.New(cfg, manager.Options{})
+		Expect(err).NotTo(HaveOccurred())
+		c = mgr.GetClient()
 
-	expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: name}}
+		stopMgr, mgrStopped = StartTestManager(mgr)
+	})
 
-	g := gomega.NewGomegaWithT(t)
-
-	// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
-	// channel when it is finished.
-	mgr, err := manager.New(cfg, manager.Options{})
-	g.Expect(err).NotTo(gomega.HaveOccurred())
-	c = mgr.GetClient()
-
-	recFn, requests := SetupTestReconcile(newReconciler(mgr))
-	g.Expect(add(mgr, recFn)).NotTo(gomega.HaveOccurred())
-
-	stopMgr, mgrStopped := StartTestManager(mgr, g)
-
-	defer func() {
+	AfterEach(func() {
 		close(stopMgr)
 		mgrStopped.Wait()
-	}()
+	})
 
-	// Create the VirtualMachineService object and expect the Reconcile and Deployment to be created
-	err = c.Create(context.TODO(), instance)
-	// The instance object may not be a valid object because it might be missing some required fields.
-	// Please modify the instance object by adding required fields and then remove the following if statement.
-	if apierrors.IsInvalid(err) {
-		t.Logf("failed to create object, got an invalid object error: %v", err)
-		return
-	}
-	g.Expect(err).NotTo(gomega.HaveOccurred())
-	defer func() {
-		_ = c.Delete(context.TODO(), instance)
-	}()
-	g.Eventually(requests, timeout).Should(gomega.Receive(gomega.Equal(expectedRequest)))
+	Describe("when creating/deleting a VM Service", func() {
+		It("invoke the reconcile method", func() {
+			port := vmoperatorv1alpha1.VirtualMachineServicePort{
+				Name:       "foo",
+				Protocol:   "TCP",
+				Port:       42,
+				TargetPort: 42,
+			}
 
+			instance := vmoperatorv1alpha1.VirtualMachineService{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      name,
+				},
+				Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+					Type:     "ClusterIP",
+					Ports:    []vmoperatorv1alpha1.VirtualMachineServicePort{port},
+					Selector: map[string]string{"foo": "bar"},
+				},
+			}
+
+			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: name}}
+			recFn, requests := SetupTestReconcile(newReconciler(mgr))
+			Expect(add(mgr, recFn)).To(Succeed())
+			// Create the VM Service object and expect the Reconcile
+			err := c.Create(context.TODO(), &instance)
+			Expect(err).ShouldNot(HaveOccurred())
+			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+			//Delete the VM Service object and expect the Reconcile
+			err = c.Delete(context.TODO(), &instance)
+			Expect(err).ShouldNot(HaveOccurred())
+			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+		})
+	})
 	/*
 		deploy := &appsv1.Deployment{}
 		g.Eventually(func() error { return c.Get(context.TODO(), depKey, deploy) }, timeout).
@@ -99,4 +103,4 @@ func TestReconcile(t *testing.T) {
 		g.Eventually(func() error { return c.Delete(context.TODO(), deploy) }, timeout).
 			Should(gomega.MatchError("deployments.apps \"foo-deployment\" not found"))
 	*/
-}
+})

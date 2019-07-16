@@ -81,6 +81,16 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 		return nil, err
 	}
 
+	if ses.contentlib != nil {
+		//List images from Content Library
+		imagesFromCL, err := ses.ListVirtualMachineImagesFromCL(ctx, namespace)
+		if err != nil {
+			return nil, err
+		}
+
+		return imagesFromCL, nil
+	}
+
 	// TODO(bryanv) Need an actual path here?
 	resVms, err := ses.ListVirtualMachines(ctx, "*")
 	if err != nil {
@@ -90,16 +100,6 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 	var images []*v1alpha1.VirtualMachineImage
 	for _, resVm := range resVms {
 		images = append(images, resVmToVirtualMachineImage(ctx, namespace, resVm))
-	}
-
-	if ses.contentlib != nil {
-		//List images from Content Library
-		imagesFromCL, err := ses.ListVirtualMachineImagesFromCL(ctx, namespace)
-		if err != nil {
-			return nil, err
-		}
-
-		images = append(images, imagesFromCL...)
 	}
 
 	return images, nil

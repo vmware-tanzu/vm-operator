@@ -86,12 +86,12 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 
 	s.creds = config.VcCreds
 
-	if knownLibrary := config.ContentSource; knownLibrary != "" {
+	if config.ContentSource != "" {
 		if err = s.withRestClient(ctx, func(c *rest.Client) error {
-			s.contentlib, err = library.NewManager(c).GetLibraryByName(ctx, knownLibrary)
+			s.contentlib, err = library.NewManager(c).GetLibraryByName(ctx, config.ContentSource)
 			return err
 		}); err != nil {
-			return errors.Wrapf(err, "failed to init Content Library %q", knownLibrary)
+			klog.Errorf("failed to init ContentSource %q", config.ContentSource)
 		}
 	}
 
@@ -125,7 +125,7 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string,
 	var item *library.Item
 
 	err := s.withRestClient(ctx, func(c *rest.Client) error {
-		itemIDs, err := library.NewManager(c).FindLibraryItems(ctx, library.FindItem{Name: name})
+		itemIDs, err := library.NewManager(c).FindLibraryItems(ctx, library.FindItem{LibraryID: s.contentlib.ID, Name: name})
 		if err != nil {
 			return err
 		}

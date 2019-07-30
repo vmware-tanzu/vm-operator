@@ -204,12 +204,27 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 
 		// If image is found, deploy VM from the image
 		if image != nil {
-			deployedVM, err := s.deployOvf(ctx, image.Status.Uuid, name)
+			//Get configSpec to honor VM Class
+			configSpec, err := s.configSpecFromClassSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata)
+			if err != nil {
+				return nil, err
+			}
+
+			deployedVm, err := s.deployOvf(ctx, image.Status.Uuid, name)
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
 			}
 
-			return deployedVM, nil
+			//reconfigure with VirtualMachineClass config
+			if err := deployedVm.Reconfigure(ctx, configSpec); err != nil {
+				//Reconfigure failed: delete poweredOff deployedVM
+				if err1 := deployedVm.Delete(ctx); err1 != nil {
+					klog.Errorf("failed to delete Stale VM: %q with err: %v", deployedVm.Name, err1)
+				}
+				return nil, errors.Wrapf(err, "failed to reconfigure new VM %q", deployedVm.Name)
+			}
+
+			return deployedVm, nil
 		}
 	}
 
@@ -316,11 +331,12 @@ func (s *Session) configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualM
 func (s *Session) cloneSpecFromClassSpec(ctx context.Context, name string, resSrcVm *res.VirtualMachine,
 	vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	vmMetadata vmprovider.VirtualMachineMetadata) (*vimTypes.VirtualMachineCloneSpec, error) {
-
 	// TODO(bryanv) The CloneSpec Config is deprecated:
-	//   "as of vSphere API 6.0. Use deviceChange in location instead for specifying any virtual
-	//    device changes for disks and networks. All other VM configuration changes should use
-	//    ReConfigVM_Task API after the clone operation finishes."
+	//  "as of vSphere API 6.0. Use deviceChange in location instead for specifying any virtual
+	//  device changes for disks and networks. All other VM configuration changes should use
+	//  ReConfigVM_Task API after the clone operation finishes.
+	//  TLDR: Don't use the ConfigSpec for virtual dev changes, use the RelocateSpec instead"
+	//  Use of ConfigSpec is still supported and required.
 	configSpec, err := s.configSpecFromClassSpec(name, vmSpec, vmClassSpec, vmMetadata)
 	if err != nil {
 		return nil, err

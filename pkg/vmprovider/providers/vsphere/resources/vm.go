@@ -99,6 +99,20 @@ func (vm *VirtualMachine) Delete(ctx context.Context) error {
 	return nil
 }
 
+func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *types.VirtualMachineConfigSpec) error {
+	task, err := vm.vcVirtualMachine.Reconfigure(ctx, *configSpec)
+	if err != nil {
+		return err
+	}
+
+	_, err = task.WaitForResult(ctx, nil)
+	if err != nil {
+		return errors.Wrapf(err, "reconfigure VM %q task failed", vm.Name)
+	}
+
+	return nil
+}
+
 // IpAddress returns the IpAddress of the VM if powered on, error otherwise
 func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
 	var o mo.VirtualMachine

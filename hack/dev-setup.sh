@@ -23,7 +23,7 @@ installApps() {
     isInstalled "/usr/local/bin/bash"          || brew install bash
     isInstalled "md5sum"                       || brew install md5sum
     # macOS uses BSD getopt. load-k8s-master assumes GNU getopt.
-    isInstalled "/usr/local/opt/gnu-getop/bin" || brew install gnu-getopt
+    isInstalled "/usr/local/opt/gnu-getopt/bin" || brew install gnu-getopt
     isInstalled "sshpass"                      || brew install http://git.io/sshpass.rb
 }
 

@@ -34,8 +34,17 @@ spec:
           - mountPath: /etc/kubernetes/pki
             name: k8s-certs
             readOnly: true
+          - mountPath: /etc/kubernetes/pki/apiserver-etcd-client.key
+            # Need file level mounts to access encrypted host data
+            name: k8s-etcd-client-key
+            readOnly: true
       volumes:
       - name: k8s-certs
         hostPath:
           path: /etc/kubernetes/pki
           type: Directory
+      - name: k8s-etcd-client-key
+        # Need file level mounts to access encrypted host data
+        hostPath:
+          path: /dev/shm/wcp_decrypted_data/k8s-etcd-client-key
+          type: File

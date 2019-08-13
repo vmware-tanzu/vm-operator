@@ -210,7 +210,7 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 			Name:       vmPort.Name,
 			Protocol:   corev1.Protocol(vmPort.Protocol),
 			Port:       vmPort.Port,
-			TargetPort: intstr.FromInt(int(vmPort.Port)),
+			TargetPort: intstr.FromInt(int(vmPort.TargetPort)),
 		}
 		servicePorts = append(servicePorts, sport)
 	}

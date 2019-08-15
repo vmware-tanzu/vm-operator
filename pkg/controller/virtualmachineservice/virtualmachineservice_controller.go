@@ -8,9 +8,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-
 	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	corev1 "k8s.io/api/core/v1"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -55,7 +55,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
-	c, err := controller.New("virtualmachineservice-controller", mgr, controller.Options{Reconciler: r})
+	c, err := controller.New("virtualmachineservice-controller", mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: common.GetMaxReconcileNum()})
 	if err != nil {
 		return err
 	}

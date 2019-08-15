@@ -7,6 +7,8 @@ package virtualmachine
 import (
 	"context"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
+
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -50,7 +52,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
-	c, err := controller.New("virtualmachine-controller", mgr, controller.Options{Reconciler: r})
+	c, err := controller.New("virtualmachine-controller", mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: common.GetMaxReconcileNum()})
 	if err != nil {
 		return err
 	}

@@ -173,7 +173,7 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 
 func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
-	err := r.Get(ctx, types.NamespacedName{Name: vm.Spec.ClassName, Namespace: vm.Namespace}, vmClass)
+	err := r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
 	if err != nil {
 		log.Error(err, "Failed to get VirtualMachineClass for VirtualMachine",
 			"vmName", vm.NamespacedName(), "class", vm.Spec.ClassName)

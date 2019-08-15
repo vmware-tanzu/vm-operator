@@ -60,7 +60,7 @@ var _ = Describe("VirtualMachineClass controller", func() {
 			// Create the VM Class object and expect this to fail
 			invalid = vmoperatorv1alpha1.VirtualMachineClass{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      name,
+					Name: name,
 				},
 				Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
 					Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{
@@ -93,7 +93,7 @@ var _ = Describe("VirtualMachineClass controller", func() {
 		It("invoke the reconcile method", func() {
 			instance = vmoperatorv1alpha1.VirtualMachineClass{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      name,
+					Name: name,
 				},
 				Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
 					Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{

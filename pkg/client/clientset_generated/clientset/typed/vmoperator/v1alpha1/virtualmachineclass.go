@@ -18,7 +18,7 @@ import (
 // VirtualMachineClassesGetter has a method to return a VirtualMachineClassInterface.
 // A group's client should implement this interface.
 type VirtualMachineClassesGetter interface {
-	VirtualMachineClasses(namespace string) VirtualMachineClassInterface
+	VirtualMachineClasses() VirtualMachineClassInterface
 }
 
 // VirtualMachineClassInterface has methods to work with VirtualMachineClass resources.
@@ -38,14 +38,12 @@ type VirtualMachineClassInterface interface {
 // virtualMachineClasses implements VirtualMachineClassInterface
 type virtualMachineClasses struct {
 	client rest.Interface
-	ns     string
 }
 
 // newVirtualMachineClasses returns a VirtualMachineClasses
-func newVirtualMachineClasses(c *VmoperatorV1alpha1Client, namespace string) *virtualMachineClasses {
+func newVirtualMachineClasses(c *VmoperatorV1alpha1Client) *virtualMachineClasses {
 	return &virtualMachineClasses{
 		client: c.RESTClient(),
-		ns:     namespace,
 	}
 }
 
@@ -53,7 +51,6 @@ func newVirtualMachineClasses(c *VmoperatorV1alpha1Client, namespace string) *vi
 func (c *virtualMachineClasses) Get(name string, options v1.GetOptions) (result *v1alpha1.VirtualMachineClass, err error) {
 	result = &v1alpha1.VirtualMachineClass{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("virtualmachineclasses").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
@@ -66,7 +63,6 @@ func (c *virtualMachineClasses) Get(name string, options v1.GetOptions) (result 
 func (c *virtualMachineClasses) List(opts v1.ListOptions) (result *v1alpha1.VirtualMachineClassList, err error) {
 	result = &v1alpha1.VirtualMachineClassList{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("virtualmachineclasses").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Do().
@@ -78,7 +74,6 @@ func (c *virtualMachineClasses) List(opts v1.ListOptions) (result *v1alpha1.Virt
 func (c *virtualMachineClasses) Watch(opts v1.ListOptions) (watch.Interface, error) {
 	opts.Watch = true
 	return c.client.Get().
-		Namespace(c.ns).
 		Resource("virtualmachineclasses").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Watch()
@@ -88,7 +83,6 @@ func (c *virtualMachineClasses) Watch(opts v1.ListOptions) (watch.Interface, err
 func (c *virtualMachineClasses) Create(virtualMachineClass *v1alpha1.VirtualMachineClass) (result *v1alpha1.VirtualMachineClass, err error) {
 	result = &v1alpha1.VirtualMachineClass{}
 	err = c.client.Post().
-		Namespace(c.ns).
 		Resource("virtualmachineclasses").
 		Body(virtualMachineClass).
 		Do().
@@ -100,7 +94,6 @@ func (c *virtualMachineClasses) Create(virtualMachineClass *v1alpha1.VirtualMach
 func (c *virtualMachineClasses) Update(virtualMachineClass *v1alpha1.VirtualMachineClass) (result *v1alpha1.VirtualMachineClass, err error) {
 	result = &v1alpha1.VirtualMachineClass{}
 	err = c.client.Put().
-		Namespace(c.ns).
 		Resource("virtualmachineclasses").
 		Name(virtualMachineClass.Name).
 		Body(virtualMachineClass).
@@ -115,7 +108,6 @@ func (c *virtualMachineClasses) Update(virtualMachineClass *v1alpha1.VirtualMach
 func (c *virtualMachineClasses) UpdateStatus(virtualMachineClass *v1alpha1.VirtualMachineClass) (result *v1alpha1.VirtualMachineClass, err error) {
 	result = &v1alpha1.VirtualMachineClass{}
 	err = c.client.Put().
-		Namespace(c.ns).
 		Resource("virtualmachineclasses").
 		Name(virtualMachineClass.Name).
 		SubResource("status").
@@ -128,7 +120,6 @@ func (c *virtualMachineClasses) UpdateStatus(virtualMachineClass *v1alpha1.Virtu
 // Delete takes name of the virtualMachineClass and deletes it. Returns an error if one occurs.
 func (c *virtualMachineClasses) Delete(name string, options *v1.DeleteOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("virtualmachineclasses").
 		Name(name).
 		Body(options).
@@ -139,7 +130,6 @@ func (c *virtualMachineClasses) Delete(name string, options *v1.DeleteOptions) e
 // DeleteCollection deletes a collection of objects.
 func (c *virtualMachineClasses) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("virtualmachineclasses").
 		VersionedParams(&listOptions, scheme.ParameterCodec).
 		Body(options).
@@ -151,7 +141,6 @@ func (c *virtualMachineClasses) DeleteCollection(options *v1.DeleteOptions, list
 func (c *virtualMachineClasses) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1alpha1.VirtualMachineClass, err error) {
 	result = &v1alpha1.VirtualMachineClass{}
 	err = c.client.Patch(pt).
-		Namespace(c.ns).
 		Resource("virtualmachineclasses").
 		SubResource(subresources...).
 		Name(name).

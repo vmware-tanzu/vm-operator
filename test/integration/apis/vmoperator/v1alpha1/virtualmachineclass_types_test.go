@@ -38,7 +38,7 @@ var _ = Describe("VirtualMachineClass", func() {
 	Describe("when sending a storage request", func() {
 		Context("for a valid config", func() {
 			It("should provide CRUD access to the object", func() {
-				client = cs.VmoperatorV1alpha1().VirtualMachineClasses("virtualmachineclass-test-valid")
+				client = cs.VmoperatorV1alpha1().VirtualMachineClasses()
 
 				By("returning success from the create request")
 				actual, err := client.Create(&instance)

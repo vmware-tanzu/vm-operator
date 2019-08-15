@@ -13,6 +13,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
+func (VirtualMachineClassStrategy) NamespaceScoped() bool {
+	return false
+}
+
+func (VirtualMachineClassStatusStrategy) NamespaceScoped() bool {
+	return false
+}
+
 func validateMemory(vmClass VirtualMachineClass) field.ErrorList {
 	resources := vmClass.Spec.Policies.Resources
 	errors := field.ErrorList{}

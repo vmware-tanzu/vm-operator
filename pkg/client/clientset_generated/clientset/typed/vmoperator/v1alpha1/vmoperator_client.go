@@ -30,8 +30,8 @@ func (c *VmoperatorV1alpha1Client) VirtualMachines(namespace string) VirtualMach
 	return newVirtualMachines(c, namespace)
 }
 
-func (c *VmoperatorV1alpha1Client) VirtualMachineClasses(namespace string) VirtualMachineClassInterface {
-	return newVirtualMachineClasses(c, namespace)
+func (c *VmoperatorV1alpha1Client) VirtualMachineClasses() VirtualMachineClassInterface {
+	return newVirtualMachineClasses(c)
 }
 
 func (c *VmoperatorV1alpha1Client) VirtualMachineImages(namespace string) VirtualMachineImageInterface {

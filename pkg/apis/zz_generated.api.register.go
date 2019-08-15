@@ -47,7 +47,9 @@ var vmoperatorApiGroup = builders.NewApiGroupBuilder(
 	WithVersionedApis(
 		vmoperatorv1alpha1.ApiVersion,
 	).
-	WithRootScopedKinds()
+	WithRootScopedKinds(
+		"VirtualMachineClass",
+	)
 
 func GetVmoperatorAPIBuilder() *builders.APIGroupBuilder {
 	return vmoperatorApiGroup

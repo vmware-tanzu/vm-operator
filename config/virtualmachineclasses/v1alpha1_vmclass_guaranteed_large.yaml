@@ -1,0 +1,16 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachineClass
+metadata:
+  name: guaranteed-large
+spec:
+  hardware:
+    cpus: 4
+    memory: 16Gi
+  policies:
+    resources:
+      requests:
+        cpu: 4
+        memory: 16Gi
+      limits:
+        cpu: 4
+        memory: 16Gi

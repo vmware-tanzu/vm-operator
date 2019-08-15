@@ -20,7 +20,6 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/test/integration"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -30,7 +29,6 @@ var c client.Client
 const timeout = time.Second * 5
 
 var _ = Describe("VirtualMachineClass controller", func() {
-	ns := integration.DefaultNamespace
 	name := "fooVm"
 
 	var (
@@ -62,7 +60,6 @@ var _ = Describe("VirtualMachineClass controller", func() {
 			// Create the VM Class object and expect this to fail
 			invalid = vmoperatorv1alpha1.VirtualMachineClass{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
 					Name:      name,
 				},
 				Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
@@ -96,7 +93,6 @@ var _ = Describe("VirtualMachineClass controller", func() {
 		It("invoke the reconcile method", func() {
 			instance = vmoperatorv1alpha1.VirtualMachineClass{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
 					Name:      name,
 				},
 				Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
@@ -120,7 +116,7 @@ var _ = Describe("VirtualMachineClass controller", func() {
 				},
 			}
 
-			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: name}}
+			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Name: name}}
 			recFn, requests := SetupTestReconcile(newReconciler(mgr))
 			Expect(add(mgr, recFn)).To(Succeed())
 			// Create the VM Class object and expect the Reconcile

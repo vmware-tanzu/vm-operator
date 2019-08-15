@@ -48,7 +48,7 @@ var _ = Describe("VirtualMachine", func() {
 				namespace := "virtualmachine-test-invalid"
 
 				client = cs.VmoperatorV1alpha1().VirtualMachines(namespace)
-				vmClassClient = cs.VmoperatorV1alpha1().VirtualMachineClasses(namespace)
+				vmClassClient = cs.VmoperatorV1alpha1().VirtualMachineClasses()
 
 				By("returning failure from the create request when image isn't specified")
 				imageInvalid := VirtualMachine{}
@@ -61,7 +61,7 @@ var _ = Describe("VirtualMachine", func() {
 				namespace := "virtualmachine-test-valid"
 
 				client = cs.VmoperatorV1alpha1().VirtualMachines(namespace)
-				vmClassClient = cs.VmoperatorV1alpha1().VirtualMachineClasses(namespace)
+				vmClassClient = cs.VmoperatorV1alpha1().VirtualMachineClasses()
 
 				By("returning success from the create request")
 				actual, err := client.Create(&instance)

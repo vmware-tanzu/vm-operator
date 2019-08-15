@@ -1,0 +1,6 @@
+resources:
+  - v1alpha1_vmclass_guaranteed_xsmall.yaml
+  - v1alpha1_vmclass_guaranteed_small.yaml
+  - v1alpha1_vmclass_guaranteed_medium.yaml
+  - v1alpha1_vmclass_guaranteed_large.yaml
+  - v1alpha1_vmclass_guaranteed_xlarge.yaml

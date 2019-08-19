@@ -31,6 +31,8 @@ deploy() {
         numAttempts=$((numAttempts+1))
         if [ $numAttempts == $maxAttempts ]; then
             echo "APIserver pod did not start on time"
+            command="kubectl get pod --all-namespaces"
+            echo "$command" && eval "$command"
             return 1
         fi
         echo "APIserver pod not ready yet. Trying again"

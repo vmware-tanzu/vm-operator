@@ -166,12 +166,13 @@ type VirtualMachineServiceSpec struct {
 }
 
 type VirtualMachineSpec struct {
-	ImageName  string
-	ClassName  string
-	PowerState string
-	Env        corev1.EnvVar
-	Ports      []VirtualMachinePort
-	VmMetadata *VirtualMachineMetadata
+	ImageName         string
+	ClassName         string
+	PowerState        string
+	Env               corev1.EnvVar
+	Ports             []VirtualMachinePort
+	VmMetadata        *VirtualMachineMetadata
+	NetworkInterfaces []VirtualMachineNetworkInterface
 }
 
 type VirtualMachineServicePort struct {
@@ -179,6 +180,11 @@ type VirtualMachineServicePort struct {
 	Protocol   string
 	Port       int32
 	TargetPort int32
+}
+
+type VirtualMachineNetworkInterface struct {
+	NetworkName      string
+	EthernetCardType string
 }
 
 type VirtualMachineMetadata struct {

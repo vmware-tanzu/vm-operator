@@ -28,6 +28,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
+const (
+	DefaultEthernetCardType = "vmxnet3"
+)
+
 type Session struct {
 	client *Client
 
@@ -177,8 +181,13 @@ func (s *Session) GetVirtualMachine(ctx context.Context, name string) (*res.Virt
 func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) (*res.VirtualMachine, error) {
 
+	deviceSpecs, err := s.deviceSpecsFromVMSpec(ctx, &vm.Spec)
+	if err != nil {
+		return nil, err
+	}
+
 	name := vm.Name
-	configSpec, err := s.configSpecFromClassSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata)
+	configSpec, err := configSpecFromClassSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
 	if err != nil {
 		return nil, err
 	}
@@ -204,15 +213,21 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 
 		// If image is found, deploy VM from the image
 		if image != nil {
-			//Get configSpec to honor VM Class
-			configSpec, err := s.configSpecFromClassSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata)
+			deployedVm, err := s.deployOvf(ctx, image.Status.Uuid, name)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
+			}
+
+			// Add device change specs to configSpec
+			deviceSpecs, err := s.deviceChangeSpecs(ctx, &vm.Spec, deployedVm)
 			if err != nil {
 				return nil, err
 			}
 
-			deployedVm, err := s.deployOvf(ctx, image.Status.Uuid, name)
+			// Get configSpec to honor VM Class
+			configSpec, err := configSpecFromClassSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
 			if err != nil {
-				return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
+				return nil, err
 			}
 
 			//reconfigure with VirtualMachineClass config
@@ -277,67 +292,99 @@ func cpuQuantityToMhz(q resource.Quantity) int64 {
 	return int64(math.Ceil(float64(q.Value()) / float64(1024*1024)))
 }
 
-func (s *Session) configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
-	metadata vmprovider.VirtualMachineMetadata) (*vimTypes.VirtualMachineConfigSpec, error) {
+func (s *Session) deviceSpecsFromVMSpec(ctx context.Context, vmSpec *v1alpha1.VirtualMachineSpec) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+	var deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec
 
-	configSpec := &vimTypes.VirtualMachineConfigSpec{
-		Name:     name,
-		NumCPUs:  int32(vmClassSpec.Hardware.Cpus),
-		MemoryMB: memoryQuantityToMb(vmClassSpec.Hardware.Memory),
-	}
-
-	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
-
-	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
-		rsv := cpuQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu)
-		configSpec.CpuAllocation.Reservation = &rsv
-	}
-
-	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
-		lim := cpuQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu)
-		configSpec.CpuAllocation.Limit = &lim
-	}
-
-	configSpec.MemoryAllocation = &vimTypes.ResourceAllocationInfo{}
-
-	if !vmClassSpec.Policies.Resources.Requests.Memory.IsZero() {
-		rsv := memoryQuantityToMb(vmClassSpec.Policies.Resources.Requests.Memory)
-		configSpec.MemoryAllocation.Reservation = &rsv
-	}
-
-	if !vmClassSpec.Policies.Resources.Limits.Memory.IsZero() {
-		lim := memoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
-		configSpec.MemoryAllocation.Limit = &lim
-	}
-
-	if vmSpec.VmMetadata != nil {
-		switch vmSpec.VmMetadata.Transport {
-		case "ExtraConfig":
-			var extraConfigs []vimTypes.BaseOptionValue
-			for k, v := range metadata {
-				extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: k, Value: v})
-			}
-			configSpec.ExtraConfig = extraConfigs
-		default:
-			return nil, fmt.Errorf("unsupported metadata transport %q", vmSpec.VmMetadata.Transport)
+	// The clients should ensure that existing device keys are not reused as temporary key values for the new device to be added, hence
+	//  use unique negative integers as temporary keys.
+	key := int32(-100)
+	for _, vif := range vmSpec.NetworkInterfaces {
+		// Add new NICs based on the vm spec
+		// TODO: Validate the NIC type based on known types
+		ethCardType := vif.EthernetCardType
+		if vif.EthernetCardType == "" {
+			ethCardType = DefaultEthernetCardType
 		}
+
+		ref, err := s.finder.Network(ctx, vif.NetworkName)
+		if err != nil {
+			return nil, errors.Wrapf(err, "unable to find network %q", vif.NetworkName)
+		}
+		backing, err := ref.EthernetCardBackingInfo(ctx)
+		if err != nil {
+			return nil, errors.Wrapf(err, "unable to create new ethernet card backing info for network %q", vif.NetworkName)
+		}
+		dev, err := object.EthernetCardTypes().CreateEthernetCard(ethCardType, backing)
+		if err != nil {
+			return nil, errors.Wrapf(err, "unable to create new ethernet card %q for network %q", ethCardType, vif.NetworkName)
+		}
+
+		// Get the actual NIC object. This is safe to assert without a check
+		// because "object.EthernetCardTypes().CreateEthernetCard" returns a
+		// "types.BaseVirtualEthernetCard" as a "types.BaseVirtualDevice".
+		nic := dev.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+
+		// Assign a temporary device key to ensure that a unique one will be
+		// generated when the device is created.
+		nic.Key = key
+
+		deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
+			Device:    dev,
+			Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+		})
+
+		key--
+	}
+	return deviceSpecs, nil
+}
+
+func (s *Session) deviceChangeSpecs(ctx context.Context, vmSpec *v1alpha1.VirtualMachineSpec, resSrcVm *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+	// Note: If no network interface is specified in the vm spec we don't remove existing interfaces while cloning.
+	if len(vmSpec.NetworkInterfaces) == 0 {
+		return nil, nil
 	}
 
-	configSpec.Annotation = fmt.Sprint("Virtual Machine managed by VM Operator")
+	netDevices, err := resSrcVm.GetNetworkDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-	return configSpec, nil
+	var deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec
+
+	// Remove any existing NICs
+	for _, dev := range netDevices {
+		deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
+			Device:    dev,
+			Operation: vimTypes.VirtualDeviceConfigSpecOperationRemove,
+		})
+	}
+
+	// Add new NICs
+	addDeviceSpecs, err := s.deviceSpecsFromVMSpec(ctx, vmSpec)
+	if err != nil {
+		return nil, err
+	}
+	deviceSpecs = append(deviceSpecs, addDeviceSpecs...)
+
+	return deviceSpecs, nil
 }
 
 func (s *Session) cloneSpecFromClassSpec(ctx context.Context, name string, resSrcVm *res.VirtualMachine,
 	vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	vmMetadata vmprovider.VirtualMachineMetadata) (*vimTypes.VirtualMachineCloneSpec, error) {
+
+	deviceSpecs, err := s.deviceChangeSpecs(ctx, vmSpec, resSrcVm)
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO(bryanv) The CloneSpec Config is deprecated:
 	//  "as of vSphere API 6.0. Use deviceChange in location instead for specifying any virtual
 	//  device changes for disks and networks. All other VM configuration changes should use
 	//  ReConfigVM_Task API after the clone operation finishes.
 	//  TLDR: Don't use the ConfigSpec for virtual dev changes, use the RelocateSpec instead"
 	//  Use of ConfigSpec is still supported and required.
-	configSpec, err := s.configSpecFromClassSpec(name, vmSpec, vmClassSpec, vmMetadata)
+	configSpec, err := configSpecFromClassSpec(name, vmSpec, vmClassSpec, vmMetadata, deviceSpecs)
 	if err != nil {
 		return nil, err
 	}
@@ -439,4 +486,57 @@ func (s *Session) withRestClient(ctx context.Context, f func(c *rest.Client) err
 	}()
 
 	return f(c)
+}
+
+func configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
+	metadata vmprovider.VirtualMachineMetadata, deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec) (*vimTypes.VirtualMachineConfigSpec, error) {
+
+	configSpec := &vimTypes.VirtualMachineConfigSpec{
+		Name:     name,
+		NumCPUs:  int32(vmClassSpec.Hardware.Cpus),
+		MemoryMB: memoryQuantityToMb(vmClassSpec.Hardware.Memory),
+	}
+
+	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
+
+	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
+		rsv := cpuQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu)
+		configSpec.CpuAllocation.Reservation = &rsv
+	}
+
+	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
+		lim := cpuQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu)
+		configSpec.CpuAllocation.Limit = &lim
+	}
+
+	configSpec.MemoryAllocation = &vimTypes.ResourceAllocationInfo{}
+
+	if !vmClassSpec.Policies.Resources.Requests.Memory.IsZero() {
+		rsv := memoryQuantityToMb(vmClassSpec.Policies.Resources.Requests.Memory)
+		configSpec.MemoryAllocation.Reservation = &rsv
+	}
+
+	if !vmClassSpec.Policies.Resources.Limits.Memory.IsZero() {
+		lim := memoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
+		configSpec.MemoryAllocation.Limit = &lim
+	}
+
+	if vmSpec.VmMetadata != nil {
+		switch vmSpec.VmMetadata.Transport {
+		case "ExtraConfig":
+			var extraConfigs []vimTypes.BaseOptionValue
+			for k, v := range metadata {
+				extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: k, Value: v})
+			}
+			configSpec.ExtraConfig = extraConfigs
+		default:
+			return nil, fmt.Errorf("unsupported metadata transport %q", vmSpec.VmMetadata.Transport)
+		}
+	}
+
+	configSpec.Annotation = fmt.Sprint("Virtual Machine managed by VM Operator")
+
+	configSpec.DeviceChange = deviceSpecs
+
+	return configSpec, nil
 }

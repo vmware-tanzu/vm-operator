@@ -248,3 +248,13 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState s
 
 	return nil
 }
+
+func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) ([]types.BaseVirtualDevice, error) {
+	devices, err := vm.vcVirtualMachine.Device(ctx)
+	if err != nil {
+		klog.Errorf("Failed to get devices for VM %q: %v", vm.Name, err)
+		return nil, err
+	}
+
+	return devices.SelectByType((*types.VirtualEthernetCard)(nil)), nil
+}

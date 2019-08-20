@@ -1,3 +1,5 @@
+// +build !integration
+
 /* **********************************************************
  * Copyright 2019-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/

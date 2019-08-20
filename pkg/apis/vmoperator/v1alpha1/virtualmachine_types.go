@@ -50,14 +50,20 @@ type VirtualMachinePort struct {
 	Protocol corev1.Protocol `json:"protocol"`
 }
 
+type VirtualMachineNetworkInterface struct {
+	NetworkName      string `json:"networkName"`
+	EthernetCardType string `json:"ethernetCardType,omitempty"`
+}
+
 // VirtualMachineSpec defines the desired state of VirtualMachine
 type VirtualMachineSpec struct {
-	ImageName  string                  `json:"imageName"`
-	ClassName  string                  `json:"className"`
-	PowerState string                  `json:"powerState"`
-	Env        corev1.EnvVar           `json:"env,omitempty"`
-	Ports      []VirtualMachinePort    `json:"ports,omitempty"`
-	VmMetadata *VirtualMachineMetadata `json:"vmMetadata,omitempty"`
+	ImageName         string                           `json:"imageName"`
+	ClassName         string                           `json:"className"`
+	PowerState        string                           `json:"powerState"`
+	Env               corev1.EnvVar                    `json:"env,omitempty"`
+	Ports             []VirtualMachinePort             `json:"ports,omitempty"`
+	VmMetadata        *VirtualMachineMetadata          `json:"vmMetadata,omitempty"`
+	NetworkInterfaces []VirtualMachineNetworkInterface `json:"networkInterfaces,omitempty"`
 }
 
 // VirtualMachineMetadata defines the guest customization

@@ -21,7 +21,7 @@ deploy() {
     kubectl apply -f "$DEPLOYMENT_YAML"
 
     # wait for the aggregated api server to come up so we can install the VM classes
-    maxAttempts=50
+    maxAttempts=100
     numAttempts=0
 
     conditionType=$(kubectl get apiservices $APISERVICE_NAME -o=jsonpath='{.status.conditions[0].type}')

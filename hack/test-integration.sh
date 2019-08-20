@@ -14,7 +14,7 @@ usage () {
     exit 1
 }
 
-test_controller() {
+test_pkg() {
     PKG=${1%/}
     CMD="$GOTEST -parallel=1"
 
@@ -29,6 +29,17 @@ test_controller() {
     fi
 }
 
+PACKAGES=(
+    # Cannot run all integration tests the easy way:
+    #    $ go test -parallel=1 -tags=integration -v ./cmd/... ./pkg/...
+    #
+    # because each controller suite has a TestMain() and parallel seems to
+    # only apply to the tests run by each TestMain(). Since the aggregated
+    # apiserver has to listen on port 443 this causes a port conflict. So
+    # run the tests separately and merge the coverage output.
+    pkg/controller/*/
+    pkg/vmprovider
+)
 COVERAGE=""
 COVERAGE_FILES=()
 
@@ -47,16 +58,8 @@ fi
 
 go clean -testcache > /dev/null
 
-# Cannot run all integration tests the easy way:
-#    $ go test -parallel=1 -tags=integration -v ./cmd/... ./pkg/...
-#
-# because each controller suite has a TestMain() and parallel seems to
-# only apply to the tests run by each TestMain(). Since the aggregated
-# apiserver has to listen on port 443 this causes a port conflict. So
-# run the tests separately and merge the coverage output.
-
-for CTRL in pkg/controller/*/ ; do
-    test_controller $CTRL
+for pkg in ${PACKAGES[@]} ; do
+    test_pkg $pkg
 done
 
 if [[ ${#COVERAGE_FILES[@]} -gt 0 ]] ; then

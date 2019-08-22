@@ -5,7 +5,7 @@ set -o pipefail
 set -o nounset
 
 # Use tag to distinguish unit and integration tests.
-GOTEST="go test -tags=integration -v"
+GOTEST="go test -race -tags=integration -v"
 
 RC=0
 

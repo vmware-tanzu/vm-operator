@@ -26,6 +26,6 @@ fi
 
 go clean -testcache > /dev/null
 
-go test -v $OPTIONS ./cmd/... ./pkg/...
+go test -race -v $OPTIONS ./cmd/... ./pkg/...
 
 # vim: tabstop=4 shiftwidth=4 expandtab softtabstop=4 filetype=sh

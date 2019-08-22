@@ -10,6 +10,10 @@ spec:
         - key: node-role.kubernetes.io/master
           operator: "Exists"
           effect: "NoSchedule"
+        - key: kubeadmNode
+          operator: "Equal"
+          value: "master"
+          effect: "NoSchedule"
 
 ---
 
@@ -24,4 +28,8 @@ spec:
       tolerations:
         - key: node-role.kubernetes.io/master
           operator: "Exists"
+          effect: "NoSchedule"
+        - key: kubeadmNode
+          operator: "Equal"
+          value: "master"
           effect: "NoSchedule"

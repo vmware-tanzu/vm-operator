@@ -378,12 +378,6 @@ func (s *Session) cloneSpecFromClassSpec(ctx context.Context, name string, resSr
 		return nil, err
 	}
 
-	// TODO(bryanv) The CloneSpec Config is deprecated:
-	//  "as of vSphere API 6.0. Use deviceChange in location instead for specifying any virtual
-	//  device changes for disks and networks. All other VM configuration changes should use
-	//  ReConfigVM_Task API after the clone operation finishes.
-	//  TLDR: Don't use the ConfigSpec for virtual dev changes, use the RelocateSpec instead"
-	//  Use of ConfigSpec is still supported and required.
 	configSpec, err := configSpecFromClassSpec(name, vmSpec, vmClassSpec, vmMetadata, deviceSpecs)
 	if err != nil {
 		return nil, err

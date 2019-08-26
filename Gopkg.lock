@@ -396,6 +396,14 @@
   revision = "44d81051d367757e1c7c6a5a86423ece9afcf63c"
 
 [[projects]]
+  digest = "1:92e58106a0bcccecfab1b854d8f8dc40dd6bf7832087e8da1f0061232c7af138"
+  name = "github.com/google/uuid"
+  packages = ["."]
+  pruneopts = "NU"
+  revision = "0cd6bf5da1e1c83f8b45653022c74f71af0538a4"
+  version = "v1.1.1"
+
+[[projects]]
   digest = "1:27b4ab41ffdc76ad6db56db327a4db234a59588ef059fc3fd678ba0bc6b9094f"
   name = "github.com/googleapis/gnostic"
   packages = [
@@ -715,7 +723,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:1240825c6d8f92a2c492071c045658fb98fe03d5c40faa51a02ae03fc9b4bf5e"
+  digest = "1:c92fbf15963113a7167268cd47863dcf6e73ca7371064dfec884aa74056be5e1"
   name = "github.com/vmware/govmomi"
   packages = [
     ".",
@@ -723,8 +731,13 @@
     "list",
     "nfc",
     "object",
+    "ovf",
     "property",
     "session",
+    "simulator",
+    "simulator/esx",
+    "simulator/internal",
+    "simulator/vpx",
     "task",
     "vapi/internal",
     "vapi/library",
@@ -1513,6 +1526,7 @@
     "github.com/vmware/govmomi/find",
     "github.com/vmware/govmomi/object",
     "github.com/vmware/govmomi/session",
+    "github.com/vmware/govmomi/simulator",
     "github.com/vmware/govmomi/vapi/library",
     "github.com/vmware/govmomi/vapi/rest",
     "github.com/vmware/govmomi/vapi/vcenter",
@@ -1525,6 +1539,7 @@
     "google.golang.org/genproto",
     "google.golang.org/grpc",
     "k8s.io/api/core/v1",
+    "k8s.io/api/storage/v1",
     "k8s.io/apimachinery/pkg/api/errors",
     "k8s.io/apimachinery/pkg/api/resource",
     "k8s.io/apimachinery/pkg/apis/meta/internalversion",
@@ -1548,6 +1563,8 @@
     "k8s.io/client-go/kubernetes",
     "k8s.io/client-go/kubernetes/fake",
     "k8s.io/client-go/kubernetes/scheme",
+    "k8s.io/client-go/kubernetes/typed/storage/v1",
+    "k8s.io/client-go/kubernetes/typed/storage/v1/fake",
     "k8s.io/client-go/plugin/pkg/client/auth",
     "k8s.io/client-go/rest",
     "k8s.io/client-go/testing",

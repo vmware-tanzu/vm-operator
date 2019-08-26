@@ -13,6 +13,7 @@ import (
 	"github.com/vmware/govmomi/vapi/vcenter"
 
 	"github.com/vmware/govmomi/vapi/rest"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog"
 
 	"github.com/vmware/govmomi/vapi/library"
@@ -23,9 +24,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/types"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -207,7 +208,7 @@ func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 }
 
 func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) (*res.VirtualMachine, error) {
+	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (*res.VirtualMachine, error) {
 
 	name := vm.Name
 
@@ -254,7 +255,7 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 		return nil, err
 	}
 
-	cloneSpec, err := s.cloneSpecFromClassSpec(ctx, name, resSrcVm, &vm.Spec, &vmClass.Spec, vmMetadata)
+	cloneSpec, err := s.getCloneSpec(ctx, name, resSrcVm, &vm.Spec, &vmClass.Spec, vmMetadata, profileID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create clone spec from %q", resSrcVm.Name)
 	}
@@ -295,7 +296,7 @@ func memoryQuantityToMb(q resource.Quantity) int64 {
 }
 
 func cpuQuantityToMhz(q resource.Quantity) int64 {
-	return int64(math.Ceil(float64(q.Value()) / float64(1024*1024)))
+	return int64(math.Ceil(float64(q.Value()) / float64(1000*1000)))
 }
 
 func (s *Session) deviceSpecsFromVMSpec(ctx context.Context, vmSpec *v1alpha1.VirtualMachineSpec) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
@@ -375,14 +376,45 @@ func (s *Session) deviceChangeSpecs(ctx context.Context, vmSpec *v1alpha1.Virtua
 	return deviceSpecs, nil
 }
 
-func (s *Session) cloneSpecFromClassSpec(ctx context.Context, name string, resSrcVm *res.VirtualMachine,
-	vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
-	vmMetadata vmprovider.VirtualMachineMetadata) (*vimTypes.VirtualMachineCloneSpec, error) {
+func processStorageClass(ctx context.Context, resSrcVM *res.VirtualMachine, profileID string) ([]types.BaseVirtualDeviceConfigSpec, []vimTypes.BaseVirtualMachineProfileSpec, error) {
+	if len(profileID) == 0 {
+		return nil, nil, nil
+	}
 
-	deviceSpecs, err := s.deviceChangeSpecs(ctx, vmSpec, resSrcVm)
+	disks, err := resSrcVM.GetVirtualDisks(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	vdcs, err := disks.ConfigSpec(vimTypes.VirtualDeviceConfigSpecOperationEdit)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var vmProfile []vimTypes.BaseVirtualMachineProfileSpec
+	profileSpec := &vimTypes.VirtualMachineDefinedProfileSpec{ProfileId: profileID}
+	vmProfile = append(vmProfile, profileSpec)
+
+	for _, cs := range vdcs {
+		cs.GetVirtualDeviceConfigSpec().Profile = vmProfile
+		cs.GetVirtualDeviceConfigSpec().FileOperation = ""
+	}
+
+	return vdcs, vmProfile, nil
+}
+
+func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.VirtualMachine,
+	vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
+	vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (*vimTypes.VirtualMachineCloneSpec, error) {
+
+	vdcs, vmProfile, err := processStorageClass(ctx, resSrcVM, profileID)
 	if err != nil {
 		return nil, err
 	}
+	deviceSpecs, err := s.deviceChangeSpecs(ctx, vmSpec, resSrcVM)
+	if err != nil {
+		return nil, err
+	}
+	deviceSpecs = append(deviceSpecs, vdcs...)
 
 	configSpec, err := configSpecFromClassSpec(name, vmSpec, vmClassSpec, vmMetadata, deviceSpecs)
 	if err != nil {
@@ -401,6 +433,8 @@ func (s *Session) cloneSpecFromClassSpec(ctx context.Context, name string, resSr
 	cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
 	cloneSpec.Location.Pool = vimTypes.NewReference(s.resourcepool.Reference())
 	//cloneSpec.Location.DiskMoveType = string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndConsolidate)
+
+	cloneSpec.Location.Profile = vmProfile
 
 	return cloneSpec, nil
 }

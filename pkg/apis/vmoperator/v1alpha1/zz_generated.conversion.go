@@ -871,6 +871,7 @@ func autoConvert_v1alpha1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(in
 	out.Ports = *(*[]vmoperator.VirtualMachinePort)(unsafe.Pointer(&in.Ports))
 	out.VmMetadata = (*vmoperator.VirtualMachineMetadata)(unsafe.Pointer(in.VmMetadata))
 	out.NetworkInterfaces = *(*[]vmoperator.VirtualMachineNetworkInterface)(unsafe.Pointer(&in.NetworkInterfaces))
+	out.StorageClass = in.StorageClass
 	return nil
 }
 
@@ -887,6 +888,7 @@ func autoConvert_vmoperator_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in
 	out.Ports = *(*[]VirtualMachinePort)(unsafe.Pointer(&in.Ports))
 	out.VmMetadata = (*VirtualMachineMetadata)(unsafe.Pointer(in.VmMetadata))
 	out.NetworkInterfaces = *(*[]VirtualMachineNetworkInterface)(unsafe.Pointer(&in.NetworkInterfaces))
+	out.StorageClass = in.StorageClass
 	return nil
 }
 

@@ -21,8 +21,11 @@ import (
 	. "github.com/onsi/gomega"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fakeClient "k8s.io/client-go/kubernetes/fake"
+	fakeStorage "k8s.io/client-go/kubernetes/typed/storage/v1/fake"
 )
 
 var c client.Client
@@ -67,7 +70,7 @@ var _ = Describe("VirtualMachine controller", func() {
 							Memory: resource.MustParse("200Mi"),
 						},
 					},
-					StorageClass: "fooStorageClass",
+					StorageClass: "fooClass",
 				},
 			},
 		}
@@ -109,12 +112,25 @@ var _ = Describe("VirtualMachine controller", func() {
 					Name:      name,
 				},
 				Spec: vmoperatorv1alpha1.VirtualMachineSpec{
-					ImageName:  imageName,
-					ClassName:  classInstance.Name,
-					PowerState: "poweredOn",
-					Ports:      []vmoperatorv1alpha1.VirtualMachinePort{},
+					ImageName:    imageName,
+					ClassName:    classInstance.Name,
+					PowerState:   "poweredOn",
+					Ports:        []vmoperatorv1alpha1.VirtualMachinePort{},
+					StorageClass: "fooClass",
 				},
 			}
+
+			var fs fakeStorage.FakeStorageV1
+			fcl := fakeClient.NewSimpleClientset()
+			fs.Fake = &fcl.Fake
+			cl := fs.StorageClasses()
+			var sc storagev1.StorageClass
+			sc.Parameters = make(map[string]string)
+			sc.Parameters["storagePolicyID"] = "foo"
+			sc.Name = "fooClass"
+			_, err := cl.Create(&sc)
+			SetFakeStorageClasses(cl)
+
 			// Create the VM Object the expect Reconcile
 			err = c.Create(context.TODO(), &instance)
 			Expect(err).ShouldNot(HaveOccurred())

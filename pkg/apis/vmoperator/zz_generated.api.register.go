@@ -173,6 +173,7 @@ type VirtualMachineSpec struct {
 	Ports             []VirtualMachinePort
 	VmMetadata        *VirtualMachineMetadata
 	NetworkInterfaces []VirtualMachineNetworkInterface
+	StorageClass      string
 }
 
 type VirtualMachineServicePort struct {

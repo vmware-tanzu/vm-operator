@@ -1588,8 +1588,14 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.Reference
 							},
 						},
 					},
+					"storageClass": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
 				},
-				Required: []string{"imageName", "className", "powerState"},
+				Required: []string{"imageName", "className", "powerState", "storageClass"},
 			},
 		},
 		Dependencies: []string{

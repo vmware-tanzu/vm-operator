@@ -10,16 +10,21 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/klog"
+	clientconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	storagev1 "k8s.io/client-go/kubernetes/typed/storage/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -81,6 +86,7 @@ type ReconcileVirtualMachine struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses,verbs=get;list
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	ctx := context.Background()
 
@@ -173,6 +179,47 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 	return nil
 }
 
+var fakeStorageClasses storagev1.StorageClassInterface
+
+func SetFakeStorageClasses(scl storagev1.StorageClassInterface) {
+	fakeStorageClasses = scl
+}
+
+func processStorageClass(ctx context.Context, vmSpec *v1alpha1.VirtualMachineSpec) (string, error) {
+	var sClasses storagev1.StorageClassInterface
+
+	if len(vmSpec.StorageClass) == 0 {
+		return "", nil
+	}
+
+	if fakeStorageClasses != nil {
+		sClasses = fakeStorageClasses
+	} else {
+		kCfg, err := clientconfig.GetConfig()
+		if err != nil {
+			klog.Errorf("Failed to get kubernetes config: %v", err)
+			return "", err
+		}
+
+		storageCl, err := storagev1.NewForConfig(kCfg)
+		if err != nil {
+			klog.Errorf("Failed to get storage_v1 for config: %v", err)
+			return "", err
+		}
+
+		sClasses = storageCl.StorageClasses()
+	}
+
+	var options metav1.GetOptions
+	myClass, err := sClasses.Get(vmSpec.StorageClass, options)
+	if err != nil {
+		klog.Errorf("Failed to get storage class: %v", err)
+		return "", err
+	}
+
+	return myClass.Parameters["storagePolicyID"], nil
+}
+
 func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
 	err := r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
@@ -195,9 +242,13 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 		vmMetadata = configMap.Data
 	}
 
+	policyID, err := processStorageClass(ctx, &vm.Spec)
+	if err != nil {
+		return err
+	}
 	vm.Status.Phase = vmoperatorv1alpha1.Creating
 
-	err = r.vmProvider.CreateVirtualMachine(ctx, vm, *vmClass, vmMetadata)
+	err = r.vmProvider.CreateVirtualMachine(ctx, vm, *vmClass, vmMetadata, policyID)
 	if err != nil {
 		log.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())
 		return err

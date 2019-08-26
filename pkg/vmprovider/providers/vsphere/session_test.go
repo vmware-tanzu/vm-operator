@@ -50,7 +50,7 @@ var _ = Describe("Sessions", func() {
 				vmClass := getVMClassInstance()
 				vm := getVirtualMachineInstance(testVMName, imageName, vmClass.Name)
 				vmMetadata := map[string]string{}
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata)
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM).ShouldNot(BeNil())
 				// Existing NIF should not be changed.
@@ -79,7 +79,7 @@ var _ = Describe("Sessions", func() {
 						},
 					}
 					vmMetadata := map[string]string{}
-					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata)
+					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
 					Expect(err).NotTo(HaveOccurred())
 					netDevices, err := clonedVM.GetNetworkDevices(context.TODO())
 					Expect(err).NotTo(HaveOccurred())

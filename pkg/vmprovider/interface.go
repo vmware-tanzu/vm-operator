@@ -28,7 +28,7 @@ type VirtualMachineProviderInterface interface {
 	DoesVirtualMachineExist(ctx context.Context, namespace, name string) (bool, error)
 
 	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-		vmClass v1alpha1.VirtualMachineClass, vmMetadata VirtualMachineMetadata) error
+		vmClass v1alpha1.VirtualMachineClass, vmMetadata VirtualMachineMetadata, profileID string) error
 	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 }

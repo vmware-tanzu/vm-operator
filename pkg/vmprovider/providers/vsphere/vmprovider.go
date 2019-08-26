@@ -171,7 +171,7 @@ func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, v
 }
 
 func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) error {
+	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) error {
 
 	vmName := vm.NamespacedName()
 	klog.Infof("Creating VirtualMachine %v", vmName)
@@ -187,7 +187,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 	if vm.Spec.ImageName == "" {
 		resVm, err = ses.CreateVirtualMachine(ctx, vm, vmClass, vmMetadata)
 	} else {
-		resVm, err = ses.CloneVirtualMachine(ctx, vm, vmClass, vmMetadata)
+		resVm, err = ses.CloneVirtualMachine(ctx, vm, vmClass, vmMetadata, profileID)
 	}
 
 	if err != nil {

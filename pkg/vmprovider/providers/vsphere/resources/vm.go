@@ -249,6 +249,16 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState s
 	return nil
 }
 
+// GetVirtualDisks returns the list of VMs vmdks
+func (vm *VirtualMachine) GetVirtualDisks(ctx context.Context) (object.VirtualDeviceList, error) {
+	deviceList, err := vm.vcVirtualMachine.Device(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return deviceList.SelectByType((*types.VirtualDisk)(nil)), nil
+}
+
 func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) ([]types.BaseVirtualDevice, error) {
 	devices, err := vm.vcVirtualMachine.Device(ctx)
 	if err != nil {

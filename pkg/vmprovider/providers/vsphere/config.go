@@ -41,6 +41,9 @@ const (
 	folderKey            = "Folder"
 	datastoreKey         = "Datastore"
 	contentSourceKey     = "ContentSource"
+
+	NamespaceRPAnnotationKey     = "vmware-system-resource-pool"
+	NamespaceFolderAnnotationKey = "vmware-system-vm-folder"
 )
 
 func ConfigMapsToProviderConfig(baseConfigMap *v1.ConfigMap, nsConfigMap *v1.ConfigMap, vcCreds *VSphereVmProviderCredentials) (*VSphereVmProviderConfig, error) {
@@ -98,6 +101,27 @@ func configMapsToProviderCredentials(clientSet kubernetes.Interface, baseConfigM
 	return
 }
 
+// UpdateVMFolderAndRPInProviderConfig updates the RP and vm folder in the provider config from the namespace annotation.
+func UpdateVMFolderAndRPInProviderConfig(clientSet kubernetes.Interface, namespace string, providerConfig *VSphereVmProviderConfig) error {
+	var ns *v1.Namespace
+	var err error
+	if ns, err = clientSet.CoreV1().Namespaces().Get(namespace, metav1.GetOptions{}); err != nil {
+		return errors.Wrapf(err, "could not find the namespace: %s", namespace)
+	}
+	if len(ns.ObjectMeta.Annotations) == 0 ||
+		ns.ObjectMeta.Annotations[NamespaceRPAnnotationKey] == "" ||
+		ns.ObjectMeta.Annotations[NamespaceFolderAnnotationKey] == "" {
+		klog.Warningf("Namespace %s has incomplete RP/VM folder annotations. "+
+			"RP: %s, VM-folder: %s", ns.ObjectMeta.Name,
+			ns.ObjectMeta.Annotations[NamespaceRPAnnotationKey],
+			ns.ObjectMeta.Annotations[NamespaceFolderAnnotationKey])
+	} else {
+		providerConfig.ResourcePool = ns.ObjectMeta.Annotations[NamespaceRPAnnotationKey]
+		providerConfig.Folder = ns.ObjectMeta.Annotations[NamespaceFolderAnnotationKey]
+	}
+	return nil
+}
+
 // GetProviderConfigFromConfigMap gets the vSphere Provider ConfigMap from the API Master.
 func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace string) (*VSphereVmProviderConfig, error) {
 	var baseConfigMap, nsConfigMap *v1.ConfigMap
@@ -133,7 +157,16 @@ func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace st
 		return nil, err
 	}
 
-	return ConfigMapsToProviderConfig(baseConfigMap, nsConfigMap, vcCreds)
+	providerConfig, err := ConfigMapsToProviderConfig(baseConfigMap, nsConfigMap, vcCreds)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := UpdateVMFolderAndRPInProviderConfig(clientSet, namespace, providerConfig); err != nil {
+		return nil, errors.Wrapf(err, "error in updaing RP and VM folder")
+	}
+
+	return providerConfig, nil
 }
 
 func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig, vcCredsSecretName string) *v1.ConfigMap {

@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
 	. "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -34,6 +35,50 @@ func newConfig(namespace string, vcPNID string, vcPort string, vcCredsSecretName
 	secret := ProviderCredentialsToSecret(namespace, providerConfig.VcCreds, vcCredsSecretName)
 	return configMap, secret, providerConfig
 }
+
+var _ = Describe("UpdateVMFolderAndResourcePool", func() {
+	var (
+		ns  *v1.Namespace
+		err error
+	)
+	Context("when a good provider config exists and namespace has non-empty annotations", func() {
+		Specify("provider config is updated with RP and VM folder", func() {
+			clientSet := fake.NewSimpleClientset()
+			namespaceRP := "namespace-test-RP"
+			namespaceVMFolder := "namesapce-test-vmfolder"
+			annotations := make(map[string]string)
+			annotations[NamespaceRPAnnotationKey] = namespaceRP
+			annotations[NamespaceFolderAnnotationKey] = namespaceVMFolder
+			ns, err = clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace", Annotations: annotations}})
+			Expect(err).ShouldNot(HaveOccurred())
+			providerConfig := &VSphereVmProviderConfig{}
+			err = UpdateVMFolderAndRPInProviderConfig(clientSet, ns.Name, providerConfig)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(providerConfig.ResourcePool).To(Equal(namespaceRP))
+			Expect(providerConfig.Folder).To(Equal(namespaceVMFolder))
+		})
+	})
+	Context("when a good provider config exists and namespace has non-empty annotations", func() {
+		Specify("namespace annotations should be empty", func() {
+			clientSet := fake.NewSimpleClientset()
+			ns, err = clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace"}})
+			Expect(err).ShouldNot(HaveOccurred())
+			providerConfig := &VSphereVmProviderConfig{}
+			err = UpdateVMFolderAndRPInProviderConfig(clientSet, ns.Name, providerConfig)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(ns.ObjectMeta.Annotations).To(BeEmpty())
+		})
+	})
+	Context("namespace does not exist", func() {
+		Specify("returns error", func() {
+			clientSet := fake.NewSimpleClientset()
+			providerConfig := &VSphereVmProviderConfig{}
+			err = UpdateVMFolderAndRPInProviderConfig(clientSet, "test-namespace", providerConfig)
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(Equal("could not find the namespace: test-namespace: namespaces \"test-namespace\" not found"))
+		})
+	})
+})
 
 var _ = Describe("GetProviderConfigFromConfigMap", func() {
 
@@ -61,6 +106,8 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 		Context("when a base secret doesn't exist", func() {
 			Specify("returns no provider config and an error", func() {
 				clientSet := fake.NewSimpleClientset(baseConfigMapIn)
+				_, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace"}})
+				Expect(err).To(BeNil())
 				providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "ns-namespace")
 				Expect(err).NotTo(BeNil())
 				Expect(providerConfig).To(BeNil())
@@ -70,6 +117,8 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 		Context("when a base secret exists", func() {
 			Specify("returns a good provider config", func() {
 				clientSet := fake.NewSimpleClientset(baseConfigMapIn, baseSecretIn)
+				_, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace"}})
+				Expect(err).To(BeNil())
 				providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "ns-namespace")
 				Expect(err).To(BeNil())
 				Expect(providerConfig).To(Equal(baseProviderConfigIn))
@@ -79,10 +128,13 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 		Context("also full ns config exists", func() {
 			Specify("returns a good provider config for ns", func() {
 				clientSet := fake.NewSimpleClientset(baseConfigMapIn, baseSecretIn, nsConfigMapIn, nsSecretIn)
+				_, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace"}})
+				Expect(err).To(BeNil())
 				providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "ns-namespace")
 				Expect(err).To(BeNil())
 				Expect(providerConfig).To(Equal(nsProviderConfigIn))
 			})
+
 		})
 
 		Context("also sparse ns config exists", func() {
@@ -90,6 +142,8 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 				Specify("returns a good provider config with VcPNID from base", func() {
 					delete(nsConfigMapIn.Data, "VcPNID")
 					clientSet := fake.NewSimpleClientset(baseConfigMapIn, baseSecretIn, nsConfigMapIn, nsSecretIn)
+					_, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace"}})
+					Expect(err).To(BeNil())
 					providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "ns-namespace")
 					Expect(err).To(BeNil())
 					Expect(providerConfig.VcPNID).To(Equal(baseProviderConfigIn.VcPNID))
@@ -100,6 +154,8 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 		Context("per env variable, but only the ns config exists", func() {
 			Specify("returns a good provider config for ns", func() {
 				clientSet := fake.NewSimpleClientset(nsConfigMapIn, nsSecretIn)
+				_, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace"}})
+				Expect(err).To(BeNil())
 				providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "ns-namespace")
 				Expect(err).To(BeNil())
 				Expect(providerConfig).To(Equal(nsProviderConfigIn))
@@ -113,6 +169,8 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 		Context("when a ns secret doesn't exist", func() {
 			Specify("returns no provider config and an error", func() {
 				clientSet := fake.NewSimpleClientset(nsConfigMapIn)
+				_, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace"}})
+				Expect(err).To(BeNil())
 				providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "ns-namespace")
 				Expect(err).NotTo(BeNil())
 				Expect(providerConfig).To(BeNil())
@@ -122,6 +180,8 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 		Context("when a ns secret exists", func() {
 			Specify("returns a good provider config", func() {
 				clientSet := fake.NewSimpleClientset(nsConfigMapIn, nsSecretIn)
+				_, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace"}})
+				Expect(err).To(BeNil())
 				providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "ns-namespace")
 				Expect(err).To(BeNil())
 				Expect(providerConfig).To(Equal(nsProviderConfigIn))
@@ -133,6 +193,8 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 	Context("when neither ns nor base config exist", func() {
 		Specify("returns no provider config and an error", func() {
 			clientSet := fake.NewSimpleClientset()
+			_, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace"}})
+			Expect(err).To(BeNil())
 			providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "ns-namespace")
 			Expect(err).NotTo(BeNil())
 			Expect(providerConfig).To(BeNil())

@@ -37,6 +37,7 @@ type Session struct {
 
 	finder       *find.Finder
 	datacenter   *object.Datacenter
+	cluster      *object.ClusterComputeResource
 	dcFolders    *object.DatacenterFolders
 	resourcepool *object.ResourcePool
 	datastore    *object.Datastore
@@ -81,6 +82,11 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	s.resourcepool, err = s.finder.ResourcePool(ctx, config.ResourcePool)
 	if err != nil {
 		return errors.Wrapf(err, "failed to init ResourcePool %q", config.ResourcePool)
+	}
+
+	s.cluster, err = GetResourcePoolOwner(ctx, s.resourcepool)
+	if err != nil {
+		return errors.Wrapf(err, "failed to init cluster %q", config.ResourcePool)
 	}
 
 	s.datastore, err = s.finder.Datastore(ctx, config.Datastore)

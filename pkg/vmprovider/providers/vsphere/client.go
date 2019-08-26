@@ -9,9 +9,9 @@ import (
 	"net"
 	"time"
 
-	"k8s.io/klog"
-
 	"net/url"
+
+	"k8s.io/klog"
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi"

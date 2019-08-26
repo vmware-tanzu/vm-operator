@@ -39,7 +39,7 @@ type Session struct {
 	finder       *find.Finder
 	datacenter   *object.Datacenter
 	cluster      *object.ClusterComputeResource
-	dcFolders    *object.DatacenterFolders
+	folder       *object.Folder
 	resourcepool *object.ResourcePool
 	datastore    *object.Datastore
 	contentlib   *library.Library
@@ -75,14 +75,14 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	s.datacenter = dc
 	s.finder.SetDatacenter(dc)
 
-	s.dcFolders, err = dc.Folders(ctx)
+	s.resourcepool, err = GetResourcePool(ctx, s.finder, config.ResourcePool)
 	if err != nil {
-		return errors.Wrapf(err, "failed to init Datacenter %q folders", config.Datacenter)
+		return errors.Wrapf(err, "failed to init Resource Pool %q", config.ResourcePool)
 	}
 
-	s.resourcepool, err = s.finder.ResourcePool(ctx, config.ResourcePool)
+	s.folder, err = GetVMFolder(ctx, s.finder, config.Folder)
 	if err != nil {
-		return errors.Wrapf(err, "failed to init ResourcePool %q", config.ResourcePool)
+		return errors.Wrapf(err, "failed to init folder %q", config.Folder)
 	}
 
 	s.cluster, err = GetResourcePoolOwner(ctx, s.resourcepool)
@@ -445,7 +445,7 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec *vimType
 	}
 
 	resVm := res.NewVMForCreate(name)
-	err := resVm.Create(ctx, s.dcFolders.VmFolder, s.resourcepool, configSpec)
+	err := resVm.Create(ctx, s.folder, s.resourcepool, configSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -454,7 +454,7 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec *vimType
 }
 
 func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
-	cloneResVm, err := resSrcVm.Clone(ctx, s.dcFolders.VmFolder, cloneSpec)
+	cloneResVm, err := resSrcVm.Clone(ctx, s.folder, cloneSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +464,7 @@ func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, clo
 
 func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string) (*res.VirtualMachine, error) {
 
-	var deployment vcenter.Deployment
+	var deployment *types.ManagedObjectReference
 	var err error
 	err = s.withRestClient(ctx, func(c *rest.Client) error {
 		manager := vcenter.NewManager(c)
@@ -489,11 +489,7 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string) (
 		return nil, err
 	}
 
-	if !deployment.Succeeded {
-		return nil, deployment.Error
-	}
-
-	ref, err := s.finder.ObjectReference(ctx, vimTypes.ManagedObjectReference{Type: deployment.ResourceID.Type, Value: deployment.ResourceID.ID})
+	ref, err := s.finder.ObjectReference(ctx, vimTypes.ManagedObjectReference{Type: deployment.Type, Value: deployment.Value})
 	if err != nil {
 		return nil, err
 	}
@@ -573,4 +569,22 @@ func configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec, v
 	configSpec.DeviceChange = deviceSpecs
 
 	return configSpec, nil
+}
+
+// GetPool returns resource pool for a given invt path of a moref
+func GetResourcePool(ctx context.Context, finder *find.Finder, rp string) (*object.ResourcePool, error) {
+	ref := types.ManagedObjectReference{Type: "ResourcePool", Value: rp}
+	if o, err := finder.ObjectReference(ctx, ref); err == nil {
+		return o.(*object.ResourcePool), nil
+	}
+	return finder.ResourcePool(ctx, rp)
+}
+
+// GetPool returns VM folder for a given invt path of a moref
+func GetVMFolder(ctx context.Context, finder *find.Finder, folder string) (*object.Folder, error) {
+	ref := types.ManagedObjectReference{Type: "Folder", Value: folder}
+	if o, err := finder.ObjectReference(ctx, ref); err == nil {
+		return o.(*object.Folder), nil
+	}
+	return finder.Folder(ctx, folder)
 }

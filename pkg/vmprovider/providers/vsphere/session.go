@@ -36,7 +36,7 @@ const (
 type Session struct {
 	client *Client
 
-	finder       *find.Finder
+	Finder       *find.Finder
 	datacenter   *object.Datacenter
 	cluster      *object.ClusterComputeResource
 	folder       *object.Folder
@@ -44,6 +44,19 @@ type Session struct {
 	datastore    *object.Datastore
 	contentlib   *library.Library
 	creds        *VSphereVmProviderCredentials
+}
+
+func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig) (*Session, error) {
+	s, err := NewSession(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = s.ConfigureContent(ctx, config.ContentSource); err != nil {
+		return nil, err
+	}
+
+	return s, nil
 }
 
 func NewSession(ctx context.Context, config *VSphereVmProviderConfig) (*Session, error) {
@@ -65,22 +78,22 @@ func NewSession(ctx context.Context, config *VSphereVmProviderConfig) (*Session,
 }
 
 func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConfig) error {
-	s.finder = find.NewFinder(s.client.VimClient(), false)
+	s.Finder = find.NewFinder(s.client.VimClient(), false)
 
-	dc, err := s.finder.Datacenter(ctx, config.Datacenter)
+	dc, err := s.Finder.Datacenter(ctx, config.Datacenter)
 	if err != nil {
 		return errors.Wrapf(err, "failed to init Datacenter %q", config.Datacenter)
 	}
 
 	s.datacenter = dc
-	s.finder.SetDatacenter(dc)
+	s.Finder.SetDatacenter(dc)
 
-	s.resourcepool, err = GetResourcePool(ctx, s.finder, config.ResourcePool)
+	s.resourcepool, err = GetResourcePool(ctx, s.Finder, config.ResourcePool)
 	if err != nil {
 		return errors.Wrapf(err, "failed to init Resource Pool %q", config.ResourcePool)
 	}
 
-	s.folder, err = GetVMFolder(ctx, s.finder, config.Folder)
+	s.folder, err = GetVMFolder(ctx, s.Finder, config.Folder)
 	if err != nil {
 		return errors.Wrapf(err, "failed to init folder %q", config.Folder)
 	}
@@ -90,20 +103,27 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		return errors.Wrapf(err, "failed to init cluster %q", config.ResourcePool)
 	}
 
-	s.datastore, err = s.finder.Datastore(ctx, config.Datastore)
+	s.datastore, err = s.Finder.Datastore(ctx, config.Datastore)
 	if err != nil {
 		return errors.Wrapf(err, "failed to init Datastore %q", config.Datastore)
 	}
 
 	s.creds = config.VcCreds
 
-	if config.ContentSource != "" {
-		if err = s.withRestClient(ctx, func(c *rest.Client) error {
-			s.contentlib, err = library.NewManager(c).GetLibraryByName(ctx, config.ContentSource)
-			return err
-		}); err != nil {
-			klog.Errorf("failed to init ContentSource %q", config.ContentSource)
-		}
+	return nil
+}
+
+func (s *Session) ConfigureContent(ctx context.Context, contentSource string) error {
+	if contentSource == "" {
+		return nil
+	}
+
+	var err error
+	if err = s.WithRestClient(ctx, func(c *rest.Client) error {
+		s.contentlib, err = library.NewManager(c).GetLibraryByName(ctx, contentSource)
+		return err
+	}); err != nil {
+		return errors.Wrapf(err, "failed to init Content Library %q", contentSource)
 	}
 
 	return nil
@@ -116,7 +136,7 @@ func (s *Session) Logout(ctx context.Context) {
 func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
 	var items []library.Item
 	var err error
-	err = s.withRestClient(ctx, func(c *rest.Client) error {
+	err = s.WithRestClient(ctx, func(c *rest.Client) error {
 		items, err = library.NewManager(c).GetLibraryItems(ctx, s.contentlib.ID)
 		return err
 	})
@@ -135,7 +155,7 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace 
 func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string, namespace string) (*v1alpha1.VirtualMachineImage, error) {
 	var item *library.Item
 
-	err := s.withRestClient(ctx, func(c *rest.Client) error {
+	err := s.WithRestClient(ctx, func(c *rest.Client) error {
 		itemIDs, err := library.NewManager(c).FindLibraryItems(ctx, library.FindItem{LibraryID: s.contentlib.ID, Name: name})
 		if err != nil {
 			return err
@@ -162,7 +182,7 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string,
 func (s *Session) ListVirtualMachines(ctx context.Context, path string) ([]*res.VirtualMachine, error) {
 	var vms []*res.VirtualMachine
 
-	objVms, err := s.finder.VirtualMachineList(ctx, path)
+	objVms, err := s.Finder.VirtualMachineList(ctx, path)
 	if err != nil {
 		switch err.(type) {
 		case *find.NotFoundError, *find.DefaultNotFoundError:
@@ -209,7 +229,6 @@ func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 
 func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (*res.VirtualMachine, error) {
-
 	name := vm.Name
 
 	if s.contentlib != nil {
@@ -283,7 +302,7 @@ func (s *Session) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 }
 
 func (s *Session) lookupVm(ctx context.Context, name string) (*res.VirtualMachine, error) {
-	objVm, err := s.finder.VirtualMachine(ctx, name)
+	objVm, err := s.Finder.VirtualMachine(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +332,7 @@ func (s *Session) deviceSpecsFromVMSpec(ctx context.Context, vmSpec *v1alpha1.Vi
 			ethCardType = DefaultEthernetCardType
 		}
 
-		ref, err := s.finder.Network(ctx, vif.NetworkName)
+		ref, err := s.Finder.Network(ctx, vif.NetworkName)
 		if err != nil {
 			return nil, errors.Wrapf(err, "unable to find network %q", vif.NetworkName)
 		}
@@ -466,7 +485,7 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string) (
 
 	var deployment *types.ManagedObjectReference
 	var err error
-	err = s.withRestClient(ctx, func(c *rest.Client) error {
+	err = s.WithRestClient(ctx, func(c *rest.Client) error {
 		manager := vcenter.NewManager(c)
 
 		deploySpec := vcenter.Deploy{
@@ -489,7 +508,7 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string) (
 		return nil, err
 	}
 
-	ref, err := s.finder.ObjectReference(ctx, vimTypes.ManagedObjectReference{Type: deployment.Type, Value: deployment.Value})
+	ref, err := s.Finder.ObjectReference(ctx, vimTypes.ManagedObjectReference{Type: deployment.Type, Value: deployment.Value})
 	if err != nil {
 		return nil, err
 	}
@@ -499,7 +518,7 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string) (
 	return deployedVM, nil
 }
 
-func (s *Session) withRestClient(ctx context.Context, f func(c *rest.Client) error) error {
+func (s *Session) WithRestClient(ctx context.Context, f func(c *rest.Client) error) error {
 	c := rest.NewClient(s.client.VimClient())
 
 	userInfo := url.UserPassword(s.creds.Username, s.creds.Password)

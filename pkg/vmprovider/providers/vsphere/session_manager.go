@@ -48,7 +48,7 @@ func (sm *SessionManager) createSession(ctx context.Context, namespace string) (
 		return nil, err
 	}
 
-	ses, err := NewSession(ctx, config)
+	ses, err := NewSessionAndConfigure(ctx, config)
 	if err != nil {
 		return nil, err
 	}

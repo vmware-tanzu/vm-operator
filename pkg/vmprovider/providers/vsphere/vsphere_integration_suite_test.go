@@ -12,7 +12,6 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
@@ -20,6 +19,7 @@ import (
 var (
 	vcSim   *integration.VcSimInstance
 	session *vsphere.Session
+	err     error
 )
 
 func TestVSphereIntegrationProvider(t *testing.T) {
@@ -32,8 +32,14 @@ var _ = BeforeSuite(func() {
 	vcSim = integration.NewVcSimInstance()
 	address, port := vcSim.Start()
 	config := integration.NewIntegrationVmOperatorConfig(address, port)
-	var err error
+	//Setup session
 	session, err = vsphere.NewSession(context.TODO(), config)
+	Expect(err).NotTo(HaveOccurred())
+	//Setup vcsim with ovf content
+	err = integration.SetupVcSimContent(context.TODO(), session, config)
+	Expect(err).NotTo(HaveOccurred())
+	//Configure Session with created content
+	err = session.ConfigureContent(context.TODO(), config.ContentSource)
 	Expect(err).NotTo(HaveOccurred())
 })
 

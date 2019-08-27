@@ -40,6 +40,19 @@ var _ = Describe("Sessions", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(vm.Name).Should(Equal("DC0_H0_VM0"))
 			})
+
+			It("should list virtualmachineimages from CL", func() {
+				images, err := session.ListVirtualMachineImagesFromCL(context.TODO(), testNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(images).ShouldNot(BeEmpty())
+				Expect(images[0].ObjectMeta.Name).Should(Equal("test-item"))
+			})
+
+			It("should get virtualmachineimage from CL", func() {
+				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "test-item", testNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(image.ObjectMeta.Name).Should(Equal("test-item"))
+			})
 		})
 	})
 
@@ -96,6 +109,40 @@ var _ = Describe("Sessions", func() {
 					_, ok = dev2.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
 					Expect(ok).Should(BeTrue())
 				})
+			})
+		})
+		Context("from Content-library", func() {
+			It("should clone VM and change networks", func() {
+				imageName := "test-item"
+				vmClass := getVMClassInstance()
+				vm := getVirtualMachineInstance("DeployedVM"+"change-net", imageName, vmClass.Name)
+				// Add two network interfaces to the VM and attach to different networks
+				vm.Spec.NetworkInterfaces = []vmoperatorv1alpha1.VirtualMachineNetworkInterface{
+					{
+						NetworkName: "VM Network",
+					},
+					{
+						NetworkName:      "VM Network",
+						EthernetCardType: "e1000",
+					},
+				}
+				vmMetadata := map[string]string{}
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
+				Expect(err).NotTo(HaveOccurred())
+				netDevices, err := clonedVM.GetNetworkDevices(context.TODO())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(netDevices)).Should(Equal(2))
+				// The interface type should be default vmxnet3
+				dev1, ok := netDevices[0].(*vimTypes.VirtualVmxnet3)
+				Expect(ok).Should(BeTrue())
+				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
+				_, ok = dev1.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
+				Expect(ok).Should(BeTrue())
+				// The interface type should be e1000
+				dev2, ok := netDevices[1].(*vimTypes.VirtualE1000)
+				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
+				_, ok = dev2.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
+				Expect(ok).Should(BeTrue())
 			})
 		})
 	})

@@ -723,7 +723,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:c2c66a537ba22e7fbfaa3d2335b52004415ac03195b972886e84674540266e09"
+  digest = "1:a2f3ffa9ff598ad47bc6c1cf1efb6fbd4a1a52da4b6ae1da51ea0828cc281969"
   name = "github.com/vmware/govmomi"
   packages = [
     ".",
@@ -742,7 +742,10 @@
     "vapi/internal",
     "vapi/library",
     "vapi/rest",
+    "vapi/simulator",
+    "vapi/tags",
     "vapi/vcenter",
+    "view",
     "vim25",
     "vim25/debug",
     "vim25/methods",
@@ -1511,6 +1514,7 @@
     "github.com/coreos/etcd",
     "github.com/go-openapi/loads",
     "github.com/go-openapi/spec",
+    "github.com/golang/glog",
     "github.com/imdario/mergo",
     "github.com/json-iterator/go",
     "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/builders",
@@ -1527,8 +1531,10 @@
     "github.com/vmware/govmomi/object",
     "github.com/vmware/govmomi/session",
     "github.com/vmware/govmomi/simulator",
+    "github.com/vmware/govmomi/simulator/vpx",
     "github.com/vmware/govmomi/vapi/library",
     "github.com/vmware/govmomi/vapi/rest",
+    "github.com/vmware/govmomi/vapi/simulator",
     "github.com/vmware/govmomi/vapi/vcenter",
     "github.com/vmware/govmomi/vim25",
     "github.com/vmware/govmomi/vim25/methods",

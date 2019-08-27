@@ -13,6 +13,8 @@ import (
 
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/simulator"
+	"github.com/vmware/govmomi/simulator/vpx"
+	vapi "github.com/vmware/govmomi/vapi/simulator"
 )
 
 type VcSimInstance struct {
@@ -39,6 +41,10 @@ func (v *VcSimInstance) Start() (vcAddress string, vcPort int) {
 		v.server.Close()
 		klog.Fatalf("Fail to find vc simulator port: %#v", err)
 	}
+	//register for vapi/rest calls
+	path, handler := vapi.New(v.server.URL, vpx.Setting)
+	v.vcsim.Service.Handle(path, handler)
+
 	return ip, port
 }
 

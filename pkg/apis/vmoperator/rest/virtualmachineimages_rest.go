@@ -11,7 +11,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	"k8s.io/apiserver/pkg/registry/rest"
-	"k8s.io/klog"
+	"k8s.io/klog/klogr"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -26,6 +26,8 @@ import (
 type VirtualMachineImagesREST struct {
 	provider vmprovider.VirtualMachineProviderInterface
 }
+
+var log = klogr.New().WithName("vm-image-rest")
 
 func NewVirtualMachineImagesREST(provider vmprovider.VirtualMachineProviderInterface) vmoperator.RestProvider {
 	return vmoperator.RestProvider{
@@ -58,8 +60,7 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 	//if !ok {
 	//return nil, errors.NewBadRequest("user is required")
 	//}
-
-	klog.Infof("Listing VirtualMachineImages namespace: %s options: %v user: %v", namespace, options, user)
+	log.Info("Listing VirtualMachineImages", "namespace", namespace, "options", options, "user", user)
 
 	if namespace == "" {
 		return &v1alpha1.VirtualMachineImageList{}, nil
@@ -67,7 +68,7 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 
 	images, err := r.provider.ListVirtualMachineImages(ctx, namespace)
 	if err != nil {
-		klog.Errorf("Failed to list images: %v", err)
+		log.Error(err, "Failed to list images")
 		return nil, errors.NewInternalError(err)
 	}
 
@@ -87,7 +88,7 @@ func (r *VirtualMachineImagesREST) New() runtime.Object {
 
 // Get retrieves the object from the storage. It is required to support Patch.
 func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
-	klog.Infof("Getting VirtualMachineImage name: %s options: %v", name, options)
+	log.Info("Getting VirtualMachineImage", "name", name, "options", options)
 
 	// Get the namespace from the context (populated from the URL).
 	// The namespace in the object can be empty until StandardStorage.Create()->BeforeCreate() populates it from the context.
@@ -103,11 +104,11 @@ func (r *VirtualMachineImagesREST) Get(ctx context.Context, name string, options
 	//	return nil, errors.NewBadRequest("user is required")
 	//}
 
-	klog.Infof("Getting VirtualMachineImage name: %s namespace: %s user: %v", name, namespace, user)
+	log.Info("Getting VirtualMachineImage", "name", name, "namespace", namespace, "user", user)
 
 	image, err := r.provider.GetVirtualMachineImage(ctx, namespace, name)
 	if err != nil {
-		klog.Errorf("Failed to get image: %v", err)
+		log.Error(err, "Failed to get image")
 		return nil, errors.NewInternalError(err) // TODO(bryanv) Do not convert NotFound errors?
 	}
 

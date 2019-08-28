@@ -11,8 +11,6 @@ import (
 
 	"net/url"
 
-	"k8s.io/klog"
-
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/session"
@@ -54,7 +52,7 @@ func NewClient(ctx context.Context, config *VSphereVmProviderConfig) (*Client, e
 		if _, err := methods.GetCurrentTime(ctx, rt); err != nil && isNotAuthenticatedError(err) {
 			if err = vcClient.Login(ctx, userInfo); err != nil {
 				if isInvalidLogin(err) {
-					klog.Errorf("Invalid login in keep alive handler for url: %v", soapUrl)
+					log.Error(err, "Invalid login in keep alive handler", "url", soapUrl)
 					return err
 				}
 			}
@@ -97,7 +95,7 @@ func (c *Client) VimClient() *vim25.Client {
 
 func (c *Client) Logout(ctx context.Context) {
 	if err := c.client.Logout(ctx); err != nil {
-		url := c.client.URL()
-		klog.Errorf("Error logging out url %s@%s: %v", url.User.Username(), url.Host, err)
+		clientUrl := c.client.URL()
+		log.Error(err, "Error logging out url", "username", clientUrl.User.Username(), "host", clientUrl.Host)
 	}
 }

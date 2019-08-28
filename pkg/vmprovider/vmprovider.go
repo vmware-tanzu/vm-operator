@@ -5,14 +5,16 @@
 package vmprovider
 
 import (
+	"os"
 	"sync"
 
-	"k8s.io/klog"
+	"k8s.io/klog/klogr"
 )
 
 var (
 	mutex                sync.Mutex
 	registeredVmProvider VirtualMachineProviderInterface
+	log                  = klogr.New()
 )
 
 // RegisterVmProvider registers the provider.
@@ -21,7 +23,8 @@ func RegisterVmProvider(vmProvider VirtualMachineProviderInterface) {
 	defer mutex.Unlock()
 
 	if registeredVmProvider != nil {
-		klog.Fatalf("VM provider %q is already registered", registeredVmProvider.Name())
+		log.Error(nil, "VM provider is already registered", "providerName", registeredVmProvider.Name())
+		os.Exit(255)
 	}
 
 	registeredVmProvider = vmProvider
@@ -41,7 +44,8 @@ func GetVmProviderOrDie() VirtualMachineProviderInterface {
 	defer mutex.Unlock()
 
 	if registeredVmProvider == nil {
-		klog.Fatal("No VM provider registered")
+		log.Error(nil, "No VM provider registered")
+		os.Exit(255)
 	}
 
 	return registeredVmProvider

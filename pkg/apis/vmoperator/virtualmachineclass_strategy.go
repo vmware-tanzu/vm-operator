@@ -7,10 +7,9 @@ package vmoperator
 import (
 	"context"
 
-	"k8s.io/klog"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/klog/klogr"
 )
 
 func (VirtualMachineClassStrategy) NamespaceScoped() bool {
@@ -64,7 +63,9 @@ func validateCPU(vmClass VirtualMachineClass) field.ErrorList {
 // Validate checks that an instance of VirtualMachineClass is well formed
 func (VirtualMachineClassStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	vmClass := obj.(*VirtualMachineClass)
-	klog.V(4).Infof("Validating fields for VirtualMachineClass %s/%s", vmClass.Namespace, vmClass.Name)
+
+	log := klogr.New()
+	log.V(4).Info("Validating fields for VirtualMachineClass", "namespace", vmClass.Namespace, "name", vmClass.Name)
 
 	memErrors := validateMemory(*vmClass)
 	cpuErrors := validateCPU(*vmClass)

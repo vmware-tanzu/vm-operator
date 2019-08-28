@@ -11,15 +11,13 @@ import (
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 
-	"k8s.io/klog"
-
+	"github.com/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/sequence"
-
-	"github.com/pkg/errors"
+	"k8s.io/klog/klogr"
 
 	"github.com/vmware/govmomi/find"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
@@ -42,6 +40,8 @@ type VSphereVmProvider struct {
 }
 
 var _ vmprovider.VirtualMachineProviderInterface = &VSphereVmProvider{}
+
+var log = klogr.New()
 
 func NewVSphereVmProvider(clientset *kubernetes.Clientset) (*VSphereVmProvider, error) {
 	vmProvider := &VSphereVmProvider{
@@ -74,7 +74,7 @@ func (vs *VSphereVmProvider) Initialize(stop <-chan struct{}) {
 }
 
 func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
-	klog.Infof("Listing VirtualMachineImages in namespace %q", namespace)
+	log.Info("Listing VirtualMachineImages", "namespace", namespace)
 
 	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
@@ -108,7 +108,7 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error) {
 	vmName := fmt.Sprintf("%v/%v", namespace, name)
 
-	klog.Infof("Getting image for VirtualMachine %v", vmName)
+	log.Info("Getting image for VirtualMachine", "name", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
@@ -174,7 +174,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) error {
 
 	vmName := vm.NamespacedName()
-	klog.Infof("Creating VirtualMachine %v", vmName)
+	log.Info("Creating VirtualMachine", "name", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
 	if err != nil {
@@ -191,7 +191,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 	}
 
 	if err != nil {
-		klog.Errorf("Create/Clone VirtualMachine %v failed: %v", vmName, err)
+		log.Error(err, "Create/Clone VirtualMachine failed", "name", vmName, "error", err)
 		return transformVmError(vmName, err)
 	}
 
@@ -231,7 +231,7 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 // UpdateVirtualMachine updates the VM status, power state, phase etc
 func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
 	vmName := vm.NamespacedName()
-	klog.Infof("Updating VirtualMachine %v", vmName)
+	log.Info("Updating VirtualMachine", "name", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
 	if err != nil {
@@ -258,7 +258,7 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 
 func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
 	vmName := vmToDelete.NamespacedName()
-	klog.Infof("Deleting VirtualMachine %v", vmName)
+	log.Info("Deleting VirtualMachine", "name", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, vmToDelete.Namespace)
 	if err != nil {
@@ -273,7 +273,7 @@ func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelet
 	deleteSequence := sequence.NewVirtualMachineDeleteSequence(vmToDelete, resVm)
 	err = deleteSequence.Execute(ctx)
 	if err != nil {
-		klog.Errorf("Delete VirtualMachine %v sequence failed: %v", vmName, err)
+		log.Error(err, "Delete VirtualMachine sequence failed", "name", vmName)
 		return err
 	}
 

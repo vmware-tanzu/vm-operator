@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/klog"
+	"k8s.io/klog/klogr"
 )
 
 // This is in this package to avoid an import cycle.
@@ -36,7 +36,8 @@ func RegisterRestProvider(restProvider RestProvider) error {
 		return errors.New("REST provider already registered")
 	}
 
-	klog.V(1).Info("REST provider registered")
+	log := klogr.New()
+	log.V(1).Info("REST provider registered")
 	provider = &restProvider
 	return nil
 }

@@ -6,12 +6,13 @@ package vsphere
 import (
 	"os"
 
+	"k8s.io/klog"
+
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog"
 )
 
 /*
@@ -132,17 +133,17 @@ func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace st
 	if vmopNamespaceExists {
 		baseConfigMap, err = clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(VSphereConfigMapName, metav1.GetOptions{})
 		if kerr.IsNotFound(err) {
-			klog.Warningf("could not find base provider ConfigMap %v/%v", vmopNamespace, VSphereConfigMapName)
+			log.Info("could not find base provider ConfigMap", "namespace", vmopNamespace, "configMapName", VSphereConfigMapName)
 		} else if err != nil {
 			return nil, errors.Wrapf(err, "could not get base provider ConfigMap %v/%v", vmopNamespace, VSphereConfigMapName)
 		}
 	} else {
-		klog.Warningf("unset env %s, will fallback to exclusively using per-namespace configuration", VmopNamespaceEnv)
+		log.Info("unset env, will fallback to exclusively using per-namespace configuration", "namespaceEnv", VmopNamespaceEnv)
 	}
 
 	nsConfigMap, err = clientSet.CoreV1().ConfigMaps(namespace).Get(VSphereConfigMapName, metav1.GetOptions{})
 	if kerr.IsNotFound(err) {
-		klog.Warningf("could not find per-namespace provider ConfigMap %v/%v", namespace, VSphereConfigMapName)
+		log.Info("could not find per-namespace provider ConfigMap", "namespace", namespace, "configMapName", VSphereConfigMapName)
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "could not get per-namespace provider ConfigMap %v/%v", namespace, VSphereConfigMapName)
 	}

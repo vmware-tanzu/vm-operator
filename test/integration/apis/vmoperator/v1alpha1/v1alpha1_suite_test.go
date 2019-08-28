@@ -5,9 +5,10 @@
 package v1alpha1
 
 import (
+	"os"
 	"testing"
 
-	"k8s.io/klog"
+	"k8s.io/klog/klogr"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 
@@ -30,6 +31,7 @@ var testenv *test.TestEnvironment
 var config *rest.Config
 var cs *clientset.Clientset
 var vcsim *integration.VcSimInstance
+var log = klogr.New()
 
 func TestV1alpha1(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -42,13 +44,15 @@ var _ = BeforeSuite(func() {
 
 	provider, err := vsphere.NewVSphereVmProviderFromConfig(integration.DefaultNamespace, integration.NewIntegrationVmOperatorConfig(address, port))
 	if err != nil {
-		klog.Fatalf("Failed to create vSphere provider: %v", err)
+		log.Error(err, "Failed to create vSphere provider")
+		os.Exit(255)
 	}
 
 	vmprovider.RegisterVmProvider(provider)
 
 	if err := vmoperator.RegisterRestProvider(vmrest.NewVirtualMachineImagesREST(provider)); err != nil {
-		klog.Fatalf("Failed to register REST provider: %s", err)
+		log.Error(err, "Failed to register REST provider")
+		os.Exit(255)
 	}
 
 	testenv = test.NewTestEnvironment()

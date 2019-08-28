@@ -8,7 +8,7 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/klog"
+	"k8s.io/klog/klogr"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 
@@ -24,6 +24,8 @@ type VirtualMachine struct {
 	Name             string
 	vcVirtualMachine *object.VirtualMachine
 }
+
+var log = klogr.New().WithName("vmprovider")
 
 // NewVMForCreate returns a VirtualMachine that Create() can be called on
 // to create the VM and set the VirtualMachine object reference.
@@ -42,7 +44,7 @@ func NewVMFromObject(objVm *object.VirtualMachine) (*VirtualMachine, error) {
 
 func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, pool *object.ResourcePool, vmSpec *types.VirtualMachineConfigSpec) error {
 	if vm.vcVirtualMachine != nil {
-		klog.Errorf("Failed to create VM %q because the VM object is already set", vm.Name)
+		log.Info("Failed to create VM because the VM object is already set", "name", vm.Name)
 		return fmt.Errorf("failed to create VM %q because the VM object is already set", vm.Name)
 	}
 
@@ -129,7 +131,7 @@ func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
 	}
 
 	if o.Guest == nil {
-		klog.Infof("VM %q Guest info is empty", vm.Name)
+		log.Info("VM guest info is empty", "name", vm.Name)
 		return "", &find.NotFoundError{}
 	}
 
@@ -213,11 +215,11 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState s
 
 	ps, err := vm.vcVirtualMachine.PowerState(ctx)
 	if err != nil {
-		klog.Errorf("Failed to get VM %q power state: %v", vm.Name, err)
+		log.Error(err, "Failed to get VM power state", "name", vm.Name)
 		return err
 	}
 
-	klog.Infof("VM %q current power state: %s, desired: %s", vm.Name, ps, desiredPowerState)
+	log.Info("VM power state", "name", vm.Name, "currentState", ps, "desiredState", desiredPowerState)
 
 	if string(ps) == desiredPowerState {
 		return nil
@@ -236,13 +238,13 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState s
 	}
 
 	if err != nil {
-		klog.Errorf("Failed to change VM %q to power state %s: %v", vm.Name, desiredPowerState, err)
+		log.Error(err, "Failed to change VM power state", "name", vm.Name, "desiredState", desiredPowerState)
 		return err
 	}
 
 	_, err = task.WaitForResult(ctx, nil)
 	if err != nil {
-		klog.Errorf("VM %q change power state task failed: %v", vm.Name, err)
+		log.Error(err, "VM change power state task failed", "name", vm.Name)
 		return err
 	}
 
@@ -262,7 +264,7 @@ func (vm *VirtualMachine) GetVirtualDisks(ctx context.Context) (object.VirtualDe
 func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) ([]types.BaseVirtualDevice, error) {
 	devices, err := vm.vcVirtualMachine.Device(ctx)
 	if err != nil {
-		klog.Errorf("Failed to get devices for VM %q: %v", vm.Name, err)
+		log.Error(err, "Failed to get devices for VM", "name", vm.Name)
 		return nil, err
 	}
 

@@ -7,7 +7,7 @@ package main
 import (
 	"os"
 
-	"k8s.io/klog"
+	"k8s.io/klog/klogr"
 
 	"github.com/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
@@ -30,6 +30,7 @@ import (
 
 var (
 	version = "v0"
+	log     = klogr.New()
 )
 
 func registerVsphereVmProvider() error {
@@ -59,13 +60,15 @@ func registerVsphereVmProvider() error {
 func main() {
 	// Assume this will always be our provider.
 	if err := registerVsphereVmProvider(); err != nil {
-		klog.Fatalf("Failed to register vSphere VM provider: %v", err)
+		log.Error(err, "Failed to register vSphere VM provider")
+		os.Exit(255)
 	}
 
 	// Use the registered VM provider in the custom REST implementations.
 	provider := vmprovider.GetVmProviderOrDie()
 	if err := vmoperator.RegisterRestProvider(rest.NewVirtualMachineImagesREST(provider)); err != nil {
-		klog.Fatalf("Failed to register REST provider: %v", err)
+		log.Error(err, "Failed to register REST provider")
+		os.Exit(255)
 	}
 
 	server.StartApiServer("/registry/vmware.com", apis.GetAllApiBuilders(), openapi.GetOpenAPIDefinitions, "Api", version)

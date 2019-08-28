@@ -7,7 +7,7 @@ package sequence
 import (
 	"context"
 
-	"k8s.io/klog"
+	"k8s.io/klog/klogr"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -17,6 +17,8 @@ type VirtualMachinePowerOffStep struct {
 	vm    *v1alpha1.VirtualMachine
 	resVm *resources.VirtualMachine
 }
+
+var log = klogr.New()
 
 func (step VirtualMachinePowerOffStep) Name() string { return "PowerOff" }
 
@@ -40,7 +42,7 @@ func (step VirtualMachineDeleteStep) Name() string { return "Delete Vm" }
 func (step VirtualMachineDeleteStep) Execute(ctx context.Context) error {
 	err := step.resVm.Delete(ctx)
 	if err != nil {
-		klog.Errorf("Failed to delete Vm: %s", err)
+		log.Error(err, "Failed to delete VM")
 		return err
 	}
 
@@ -58,12 +60,12 @@ func (seq VirtualMachineDeleteSequence) GetName() string {
 func (seq VirtualMachineDeleteSequence) Execute(ctx context.Context) error {
 	for _, step := range seq.steps {
 		err := step.Execute(ctx)
-		klog.Infof("Executing step %s", step.Name())
+		log.Info("Executing step", "step", step.Name())
 		if err != nil {
-			klog.Infof("Step %s failed %s", step.Name(), err)
+			log.Error(err, "Step failed", "step", step.Name())
 			return err
 		}
-		klog.Infof("Step %s succeeded", step.Name())
+		log.Info("Step succeeded", "name", step.Name())
 	}
 	return nil
 }

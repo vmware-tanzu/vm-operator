@@ -10,11 +10,9 @@ import (
 	"math"
 	"net/url"
 
-	"github.com/vmware/govmomi/vapi/vcenter"
-
 	"github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vapi/vcenter"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/klog"
 
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -268,7 +266,7 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 			if err := deployedVm.Reconfigure(ctx, configSpec); err != nil {
 				//Reconfigure failed: delete poweredOff deployedVM
 				if err1 := deployedVm.Delete(ctx); err1 != nil {
-					klog.Errorf("failed to delete Stale VM: %q with err: %v", deployedVm.Name, err1)
+					log.Error(err1, "failed to delete Stale VM", "name", deployedVm.Name)
 				}
 				return nil, errors.Wrapf(err, "failed to reconfigure new VM %q", deployedVm.Name)
 			}
@@ -468,7 +466,7 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 		cloneSpec.Location = *rSpec
 	} else {
 		cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
-		klog.Warningf("Skipping call to PlaceVM. Using preconfigured datastore: %v", s.datastore)
+		log.Info("Skipping call to PlaceVM. Using preconfigured datastore", "datastore", s.datastore)
 	}
 	//cloneSpec.Location.DiskMoveType = string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndConsolidate)
 
@@ -549,7 +547,7 @@ func (s *Session) WithRestClient(ctx context.Context, f func(c *rest.Client) err
 
 	defer func() {
 		if err := c.Logout(ctx); err != nil {
-			klog.Errorf("failed to logout: %v", err)
+			log.Error(err, "failed to logout")
 		}
 	}()
 

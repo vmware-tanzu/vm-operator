@@ -335,7 +335,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 			portNum, err := findPort(&vm, servicePort)
 			if err != nil {
 				log.Error(err, "Failed to find port for service",
-					"name", fmt.Sprintf("%s/%s", service.Namespace, service.Name))
+					"namespace", service.Namespace, "name", service.Name)
 				continue
 			}
 

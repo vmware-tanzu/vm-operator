@@ -7,9 +7,10 @@ package integration
 import (
 	"context"
 	"crypto/tls"
+	"os"
 	"strconv"
 
-	"k8s.io/klog"
+	"k8s.io/klog/klogr"
 
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/simulator"
@@ -22,12 +23,15 @@ type VcSimInstance struct {
 	server *simulator.Server
 }
 
+var log = klogr.New()
+
 func NewVcSimInstance() *VcSimInstance {
 	vpx := simulator.VPX()
 	err := vpx.Create()
 	if err != nil {
 		vpx.Remove()
-		klog.Fatalf("Fail to create vc simulator: %#v", err)
+		log.Error(err, "Fail to create vc simulator")
+		os.Exit(255)
 	}
 	return &VcSimInstance{vcsim: vpx}
 }
@@ -39,7 +43,8 @@ func (v *VcSimInstance) Start() (vcAddress string, vcPort int) {
 	port, err := strconv.Atoi(v.server.URL.Port())
 	if err != nil {
 		v.server.Close()
-		klog.Fatalf("Fail to find vc simulator port: %#v", err)
+		log.Error(err, "Fail to find vc simulator port")
+		os.Exit(255)
 	}
 	//register for vapi/rest calls
 	path, handler := vapi.New(v.server.URL, vpx.Setting)

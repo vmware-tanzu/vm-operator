@@ -46,12 +46,14 @@ var _ = Describe("Sessions", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).ShouldNot(BeEmpty())
 				Expect(images[0].ObjectMeta.Name).Should(Equal("test-item"))
+				Expect(images[0].Spec.Type).Should(Equal("ovf"))
 			})
 
 			It("should get virtualmachineimage from CL", func() {
 				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "test-item", testNamespace)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(image.ObjectMeta.Name).Should(Equal("test-item"))
+				Expect(image.Spec.Type).Should(Equal("ovf"))
 			})
 		})
 	})

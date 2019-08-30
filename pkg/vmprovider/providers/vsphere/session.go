@@ -148,7 +148,9 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace 
 
 	var images []*v1alpha1.VirtualMachineImage
 	for _, item := range items {
-		images = append(images, libItemToVirtualMachineImage(&item, namespace))
+		if IsSupportedDeployType(item.Type) {
+			images = append(images, libItemToVirtualMachineImage(&item, namespace))
+		}
 	}
 
 	return images, err
@@ -176,6 +178,10 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string,
 	//Return nil when the image with 'name' is not found in CL
 	if item == nil {
 		return nil, nil
+	}
+	//if not a supported type return nil
+	if !IsSupportedDeployType(item.Type) {
+		return nil, errors.Errorf("item: %v not a supported type", item.Name)
 	}
 
 	return libItemToVirtualMachineImage(item, namespace), nil
@@ -619,4 +625,14 @@ func GetVMFolder(ctx context.Context, finder *find.Finder, folder string) (*obje
 		return o.(*object.Folder), nil
 	}
 	return finder.Folder(ctx, folder)
+}
+
+func IsSupportedDeployType(t string) bool {
+	switch t {
+	case
+		//"vmtx",
+		"ovf":
+		return true
+	}
+	return false
 }

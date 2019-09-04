@@ -44,6 +44,7 @@ type Session struct {
 	datastore    *object.Datastore
 	contentlib   *library.Library
 	creds        *VSphereVmProviderCredentials
+	usePlaceVM   bool //Used to avoid calling PlaceVM in integration tests (since PlaceVm is not implemented in vcsim yet)
 }
 
 func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig) (*Session, error) {
@@ -66,7 +67,8 @@ func NewSession(ctx context.Context, config *VSphereVmProviderConfig) (*Session,
 	}
 
 	s := &Session{
-		client: c,
+		client:     c,
+		usePlaceVM: !config.AvoidUsingPlaceVM,
 	}
 
 	if err = s.initSession(ctx, config); err != nil {
@@ -449,8 +451,19 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 		Memory:  &memory,
 	}
 
-	cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
 	cloneSpec.Location.Pool = vimTypes.NewReference(s.resourcepool.Reference())
+
+	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resSrcVM.ReferenceValue()}
+	if s.usePlaceVM {
+		rSpec, err := computeVMPlacement(ctx, s.cluster, vmRef, cloneSpec, vimTypes.PlacementSpecPlacementTypeClone)
+		if err != nil {
+			return nil, err
+		}
+		cloneSpec.Location = *rSpec
+	} else {
+		cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
+		klog.Warningf("Skipping call to PlaceVM. Using preconfigured datastore: %v", s.datastore)
+	}
 	//cloneSpec.Location.DiskMoveType = string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndConsolidate)
 
 	cloneSpec.Location.Profile = vmProfile

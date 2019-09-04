@@ -19,14 +19,15 @@ import (
  * vSphere instance for VM management.
  */
 type VSphereVmProviderConfig struct {
-	VcPNID        string
-	VcPort        string
-	VcCreds       *VSphereVmProviderCredentials
-	Datacenter    string
-	ResourcePool  string
-	Folder        string
-	Datastore     string
-	ContentSource string
+	VcPNID            string
+	VcPort            string
+	VcCreds           *VSphereVmProviderCredentials
+	Datacenter        string
+	ResourcePool      string
+	Folder            string
+	Datastore         string
+	ContentSource     string
+	AvoidUsingPlaceVM bool //Used to avoid calling PlaceVM in integration tests (since PlaceVm is not implemented in vcsim yet)
 }
 
 const (

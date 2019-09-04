@@ -45,14 +45,15 @@ func InstallVmOperatorConfig(clientSet *kubernetes.Clientset, vcAddress string, 
 
 func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphereVmProviderConfig {
 	return &vsphere.VSphereVmProviderConfig{
-		VcPNID:        vcAddress,
-		VcPort:        strconv.Itoa(vcPort),
-		VcCreds:       NewIntegrationVmOperatorCredentials(),
-		Datacenter:    "/DC0",
-		ResourcePool:  "/DC0/host/DC0_C0/Resources",
-		Folder:        "/DC0/vm",
-		Datastore:     "/DC0/datastore/LocalDS_0",
-		ContentSource: ContentSourceName,
+		VcPNID:            vcAddress,
+		VcPort:            strconv.Itoa(vcPort),
+		VcCreds:           NewIntegrationVmOperatorCredentials(),
+		Datacenter:        "/DC0",
+		ResourcePool:      "/DC0/host/DC0_C0/Resources",
+		Folder:            "/DC0/vm",
+		Datastore:         "/DC0/datastore/LocalDS_0",
+		ContentSource:     ContentSourceName,
+		AvoidUsingPlaceVM: true,
 	}
 }
 
@@ -76,7 +77,9 @@ func SetupEnv(vcSim *VcSimInstance) error {
 }
 
 func CleanupEnv(vcSim *VcSimInstance) {
-	vcSim.Stop()
+	if vcSim != nil {
+		vcSim.Stop()
+	}
 }
 
 func SetupVcSimContent(ctx context.Context, s *vsphere.Session, config *vsphere.VSphereVmProviderConfig) error {

@@ -32,6 +32,7 @@ var _ = BeforeSuite(func() {
 	vcSim = integration.NewVcSimInstance()
 	address, port := vcSim.Start()
 	config := integration.NewIntegrationVmOperatorConfig(address, port)
+	var err error
 	//Setup session
 	session, err = vsphere.NewSession(context.TODO(), config)
 	Expect(err).NotTo(HaveOccurred())

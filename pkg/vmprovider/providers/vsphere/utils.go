@@ -92,6 +92,6 @@ func computeVMPlacement(ctx context.Context, cls *object.ClusterComputeResource,
 	if rSpec == nil {
 		return nil, fmt.Errorf("no valid placement action")
 	}
-	klog.Infof("got vm placement: %#v", *rSpec)
+	klog.Infof("got vm placement: Host=%s Datastore=%s", rSpec.Host.Value, rSpec.Datastore.Value)
 	return rSpec, nil
 }

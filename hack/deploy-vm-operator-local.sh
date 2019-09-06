@@ -18,7 +18,20 @@ deploy() {
     kubectl kustomize config/local > "$DEPLOYMENT_YAML"
     kubectl kustomize config/virtualmachineclasses > "$VMCLASSES_YAML"
 
+    restart=""
+    if kubectl get deployment -n default vmoperator-controller >/dev/null 2>&1 ; then
+        restart=1
+    fi
+
     kubectl apply -f "$DEPLOYMENT_YAML"
+
+    if [[ -n $restart ]] ; then
+        kubectl rollout restart -n default deployment vmoperator-apiserver
+        kubectl rollout restart -n default deployment vmoperator-controller
+
+        kubectl rollout status -n default deployment vmoperator-apiserver
+        kubectl rollout status -n default deployment vmoperator-controller
+    fi
 
     # wait for the aggregated api server to come up so we can install the VM classes
     maxAttempts=100

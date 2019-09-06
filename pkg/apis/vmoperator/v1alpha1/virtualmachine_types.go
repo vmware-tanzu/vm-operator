@@ -64,7 +64,7 @@ type VirtualMachineSpec struct {
 	Ports             []VirtualMachinePort             `json:"ports,omitempty"`
 	VmMetadata        *VirtualMachineMetadata          `json:"vmMetadata,omitempty"`
 	NetworkInterfaces []VirtualMachineNetworkInterface `json:"networkInterfaces,omitempty"`
-	StorageClass      string                           `json:"storageClass"`
+	StorageClass      string                           `json:"storageClass,omitempty"`
 }
 
 // VirtualMachineMetadata defines the guest customization

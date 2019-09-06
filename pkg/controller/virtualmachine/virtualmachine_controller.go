@@ -11,7 +11,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog"
-	clientconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 
@@ -20,12 +19,12 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	storagetypev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	storagev1 "k8s.io/client-go/kubernetes/typed/storage/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -179,45 +178,19 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 	return nil
 }
 
-var fakeStorageClasses storagev1.StorageClassInterface
-
-func SetFakeStorageClasses(scl storagev1.StorageClassInterface) {
-	fakeStorageClasses = scl
-}
-
-func processStorageClass(ctx context.Context, vmSpec *v1alpha1.VirtualMachineSpec) (string, error) {
-	var sClasses storagev1.StorageClassInterface
-
+func (r *ReconcileVirtualMachine) processStorageClass(ctx context.Context, vmSpec *v1alpha1.VirtualMachineSpec) (string, error) {
 	if len(vmSpec.StorageClass) == 0 {
 		return "", nil
 	}
 
-	if fakeStorageClasses != nil {
-		sClasses = fakeStorageClasses
-	} else {
-		kCfg, err := clientconfig.GetConfig()
-		if err != nil {
-			klog.Errorf("Failed to get kubernetes config: %v", err)
-			return "", err
-		}
-
-		storageCl, err := storagev1.NewForConfig(kCfg)
-		if err != nil {
-			klog.Errorf("Failed to get storage_v1 for config: %v", err)
-			return "", err
-		}
-
-		sClasses = storageCl.StorageClasses()
-	}
-
-	var options metav1.GetOptions
-	myClass, err := sClasses.Get(vmSpec.StorageClass, options)
+	scl := &storagetypev1.StorageClass{}
+	err := r.Client.Get(ctx, client.ObjectKey{Namespace: "", Name: vmSpec.StorageClass}, scl)
 	if err != nil {
 		klog.Errorf("Failed to get storage class: %v", err)
 		return "", err
 	}
 
-	return myClass.Parameters["storagePolicyID"], nil
+	return scl.Parameters["storagePolicyID"], nil
 }
 
 func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
@@ -242,7 +215,7 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 		vmMetadata = configMap.Data
 	}
 
-	policyID, err := processStorageClass(ctx, &vm.Spec)
+	policyID, err := r.processStorageClass(ctx, &vm.Spec)
 	if err != nil {
 		return err
 	}

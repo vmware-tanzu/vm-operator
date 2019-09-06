@@ -20,17 +20,36 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
-	storagev1 "k8s.io/api/storage/v1"
+	storagetypev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	fakeClient "k8s.io/client-go/kubernetes/fake"
-	fakeStorage "k8s.io/client-go/kubernetes/typed/storage/v1/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var c client.Client
 
 const timeout = time.Second * 5
+
+// Create a reconciler with a fake storage class and fake storage client.
+func testReconciler(mgr manager.Manager) reconcile.Reconciler {
+	// Get provider registered in the manager's main()
+	provider := vmprovider.GetVmProviderOrDie()
+
+	var sc storagetypev1.StorageClass
+	sc.Parameters = make(map[string]string)
+	sc.Parameters["storagePolicyID"] = "foo"
+	sc.Name = "fooClass"
+
+	cl := fake.NewFakeClient(&sc)
+
+	return &ReconcileVirtualMachine{
+		Client:     cl,
+		scheme:     mgr.GetScheme(),
+		vmProvider: provider,
+	}
+}
 
 var _ = Describe("VirtualMachine controller", func() {
 	ns := integration.DefaultNamespace
@@ -83,7 +102,7 @@ var _ = Describe("VirtualMachine controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
-		recFn, requests = SetupTestReconcile(newReconciler(mgr))
+		recFn, requests = SetupTestReconcile(testReconciler(mgr))
 		Expect(add(mgr, recFn)).To(Succeed())
 
 		stopMgr, mgrStopped = StartTestManager(mgr)
@@ -119,17 +138,6 @@ var _ = Describe("VirtualMachine controller", func() {
 					StorageClass: "fooClass",
 				},
 			}
-
-			var fs fakeStorage.FakeStorageV1
-			fcl := fakeClient.NewSimpleClientset()
-			fs.Fake = &fcl.Fake
-			cl := fs.StorageClasses()
-			var sc storagev1.StorageClass
-			sc.Parameters = make(map[string]string)
-			sc.Parameters["storagePolicyID"] = "foo"
-			sc.Name = "fooClass"
-			_, err := cl.Create(&sc)
-			SetFakeStorageClasses(cl)
 
 			// Create the VM Object the expect Reconcile
 			err = c.Create(context.TODO(), &instance)

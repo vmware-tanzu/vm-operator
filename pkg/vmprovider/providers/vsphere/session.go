@@ -441,7 +441,7 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 	}
 	deviceSpecs = append(deviceSpecs, vdcs...)
 
-	configSpec, err := configSpecFromClassSpec(name, vmSpec, vmClassSpec, vmMetadata, deviceSpecs)
+	configSpec, err := configSpecFromClassSpec(name, vmSpec, vmClassSpec, vmMetadata, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -456,21 +456,23 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 	}
 
 	cloneSpec.Location.Pool = vimTypes.NewReference(s.resourcepool.Reference())
+	cloneSpec.Location.Profile = vmProfile
+	cloneSpec.Location.DeviceChange = deviceSpecs
+	cloneSpec.Location.Folder = vimTypes.NewReference(s.folder.Reference())
 
-	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resSrcVM.ReferenceValue()}
 	if s.usePlaceVM {
+		vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resSrcVM.ReferenceValue()}
 		rSpec, err := computeVMPlacement(ctx, s.cluster, vmRef, cloneSpec, vimTypes.PlacementSpecPlacementTypeClone)
 		if err != nil {
 			return nil, err
 		}
-		cloneSpec.Location = *rSpec
+		cloneSpec.Location.Host = rSpec.Host
+		cloneSpec.Location.Datastore = rSpec.Datastore
 	} else {
 		cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
 		log.Info("Skipping call to PlaceVM. Using preconfigured datastore", "datastore", s.datastore)
 	}
 	//cloneSpec.Location.DiskMoveType = string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndConsolidate)
-
-	cloneSpec.Location.Profile = vmProfile
 
 	return cloneSpec, nil
 }

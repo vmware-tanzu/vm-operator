@@ -1595,7 +1595,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.Reference
 						},
 					},
 				},
-				Required: []string{"imageName", "className", "powerState", "storageClass"},
+				Required: []string{"imageName", "className", "powerState"},
 			},
 		},
 		Dependencies: []string{

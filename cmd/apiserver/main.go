@@ -18,6 +18,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/openapi"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	"k8s.io/client-go/kubernetes"
 
 	// Make sure dep tools picks up these dependencies
@@ -48,7 +49,7 @@ func registerVsphereVmProvider() error {
 		}
 	}
 
-	provider, err := vsphere.NewVSphereVmProvider(kubernetes.NewForConfigOrDie(restConfig))
+	provider, err := vsphere.NewVSphereVmProvider(kubernetes.NewForConfigOrDie(restConfig), ncpclientset.NewForConfigOrDie(restConfig))
 	if err != nil {
 		return err
 	}

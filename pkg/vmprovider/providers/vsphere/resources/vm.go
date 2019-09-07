@@ -270,3 +270,18 @@ func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) ([]types.BaseVi
 
 	return devices.SelectByType((*types.VirtualEthernetCard)(nil)), nil
 }
+
+func (vm *VirtualMachine) Customize(ctx context.Context, spec types.CustomizationSpec) error {
+	task, err := vm.vcVirtualMachine.Customize(ctx, spec)
+	if err != nil {
+		log.Error(err, "Failed to customize VM", "name", vm.Name)
+		return err
+	}
+
+	_, err = task.WaitForResult(ctx, nil)
+	if err != nil {
+		log.Error(err, "Failed to complete customization for VM", "name", vm.Name)
+		return err
+	}
+	return nil
+}

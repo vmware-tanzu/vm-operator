@@ -186,6 +186,7 @@ type VirtualMachineServicePort struct {
 type VirtualMachineNetworkInterface struct {
 	NetworkName      string
 	EthernetCardType string
+	NetworkType      string
 }
 
 type VirtualMachineMetadata struct {

@@ -692,6 +692,7 @@ func Convert_vmoperator_VirtualMachineMetadata_To_v1alpha1_VirtualMachineMetadat
 func autoConvert_v1alpha1_VirtualMachineNetworkInterface_To_vmoperator_VirtualMachineNetworkInterface(in *VirtualMachineNetworkInterface, out *vmoperator.VirtualMachineNetworkInterface, s conversion.Scope) error {
 	out.NetworkName = in.NetworkName
 	out.EthernetCardType = in.EthernetCardType
+	out.NetworkType = in.NetworkType
 	return nil
 }
 
@@ -703,6 +704,7 @@ func Convert_v1alpha1_VirtualMachineNetworkInterface_To_vmoperator_VirtualMachin
 func autoConvert_vmoperator_VirtualMachineNetworkInterface_To_v1alpha1_VirtualMachineNetworkInterface(in *vmoperator.VirtualMachineNetworkInterface, out *VirtualMachineNetworkInterface, s conversion.Scope) error {
 	out.NetworkName = in.NetworkName
 	out.EthernetCardType = in.EthernetCardType
+	out.NetworkType = in.NetworkType
 	return nil
 }
 

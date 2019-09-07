@@ -23,6 +23,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis"
 	"github.com/vmware-tanzu/vm-operator/pkg/controller"
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
@@ -32,8 +33,9 @@ import (
 
 func registerVsphereVmProvider(restConfig *rest.Config) error {
 	clientSet := kubernetes.NewForConfigOrDie(restConfig)
+	ncpclient := ncpclientset.NewForConfigOrDie(restConfig)
 
-	provider, err := vsphere.NewVSphereVmProvider(clientSet)
+	provider, err := vsphere.NewVSphereVmProvider(clientSet, ncpclient)
 	if err != nil {
 		return err
 	}

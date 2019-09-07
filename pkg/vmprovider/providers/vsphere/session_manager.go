@@ -10,27 +10,30 @@ import (
 
 	"github.com/pkg/errors"
 
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	"k8s.io/client-go/kubernetes"
 )
 
 type SessionManager struct {
 	clientset *kubernetes.Clientset
+	ncpclient ncpclientset.Interface
 
 	mutex sync.Mutex
 	// sessions contains the map of sessions for each namespace.
 	sessions map[string]*Session
 }
 
-func NewSessionManager(clientset *kubernetes.Clientset) SessionManager {
+func NewSessionManager(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface) SessionManager {
 	return SessionManager{
 		clientset: clientset,
+		ncpclient: ncpclient,
 		sessions:  make(map[string]*Session),
 	}
 }
 
 func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProviderConfig) (*Session, error) {
 	// This function is used for intgration tests only. So prohibit call to usePlaceVmPlaceVm
-	ses, err := NewSession(context.TODO(), config)
+	ses, err := NewSession(context.TODO(), config, sm.ncpclient)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create session for namespace %s", namespace)
 	}
@@ -49,7 +52,7 @@ func (sm *SessionManager) createSession(ctx context.Context, namespace string) (
 		return nil, err
 	}
 
-	ses, err := NewSessionAndConfigure(ctx, config)
+	ses, err := NewSessionAndConfigure(ctx, config, sm.ncpclient)
 	if err != nil {
 		return nil, err
 	}

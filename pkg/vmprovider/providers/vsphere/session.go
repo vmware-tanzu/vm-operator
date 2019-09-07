@@ -18,6 +18,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
@@ -27,12 +29,10 @@ import (
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
-const (
-	DefaultEthernetCardType = "vmxnet3"
-)
-
 type Session struct {
 	client *Client
+
+	ncpClient clientset.Interface
 
 	Finder       *find.Finder
 	datacenter   *object.Datacenter
@@ -45,8 +45,8 @@ type Session struct {
 	usePlaceVM   bool //Used to avoid calling PlaceVM in integration tests (since PlaceVm is not implemented in vcsim yet)
 }
 
-func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig) (*Session, error) {
-	s, err := NewSession(ctx, config)
+func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig, ncpclient clientset.Interface) (*Session, error) {
+	s, err := NewSession(ctx, config, ncpclient)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig
 	return s, nil
 }
 
-func NewSession(ctx context.Context, config *VSphereVmProviderConfig) (*Session, error) {
+func NewSession(ctx context.Context, config *VSphereVmProviderConfig, ncpclient clientset.Interface) (*Session, error) {
 	c, err := NewClient(ctx, config)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create client for new session")
@@ -66,6 +66,7 @@ func NewSession(ctx context.Context, config *VSphereVmProviderConfig) (*Session,
 
 	s := &Session{
 		client:     c,
+		ncpClient:  ncpclient,
 		usePlaceVM: !config.AvoidUsingPlaceVM,
 	}
 
@@ -214,7 +215,7 @@ func (s *Session) GetVirtualMachine(ctx context.Context, name string) (*res.Virt
 func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) (*res.VirtualMachine, error) {
 
-	deviceSpecs, err := s.deviceSpecsFromVMSpec(ctx, &vm.Spec)
+	deviceSpecs, err := s.deviceSpecsFromVM(ctx, vm)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +252,7 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 			}
 
 			// Add device change specs to configSpec
-			deviceSpecs, err := s.deviceChangeSpecs(ctx, &vm.Spec, deployedVm)
+			deviceSpecs, err := s.deviceChangeSpecs(ctx, vm, deployedVm)
 			if err != nil {
 				return nil, err
 			}
@@ -280,7 +281,7 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 		return nil, err
 	}
 
-	cloneSpec, err := s.getCloneSpec(ctx, name, resSrcVm, &vm.Spec, &vmClass.Spec, vmMetadata, profileID)
+	cloneSpec, err := s.getCloneSpec(ctx, name, resSrcVm, vm, &vmClass.Spec, vmMetadata, profileID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create clone spec from %q", resSrcVm.Name)
 	}
@@ -324,42 +325,22 @@ func cpuQuantityToMhz(q resource.Quantity) int64 {
 	return int64(math.Ceil(float64(q.Value()) / float64(1000*1000)))
 }
 
-func (s *Session) deviceSpecsFromVMSpec(ctx context.Context, vmSpec *v1alpha1.VirtualMachineSpec) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+func (s *Session) deviceSpecsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 	var deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec
 
 	// The clients should ensure that existing device keys are not reused as temporary key values for the new device to be added, hence
 	//  use unique negative integers as temporary keys.
 	key := int32(-100)
-	for _, vif := range vmSpec.NetworkInterfaces {
-		// Add new NICs based on the vm spec
-		// TODO: Validate the NIC type based on known types
-		ethCardType := vif.EthernetCardType
-		if vif.EthernetCardType == "" {
-			ethCardType = DefaultEthernetCardType
-		}
-
-		ref, err := s.Finder.Network(ctx, vif.NetworkName)
+	for _, vif := range vm.Spec.NetworkInterfaces {
+		np, err := s.getNetworkProviderByType(vif.NetworkType)
 		if err != nil {
-			return nil, errors.Wrapf(err, "unable to find network %q", vif.NetworkName)
+			return nil, errors.Wrap(err, "failed to get network provider")
 		}
-		backing, err := ref.EthernetCardBackingInfo(ctx)
+		dev, err := np.CreateVnic(ctx, vm, &vif)
 		if err != nil {
-			return nil, errors.Wrapf(err, "unable to create new ethernet card backing info for network %q", vif.NetworkName)
+			return nil, errors.Wrapf(err, "failed to create vnic '%v'", vif)
 		}
-		dev, err := object.EthernetCardTypes().CreateEthernetCard(ethCardType, backing)
-		if err != nil {
-			return nil, errors.Wrapf(err, "unable to create new ethernet card %q for network %q", ethCardType, vif.NetworkName)
-		}
-
-		// Get the actual NIC object. This is safe to assert without a check
-		// because "object.EthernetCardTypes().CreateEthernetCard" returns a
-		// "types.BaseVirtualEthernetCard" as a "types.BaseVirtualDevice".
-		nic := dev.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-
-		// Assign a temporary device key to ensure that a unique one will be
-		// generated when the device is created.
-		nic.Key = key
-
+		dev = setVnicKey(dev, key)
 		deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
 			Device:    dev,
 			Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
@@ -370,9 +351,9 @@ func (s *Session) deviceSpecsFromVMSpec(ctx context.Context, vmSpec *v1alpha1.Vi
 	return deviceSpecs, nil
 }
 
-func (s *Session) deviceChangeSpecs(ctx context.Context, vmSpec *v1alpha1.VirtualMachineSpec, resSrcVm *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+func (s *Session) deviceChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMachine, resSrcVm *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 	// Note: If no network interface is specified in the vm spec we don't remove existing interfaces while cloning.
-	if len(vmSpec.NetworkInterfaces) == 0 {
+	if len(vm.Spec.NetworkInterfaces) == 0 {
 		return nil, nil
 	}
 
@@ -392,7 +373,7 @@ func (s *Session) deviceChangeSpecs(ctx context.Context, vmSpec *v1alpha1.Virtua
 	}
 
 	// Add new NICs
-	addDeviceSpecs, err := s.deviceSpecsFromVMSpec(ctx, vmSpec)
+	addDeviceSpecs, err := s.deviceSpecsFromVM(ctx, vm)
 	if err != nil {
 		return nil, err
 	}
@@ -428,25 +409,25 @@ func processStorageClass(ctx context.Context, resSrcVM *res.VirtualMachine, prof
 }
 
 func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.VirtualMachine,
-	vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
+	vm *v1alpha1.VirtualMachine, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (*vimTypes.VirtualMachineCloneSpec, error) {
 
 	vdcs, vmProfile, err := processStorageClass(ctx, resSrcVM, profileID)
 	if err != nil {
 		return nil, err
 	}
-	deviceSpecs, err := s.deviceChangeSpecs(ctx, vmSpec, resSrcVM)
+	deviceSpecs, err := s.deviceChangeSpecs(ctx, vm, resSrcVM)
 	if err != nil {
 		return nil, err
 	}
 	deviceSpecs = append(deviceSpecs, vdcs...)
 
-	configSpec, err := configSpecFromClassSpec(name, vmSpec, vmClassSpec, vmMetadata, nil)
+	configSpec, err := configSpecFromClassSpec(name, &vm.Spec, vmClassSpec, vmMetadata, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	powerOn := vmSpec.PowerState == v1alpha1.VirtualMachinePoweredOn
+	powerOn := vm.Spec.PowerState == v1alpha1.VirtualMachinePoweredOff
 	memory := false // No full memory clones
 
 	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
@@ -635,4 +616,67 @@ func IsSupportedDeployType(t string) bool {
 		return true
 	}
 	return false
+}
+
+// getCustomizationSpecs creates the customation spec for the vm
+// it is used to config IP for VMs connecting to nsx-t logical ports
+func (s *Session) getCustomizationSpecs(namespace, vmName string, vmSpec *v1alpha1.VirtualMachineSpec) (*vimTypes.CustomizationSpec, error) {
+	vnifs := []*ncpv1alpha1.VirtualNetworkInterface{}
+	np := NsxtNetworkProvider(s.Finder, s.ncpClient)
+	for _, nif := range vmSpec.NetworkInterfaces {
+		if nif.NetworkType == NsxtNetworkType {
+			vnetif, err := np.waitForVnetIFStatus(namespace, nif.NetworkName, vmName)
+			if err != nil {
+				return nil, err
+			}
+			vnifs = append(vnifs, vnetif)
+		}
+	}
+
+	if len(vnifs) == 0 {
+		return nil, nil
+	}
+
+	customSpec := &vimTypes.CustomizationSpec{
+		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{},
+		// This spec is for Linux guest OS
+		// Need to change if other guest OS needs to be supported
+		Identity: &vimTypes.CustomizationLinuxPrep{
+			HostName: &vimTypes.CustomizationFixedName{
+				Name: vmName,
+			},
+			HwClockUTC: vimTypes.NewBool(true),
+		},
+	}
+
+	for _, vnetif := range vnifs {
+		if len(vnetif.Status.IPAddresses) != 1 {
+			log.Info("customize vnetif IP address not unique", "vnetif", vnetif)
+			continue
+		}
+		nicMapping := vimTypes.CustomizationAdapterMapping{
+			MacAddress: vnetif.Status.MacAddress,
+			Adapter: vimTypes.CustomizationIPSettings{
+				Ip: &vimTypes.CustomizationFixedIp{
+					IpAddress: vnetif.Status.IPAddresses[0].IP,
+				},
+				SubnetMask: vnetif.Status.IPAddresses[0].SubnetMask,
+				Gateway:    []string{vnetif.Status.IPAddresses[0].Gateway},
+			},
+		}
+		customSpec.NicSettingMap = append(customSpec.NicSettingMap, nicMapping)
+	}
+
+	return customSpec, nil
+}
+
+// getNetworkProviderByType returns the network provider based on network type
+func (s *Session) getNetworkProviderByType(networkType string) (NetworkProvider, error) {
+	switch networkType {
+	case NsxtNetworkType:
+		return NsxtNetworkProvider(s.Finder, s.ncpClient), nil
+	case "":
+		return DefaultNetworkProvider(s.Finder), nil
+	}
+	return nil, fmt.Errorf("failed to create network provider for network type '%s'", networkType)
 }

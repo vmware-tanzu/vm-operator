@@ -53,6 +53,7 @@ type VirtualMachinePort struct {
 type VirtualMachineNetworkInterface struct {
 	NetworkName      string `json:"networkName"`
 	EthernetCardType string `json:"ethernetCardType,omitempty"`
+	NetworkType      string `json:"networkType,omitempty"`
 }
 
 // VirtualMachineSpec defines the desired state of VirtualMachine

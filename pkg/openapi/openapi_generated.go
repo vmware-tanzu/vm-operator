@@ -1247,6 +1247,12 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineNetworkInterface(ref comm
 							Format: "",
 						},
 					},
+					"networkType": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
 				},
 				Required: []string{"networkName"},
 			},

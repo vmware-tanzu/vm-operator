@@ -767,6 +767,21 @@
   version = "0.0.1"
 
 [[projects]]
+  branch = "master"
+  digest = "1:30aec98803da3232f476986cde6cc1813033a51b7a80d289423c5aa3618f78e0"
+  name = "gitlab.eng.vmware.com/guest-clusters/ncp-client"
+  packages = [
+    "pkg/apis/ncp/v1alpha1",
+    "pkg/client/clientset/versioned",
+    "pkg/client/clientset/versioned/fake",
+    "pkg/client/clientset/versioned/scheme",
+    "pkg/client/clientset/versioned/typed/ncp/v1alpha1",
+    "pkg/client/clientset/versioned/typed/ncp/v1alpha1/fake",
+  ]
+  pruneopts = "NU"
+  revision = "05c3b54ed75f0f8c796a8edbe090fce6744e4ced"
+
+[[projects]]
   digest = "1:e00654d8f0dcf74fef4957e2c980ba7af3a1c6135312b89f816abc5be6f02834"
   name = "go.uber.org/atomic"
   packages = ["."]
@@ -1531,6 +1546,7 @@
     "github.com/vmware/govmomi/object",
     "github.com/vmware/govmomi/session",
     "github.com/vmware/govmomi/simulator",
+    "github.com/vmware/govmomi/simulator/esx",
     "github.com/vmware/govmomi/simulator/vpx",
     "github.com/vmware/govmomi/vapi/library",
     "github.com/vmware/govmomi/vapi/rest",
@@ -1541,6 +1557,9 @@
     "github.com/vmware/govmomi/vim25/mo",
     "github.com/vmware/govmomi/vim25/soap",
     "github.com/vmware/govmomi/vim25/types",
+    "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1",
+    "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned",
+    "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake",
     "golang.org/x/net/context",
     "google.golang.org/genproto",
     "google.golang.org/grpc",

@@ -20,6 +20,7 @@ import (
 	"k8s.io/klog/klogr"
 
 	"github.com/vmware/govmomi/find"
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -43,9 +44,9 @@ var _ vmprovider.VirtualMachineProviderInterface = &VSphereVmProvider{}
 
 var log = klogr.New()
 
-func NewVSphereVmProvider(clientset *kubernetes.Clientset) (*VSphereVmProvider, error) {
+func NewVSphereVmProvider(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface) (*VSphereVmProvider, error) {
 	vmProvider := &VSphereVmProvider{
-		sessions: NewSessionManager(clientset),
+		sessions: NewSessionManager(clientset, ncpclient),
 	}
 
 	return vmProvider, nil
@@ -53,7 +54,7 @@ func NewVSphereVmProvider(clientset *kubernetes.Clientset) (*VSphereVmProvider, 
 
 func NewVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderConfig) (*VSphereVmProvider, error) {
 	vmProvider := &VSphereVmProvider{
-		sessions: NewSessionManager(nil),
+		sessions: NewSessionManager(nil, nil),
 	}
 
 	// Support existing behavior by setting up a Session for whatever namespace we're using. This is
@@ -192,6 +193,22 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 
 	if err != nil {
 		log.Error(err, "Create/Clone VirtualMachine failed", "name", vmName, "error", err)
+		return transformVmError(vmName, err)
+	}
+
+	nsxtCustomizeSpec, err := ses.getCustomizationSpecs(vm.Namespace, vm.Name, &vm.Spec)
+	if err != nil {
+		return err
+	}
+	if nsxtCustomizeSpec != nil {
+		err = resVm.Customize(ctx, *nsxtCustomizeSpec)
+		if err != nil {
+			return transformVmError(vmName, err)
+		}
+	}
+	// Power on the VM
+	err = resVm.SetPowerState(ctx, v1alpha1.VirtualMachinePoweredOn)
+	if err != nil {
 		return transformVmError(vmName, err)
 	}
 

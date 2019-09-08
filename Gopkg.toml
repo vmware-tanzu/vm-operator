@@ -123,3 +123,7 @@ required = [
 [[constraint]]
   branch = "master"
   name = "github.com/vmware/govmomi"
+
+[[constraint]]
+  name = "gitlab.eng.vmware.com/guest-clusters/ncp-client"
+  source = "git@gitlab.eng.vmware.com:guest-clusters/ncp-client.git"

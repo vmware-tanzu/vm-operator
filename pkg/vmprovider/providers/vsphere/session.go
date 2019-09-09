@@ -40,6 +40,7 @@ type Session struct {
 	folder       *object.Folder
 	resourcepool *object.ResourcePool
 	datastore    *object.Datastore
+	network      object.NetworkReference
 	contentlib   *library.Library
 	creds        *VSphereVmProviderCredentials
 	usePlaceVM   bool //Used to avoid calling PlaceVM in integration tests (since PlaceVm is not implemented in vcsim yet)
@@ -107,6 +108,15 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	s.datastore, err = s.Finder.Datastore(ctx, config.Datastore)
 	if err != nil {
 		return errors.Wrapf(err, "failed to init Datastore %q", config.Datastore)
+	}
+
+	// Network setting is optional
+	if config.Network != "" {
+		s.network, err = s.Finder.Network(ctx, config.Network)
+		if err != nil {
+			return errors.Wrapf(err, "failed to init Network %q", config.Network)
+		}
+		log.Info("Using default network", "network", config.Network)
 	}
 
 	s.creds = config.VcCreds
@@ -352,17 +362,31 @@ func (s *Session) deviceSpecsFromVM(ctx context.Context, vm *v1alpha1.VirtualMac
 }
 
 func (s *Session) deviceChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMachine, resSrcVm *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
-	// Note: If no network interface is specified in the vm spec we don't remove existing interfaces while cloning.
-	if len(vm.Spec.NetworkInterfaces) == 0 {
-		return nil, nil
-	}
-
 	netDevices, err := resSrcVm.GetNetworkDevices(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	var deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec
+
+	// Note: If no network interface is specified in the vm spec we don't remove existing interfaces while cloning. However,
+	// if a default network is configured in vmoperator config then we update the backing for the existing network interfaces.
+	if len(vm.Spec.NetworkInterfaces) == 0 {
+		if s.network != nil {
+			for _, dev := range netDevices {
+				backingInfo, err := s.network.EthernetCardBackingInfo(ctx)
+				if err != nil {
+					return nil, errors.Wrapf(err, "unable to create new ethernet card backing info for network %+v", s.network.Reference())
+				}
+				dev.GetVirtualDevice().Backing = backingInfo
+				deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
+					Device:    dev,
+					Operation: vimTypes.VirtualDeviceConfigSpecOperationEdit,
+				})
+			}
+		}
+		return deviceSpecs, nil
+	}
 
 	// Remove any existing NICs
 	for _, dev := range netDevices {

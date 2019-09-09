@@ -28,6 +28,7 @@ type VSphereVmProviderConfig struct {
 	Folder            string
 	Datastore         string
 	ContentSource     string
+	Network           string
 	AvoidUsingPlaceVM bool //Used to avoid calling PlaceVM in integration tests (since PlaceVm is not implemented in vcsim yet)
 }
 
@@ -43,6 +44,7 @@ const (
 	folderKey            = "Folder"
 	datastoreKey         = "Datastore"
 	contentSourceKey     = "ContentSource"
+	networkNameKey       = "Network"
 
 	NamespaceRPAnnotationKey     = "vmware-system-resource-pool"
 	NamespaceFolderAnnotationKey = "vmware-system-vm-folder"
@@ -86,6 +88,7 @@ func ConfigMapsToProviderConfig(baseConfigMap *v1.ConfigMap, nsConfigMap *v1.Con
 		Folder:        dataMap[folderKey],
 		Datastore:     dataMap[datastoreKey],
 		ContentSource: dataMap[contentSourceKey],
+		Network:       dataMap[networkNameKey],
 	}
 
 	return ret, nil

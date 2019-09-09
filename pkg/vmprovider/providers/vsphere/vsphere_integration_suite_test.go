@@ -6,7 +6,6 @@
 package vsphere_test
 
 import (
-	"context"
 	stdlog "log"
 	"testing"
 
@@ -17,9 +16,9 @@ import (
 )
 
 var (
-	vcSim   *integration.VcSimInstance
-	session *vsphere.Session
-	err     error
+	vcSim  *integration.VcSimInstance
+	config *vsphere.VSphereVmProviderConfig
+	err    error
 )
 
 func TestVSphereIntegrationProvider(t *testing.T) {
@@ -31,17 +30,7 @@ var _ = BeforeSuite(func() {
 	stdlog.Print("setting up integration test env..")
 	vcSim = integration.NewVcSimInstance()
 	address, port := vcSim.Start()
-	config := integration.NewIntegrationVmOperatorConfig(address, port)
-	var err error
-	//Setup session
-	session, err = vsphere.NewSession(context.TODO(), config, nil)
-	Expect(err).NotTo(HaveOccurred())
-	//Setup vcsim with ovf content
-	err = integration.SetupVcSimContent(context.TODO(), session, config)
-	Expect(err).NotTo(HaveOccurred())
-	//Configure Session with created content
-	err = session.ConfigureContent(context.TODO(), config.ContentSource)
-	Expect(err).NotTo(HaveOccurred())
+	config = integration.NewIntegrationVmOperatorConfig(address, port)
 })
 
 var _ = AfterSuite(func() {

@@ -7,8 +7,6 @@ data:
   VcPNID: <vc_pnid>
   VcCredsSecretName: wcp-vmop-vc-auth
   Datacenter: <datacenter>
-  ResourcePool: Namespaces
-  Folder: Namespaces
   # TODO: Update this before we ship 1.0
   Datastore: nfs0-1
   ContentSource: Kubernetes

@@ -99,6 +99,7 @@ type VirtualMachineStatus struct {
 	PowerState string                    `json:"powerState"`
 	Phase      VMStatusPhase             `json:"phase"`
 	VmIp       string                    `json:"vmIp"`
+	BiosUuid   string                    `json:"biosUUID"`
 }
 
 // DefaultingFunction sets default VirtualMachine field values

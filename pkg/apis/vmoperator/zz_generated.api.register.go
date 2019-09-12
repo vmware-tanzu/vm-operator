@@ -143,6 +143,7 @@ type VirtualMachineStatus struct {
 	PowerState string
 	Phase      VMStatusPhase
 	VmIp       string
+	BiosUuid   string
 }
 
 type VirtualMachineServiceStatus struct {

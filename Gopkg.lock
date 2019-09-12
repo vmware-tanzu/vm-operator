@@ -756,7 +756,7 @@
     "vim25/xml",
   ]
   pruneopts = "NU"
-  revision = "b97f87b6d728a78d40b54b1e5a52487fea0ec719"
+  revision = "3dbba021c94fffb2653fced409c20dc991710054"
 
 [[projects]]
   digest = "1:93f2507c1e532e27097c890cc431fff10b6e3e90b6a134db8a3047ff6ad75187"

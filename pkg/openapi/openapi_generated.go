@@ -1650,8 +1650,14 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref common.Referen
 							Format: "",
 						},
 					},
+					"biosUUID": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
 				},
-				Required: []string{"conditions", "host", "powerState", "phase", "vmIp"},
+				Required: []string{"conditions", "host", "powerState", "phase", "vmIp", "biosUUID"},
 			},
 		},
 		Dependencies: []string{

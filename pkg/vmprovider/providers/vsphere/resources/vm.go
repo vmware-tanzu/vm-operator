@@ -208,6 +208,7 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 		Phase:      v1alpha1.Created,
 		PowerState: string(ps),
 		VmIp:       ip,
+		BiosUuid:   vm.vcVirtualMachine.UUID(ctx),
 	}, nil
 }
 

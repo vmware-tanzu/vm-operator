@@ -905,6 +905,7 @@ func autoConvert_v1alpha1_VirtualMachineStatus_To_vmoperator_VirtualMachineStatu
 	out.PowerState = in.PowerState
 	out.Phase = vmoperator.VMStatusPhase(in.Phase)
 	out.VmIp = in.VmIp
+	out.BiosUuid = in.BiosUuid
 	return nil
 }
 
@@ -919,6 +920,7 @@ func autoConvert_vmoperator_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatu
 	out.PowerState = in.PowerState
 	out.Phase = VMStatusPhase(in.Phase)
 	out.VmIp = in.VmIp
+	out.BiosUuid = in.BiosUuid
 	return nil
 }
 

@@ -7,14 +7,11 @@ package vsphere_test
 
 import (
 	"context"
-	"fmt"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -78,8 +75,8 @@ var _ = Describe("Sessions", func() {
 		Context("without specifying any networks in VM Spec", func() {
 			It("should not override template networks", func() {
 				imageName := "DC0_H0_VM0"
-				vmClass := getVMClassInstance()
-				vm := getVirtualMachineInstance(testVMName, imageName, vmClass.Name)
+				vmClass := getVMClassInstance(testVMName, testNamespace)
+				vm := getVirtualMachineInstance(testVMName, testNamespace, imageName, vmClass.Name)
 				vmMetadata := map[string]string{}
 				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
@@ -99,8 +96,8 @@ var _ = Describe("Sessions", func() {
 		Context("by speciying networks in VM Spec", func() {
 			It("should override template networks", func() {
 				imageName := "DC0_H0_VM0"
-				vmClass := getVMClassInstance()
-				vm := getVirtualMachineInstance(testVMName+"change-net", imageName, vmClass.Name)
+				vmClass := getVMClassInstance(testVMName, testNamespace)
+				vm := getVirtualMachineInstance(testVMName+"change-net", testNamespace, imageName, vmClass.Name)
 				// Add two network interfaces to the VM and attach to different networks
 				vm.Spec.NetworkInterfaces = []vmoperatorv1alpha1.VirtualMachineNetworkInterface{
 					{
@@ -142,8 +139,8 @@ var _ = Describe("Sessions", func() {
 			})
 			It("should override network from the template", func() {
 				imageName := "DC0_H0_VM0"
-				vmClass := getVMClassInstance()
-				vm := getVirtualMachineInstance(testVMName+"with-default-net", imageName, vmClass.Name)
+				vmClass := getVMClassInstance(testVMName, testNamespace)
+				vm := getVirtualMachineInstance(testVMName+"with-default-net", testNamespace, imageName, vmClass.Name)
 				vmMetadata := map[string]string{}
 				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
@@ -160,8 +157,8 @@ var _ = Describe("Sessions", func() {
 			})
 			It("should not override networks specified in VM Spec ", func() {
 				imageName := "DC0_H0_VM0"
-				vmClass := getVMClassInstance()
-				vm := getVirtualMachineInstance(testVMName+"change-default-net", imageName, vmClass.Name)
+				vmClass := getVMClassInstance(testVMName, testNamespace)
+				vm := getVirtualMachineInstance(testVMName+"change-default-net", testNamespace, imageName, vmClass.Name)
 				// Add two network interfaces to the VM and attach to different networks
 				vm.Spec.NetworkInterfaces = []vmoperatorv1alpha1.VirtualMachineNetworkInterface{
 					{
@@ -194,8 +191,8 @@ var _ = Describe("Sessions", func() {
 		Context("from Content-library", func() {
 			It("should clone VM and change networks", func() {
 				imageName := "test-item"
-				vmClass := getVMClassInstance()
-				vm := getVirtualMachineInstance("DeployedVM"+"change-net", imageName, vmClass.Name)
+				vmClass := getVMClassInstance(testVMName, testNamespace)
+				vm := getVirtualMachineInstance("DeployedVM"+"change-net", testNamespace, imageName, vmClass.Name)
 				// Add two network interfaces to the VM and attach to different networks
 				vm.Spec.NetworkInterfaces = []vmoperatorv1alpha1.VirtualMachineNetworkInterface{
 					{
@@ -227,46 +224,3 @@ var _ = Describe("Sessions", func() {
 		})
 	})
 })
-
-func getVMClassInstance() *vmoperatorv1alpha1.VirtualMachineClass {
-	return &vmoperatorv1alpha1.VirtualMachineClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace,
-			Name:      fmt.Sprintf("%s-class", testVMName),
-		},
-		Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
-			Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{
-				Cpus:   4,
-				Memory: resource.MustParse("1Mi"),
-			},
-			Policies: vmoperatorv1alpha1.VirtualMachineClassPolicies{
-				Resources: vmoperatorv1alpha1.VirtualMachineClassResources{
-					Requests: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
-						Cpu:    resource.MustParse("1000Mi"),
-						Memory: resource.MustParse("100Mi"),
-					},
-					Limits: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
-						Cpu:    resource.MustParse("2000Mi"),
-						Memory: resource.MustParse("200Mi"),
-					},
-				},
-				StorageClass: "fooStorageClass",
-			},
-		},
-	}
-}
-
-func getVirtualMachineInstance(name, imageName, className string) *vmoperatorv1alpha1.VirtualMachine {
-	return &vmoperatorv1alpha1.VirtualMachine{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace,
-			Name:      name,
-		},
-		Spec: vmoperatorv1alpha1.VirtualMachineSpec{
-			ImageName:  imageName,
-			ClassName:  className,
-			PowerState: "poweredOn",
-			Ports:      []vmoperatorv1alpha1.VirtualMachinePort{},
-		},
-	}
-}

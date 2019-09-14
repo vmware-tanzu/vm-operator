@@ -31,10 +31,12 @@ func TestVSphereIntegrationProvider(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	var err error
 	stdlog.Print("setting up integration test env..")
 	vcSim = integration.NewVcSimInstance()
-	address, port := vcSim.Start()
-	config = integration.NewIntegrationVmOperatorConfig(address, port)
+	config, err = integration.SetupEnv(vcSim)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(config).ShouldNot(Equal(nil))
 })
 
 var _ = AfterSuite(func() {

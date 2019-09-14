@@ -723,7 +723,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:a2f3ffa9ff598ad47bc6c1cf1efb6fbd4a1a52da4b6ae1da51ea0828cc281969"
+  digest = "1:9c091c63bf3f0b2f8836461a7dea4efd3fd3df28ffc0824a334e9dc5829deba0"
   name = "github.com/vmware/govmomi"
   packages = [
     ".",

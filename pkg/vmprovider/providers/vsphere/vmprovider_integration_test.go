@@ -16,7 +16,7 @@ import (
 )
 
 var _ = Describe("VMProvider Tests", func() {
-	Context("Creating a VM via vmprovier", func() {
+	Context("Creating a VM via vmprovider", func() {
 		It("should correctly update VirtualMachineStatus", func() {
 			testNamespace := "test-namespace-vmp"
 			testVMName := "test-vm-vmp"

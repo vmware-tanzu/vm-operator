@@ -48,8 +48,9 @@ var _ = BeforeSuite(func() {
 
 	stdlog.Print("setting up integration test env..")
 	vcSim = integration.NewVcSimInstance()
-	err = integration.SetupEnv(vcSim)
+	config, err := integration.SetupEnv(vcSim)
 	Expect(err).NotTo(HaveOccurred())
+	Expect(config).ShouldNot(Equal(nil))
 })
 
 var _ = AfterSuite(func() {

@@ -7,11 +7,11 @@ package vsphere
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"k8s.io/klog"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 )
@@ -50,8 +50,8 @@ func CheckPlacementRelocateSpec(spec *vimTypes.VirtualMachineRelocateSpec) bool 
 	return true
 }
 
-func ParsePlaceVmResponse(res *vimTypes.PlaceVmResponse) *vimTypes.VirtualMachineRelocateSpec {
-	for _, r := range res.Returnval.Recommendations {
+func ParsePlaceVmResponse(res *vimTypes.PlacementResult) *vimTypes.VirtualMachineRelocateSpec {
+	for _, r := range res.Recommendations {
 		if r.Reason == string(vimTypes.RecommendationReasonCodeXvmotionPlacement) {
 			for _, a := range r.Action {
 				if pa, ok := a.(*vimTypes.PlacementAction); ok {
@@ -67,7 +67,6 @@ func ParsePlaceVmResponse(res *vimTypes.PlaceVmResponse) *vimTypes.VirtualMachin
 
 func computeVMPlacement(ctx context.Context, cls *object.ClusterComputeResource, vmRef *vimTypes.ManagedObjectReference,
 	spec interface{}, placementType vimTypes.PlacementSpecPlacementType) (*vimTypes.VirtualMachineRelocateSpec, error) {
-	req := vimTypes.PlaceVm{This: cls.Reference()}
 	ps := vimTypes.PlacementSpec{PlacementType: string(placementType)}
 	switch placementType {
 	case vimTypes.PlacementSpecPlacementTypeClone:
@@ -82,9 +81,8 @@ func computeVMPlacement(ctx context.Context, cls *object.ClusterComputeResource,
 	default:
 		return nil, fmt.Errorf("unsupported placement type: %s", string(placementType))
 	}
-	req.PlacementSpec = ps
 
-	res, err := methods.PlaceVm(ctx, cls.Client().RoundTripper, &req)
+	res, err := cls.PlaceVm(ctx, ps)
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +90,13 @@ func computeVMPlacement(ctx context.Context, cls *object.ClusterComputeResource,
 	if rSpec == nil {
 		return nil, fmt.Errorf("no valid placement action")
 	}
-	klog.Infof("got vm placement: Host=%s Datastore=%s", rSpec.Host.Value, rSpec.Datastore.Value)
+
 	return rSpec, nil
+}
+
+func isNilPtr(i interface{}) bool {
+	if i != nil {
+		return (reflect.ValueOf(i).Kind() == reflect.Ptr) && (reflect.ValueOf(i).IsNil())
+	}
+	return true
 }

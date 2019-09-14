@@ -217,14 +217,14 @@ var _ = Describe("CheckPlacementRelocateSpec", func() {
 var _ = Describe("ParsePlaceVmResponse", func() {
 	Context("when response is valid", func() {
 		Specify("PlaceVm Response is valid", func() {
-			res := types.PlaceVmResponse{}
-			res.Returnval.Recommendations = append(res.Returnval.Recommendations, createInvalidRecommendation())
-			res.Returnval.Recommendations = append(res.Returnval.Recommendations, createInvalidRecommendation())
+			res := types.PlacementResult{}
+			res.Recommendations = append(res.Recommendations, createInvalidRecommendation())
+			res.Recommendations = append(res.Recommendations, createInvalidRecommendation())
 			rec, _ := createValidRecommendation()
 			rec.Reason = string(types.RecommendationReasonCodePowerOnVm)
-			res.Returnval.Recommendations = append(res.Returnval.Recommendations, rec)
+			res.Recommendations = append(res.Recommendations, rec)
 			rec, spec := createValidRecommendation()
-			res.Returnval.Recommendations = append(res.Returnval.Recommendations, rec)
+			res.Recommendations = append(res.Recommendations, rec)
 			rSpec := Vs.ParsePlaceVmResponse(&res)
 			Expect(rSpec).NotTo(BeNil())
 			Expect(rSpec.Host).To(BeEquivalentTo(spec.Host))
@@ -234,19 +234,19 @@ var _ = Describe("ParsePlaceVmResponse", func() {
 	})
 	Context("when response is not valid", func() {
 		Specify("PlaceVm Response without recommendations", func() {
-			res := types.PlaceVmResponse{}
+			res := types.PlacementResult{}
 			rSpec := Vs.ParsePlaceVmResponse(&res)
 			Expect(rSpec).To(BeNil())
 		})
 	})
 	Context("when response is not valid", func() {
 		Specify("PlaceVm Response with invalid recommendations only", func() {
-			res := types.PlaceVmResponse{}
-			res.Returnval.Recommendations = append(res.Returnval.Recommendations, createInvalidRecommendation())
-			res.Returnval.Recommendations = append(res.Returnval.Recommendations, createInvalidRecommendation())
+			res := types.PlacementResult{}
+			res.Recommendations = append(res.Recommendations, createInvalidRecommendation())
+			res.Recommendations = append(res.Recommendations, createInvalidRecommendation())
 			rec, _ := createValidRecommendation()
 			rec.Reason = string(types.RecommendationReasonCodePowerOnVm)
-			res.Returnval.Recommendations = append(res.Returnval.Recommendations, rec)
+			res.Recommendations = append(res.Recommendations, rec)
 			rSpec := Vs.ParsePlaceVmResponse(&res)
 			Expect(rSpec).To(BeNil())
 		})

@@ -13,7 +13,7 @@ import (
 
 	vmoperator "github.com/vmware-tanzu/vm-operator"
 
-	"github.com/pkg/errors"
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
@@ -45,15 +45,14 @@ func InstallVmOperatorConfig(clientSet *kubernetes.Clientset, vcAddress string, 
 
 func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphereVmProviderConfig {
 	return &vsphere.VSphereVmProviderConfig{
-		VcPNID:            vcAddress,
-		VcPort:            strconv.Itoa(vcPort),
-		VcCreds:           NewIntegrationVmOperatorCredentials(),
-		Datacenter:        "/DC0",
-		ResourcePool:      "/DC0/host/DC0_C0/Resources",
-		Folder:            "/DC0/vm",
-		Datastore:         "/DC0/datastore/LocalDS_0",
-		ContentSource:     ContentSourceName,
-		AvoidUsingPlaceVM: true,
+		VcPNID:        vcAddress,
+		VcPort:        strconv.Itoa(vcPort),
+		VcCreds:       NewIntegrationVmOperatorCredentials(),
+		Datacenter:    "/DC0",
+		ResourcePool:  "/DC0/host/DC0_C0/Resources",
+		Folder:        "/DC0/vm",
+		Datastore:     "/DC0/datastore/LocalDS_0",
+		ContentSource: ContentSourceName,
 	}
 }
 
@@ -65,15 +64,19 @@ func NewIntegrationVmOperatorCredentials() *vsphere.VSphereVmProviderCredentials
 	}
 }
 
-func SetupEnv(vcSim *VcSimInstance) error {
+func SetupEnv(vcSim *VcSimInstance) (*vsphere.VSphereVmProviderConfig, error) {
 	address, port := vcSim.Start()
 	config := NewIntegrationVmOperatorConfig(address, port)
+	err := setupVcSimContent(vcSim, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup content library: %v", err)
+	}
 	provider, err := vsphere.NewVSphereVmProviderFromConfig(DefaultNamespace, config)
 	if err != nil {
-		return fmt.Errorf("failed to create vSphere provider: %v", err)
+		return nil, fmt.Errorf("failed to create vSphere provider: %v", err)
 	}
 	vmprovider.RegisterVmProvider(provider)
-	return nil
+	return config, nil
 }
 
 func CleanupEnv(vcSim *VcSimInstance) {
@@ -82,96 +85,117 @@ func CleanupEnv(vcSim *VcSimInstance) {
 	}
 }
 
-func SetupVcSimContent(ctx context.Context, s *vsphere.Session, config *vsphere.VSphereVmProviderConfig) error {
+func setupVcSimContent(vcSim *VcSimInstance, config *vsphere.VSphereVmProviderConfig) (err error) {
+	ctx := context.TODO()
 	// The 'Rootpath'/images directory is created and populated with ova content for CL related integration tests
 	// and cleaned up right after.
 	imagesDir := "images/"
 	ovf := "ttylinux-pc_i486-16.1.ovf"
+	fmt.Printf("Setting up Content Library: %+v\n", *config)
+	c, err := vcSim.NewClient(ctx)
+	if err != nil {
+		return
+	}
 
-	return s.WithRestClient(ctx, func(c *rest.Client) error {
-		ds, err := s.Finder.Datastore(ctx, config.Datastore)
-		if err != nil {
-			return err
-		}
+	rClient := rest.NewClient(c.Client)
+	userInfo := url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
-		lib := library.Library{
-			Name: config.ContentSource,
-			Type: "LOCAL",
-			Storage: []library.StorageBackings{
-				{
-					DatastoreID: ds.Reference().Value,
-					Type:        "DATASTORE",
-				},
+	err = rClient.Login(ctx, userInfo)
+	if err != nil {
+		return
+	}
+	defer func() {
+		err = rClient.Logout(ctx)
+	}()
+
+	finder := find.NewFinder(c.Client, false)
+	dc, err := finder.Datacenter(ctx, config.Datacenter)
+	if err != nil {
+		return
+	}
+	finder.SetDatacenter(dc)
+	ds, err := finder.Datastore(ctx, config.Datastore)
+	if err != nil {
+		return
+	}
+
+	lib := library.Library{
+		Name: config.ContentSource,
+		Type: "LOCAL",
+		Storage: []library.StorageBackings{
+			{
+				DatastoreID: ds.Reference().Value,
+				Type:        "DATASTORE",
 			},
-		}
-		//Create Library in vcsim for integration tests
-		libID, err := library.NewManager(c).CreateLibrary(ctx, lib)
+		},
+	}
+	//Create Library in vcsim for integration tests
+	libID, err := library.NewManager(rClient).CreateLibrary(ctx, lib)
+	if err != nil {
+		return
+	}
+
+	item := library.Item{
+		Name:      "test-item",
+		Type:      "ovf",
+		LibraryID: libID,
+	}
+	//Create Library item in vcsim for integration tests
+	itemID, err := library.NewManager(rClient).CreateLibraryItem(ctx, item)
+	if err != nil {
+		return
+	}
+
+	session, err := library.NewManager(rClient).CreateLibraryItemUpdateSession(ctx, library.Session{
+		LibraryItemID: itemID,
+	})
+	if err != nil {
+		return
+	}
+
+	//Update Library item with library file "ovf"
+	upload := func(path string) error {
+		f, err := os.Open(path)
 		if err != nil {
-			return errors.Wrapf(err, "failed to create content library %v for tests", config.ContentSource)
+			return err
 		}
-
-		item := library.Item{
-			Name:      "test-item",
-			Type:      "ovf",
-			LibraryID: libID,
-		}
-		//Create Library item in vcsim for integration tests
-		itemID, err := library.NewManager(c).CreateLibraryItem(ctx, item)
+		defer f.Close()
+		fi, err := f.Stat()
 		if err != nil {
-			return errors.Wrapf(err, "failed to create content library item for tests ")
-		}
-
-		session, err := library.NewManager(c).CreateLibraryItemUpdateSession(ctx, library.Session{
-			LibraryItemID: itemID,
-		})
-		if err != nil {
-			return errors.Wrapf(err, "failed to create update session for library item %v", item.Name)
-		}
-
-		//Update Library item with library file "ovf"
-		upload := func(path string) error {
-			f, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			fi, err := f.Stat()
-			if err != nil {
-				return err
-			}
-
-			name := filepath.Base(path)
-
-			size := fi.Size()
-			info := library.UpdateFile{
-				Name:       name,
-				SourceType: "PUSH",
-				Size:       size,
-			}
-
-			update, err := library.NewManager(c).AddLibraryItemFile(ctx, session, info)
-			if err != nil {
-				return err
-			}
-
-			p := soap.DefaultUpload
-			p.Headers = map[string]string{
-				"vmware-api-session-id": session,
-			}
-			p.ContentLength = size
-			u, err := url.Parse(update.UploadEndpoint.URI)
-			if err != nil {
-				return err
-			}
-
-			return c.Upload(ctx, f, u, &p)
-		}
-
-		path := string(vmoperator.Rootpath + "/" + imagesDir + ovf)
-		if err = upload(path); err != nil {
 			return err
 		}
 
-		return library.NewManager(c).CompleteLibraryItemUpdateSession(ctx, session)
-	})
+		name := filepath.Base(path)
+
+		size := fi.Size()
+		info := library.UpdateFile{
+			Name:       name,
+			SourceType: "PUSH",
+			Size:       size,
+		}
+
+		update, err := library.NewManager(rClient).AddLibraryItemFile(ctx, session, info)
+		if err != nil {
+			return err
+		}
+
+		p := soap.DefaultUpload
+		p.Headers = map[string]string{
+			"vmware-api-session-id": session,
+		}
+		p.ContentLength = size
+		u, err := url.Parse(update.UploadEndpoint.URI)
+		if err != nil {
+			return err
+		}
+
+		return c.Upload(ctx, f, u, &p)
+	}
+
+	path := string(vmoperator.Rootpath + "/" + imagesDir + ovf)
+	if err = upload(path); err != nil {
+		return
+	}
+
+	return library.NewManager(rClient).CompleteLibraryItemUpdateSession(ctx, session)
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"strings"
 
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/vcenter"
@@ -43,32 +44,17 @@ type Session struct {
 	network      object.NetworkReference
 	contentlib   *library.Library
 	creds        *VSphereVmProviderCredentials
-	usePlaceVM   bool //Used to avoid calling PlaceVM in integration tests (since PlaceVm is not implemented in vcsim yet)
 }
 
 func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig, ncpclient clientset.Interface) (*Session, error) {
-	s, err := NewSession(ctx, config, ncpclient)
-	if err != nil {
-		return nil, err
-	}
-
-	if err = s.ConfigureContent(ctx, config.ContentSource); err != nil {
-		return nil, err
-	}
-
-	return s, nil
-}
-
-func NewSession(ctx context.Context, config *VSphereVmProviderConfig, ncpclient clientset.Interface) (*Session, error) {
 	c, err := NewClient(ctx, config)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create client for new session")
 	}
 
 	s := &Session{
-		client:     c,
-		ncpClient:  ncpclient,
-		usePlaceVM: !config.AvoidUsingPlaceVM,
+		client:    c,
+		ncpClient: ncpclient,
 	}
 
 	if err = s.initSession(ctx, config); err != nil {
@@ -76,6 +62,11 @@ func NewSession(ctx context.Context, config *VSphereVmProviderConfig, ncpclient 
 		return nil, err
 	}
 
+	if err = s.ConfigureContent(ctx, config.ContentSource); err != nil {
+		return nil, err
+	}
+
+	log.Info("New session created and configured", "Session", s.String())
 	return s, nil
 }
 
@@ -224,7 +215,6 @@ func (s *Session) GetVirtualMachine(ctx context.Context, name string) (*res.Virt
 
 func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) (*res.VirtualMachine, error) {
-
 	deviceSpecs, err := s.deviceSpecsFromVM(ctx, vm)
 	if err != nil {
 		return nil, err
@@ -256,7 +246,8 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 
 		// If image is found, deploy VM from the image
 		if image != nil {
-			deployedVm, err := s.deployOvf(ctx, image.Status.Uuid, name)
+			log.Info("Going to deploy ovf", "imageName", image.ObjectMeta.Name, "vmName", name, "profleID", profileID)
+			deployedVm, err := s.deployOvf(ctx, image.Status.Uuid, name, profileID)
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
 			}
@@ -464,21 +455,14 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 	cloneSpec.Location.Profile = vmProfile
 	cloneSpec.Location.DeviceChange = deviceSpecs
 	cloneSpec.Location.Folder = vimTypes.NewReference(s.folder.Reference())
-
-	if s.usePlaceVM {
-		vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resSrcVM.ReferenceValue()}
-		rSpec, err := computeVMPlacement(ctx, s.cluster, vmRef, cloneSpec, vimTypes.PlacementSpecPlacementTypeClone)
-		if err != nil {
-			return nil, err
-		}
-		cloneSpec.Location.Host = rSpec.Host
-		cloneSpec.Location.Datastore = rSpec.Datastore
-	} else {
-		cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
-		log.Info("Skipping call to PlaceVM. Using preconfigured datastore", "datastore", s.datastore)
+	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resSrcVM.ReferenceValue()}
+	rSpec, err := computeVMPlacement(ctx, s.cluster, vmRef, cloneSpec, vimTypes.PlacementSpecPlacementTypeClone)
+	if err != nil {
+		return nil, err
 	}
+	cloneSpec.Location.Host = rSpec.Host
+	cloneSpec.Location.Datastore = rSpec.Datastore
 	//cloneSpec.Location.DiskMoveType = string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndConsolidate)
-
 	return cloneSpec, nil
 }
 
@@ -486,7 +470,7 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec *vimType
 	configSpec.Files = &vimTypes.VirtualMachineFileInfo{
 		VmPathName: fmt.Sprintf("[%s]", s.datastore.Name()),
 	}
-
+	log.Info("Going to create VM.", "Name", name, "ConfigSpec", *configSpec, "Folder", s.folder.Reference().Value, "ResourcePool", s.resourcepool.Reference().Value)
 	resVm := res.NewVMForCreate(name)
 	err := resVm.Create(ctx, s.folder, s.resourcepool, configSpec)
 	if err != nil {
@@ -497,6 +481,8 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec *vimType
 }
 
 func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
+	log.Info("Going to clone VM", "Name", cloneSpec.Config.Name, "Location", cloneSpec.Location)
+
 	cloneResVm, err := resSrcVm.Clone(ctx, s.folder, cloneSpec)
 	if err != nil {
 		return nil, err
@@ -505,26 +491,34 @@ func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, clo
 	return cloneResVm, nil
 }
 
-func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string) (*res.VirtualMachine, error) {
-
+func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, profileID string) (*res.VirtualMachine, error) {
 	var deployment *types.ManagedObjectReference
 	var err error
 	err = s.WithRestClient(ctx, func(c *rest.Client) error {
 		manager := vcenter.NewManager(c)
-
-		deploySpec := vcenter.Deploy{
-			DeploymentSpec: vcenter.DeploymentSpec{
-				Name:               vmName,
-				DefaultDatastoreID: s.datastore.Reference().Value,
-				// TODO (): Plumb AcceptAllEULA to this Spec
-				AcceptAllEULA: true,
-			},
-			Target: vcenter.Target{
-				ResourcePoolID: s.resourcepool.Reference().Value,
-			},
+		dSpec := vcenter.DeploymentSpec{
+			Name: vmName,
+			// TODO (): Plumb AcceptAllEULA to this Spec
+			AcceptAllEULA: true,
+		}
+		dSpec.StorageProfileID = profileID
+		//TODO: Remove this code when storage profile (storageClass) becomes mandatory
+		if profileID == "" {
+			log.Info("WARNING: ProfileID is empty - using datastore", "datastore", s.datastore.Reference().Value)
+			dSpec.DefaultDatastoreID = s.datastore.Reference().Value
 		}
 
-		deployment, err = manager.DeployLibraryItem(ctx, itemID, deploySpec)
+		target := vcenter.Target{
+			ResourcePoolID: s.resourcepool.Reference().Value,
+			FolderID:       s.folder.Reference().Value,
+		}
+
+		deploy := vcenter.Deploy{
+			DeploymentSpec: dSpec,
+			Target:         target,
+		}
+
+		deployment, err = manager.DeployLibraryItem(ctx, itemID, deploy)
 		return err
 	})
 
@@ -703,4 +697,28 @@ func (s *Session) getNetworkProviderByType(networkType string) (NetworkProvider,
 		return DefaultNetworkProvider(s.Finder), nil
 	}
 	return nil, fmt.Errorf("failed to create network provider for network type '%s'", networkType)
+}
+
+func (s *Session) String() string {
+	var sb strings.Builder
+	sb.WriteString("{")
+	if s.client != nil {
+		sb.WriteString(fmt.Sprintf("client: %v, ", *s.client))
+	}
+	if !isNilPtr(s.ncpClient) {
+		sb.WriteString(fmt.Sprintf("ncpClient: %+v, ", s.ncpClient))
+	}
+	if s.contentlib != nil {
+		sb.WriteString(fmt.Sprintf("contentlib: %+v, ", *s.contentlib))
+	}
+	sb.WriteString(fmt.Sprintf("datacenter: %s, ", s.datacenter.Reference().Value))
+	sb.WriteString(fmt.Sprintf("folder: %s, ", s.folder.Reference().Value))
+	if s.network != nil {
+		sb.WriteString(fmt.Sprintf("network: %s, ", s.network.Reference().Value))
+	}
+	sb.WriteString(fmt.Sprintf("resourcepool: %s, ", s.resourcepool.Reference().Value))
+	sb.WriteString(fmt.Sprintf("cluster: %s, ", s.cluster.Reference().Value))
+	sb.WriteString(fmt.Sprintf("datastore: %s ", s.datastore.Reference().Value))
+	sb.WriteString("}")
+	return sb.String()
 }

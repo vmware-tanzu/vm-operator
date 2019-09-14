@@ -21,6 +21,8 @@ import (
 type VcSimInstance struct {
 	vcsim  *simulator.Model
 	server *simulator.Server
+	IP     string
+	Port   int
 }
 
 var log = klogr.New()
@@ -37,10 +39,11 @@ func NewVcSimInstance() *VcSimInstance {
 }
 
 func (v *VcSimInstance) Start() (vcAddress string, vcPort int) {
+	var err error
 	v.vcsim.Service.TLS = new(tls.Config)
 	v.server = v.vcsim.Service.NewServer()
-	ip := v.server.URL.Hostname()
-	port, err := strconv.Atoi(v.server.URL.Port())
+	v.IP = v.server.URL.Hostname()
+	v.Port, err = strconv.Atoi(v.server.URL.Port())
 	if err != nil {
 		v.server.Close()
 		log.Error(err, "Fail to find vc simulator port")
@@ -49,8 +52,7 @@ func (v *VcSimInstance) Start() (vcAddress string, vcPort int) {
 	//register for vapi/rest calls
 	path, handler := vapi.New(v.server.URL, vpx.Setting)
 	v.vcsim.Service.Handle(path, handler)
-
-	return ip, port
+	return v.IP, v.Port
 }
 
 func (v *VcSimInstance) Stop() {

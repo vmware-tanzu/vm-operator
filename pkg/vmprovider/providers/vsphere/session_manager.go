@@ -33,7 +33,7 @@ func NewSessionManager(clientset *kubernetes.Clientset, ncpclient ncpclientset.I
 
 func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProviderConfig) (*Session, error) {
 	// This function is used for intgration tests only. So prohibit call to usePlaceVmPlaceVm
-	ses, err := NewSession(context.TODO(), config, sm.ncpclient)
+	ses, err := NewSessionAndConfigure(context.TODO(), config, sm.ncpclient)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create session for namespace %s", namespace)
 	}

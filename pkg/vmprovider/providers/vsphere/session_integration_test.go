@@ -11,7 +11,6 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-	"github.com/vmware-tanzu/vm-operator/test/integration"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -29,13 +28,7 @@ var _ = Describe("Sessions", func() {
 	BeforeEach(func() {
 		var err error
 		//Setup session
-		session, err = vsphere.NewSession(context.TODO(), config, nil)
-		Expect(err).NotTo(HaveOccurred())
-		//Setup vcsim with ovf content
-		err = integration.SetupVcSimContent(context.TODO(), session, config)
-		Expect(err).NotTo(HaveOccurred())
-		//Configure Session with created content
-		err = session.ConfigureContent(context.TODO(), config.ContentSource)
+		session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
 		Expect(err).NotTo(HaveOccurred())
 	})
 	Describe("Query Inventory", func() {
@@ -134,7 +127,7 @@ var _ = Describe("Sessions", func() {
 				// vswitch port group.
 				config.Network = "VM Network"
 				//Setup new session based on the default network
-				session, err = vsphere.NewSession(context.TODO(), config, nil)
+				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
 				Expect(err).NotTo(HaveOccurred())
 			})
 			It("should override network from the template", func() {

@@ -7,30 +7,34 @@ package virtualmachine
 import (
 	"context"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
-
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/klog"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-
-	"github.com/vmware-tanzu/vm-operator/pkg"
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	storagetypev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+)
+
+const (
+	OpCreate = "CreateVM"
+	OpDelete = "DeleteVM"
+	OpUpdate = "UpdateVM"
 )
 
 var log = logf.Log.WithName("virtualmachine-controller")
@@ -130,8 +134,10 @@ func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcil
 	return reconcile.Result{}, nil
 }
 
-func (r *ReconcileVirtualMachine) deleteVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
-	err := r.vmProvider.DeleteVirtualMachine(ctx, vm)
+func (r *ReconcileVirtualMachine) deleteVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
+	defer record.EmitEvent(vm, OpDelete, &err, false)
+
+	err = r.vmProvider.DeleteVirtualMachine(ctx, vm)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			log.Info("To be deleted VirtualMachine was not found", "name", vm.NamespacedName())
@@ -148,7 +154,7 @@ func (r *ReconcileVirtualMachine) deleteVm(ctx context.Context, vm *vmoperatorv1
 }
 
 // Process a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
-func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
+func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
 	log.Info("Reconciling VirtualMachine", "name", vm.NamespacedName())
 
 	exists, err := r.vmProvider.DoesVirtualMachineExist(ctx, vm.Namespace, vm.Name)
@@ -193,9 +199,11 @@ func (r *ReconcileVirtualMachine) processStorageClass(ctx context.Context, vmSpe
 	return scl.Parameters["storagePolicyID"], nil
 }
 
-func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
+func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
+	defer record.EmitEvent(vm, OpCreate, &err, false)
+
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
-	err := r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
+	err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
 	if err != nil {
 		log.Error(err, "Failed to get VirtualMachineClass for VirtualMachine",
 			"vmName", vm.NamespacedName(), "class", vm.Spec.ClassName)
@@ -233,8 +241,10 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 	return nil
 }
 
-func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
-	err := r.vmProvider.UpdateVirtualMachine(ctx, vm)
+func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
+	defer record.EmitEvent(vm, OpUpdate, &err, false)
+
+	err = r.vmProvider.UpdateVirtualMachine(ctx, vm)
 	if err != nil {
 		log.Error(err, "Provider failed to update VirtualMachine", "name", vm.NamespacedName())
 		return err

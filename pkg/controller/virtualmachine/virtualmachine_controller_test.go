@@ -10,46 +10,29 @@ import (
 	"sync"
 	"time"
 
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	"golang.org/x/net/context"
+	storagetypev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"golang.org/x/net/context"
-
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	vmrecord "github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
-	storagetypev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var c client.Client
 
-const timeout = time.Second * 5
-
-// Create a reconciler with a fake storage class and fake storage client.
-func testReconciler(mgr manager.Manager) reconcile.Reconciler {
-	// Get provider registered in the manager's main()
-	provider := vmprovider.GetVmProviderOrDie()
-
-	var sc storagetypev1.StorageClass
-	sc.Parameters = make(map[string]string)
-	sc.Parameters["storagePolicyID"] = "foo"
-	sc.Name = "fooClass"
-
-	cl := fake.NewFakeClient(&sc)
-
-	return &ReconcileVirtualMachine{
-		Client:     cl,
-		scheme:     mgr.GetScheme(),
-		vmProvider: provider,
-	}
-}
+const (
+	timeout      = time.Second * 5
+	storageClass = "foo-class"
+)
 
 var _ = Describe("VirtualMachine controller", func() {
 	ns := integration.DefaultNamespace
@@ -89,7 +72,7 @@ var _ = Describe("VirtualMachine controller", func() {
 							Memory: resource.MustParse("200Mi"),
 						},
 					},
-					StorageClass: "fooClass",
+					StorageClass: storageClass,
 				},
 			},
 		}
@@ -102,10 +85,18 @@ var _ = Describe("VirtualMachine controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
-		recFn, requests = SetupTestReconcile(testReconciler(mgr))
+		recFn, requests = SetupTestReconcile(newReconciler(mgr))
 		Expect(add(mgr, recFn)).To(Succeed())
 
 		stopMgr, mgrStopped = StartTestManager(mgr)
+
+		var sc storagetypev1.StorageClass
+		sc.Provisioner = "foo"
+		sc.Parameters = make(map[string]string)
+		sc.Parameters["storagePolicyID"] = "foo"
+		sc.Name = storageClass
+		err = c.Create(context.TODO(), &sc)
+		Expect(err).ShouldNot(HaveOccurred())
 
 		err = c.Create(context.TODO(), &classInstance)
 		Expect(err).ShouldNot(HaveOccurred())
@@ -135,18 +126,25 @@ var _ = Describe("VirtualMachine controller", func() {
 					ClassName:    classInstance.Name,
 					PowerState:   "poweredOn",
 					Ports:        []vmoperatorv1alpha1.VirtualMachinePort{},
-					StorageClass: "fooClass",
+					StorageClass: storageClass,
 				},
 			}
+
+			fakeRecorder := vmrecord.GetRecorder().(*record.FakeRecorder)
 
 			// Create the VM Object the expect Reconcile
 			err = c.Create(context.TODO(), &instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
 			// Delete the VM Object the expect Reconcile
 			err = c.Delete(context.TODO(), &instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+			reasonMap := vmrecord.ReadEvents(fakeRecorder)
+			Expect(len(reasonMap)).Should(Equal(2))
+			Expect(reasonMap[vmrecord.Success+OpDelete]).Should(Equal(1))
 		})
 	})
 })

@@ -1476,7 +1476,15 @@
   revision = "0cf8f7e6ed1d2e3d47d02e3b6e559369af24d803"
 
 [[projects]]
-  digest = "1:74a3314c7941ec16b4d40c10cccf53699d9971467064413af0f2158ea773c3f9"
+  digest = "1:f59adf166c86085087a9fa6a2d11e60729034f7dcc35d974d747b8ea2713c22d"
+  name = "sigs.k8s.io/cluster-api"
+  packages = ["pkg/controller/error"]
+  pruneopts = "NU"
+  revision = "91f68a197033feecfdf1b1683cc7e426fb133533"
+  version = "v0.1.10"
+
+[[projects]]
+  digest = "1:14fe447896141b3c8105f70acd76bde349e9549347e462ec6ca77142c417f64f"
   name = "sigs.k8s.io/controller-runtime"
   packages = [
     "pkg/cache",
@@ -1484,7 +1492,6 @@
     "pkg/client",
     "pkg/client/apiutil",
     "pkg/client/config",
-    "pkg/client/fake",
     "pkg/controller",
     "pkg/envtest",
     "pkg/envtest/printer",
@@ -1593,14 +1600,15 @@
     "k8s.io/client-go/rest",
     "k8s.io/client-go/testing",
     "k8s.io/client-go/tools/cache",
+    "k8s.io/client-go/tools/record",
     "k8s.io/client-go/util/flowcontrol",
     "k8s.io/klog",
     "k8s.io/klog/klogr",
     "k8s.io/kube-openapi/cmd/openapi-gen",
     "k8s.io/kube-openapi/pkg/common",
+    "sigs.k8s.io/cluster-api/pkg/controller/error",
     "sigs.k8s.io/controller-runtime/pkg/client",
     "sigs.k8s.io/controller-runtime/pkg/client/config",
-    "sigs.k8s.io/controller-runtime/pkg/client/fake",
     "sigs.k8s.io/controller-runtime/pkg/controller",
     "sigs.k8s.io/controller-runtime/pkg/handler",
     "sigs.k8s.io/controller-runtime/pkg/manager",

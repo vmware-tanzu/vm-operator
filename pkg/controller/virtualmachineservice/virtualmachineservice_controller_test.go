@@ -10,18 +10,19 @@ import (
 	"sync"
 	"time"
 
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	"golang.org/x/net/context"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"golang.org/x/net/context"
-
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	vmrecord "github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var c client.Client
@@ -30,7 +31,9 @@ const timeout = time.Second * 5
 
 var _ = Describe("VirtualMachineService controller", func() {
 	ns := integration.DefaultNamespace
-	name := "fooVm"
+	// here "name" must be confine the a DNS-1035 style which must consist of lower case alphanumeric characters or '-',
+	// regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')
+	name := "foo-vm"
 
 	var (
 		stopMgr    chan struct{}
@@ -78,14 +81,23 @@ var _ = Describe("VirtualMachineService controller", func() {
 			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: name}}
 			recFn, requests := SetupTestReconcile(newReconciler(mgr))
 			Expect(add(mgr, recFn)).To(Succeed())
+
+			fakeRecorder := vmrecord.GetRecorder().(*record.FakeRecorder)
+
 			// Create the VM Service object and expect the Reconcile
 			err := c.Create(context.TODO(), &instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
 			//Delete the VM Service object and expect the Reconcile
 			err = c.Delete(context.TODO(), &instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+			reasonMap := vmrecord.ReadEvents(fakeRecorder)
+			Expect(len(reasonMap)).Should(Equal(2))
+			Expect(reasonMap[vmrecord.Success+OpCreate]).Should(Equal(1))
+			Expect(reasonMap[vmrecord.Success+OpDelete]).Should(Equal(1))
 		})
 	})
 	/*

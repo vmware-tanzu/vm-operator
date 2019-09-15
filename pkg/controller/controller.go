@@ -5,6 +5,7 @@
 package controller
 
 import (
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
@@ -18,5 +19,6 @@ func AddToManager(m manager.Manager) error {
 			return err
 		}
 	}
+	record.InitFromRecorder(m.GetRecorder(record.RecorderName))
 	return nil
 }

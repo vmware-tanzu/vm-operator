@@ -8,19 +8,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vmware-tanzu/vm-operator/pkg"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-	"k8s.io/apimachinery/pkg/util/intstr"
-
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -28,12 +21,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 const (
 	// TODO(bryanv) Get these from mgr.GetScheme().ObjectKinds(...) to exactly match EnqueueRequestForOwner behavior.
 	ServiceOwnerRefKind    = "VirtualMachineService"
 	ServiceOwnerRefVersion = pkg.VmOperatorKey
+	OpCreate               = "CreateVMService"
+	OpDelete               = "DeleteVMService"
+	OpUpdate               = "UpdateVMService"
 )
 
 var log = logf.Log.WithName("virtualmachineservice-controller")
@@ -131,7 +134,7 @@ func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (r
 		return reconcile.Result{}, nil
 	}
 
-	_, err = r.reconcileVmService(ctx, instance)
+	err = r.reconcileVmService(ctx, instance)
 	if err != nil {
 		log.Error(err, "Failed to reconcile VirtualMachineService", "service", instance)
 		return reconcile.Result{}, err
@@ -140,12 +143,14 @@ func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (r
 	return reconcile.Result{}, nil
 }
 
-func (r *ReconcileVirtualMachineService) deleteVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) error {
+func (r *ReconcileVirtualMachineService) deleteVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (err error) {
 	log.Info("Delete VirtualMachineService", "service", vmService)
+	defer record.EmitEvent(vmService, OpDelete, &err, false)
+
 	return nil
 }
 
-func (r *ReconcileVirtualMachineService) reconcileVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*vmoperatorv1alpha1.VirtualMachineService, error) {
+func (r *ReconcileVirtualMachineService) reconcileVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) error {
 	var service *corev1.Service
 	err := r.Get(ctx, types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name}, service)
 	switch {
@@ -388,44 +393,48 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 }
 
 // Process a create event for a new Virtual Machine Service
-func (r *ReconcileVirtualMachineService) createVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*vmoperatorv1alpha1.VirtualMachineService, error) {
+func (r *ReconcileVirtualMachineService) createVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (err error) {
 	log.Info("Creating VirtualMachineService", "name", vmService.NamespacedName())
+
+	defer record.EmitEvent(vmService, OpCreate, &err, false)
 
 	// Create Service
 	service := r.vmServiceToService(vmService)
 
-	err := r.updateService(ctx, vmService, service)
+	err = r.updateService(ctx, vmService, service)
 	if err != nil {
 		log.Error(err, "Failed to update VirtualMachineService", "name", vmService.NamespacedName())
-		return nil, err
+		return err
 	}
 
 	err = r.updateEndpoints(ctx, vmService, service)
 	if err != nil {
 		log.Error(err, "Failed to update VirtualMachineService endpoints", "name", vmService.NamespacedName())
-		return nil, err
+		return err
 	}
 
 	pkg.AddAnnotations(&vmService.ObjectMeta)
 
-	return nil, nil
+	return nil
 }
 
-func (r *ReconcileVirtualMachineService) updateVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*vmoperatorv1alpha1.VirtualMachineService, error) {
+func (r *ReconcileVirtualMachineService) updateVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (err error) {
 	log.Info("Updating VirtualMachineService", "name", vmService.NamespacedName())
+
+	defer record.EmitEvent(vmService, OpUpdate, &err, false)
 
 	// Ensure Service and Endpoints are correct
 	// Determine if Service matches any VMs
 	vmList := &vmoperatorv1alpha1.VirtualMachineList{}
-	err := r.List(ctx, client.MatchingLabels(vmService.Spec.Selector), vmList)
+	err = r.List(ctx, client.MatchingLabels(vmService.Spec.Selector), vmList)
 	if err != nil {
 		// Since we're getting stuff from a local cache, it is basically impossible to get this error.
-		return nil, err
+		return err
 	}
 
 	for _, vm := range vmList.Items {
 		log.Info("VirtualMachine matched", "name", vm.NamespacedName(), "labels", vm.ObjectMeta.Labels)
 	}
 
-	return nil, nil
+	return nil
 }

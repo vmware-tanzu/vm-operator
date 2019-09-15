@@ -13,7 +13,6 @@ rules:
   - configmaps
   - secrets
   - serviceaccounts
-  - events
   - namespaces
   verbs:
   - get
@@ -22,6 +21,7 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - events
   - services
   - endpoints
   verbs:

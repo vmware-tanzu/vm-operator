@@ -102,6 +102,18 @@ func (vm *VirtualMachine) Delete(ctx context.Context) error {
 }
 
 func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *types.VirtualMachineConfigSpec) error {
+	var o mo.VirtualMachine
+	log.Info("Reconfiguring VM", "name", vm.Name)
+	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config"}, &o)
+	if err != nil {
+		return err
+	}
+
+	isDesiredConfig := CompareVmConfig(vm.Name, o.Config, configSpec)
+	if isDesiredConfig {
+		return nil
+	}
+
 	task, err := vm.vcVirtualMachine.Reconfigure(ctx, *configSpec)
 	if err != nil {
 		return err
@@ -285,4 +297,39 @@ func (vm *VirtualMachine) Customize(ctx context.Context, spec types.Customizatio
 		return err
 	}
 	return nil
+}
+
+func CompareVmConfig(name string, actualConfig *types.VirtualMachineConfigInfo, desiredConfig *types.VirtualMachineConfigSpec) bool {
+	isDesired := true
+	if desiredConfig.NumCPUs != actualConfig.Hardware.NumCPU {
+		log.Info("Reconfigure VM: NumCPUs", "name", name, "actual", actualConfig.Hardware.NumCPU, "desired", desiredConfig.NumCPUs)
+		isDesired = false
+	}
+
+	if desiredConfig.MemoryMB != int64(actualConfig.Hardware.MemoryMB) {
+		log.Info("Reconfigure VM: MemoryMB", "name", name, "actual", actualConfig.Hardware.MemoryMB, "desired", desiredConfig.MemoryMB)
+		isDesired = false
+	}
+
+	if (desiredConfig.CpuAllocation.Reservation != nil) && (*actualConfig.CpuAllocation.Reservation != *desiredConfig.CpuAllocation.Reservation) {
+		log.Info("Reconfigure VM: CpuAllocation Reservation", "name", name, "actual", *actualConfig.CpuAllocation.Reservation, "desired", *desiredConfig.CpuAllocation.Reservation)
+		isDesired = false
+	}
+
+	if (desiredConfig.CpuAllocation.Limit != nil) && (*actualConfig.CpuAllocation.Limit != *desiredConfig.CpuAllocation.Limit) {
+		log.Info("Reconfigure VM: CpuAllocation Limit", "actual", *actualConfig.CpuAllocation.Limit, "desired", *desiredConfig.CpuAllocation.Limit)
+		isDesired = false
+	}
+
+	if (desiredConfig.MemoryAllocation.Reservation != nil) && (*actualConfig.MemoryAllocation.Reservation != *desiredConfig.MemoryAllocation.Reservation) {
+		log.Info("Reconfigure VM: MemoryAllocation Reservation", "name", name, "actual", *actualConfig.MemoryAllocation.Reservation, "desired", *desiredConfig.MemoryAllocation.Reservation)
+		isDesired = false
+	}
+
+	if (desiredConfig.MemoryAllocation.Limit != nil) && (*actualConfig.MemoryAllocation.Limit != *desiredConfig.MemoryAllocation.Limit) {
+		log.Info("Reconfigure VM: MemoryAllocation Limit", "name", name, "actual", *actualConfig.MemoryAllocation.Limit, "desired", *desiredConfig.MemoryAllocation.Limit)
+		isDesired = false
+	}
+
+	return isDesired
 }

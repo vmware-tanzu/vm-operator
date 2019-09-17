@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -31,10 +32,11 @@ func TestVirtualMachineClass(t *testing.T) {
 }
 
 var (
-	cfg     *rest.Config
-	vcSim   *integration.VcSimInstance
-	testEnv *suite.Environment
-	err     error
+	cfg           *rest.Config
+	vcSim         *integration.VcSimInstance
+	testEnv       *suite.Environment
+	err           error
+	vSphereConfig *vsphere.VSphereVmProviderConfig
 )
 
 var _ = BeforeSuite(func() {
@@ -48,9 +50,10 @@ var _ = BeforeSuite(func() {
 
 	stdlog.Print("setting up integration test env..")
 	vcSim = integration.NewVcSimInstance()
-	config, err := integration.SetupEnv(vcSim)
+
+	vSphereConfig, err = integration.SetupEnv(vcSim)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(config).ShouldNot(Equal(nil))
+	Expect(vSphereConfig).ShouldNot(Equal(nil))
 })
 
 var _ = AfterSuite(func() {

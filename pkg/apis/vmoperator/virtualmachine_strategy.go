@@ -54,11 +54,11 @@ func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object
 	errors := field.ErrorList{}
 
 	if vm.Spec.ImageName == "" {
-		errors = append(errors, field.Required(field.NewPath("spec", "imageName"), ""))
+		errors = append(errors, field.Required(field.NewPath("spec", "imageName"), "imageName must be provided"))
 	}
 
 	if vm.Spec.ClassName == "" {
-		errors = append(errors, field.Required(field.NewPath("spec", "className"), ""))
+		errors = append(errors, field.Required(field.NewPath("spec", "className"), "className must be provided"))
 	}
 
 	networkTypeErrors := validateNetworkType(vm)

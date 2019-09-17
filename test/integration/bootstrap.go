@@ -75,7 +75,9 @@ func SetupEnv(vcSim *VcSimInstance) (*vsphere.VSphereVmProviderConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create vSphere provider: %v", err)
 	}
+
 	vmprovider.RegisterVmProvider(provider)
+
 	return config, nil
 }
 
@@ -120,7 +122,7 @@ func setupVcSimContent(vcSim *VcSimInstance, config *vsphere.VSphereVmProviderCo
 	}
 
 	lib := library.Library{
-		Name: config.ContentSource,
+		Name: ContentSourceName,
 		Type: "LOCAL",
 		Storage: []library.StorageBackings{
 			{

@@ -32,8 +32,17 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 	var (
 		policies VirtualMachineClassPolicies
 
-		vmClass  = VirtualMachineClass{}
-		hardware = VirtualMachineClassHardware{}
+		vmClass = VirtualMachineClass{}
+
+		hardware      = VirtualMachineClassHardware{}
+		hardwareSmall = VirtualMachineClassHardware{
+			Cpus:   1,
+			Memory: resource.MustParse("1Gi"),
+		}
+		hardwareLarge = VirtualMachineClassHardware{
+			Cpus:   2,
+			Memory: resource.MustParse("2Gi"),
+		}
 
 		resourceSpecWithMemory100 = VirtualMachineClassResourceSpec{
 			Memory: resource.MustParse("100Mi"),
@@ -47,9 +56,19 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 		resourceSpecWithCpu2000 = VirtualMachineClassResourceSpec{
 			Cpu: resource.MustParse("2000Mi"),
 		}
+
+		resourceSpecWithCpuMemSmall = VirtualMachineClassResourceSpec{
+			Cpu:    resource.MustParse("1000Mi"),
+			Memory: resource.MustParse("100Mi"),
+		}
+		resourceSpecWithCpuMemLarge = VirtualMachineClassResourceSpec{
+			Cpu:    resource.MustParse("2000Mi"),
+			Memory: resource.MustParse("200Mi"),
+		}
 	)
 
 	type ValidateFunc func(VirtualMachineClass) field.ErrorList
+	type ValidateUpdateFunc func(VirtualMachineClass, VirtualMachineClass) field.ErrorList
 
 	BeforeEach(func() {
 		requests := VirtualMachineClassResourceSpec{}
@@ -123,5 +142,40 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 		Entry("for CPU resources", validateCPU, &resourceSpecWithCpu2000, &resourceSpecWithCpu1000,
 			field.Invalid(field.NewPath("spec", "requests"), resourceSpecWithCpu2000.Cpu.Value(),
 				"CPU Limits must not be smaller than CPU Requests")),
+	)
+	DescribeTable("should pass if old and new vm classes are the same",
+		func(validateFunc ValidateUpdateFunc, request *VirtualMachineClassResourceSpec, limit *VirtualMachineClassResourceSpec) {
+
+			policies := VirtualMachineClassPolicies{
+				aVirtualMachineClassResources(*request, *limit),
+				"",
+			}
+
+			vmClass1 := aVirtualMachineClass(hardware, policies)
+			vmClass2 := aVirtualMachineClass(hardware, policies)
+
+			Expect(validateFunc(vmClass1, vmClass2)).Should(BeEmpty())
+		},
+		Entry("For changes", validateClassUpdate, &resourceSpecWithCpuMemSmall, &resourceSpecWithCpuMemLarge),
+	)
+	DescribeTable("should fail if old and new vm classes have changed",
+		func(validateFunc ValidateUpdateFunc, res1 *VirtualMachineClassResourceSpec, res2 *VirtualMachineClassResourceSpec) {
+
+			policies1 := VirtualMachineClassPolicies{
+				aVirtualMachineClassResources(*res1, *res1),
+				"",
+			}
+			policies2 := VirtualMachineClassPolicies{
+				aVirtualMachineClassResources(*res2, *res2),
+				"",
+			}
+
+			vmClass1 := aVirtualMachineClass(hardwareSmall, policies1)
+			vmClass2 := aVirtualMachineClass(hardwareLarge, policies2)
+
+			result := validateFunc(vmClass1, vmClass2)
+			Expect(result).Should(Not(BeEmpty()))
+		},
+		Entry("For changes", validateClassUpdate, &resourceSpecWithCpuMemSmall, &resourceSpecWithCpuMemLarge),
 	)
 })

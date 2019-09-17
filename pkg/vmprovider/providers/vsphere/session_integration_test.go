@@ -14,6 +14,7 @@ import (
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
 var (
@@ -31,8 +32,15 @@ var _ = Describe("Sessions", func() {
 		session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
 		Expect(err).NotTo(HaveOccurred())
 	})
-	Describe("Query Inventory", func() {
-		Context("Session", func() {
+
+	Describe("Query VM images", func() {
+		Context("From Inventory - VMs", func() {
+			BeforeEach(func() {
+				//set source to use VM inventory
+				config.ContentSource = ""
+				err = session.ConfigureContent(context.TODO(), config.ContentSource)
+				Expect(err).NotTo(HaveOccurred())
+			})
 			// TODO: The default govcsim setups 2 VM's per resource pool however we should create our own fixture for better
 			// consistency and avoid failures when govcsim is updated.
 			It("should list virtualmachines", func() {
@@ -46,7 +54,14 @@ var _ = Describe("Sessions", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(vm.Name).Should(Equal("DC0_H0_VM0"))
 			})
-
+		})
+		Context("From Content Library", func() {
+			BeforeEach(func() {
+				//set source to use CL
+				config.ContentSource = integration.ContentSourceName
+				err = session.ConfigureContent(context.TODO(), config.ContentSource)
+				Expect(err).NotTo(HaveOccurred())
+			})
 			It("should list virtualmachineimages from CL", func() {
 				images, err := session.ListVirtualMachineImagesFromCL(context.TODO(), testNamespace)
 				Expect(err).NotTo(HaveOccurred())
@@ -65,6 +80,12 @@ var _ = Describe("Sessions", func() {
 	})
 
 	Describe("Clone VM", func() {
+		BeforeEach(func() {
+			//set source to use VM inventory
+			config.ContentSource = ""
+			err = session.ConfigureContent(context.TODO(), config.ContentSource)
+			Expect(err).NotTo(HaveOccurred())
+		})
 		Context("without specifying any networks in VM Spec", func() {
 			It("should not override template networks", func() {
 				imageName := "DC0_H0_VM0"
@@ -182,37 +203,23 @@ var _ = Describe("Sessions", func() {
 			})
 		})
 		Context("from Content-library", func() {
-			It("should clone VM and change networks", func() {
+			BeforeEach(func() {
+				//set source to use CL
+				config.ContentSource = integration.ContentSourceName
+				err = session.ConfigureContent(context.TODO(), config.ContentSource)
+				Expect(err).NotTo(HaveOccurred())
+			})
+			It("should clone VM", func() {
 				imageName := "test-item"
+
 				vmClass := getVMClassInstance(testVMName, testNamespace)
-				vm := getVirtualMachineInstance("DeployedVM"+"change-net", testNamespace, imageName, vmClass.Name)
-				// Add two network interfaces to the VM and attach to different networks
-				vm.Spec.NetworkInterfaces = []vmoperatorv1alpha1.VirtualMachineNetworkInterface{
-					{
-						NetworkName: "VM Network",
-					},
-					{
-						NetworkName:      "VM Network",
-						EthernetCardType: "e1000",
-					},
-				}
+				vmName := "CL_DeployedVM"
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmClass.Name)
+
 				vmMetadata := map[string]string{}
 				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
-				netDevices, err := clonedVM.GetNetworkDevices(context.TODO())
-				Expect(err).NotTo(HaveOccurred())
-				Expect(len(netDevices)).Should(Equal(2))
-				// The interface type should be default vmxnet3
-				dev1, ok := netDevices[0].(*vimTypes.VirtualVmxnet3)
-				Expect(ok).Should(BeTrue())
-				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
-				_, ok = dev1.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
-				Expect(ok).Should(BeTrue())
-				// The interface type should be e1000
-				dev2, ok := netDevices[1].(*vimTypes.VirtualE1000)
-				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
-				_, ok = dev2.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
-				Expect(ok).Should(BeTrue())
+				Expect(clonedVM.Name).Should(Equal(vmName))
 			})
 		})
 	})

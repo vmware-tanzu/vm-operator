@@ -117,6 +117,7 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 
 func (s *Session) ConfigureContent(ctx context.Context, contentSource string) error {
 	if contentSource == "" {
+		s.contentlib = nil
 		return nil
 	}
 
@@ -177,7 +178,7 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string,
 	}
 	//Return nil when the image with 'name' is not found in CL
 	if item == nil {
-		return nil, nil
+		return nil, errors.Errorf("item: %v is not found in CL", item.Name)
 	}
 	//if not a supported type return nil
 	if !IsSupportedDeployType(item.Type) {
@@ -221,7 +222,7 @@ func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 	}
 
 	name := vm.Name
-	configSpec, err := configSpecFromClassSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
+	configSpec, err := s.configSpecFromClassSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
 	if err != nil {
 		return nil, err
 	}
@@ -244,37 +245,13 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 			return nil, err
 		}
 
-		// If image is found, deploy VM from the image
-		if image != nil {
-			log.Info("Going to deploy ovf", "imageName", image.ObjectMeta.Name, "vmName", name, "profleID", profileID)
-			deployedVm, err := s.deployOvf(ctx, image.Status.Uuid, name, profileID)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
-			}
-
-			// Add device change specs to configSpec
-			deviceSpecs, err := s.deviceChangeSpecs(ctx, vm, deployedVm)
-			if err != nil {
-				return nil, err
-			}
-
-			// Get configSpec to honor VM Class
-			configSpec, err := configSpecFromClassSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
-			if err != nil {
-				return nil, err
-			}
-
-			//reconfigure with VirtualMachineClass config
-			if err := deployedVm.Reconfigure(ctx, configSpec); err != nil {
-				//Reconfigure failed: delete poweredOff deployedVM
-				if err1 := deployedVm.Delete(ctx); err1 != nil {
-					log.Error(err1, "failed to delete Stale VM", "name", deployedVm.Name)
-				}
-				return nil, errors.Wrapf(err, "failed to reconfigure new VM %q", deployedVm.Name)
-			}
-
-			return deployedVm, nil
+		log.Info("Going to deploy ovf", "imageName", image.ObjectMeta.Name, "vmName", name, "profileID", profileID)
+		deployedVm, err := s.deployOvf(ctx, image.Status.Uuid, name, profileID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
 		}
+
+		return deployedVm, nil
 	}
 
 	resSrcVm, err := s.lookupVm(ctx, vm.Spec.ImageName)
@@ -437,12 +414,13 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 	}
 	deviceSpecs = append(deviceSpecs, vdcs...)
 
-	configSpec, err := configSpecFromClassSpec(name, &vm.Spec, vmClassSpec, vmMetadata, nil)
+	configSpec, err := s.configSpecFromClassSpec(name, &vm.Spec, vmClassSpec, vmMetadata, nil)
+
 	if err != nil {
 		return nil, err
 	}
 
-	powerOn := vm.Spec.PowerState == v1alpha1.VirtualMachinePoweredOff
+	powerOn := vm.Spec.PowerState == v1alpha1.VirtualMachinePoweredOn
 	memory := false // No full memory clones
 
 	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
@@ -473,6 +451,12 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec *vimType
 	log.Info("Going to create VM.", "Name", name, "ConfigSpec", *configSpec, "Folder", s.folder.Reference().Value, "ResourcePool", s.resourcepool.Reference().Value)
 	resVm := res.NewVMForCreate(name)
 	err := resVm.Create(ctx, s.folder, s.resourcepool, configSpec)
+	if err != nil {
+		return nil, err
+	}
+
+	// Power on the VM
+	err = resVm.SetPowerState(ctx, v1alpha1.VirtualMachinePoweredOn)
 	if err != nil {
 		return nil, err
 	}
@@ -555,7 +539,7 @@ func (s *Session) WithRestClient(ctx context.Context, f func(c *rest.Client) err
 	return f(c)
 }
 
-func configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
+func (s *Session) configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	metadata vmprovider.VirtualMachineMetadata, deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec) (*vimTypes.VirtualMachineConfigSpec, error) {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{

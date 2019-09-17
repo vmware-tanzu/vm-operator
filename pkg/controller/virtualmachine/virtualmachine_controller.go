@@ -241,10 +241,31 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 	return nil
 }
 
-func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
+func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
+	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
+	err := r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
+	if err != nil {
+		log.Error(err, "Failed to get VirtualMachineClass for VirtualMachine",
+			"vmName", vm.NamespacedName(), "class", vm.Spec.ClassName)
+		return err
+	}
+
+	var vmMetadata vmprovider.VirtualMachineMetadata
+	if metadata := vm.Spec.VmMetadata; metadata != nil {
+		configMap := &v1.ConfigMap{}
+		err := r.Get(ctx, types.NamespacedName{Name: metadata.ConfigMapName, Namespace: vm.Namespace}, configMap)
+		if err != nil {
+			log.Error(err, "Failed to get VirtualMachineMetadata ConfigMap",
+				"vmName", vm.NamespacedName(), "configMapName", metadata.ConfigMapName)
+			return err
+		}
+
+		vmMetadata = configMap.Data
+	}
+
 	defer record.EmitEvent(vm, OpUpdate, &err, false)
 
-	err = r.vmProvider.UpdateVirtualMachine(ctx, vm)
+	err = r.vmProvider.UpdateVirtualMachine(ctx, vm, *vmClass, vmMetadata)
 	if err != nil {
 		log.Error(err, "Provider failed to update VirtualMachine", "name", vm.NamespacedName())
 		return err

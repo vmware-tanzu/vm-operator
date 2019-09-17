@@ -20,6 +20,7 @@ import (
 	"k8s.io/klog/klogr"
 
 	"github.com/vmware/govmomi/find"
+	vimTypes "github.com/vmware/govmomi/vim25/types"
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,6 +73,10 @@ func (vs *VSphereVmProvider) Name() string {
 }
 
 func (vs *VSphereVmProvider) Initialize(stop <-chan struct{}) {
+}
+
+func (vs *VSphereVmProvider) GetSession(ctx context.Context, namespace string) (*Session, error) {
+	return vs.sessions.GetSession(ctx, namespace)
 }
 
 func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
@@ -206,11 +211,6 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 			return transformVmError(vmName, err)
 		}
 	}
-	// Power on the VM
-	err = resVm.SetPowerState(ctx, v1alpha1.VirtualMachinePoweredOn)
-	if err != nil {
-		return transformVmError(vmName, err)
-	}
 
 	err = vs.mergeVmStatus(ctx, vm, resVm)
 	if err != nil {
@@ -222,13 +222,13 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 	return nil
 }
 
-func (vs *VSphereVmProvider) updateVm(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
-	err := vs.updatePowerState(ctx, vm, resVm)
-	if err != nil {
-		return err
+func (vs *VSphereVmProvider) updateVm(ctx context.Context, vm *v1alpha1.VirtualMachine, configSpec *vimTypes.VirtualMachineConfigSpec, resVm *res.VirtualMachine) error {
+	err := vs.reconfigureVm(ctx, resVm, configSpec)
+	if err == nil {
+		return vs.updatePowerState(ctx, vm, resVm)
 	}
 
-	return nil
+	return err
 }
 
 func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
@@ -245,8 +245,12 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 	return nil
 }
 
+func (vs *VSphereVmProvider) reconfigureVm(ctx context.Context, resSrcVm *res.VirtualMachine, configSpec *vimTypes.VirtualMachineConfigSpec) error {
+	return resSrcVm.Reconfigure(ctx, configSpec)
+}
+
 // UpdateVirtualMachine updates the VM status, power state, phase etc
-func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
+func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) error {
 	vmName := vm.NamespacedName()
 	log.Info("Updating VirtualMachine", "name", vmName)
 
@@ -260,7 +264,19 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 		return transformVmError(vmName, err)
 	}
 
-	err = vs.updateVm(ctx, vm, resVm)
+	// Add device change specs to configSpec
+	deviceSpecs, err := ses.deviceChangeSpecs(ctx, vm, resVm)
+	if err != nil {
+		return transformVmError(vmName, err)
+	}
+
+	// Get configSpec to honor VM Class
+	configSpec, err := ses.configSpecFromClassSpec(vm.Name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
+	if err != nil {
+		return transformVmError(vmName, err)
+	}
+
+	err = vs.updateVm(ctx, vm, configSpec, resVm)
 	if err != nil {
 		return transformVmError(vmName, err)
 	}

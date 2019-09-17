@@ -21,8 +21,8 @@ import (
 
 var (
 	vcSim  *integration.VcSimInstance
-	config *vsphere.VSphereVmProviderConfig
 	err    error
+	config *vsphere.VSphereVmProviderConfig
 )
 
 func TestVSphereIntegrationProvider(t *testing.T) {

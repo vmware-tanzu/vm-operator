@@ -29,6 +29,7 @@ type VirtualMachineProviderInterface interface {
 
 	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 		vmClass v1alpha1.VirtualMachineClass, vmMetadata VirtualMachineMetadata, profileID string) error
-	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
+	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
+		vmClass v1alpha1.VirtualMachineClass, vmMetadata VirtualMachineMetadata) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 }

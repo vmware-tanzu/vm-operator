@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
 
 	"github.com/vmware-tanzu/vm-operator/test/integration"
@@ -31,10 +33,11 @@ func TestVirtualMachine(t *testing.T) {
 }
 
 var (
-	cfg     *rest.Config
-	vcSim   *integration.VcSimInstance
-	testEnv *suite.Environment
-	err     error
+	cfg           *rest.Config
+	vcSim         *integration.VcSimInstance
+	testEnv       *suite.Environment
+	err           error
+	vSphereConfig *vsphere.VSphereVmProviderConfig
 )
 
 var _ = BeforeSuite(func() {
@@ -48,9 +51,10 @@ var _ = BeforeSuite(func() {
 
 	stdlog.Print("setting up integration test env..")
 	vcSim = integration.NewVcSimInstance()
-	config, err := integration.SetupEnv(vcSim)
+
+	vSphereConfig, err = integration.SetupEnv(vcSim)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(config).ShouldNot(Equal(nil))
+	Expect(vSphereConfig).ShouldNot(Equal(nil))
 })
 
 var _ = AfterSuite(func() {

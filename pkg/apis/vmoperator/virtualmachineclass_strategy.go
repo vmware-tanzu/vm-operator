@@ -6,11 +6,14 @@ package vmoperator
 
 import (
 	"context"
+	"reflect"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/klog/klogr"
 )
+
+const VMClassImmutable = "VM Classes are immutable"
 
 func (VirtualMachineClassStrategy) NamespaceScoped() bool {
 	return false
@@ -58,6 +61,26 @@ func validateCPU(vmClass VirtualMachineClass) field.ErrorList {
 	}
 
 	return errors
+}
+
+func validateClassUpdate(new, old VirtualMachineClass) field.ErrorList {
+	errors := field.ErrorList{}
+	if !reflect.DeepEqual(new.Spec, old.Spec) {
+		errors = append(errors, field.Forbidden(field.NewPath("spec"), VMClassImmutable))
+	}
+
+	return errors
+}
+
+//ValidateUpdate makes sure the VM Classes are immutable.
+//NOTE: This is for 1.0 and will change in the future.
+func (VirtualMachineClassStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Object) field.ErrorList {
+	newVmClass := obj.(*VirtualMachineClass)
+	oldVmClass := old.(*VirtualMachineClass)
+	log := klogr.New()
+	log.V(4).Info("Validating Update for VirtualMachineClass", "namespace", newVmClass.Namespace, "name", newVmClass.Name)
+
+	return validateClassUpdate(*newVmClass, *oldVmClass)
 }
 
 // Validate checks that an instance of VirtualMachineClass is well formed

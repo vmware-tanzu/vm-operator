@@ -14,11 +14,12 @@ linters-settings:
     # minimal code complexity to report
     min-complexity: 15
 
-# linters to enable in addition to the default linters
+# linters to enable
 linters:
   enable:
     - deadcode
     - dupl
+    - errcheck
     - gosec
     - goconst
     - gocyclo
@@ -27,7 +28,10 @@ linters:
     - ineffassign
     - misspell
     - nakedret
-    - staticcheck
-    - vet
-    - vetshadow
-  disable-all: false
+    - structcheck
+    - unused
+    - varcheck
+# See     - staticcheck
+#    - vet
+#    - vetshadow
+  disable-all: true

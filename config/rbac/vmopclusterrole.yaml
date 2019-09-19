@@ -62,3 +62,16 @@ rules:
     - get
     - list
     - watch
+- apiGroups:
+  - "vmware.com"
+  resources:
+  - virtualnetworkinterfaces
+  - virtualnetworkinterfaces/status
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - delete
+  - watch
+  - update

@@ -76,6 +76,12 @@ var _ = Describe("Sessions", func() {
 				Expect(image.ObjectMeta.Name).Should(Equal("test-item"))
 				Expect(image.Spec.Type).Should(Equal("ovf"))
 			})
+
+			It("should not get virtualmachineimage from CL", func() {
+				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "invalid", testNamespace)
+				Expect(err).Should(MatchError("item: invalid is not found in CL"))
+				Expect(image).Should(BeNil())
+			})
 		})
 	})
 

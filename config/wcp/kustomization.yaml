@@ -14,7 +14,6 @@ images:
 resources:
   - namespace.yaml
   - rbac_psp.yaml
-  - endpoints.yaml
   - vsphere_provider_config.yaml
 
 patchesStrategicMerge:
@@ -24,10 +23,4 @@ patchesStrategicMerge:
   - apiserver_service_patch.yaml
   - apiserver_deployment_patch.yaml
   - controller_deployment_patch.yaml
-
-patchesJson6902:
-  - target:
-      version: v1
-      kind: Service
-      name: vmoperator
-    path: apiserver_service_remove_selector.yaml
+  - apiserver_antiaffinity_patch.yaml

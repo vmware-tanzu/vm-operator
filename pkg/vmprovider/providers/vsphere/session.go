@@ -178,7 +178,7 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string,
 	}
 	//Return nil when the image with 'name' is not found in CL
 	if item == nil {
-		return nil, errors.Errorf("item: %v is not found in CL", item.Name)
+		return nil, errors.Errorf("item: %v is not found in CL", name)
 	}
 	//if not a supported type return nil
 	if !IsSupportedDeployType(item.Type) {

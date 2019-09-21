@@ -246,8 +246,7 @@ type VirtualMachineImageSpec struct {
 }
 
 type VirtualMachineClassPolicies struct {
-	Resources    VirtualMachineClassResources
-	StorageClass string
+	Resources VirtualMachineClassResources
 }
 
 type VirtualMachineClassHardware struct {

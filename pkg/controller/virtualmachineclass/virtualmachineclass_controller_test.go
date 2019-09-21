@@ -78,7 +78,6 @@ var _ = Describe("VirtualMachineClass controller", func() {
 								Memory: resource.MustParse("200Mi"),
 							},
 						},
-						StorageClass: "fooStorageClass",
 					},
 				},
 			}
@@ -111,7 +110,6 @@ var _ = Describe("VirtualMachineClass controller", func() {
 								Memory: resource.MustParse("200Mi"),
 							},
 						},
-						StorageClass: "fooStorageClass",
 					},
 				},
 			}

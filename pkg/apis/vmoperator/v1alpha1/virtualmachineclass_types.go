@@ -40,8 +40,7 @@ type VirtualMachineClassResources struct {
 }
 
 type VirtualMachineClassPolicies struct {
-	Resources    VirtualMachineClassResources `json:"resources,omitempty"`
-	StorageClass string                       `json:"storageClass,omitempty"`
+	Resources VirtualMachineClassResources `json:"resources,omitempty"`
 }
 
 // VirtualMachineClassSpec defines the desired state of VirtualMachineClass

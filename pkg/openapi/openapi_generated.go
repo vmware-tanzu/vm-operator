@@ -818,12 +818,6 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassPolicies(ref common.
 							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassResources"),
 						},
 					},
-					"storageClass": {
-						SchemaProps: spec.SchemaProps{
-							Type:   []string{"string"},
-							Format: "",
-						},
-					},
 				},
 			},
 		},

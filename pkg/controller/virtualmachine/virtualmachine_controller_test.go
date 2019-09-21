@@ -76,7 +76,6 @@ var _ = Describe("VirtualMachine controller", func() {
 							Memory: resource.MustParse("200Mi"),
 						},
 					},
-					StorageClass: storageClass,
 				},
 			},
 		}

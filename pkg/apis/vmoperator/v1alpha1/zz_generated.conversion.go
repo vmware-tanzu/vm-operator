@@ -389,7 +389,6 @@ func autoConvert_v1alpha1_VirtualMachineClassPolicies_To_vmoperator_VirtualMachi
 	if err := Convert_v1alpha1_VirtualMachineClassResources_To_vmoperator_VirtualMachineClassResources(&in.Resources, &out.Resources, s); err != nil {
 		return err
 	}
-	out.StorageClass = in.StorageClass
 	return nil
 }
 
@@ -402,7 +401,6 @@ func autoConvert_vmoperator_VirtualMachineClassPolicies_To_v1alpha1_VirtualMachi
 	if err := Convert_vmoperator_VirtualMachineClassResources_To_v1alpha1_VirtualMachineClassResources(&in.Resources, &out.Resources, s); err != nil {
 		return err
 	}
-	out.StorageClass = in.StorageClass
 	return nil
 }
 

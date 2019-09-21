@@ -65,7 +65,6 @@ func getVMClassInstance(vmName, namespace string) *vmoperatorv1alpha1.VirtualMac
 						Memory: resource.MustParse("200Mi"),
 					},
 				},
-				StorageClass: "fooStorageClass",
 			},
 		},
 	}

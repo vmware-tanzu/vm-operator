@@ -75,7 +75,6 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 		limits := VirtualMachineClassResourceSpec{}
 		policies = VirtualMachineClassPolicies{
 			aVirtualMachineClassResources(requests, limits),
-			"",
 		}
 	})
 
@@ -99,7 +98,6 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 		func(validateFunc ValidateFunc, request *VirtualMachineClassResourceSpec, limit *VirtualMachineClassResourceSpec) {
 			policies := VirtualMachineClassPolicies{
 				aVirtualMachineClassResources(*request, *limit),
-				"",
 			}
 
 			vmClass := aVirtualMachineClass(hardware, policies)
@@ -113,7 +111,6 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 		func(validateFunc ValidateFunc, requestAndLimit *VirtualMachineClassResourceSpec) {
 			policies := VirtualMachineClassPolicies{
 				aVirtualMachineClassResources(*requestAndLimit, *requestAndLimit),
-				"",
 			}
 			vmClass := aVirtualMachineClass(hardware, policies)
 			Expect(validateFunc(vmClass)).Should(BeEmpty())
@@ -127,7 +124,6 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 
 			policies := VirtualMachineClassPolicies{
 				aVirtualMachineClassResources(*request, *limit),
-				"",
 			}
 
 			vmClass := aVirtualMachineClass(hardware, policies)
@@ -148,7 +144,6 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 
 			policies := VirtualMachineClassPolicies{
 				aVirtualMachineClassResources(*request, *limit),
-				"",
 			}
 
 			vmClass1 := aVirtualMachineClass(hardware, policies)
@@ -163,11 +158,9 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 
 			policies1 := VirtualMachineClassPolicies{
 				aVirtualMachineClassResources(*res1, *res1),
-				"",
 			}
 			policies2 := VirtualMachineClassPolicies{
 				aVirtualMachineClassResources(*res2, *res2),
-				"",
 			}
 
 			vmClass1 := aVirtualMachineClass(hardwareSmall, policies1)

@@ -7,6 +7,7 @@ package virtualmachine
 import (
 	"context"
 
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	v1 "k8s.io/api/core/v1"
 	storagetypev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -35,9 +36,12 @@ const (
 	OpCreate = "CreateVM"
 	OpDelete = "DeleteVM"
 	OpUpdate = "UpdateVM"
+	OpCheck  = "CheckVM"
+
+	ControllerName = "virtualmachine-controller"
 )
 
-var log = logf.Log.WithName("virtualmachine-controller")
+var log = logf.Log.WithName(ControllerName)
 
 // Add creates a new VirtualMachine Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -60,7 +64,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
-	c, err := controller.New("virtualmachine-controller", mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: common.GetMaxReconcileNum()})
+	c, err := controller.New(ControllerName, mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: common.GetMaxReconcileNum()})
 	if err != nil {
 		return err
 	}
@@ -106,6 +110,8 @@ func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcil
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
+
+	ctx = context.WithValue(ctx, vimtypes.ID{}, "vmoperator-"+instance.Name+"-"+ControllerName)
 
 	if !instance.ObjectMeta.DeletionTimestamp.IsZero() {
 		const finalizerName = vmoperator.VirtualMachineFinalizer
@@ -161,6 +167,7 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 	exists, err := r.vmProvider.DoesVirtualMachineExist(ctx, vm.Namespace, vm.Name)
 	if err != nil {
 		log.Error(err, "Failed to check if VirtualMachine exists from provider", "name", vm.NamespacedName())
+		record.EmitEvent(vm, OpCheck, &err, false)
 		return err
 	}
 
@@ -242,9 +249,11 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 	return nil
 }
 
-func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
+func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
+	defer record.EmitEvent(vm, OpUpdate, &err, false)
+
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
-	err := r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
+	err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
 	if err != nil {
 		log.Error(err, "Failed to get VirtualMachineClass for VirtualMachine",
 			"vmName", vm.NamespacedName(), "class", vm.Spec.ClassName)
@@ -263,8 +272,6 @@ func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1
 
 		vmMetadata = configMap.Data
 	}
-
-	defer record.EmitEvent(vm, OpUpdate, &err, false)
 
 	err = r.vmProvider.UpdateVirtualMachine(ctx, vm, *vmClass, vmMetadata)
 	if err != nil {

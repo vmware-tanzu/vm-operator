@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,9 +38,10 @@ const (
 	OpCreate               = "CreateVMService"
 	OpDelete               = "DeleteVMService"
 	OpUpdate               = "UpdateVMService"
+	ControllerName         = "virtualmachineservice-controller"
 )
 
-var log = logf.Log.WithName("virtualmachineservice-controller")
+var log = logf.Log.WithName(ControllerName)
 
 // Add creates a new VirtualMachineService Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -58,7 +60,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
-	c, err := controller.New("virtualmachineservice-controller", mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: common.GetMaxReconcileNum()})
+	c, err := controller.New(ControllerName, mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: common.GetMaxReconcileNum()})
 	if err != nil {
 		return err
 	}
@@ -113,6 +115,8 @@ func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (r
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
+
+	ctx = context.WithValue(ctx, vimtypes.ID{}, "vmoperator-"+instance.Name+"-"+ControllerName)
 
 	if !instance.ObjectMeta.DeletionTimestamp.IsZero() {
 		const finalizerName = vmoperator.VirtualMachineServiceFinalizer

@@ -10,8 +10,8 @@ spec:
            requiredDuringSchedulingIgnoredDuringExecution:
            - labelSelector:
                matchExpressions:
-               - key: app
+               - key: name
                  operator: In
                  values:
-                 - vmop
+                 - vmoperator-apiserver
              topologyKey: "kubernetes.io/hostname"

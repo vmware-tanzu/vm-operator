@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog"
 	"k8s.io/klog/klogr"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis"
@@ -28,7 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/signals"
-	//"github.com/vmware-tanzu/vm-operator/pkg/webhook"
 )
 
 func registerVsphereVmProvider(restConfig *rest.Config) error {
@@ -88,6 +88,9 @@ func main() {
 	var healthAddr string
 	flag.StringVar(&healthAddr, "health-addr", ":49201",
 		"The address on which an http server will listen on for readiness, liveness, etc health checks")
+	if err := flag.Set("v", "2"); err != nil {
+		klog.Fatalf("klog level flag has changed from -v: %v", err)
+	}
 	flag.Parse()
 
 	logf.SetLogger(klogr.New())

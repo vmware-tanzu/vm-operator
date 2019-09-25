@@ -31,7 +31,9 @@ linters:
     - structcheck
     - unused
     - varcheck
-# See     - staticcheck
-#    - vet
-#    - vetshadow
-  disable-all: true
+    - staticcheck
+    - vet
+    - vetshadow
+  disable:
+    - typecheck
+  disable-all: false

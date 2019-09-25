@@ -150,7 +150,11 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace 
 	var images []*v1alpha1.VirtualMachineImage
 	for _, item := range items {
 		if IsSupportedDeployType(item.Type) {
-			images = append(images, libItemToVirtualMachineImage(&item, namespace))
+			virtualMachineImage, err := libItemToVirtualMachineImage(ctx, s, &item, namespace)
+			if err != nil {
+				return nil, err
+			}
+			images = append(images, virtualMachineImage)
 		}
 	}
 
@@ -185,7 +189,13 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string,
 		return nil, errors.Errorf("item: %v not a supported type", item.Name)
 	}
 
-	return libItemToVirtualMachineImage(item, namespace), nil
+	virtualMachineImage, err := libItemToVirtualMachineImage(ctx, s, item, namespace)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return virtualMachineImage, nil
 }
 
 func (s *Session) ListVirtualMachines(ctx context.Context, path string) ([]*res.VirtualMachine, error) {

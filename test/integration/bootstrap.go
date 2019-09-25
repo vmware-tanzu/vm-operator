@@ -13,6 +13,7 @@ import (
 
 	vmoperator "github.com/vmware-tanzu/vm-operator"
 
+	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
@@ -110,17 +111,21 @@ func setupVcSimContent(vcSim *VcSimInstance, config *vsphere.VSphereVmProviderCo
 		err = rClient.Logout(ctx)
 	}()
 
+	return SetupContentLibraryForTest(ctx, ContentSourceName, c, config, rClient, imagesDir, ovf)
+}
+
+func SetupContentLibraryForTest(ctx context.Context, sourceName string, c *govmomi.Client,
+	config *vsphere.VSphereVmProviderConfig, rClient *rest.Client, imagesDir string, ovf string) error {
 	finder := find.NewFinder(c.Client, false)
 	dc, err := finder.Datacenter(ctx, config.Datacenter)
 	if err != nil {
-		return
+		return err
 	}
 	finder.SetDatacenter(dc)
 	ds, err := finder.Datastore(ctx, config.Datastore)
 	if err != nil {
-		return
+		return err
 	}
-
 	lib := library.Library{
 		Name: ContentSourceName,
 		Type: "LOCAL",
@@ -134,9 +139,8 @@ func setupVcSimContent(vcSim *VcSimInstance, config *vsphere.VSphereVmProviderCo
 	//Create Library in vcsim for integration tests
 	libID, err := library.NewManager(rClient).CreateLibrary(ctx, lib)
 	if err != nil {
-		return
+		return err
 	}
-
 	item := library.Item{
 		Name:      "test-item",
 		Type:      "ovf",
@@ -144,17 +148,17 @@ func setupVcSimContent(vcSim *VcSimInstance, config *vsphere.VSphereVmProviderCo
 	}
 	//Create Library item in vcsim for integration tests
 	itemID, err := library.NewManager(rClient).CreateLibraryItem(ctx, item)
-	if err != nil {
-		return
-	}
 
+	if err != nil {
+		return err
+	}
 	session, err := library.NewManager(rClient).CreateLibraryItemUpdateSession(ctx, library.Session{
 		LibraryItemID: itemID,
 	})
-	if err != nil {
-		return
-	}
 
+	if err != nil {
+		return err
+	}
 	//Update Library item with library file "ovf"
 	upload := func(path string) error {
 		f, err := os.Open(path)
@@ -193,11 +197,9 @@ func setupVcSimContent(vcSim *VcSimInstance, config *vsphere.VSphereVmProviderCo
 
 		return c.Upload(ctx, f, u, &p)
 	}
-
 	path := string(vmoperator.Rootpath + "/" + imagesDir + ovf)
 	if err = upload(path); err != nil {
-		return
+		return err
 	}
-
 	return library.NewManager(rClient).CompleteLibraryItemUpdateSession(ctx, session)
 }

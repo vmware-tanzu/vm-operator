@@ -346,12 +346,19 @@ func resVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *re
 	}
 }
 
-func libItemToVirtualMachineImage(item *library.Item, namespace string) *v1alpha1.VirtualMachineImage {
+func libItemToVirtualMachineImage(ctx context.Context, sess *Session, item *library.Item,
+	namespace string) (*v1alpha1.VirtualMachineImage, error) {
+
+	ovfProperties, err := fetchOvfProperties(ctx, sess, item)
+	if err != nil {
+		return nil, err
+	}
 
 	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{
-			Name:      item.Name,
-			Namespace: namespace,
+			Name:        item.Name,
+			Namespace:   namespace,
+			Annotations: ovfProperties,
 		},
 		Status: v1alpha1.VirtualMachineImageStatus{
 			Uuid:       item.ID,
@@ -361,8 +368,19 @@ func libItemToVirtualMachineImage(item *library.Item, namespace string) *v1alpha
 			Type:            item.Type,
 			ImageSourceType: "Content Library",
 		},
-	}
+	}, nil
 
+}
+
+func fetchOvfProperties(ctx context.Context, sess *Session, item *library.Item) (map[string]string, error) {
+
+	contentLibSession := NewContentLibraryProvider(sess)
+	//fetch & parse ovf from CL and populate the properties as annotations
+	ovfProperties, err := contentLibSession.ParseAndRetrievePropsFromLibraryItem(ctx, *item)
+	if err != nil {
+		return nil, err
+	}
+	return ovfProperties, nil
 }
 
 // Transform Govmomi error to Kubernetes error

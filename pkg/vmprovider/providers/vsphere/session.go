@@ -6,9 +6,11 @@ package vsphere
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/vmware/govmomi/vapi/rest"
@@ -44,6 +46,7 @@ type Session struct {
 	network      object.NetworkReference
 	contentlib   *library.Library
 	creds        *VSphereVmProviderCredentials
+	extraConfig  map[string]string
 }
 
 func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig, ncpclient clientset.Interface) (*Session, error) {
@@ -108,6 +111,15 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 			return errors.Wrapf(err, "failed to init Network %q", config.Network)
 		}
 		log.Info("Using default network", "network", config.Network)
+	}
+
+	// Allow for the option to specify extraConfig to be applied to all VMs
+	if jsonExtraConfig := os.Getenv("JSON_EXTRA_CONFIG"); jsonExtraConfig != "" {
+		s.extraConfig = make(map[string]string)
+		if err := json.Unmarshal([]byte(jsonExtraConfig), &s.extraConfig); err != nil {
+			return errors.Wrapf(err, "Unable to parse Json ExtraConfig")
+		}
+		log.Info("Using Json extraConfig", "extraConfig", s.extraConfig)
 	}
 
 	s.creds = config.VcCreds
@@ -549,6 +561,28 @@ func (s *Session) WithRestClient(ctx context.Context, f func(c *rest.Client) err
 	return f(c)
 }
 
+func GetExtraConfig(vmSpecMeta, globalMeta map[string]string) []vimTypes.BaseOptionValue {
+	var extraConfigs []vimTypes.BaseOptionValue
+	mergedConfig := vmSpecMeta
+
+	// If global values for extraConfig have been configured, apply them here
+	if globalMeta != nil {
+		mergedConfig = make(map[string]string)
+		for k, v := range globalMeta {
+			mergedConfig[k] = v
+		}
+		// Ensure that VM-specified extraConfig overrides global values
+		for k, v := range vmSpecMeta {
+			mergedConfig[k] = v
+		}
+	}
+
+	for k, v := range mergedConfig {
+		extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: k, Value: v})
+	}
+	return extraConfigs
+}
+
 func (s *Session) configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	metadata vmprovider.VirtualMachineMetadata, deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec) (*vimTypes.VirtualMachineConfigSpec, error) {
 
@@ -585,11 +619,7 @@ func (s *Session) configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualM
 	if vmSpec.VmMetadata != nil {
 		switch vmSpec.VmMetadata.Transport {
 		case "ExtraConfig":
-			var extraConfigs []vimTypes.BaseOptionValue
-			for k, v := range metadata {
-				extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: k, Value: v})
-			}
-			configSpec.ExtraConfig = extraConfigs
+			configSpec.ExtraConfig = GetExtraConfig(metadata, s.extraConfig)
 		default:
 			return nil, fmt.Errorf("unsupported metadata transport %q", vmSpec.VmMetadata.Transport)
 		}

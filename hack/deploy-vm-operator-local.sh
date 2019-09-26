@@ -8,14 +8,20 @@ DEPLOYMENT_YAML=artifacts/local-deployment.yaml
 VMCLASSES_YAML=artifacts/default-vmclasses.yaml
 REDEPLOYMENT_YAML=artifacts/local-redeployment.yaml
 APISERVICE_NAME="v1alpha1.vmoperator.vmware.com"
+LOCAL_CONFIG=config/local
 
 usage () {
-    echo "Usage: $(basename $0) [deploy|undeploy|redeploy]"
+    echo "Usage: $(basename $0) [deploy|deploy-vcsim|undeploy|redeploy]"
     exit 1
 }
 
+deploy-vcsim() {
+    LOCAL_CONFIG=config/local-vcsim
+    deploy
+}
+
 deploy() {
-    kubectl kustomize config/local > "$DEPLOYMENT_YAML"
+    kubectl kustomize "$LOCAL_CONFIG" > "$DEPLOYMENT_YAML"
     kubectl kustomize config/virtualmachineclasses > "$VMCLASSES_YAML"
 
     restart=""
@@ -85,6 +91,7 @@ COMMAND=$1
 
 case $COMMAND in
     "deploy"   ) deploy ;;
+    "deploy-vcsim" ) deploy-vcsim ;;
     "undeploy" ) undeploy ;;
     "redeploy" ) redeploy ;;
     * ) usage

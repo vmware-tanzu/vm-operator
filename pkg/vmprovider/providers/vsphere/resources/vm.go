@@ -202,21 +202,27 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 
 	ps, err := vm.vcVirtualMachine.PowerState(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get VM %v PowerState VM", vm.Name)
+		return nil, errors.Wrapf(err, "failed to get PowerState for VirtualMachine: %s", vm.Name)
 	}
 
 	host, err := vm.vcVirtualMachine.HostSystem(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get VM %v HostSystem", vm.Name)
+		return nil, errors.Wrapf(err, "failed to get VM HostSystem for VirtualMachine: %s", vm.Name)
+	}
+
+	// use ObjectName instead of Name to fetch hostname
+	hostname, err := host.ObjectName(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get VM hostname for VirtualMachine: %s", vm.Name)
 	}
 
 	ip, err := vm.IpAddress(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get VM %v IP address", vm.Name)
+		return nil, errors.Wrapf(err, "failed to get VM IP address for VirtualMachine %s", vm.Name)
 	}
 
 	return &v1alpha1.VirtualMachineStatus{
-		Host:       host.Name(),
+		Host:       hostname,
 		Phase:      v1alpha1.Created,
 		PowerState: string(ps),
 		VmIp:       ip,

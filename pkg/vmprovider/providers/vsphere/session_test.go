@@ -18,6 +18,37 @@ import (
 
 var _ = Describe("GetResourcePool", func() {
 
+	Context("ExtraConfig priority", func() {
+		Specify("ExtraConfig map is correct with no global map", func() {
+			vmConfig := map[string]string{"oneK": "oneV", "twoK": "twoV"}
+
+			vmMeta := vsphere.GetExtraConfig(vmConfig, nil)
+
+			// Check that the VM extra config is returned in the correct format
+			for _, option := range vmMeta {
+				Expect(option.GetOptionValue().Value).Should(Equal(vmConfig[option.GetOptionValue().Key]))
+			}
+		})
+
+		Specify("ExtraConfig map is correct with global map", func() {
+			vmConfig := map[string]string{"oneK": "oneV", "twoK": "twoV"}
+			globalConfig := map[string]string{"twoK": "glob-twoV", "threeK": "glob-threeV"}
+
+			vmMeta := vsphere.GetExtraConfig(vmConfig, globalConfig)
+
+			// Check that the VM extra config overrides the global config
+			for _, option := range vmMeta {
+				if _, ok := vmConfig[option.GetOptionValue().Key]; ok {
+					Expect(option.GetOptionValue().Value).Should(Equal(vmConfig[option.GetOptionValue().Key]))
+				} else if _, ok := globalConfig[option.GetOptionValue().Key]; ok {
+					Expect(option.GetOptionValue().Value).Should(Equal(globalConfig[option.GetOptionValue().Key]))
+				} else {
+					Fail("Unrecognized extraConfig option")
+				}
+			}
+		})
+	})
+
 	Context("RP as inventory path", func() {
 		Specify("returns RP object without error", func() {
 			res := simulator.VPX().Run(func(ctx context.Context, c *vim25.Client) error {

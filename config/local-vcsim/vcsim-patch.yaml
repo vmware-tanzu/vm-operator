@@ -1,0 +1,15 @@
+# Patch to start a local deployment against vcsim
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-controller
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+      - name: controller
+        env:
+        # Add extraConfig to the VirtualMachines to tell vcsim to give them an IP
+        - name: "JSON_EXTRA_CONFIG"
+          value: '{"SET.guest.ipAddress":"10.0.0.1"}'

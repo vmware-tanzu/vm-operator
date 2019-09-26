@@ -251,8 +251,7 @@ var _ = Describe("Sessions", func() {
 		AfterEach(func() {
 			os.Setenv("JSON_EXTRA_CONFIG", "")
 		})
-		// TODO: Waiting on vcsim fix https://github.com/vmware/govmomi/pull/1633
-		XContext("with global extraConfig", func() {
+		Context("with global extraConfig", func() {
 			It("should copy the values into the VM", func() {
 				imageName := "DC0_H0_VM0"
 				vmClass := getVMClassInstance(testVMName, testNamespace)

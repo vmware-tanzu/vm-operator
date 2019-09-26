@@ -7,6 +7,7 @@ package vsphere_test
 
 import (
 	"context"
+	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -226,6 +227,57 @@ var _ = Describe("Sessions", func() {
 				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
+			})
+		})
+	})
+	Describe("Clone VM with global metadata", func() {
+		const (
+			localKey  = "localK"
+			localVal  = "localV"
+			globalKey = "globalK"
+			globalVal = "globalV"
+		)
+
+		BeforeEach(func() {
+			//set source to use VM inventory
+
+			os.Setenv("JSON_EXTRA_CONFIG", "{\""+globalKey+"\":\""+globalVal+"\"}")
+			// Create a new session which should pick up the config
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
+			config.ContentSource = ""
+			err = session.ConfigureContent(context.TODO(), config.ContentSource)
+			Expect(err).NotTo(HaveOccurred())
+		})
+		AfterEach(func() {
+			os.Setenv("JSON_EXTRA_CONFIG", "")
+		})
+		// TODO: Waiting on vcsim fix https://github.com/vmware/govmomi/pull/1633
+		XContext("with global extraConfig", func() {
+			It("should copy the values into the VM", func() {
+				imageName := "DC0_H0_VM0"
+				vmClass := getVMClassInstance(testVMName, testNamespace)
+				vm := getVirtualMachineInstance(testVMName+"-extraConfig", testNamespace, imageName, vmClass.Name)
+				vm.Spec.VmMetadata.Transport = "ExtraConfig"
+				vmMetadata := map[string]string{localKey: localVal}
+
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM).ShouldNot(BeNil())
+
+				keysFound := map[string]bool{localKey: false, globalKey: false}
+				mo, err := clonedVM.ManagedObject(context.TODO())
+				for _, option := range mo.Config.ExtraConfig {
+					key := option.GetOptionValue().Key
+					keysFound[key] = true
+					if key == localKey {
+						Expect(option.GetOptionValue().Value).Should(Equal(localVal))
+					} else if key == globalKey {
+						Expect(option.GetOptionValue().Value).Should(Equal(globalVal))
+					}
+				}
+				for k, v := range keysFound {
+					Expect(v).Should(BeTrue(), "Key %v not found in VM", k)
+				}
 			})
 		})
 	})

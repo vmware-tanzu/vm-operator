@@ -723,7 +723,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:9c091c63bf3f0b2f8836461a7dea4efd3fd3df28ffc0824a334e9dc5829deba0"
+  digest = "1:df985a05343275db93d7b71104a83ebd5be91b41f0a201f4d01e026d1ebd0d8f"
   name = "github.com/vmware/govmomi"
   packages = [
     ".",
@@ -756,7 +756,7 @@
     "vim25/xml",
   ]
   pruneopts = "NU"
-  revision = "3dbba021c94fffb2653fced409c20dc991710054"
+  revision = "2cc33fa853c994a5d4b6193641e5791c1f6567a2"
 
 [[projects]]
   digest = "1:93f2507c1e532e27097c890cc431fff10b6e3e90b6a134db8a3047ff6ad75187"

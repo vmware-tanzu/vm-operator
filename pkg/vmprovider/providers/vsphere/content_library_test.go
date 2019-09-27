@@ -1,3 +1,6 @@
+// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // +build !integration
 
 package vsphere_test
@@ -8,7 +11,6 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
-	"net/http"
 	"os"
 
 	"github.com/vmware/govmomi/simulator/vpx"
@@ -44,13 +46,6 @@ var (
 	fileUriToDownload string
 )
 
-type ClientMock struct {
-}
-
-func (c *ClientMock) Do(req *http.Request) (*http.Response, error) {
-	return &http.Response{}, nil
-}
-
 func newVsphereConfig(vcAddress string, vcPort int) *vsphere.VSphereVmProviderConfig {
 	return &vsphere.VSphereVmProviderConfig{
 		VcPNID:        vcAddress,
@@ -76,42 +71,51 @@ func setUpContentLibrary(c *govmomi.Client, config *vsphere.VSphereVmProviderCon
 	if err != nil {
 		return err
 	}
+
 	userInfo := url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 	err = restClient.Login(ctx, userInfo)
 	if err != nil {
 		return err
 	}
-	Expect(err).To(BeNil())
-	err = integration.SetupContentLibraryForTest(ctx, ContentSourceName, c, config, restClient, "test/resource/",
+
+	return integration.SetupContentLibraryForTest(ctx, ContentSourceName, c, config, restClient, "test/resource/",
 		"photon-ova.ovf")
-	return err
 }
 
 func setupTest() {
 	ctx = context.TODO()
 	m := simulator.VPX()
+
 	err := m.Create()
 	Expect(err).To(BeNil())
+
 	m.Service.TLS = new(tls.Config)
 	server := m.Service.NewServer()
 	host := server.URL.Hostname()
+
 	port, err := strconv.Atoi(server.URL.Port())
 	if err != nil {
 		server.Close()
 	}
+
+	config = newVsphereConfig(host, port)
+
 	path, handler := vapi.New(server.URL, vpx.Setting)
 	m.Service.Handle(path, handler)
-	if err != nil {
-		server.Close()
-	}
+
 	client, err := govmomi.NewClient(ctx, server.URL, true)
 	Expect(err).To(BeNil())
-	config = newVsphereConfig(host, port)
+
 	err = setUpContentLibrary(client, config)
+	Expect(err).To(BeNil())
+
 	provider, err := vsphere.NewVSphereVmProviderFromConfig(namespace, config)
 	Expect(err).ShouldNot(HaveOccurred())
+
 	vmprovider.RegisterVmProvider(provider)
+
 	sess, err = provider.GetSession(ctx, namespace)
+	Expect(err).To(BeNil())
 }
 
 var _ = Describe("list files in content library", func() {
@@ -119,27 +123,35 @@ var _ = Describe("list files in content library", func() {
 	Context("when items are present in library", func() {
 		It("lists the ovf and downloads the ovf", func() {
 			simulator.Test(func(ctx context.Context, client *vim25.Client) {
-				setupTest()
 				var libID string
 				var libItem *library.Item
+
+				setupTest()
+
 				clProvider := vsphere.NewContentLibraryProvider(sess)
 				libraries, err := library.NewManager(restClient).ListLibraries(ctx)
 				Expect(err).To(BeNil())
+
 				libID = libraries[0]
 				item := library.Item{
 					Name:      "test-item",
 					Type:      "ovf",
 					LibraryID: libID,
 				}
+
 				itemIDs, err := library.NewManager(restClient).FindLibraryItems(ctx,
 					library.FindItem{LibraryID: libID, Name: item.Name})
 				Expect(err).To(BeNil())
 				Expect(itemIDs).Should(HaveLen(1))
+
 				libItem, err = library.NewManager(restClient).GetLibraryItem(ctx, itemIDs[0])
+				Expect(err).To(BeNil())
+
 				fileUri, sessionid, err := clProvider.GenerateDownloadUriForLibraryItem(ctx, *libItem, restClient)
 				Expect(err).To(BeNil())
 				Expect(fileUri).ShouldNot(BeEmpty())
 				Expect(sessionid).NotTo(BeNil())
+
 				fileUriToDownload = fileUri
 			})
 		})
@@ -153,6 +165,7 @@ var _ = Describe("list files in content library", func() {
 				Type:      "ovf",
 				LibraryID: "fakeID",
 			}
+
 			clProvider := vsphere.NewContentLibraryProvider(sess)
 			_, _, err := clProvider.GenerateDownloadUriForLibraryItem(ctx, item, restClient)
 			Expect(err.Error()).Should(ContainSubstring("404 Not Found"))
@@ -164,6 +177,7 @@ var _ = Describe("list files in content library", func() {
 			ovfPath := string(vmoperator.Rootpath + "/test/resource/" + testOvfName)
 			file, err := os.Open(ovfPath)
 			Expect(err).To(BeNil())
+
 			var readerStream io.ReadCloser = file
 			props, err := vsphere.ParseOvfAndFetchProperties(readerStream)
 			Expect(err).To(BeNil())
@@ -178,8 +192,10 @@ var _ = Describe("list files in content library", func() {
 		It("returns a path error", func() {
 			file, err := ioutil.TempFile("", "*.ovf")
 			Expect(err).To(BeNil())
+
 			var readerStream io.ReadCloser = file
 			defer readerStream.Close()
+
 			_, err = vsphere.ParseOvfAndFetchProperties(readerStream)
 			Expect(err).Should(MatchError(errors.New("EOF")))
 		})
@@ -189,6 +205,7 @@ var _ = Describe("list files in content library", func() {
 		It("should be possbile to generate a content library session", func() {
 			sessRef, err := vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
 			Expect(err).To(BeNil())
+
 			clProvider := vsphere.NewContentLibraryProvider(sessRef)
 			Expect(clProvider).NotTo(BeNil())
 		})

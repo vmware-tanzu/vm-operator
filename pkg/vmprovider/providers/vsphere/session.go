@@ -272,6 +272,18 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
 		}
+		// Create network resource and reconfigure VM
+		deviceSpecs, err := s.deviceChangeSpecs(ctx, vm, deployedVm)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to generate device change spec for VM %q", name)
+		}
+		// configure VM device
+		err = deployedVm.Reconfigure(ctx, &vimTypes.VirtualMachineConfigSpec{
+			DeviceChange: deviceSpecs,
+		})
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to reconfigure VM %q", name)
+		}
 
 		return deployedVm, nil
 	}

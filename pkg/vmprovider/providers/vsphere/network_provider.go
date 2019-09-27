@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -128,32 +129,69 @@ func (np *nsxtNetworkProvider) searchOpaqueNetworkName(ctx context.Context, netw
 	return "", fmt.Errorf("opaque network with ID '%s' not found", networkID)
 }
 
+// setVnetifOwner sets owner reference for vnetif object
+func (np *nsxtNetworkProvider) setVnetifOwner(vm *v1alpha1.VirtualMachine, vnetif *ncpv1alpha1.VirtualNetworkInterface) {
+	owner := []metav1.OwnerReference{
+		{
+			Name:       vm.Name,
+			APIVersion: vm.APIVersion,
+			Kind:       vm.Kind,
+			UID:        vm.UID,
+		},
+	}
+	vnetif.SetOwnerReferences(owner)
+}
+
+// ownerMatch checks the owner reference for the vnetif object
+// owner of VirtualMachine type should be object vm
+func (np *nsxtNetworkProvider) ownerMatch(vm *v1alpha1.VirtualMachine, vnetif *ncpv1alpha1.VirtualNetworkInterface) bool {
+	match := false
+	for _, owner := range vnetif.GetOwnerReferences() {
+		if owner.Kind != vm.Kind {
+			continue
+		}
+		if owner.UID != vm.UID {
+			return false
+		} else {
+			match = true
+		}
+	}
+	return match
+}
+
 // createVirtualNetworkInterface creates a NCP vnetif for a given VM network interface
 func (np *nsxtNetworkProvider) createVirtualNetworkInterface(ctx context.Context, vm *v1alpha1.VirtualMachine, vmif *v1alpha1.VirtualMachineNetworkInterface) (*ncpv1alpha1.VirtualNetworkInterface, error) {
-	vmName := vm.NamespacedName()
-
 	// Create vnetif object
+	vnetifName := np.GenerateNsxVnetifName(vmif.NetworkName, vm.Name)
 	vnetif := &ncpv1alpha1.VirtualNetworkInterface{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      np.GenerateNsxVnetifName(vmif.NetworkName, vm.Name),
+			Name:      vnetifName,
 			Namespace: vm.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					Name:       vm.Name,
-					APIVersion: vm.APIVersion,
-					Kind:       vm.Kind,
-					UID:        vm.UID,
-				},
-			},
 		},
 		Spec: ncpv1alpha1.VirtualNetworkInterfaceSpec{
 			VirtualNetwork: vmif.NetworkName,
 		},
 	}
+	np.setVnetifOwner(vm, vnetif)
 
 	_, err := np.client.VmwareV1alpha1().VirtualNetworkInterfaces(vm.Namespace).Create(vnetif)
 	if err != nil {
-		log.Error(err, "Failed Create VirtualNetworkInterface", "name", vmName)
+		if !k8serrors.IsAlreadyExists(err) {
+			return nil, err
+		}
+		// Update owner reference if vnetif already exist
+		currentVnetif, err := np.client.VmwareV1alpha1().VirtualNetworkInterfaces(vm.Namespace).Get(vnetifName, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		if !np.ownerMatch(vm, vnetif) {
+			copiedVnetif := currentVnetif.DeepCopy()
+			np.setVnetifOwner(vm, copiedVnetif)
+			_, err = np.client.VmwareV1alpha1().VirtualNetworkInterfaces(vm.Namespace).Update(copiedVnetif)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// Wait until the vnetif status is available

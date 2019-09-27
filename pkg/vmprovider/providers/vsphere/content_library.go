@@ -1,3 +1,6 @@
+// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 package vsphere
 
 import (
@@ -19,13 +22,11 @@ type ContentLibraryProvider struct {
 }
 
 const (
-	libItemName          = "itemName"
-	libFilePath          = "path"
-	libFileName          = "fileName"
-	libItemId            = "itemid"
-	libSessionId         = "sessionid"
-	libFileDownloadState = "downloadState"
-	libFileDownloadUrl   = "fileUrl"
+	libItemName        = "itemName"
+	libFileName        = "fileName"
+	libItemId          = "itemId"
+	libSessionId       = "sessionId"
+	libFileDownloadUrl = "fileUrl"
 )
 
 func NewContentLibraryProvider(ses *Session) *ContentLibraryProvider {
@@ -38,9 +39,7 @@ func NewContentLibraryProvider(ses *Session) *ContentLibraryProvider {
 // ParseAndRetrievePropsFromLibraryItem downloads the supported file from content library.
 // parses the downloaded ovf and retrieves the properties defined under
 // VirtualSystem.Product.Property and return them as a map.
-func (cs *ContentLibraryProvider) ParseAndRetrievePropsFromLibraryItem(ctx context.Context, item library.Item) (map[string]string,
-	error) {
-	var ovfProperties = make(map[string]string)
+func (cs *ContentLibraryProvider) ParseAndRetrievePropsFromLibraryItem(ctx context.Context, item library.Item) (map[string]string, error) {
 	var downloadedFileContent io.ReadCloser
 	s := cs.session
 
@@ -78,7 +77,7 @@ func (cs *ContentLibraryProvider) ParseAndRetrievePropsFromLibraryItem(ctx conte
 		return nil, err
 	}
 
-	ovfProperties, err = ParseOvfAndFetchProperties(downloadedFileContent)
+	ovfProperties, err := ParseOvfAndFetchProperties(downloadedFileContent)
 	if err != nil {
 		return nil, err
 	}
@@ -91,10 +90,12 @@ func ParseOvfAndFetchProperties(fileContent io.ReadCloser) (map[string]string, e
 	var env *ovf.Envelope
 	properties := make(map[string]string)
 	defer fileContent.Close()
+
 	env, err := ovf.Unmarshal(fileContent)
 	if err != nil {
 		return nil, err
 	}
+
 	for _, product := range env.VirtualSystem.Product {
 		for _, prop := range product.Property {
 			if strings.HasPrefix(prop.Key, "vmware-system") {
@@ -114,15 +115,16 @@ func (cs *ContentLibraryProvider) GenerateDownloadUriForLibraryItem(ctx context.
 
 	var fileDownloadUri string
 	var fileToDownload string
-	s := cs.session
 	var downloadSessionId string
+
+	s := cs.session
 
 	err := s.WithRestClient(ctx, func(c *rest.Client) error {
 
 		libManager := library.NewManager(c)
 		var info *library.DownloadFile
 
-		// create a download session for file referred by item id. here ovf
+		// create a download session for the file referred to by item id.
 		session, err := libManager.CreateLibraryItemDownloadSession(ctx, library.Session{
 			LibraryItemID: item.ID,
 		})
@@ -148,28 +150,26 @@ func (cs *ContentLibraryProvider) GenerateDownloadUriForLibraryItem(ctx context.
 		}
 		log.Info("download session created", libFileName, fileToDownload, libItemId, item.ID, libSessionId, session)
 
-		//prepare a download session wait until the file is prepared for download.
-		// to start of with we will use a timed wait of 10 secs.
 		_, err = libManager.PrepareLibraryItemDownloadSessionFile(ctx, session, fileToDownload)
 		if err != nil {
 			return err
 		}
+
 		log.Info("request posted to prepare file", libFileName, fileToDownload, libSessionId, session)
 
-		for {
-			info, err = libManager.GetLibraryItemDownloadSessionFile(ctx, session, fileToDownload)
-			if err != nil {
-				return err
-			}
-			if info.Status == "PREPARED" {
-				log.Info("Download file", libFileDownloadUrl, info.DownloadEndpoint.URI)
-				fileDownloadUri = info.DownloadEndpoint.URI
-				break
-			}
-			if info.Status == "ERROR" {
-				return errors.Errorf("Error occurred preparing file for download %v",
-					info.ErrorMessage)
-			}
+		info, err = libManager.GetLibraryItemDownloadSessionFile(ctx, session, fileToDownload)
+		if err != nil {
+			return err
+		}
+
+		if info.Status == "ERROR" {
+			return errors.Errorf("Error occurred preparing file for download %v",
+				info.ErrorMessage)
+		}
+
+		if info.Status == "PREPARED" {
+			log.Info("Download file", libFileDownloadUrl, info.DownloadEndpoint.URI)
+			fileDownloadUri = info.DownloadEndpoint.URI
 		}
 
 		return nil

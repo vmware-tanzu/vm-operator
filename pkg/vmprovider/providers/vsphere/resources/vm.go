@@ -317,22 +317,22 @@ func CompareVmConfig(name string, actualConfig *types.VirtualMachineConfigInfo, 
 		isDesired = false
 	}
 
-	if (desiredConfig.CpuAllocation.Reservation != nil) && (*actualConfig.CpuAllocation.Reservation != *desiredConfig.CpuAllocation.Reservation) {
+	if (desiredConfig.CpuAllocation != nil) && (desiredConfig.CpuAllocation.Reservation != nil) && (*actualConfig.CpuAllocation.Reservation != *desiredConfig.CpuAllocation.Reservation) {
 		log.Info("Reconfigure VM: CpuAllocation Reservation", "name", name, "actual", *actualConfig.CpuAllocation.Reservation, "desired", *desiredConfig.CpuAllocation.Reservation)
 		isDesired = false
 	}
 
-	if (desiredConfig.CpuAllocation.Limit != nil) && (*actualConfig.CpuAllocation.Limit != *desiredConfig.CpuAllocation.Limit) {
+	if (desiredConfig.CpuAllocation != nil) && (desiredConfig.CpuAllocation.Limit != nil) && (*actualConfig.CpuAllocation.Limit != *desiredConfig.CpuAllocation.Limit) {
 		log.Info("Reconfigure VM: CpuAllocation Limit", "actual", *actualConfig.CpuAllocation.Limit, "desired", *desiredConfig.CpuAllocation.Limit)
 		isDesired = false
 	}
 
-	if (desiredConfig.MemoryAllocation.Reservation != nil) && (*actualConfig.MemoryAllocation.Reservation != *desiredConfig.MemoryAllocation.Reservation) {
+	if (desiredConfig.MemoryAllocation != nil) && (desiredConfig.MemoryAllocation.Reservation != nil) && (*actualConfig.MemoryAllocation.Reservation != *desiredConfig.MemoryAllocation.Reservation) {
 		log.Info("Reconfigure VM: MemoryAllocation Reservation", "name", name, "actual", *actualConfig.MemoryAllocation.Reservation, "desired", *desiredConfig.MemoryAllocation.Reservation)
 		isDesired = false
 	}
 
-	if (desiredConfig.MemoryAllocation.Limit != nil) && (*actualConfig.MemoryAllocation.Limit != *desiredConfig.MemoryAllocation.Limit) {
+	if (desiredConfig.MemoryAllocation != nil) && (desiredConfig.MemoryAllocation.Limit != nil) && (*actualConfig.MemoryAllocation.Limit != *desiredConfig.MemoryAllocation.Limit) {
 		log.Info("Reconfigure VM: MemoryAllocation Limit", "name", name, "actual", *actualConfig.MemoryAllocation.Limit, "desired", *desiredConfig.MemoryAllocation.Limit)
 		isDesired = false
 	}

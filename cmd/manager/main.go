@@ -84,6 +84,10 @@ func waitForVmOperatorGroupVersion(restConfig *rest.Config) error {
 
 func main() {
 	//klog.InitFlags(nil) Usually needed but already called via an init() somewhere
+	var (
+		controllerName      string = "vmoperator-controller-manager"
+		controllerNamespace        = os.Getenv("POD_NAMESPACE")
+	)
 
 	var healthAddr string
 	flag.StringVar(&healthAddr, "health-addr", ":49201",
@@ -131,10 +135,18 @@ func main() {
 
 	// Until we get VC events
 	syncPeriod := 10 * time.Second
+	// setting namespace when manager is not run in cluster (for testing)
+	if controllerNamespace == "" {
+		controllerNamespace = "default"
+		log.Info("ControllerNamespace defaulted to ", controllerNamespace, ". controllerNamespace should be defaulted only in testing. Manager may function incorrectly in production with it defaulted.")
+	}
 
 	// Create a new Cmd to provide shared dependencies and start components
 	log.Info("setting up manager")
-	mgr, err := manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod})
+	mgr, err := manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
+		LeaderElection:          true,
+		LeaderElectionID:        controllerName + "-runtime",
+		LeaderElectionNamespace: controllerNamespace})
 	if err != nil {
 		log.Error(err, "unable to set up overall controller manager")
 		os.Exit(1)

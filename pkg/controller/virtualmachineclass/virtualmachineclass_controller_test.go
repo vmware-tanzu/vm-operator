@@ -20,6 +20,8 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/test/integration"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -30,20 +32,26 @@ const timeout = time.Second * 5
 
 var _ = Describe("VirtualMachineClass controller", func() {
 	name := "fooVm"
+	ns := integration.DefaultNamespace
 
 	var (
-		instance   vmoperatorv1alpha1.VirtualMachineClass
-		invalid    vmoperatorv1alpha1.VirtualMachineClass
-		stopMgr    chan struct{}
-		mgrStopped *sync.WaitGroup
-		mgr        manager.Manager
-		err        error
+		instance                vmoperatorv1alpha1.VirtualMachineClass
+		invalid                 vmoperatorv1alpha1.VirtualMachineClass
+		stopMgr                 chan struct{}
+		mgrStopped              *sync.WaitGroup
+		mgr                     manager.Manager
+		err                     error
+		leaderElectionConfigMap string = "vmoperator-controller-manager-runtime"
 	)
 
 	BeforeEach(func() {
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
-		mgr, err = manager.New(cfg, manager.Options{})
+		syncPeriod := 10 * time.Second
+		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
+			LeaderElection:          true,
+			LeaderElectionID:        leaderElectionConfigMap,
+			LeaderElectionNamespace: ns})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
@@ -53,6 +61,14 @@ var _ = Describe("VirtualMachineClass controller", func() {
 	AfterEach(func() {
 		close(stopMgr)
 		mgrStopped.Wait()
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      leaderElectionConfigMap,
+			},
+		}
+		err := c.Delete(context.Background(), configMap)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	Describe("when creating/deleting a VM Class", func() {

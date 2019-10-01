@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"golang.org/x/net/context"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -36,16 +37,21 @@ var _ = Describe("VirtualMachineService controller", func() {
 	name := "foo-vm"
 
 	var (
-		stopMgr    chan struct{}
-		mgrStopped *sync.WaitGroup
-		mgr        manager.Manager
-		err        error
+		stopMgr                 chan struct{}
+		mgrStopped              *sync.WaitGroup
+		mgr                     manager.Manager
+		err                     error
+		leaderElectionConfigMap string = "vmoperator-controller-manager-runtime"
 	)
 
 	BeforeEach(func() {
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
-		mgr, err = manager.New(cfg, manager.Options{})
+		syncPeriod := 10 * time.Second
+		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
+			LeaderElection:          true,
+			LeaderElectionID:        leaderElectionConfigMap,
+			LeaderElectionNamespace: ns})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
@@ -55,6 +61,14 @@ var _ = Describe("VirtualMachineService controller", func() {
 	AfterEach(func() {
 		close(stopMgr)
 		mgrStopped.Wait()
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      leaderElectionConfigMap,
+			},
+		}
+		err := c.Delete(context.Background(), configMap)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	Describe("when creating/deleting a VM Service", func() {

@@ -45,6 +45,25 @@ func validateNetworkType(vm *VirtualMachine) field.ErrorList {
 	return errors
 }
 
+func validateVolumes(vm *VirtualMachine) field.ErrorList {
+	errors := field.ErrorList{}
+	volumesPath := field.NewPath("spec", "volumes")
+	volumeNames := map[string]bool{}
+	for i, volume := range vm.Spec.Volumes {
+		if volume.Name == "" {
+			errors = append(errors, field.Required(volumesPath.Index(i).Child("name"), ""))
+		}
+		if volume.PersistentVolumeClaim == nil || volume.PersistentVolumeClaim.ClaimName == "" {
+			errors = append(errors, field.Required(volumesPath.Index(i).Child("persistentVolumeClaim", "claimName"), ""))
+		}
+		if volumeNames[volume.Name] == true {
+			errors = append(errors, field.Duplicate(volumesPath.Index(i).Child("name"), volume.Name))
+		}
+		volumeNames[volume.Name] = true
+	}
+	return errors
+}
+
 // Validate checks that an instance of VirtualMachine is well formed
 func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	vm := obj.(*VirtualMachine)
@@ -63,6 +82,9 @@ func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object
 
 	networkTypeErrors := validateNetworkType(vm)
 	errors = append(errors, networkTypeErrors...)
+
+	volumesErrors := validateVolumes(vm)
+	errors = append(errors, volumesErrors...)
 
 	return errors
 }

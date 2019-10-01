@@ -12,11 +12,19 @@ package integration
 import (
 	"testing"
 
+<<<<<<< HEAD
+=======
+	"k8s.io/client-go/kubernetes"
+
+>>>>>>> Manage VirtualMachineImages asynchronously
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test/suite"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+<<<<<<< HEAD
 	"k8s.io/client-go/kubernetes"
+=======
+>>>>>>> Manage VirtualMachineImages asynchronously
 	"k8s.io/client-go/rest"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -24,11 +32,18 @@ import (
 )
 
 var (
+<<<<<<< HEAD
 	restConfig    *rest.Config
 	vcSim         *integration.VcSimInstance
 	testEnv       *suite.Environment
 	vSphereConfig *vsphere.VSphereVmProviderConfig
 	session       *vsphere.Session
+=======
+	vcSim         *integration.VcSimInstance
+	testEnv       *suite.Environment
+	vSphereConfig *vsphere.VSphereVmProviderConfig
+	restConfig    *rest.Config
+>>>>>>> Manage VirtualMachineImages asynchronously
 	clientSet     *kubernetes.Clientset
 )
 
@@ -38,7 +53,11 @@ func TestVSphereIntegrationProvider(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+<<<<<<< HEAD
 	testEnv, vSphereConfig, restConfig, vcSim, session = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
+=======
+	testEnv, vSphereConfig, restConfig, vcSim, _ = integration.SetupIntegrationEnv()
+>>>>>>> Manage VirtualMachineImages asynchronously
 	clientSet = kubernetes.NewForConfigOrDie(restConfig)
 })
 

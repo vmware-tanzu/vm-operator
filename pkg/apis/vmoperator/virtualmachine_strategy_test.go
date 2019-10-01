@@ -10,6 +10,8 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
@@ -69,6 +71,107 @@ var _ = Describe("VirtualMachine Validation", func() {
 			Entry("nsx-t network type", validateNetworkType, []VirtualMachineNetworkInterface{{NetworkName: "dummy-network-name", NetworkType: "nsx-t"}}),
 			Entry("empty network type", validateNetworkType, []VirtualMachineNetworkInterface{{NetworkName: "dummy-network-name", NetworkType: ""}}),
 			Entry("no network interface", validateNetworkType, nil),
+		)
+	})
+
+	Describe("validate volumes type", func() {
+		type ValidateFunc func(*VirtualMachine) field.ErrorList
+
+		DescribeTable("should accept valid volumes",
+			func(validateFunc ValidateFunc, fieldErrors field.ErrorList, volumes []VirtualMachineVolumes) {
+				vm := &VirtualMachine{
+					Spec: VirtualMachineSpec{
+						Volumes: volumes,
+					},
+				}
+				Expect(validateFunc(vm)).Should(Equal(fieldErrors))
+			},
+			Entry("volume with valid pvc", validateVolumes, field.ErrorList{}, []VirtualMachineVolumes{
+				{
+					Name: "test-volume-1",
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: "dummy-pvc"},
+				},
+				{
+					Name: "test-volume-2",
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: "dummy-pvc-2"},
+				},
+			}),
+			Entry("no volumes", validateVolumes, field.ErrorList{}, nil),
+		)
+
+		DescribeTable("should reject invalid volumes",
+			func(validateFunc ValidateFunc, fieldErrors field.ErrorList, volumes []VirtualMachineVolumes) {
+				vm := &VirtualMachine{
+					Spec: VirtualMachineSpec{
+						Volumes: volumes,
+					},
+				}
+				Expect(validateFunc(vm)).Should(Equal(fieldErrors))
+			},
+
+			Entry("volume with no pvc", validateVolumes, field.ErrorList{
+				{
+					Type:     field.ErrorTypeRequired,
+					Field:    "spec.volumes[0].persistentVolumeClaim.claimName",
+					BadValue: "",
+				},
+			}, []VirtualMachineVolumes{
+				{
+					Name: "test-volume-0",
+				},
+			}),
+
+			Entry("volume with no name", validateVolumes, field.ErrorList{
+				{
+					Type:     field.ErrorTypeRequired,
+					Field:    "spec.volumes[0].name",
+					BadValue: "",
+				},
+				{
+					Type:     field.ErrorTypeRequired,
+					Field:    "spec.volumes[0].persistentVolumeClaim.claimName",
+					BadValue: "",
+				},
+			}, []VirtualMachineVolumes{
+				{
+					Name: "",
+				},
+			}),
+
+			Entry("volume with duplicate names", validateVolumes, field.ErrorList{
+				{
+					Type:     field.ErrorTypeDuplicate,
+					Field:    "spec.volumes[1].name",
+					BadValue: "test-volume-1",
+				},
+			}, []VirtualMachineVolumes{
+				{
+					Name: "test-volume-1",
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: "dummy-pvc-1"},
+				},
+				{
+					Name: "test-volume-1",
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: "dummy-pvc-2"},
+				},
+			}),
+
+			Entry("volume with no pvc name", validateVolumes, field.ErrorList{
+				{
+					Type:     field.ErrorTypeRequired,
+					Field:    "spec.volumes[0].persistentVolumeClaim.claimName",
+					BadValue: "",
+				},
+			}, []VirtualMachineVolumes{
+				{
+					Name: "test-volume-3",
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: ""},
+				},
+			}),
 		)
 	})
 

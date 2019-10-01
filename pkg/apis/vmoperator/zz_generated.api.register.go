@@ -144,9 +144,17 @@ type VirtualMachineStatus struct {
 	Phase      VMStatusPhase
 	VmIp       string
 	BiosUuid   string
+	Volumes    []VirtualMachineVolumeStatus
 }
 
 type VirtualMachineServiceStatus struct {
+}
+
+type VirtualMachineVolumeStatus struct {
+	Name     string
+	Attached bool
+	DiskUuid string
+	Error    string
 }
 
 type VirtualMachineCondition struct {
@@ -175,6 +183,7 @@ type VirtualMachineSpec struct {
 	VmMetadata        *VirtualMachineMetadata
 	NetworkInterfaces []VirtualMachineNetworkInterface
 	StorageClass      string
+	Volumes           []VirtualMachineVolumes
 }
 
 type VirtualMachineServicePort struct {
@@ -182,6 +191,11 @@ type VirtualMachineServicePort struct {
 	Protocol   string
 	Port       int32
 	TargetPort int32
+}
+
+type VirtualMachineVolumes struct {
+	Name                  string
+	PersistentVolumeClaim *corev1.PersistentVolumeClaimVolumeSource
 }
 
 type VirtualMachineNetworkInterface struct {

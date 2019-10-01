@@ -280,7 +280,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 		})
 	})
 
-	Describe("differenceImages", func() {
+		
 
 		Context("when image list fails", func() {
 			ctx := context.Background()

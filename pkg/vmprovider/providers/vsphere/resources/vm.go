@@ -98,6 +98,8 @@ func (vm *VirtualMachine) Delete(ctx context.Context) error {
 
 func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *types.VirtualMachineConfigSpec) error {
 
+	log.Info("Reconfiguring VM", "name", vm.Name)
+
 	task, err := vm.vcVirtualMachine.Reconfigure(ctx, *configSpec)
 	if err != nil {
 		return err

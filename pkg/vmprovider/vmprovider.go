@@ -14,8 +14,13 @@ var (
 	registeredVmProvider VirtualMachineProviderInterface
 )
 
+<<<<<<< HEAD
 // RegisterVmProviderOrDie registers the provider.
 func RegisterVmProviderOrDie(vmProvider VirtualMachineProviderInterface) VirtualMachineProviderInterface {
+=======
+// RegisterVmProvider registers the provider.
+func RegisterVmProvider(vmProvider VirtualMachineProviderInterface) VirtualMachineProviderInterface {
+>>>>>>> Manage VirtualMachineImages asynchronously
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -27,7 +32,11 @@ func RegisterVmProviderOrDie(vmProvider VirtualMachineProviderInterface) Virtual
 	return vmProvider
 }
 
+<<<<<<< HEAD
 func UnregisterVmProviderOrDie(vmProvider VirtualMachineProviderInterface) {
+=======
+func UnregisterVmProvider(vmProvider VirtualMachineProviderInterface) {
+>>>>>>> Manage VirtualMachineImages asynchronously
 	mutex.Lock()
 	defer mutex.Unlock()
 

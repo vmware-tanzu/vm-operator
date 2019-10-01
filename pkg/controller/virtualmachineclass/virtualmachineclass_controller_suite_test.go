@@ -89,5 +89,8 @@ func StartTestManager(mgr manager.Manager) (chan struct{}, *sync.WaitGroup) {
 		Expect(mgr.Start(stop)).To(Succeed())
 		wg.Done()
 	}()
+	cache := mgr.GetCache()
+	result := cache.WaitForCacheSync(stop)
+	Expect(result).Should(BeTrue(), "Cache should have synced")
 	return stop, wg
 }

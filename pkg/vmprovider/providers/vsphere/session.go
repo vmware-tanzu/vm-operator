@@ -277,7 +277,7 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context) ([]*v1alph
 
 func (s *Session) GetItemIDFromCL(ctx context.Context, itemName string) (string, error) {
 	var itemID string
-	//var item *library.Item
+
 	err := s.WithRestClient(ctx, func(c *rest.Client) error {
 		itemIDs, err := library.NewManager(c).FindLibraryItems(ctx,
 			library.FindItem{LibraryID: s.contentlib.ID, Name: itemName})
@@ -313,7 +313,6 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string)
 		return nil, err
 	}
 
-	// Return nil when the image with 'name' is not found in CL
 	if item == nil {
 		return nil, errors.Errorf("item: %v is not found in CL", name)
 	}

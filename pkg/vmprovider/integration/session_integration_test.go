@@ -94,8 +94,7 @@ var _ = Describe("Sessions", func() {
 
 			It("should not get virtualmachineimage from CL", func() {
 				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "invalid")
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).Should(Equal("failed to find image \"invalid\": no library items named: invalid"))
+				Expect(err).Should(MatchError("item: invalid is not found in CL"))
 				Expect(image).Should(BeNil())
 			})
 		})
@@ -403,6 +402,18 @@ var _ = Describe("Sessions", func() {
 			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
 		})
+
+		AfterEach(func() {
+			os.Setenv("JSON_EXTRA_CONFIG", "")
+		})
+
+		Context("with global extraConfig", func() {
+			It("should copy the values into the VM", func() {
+				imageName := "DC0_H0_VM0"
+				vmClass := getVMClassInstance(testVMName, testNamespace)
+				vm := getVirtualMachineInstance(testVMName+"-extraConfig", testNamespace, imageName, vmClass.Name)
+				vm.Spec.VmMetadata.Transport = "ExtraConfig"
+				vmMetadata := map[string]string{localKey: localVal}
 
 		Context("with vm metadata and global extraConfig", func() {
 			BeforeEach(func() {

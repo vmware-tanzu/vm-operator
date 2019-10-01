@@ -5,7 +5,6 @@ package integration
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	stdlog "log"
 	"net/url"
@@ -208,6 +207,10 @@ func SetupVcsimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Con
 		return nil, fmt.Errorf("failed to setup content library: %v", err)
 	}
 
+	err = SetupContentLibrary(ctx, vSphereConfig, session)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(vSphereConfig).ShouldNot(Equal(nil))
+
 	// Configure each requested namespace to use CL as the content source
 	for _, ns := range namespaces {
 		err = vsphere.InstallVSphereVmProviderConfig(kubernetes.NewForConfigOrDie(cfg),
@@ -221,14 +224,17 @@ func SetupVcsimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Con
 	return session, nil
 }
 
-func TeardownVcsimEnv(vcSim *VcSimInstance) {
+func s(vcSim *VcSimInstance) {
 	if vcSim != nil {
 		vcSim.Stop()
 	}
 
-	if vmProvider != nil {
-		vmprovider.UnregisterVmProviderOrDie(vmProvider)
-	}
+	/*
+		if vmProvider != nil {
+			vmprovider.UnregisterVmProviderOrDie(vmProvider)
+		}
+	*/
+
 }
 
 func setupVcSimContent(config *vsphere.VSphereVmProviderConfig, vcSim *VcSimInstance, session *vsphere.Session) (err error) {

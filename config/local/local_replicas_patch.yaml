@@ -1,0 +1,5 @@
+# deploy vmop with 3 replicas for leader election testing
+- op: add
+  path: /spec/replicas
+  value: 3
+

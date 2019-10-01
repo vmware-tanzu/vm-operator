@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"golang.org/x/net/context"
+	corev1 "k8s.io/api/core/v1"
 	storagetypev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,16 +43,17 @@ var _ = Describe("VirtualMachine controller", func() {
 	name := "fooVm"
 
 	var (
-		classInstance   vmoperatorv1alpha1.VirtualMachineClass
-		sc              storagetypev1.StorageClass
-		instance        vmoperatorv1alpha1.VirtualMachine
-		expectedRequest reconcile.Request
-		recFn           reconcile.Reconciler
-		requests        chan reconcile.Request
-		stopMgr         chan struct{}
-		mgrStopped      *sync.WaitGroup
-		mgr             manager.Manager
-		err             error
+		classInstance           vmoperatorv1alpha1.VirtualMachineClass
+		sc                      storagetypev1.StorageClass
+		instance                vmoperatorv1alpha1.VirtualMachine
+		expectedRequest         reconcile.Request
+		recFn                   reconcile.Reconciler
+		requests                chan reconcile.Request
+		stopMgr                 chan struct{}
+		mgrStopped              *sync.WaitGroup
+		mgr                     manager.Manager
+		err                     error
+		leaderElectionConfigMap string = "vmoperator-controller-manager-runtime"
 	)
 
 	BeforeEach(func() {
@@ -83,7 +85,11 @@ var _ = Describe("VirtualMachine controller", func() {
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 
-		mgr, err = manager.New(cfg, manager.Options{})
+		syncPeriod := 10 * time.Second
+		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
+			LeaderElection:          true,
+			LeaderElectionID:        leaderElectionConfigMap,
+			LeaderElectionNamespace: ns})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
@@ -109,6 +115,14 @@ var _ = Describe("VirtualMachine controller", func() {
 
 		close(stopMgr)
 		mgrStopped.Wait()
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      leaderElectionConfigMap,
+			},
+		}
+		err := c.Delete(context.Background(), configMap)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	Describe("when creating/deleting a VM object", func() {

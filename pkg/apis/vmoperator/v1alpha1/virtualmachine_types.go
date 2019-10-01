@@ -66,6 +66,10 @@ type VirtualMachineSpec struct {
 	VmMetadata        *VirtualMachineMetadata          `json:"vmMetadata,omitempty"`
 	NetworkInterfaces []VirtualMachineNetworkInterface `json:"networkInterfaces,omitempty"`
 	StorageClass      string                           `json:"storageClass,omitempty"`
+	// +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	Volumes []VirtualMachineVolumes `json:"volumes,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
 }
 
 // VirtualMachineMetadata defines the guest customization
@@ -93,13 +97,37 @@ type VirtualMachineCondition struct {
 	Type               string      `json:"type"`
 }
 
+type VirtualMachineVolumes struct {
+	// Each volume in a VM must have a unique name.
+	Name string `json:"name"`
+
+	// persistentVolumeClaim represents a reference to a PersistentVolumeClaim (pvc) in the same namespace. The pvc
+	// must match a persistent volume provisioned (either statically or dynamically) by the Cloud Native Storage CSI.
+	PersistentVolumeClaim *corev1.PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
+}
+
 type VirtualMachineStatus struct {
-	Conditions []VirtualMachineCondition `json:"conditions"`
-	Host       string                    `json:"host"`
-	PowerState string                    `json:"powerState"`
-	Phase      VMStatusPhase             `json:"phase"`
-	VmIp       string                    `json:"vmIp"`
-	BiosUuid   string                    `json:"biosUUID"`
+	Conditions []VirtualMachineCondition    `json:"conditions"`
+	Host       string                       `json:"host"`
+	PowerState string                       `json:"powerState"`
+	Phase      VMStatusPhase                `json:"phase"`
+	VmIp       string                       `json:"vmIp"`
+	BiosUuid   string                       `json:"biosUUID"`
+	Volumes    []VirtualMachineVolumeStatus `json:"volumes"`
+}
+
+type VirtualMachineVolumeStatus struct {
+	// The name of the volume in a VM.
+	Name string `json:"name"`
+
+	// Attached represents the state of volume attachment
+	Attached bool `json:"attached"`
+
+	// DiskUuid represents the underlying virtual disk UUID and is present when attachment succeeds
+	DiskUuid string `json:"diskUUID"`
+
+	// Error represents the last error seen when attaching or detaching a volume and will be empty if attachment succeeds
+	Error string `json:"error"`
 }
 
 // DefaultingFunction sets default VirtualMachine field values

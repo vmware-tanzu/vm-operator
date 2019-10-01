@@ -49,6 +49,8 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineServiceStatus":     schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineServiceStatus(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineSpec":              schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineStatus":            schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineVolumeStatus":      schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineVolumeStatus(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineVolumes":           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineVolumes(ref),
 		"k8s.io/api/admissionregistration/v1alpha1.Initializer":                                                     schema_k8sio_api_admissionregistration_v1alpha1_Initializer(ref),
 		"k8s.io/api/admissionregistration/v1alpha1.InitializerConfiguration":                                        schema_k8sio_api_admissionregistration_v1alpha1_InitializerConfiguration(ref),
 		"k8s.io/api/admissionregistration/v1alpha1.InitializerConfigurationList":                                    schema_k8sio_api_admissionregistration_v1alpha1_InitializerConfigurationList(ref),
@@ -1594,12 +1596,30 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.Reference
 							Format: "",
 						},
 					},
+					"volumes": {
+						VendorExtensible: spec.VendorExtensible{
+							Extensions: spec.Extensions{
+								"x-kubernetes-patch-merge-key": "name",
+								"x-kubernetes-patch-strategy":  "merge",
+							},
+						},
+						SchemaProps: spec.SchemaProps{
+							Type: []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineVolumes"),
+									},
+								},
+							},
+						},
+					},
 				},
 				Required: []string{"imageName", "className", "powerState"},
 			},
 		},
 		Dependencies: []string{
-			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineMetadata", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineNetworkInterface", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort", "k8s.io/api/core/v1.EnvVar"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineMetadata", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineNetworkInterface", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineVolumes", "k8s.io/api/core/v1.EnvVar"},
 	}
 }
 
@@ -1650,12 +1670,92 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref common.Referen
 							Format: "",
 						},
 					},
+					"volumes": {
+						SchemaProps: spec.SchemaProps{
+							Type: []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineVolumeStatus"),
+									},
+								},
+							},
+						},
+					},
 				},
-				Required: []string{"conditions", "host", "powerState", "phase", "vmIp", "biosUUID"},
+				Required: []string{"conditions", "host", "powerState", "phase", "vmIp", "biosUUID", "volumes"},
 			},
 		},
 		Dependencies: []string{
-			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineCondition"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineCondition", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineVolumeStatus"},
+	}
+}
+
+func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineVolumeStatus(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Properties: map[string]spec.Schema{
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The name of the volume in a VM.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"attached": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Attached represents the state of volume attachment",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
+					"diskUUID": {
+						SchemaProps: spec.SchemaProps{
+							Description: "DiskUuid represents the underlying virtual disk UUID and is present when attachment succeeds",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"error": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Error represents the last error seen when attaching or detaching a volume and will be empty if attachment succeeds",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"name", "attached", "diskUUID", "error"},
+			},
+		},
+		Dependencies: []string{},
+	}
+}
+
+func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineVolumes(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Properties: map[string]spec.Schema{
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Each volume in a VM must have a unique name.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"persistentVolumeClaim": {
+						SchemaProps: spec.SchemaProps{
+							Description: "persistentVolumeClaim represents a reference to a PersistentVolumeClaim (pvc) in the same namespace. The pvc must match a persistent volume provisioned (either statically or dynamically) by the Cloud Native Storage CSI.",
+							Ref:         ref("k8s.io/api/core/v1.PersistentVolumeClaimVolumeSource"),
+						},
+					},
+				},
+				Required: []string{"name"},
+			},
+		},
+		Dependencies: []string{
+			"k8s.io/api/core/v1.PersistentVolumeClaimVolumeSource"},
 	}
 }
 

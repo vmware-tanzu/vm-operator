@@ -41,6 +41,7 @@ var (
 )
 
 var _ = BeforeSuite(func() {
+	stdlog.Print("setting up local aggregated-apiserver for test env...")
 	testEnv, err = suite.InstallLocalTestingAPIAggregationEnvironment("vmoperator.vmware.com", "v1alpha1")
 	Expect(err).NotTo(HaveOccurred())
 

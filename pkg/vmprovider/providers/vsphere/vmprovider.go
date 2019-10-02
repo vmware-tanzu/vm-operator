@@ -41,6 +41,19 @@ type VSphereVmProvider struct {
 	sessions SessionManager
 }
 
+type OvfPropertyRetriever interface {
+	FetchOvfPropertiesFromLibrary(ctx context.Context, sess *Session, item *library.Item) (map[string]string, error)
+}
+
+type vmOptions struct{}
+
+type ImageOptions int
+
+const (
+	AnnotateVmImage ImageOptions = iota
+	DoNotAnnotateVmImage
+)
+
 var _ vmprovider.VirtualMachineProviderInterface = &VSphereVmProvider{}
 
 var log = klogr.New()
@@ -346,12 +359,16 @@ func resVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *re
 	}
 }
 
-func libItemToVirtualMachineImage(ctx context.Context, sess *Session, item *library.Item,
-	namespace string) (*v1alpha1.VirtualMachineImage, error) {
+func LibItemToVirtualMachineImage(ctx context.Context, sess *Session, item *library.Item, namespace string, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
 
-	ovfProperties, err := fetchOvfProperties(ctx, sess, item)
-	if err != nil {
-		return nil, err
+	var ovfProperties = map[string]string{}
+
+	if imgOptions == AnnotateVmImage {
+		var err error
+		ovfProperties, err = vmProvider.FetchOvfPropertiesFromLibrary(ctx, sess, item)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &v1alpha1.VirtualMachineImage{
@@ -372,14 +389,16 @@ func libItemToVirtualMachineImage(ctx context.Context, sess *Session, item *libr
 
 }
 
-func fetchOvfProperties(ctx context.Context, sess *Session, item *library.Item) (map[string]string, error) {
+func (vm vmOptions) FetchOvfPropertiesFromLibrary(ctx context.Context, sess *Session, item *library.Item) (map[string]string, error) {
 
 	contentLibSession := NewContentLibraryProvider(sess)
+
 	//fetch & parse ovf from CL and populate the properties as annotations
 	ovfProperties, err := contentLibSession.ParseAndRetrievePropsFromLibraryItem(ctx, *item)
 	if err != nil {
 		return nil, err
 	}
+
 	return ovfProperties, nil
 }
 

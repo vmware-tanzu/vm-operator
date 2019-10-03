@@ -6,10 +6,12 @@ package virtualmachine
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
@@ -30,12 +32,13 @@ var _ = Describe("VM Operator Controller leader election tests", func() {
 		mgrStopped              *sync.WaitGroup
 		mgr                     manager.Manager
 		err                     error
-		leaderElectionConfigMap string = "vmoperator-controller-manager-runtime"
+		leaderElectionConfigMap string
 	)
 	BeforeEach(func() {
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 		syncPeriod := 10 * time.Second
+		leaderElectionConfigMap = fmt.Sprintf("vmoperator-controller-manager-runtime-%s", uuid.New())
 		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
 			LeaderElection:          true,
 			LeaderElectionID:        leaderElectionConfigMap,

@@ -7,9 +7,11 @@
 package virtualmachineservice
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"golang.org/x/net/context"
@@ -41,13 +43,14 @@ var _ = Describe("VirtualMachineService controller", func() {
 		mgrStopped              *sync.WaitGroup
 		mgr                     manager.Manager
 		err                     error
-		leaderElectionConfigMap string = "vmoperator-controller-manager-runtime"
+		leaderElectionConfigMap string
 	)
 
 	BeforeEach(func() {
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 		syncPeriod := 10 * time.Second
+		leaderElectionConfigMap = fmt.Sprintf("vmoperator-controller-manager-runtime-%s", uuid.New())
 		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
 			LeaderElection:          true,
 			LeaderElectionID:        leaderElectionConfigMap,

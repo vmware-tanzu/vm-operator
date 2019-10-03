@@ -7,6 +7,7 @@
 package virtualmachineclass
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
@@ -41,13 +43,14 @@ var _ = Describe("VirtualMachineClass controller", func() {
 		mgrStopped              *sync.WaitGroup
 		mgr                     manager.Manager
 		err                     error
-		leaderElectionConfigMap string = "vmoperator-controller-manager-runtime"
+		leaderElectionConfigMap string
 	)
 
 	BeforeEach(func() {
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 		syncPeriod := 10 * time.Second
+		leaderElectionConfigMap = fmt.Sprintf("vmoperator-controller-manager-runtime-%s", uuid.New())
 		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
 			LeaderElection:          true,
 			LeaderElectionID:        leaderElectionConfigMap,

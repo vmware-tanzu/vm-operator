@@ -42,7 +42,6 @@ var (
 
 	sess              *vsphere.Session
 	namespace         = "base-namespace"
-	ContentSourceName = "cl_unit_test"
 	testOvfName       = "photon-ova.ovf"
 
 	restClient        *rest.Client
@@ -83,7 +82,7 @@ func setUpContentLibrary(c *govmomi.Client, config *vsphere.VSphereVmProviderCon
 		return err
 	}
 
-	return integration.SetupContentLibraryForTest(ctx, ContentSourceName, c, config, restClient, "test/resource/",
+	return integration.SetupContentLibraryForTest(ctx, c, config, restClient, "test/resource/",
 		"photon-ova.ovf")
 }
 

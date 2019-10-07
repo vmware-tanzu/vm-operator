@@ -48,7 +48,7 @@ var _ = Describe("VMProvider Tests", func() {
 			testVMName := "test-vm-vmp-deploy"
 
 			//Setting VM Operator config to use CL
-			config.ContentSource = integration.ContentSourceName
+			config.ContentSource = integration.GetContentSourceID()
 
 			// Create a new VMProvder from the config provided by the test
 			vmProvider, err := vsphere.NewVSphereVmProviderFromConfig(testNamespace, config)

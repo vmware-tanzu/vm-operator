@@ -59,7 +59,7 @@ var _ = Describe("Sessions", func() {
 		Context("From Content Library", func() {
 			BeforeEach(func() {
 				//set source to use CL
-				config.ContentSource = integration.ContentSourceName
+				config.ContentSource = integration.GetContentSourceID()
 				err = session.ConfigureContent(context.TODO(), config.ContentSource)
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -212,7 +212,7 @@ var _ = Describe("Sessions", func() {
 		Context("from Content-library", func() {
 			BeforeEach(func() {
 				//set source to use CL
-				config.ContentSource = integration.ContentSourceName
+				config.ContentSource = integration.GetContentSourceID()
 				err = session.ConfigureContent(context.TODO(), config.ContentSource)
 				Expect(err).NotTo(HaveOccurred())
 			})

@@ -36,6 +36,16 @@ type VSphereVmProviderTestConfig struct {
 	*vsphere.VSphereVmProviderConfig
 }
 
+var ContentSourceID string
+
+func setContentSourceID(id string) {
+	ContentSourceID = id
+}
+
+func GetContentSourceID() string {
+	return ContentSourceID
+}
+
 // Support for bootstrapping VM operator resource requirements in Kubernetes.
 // Generate a fake vsphere provider config that is suitable for the integration test environment.
 // Post the resultant config map to the API Master for consumption by the VM operator
@@ -53,7 +63,7 @@ func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphe
 		ResourcePool:  "/DC0/host/DC0_C0/Resources",
 		Folder:        "/DC0/vm",
 		Datastore:     "/DC0/datastore/LocalDS_0",
-		ContentSource: ContentSourceName,
+		ContentSource: "",
 	}
 }
 
@@ -111,10 +121,10 @@ func setupVcSimContent(vcSim *VcSimInstance, config *vsphere.VSphereVmProviderCo
 		err = rClient.Logout(ctx)
 	}()
 
-	return SetupContentLibraryForTest(ctx, ContentSourceName, c, config, rClient, imagesDir, ovf)
+	return SetupContentLibraryForTest(ctx, c, config, rClient, imagesDir, ovf)
 }
 
-func SetupContentLibraryForTest(ctx context.Context, sourceName string, c *govmomi.Client,
+func SetupContentLibraryForTest(ctx context.Context, c *govmomi.Client,
 	config *vsphere.VSphereVmProviderConfig, rClient *rest.Client, imagesDir string, ovf string) error {
 	finder := find.NewFinder(c.Client, false)
 	dc, err := finder.Datacenter(ctx, config.Datacenter)
@@ -141,6 +151,8 @@ func SetupContentLibraryForTest(ctx context.Context, sourceName string, c *govmo
 	if err != nil {
 		return err
 	}
+	// Assign ContentSourceID to be used for integration tests
+	setContentSourceID(libID)
 	item := library.Item{
 		Name:      "test-item",
 		Type:      "ovf",

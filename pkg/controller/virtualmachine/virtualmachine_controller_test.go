@@ -189,7 +189,7 @@ var _ = Describe("VirtualMachine controller", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				//Configure to use Content Library
-				vSphereConfig.ContentSource = integration.ContentSourceName
+				vSphereConfig.ContentSource = integration.GetContentSourceID()
 				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 				Expect(err).NotTo(HaveOccurred())
 

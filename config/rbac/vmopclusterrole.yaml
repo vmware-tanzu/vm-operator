@@ -87,6 +87,10 @@ rules:
   resources:
   - virtualnetworkinterfaces
   - virtualnetworkinterfaces/status
+  - loadbalancers
+  - loadbalancers/status
+  - virtualnetworks
+  - virtualnetworks/status
   verbs:
   - create
   - get

@@ -545,6 +545,14 @@
   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_apiserver-builder-alpha.git"
 
 [[projects]]
+  branch = "master"
+  digest = "1:66bfd4fd6c62d6bf28c7d8c3573b31bac4ba7c81fb0f934c13e4c07b72d6ae92"
+  name = "github.com/kubernetes/utils"
+  packages = ["pointer"]
+  pruneopts = "NU"
+  revision = "69764acb6e8e900b7c05296c5d3c9c19545475f9"
+
+[[projects]]
   digest = "1:2c030e815d0a8978ff1c7914a1b05f2d006bc222298261b277a69198c549b8fd"
   name = "github.com/mailru/easyjson"
   packages = [
@@ -776,7 +784,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:30aec98803da3232f476986cde6cc1813033a51b7a80d289423c5aa3618f78e0"
+  digest = "1:4a4745618928c2f09ed361dc62bc0489ce896d4cf74a99809653c92a8777c021"
   name = "gitlab.eng.vmware.com/guest-clusters/ncp-client"
   packages = [
     "pkg/apis/ncp/v1alpha1",
@@ -787,7 +795,7 @@
     "pkg/client/clientset/versioned/typed/ncp/v1alpha1/fake",
   ]
   pruneopts = "NU"
-  revision = "05c3b54ed75f0f8c796a8edbe090fce6744e4ced"
+  revision = "aadc78edc581e19deb92da3ae7dbd8656c076025"
   source = "git@gitlab.eng.vmware.com:guest-clusters/ncp-client.git"
 
 [[projects]]
@@ -1554,6 +1562,7 @@
     "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/cmd/server",
     "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test",
     "github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test/suite",
+    "github.com/kubernetes/utils/pointer",
     "github.com/modern-go/reflect2",
     "github.com/onsi/ginkgo",
     "github.com/onsi/ginkgo/extensions/table",

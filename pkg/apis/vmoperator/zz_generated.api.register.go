@@ -114,6 +114,7 @@ func Resource(resource string) schema.GroupResource {
 
 type Protocol string
 type VMStatusPhase string
+type VirtualMachineServiceType string
 
 // +genclient
 // +genclient
@@ -148,6 +149,7 @@ type VirtualMachineStatus struct {
 }
 
 type VirtualMachineServiceStatus struct {
+	LoadBalancer LoadBalancerStatus
 }
 
 type VirtualMachineVolumeStatus struct {
@@ -155,6 +157,10 @@ type VirtualMachineVolumeStatus struct {
 	Attached bool
 	DiskUuid string
 	Error    string
+}
+
+type LoadBalancerStatus struct {
+	Ingress []LoadBalancerIngress
 }
 
 type VirtualMachineCondition struct {
@@ -166,8 +172,13 @@ type VirtualMachineCondition struct {
 	Type               string
 }
 
+type LoadBalancerIngress struct {
+	IP       string
+	Hostname string
+}
+
 type VirtualMachineServiceSpec struct {
-	Type         string
+	Type         VirtualMachineServiceType
 	Ports        []VirtualMachineServicePort
 	Selector     map[string]string
 	ClusterIP    string

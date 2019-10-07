@@ -15,13 +15,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
@@ -29,9 +28,8 @@ import (
 const (
 	DefaultEthernetCardType = "vmxnet3"
 	NsxtNetworkType         = "nsx-t"
-
-	retryInterval = 100 * time.Millisecond
-	retryTimeout  = 15 * time.Second
+	retryInterval           = 100 * time.Millisecond
+	retryTimeout            = 15 * time.Second
 )
 
 // NetworkProvider sets up network for different type of network

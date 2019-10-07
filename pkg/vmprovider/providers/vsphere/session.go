@@ -135,7 +135,13 @@ func (s *Session) ConfigureContent(ctx context.Context, contentSource string) er
 
 	var err error
 	if err = s.WithRestClient(ctx, func(c *rest.Client) error {
-		s.contentlib, err = library.NewManager(c).GetLibraryByName(ctx, contentSource)
+		libManager := library.NewManager(c)
+		s.contentlib, err = libManager.GetLibraryByID(ctx, contentSource)
+		// TODO: Below code needs to be removed before 1.0. Allowing a name to be specified for test environments and prevent any breakages.
+		if err != nil {
+			log.Error(err, "GetLibrarybyID failed: Trying GetLibrarybyName")
+			s.contentlib, err = libManager.GetLibraryByName(ctx, contentSource)
+		}
 		return err
 	}); err != nil {
 		return errors.Wrapf(err, "failed to init Content Library %q", contentSource)

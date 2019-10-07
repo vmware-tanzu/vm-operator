@@ -8,7 +8,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineservice/providers"
+
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,12 +30,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/vmware-tanzu/vm-operator/pkg"
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 const (
@@ -52,8 +54,9 @@ func Add(mgr manager.Manager) error {
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	return &ReconcileVirtualMachineService{
-		Client: mgr.GetClient(),
-		scheme: mgr.GetScheme(),
+		Client:               mgr.GetClient(),
+		scheme:               mgr.GetScheme(),
+		loadbalancerProvider: providers.GetLoadbalancerProviderByType(providers.NSXTLoadBalancer),
 	}
 }
 
@@ -91,7 +94,8 @@ var _ reconcile.Reconciler = &ReconcileVirtualMachineService{}
 // ReconcileVirtualMachineService reconciles a VirtualMachineService object
 type ReconcileVirtualMachineService struct {
 	client.Client
-	scheme *runtime.Scheme
+	scheme               *runtime.Scheme
+	loadbalancerProvider providers.LoadbalancerProvider
 }
 
 // Reconcile reads that state of the cluster for a VirtualMachineService object and makes changes based on the state read
@@ -100,6 +104,8 @@ type ReconcileVirtualMachineService struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineservices/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=vmware.com,resources=loadbalancers;loadbalancers/status,verbs=create;get;list;patch;delete;watch;update
+// +kubebuilder:rbac:groups=vmware.com,resources=virtualnetworks;virtualnetworks/status,verbs=create;get;list;patch;delete;watch;update
 func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	ctx := context.Background()
 
@@ -154,17 +160,49 @@ func (r *ReconcileVirtualMachineService) deleteVmService(ctx context.Context, vm
 	return nil
 }
 
-func (r *ReconcileVirtualMachineService) reconcileVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) error {
-	var service *corev1.Service
-	err := r.Get(ctx, types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name}, service)
-	switch {
-	case err != nil:
-		return r.createVmService(ctx, vmService)
-	//case NotFound:
-	//log.Error(err, "Service not found", "name", vmService.Name)
-	default:
-		return r.updateVmService(ctx, vmService)
+func (r *ReconcileVirtualMachineService) reconcileVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (err error) {
+	log.Info("Reconcile VirtualMachineService", "name", vmService.NamespacedName())
+	defer log.Info("Finished Reconcile VirtualMachineService", "name", vmService.NamespacedName())
+
+	loadBalancerName := ""
+	if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
+		if r.loadbalancerProvider == nil {
+			log.Error(err, "Failed to get Load balancer provider for vm service", "name", vmService.Name)
+			return err
+		}
+		//Get virtual network name from vm spec
+		virtualNetworkName, err := r.getVirtualNetworkName(ctx, vmService)
+		if err != nil {
+			log.Error(err, "Failed to get virtual network from vm spec", "name", vmService.Name)
+			return err
+		}
+		// Get LoadBalancer to attach
+		loadBalancerName, err = r.loadbalancerProvider.EnsureLoadBalancer(ctx, vmService, virtualNetworkName)
+		if err != nil {
+			log.Error(err, "Failed to create or get load balancer for vm service", "name", vmService.Name)
+			return err
+		}
 	}
+
+	// Translate vm service to service
+	service := r.vmServiceToService(vmService)
+	log.V(4).Info("Translate VM Service to K8S Service", "k8s service", service)
+	// Update k8s Service
+	newService, err := r.createOrUpdateService(ctx, vmService, service, loadBalancerName)
+	if err != nil {
+		log.Error(err, "Failed to update k8s services", "k8s services", service)
+		return err
+	}
+	// Update endpoints
+	err = r.updateEndpoints(ctx, vmService, newService)
+	if err != nil {
+		log.Error(err, "Failed to update VirtualMachineService endpoints", "name", vmService.NamespacedName())
+		return err
+	}
+	// Update vm service
+	newVMService, err := r.updateVmService(ctx, vmService, newService)
+	log.Info("Updated new vm services", "new vm service", newVMService)
+	return err
 }
 
 func (r *ReconcileVirtualMachineService) makeObjectMeta(vmService *vmoperatorv1alpha1.VirtualMachineService) *metav1.ObjectMeta {
@@ -210,6 +248,21 @@ func (r *ReconcileVirtualMachineService) makeEndpointAddress(vmService *vmoperat
 		}}
 }
 
+//Get virtual network name from vm spec
+func (r *ReconcileVirtualMachineService) getVirtualNetworkName(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (string, error) {
+	log.V(4).Info("Get Virtual Network Name", "vmservice", vmService.NamespacedName())
+	defer log.V(4).Info("Finished Get Virtual Network Name", "vmservice", vmService.NamespacedName())
+
+	vmList := &vmoperatorv1alpha1.VirtualMachineList{}
+	err := r.List(ctx, client.MatchingLabels(vmService.Spec.Selector), vmList)
+	if err != nil {
+		return "", err
+	}
+
+	return r.loadbalancerProvider.GetNetworkName(vmList.Items)
+}
+
+//Convert vm service to k8s service
 func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperatorv1alpha1.VirtualMachineService) *corev1.Service {
 	om := r.makeObjectMeta(vmService)
 
@@ -232,7 +285,7 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 		ObjectMeta: *om,
 		Spec: corev1.ServiceSpec{
 			// Don't specify selector to keep endpoints controller from interfering
-			Type:  corev1.ServiceTypeClusterIP, // TODO: Pull this from VM Service
+			Type:  corev1.ServiceType(vmService.Spec.Type),
 			Ports: servicePorts,
 		},
 	}
@@ -270,35 +323,51 @@ func addEndpointSubset(subsets []corev1.EndpointSubset, vm *vmoperatorv1alpha1.V
 	return subsets
 }
 
-func (r *ReconcileVirtualMachineService) updateService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service) error {
-	log.Info("Updating VirtualMachineService", "name", vmService.NamespacedName())
-	defer log.Info("Finished syncing VirtualMachineService", "name", vmService.NamespacedName())
+// Create or update k8s service
+func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service, loadBalancerName string) (*corev1.Service, error) {
+	log.Info("Updating k8s service", "k8s service name", vmService.NamespacedName())
+	defer log.Info("Finished syncing  k8s service", "k8s service name", vmService.NamespacedName())
 
-	// See if there's actually an update here.
+	// find current service
 	currentService := &corev1.Service{}
 	err := r.Get(ctx, types.NamespacedName{Name: vmService.Name, Namespace: vmService.Namespace}, currentService)
+
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			log.Error(err, "Failed to get service", "name", vmService.NamespacedName())
-			return err
+			return nil, err
 		}
+		// not exist, need to create one
+		log.Info("No k8s service in this name, creating one", "name", vmService.NamespacedName())
 		currentService = service
 	}
 
+	// update service labels and ports
 	newService := currentService.DeepCopy()
 	newService.Labels = service.Labels
+	newService.Spec.Ports = service.Spec.Ports
 	pkg.AddAnnotations(&newService.ObjectMeta)
 
+	// create or update service
 	createService := len(currentService.ResourceVersion) == 0
 	if createService {
-		log.Info("Creating service", "name", vmService.NamespacedName(), "service", newService)
+		log.Info("Creating k8s service", "name", vmService.NamespacedName(), "service", newService)
+		//every time create a load balancer type vm service, need to append this vm service to load balancer owner reference list
+		if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
+			err = r.loadbalancerProvider.UpdateLoadBalancerOwnerReference(ctx, loadBalancerName, vmService)
+			if err != nil {
+				log.Error(err, "Update LoadBalancer Owner Reference Error", "load balancer", loadBalancerName)
+				return nil, err
+			}
+		}
 		err = r.Create(ctx, newService)
+		defer record.EmitEvent(vmService, OpCreate, &err, false)
 	} else {
-		log.Info("Updating service", "name", vmService.NamespacedName(), "service", newService)
+		log.Info("Updating k8s service", "name", vmService.NamespacedName(), "service", newService)
 		err = r.Update(ctx, newService)
 	}
 
-	return err
+	return newService, err
 }
 
 func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service) error {
@@ -311,8 +380,6 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 		return err
 	}
 
-	//log.Info(fmt.Sprintf("VMs: %s match labels %s", vms, service.Spec.Selector))
-
 	// Determine if any endpoints match
 	var subsets []corev1.EndpointSubset
 
@@ -323,7 +390,6 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 			log.Info("Failed to find an IP for VirtualMachine", "name", vm.NamespacedName())
 			continue
 		}
-
 		// Ignore if all required values aren't present
 		if vm.Status.Host == "" {
 			log.Info("Skipping VirtualMachine due to empty host", "name", vm.NamespacedName())
@@ -396,49 +462,39 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 	return nil
 }
 
-// Process a create event for a new Virtual Machine Service
-func (r *ReconcileVirtualMachineService) createVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (err error) {
-	log.Info("Creating VirtualMachineService", "name", vmService.NamespacedName())
-
-	defer record.EmitEvent(vmService, OpCreate, &err, false)
-
-	// Create Service
-	service := r.vmServiceToService(vmService)
-
-	err = r.updateService(ctx, vmService, service)
-	if err != nil {
-		log.Error(err, "Failed to update VirtualMachineService", "name", vmService.NamespacedName())
-		return err
-	}
-
-	err = r.updateEndpoints(ctx, vmService, service)
-	if err != nil {
-		log.Error(err, "Failed to update VirtualMachineService endpoints", "name", vmService.NamespacedName())
-		return err
-	}
-
-	pkg.AddAnnotations(&vmService.ObjectMeta)
-
-	return nil
-}
-
-func (r *ReconcileVirtualMachineService) updateVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (err error) {
+// Create or update vm service
+func (r *ReconcileVirtualMachineService) updateVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, newService *corev1.Service) (*vmoperatorv1alpha1.VirtualMachineService, error) {
 	log.Info("Updating VirtualMachineService", "name", vmService.NamespacedName())
+	defer log.Info("Finished updating VirtualMachineService", "name", vmService.NamespacedName())
 
-	defer record.EmitEvent(vmService, OpUpdate, &err, false)
-
-	// Ensure Service and Endpoints are correct
-	// Determine if Service matches any VMs
-	vmList := &vmoperatorv1alpha1.VirtualMachineList{}
-	err = r.List(ctx, client.MatchingLabels(vmService.Spec.Selector), vmList)
+	// find current vm service
+	currentVMService := &vmoperatorv1alpha1.VirtualMachineService{}
+	err := r.Get(ctx, types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name}, currentVMService)
 	if err != nil {
-		// Since we're getting stuff from a local cache, it is basically impossible to get this error.
-		return err
+		if !errors.IsNotFound(err) {
+			log.Error(err, "Failed to get VirtualMachineService", "name", vmService.NamespacedName())
+			return nil, err
+		}
+		currentVMService = vmService
 	}
-
-	for _, vm := range vmList.Items {
-		log.Info("VirtualMachine matched", "name", vm.NamespacedName(), "labels", vm.ObjectMeta.Labels)
+	// update vm service
+	newVMService := currentVMService.DeepCopy()
+	// if could update loadbalancer external IP
+	if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer && len(newService.Status.LoadBalancer.Ingress) > 0 {
+		//copy service ingress array to vm service ingress array
+		newVMService.Status.LoadBalancer.Ingress = make([]vmoperatorv1alpha1.LoadBalancerIngress, len(newService.Status.LoadBalancer.Ingress))
+		for idx, ingress := range newService.Status.LoadBalancer.Ingress {
+			vmIngress := vmoperatorv1alpha1.LoadBalancerIngress{
+				IP:       ingress.IP,
+				Hostname: ingress.Hostname,
+			}
+			newVMService.Status.LoadBalancer.Ingress[idx] = vmIngress
+		}
+		if err = r.Status().Update(ctx, newVMService); err != nil {
+			log.Error(err, "Failed to update VirtualMachineService Status", "name", newVMService.NamespacedName())
+			return nil, err
+		}
 	}
-
-	return nil
+	pkg.AddAnnotations(&newVMService.ObjectMeta)
+	return newVMService, nil
 }

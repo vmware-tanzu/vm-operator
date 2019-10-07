@@ -6,10 +6,11 @@ package mocks
 
 import (
 	context "context"
+	reflect "reflect"
+
 	gomock "github.com/golang/mock/gomock"
 	library "github.com/vmware/govmomi/vapi/library"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
-	reflect "reflect"
 )
 
 // MockOvfPropertyRetriever is a mock of OvfPropertyRetriever interface

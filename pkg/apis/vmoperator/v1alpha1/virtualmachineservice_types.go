@@ -61,7 +61,7 @@ const (
 
 // VirtualMachineServiceSpec defines the desired state of VirtualMachineService
 type VirtualMachineServiceSpec struct {
-	Type     string                      `json:"type"`
+	Type     VirtualMachineServiceType   `json:"type"`
 	Ports    []VirtualMachineServicePort `json:"ports"`
 	Selector map[string]string           `json:"selector"`
 
@@ -72,6 +72,28 @@ type VirtualMachineServiceSpec struct {
 
 // VirtualMachineServiceStatus defines the observed state of VirtualMachineService
 type VirtualMachineServiceStatus struct {
+	// LoadBalancer contains the current status of the load-balancer,
+	// if one is present.
+	// +optional
+	LoadBalancer LoadBalancerStatus `json:"loadBalancer,omitempty"`
+}
+
+// LoadBalancerStatus represents the status of a load-balancer.
+type LoadBalancerStatus struct {
+	// Ingress is a list containing ingress points for the load-balancer.
+	// Traffic intended for the service should be sent to these ingress points.
+	// +optional
+	Ingress []LoadBalancerIngress `json:"ingress,omitempty"`
+}
+
+// LoadBalancerIngress represents the status of a load-balancer ingress point:
+// traffic intended for the service should be sent to an ingress point.
+type LoadBalancerIngress struct {
+	// IP is set for load-balancer ingress points that are IP based
+	IP string `json:"ip,omitempty"`
+
+	// Hostname is set for load-balancer ingress points that are DNS based
+	Hostname string `json:"hostname,omitempty"`
 }
 
 // DefaultingFunction sets default VirtualMachineService field values

@@ -8,6 +8,7 @@ package virtualmachineservice
 
 import (
 	stdlog "log"
+	"os"
 	"sync"
 	"testing"
 
@@ -55,6 +56,8 @@ var _ = BeforeSuite(func() {
 	vSphereConfig, err = integration.SetupEnv(vcSim)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(vSphereConfig).ShouldNot(Equal(nil))
+
+	os.Setenv(vsphere.EnvContentLibApiWaitSecs, "1")
 })
 
 var _ = AfterSuite(func() {

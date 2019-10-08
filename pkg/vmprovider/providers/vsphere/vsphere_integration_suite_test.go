@@ -8,6 +8,7 @@ package vsphere_test
 import (
 	"fmt"
 	stdlog "log"
+	"os"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
@@ -37,6 +38,8 @@ var _ = BeforeSuite(func() {
 	config, err = integration.SetupEnv(vcSim)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(config).ShouldNot(Equal(nil))
+
+	os.Setenv(vsphere.EnvContentLibApiWaitSecs, "1")
 })
 
 var _ = AfterSuite(func() {

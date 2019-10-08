@@ -7,14 +7,15 @@ package vsphere
 import (
 	"context"
 	"fmt"
-
-	"github.com/vmware/govmomi/vapi/library"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"os"
+	"strconv"
 
 	"github.com/pkg/errors"
+	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/sequence"
 	"k8s.io/klog/klogr"
@@ -35,6 +36,8 @@ const (
 
 	// Annotation Key for vSphere MoRef
 	VmOperatorMoRefKey = pkg.VmOperatorKey + "/moref"
+
+	EnvContentLibApiWaitSecs = "CONTENT_API_WAIT_SECS"
 )
 
 type VSphereVmProvider struct {
@@ -393,13 +396,37 @@ func (vm vmOptions) FetchOvfPropertiesFromLibrary(ctx context.Context, sess *Ses
 
 	contentLibSession := NewContentLibraryProvider(sess)
 
+	clDownloadHandler := createClDownloadHandler()
+
 	//fetch & parse ovf from CL and populate the properties as annotations
-	ovfProperties, err := contentLibSession.ParseAndRetrievePropsFromLibraryItem(ctx, *item)
+	ovfProperties, err := contentLibSession.ParseAndRetrievePropsFromLibraryItem(ctx, item, *clDownloadHandler)
 	if err != nil {
 		return nil, err
 	}
 
 	return ovfProperties, nil
+}
+
+func createClDownloadHandler() *ContentDownloadHandler {
+
+	var clDownloadHandler ContentDownloadHandler
+
+	//integration test environment would require a much lesser wait time
+	envClApiWaitSecs := os.Getenv(EnvContentLibApiWaitSecs)
+
+	if envClApiWaitSecs == "" {
+		clDownloadHandler = ContentDownloadProvider{ApiWaitTimeSecs: 5}
+		return &clDownloadHandler
+	}
+
+	value, err := strconv.Atoi(envClApiWaitSecs)
+	if err != nil {
+		clDownloadHandler = ContentDownloadProvider{ApiWaitTimeSecs: 5}
+	} else {
+		clDownloadHandler = ContentDownloadProvider{ApiWaitTimeSecs: value}
+	}
+
+	return &clDownloadHandler
 }
 
 // Transform Govmomi error to Kubernetes error

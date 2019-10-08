@@ -33,3 +33,11 @@ type VirtualMachineServiceListerExpansion interface{}
 // VirtualMachineServiceNamespaceListerExpansion allows custom methods to be added to
 // VirtualMachineServiceNamespaceLister.
 type VirtualMachineServiceNamespaceListerExpansion interface{}
+
+// VirtualMachineSetResourcePolicyListerExpansion allows custom methods to be added to
+// VirtualMachineSetResourcePolicyLister.
+type VirtualMachineSetResourcePolicyListerExpansion interface{}
+
+// VirtualMachineSetResourcePolicyNamespaceListerExpansion allows custom methods to be added to
+// VirtualMachineSetResourcePolicyNamespaceLister.
+type VirtualMachineSetResourcePolicyNamespaceListerExpansion interface{}

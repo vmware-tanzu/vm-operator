@@ -4,7 +4,7 @@
  * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
-package virtualmachineclass
+package virtualmachinesetresourcepolicy
 
 import (
 	"fmt"
@@ -32,13 +32,13 @@ var c client.Client
 
 const timeout = time.Second * 5
 
-var _ = Describe("VirtualMachineClass controller", func() {
+var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 	name := "fooVm"
 	ns := integration.DefaultNamespace
 
 	var (
-		instance                vmoperatorv1alpha1.VirtualMachineClass
-		invalid                 vmoperatorv1alpha1.VirtualMachineClass
+		instance                vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
+		invalid                 vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
 		stopMgr                 chan struct{}
 		mgrStopped              *sync.WaitGroup
 		mgr                     manager.Manager
@@ -74,29 +74,28 @@ var _ = Describe("VirtualMachineClass controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	Describe("when creating/deleting a VM Class", func() {
+	Describe("when creating/deleting a VirtualMachineSetResourcePolicy", func() {
 		It("invoke the validate method", func() {
-			// Create the VM Class object and expect this to fail
-			invalid = vmoperatorv1alpha1.VirtualMachineClass{
+			// Create the VirtualMachineSetResourcePolicy object and expect this to fail
+			invalid = vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: name,
+					Name:      name,
+					Namespace: ns,
 				},
-				Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
-					Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{
-						Cpus:   4,
-						Memory: resource.MustParse("1Mi"),
-					},
-					Policies: vmoperatorv1alpha1.VirtualMachineClassPolicies{
-						Resources: vmoperatorv1alpha1.VirtualMachineClassResources{
-							Requests: vmoperatorv1alpha1.VirtualMachineResourceSpec{
-								Cpu:    resource.MustParse("2000Mi"),
-								Memory: resource.MustParse("100Mi"),
-							},
-							Limits: vmoperatorv1alpha1.VirtualMachineResourceSpec{
-								Cpu:    resource.MustParse("1000Mi"),
-								Memory: resource.MustParse("200Mi"),
-							},
+				Spec: vmoperatorv1alpha1.VirtualMachineSetResourcePolicySpec{
+					ResourcePool: vmoperatorv1alpha1.ResourcePoolSpec{
+						Name: "name-resourcepool",
+						Reservations: vmoperatorv1alpha1.VirtualMachineResourceSpec{
+							Cpu:    resource.MustParse("1000Mi"),
+							Memory: resource.MustParse("200Mi"),
 						},
+						Limits: vmoperatorv1alpha1.VirtualMachineResourceSpec{
+							Cpu:    resource.MustParse("2000Mi"),
+							Memory: resource.MustParse("100Mi"),
+						},
+					},
+					Folder: vmoperatorv1alpha1.FolderSpec{
+						Name: "name-folder",
 					},
 				},
 			}
@@ -109,38 +108,37 @@ var _ = Describe("VirtualMachineClass controller", func() {
 		})
 
 		It("invoke the reconcile method", func() {
-			instance = vmoperatorv1alpha1.VirtualMachineClass{
+			instance = vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: name,
+					Name:      name,
+					Namespace: ns,
 				},
-				Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
-					Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{
-						Cpus:   4,
-						Memory: resource.MustParse("1Mi"),
-					},
-					Policies: vmoperatorv1alpha1.VirtualMachineClassPolicies{
-						Resources: vmoperatorv1alpha1.VirtualMachineClassResources{
-							Requests: vmoperatorv1alpha1.VirtualMachineResourceSpec{
-								Cpu:    resource.MustParse("1000Mi"),
-								Memory: resource.MustParse("100Mi"),
-							},
-							Limits: vmoperatorv1alpha1.VirtualMachineResourceSpec{
-								Cpu:    resource.MustParse("2000Mi"),
-								Memory: resource.MustParse("200Mi"),
-							},
+				Spec: vmoperatorv1alpha1.VirtualMachineSetResourcePolicySpec{
+					ResourcePool: vmoperatorv1alpha1.ResourcePoolSpec{
+						Name: "name-resourcepool",
+						Reservations: vmoperatorv1alpha1.VirtualMachineResourceSpec{
+							Cpu:    resource.MustParse("1000Mi"),
+							Memory: resource.MustParse("100Mi"),
 						},
+						Limits: vmoperatorv1alpha1.VirtualMachineResourceSpec{
+							Cpu:    resource.MustParse("2000Mi"),
+							Memory: resource.MustParse("200Mi"),
+						},
+					},
+					Folder: vmoperatorv1alpha1.FolderSpec{
+						Name: "name-folder",
 					},
 				},
 			}
 
-			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Name: name}}
+			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: ns}}
 			recFn, requests := SetupTestReconcile(newReconciler(mgr))
 			Expect(add(mgr, recFn)).To(Succeed())
-			// Create the VM Class object and expect the Reconcile
+			// Create the VirtualMachineSetResourcePolicy object and expect the Reconcile
 			err = c.Create(context.TODO(), &instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
-			// Delete the VM Class object and expect the Reconcile
+			// Delete the VirtualMachineSetResourcePolicy object and expect the Reconcile
 			err = c.Delete(context.TODO(), &instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))

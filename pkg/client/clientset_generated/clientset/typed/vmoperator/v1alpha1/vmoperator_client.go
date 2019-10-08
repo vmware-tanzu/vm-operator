@@ -19,6 +19,7 @@ type VmoperatorV1alpha1Interface interface {
 	VirtualMachineClassesGetter
 	VirtualMachineImagesGetter
 	VirtualMachineServicesGetter
+	VirtualMachineSetResourcePoliciesGetter
 }
 
 // VmoperatorV1alpha1Client is used to interact with features provided by the vmoperator.vmware.com group.
@@ -40,6 +41,10 @@ func (c *VmoperatorV1alpha1Client) VirtualMachineImages(namespace string) Virtua
 
 func (c *VmoperatorV1alpha1Client) VirtualMachineServices(namespace string) VirtualMachineServiceInterface {
 	return newVirtualMachineServices(c, namespace)
+}
+
+func (c *VmoperatorV1alpha1Client) VirtualMachineSetResourcePolicies(namespace string) VirtualMachineSetResourcePolicyInterface {
+	return newVirtualMachineSetResourcePolicies(c, namespace)
 }
 
 // NewForConfig creates a new VmoperatorV1alpha1Client for the given config.

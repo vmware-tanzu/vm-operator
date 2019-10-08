@@ -59,11 +59,11 @@ func getVMClassInstance(vmName, namespace string) *vmoperatorv1alpha1.VirtualMac
 			},
 			Policies: vmoperatorv1alpha1.VirtualMachineClassPolicies{
 				Resources: vmoperatorv1alpha1.VirtualMachineClassResources{
-					Requests: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
+					Requests: vmoperatorv1alpha1.VirtualMachineResourceSpec{
 						Cpu:    resource.MustParse("1000Mi"),
 						Memory: resource.MustParse("100Mi"),
 					},
-					Limits: vmoperatorv1alpha1.VirtualMachineClassResourceSpec{
+					Limits: vmoperatorv1alpha1.VirtualMachineResourceSpec{
 						Cpu:    resource.MustParse("2000Mi"),
 						Memory: resource.MustParse("200Mi"),
 					},

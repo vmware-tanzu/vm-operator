@@ -24,6 +24,16 @@ func init() {
 // RegisterConversions adds conversion functions to the given scheme.
 // Public to allow building arbitrary schemes.
 func RegisterConversions(s *runtime.Scheme) error {
+	if err := s.AddGeneratedConversionFunc((*FolderSpec)(nil), (*vmoperator.FolderSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_FolderSpec_To_vmoperator_FolderSpec(a.(*FolderSpec), b.(*vmoperator.FolderSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.FolderSpec)(nil), (*FolderSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_FolderSpec_To_v1alpha1_FolderSpec(a.(*vmoperator.FolderSpec), b.(*FolderSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*LoadBalancerIngress)(nil), (*vmoperator.LoadBalancerIngress)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha1_LoadBalancerIngress_To_vmoperator_LoadBalancerIngress(a.(*LoadBalancerIngress), b.(*vmoperator.LoadBalancerIngress), scope)
 	}); err != nil {
@@ -41,6 +51,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*vmoperator.LoadBalancerStatus)(nil), (*LoadBalancerStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_vmoperator_LoadBalancerStatus_To_v1alpha1_LoadBalancerStatus(a.(*vmoperator.LoadBalancerStatus), b.(*LoadBalancerStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*ResourcePoolSpec)(nil), (*vmoperator.ResourcePoolSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_ResourcePoolSpec_To_vmoperator_ResourcePoolSpec(a.(*ResourcePoolSpec), b.(*vmoperator.ResourcePoolSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.ResourcePoolSpec)(nil), (*ResourcePoolSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_ResourcePoolSpec_To_v1alpha1_ResourcePoolSpec(a.(*vmoperator.ResourcePoolSpec), b.(*ResourcePoolSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -91,16 +111,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineClassPolicies)(nil), (*VirtualMachineClassPolicies)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_vmoperator_VirtualMachineClassPolicies_To_v1alpha1_VirtualMachineClassPolicies(a.(*vmoperator.VirtualMachineClassPolicies), b.(*VirtualMachineClassPolicies), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*VirtualMachineClassResourceSpec)(nil), (*vmoperator.VirtualMachineClassResourceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1alpha1_VirtualMachineClassResourceSpec_To_vmoperator_VirtualMachineClassResourceSpec(a.(*VirtualMachineClassResourceSpec), b.(*vmoperator.VirtualMachineClassResourceSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineClassResourceSpec)(nil), (*VirtualMachineClassResourceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_vmoperator_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineClassResourceSpec(a.(*vmoperator.VirtualMachineClassResourceSpec), b.(*VirtualMachineClassResourceSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -224,6 +234,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineResourceSpec)(nil), (*vmoperator.VirtualMachineResourceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(a.(*VirtualMachineResourceSpec), b.(*vmoperator.VirtualMachineResourceSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineResourceSpec)(nil), (*VirtualMachineResourceSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(a.(*vmoperator.VirtualMachineResourceSpec), b.(*VirtualMachineResourceSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineService)(nil), (*vmoperator.VirtualMachineService)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha1_VirtualMachineService_To_vmoperator_VirtualMachineService(a.(*VirtualMachineService), b.(*vmoperator.VirtualMachineService), scope)
 	}); err != nil {
@@ -274,6 +294,46 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineSetResourcePolicy)(nil), (*vmoperator.VirtualMachineSetResourcePolicy)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_VirtualMachineSetResourcePolicy_To_vmoperator_VirtualMachineSetResourcePolicy(a.(*VirtualMachineSetResourcePolicy), b.(*vmoperator.VirtualMachineSetResourcePolicy), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineSetResourcePolicy)(nil), (*VirtualMachineSetResourcePolicy)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineSetResourcePolicy_To_v1alpha1_VirtualMachineSetResourcePolicy(a.(*vmoperator.VirtualMachineSetResourcePolicy), b.(*VirtualMachineSetResourcePolicy), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineSetResourcePolicyList)(nil), (*vmoperator.VirtualMachineSetResourcePolicyList)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_VirtualMachineSetResourcePolicyList_To_vmoperator_VirtualMachineSetResourcePolicyList(a.(*VirtualMachineSetResourcePolicyList), b.(*vmoperator.VirtualMachineSetResourcePolicyList), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineSetResourcePolicyList)(nil), (*VirtualMachineSetResourcePolicyList)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineSetResourcePolicyList_To_v1alpha1_VirtualMachineSetResourcePolicyList(a.(*vmoperator.VirtualMachineSetResourcePolicyList), b.(*VirtualMachineSetResourcePolicyList), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineSetResourcePolicySpec)(nil), (*vmoperator.VirtualMachineSetResourcePolicySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_VirtualMachineSetResourcePolicySpec_To_vmoperator_VirtualMachineSetResourcePolicySpec(a.(*VirtualMachineSetResourcePolicySpec), b.(*vmoperator.VirtualMachineSetResourcePolicySpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineSetResourcePolicySpec)(nil), (*VirtualMachineSetResourcePolicySpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineSetResourcePolicySpec_To_v1alpha1_VirtualMachineSetResourcePolicySpec(a.(*vmoperator.VirtualMachineSetResourcePolicySpec), b.(*VirtualMachineSetResourcePolicySpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*VirtualMachineSetResourcePolicyStatus)(nil), (*vmoperator.VirtualMachineSetResourcePolicyStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_VirtualMachineSetResourcePolicyStatus_To_vmoperator_VirtualMachineSetResourcePolicyStatus(a.(*VirtualMachineSetResourcePolicyStatus), b.(*vmoperator.VirtualMachineSetResourcePolicyStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*vmoperator.VirtualMachineSetResourcePolicyStatus)(nil), (*VirtualMachineSetResourcePolicyStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_vmoperator_VirtualMachineSetResourcePolicyStatus_To_v1alpha1_VirtualMachineSetResourcePolicyStatus(a.(*vmoperator.VirtualMachineSetResourcePolicyStatus), b.(*VirtualMachineSetResourcePolicyStatus), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*VirtualMachineSpec)(nil), (*vmoperator.VirtualMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(a.(*VirtualMachineSpec), b.(*vmoperator.VirtualMachineSpec), scope)
 	}); err != nil {
@@ -317,6 +377,26 @@ func RegisterConversions(s *runtime.Scheme) error {
 	return nil
 }
 
+func autoConvert_v1alpha1_FolderSpec_To_vmoperator_FolderSpec(in *FolderSpec, out *vmoperator.FolderSpec, s conversion.Scope) error {
+	out.Name = in.Name
+	return nil
+}
+
+// Convert_v1alpha1_FolderSpec_To_vmoperator_FolderSpec is an autogenerated conversion function.
+func Convert_v1alpha1_FolderSpec_To_vmoperator_FolderSpec(in *FolderSpec, out *vmoperator.FolderSpec, s conversion.Scope) error {
+	return autoConvert_v1alpha1_FolderSpec_To_vmoperator_FolderSpec(in, out, s)
+}
+
+func autoConvert_vmoperator_FolderSpec_To_v1alpha1_FolderSpec(in *vmoperator.FolderSpec, out *FolderSpec, s conversion.Scope) error {
+	out.Name = in.Name
+	return nil
+}
+
+// Convert_vmoperator_FolderSpec_To_v1alpha1_FolderSpec is an autogenerated conversion function.
+func Convert_vmoperator_FolderSpec_To_v1alpha1_FolderSpec(in *vmoperator.FolderSpec, out *FolderSpec, s conversion.Scope) error {
+	return autoConvert_vmoperator_FolderSpec_To_v1alpha1_FolderSpec(in, out, s)
+}
+
 func autoConvert_v1alpha1_LoadBalancerIngress_To_vmoperator_LoadBalancerIngress(in *LoadBalancerIngress, out *vmoperator.LoadBalancerIngress, s conversion.Scope) error {
 	out.IP = in.IP
 	out.Hostname = in.Hostname
@@ -357,6 +437,38 @@ func autoConvert_vmoperator_LoadBalancerStatus_To_v1alpha1_LoadBalancerStatus(in
 // Convert_vmoperator_LoadBalancerStatus_To_v1alpha1_LoadBalancerStatus is an autogenerated conversion function.
 func Convert_vmoperator_LoadBalancerStatus_To_v1alpha1_LoadBalancerStatus(in *vmoperator.LoadBalancerStatus, out *LoadBalancerStatus, s conversion.Scope) error {
 	return autoConvert_vmoperator_LoadBalancerStatus_To_v1alpha1_LoadBalancerStatus(in, out, s)
+}
+
+func autoConvert_v1alpha1_ResourcePoolSpec_To_vmoperator_ResourcePoolSpec(in *ResourcePoolSpec, out *vmoperator.ResourcePoolSpec, s conversion.Scope) error {
+	out.Name = in.Name
+	if err := Convert_v1alpha1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(&in.Reservations, &out.Reservations, s); err != nil {
+		return err
+	}
+	if err := Convert_v1alpha1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Convert_v1alpha1_ResourcePoolSpec_To_vmoperator_ResourcePoolSpec is an autogenerated conversion function.
+func Convert_v1alpha1_ResourcePoolSpec_To_vmoperator_ResourcePoolSpec(in *ResourcePoolSpec, out *vmoperator.ResourcePoolSpec, s conversion.Scope) error {
+	return autoConvert_v1alpha1_ResourcePoolSpec_To_vmoperator_ResourcePoolSpec(in, out, s)
+}
+
+func autoConvert_vmoperator_ResourcePoolSpec_To_v1alpha1_ResourcePoolSpec(in *vmoperator.ResourcePoolSpec, out *ResourcePoolSpec, s conversion.Scope) error {
+	out.Name = in.Name
+	if err := Convert_vmoperator_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(&in.Reservations, &out.Reservations, s); err != nil {
+		return err
+	}
+	if err := Convert_vmoperator_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Convert_vmoperator_ResourcePoolSpec_To_v1alpha1_ResourcePoolSpec is an autogenerated conversion function.
+func Convert_vmoperator_ResourcePoolSpec_To_v1alpha1_ResourcePoolSpec(in *vmoperator.ResourcePoolSpec, out *ResourcePoolSpec, s conversion.Scope) error {
+	return autoConvert_vmoperator_ResourcePoolSpec_To_v1alpha1_ResourcePoolSpec(in, out, s)
 }
 
 func autoConvert_v1alpha1_VirtualMachine_To_vmoperator_VirtualMachine(in *VirtualMachine, out *vmoperator.VirtualMachine, s conversion.Scope) error {
@@ -491,33 +603,11 @@ func Convert_vmoperator_VirtualMachineClassPolicies_To_v1alpha1_VirtualMachineCl
 	return autoConvert_vmoperator_VirtualMachineClassPolicies_To_v1alpha1_VirtualMachineClassPolicies(in, out, s)
 }
 
-func autoConvert_v1alpha1_VirtualMachineClassResourceSpec_To_vmoperator_VirtualMachineClassResourceSpec(in *VirtualMachineClassResourceSpec, out *vmoperator.VirtualMachineClassResourceSpec, s conversion.Scope) error {
-	out.Cpu = in.Cpu
-	out.Memory = in.Memory
-	return nil
-}
-
-// Convert_v1alpha1_VirtualMachineClassResourceSpec_To_vmoperator_VirtualMachineClassResourceSpec is an autogenerated conversion function.
-func Convert_v1alpha1_VirtualMachineClassResourceSpec_To_vmoperator_VirtualMachineClassResourceSpec(in *VirtualMachineClassResourceSpec, out *vmoperator.VirtualMachineClassResourceSpec, s conversion.Scope) error {
-	return autoConvert_v1alpha1_VirtualMachineClassResourceSpec_To_vmoperator_VirtualMachineClassResourceSpec(in, out, s)
-}
-
-func autoConvert_vmoperator_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineClassResourceSpec(in *vmoperator.VirtualMachineClassResourceSpec, out *VirtualMachineClassResourceSpec, s conversion.Scope) error {
-	out.Cpu = in.Cpu
-	out.Memory = in.Memory
-	return nil
-}
-
-// Convert_vmoperator_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineClassResourceSpec is an autogenerated conversion function.
-func Convert_vmoperator_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineClassResourceSpec(in *vmoperator.VirtualMachineClassResourceSpec, out *VirtualMachineClassResourceSpec, s conversion.Scope) error {
-	return autoConvert_vmoperator_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineClassResourceSpec(in, out, s)
-}
-
 func autoConvert_v1alpha1_VirtualMachineClassResources_To_vmoperator_VirtualMachineClassResources(in *VirtualMachineClassResources, out *vmoperator.VirtualMachineClassResources, s conversion.Scope) error {
-	if err := Convert_v1alpha1_VirtualMachineClassResourceSpec_To_vmoperator_VirtualMachineClassResourceSpec(&in.Requests, &out.Requests, s); err != nil {
+	if err := Convert_v1alpha1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(&in.Requests, &out.Requests, s); err != nil {
 		return err
 	}
-	if err := Convert_v1alpha1_VirtualMachineClassResourceSpec_To_vmoperator_VirtualMachineClassResourceSpec(&in.Limits, &out.Limits, s); err != nil {
+	if err := Convert_v1alpha1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
 		return err
 	}
 	return nil
@@ -529,10 +619,10 @@ func Convert_v1alpha1_VirtualMachineClassResources_To_vmoperator_VirtualMachineC
 }
 
 func autoConvert_vmoperator_VirtualMachineClassResources_To_v1alpha1_VirtualMachineClassResources(in *vmoperator.VirtualMachineClassResources, out *VirtualMachineClassResources, s conversion.Scope) error {
-	if err := Convert_vmoperator_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineClassResourceSpec(&in.Requests, &out.Requests, s); err != nil {
+	if err := Convert_vmoperator_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(&in.Requests, &out.Requests, s); err != nil {
 		return err
 	}
-	if err := Convert_vmoperator_VirtualMachineClassResourceSpec_To_v1alpha1_VirtualMachineClassResourceSpec(&in.Limits, &out.Limits, s); err != nil {
+	if err := Convert_vmoperator_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(&in.Limits, &out.Limits, s); err != nil {
 		return err
 	}
 	return nil
@@ -819,6 +909,28 @@ func Convert_vmoperator_VirtualMachinePort_To_v1alpha1_VirtualMachinePort(in *vm
 	return autoConvert_vmoperator_VirtualMachinePort_To_v1alpha1_VirtualMachinePort(in, out, s)
 }
 
+func autoConvert_v1alpha1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(in *VirtualMachineResourceSpec, out *vmoperator.VirtualMachineResourceSpec, s conversion.Scope) error {
+	out.Cpu = in.Cpu
+	out.Memory = in.Memory
+	return nil
+}
+
+// Convert_v1alpha1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec is an autogenerated conversion function.
+func Convert_v1alpha1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(in *VirtualMachineResourceSpec, out *vmoperator.VirtualMachineResourceSpec, s conversion.Scope) error {
+	return autoConvert_v1alpha1_VirtualMachineResourceSpec_To_vmoperator_VirtualMachineResourceSpec(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(in *vmoperator.VirtualMachineResourceSpec, out *VirtualMachineResourceSpec, s conversion.Scope) error {
+	out.Cpu = in.Cpu
+	out.Memory = in.Memory
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(in *vmoperator.VirtualMachineResourceSpec, out *VirtualMachineResourceSpec, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineResourceSpec_To_v1alpha1_VirtualMachineResourceSpec(in, out, s)
+}
+
 func autoConvert_v1alpha1_VirtualMachineService_To_vmoperator_VirtualMachineService(in *VirtualMachineService, out *vmoperator.VirtualMachineService, s conversion.Scope) error {
 	out.ObjectMeta = in.ObjectMeta
 	if err := Convert_v1alpha1_VirtualMachineServiceSpec_To_vmoperator_VirtualMachineServiceSpec(&in.Spec, &out.Spec, s); err != nil {
@@ -951,6 +1063,108 @@ func Convert_vmoperator_VirtualMachineServiceStatus_To_v1alpha1_VirtualMachineSe
 	return autoConvert_vmoperator_VirtualMachineServiceStatus_To_v1alpha1_VirtualMachineServiceStatus(in, out, s)
 }
 
+func autoConvert_v1alpha1_VirtualMachineSetResourcePolicy_To_vmoperator_VirtualMachineSetResourcePolicy(in *VirtualMachineSetResourcePolicy, out *vmoperator.VirtualMachineSetResourcePolicy, s conversion.Scope) error {
+	out.ObjectMeta = in.ObjectMeta
+	if err := Convert_v1alpha1_VirtualMachineSetResourcePolicySpec_To_vmoperator_VirtualMachineSetResourcePolicySpec(&in.Spec, &out.Spec, s); err != nil {
+		return err
+	}
+	if err := Convert_v1alpha1_VirtualMachineSetResourcePolicyStatus_To_vmoperator_VirtualMachineSetResourcePolicyStatus(&in.Status, &out.Status, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Convert_v1alpha1_VirtualMachineSetResourcePolicy_To_vmoperator_VirtualMachineSetResourcePolicy is an autogenerated conversion function.
+func Convert_v1alpha1_VirtualMachineSetResourcePolicy_To_vmoperator_VirtualMachineSetResourcePolicy(in *VirtualMachineSetResourcePolicy, out *vmoperator.VirtualMachineSetResourcePolicy, s conversion.Scope) error {
+	return autoConvert_v1alpha1_VirtualMachineSetResourcePolicy_To_vmoperator_VirtualMachineSetResourcePolicy(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachineSetResourcePolicy_To_v1alpha1_VirtualMachineSetResourcePolicy(in *vmoperator.VirtualMachineSetResourcePolicy, out *VirtualMachineSetResourcePolicy, s conversion.Scope) error {
+	out.ObjectMeta = in.ObjectMeta
+	if err := Convert_vmoperator_VirtualMachineSetResourcePolicySpec_To_v1alpha1_VirtualMachineSetResourcePolicySpec(&in.Spec, &out.Spec, s); err != nil {
+		return err
+	}
+	if err := Convert_vmoperator_VirtualMachineSetResourcePolicyStatus_To_v1alpha1_VirtualMachineSetResourcePolicyStatus(&in.Status, &out.Status, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachineSetResourcePolicy_To_v1alpha1_VirtualMachineSetResourcePolicy is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineSetResourcePolicy_To_v1alpha1_VirtualMachineSetResourcePolicy(in *vmoperator.VirtualMachineSetResourcePolicy, out *VirtualMachineSetResourcePolicy, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineSetResourcePolicy_To_v1alpha1_VirtualMachineSetResourcePolicy(in, out, s)
+}
+
+func autoConvert_v1alpha1_VirtualMachineSetResourcePolicyList_To_vmoperator_VirtualMachineSetResourcePolicyList(in *VirtualMachineSetResourcePolicyList, out *vmoperator.VirtualMachineSetResourcePolicyList, s conversion.Scope) error {
+	out.ListMeta = in.ListMeta
+	out.Items = *(*[]vmoperator.VirtualMachineSetResourcePolicy)(unsafe.Pointer(&in.Items))
+	return nil
+}
+
+// Convert_v1alpha1_VirtualMachineSetResourcePolicyList_To_vmoperator_VirtualMachineSetResourcePolicyList is an autogenerated conversion function.
+func Convert_v1alpha1_VirtualMachineSetResourcePolicyList_To_vmoperator_VirtualMachineSetResourcePolicyList(in *VirtualMachineSetResourcePolicyList, out *vmoperator.VirtualMachineSetResourcePolicyList, s conversion.Scope) error {
+	return autoConvert_v1alpha1_VirtualMachineSetResourcePolicyList_To_vmoperator_VirtualMachineSetResourcePolicyList(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachineSetResourcePolicyList_To_v1alpha1_VirtualMachineSetResourcePolicyList(in *vmoperator.VirtualMachineSetResourcePolicyList, out *VirtualMachineSetResourcePolicyList, s conversion.Scope) error {
+	out.ListMeta = in.ListMeta
+	out.Items = *(*[]VirtualMachineSetResourcePolicy)(unsafe.Pointer(&in.Items))
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachineSetResourcePolicyList_To_v1alpha1_VirtualMachineSetResourcePolicyList is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineSetResourcePolicyList_To_v1alpha1_VirtualMachineSetResourcePolicyList(in *vmoperator.VirtualMachineSetResourcePolicyList, out *VirtualMachineSetResourcePolicyList, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineSetResourcePolicyList_To_v1alpha1_VirtualMachineSetResourcePolicyList(in, out, s)
+}
+
+func autoConvert_v1alpha1_VirtualMachineSetResourcePolicySpec_To_vmoperator_VirtualMachineSetResourcePolicySpec(in *VirtualMachineSetResourcePolicySpec, out *vmoperator.VirtualMachineSetResourcePolicySpec, s conversion.Scope) error {
+	if err := Convert_v1alpha1_ResourcePoolSpec_To_vmoperator_ResourcePoolSpec(&in.ResourcePool, &out.ResourcePool, s); err != nil {
+		return err
+	}
+	if err := Convert_v1alpha1_FolderSpec_To_vmoperator_FolderSpec(&in.Folder, &out.Folder, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Convert_v1alpha1_VirtualMachineSetResourcePolicySpec_To_vmoperator_VirtualMachineSetResourcePolicySpec is an autogenerated conversion function.
+func Convert_v1alpha1_VirtualMachineSetResourcePolicySpec_To_vmoperator_VirtualMachineSetResourcePolicySpec(in *VirtualMachineSetResourcePolicySpec, out *vmoperator.VirtualMachineSetResourcePolicySpec, s conversion.Scope) error {
+	return autoConvert_v1alpha1_VirtualMachineSetResourcePolicySpec_To_vmoperator_VirtualMachineSetResourcePolicySpec(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachineSetResourcePolicySpec_To_v1alpha1_VirtualMachineSetResourcePolicySpec(in *vmoperator.VirtualMachineSetResourcePolicySpec, out *VirtualMachineSetResourcePolicySpec, s conversion.Scope) error {
+	if err := Convert_vmoperator_ResourcePoolSpec_To_v1alpha1_ResourcePoolSpec(&in.ResourcePool, &out.ResourcePool, s); err != nil {
+		return err
+	}
+	if err := Convert_vmoperator_FolderSpec_To_v1alpha1_FolderSpec(&in.Folder, &out.Folder, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachineSetResourcePolicySpec_To_v1alpha1_VirtualMachineSetResourcePolicySpec is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineSetResourcePolicySpec_To_v1alpha1_VirtualMachineSetResourcePolicySpec(in *vmoperator.VirtualMachineSetResourcePolicySpec, out *VirtualMachineSetResourcePolicySpec, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineSetResourcePolicySpec_To_v1alpha1_VirtualMachineSetResourcePolicySpec(in, out, s)
+}
+
+func autoConvert_v1alpha1_VirtualMachineSetResourcePolicyStatus_To_vmoperator_VirtualMachineSetResourcePolicyStatus(in *VirtualMachineSetResourcePolicyStatus, out *vmoperator.VirtualMachineSetResourcePolicyStatus, s conversion.Scope) error {
+	return nil
+}
+
+// Convert_v1alpha1_VirtualMachineSetResourcePolicyStatus_To_vmoperator_VirtualMachineSetResourcePolicyStatus is an autogenerated conversion function.
+func Convert_v1alpha1_VirtualMachineSetResourcePolicyStatus_To_vmoperator_VirtualMachineSetResourcePolicyStatus(in *VirtualMachineSetResourcePolicyStatus, out *vmoperator.VirtualMachineSetResourcePolicyStatus, s conversion.Scope) error {
+	return autoConvert_v1alpha1_VirtualMachineSetResourcePolicyStatus_To_vmoperator_VirtualMachineSetResourcePolicyStatus(in, out, s)
+}
+
+func autoConvert_vmoperator_VirtualMachineSetResourcePolicyStatus_To_v1alpha1_VirtualMachineSetResourcePolicyStatus(in *vmoperator.VirtualMachineSetResourcePolicyStatus, out *VirtualMachineSetResourcePolicyStatus, s conversion.Scope) error {
+	return nil
+}
+
+// Convert_vmoperator_VirtualMachineSetResourcePolicyStatus_To_v1alpha1_VirtualMachineSetResourcePolicyStatus is an autogenerated conversion function.
+func Convert_vmoperator_VirtualMachineSetResourcePolicyStatus_To_v1alpha1_VirtualMachineSetResourcePolicyStatus(in *vmoperator.VirtualMachineSetResourcePolicyStatus, out *VirtualMachineSetResourcePolicyStatus, s conversion.Scope) error {
+	return autoConvert_vmoperator_VirtualMachineSetResourcePolicyStatus_To_v1alpha1_VirtualMachineSetResourcePolicyStatus(in, out, s)
+}
+
 func autoConvert_v1alpha1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(in *VirtualMachineSpec, out *vmoperator.VirtualMachineSpec, s conversion.Scope) error {
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
@@ -958,8 +1172,9 @@ func autoConvert_v1alpha1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(in
 	out.Env = in.Env
 	out.Ports = *(*[]vmoperator.VirtualMachinePort)(unsafe.Pointer(&in.Ports))
 	out.VmMetadata = (*vmoperator.VirtualMachineMetadata)(unsafe.Pointer(in.VmMetadata))
-	out.NetworkInterfaces = *(*[]vmoperator.VirtualMachineNetworkInterface)(unsafe.Pointer(&in.NetworkInterfaces))
 	out.StorageClass = in.StorageClass
+	out.NetworkInterfaces = *(*[]vmoperator.VirtualMachineNetworkInterface)(unsafe.Pointer(&in.NetworkInterfaces))
+	out.ResourcePolicyName = in.ResourcePolicyName
 	out.Volumes = *(*[]vmoperator.VirtualMachineVolumes)(unsafe.Pointer(&in.Volumes))
 	return nil
 }
@@ -976,8 +1191,9 @@ func autoConvert_vmoperator_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in
 	out.Env = in.Env
 	out.Ports = *(*[]VirtualMachinePort)(unsafe.Pointer(&in.Ports))
 	out.VmMetadata = (*VirtualMachineMetadata)(unsafe.Pointer(in.VmMetadata))
-	out.NetworkInterfaces = *(*[]VirtualMachineNetworkInterface)(unsafe.Pointer(&in.NetworkInterfaces))
 	out.StorageClass = in.StorageClass
+	out.NetworkInterfaces = *(*[]VirtualMachineNetworkInterface)(unsafe.Pointer(&in.NetworkInterfaces))
+	out.ResourcePolicyName = in.ResourcePolicyName
 	out.Volumes = *(*[]VirtualMachineVolumes)(unsafe.Pointer(&in.Volumes))
 	return nil
 }
@@ -991,6 +1207,7 @@ func autoConvert_v1alpha1_VirtualMachineStatus_To_vmoperator_VirtualMachineStatu
 	out.Conditions = *(*[]vmoperator.VirtualMachineCondition)(unsafe.Pointer(&in.Conditions))
 	out.Host = in.Host
 	out.PowerState = in.PowerState
+	out.ResourcePolicyName = in.ResourcePolicyName
 	out.Phase = vmoperator.VMStatusPhase(in.Phase)
 	out.VmIp = in.VmIp
 	out.BiosUuid = in.BiosUuid
@@ -1007,6 +1224,7 @@ func autoConvert_vmoperator_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatu
 	out.Conditions = *(*[]VirtualMachineCondition)(unsafe.Pointer(&in.Conditions))
 	out.Host = in.Host
 	out.PowerState = in.PowerState
+	out.ResourcePolicyName = in.ResourcePolicyName
 	out.Phase = VMStatusPhase(in.Phase)
 	out.VmIp = in.VmIp
 	out.BiosUuid = in.BiosUuid

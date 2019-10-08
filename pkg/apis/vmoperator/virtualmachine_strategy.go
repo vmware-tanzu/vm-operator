@@ -56,7 +56,7 @@ func validateVolumes(vm *VirtualMachine) field.ErrorList {
 		if volume.PersistentVolumeClaim == nil || volume.PersistentVolumeClaim.ClaimName == "" {
 			errors = append(errors, field.Required(volumesPath.Index(i).Child("persistentVolumeClaim", "claimName"), ""))
 		}
-		if volumeNames[volume.Name] == true {
+		if volumeNames[volume.Name] {
 			errors = append(errors, field.Duplicate(volumesPath.Index(i).Child("name"), volume.Name))
 		}
 		volumeNames[volume.Name] = true

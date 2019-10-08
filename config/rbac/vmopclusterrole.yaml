@@ -68,6 +68,8 @@ rules:
   - virtualmachineservices/status
   - virtualmachineclasses
   - virtualmachineclasses/status
+  - virtualmachinesetresourcepolicies
+  - virtualmachinesetresourcepolicies/status
   verbs:
   - get
   - list

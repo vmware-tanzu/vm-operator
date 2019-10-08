@@ -23,42 +23,60 @@ func (VirtualMachineClassStatusStrategy) NamespaceScoped() bool {
 	return false
 }
 
-func validateMemory(vmClass VirtualMachineClass) field.ErrorList {
-	resources := vmClass.Spec.Policies.Resources
-	errors := field.ErrorList{}
-	reqExists := !resources.Requests.Memory.IsZero()
-	limitExists := !resources.Limits.Memory.IsZero()
+// isMemoryRequestValid validates memory reservation against specified limit
+func isMemoryRequestValid(request, limit VirtualMachineResourceSpec) bool {
+	reqExists := !request.Memory.IsZero()
+	limitExists := !limit.Memory.IsZero()
 
-	if reqExists && limitExists {
-		if resources.Requests.Memory.Value() > resources.Limits.Memory.Value() {
-			errors = append(errors,
-				field.Invalid(
-					field.NewPath("spec", "requests"),
-					resources.Requests.Memory.Value(), "Memory Limits must not be smaller than Memory Requests"))
-		}
-
-		//TODO: Validate req and limit against hardware configuration of the class
+	if reqExists && limitExists && request.Memory.Value() > limit.Memory.Value() {
+		return false
 	}
+
+	return true
+}
+
+// isCPURequestValid validates CPU reservation against specified limit
+func isCPURequestValid(request, limit VirtualMachineResourceSpec) bool {
+	reqExists := !request.Cpu.IsZero()
+	limitExists := !limit.Cpu.IsZero()
+
+	if reqExists && limitExists && request.Cpu.Value() > limit.Cpu.Value() {
+		return false
+	}
+
+	return true
+}
+
+// validateMemory validates the memory reservation specified
+func validateMemory(vmclass VirtualMachineClass) field.ErrorList {
+	errors := field.ErrorList{}
+
+	// check the reservation against limits
+	if !isMemoryRequestValid(vmclass.Spec.Policies.Resources.Requests, vmclass.Spec.Policies.Resources.Limits) {
+		errors = append(errors,
+			field.Invalid(
+				field.NewPath("spec", "policies", "resources", "requests", "memory"),
+				vmclass.Spec.Policies.Resources.Requests.Memory.Value(), "Memory request should not be larger than Memory limit"))
+	}
+
+	//TODO: Validate req and limit against hardware configuration of the class
 
 	return errors
 }
 
-func validateCPU(vmClass VirtualMachineClass) field.ErrorList {
-	resources := vmClass.Spec.Policies.Resources
+// validateCPU validates the CPU reservation specified
+func validateCPU(vmclass VirtualMachineClass) field.ErrorList {
 	errors := field.ErrorList{}
-	reqExists := !resources.Requests.Cpu.IsZero()
-	limitExists := !resources.Limits.Cpu.IsZero()
 
-	if reqExists && limitExists {
-		if resources.Requests.Cpu.Value() > resources.Limits.Cpu.Value() {
-			errors = append(errors,
-				field.Invalid(
-					field.NewPath("spec", "requests"),
-					resources.Requests.Cpu.Value(), "CPU Limits must not be smaller than CPU Requests"))
-		}
-
-		//TODO: Validate req and limit against hardware configuration of the class
+	// check the reservation against limits
+	if !isCPURequestValid(vmclass.Spec.Policies.Resources.Requests, vmclass.Spec.Policies.Resources.Limits) {
+		errors = append(errors,
+			field.Invalid(
+				field.NewPath("spec", "policies", "resources", "requests", "cpu"),
+				vmclass.Spec.Policies.Resources.Requests.Cpu.Value(), "CPU request should not be larger than Memory limit"))
 	}
+
+	//TODO: Validate req and limit against hardware configuration of the class
 
 	return errors
 }

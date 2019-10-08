@@ -64,8 +64,10 @@ type VirtualMachineSpec struct {
 	Env               corev1.EnvVar                    `json:"env,omitempty"`
 	Ports             []VirtualMachinePort             `json:"ports,omitempty"`
 	VmMetadata        *VirtualMachineMetadata          `json:"vmMetadata,omitempty"`
-	NetworkInterfaces []VirtualMachineNetworkInterface `json:"networkInterfaces,omitempty"`
 	StorageClass      string                           `json:"storageClass,omitempty"`
+	NetworkInterfaces []VirtualMachineNetworkInterface `json:"networkInterfaces,omitempty"`
+	// +optional
+	ResourcePolicyName string `json:"resourcePolicyName"`
 	// +optional
 	// +patchMergeKey=name
 	// +patchStrategy=merge
@@ -107,13 +109,14 @@ type VirtualMachineVolumes struct {
 }
 
 type VirtualMachineStatus struct {
-	Conditions []VirtualMachineCondition    `json:"conditions"`
-	Host       string                       `json:"host"`
-	PowerState string                       `json:"powerState"`
-	Phase      VMStatusPhase                `json:"phase"`
-	VmIp       string                       `json:"vmIp"`
-	BiosUuid   string                       `json:"biosUUID"`
-	Volumes    []VirtualMachineVolumeStatus `json:"volumes"`
+	Conditions         []VirtualMachineCondition    `json:"conditions"`
+	Host               string                       `json:"host"`
+	PowerState         string                       `json:"powerState"`
+	ResourcePolicyName string                       `json:"resourcePolicy"`
+	Phase              VMStatusPhase                `json:"phase"`
+	VmIp               string                       `json:"vmIp"`
+	BiosUuid           string                       `json:"biosUUID"`
+	Volumes            []VirtualMachineVolumeStatus `json:"volumes"`
 }
 
 type VirtualMachineVolumeStatus struct {

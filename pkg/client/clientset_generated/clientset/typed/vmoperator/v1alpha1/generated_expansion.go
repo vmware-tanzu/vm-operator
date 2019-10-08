@@ -13,3 +13,5 @@ type VirtualMachineClassExpansion interface{}
 type VirtualMachineImageExpansion interface{}
 
 type VirtualMachineServiceExpansion interface{}
+
+type VirtualMachineSetResourcePolicyExpansion interface{}

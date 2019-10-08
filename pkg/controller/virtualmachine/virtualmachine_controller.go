@@ -262,6 +262,20 @@ func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1
 		return err
 	}
 
+	// if a resourcePolicy is specified, verify that it exists
+	if vm.Spec.ResourcePolicyName != "" {
+		resourcePolicy := &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{}
+		err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ResourcePolicyName, Namespace: vm.Namespace}, resourcePolicy)
+
+		if err != nil {
+			log.Error(err, "Failed to get ResourcePolicy for VirtualMachine",
+				"vmName", vm.NamespacedName(), "class", vm.Spec.ResourcePolicyName)
+			return err
+		}
+		// Set the resource policy name manually for now. This should be passed like VM classes ideally.
+		vm.Status.ResourcePolicyName = resourcePolicy.Name
+	}
+
 	var vmMetadata vmprovider.VirtualMachineMetadata
 	if metadata := vm.Spec.VmMetadata; metadata != nil {
 		configMap := &v1.ConfigMap{}

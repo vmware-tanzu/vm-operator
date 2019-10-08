@@ -29,14 +29,14 @@ type VirtualMachineClassHardware struct {
 	Memory resource.Quantity `json:"memory,omitempty"`
 }
 
-type VirtualMachineClassResourceSpec struct {
+type VirtualMachineResourceSpec struct {
 	Cpu    resource.Quantity `json:"cpu,omitempty"`
 	Memory resource.Quantity `json:"memory,omitempty"`
 }
 
 type VirtualMachineClassResources struct {
-	Requests VirtualMachineClassResourceSpec `json:"requests,omitempty"`
-	Limits   VirtualMachineClassResourceSpec `json:"limits,omitempty"`
+	Requests VirtualMachineResourceSpec `json:"requests,omitempty"`
+	Limits   VirtualMachineResourceSpec `json:"limits,omitempty"`
 }
 
 type VirtualMachineClassPolicies struct {

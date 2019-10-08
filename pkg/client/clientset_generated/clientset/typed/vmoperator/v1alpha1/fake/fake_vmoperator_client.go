@@ -32,6 +32,10 @@ func (c *FakeVmoperatorV1alpha1) VirtualMachineServices(namespace string) v1alph
 	return &FakeVirtualMachineServices{c, namespace}
 }
 
+func (c *FakeVmoperatorV1alpha1) VirtualMachineSetResourcePolicies(namespace string) v1alpha1.VirtualMachineSetResourcePolicyInterface {
+	return &FakeVirtualMachineSetResourcePolicies{c, namespace}
+}
+
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
 func (c *FakeVmoperatorV1alpha1) RESTClient() rest.Interface {

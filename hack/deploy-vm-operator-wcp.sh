@@ -68,7 +68,9 @@ deploy() {
         --component vmop \
         --binary bin/linux/apiserver,bin/linux/manager \
         --k8s-master-ip $WCP_SA_IP \
-        --k8s-master-password $WCP_SA_PASSWORD
+        --k8s-master-password $WCP_SA_PASSWORD \
+        --yamlToApply artifacts/default-vmclasses.yaml,artifacts/wcp-deployment.yaml \
+        --yamlDestination /usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop
 }
 
 undeploy() {

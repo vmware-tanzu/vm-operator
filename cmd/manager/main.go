@@ -13,6 +13,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/errors"
 
+	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"k8s.io/client-go/kubernetes"
@@ -99,6 +100,9 @@ func main() {
 
 	logf.SetLogger(klogr.New())
 	log := logf.Log.WithName("entrypoint")
+
+	log.Info("Starting vm-operator controller manager", "version", pkg.BuildVersion,
+		"buildnumber", pkg.BuildNumber, "buildtype", pkg.BuildType)
 
 	log.Info("Setting up health HTTP server")
 	srv, err := createHealthHTTPServer(healthAddr)

@@ -13,6 +13,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 
 	_ "github.com/go-openapi/loads"
+	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/rest"
 	"github.com/vmware-tanzu/vm-operator/pkg/openapi"
@@ -30,8 +31,8 @@ import (
 )
 
 var (
-	version = "v0"
-	log     = klogr.New()
+	apiVersion = "v0"
+	log        = klogr.New()
 )
 
 func registerVsphereVmProvider() error {
@@ -59,6 +60,9 @@ func registerVsphereVmProvider() error {
 }
 
 func main() {
+	log.Info("Starting vm-operator apiserver", "version", pkg.BuildVersion,
+		"buildnumber", pkg.BuildNumber, "buildtype", pkg.BuildType)
+
 	// Assume this will always be our provider.
 	if err := registerVsphereVmProvider(); err != nil {
 		log.Error(err, "Failed to register vSphere VM provider")
@@ -72,5 +76,5 @@ func main() {
 		os.Exit(255)
 	}
 
-	server.StartApiServer("/registry/vmware.com", apis.GetAllApiBuilders(), openapi.GetOpenAPIDefinitions, "Api", version)
+	server.StartApiServer("/registry/vmware.com", apis.GetAllApiBuilders(), openapi.GetOpenAPIDefinitions, "Api", apiVersion)
 }

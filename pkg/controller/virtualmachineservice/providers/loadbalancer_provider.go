@@ -89,8 +89,7 @@ func (nl *nsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmSe
 
 //Loadbalancer name formatting
 func (nl *nsxtLoadbalancerProvider) getLoadbalancerName(namespace, clusterName string) string {
-	//TODO:  () In early ncp version, they will think load balancer suffix should be numerical, remove it in future with ncp latest version
-	return fmt.Sprintf("%s-%s-lb-1", namespace, clusterName)
+	return fmt.Sprintf("%s-%s-lb", namespace, clusterName)
 }
 
 //Create NSX-T Loadbalancer configuration

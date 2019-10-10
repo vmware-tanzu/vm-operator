@@ -181,7 +181,7 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace 
 	for _, item := range items {
 		if IsSupportedDeployType(item.Type) {
 			var vmOpts OvfPropertyRetriever = vmOptions{}
-			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, namespace, DoNotAnnotateVmImage, vmOpts)
+			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, namespace, AnnotateVmImage, vmOpts)
 			if err != nil {
 				return nil, err
 			}

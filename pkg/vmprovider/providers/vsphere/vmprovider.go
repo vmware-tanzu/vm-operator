@@ -46,6 +46,7 @@ type VSphereVmProvider struct {
 
 type OvfPropertyRetriever interface {
 	FetchOvfPropertiesFromLibrary(ctx context.Context, sess *Session, item *library.Item) (map[string]string, error)
+	FetchOvfPropertiesFromVM(ctx context.Context, resVm *res.VirtualMachine) (map[string]string, error)
 }
 
 type vmOptions struct{}
@@ -119,9 +120,15 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 		return nil, transformVmImageError("", err)
 	}
 
+	var vmOpts OvfPropertyRetriever = vmOptions{}
 	var images []*v1alpha1.VirtualMachineImage
 	for _, resVm := range resVms {
-		images = append(images, resVmToVirtualMachineImage(ctx, namespace, resVm))
+		image, err := ResVmToVirtualMachineImage(ctx, namespace, resVm, AnnotateVmImage, vmOpts)
+		if err != nil {
+			return nil, err
+		}
+
+		images = append(images, image)
 	}
 
 	return images, nil
@@ -155,7 +162,8 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespa
 		return nil, transformVmImageError(vmName, err)
 	}
 
-	return resVmToVirtualMachineImage(ctx, namespace, resVm), nil
+	var vmOpts OvfPropertyRetriever = vmOptions{}
+	return ResVmToVirtualMachineImage(ctx, namespace, resVm, AnnotateVmImage, vmOpts)
 }
 
 func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachine, error) {
@@ -342,13 +350,24 @@ func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.Vir
 	return nil
 }
 
-func resVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *res.VirtualMachine) *v1alpha1.VirtualMachineImage {
+func ResVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *res.VirtualMachine, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
 	powerState, uuid, reference := resVm.ImageFields(ctx)
+
+	var ovfProperties map[string]string
+
+	if imgOptions == AnnotateVmImage {
+		var err error
+		ovfProperties, err = vmProvider.FetchOvfPropertiesFromVM(ctx, resVm)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{
-			Name:      resVm.Name,
-			Namespace: namespace,
+			Name:        resVm.Name,
+			Namespace:   namespace,
+			Annotations: ovfProperties,
 		},
 		Status: v1alpha1.VirtualMachineImageStatus{
 			Uuid:       uuid,
@@ -359,12 +378,12 @@ func resVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *re
 			Type:            "VM",
 			ImageSourceType: "Inventory",
 		},
-	}
+	}, nil
 }
 
 func LibItemToVirtualMachineImage(ctx context.Context, sess *Session, item *library.Item, namespace string, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
 
-	var ovfProperties = map[string]string{}
+	var ovfProperties map[string]string
 
 	if imgOptions == AnnotateVmImage {
 		var err error
@@ -405,6 +424,10 @@ func (vm vmOptions) FetchOvfPropertiesFromLibrary(ctx context.Context, sess *Ses
 	}
 
 	return ovfProperties, nil
+}
+
+func (vm vmOptions) FetchOvfPropertiesFromVM(ctx context.Context, resVm *res.VirtualMachine) (map[string]string, error) {
+	return resVm.GetOvfProperties(ctx)
 }
 
 func createClDownloadHandler() *ContentDownloadHandler {

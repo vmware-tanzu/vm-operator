@@ -7,6 +7,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"k8s.io/klog/klogr"
 
@@ -228,6 +229,28 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 		VmIp:       ip,
 		BiosUuid:   vm.vcVirtualMachine.UUID(ctx),
 	}, nil
+}
+
+func (vm *VirtualMachine) GetOvfProperties(ctx context.Context) (map[string]string, error) {
+	moVM, err := vm.ManagedObject(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	properties := make(map[string]string)
+
+	props := moVM.Config.VAppConfig.GetVmConfigInfo().Property
+	for _, prop := range props {
+		if strings.HasPrefix(prop.Id, "vmware-system") {
+			if prop.Value != "" {
+				properties[prop.Id] = prop.Value
+			} else {
+				properties[prop.Id] = prop.DefaultValue
+			}
+		}
+	}
+
+	return properties, nil
 }
 
 func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState string) error {

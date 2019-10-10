@@ -11,6 +11,7 @@ import (
 	gomock "github.com/golang/mock/gomock"
 	library "github.com/vmware/govmomi/vapi/library"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	resources "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
 // MockOvfPropertyRetriever is a mock of OvfPropertyRetriever interface
@@ -49,4 +50,19 @@ func (m *MockOvfPropertyRetriever) FetchOvfPropertiesFromLibrary(ctx context.Con
 func (mr *MockOvfPropertyRetrieverMockRecorder) FetchOvfPropertiesFromLibrary(ctx, sess, item interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchOvfPropertiesFromLibrary", reflect.TypeOf((*MockOvfPropertyRetriever)(nil).FetchOvfPropertiesFromLibrary), ctx, sess, item)
+}
+
+// FetchOvfPropertiesFromVM mocks base method
+func (m *MockOvfPropertyRetriever) FetchOvfPropertiesFromVM(ctx context.Context, resVm *resources.VirtualMachine) (map[string]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FetchOvfPropertiesFromVM", ctx, resVm)
+	ret0, _ := ret[0].(map[string]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FetchOvfPropertiesFromVM indicates an expected call of FetchOvfPropertiesFromVM
+func (mr *MockOvfPropertyRetrieverMockRecorder) FetchOvfPropertiesFromVM(ctx, resVm interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchOvfPropertiesFromVM", reflect.TypeOf((*MockOvfPropertyRetriever)(nil).FetchOvfPropertiesFromVM), ctx, resVm)
 }

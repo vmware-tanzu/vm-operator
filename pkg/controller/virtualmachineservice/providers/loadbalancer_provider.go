@@ -24,7 +24,7 @@ import (
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
 
-type LoadBalancerProviderType string
+type loadBalancerProviderType string
 
 const (
 	LoadbalancerKind                                   = "LoadBalancer"
@@ -32,7 +32,7 @@ const (
 	ServiceLoadBalancerTagKey                          = "ncp/crd_lb"
 	ServiceOwnerRefKind                                = "VirtualMachineService"
 	ServiceOwnerRefVersion                             = "vmoperator.vmware.com"
-	NSXTLoadBalancer          LoadBalancerProviderType = "nsx-t-lb"
+	NSXTLoadBalancer          loadBalancerProviderType = "nsx-t-lb"
 )
 
 var log = klogr.New()
@@ -53,8 +53,8 @@ type LoadbalancerProvider interface {
 	UpdateLoadBalancerOwnerReference(ctx context.Context, loadBalancerName string, vmService *vmoperatorv1alpha1.VirtualMachineService) error
 }
 
-//Loadbalancer Provider Currently only support nsxt provider
-func GetLoadbalancerProviderByType(providerType LoadBalancerProviderType) LoadbalancerProvider {
+// Get Loadbalancer Provider By Type, currently only support nsxt provider, if provider type unknown, will return nil
+func GetLoadbalancerProviderByType(providerType loadBalancerProviderType) LoadbalancerProvider {
 	if providerType == NSXTLoadBalancer {
 		//TODO:  () Using static ncp client for now, replace it with runtime ncp client
 		cfg, err := config.GetConfig()
@@ -128,8 +128,9 @@ func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, 
 		if err != nil {
 			if !errors.IsNotFound(err) {
 				log.Error(err, "Failed to get virtual network", "name", virtualNetworkName)
+			} else {
+				log.Error(err, "Virtual Network does not exist, can't create loadbalancer", "name", virtualNetworkName)
 			}
-			log.Error(err, "Virtual Network does not exist, can't create loadbalancer", "name", virtualNetworkName)
 			return "", err
 		}
 		//no current loadbalancer, create a new loadbalancer
@@ -194,31 +195,29 @@ func (nl *nsxtLoadbalancerProvider) UpdateLoadBalancerOwnerReference(ctx context
 		log.Error(err, "Load Balancer does not exist, can't set owner reference for vm service", "vm service", vmService.NamespacedName())
 		return err
 	}
+	patchOpStr, _ := nl.PrepareLoadBalancerOwnerRefPatchOperation(loadBalancer, vmService)
+	_, err = nl.client.VmwareV1alpha1().LoadBalancers(loadBalancer.Namespace).Patch(loadBalancerName, types.JSONPatchType, patchOpStr)
+	return err
+}
+
+// PrepareLoadBalancerOwnerRefPatchOperation Prepare patch operation for owner reference patch update
+func (nl *nsxtLoadbalancerProvider) PrepareLoadBalancerOwnerRefPatchOperation(loadBalancer *ncpv1alpha1.LoadBalancer, vmService *vmoperatorv1alpha1.VirtualMachineService) ([]byte, error) {
 	path := "/metadata/ownerReferences"
 	var value interface{}
-	// first create load balancer
+	newOwner := metav1.OwnerReference{
+		UID:                vmService.UID,
+		Name:               vmService.Name,
+		Controller:         ptr.BoolPtr(false),
+		BlockOwnerDeletion: ptr.BoolPtr(true),
+		Kind:               ServiceOwnerRefKind,
+		APIVersion:         ServiceOwnerRefVersion,
+	}
+
 	if len(loadBalancer.OwnerReferences) == 0 {
-		value = []metav1.OwnerReference{
-			{
-				UID:                vmService.UID,
-				Name:               vmService.Name,
-				Controller:         ptr.BoolPtr(false),
-				BlockOwnerDeletion: ptr.BoolPtr(true),
-				Kind:               ServiceOwnerRefKind,
-				APIVersion:         ServiceOwnerRefVersion,
-			},
-		}
+		value = []metav1.OwnerReference{newOwner}
 	} else {
-		//append load balancer owner reference
 		path += "/-"
-		value = metav1.OwnerReference{
-			UID:                vmService.UID,
-			Name:               vmService.Name,
-			Controller:         ptr.BoolPtr(false),
-			BlockOwnerDeletion: ptr.BoolPtr(true),
-			Kind:               ServiceOwnerRefKind,
-			APIVersion:         ServiceOwnerRefVersion,
-		}
+		value = newOwner
 	}
 
 	patchOp := []patchOperation{
@@ -228,15 +227,5 @@ func (nl *nsxtLoadbalancerProvider) UpdateLoadBalancerOwnerReference(ctx context
 			Value: value,
 		},
 	}
-	patchOpStr, err := json.Marshal(patchOp)
-	if err != nil {
-		log.Error(err, "Can't patch LoadBalancer Owner Reference, marshal patch op error")
-		return err
-	}
-	loadBalancer, err = nl.client.VmwareV1alpha1().LoadBalancers(loadBalancer.Namespace).Patch(loadBalancerName, types.JSONPatchType, patchOpStr)
-	if err != nil {
-		log.Error(err, "Can't patch LoadBalancer Owner Reference")
-		return err
-	}
-	return err
+	return json.Marshal(patchOp)
 }

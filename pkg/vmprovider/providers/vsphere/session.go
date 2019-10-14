@@ -84,24 +84,36 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	s.datacenter = dc
 	s.Finder.SetDatacenter(dc)
 
-	s.resourcepool, err = GetResourcePool(ctx, s.Finder, config.ResourcePool)
-	if err != nil {
-		return errors.Wrapf(err, "failed to init Resource Pool %q", config.ResourcePool)
+	// not necessary for vmimage list/get from Content Library
+	if config.ResourcePool != "" {
+		s.resourcepool, err = GetResourcePool(ctx, s.Finder, config.ResourcePool)
+		if err != nil {
+			return errors.Wrapf(err, "failed to init Resource Pool %q", config.ResourcePool)
+		}
 	}
 
-	s.folder, err = GetVMFolder(ctx, s.Finder, config.Folder)
-	if err != nil {
-		return errors.Wrapf(err, "failed to init folder %q", config.Folder)
+	// not necessary for vmimage list/get from Content Library
+	if config.Folder != "" {
+		s.folder, err = GetVMFolder(ctx, s.Finder, config.Folder)
+		if err != nil {
+			return errors.Wrapf(err, "failed to init folder %q", config.Folder)
+		}
 	}
 
-	s.cluster, err = GetResourcePoolOwner(ctx, s.resourcepool)
-	if err != nil {
-		return errors.Wrapf(err, "failed to init cluster %q", config.ResourcePool)
+	// not necessary for vmimage list/get from Content Library
+	if s.resourcepool != nil {
+		s.cluster, err = GetResourcePoolOwner(ctx, s.resourcepool)
+		if err != nil {
+			return errors.Wrapf(err, "failed to init cluster %q", config.ResourcePool)
+		}
 	}
 
-	s.datastore, err = s.Finder.Datastore(ctx, config.Datastore)
-	if err != nil {
-		return errors.Wrapf(err, "failed to init Datastore %q", config.Datastore)
+	// not necessary for vmimage list/get from Content Library
+	if config.Datastore != "" {
+		s.datastore, err = s.Finder.Datastore(ctx, config.Datastore)
+		if err != nil {
+			return errors.Wrapf(err, "failed to init Datastore %q", config.Datastore)
+		}
 	}
 
 	// Network setting is optional
@@ -757,13 +769,21 @@ func (s *Session) String() string {
 		sb.WriteString(fmt.Sprintf("contentlib: %+v, ", *s.contentlib))
 	}
 	sb.WriteString(fmt.Sprintf("datacenter: %s, ", s.datacenter.Reference().Value))
-	sb.WriteString(fmt.Sprintf("folder: %s, ", s.folder.Reference().Value))
+	if s.folder != nil {
+		sb.WriteString(fmt.Sprintf("folder: %s, ", s.folder.Reference().Value))
+	}
 	if s.network != nil {
 		sb.WriteString(fmt.Sprintf("network: %s, ", s.network.Reference().Value))
 	}
-	sb.WriteString(fmt.Sprintf("resourcepool: %s, ", s.resourcepool.Reference().Value))
-	sb.WriteString(fmt.Sprintf("cluster: %s, ", s.cluster.Reference().Value))
-	sb.WriteString(fmt.Sprintf("datastore: %s ", s.datastore.Reference().Value))
+	if s.resourcepool != nil {
+		sb.WriteString(fmt.Sprintf("resourcepool: %s, ", s.resourcepool.Reference().Value))
+	}
+	if s.cluster != nil {
+		sb.WriteString(fmt.Sprintf("cluster: %s, ", s.cluster.Reference().Value))
+	}
+	if s.datastore != nil {
+		sb.WriteString(fmt.Sprintf("datastore: %s ", s.datastore.Reference().Value))
+	}
 	sb.WriteString("}")
 	return sb.String()
 }

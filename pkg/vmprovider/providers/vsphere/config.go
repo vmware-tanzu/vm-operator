@@ -143,11 +143,13 @@ func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace st
 		log.Info("unset env, will fallback to exclusively using per-namespace configuration", "namespaceEnv", VmopNamespaceEnv)
 	}
 
-	nsConfigMap, err = clientSet.CoreV1().ConfigMaps(namespace).Get(VSphereConfigMapName, metav1.GetOptions{})
-	if kerr.IsNotFound(err) {
-		log.Info("could not find per-namespace provider ConfigMap", "namespace", namespace, "configMapName", VSphereConfigMapName)
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "could not get per-namespace provider ConfigMap %v/%v", namespace, VSphereConfigMapName)
+	if namespace != "" {
+		nsConfigMap, err = clientSet.CoreV1().ConfigMaps(namespace).Get(VSphereConfigMapName, metav1.GetOptions{})
+		if kerr.IsNotFound(err) {
+			log.Info("could not find per-namespace provider ConfigMap", "namespace", namespace, "configMapName", VSphereConfigMapName)
+		} else if err != nil {
+			return nil, errors.Wrapf(err, "could not get per-namespace provider ConfigMap %v/%v", namespace, VSphereConfigMapName)
+		}
 	}
 
 	if baseConfigMap == nil && nsConfigMap == nil {
@@ -166,8 +168,10 @@ func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace st
 		return nil, err
 	}
 
-	if err := UpdateVMFolderAndRPInProviderConfig(clientSet, namespace, providerConfig); err != nil {
-		return nil, errors.Wrapf(err, "error in updaing RP and VM folder")
+	if namespace != "" {
+		if err := UpdateVMFolderAndRPInProviderConfig(clientSet, namespace, providerConfig); err != nil {
+			return nil, errors.Wrapf(err, "error in updating RP and VM folder")
+		}
 	}
 
 	return providerConfig, nil

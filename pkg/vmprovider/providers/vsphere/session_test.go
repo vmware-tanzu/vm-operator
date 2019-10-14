@@ -13,6 +13,7 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 

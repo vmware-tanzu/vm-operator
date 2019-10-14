@@ -123,6 +123,12 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 				Expect(err).To(BeNil())
 				Expect(providerConfig).To(Equal(baseProviderConfigIn))
 			})
+			Specify("returns a good provider config for no namespace", func() {
+				clientSet := fake.NewSimpleClientset(baseConfigMapIn, baseSecretIn)
+				providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "")
+				Expect(err).To(BeNil())
+				Expect(providerConfig).To(Equal(baseProviderConfigIn))
+			})
 		})
 
 		Context("also full ns config exists", func() {

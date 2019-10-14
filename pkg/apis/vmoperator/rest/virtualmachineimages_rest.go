@@ -62,8 +62,10 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 	//}
 	log.Info("Listing VirtualMachineImages", "namespace", namespace, "options", options, "user", user)
 
+	// namespace == "" means vmimages for ALL namespaces are requested
 	if namespace == "" {
-		return &v1alpha1.VirtualMachineImageList{}, nil
+		// listing for the default namespace only: it's the same list for any other namespace anyway
+		namespace = "default"
 	}
 
 	images, err := r.provider.ListVirtualMachineImages(ctx, namespace)

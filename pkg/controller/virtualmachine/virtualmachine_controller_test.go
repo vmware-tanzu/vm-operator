@@ -143,9 +143,9 @@ var _ = Describe("VirtualMachine controller", func() {
 
 				vmName := "fooVM"
 				expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmName}}
+				/* TODO() This List call does not seem to not pass along the namespace
 				imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
 				err = c.List(context.TODO(), &client.ListOptions{Namespace: ns}, imageList)
-				/* TODO() This List call does not seem to not pass along the namespace
 				Expect(err).ShouldNot(HaveOccurred())
 				imageName := imageList.Items[0].Name
 				*/
@@ -195,9 +195,9 @@ var _ = Describe("VirtualMachine controller", func() {
 
 				vmName := "CL-DeployedVM"
 				expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmName}}
+				/* TODO() This List call does not seem to not pass along the namespace
 				imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
 				err = c.List(context.TODO(), &client.ListOptions{Namespace: ns}, imageList)
-				/* TODO() This List call does not seem to not pass along the namespace
 				Expect(err).ShouldNot(HaveOccurred())
 				imageName := imageList.Items[0].Name
 				*/

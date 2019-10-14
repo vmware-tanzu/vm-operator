@@ -30,30 +30,29 @@ verifyEnvironmentVariables() {
         exit 1
     fi
 
-    if [[ -n ${VCSA_IP:-} ]]; then
-        if [[ -z ${VCSA_PASSWORD:-} ]]; then
-            # Often the VCSA_PASSWORD is set to a default. The below sets a
-            # common default so the user of this script does not need to set it.
-            VCSA_PASSWORD="vmware"
-        fi
-        output=$(SSHPASS="$VCSA_PASSWORD" sshpass -e ssh -o \
-                 UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
-                 root@$VCSA_IP "/usr/lib/vmware-wcp/decryptK8Pwd.py" 2>&1)
-        WCP_SA_IP=$(echo $output | grep -oEI "IP: (\S)+" | cut -d" " -f2)
-        WCP_SA_PASSWORD=$(echo $output | grep -oEI "PWD: (\S)+" | cut -d" " -f2)
-    fi
-
-    if [[ -z ${WCP_SA_IP:-} ]]; then
-        echo "Error: The WCP_SA_IP environment variable must be set to the" \
-             "WCP Supervisor Cluster API Server's IP address"
+    if [[ -z ${VCSA_DATACENTER:-} ]]; then
+        echo "Error: The VCSA_DATACENTER environment variable must be set" \
+             "to point to a valid VCSA Datacenter"
         exit 1
     fi
 
-    if [[ -z ${WCP_SA_PASSWORD:-} ]]; then
-        echo "Error: The WCP_SA_PASSWORD environment variable must be set to" \
-             "the WCP Supervisor Cluster API Server's root password"
+    if [[ -z ${VCSA_DATASTORE:-} ]]; then
+        VCSA_DATASTORE="nfs-01"
+    fi
+
+    if [[ -z ${VCSA_IP:-} ]]; then
+        echo "Error: The VCSA_IP environment variable must be set" \
+             "to point to a valid VCSA"
         exit 1
     fi
+
+    VCSA_PASSWORD=${VCSA_PASSWORD:-vmware}
+
+    output=$(SSHPASS="$VCSA_PASSWORD" sshpass -e ssh -o \
+                UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
+                root@$VCSA_IP "/usr/lib/vmware-wcp/decryptK8Pwd.py" 2>&1)
+    WCP_SA_IP=$(echo $output | grep -oEI "IP: (\S)+" | cut -d" " -f2)
+    WCP_SA_PASSWORD=$(echo $output | grep -oEI "PWD: (\S)+" | cut -d" " -f2)
 
     if ! ping -c 3 -i 0.25 $WCP_SA_IP > /dev/null 2>&1 ; then
         echo "Error: Could not access WCP Supervisor Cluster API Server at" \
@@ -62,15 +61,25 @@ verifyEnvironmentVariables() {
     fi
 }
 
+patchWcpDeploymentYaml() {
+    if [[ -f  "artifacts/wcp-deployment.yaml" ]]; then
+        sed -i'' "s,<vc_pnid>,$VCSA_IP,g" "artifacts/wcp-deployment.yaml"
+        sed -i'' "s,<datacenter>,$VCSA_DATACENTER,g" "artifacts/wcp-deployment.yaml"
+        sed -i'' "s, Datastore: .*, Datastore: $VCSA_DATASTORE," "artifacts/wcp-deployment.yaml"
+    fi
+}
+
 deploy() {
+    patchWcpDeploymentYaml
     PATH="/usr/local/opt/gnu-getopt/bin:/usr/local/bin:$PATH" \
         $WCP_LOAD_K8S_MASTER \
         --component vmop \
         --binary bin/linux/apiserver,bin/linux/manager \
-        --k8s-master-ip $WCP_SA_IP \
-        --k8s-master-password $WCP_SA_PASSWORD \
-        --yamlToApply artifacts/default-vmclasses.yaml,artifacts/wcp-deployment.yaml \
-        --yamlDestination /usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop
+        --vc-ip $VCSA_IP \
+        --vc-user root \
+        --vc-password $VCSA_PASSWORD \
+        --yamlToCopy artifacts/wcp-deployment.yaml,/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/vmop.yaml \
+        --yamlToCopy artifacts/default-vmclasses.yaml,/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/40-vmclasses/default-vmclasses.yaml
 }
 
 undeploy() {

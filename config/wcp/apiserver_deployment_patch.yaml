@@ -10,7 +10,7 @@ spec:
       - name: apiserver
         image: vmware/vmop:0.0.1
         args:
-        - "--etcd-servers=<etcd_proto_client>://127.0.0.1:2379"
+        - "--etcd-servers=https://127.0.0.1:2379"
         - "--etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt"
         - "--etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt"
         - "--etcd-keyfile=/etc/kubernetes/pki/apiserver-etcd-client.key"

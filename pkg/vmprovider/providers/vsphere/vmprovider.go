@@ -98,7 +98,7 @@ func (vs *VSphereVmProvider) GetSession(ctx context.Context, namespace string) (
 func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
 	log.Info("Listing VirtualMachineImages", "namespace", namespace)
 
-	ses, err := vs.sessions.GetSession(ctx, namespace)
+	ses, err := vs.sessions.GetSession(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespa
 
 	log.Info("Getting image for VirtualMachine", "name", vmName)
 
-	ses, err := vs.sessions.GetSession(ctx, namespace)
+	ses, err := vs.sessions.GetSession(ctx, "")
 	if err != nil {
 		return nil, err
 	}

@@ -187,6 +187,16 @@ func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(
 	work := func(t *time.Time) (TimerTaskResponse, error) {
 		returnMap := map[string]string{}
 		emptyStruct := TimerTaskResponse{}
+
+		downloadSessResp, err := libManager.GetLibraryItemDownloadSession(ctx, session)
+		if err != nil {
+			return emptyStruct, err
+		}
+
+		if downloadSessResp.ErrorMessage != nil {
+			return emptyStruct, downloadSessResp.ErrorMessage
+		}
+
 		info, err = libManager.GetLibraryItemDownloadSessionFile(ctx, session, fileToDownload)
 		if err != nil {
 			return emptyStruct, err

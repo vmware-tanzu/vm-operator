@@ -36,11 +36,12 @@ import (
 const (
 	// TODO(bryanv) Get these from mgr.GetScheme().ObjectKinds(...) to exactly match EnqueueRequestForOwner behavior.
 	ServiceOwnerRefKind    = "VirtualMachineService"
-	ServiceOwnerRefVersion = pkg.VmOperatorKey
-	OpCreate               = "CreateVMService"
-	OpDelete               = "DeleteVMService"
-	OpUpdate               = "UpdateVMService"
-	ControllerName         = "virtualmachineservice-controller"
+	ServiceOwnerRefVersion = "vmoperator.vmware.com/v1alpha1"
+
+	OpCreate       = "CreateVMService"
+	OpDelete       = "DeleteVMService"
+	OpUpdate       = "UpdateVMService"
+	ControllerName = "virtualmachineservice-controller"
 )
 
 var log = logf.Log.WithName(ControllerName)
@@ -325,20 +326,21 @@ func addEndpointSubset(subsets []corev1.EndpointSubset, vm *vmoperatorv1alpha1.V
 
 // Create or update k8s service
 func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service, loadBalancerName string) (*corev1.Service, error) {
-	log.Info("Updating k8s service", "k8s service name", vmService.NamespacedName())
-	defer log.Info("Finished syncing  k8s service", "k8s service name", vmService.NamespacedName())
+	serviceKey := client.ObjectKey{Name: service.Name, Namespace: service.Namespace}
+
+	log.Info("Updating k8s service", "k8s service name", serviceKey)
+	defer log.Info("Finished updating k8s service", "k8s service name", serviceKey)
 
 	// find current service
 	currentService := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: vmService.Name, Namespace: vmService.Namespace}, currentService)
-
+	err := r.Get(ctx, serviceKey, currentService)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			log.Error(err, "Failed to get service", "name", vmService.NamespacedName())
+			log.Error(err, "Failed to get service", "name", serviceKey)
 			return nil, err
 		}
 		// not exist, need to create one
-		log.Info("No k8s service in this name, creating one", "name", vmService.NamespacedName())
+		log.Info("No k8s service in this name, creating one", "name", serviceKey)
 		currentService = service
 	}
 
@@ -351,7 +353,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Conte
 	// create or update service
 	createService := len(currentService.ResourceVersion) == 0
 	if createService {
-		log.Info("Creating k8s service", "name", vmService.NamespacedName(), "service", newService)
+		log.Info("Creating k8s service", "name", serviceKey, "service", newService)
 		//every time create a load balancer type vm service, need to append this vm service to load balancer owner reference list
 		if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
 			err = r.loadbalancerProvider.UpdateLoadBalancerOwnerReference(ctx, loadBalancerName, vmService)
@@ -363,8 +365,9 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Conte
 		err = r.Create(ctx, newService)
 		defer record.EmitEvent(vmService, OpCreate, &err, false)
 	} else {
-		log.Info("Updating k8s service", "name", vmService.NamespacedName(), "service", newService)
+		log.Info("Updating k8s service", "name", serviceKey, "service", newService)
 		err = r.Update(ctx, newService)
+		//defer record.EmitEvent(vmService, OpUpdate, &err, false) ???
 	}
 
 	return newService, err
@@ -473,6 +476,7 @@ func (r *ReconcileVirtualMachineService) updateVmService(ctx context.Context, vm
 	defer log.Info("Finished updating VirtualMachineService", "name", vmService.NamespacedName())
 
 	// find current vm service
+	// BMV: vmService is from r.Get() at the start of Reconcile so needed to do it again?
 	currentVMService := &vmoperatorv1alpha1.VirtualMachineService{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name}, currentVMService)
 	if err != nil {
@@ -500,6 +504,8 @@ func (r *ReconcileVirtualMachineService) updateVmService(ctx context.Context, vm
 			return nil, err
 		}
 	}
+
+	// BMV: newVMService isn't saved after this point so annotations are missing
 	pkg.AddAnnotations(&newVMService.ObjectMeta)
 	return newVMService, nil
 }

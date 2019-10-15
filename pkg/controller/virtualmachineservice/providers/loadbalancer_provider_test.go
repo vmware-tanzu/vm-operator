@@ -407,7 +407,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 				It("Should successfully assemble first lb's owner reference patch request", func() {
 					payload, err := loadBalancerProvider.PrepareLoadBalancerOwnerRefPatchOperation(loadBalancer, vmService)
 					Expect(err).To(BeNil())
-					Expect(string(payload)).To(Equal(`[{"op":"add","path":"/metadata/ownerReferences","value":[{"apiVersion":"vmoperator.vmware.com","kind":"VirtualMachineService","name":"dummy-vmservice","uid":"","controller":false,"blockOwnerDeletion":true}]}]`))
+					Expect(string(payload)).To(Equal(`[{"op":"add","path":"/metadata/ownerReferences","value":[{"apiVersion":"vmoperator.vmware.com/v1alpha1","kind":"VirtualMachineService","name":"dummy-vmservice","uid":"","controller":false,"blockOwnerDeletion":true}]}]`))
 				})
 
 				It("Should successfully assemble multiple owner references patch request", func() {
@@ -436,7 +436,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 					}
 					payload, err := loadBalancerProvider.PrepareLoadBalancerOwnerRefPatchOperation(loadBalancer, secondVMService)
 					Expect(err).To(BeNil())
-					Expect(string(payload)).To(Equal(`[{"op":"add","path":"/metadata/ownerReferences/-","value":{"apiVersion":"vmoperator.vmware.com","kind":"VirtualMachineService","name":"dummy-vmservice-2","uid":"","controller":false,"blockOwnerDeletion":true}}]`))
+					Expect(string(payload)).To(Equal(`[{"op":"add","path":"/metadata/ownerReferences/-","value":{"apiVersion":"vmoperator.vmware.com/v1alpha1","kind":"VirtualMachineService","name":"dummy-vmservice-2","uid":"","controller":false,"blockOwnerDeletion":true}}]`))
 				})
 			})
 

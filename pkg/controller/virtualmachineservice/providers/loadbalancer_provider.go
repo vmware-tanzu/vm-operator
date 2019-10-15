@@ -31,7 +31,7 @@ const (
 	APIVersion                                         = "vmware.com/v1alpha1"
 	ServiceLoadBalancerTagKey                          = "ncp/crd_lb"
 	ServiceOwnerRefKind                                = "VirtualMachineService"
-	ServiceOwnerRefVersion                             = "vmoperator.vmware.com"
+	ServiceOwnerRefVersion                             = "vmoperator.vmware.com/v1alpha1"
 	NSXTLoadBalancer          loadBalancerProviderType = "nsx-t-lb"
 )
 

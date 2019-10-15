@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/errors"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -107,10 +109,27 @@ var _ = Describe("VirtualMachineService controller", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 
-			//Delete the VM Service object and expect the Reconcile
+			// Service should have been created with same name
+			serviceKey := client.ObjectKey{Name: instance.Name, Namespace: instance.Namespace}
+			service := corev1.Service{}
+			err = c.Get(context.TODO(), serviceKey, &service)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			// Delete the VM Service object and expect it to be deleted.
 			err = c.Delete(context.TODO(), &instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+			Eventually(func() bool {
+				vmService := vmoperatorv1alpha1.VirtualMachineService{}
+				err = c.Get(context.TODO(), serviceKey, &vmService)
+				return errors.IsNotFound(err)
+			}).Should(BeTrue())
+
+			// Expect the Service to be deleted too but not yet. In this testenv framework, the kube-controller is
+			// not running so this won't be garbage collected.
+			//err = c.Get(context.TODO(), serviceKey, &service)
+			//Expect(errors.IsNotFound(err)).Should(BeTrue())
 
 			reasonMap := vmrecord.ReadEvents(fakeRecorder)
 			Expect(len(reasonMap)).Should(Equal(2))
@@ -167,20 +186,4 @@ var _ = Describe("VirtualMachineService controller", func() {
 			Expect(vmList.Items[0].Name).To(Equal("dummy-vm-1"))
 		})
 	})
-
-	/*
-		deploy := &appsv1.Deployment{}
-		g.Eventually(func() error { return c.Get(context.TODO(), depKey, deploy) }, timeout).
-			Should(gomega.Succeed())
-
-		// Delete the Deployment and expect Reconcile to be called for Deployment deletion
-		g.Expect(c.Delete(context.TODO(), deploy)).NotTo(gomega.HaveOccurred())
-		g.Eventually(requests, timeout).Should(gomega.Receive(gomega.Equal(expectedRequest)))
-		g.Eventually(func() error { return c.Get(context.TODO(), depKey, deploy) }, timeout).
-			Should(gomega.Succeed())
-
-		// Manually delete Deployment since GC isn't enabled in the test control plane
-		g.Eventually(func() error { return c.Delete(context.TODO(), deploy) }, timeout).
-			Should(gomega.MatchError("deployments.apps \"foo-deployment\" not found"))
-	*/
 })

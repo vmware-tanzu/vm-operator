@@ -370,12 +370,17 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Conte
 	return newService, err
 }
 
+func (r *ReconcileVirtualMachineService) getVMServiceSelectedVirtualMachines(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*vmoperatorv1alpha1.VirtualMachineList, error) {
+	vmList := &vmoperatorv1alpha1.VirtualMachineList{}
+	err := r.List(ctx, client.MatchingLabels(vmService.Spec.Selector), vmList)
+	return vmList, err
+}
+
 func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service) error {
 	log.Info("Updating VirtualMachineService endpoints", "name", vmService.NamespacedName())
 	defer log.Info("Finished updating VirtualMachineService endpoints", "name", vmService.NamespacedName())
 
-	vmList := &vmoperatorv1alpha1.VirtualMachineList{}
-	err := r.List(ctx, client.MatchingLabels(service.Spec.Selector), vmList)
+	vmList, err := r.getVMServiceSelectedVirtualMachines(ctx, vmService)
 	if err != nil {
 		return err
 	}

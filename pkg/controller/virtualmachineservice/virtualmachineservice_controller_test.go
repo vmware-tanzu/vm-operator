@@ -44,6 +44,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 		mgr                     manager.Manager
 		err                     error
 		leaderElectionConfigMap string
+		r                       ReconcileVirtualMachineService
 	)
 
 	BeforeEach(func() {
@@ -57,7 +58,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 			LeaderElectionNamespace: ns})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
-
+		r = ReconcileVirtualMachineService{mgr.GetClient(), mgr.GetScheme(), nil}
 		stopMgr, mgrStopped = StartTestManager(mgr)
 	})
 
@@ -117,6 +118,56 @@ var _ = Describe("VirtualMachineService controller", func() {
 			Expect(reasonMap[vmrecord.Success+OpDelete]).Should(Equal(1))
 		})
 	})
+
+	Describe("When listing virtual machines", func() {
+		BeforeEach(func() {
+			virtualMachine1 := vmoperatorv1alpha1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "dummy-vm-1",
+					Namespace: ns,
+					Labels:    map[string]string{"foo": "bar"},
+				},
+				Spec: vmoperatorv1alpha1.VirtualMachineSpec{
+					PowerState: "poweredOn",
+					ImageName:  "test",
+					ClassName:  "TEST",
+				},
+			}
+			virtualMachine2 := vmoperatorv1alpha1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "dummy-vm-2",
+					Namespace: ns,
+				},
+				Spec: vmoperatorv1alpha1.VirtualMachineSpec{
+					PowerState: "poweredOn",
+					ImageName:  "test",
+					ClassName:  "TEST",
+				},
+			}
+			err := c.Create(context.TODO(), &virtualMachine1)
+			Expect(err).ShouldNot(HaveOccurred())
+			err = c.Create(context.TODO(), &virtualMachine2)
+			Expect(err).ShouldNot(HaveOccurred())
+		})
+
+		It("Should use vmservice selector instead of service selector", func() {
+			vmService := &vmoperatorv1alpha1.VirtualMachineService{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      "dummy-vm-service",
+				},
+				Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+					Type:     vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer,
+					Selector: map[string]string{"foo": "bar"},
+				},
+			}
+			vmList, err := r.getVMServiceSelectedVirtualMachines(context.TODO(), vmService)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(len(vmList.Items)).To(Equal(1))
+			Expect(vmList.Items[0].Name).To(Equal("dummy-vm-1"))
+		})
+	})
+
 	/*
 		deploy := &appsv1.Deployment{}
 		g.Eventually(func() error { return c.Get(context.TODO(), depKey, deploy) }, timeout).

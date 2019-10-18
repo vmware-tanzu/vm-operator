@@ -40,9 +40,9 @@ var (
 	err error
 	ctx context.Context
 
-	sess              *vsphere.Session
-	namespace         = "base-namespace"
-	testOvfName       = "photon-ova.ovf"
+	sess        *vsphere.Session
+	namespace   = "base-namespace"
+	testOvfName = "photon-ova.ovf"
 
 	restClient        *rest.Client
 	config            *vsphere.VSphereVmProviderConfig

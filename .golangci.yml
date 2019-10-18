@@ -7,6 +7,8 @@
 run:
   # timeout for analysis, e.g. 30s, 5m, default is 1m
   deadline: 8m
+  skip-files:
+   - ".*generated.*\\.go"
 
 # override defaults
 linters-settings:

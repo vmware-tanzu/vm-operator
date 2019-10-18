@@ -18,7 +18,7 @@ var _ = Describe("VirtualMachineService", func() {
 	var instance VirtualMachineService
 	var expected VirtualMachineService
 	var client VirtualMachineServiceInterface
-	typ := "ClusterIP"
+	typ := VirtualMachineServiceTypeClusterIP
 	port := VirtualMachineServicePort{
 		Name:       "foo",
 		Protocol:   "TCP",

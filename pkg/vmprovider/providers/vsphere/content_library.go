@@ -294,5 +294,4 @@ func deleteLibraryItemDownloadSession(s *Session, c *rest.Client, ctx context.Co
 		log.Error(sessionError, "Error occurred when deleting download session", libSessionId, session)
 	}
 
-	return
 }

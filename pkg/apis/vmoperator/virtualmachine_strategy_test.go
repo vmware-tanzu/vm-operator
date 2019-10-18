@@ -12,7 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
@@ -31,62 +30,60 @@ var _ = Describe("VirtualMachine Validation", func() {
 	})
 
 	Describe("validate network type", func() {
-		type ValidateFunc func(*VirtualMachine) field.ErrorList
 
 		DescribeTable("should reject network interface without name",
-			func(validateFunc ValidateFunc, vnifs []VirtualMachineNetworkInterface) {
+			func(vnifs []VirtualMachineNetworkInterface) {
 				vm := &VirtualMachine{
 					Spec: VirtualMachineSpec{
 						NetworkInterfaces: vnifs,
 					},
 				}
-				Expect(validateFunc(vm)).ShouldNot(BeEmpty())
+				Expect(validateNetworkType(vm)).ShouldNot(BeEmpty())
 
 			},
-			Entry("nsx-t network type", validateNetworkType, []VirtualMachineNetworkInterface{{NetworkType: "nsx-t"}}),
-			Entry("empty network type", validateNetworkType, []VirtualMachineNetworkInterface{{NetworkType: ""}}),
+			Entry("nsx-t network type", []VirtualMachineNetworkInterface{{NetworkType: "nsx-t"}}),
+			Entry("empty network type", []VirtualMachineNetworkInterface{{NetworkType: ""}}),
 		)
 
 		DescribeTable("should reject network interface with invalid type",
-			func(validateFunc ValidateFunc, vnifs []VirtualMachineNetworkInterface) {
+			func(vnifs []VirtualMachineNetworkInterface) {
 				vm := &VirtualMachine{
 					Spec: VirtualMachineSpec{
 						NetworkInterfaces: vnifs,
 					},
 				}
-				Expect(validateFunc(vm)).ShouldNot(BeEmpty())
+				Expect(validateNetworkType(vm)).ShouldNot(BeEmpty())
 			},
-			Entry("invalid network type", validateNetworkType, []VirtualMachineNetworkInterface{{NetworkName: "dummy-network-name", NetworkType: "invalid-type"}}),
+			Entry("invalid network type", []VirtualMachineNetworkInterface{{NetworkName: "dummy-network-name", NetworkType: "invalid-type"}}),
 		)
 
 		DescribeTable("should accept valid network interface",
-			func(validateFunc ValidateFunc, vnifs []VirtualMachineNetworkInterface) {
+			func(vnifs []VirtualMachineNetworkInterface) {
 				vm := &VirtualMachine{
 					Spec: VirtualMachineSpec{
 						NetworkInterfaces: vnifs,
 					},
 				}
-				Expect(validateFunc(vm)).Should(BeEmpty())
+				Expect(validateNetworkType(vm)).Should(BeEmpty())
 			},
-			Entry("nsx-t network type", validateNetworkType, []VirtualMachineNetworkInterface{{NetworkName: "dummy-network-name", NetworkType: "nsx-t"}}),
-			Entry("empty network type", validateNetworkType, []VirtualMachineNetworkInterface{{NetworkName: "dummy-network-name", NetworkType: ""}}),
-			Entry("no network interface", validateNetworkType, nil),
+			Entry("nsx-t network type", []VirtualMachineNetworkInterface{{NetworkName: "dummy-network-name", NetworkType: "nsx-t"}}),
+			Entry("empty network type", []VirtualMachineNetworkInterface{{NetworkName: "dummy-network-name", NetworkType: ""}}),
+			Entry("no network interface", nil),
 		)
 	})
 
 	Describe("validate volumes type", func() {
-		type ValidateFunc func(*VirtualMachine) field.ErrorList
 
 		DescribeTable("should accept valid volumes",
-			func(validateFunc ValidateFunc, fieldErrors field.ErrorList, volumes []VirtualMachineVolumes) {
+			func(fieldErrors field.ErrorList, volumes []VirtualMachineVolumes) {
 				vm := &VirtualMachine{
 					Spec: VirtualMachineSpec{
 						Volumes: volumes,
 					},
 				}
-				Expect(validateFunc(vm)).Should(Equal(fieldErrors))
+				Expect(validateVolumes(vm)).Should(Equal(fieldErrors))
 			},
-			Entry("volume with valid pvc", validateVolumes, field.ErrorList{}, []VirtualMachineVolumes{
+			Entry("volume with valid pvc", field.ErrorList{}, []VirtualMachineVolumes{
 				{
 					Name: "test-volume-1",
 					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
@@ -98,20 +95,20 @@ var _ = Describe("VirtualMachine Validation", func() {
 						ClaimName: "dummy-pvc-2"},
 				},
 			}),
-			Entry("no volumes", validateVolumes, field.ErrorList{}, nil),
+			Entry("no volumes", field.ErrorList{}, nil),
 		)
 
 		DescribeTable("should reject invalid volumes",
-			func(validateFunc ValidateFunc, fieldErrors field.ErrorList, volumes []VirtualMachineVolumes) {
+			func(fieldErrors field.ErrorList, volumes []VirtualMachineVolumes) {
 				vm := &VirtualMachine{
 					Spec: VirtualMachineSpec{
 						Volumes: volumes,
 					},
 				}
-				Expect(validateFunc(vm)).Should(Equal(fieldErrors))
+				Expect(validateVolumes(vm)).Should(Equal(fieldErrors))
 			},
 
-			Entry("volume with no pvc", validateVolumes, field.ErrorList{
+			Entry("volume with no pvc", field.ErrorList{
 				{
 					Type:     field.ErrorTypeRequired,
 					Field:    "spec.volumes[0].persistentVolumeClaim.claimName",
@@ -123,7 +120,7 @@ var _ = Describe("VirtualMachine Validation", func() {
 				},
 			}),
 
-			Entry("volume with no name", validateVolumes, field.ErrorList{
+			Entry("volume with no name", field.ErrorList{
 				{
 					Type:     field.ErrorTypeRequired,
 					Field:    "spec.volumes[0].name",
@@ -140,7 +137,7 @@ var _ = Describe("VirtualMachine Validation", func() {
 				},
 			}),
 
-			Entry("volume with duplicate names", validateVolumes, field.ErrorList{
+			Entry("volume with duplicate names", field.ErrorList{
 				{
 					Type:     field.ErrorTypeDuplicate,
 					Field:    "spec.volumes[1].name",
@@ -159,7 +156,7 @@ var _ = Describe("VirtualMachine Validation", func() {
 				},
 			}),
 
-			Entry("volume with no pvc name", validateVolumes, field.ErrorList{
+			Entry("volume with no pvc name", field.ErrorList{
 				{
 					Type:     field.ErrorTypeRequired,
 					Field:    "spec.volumes[0].persistentVolumeClaim.claimName",
@@ -176,7 +173,6 @@ var _ = Describe("VirtualMachine Validation", func() {
 	})
 
 	Describe("Validate", func() {
-		type ValidateObjFunc func(ctx context.Context, obj runtime.Object) field.ErrorList
 
 		DescribeTable("should accept valid vm",
 			func(vm *VirtualMachine) {

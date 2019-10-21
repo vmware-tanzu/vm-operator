@@ -32,4 +32,5 @@ type VirtualMachineProviderInterface interface {
 	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 		vmClass v1alpha1.VirtualMachineClass, vmMetadata VirtualMachineMetadata) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
+	GetClusterID(ctx context.Context, namespace string) (string, error)
 }

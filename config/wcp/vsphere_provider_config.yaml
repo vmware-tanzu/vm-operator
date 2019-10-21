@@ -5,7 +5,7 @@ metadata:
   namespace: vmware-system-vmop
 data:
   VcPNID: <vc_pnid>
-  VcCredsSecretName: wcp-vmop-vc-auth
+  VcCredsSecretName: wcp-vmop-sa-vc-auth
   Datacenter: <datacenter>
   # TODO: Uncomment the next line and remove datastore config after is done
   #  StorageClassRequired: true

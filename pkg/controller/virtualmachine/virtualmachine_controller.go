@@ -39,6 +39,10 @@ const (
 	OpCheck  = "CheckVM"
 
 	ControllerName = "virtualmachine-controller"
+
+	// We should add more uniqueness to the OpId to prevent the collision incurred by different vm-operator to aid
+	// debugging at VPXD.
+	RandomLen = 8
 )
 
 var log = logf.Log.WithName(ControllerName)
@@ -113,7 +117,11 @@ func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, err
 	}
 
-	ctx = context.WithValue(ctx, vimtypes.ID{}, "vmoperator-"+instance.Name+"-"+ControllerName)
+	clusterID, err := r.vmProvider.GetClusterID(ctx, request.Namespace)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	ctx = context.WithValue(ctx, vimtypes.ID{}, "vmoperator-"+ControllerName+"-"+clusterID+"-"+instance.Name)
 
 	if !instance.ObjectMeta.DeletionTimestamp.IsZero() {
 		const finalizerName = vmoperator.VirtualMachineFinalizer
@@ -145,6 +153,11 @@ func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcil
 
 func (r *ReconcileVirtualMachine) deleteVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
 	defer record.EmitEvent(vm, OpDelete, &err, false)
+
+	// TODO 	//  The length limit of OpId is 256, we will implement a function to detects if the total length exceeds
+	//  the limit and then “smartly” trims each component of the op id to an abbreviated version
+	opId := ctx.Value(vimtypes.ID{}).(string)
+	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-delete-"+common.RandomString(RandomLen))
 
 	err = r.vmProvider.DeleteVirtualMachine(ctx, vm)
 	if err != nil {
@@ -212,6 +225,11 @@ func (r *ReconcileVirtualMachine) processStorageClass(ctx context.Context, vmSpe
 func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
 	defer record.EmitEvent(vm, OpCreate, &err, false)
 
+	// TODO 	//  The length limit of OpId is 256, we will implement a function to detects if the total length exceeds
+	//  the limit and then “smartly” trims each component of the op id to an abbreviated version
+	opId := ctx.Value(vimtypes.ID{}).(string)
+	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-create-"+common.RandomString(RandomLen))
+
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
 	err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
 	if err != nil {
@@ -253,6 +271,11 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 
 func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
 	defer record.EmitEvent(vm, OpUpdate, &err, false)
+
+	// TODO 	//  The length limit of OpId is 256, we will implement a function to detects if the total length exceeds
+	//  the limit and then “smartly” trims each component of the op id to an abbreviated version
+	opId := ctx.Value(vimtypes.ID{}).(string)
+	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-update-"+common.RandomString(RandomLen))
 
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
 	err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)

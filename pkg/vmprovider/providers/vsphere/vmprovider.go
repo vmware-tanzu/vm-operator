@@ -350,6 +350,17 @@ func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.Vir
 	return nil
 }
 
+func (vs *VSphereVmProvider) GetClusterID(ctx context.Context, namespace string) (string, error) {
+	ses, err := vs.sessions.GetSession(ctx, namespace)
+	if err != nil {
+		return "", err
+	}
+	if ses.cluster == nil {
+		return "", errors.Errorf("no cluster exists")
+	}
+	return ses.cluster.Reference().Value, nil
+}
+
 func ResVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *res.VirtualMachine, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
 	powerState, uuid, reference := resVm.ImageFields(ctx)
 

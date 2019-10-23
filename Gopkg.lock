@@ -799,6 +799,15 @@
   source = "git@gitlab.eng.vmware.com:guest-clusters/ncp-client.git"
 
 [[projects]]
+  branch = "CNSOperator"
+  digest = "1:98d4dfcf3b4483c9328bae93b106adebd32b89e6bd2829c1d718e8ecee63d23f"
+  name = "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver"
+  packages = ["pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"]
+  pruneopts = "NU"
+  revision = "cfb811a0b67298fe68e9b5f900d79ea8ed54abab"
+  source = "git@gitlab.eng.vmware.com:hatchway/vsphere-csi-driver.git"
+
+[[projects]]
   digest = "1:e00654d8f0dcf74fef4957e2c980ba7af3a1c6135312b89f816abc5be6f02834"
   name = "go.uber.org/atomic"
   packages = ["."]
@@ -1500,7 +1509,7 @@
   version = "v0.1.10"
 
 [[projects]]
-  digest = "1:14fe447896141b3c8105f70acd76bde349e9549347e462ec6ca77142c417f64f"
+  digest = "1:4efe5f8bba81b8327fc0bf08c8d35b0b6f46474f9e92dd6b39bd55e11b80c7b8"
   name = "sigs.k8s.io/controller-runtime"
   packages = [
     "pkg/cache",
@@ -1508,6 +1517,7 @@
     "pkg/client",
     "pkg/client/apiutil",
     "pkg/client/config",
+    "pkg/client/fake",
     "pkg/controller",
     "pkg/envtest",
     "pkg/envtest/printer",
@@ -1525,6 +1535,7 @@
     "pkg/recorder",
     "pkg/runtime/inject",
     "pkg/runtime/log",
+    "pkg/runtime/scheme",
     "pkg/runtime/signals",
     "pkg/source",
     "pkg/source/internal",
@@ -1589,6 +1600,7 @@
     "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1",
     "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned",
     "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake",
+    "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1",
     "golang.org/x/net/context",
     "google.golang.org/genproto",
     "google.golang.org/grpc",
@@ -1630,7 +1642,9 @@
     "sigs.k8s.io/cluster-api/pkg/controller/error",
     "sigs.k8s.io/controller-runtime/pkg/client",
     "sigs.k8s.io/controller-runtime/pkg/client/config",
+    "sigs.k8s.io/controller-runtime/pkg/client/fake",
     "sigs.k8s.io/controller-runtime/pkg/controller",
+    "sigs.k8s.io/controller-runtime/pkg/envtest",
     "sigs.k8s.io/controller-runtime/pkg/handler",
     "sigs.k8s.io/controller-runtime/pkg/manager",
     "sigs.k8s.io/controller-runtime/pkg/reconcile",

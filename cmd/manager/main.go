@@ -25,6 +25,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/apis"
 	"github.com/vmware-tanzu/vm-operator/pkg/controller"
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
+	cnsv1alpha1 "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
@@ -157,6 +158,11 @@ func main() {
 	// Setup Scheme for all resources
 	log.Info("setting up scheme")
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
+		log.Error(err, "unable add APIs to scheme")
+		os.Exit(1)
+	}
+
+	if err := cnsv1alpha1.SchemeBuilder.AddToScheme(mgr.GetScheme()); err != nil {
 		log.Error(err, "unable add APIs to scheme")
 		os.Exit(1)
 	}

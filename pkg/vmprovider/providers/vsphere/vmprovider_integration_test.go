@@ -10,13 +10,15 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
 var _ = Describe("VMProvider Tests", func() {
+
+	var clTestNamespace = integration.DefaultNamespace
+
 	Context("Creating a VM via vmprovider", func() {
 		It("should correctly update VirtualMachineStatus", func() {
 			testNamespace := "test-namespace-vmp"
@@ -71,6 +73,31 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(vm.Status.VmIp).Should(Equal(testIP))
 			Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
 			Expect(vm.Status.BiosUuid).ShouldNot(BeEmpty())
+		})
+	})
+	Context("listVirtualmachineImages", func() {
+		It("should list the virtualmachineimages available in CL", func() {
+			config.ContentSource = integration.GetContentSourceID()
+
+			provider, err := vsphere.NewVSphereVmProviderFromConfig("", config)
+			Expect(err).NotTo(HaveOccurred())
+
+			images, err := provider.ListVirtualMachineImages(context.TODO(), clTestNamespace)
+			Expect(err).To(BeNil())
+			Expect(images).Should(HaveLen(1))
+		})
+	})
+	Context("GetVirtualmachineImage", func() {
+		It("should get the virtualmachineimage object", func() {
+			config.ContentSource = integration.GetContentSourceID()
+
+			provider, err := vsphere.NewVSphereVmProviderFromConfig("", config)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			image, err := provider.GetVirtualMachineImage(context.TODO(), clTestNamespace, "test-item")
+			Expect(err).To(BeNil())
+			Expect(image).ShouldNot(BeNil())
+			Expect(image.Name).Should(BeEquivalentTo("test-item"))
 		})
 	})
 })

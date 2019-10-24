@@ -239,13 +239,15 @@ func (vm *VirtualMachine) GetOvfProperties(ctx context.Context) (map[string]stri
 
 	properties := make(map[string]string)
 
-	props := moVM.Config.VAppConfig.GetVmConfigInfo().Property
-	for _, prop := range props {
-		if strings.HasPrefix(prop.Id, "vmware-system") {
-			if prop.Value != "" {
-				properties[prop.Id] = prop.Value
-			} else {
-				properties[prop.Id] = prop.DefaultValue
+	if vAppConfig := moVM.Config.VAppConfig; vAppConfig != nil {
+		props := vAppConfig.GetVmConfigInfo().Property
+		for _, prop := range props {
+			if strings.HasPrefix(prop.Id, "vmware-system") {
+				if prop.Value != "" {
+					properties[prop.Id] = prop.Value
+				} else {
+					properties[prop.Id] = prop.DefaultValue
+				}
 			}
 		}
 	}

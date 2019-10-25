@@ -176,208 +176,229 @@ var _ = Describe("Loadbalancer Provider", func() {
 
 			Context("check virtual network vaild", func() {
 				var (
-					virtualMachines []vmoperatorv1alpha1.VirtualMachine
+					virtualMachines       []vmoperatorv1alpha1.VirtualMachine
+					virtualMachineService *vmoperatorv1alpha1.VirtualMachineService
 				)
 				BeforeEach(func() {
 					virtualMachines = []vmoperatorv1alpha1.VirtualMachine{}
+					virtualMachineService = &vmoperatorv1alpha1.VirtualMachineService{}
 				})
 
-				It("nsx-t load balancer provider should not get virtual network name with empty vm ", func() {
-					vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines)
-					Expect(err).To(MatchError("no virtual machine matched selector"))
-					Expect(vnetName).To(Equal(""))
+				Context("without vnet name in virtualMachineService annotation", func() {
+					It("nsx-t load balancer provider should not get virtual network name with empty vm ", func() {
+						vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines, virtualMachineService)
+						Expect(err).To(MatchError("no virtual machine matched selector"))
+						Expect(vnetName).To(Equal(""))
+					})
+
+					It("nsx-t load balancer provider should successfully get virtual network name", func() {
+						virtualMachines = []vmoperatorv1alpha1.VirtualMachine{
+							{
+								TypeMeta: metav1.TypeMeta{
+									Kind:       "VirtualMachine",
+									APIVersion: "vmware.com/v1alpha1",
+								},
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "dummy-vm",
+									Namespace: vmService.GetNamespace(),
+								},
+								Spec: v1alpha1.VirtualMachineSpec{
+									ImageName:  "test",
+									ClassName:  "test",
+									PowerState: "on",
+									NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
+										{
+											NetworkName: "dummy-vnet",
+											NetworkType: vmoperator.NsxtNetworkType,
+										},
+									},
+								},
+							},
+						}
+						vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines, virtualMachineService)
+						Expect(err).To(BeNil())
+						Expect(vnetName).To(Equal("dummy-vnet"))
+					})
+
+					It("nsx-t load balancer provider should fail to get virtual network name with two nsx-t network", func() {
+						virtualMachines = []vmoperatorv1alpha1.VirtualMachine{
+							{
+								TypeMeta: metav1.TypeMeta{
+									Kind:       "VirtualMachine",
+									APIVersion: "vmware.com/v1alpha1",
+								},
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "dummy-vm",
+									Namespace: vmService.GetNamespace(),
+								},
+								Spec: v1alpha1.VirtualMachineSpec{
+									ImageName:  "test",
+									ClassName:  "test",
+									PowerState: "on",
+									NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
+										{
+											NetworkName: "dummy-vnet",
+											NetworkType: vmoperator.NsxtNetworkType,
+										},
+										{
+											NetworkName: "dummy-vnet-2",
+											NetworkType: vmoperator.NsxtNetworkType,
+										},
+									},
+								},
+							},
+						}
+						vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines, virtualMachineService)
+						Expect(err).To(MatchError(`virtual machine "dummy/dummy-vm" can't connect to two NST-X virtual network `))
+						Expect(vnetName).To(Equal(""))
+					})
+
+					It("nsx-t load balancer provider should not get virtual network name with no nsx-t network", func() {
+						virtualMachines = []vmoperatorv1alpha1.VirtualMachine{
+							{
+								TypeMeta: metav1.TypeMeta{
+									Kind:       "VirtualMachine",
+									APIVersion: "vmware.com/v1alpha1",
+								},
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "dummy-vm",
+									Namespace: vmService.GetNamespace(),
+								},
+								Spec: v1alpha1.VirtualMachineSpec{
+									ImageName:  "test",
+									ClassName:  "test",
+									PowerState: "on",
+									NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
+										{
+											NetworkName: "dummy-vnet",
+											NetworkType: dummyObjectName,
+										},
+									},
+								},
+							},
+						}
+						vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines, virtualMachineService)
+						Expect(err).To(MatchError(`virtual machine "dummy/dummy-vm" doesn't have nsx-t virtual network`))
+						Expect(vnetName).To(Equal(""))
+					})
+
+					It("nsx-t load balancer provider should not get virtual network name with more than one nsx-t network", func() {
+						virtualMachines = []vmoperatorv1alpha1.VirtualMachine{
+							{
+								TypeMeta: metav1.TypeMeta{
+									Kind:       "VirtualMachine",
+									APIVersion: "vmware.com/v1alpha1",
+								},
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "dummy-vm",
+									Namespace: vmService.GetNamespace(),
+								},
+								Spec: v1alpha1.VirtualMachineSpec{
+									ImageName:  "test",
+									ClassName:  "test",
+									PowerState: "on",
+									NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
+										{
+											NetworkName: "dummy-vnet",
+											NetworkType: vmoperator.NsxtNetworkType,
+										},
+									},
+								},
+							},
+							{
+								TypeMeta: metav1.TypeMeta{
+									Kind:       "VirtualMachine",
+									APIVersion: "vmware.com/v1alpha1",
+								},
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "dummy-vm",
+									Namespace: vmService.GetNamespace(),
+								},
+								Spec: v1alpha1.VirtualMachineSpec{
+									ImageName:  "test",
+									ClassName:  "test",
+									PowerState: "on",
+									NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
+										{
+											NetworkName: "dummy-vnet-d",
+											NetworkType: vmoperator.NsxtNetworkType,
+										},
+									},
+								},
+							},
+						}
+						vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines, virtualMachineService)
+						Expect(err).To(MatchError(`virtual machine "dummy/dummy-vm" has different virtual network with previous vms`))
+						Expect(vnetName).To(Equal(""))
+					})
+
+					It("nsx-t load balancer provider should not get virtual network name with one don't have nsx-t network", func() {
+						virtualMachines = []vmoperatorv1alpha1.VirtualMachine{
+							{
+								TypeMeta: metav1.TypeMeta{
+									Kind:       "VirtualMachine",
+									APIVersion: "vmware.com/v1alpha1",
+								},
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "dummy-vm",
+									Namespace: vmService.GetNamespace(),
+								},
+								Spec: v1alpha1.VirtualMachineSpec{
+									ImageName:  "test",
+									ClassName:  "test",
+									PowerState: "on",
+									NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
+										{
+											NetworkName: "dummy-vnet",
+											NetworkType: vmoperator.NsxtNetworkType,
+										},
+									},
+								},
+							},
+							{
+								TypeMeta: metav1.TypeMeta{
+									Kind:       "VirtualMachine",
+									APIVersion: "vmware.com/v1alpha1",
+								},
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      "dummy-vm",
+									Namespace: vmService.GetNamespace(),
+								},
+								Spec: v1alpha1.VirtualMachineSpec{
+									ImageName:  "test",
+									ClassName:  "test",
+									PowerState: "on",
+									NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
+										{
+											NetworkName: "dummy-vnet-d",
+											NetworkType: dummyObjectName,
+										},
+									},
+								},
+							},
+						}
+						vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines, virtualMachineService)
+						Expect(err).To(MatchError(`virtual machine "dummy/dummy-vm" doesn't have nsx-t virtual network`))
+						Expect(vnetName).To(Equal(""))
+					})
 				})
 
-				It("nsx-t load balancer provider should successfully get virtual network name", func() {
-					virtualMachines = []vmoperatorv1alpha1.VirtualMachine{
-						{
-							TypeMeta: metav1.TypeMeta{
-								Kind:       "VirtualMachine",
-								APIVersion: "vmware.com/v1alpha1",
-							},
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "dummy-vm",
-								Namespace: vmService.GetNamespace(),
-							},
-							Spec: v1alpha1.VirtualMachineSpec{
-								ImageName:  "test",
-								ClassName:  "test",
-								PowerState: "on",
-								NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
-									{
-										NetworkName: "dummy-vnet",
-										NetworkType: vmoperator.NsxtNetworkType,
-									},
-								},
-							},
-						},
-					}
-					vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines)
-					Expect(err).To(BeNil())
-					Expect(vnetName).To(Equal("dummy-vnet"))
+				Context("with vnet name in virtualMachineService annotation", func() {
+					BeforeEach(func() {
+						virtualMachineService.Annotations = map[string]string{
+							"ncp.vmware.com/virtual-network-name": "vnet",
+						}
+					})
+					It("nsx-t load balancer provider should successfully get virtual network name", func() {
+						vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines, virtualMachineService)
+						Expect(err).To(BeNil())
+						Expect(vnetName).To(Equal("vnet"))
+					})
+					AfterEach(func() {
+						virtualMachineService.Annotations = nil
+					})
 				})
 
-				It("nsx-t load balancer provider should fail to get virtual network name with two nsx-t network", func() {
-					virtualMachines = []vmoperatorv1alpha1.VirtualMachine{
-						{
-							TypeMeta: metav1.TypeMeta{
-								Kind:       "VirtualMachine",
-								APIVersion: "vmware.com/v1alpha1",
-							},
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "dummy-vm",
-								Namespace: vmService.GetNamespace(),
-							},
-							Spec: v1alpha1.VirtualMachineSpec{
-								ImageName:  "test",
-								ClassName:  "test",
-								PowerState: "on",
-								NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
-									{
-										NetworkName: "dummy-vnet",
-										NetworkType: vmoperator.NsxtNetworkType,
-									},
-									{
-										NetworkName: "dummy-vnet-2",
-										NetworkType: vmoperator.NsxtNetworkType,
-									},
-								},
-							},
-						},
-					}
-					vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines)
-					Expect(err).To(MatchError(`virtual machine "dummy/dummy-vm" can't connect to two NST-X virtual network `))
-					Expect(vnetName).To(Equal(""))
-				})
-
-				It("nsx-t load balancer provider should not get virtual network name with no nsx-t network", func() {
-					virtualMachines = []vmoperatorv1alpha1.VirtualMachine{
-						{
-							TypeMeta: metav1.TypeMeta{
-								Kind:       "VirtualMachine",
-								APIVersion: "vmware.com/v1alpha1",
-							},
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "dummy-vm",
-								Namespace: vmService.GetNamespace(),
-							},
-							Spec: v1alpha1.VirtualMachineSpec{
-								ImageName:  "test",
-								ClassName:  "test",
-								PowerState: "on",
-								NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
-									{
-										NetworkName: "dummy-vnet",
-										NetworkType: dummyObjectName,
-									},
-								},
-							},
-						},
-					}
-					vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines)
-					Expect(err).To(MatchError(`virtual machine "dummy/dummy-vm" doesn't have nsx-t virtual network`))
-					Expect(vnetName).To(Equal(""))
-				})
-
-				It("nsx-t load balancer provider should not get virtual network name with more than one nsx-t network", func() {
-					virtualMachines = []vmoperatorv1alpha1.VirtualMachine{
-						{
-							TypeMeta: metav1.TypeMeta{
-								Kind:       "VirtualMachine",
-								APIVersion: "vmware.com/v1alpha1",
-							},
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "dummy-vm",
-								Namespace: vmService.GetNamespace(),
-							},
-							Spec: v1alpha1.VirtualMachineSpec{
-								ImageName:  "test",
-								ClassName:  "test",
-								PowerState: "on",
-								NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
-									{
-										NetworkName: "dummy-vnet",
-										NetworkType: vmoperator.NsxtNetworkType,
-									},
-								},
-							},
-						},
-						{
-							TypeMeta: metav1.TypeMeta{
-								Kind:       "VirtualMachine",
-								APIVersion: "vmware.com/v1alpha1",
-							},
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "dummy-vm",
-								Namespace: vmService.GetNamespace(),
-							},
-							Spec: v1alpha1.VirtualMachineSpec{
-								ImageName:  "test",
-								ClassName:  "test",
-								PowerState: "on",
-								NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
-									{
-										NetworkName: "dummy-vnet-d",
-										NetworkType: vmoperator.NsxtNetworkType,
-									},
-								},
-							},
-						},
-					}
-					vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines)
-					Expect(err).To(MatchError(`virtual machine "dummy/dummy-vm" has different virtual network with previous vms`))
-					Expect(vnetName).To(Equal(""))
-				})
-
-				It("nsx-t load balancer provider should not get virtual network name with one don't have nsx-t network", func() {
-					virtualMachines = []vmoperatorv1alpha1.VirtualMachine{
-						{
-							TypeMeta: metav1.TypeMeta{
-								Kind:       "VirtualMachine",
-								APIVersion: "vmware.com/v1alpha1",
-							},
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "dummy-vm",
-								Namespace: vmService.GetNamespace(),
-							},
-							Spec: v1alpha1.VirtualMachineSpec{
-								ImageName:  "test",
-								ClassName:  "test",
-								PowerState: "on",
-								NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
-									{
-										NetworkName: "dummy-vnet",
-										NetworkType: vmoperator.NsxtNetworkType,
-									},
-								},
-							},
-						},
-						{
-							TypeMeta: metav1.TypeMeta{
-								Kind:       "VirtualMachine",
-								APIVersion: "vmware.com/v1alpha1",
-							},
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "dummy-vm",
-								Namespace: vmService.GetNamespace(),
-							},
-							Spec: v1alpha1.VirtualMachineSpec{
-								ImageName:  "test",
-								ClassName:  "test",
-								PowerState: "on",
-								NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
-									{
-										NetworkName: "dummy-vnet-d",
-										NetworkType: dummyObjectName,
-									},
-								},
-							},
-						},
-					}
-					vnetName, err := loadBalancerProvider.GetNetworkName(virtualMachines)
-					Expect(err).To(MatchError(`virtual machine "dummy/dummy-vm" doesn't have nsx-t virtual network`))
-					Expect(vnetName).To(Equal(""))
-				})
 			})
 
 			Context("Prepare patch operations for load balancer owner reference patch update", func() {

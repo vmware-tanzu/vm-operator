@@ -260,7 +260,7 @@ func (r *ReconcileVirtualMachineService) getVirtualNetworkName(ctx context.Conte
 		return "", err
 	}
 
-	return r.loadbalancerProvider.GetNetworkName(vmList.Items)
+	return r.loadbalancerProvider.GetNetworkName(vmList.Items, vmService)
 }
 
 //Convert vm service to k8s service

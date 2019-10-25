@@ -281,34 +281,39 @@ var _ = Describe("list files in content library", func() {
 
 	Context("when a work function is given as input", func() {
 		It("should return the expected response", func() {
-			doneChannel := make(chan vsphere.TimerTaskResponse)
-			ticker := time.NewTicker(time.Duration(2) * time.Second)
-			work := func(t *time.Time) (vsphere.TimerTaskResponse, error) {
+			apiDelay := time.Duration(2) * time.Second
+			work := func(ctx context.Context) (vsphere.TimerTaskResponse, error) {
 				for i := 1; i < 10; i++ {
-					fmt.Printf("performing fake task for iteration - %v \n", i)
-
+					fmt.Printf("iterating through - %v \n", i)
 				}
 				return vsphere.TimerTaskResponse{TaskDone: true}, nil
 			}
-			go vsphere.RunTaskAtInterval(doneChannel, ticker, work)
-			var finalResponse = <-doneChannel
-			Expect(finalResponse).NotTo(BeEquivalentTo(vsphere.TimerTaskResponse{}))
-			Expect(finalResponse.TaskDone).To(BeTrue())
+			err = vsphere.RunTaskAtInterval(context.TODO(), apiDelay, work)
+			Expect(err).To(BeNil())
 		})
 	})
 
-	Context("when a work function is given as input", func() {
-		It("should return the expected response", func() {
-			doneChannel := make(chan vsphere.TimerTaskResponse)
-			ticker := time.NewTicker(time.Duration(2) * time.Second)
-			work := func(t *time.Time) (vsphere.TimerTaskResponse, error) {
+	Context("when a given work function results in error", func() {
+		It("should return the error as expected", func() {
+			apiDelay := time.Duration(2) * time.Second
+			work := func(ctx context.Context) (vsphere.TimerTaskResponse, error) {
 				return vsphere.TimerTaskResponse{TaskDone: true}, errors.New("an error occurred when performing work")
 			}
-			go vsphere.RunTaskAtInterval(doneChannel, ticker, work)
-			var finalResponse = <-doneChannel
-			Expect(finalResponse).NotTo(BeEquivalentTo(vsphere.TimerTaskResponse{}))
-			Expect(finalResponse.TaskDone).To(BeTrue())
-			Expect(finalResponse.Err.Error()).To(BeEquivalentTo("an error occurred when performing work"))
+			err = vsphere.RunTaskAtInterval(context.TODO(), apiDelay, work)
+			Expect(err).NotTo(BeNil())
+			Expect(err.Error()).To(BeEquivalentTo("an error occurred when performing work"))
+		})
+	})
+
+	Context("when a long running work function is given as input", func() {
+		It("should execute only one instance of the work at a given time", func() {
+			work := func(ctx context.Context) (vsphere.TimerTaskResponse, error) {
+				time.Sleep(2 * time.Minute)
+				return vsphere.TimerTaskResponse{TaskDone: true}, nil
+			}
+			apiDelay := time.Duration(2) * time.Second
+			err = vsphere.RunTaskAtInterval(context.TODO(), apiDelay, work)
+			Expect(err).To(BeNil())
 		})
 	})
 })

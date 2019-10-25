@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"strings"
+
 	"time"
 
 	"github.com/vmware/govmomi/ovf"
@@ -182,9 +183,7 @@ func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(
 	// content library api to prepare a file for download guarantees eventual end state of either Error or Prepared
 	// in order to avoid posting too many requests to the api we are setting a sleep of 'n' seconds between each retry
 
-	ticker := time.NewTicker(time.Duration(clApiSleepInterval) * time.Second)
-
-	work := func(t *time.Time) (TimerTaskResponse, error) {
+	work := func(ctx context.Context) (TimerTaskResponse, error) {
 		returnMap := map[string]string{}
 		emptyStruct := TimerTaskResponse{}
 
@@ -220,11 +219,11 @@ func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(
 		return TimerTaskResponse{}, nil
 	}
 
-	doneChannel := make(chan TimerTaskResponse)
-	go RunTaskAtInterval(doneChannel, ticker, work)
-	var finalResponse = <-doneChannel
-	if finalResponse.Err != nil {
-		return DownloadUriResponse{}, finalResponse.Err
+	clApiDelayDuration := time.Duration(clApiSleepInterval) * time.Second
+
+	err = RunTaskAtInterval(ctx, clApiDelayDuration, work)
+	if err != nil {
+		return DownloadUriResponse{}, err
 	}
 
 	return DownloadUriResponse{
@@ -238,30 +237,16 @@ func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(
 //the work is considered complete when
 // 1. a struct is returned with the value of TaskDone set (or)
 // 2. there is an error returned
-func RunTaskAtInterval(doneCh chan TimerTaskResponse, ticker *time.Ticker, work func(t *time.Time) (TimerTaskResponse, error)) {
-	var response TimerTaskResponse
-	resultCh := make(chan TimerTaskResponse)
-taskLoop:
+func RunTaskAtInterval(ctx context.Context, clApiCheckDelayInSecs time.Duration, work func(ctx context.Context) (TimerTaskResponse, error)) error {
+
 	for {
-		select {
-		case t := <-ticker.C:
-			go func() {
-				routineResponse, err := work(&t)
-				if err != nil {
-					resultCh <- TimerTaskResponse{
-						TaskDone: true,
-						Err:      err,
-					}
-				}
-				if routineResponse.TaskDone {
-					resultCh <- routineResponse
-				}
-			}()
-		case response = <-resultCh:
-			log.Info("received in result channel", "error", response.Err, "values", response.returnValues)
-			ticker.Stop()
-			doneCh <- response
-			break taskLoop
+		routineResponse, err := work(ctx)
+		if err != nil {
+			return err
+		} else if routineResponse.TaskDone {
+			return nil
+		} else {
+			time.Sleep(clApiCheckDelayInSecs)
 		}
 	}
 }

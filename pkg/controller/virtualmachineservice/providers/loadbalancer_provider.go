@@ -46,7 +46,7 @@ type patchOperation struct {
 
 //LoadbalancerProvider sets up Loadbalancer for different type of Loadbalancer
 type LoadbalancerProvider interface {
-	GetNetworkName(virtualMachines []vmoperatorv1alpha1.VirtualMachine) (string, error)
+	GetNetworkName(virtualMachines []vmoperatorv1alpha1.VirtualMachine, vmService *vmoperatorv1alpha1.VirtualMachineService) (string, error)
 
 	EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) (string, error)
 
@@ -149,7 +149,13 @@ func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, 
 }
 
 //Check virtual network name from vm spec
-func (nl *nsxtLoadbalancerProvider) GetNetworkName(virtualMachines []vmoperatorv1alpha1.VirtualMachine) (string, error) {
+func (nl *nsxtLoadbalancerProvider) GetNetworkName(virtualMachines []vmoperatorv1alpha1.VirtualMachine, vmService *vmoperatorv1alpha1.VirtualMachineService) (string, error) {
+	if vmService != nil && vmService.Annotations != nil {
+		if vnet := vmService.Annotations["ncp.vmware.com/virtual-network-name"]; vnet != "" {
+			return vnet, nil
+		}
+	}
+
 	if len(virtualMachines) <= 0 {
 		return "", fmt.Errorf("no virtual machine matched selector")
 	}

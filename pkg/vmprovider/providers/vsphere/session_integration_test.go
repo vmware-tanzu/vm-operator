@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
@@ -277,6 +278,117 @@ var _ = Describe("Sessions", func() {
 				for k, v := range keysFound {
 					Expect(v).Should(BeTrue(), "Key %v not found in VM", k)
 				}
+			})
+		})
+	})
+	Describe("Resource Pool", func() {
+		var rpName string
+		var rpSpec *v1alpha1.ResourcePoolSpec
+
+		BeforeEach(func() {
+			rpName = "test-folder"
+			rpSpec = &vmoperatorv1alpha1.ResourcePoolSpec{
+				Name: rpName,
+			}
+		})
+
+		Context("Create a ResourcePool, verify it exists and delete it", func() {
+			JustBeforeEach(func() {
+				rpMoId, err := session.CreateResourcePool(context.TODO(), rpSpec)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rpMoId).To(Not(BeEmpty()))
+			})
+			JustAfterEach(func() {
+				// RP would already be deleted after the deletion test. But DeleteResourcePool handles delete of an RP if it's already deleted.
+				Expect(session.DeleteResourcePool(context.TODO(), rpSpec.Name)).To(Succeed())
+			})
+
+			It("create is tested in setup", func() {
+				// Create is tested in JustBeforeEach
+			})
+
+			It("Verifies if a ResourcePool exists", func() {
+				exists, err := session.DoesResourcePoolExist(context.TODO(), integration.DefaultNamespace, rpSpec.Name)
+				Expect(exists).To(BeTrue())
+				Expect(err).NotTo(HaveOccurred())
+			})
+			It("delete is tested in teardown", func() {
+				// Delete is tested in JustAfterEach
+			})
+		})
+
+		Context("Create two resource pools with the duplicate names", func() {
+			It("second resource pool should fail to create", func() {
+				rpMoId, err := session.CreateResourcePool(context.TODO(), rpSpec)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rpMoId).To(Not(BeEmpty()))
+
+				// Try to create another ResourcePool with the same spec.
+				rpMoId, err = session.CreateResourcePool(context.TODO(), rpSpec)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("ServerFaultCode: DuplicateName"))
+				Expect(rpMoId).To(BeEmpty())
+			})
+		})
+		Context("Delete a Resource Pool that doesnt exist", func() {
+			It("should succeed", func() {
+				Expect(session.DeleteResourcePool(context.TODO(), rpSpec.Name)).To(Succeed())
+			})
+		})
+	})
+
+	Describe("Folder", func() {
+		var folderName string
+		var folderSpec *v1alpha1.FolderSpec
+
+		BeforeEach(func() {
+			folderName = "test-folder"
+			folderSpec = &vmoperatorv1alpha1.FolderSpec{
+				Name: folderName,
+			}
+		})
+
+		Context("Create a Folder, verify it exists and delete it", func() {
+			JustBeforeEach(func() {
+				folderMoId, err := session.CreateFolder(context.TODO(), folderSpec)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(folderMoId).To(Not(BeEmpty()))
+
+			})
+			JustAfterEach(func() {
+				Expect(session.DeleteFolder(context.TODO(), folderName)).To(Succeed())
+			})
+
+			It("create is tested in setup", func() {
+				// Create is tested in JustBeforeEach
+			})
+
+			It("Verifies if a Folder exists", func() {
+				exists, err := session.DoesFolderExist(context.TODO(), integration.DefaultNamespace, folderName)
+				Expect(exists).To(BeTrue())
+				Expect(err).NotTo(HaveOccurred())
+			})
+			It("delete is tested in teardown", func() {
+				// Delete is tested in JustAfterEach
+			})
+		})
+
+		Context("Create two folders with the duplicate names", func() {
+			It("Second folder should fail to create", func() {
+				folderMoId1, err := session.CreateFolder(context.TODO(), folderSpec)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(folderMoId1).To(Not(BeEmpty()))
+
+				// Try to crete another folder with the same spec.
+				folderMoId2, err := session.CreateFolder(context.TODO(), folderSpec)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("ServerFaultCode: DuplicateName"))
+				Expect(folderMoId2).To(BeEmpty())
+			})
+		})
+		Context("Delete a Folder that doesnt exist", func() {
+			It("should succeed", func() {
+				Expect(session.DeleteFolder(context.TODO(), folderSpec.Name)).To(Succeed())
 			})
 		})
 	})

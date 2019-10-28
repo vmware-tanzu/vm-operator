@@ -257,6 +257,148 @@ func (s *Session) GetVirtualMachine(ctx context.Context, name string) (*res.Virt
 	return s.lookupVm(ctx, name)
 }
 
+// DoesResourcePoolExist checks if a ResourcePool with the given name exists.
+func (s *Session) DoesResourcePoolExist(ctx context.Context, namespace, resourcePoolName string) (bool, error) {
+	parentResourcePoolPath := s.resourcepool.InventoryPath
+	childResourcePoolPath := parentResourcePoolPath + "/" + resourcePoolName
+
+	log.V(4).Info("Checking if ResourcePool exists", "Name", resourcePoolName, "Path", childResourcePoolPath)
+	_, err := GetResourcePool(ctx, s.Finder, childResourcePoolPath)
+	if err != nil {
+		switch err.(type) {
+		case *find.NotFoundError, *find.DefaultNotFoundError:
+			return false, nil
+		default:
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+// CreateResourcePool creates a ResourcePool under the parent ResourcePool (session.resourcePool).
+func (s *Session) CreateResourcePool(ctx context.Context, rpSpec *v1alpha1.ResourcePoolSpec) (string, error) {
+	log.Info("Creating ResourcePool", "Name", rpSpec.Name)
+
+	// CreteResourcePool is invoked during a ResourcePolicy reconciliation to create a ResourcePool for a set of
+	// VirtualMachines. The new RP is created under the RP corresponding to the session.
+	// For a Supervisor Cluster deployment, the session's RP is the supervisor cluster namespace's RP.
+	// For IAAS deployments, the session's RP correspond to RP in provider ConfigMap.
+
+	poolSpec := types.DefaultResourceConfigSpec()
+	parentRPObj := s.resourcepool
+	childRpObj, err := parentRPObj.Create(ctx, rpSpec.Name, poolSpec)
+
+	if err != nil {
+		return "", err
+	}
+
+	log.V(4).Info("Created ResourcePool", "Name", childRpObj.Name(), "Path", childRpObj.InventoryPath)
+
+	return childRpObj.Reference().Value, nil
+}
+
+// UpdateResourcePool updates a ResourcePool with the given spec.
+func (s *Session) UpdateResourcePool(ctx context.Context, rpSpec *v1alpha1.ResourcePoolSpec) error {
+	// Nothing to do if no reservation and limits set.
+	hasReservations := !rpSpec.Reservations.Cpu.IsZero() || !rpSpec.Reservations.Memory.IsZero()
+	hasLimits := !rpSpec.Limits.Cpu.IsZero() || !rpSpec.Limits.Memory.IsZero()
+	if !hasReservations || !hasLimits {
+		return nil
+	}
+
+	log.V(4).Info("Updating the ResourcePool", "Name", rpSpec.Name)
+	// TODO 
+	return nil
+}
+
+func (s *Session) DeleteResourcePool(ctx context.Context, resourcePoolName string) error {
+	log.Info("Deleting the ResourcePool", "Name", resourcePoolName)
+	rpPath := s.resourcepool.InventoryPath + "/" + resourcePoolName
+	rpObj, err := GetResourcePool(ctx, s.Finder, rpPath)
+	if err != nil {
+		log.V(2).Info("To be deleted ResourcePool not found", "Name", resourcePoolName, "Path", rpPath)
+		return nil
+	}
+
+	task, err := rpObj.Destroy(ctx)
+	if err != nil {
+		log.Error(err, "Failed to invoke destroy for ResourcePool", "Name", resourcePoolName)
+		return err
+	}
+
+	if taskResult, err := task.WaitForResult(ctx, nil); err != nil {
+		log.Error(err, "Error in deleting ResourcePool", "Name", resourcePoolName, "Error Received", taskResult.Error.LocalizedMessage)
+		return err
+	}
+
+	return nil
+}
+
+// DoesFolderExist checks if a Folder with the given name exists.
+func (s *Session) DoesFolderExist(ctx context.Context, namespace, folderName string) (bool, error) {
+	parentFolderPath := s.folder.InventoryPath
+	childFolderPath := parentFolderPath + "/" + folderName
+
+	log.V(4).Info("Checking if a Folder exists", "Name", folderName, "Path", childFolderPath)
+
+	_, err := GetVMFolder(ctx, s.Finder, childFolderPath)
+	if err != nil {
+		switch err.(type) {
+		case *find.NotFoundError, *find.DefaultNotFoundError:
+			return false, nil
+		default:
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+// CreateFolder creates a folder under the parent Folder (session.folder).
+func (s *Session) CreateFolder(ctx context.Context, folderSpec *v1alpha1.FolderSpec) (string, error) {
+	log.Info("Creating new Folder", "Name", folderSpec.Name)
+
+	// CreateFolder is invoked during a ResourcePolicy reconciliation to create a Folder for a set of VirtualMachines.
+	// The new Folder is created under the Folder corresponding to the session.
+	// For a Supervisor Cluster deployment, the session's Folder is the supervisor cluster namespace's Folder.
+	// For IAAS deployments, the session's Folder corresponds to Folder in provider ConfigMap.
+
+	folderObj, err := s.folder.CreateFolder(ctx, folderSpec.Name)
+	if err != nil {
+		return "", err
+	}
+
+	log.V(4).Info("Created Folder", "name", folderObj.Name(), "path", folderObj.InventoryPath)
+
+	return folderObj.Reference().Value, nil
+}
+
+// CreateFolder creates a folder under the parent Folder (session.folder).
+func (s *Session) DeleteFolder(ctx context.Context, folderName string) error {
+	log.Info("Deleting the Folder", "Name", folderName)
+
+	folderPath := s.folder.InventoryPath + "/" + folderName
+	folderObj, err := GetVMFolder(ctx, s.Finder, folderPath)
+	if err != nil {
+		log.V(2).Info("To be deleted folder not found", "Name", folderName, "Path", folderPath)
+		return nil
+	}
+
+	task, err := folderObj.Destroy(ctx)
+	if err != nil {
+		return err
+	}
+
+	if taskResult, err := task.WaitForResult(ctx, nil); err != nil {
+		log.Error(err, "Error in deleting the Folder.", "name", folderName, "Error Received", taskResult.Error.LocalizedMessage)
+	}
+
+	log.V(4).Info("Deleted Folder", "name", folderName)
+
+	return nil
+}
+
 func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) (*res.VirtualMachine, error) {
 	deviceSpecs, err := s.deviceSpecsFromVM(ctx, vm)

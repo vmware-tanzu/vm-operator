@@ -6,9 +6,13 @@ package virtualmachineservice
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineservice/utils"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineservice/providers"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware-tanzu/vm-operator/pkg"
@@ -187,7 +191,7 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx context.Context,
 
 	// Translate vm service to service
 	service := r.vmServiceToService(vmService)
-	log.V(4).Info("Translate VM Service to K8S Service", "k8s service", service)
+	log.V(5).Info("Translate VM Service to K8S Service", "k8s service", service)
 	// Update k8s Service
 	newService, err := r.createOrUpdateService(ctx, vmService, service, loadBalancerName)
 	if err != nil {
@@ -201,8 +205,8 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx context.Context,
 		return err
 	}
 	// Update vm service
-	newVMService, err := r.updateVmService(ctx, vmService, newService)
-	log.Info("Updated new vm services", "new vm service", newVMService)
+	newVMService, err := r.updateVmServiceStatus(ctx, vmService, newService)
+	log.V(5).Info("Updated new vm services", "new vm service", newVMService)
 	return err
 }
 
@@ -251,8 +255,8 @@ func (r *ReconcileVirtualMachineService) makeEndpointAddress(vmService *vmoperat
 
 //Get virtual network name from vm spec
 func (r *ReconcileVirtualMachineService) getVirtualNetworkName(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (string, error) {
-	log.V(4).Info("Get Virtual Network Name", "vmservice", vmService.NamespacedName())
-	defer log.V(4).Info("Finished Get Virtual Network Name", "vmservice", vmService.NamespacedName())
+	log.V(5).Info("Get Virtual Network Name", "vmservice", vmService.NamespacedName())
+	defer log.V(5).Info("Finished Get Virtual Network Name", "vmservice", vmService.NamespacedName())
 
 	vmList := &vmoperatorv1alpha1.VirtualMachineList{}
 	err := r.List(ctx, client.MatchingLabels(vmService.Spec.Selector), vmList)
@@ -270,6 +274,7 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 	var servicePorts []corev1.ServicePort
 	for _, vmPort := range vmService.Spec.Ports {
 		sport := corev1.ServicePort{
+			// No node port field in vm service, cant't translate that one
 			Name:       vmPort.Name,
 			Protocol:   corev1.Protocol(vmPort.Protocol),
 			Port:       vmPort.Port,
@@ -286,8 +291,10 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 		ObjectMeta: *om,
 		Spec: corev1.ServiceSpec{
 			// Don't specify selector to keep endpoints controller from interfering
-			Type:  corev1.ServiceType(vmService.Spec.Type),
-			Ports: servicePorts,
+			Type:         corev1.ServiceType(vmService.Spec.Type),
+			Ports:        servicePorts,
+			ExternalName: vmService.Spec.ExternalName,
+			ClusterIP:    vmService.Spec.ClusterIP,
 		},
 	}
 }
@@ -342,18 +349,40 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Conte
 		// not exist, need to create one
 		log.Info("No k8s service in this name, creating one", "name", serviceKey)
 		currentService = service
+	} else {
+		ok, err := utils.VMServiceCompareToLastApplied(vmService, currentService.GetAnnotations()[corev1.LastAppliedConfigAnnotation])
+		if err != nil {
+			log.Error(err, "unmarshal vm service: [%s/%s]'s applied config failed,error: %v", currentService.GetNamespace(), currentService.GetName(), err)
+		}
+		if ok {
+			log.V(5).Info("No change, no need to update service", "name", vmService.NamespacedName(), "service", service)
+			return currentService, nil
+		}
 	}
 
-	// update service labels and ports
+	// just update possible changed service fields
 	newService := currentService.DeepCopy()
 	newService.Labels = service.Labels
+	newService.Spec.Type = service.Spec.Type
+	newService.Spec.ExternalName = service.Spec.ExternalName
+
 	newService.Spec.Ports = service.Spec.Ports
+	// can't simply copy everything, need to keep node port unchanged
+	portNodePortMap := make(map[int32]int32)
+	for _, servicePort := range currentService.Spec.Ports {
+		portNodePortMap[servicePort.Port] = servicePort.NodePort
+	}
+	for idx, servicePort := range newService.Spec.Ports {
+		if nodePort, ok := portNodePortMap[servicePort.Port]; ok {
+			newService.Spec.Ports[idx].NodePort = nodePort
+		}
+	}
+
 	pkg.AddAnnotations(&newService.ObjectMeta)
 
 	// create or update service
 	createService := len(currentService.ResourceVersion) == 0
 	if createService {
-		log.Info("Creating k8s service", "name", serviceKey, "service", newService)
 		//every time create a load balancer type vm service, need to append this vm service to load balancer owner reference list
 		if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
 			err = r.loadbalancerProvider.UpdateLoadBalancerOwnerReference(ctx, loadBalancerName, vmService)
@@ -362,6 +391,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Conte
 				return nil, err
 			}
 		}
+		log.Info("Creating k8s service", "name", serviceKey, "service", newService)
 		err = r.Create(ctx, newService)
 		defer record.EmitEvent(vmService, OpCreate, &err, false)
 	} else {
@@ -388,7 +418,6 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 		return err
 	}
 
-	// Determine if any endpoints match
 	var subsets []corev1.EndpointSubset
 
 	for _, vm := range vmList.Items {
@@ -425,87 +454,76 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 			epp := &corev1.EndpointPort{Name: portName, Port: int32(portNum), Protocol: portProto}
 			subsets = addEndpointSubset(subsets, &vm, epa, epp)
 		}
-
-		// See if there's actually an update here.
-		currentEndpoints := &corev1.Endpoints{}
-		err := r.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, currentEndpoints)
-		if err != nil {
-			if !errors.IsNotFound(err) {
-				log.Error(err, "Failed to list services")
-				return err
-			}
-
-			currentEndpoints = &corev1.Endpoints{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   service.Name,
-					Labels: service.Labels,
-				},
-			}
-		}
-
-		newEndpoints := r.makeEndpoints(vmService, currentEndpoints, subsets)
-
-		createEndpoints := len(currentEndpoints.ResourceVersion) == 0
-		if createEndpoints {
-			log.Info("Creating service endpoints",
-				"service name", vmService.NamespacedName(), "endpoints", newEndpoints)
-			err = r.Create(ctx, newEndpoints)
-		} else {
-			log.Info("Updating service endpoints", "service name", vmService.NamespacedName(), "endpoints", newEndpoints)
-			err = r.Update(ctx, newEndpoints)
-		}
-
-		if err != nil {
-			if createEndpoints && errors.IsForbidden(err) {
-				// A request is forbidden primarily for two reasons:
-				// 1. namespace is terminating, endpoint creation is not allowed by default.
-				// 2. policy is mis-configured, in which case no service would function anywhere.
-				// Given the frequency of 1, we log at a lower level.
-				log.V(5).Info("Forbidden from creating endpoints", "error", err.Error())
-			}
-			return err
-		}
 	}
 
+	// See if there's actually an update here.
+	currentEndpoints := &corev1.Endpoints{}
+	err = r.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, currentEndpoints)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			log.Error(err, "Failed to list endpoints")
+			return err
+		}
+
+		currentEndpoints = &corev1.Endpoints{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   service.Name,
+				Labels: service.Labels,
+			},
+		}
+	} else if apiequality.Semantic.DeepEqual(currentEndpoints.Subsets, subsets) {
+		log.V(5).Info("No change, no need to update endpoints", "endpoints", currentEndpoints)
+		return nil
+	}
+	newEndpoints := r.makeEndpoints(vmService, currentEndpoints, subsets)
+
+	createEndpoints := len(currentEndpoints.ResourceVersion) == 0
+	if createEndpoints {
+		log.Info("Creating service endpoints", "service name", vmService.NamespacedName(), "endpoints", newEndpoints)
+		err = r.Create(ctx, newEndpoints)
+	} else {
+		log.Info("Updating service endpoints", "service name", vmService.NamespacedName(), "endpoints", newEndpoints)
+		err = r.Update(ctx, newEndpoints)
+	}
+
+	if err != nil {
+		if createEndpoints && errors.IsForbidden(err) {
+			// A request is forbidden primarily for two reasons:
+			// 1. namespace is terminating, endpoint creation is not allowed by default.
+			// 2. policy is mis-configured, in which case no service would function anywhere.
+			// Given the frequency of 1, we log at a lower level.
+			log.V(5).Info("Forbidden from creating endpoints", "error", err.Error())
+		}
+		return err
+	}
 	return nil
 }
 
-// Create or update vm service
-func (r *ReconcileVirtualMachineService) updateVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, newService *corev1.Service) (*vmoperatorv1alpha1.VirtualMachineService, error) {
+// updateVmServiceStatus update vmservice status, sync external ip for loadbalancer type of service
+func (r *ReconcileVirtualMachineService) updateVmServiceStatus(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, newService *corev1.Service) (*vmoperatorv1alpha1.VirtualMachineService, error) {
 	log.Info("Updating VirtualMachineService", "name", vmService.NamespacedName())
 	defer log.Info("Finished updating VirtualMachineService", "name", vmService.NamespacedName())
-
-	// find current vm service
-	// BMV: vmService is from r.Get() at the start of Reconcile so needed to do it again?
-	currentVMService := &vmoperatorv1alpha1.VirtualMachineService{}
-	err := r.Get(ctx, types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name}, currentVMService)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			log.Error(err, "Failed to get VirtualMachineService", "name", vmService.NamespacedName())
-			return nil, err
-		}
-		currentVMService = vmService
-	}
-	// update vm service
-	newVMService := currentVMService.DeepCopy()
 	// if could update loadbalancer external IP
 	if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer && len(newService.Status.LoadBalancer.Ingress) > 0 {
-		//copy service ingress array to vm service ingress array
-		newVMService.Status.LoadBalancer.Ingress = make([]vmoperatorv1alpha1.LoadBalancerIngress, len(newService.Status.LoadBalancer.Ingress))
-		for idx, ingress := range newService.Status.LoadBalancer.Ingress {
-			vmIngress := vmoperatorv1alpha1.LoadBalancerIngress{
-				IP:       ingress.IP,
-				Hostname: ingress.Hostname,
+		vmServiceStatusStr, _ := json.Marshal(vmService.Status)
+		serviceStatusStr, _ := json.Marshal(newService.Status)
+		if string(vmServiceStatusStr) != string(serviceStatusStr) {
+			//copy service ingress array to vm service ingress array
+			vmService.Status.LoadBalancer.Ingress = make([]vmoperatorv1alpha1.LoadBalancerIngress, len(newService.Status.LoadBalancer.Ingress))
+			for idx, ingress := range newService.Status.LoadBalancer.Ingress {
+				vmIngress := vmoperatorv1alpha1.LoadBalancerIngress{
+					IP:       ingress.IP,
+					Hostname: ingress.Hostname,
+				}
+				vmService.Status.LoadBalancer.Ingress[idx] = vmIngress
 			}
-			newVMService.Status.LoadBalancer.Ingress[idx] = vmIngress
-		}
-		if err = r.Status().Update(ctx, newVMService); err != nil {
-			log.Error(err, "Failed to update VirtualMachineService Status", "name", newVMService.NamespacedName())
-			return nil, err
+			if err := r.Status().Update(ctx, vmService); err != nil {
+				log.Error(err, "Failed to update VirtualMachineService Status", "name", vmService.NamespacedName())
+				return nil, err
+			}
 		}
 	}
-
 	// BMV: newVMService isn't saved after this point so annotations are missing
-	pkg.AddAnnotations(&newVMService.ObjectMeta)
-	return newVMService, nil
+	pkg.AddAnnotations(&vmService.ObjectMeta)
+	return vmService, nil
 }

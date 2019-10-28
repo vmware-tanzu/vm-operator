@@ -88,10 +88,11 @@ var _ = Describe("Sessions", func() {
 	})
 
 	Describe("Clone VM", func() {
+		ctx := context.TODO()
 		BeforeEach(func() {
 			//set source to use VM inventory
 			config.ContentSource = ""
-			err = session.ConfigureContent(context.TODO(), config.ContentSource)
+			err = session.ConfigureContent(ctx, config.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
 		})
 		Context("without specifying any networks in VM Spec", func() {
@@ -100,11 +101,19 @@ var _ = Describe("Sessions", func() {
 				vmClass := getVMClassInstance(testVMName, testNamespace)
 				vm := getVirtualMachineInstance(testVMName, testNamespace, imageName, vmClass.Name)
 				vmMetadata := map[string]string{}
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
+				resVM, err := session.GetVirtualMachine(ctx, "DC0_H0_VM0")
+				Expect(err).NotTo(HaveOccurred())
+				nicChanges, err := session.GetNicChangeSpecs(ctx, vm, resVM)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(nicChanges)).Should(Equal(0))
+				nicChanges, err = session.GetNicChangeSpecs(ctx, vm, nil)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(nicChanges)).Should(Equal(0))
+				clonedVM, err := session.CloneVirtualMachine(ctx, vm, *vmClass, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM).ShouldNot(BeNil())
 				// Existing NIF should not be changed.
-				netDevices, err := clonedVM.GetNetworkDevices(context.TODO())
+				netDevices, err := clonedVM.GetNetworkDevices(ctx)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(netDevices)).Should(Equal(1))
 				dev := netDevices[0].GetVirtualDevice()
@@ -130,10 +139,30 @@ var _ = Describe("Sessions", func() {
 						EthernetCardType: "e1000",
 					},
 				}
-				vmMetadata := map[string]string{}
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
+				resVM, err := session.GetVirtualMachine(ctx, "DC0_H0_VM0")
 				Expect(err).NotTo(HaveOccurred())
-				netDevices, err := clonedVM.GetNetworkDevices(context.TODO())
+				nicChanges, err := session.GetNicChangeSpecs(ctx, vm, resVM)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(nicChanges)).Should(Equal(3))
+				numAdd := 0
+				for _, changeSpec := range nicChanges {
+					Expect(changeSpec.GetVirtualDeviceConfigSpec().Operation).ShouldNot(Equal(vimTypes.VirtualDeviceConfigSpecOperationEdit))
+					if changeSpec.GetVirtualDeviceConfigSpec().Operation == vimTypes.VirtualDeviceConfigSpecOperationAdd {
+						numAdd += 1
+						continue
+					}
+				}
+				Expect(numAdd).Should(Equal(2))
+				nicChanges, err = session.GetNicChangeSpecs(ctx, vm, nil)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(nicChanges)).Should(Equal(2))
+				for _, changeSpec := range nicChanges {
+					Expect(changeSpec.GetVirtualDeviceConfigSpec().Operation).Should(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+				}
+				vmMetadata := map[string]string{}
+				clonedVM, err := session.CloneVirtualMachine(ctx, vm, *vmClass, vmMetadata, "foo")
+				Expect(err).NotTo(HaveOccurred())
+				netDevices, err := clonedVM.GetNetworkDevices(ctx)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(netDevices)).Should(Equal(2))
 				// The interface type should be default vmxnet3
@@ -163,6 +192,17 @@ var _ = Describe("Sessions", func() {
 				imageName := "DC0_H0_VM0"
 				vmClass := getVMClassInstance(testVMName, testNamespace)
 				vm := getVirtualMachineInstance(testVMName+"with-default-net", testNamespace, imageName, vmClass.Name)
+				resVM, err := session.GetVirtualMachine(ctx, "DC0_H0_VM0")
+				Expect(err).NotTo(HaveOccurred())
+				nicChanges, err := session.GetNicChangeSpecs(ctx, vm, resVM)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(nicChanges)).Should(Equal(1))
+				for _, changeSpec := range nicChanges {
+					Expect(changeSpec.GetVirtualDeviceConfigSpec().Operation).Should(Equal(vimTypes.VirtualDeviceConfigSpecOperationEdit))
+				}
+				nicChanges, err = session.GetNicChangeSpecs(ctx, vm, nil)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(nicChanges)).Should(Equal(0))
 				vmMetadata := map[string]string{}
 				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())

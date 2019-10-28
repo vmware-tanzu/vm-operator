@@ -12,22 +12,18 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
-	vmoperator "github.com/vmware-tanzu/vm-operator"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
 
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 	"k8s.io/client-go/rest"
-
-	"path/filepath"
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test/suite"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis"
-	cnsv1alpha1 "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	"k8s.io/client-go/kubernetes/scheme"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -50,17 +46,9 @@ var _ = BeforeSuite(func() {
 	testEnv, err = suite.InstallLocalTestingAPIAggregationEnvironment("vmoperator.vmware.com", "v1alpha1")
 	Expect(err).NotTo(HaveOccurred())
 
-	_, err := envtest.InstallCRDs(testEnv.KubeAPIServerEnvironment.Config, envtest.CRDInstallOptions{
-		Paths: []string{
-			filepath.Join(vmoperator.Rootpath, "config", "crds", "external-crds")},
-	})
-	Expect(err).NotTo(HaveOccurred())
-
 	cfg = testEnv.LoopbackClientConfig
 
 	err = apis.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = cnsv1alpha1.SchemeBuilder.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	stdlog.Print("setting up integration test env..")

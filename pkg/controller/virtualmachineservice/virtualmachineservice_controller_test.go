@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/intstr"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/google/uuid"
@@ -73,6 +75,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 				Name:      leaderElectionConfigMap,
 			},
 		}
+
 		err := c.Delete(context.Background(), configMap)
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -184,6 +187,201 @@ var _ = Describe("VirtualMachineService controller", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(len(vmList.Items)).To(Equal(1))
 			Expect(vmList.Items[0].Name).To(Equal("dummy-vm-1"))
+		})
+	})
+
+	Describe("when update k8s objects", func() {
+		var (
+			port = corev1.ServicePort{
+				Name:     "foo",
+				Protocol: "TCP",
+				Port:     42,
+				TargetPort: intstr.IntOrString{
+					Type:   intstr.Int,
+					IntVal: 8080,
+					StrVal: "",
+				},
+			}
+
+			vmPort = vmoperatorv1alpha1.VirtualMachineServicePort{
+				Name:       "foo",
+				Protocol:   "TCP",
+				Port:       42,
+				TargetPort: 42,
+			}
+
+			service = &corev1.Service{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Service",
+					APIVersion: "core/v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   ns,
+					Name:        "dummy-service",
+					Annotations: map[string]string{corev1.LastAppliedConfigAnnotation: `{"apiVersion":"vmoperator.vmware.com/v1alpha1","kind":"VirtualMachineService","metadata":{"annotations":{},"name":"dummy-service","namespace":"default"},"spec":{"ports":[{"name":"foo","port":42,"protocol":"TCP","targetPort":42}],"selector":{"foo":"bar"},"type":"LoadBalancer"}}`},
+				},
+				Spec: corev1.ServiceSpec{
+					Type:  corev1.ServiceTypeLoadBalancer,
+					Ports: []corev1.ServicePort{port},
+				},
+				Status: corev1.ServiceStatus{
+					LoadBalancer: corev1.LoadBalancerStatus{
+						Ingress: []corev1.LoadBalancerIngress{
+							{
+								IP:       "10.0.0.1",
+								Hostname: "TEST",
+							},
+						},
+					},
+				},
+			}
+			vmService = &vmoperatorv1alpha1.VirtualMachineService{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      "dummy-service",
+				},
+				Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+					Type:     vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer,
+					Ports:    []vmoperatorv1alpha1.VirtualMachineServicePort{vmPort},
+					Selector: map[string]string{"foo": "bar"},
+				},
+			}
+		)
+
+		Describe("when update service", func() {
+			It("should update service when it is not the same service", func() {
+				err := c.Create(context.TODO(), service)
+				Expect(err).ShouldNot(HaveOccurred())
+				currentService := &corev1.Service{}
+				err = c.Get(context.TODO(), types.NamespacedName{service.Namespace, service.Name}, currentService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				changedVMService := &vmoperatorv1alpha1.VirtualMachineService{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ns,
+						Name:      "dummy-service",
+					},
+					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+						Type: vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer,
+						Ports: []vmoperatorv1alpha1.VirtualMachineServicePort{
+							{
+								Name:       "test",
+								Protocol:   "TCP",
+								Port:       80,
+								TargetPort: 80,
+							},
+						},
+						Selector: map[string]string{"foo": "bar"},
+					},
+				}
+
+				newService, err := r.createOrUpdateService(context.TODO(), changedVMService, service, "test-lb")
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(newService).NotTo(Equal(currentService))
+			})
+
+			It("should not update service when it is the same service", func() {
+				currentService := &corev1.Service{}
+				err = c.Get(context.TODO(), types.NamespacedName{service.Namespace, service.Name}, currentService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				newService, err := r.createOrUpdateService(context.TODO(), vmService, currentService, "test-lb")
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(newService).To(Equal(currentService))
+			})
+		})
+
+		Describe("when update vm service", func() {
+			It("should update vm service when it is not the same with exist vm service", func() {
+				err := c.Create(context.TODO(), vmService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				currentVMService := &vmoperatorv1alpha1.VirtualMachineService{}
+				err = c.Get(context.TODO(), types.NamespacedName{vmService.Namespace, vmService.Name}, currentVMService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				changedVMService := &vmoperatorv1alpha1.VirtualMachineService{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ns,
+						Name:      "dummy-service",
+					},
+					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+						Type:     vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer,
+						Ports:    []vmoperatorv1alpha1.VirtualMachineServicePort{vmPort},
+						Selector: map[string]string{"foo": "bar"},
+					},
+				}
+
+				newVMService, err := r.updateVmServiceStatus(context.TODO(), changedVMService, service)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(newVMService).NotTo(Equal(currentVMService))
+			})
+
+			It("should not update vm service when it is the same with exist vm service", func() {
+				currentVMService := &vmoperatorv1alpha1.VirtualMachineService{}
+				err = c.Get(context.TODO(), types.NamespacedName{vmService.Namespace, vmService.Name}, currentVMService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				newVMService, err := r.updateVmServiceStatus(context.TODO(), currentVMService, service)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(newVMService).To(Equal(currentVMService))
+			})
+		})
+
+		Describe("when update endpoints", func() {
+			It("should update endpoints when it is not the same with exist endpoints", func() {
+				currentEndpoints := &corev1.Endpoints{}
+				err = c.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: integration.DefaultNamespace}, currentEndpoints)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				changedService := &corev1.Service{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "Service",
+						APIVersion: "core/v1",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: integration.DefaultNamespace,
+						Name:      name,
+						Labels:    map[string]string{"foo": "bar"},
+					},
+					Spec: corev1.ServiceSpec{
+						Type:  corev1.ServiceTypeClusterIP,
+						Ports: []corev1.ServicePort{port},
+					},
+				}
+				err = r.updateEndpoints(context.TODO(), vmService, changedService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				newEndpoints := &corev1.Endpoints{}
+				err = c.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: integration.DefaultNamespace}, currentEndpoints)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(currentEndpoints).NotTo(Equal(newEndpoints))
+			})
+
+			It("should not update endpoints when it is the same with exist endpoints", func() {
+				endpoints := &corev1.Endpoints{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ns,
+						Name:      "dummy-service",
+					},
+					Subsets: nil,
+				}
+				err = c.Create(context.TODO(), endpoints)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				currentEndpoints := &corev1.Endpoints{}
+				err = c.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, currentEndpoints)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				err = r.updateEndpoints(context.TODO(), vmService, service)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				newEndpoints := &corev1.Endpoints{}
+				err = c.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, newEndpoints)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				Expect(currentEndpoints).To(Equal(newEndpoints))
+			})
 		})
 	})
 })

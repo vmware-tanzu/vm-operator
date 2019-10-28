@@ -8,7 +8,6 @@ import (
 	"context"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	volumeproviders "github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachine/providers"
 	v1 "k8s.io/api/core/v1"
 	storagetypev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -31,7 +30,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	cnsv1alpha1 "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 )
 
 const (
@@ -61,10 +59,9 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	provider := vmprovider.GetVmProviderOrDie()
 
 	return &ReconcileVirtualMachine{
-		Client:         mgr.GetClient(),
-		scheme:         mgr.GetScheme(),
-		vmProvider:     provider,
-		volumeProvider: volumeproviders.CnsVolumeProvider(mgr.GetClient()),
+		Client:     mgr.GetClient(),
+		scheme:     mgr.GetScheme(),
+		vmProvider: provider,
 	}
 }
 
@@ -82,15 +79,6 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// Watch for changes for CnsNodeVmAttachment, and enqueue VirtualMachine which is the owner of CnsNodeVmAttachment
-	err = c.Watch(&source.Kind{Type: &cnsv1alpha1.CnsNodeVmAttachment{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &vmoperatorv1alpha1.VirtualMachine{},
-	})
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -99,9 +87,8 @@ var _ reconcile.Reconciler = &ReconcileVirtualMachine{}
 // ReconcileVirtualMachine reconciles a VirtualMachine object
 type ReconcileVirtualMachine struct {
 	client.Client
-	scheme         *runtime.Scheme
-	vmProvider     vmprovider.VirtualMachineProviderInterface
-	volumeProvider volumeproviders.VolumeProviderInterface
+	scheme     *runtime.Scheme
+	vmProvider vmprovider.VirtualMachineProviderInterface
 }
 
 // Reconcile reads that state of the cluster for a VirtualMachine object and makes changes based on the state read
@@ -110,8 +97,6 @@ type ReconcileVirtualMachine struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses,verbs=get;list
-// +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmattachments,verbs=create;delete;get;list;watch;patch;update
-// +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmattachments/status,verbs=get;list
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmware.com,resources=virtualnetworkinterfaces;virtualnetworkinterfaces/status,verbs=create;get;list;patch;delete;watch;update
 // +kubebuilder:rbac:groups="",resources=events;configmaps,verbs=get;list;watch;create;update;patch;delete
@@ -201,10 +186,6 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 		return err
 	}
 
-	// Before the VM being created or updated, figure out the Volumes[] VirtualMachineVolumes change.
-	// This step determines what CnsNodeVmAttachments need to be created or deleted
-	vmVolumesToProcess, _ := volumeproviders.GetVmVolumesToProcess(vm)
-
 	if exists {
 		err = r.updateVm(ctx, vm)
 	} else {
@@ -219,19 +200,6 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 		return uErr
 	}
 
-	if err != nil {
-		return err
-	}
-
-	// Create CnsNodeVMAttachments on demand if VM has been reconciled properly
-	err = r.volumeProvider.AttachVolumes(ctx, vm, vmVolumesToProcess)
-	if err != nil {
-		return err
-	}
-
-	// TODO: Delete CnsNodeVMAttachments on demand if VM has been reconciled properly
-
-	err = r.volumeProvider.UpdateVmVolumesStatus(ctx, vm)
 	if err != nil {
 		return err
 	}

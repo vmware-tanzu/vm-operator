@@ -343,7 +343,7 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 	}
 
 	// Add device change specs to configSpec
-	deviceSpecs, err := ses.deviceChangeSpecs(ctx, vm, resVm)
+	deviceSpecs, err := ses.GetNicChangeSpecs(ctx, vm, resVm)
 	if err != nil {
 		return transformVmError(vmName, err)
 	}

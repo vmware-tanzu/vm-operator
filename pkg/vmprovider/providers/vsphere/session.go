@@ -401,13 +401,13 @@ func (s *Session) DeleteFolder(ctx context.Context, folderName string) error {
 
 func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) (*res.VirtualMachine, error) {
-	deviceSpecs, err := s.deviceSpecsFromVM(ctx, vm)
+	nicSpecs, err := s.GetNicChangeSpecs(ctx, vm, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	name := vm.Name
-	configSpec, err := s.configSpecFromClassSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
+	configSpec, err := s.configSpecFromClassSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata, nicSpecs)
 	if err != nil {
 		return nil, err
 	}
@@ -436,13 +436,13 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 			return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
 		}
 		// Create network resource and reconfigure VM
-		deviceSpecs, err := s.deviceChangeSpecs(ctx, vm, deployedVm)
+		nicSpecs, err := s.GetNicChangeSpecs(ctx, vm, deployedVm)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to generate device change spec for VM %q", name)
 		}
 		// configure VM device
 		err = deployedVm.Reconfigure(ctx, &vimTypes.VirtualMachineConfigSpec{
-			DeviceChange: deviceSpecs,
+			DeviceChange: nicSpecs,
 		})
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to reconfigure VM %q", name)
@@ -500,14 +500,14 @@ func cpuQuantityToMhz(q resource.Quantity) int64 {
 	return int64(math.Ceil(float64(q.Value()) / float64(1000*1000)))
 }
 
-func (s *Session) deviceSpecsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
-	var deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec
+func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine) ([]vimTypes.BaseVirtualDevice, error) {
+	devices := make([]vimTypes.BaseVirtualDevice, 0, len(vm.Spec.NetworkInterfaces))
 
 	// The clients should ensure that existing device keys are not reused as temporary key values for the new device to be added, hence
 	//  use unique negative integers as temporary keys.
 	key := int32(-100)
 	for _, vif := range vm.Spec.NetworkInterfaces {
-		np, err := s.getNetworkProviderByType(vif.NetworkType)
+		np, err := NetworkProviderByType(vif.NetworkType, s.Finder, s.ncpClient)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get network provider")
 		}
@@ -516,57 +516,67 @@ func (s *Session) deviceSpecsFromVM(ctx context.Context, vm *v1alpha1.VirtualMac
 			return nil, errors.Wrapf(err, "failed to create vnic '%v'", vif)
 		}
 		dev = setVnicKey(dev, key)
+		devices = append(devices, dev)
+		/*
+			deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
+				Device:    dev,
+				Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+			})
+		*/
+		key--
+	}
+	return devices, nil
+}
+
+// GetNicChangeSpecs - Returns changes for NIC device that need to be done to get desired VM config
+func (s *Session) GetNicChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMachine, resSrcVm *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+	var deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec
+
+	if resSrcVm != nil {
+		netDevices, err := resSrcVm.GetNetworkDevices(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		// Note: If no network interface is specified in the vm spec we don't remove existing interfaces while cloning. However,
+		// if a default network is configured in vmoperator config then we update the backing for the existing network interfaces.
+		if len(vm.Spec.NetworkInterfaces) == 0 {
+			if s.network != nil {
+				for _, dev := range netDevices {
+					backingInfo, err := s.network.EthernetCardBackingInfo(ctx)
+					if err != nil {
+						return nil, errors.Wrapf(err, "unable to create new ethernet card backing info for network %+v", s.network.Reference())
+					}
+					dev.GetVirtualDevice().Backing = backingInfo
+					deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
+						Device:    dev,
+						Operation: vimTypes.VirtualDeviceConfigSpecOperationEdit,
+					})
+				}
+			}
+			return deviceSpecs, nil
+		}
+
+		// Remove any existing NICs
+		for _, dev := range netDevices {
+			deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
+				Device:    dev,
+				Operation: vimTypes.VirtualDeviceConfigSpecOperationRemove,
+			})
+		}
+	}
+
+	// Add new NICs
+	vmNics, err := s.getNicsFromVM(ctx, vm)
+	if err != nil {
+		return nil, err
+	}
+	for _, dev := range vmNics {
 		deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
 			Device:    dev,
 			Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
 		})
-
-		key--
 	}
-	return deviceSpecs, nil
-}
-
-func (s *Session) deviceChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMachine, resSrcVm *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
-	netDevices, err := resSrcVm.GetNetworkDevices(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec
-
-	// Note: If no network interface is specified in the vm spec we don't remove existing interfaces while cloning. However,
-	// if a default network is configured in vmoperator config then we update the backing for the existing network interfaces.
-	if len(vm.Spec.NetworkInterfaces) == 0 {
-		if s.network != nil {
-			for _, dev := range netDevices {
-				backingInfo, err := s.network.EthernetCardBackingInfo(ctx)
-				if err != nil {
-					return nil, errors.Wrapf(err, "unable to create new ethernet card backing info for network %+v", s.network.Reference())
-				}
-				dev.GetVirtualDevice().Backing = backingInfo
-				deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
-					Device:    dev,
-					Operation: vimTypes.VirtualDeviceConfigSpecOperationEdit,
-				})
-			}
-		}
-		return deviceSpecs, nil
-	}
-
-	// Remove any existing NICs
-	for _, dev := range netDevices {
-		deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
-			Device:    dev,
-			Operation: vimTypes.VirtualDeviceConfigSpecOperationRemove,
-		})
-	}
-
-	// Add new NICs
-	addDeviceSpecs, err := s.deviceSpecsFromVM(ctx, vm)
-	if err != nil {
-		return nil, err
-	}
-	deviceSpecs = append(deviceSpecs, addDeviceSpecs...)
 
 	return deviceSpecs, nil
 }
@@ -601,15 +611,14 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 	vm *v1alpha1.VirtualMachine, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (*vimTypes.VirtualMachineCloneSpec, error) {
 
-	vdcs, vmProfile, err := processStorageClass(ctx, resSrcVM, profileID)
+	diskSpecs, vmProfile, err := processStorageClass(ctx, resSrcVM, profileID)
 	if err != nil {
 		return nil, err
 	}
-	deviceSpecs, err := s.deviceChangeSpecs(ctx, vm, resSrcVM)
+	nicSpecs, err := s.GetNicChangeSpecs(ctx, vm, resSrcVM)
 	if err != nil {
 		return nil, err
 	}
-	deviceSpecs = append(deviceSpecs, vdcs...)
 
 	configSpec, err := s.configSpecFromClassSpec(name, &vm.Spec, vmClassSpec, vmMetadata, nil)
 
@@ -626,9 +635,16 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 		Memory:  &memory,
 	}
 
+	for _, changeSpec := range nicSpecs {
+		if changeSpec.GetVirtualDeviceConfigSpec().Operation == vimTypes.VirtualDeviceConfigSpecOperationEdit {
+			cloneSpec.Location.DeviceChange = append(cloneSpec.Location.DeviceChange, changeSpec)
+		} else {
+			cloneSpec.Config.DeviceChange = append(cloneSpec.Config.DeviceChange, changeSpec)
+		}
+	}
 	cloneSpec.Location.Pool = vimTypes.NewReference(s.resourcepool.Reference())
 	cloneSpec.Location.Profile = vmProfile
-	cloneSpec.Location.DeviceChange = deviceSpecs
+	cloneSpec.Location.DeviceChange = append(cloneSpec.Location.DeviceChange, diskSpecs...)
 	cloneSpec.Location.Folder = vimTypes.NewReference(s.folder.Reference())
 	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resSrcVM.ReferenceValue()}
 	rSpec, err := computeVMPlacement(ctx, s.cluster, vmRef, cloneSpec, vimTypes.PlacementSpecPlacementTypeClone)
@@ -885,17 +901,6 @@ func (s *Session) getCustomizationSpecs(namespace, vmName string, vmSpec *v1alph
 	}
 
 	return customSpec, nil
-}
-
-// getNetworkProviderByType returns the network provider based on network type
-func (s *Session) getNetworkProviderByType(networkType string) (NetworkProvider, error) {
-	switch networkType {
-	case NsxtNetworkType:
-		return NsxtNetworkProvider(s.Finder, s.ncpClient), nil
-	case "":
-		return DefaultNetworkProvider(s.Finder), nil
-	}
-	return nil, fmt.Errorf("failed to create network provider for network type '%s'", networkType)
 }
 
 func (s *Session) String() string {

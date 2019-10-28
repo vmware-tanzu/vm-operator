@@ -90,3 +90,22 @@ func getVirtualMachineInstance(name, namespace, imageName, className string) *vm
 		},
 	}
 }
+
+func getVirtualMachineSetResourcePolicy(name, namespace, resourcepoolName, folderName string) *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy {
+	return &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: vmoperatorv1alpha1.VirtualMachineSetResourcePolicySpec{
+			ResourcePool:vmoperatorv1alpha1.ResourcePoolSpec{
+				Name: resourcepoolName,
+				Reservations:vmoperatorv1alpha1.VirtualMachineResourceSpec{},
+				Limits:vmoperatorv1alpha1.VirtualMachineResourceSpec{},
+			},
+			Folder:vmoperatorv1alpha1.FolderSpec{
+				Name:folderName,
+			},
+		},
+	}
+}

@@ -6,8 +6,6 @@ package virtualmachinesetresourcepolicy
 import (
 	"context"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -17,6 +15,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
 const controllerName = "virtualmachinesetresourcepolicy-controller"
@@ -31,7 +35,14 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &VirtualMachineSetResourcePolicyReconciler{Client: mgr.GetClient(), scheme: mgr.GetScheme()}
+	// Get provider registered in the manager's main()
+	provider := vmprovider.GetVmProviderOrDie()
+
+	return &ReconcileVirtualMachineSetResourcePolicy{
+		Client:     mgr.GetClient(),
+		scheme:     mgr.GetScheme(),
+		vmProvider: provider,
+	}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -51,20 +62,55 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	return nil
 }
 
-var _ reconcile.Reconciler = &VirtualMachineSetResourcePolicyReconciler{}
+var _ reconcile.Reconciler = &ReconcileVirtualMachineSetResourcePolicy{}
 
 // VirtualMachineSetResourcePolicyReconciler reconciles a VirtualMachineSetResourcePolicy object
-type VirtualMachineSetResourcePolicyReconciler struct {
+type ReconcileVirtualMachineSetResourcePolicy struct {
 	client.Client
-	scheme *runtime.Scheme
+	scheme     *runtime.Scheme
+	vmProvider vmprovider.VirtualMachineProviderInterface
+}
+
+// reconcileCreateOrUpdate reconciles a VirtualMachineSetResourcePolicy.
+func (r *ReconcileVirtualMachineSetResourcePolicy) reconcileCreateOrUpdate(ctx context.Context, policy *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy) error {
+	logger := log.WithValues("namespace", policy.Namespace, "name", policy.Name)
+	logger.V(4).Info("Reconciling CreateOrUpdate VirtualMachineSetResourcePolicy")
+
+	err := r.vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, policy)
+	if err != nil {
+		return err
+	}
+
+	if err := r.Status().Update(ctx, policy); err != nil {
+		logger.Error(err, "Failed to update VirtualMachineSetResourcePolicy status")
+		return err
+	}
+
+	logger.V(4).Info("Reconciled CreateOrUpdate VirtualMachineSetResourcePolicy without errors.")
+
+	return nil
+}
+
+// reconcileDelete reconciles a deleted VirtualMachineSetResourcePolicy resource.
+func (r *ReconcileVirtualMachineSetResourcePolicy) reconcileDelete(ctx context.Context, resourcePolicy *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy) (err error) {
+	logger := log.WithValues("namespace", resourcePolicy.Namespace, "name", resourcePolicy.Name)
+
+	logger.V(4).Info("Attempting to delete VirtualMachineSetResourcePolicy")
+	if err := r.vmProvider.DeleteVirtualMachineSetResourcePolicy(ctx, resourcePolicy); err != nil {
+		logger.Error(err, "error in deleting VirtualMachineSetResourcePolicy")
+		return err
+	}
+	logger.Info("Deleted VirtualMachineSetResourcePolicy successfully")
+
+	return nil
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicy,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicy/status,verbs=get;update;patch
-func (r *VirtualMachineSetResourcePolicyReconciler) Reconcile(request reconcile.Request) (reconcile.Result, error) {
+func (r *ReconcileVirtualMachineSetResourcePolicy) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	logger := log.WithValues("namespace", request.Namespace, "name", request.Name)
 
-	logger.Info("Reconciling VirtualMachineSetResourcePolicy resource.")
+	logger.V(4).Info("Reconciling VirtualMachineSetResourcePolicy resource")
 	instance := &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{}
 	err := r.Get(context.Background(), request.NamespacedName, instance)
 	if err != nil {
@@ -75,6 +121,30 @@ func (r *VirtualMachineSetResourcePolicyReconciler) Reconcile(request reconcile.
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
+		return reconcile.Result{}, err
+	}
+
+	ctx := context.Background()
+
+	if !instance.ObjectMeta.DeletionTimestamp.IsZero() {
+		if lib.ContainsString(instance.ObjectMeta.Finalizers, vmoperator.VirtualMachineSetResourcePolicyFinalizer) {
+			if err := r.reconcileDelete(ctx, instance); err != nil {
+				// return with error so that it can be retried
+				return reconcile.Result{}, err
+			}
+
+			// remove our finalizer from the list and update it.
+			instance.ObjectMeta.Finalizers = lib.RemoveString(instance.ObjectMeta.Finalizers, vmoperator.VirtualMachineSetResourcePolicyFinalizer)
+			if err := r.Update(ctx, instance); err != nil {
+				return reconcile.Result{}, err
+			}
+		}
+
+		// finalizer has finished. Resource is deleted. Nothing to reconcile.
+		return reconcile.Result{}, nil
+	}
+
+	if err = r.reconcileCreateOrUpdate(ctx, instance); err != nil {
 		return reconcile.Result{}, err
 	}
 

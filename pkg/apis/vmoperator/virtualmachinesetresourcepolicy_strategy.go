@@ -11,6 +11,22 @@ import (
 	"k8s.io/klog/klogr"
 )
 
+const (
+	VirtualMachineSetResourcePolicyFinalizer = "virtualmachinesetresourcepolicy.vmoperator.vmware.com"
+)
+
+// copied from virtualmachine_strategy.go
+func (v VirtualMachineSetResourcePolicyStrategy) PrepareForCreate(ctx context.Context, obj runtime.Object) {
+	// Invoke the parent implementation to strip the Status
+	v.DefaultStorageStrategy.PrepareForCreate(ctx, obj)
+
+	o := obj.(*VirtualMachineSetResourcePolicy)
+
+	// Add a finalizer so that our controllers can process deletion
+	finalizers := append(o.GetFinalizers(), VirtualMachineSetResourcePolicyFinalizer)
+	o.SetFinalizers(finalizers)
+}
+
 // validateResourcePoolMemory validates the memory reservation specified for an RP
 func validateResourcePoolMemory(resourcePolicy VirtualMachineSetResourcePolicy) field.ErrorList {
 	errors := field.ErrorList{}

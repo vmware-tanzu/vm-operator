@@ -75,6 +75,7 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(vm.Status.BiosUuid).ShouldNot(BeEmpty())
 		})
 	})
+
 	Context("listVirtualmachineImages", func() {
 		It("should list the virtualmachineimages available in CL", func() {
 			config.ContentSource = integration.GetContentSourceID()
@@ -98,6 +99,25 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(err).To(BeNil())
 			Expect(image).ShouldNot(BeNil())
 			Expect(image.Name).Should(BeEquivalentTo("test-item"))
+		})
+	})
+
+	Context("CRUD a VirtualMachineSetResourcePolicy via vmprovider", func() {
+		It("should correctly create and delete the resource", func() {
+			testPolicyName := "test-resourcepolicy"
+			testPolicyNamespace := "test-namespace-vmp"
+			testRPName := "test-resourcepool"
+			testFolderName := "test-folder"
+
+			// Create a new VMProvder from the config provided by the test
+			vmProvider, err := vsphere.NewVSphereVmProviderFromConfig(testPolicyNamespace, config)
+			Expect(err).NotTo(HaveOccurred())
+			resourcePolicy := getVirtualMachineSetResourcePolicy(testPolicyName, testPolicyNamespace, testRPName, testFolderName)
+			err = vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = vmProvider.DeleteVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })

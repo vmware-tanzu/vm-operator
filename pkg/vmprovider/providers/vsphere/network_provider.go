@@ -96,6 +96,17 @@ func NsxtNetworkProvider(finder *find.Finder, client clientset.Interface) *nsxtN
 	}
 }
 
+// NetworkProviderByType returns the network provider based on network type
+func NetworkProviderByType(networkType string, finder *find.Finder, client clientset.Interface) (NetworkProvider, error) {
+	switch networkType {
+	case NsxtNetworkType:
+		return NsxtNetworkProvider(finder, client), nil
+	case "":
+		return DefaultNetworkProvider(finder), nil
+	}
+	return nil, fmt.Errorf("failed to create network provider for network type '%s'", networkType)
+}
+
 // GenerateNsxVnetifName generates the vnetif name for the VM
 func (np *nsxtNetworkProvider) GenerateNsxVnetifName(networkName, vmName string) string {
 	return fmt.Sprintf("%s-%s-lsp", networkName, vmName)

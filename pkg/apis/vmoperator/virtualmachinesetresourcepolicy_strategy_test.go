@@ -43,6 +43,17 @@ func aVirtualMachineResourceSpec(cpu, memory string) VirtualMachineResourceSpec 
 
 var _ = Describe("VirtualMachineSetResourcePolicy Validation", func() {
 
+	Describe("PrepareForCreate", func() {
+		It("Sets finalizer", func() {
+			v := VirtualMachineSetResourcePolicyStrategy{}
+			ctx := context.Background()
+			resourcePolicy := &VirtualMachineSetResourcePolicy{Spec: VirtualMachineSetResourcePolicySpec{}}
+			v.PrepareForCreate(ctx, resourcePolicy)
+			Expect(resourcePolicy.Finalizers).Should(HaveLen(1))
+			Expect(resourcePolicy.Finalizers[0]).Should(Equal("virtualmachinesetresourcepolicy.vmoperator.vmware.com"))
+		})
+	})
+
 	Context("with valid resource pool and folder spec", func() {
 		Specify("should validate without errors", func() {
 			res := aVirtualMachineResourceSpec("1Gi", "1Gi")

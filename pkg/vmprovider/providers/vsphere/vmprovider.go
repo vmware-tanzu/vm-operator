@@ -200,6 +200,60 @@ func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, v
 	objectMeta.SetAnnotations(annotations)
 }
 
+// CreateVirtualMachineSetResourcePolicy creates if a VirtualMachineSetResourcePolicy doesn't exist, updates otherwise.
+func (vs *VSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
+	if err != nil {
+		return err
+	}
+
+	rpExists, err := ses.DoesResourcePoolExist(ctx, resourcePolicy.Namespace, resourcePolicy.Spec.ResourcePool.Name)
+	if err != nil {
+		return err
+	}
+
+	if !rpExists {
+		if _, err = ses.CreateResourcePool(ctx, &resourcePolicy.Spec.ResourcePool); err != nil {
+			return err
+		}
+	} else {
+		if err = ses.UpdateResourcePool(ctx, &resourcePolicy.Spec.ResourcePool); err != nil {
+			return err
+		}
+	}
+
+	folderExists, err := ses.DoesFolderExist(ctx, resourcePolicy.Namespace, resourcePolicy.Spec.Folder.Name)
+	if err != nil {
+		return err
+	}
+
+	if !folderExists {
+		if _, err = ses.CreateFolder(ctx, &resourcePolicy.Spec.Folder); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// DeleteVirtualMachineSetResourcePolicy deletes the VirtualMachineSetPolicy.
+func (vs *VSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
+	if err != nil {
+		return err
+	}
+
+	if err = ses.DeleteResourcePool(ctx, resourcePolicy.Spec.ResourcePool.Name); err != nil {
+		return err
+	}
+
+	if err = ses.DeleteFolder(ctx, resourcePolicy.Spec.Folder.Name); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) error {
 

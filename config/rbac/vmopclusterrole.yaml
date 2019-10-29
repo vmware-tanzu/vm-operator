@@ -101,3 +101,14 @@ rules:
   - delete
   - watch
   - update
+- apiGroups:
+    - "cns.vmware.com"
+  resources:
+    - cnsnodevmattachments
+  verbs:
+    - create
+    - get
+    - list
+    - delete
+    - watch
+    - update

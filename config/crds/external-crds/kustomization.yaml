@@ -1,0 +1,4 @@
+# Install CnsNodeVmAttachment CRD
+resources:
+  - cnsnodevmattachment-crd.yaml
+

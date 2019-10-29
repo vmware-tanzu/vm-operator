@@ -7,6 +7,7 @@ bases:
 - ../rbac
 - ../apiserver
 - ../manager
+- ../crds/external-crds
 
 
 patchesJson6902:

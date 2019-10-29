@@ -289,6 +289,36 @@ var _ = Describe("VirtualMachineService controller", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(newService).To(Equal(currentService))
 			})
+
+			It("should update service for invalid format service annotation", func() {
+				currentService := &corev1.Service{}
+				err = c.Get(context.TODO(), types.NamespacedName{service.Namespace, service.Name}, currentService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				changedVMService := &vmoperatorv1alpha1.VirtualMachineService{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ns,
+						Name:      "dummy-service",
+					},
+					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+						Type: vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer,
+						Ports: []vmoperatorv1alpha1.VirtualMachineServicePort{
+							{
+								Name:       "test",
+								Protocol:   "TCP",
+								Port:       80,
+								TargetPort: 80,
+							},
+						},
+						Selector: map[string]string{"foo": "bar"},
+					},
+				}
+				currentService.Annotations[corev1.LastAppliedConfigAnnotation] = `{"d"}`
+
+				newService, err := r.createOrUpdateService(context.TODO(), changedVMService, service, "test-lb")
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(newService).NotTo(Equal(currentService))
+			})
 		})
 
 		Describe("when update vm service", func() {

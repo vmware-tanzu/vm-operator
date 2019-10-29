@@ -352,7 +352,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Conte
 	} else {
 		ok, err := utils.VMServiceCompareToLastApplied(vmService, currentService.GetAnnotations()[corev1.LastAppliedConfigAnnotation])
 		if err != nil {
-			log.Error(err, "unmarshal vm service: [%s/%s]'s applied config failed,error: %v", currentService.GetNamespace(), currentService.GetName(), err)
+			log.Error(err, "unmarshal last applied service config failed", "current service", currentService)
 		}
 		if ok {
 			log.V(5).Info("No change, no need to update service", "name", vmService.NamespacedName(), "service", service)

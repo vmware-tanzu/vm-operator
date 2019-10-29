@@ -8,3 +8,4 @@ bases:
 - ../etcd
 - ../rbac
 - ../apiserver
+- ../crds/external-crds

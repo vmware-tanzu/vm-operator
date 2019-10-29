@@ -398,6 +398,7 @@ func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.Vir
 		return errors.Wrapf(err, "unable to get VirtualMachine status")
 	}
 
+	vmStatus.Volumes = vm.Status.Volumes
 	vmStatus.Phase = vm.Status.Phase
 	vmStatus.DeepCopyInto(&vm.Status)
 

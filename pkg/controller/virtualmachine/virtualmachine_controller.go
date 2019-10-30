@@ -211,14 +211,6 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 		err = r.createVm(ctx, vm)
 	}
 
-	if uErr := r.Status().Update(ctx, vm); uErr != nil {
-		log.Error(uErr, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
-		if err != nil {
-			return err
-		}
-		return uErr
-	}
-
 	if err != nil {
 		return err
 	}
@@ -234,6 +226,14 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 	err = r.volumeProvider.UpdateVmVolumesStatus(ctx, vm)
 	if err != nil {
 		return err
+	}
+
+	if uErr := r.Status().Update(ctx, vm); uErr != nil {
+		log.Error(uErr, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
+		if err != nil {
+			return err
+		}
+		return uErr
 	}
 
 	return nil

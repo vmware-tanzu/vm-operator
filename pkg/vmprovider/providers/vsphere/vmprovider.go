@@ -11,21 +11,21 @@ import (
 	"strconv"
 
 	"github.com/pkg/errors"
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vapi/library"
+	vimTypes "github.com/vmware/govmomi/vim25/types"
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
+	k8serror "k8s.io/apimachinery/pkg/api/errors"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/klogr"
+
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/sequence"
-	"k8s.io/klog/klogr"
-
-	"github.com/vmware/govmomi/find"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
-	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
-	k8serror "k8s.io/apimachinery/pkg/api/errors"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 )
 
 const (
@@ -38,6 +38,8 @@ const (
 	VmOperatorMoRefKey = pkg.VmOperatorKey + "/moref"
 
 	EnvContentLibApiWaitSecs = "CONTENT_API_WAIT_SECS"
+
+	DefaultContentLibApiWaitSecs = 5
 )
 
 type VSphereVmProvider struct {
@@ -484,7 +486,7 @@ func (vm vmOptions) FetchOvfPropertiesFromLibrary(ctx context.Context, sess *Ses
 	clDownloadHandler := createClDownloadHandler()
 
 	//fetch & parse ovf from CL and populate the properties as annotations
-	ovfProperties, err := contentLibSession.ParseAndRetrievePropsFromLibraryItem(ctx, item, *clDownloadHandler)
+	ovfProperties, err := contentLibSession.ParseAndRetrievePropsFromLibraryItem(ctx, item, clDownloadHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -496,26 +498,17 @@ func (vm vmOptions) FetchOvfPropertiesFromVM(ctx context.Context, resVm *res.Vir
 	return resVm.GetOvfProperties(ctx)
 }
 
-func createClDownloadHandler() *ContentDownloadHandler {
-
-	var clDownloadHandler ContentDownloadHandler
+func createClDownloadHandler() ContentDownloadHandler {
 
 	//integration test environment would require a much lesser wait time
 	envClApiWaitSecs := os.Getenv(EnvContentLibApiWaitSecs)
 
-	if envClApiWaitSecs == "" {
-		clDownloadHandler = ContentDownloadProvider{ApiWaitTimeSecs: 5}
-		return &clDownloadHandler
-	}
-
 	value, err := strconv.Atoi(envClApiWaitSecs)
 	if err != nil {
-		clDownloadHandler = ContentDownloadProvider{ApiWaitTimeSecs: 5}
-	} else {
-		clDownloadHandler = ContentDownloadProvider{ApiWaitTimeSecs: value}
+		value = DefaultContentLibApiWaitSecs
 	}
 
-	return &clDownloadHandler
+	return ContentDownloadProvider{ApiWaitTimeSecs: value}
 }
 
 // Transform Govmomi error to Kubernetes error

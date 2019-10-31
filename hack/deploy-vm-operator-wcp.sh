@@ -37,7 +37,7 @@ verifyEnvironmentVariables() {
     fi
 
     if [[ -z ${VCSA_DATASTORE:-} ]]; then
-        VCSA_DATASTORE="nfs-01"
+        VCSA_DATASTORE="nfs0-1"
     fi
 
     if [[ -z ${VCSA_IP:-} ]]; then

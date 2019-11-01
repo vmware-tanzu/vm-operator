@@ -61,7 +61,6 @@ type VirtualMachineSpec struct {
 	ImageName         string                           `json:"imageName"`
 	ClassName         string                           `json:"className"`
 	PowerState        string                           `json:"powerState"`
-	Env               corev1.EnvVar                    `json:"env,omitempty"`
 	Ports             []VirtualMachinePort             `json:"ports,omitempty"`
 	VmMetadata        *VirtualMachineMetadata          `json:"vmMetadata,omitempty"`
 	StorageClass      string                           `json:"storageClass,omitempty"`
@@ -79,16 +78,6 @@ type VirtualMachineMetadata struct {
 	ConfigMapName string `json:"configMapName,omitempty"`
 	Transport     string `json:"transport,omitempty"`
 }
-
-// TODO: Make these annotations
-/*
-type VirtualMachineConfigStatus struct {
-	Uuid 		string `json:"uuid,omitempty"`
-	InternalId 	string `json:"internalId"`
-	CreateDate  	string `json:"createDate"`
-	ModifiedDate 	string `json:"modifiedDate"`
-}
-*/
 
 type VirtualMachineCondition struct {
 	LastProbeTime      metav1.Time `json:"lastProbeTime"`

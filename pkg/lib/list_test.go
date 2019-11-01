@@ -1,6 +1,6 @@
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// *******************************************************************************
+// Copyright 2018 - 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
+// *******************************************************************************
 
 package lib_test
 
@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 

@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/vmware/govmomi/vapi/library"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
@@ -29,6 +30,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
+
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
@@ -42,14 +44,16 @@ type Session struct {
 	cluster      *object.ClusterComputeResource
 	folder       *object.Folder
 	resourcepool *object.ResourcePool
-	datastore    *object.Datastore
 	network      object.NetworkReference
 	contentlib   *library.Library
+	datastore    *object.Datastore
 	creds        *VSphereVmProviderCredentials
 	extraConfig  map[string]string
 }
 
-func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig, ncpclient clientset.Interface) (*Session, error) {
+func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig, ncpclient clientset.Interface) (
+	*Session, error) {
+
 	c, err := NewClient(ctx, config)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create client for new session")
@@ -114,6 +118,7 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		if err != nil {
 			return errors.Wrapf(err, "failed to init Datastore %q", config.Datastore)
 		}
+		log.Info("Datastore init OK", "datastore", s.datastore.Reference().Value)
 	}
 
 	// Network setting is optional
@@ -141,6 +146,7 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 
 func (s *Session) ConfigureContent(ctx context.Context, contentSource string) error {
 	if contentSource == "" {
+		log.Info("Content library configured to nothing")
 		s.contentlib = nil
 		return nil
 	}
@@ -149,9 +155,10 @@ func (s *Session) ConfigureContent(ctx context.Context, contentSource string) er
 	if err = s.WithRestClient(ctx, func(c *rest.Client) error {
 		libManager := library.NewManager(c)
 		s.contentlib, err = libManager.GetLibraryByID(ctx, contentSource)
-		// TODO: Below code needs to be removed before 1.0. Allowing a name to be specified for test environments and prevent any breakages.
+		// TODO: Below code needs to be removed before 1.0. Allowing a name to be specified for test
+		// environments and prevent any breakages.
 		if err != nil {
-			log.Error(err, "GetLibrarybyID failed: Trying GetLibrarybyName")
+			log.Error(err, "GetLibrarybyID failed: Trying GetLibraryByName")
 			s.contentlib, err = libManager.GetLibraryByName(ctx, contentSource)
 		}
 		return err
@@ -166,7 +173,9 @@ func (s *Session) Logout(ctx context.Context) {
 	s.client.Logout(ctx)
 }
 
-func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
+func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace string) (
+	[]*v1alpha1.VirtualMachineImage, error) {
+
 	var items []library.Item
 	var err error
 	err = s.WithRestClient(ctx, func(c *rest.Client) error {
@@ -192,11 +201,14 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace 
 	return images, err
 }
 
-func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string, namespace string) (*v1alpha1.VirtualMachineImage, error) {
+func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string, namespace string) (
+	*v1alpha1.VirtualMachineImage, error) {
+
 	var item *library.Item
 
 	err := s.WithRestClient(ctx, func(c *rest.Client) error {
-		itemIDs, err := library.NewManager(c).FindLibraryItems(ctx, library.FindItem{LibraryID: s.contentlib.ID, Name: name})
+		itemIDs, err := library.NewManager(c).FindLibraryItems(ctx,
+			library.FindItem{LibraryID: s.contentlib.ID, Name: name})
 		if err != nil {
 			return err
 		}
@@ -401,6 +413,10 @@ func (s *Session) DeleteFolder(ctx context.Context, folderName string) error {
 
 func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) (*res.VirtualMachine, error) {
+	if s.datastore == nil {
+		return nil, errors.New("Cannot create VM if Datastore is not configured")
+	}
+
 	nicSpecs, err := s.GetNicChangeSpecs(ctx, vm, nil)
 	if err != nil {
 		return nil, err
@@ -421,34 +437,21 @@ func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 }
 
 func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (*res.VirtualMachine, error) {
-	name := vm.Name
+	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (
+	*res.VirtualMachine, error) {
+
+	log.Info("Will attempt to clone virtual machine", "profileID", profileID)
 
 	if s.contentlib != nil {
-		image, err := s.GetVirtualMachineImageFromCL(ctx, vm.Spec.ImageName, vm.Namespace)
-		if err != nil {
-			return nil, err
-		}
+		return s.cloneVirtualMachineFromCL(ctx, vm, profileID)
+	}
 
-		log.Info("Going to deploy ovf", "imageName", image.ObjectMeta.Name, "vmName", name, "profileID", profileID)
-		deployedVm, err := s.deployOvf(ctx, image.Status.Uuid, name, profileID)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
-		}
-		// Create network resource and reconfigure VM
-		nicSpecs, err := s.GetNicChangeSpecs(ctx, vm, deployedVm)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to generate device change spec for VM %q", name)
-		}
-		// configure VM device
-		err = deployedVm.Reconfigure(ctx, &vimTypes.VirtualMachineConfigSpec{
-			DeviceChange: nicSpecs,
-		})
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to reconfigure VM %q", name)
-		}
+	// Clone Virtual Machine from local:
 
-		return deployedVm, nil
+	if profileID == "" {
+		err := errors.New("Profile ID is empty, it is required whenever content library is not configured")
+		log.Error(err, "During a request to clone a VM")
+		return nil, err
 	}
 
 	resSrcVm, err := s.lookupVm(ctx, vm.Spec.ImageName)
@@ -456,6 +459,7 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 		return nil, err
 	}
 
+	name := vm.Name
 	cloneSpec, err := s.getCloneSpec(ctx, name, resSrcVm, vm, &vmClass.Spec, vmMetadata, profileID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create clone spec from %q", resSrcVm.Name)
@@ -467,6 +471,45 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 	}
 
 	return cloneResVm, nil
+}
+
+func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.VirtualMachine, profileID string) (
+	*res.VirtualMachine, error) {
+	if profileID == "" && s.datastore == nil {
+		// NOTE that deployOvf() requires either Datastore or Profile ID to be defined. Other private functions
+		// may make similar assumptions. In any case, it can and should be handled here.
+		msg := "Cannot clone VM if content library is configured, but Datastore/ProfileID are absent"
+		err := errors.New(msg)
+		log.Error(err, "During a request to clone a VM")
+		return nil, err
+	}
+
+	image, err := s.GetVirtualMachineImageFromCL(ctx, vm.Spec.ImageName, vm.Namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	// NOTE that if both s.datastore and profileID are defined, deployOvf will use Profile ID and ignore s.datastore.
+	// We want Profile ID to override Datastore.
+
+	name := vm.Name
+	log.Info("Going to deploy ovf", "imageName", image.ObjectMeta.Name, "vmName", name, "profileID", profileID)
+	deployedVm, err := s.deployOvf(ctx, image.Status.Uuid, name, profileID)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
+	}
+	// Create network resource and reconfigure VM
+	nicSpecs, err := s.GetNicChangeSpecs(ctx, vm, deployedVm)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to generate device change spec for VM %q", name)
+	}
+	// configure VM device
+	err = deployedVm.Reconfigure(ctx, &vimTypes.VirtualMachineConfigSpec{DeviceChange: nicSpecs})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to reconfigure VM %q", name)
+	}
+
+	return deployedVm, nil
 }
 
 func (s *Session) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
@@ -492,19 +535,20 @@ func (s *Session) lookupVm(ctx context.Context, name string) (*res.VirtualMachin
 	return res.NewVMFromObject(objVm)
 }
 
+// TODO ... jira ... move to lib package.
 func memoryQuantityToMb(q resource.Quantity) int64 {
 	return int64(math.Ceil(float64(q.Value()) / float64(1024*1024)))
 }
 
+// TODO ... jira ... move to lib package.
 func cpuQuantityToMhz(q resource.Quantity) int64 {
 	return int64(math.Ceil(float64(q.Value()) / float64(1000*1000)))
 }
 
 func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine) ([]vimTypes.BaseVirtualDevice, error) {
 	devices := make([]vimTypes.BaseVirtualDevice, 0, len(vm.Spec.NetworkInterfaces))
-
-	// The clients should ensure that existing device keys are not reused as temporary key values for the new device to be added, hence
-	//  use unique negative integers as temporary keys.
+	// The clients should ensure that existing device keys are not reused as temporary key values for the new device to
+	// be added, hence use unique negative integers as temporary keys.
 	key := int32(-100)
 	for _, vif := range vm.Spec.NetworkInterfaces {
 		np, err := NetworkProviderByType(vif.NetworkType, s.Finder, s.ncpClient)
@@ -581,8 +625,10 @@ func (s *Session) GetNicChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMac
 	return deviceSpecs, nil
 }
 
-func processStorageClass(ctx context.Context, resSrcVM *res.VirtualMachine, profileID string) ([]types.BaseVirtualDeviceConfigSpec, []vimTypes.BaseVirtualMachineProfileSpec, error) {
-	if len(profileID) == 0 {
+func processStorageClass(ctx context.Context, resSrcVM *res.VirtualMachine, profileID string) (
+	[]types.BaseVirtualDeviceConfigSpec, []vimTypes.BaseVirtualMachineProfileSpec, error) {
+
+	if profileID == "" {
 		return nil, nil, nil
 	}
 
@@ -653,15 +699,19 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 	}
 	cloneSpec.Location.Host = rSpec.Host
 	cloneSpec.Location.Datastore = rSpec.Datastore
-	//cloneSpec.Location.DiskMoveType = string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndConsolidate)
+	//cloneSpec.Location.DiskMoveType =
+	//string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndConsolidate)
 	return cloneSpec, nil
 }
 
-func (s *Session) createVm(ctx context.Context, name string, configSpec *vimTypes.VirtualMachineConfigSpec) (*res.VirtualMachine, error) {
+func (s *Session) createVm(ctx context.Context, name string, configSpec *vimTypes.VirtualMachineConfigSpec) (
+	*res.VirtualMachine, error) {
+
 	configSpec.Files = &vimTypes.VirtualMachineFileInfo{
 		VmPathName: fmt.Sprintf("[%s]", s.datastore.Name()),
 	}
-	log.Info("Going to create VM.", "Name", name, "ConfigSpec", *configSpec, "Folder", s.folder.Reference().Value, "ResourcePool", s.resourcepool.Reference().Value)
+	log.Info("Going to create VM.", "Name", name, "ConfigSpec", *configSpec, "Folder", s.folder.Reference().Value,
+		"ResourcePool", s.resourcepool.Reference().Value)
 	resVm := res.NewVMForCreate(name)
 	err := resVm.Create(ctx, s.folder, s.resourcepool, configSpec)
 	if err != nil {
@@ -677,7 +727,8 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec *vimType
 	return resVm, nil
 }
 
-func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
+func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine,
+	cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
 	log.Info("Going to clone VM", "Name", cloneSpec.Config.Name, "Location", cloneSpec.Location)
 
 	cloneResVm, err := resSrcVm.Clone(ctx, s.folder, cloneSpec)
@@ -688,7 +739,9 @@ func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, clo
 	return cloneResVm, nil
 }
 
-func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, profileID string) (*res.VirtualMachine, error) {
+func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, profileID string) (*res.VirtualMachine,
+	error) {
+
 	var deployment *types.ManagedObjectReference
 	var err error
 	err = s.WithRestClient(ctx, func(c *rest.Client) error {
@@ -698,11 +751,12 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, p
 			// TODO (): Plumb AcceptAllEULA to this Spec
 			AcceptAllEULA: true,
 		}
-		dSpec.StorageProfileID = profileID
 		//TODO: Remove this code when storage profile (storageClass) becomes mandatory
 		if profileID == "" {
 			log.Info("WARNING: ProfileID is empty - using datastore", "datastore", s.datastore.Reference().Value)
 			dSpec.DefaultDatastoreID = s.datastore.Reference().Value
+		} else {
+			dSpec.StorageProfileID = profileID
 		}
 
 		target := vcenter.Target{
@@ -723,7 +777,10 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, p
 		return nil, err
 	}
 
-	ref, err := s.Finder.ObjectReference(ctx, vimTypes.ManagedObjectReference{Type: deployment.Type, Value: deployment.Value})
+	ref, err := s.Finder.ObjectReference(ctx, vimTypes.ManagedObjectReference{
+		Type:  deployment.Type,
+		Value: deployment.Value,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -774,8 +831,9 @@ func GetExtraConfig(vmSpecMeta, globalMeta map[string]string) []vimTypes.BaseOpt
 	return extraConfigs
 }
 
-func (s *Session) configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
-	metadata vmprovider.VirtualMachineMetadata, deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec) (*vimTypes.VirtualMachineConfigSpec, error) {
+func (s *Session) configSpecFromClassSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec,
+	vmClassSpec *v1alpha1.VirtualMachineClassSpec, metadata vmprovider.VirtualMachineMetadata,
+	deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec) (*vimTypes.VirtualMachineConfigSpec, error) {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{
 		Name:     name,
@@ -853,7 +911,9 @@ func IsSupportedDeployType(t string) bool {
 
 // getCustomizationSpecs creates the customation spec for the vm
 // it is used to config IP for VMs connecting to nsx-t logical ports
-func (s *Session) getCustomizationSpecs(namespace, vmName string, vmSpec *v1alpha1.VirtualMachineSpec) (*vimTypes.CustomizationSpec, error) {
+func (s *Session) getCustomizationSpecs(namespace, vmName string, vmSpec *v1alpha1.VirtualMachineSpec) (
+	*vimTypes.CustomizationSpec, error) {
+
 	vnifs := []*ncpv1alpha1.VirtualNetworkInterface{}
 	np := NsxtNetworkProvider(s.Finder, s.ncpClient)
 	for _, nif := range vmSpec.NetworkInterfaces {

@@ -1169,7 +1169,6 @@ func autoConvert_v1alpha1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(in
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
 	out.PowerState = in.PowerState
-	out.Env = in.Env
 	out.Ports = *(*[]vmoperator.VirtualMachinePort)(unsafe.Pointer(&in.Ports))
 	out.VmMetadata = (*vmoperator.VirtualMachineMetadata)(unsafe.Pointer(in.VmMetadata))
 	out.StorageClass = in.StorageClass
@@ -1188,7 +1187,6 @@ func autoConvert_vmoperator_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
 	out.PowerState = in.PowerState
-	out.Env = in.Env
 	out.Ports = *(*[]VirtualMachinePort)(unsafe.Pointer(&in.Ports))
 	out.VmMetadata = (*VirtualMachineMetadata)(unsafe.Pointer(in.VmMetadata))
 	out.StorageClass = in.StorageClass

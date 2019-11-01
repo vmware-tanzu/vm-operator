@@ -191,7 +191,6 @@ type VirtualMachineSpec struct {
 	ImageName          string
 	ClassName          string
 	PowerState         string
-	Env                corev1.EnvVar
 	Ports              []VirtualMachinePort
 	VmMetadata         *VirtualMachineMetadata
 	StorageClass       string

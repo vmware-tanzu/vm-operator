@@ -1820,11 +1820,6 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.Reference
 							Format: "",
 						},
 					},
-					"env": {
-						SchemaProps: spec.SchemaProps{
-							Ref: ref("k8s.io/api/core/v1.EnvVar"),
-						},
-					},
 					"ports": {
 						SchemaProps: spec.SchemaProps{
 							Type: []string{"array"},
@@ -1889,7 +1884,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.Reference
 			},
 		},
 		Dependencies: []string{
-			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineMetadata", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineNetworkInterface", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineVolumes", "k8s.io/api/core/v1.EnvVar"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineMetadata", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineNetworkInterface", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineVolumes"},
 	}
 }
 

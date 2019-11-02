@@ -459,13 +459,12 @@ var _ = Describe("Sessions", func() {
 				clonedVM, err :=
 					session.CloneVirtualMachine(context.TODO(), nil, v1alpha1.VirtualMachineClass{}, nil, "")
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(
-					MatchError("Cannot clone VM if content library is configured, but Datastore/ProfileID are absent"))
+				Expect(err).To(MatchError("Cannot clone VM if both Datastore and ProfileID are absent"))
 				Expect(clonedVM).Should(BeNil())
 			})
 		})
 
-		Context("with empty profile ID and no content source", func() {
+		Context("with no content source, empty datastore and empty profile id", func() {
 			BeforeEach(func() {
 				var err error
 				config.Datastore = ""
@@ -478,30 +477,7 @@ var _ = Describe("Sessions", func() {
 				clonedVM, err :=
 					session.CloneVirtualMachine(context.TODO(), nil, v1alpha1.VirtualMachineClass{}, nil, "")
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(
-					MatchError("Profile ID is empty, it is required whenever content library is not configured"))
-				Expect(clonedVM).Should(BeNil())
-			})
-		})
-
-		Context("with empty profile ID, no content source, and existing redundant config.Datastore", func() {
-			BeforeEach(func() {
-				// This is the default, as you can see from all other Describe scopes in this file:
-				Expect(config.Datastore != "").To(BeTrue())
-
-				config.ContentSource = ""
-				var err error
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
-				Expect(err).NotTo(HaveOccurred())
-			})
-
-			It("should return an error", func() {
-				clonedVM, err :=
-					session.CloneVirtualMachine(context.TODO(), nil, v1alpha1.VirtualMachineClass{}, nil, "")
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(
-					MatchError("Profile ID is empty, it is required whenever content library is not configured"))
-				Expect(clonedVM).Should(BeNil())
+				Expect(err).To(MatchError("Cannot clone VM if both Datastore and ProfileID are absent"))
 				Expect(clonedVM).Should(BeNil())
 			})
 		})

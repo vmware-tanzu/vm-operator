@@ -158,7 +158,7 @@ func (s *Session) ConfigureContent(ctx context.Context, contentSource string) er
 		// TODO: Below code needs to be removed before 1.0. Allowing a name to be specified for test
 		// environments and prevent any breakages.
 		if err != nil {
-			log.Error(err, "GetLibrarybyID failed: Trying GetLibraryByName")
+			log.Error(err, "GetLibraryByID failed: Trying GetLibraryByName")
 			s.contentlib, err = libManager.GetLibraryByName(ctx, contentSource)
 		}
 		return err
@@ -440,6 +440,12 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (
 	*res.VirtualMachine, error) {
 
+	if profileID == "" && s.datastore == nil {
+		err := errors.New("Cannot clone VM if both Datastore and ProfileID are absent")
+		log.Error(err, "During a request to clone a VM")
+		return nil, err
+	}
+
 	log.Info("Will attempt to clone virtual machine", "profileID", profileID)
 
 	if s.contentlib != nil {
@@ -447,12 +453,6 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 	}
 
 	// Clone Virtual Machine from local:
-
-	if profileID == "" {
-		err := errors.New("Profile ID is empty, it is required whenever content library is not configured")
-		log.Error(err, "During a request to clone a VM")
-		return nil, err
-	}
 
 	resSrcVm, err := s.lookupVm(ctx, vm.Spec.ImageName)
 	if err != nil {
@@ -475,14 +475,6 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 
 func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.VirtualMachine, profileID string) (
 	*res.VirtualMachine, error) {
-	if profileID == "" && s.datastore == nil {
-		// NOTE that deployOvf() requires either Datastore or Profile ID to be defined. Other private functions
-		// may make similar assumptions. In any case, it can and should be handled here.
-		msg := "Cannot clone VM if content library is configured, but Datastore/ProfileID are absent"
-		err := errors.New(msg)
-		log.Error(err, "During a request to clone a VM")
-		return nil, err
-	}
 
 	image, err := s.GetVirtualMachineImageFromCL(ctx, vm.Spec.ImageName, vm.Namespace)
 	if err != nil {

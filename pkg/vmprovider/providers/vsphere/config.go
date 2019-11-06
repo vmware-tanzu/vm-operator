@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/klog"
-
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
@@ -123,21 +121,20 @@ func configMapsToProviderCredentials(clientSet kubernetes.Interface, baseConfigM
 
 // UpdateVMFolderAndRPInProviderConfig updates the RP and vm folder in the provider config from the namespace annotation.
 func UpdateVMFolderAndRPInProviderConfig(clientSet kubernetes.Interface, namespace string, providerConfig *VSphereVmProviderConfig) error {
-	var ns *v1.Namespace
-	var err error
-	if ns, err = clientSet.CoreV1().Namespaces().Get(namespace, metav1.GetOptions{}); err != nil {
+	ns, err := clientSet.CoreV1().Namespaces().Get(namespace, metav1.GetOptions{})
+	if err != nil {
 		return errors.Wrapf(err, "could not find the namespace: %s", namespace)
 	}
-	if len(ns.ObjectMeta.Annotations) == 0 ||
-		ns.ObjectMeta.Annotations[NamespaceRPAnnotationKey] == "" ||
-		ns.ObjectMeta.Annotations[NamespaceFolderAnnotationKey] == "" {
-		klog.Warningf("Namespace %s has incomplete RP/VM folder annotations. "+
-			"RP: %s, VM-folder: %s", ns.ObjectMeta.Name,
-			ns.ObjectMeta.Annotations[NamespaceRPAnnotationKey],
-			ns.ObjectMeta.Annotations[NamespaceFolderAnnotationKey])
+
+	resourcePool := ns.ObjectMeta.Annotations[NamespaceRPAnnotationKey]
+	vmFolder := ns.ObjectMeta.Annotations[NamespaceFolderAnnotationKey]
+
+	if resourcePool == "" || vmFolder == "" {
+		log.Info("Incomplete namespace resource annotations", "namespace", namespace,
+			"resourcePool", resourcePool, "vmFolder", vmFolder)
 	} else {
-		providerConfig.ResourcePool = ns.ObjectMeta.Annotations[NamespaceRPAnnotationKey]
-		providerConfig.Folder = ns.ObjectMeta.Annotations[NamespaceFolderAnnotationKey]
+		providerConfig.ResourcePool = resourcePool
+		providerConfig.Folder = vmFolder
 	}
 
 	if providerConfig.ResourcePool == "" || providerConfig.Folder == "" {

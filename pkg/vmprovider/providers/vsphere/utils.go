@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"k8s.io/klog"
-
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
@@ -21,7 +19,7 @@ func GetResourcePoolOwner(ctx context.Context, rp *object.ResourcePool) (*object
 	var owner mo.ResourcePool
 	err := rp.Properties(ctx, rp.Reference(), []string{"owner"}, &owner)
 	if err != nil {
-		klog.Errorf("Failed to retrieve owner of %v: %v", rp.Reference(), err)
+		log.Error(err, "Failed to retrieve owner of", "resourcePool", rp.Reference())
 		return nil, err
 	}
 	if owner.Owner.Type != "ClusterComputeResource" {
@@ -32,19 +30,19 @@ func GetResourcePoolOwner(ctx context.Context, rp *object.ResourcePool) (*object
 
 func CheckPlacementRelocateSpec(spec *vimTypes.VirtualMachineRelocateSpec) bool {
 	if spec == nil {
-		klog.Warning("RelocateSpec is nil")
+		log.Info("RelocateSpec is nil")
 		return false
 	}
 	if spec.Host == nil {
-		klog.Warningf("RelocateSpec does not have a host: %#v", spec)
+		log.Info("RelocateSpec does not have a host", "relocateSpec", spec)
 		return false
 	}
 	if spec.Pool == nil {
-		klog.Warningf("RelocateSpec does not have a resource pool: %#v", spec)
+		log.Info("RelocateSpec does not have a resource pool", "relocateSpec", spec)
 		return false
 	}
 	if spec.Datastore == nil {
-		klog.Warningf("RelocateSpec does not have a datastore: %#v", spec)
+		log.Info("RelocateSpec does not have a datastore", "relocateSpec", spec)
 		return false
 	}
 	return true

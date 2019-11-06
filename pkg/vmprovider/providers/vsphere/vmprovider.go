@@ -297,7 +297,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 	}
 
 	if err != nil {
-		log.Error(err, "Create/Clone VirtualMachine failed", "name", vmName, "error", err)
+		log.Error(err, "Create/Clone VirtualMachine failed", "name", vmName)
 		return transformVmError(vmName, err)
 	}
 

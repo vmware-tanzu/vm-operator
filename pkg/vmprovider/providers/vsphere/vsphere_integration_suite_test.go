@@ -99,7 +99,7 @@ func getVirtualMachineSetResourcePolicy(name, namespace string) *vmoperatorv1alp
 		},
 		Spec: vmoperatorv1alpha1.VirtualMachineSetResourcePolicySpec{
 			ResourcePool: vmoperatorv1alpha1.ResourcePoolSpec{
-				Name: fmt.Sprintf("%s-resourcepool", name),
+				Name:         fmt.Sprintf("%s-resourcepool", name),
 				Reservations: vmoperatorv1alpha1.VirtualMachineResourceSpec{},
 				Limits:       vmoperatorv1alpha1.VirtualMachineResourceSpec{},
 			},

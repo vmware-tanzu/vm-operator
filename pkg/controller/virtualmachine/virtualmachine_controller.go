@@ -17,7 +17,6 @@ import (
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -301,7 +300,7 @@ func (r *ReconcileVirtualMachine) processStorageClass(ctx context.Context, vmSpe
 	scl := &storagetypev1.StorageClass{}
 	err = r.Client.Get(ctx, client.ObjectKey{Namespace: "", Name: scName}, scl)
 	if err != nil {
-		klog.Errorf("Failed to get storage class: %v", err)
+		log.Error(err, "Failed to get storage class", "storageClass", scName)
 		return "", err
 	}
 
@@ -331,7 +330,7 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 		resourcePolicy = &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{}
 		err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ResourcePolicyName, Namespace: vm.Namespace}, resourcePolicy)
 		if err != nil {
-			log.Error(err, "Failed to get VirtualMachineSetResourcePoicy for VirtualMachine",
+			log.Error(err, "Failed to get VirtualMachineSetResourcePolicy for VirtualMachine",
 				"namespace", vm.Namespace, "name", vm.Name, "resourcePolicyName", vm.Spec.ResourcePolicyName)
 			return err
 		}

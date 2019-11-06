@@ -6,12 +6,13 @@ package virtualmachine
 
 import (
 	"context"
+	"errors"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	volumeproviders "github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachine/providers"
 	v1 "k8s.io/api/core/v1"
 	storagetypev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
@@ -123,7 +124,7 @@ func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcil
 	instance := &vmoperatorv1alpha1.VirtualMachine{}
 	err := r.Get(ctx, request.NamespacedName, instance)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apiErrors.IsNotFound(err) {
 			// Object not found, return.  Created objects are automatically garbage collected.
 			// For additional cleanup logic use finalizers.
 			return reconcile.Result{}, nil
@@ -176,7 +177,7 @@ func (r *ReconcileVirtualMachine) deleteVm(ctx context.Context, vm *vmoperatorv1
 
 	err = r.vmProvider.DeleteVirtualMachine(ctx, vm)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apiErrors.IsNotFound(err) {
 			log.Info("To be deleted VirtualMachine was not found", "name", vm.NamespacedName())
 			return nil
 		}
@@ -270,6 +271,29 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 		return err
 	}
 
+	// If a resource policy is specified for this VM, make sure that the corresponding entities (RP and Folder) are
+	// created on the infra provider before creating the VM.
+	var resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy
+	if vm.Spec.ResourcePolicyName != "" {
+		resourcePolicy = &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{}
+		err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ResourcePolicyName, Namespace: vm.Namespace}, resourcePolicy)
+		if err != nil {
+			log.Error(err, "Failed to get VirtualMachineSetResourcePoicy for VirtualMachine",
+				"namespace", vm.Namespace, "name", vm.Name, "resourcePolicyName", vm.Spec.ResourcePolicyName)
+			return err
+		}
+
+		// Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy
+		rpReady, err := r.vmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
+		if err != nil {
+			log.Error(err, "Failed to check if VirtualMachineSetResourcePolicy Exist")
+			return err
+		}
+		if !rpReady {
+			return errors.New("VirtualMachineSetResourcePolicy not ready yet. Failing VirtualMachine reconcile")
+		}
+	}
+
 	var vmMetadata vmprovider.VirtualMachineMetadata
 	if metadata := vm.Spec.VmMetadata; metadata != nil {
 		configMap := &v1.ConfigMap{}
@@ -289,7 +313,7 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 	}
 	vm.Status.Phase = vmoperatorv1alpha1.Creating
 
-	err = r.vmProvider.CreateVirtualMachine(ctx, vm, *vmClass, vmMetadata, policyID)
+	err = r.vmProvider.CreateVirtualMachine(ctx, vm, *vmClass, resourcePolicy, vmMetadata, policyID)
 	if err != nil {
 		log.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())
 		return err

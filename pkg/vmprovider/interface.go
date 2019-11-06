@@ -28,7 +28,7 @@ type VirtualMachineProviderInterface interface {
 	DoesVirtualMachineExist(ctx context.Context, namespace, name string) (bool, error)
 
 	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-		vmClass v1alpha1.VirtualMachineClass, vmMetadata VirtualMachineMetadata, profileID string) error
+		vmClass v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy, vmMetadata VirtualMachineMetadata, profileID string) error
 	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 		vmClass v1alpha1.VirtualMachineClass, vmMetadata VirtualMachineMetadata) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
@@ -36,5 +36,7 @@ type VirtualMachineProviderInterface interface {
 	GetClusterID(ctx context.Context, namespace string) (string, error)
 
 	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
+	// Used by VirtualMachine controller to determine if entities of ResourcePolicy exist on the infrastructure provider
+	DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
 }

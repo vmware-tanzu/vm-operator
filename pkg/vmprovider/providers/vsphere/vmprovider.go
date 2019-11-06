@@ -202,6 +202,26 @@ func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, v
 	objectMeta.SetAnnotations(annotations)
 }
 
+// DoesVirtualMachineSetResourcePolicyExist checks if the entities of a VirtualMachineSetResourcePolicy exist on vSphere
+func (vs *VSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
+	if err != nil {
+		return false, err
+	}
+
+	rpExists, err := ses.DoesResourcePoolExist(ctx, resourcePolicy.Namespace, resourcePolicy.Spec.ResourcePool.Name)
+	if err != nil {
+		return false, err
+	}
+
+	folderExists, err := ses.DoesFolderExist(ctx, resourcePolicy.Namespace, resourcePolicy.Spec.Folder.Name)
+	if err != nil {
+		return false, err
+	}
+
+	return rpExists && folderExists, nil
+}
+
 // CreateVirtualMachineSetResourcePolicy creates if a VirtualMachineSetResourcePolicy doesn't exist, updates otherwise.
 func (vs *VSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
@@ -257,7 +277,7 @@ func (vs *VSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.C
 }
 
 func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) error {
+	vmClass v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) error {
 
 	vmName := vm.NamespacedName()
 	log.Info("Creating VirtualMachine", "name", vmName)
@@ -271,9 +291,9 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 	// The later is really only useful for dummy VMs at the moment.
 	var resVm *res.VirtualMachine
 	if vm.Spec.ImageName == "" {
-		resVm, err = ses.CreateVirtualMachine(ctx, vm, vmClass, vmMetadata)
+		resVm, err = ses.CreateVirtualMachine(ctx, vm, vmClass, resourcePolicy, vmMetadata)
 	} else {
-		resVm, err = ses.CloneVirtualMachine(ctx, vm, vmClass, vmMetadata, profileID)
+		resVm, err = ses.CloneVirtualMachine(ctx, vm, vmClass, resourcePolicy, vmMetadata, profileID)
 	}
 
 	if err != nil {
@@ -351,7 +371,7 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 	}
 
 	// Get configSpec to honor VM Class
-	configSpec, err := ses.configSpecFromClassSpec(vm.Name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
+	configSpec, err := ses.generateConfigSpec(vm.Name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
 	if err != nil {
 		return transformVmError(vmName, err)
 	}

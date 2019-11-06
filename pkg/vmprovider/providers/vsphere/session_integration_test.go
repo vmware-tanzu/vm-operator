@@ -109,7 +109,7 @@ var _ = Describe("Sessions", func() {
 				nicChanges, err = session.GetNicChangeSpecs(ctx, vm, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(nicChanges)).Should(Equal(0))
-				clonedVM, err := session.CloneVirtualMachine(ctx, vm, *vmClass, vmMetadata, "foo")
+				clonedVM, err := session.CloneVirtualMachine(ctx, vm, *vmClass, nil, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM).ShouldNot(BeNil())
 				// Existing NIF should not be changed.
@@ -160,7 +160,7 @@ var _ = Describe("Sessions", func() {
 					Expect(changeSpec.GetVirtualDeviceConfigSpec().Operation).Should(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
 				}
 				vmMetadata := map[string]string{}
-				clonedVM, err := session.CloneVirtualMachine(ctx, vm, *vmClass, vmMetadata, "foo")
+				clonedVM, err := session.CloneVirtualMachine(ctx, vm, *vmClass, nil, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
 				netDevices, err := clonedVM.GetNetworkDevices(ctx)
 				Expect(err).NotTo(HaveOccurred())
@@ -204,7 +204,7 @@ var _ = Describe("Sessions", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(nicChanges)).Should(Equal(0))
 				vmMetadata := map[string]string{}
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM).ShouldNot(BeNil())
 				// Existing NIF should not be changed.
@@ -232,7 +232,7 @@ var _ = Describe("Sessions", func() {
 					},
 				}
 				vmMetadata := map[string]string{}
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
 				netDevices, err := clonedVM.GetNetworkDevices(context.TODO())
 				Expect(err).NotTo(HaveOccurred())
@@ -265,7 +265,7 @@ var _ = Describe("Sessions", func() {
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmClass.Name)
 
 				vmMetadata := map[string]string{}
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
 			})
@@ -300,7 +300,7 @@ var _ = Describe("Sessions", func() {
 				vm.Spec.VmMetadata.Transport = "ExtraConfig"
 				vmMetadata := map[string]string{localKey: localVal}
 
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "foo")
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "foo")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM).ShouldNot(BeNil())
 
@@ -457,7 +457,7 @@ var _ = Describe("Sessions", func() {
 
 			It("should return an error", func() {
 				clonedVM, err :=
-					session.CloneVirtualMachine(context.TODO(), nil, v1alpha1.VirtualMachineClass{}, nil, "")
+					session.CloneVirtualMachine(context.TODO(), nil, v1alpha1.VirtualMachineClass{}, nil, nil, "")
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError("Cannot clone VM if both Datastore and ProfileID are absent"))
 				Expect(clonedVM).Should(BeNil())
@@ -475,7 +475,7 @@ var _ = Describe("Sessions", func() {
 
 			It("should return an error", func() {
 				clonedVM, err :=
-					session.CloneVirtualMachine(context.TODO(), nil, v1alpha1.VirtualMachineClass{}, nil, "")
+					session.CloneVirtualMachine(context.TODO(), nil, v1alpha1.VirtualMachineClass{}, nil, nil, "")
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError("Cannot clone VM if both Datastore and ProfileID are absent"))
 				Expect(clonedVM).Should(BeNil())

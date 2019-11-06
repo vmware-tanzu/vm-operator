@@ -2,4 +2,3 @@
 - op: add
   path: /spec/replicas
   value: 3
-

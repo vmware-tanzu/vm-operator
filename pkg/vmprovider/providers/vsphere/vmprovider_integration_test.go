@@ -37,7 +37,7 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(vm.Status.BiosUuid).Should(BeEmpty())
 
 			// Note that createVirtualMachine has the side effect of changing the vm input value
-			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "testProfileID")
+			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "testProfileID")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(vm.Status.VmIp).Should(Equal(testIP))
 			Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
@@ -65,7 +65,7 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(vm.Status.BiosUuid).Should(BeEmpty())
 
 			// CreateVirtualMachine from CL
-			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, *vmClass, vmMetadata, "testProfileID")
+			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "testProfileID")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOff))
 			// Update Virtual Machine to Reconfigure with VM Class config
@@ -102,22 +102,55 @@ var _ = Describe("VMProvider Tests", func() {
 		})
 	})
 
-	Context("CRUD a VirtualMachineSetResourcePolicy via vmprovider", func() {
-		It("should correctly create and delete the resource", func() {
-			testPolicyName := "test-resourcepolicy"
-			testPolicyNamespace := "test-namespace-vmp"
-			testRPName := "test-resourcepool"
-			testFolderName := "test-folder"
+	Context("VirtualMachineSetResourcePolicy", func() {
+		var (
+			vmProvider          *vsphere.VSphereVmProvider
+			resourcePolicy      *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
+			testPolicyName      string
+			testPolicyNamespace string
+			err                 error
+		)
+
+		JustBeforeEach(func() {
+			testPolicyName = "test-name"
+			testPolicyNamespace = "test-namespace"
 
 			// Create a new VMProvder from the config provided by the test
-			vmProvider, err := vsphere.NewVSphereVmProviderFromConfig(testPolicyNamespace, config)
+			vmProvider, err = vsphere.NewVSphereVmProviderFromConfig(testPolicyNamespace, config)
 			Expect(err).NotTo(HaveOccurred())
-			resourcePolicy := getVirtualMachineSetResourcePolicy(testPolicyName, testPolicyNamespace, testRPName, testFolderName)
-			err = vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)
-			Expect(err).NotTo(HaveOccurred())
+			resourcePolicy = getVirtualMachineSetResourcePolicy(testPolicyName, testPolicyNamespace)
+			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
+		})
+		JustAfterEach(func() {
+			Expect(vmProvider.DeleteVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
+		})
 
-			err = vmProvider.DeleteVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)
-			Expect(err).NotTo(HaveOccurred())
+		It("should create VirtualMachineSetResourcePolicy", func() {
+			// handled in JustBeforeEach.
+		})
+
+		It("should update VirtualMachineSetResourcePolicy", func() {
+			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
+		})
+
+		Context("verify if an already created resourcepolicy exists", func() {
+			It("successfully able to find the resourcepolicy", func() {
+				exists, err := vmProvider.DoesVirtualMachineSetResourcePolicyExist(context.TODO(), resourcePolicy)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(exists).To(BeTrue())
+			})
+		})
+
+		Context("verify if a resourcepolicy that hasn't been created exists", func() {
+			It("should fail to find the resource policy without any errors", func() {
+				failResPolicy := getVirtualMachineSetResourcePolicy("test-policy", testPolicyNamespace)
+				exists, err := vmProvider.DoesVirtualMachineSetResourcePolicyExist(context.TODO(), failResPolicy)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(exists).NotTo(BeTrue())
+			})
+		})
+		It("should delete VirtualMachineSetResourcePolicy", func() {
+			// handled in JustAfterEach
 		})
 	})
 })

@@ -16,6 +16,7 @@ resources:
   - namespace.yaml
   - rbac_psp.yaml
   - vsphere_provider_config.yaml
+  - vmoperator_network_config.yaml
 
 patchesStrategicMerge:
   - master_node_selector_patch.yaml

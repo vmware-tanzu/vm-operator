@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vmoperator-network-config
+  namespace: vmware-system-vmop
+data:
+  nameservers: <worker_dns>
+---

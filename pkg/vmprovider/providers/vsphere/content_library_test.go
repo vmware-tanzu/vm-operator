@@ -226,7 +226,7 @@ var _ = Describe("list files in content library", func() {
 
 	Context("when session object is present", func() {
 		It("should be possible to generate a content library session", func() {
-			sessRef, err := vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
+			sessRef, err := vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
 			Expect(err).To(BeNil())
 
 			clProvider := vsphere.NewContentLibraryProvider(sessRef)
@@ -237,7 +237,7 @@ var _ = Describe("list files in content library", func() {
 	Context("when url is invalid", func() {
 		It("should return a Err", func() {
 			ctx := context.TODO()
-			sessRef, err := vsphere.NewSessionAndConfigure(ctx, config, nil)
+			sessRef, err := vsphere.NewSessionAndConfigure(ctx, config, nil, nil)
 			Expect(err).To(BeNil())
 			err = sessRef.WithRestClient(ctx, func(c *rest.Client) error {
 				_, err = vsphere.ReadFileFromUrl(ctx, c, sessRef, "test.com/link")
@@ -250,7 +250,7 @@ var _ = Describe("list files in content library", func() {
 	Context("when url is valid", func() {
 		It("should download the file", func() {
 			ctx := context.TODO()
-			sessRef, err := vsphere.NewSessionAndConfigure(ctx, config, nil)
+			sessRef, err := vsphere.NewSessionAndConfigure(ctx, config, nil, nil)
 			Expect(err).To(BeNil())
 			err = sessRef.WithRestClient(ctx, func(c *rest.Client) error {
 				_, err = vsphere.ReadFileFromUrl(ctx, c, sessRef, fileUriToDownload)

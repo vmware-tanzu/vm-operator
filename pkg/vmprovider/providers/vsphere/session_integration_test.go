@@ -31,7 +31,7 @@ var _ = Describe("Sessions", func() {
 	BeforeEach(func() {
 		var err error
 		//Setup session
-		session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
+		session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -185,7 +185,7 @@ var _ = Describe("Sessions", func() {
 				// vswitch port group.
 				config.Network = "VM Network"
 				//Setup new session based on the default network
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
+				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
 				Expect(err).NotTo(HaveOccurred())
 			})
 			It("should override network from the template", func() {
@@ -284,7 +284,7 @@ var _ = Describe("Sessions", func() {
 
 			os.Setenv("JSON_EXTRA_CONFIG", "{\""+globalKey+"\":\""+globalVal+"\"}")
 			// Create a new session which should pick up the config
-			session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
 			config.ContentSource = ""
 			err = session.ConfigureContent(context.TODO(), config.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
@@ -449,7 +449,7 @@ var _ = Describe("Sessions", func() {
 				var err error
 				config.Datastore = ""
 				config.ContentSource = integration.GetContentSourceID()
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
+				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
 				Expect(err).NotTo(HaveOccurred())
 				err = session.ConfigureContent(context.TODO(), config.ContentSource)
 				Expect(err).NotTo(HaveOccurred())
@@ -469,7 +469,7 @@ var _ = Describe("Sessions", func() {
 				var err error
 				config.Datastore = ""
 				config.ContentSource = ""
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil)
+				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
 				Expect(err).NotTo(HaveOccurred())
 			})
 

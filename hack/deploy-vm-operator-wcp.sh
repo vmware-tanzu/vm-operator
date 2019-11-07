@@ -36,9 +36,7 @@ verifyEnvironmentVariables() {
         exit 1
     fi
 
-    if [[ -z ${VCSA_DATASTORE:-} ]]; then
-        VCSA_DATASTORE="nfs0-1"
-    fi
+    VCSA_DATASTORE=${VCSA_DATASTORE:-nfs0-1}
 
     if [[ -z ${VCSA_IP:-} ]]; then
         echo "Error: The VCSA_IP environment variable must be set" \
@@ -59,6 +57,19 @@ verifyEnvironmentVariables() {
              "$WCP_SA_IP"
         exit 1
     fi
+
+    if [[ -z ${VCSA_WORKER_DNS:-} ]]; then
+        cmd="grep WORKER_DNS /var/lib/node.cfg | cut -d'=' -f2 | sed -e 's/^[[:space:]]*//'"
+        output=$(SSHPASS="$WCP_SA_PASSWORD" sshpass -e ssh -o \
+                    UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
+                    root@$WCP_SA_IP "$cmd")
+        if [[ -z $output ]]; then
+            echo "You did not specify env VCSA_WORKER_DNS and we couldn't fetch it from the SV cluster."
+            echo "Run the following on your SV node: $cmd"
+            exit 1
+        fi
+        VCSA_WORKER_DNS=$output
+    fi
 }
 
 patchWcpDeploymentYaml() {
@@ -66,6 +77,7 @@ patchWcpDeploymentYaml() {
         sed -i'' "s,<vc_pnid>,$VCSA_IP,g" "artifacts/wcp-deployment.yaml"
         sed -i'' "s,<datacenter>,$VCSA_DATACENTER,g" "artifacts/wcp-deployment.yaml"
         sed -i'' "s, Datastore: .*, Datastore: $VCSA_DATASTORE," "artifacts/wcp-deployment.yaml"
+        sed -i'' "s,<worker_dns>,$VCSA_WORKER_DNS," "artifacts/wcp-deployment.yaml"
     fi
 }
 

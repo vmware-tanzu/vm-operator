@@ -5,6 +5,7 @@ package vsphere
 
 import (
 	"os"
+	"strings"
 
 	"k8s.io/klog"
 
@@ -32,8 +33,9 @@ type VSphereVmProviderConfig struct {
 }
 
 const (
-	VmopNamespaceEnv     = "POD_NAMESPACE"
-	VSphereConfigMapName = "vsphere.provider.config.vmoperator.vmware.com"
+	VmopNamespaceEnv         = "POD_NAMESPACE"
+	VSphereConfigMapName     = "vsphere.provider.config.vmoperator.vmware.com"
+	NameServersConfigMapName = "vmoperator-network-config"
 
 	vcPNIDKey            = "VcPNID"
 	vcPortKey            = "VcPort"
@@ -124,6 +126,35 @@ func UpdateVMFolderAndRPInProviderConfig(clientSet kubernetes.Interface, namespa
 		providerConfig.Folder = ns.ObjectMeta.Annotations[NamespaceFolderAnnotationKey]
 	}
 	return nil
+}
+
+func GetNameserversFromConfigMap(clientSet kubernetes.Interface) ([]string, error) {
+	vmopNamespace, vmopNamespaceExists := os.LookupEnv(VmopNamespaceEnv)
+	if !vmopNamespaceExists {
+		return nil, errors.Errorf("Cannot retrieve %v ConfigMap: unset env", NameServersConfigMapName)
+	}
+
+	nameserversConfigMap, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(NameServersConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return nil, errors.Wrapf(err, "cannot retrieve %v ConfigMap", NameServersConfigMapName)
+	}
+
+	nameservers, ok := nameserversConfigMap.Data["nameservers"]
+	if !ok {
+		return nil, errors.Wrapf(err, "invalid %v ConfigMap, missing key nameservers", NameServersConfigMapName)
+	}
+
+	nameserverList := strings.Fields(nameservers)
+	if len(nameserverList) == 0 {
+		return nil, errors.Errorf("No nameservers in %v ConfigMap", NameServersConfigMapName)
+	}
+
+	if len(nameserverList) == 1 && nameserverList[0] == "<worker_dns>" {
+		return nil, errors.Errorf("No valid nameservers in %v ConfigMap. It still contains <worker_dns> key.", NameServersConfigMapName)
+	}
+
+	// do we need to validate that these look like valid ipv4 addresses?
+	return nameserverList, nil
 }
 
 // GetProviderConfigFromConfigMap gets the vSphere Provider ConfigMap from the API Master.

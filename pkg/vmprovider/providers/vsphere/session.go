@@ -23,6 +23,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -32,8 +33,8 @@ import (
 )
 
 type Session struct {
-	client *Client
-
+	client    *Client
+	clientset kubernetes.Interface
 	ncpClient clientset.Interface
 
 	Finder       *find.Finder
@@ -48,9 +49,7 @@ type Session struct {
 	extraConfig  map[string]string
 }
 
-func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig, ncpclient clientset.Interface) (
-	*Session, error) {
-
+func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig, clientset kubernetes.Interface, ncpclient clientset.Interface) (*Session, error) {
 	c, err := NewClient(ctx, config)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create client for new session")
@@ -58,6 +57,7 @@ func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig
 
 	s := &Session{
 		client:    c,
+		clientset: clientset,
 		ncpClient: ncpclient,
 	}
 
@@ -977,6 +977,13 @@ func (s *Session) getCustomizationSpecs(namespace, vmName string, vmSpec *v1alph
 			},
 			HwClockUTC: vimTypes.NewBool(true),
 		},
+	}
+
+	nameserverList, err := GetNameserversFromConfigMap(s.clientset)
+	if err != nil {
+		log.Error(err, "No valid nameservers configmap data")
+	} else {
+		customSpec.GlobalIPSettings.DnsServerList = nameserverList
 	}
 
 	for _, vnetif := range vnifs {

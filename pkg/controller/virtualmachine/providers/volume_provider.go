@@ -22,8 +22,22 @@ const (
 var log = logf.Log.WithName(LoggerName)
 
 type VolumeProviderInterface interface {
-	AttachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToAdd map[client.ObjectKey]bool) error
-	DetachVolumes(ctx context.Context, virtualMachineVolumesDeleted map[client.ObjectKey]bool) error
+	// AttachVolumes(): The implementation of attaching volumes
+	// Arguments:
+	// * ctx context.Context:
+	// * vm *vmoperatorv1alpha1.VirtualMachine: The VirtualMachine instance pointer to which the volume will be attached
+	// * virtualMachineVolumesToAttach map[client.ObjectKey]bool: A set of object keys which indicates the virtual machine volumes to attach
+	AttachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToAttach map[client.ObjectKey]bool) error
+	// AttachVolumes(): The implementation of detaching volumes
+	// Arguments:
+	// * ctx context.Context:
+	// * vm *vmoperatorv1alpha1.VirtualMachine: The VirtualMachine instance pointer from which the volume will be detached
+	// * virtualMachineVolumesToDetach map[client.ObjectKey]bool: A set of object keys which indicates the virtual machine volumes to detach
+	DetachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToDetach map[client.ObjectKey]bool) error
+	// UpdateVmVolumesStatus(): The implementation of updating virtual machine volumes status
+	// Arguments:
+	// * ctx context.Context:
+	// * vm *vmoperatorv1alpha1.VirtualMachine: The VirtualMachine instance pointer from which the virtual machine volumes status needs to be updated
 	UpdateVmVolumesStatus(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error
 }
 
@@ -38,18 +52,19 @@ func CnsVolumeProvider(client client.Client) *cnsVolumeProvider {
 //TODO: CreateAttachments, DeleteCAttachments and UpdateVmVolumesStatus should return a slice of error: 
 // CreateCnsNodeVmAttachments loop on the set of virtualMachineVolumesToAdd and create the CnsNodeVmAttachment instances accordingly
 // Then assign the vm.Status.Volumes with the newly constructed virtualMachineVolumeStatusToUpdate.
-// Note: AttachVolumes() does not call client.Status().Update(), it just updates vm object and vitualmachine_controller.go eventually will call apiserver to update
-//       the vm object
-func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToAdd map[client.ObjectKey]bool) error {
+// Return error when fails to create CnsNodeVmAttachment instances (partially or completely)
+// Note: AttachVolumes() does not call client.Status().Update(), it just updates vm object and vitualmachine_controller.go eventually
+//       will call apiserver to update the vm object
+func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToAttach map[client.ObjectKey]bool) error {
 	// If no volumes need to be attached, then just return
-	if len(virtualMachineVolumesToAdd) == 0 {
+	if len(virtualMachineVolumesToAttach) == 0 {
 		return nil
 	}
 
 	var err error
 	var virtualMachineVolumeStatusToUpdate []vmoperatorv1alpha1.VirtualMachineVolumeStatus
 
-	for virtualMachineVolume := range virtualMachineVolumesToAdd {
+	for virtualMachineVolume := range virtualMachineVolumesToAttach {
 		cnsNodeVmAttachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 		cnsNodeVmAttachment.SetName(constructCnsNodeVmAttachmentName(vm.Name, virtualMachineVolume.Name))
 		cnsNodeVmAttachment.SetNamespace(virtualMachineVolume.Namespace)
@@ -110,14 +125,37 @@ func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv
 	return nil
 }
 
-func (cvp *cnsVolumeProvider) DetachVolumes(ctx context.Context, virtualMachineVolumesToDelete map[client.ObjectKey]bool) error {
-	// TODO: Delete CnsNodeVMAttachments on demand if VM has been reconciled properly
+// This function loops on virtualMachineVolumesToDelete and delete the CnsNodeVmAttachment instance respectively
+// Return error when fails to delete CnsNodeVmAttachment instances (partially or completely)
+// Note: DetachVolumes() does not update the vm.Status.Volumes since it has been handled by UpdateVmVolumesStatus() by checking the existence of
+//       respective CnsNodeVmAttachment instance
+func (cvp *cnsVolumeProvider) DetachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToDetach map[client.ObjectKey]bool) error {
+	var err error
+	for virtualMachineVolumeToDelete := range virtualMachineVolumesToDetach {
+		cnsNodeVmAttachmentToDelete := &cnsv1alpha1.CnsNodeVmAttachment{}
+		cnsNodeVmAttachmentToDelete.SetName(constructCnsNodeVmAttachmentName(vm.Name, virtualMachineVolumeToDelete.Name))
+		cnsNodeVmAttachmentToDelete.SetNamespace(virtualMachineVolumeToDelete.Namespace)
+		log.Info("Attempting to delete the CnsNodeVmAttachment", "name", cnsNodeVmAttachmentToDelete.Name, "namespace", cnsNodeVmAttachmentToDelete.Namespace)
+		deleteError := cvp.client.Delete(ctx, cnsNodeVmAttachmentToDelete)
+		if deleteError != nil {
+			if apierrors.IsNotFound(deleteError) {
+				log.Info("The CnsNodeVmAttachment instance not found. It might have been deleted already")
+			} else {
+				err = deleteError
+				log.Error(deleteError, "Unable to delete the CnsNodeVmAttachment instance", "name", cnsNodeVmAttachmentToDelete.Name, "namespace", cnsNodeVmAttachmentToDelete.Namespace)
+			}
+		}
+	}
+
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 // This function loops on vm.Status.Volumes and update its status by checking the corresponding CnsNodeVmAttachment instance
-// Note: UpdateVmVolumesStatus() does not call client.Status().Update(), it just updates vm object and vitualmachine_controller.go eventually will call apiserver to update
-//       the vm object
+// Note: UpdateVmVolumesStatus() does not call client.Status().Update(), it just updates vm object and vitualmachine_controller.go
+//       eventually will call apiserver to update the vm object
 func (cvp *cnsVolumeProvider) UpdateVmVolumesStatus(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
 	// If there are no volumes under vm.status, then no need to update anything
 	if len(vm.Status.Volumes) == 0 {
@@ -167,6 +205,8 @@ func (cvp *cnsVolumeProvider) UpdateVmVolumesStatus(ctx context.Context, vm *vmo
 // GetVmVolumesToProcess returns a set of VirtualMachineVolume names desired, and a set of VirtualMachineVolume names need to be deleted
 // by comparing vm.spec.volumes and vm.status.volumes.
 // If vm.spec.volumes has [a,b,c], vm.status.volumes has [b,c,d], then vmVolumesDesired has [a], vmVolumesToDelete has [d]
+//
+// Note: virtualmachine_strategy.go#validateVolumes() has been implemented to validate the vm.Spec.Volumes, so the vm.Spec.Volumes only contain distinct element
 func GetVmVolumesToProcess(vm *vmoperatorv1alpha1.VirtualMachine) (map[client.ObjectKey]bool, map[client.ObjectKey]bool) {
 	log.Info("Getting the changes of VirtualMachineVolumes by processing the VirtualMachine object", "name", vm.NamespacedName())
 	vmVolumesToAttach := map[client.ObjectKey]bool{}

@@ -33,6 +33,7 @@ const (
 	ServiceOwnerRefKind                                = "VirtualMachineService"
 	ServiceOwnerRefVersion                             = "vmoperator.vmware.com/v1alpha1"
 	NSXTLoadBalancer          loadBalancerProviderType = "nsx-t-lb"
+	ClusterNameKey                                     = "capw.vmware.com/cluster.name"
 )
 
 var log = klogr.New()
@@ -100,7 +101,7 @@ func (nl *nsxtLoadbalancerProvider) createNSXTLoadBalancerSpec(ctx context.Conte
 			APIVersion: APIVersion,
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      nl.getLoadbalancerName(vmService.Namespace, vmService.ClusterName),
+			Name:      nl.getLoadbalancerName(vmService.Namespace, vmService.Spec.Selector[ClusterNameKey]),
 			Namespace: vmService.GetNamespace(),
 		},
 		Spec: ncpv1alpha1.LoadBalancerSpec{

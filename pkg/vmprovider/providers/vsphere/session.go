@@ -33,20 +33,20 @@ import (
 )
 
 type Session struct {
-	client    *Client
-	clientset kubernetes.Interface
-	ncpClient clientset.Interface
-
-	Finder       *find.Finder
-	datacenter   *object.Datacenter
-	cluster      *object.ClusterComputeResource
-	folder       *object.Folder
-	resourcepool *object.ResourcePool
-	network      object.NetworkReference
-	contentlib   *library.Library
-	datastore    *object.Datastore
-	creds        *VSphereVmProviderCredentials
-	extraConfig  map[string]string
+	client               *Client
+	clientset            kubernetes.Interface
+	ncpClient            clientset.Interface
+	Finder               *find.Finder
+	datacenter           *object.Datacenter
+	cluster              *object.ClusterComputeResource
+	folder               *object.Folder
+	resourcepool         *object.ResourcePool
+	network              object.NetworkReference
+	contentlib           *library.Library
+	datastore            *object.Datastore
+	creds                *VSphereVmProviderCredentials
+	extraConfig          map[string]string
+	storageClassRequired bool
 }
 
 func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig, clientset kubernetes.Interface, ncpclient clientset.Interface) (*Session, error) {
@@ -56,9 +56,10 @@ func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig
 	}
 
 	s := &Session{
-		client:    c,
-		clientset: clientset,
-		ncpClient: ncpclient,
+		client:               c,
+		clientset:            clientset,
+		ncpClient:            ncpclient,
+		storageClassRequired: config.StorageClassRequired,
 	}
 
 	if err = s.initSession(ctx, config); err != nil {
@@ -109,15 +110,6 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		}
 	}
 
-	// not necessary for vmimage list/get from Content Library
-	if config.Datastore != "" {
-		s.datastore, err = s.Finder.Datastore(ctx, config.Datastore)
-		if err != nil {
-			return errors.Wrapf(err, "failed to init Datastore %q", config.Datastore)
-		}
-		log.Info("Datastore init OK", "datastore", s.datastore.Reference().Value)
-	}
-
 	// Network setting is optional
 	if config.Network != "" {
 		s.network, err = s.Finder.Network(ctx, config.Network)
@@ -138,6 +130,24 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 
 	s.creds = config.VcCreds
 
+	return s.initDatastore(ctx, config.Datastore)
+}
+
+func (s *Session) initDatastore(ctx context.Context, datastore string) error {
+	if s.storageClassRequired {
+		if datastore != "" {
+			log.Info("Ignoring configured datastore since storage class is required")
+		}
+	} else {
+		if datastore != "" {
+			var err error
+			s.datastore, err = s.Finder.Datastore(ctx, datastore)
+			if err != nil {
+				return errors.Wrapf(err, "failed to init Datastore %q", datastore)
+			}
+			log.Info("Datastore init OK", "datastore", s.datastore.Reference().Value)
+		}
+	}
 	return nil
 }
 
@@ -470,26 +480,32 @@ func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmClass v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (*res.VirtualMachine, error) {
 
-	if profileID == "" && s.datastore == nil {
-		err := errors.New("Cannot clone VM if both Datastore and ProfileID are absent")
-		log.Error(err, "During a request to clone a VM")
-		return nil, err
-	}
+	name := vm.Name
 
-	log.Info("Will attempt to clone virtual machine", "profileID", profileID)
+	if profileID == "" {
+		if s.storageClassRequired {
+			return nil, fmt.Errorf("storage class configuration is mandated but not specified for %s", name)
+		}
+		if s.datastore == nil {
+			err := errors.New("Cannot clone VM if both Datastore and ProfileID are absent")
+			log.Error(err, "During a request to clone a VM")
+			return nil, err
+		}
+		log.Info("Will attempt to clone virtual machine", "name", name, "datastore", s.datastore)
+	} else {
+		log.Info("Will attempt to clone virtual machine", "name", name, "profileID", profileID)
+	}
 
 	if s.contentlib != nil {
 		return s.cloneVirtualMachineFromCL(ctx, vm, resourcePolicy, profileID)
 	}
 
 	// Clone Virtual Machine from local:
-
 	resSrcVm, err := s.lookupVm(ctx, vm.Spec.ImageName)
 	if err != nil {
 		return nil, err
 	}
 
-	name := vm.Name
 	cloneSpec, err := s.getCloneSpec(ctx, name, resSrcVm, vm, &vmClass.Spec, resourcePolicy, vmMetadata, profileID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create clone spec from %q", resSrcVm.Name)
@@ -510,9 +526,6 @@ func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.Vi
 	if err != nil {
 		return nil, err
 	}
-
-	// NOTE that if both s.datastore and profileID are defined, deployOvf will use Profile ID and ignore s.datastore.
-	// We want Profile ID to override Datastore.
 
 	name := vm.Name
 	var resPolicyName string
@@ -588,12 +601,6 @@ func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine
 		}
 		dev = setVnicKey(dev, key)
 		devices = append(devices, dev)
-		/*
-			deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
-				Device:    dev,
-				Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-			})
-		*/
 		key--
 	}
 	return devices, nil
@@ -684,10 +691,11 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 	vm *v1alpha1.VirtualMachine, vmClassSpec *v1alpha1.VirtualMachineClassSpec, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
 	vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (*vimTypes.VirtualMachineCloneSpec, error) {
 
-	diskSpecs, vmProfile, err := processStorageClass(ctx, resSrcVM, profileID)
+	resourcePoolObj, folderObj, err := s.GetRPAndFolderObjFromResourcePolicy(ctx, resourcePolicy)
 	if err != nil {
 		return nil, err
 	}
+
 	nicSpecs, err := s.GetNicChangeSpecs(ctx, vm, resSrcVM)
 	if err != nil {
 		return nil, err
@@ -715,15 +723,19 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 		}
 	}
 
-	resourcePoolObj, folderObj, err := s.GetRPAndFolderObjFromResourcePolicy(ctx, resourcePolicy)
-	if err != nil {
-		return nil, err
+	if profileID == "" {
+		cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
+	} else {
+		diskSpecs, vmProfile, err := processStorageClass(ctx, resSrcVM, profileID)
+		cloneSpec.Location.Profile = vmProfile
+		if err != nil {
+			return nil, err
+		}
+		cloneSpec.Location.DeviceChange = append(cloneSpec.Location.DeviceChange, diskSpecs...)
 	}
 
 	cloneSpec.Location.Pool = vimTypes.NewReference(resourcePoolObj.Reference())
 	cloneSpec.Location.Folder = vimTypes.NewReference(folderObj.Reference())
-	cloneSpec.Location.Profile = vmProfile
-	cloneSpec.Location.DeviceChange = append(cloneSpec.Location.DeviceChange, diskSpecs...)
 	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resSrcVM.ReferenceValue()}
 	rSpec, err := computeVMPlacement(ctx, s.cluster, vmRef, cloneSpec, vimTypes.PlacementSpecPlacementTypeClone)
 	if err != nil {
@@ -736,7 +748,8 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 	return cloneSpec, nil
 }
 
-func (s *Session) createVm(ctx context.Context, name string, configSpec *vimTypes.VirtualMachineConfigSpec, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (*res.VirtualMachine, error) {
+func (s *Session) createVm(ctx context.Context, name string, configSpec *vimTypes.VirtualMachineConfigSpec,
+	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (*res.VirtualMachine, error) {
 	configSpec.Files = &vimTypes.VirtualMachineFileInfo{
 		VmPathName: fmt.Sprintf("[%s]", s.datastore.Name()),
 	}
@@ -783,7 +796,10 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, p
 			// TODO (): Plumb AcceptAllEULA to this Spec
 			AcceptAllEULA: true,
 		}
-		//TODO: Remove this code when storage profile (storageClass) becomes mandatory
+
+		// NOTE that if both s.datastore and profileID are defined, deployOvf will use Profile ID and ignore s.datastore.
+		// We want Profile ID to override Datastore.
+
 		if profileID == "" {
 			log.Info("WARNING: ProfileID is empty - using datastore", "datastore", s.datastore.Reference().Value)
 			dSpec.DefaultDatastoreID = s.datastore.Reference().Value

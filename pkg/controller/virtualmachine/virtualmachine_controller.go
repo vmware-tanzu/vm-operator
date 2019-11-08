@@ -7,6 +7,8 @@ package virtualmachine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	volumeproviders "github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachine/providers"
@@ -41,8 +43,8 @@ const (
 	OpUpdate = "UpdateVM"
 	OpCheck  = "CheckVM"
 
-	ControllerName = "virtualmachine-controller"
-
+	ControllerName                 = "virtualmachine-controller"
+	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
 	// We should add more uniqueness to the OpId to prevent the collision incurred by different vm-operator to aid
 	// debugging at VPXD.
 	RandomLen = 8
@@ -256,13 +258,47 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 	return nil
 }
 
-func (r *ReconcileVirtualMachine) processStorageClass(ctx context.Context, vmSpec *v1alpha1.VirtualMachineSpec) (string, error) {
-	if len(vmSpec.StorageClass) == 0 {
+func (r *ReconcileVirtualMachine) validateStorageClass(ctx context.Context, scName string, namespace string) error {
+	allResourceQuotas := &v1.ResourceQuotaList{}
+	err := r.List(ctx, client.InNamespace(namespace), allResourceQuotas)
+	if err != nil {
+		log.Error(err, "Unable to get ResourceQuota list", "namespace", namespace)
+		return err
+	}
+
+	if len(allResourceQuotas.Items) == 0 {
+		return fmt.Errorf("no ResourceQuotas assigned for namespace '%s'", namespace)
+	}
+
+	for _, resourceQuota := range allResourceQuotas.Items {
+		for resourceName := range resourceQuota.Spec.Hard {
+			resourceNameStr := resourceName.String()
+			if !strings.Contains(resourceNameStr, storageResourceQuotaStrPattern) {
+				continue
+			}
+			scNameFromRQ := strings.Split(resourceNameStr, storageResourceQuotaStrPattern)[0]
+			if scName == scNameFromRQ {
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("StorageClass '%s' is not assigned for namespace '%s'", scName, namespace)
+}
+
+func (r *ReconcileVirtualMachine) processStorageClass(ctx context.Context, vmSpec *v1alpha1.VirtualMachineSpec, namespace string) (string, error) {
+	scName := vmSpec.StorageClass
+	if len(scName) == 0 {
 		return "", nil
 	}
 
+	err := r.validateStorageClass(ctx, scName, namespace)
+	if err != nil {
+		return "", err
+	}
+
 	scl := &storagetypev1.StorageClass{}
-	err := r.Client.Get(ctx, client.ObjectKey{Namespace: "", Name: vmSpec.StorageClass}, scl)
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: "", Name: scName}, scl)
 	if err != nil {
 		klog.Errorf("Failed to get storage class: %v", err)
 		return "", err
@@ -323,7 +359,7 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 		vmMetadata = configMap.Data
 	}
 
-	policyID, err := r.processStorageClass(ctx, &vm.Spec)
+	policyID, err := r.processStorageClass(ctx, &vm.Spec, vm.Namespace)
 	if err != nil {
 		return err
 	}

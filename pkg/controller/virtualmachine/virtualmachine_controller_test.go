@@ -40,13 +40,32 @@ const (
 	storageClass = "foo-class"
 )
 
+func generateDefaultResourceQuota() *corev1.ResourceQuota {
+	return &corev1.ResourceQuota{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "ResourceQuota",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "rq-for-unit-test",
+			Namespace: integration.DefaultNamespace,
+		},
+		Spec: corev1.ResourceQuotaSpec{
+			Hard: corev1.ResourceList{
+				storageClass + ".storageclass.storage.k8s.io/persistentvolumeclaims":   resource.MustParse("1"),
+				"simple-class" + ".storageclass.storage.k8s.io/persistentvolumeclaims": resource.MustParse("1"),
+				"limits.cpu":    resource.MustParse("2"),
+				"limits.memory": resource.MustParse("2Gi"),
+			},
+		},
+	}
+}
+
 var _ = Describe("VirtualMachine controller", func() {
 	ns := integration.DefaultNamespace
 	name := "fooVm"
 
 	var (
 		classInstance           vmoperatorv1alpha1.VirtualMachineClass
-		sc                      storagetypev1.StorageClass
 		instance                vmoperatorv1alpha1.VirtualMachine
 		expectedRequest         reconcile.Request
 		recFn                   reconcile.Reconciler
@@ -96,12 +115,18 @@ var _ = Describe("VirtualMachine controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
+		sc := storagetypev1.StorageClass{}
 		sc.Provisioner = "foo"
 		sc.Parameters = make(map[string]string)
 		sc.Parameters["storagePolicyID"] = "foo"
 		sc.Name = storageClass
 
 		err = c.Create(context.TODO(), &sc)
+
+		sc.Name = "invalid-class"
+		err = c.Create(context.TODO(), &sc)
+
+		err = c.Create(context.TODO(), generateDefaultResourceQuota())
 
 		recFn, requests = SetupTestReconcile(newReconciler(mgr))
 		Expect(add(mgr, recFn)).To(Succeed())
@@ -130,7 +155,7 @@ var _ = Describe("VirtualMachine controller", func() {
 
 	Describe("when creating/deleting a VM object", func() {
 		Context("from inventory", func() {
-			It("invoke the reconcile method", func() {
+			It("invoke the reconcile method with valid storage class", func() {
 				provider := vmprovider.GetVmProviderOrDie()
 				p := provider.(*vsphere.VSphereVmProvider)
 				session, err := p.GetSession(context.TODO(), ns)
@@ -176,7 +201,55 @@ var _ = Describe("VirtualMachine controller", func() {
 				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 
 				reasonMap := vmrecord.ReadEvents(fakeRecorder)
+				Expect(reasonMap[vmrecord.Failure+OpCreate]).Should(BeZero())
+				Expect(reasonMap[vmrecord.Failure+OpDelete]).Should(BeZero())
 				Expect(reasonMap[vmrecord.Success+OpCreate]).Should(Equal(1))
+				Expect(reasonMap[vmrecord.Success+OpDelete]).Should(Equal(1))
+			})
+		})
+		Context("from inventory", func() {
+			It("invoke the reconcile method with invalid storage class", func() {
+				provider := vmprovider.GetVmProviderOrDie()
+				p := provider.(*vsphere.VSphereVmProvider)
+				session, err := p.GetSession(context.TODO(), ns)
+				Expect(err).NotTo(HaveOccurred())
+
+				//Configure to use inventory
+				vSphereConfig.ContentSource = ""
+				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
+				Expect(err).NotTo(HaveOccurred())
+
+				vmName := "invalid-vm"
+				expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmName}}
+				imageName := "DC0_H0_VM0"
+
+				instance = vmoperatorv1alpha1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ns,
+						Name:      vmName,
+					},
+					Spec: vmoperatorv1alpha1.VirtualMachineSpec{
+						ImageName:    imageName,
+						ClassName:    classInstance.Name,
+						PowerState:   "poweredOn",
+						Ports:        []vmoperatorv1alpha1.VirtualMachinePort{},
+						StorageClass: "invalid-class",
+					},
+				}
+
+				fakeRecorder := vmrecord.GetRecorder().(*record.FakeRecorder)
+
+				err = c.Create(context.TODO(), &instance)
+				Expect(err).ShouldNot(HaveOccurred())
+				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+				// Delete the VM Object then expect Reconcile
+				err = c.Delete(context.TODO(), &instance)
+				Expect(err).ShouldNot(HaveOccurred())
+				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+				reasonMap := vmrecord.ReadEvents(fakeRecorder)
+				Expect(reasonMap[vmrecord.Failure+OpCreate]).ShouldNot(BeZero())
+				Expect(reasonMap[vmrecord.Failure+OpDelete]).Should(BeZero())
+				Expect(reasonMap[vmrecord.Success+OpCreate]).Should(BeZero())
 				Expect(reasonMap[vmrecord.Success+OpDelete]).Should(Equal(1))
 			})
 		})

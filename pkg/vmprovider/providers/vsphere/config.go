@@ -5,6 +5,7 @@ package vsphere
 
 import (
 	"os"
+	"strconv"
 	"strings"
 
 	"k8s.io/klog"
@@ -21,15 +22,16 @@ import (
  * vSphere instance for VM management.
  */
 type VSphereVmProviderConfig struct {
-	VcPNID        string
-	VcPort        string
-	VcCreds       *VSphereVmProviderCredentials
-	Datacenter    string
-	ResourcePool  string
-	Folder        string
-	Datastore     string
-	ContentSource string
-	Network       string
+	VcPNID               string
+	VcPort               string
+	VcCreds              *VSphereVmProviderCredentials
+	Datacenter           string
+	ResourcePool         string
+	Folder               string
+	Datastore            string
+	ContentSource        string
+	Network              string
+	StorageClassRequired bool
 }
 
 const (
@@ -46,6 +48,7 @@ const (
 	datastoreKey         = "Datastore"
 	contentSourceKey     = "ContentSource"
 	networkNameKey       = "Network"
+	scRequiredKey        = "StorageClassRequired"
 
 	NamespaceRPAnnotationKey     = "vmware-system-resource-pool"
 	NamespaceFolderAnnotationKey = "vmware-system-vm-folder"
@@ -80,16 +83,27 @@ func ConfigMapsToProviderConfig(baseConfigMap *v1.ConfigMap, nsConfigMap *v1.Con
 		vcPort = "443"
 	}
 
+	scRequired := false
+	s, ok := dataMap[scRequiredKey]
+	if ok {
+		var err error
+		scRequired, err = strconv.ParseBool(s)
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to parse value of StorageClassRequired")
+		}
+	}
+
 	ret := &VSphereVmProviderConfig{
-		VcPNID:        vcPNID,
-		VcPort:        vcPort,
-		VcCreds:       vcCreds,
-		Datacenter:    dataMap[datacenterKey],
-		ResourcePool:  dataMap[resourcePoolKey],
-		Folder:        dataMap[folderKey],
-		Datastore:     dataMap[datastoreKey],
-		ContentSource: dataMap[contentSourceKey],
-		Network:       dataMap[networkNameKey],
+		VcPNID:               vcPNID,
+		VcPort:               vcPort,
+		VcCreds:              vcCreds,
+		Datacenter:           dataMap[datacenterKey],
+		ResourcePool:         dataMap[resourcePoolKey],
+		Folder:               dataMap[folderKey],
+		Datastore:            dataMap[datastoreKey],
+		ContentSource:        dataMap[contentSourceKey],
+		Network:              dataMap[networkNameKey],
+		StorageClassRequired: scRequired,
 	}
 
 	return ret, nil
@@ -219,6 +233,7 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 	dataMap[folderKey] = config.Folder
 	dataMap[datastoreKey] = config.Datastore
 	dataMap[contentSourceKey] = config.ContentSource
+	dataMap[scRequiredKey] = strconv.FormatBool(config.StorageClassRequired)
 
 	return &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

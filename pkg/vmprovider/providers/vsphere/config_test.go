@@ -7,6 +7,7 @@ package vsphere_test
 
 import (
 	"os"
+	"strconv"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -275,6 +276,51 @@ var _ = Describe("configMapsToProviderConfig", func() {
 			providerConfig, err := ConfigMapsToProviderConfig(baseConfigMapIn, nsConfigMapIn, nil)
 			Expect(err).NotTo(BeNil())
 			Expect(providerConfig).To(BeNil())
+		})
+	})
+
+	Context("when StorageClassRequired is unset on both configs", func() {
+		Specify("return a provider config with the StorageClassRequired equals to false", func() {
+			providerConfig, err := ConfigMapsToProviderConfig(baseConfigMapIn, nsConfigMapIn, vcCreds)
+			Expect(err).To(BeNil())
+			Expect(providerConfig.StorageClassRequired).To(Equal(false))
+		})
+	})
+
+	Context("when StorageClassRequired is set on base config", func() {
+		Specify("return a provider config with the StorageClassRequired equals to true", func() {
+			baseConfigMapIn.Data["StorageClassRequired"] = strconv.FormatBool(true)
+			delete(nsConfigMapIn.Data, "StorageClassRequired")
+			providerConfig, err := ConfigMapsToProviderConfig(baseConfigMapIn, nsConfigMapIn, vcCreds)
+			Expect(err).To(BeNil())
+			Expect(providerConfig.StorageClassRequired).To(Equal(true))
+		})
+	})
+
+	Context("when StorageClassRequired is set on ns config", func() {
+		Specify("return a provider config with the StorageClassRequired equals to true", func() {
+			delete(baseConfigMapIn.Data, "StorageClassRequired")
+			nsConfigMapIn.Data["StorageClassRequired"] = strconv.FormatBool(true)
+			providerConfig, err := ConfigMapsToProviderConfig(baseConfigMapIn, nsConfigMapIn, vcCreds)
+			Expect(err).To(BeNil())
+			Expect(providerConfig.StorageClassRequired).To(Equal(true))
+		})
+	})
+
+	Context("when StorageClassRequired is set on both configs", func() {
+		Specify("return a provider config with the StorageClassRequired equals to false", func() {
+			baseConfigMapIn.Data["StorageClassRequired"] = strconv.FormatBool(true)
+			nsConfigMapIn.Data["StorageClassRequired"] = strconv.FormatBool(false)
+			providerConfig, err := ConfigMapsToProviderConfig(baseConfigMapIn, nsConfigMapIn, vcCreds)
+			Expect(err).To(BeNil())
+			Expect(providerConfig.StorageClassRequired).To(Equal(false))
+		})
+		Specify("return a provider config with the StorageClassRequired equals to true", func() {
+			baseConfigMapIn.Data["StorageClassRequired"] = "false"
+			nsConfigMapIn.Data["StorageClassRequired"] = strconv.FormatBool(true)
+			providerConfig, err := ConfigMapsToProviderConfig(baseConfigMapIn, nsConfigMapIn, vcCreds)
+			Expect(err).To(BeNil())
+			Expect(providerConfig.StorageClassRequired).To(Equal(true))
 		})
 	})
 

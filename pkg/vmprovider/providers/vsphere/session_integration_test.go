@@ -7,11 +7,13 @@ package vsphere_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
@@ -435,49 +437,56 @@ var _ = Describe("Sessions", func() {
 	})
 
 	Describe("Clone VM gracefully fails", func() {
-		var savedDatastoreAttribute string
+		Context("Should fail gracefully", func() {
+			var savedDatastoreAttribute string
+			vm := &vmoperatorv1alpha1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "TestVM",
+				},
+			}
 
-		BeforeEach(func() { savedDatastoreAttribute = config.Datastore })
-
-		AfterEach(func() {
-			config.Datastore = savedDatastoreAttribute
-			config.ContentSource = ""
-		})
-
-		Context("with existing content source, empty datastore and empty profile id", func() {
 			BeforeEach(func() {
-				var err error
-				config.Datastore = ""
-				config.ContentSource = integration.GetContentSourceID()
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
-				Expect(err).NotTo(HaveOccurred())
-				err = session.ConfigureContent(context.TODO(), config.ContentSource)
-				Expect(err).NotTo(HaveOccurred())
+				savedDatastoreAttribute = config.Datastore
 			})
 
-			It("should return an error", func() {
+			AfterEach(func() {
+				config.Datastore = savedDatastoreAttribute
+				config.ContentSource = ""
+				config.StorageClassRequired = false
+			})
+
+			It("with existing content source, empty datastore and empty profile id", func() {
+				config.Datastore = ""
+				config.ContentSource = integration.GetContentSourceID()
+				session, err := vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
+				Expect(err).NotTo(HaveOccurred())
 				clonedVM, err :=
-					session.CloneVirtualMachine(context.TODO(), nil, v1alpha1.VirtualMachineClass{}, nil, nil, "")
+					session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError("Cannot clone VM if both Datastore and ProfileID are absent"))
 				Expect(clonedVM).Should(BeNil())
 			})
-		})
-
-		Context("with no content source, empty datastore and empty profile id", func() {
-			BeforeEach(func() {
-				var err error
-				config.Datastore = ""
-				config.ContentSource = ""
+			It("with existing content source but mandatory profile id is not set", func() {
+				config.ContentSource = integration.GetContentSourceID()
+				config.StorageClassRequired = true
 				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
 				Expect(err).NotTo(HaveOccurred())
-			})
-
-			It("should return an error", func() {
 				clonedVM, err :=
-					session.CloneVirtualMachine(context.TODO(), nil, v1alpha1.VirtualMachineClass{}, nil, nil, "")
+					session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError("Cannot clone VM if both Datastore and ProfileID are absent"))
+				expectedError := fmt.Sprintf("storage class configuration is mandated but not specified for %s", vm.Name)
+				Expect(err).To(MatchError(expectedError))
+				Expect(clonedVM).Should(BeNil())
+			})
+			It("without content source and missing mandatory profile ID", func() {
+				config.StorageClassRequired = true
+				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
+				Expect(err).NotTo(HaveOccurred())
+				clonedVM, err :=
+					session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
+				Expect(err).To(HaveOccurred())
+				expectedError := fmt.Sprintf("storage class configuration is mandated but not specified for %s", vm.Name)
+				Expect(err).To(MatchError(expectedError))
 				Expect(clonedVM).Should(BeNil())
 			})
 		})

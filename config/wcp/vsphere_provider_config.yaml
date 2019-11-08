@@ -7,8 +7,10 @@ data:
   VcPNID: <vc_pnid>
   VcCredsSecretName: wcp-vmop-vc-auth
   Datacenter: <datacenter>
-  # TODO: Update this before we ship 1.0
+  # TODO: Uncomment the next line and remove datastore config after is done
+  #  StorageClassRequired: true
   Datastore: nfs0-1
+  # TODO: Update this before we ship 1.0
   ContentSource: Kubernetes
 
 ---

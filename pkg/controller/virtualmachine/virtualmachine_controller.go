@@ -204,7 +204,7 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 
 	// Before the VM being created or updated, figure out the Volumes[] VirtualMachineVolumes change.
 	// This step determines what CnsNodeVmAttachments need to be created or deleted
-	vmVolumesToProcess, _ := volumeproviders.GetVmVolumesToProcess(vm)
+	vmVolumesToAdd, vmVolumesToDelete := volumeproviders.GetVmVolumesToProcess(vm)
 
 	if exists {
 		err = r.updateVm(ctx, vm)
@@ -217,24 +217,40 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 	}
 
 	// Create CnsNodeVMAttachments on demand if VM has been reconciled properly
-	err = r.volumeProvider.AttachVolumes(ctx, vm, vmVolumesToProcess)
-	if err != nil {
-		return err
-	}
+	volumeAttachErr := r.volumeProvider.AttachVolumes(ctx, vm, vmVolumesToAdd)
+	// Delete CnsNodeVMAttachments on demand if VM has been reconciled properly
+	volumeDetachErr := r.volumeProvider.DetachVolumes(ctx, vm, vmVolumesToDelete)
+	// Update the VirtualMachineVolumeStatus based on the status of respective CnsNodeVmAttachment instance
+	volumeStatusUpdateErr := r.volumeProvider.UpdateVmVolumesStatus(ctx, vm)
+	/*
+			Above code does not return immediately on error is because: we want to always call (r.Status().Update(ctx, vm))
 
-	// TODO: Delete CnsNodeVMAttachments on demand if VM has been reconciled properly
+			1. AttachVolumes() returns error when it fails to create CnsNodeVmAttachment instances (partially or completely)
+			  1.1 If the attach operation [succeeds partially | fails completely], there is no reason to return without
+		          calling(r.Status().Update(ctx, vm)) to update the status for the succeeded set of volumes.
 
-	err = r.volumeProvider.UpdateVmVolumesStatus(ctx, vm)
-	if err != nil {
-		return err
-	}
+			2. DetachVolumes() returns error when it fails to delete CnsNodeVmAttachment instances (partially or completely)
+			  2.1 If the detach operation [succeeds partially | fails completely], there is no reason to return without
+		          calling (r.Status().Update(ctx, vm)) to update the status for the succeeded set of volumes.
+
+			3. UpdateVmVolumesStatus() does not call client.Status().Update(), it only modifies the vm object by updating the vm.Status.Volumes.
+			   It returns error when it fails to get the CnsNodeVmAttachment instance which is supposed to exist.
+			  3.1 If update volumes status succeeds partially, there is no reason to return without calling (r.Status().Update(ctx, vm))
+	*/
 
 	if uErr := r.Status().Update(ctx, vm); uErr != nil {
 		log.Error(uErr, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
-		if err != nil {
-			return err
-		}
 		return uErr
+	}
+
+	// TODO: The error handling here should be optimized along with 	if volumeAttachErr != nil {
+		return volumeAttachErr
+	}
+	if volumeDetachErr != nil {
+		return volumeDetachErr
+	}
+	if volumeStatusUpdateErr != nil {
+		return volumeStatusUpdateErr
 	}
 
 	return nil

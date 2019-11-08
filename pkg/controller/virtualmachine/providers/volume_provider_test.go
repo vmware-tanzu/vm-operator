@@ -16,6 +16,7 @@ import (
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	cnsv1alpha1 "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -262,6 +263,69 @@ var _ = Describe("Volume Provider", func() {
 						Expect(virtualMachineVolumeStatus.Attached).To(BeFalse())
 					}
 				}
+			})
+		})
+
+		Context("when no new volumes need to be added", func() {
+			It("should have no error", func() {
+				vm = generateDefaultVirtualMachine()
+				vm.Spec.Volumes = nil
+				vm.Status.Volumes = nil
+				virtualMachineVolumesAdded, _ := GetVmVolumesToProcess(vm)
+				Expect(len(virtualMachineVolumesAdded)).To(Equal(0))
+
+				err := cnsVolumeProvider.AttachVolumes(context.TODO(), vm, virtualMachineVolumesAdded)
+				Expect(err).NotTo(HaveOccurred())
+
+			})
+		})
+
+	})
+
+	Describe("Unit tests for DetachVolumes()", func() {
+		Context("when a volume needs to be detached", func() {
+			It("should have no error if the respective CnsNodeVmAttachment instance does not exist", func() {
+				vm = generateDefaultVirtualMachine()
+				vm.Spec.Volumes = nil
+				_, virtualMachineVolumesToDetach := GetVmVolumesToProcess(vm)
+				Expect(len(virtualMachineVolumesToDetach)).To(Equal(1))
+
+				err := cnsVolumeProvider.DetachVolumes(context.TODO(), vm, virtualMachineVolumesToDetach)
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		Context("when a volume need to be detached", func() {
+			It("should have no error returned and the respective CnsNodeVmAttachment instance is deleted", func() {
+				vm = generateDefaultVirtualMachine()
+				cnsNodeVmAttachment := generateAttachedCnsNodeVmAttachment(vm.Name, vm.Spec.Volumes[0].Name, vm.Namespace)
+				err := cnsVolumeProvider.client.Create(context.TODO(), cnsNodeVmAttachment)
+				Expect(err).NotTo(HaveOccurred())
+
+				vm.Spec.Volumes = nil
+				_, virtualMachineVolumesToDetach := GetVmVolumesToProcess(vm)
+				Expect(len(virtualMachineVolumesToDetach)).To(Equal(1))
+
+				err = cnsVolumeProvider.DetachVolumes(context.TODO(), vm, virtualMachineVolumesToDetach)
+				Expect(err).NotTo(HaveOccurred())
+
+				cnsNodeVmAttachmentReceived := &cnsv1alpha1.CnsNodeVmAttachment{}
+				err = cnsVolumeProvider.client.Get(context.TODO(),
+					client.ObjectKey{Name: cnsNodeVmAttachment.Name, Namespace: cnsNodeVmAttachment.Namespace},
+					cnsNodeVmAttachmentReceived,
+				)
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			})
+		})
+
+		Context("when no volumes need to be detached", func() {
+			It("should have no error returned", func() {
+				vm = generateDefaultVirtualMachine()
+				_, virtualMachineVolumesToDetach := GetVmVolumesToProcess(vm)
+				Expect(len(virtualMachineVolumesToDetach)).To(Equal(0))
+
+				err := cnsVolumeProvider.DetachVolumes(context.TODO(), vm, virtualMachineVolumesToDetach)
+				Expect(err).NotTo(HaveOccurred())
 			})
 		})
 	})

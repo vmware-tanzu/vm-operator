@@ -113,7 +113,13 @@ func (nl *nsxtLoadbalancerProvider) createNSXTLoadBalancerSpec(ctx context.Conte
 
 //Create or Update NSX-T Loadbalancer
 func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) (string, error) {
-	loadBalancerName := nl.getLoadbalancerName(vmService.Namespace, vmService.ClusterName)
+
+	clusterName, ok := vmService.Spec.Selector[ClusterNameKey]
+	if !ok {
+		return "", fmt.Errorf("can't create loadbalancer without cluster name")
+	}
+
+	loadBalancerName := nl.getLoadbalancerName(vmService.Namespace, clusterName)
 
 	log.V(4).Info("Get or create loadbalancer", "name", loadBalancerName)
 	defer log.V(4).Info("Finished get or create Loadbalancer", "name", loadBalancerName)

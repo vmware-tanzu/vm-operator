@@ -6,6 +6,7 @@ set -o nounset
 set -x
 
 YAML= # bryanv: Not used (yet?)
+SSHCommonArgs=" -o PubkeyAuthentication=no -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no "
 
 usage () {
     cat <<EOM
@@ -46,8 +47,7 @@ verifyEnvironmentVariables() {
 
     VCSA_PASSWORD=${VCSA_PASSWORD:-vmware}
 
-    output=$(SSHPASS="$VCSA_PASSWORD" sshpass -e ssh -o \
-                UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
+    output=$(SSHPASS="$VCSA_PASSWORD" sshpass -e ssh $SSHCommonArgs \
                 root@$VCSA_IP "/usr/lib/vmware-wcp/decryptK8Pwd.py" 2>&1)
     WCP_SA_IP=$(echo $output | grep -oEI "IP: (\S)+" | cut -d" " -f2)
     WCP_SA_PASSWORD=$(echo $output | grep -oEI "PWD: (\S)+" | cut -d" " -f2)
@@ -60,8 +60,7 @@ verifyEnvironmentVariables() {
 
     if [[ -z ${VCSA_WORKER_DNS:-} ]]; then
         cmd="grep WORKER_DNS /var/lib/node.cfg | cut -d'=' -f2 | sed -e 's/^[[:space:]]*//'"
-        output=$(SSHPASS="$WCP_SA_PASSWORD" sshpass -e ssh -o \
-                    UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
+        output=$(SSHPASS="$WCP_SA_PASSWORD" sshpass -e ssh $SSHCommonArgs \
                     root@$WCP_SA_IP "$cmd")
         if [[ -z $output ]]; then
             echo "You did not specify env VCSA_WORKER_DNS and we couldn't fetch it from the SV cluster."

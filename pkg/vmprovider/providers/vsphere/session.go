@@ -21,7 +21,6 @@ import (
 	"github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25/types"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes"
 
@@ -335,14 +334,15 @@ func (s *Session) DeleteResourcePool(ctx context.Context, resourcePoolName strin
 	log.Info("Deleting the ResourcePool", "Name", resourcePoolName)
 	rpPath := s.resourcepool.InventoryPath + "/" + resourcePoolName
 	rpObj, err := GetResourcePool(ctx, s.Finder, rpPath)
+
 	if err != nil {
-		// Ignore if the ResourcePool does not exist (already deleted?)
-		if apiErrors.IsNotFound(err) {
-			log.V(2).Info("To be deleted ResourcePool not found", "name", resourcePoolName, "path", rpPath)
+		switch err.(type) {
+		case *find.NotFoundError, *find.DefaultNotFoundError:
 			return nil
+		default:
+			log.Error(err, "Error getting the to be deleted ResourcePool", "name", resourcePoolName, "path", rpPath)
+			return err
 		}
-		log.Error(err, "Error getting the to be deleted ResourcePool", "name", resourcePoolName, "path", rpPath)
-		return err
 	}
 
 	task, err := rpObj.Destroy(ctx)
@@ -404,14 +404,15 @@ func (s *Session) DeleteFolder(ctx context.Context, folderName string) error {
 
 	folderPath := s.folder.InventoryPath + "/" + folderName
 	folderObj, err := GetVMFolder(ctx, s.Finder, folderPath)
+
 	if err != nil {
-		// Ignore if the Folder does not exist (already deleted?)
-		if apiErrors.IsNotFound(err) {
-			log.V(2).Info("To be deleted folder not found", "name", folderName, "path", folderPath)
+		switch err.(type) {
+		case *find.NotFoundError, *find.DefaultNotFoundError:
 			return nil
+		default:
+			log.V(2).Info("Error getting the to be deleted VM folder", "name", folderName, "path", folderPath)
+			return err
 		}
-		log.V(2).Info("Error getting the to be deleted VM folder", "name", folderName, "path", folderPath)
-		return err
 	}
 
 	task, err := folderObj.Destroy(ctx)

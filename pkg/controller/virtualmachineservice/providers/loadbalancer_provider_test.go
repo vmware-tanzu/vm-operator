@@ -80,11 +80,25 @@ var _ = Describe("Loadbalancer Provider", func() {
 					Spec: v1alpha1.VirtualMachineServiceSpec{
 						Type:         v1alpha1.VirtualMachineServiceTypeClusterIP,
 						Ports:        nil,
-						Selector:     nil,
+						Selector:     map[string]string{ClusterNameKey: "test"},
 						ClusterIP:    "TEST",
 						ExternalName: "TEST",
 					},
 				}
+			})
+
+			Context("load balancer name", func() {
+				It("load balancer name should be namespace-clustername-lb", func() {
+					lb = loadBalancerProvider.getLoadbalancerName(vmService.Namespace, vmService.Spec.Selector[ClusterNameKey])
+					Expect(lb).To(Equal("dummy-test-lb"))
+				})
+
+				It("create loadbalancer should return error without cluster name", func() {
+					vmService.Spec.Selector = nil
+					lb, err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
+					Expect(err).Should(HaveOccurred())
+					Expect(lb).To(Equal(""))
+				})
 			})
 
 			Context("virtual network doesn't exist", func() {

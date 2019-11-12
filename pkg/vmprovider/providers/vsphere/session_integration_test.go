@@ -333,17 +333,18 @@ var _ = Describe("Sessions", func() {
 			rpSpec = &vmoperatorv1alpha1.ResourcePoolSpec{
 				Name: rpName,
 			}
+			rpMoId, err := session.CreateResourcePool(context.TODO(), rpSpec)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rpMoId).To(Not(BeEmpty()))
+		})
+
+		AfterEach(func() {
+			// RP would already be deleted after the deletion test. But DeleteResourcePool handles delete of an RP if it's already deleted.
+			Expect(session.DeleteResourcePool(context.TODO(), rpSpec.Name)).To(Succeed())
 		})
 
 		Context("Create a ResourcePool, verify it exists and delete it", func() {
 			JustBeforeEach(func() {
-				rpMoId, err := session.CreateResourcePool(context.TODO(), rpSpec)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(rpMoId).To(Not(BeEmpty()))
-			})
-			JustAfterEach(func() {
-				// RP would already be deleted after the deletion test. But DeleteResourcePool handles delete of an RP if it's already deleted.
-				Expect(session.DeleteResourcePool(context.TODO(), rpSpec.Name)).To(Succeed())
 			})
 
 			It("create is tested in setup", func() {
@@ -362,20 +363,16 @@ var _ = Describe("Sessions", func() {
 
 		Context("Create two resource pools with the duplicate names", func() {
 			It("second resource pool should fail to create", func() {
-				rpMoId, err := session.CreateResourcePool(context.TODO(), rpSpec)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(rpMoId).To(Not(BeEmpty()))
-
 				// Try to create another ResourcePool with the same spec.
-				rpMoId, err = session.CreateResourcePool(context.TODO(), rpSpec)
+				rpMoId, err := session.CreateResourcePool(context.TODO(), rpSpec)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal("ServerFaultCode: DuplicateName"))
 				Expect(rpMoId).To(BeEmpty())
 			})
 		})
-		Context("Delete a Resource Pool that doesnt exist", func() {
+		Context("Delete a Resource Pool that doesn't exist", func() {
 			It("should succeed", func() {
-				Expect(session.DeleteResourcePool(context.TODO(), rpSpec.Name)).To(Succeed())
+				Expect(session.DeleteResourcePool(context.TODO(), "nonexistent-resourcepool")).To(Succeed())
 			})
 		})
 	})

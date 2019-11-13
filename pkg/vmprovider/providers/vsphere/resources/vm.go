@@ -225,7 +225,7 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 	return &v1alpha1.VirtualMachineStatus{
 		Host:       hostname,
 		Phase:      v1alpha1.Created,
-		PowerState: string(ps),
+		PowerState: v1alpha1.VirtualMachinePowerState(ps),
 		VmIp:       ip,
 		BiosUuid:   vm.vcVirtualMachine.UUID(ctx),
 	}, nil
@@ -255,7 +255,7 @@ func (vm *VirtualMachine) GetOvfProperties(ctx context.Context) (map[string]stri
 	return properties, nil
 }
 
-func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState string) error {
+func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState v1alpha1.VirtualMachinePowerState) error {
 
 	ps, err := vm.vcVirtualMachine.PowerState(ctx)
 	if err != nil {
@@ -265,7 +265,7 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState s
 
 	log.Info("VM power state", "name", vm.Name, "currentState", ps, "desiredState", desiredPowerState)
 
-	if string(ps) == desiredPowerState {
+	if v1alpha1.VirtualMachinePowerState(ps) == desiredPowerState {
 		return nil
 	}
 

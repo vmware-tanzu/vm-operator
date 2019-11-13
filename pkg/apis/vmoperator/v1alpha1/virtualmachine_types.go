@@ -31,8 +31,8 @@ type VirtualMachinePowerState string
 
 // See govmomi.vim25.types.VirtualMachinePowerState
 const (
-	VirtualMachinePoweredOff = "poweredOff"
-	VirtualMachinePoweredOn  = "poweredOn"
+	VirtualMachinePoweredOff VirtualMachinePowerState = "poweredOff"
+	VirtualMachinePoweredOn  VirtualMachinePowerState = "poweredOn"
 )
 
 type VMStatusPhase string
@@ -60,7 +60,7 @@ type VirtualMachineNetworkInterface struct {
 type VirtualMachineSpec struct {
 	ImageName         string                           `json:"imageName"`
 	ClassName         string                           `json:"className"`
-	PowerState        string                           `json:"powerState"`
+	PowerState        VirtualMachinePowerState         `json:"powerState"`
 	Ports             []VirtualMachinePort             `json:"ports,omitempty"`
 	VmMetadata        *VirtualMachineMetadata          `json:"vmMetadata,omitempty"`
 	StorageClass      string                           `json:"storageClass,omitempty"`
@@ -100,7 +100,7 @@ type VirtualMachineVolumes struct {
 type VirtualMachineStatus struct {
 	Conditions         []VirtualMachineCondition    `json:"conditions"`
 	Host               string                       `json:"host"`
-	PowerState         string                       `json:"powerState"`
+	PowerState         VirtualMachinePowerState     `json:"powerState"`
 	ResourcePolicyName string                       `json:"resourcePolicy"`
 	Phase              VMStatusPhase                `json:"phase"`
 	VmIp               string                       `json:"vmIp"`

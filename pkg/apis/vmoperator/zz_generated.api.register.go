@@ -128,6 +128,7 @@ func Resource(resource string) schema.GroupResource {
 
 type Protocol string
 type VMStatusPhase string
+type VirtualMachinePowerState string
 type VirtualMachineServiceType string
 
 // +genclient
@@ -155,7 +156,7 @@ type VirtualMachineSetResourcePolicy struct {
 type VirtualMachineStatus struct {
 	Conditions         []VirtualMachineCondition
 	Host               string
-	PowerState         string
+	PowerState         VirtualMachinePowerState
 	ResourcePolicyName string
 	Phase              VMStatusPhase
 	VmIp               string
@@ -190,7 +191,7 @@ type VirtualMachineSetResourcePolicySpec struct {
 type VirtualMachineSpec struct {
 	ImageName          string
 	ClassName          string
-	PowerState         string
+	PowerState         VirtualMachinePowerState
 	Ports              []VirtualMachinePort
 	VmMetadata         *VirtualMachineMetadata
 	StorageClass       string

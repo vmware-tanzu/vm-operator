@@ -1168,7 +1168,7 @@ func Convert_vmoperator_VirtualMachineSetResourcePolicyStatus_To_v1alpha1_Virtua
 func autoConvert_v1alpha1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(in *VirtualMachineSpec, out *vmoperator.VirtualMachineSpec, s conversion.Scope) error {
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
-	out.PowerState = in.PowerState
+	out.PowerState = vmoperator.VirtualMachinePowerState(in.PowerState)
 	out.Ports = *(*[]vmoperator.VirtualMachinePort)(unsafe.Pointer(&in.Ports))
 	out.VmMetadata = (*vmoperator.VirtualMachineMetadata)(unsafe.Pointer(in.VmMetadata))
 	out.StorageClass = in.StorageClass
@@ -1186,7 +1186,7 @@ func Convert_v1alpha1_VirtualMachineSpec_To_vmoperator_VirtualMachineSpec(in *Vi
 func autoConvert_vmoperator_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *vmoperator.VirtualMachineSpec, out *VirtualMachineSpec, s conversion.Scope) error {
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
-	out.PowerState = in.PowerState
+	out.PowerState = VirtualMachinePowerState(in.PowerState)
 	out.Ports = *(*[]VirtualMachinePort)(unsafe.Pointer(&in.Ports))
 	out.VmMetadata = (*VirtualMachineMetadata)(unsafe.Pointer(in.VmMetadata))
 	out.StorageClass = in.StorageClass
@@ -1204,7 +1204,7 @@ func Convert_vmoperator_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *vm
 func autoConvert_v1alpha1_VirtualMachineStatus_To_vmoperator_VirtualMachineStatus(in *VirtualMachineStatus, out *vmoperator.VirtualMachineStatus, s conversion.Scope) error {
 	out.Conditions = *(*[]vmoperator.VirtualMachineCondition)(unsafe.Pointer(&in.Conditions))
 	out.Host = in.Host
-	out.PowerState = in.PowerState
+	out.PowerState = vmoperator.VirtualMachinePowerState(in.PowerState)
 	out.ResourcePolicyName = in.ResourcePolicyName
 	out.Phase = vmoperator.VMStatusPhase(in.Phase)
 	out.VmIp = in.VmIp
@@ -1221,7 +1221,7 @@ func Convert_v1alpha1_VirtualMachineStatus_To_vmoperator_VirtualMachineStatus(in
 func autoConvert_vmoperator_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(in *vmoperator.VirtualMachineStatus, out *VirtualMachineStatus, s conversion.Scope) error {
 	out.Conditions = *(*[]VirtualMachineCondition)(unsafe.Pointer(&in.Conditions))
 	out.Host = in.Host
-	out.PowerState = in.PowerState
+	out.PowerState = VirtualMachinePowerState(in.PowerState)
 	out.ResourcePolicyName = in.ResourcePolicyName
 	out.Phase = VMStatusPhase(in.Phase)
 	out.VmIp = in.VmIp

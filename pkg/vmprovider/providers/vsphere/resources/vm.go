@@ -219,7 +219,8 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 
 	ip, err := vm.IpAddress(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get VM IP address for VirtualMachine %s", vm.Name)
+		log.Error(err, fmt.Sprintf("failed to get VM IP address for VirtualMachine %s", vm.Name))
+		ip = ""
 	}
 
 	return &v1alpha1.VirtualMachineStatus{

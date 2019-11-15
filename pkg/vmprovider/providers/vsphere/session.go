@@ -193,7 +193,8 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace 
 	}
 
 	var images []*v1alpha1.VirtualMachineImage
-	for _, item := range items {
+	for i := range items {
+		item := items[i]
 		if IsSupportedDeployType(item.Type) {
 			var vmOpts OvfPropertyRetriever = vmOptions{}
 			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, namespace, AnnotateVmImage, vmOpts)
@@ -591,7 +592,8 @@ func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine
 	// The clients should ensure that existing device keys are not reused as temporary key values for the new device to
 	// be added, hence use unique negative integers as temporary keys.
 	key := int32(-100)
-	for _, vif := range vm.Spec.NetworkInterfaces {
+	for i := range vm.Spec.NetworkInterfaces {
+		vif := vm.Spec.NetworkInterfaces[i]
 		np, err := NetworkProviderByType(vif.NetworkType, s.Finder, s.ncpClient)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get network provider")
@@ -609,6 +611,7 @@ func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine
 
 // GetNicChangeSpecs - Returns changes for NIC device that need to be done to get desired VM config
 func (s *Session) GetNicChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMachine, resSrcVm *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+	//nolint:prealloc
 	var deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec
 
 	if resSrcVm != nil {
@@ -864,7 +867,6 @@ func (s *Session) WithRestClient(ctx context.Context, f func(c *rest.Client) err
 }
 
 func GetExtraConfig(vmSpecMeta, globalMeta map[string]string) []vimTypes.BaseOptionValue {
-	var extraConfigs []vimTypes.BaseOptionValue
 	mergedConfig := vmSpecMeta
 
 	// If global values for extraConfig have been configured, apply them here
@@ -879,6 +881,7 @@ func GetExtraConfig(vmSpecMeta, globalMeta map[string]string) []vimTypes.BaseOpt
 		}
 	}
 
+	extraConfigs := make([]vimTypes.BaseOptionValue, 0, len(mergedConfig))
 	for k, v := range mergedConfig {
 		extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: k, Value: v})
 	}

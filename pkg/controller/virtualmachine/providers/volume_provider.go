@@ -165,7 +165,7 @@ func (cvp *cnsVolumeProvider) UpdateVmVolumesStatus(ctx context.Context, vm *vmo
 	log.Info("Updating the VirtualMachineVolumeStatus for VirtualMachine", "name", vm.Name, "namespace", vm.Namespace)
 	// Updating the existing volume status
 	var err error
-	var newVmVolumeStatus []vmoperatorv1alpha1.VirtualMachineVolumeStatus
+	newVmVolumeStatus := make([]vmoperatorv1alpha1.VirtualMachineVolumeStatus, 0, len(vm.Status.Volumes))
 	for _, vmVolume := range vm.Status.Volumes {
 		cnsNodeVmAttachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 		cnsNodeVmAttachmentName := constructCnsNodeVmAttachmentName(vm.Name, vmVolume.Name)

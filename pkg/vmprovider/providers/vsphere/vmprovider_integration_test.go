@@ -20,28 +20,54 @@ var _ = Describe("VMProvider Tests", func() {
 	var clTestNamespace = integration.DefaultNamespace
 
 	Context("Creating a VM via vmprovider", func() {
-		It("should correctly update VirtualMachineStatus", func() {
-			testNamespace := "test-namespace-vmp"
-			testVMName := "test-vm-vmp"
+		Context("and the IP is available on create", func() {
+			It("should correctly update VirtualMachineStatus", func() {
+				testNamespace := "test-namespace-vmp"
+				testVMName := "test-vm-vmp"
 
-			// Create a new VMProvder from the config provided by the test
-			vmProvider, err := vsphere.NewVSphereVmProviderFromConfig(testNamespace, config)
-			Expect(err).NotTo(HaveOccurred())
+				// Create a new VMProvder from the config provided by the test
+				vmProvider, err := vsphere.NewVSphereVmProviderFromConfig(testNamespace, config)
+				Expect(err).NotTo(HaveOccurred())
 
-			// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
-			testIP := "10.0.0.1"
-			vmMetadata := map[string]string{"SET.guest.ipAddress": testIP}
-			imageName := "" // create, not clone
-			vmClass := getVMClassInstance(testVMName, testNamespace)
-			vm := getVirtualMachineInstance(testVMName, testNamespace, imageName, vmClass.Name)
-			Expect(vm.Status.BiosUuid).Should(BeEmpty())
+				// Instruction to vcsim to give the VM an IP address
+				testIP := "10.0.0.1"
+				vmMetadata := map[string]string{"SET.guest.ipAddress": testIP}
+				imageName := "" // create, not clone
+				vmClass := getVMClassInstance(testVMName, testNamespace)
+				vm := getVirtualMachineInstance(testVMName, testNamespace, imageName, vmClass.Name)
+				Expect(vm.Status.BiosUuid).Should(BeEmpty())
 
-			// Note that createVirtualMachine has the side effect of changing the vm input value
-			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "testProfileID")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(vm.Status.VmIp).Should(Equal(testIP))
-			Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
-			Expect(vm.Status.BiosUuid).ShouldNot(BeEmpty())
+				// Note that createVirtualMachine has the side effect of changing the vm input value
+				err = vmProvider.CreateVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "testProfileID")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vm.Status.VmIp).Should(Equal(testIP))
+				Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
+				Expect(vm.Status.BiosUuid).ShouldNot(BeEmpty())
+			})
+		})
+
+		Context("and the IP is not available on create", func() {
+			It("should correctly update VirtualMachineStatus", func() {
+				testNamespace := "test-namespace-vmp"
+				testVMName := "test-vm-vmp-noip"
+
+				// Create a new VMProvder from the config provided by the test
+				vmProvider, err := vsphere.NewVSphereVmProviderFromConfig(testNamespace, config)
+				Expect(err).NotTo(HaveOccurred())
+
+				vmMetadata := map[string]string{}
+				imageName := "" // create, not clone
+				vmClass := getVMClassInstance(testVMName, testNamespace)
+				vm := getVirtualMachineInstance(testVMName, testNamespace, imageName, vmClass.Name)
+				Expect(vm.Status.BiosUuid).Should(BeEmpty())
+
+				// Note that createVirtualMachine has the side effect of changing the vm input value
+				err = vmProvider.CreateVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "testProfileID")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vm.Status.VmIp).Should(BeEmpty())
+				Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
+				Expect(vm.Status.BiosUuid).ShouldNot(BeEmpty())
+			})
 		})
 	})
 	Context("Creating and Updating a VM from Content Library", func() {

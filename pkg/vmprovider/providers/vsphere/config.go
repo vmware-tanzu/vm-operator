@@ -139,6 +139,11 @@ func UpdateVMFolderAndRPInProviderConfig(clientSet kubernetes.Interface, namespa
 		providerConfig.ResourcePool = ns.ObjectMeta.Annotations[NamespaceRPAnnotationKey]
 		providerConfig.Folder = ns.ObjectMeta.Annotations[NamespaceFolderAnnotationKey]
 	}
+
+	if providerConfig.ResourcePool == "" || providerConfig.Folder == "" {
+		return errors.Errorf("Invalid resourcepool/folder in providerconfig. ResourcePool: %v, Folder: %v", providerConfig.ResourcePool, providerConfig.Folder)
+	}
+
 	return nil
 }
 

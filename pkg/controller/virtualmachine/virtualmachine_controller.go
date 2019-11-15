@@ -311,7 +311,7 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 	defer record.EmitEvent(vm, OpCreate, &err, false)
 
 	// TODO 	//  The length limit of OpId is 256, we will implement a function to detects if the total length exceeds
-	//  the limit and then “smartly” trims each component of the op id to an abbreviated version
+	//  the limit and then "smartly" trims each component of the op id to an abbreviated version
 	opId := ctx.Value(vimtypes.ID{}).(string)
 	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-create-"+common.RandomString(RandomLen))
 

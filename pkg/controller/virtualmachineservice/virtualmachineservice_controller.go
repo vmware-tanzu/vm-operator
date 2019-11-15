@@ -271,7 +271,7 @@ func (r *ReconcileVirtualMachineService) getVirtualNetworkName(ctx context.Conte
 func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperatorv1alpha1.VirtualMachineService) *corev1.Service {
 	om := r.makeObjectMeta(vmService)
 
-	var servicePorts []corev1.ServicePort
+	servicePorts := make([]corev1.ServicePort, 0, len(vmService.Spec.Ports))
 	for _, vmPort := range vmService.Spec.Ports {
 		sport := corev1.ServicePort{
 			// No node port field in vm service, cant't translate that one
@@ -306,7 +306,7 @@ func findPort(vm *vmoperatorv1alpha1.VirtualMachine, svcPort *corev1.ServicePort
 		name := portName.StrVal
 		for _, port := range vm.Spec.Ports {
 			if port.Name == name && port.Protocol == svcPort.Protocol {
-				return int(port.Port), nil
+				return port.Port, nil
 			}
 		}
 	case intstr.Int:
@@ -420,7 +420,8 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 
 	var subsets []corev1.EndpointSubset
 
-	for _, vm := range vmList.Items {
+	for i := range vmList.Items {
+		vm := vmList.Items[i]
 		log.Info("Resolving ports for VirtualMachine", "name", vm.NamespacedName())
 		// Handle multiple VM interfaces
 		if len(vm.Status.VmIp) == 0 {

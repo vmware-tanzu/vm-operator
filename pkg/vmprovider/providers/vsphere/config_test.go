@@ -43,7 +43,7 @@ var _ = Describe("UpdateVMFolderAndResourcePool", func() {
 		err error
 	)
 	Context("when a good provider config exists and namespace has non-empty annotations", func() {
-		Specify("provider config is updated with RP and VM folder", func() {
+		Specify("provider config is updated with RP and VM folder from annotations", func() {
 			clientSet := fake.NewSimpleClientset()
 			namespaceRP := "namespace-test-RP"
 			namespaceVMFolder := "namesapce-test-vmfolder"
@@ -53,21 +53,24 @@ var _ = Describe("UpdateVMFolderAndResourcePool", func() {
 			ns, err = clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace", Annotations: annotations}})
 			Expect(err).ShouldNot(HaveOccurred())
 			providerConfig := &VSphereVmProviderConfig{}
-			err = UpdateVMFolderAndRPInProviderConfig(clientSet, ns.Name, providerConfig)
-			Expect(err).ShouldNot(HaveOccurred())
+			Expect(UpdateVMFolderAndRPInProviderConfig(clientSet, ns.Name, providerConfig)).To(Succeed())
 			Expect(providerConfig.ResourcePool).To(Equal(namespaceRP))
 			Expect(providerConfig.Folder).To(Equal(namespaceVMFolder))
 		})
 	})
-	Context("when a good provider config exists and namespace has non-empty annotations", func() {
-		Specify("namespace annotations should be empty", func() {
+	Context("when a good provider config exists and namespace does not have annotations", func() {
+		Specify("should succeed with providerconfig unmodified", func() {
 			clientSet := fake.NewSimpleClientset()
 			ns, err = clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace"}})
 			Expect(err).ShouldNot(HaveOccurred())
 			providerConfig := &VSphereVmProviderConfig{}
-			err = UpdateVMFolderAndRPInProviderConfig(clientSet, ns.Name, providerConfig)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(ns.ObjectMeta.Annotations).To(BeEmpty())
+			providerConfigRP := "namespace-test-RP"
+			providerConfigFolder := "namesapce-test-vmfolder"
+			providerConfig.ResourcePool = providerConfigRP
+			providerConfig.Folder = providerConfigFolder
+			Expect(UpdateVMFolderAndRPInProviderConfig(clientSet, ns.Name, providerConfig)).To(Succeed())
+			Expect(providerConfig.ResourcePool).To(Equal(providerConfigRP))
+			Expect(providerConfig.Folder).To(Equal(providerConfigFolder))
 		})
 	})
 	Context("namespace does not exist", func() {
@@ -77,6 +80,17 @@ var _ = Describe("UpdateVMFolderAndResourcePool", func() {
 			err = UpdateVMFolderAndRPInProviderConfig(clientSet, "test-namespace", providerConfig)
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).To(Equal("could not find the namespace: test-namespace: namespaces \"test-namespace\" not found"))
+		})
+	})
+	Context("ResourcePool and Folder not present in either providerConfig or namespace annotations", func() {
+		It("should return an error", func() {
+			clientSet := fake.NewSimpleClientset()
+			ns, err = clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-namespace"}})
+			Expect(err).ShouldNot(HaveOccurred())
+			providerConfig := &VSphereVmProviderConfig{}
+			err = UpdateVMFolderAndRPInProviderConfig(clientSet, "ns-namespace", providerConfig)
+			Expect(err).Should(HaveOccurred())
+			Expect(err.Error()).To(Equal("Invalid resourcepool/folder in providerconfig. ResourcePool: , Folder: "))
 		})
 	})
 })

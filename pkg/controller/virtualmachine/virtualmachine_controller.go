@@ -118,6 +118,7 @@ type ReconcileVirtualMachine struct {
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmware.com,resources=virtualnetworkinterfaces;virtualnetworkinterfaces/status,verbs=create;get;list;patch;delete;watch;update
 // +kubebuilder:rbac:groups="",resources=events;configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=resourcequotas,verbs=get;list
 // +kubebuilder:rbac:groups="",resources=configmaps/status,verbs=get;update;patch
 func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	ctx := context.Background()

@@ -111,7 +111,7 @@ func isInvalidResponse(response DownloadUriResponse) bool {
 	return false
 }
 
-func ParseOvfAndFetchProperties(fileContent io.ReadCloser) (map[string]string, error) {
+func ParseOvfAndFetchProperties(fileContent io.Reader) (map[string]string, error) {
 	var env *ovf.Envelope
 	properties := make(map[string]string)
 

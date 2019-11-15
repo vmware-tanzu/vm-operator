@@ -123,7 +123,7 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 	}
 
 	var vmOpts OvfPropertyRetriever = vmOptions{}
-	var images []*v1alpha1.VirtualMachineImage
+	images := make([]*v1alpha1.VirtualMachineImage, 0, len(resVms))
 	for _, resVm := range resVms {
 		image, err := ResVmToVirtualMachineImage(ctx, namespace, resVm, AnnotateVmImage, vmOpts)
 		if err != nil {

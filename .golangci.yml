@@ -9,6 +9,8 @@ run:
   deadline: 8m
   skip-files:
    - ".*generated.*\\.go"
+  skip-dirs:
+    - vendor
 
 # override defaults
 linters-settings:
@@ -28,14 +30,19 @@ linters:
     - gofmt
     - goimports
     - ineffassign
+    - interfacer
+    - megacheck
     - misspell
     - nakedret
+    - prealloc
+    - scopelint
     - structcheck
-    - unused
+    - typecheck
+    - unconvert
     - varcheck
-    - staticcheck
     - vet
     - vetshadow
+#    - bodyclose
+#    - unparam
   disable:
-    - typecheck
   disable-all: false

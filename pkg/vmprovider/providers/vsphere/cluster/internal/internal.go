@@ -39,7 +39,7 @@ type ModuleMembers struct {
 
 // AsReferences converts the ModuleMembers.VM field to morefs
 func (m *ModuleMembers) AsReferences() []types.ManagedObjectReference {
-	var refs []types.ManagedObjectReference
+	refs := make([]types.ManagedObjectReference, 0, len(m.VMs))
 	for _, id := range m.VMs {
 		refs = append(refs, types.ManagedObjectReference{
 			Type:  "VirtualMachine",
@@ -66,7 +66,7 @@ func ClusterVM(c *vim25.Client, cluster mo.Reference) ([]mo.Reference, error) {
 		return nil, err
 	}
 
-	var vms []mo.Reference
+	vms := make([]mo.Reference, 0, len(refs))
 	for i := range refs {
 		vms = append(vms, refs[i])
 	}

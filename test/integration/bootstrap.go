@@ -209,7 +209,7 @@ func SetupContentLibraryForTest(ctx context.Context, c *govmomi.Client,
 
 		return c.Upload(ctx, f, u, &p)
 	}
-	path := string(vmoperator.Rootpath + "/" + imagesDir + ovf)
+	path := vmoperator.Rootpath + "/" + imagesDir + ovf
 	if err = upload(path); err != nil {
 		return err
 	}

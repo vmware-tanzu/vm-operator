@@ -74,7 +74,7 @@ func (r *VirtualMachineImagesREST) List(ctx context.Context, options *metaintern
 		return nil, errors.NewInternalError(err)
 	}
 
-	var items []v1alpha1.VirtualMachineImage
+	items := make([]v1alpha1.VirtualMachineImage, 0, len(images))
 	for _, item := range images {
 		items = append(items, *item)
 	}

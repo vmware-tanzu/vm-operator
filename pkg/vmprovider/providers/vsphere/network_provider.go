@@ -112,6 +112,51 @@ func (np *nsxtNetworkProvider) GenerateNsxVnetifName(networkName, vmName string)
 	return fmt.Sprintf("%s-%s-lsp", networkName, vmName)
 }
 
+// getNetworkInventoryPath takes the network ID, returns opaque network inventory path
+// if not matched, return error
+func (np *nsxtNetworkProvider) getNetworkInventoryPath(ctx context.Context, network object.NetworkReference, networkID string) (string, error) {
+	obj, ok := network.(*object.OpaqueNetwork)
+	if !ok {
+		return "", fmt.Errorf("network %s is not opaque network", networkID)
+	}
+
+	var net mo.OpaqueNetwork
+
+	if err := obj.Properties(ctx, obj.Reference(), []string{"summary"}, &net); err != nil {
+		return "", err
+	}
+
+	summary, _ := net.Summary.(*vimTypes.OpaqueNetworkSummary)
+	if summary.OpaqueNetworkId == networkID {
+		return obj.InventoryPath, nil
+	}
+	return "", fmt.Errorf("opaque network with ID '%s' not matched", networkID)
+}
+
+// getDistributedPortGroupInventoryPath takes the network ID, returns distributed port group inventory path
+// if not matched, return error
+func (np *nsxtNetworkProvider) getDistributedPortgroupInventoryPath(ctx context.Context, network object.NetworkReference, networkID string) (string, error) {
+	obj, ok := network.(*object.DistributedVirtualPortgroup)
+	if !ok {
+		return "", fmt.Errorf("network %s is not distributed port group", networkID)
+	}
+
+	var configInfo []types.ObjectContent
+
+	err := obj.Properties(ctx, obj.Reference(), []string{"config.logicalSwitchUuid"}, &configInfo)
+	if err != nil {
+		return "", err
+	}
+	if len(configInfo) > 0 {
+		for _, dynamicProperty := range configInfo[0].PropSet {
+			if dynamicProperty.Val == networkID {
+				return obj.InventoryPath, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("distributed port group with ID '%s' not matched", networkID)
+}
+
 // searchOpaqueNetworkName takes in nsx-t logical switch UUID and returns the name of the nsx-t network
 func (np *nsxtNetworkProvider) searchOpaqueNetworkName(ctx context.Context, networkID string) (string, error) {
 	networks, err := np.finder.NetworkList(ctx, "*")
@@ -119,20 +164,11 @@ func (np *nsxtNetworkProvider) searchOpaqueNetworkName(ctx context.Context, netw
 		return "", err
 	}
 	for _, network := range networks {
-		obj, ok := network.(*object.OpaqueNetwork)
-		if !ok {
-			continue
+		if inventoryPath, err := np.getDistributedPortgroupInventoryPath(ctx, network, networkID); err == nil {
+			return inventoryPath, nil
 		}
-
-		var net mo.OpaqueNetwork
-
-		if err := obj.Properties(ctx, obj.Reference(), []string{"summary"}, &net); err != nil {
-			return "", err
-		}
-
-		summary, _ := net.Summary.(*vimTypes.OpaqueNetworkSummary)
-		if summary.OpaqueNetworkId == networkID {
-			return obj.InventoryPath, nil
+		if inventoryPath, err := np.getNetworkInventoryPath(ctx, network, networkID); err == nil {
+			return inventoryPath, nil
 		}
 	}
 	return "", fmt.Errorf("opaque network with ID '%s' not found", networkID)

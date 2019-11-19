@@ -898,6 +898,12 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 		MemoryMB: memoryQuantityToMb(vmClassSpec.Hardware.Memory),
 	}
 
+	//  Enable clients to differentiate the managed VMs from the regular VMs.
+	configSpec.ManagedBy = &vimTypes.ManagedByInfo{
+		ExtensionKey: "com.vmware.vcenter.wcp",
+		Type:         "VirtualMachine",
+	}
+
 	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
 
 	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {

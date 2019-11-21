@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"text/template"
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
@@ -208,28 +209,41 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace 
 	return images, err
 }
 
-func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string, namespace string) (
-	*v1alpha1.VirtualMachineImage, error) {
-
-	var item *library.Item
-
+func (s *Session) GetItemIDFromCL(ctx context.Context, itemName string) (string, error) {
+	var itemID string
 	err := s.WithRestClient(ctx, func(c *rest.Client) error {
 		itemIDs, err := library.NewManager(c).FindLibraryItems(ctx,
-			library.FindItem{LibraryID: s.contentlib.ID, Name: name})
+			library.FindItem{LibraryID: s.contentlib.ID, Name: itemName})
 		if err != nil {
 			return err
 		}
-
-		if len(itemIDs) > 0 {
-			//Handle multiple IDs found as an error or return the first one?
-			item, err = library.NewManager(c).GetLibraryItem(ctx, itemIDs[0])
+		if len(itemIDs) == 0 {
+			return errors.Errorf("no library items named: %s", itemName)
 		}
-		return err
+		if len(itemIDs) != 1 {
+			return errors.Errorf("multiple library items named: %s", itemName)
+		}
+		itemID = itemIDs[0]
+		return nil
 	})
+	return itemID, errors.Wrapf(err, "failed to find image %q", itemName)
+}
 
+func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string, namespace string) (*v1alpha1.VirtualMachineImage, error) {
+	itemID, err := s.GetItemIDFromCL(ctx, name)
 	if err != nil {
 		return nil, err
 	}
+
+	var item *library.Item
+	err = s.WithRestClient(ctx, func(c *rest.Client) error {
+		item, err = library.NewManager(c).GetLibraryItem(ctx, itemID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	//Return nil when the image with 'name' is not found in CL
 	if item == nil {
 		return nil, errors.Errorf("item: %v is not found in CL", name)
@@ -499,7 +513,7 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 	}
 
 	if s.contentlib != nil {
-		return s.cloneVirtualMachineFromCL(ctx, vm, resourcePolicy, profileID)
+		return s.cloneVirtualMachineFromCL(ctx, vm, &vmClass, resourcePolicy, vmMetadata, profileID)
 	}
 
 	// Clone Virtual Machine from local:
@@ -521,12 +535,12 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 	return cloneResVm, nil
 }
 
-func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.VirtualMachine, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy, profileID string) (
+func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass *v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (
 	*res.VirtualMachine, error) {
 
-	image, err := s.GetVirtualMachineImageFromCL(ctx, vm.Spec.ImageName, vm.Namespace)
+	itemID, err := s.GetItemIDFromCL(ctx, vm.Spec.ImageName)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to find image %q", vm.Spec.ImageName)
 	}
 
 	name := vm.Name
@@ -535,8 +549,8 @@ func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.Vi
 		resPolicyName = resourcePolicy.Name
 	}
 
-	log.Info("Going to deploy ovf", "imageName", image.ObjectMeta.Name, "vmName", name, "profileID", profileID, "resourcePolicyName", resPolicyName)
-	deployedVm, err := s.deployOvf(ctx, image.Status.Uuid, name, profileID, resourcePolicy)
+	log.Info("Going to deploy ovf", "imageName", vm.Spec.ImageName, "vmName", name, "profileID", profileID, "resourcePolicyName", resPolicyName)
+	deployedVm, err := s.deployOvf(ctx, itemID, name, profileID, resourcePolicy)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
 	}
@@ -546,7 +560,11 @@ func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.Vi
 		return nil, errors.Wrapf(err, "failed to generate device change spec for VM %q", name)
 	}
 	// configure VM device
-	err = deployedVm.Reconfigure(ctx, &vimTypes.VirtualMachineConfigSpec{DeviceChange: nicSpecs})
+	configSpec, err := s.generateConfigSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata, nicSpecs)
+	if err != nil {
+		return nil, err
+	}
+	err = deployedVm.Reconfigure(ctx, configSpec)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to reconfigure VM %q", name)
 	}
@@ -866,21 +884,48 @@ func (s *Session) WithRestClient(ctx context.Context, f func(c *rest.Client) err
 	return f(c)
 }
 
-func GetExtraConfig(vmSpecMeta, globalMeta map[string]string) []vimTypes.BaseOptionValue {
-	mergedConfig := vmSpecMeta
+func renderTemplate(name, text string, obj interface{}) string {
+	t, err := template.New(name).Parse(text)
+	if err != nil {
+		return text
+	}
+	b := strings.Builder{}
+	if err := t.Execute(&b, obj); err != nil {
+		return text
+	}
+	return b.String()
+}
 
-	// If global values for extraConfig have been configured, apply them here
-	if globalMeta != nil {
-		mergedConfig = make(map[string]string)
-		for k, v := range globalMeta {
-			mergedConfig[k] = v
-		}
-		// Ensure that VM-specified extraConfig overrides global values
-		for k, v := range vmSpecMeta {
-			mergedConfig[k] = v
-		}
+func ApplyVmSpec(meta map[string]string, vmSpec *v1alpha1.VirtualMachineSpec) map[string]string {
+	result := make(map[string]string, len(meta))
+	for k, v := range meta {
+		result[k] = renderTemplate(k, v, vmSpec)
+	}
+	return result
+}
+
+func MergeMeta(vmSpecMeta, globalMeta map[string]string) map[string]string {
+	if len(globalMeta) == 0 {
+		return vmSpecMeta
 	}
 
+	// global values for extraConfig have been configured, apply them here
+	mergedConfig := make(map[string]string)
+	for k, v := range globalMeta {
+		mergedConfig[k] = v
+	}
+	// Ensure that VM-specified extraConfig overrides global values
+	for k, v := range vmSpecMeta {
+		mergedConfig[k] = v
+	}
+
+	return mergedConfig
+}
+
+func GetExtraConfig(mergedConfig map[string]string) []vimTypes.BaseOptionValue {
+	if len(mergedConfig) == 0 {
+		return nil
+	}
 	extraConfigs := make([]vimTypes.BaseOptionValue, 0, len(mergedConfig))
 	for k, v := range mergedConfig {
 		extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: k, Value: v})
@@ -928,14 +973,9 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 		configSpec.MemoryAllocation.Limit = &lim
 	}
 
-	if vmSpec.VmMetadata != nil {
-		switch vmSpec.VmMetadata.Transport {
-		case "ExtraConfig":
-			configSpec.ExtraConfig = GetExtraConfig(metadata, s.extraConfig)
-		default:
-			return nil, fmt.Errorf("unsupported metadata transport %q", vmSpec.VmMetadata.Transport)
-		}
-	}
+	mergedConfig := MergeMeta(metadata, s.extraConfig)
+	renderedConfig := ApplyVmSpec(mergedConfig, vmSpec)
+	configSpec.ExtraConfig = GetExtraConfig(renderedConfig)
 
 	configSpec.Annotation = fmt.Sprint("Virtual Machine managed by VM Operator")
 

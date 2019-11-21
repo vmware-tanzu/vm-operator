@@ -14,6 +14,7 @@ import (
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
@@ -23,7 +24,7 @@ var _ = Describe("GetResourcePool", func() {
 		Specify("ExtraConfig map is correct with no global map", func() {
 			vmConfig := map[string]string{"oneK": "oneV", "twoK": "twoV"}
 
-			vmMeta := vsphere.GetExtraConfig(vmConfig, nil)
+			vmMeta := vsphere.GetExtraConfig(vmConfig)
 
 			// Check that the VM extra config is returned in the correct format
 			for _, option := range vmMeta {
@@ -32,17 +33,25 @@ var _ = Describe("GetResourcePool", func() {
 		})
 
 		Specify("ExtraConfig map is correct with global map", func() {
-			vmConfig := map[string]string{"oneK": "oneV", "twoK": "twoV"}
-			globalConfig := map[string]string{"twoK": "glob-twoV", "threeK": "glob-threeV"}
+			vmSpec := &v1alpha1.VirtualMachineSpec{ImageName: "photon-3-something"}
 
-			vmMeta := vsphere.GetExtraConfig(vmConfig, globalConfig)
+			vmConfig := map[string]string{"oneK": "oneV", "twoK": "twoV"}
+			renderedVmConfig := vsphere.ApplyVmSpec(vmConfig, vmSpec)
+
+			globalConfig := map[string]string{"twoK": "glob-twoV", "threeK": "glob-three-{{.ImageName}}-V"}
+			renderedGlobalConfig := vsphere.ApplyVmSpec(globalConfig, vmSpec)
+
+			mergedMeta := vsphere.MergeMeta(vmConfig, globalConfig)
+			vmMeta := vsphere.GetExtraConfig(vsphere.ApplyVmSpec(mergedMeta, vmSpec))
+
+			Expect(renderedGlobalConfig["threeK"]).To(ContainSubstring(vmSpec.ImageName))
 
 			// Check that the VM extra config overrides the global config
 			for _, option := range vmMeta {
 				if _, ok := vmConfig[option.GetOptionValue().Key]; ok {
-					Expect(option.GetOptionValue().Value).Should(Equal(vmConfig[option.GetOptionValue().Key]))
+					Expect(option.GetOptionValue().Value).Should(Equal(renderedVmConfig[option.GetOptionValue().Key]))
 				} else if _, ok := globalConfig[option.GetOptionValue().Key]; ok {
-					Expect(option.GetOptionValue().Value).Should(Equal(globalConfig[option.GetOptionValue().Key]))
+					Expect(option.GetOptionValue().Value).Should(Equal(renderedGlobalConfig[option.GetOptionValue().Key]))
 				} else {
 					Fail("Unrecognized extraConfig option")
 				}

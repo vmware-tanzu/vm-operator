@@ -69,15 +69,6 @@
             <Item ovf:required="false">
                 <rasd:AddressOnParent>0</rasd:AddressOnParent>
                 <rasd:AutomaticAllocation>false</rasd:AutomaticAllocation>
-                <rasd:Description>Floppy Drive</rasd:Description>
-                <rasd:ElementName>floppy0</rasd:ElementName>
-                <rasd:InstanceID>5</rasd:InstanceID>
-                <rasd:ResourceType>14</rasd:ResourceType>
-                <vmw:Config ovf:required="false" vmw:key="connectable.allowGuestControl" vmw:value="true"/>
-            </Item>
-            <Item ovf:required="false">
-                <rasd:AddressOnParent>0</rasd:AddressOnParent>
-                <rasd:AutomaticAllocation>false</rasd:AutomaticAllocation>
                 <rasd:ElementName>cdrom0</rasd:ElementName>
                 <rasd:InstanceID>6</rasd:InstanceID>
                 <rasd:Parent>4</rasd:Parent>

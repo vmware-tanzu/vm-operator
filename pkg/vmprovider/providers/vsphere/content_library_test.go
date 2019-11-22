@@ -1,7 +1,7 @@
-// +build integration
-
 // Copyright (c) 2019 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+
+// +build !integration
 
 package vsphere_test
 
@@ -12,29 +12,32 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net/url"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/vmware/govmomi/simulator/vpx"
+	"github.com/vmware/govmomi/vapi/library"
+	"github.com/vmware/govmomi/vim25"
+	vmoperator "github.com/vmware-tanzu/vm-operator"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/mocks"
+
+	"net/url"
+	"strconv"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/simulator"
-	"github.com/vmware/govmomi/simulator/vpx"
-	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
 	vapi "github.com/vmware/govmomi/vapi/simulator"
-	"github.com/vmware/govmomi/vim25"
-
-	vmoperator "github.com/vmware-tanzu/vm-operator"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/mocks"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
 var (
+	err error
 	ctx context.Context
 
 	sess        *vsphere.Session
@@ -42,6 +45,7 @@ var (
 	testOvfName = "photon-ova.ovf"
 
 	restClient        *rest.Client
+	config            *vsphere.VSphereVmProviderConfig
 	fileUriToDownload string
 	downloadSessionId string
 )
@@ -111,6 +115,8 @@ func setupTest() {
 
 	provider, err := vsphere.NewVSphereVmProviderFromConfig(namespace, config)
 	Expect(err).ShouldNot(HaveOccurred())
+
+	vmprovider.RegisterVmProvider(provider)
 
 	sess, err = provider.GetSession(ctx, namespace)
 	Expect(err).To(BeNil())

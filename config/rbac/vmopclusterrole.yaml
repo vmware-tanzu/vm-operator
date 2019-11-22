@@ -34,7 +34,6 @@ rules:
   - secrets
   - serviceaccounts
   - namespaces
-  - resourcequotas
   verbs:
   - get
   - list

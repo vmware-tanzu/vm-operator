@@ -5,6 +5,7 @@ package integration
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	stdlog "log"
 	"net/url"
@@ -23,6 +24,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -30,9 +32,11 @@ import (
 
 	vmoperator "github.com/vmware-tanzu/vm-operator"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis"
+	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	cnsv1alpha1 "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 )
 
@@ -50,8 +54,8 @@ const (
 
 var (
 	ContentSourceID string
-	vmProvider      vmprovider.VirtualMachineProviderInterface
 	log             = logf.Log.WithName("integration")
+	vsphereProvider vsphere.VSphereVmProviderInterface
 )
 
 func setContentSourceID(id string) {
@@ -116,6 +120,13 @@ func EnableDebugLogging() {
 		stdlog.Print(err)
 	}
 	logf.SetLogger(zapr.NewLogger(zapLog))
+
+	//klog.InitFlags(nil)
+
+	if err := flag.Set("v", "4"); err != nil {
+		klog.Fatalf("klog level flag has changed from -v: %v", err)
+	}
+
 }
 
 // Because of a hard coded path in buildAggregatedAPIServer, all integration tests that are using
@@ -125,6 +136,8 @@ func EnableDebugLogging() {
 func SetupIntegrationEnv(namespaces []string) (*suite.Environment, *vsphere.VSphereVmProviderConfig, *rest.Config, *VcSimInstance, *vsphere.Session) {
 	// Enable this function call in order to see more verbose logging as part of these integration tests
 	EnableDebugLogging()
+	Expect(namespaces).NotTo(Equal(nil))
+	Expect(len(namespaces) > 0).To(BeTrue())
 
 	stdlog.Print("setting up the local aggregated-apiserver for test env...")
 	testEnv, err := suite.InstallLocalTestingAPIAggregationEnvironment("vmoperator.vmware.com", "v1alpha1")
@@ -146,17 +159,26 @@ func SetupIntegrationEnv(namespaces []string) (*suite.Environment, *vsphere.VSph
 	err = cnsv1alpha1.SchemeBuilder.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	vmProvider, err = vsphere.RegisterVsphereVmProvider(cfg)
-	Expect(err).NotTo(HaveOccurred())
+	clientSet := kubernetes.NewForConfigOrDie(cfg)
+	ncpclient := ncpclientset.NewForConfigOrDie(cfg)
+	vmopclient := vmopclientset.NewForConfigOrDie(cfg)
+
+	vsphereProvider = vsphere.NewVSphereVmProviderFromClients(clientSet, ncpclient, vmopclient)
+	vmProvider := vsphereProvider.(vmprovider.VirtualMachineProviderInterface)
+
+	// Register the vSphere provider
+	log.Info("setting up vSphere Provider")
+	vmprovider.GetService().RegisterVmProvider(vmProvider)
 
 	vcSim := NewVcSimInstance()
 
 	address, port := vcSim.Start()
 	vSphereConfig := NewIntegrationVmOperatorConfig(address, port, "")
 
+	Expect(vSphereConfig).ShouldNot(BeNil())
+
 	session, err := SetupVcsimEnv(vSphereConfig, cfg, vcSim, namespaces)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(vSphereConfig).ShouldNot(Equal(nil))
 
 	err = os.Setenv(vsphere.EnvContentLibApiWaitSecs, "1")
 	Expect(err).NotTo(HaveOccurred())
@@ -189,27 +211,25 @@ func SetupVcsimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Con
 		return nil, fmt.Errorf("failed to install vm operator config: %v", err)
 	}
 
+	// Support for bootstrapping VM operator resource requirements in Kubernetes.
+	// Generate a fake vsphere provider config that is suitable for the integration test environment.
+	// Post the resultant config map to the API Master for consumption by the VM operator
+	klog.Infof("Installing a bootstrap config map for use in integration tests.")
 	err = vsphere.InstallVSphereVmProviderConfig(kubernetes.NewForConfigOrDie(cfg), DefaultNamespace, vSphereConfig, SecretName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install vm operator config: %v", err)
 	}
 
-	vsphereVmProvider := vmProvider.(*vsphere.VSphereVmProvider)
-
 	// Setup content library once.  The first namespace is sufficient to use
-	session, err := vsphereVmProvider.GetSession(context.TODO(), namespaces[0])
+	session, err := vsphereProvider.GetSession(context.TODO(), namespaces[0])
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session: %v", err)
 	}
 
 	err = setupVcSimContent(vSphereConfig, vcSim, session)
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup content library: %v", err)
+		return nil, fmt.Errorf("failed to setup the VC Simulator: %v", err)
 	}
-
-	err = SetupContentLibrary(ctx, vSphereConfig, session)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(vSphereConfig).ShouldNot(Equal(nil))
 
 	// Configure each requested namespace to use CL as the content source
 	for _, ns := range namespaces {
@@ -220,21 +240,13 @@ func SetupVcsimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Con
 		Expect(err).NotTo(HaveOccurred())
 	}
 
-	// return the last session for use
 	return session, nil
 }
 
-func s(vcSim *VcSimInstance) {
+func TeardownVcsimEnv(vcSim *VcSimInstance) {
 	if vcSim != nil {
 		vcSim.Stop()
 	}
-
-	/*
-		if vmProvider != nil {
-			vmprovider.UnregisterVmProviderOrDie(vmProvider)
-		}
-	*/
-
 }
 
 func setupVcSimContent(config *vsphere.VSphereVmProviderConfig, vcSim *VcSimInstance, session *vsphere.Session) (err error) {
@@ -243,16 +255,17 @@ func setupVcSimContent(config *vsphere.VSphereVmProviderConfig, vcSim *VcSimInst
 	c, err := vcSim.NewClient(ctx)
 	if err != nil {
 		stdlog.Printf("Failed to create client %v", err)
-		return
+		return err
 	}
 
 	rClient := govmomirest.NewClient(c.Client)
+
 	userInfo := url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
 	err = rClient.Login(ctx, userInfo)
 	if err != nil {
 		stdlog.Printf("Failed to login %v", err)
-		return
+		return err
 	}
 	defer func() {
 		err = rClient.Logout(ctx)

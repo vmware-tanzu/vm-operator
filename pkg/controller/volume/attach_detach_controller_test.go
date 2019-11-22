@@ -183,9 +183,8 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 		// TODO:  Figure out a way to mock the client error in order to cover more corner cases
 		It("invoke the reconcile method", func() {
 
-			provider := vmprovider.GetVmProviderOrDie()
-
-			p := provider.(*vsphere.VSphereVmProvider)
+			provider := vmprovider.GetService().GetRegisteredVmProviderOrDie()
+			p := provider.(vsphere.VSphereVmProviderInterface)
 			session, err := p.GetSession(context.TODO(), ns)
 			Expect(err).NotTo(HaveOccurred())
 

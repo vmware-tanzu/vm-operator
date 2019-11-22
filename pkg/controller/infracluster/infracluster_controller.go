@@ -40,7 +40,7 @@ func Add(mgr manager.Manager) error {
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	// Get provider registered in the manager's main()
-	provider := vmprovider.GetVmProviderOrDie()
+	provider := vmprovider.GetService().GetRegisteredVmProviderOrDie()
 
 	return &ReconcileInfraClusterProvider{
 		Client:     mgr.GetClient(),

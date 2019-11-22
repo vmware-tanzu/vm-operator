@@ -83,8 +83,7 @@ var _ = Describe("Sessions", func() {
 
 			It("should not get virtualmachineimage from CL", func() {
 				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "invalid", testNamespace)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).Should(Equal("failed to find image \"invalid\": no library items named: invalid"))
+				Expect(err).Should(MatchError("item: invalid is not found in CL"))
 				Expect(image).Should(BeNil())
 			})
 		})

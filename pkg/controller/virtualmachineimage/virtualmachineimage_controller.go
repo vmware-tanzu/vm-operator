@@ -264,14 +264,16 @@ func AddWithOptions(mgr manager.Manager, options VirtualMachineImageDiscovererOp
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager, options VirtualMachineImageDiscovererOptions) reconcile.Reconciler {
-	vmProvider := vmprovider.GetVmProviderOrDie()
-	imageDiscoverer := NewVirtualMachineImageDiscoverer(mgr.GetClient(), vmProvider, options)
+	providerService := vmprovider.GetService()
+	registeredProvider := providerService.GetRegisteredVmProviderOrDie()
+
+	imageDiscoverer := NewVirtualMachineImageDiscoverer(mgr.GetClient(), registeredProvider, options)
 
 	return &ReconcileVirtualMachineImage{
 		Client:          mgr.GetClient(),
 		scheme:          mgr.GetScheme(),
 		imageDiscoverer: imageDiscoverer,
-		vmProvider:      vmProvider,
+		vmProvider:      registeredProvider,
 	}
 }
 

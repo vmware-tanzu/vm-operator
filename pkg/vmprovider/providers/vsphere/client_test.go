@@ -48,6 +48,15 @@ var _ = Describe("NewClient", func() {
 		})
 	})
 
+	Context("When called with nil config", func() {
+		Specify("returns nil client and an error", func() {
+			client, err := NewClient(ctx, nil)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal("Config cannot be nil"))
+			Expect(client).To(BeNil())
+		})
+	})
+
 	Context("When called with invalid host and port", func() {
 		Specify("soap.ParseURL should fail", func() {
 			failConfig := testConfig("test%test", "", "test-user", "test-pass")

@@ -174,7 +174,7 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 	})
 })
 
-var _ = Describe("configMapsToProviderConfig", func() {
+var _ = Describe("ConfigMapToProviderConfig", func() {
 
 	var (
 		configMapIn *v1.ConfigMap

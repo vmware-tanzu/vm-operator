@@ -5,6 +5,9 @@ package vsphere_test
 import (
 	"context"
 	"errors"
+	"time"
+
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
@@ -53,10 +56,12 @@ var _ = Describe("virtualmachine images", func() {
 		})
 
 		It("returns a virtualmachineimage object from the library without annotations", func() {
+			ts := time.Now()
 			item := library.Item{
-				Name:      "fakeItem",
-				Type:      "ovf",
-				LibraryID: "fakeID",
+				Name:         "fakeItem",
+				Type:         "ovf",
+				LibraryID:    "fakeID",
+				CreationTime: &ts,
 			}
 			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, "default", vsphere.DoNotAnnotateVmImage, nil)
 			Expect(err).To(BeNil())
@@ -68,10 +73,12 @@ var _ = Describe("virtualmachine images", func() {
 
 	Context("when annotate flag is set to true", func() {
 		It("returns a virtualmachineimage object from the library with annotations", func() {
+			ts := time.Now()
 			item := library.Item{
-				Name:      "fakeItem",
-				Type:      "ovf",
-				LibraryID: "fakeID",
+				Name:         "fakeItem",
+				Type:         "ovf",
+				LibraryID:    "fakeID",
+				CreationTime: &ts,
 			}
 			annotations := map[string]string{}
 			annotations["version"] = "1.15"
@@ -87,6 +94,7 @@ var _ = Describe("virtualmachine images", func() {
 			Expect(len(image.Annotations)).To(BeEquivalentTo(1))
 			Expect(image.Annotations).Should(HaveKey("version"))
 			Expect(image.Annotations["version"]).Should(Equal("1.15"))
+			Expect(image.CreationTimestamp).To(BeEquivalentTo(v1.NewTime(ts)))
 		})
 
 		It("returns a virtualmachineimage object from the VM with annotations", func() {

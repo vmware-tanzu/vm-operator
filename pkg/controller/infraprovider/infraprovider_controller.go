@@ -37,12 +37,13 @@ func Add(mgr manager.Manager) error {
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	// Get provider registered in the manager's main()
-	provider := vmprovider.GetVmProviderOrDie()
+	service := vmprovider.GetService()
+	registeredProvider := service.GetRegisteredVmProviderOrDie()
 
 	return &ReconcileInfraProvider{
 		Client:     mgr.GetClient(),
 		scheme:     mgr.GetScheme(),
-		vmProvider: provider,
+		vmProvider: registeredProvider,
 	}
 }
 

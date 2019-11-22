@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"strings"
 	"time"
 
@@ -59,12 +60,14 @@ func Add(mgr manager.Manager) error {
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	// Get provider registered in the manager's main()
-	provider := vmprovider.GetVmProviderOrDie()
+
+	providerService := vmprovider.GetService()
+	registeredProvider := providerService.GetRegisteredVmProviderOrDie()
 
 	return &ReconcileVirtualMachine{
 		Client:     mgr.GetClient(),
 		scheme:     mgr.GetScheme(),
-		vmProvider: provider,
+		vmProvider: registeredProvider,
 	}
 }
 
@@ -83,10 +86,12 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	// Watch for changes for CnsNodeVmAttachment, and enqueue VirtualMachine which is the owner of CnsNodeVmAttachment
+
 	err = c.Watch(&source.Kind{Type: &cnsv1alpha1.CnsNodeVmAttachment{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &vmoperatorv1alpha1.VirtualMachine{},
 	})
+
 	if err != nil {
 		return err
 	}

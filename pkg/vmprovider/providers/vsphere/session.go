@@ -67,14 +67,18 @@ type Session struct {
 	cpuMinMHzInCluster uint64 // CPU Min Frequency across all Hosts in the cluster
 }
 
-func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig, clientset kubernetes.Interface, ncpclient ncpcs.Interface, vmopclient vmopcs.Interface) (*Session, error) {
-	c, err := NewClient(ctx, config)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create client for new session")
+func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphereVmProviderConfig,
+	clientset kubernetes.Interface,
+	ncpclient ncpcs.Interface,
+	vmopclient vmopcs.Interface) (*Session, error) {
+	var err error
+
+	if client == nil {
+		return nil, errors.New("Session could not be created with a nil VC client")
 	}
 
 	s := &Session{
-		client:                c,
+		client:                client,
 		clientset:             clientset,
 		ncpClient:             ncpclient,
 		vmopClient:            vmopclient,
@@ -83,12 +87,10 @@ func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig
 	}
 
 	if err = s.initSession(ctx, config); err != nil {
-		s.Logout(ctx)
 		return nil, err
 	}
 
 	if err = s.ConfigureContent(ctx, config.ContentSource); err != nil {
-		s.Logout(ctx)
 		return nil, err
 	}
 
@@ -211,6 +213,8 @@ func (s *Session) initCpuMinFreq(ctx context.Context) error {
 }
 
 func (s *Session) ConfigureContent(ctx context.Context, contentSource string) error {
+	log.V(4).Info("Configuring library Content", "contentSource", contentSource)
+
 	if contentSource == "" {
 		log.V(4).Info("Content library configured to nothing")
 		s.contentlib = nil
@@ -233,10 +237,6 @@ func (s *Session) ConfigureContent(ctx context.Context, contentSource string) er
 // TODO: Follow up to expose this and other fields without "getters"
 func (s *Session) Datastore() *object.Datastore {
 	return s.datastore
-}
-
-func (s *Session) Logout(ctx context.Context) {
-	s.client.Logout(ctx)
 }
 
 func (s *Session) CreateLibrary(ctx context.Context, contentSource string) (string, error) {
@@ -379,7 +379,7 @@ func (s *Session) DoesResourcePoolExist(ctx context.Context, namespace, resource
 
 // CreateResourcePool creates a ResourcePool under the parent ResourcePool (session.resourcePool).
 func (s *Session) CreateResourcePool(ctx context.Context, rpSpec *v1alpha1.ResourcePoolSpec) (string, error) {
-	log.Info("Creating ResourcePool", "name", rpSpec.Name)
+	log.Info("Creating ResourcePool with session", "name", rpSpec.Name)
 
 	// CreteResourcePool is invoked during a ResourcePolicy reconciliation to create a ResourcePool for a set of
 	// VirtualMachines. The new RP is created under the RP corresponding to the session.

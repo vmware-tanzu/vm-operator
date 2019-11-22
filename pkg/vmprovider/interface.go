@@ -6,6 +6,7 @@ package vmprovider
 
 import (
 	"context"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -19,6 +20,47 @@ type VmConfigArgs struct {
 	ResourcePolicy   *v1alpha1.VirtualMachineSetResourcePolicy
 	VmMetadata       VirtualMachineMetadata
 	StorageProfileID string
+}
+
+type VMProviderService interface {
+	RegisterVmProvider(vmProvider VirtualMachineProviderInterface)
+	GetRegisteredVmProviderOrDie() VirtualMachineProviderInterface
+}
+
+type vmProviderService struct {
+	registeredVmProvider VirtualMachineProviderInterface
+	mutex                sync.Mutex
+}
+
+var once sync.Once
+var providerServiceVar *vmProviderService
+
+// GetService creates a VMProviderService
+func GetService() VMProviderService {
+	once.Do(func() {
+		providerServiceVar = &vmProviderService{}
+	})
+	return providerServiceVar
+}
+
+// RegisterVmProvider registers a VMProvider directly, replaces the existing
+func (vs *vmProviderService) RegisterVmProvider(vmProvider VirtualMachineProviderInterface) {
+	vs.mutex.Lock()
+	defer vs.mutex.Unlock()
+
+	vs.registeredVmProvider = vmProvider
+}
+
+// GetRegisteredVmProviderOrDie returns the registered VM Provider
+func (vs *vmProviderService) GetRegisteredVmProviderOrDie() VirtualMachineProviderInterface {
+	vs.mutex.Lock()
+	defer vs.mutex.Unlock()
+
+	if vs.registeredVmProvider == nil {
+		panic("No VM provider registered")
+	}
+
+	return vs.registeredVmProvider
 }
 
 // VirtualMachineProviderInterface is a plugable interface for VM Providers

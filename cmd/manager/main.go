@@ -15,6 +15,11 @@ import (
 	"k8s.io/klog/klogr"
 
 	govmomidebug "github.com/vmware/govmomi/vim25/debug"
+	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -26,10 +31,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/signals"
 
-	"github.com/vmware-tanzu/vm-operator/pkg"
-	"github.com/vmware-tanzu/vm-operator/pkg/apis"
-	"github.com/vmware-tanzu/vm-operator/pkg/controller"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	cnsv1alpha1 "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 )
 
@@ -219,12 +220,12 @@ func main() {
 	cfg.Burst = ctrlConfig.rateLimiterBurst
 	cfg.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(cfg.QPS, cfg.Burst)
 
+	vmProvider := vsphere.NewVsphereMachineProviderFromRestConfig(cfg)
+
 	// Register the vSphere provider
 	log.Info("Setting up vSphere Provider")
-	if _, err := vsphere.RegisterVsphereVmProvider(cfg); err != nil {
-		log.Error(err, "Unable to register vSphere VM provider")
-		os.Exit(1)
-	}
+	providerService := vmprovider.GetService()
+	providerService.RegisterVmProvider(vmProvider)
 
 	// Wait a bit for the aggregated apiserver to become available
 	if err := waitForVmOperatorGroupVersion(cfg); err != nil {

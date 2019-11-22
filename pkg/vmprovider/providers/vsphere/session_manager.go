@@ -16,6 +16,7 @@ import (
 )
 
 type SessionManager struct {
+	client     *Client
 	clientset  *kubernetes.Clientset
 	ncpclient  ncpclientset.Interface
 	vmopclient vmopclientset.Interface
@@ -34,18 +35,40 @@ func NewSessionManager(clientset *kubernetes.Clientset, ncpclient ncpclientset.I
 	}
 }
 
+func (sm *SessionManager) getClient(context context.Context, config *VSphereVmProviderConfig) (*Client, error) {
+	if sm.client != nil {
+		return sm.client, nil
+	}
+
+	client, err := NewClient(context, config)
+	if err != nil {
+		return nil, err
+	}
+
+	sm.client = client
+
+	return sm.client, nil
+}
+
+// NewSession is only used in testing
 func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProviderConfig) (*Session, error) {
 	log.V(4).Info("New session", "namespace", namespace, "config", config)
-	ses, err := NewSessionAndConfigure(context.TODO(), config, sm.clientset, sm.ncpclient, sm.vmopclient)
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+
+	client, err := sm.getClient(context.TODO(), config)
+	if err != nil {
+		return nil, err
+	}
+
+	ses, err := NewSessionAndConfigure(context.TODO(), client, config, sm.clientset, sm.ncpclient, sm.vmopclient)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create session for namespace %s", namespace)
 	}
 
-	sm.mutex.Lock()
 	sm.sessions[namespace] = ses
-	sm.mutex.Unlock()
-
 	return ses, nil
+
 }
 
 func (sm *SessionManager) createSession(ctx context.Context, namespace string) (*Session, error) {
@@ -56,7 +79,12 @@ func (sm *SessionManager) createSession(ctx context.Context, namespace string) (
 
 	log.V(4).Info("Create session", "namespace", namespace, "config", config)
 
-	ses, err := NewSessionAndConfigure(ctx, config, sm.clientset, sm.ncpclient, sm.vmopclient)
+	client, err := sm.getClient(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	ses, err := NewSessionAndConfigure(ctx, client, config, sm.clientset, sm.ncpclient, sm.vmopclient)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +93,6 @@ func (sm *SessionManager) createSession(ctx context.Context, namespace string) (
 }
 
 func (sm *SessionManager) GetSession(ctx context.Context, namespace string) (*Session, error) {
-
 	sm.mutex.Lock()
 	ses, ok := sm.sessions[namespace]
 	sm.mutex.Unlock()
@@ -80,13 +107,6 @@ func (sm *SessionManager) GetSession(ctx context.Context, namespace string) (*Se
 	}
 
 	sm.mutex.Lock()
-	ses2, ok := sm.sessions[namespace]
-	if ok {
-		sm.mutex.Unlock()
-		ses.Logout(ctx)
-		return ses2, nil
-	}
-
 	sm.sessions[namespace] = ses
 	sm.mutex.Unlock()
 
@@ -135,19 +155,24 @@ func (sm *SessionManager) UpdateVcPNID(ctx context.Context, clusterConfigMap *co
 		return err
 	}
 
-	sm.clearClientAndSessions(ctx)
+	sm.clearSessionsAndClient(ctx)
 
-	return nil
+	return err
 }
 
-func (sm *SessionManager) clearClientAndSessions(ctx context.Context) {
+func (sm *SessionManager) clearSessionsAndClient(ctx context.Context) {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 
-	for ns, s := range sm.sessions {
-		s.Logout(ctx)
+	for ns := range sm.sessions {
 		delete(sm.sessions, ns)
 	}
+
+	if sm.client != nil {
+		sm.client.Logout(ctx)
+		sm.client = nil
+	}
+
 }
 
 func (sm *SessionManager) isPnidUnchanged(oldPnid, newPnid string) bool {

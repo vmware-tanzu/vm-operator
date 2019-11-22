@@ -38,12 +38,13 @@ func Add(mgr manager.Manager) error {
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	// Get provider registered in the manager's main()
-	provider := vmprovider.GetVmProviderOrDie()
+	providerService := vmprovider.GetService()
+	registeredProvider := providerService.GetRegisteredVmProviderOrDie()
 
 	return &ReconcileVirtualMachineSetResourcePolicy{
 		Client:     mgr.GetClient(),
 		scheme:     mgr.GetScheme(),
-		vmProvider: provider,
+		vmProvider: registeredProvider,
 	}
 }
 

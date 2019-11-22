@@ -48,12 +48,6 @@ const (
 	DefaultContentLibApiWaitSecs = 5
 )
 
-type VSphereVmProvider struct {
-	sessions SessionManager
-}
-
-var _ vmprovider.VirtualMachineProviderInterface = &VSphereVmProvider{}
-
 type OvfPropertyRetriever interface {
 	FetchOvfPropertiesFromLibrary(ctx context.Context, ses *Session, item *library.Item) (map[string]string, error)
 	FetchOvfPropertiesFromVM(ctx context.Context, resVm *res.VirtualMachine) (map[string]string, error)
@@ -72,43 +66,35 @@ const (
 
 var log = logf.Log.WithName(VsphereVmProviderName)
 
-func NewVSphereVmProvider(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) (*VSphereVmProvider, error) {
-	vmProvider := &VSphereVmProvider{
+type vSphereVmProvider struct {
+	sessions SessionManager
+}
+
+func NewVSphereVmProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) VSphereVmProviderInterface {
+	vmProvider := &vSphereVmProvider{
 		sessions: NewSessionManager(clientset, ncpclient, vmopclient),
 	}
 
-	return vmProvider, nil
+	return vmProvider
 }
 
-func (vs *VSphereVmProvider) RegisterSession(namespace string, config *VSphereVmProviderConfig) error {
+func NewVsphereMachineProviderFromRestConfig(cfg *rest.Config) vmprovider.VirtualMachineProviderInterface {
+	clientSet := kubernetes.NewForConfigOrDie(cfg)
+	ncpclient := ncpclientset.NewForConfigOrDie(cfg)
+	vmopclient := vmopclientset.NewForConfigOrDie(cfg)
 
-	// Support existing behavior by setting up a Session for whatever namespace we're using. This is
-	// used in the integration tests.
-	_, err := vs.sessions.NewSession(namespace, config)
-	return err
+	vmProvider := NewVsphereMachineProviderFromClients(clientSet, ncpclient, vmopclient)
+
+	return vmProvider
 }
 
-func RegisterVsphereVmProvider(restConfig *rest.Config) (vmprovider.VirtualMachineProviderInterface, error) {
-	clientSet := kubernetes.NewForConfigOrDie(restConfig)
-	ncpclient := ncpclientset.NewForConfigOrDie(restConfig)
-	vmopclient := vmopclientset.NewForConfigOrDie(restConfig)
-
-	vsphereProvider, err := NewVSphereVmProvider(clientSet, ncpclient, vmopclient)
-	if err != nil {
-		return nil, err
-	}
-
-	provider := vmprovider.RegisterVmProviderOrDie(vsphereProvider)
-	return provider, nil
+func NewVsphereMachineProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) vmprovider.VirtualMachineProviderInterface {
+	vSphereProvider := NewVSphereVmProviderFromClients(clientset, ncpclient, vmopclient)
+	return vSphereProvider.(vmprovider.VirtualMachineProviderInterface)
 }
 
-func UnregisterVsphereVmProvider(vmProvider vmprovider.VirtualMachineProviderInterface) {
-	vmprovider.UnregisterVmProviderOrDie(vmProvider)
-}
-
-// NewVSphereVmProviderFromConfig is only used in the integration tests.
-func NewVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderConfig) (*VSphereVmProvider, error) {
-	vmProvider := &VSphereVmProvider{
+func newVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderConfig) (VSphereVmProviderInterface, error) {
+	vmProvider := &vSphereVmProvider{
 		sessions: NewSessionManager(nil, nil, nil),
 	}
 
@@ -121,18 +107,38 @@ func NewVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderC
 	return vmProvider, nil
 }
 
-func (vs *VSphereVmProvider) Name() string {
+// NewVSphereMachineProviderFromConfig only used in v1alpha1_suite_test.go
+func NewVSphereMachineProviderFromConfig(namespace string, config *VSphereVmProviderConfig) (vmprovider.VirtualMachineProviderInterface, error) {
+	vSphereProvider, err := newVSphereVmProviderFromConfig(namespace, config)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return vSphereProvider.(vmprovider.VirtualMachineProviderInterface), nil
+}
+
+type VSphereVmProviderInterface interface {
+	GetSession(ctx context.Context, namespace string) (*Session, error)
+	UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error
+	UpdateVmOpSACredSecret(ctx context.Context)
+	DoClusterModulesExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
+	CreateClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
+	DeleteClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
+}
+
+func (vs *vSphereVmProvider) Name() string {
 	return VsphereVmProviderName
 }
 
-func (vs *VSphereVmProvider) Initialize(stop <-chan struct{}) {
+func (vs *vSphereVmProvider) Initialize(stop <-chan struct{}) {
 }
 
-func (vs *VSphereVmProvider) GetSession(ctx context.Context, namespace string) (*Session, error) {
+func (vs *vSphereVmProvider) GetSession(ctx context.Context, namespace string) (*Session, error) {
 	return vs.sessions.GetSession(ctx, namespace)
 }
 
-func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
+func (vs *vSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
 	log.V(4).Info("Listing VirtualMachineImages", "namespace", namespace)
 
 	ses, err := vs.sessions.GetSession(ctx, namespace)
@@ -174,9 +180,8 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 	return nil, nil
 }
 
-func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error) {
+func (vs *vSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error) {
 	vmName := fmt.Sprintf("%v/%v", namespace, name)
-
 	log.V(4).Info("Getting VirtualMachineImage for ", "name", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, namespace)
@@ -210,7 +215,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespa
 	return nil, nil
 }
 
-func (vs *VSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
+func (vs *vSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
 	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
 	if err != nil {
 		return false, err
@@ -228,7 +233,7 @@ func (vs *VSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1
 	return true, nil
 }
 
-func (vs *VSphereVmProvider) addProviderAnnotations(session *Session, objectMeta *v1.ObjectMeta, vmRes *res.VirtualMachine) {
+func (vs *vSphereVmProvider) addProviderAnnotations(session *Session, objectMeta *v1.ObjectMeta, vmRes *res.VirtualMachine) {
 
 	annotations := objectMeta.GetAnnotations()
 	if annotations == nil {
@@ -271,8 +276,8 @@ func (vs *VSphereVmProvider) addProviderAnnotations(session *Session, objectMeta
 	objectMeta.SetAnnotations(annotations)
 }
 
-// DoesVirtualMachineSetResourcePolicyExist checks if the entities of a VirtualMachineSetResourcePolicy exists on vSphere
-func (vs *VSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+// DoesVirtualMachineSetResourcePolicyExist checks if the entities of a VirtualMachineSetResourcePolicy exist on vSphere
+func (vs *vSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
 	if err != nil {
 		return false, err
@@ -297,7 +302,7 @@ func (vs *VSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx contex
 }
 
 // CreateOrUpdateVirtualMachineSetResourcePolicy creates if a VirtualMachineSetResourcePolicy doesn't exist, updates otherwise.
-func (vs *VSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+func (vs *vSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
 	if err != nil {
 		return err
@@ -344,7 +349,7 @@ func (vs *VSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx c
 }
 
 // DeleteVirtualMachineSetResourcePolicy deletes the VirtualMachineSetPolicy.
-func (vs *VSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+func (vs *vSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
 	if err != nil {
 		return err
@@ -365,7 +370,7 @@ func (vs *VSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.C
 	return nil
 }
 
-func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+func (vs *vSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
 
 	vmName := vm.NamespacedName()
 	log.Info("Creating VirtualMachine", "name", vmName)
@@ -397,7 +402,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 	return nil
 }
 
-func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
+func (vs *vSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
 	// Default to on.
 	powerState := v1alpha1.VirtualMachinePoweredOn
 	if vm.Spec.PowerState != "" {
@@ -412,7 +417,7 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 }
 
 // UpdateVirtualMachine updates the VM status, power state, phase etc
-func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+func (vs *vSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
 	vmName := vm.NamespacedName()
 	log.V(4).Info("Updating VirtualMachine", "name", vmName)
 
@@ -430,7 +435,7 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 	return nil
 }
 
-func (vs *VSphereVmProvider) updateVirtualMachine(ctx context.Context, session *Session, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+func (vs *vSphereVmProvider) updateVirtualMachine(ctx context.Context, session *Session, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
 	resVm, err := session.GetVirtualMachine(ctx, vm)
 	if err != nil {
 		return err
@@ -500,7 +505,7 @@ func (vs *VSphereVmProvider) updateVirtualMachine(ctx context.Context, session *
 	return nil
 }
 
-func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
+func (vs *vSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
 	vmName := vmToDelete.NamespacedName()
 	log.Info("Deleting VirtualMachine", "name", vmName)
 
@@ -525,7 +530,7 @@ func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelet
 }
 
 // mergeVmStatus merges the v1alpha1 VM's status with resource VM's status
-func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
+func (vs *vSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
 	vmStatus, err := resVm.GetStatus(ctx)
 	if err != nil {
 		return errors.Wrapf(err, "unable to get VirtualMachine status")
@@ -538,7 +543,7 @@ func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.Vir
 	return nil
 }
 
-func (vs *VSphereVmProvider) GetClusterID(ctx context.Context, namespace string) (string, error) {
+func (vs *vSphereVmProvider) GetClusterID(ctx context.Context, namespace string) (string, error) {
 	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
 		return "", err
@@ -549,7 +554,8 @@ func (vs *VSphereVmProvider) GetClusterID(ctx context.Context, namespace string)
 	return ses.cluster.Reference().Value, nil
 }
 
-func (vs *VSphereVmProvider) ComputeClusterCpuMinFrequency(ctx context.Context) error {
+func (vs *vSphereVmProvider) ComputeClusterCpuMinFrequency(ctx context.Context) error {
+
 	if err := vs.sessions.ComputeClusterCpuMinFrequency(ctx); err != nil {
 		return err
 	}
@@ -557,16 +563,16 @@ func (vs *VSphereVmProvider) ComputeClusterCpuMinFrequency(ctx context.Context) 
 	return nil
 }
 
-func (vs *VSphereVmProvider) UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error {
+func (vs *vSphereVmProvider) UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error {
 	return vs.sessions.UpdateVcPNID(ctx, clusterConfigMap)
 }
 
-func (vs *VSphereVmProvider) UpdateVmOpSACredSecret(ctx context.Context) {
-	vs.sessions.clearClientAndSessions(ctx)
+func (vs *vSphereVmProvider) UpdateVmOpSACredSecret(ctx context.Context) {
+	vs.sessions.clearSessionsAndClient(ctx)
 }
 
-func (vs *VSphereVmProvider) UpdateVmOpConfigMap(ctx context.Context) {
-	vs.sessions.clearClientAndSessions(ctx)
+func (vs *vSphereVmProvider) UpdateVmOpConfigMap(ctx context.Context) {
+	vs.sessions.clearSessionsAndClient(ctx)
 }
 
 func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
@@ -718,7 +724,7 @@ func isClusterModulePresent(ctx context.Context, session *Session, moduleSpec v1
 
 // DoClusterModulesExist checks whether all the ClusterModules for the given  VirtualMachineSetResourcePolicy has been
 // created and exist in VC.
-func (vs *VSphereVmProvider) DoClusterModulesExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+func (vs *vSphereVmProvider) DoClusterModulesExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
 	if err != nil {
 		return false, err
@@ -748,7 +754,7 @@ func updateOrAddClusterModuleStatus(new v1alpha1.ClusterModuleStatus, resourcePo
 }
 
 // CreateClusterModules creates all the ClusterModules that has not created yet for a given VirtualMachineSetResourcePolicy in VC.
-func (vs *VSphereVmProvider) CreateClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+func (vs *vSphereVmProvider) CreateClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 
 	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
 	if err != nil {
@@ -776,7 +782,7 @@ func IsNotFoundError(err error) bool {
 }
 
 // DeleteClusterModules deletes all the ClusterModules associated with a given VirtualMachineSetResourcePolicy in VC.
-func (vs *VSphereVmProvider) DeleteClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+func (vs *vSphereVmProvider) DeleteClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
 	if err != nil {
 		return err
@@ -797,7 +803,7 @@ func (vs *VSphereVmProvider) DeleteClusterModules(ctx context.Context, resourceP
 	return nil
 }
 
-func (vs *VSphereVmProvider) attachTagsToVmAndAddToClusterModules(ctx context.Context, vm *v1alpha1.VirtualMachine, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+func (vs *vSphereVmProvider) attachTagsToVmAndAddToClusterModules(ctx context.Context, vm *v1alpha1.VirtualMachine, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
 	if err != nil {
 		return err

@@ -451,11 +451,16 @@ func ResVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *re
 		}
 	}
 
+	var ts v1.Time
+	if creationTime, _ := resVm.GetCreationTime(ctx); creationTime != nil {
+		ts = v1.NewTime(*creationTime)
+	}
 	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{
-			Name:        resVm.Name,
-			Namespace:   namespace,
-			Annotations: ovfProperties,
+			Name:              resVm.Name,
+			Namespace:         namespace,
+			Annotations:       ovfProperties,
+			CreationTimestamp: ts,
 		},
 		Status: v1alpha1.VirtualMachineImageStatus{
 			Uuid:       uuid,
@@ -481,11 +486,16 @@ func LibItemToVirtualMachineImage(ctx context.Context, sess *Session, item *libr
 		}
 	}
 
+	var ts v1.Time
+	if item.CreationTime != nil {
+		ts = v1.NewTime(*item.CreationTime)
+	}
 	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{
-			Name:        item.Name,
-			Namespace:   namespace,
-			Annotations: ovfProperties,
+			Name:              item.Name,
+			Namespace:         namespace,
+			Annotations:       ovfProperties,
+			CreationTimestamp: ts,
 		},
 		Status: v1alpha1.VirtualMachineImageStatus{
 			Uuid:       item.ID,

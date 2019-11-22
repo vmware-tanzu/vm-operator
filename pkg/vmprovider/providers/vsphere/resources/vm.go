@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"k8s.io/klog/klogr"
 
@@ -195,6 +196,20 @@ func (vm *VirtualMachine) ImageFields(ctx context.Context) (powerState, uuid, re
 	reference = vm.ReferenceValue()
 
 	return
+}
+
+// GetCreationTime returns the creation time of the VM
+func (vm *VirtualMachine) GetCreationTime(ctx context.Context) (*time.Time, error) {
+	var o mo.VirtualMachine
+
+	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config.createDate"}, &o)
+	if err != nil {
+		return nil, err
+	} else if o.Config == nil {
+		return &time.Time{}, nil
+	}
+
+	return o.Config.CreateDate, nil
 }
 
 // GetStatus returns a VirtualMachine's Status

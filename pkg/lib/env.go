@@ -14,6 +14,7 @@ const (
 	VmopNamespaceEnv = "POD_NAMESPACE"
 )
 
+// SetVmOpNamespaceEnv sets the VM Operator pod's namespace in the environment
 func SetVmOpNamespaceEnv(namespace string) error {
 	err := os.Setenv(VmopNamespaceEnv, namespace)
 	if err != nil {
@@ -22,7 +23,7 @@ func SetVmOpNamespaceEnv(namespace string) error {
 	return nil
 }
 
-// Resolve the vmoperator pods namespace from the environment
+// GetVmOpNamespaceFromEnv resolves the VM Operator pod's namespace from the environment
 func GetVmOpNamespaceFromEnv() (string, error) {
 	vmopNamespace, vmopNamespaceExists := os.LookupEnv(VmopNamespaceEnv)
 	if !vmopNamespaceExists {

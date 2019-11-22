@@ -133,13 +133,11 @@ var _ = Describe("VMProvider Tests", func() {
 
 	Context("Creating a VM via vmprovider", func() {
 		vmNamespace := integration.DefaultNamespace
-		var vmProvider *vsphere.VSphereVmProvider
+		var vmProvider vmprovider.VirtualMachineProviderInterface
 		var err error
 
 		BeforeEach(func() {
-			// Create a new VMProvder from the config provided by the test
-			vmProvider, err = vsphere.NewVSphereVmProvider(clientSet, nil, nil)
-			Expect(err).NotTo(HaveOccurred())
+			vmProvider = vsphere.NewVsphereMachineProviderFromClients(clientSet, nil, nil)
 		})
 
 		Context("and the IP is available on create", func() {
@@ -185,7 +183,7 @@ var _ = Describe("VMProvider Tests", func() {
 	})
 
 	Context("When using Content Library", func() {
-		var vmProvider *vsphere.VSphereVmProvider
+		var vmProvider vmprovider.VirtualMachineProviderInterface
 		var err error
 		vmNamespace := integration.DefaultNamespace
 		vmName := "test-vm-vmp-deploy"
@@ -196,11 +194,7 @@ var _ = Describe("VMProvider Tests", func() {
 				integration.SecretName)
 			Expect(err).NotTo(HaveOccurred())
 
-			vmProvider, err = vsphere.NewVSphereVmProvider(clientSet, nil, nil)
-			Expect(err).NotTo(HaveOccurred())
-		})
-
-		It("A created VM shoould reconfigure and power on without errors", func() {
+			vmProvider = vsphere.NewVsphereMachineProviderFromClients(clientSet, nil, nil)
 
 			// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
 			testIP := "10.0.0.1"
@@ -343,10 +337,9 @@ var _ = Describe("VMProvider Tests", func() {
 	})
 
 	Context("ListVirtualMachineImages", func() {
-
 		It("should list the virtualmachineimages available in CL", func() {
+			vmProvider := vmprovider.GetService().GetRegisteredVmProviderOrDie()
 
-			vmProvider := vmprovider.GetVmProviderOrDie()
 			var images []*vmoperatorv1alpha1.VirtualMachineImage
 
 			//Configure to use Content Library
@@ -374,8 +367,7 @@ var _ = Describe("VMProvider Tests", func() {
 	Context("GetVirtualMachineImage", func() {
 
 		It("should get the existing virtualmachineimage", func() {
-
-			vmProvider := vmprovider.GetVmProviderOrDie()
+			vmProvider := vmprovider.GetService().GetRegisteredVmProviderOrDie()
 
 			var image *vmoperatorv1alpha1.VirtualMachineImage
 
@@ -385,28 +377,28 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 
 			Eventually(func() *vmoperatorv1alpha1.VirtualMachineImage {
-				image, _ = vmProvider.GetVirtualMachineImage(context.TODO(), integration.DefaultNamespace, integration.IntegrationContentLibraryItemName)
+				image, err = vmProvider.GetVirtualMachineImage(context.TODO(), integration.DefaultNamespace, integration.IntegrationContentLibraryItemName)
+				Expect(err).To(BeNil())
 				return image
 			}, time.Second*15).ShouldNot(BeNil())
+
 			Expect(image.Name).Should(BeEquivalentTo(integration.IntegrationContentLibraryItemName))
 		})
 	})
 
 	Context("VirtualMachineSetResourcePolicy", func() {
 		var (
-			vmProvider          *vsphere.VSphereVmProvider
+			vmProvider          vmprovider.VirtualMachineProviderInterface
 			resourcePolicy      *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
 			testPolicyName      string
 			testPolicyNamespace string
-			err                 error
 		)
 
 		JustBeforeEach(func() {
 			testPolicyName = "test-name"
 			testPolicyNamespace = integration.DefaultNamespace
 
-			vmProvider, err = vsphere.NewVSphereVmProvider(clientSet, nil, nil)
-			Expect(err).NotTo(HaveOccurred())
+			vmProvider = vsphere.NewVsphereMachineProviderFromClients(clientSet, nil, nil)
 
 			resourcePolicy = getVirtualMachineSetResourcePolicy(testPolicyName, testPolicyNamespace)
 			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
@@ -447,10 +439,11 @@ var _ = Describe("VMProvider Tests", func() {
 	})
 
 	Context("Compute CPU Min Frequency in the Cluster", func() {
-		var vmProvider *vsphere.VSphereVmProvider
+		var vmProvider vmprovider.VirtualMachineProviderInterface
 		var err error
 		It("reconfigure and power on without errors", func() {
-			vmProvider, err = vsphere.NewVSphereVmProvider(clientSet, nil, nil)
+			vmProvider = vsphere.NewVsphereMachineProviderFromClients(clientSet, nil, nil)
+
 			err = vmProvider.ComputeClusterCpuMinFrequency(context.TODO())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(session.GetCpuMinMHzInCluster()).Should(BeNumerically(">", 0))
@@ -459,7 +452,7 @@ var _ = Describe("VMProvider Tests", func() {
 
 	Context("Update PNID", func() {
 		It("update pnid when the same pnid is supplied", func() {
-			vmProvider, err := vsphere.NewVSphereVmProvider(clientSet, nil, nil)
+			vmProvider := vsphere.NewVSphereVmProviderFromClients(clientSet, nil, nil)
 			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, "")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -469,7 +462,7 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 		It("update pnid when a different pnid is supplied", func() {
-			vmProvider, err := vsphere.NewVSphereVmProvider(clientSet, nil, nil)
+			vmProvider := vsphere.NewVSphereVmProviderFromClients(clientSet, nil, nil)
 			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, "")
 			Expect(err).NotTo(HaveOccurred())
 

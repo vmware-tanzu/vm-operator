@@ -174,7 +174,7 @@ var _ = Describe("VirtualMachine controller", func() {
 
 	Context("when creating/deleting a VM object from Inventory", func() {
 		It("invoke the reconcile method with valid storage class", func() {
-			provider := vmprovider.GetVmProviderOrDie()
+			provider := vmprovider.GetService().GetRegisteredVmProviderOrDie()
 
 			//Configure to use Content Library
 			vSphereConfig.ContentSource = ""

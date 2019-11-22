@@ -39,7 +39,7 @@ func AddConfigMapController(mgr manager.Manager) error {
 
 // cmReconciler returns a new reconcile.Reconciler
 func cmReconciler(mgr manager.Manager) reconcile.Reconciler {
-	vmProvider := vmprovider.GetVmProviderOrDie()
+	vmProvider := vmprovider.GetService().GetRegisteredVmProviderOrDie()
 	imageDiscoverer := NewVirtualMachineImageDiscoverer(mgr.GetClient(), vmProvider, VirtualMachineImageDiscovererOptions{})
 
 	return &ReconcileVMOpConfigMap{

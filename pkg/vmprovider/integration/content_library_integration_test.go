@@ -13,8 +13,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/vmware-tanzu/vm-operator/test/integration"
-
 	"github.com/go-logr/zapr"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"

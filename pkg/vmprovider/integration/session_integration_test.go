@@ -14,15 +14,15 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/tags"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var (
@@ -33,12 +33,11 @@ var (
 var _ = Describe("Sessions", func() {
 	var (
 		session *vsphere.Session
-		err     error
-		ctx     context.Context
 	)
 	BeforeEach(func() {
 		ctx = context.Background()
-		session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
+
+		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -94,7 +93,8 @@ var _ = Describe("Sessions", func() {
 
 			It("should not get virtualmachineimage from CL", func() {
 				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "invalid")
-				Expect(err).Should(MatchError("item: invalid is not found in CL"))
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).Should(Equal("failed to find image \"invalid\": no library items named: invalid"))
 				Expect(image).Should(BeNil())
 			})
 		})
@@ -263,12 +263,12 @@ var _ = Describe("Sessions", func() {
 		Context("when a default network is specified", func() {
 
 			BeforeEach(func() {
-				var err error
 				// For the vcsim env the source VM is attached to a distributed port group. Hence, we are using standard
 				// vswitch port group.
 				vSphereConfig.Network = "VM Network"
+
 				//Setup new session based on the default network
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
+				session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -374,14 +374,12 @@ var _ = Describe("Sessions", func() {
 			err = os.Setenv("JSON_EXTRA_CONFIG", "invalid-json")
 			Expect(err).NotTo(HaveOccurred())
 		})
-
 		AfterEach(func() {
 			err = os.Setenv("JSON_EXTRA_CONFIG", "")
 			Expect(err).NotTo(HaveOccurred())
 		})
-
 		It("Should fail", func() {
-			session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 			Expect(err.Error()).To(MatchRegexp("Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable"))
 		})
 	})
@@ -397,23 +395,11 @@ var _ = Describe("Sessions", func() {
 		JustBeforeEach(func() {
 			//set source to use VM inventory
 
-			session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 			vSphereConfig.ContentSource = ""
 			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
 		})
-
-		AfterEach(func() {
-			os.Setenv("JSON_EXTRA_CONFIG", "")
-		})
-
-		Context("with global extraConfig", func() {
-			It("should copy the values into the VM", func() {
-				imageName := "DC0_H0_VM0"
-				vmClass := getVMClassInstance(testVMName, testNamespace)
-				vm := getVirtualMachineInstance(testVMName+"-extraConfig", testNamespace, imageName, vmClass.Name)
-				vm.Spec.VmMetadata.Transport = "ExtraConfig"
-				vmMetadata := map[string]string{localKey: localVal}
 
 		Context("with vm metadata and global extraConfig", func() {
 			BeforeEach(func() {
@@ -599,6 +585,8 @@ var _ = Describe("Sessions", func() {
 		Describe("Clone VM gracefully fails", func() {
 			Context("Should fail gracefully", func() {
 				var savedDatastoreAttribute string
+				var err error
+
 				vm := &vmoperatorv1alpha1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "TestVM",
@@ -618,7 +606,8 @@ var _ = Describe("Sessions", func() {
 				It("with existing content source, empty datastore and empty profile id", func() {
 					vSphereConfig.Datastore = ""
 					vSphereConfig.ContentSource = integration.GetContentSourceID()
-					session, err := vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
+
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}
@@ -632,7 +621,8 @@ var _ = Describe("Sessions", func() {
 				It("with existing content source but mandatory profile id is not set", func() {
 					vSphereConfig.ContentSource = integration.GetContentSourceID()
 					vSphereConfig.StorageClassRequired = true
-					session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
+
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}
@@ -645,7 +635,8 @@ var _ = Describe("Sessions", func() {
 
 				It("without content source and missing mandatory profile ID", func() {
 					vSphereConfig.StorageClassRequired = true
-					session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
+
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}

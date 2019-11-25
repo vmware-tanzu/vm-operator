@@ -335,8 +335,8 @@ func addEndpointSubset(subsets []corev1.EndpointSubset, vm *vmoperatorv1alpha1.V
 func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service, loadBalancerName string) (*corev1.Service, error) {
 	serviceKey := client.ObjectKey{Name: service.Name, Namespace: service.Namespace}
 
-	log.Info("Updating k8s service", "k8s service name", serviceKey)
-	defer log.Info("Finished updating k8s service", "k8s service name", serviceKey)
+	log.V(5).Info("Updating k8s service", "k8s service name", serviceKey)
+	defer log.V(5).Info("Finished updating k8s service", "k8s service name", serviceKey)
 
 	// find current service
 	currentService := &corev1.Service{}
@@ -347,12 +347,12 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Conte
 			return nil, err
 		}
 		// not exist, need to create one
-		log.Info("No k8s service in this name, creating one", "name", serviceKey)
+		log.V(5).Info("No k8s service in this name, creating one", "name", serviceKey)
 		currentService = service
 	} else {
 		ok, err := utils.VMServiceCompareToLastApplied(vmService, currentService.GetAnnotations()[corev1.LastAppliedConfigAnnotation])
 		if err != nil {
-			log.V(5).Info("unmarshal last applied service config failed, no last applied vm svc configuration ", "current service", currentService)
+			log.V(5).Info("Unmarshal last applied service config failed, no last applied vm svc configuration ", "current service", currentService)
 		}
 		if ok {
 			log.V(5).Info("No change, no need to update service", "name", vmService.NamespacedName(), "service", service)
@@ -391,11 +391,11 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Conte
 				return nil, err
 			}
 		}
-		log.Info("Creating k8s service", "name", serviceKey, "service", newService)
+		log.V(5).Info("Creating k8s service", "name", serviceKey, "service", newService)
 		err = r.Create(ctx, newService)
 		defer record.EmitEvent(vmService, OpCreate, &err, false)
 	} else {
-		log.Info("Updating k8s service", "name", serviceKey, "service", newService)
+		log.V(5).Info("Updating k8s service", "name", serviceKey, "service", newService)
 		err = r.Update(ctx, newService)
 		//defer record.EmitEvent(vmService, OpUpdate, &err, false) ???
 	}
@@ -410,8 +410,8 @@ func (r *ReconcileVirtualMachineService) getVMServiceSelectedVirtualMachines(ctx
 }
 
 func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service) error {
-	log.Info("Updating VirtualMachineService endpoints", "name", vmService.NamespacedName())
-	defer log.Info("Finished updating VirtualMachineService endpoints", "name", vmService.NamespacedName())
+	log.V(5).Info("Updating VirtualMachineService endpoints", "name", vmService.NamespacedName())
+	defer log.V(5).Info("Finished updating VirtualMachineService endpoints", "name", vmService.NamespacedName())
 
 	vmList, err := r.getVMServiceSelectedVirtualMachines(ctx, vmService)
 	if err != nil {
@@ -422,7 +422,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 
 	for i := range vmList.Items {
 		vm := vmList.Items[i]
-		log.Info("Resolving ports for VirtualMachine", "name", vm.NamespacedName())
+		log.V(5).Info("Resolving ports for VirtualMachine", "name", vm.NamespacedName())
 		// Handle multiple VM interfaces
 		if len(vm.Status.VmIp) == 0 {
 			log.Info("Failed to find an IP for VirtualMachine", "name", vm.NamespacedName())
@@ -442,7 +442,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 			portName := servicePort.Name
 			portProto := servicePort.Protocol
 
-			log.Info("VirtualMachine port", "name", vm.NamespacedName(),
+			log.V(5).Info("VirtualMachine port", "name", vm.NamespacedName(),
 				"port name", portName, "port proto", portProto)
 
 			portNum, err := findPort(&vm, servicePort)
@@ -480,10 +480,10 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 
 	createEndpoints := len(currentEndpoints.ResourceVersion) == 0
 	if createEndpoints {
-		log.Info("Creating service endpoints", "service name", vmService.NamespacedName(), "endpoints", newEndpoints)
+		log.V(5).Info("Creating service endpoints", "service name", vmService.NamespacedName(), "endpoints", newEndpoints)
 		err = r.Create(ctx, newEndpoints)
 	} else {
-		log.Info("Updating service endpoints", "service name", vmService.NamespacedName(), "endpoints", newEndpoints)
+		log.V(5).Info("Updating service endpoints", "service name", vmService.NamespacedName(), "endpoints", newEndpoints)
 		err = r.Update(ctx, newEndpoints)
 	}
 
@@ -502,8 +502,8 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 
 // updateVmServiceStatus update vmservice status, sync external ip for loadbalancer type of service
 func (r *ReconcileVirtualMachineService) updateVmServiceStatus(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, newService *corev1.Service) (*vmoperatorv1alpha1.VirtualMachineService, error) {
-	log.Info("Updating VirtualMachineService", "name", vmService.NamespacedName())
-	defer log.Info("Finished updating VirtualMachineService", "name", vmService.NamespacedName())
+	log.V(5).Info("Updating VirtualMachineService", "name", vmService.NamespacedName())
+	defer log.V(5).Info("Finished updating VirtualMachineService", "name", vmService.NamespacedName())
 	// if could update loadbalancer external IP
 	if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer && len(newService.Status.LoadBalancer.Ingress) > 0 {
 		vmServiceStatusStr, _ := json.Marshal(vmService.Status)

@@ -121,8 +121,8 @@ func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, 
 
 	loadBalancerName := nl.getLoadbalancerName(vmService.Namespace, clusterName)
 
-	log.V(4).Info("Get or create loadbalancer", "name", loadBalancerName)
-	defer log.V(4).Info("Finished get or create Loadbalancer", "name", loadBalancerName)
+	log.V(5).Info("Get or create loadbalancer", "name", loadBalancerName)
+	defer log.V(5).Info("Finished get or create Loadbalancer", "name", loadBalancerName)
 	//Get current loadbalancer
 	currentLoadbalancer, err := nl.client.VmwareV1alpha1().LoadBalancers(vmService.Namespace).Get(loadBalancerName, metav1.GetOptions{})
 	if err != nil {

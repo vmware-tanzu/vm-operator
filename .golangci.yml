@@ -34,7 +34,6 @@ linters:
     - megacheck
     - misspell
     - nakedret
-    - prealloc
     - scopelint
     - structcheck
     - typecheck

@@ -31,6 +31,10 @@ import (
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
 
+var DefaultExtraConfig = map[string]string{
+	"disk.enableUUID": "TRUE",
+}
+
 type Session struct {
 	client               *Client
 	clientset            kubernetes.Interface
@@ -118,13 +122,19 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		log.Info("Using default network", "network", config.Network)
 	}
 
+	// Apply default extra config values
+	s.extraConfig = DefaultExtraConfig
 	// Allow for the option to specify extraConfig to be applied to all VMs
 	if jsonExtraConfig := os.Getenv("JSON_EXTRA_CONFIG"); jsonExtraConfig != "" {
-		s.extraConfig = make(map[string]string)
-		if err := json.Unmarshal([]byte(jsonExtraConfig), &s.extraConfig); err != nil {
-			return errors.Wrapf(err, "Unable to parse Json ExtraConfig")
+		extraConfig := make(map[string]string)
+		if err := json.Unmarshal([]byte(jsonExtraConfig), &extraConfig); err != nil {
+			return errors.Wrapf(err, "Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable")
 		}
-		log.Info("Using Json extraConfig", "extraConfig", s.extraConfig)
+		log.Info("Using Json extraConfig", "extraConfig", extraConfig)
+		// Over-write the default extra config values
+		for k, v := range extraConfig {
+			s.extraConfig[k] = v
+		}
 	}
 
 	s.creds = config.VcCreds
@@ -866,7 +876,7 @@ func (s *Session) WithRestClient(ctx context.Context, f func(c *rest.Client) err
 	return f(c)
 }
 
-func GetExtraConfig(vmSpecMeta, globalMeta map[string]string) []vimTypes.BaseOptionValue {
+func GetExtraConfigForVmMeta(vmSpecMeta, globalMeta map[string]string) []vimTypes.BaseOptionValue {
 	mergedConfig := vmSpecMeta
 
 	// If global values for extraConfig have been configured, apply them here
@@ -881,8 +891,12 @@ func GetExtraConfig(vmSpecMeta, globalMeta map[string]string) []vimTypes.BaseOpt
 		}
 	}
 
-	extraConfigs := make([]vimTypes.BaseOptionValue, 0, len(mergedConfig))
-	for k, v := range mergedConfig {
+	return getExtraConfig(mergedConfig)
+}
+
+func getExtraConfig(extraConfigMap map[string]string) []vimTypes.BaseOptionValue {
+	extraConfigs := make([]vimTypes.BaseOptionValue, 0, len(extraConfigMap))
+	for k, v := range extraConfigMap {
 		extraConfigs = append(extraConfigs, &vimTypes.OptionValue{Key: k, Value: v})
 	}
 	return extraConfigs
@@ -931,10 +945,13 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 	if vmSpec.VmMetadata != nil {
 		switch vmSpec.VmMetadata.Transport {
 		case "ExtraConfig":
-			configSpec.ExtraConfig = GetExtraConfig(metadata, s.extraConfig)
+			configSpec.ExtraConfig = GetExtraConfigForVmMeta(metadata, s.extraConfig)
 		default:
 			return nil, fmt.Errorf("unsupported metadata transport %q", vmSpec.VmMetadata.Transport)
 		}
+	} else {
+		// Even if there is no vm metadata, we still need to set the global extra config on the VM.
+		configSpec.ExtraConfig = getExtraConfig(s.extraConfig)
 	}
 
 	configSpec.Annotation = fmt.Sprint("Virtual Machine managed by VM Operator")

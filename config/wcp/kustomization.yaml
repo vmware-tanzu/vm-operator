@@ -5,7 +5,6 @@ bases:
   - ../rbac
   - ../apiserver
   - ../manager
-  - ../crds/external-crds
 
 images:
   - name: vmoperator:latest

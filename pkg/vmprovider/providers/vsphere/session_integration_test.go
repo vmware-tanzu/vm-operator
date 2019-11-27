@@ -273,6 +273,20 @@ var _ = Describe("Sessions", func() {
 			})
 		})
 	})
+
+	Context("Session creation with invalid global extraConfig", func() {
+		BeforeEach(func() {
+			os.Setenv("JSON_EXTRA_CONFIG", "invalid-json")
+		})
+		AfterEach(func() {
+			os.Setenv("JSON_EXTRA_CONFIG", "")
+		})
+		It("Should fail", func() {
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
+			Expect(err.Error()).To(MatchRegexp("Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable"))
+		})
+	})
+
 	Describe("Clone VM with global metadata", func() {
 		const (
 			localKey  = "localK"
@@ -281,21 +295,25 @@ var _ = Describe("Sessions", func() {
 			globalVal = "globalV"
 		)
 
-		BeforeEach(func() {
+		JustBeforeEach(func() {
 			//set source to use VM inventory
 
-			os.Setenv("JSON_EXTRA_CONFIG", "{\""+globalKey+"\":\""+globalVal+"\"}")
 			// Create a new session which should pick up the config
 			session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
+			Expect(err).NotTo(HaveOccurred())
 			config.ContentSource = ""
 			err = session.ConfigureContent(context.TODO(), config.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
 		})
-		AfterEach(func() {
-			os.Setenv("JSON_EXTRA_CONFIG", "")
-		})
-		Context("with global extraConfig", func() {
-			It("should copy the values into the VM", func() {
+
+		Context("with vm metadata and global extraConfig", func() {
+			BeforeEach(func() {
+				os.Setenv("JSON_EXTRA_CONFIG", "{\""+globalKey+"\":\""+globalVal+"\"}")
+			})
+			AfterEach(func() {
+				os.Setenv("JSON_EXTRA_CONFIG", "")
+			})
+			It("should copy all the values into the VM", func() {
 				imageName := "DC0_H0_VM0"
 				vmClass := getVMClassInstance(testVMName, testNamespace)
 				vm := getVirtualMachineInstance(testVMName+"-extraConfig", testNamespace, imageName, vmClass.Name)
@@ -307,6 +325,10 @@ var _ = Describe("Sessions", func() {
 				Expect(clonedVM).ShouldNot(BeNil())
 
 				keysFound := map[string]bool{localKey: false, globalKey: false}
+				// Add all the default keys
+				for k := range vsphere.DefaultExtraConfig {
+					keysFound[k] = false
+				}
 				mo, err := clonedVM.ManagedObject(context.TODO())
 				for _, option := range mo.Config.ExtraConfig {
 					key := option.GetOptionValue().Key
@@ -315,6 +337,35 @@ var _ = Describe("Sessions", func() {
 						Expect(option.GetOptionValue().Value).Should(Equal(localVal))
 					} else if key == globalKey {
 						Expect(option.GetOptionValue().Value).Should(Equal(globalVal))
+					} else if defaultVal, ok := vsphere.DefaultExtraConfig[key]; ok {
+						Expect(option.GetOptionValue().Value).Should(Equal(defaultVal))
+					}
+				}
+				for k, v := range keysFound {
+					Expect(v).Should(BeTrue(), "Key %v not found in VM", k)
+				}
+			})
+		})
+		Context("without vm metadata or global extraConfig", func() {
+			It("should copy the default values into the VM", func() {
+				imageName := "DC0_H0_VM0"
+				vmClass := getVMClassInstance(testVMName, testNamespace)
+				vm := getVirtualMachineInstance(testVMName+"-default-extraConfig", testNamespace, imageName, vmClass.Name)
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, nil, "foo")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM).ShouldNot(BeNil())
+
+				keysFound := map[string]bool{}
+				// Add all the default keys
+				for k := range vsphere.DefaultExtraConfig {
+					keysFound[k] = false
+				}
+				mo, err := clonedVM.ManagedObject(context.TODO())
+				for _, option := range mo.Config.ExtraConfig {
+					key := option.GetOptionValue().Key
+					keysFound[key] = true
+					if defaultVal, ok := vsphere.DefaultExtraConfig[key]; ok {
+						Expect(option.GetOptionValue().Value).Should(Equal(defaultVal))
 					}
 				}
 				for k, v := range keysFound {

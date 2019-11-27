@@ -23,7 +23,7 @@ var _ = Describe("GetResourcePool", func() {
 		Specify("ExtraConfig map is correct with no global map", func() {
 			vmConfig := map[string]string{"oneK": "oneV", "twoK": "twoV"}
 
-			vmMeta := vsphere.GetExtraConfig(vmConfig, nil)
+			vmMeta := vsphere.GetExtraConfigForVmMeta(vmConfig, nil)
 
 			// Check that the VM extra config is returned in the correct format
 			for _, option := range vmMeta {
@@ -35,7 +35,7 @@ var _ = Describe("GetResourcePool", func() {
 			vmConfig := map[string]string{"oneK": "oneV", "twoK": "twoV"}
 			globalConfig := map[string]string{"twoK": "glob-twoV", "threeK": "glob-threeV"}
 
-			vmMeta := vsphere.GetExtraConfig(vmConfig, globalConfig)
+			vmMeta := vsphere.GetExtraConfigForVmMeta(vmConfig, globalConfig)
 
 			// Check that the VM extra config overrides the global config
 			for _, option := range vmMeta {

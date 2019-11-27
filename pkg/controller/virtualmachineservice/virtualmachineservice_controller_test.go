@@ -127,7 +127,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 				vmService := vmoperatorv1alpha1.VirtualMachineService{}
 				err = c.Get(context.TODO(), serviceKey, &vmService)
 				return errors.IsNotFound(err)
-			}).Should(BeTrue())
+			}, timeout).Should(BeTrue())
 
 			// Expect the Service to be deleted too but not yet. In this testenv framework, the kube-controller is
 			// not running so this won't be garbage collected.

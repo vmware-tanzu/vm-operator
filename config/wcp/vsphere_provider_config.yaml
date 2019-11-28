@@ -13,14 +13,3 @@ data:
   # TODO: Update this before we ship 1.0
   ContentSource: Kubernetes
 
----
-
-apiVersion: v1
-kind: Secret
-metadata:
-  name: wcp-vmop-vc-auth
-  namespace: vmware-system-vmop
-type: Opaque
-data:
-  username: QWRtaW5pc3RyYXRvckB2c3BoZXJlLmxvY2Fs
-  password: QWRtaW4hMjM=

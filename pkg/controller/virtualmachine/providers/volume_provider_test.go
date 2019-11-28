@@ -182,8 +182,6 @@ var _ = Describe("Volume Provider", func() {
 				err = cnsVolumeProvider.AttachVolumes(context.TODO(), vm, virtualMachineVolumesAdded)
 				Expect(err).NotTo(HaveOccurred())
 
-				Expect(len(vm.Status.Volumes)).To(Equal(1))
-
 				cnsNodeVmAttachmentList := &cnsv1alpha1.CnsNodeVmAttachmentList{}
 				err = cnsVolumeProvider.client.List(context.TODO(), &client.ListOptions{Namespace: vm.Namespace}, cnsNodeVmAttachmentList)
 				Expect(err).NotTo(HaveOccurred())
@@ -198,7 +196,7 @@ var _ = Describe("Volume Provider", func() {
 		})
 
 		Context("when multiple volumes are added", func() {
-			It("should create multiple CnsNodeVmAttachment instances and set VirtualMachineVolumeStatus to default values", func() {
+			It("should create multiple CnsNodeVmAttachment instances", func() {
 				vm = generateDefaultVirtualMachine()
 				vm.Spec.Volumes = append(vm.Spec.Volumes, generateVirtualMachineVolumes("beta"))
 				// Remove default vm.status.volumes
@@ -217,14 +215,6 @@ var _ = Describe("Volume Provider", func() {
 				err = cnsVolumeProvider.client.List(context.TODO(), &client.ListOptions{}, cnsNodeVmAttachmentList)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(cnsNodeVmAttachmentList.Items)).To(Equal(2))
-				// There should be multiple volume status has been updated under VirtualMachine
-				Expect(len(vm.Status.Volumes)).To(Equal(2))
-
-				for _, vmVolumeStatus := range vm.Status.Volumes {
-					Expect(vmVolumeStatus.Error).To(Equal(""))
-					Expect(vmVolumeStatus.DiskUuid).To(Equal(""))
-					Expect(vmVolumeStatus.Attached).To(BeFalse())
-				}
 			})
 		})
 

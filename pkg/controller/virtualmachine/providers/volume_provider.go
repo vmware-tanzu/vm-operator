@@ -51,19 +51,11 @@ func CnsVolumeProvider(client client.Client) *cnsVolumeProvider {
 
 //TODO: CreateAttachments, DeleteCAttachments and UpdateVmVolumesStatus should return a slice of error: 
 // CreateCnsNodeVmAttachments loop on the set of virtualMachineVolumesToAdd and create the CnsNodeVmAttachment instances accordingly
-// Then assign the vm.Status.Volumes with the newly constructed virtualMachineVolumeStatusToUpdate.
 // Return error when fails to create CnsNodeVmAttachment instances (partially or completely)
 // Note: AttachVolumes() does not call client.Status().Update(), it just updates vm object and vitualmachine_controller.go eventually
 //       will call apiserver to update the vm object
 func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToAttach map[client.ObjectKey]bool) error {
-	// If no volumes need to be attached, then just return
-	if len(virtualMachineVolumesToAttach) == 0 {
-		return nil
-	}
-
 	var err error
-	var virtualMachineVolumeStatusToUpdate []vmoperatorv1alpha1.VirtualMachineVolumeStatus
-
 	for virtualMachineVolume := range virtualMachineVolumesToAttach {
 		cnsNodeVmAttachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 		cnsNodeVmAttachment.SetName(constructCnsNodeVmAttachmentName(vm.Name, virtualMachineVolume.Name))
@@ -85,39 +77,16 @@ func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv
 		log.Info("Attempting to create the CnsNodeVmAttachment", "name", cnsNodeVmAttachment.Name, "namespace", cnsNodeVmAttachment.Namespace)
 		clientCreateError := cvp.client.Create(ctx, cnsNodeVmAttachment)
 		if clientCreateError != nil {
-			if apierrors.IsAlreadyExists(clientCreateError) {
-				// Get the CnsNodeVmAttachment and construct its status
-				exitingCnsVmAttachment := &cnsv1alpha1.CnsNodeVmAttachment{}
-				clientGetError := cvp.client.Get(ctx, client.ObjectKey{Name: cnsNodeVmAttachment.Name, Namespace: cnsNodeVmAttachment.Namespace}, exitingCnsVmAttachment)
-				if clientGetError != nil {
-					err = clientGetError
-					log.Error(clientGetError, "Unable to get CnsNodeVmAttachment which showed as exists", "name", cnsNodeVmAttachment.Name, "namespace", cnsNodeVmAttachment.Namespace)
-					continue
-				}
-				virtualMachineVolumeStatusToUpdate = append(virtualMachineVolumeStatusToUpdate, vmoperatorv1alpha1.VirtualMachineVolumeStatus{
-					Name:     virtualMachineVolume.Name,
-					Attached: exitingCnsVmAttachment.Status.Attached,
-					DiskUuid: exitingCnsVmAttachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID],
-					Error:    exitingCnsVmAttachment.Status.Error,
-				})
-			} else {
+			// Ignore if the CRD instance already exists
+			if !apierrors.IsAlreadyExists(clientCreateError) {
 				err = clientCreateError
 				log.Error(clientCreateError, "Unable to create CnsNodeVmAttachment", "name", cnsNodeVmAttachment.Name, "namespace", cnsNodeVmAttachment.Namespace)
 			}
 		} else {
 			log.Info("Created the CnsNodeVmAttachment", "name", cnsNodeVmAttachment.Name, "namespace", cnsNodeVmAttachment.Namespace)
-			virtualMachineVolumeStatusToUpdate = append(virtualMachineVolumeStatusToUpdate, vmoperatorv1alpha1.VirtualMachineVolumeStatus{
-				Name:     virtualMachineVolume.Name,
-				Attached: false,
-				DiskUuid: "",
-				Error:    "",
-			})
 		}
 		// Continue creating next CnsNodeVmAttachment, reconciliation will try to create those failed ones in the retry.
 	}
-
-	// Set the status for the processed VirtualMachineVolume instances
-	vm.Status.Volumes = virtualMachineVolumeStatusToUpdate
 
 	if err != nil {
 		return err
@@ -157,38 +126,55 @@ func (cvp *cnsVolumeProvider) DetachVolumes(ctx context.Context, vm *vmoperatorv
 // Note: UpdateVmVolumesStatus() does not call client.Status().Update(), it just updates vm object and vitualmachine_controller.go
 //       eventually will call apiserver to update the vm object
 func (cvp *cnsVolumeProvider) UpdateVmVolumesStatus(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
-	// If there are no volumes under vm.status, then no need to update anything
-	if len(vm.Status.Volumes) == 0 {
-		return nil
-	}
-
 	log.Info("Updating the VirtualMachineVolumeStatus for VirtualMachine", "name", vm.Name, "namespace", vm.Namespace)
 	// Updating the existing volume status
 	var err error
-	newVmVolumeStatus := make([]vmoperatorv1alpha1.VirtualMachineVolumeStatus, 0, len(vm.Status.Volumes))
-	for _, vmVolume := range vm.Status.Volumes {
+	volumesForStatusUpdate := getVolumesForStatusUpdate(vm)
+	newVmVolumeStatus := make([]vmoperatorv1alpha1.VirtualMachineVolumeStatus, 0, len(volumesForStatusUpdate))
+	for volumeName, currVolumeStatus := range volumesForStatusUpdate {
 		cnsNodeVmAttachment := &cnsv1alpha1.CnsNodeVmAttachment{}
-		cnsNodeVmAttachmentName := constructCnsNodeVmAttachmentName(vm.Name, vmVolume.Name)
+		cnsNodeVmAttachmentName := constructCnsNodeVmAttachmentName(vm.Name, volumeName)
 		cnsNodeVmAttachmentNamespace := vm.Namespace
 		clientGetErr := cvp.client.Get(ctx, client.ObjectKey{Name: cnsNodeVmAttachmentName, Namespace: cnsNodeVmAttachmentNamespace}, cnsNodeVmAttachment)
 		if clientGetErr != nil {
+			/*
+				When error happens from client.Get against CnsNodeVmAttachment instances
+				Updating status for newly attached volumes:
+				- If CnsNodeVmAttachment instance is not found:
+				    Action: No need to update its status (reconcile will attempt to re-create CNS CRs)
+				- If other errors:
+				    Action: No need to update its status (reconcile will attempt to re-attach CNS CRs)
+
+				Updating status for for existing volumes:
+				- If CnsNodeVmAttachment instance is not found:
+				    Action: No need to update its status (reconcile will attempt to re-create CNS CRs)
+				- If other errors:
+				    Action: Retains the status (reconcile will attempt to update its status in next loop)
+
+				Updating status for detached volumes:
+				- If CnsNodeVmAttachment instance is not found:
+				    Action: No need to update its status (CNS CRs have been successfully deleted)
+				- If other errors:
+				    Action: Retains the status (reconcile will attempt to update its status in next loop)
+			*/
 			if apierrors.IsNotFound(clientGetErr) {
-				// If cnsNodeVmAttachment not found, we should not update its status.
-				// If it is from attach operation, reconcile will try to recreate the cnsNodeVmAttachment next round
-				// If it is from detach operation, that means the CnsNodeVmAttachment instance has been successfully delete. No need to keep it under volume status
 				log.Info("The CnsNodeVmAttachment not found. Skip updating its status", "name", cnsNodeVmAttachmentName, "namespace", cnsNodeVmAttachmentNamespace)
 			} else {
 				err = clientGetErr
 				log.Error(clientGetErr, "Unable to get CnsNodeVmAttachment to update the VirtualMachineVolumeStatus", "name", cnsNodeVmAttachmentName, "namespace", cnsNodeVmAttachmentNamespace)
+				// Based on the inline comments above, we retain the volume status if it exists under this error condition
+				if currVolumeStatus.Name != "" {
+					newVmVolumeStatus = append(newVmVolumeStatus, currVolumeStatus)
+				}
 			}
-			continue
+		} else {
+			newVmVolumeStatus = append(newVmVolumeStatus, vmoperatorv1alpha1.VirtualMachineVolumeStatus{
+				Name:     volumeName,
+				Attached: cnsNodeVmAttachment.Status.Attached,
+				DiskUuid: cnsNodeVmAttachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID],
+				Error:    cnsNodeVmAttachment.Status.Error,
+			})
 		}
-		newVmVolumeStatus = append(newVmVolumeStatus, vmoperatorv1alpha1.VirtualMachineVolumeStatus{
-			Name:     vmVolume.Name,
-			Attached: cnsNodeVmAttachment.Status.Attached,
-			DiskUuid: cnsNodeVmAttachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID],
-			Error:    cnsNodeVmAttachment.Status.Error,
-		})
 	}
 
 	vm.Status.Volumes = newVmVolumeStatus
@@ -232,4 +218,18 @@ func GetVmVolumesToProcess(vm *vmoperatorv1alpha1.VirtualMachine) (map[client.Ob
 // 
 func constructCnsNodeVmAttachmentName(vmName string, virtualMachineVolumeName string) string {
 	return vmName + "-" + virtualMachineVolumeName
+}
+
+// getVmVolumesToUpdateStatus() returns the volumes need to be scanned for status updates.
+// returns a map which contains the union of the {key: VirtualMachineVolumeName, value: VirtualMachineVolumeStatus} from both Spec.volumes and Status.volumes
+func getVolumesForStatusUpdate(vm *vmoperatorv1alpha1.VirtualMachine) map[string]vmoperatorv1alpha1.VirtualMachineVolumeStatus {
+	vmVolumesSet := make(map[string]vmoperatorv1alpha1.VirtualMachineVolumeStatus)
+	for _, volume := range vm.Spec.Volumes {
+		// Assign an empty status for the volumes in vm.Spec.Volumes
+		vmVolumesSet[volume.Name] = vmoperatorv1alpha1.VirtualMachineVolumeStatus{}
+	}
+	for _, volumeStatus := range vm.Status.Volumes {
+		vmVolumesSet[volumeStatus.Name] = volumeStatus
+	}
+	return vmVolumesSet
 }

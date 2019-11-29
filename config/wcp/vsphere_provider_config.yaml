@@ -7,9 +7,6 @@ data:
   VcPNID: <vc_pnid>
   VcCredsSecretName: wcp-vmop-sa-vc-auth
   Datacenter: <datacenter>
-  # TODO: Uncomment the next line and remove datastore config after is done
-  #  StorageClassRequired: true
-  Datastore: nfs0-1
+  StorageClassRequired: "true"
   # TODO: Update this before we ship 1.0
   ContentSource: Kubernetes
-

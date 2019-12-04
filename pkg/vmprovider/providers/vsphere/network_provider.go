@@ -46,18 +46,24 @@ func getEthCardType(vif *v1alpha1.VirtualMachineNetworkInterface) string {
 	return ethCardType
 }
 
-func createCommonVnic(ctx context.Context, networkName, ethCardType string, finder *find.Finder) (types.BaseVirtualDevice, error) {
-	ref, err := finder.Network(ctx, networkName)
+// createVnicOnNamedNetwork creates vnic on named network
+func createVnicOnNamedNetwork(ctx context.Context, networkName, ethCardType string, finder *find.Finder) (types.BaseVirtualDevice, error) {
+	networkRef, err := finder.Network(ctx, networkName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to find network %q", networkName)
 	}
-	backing, err := ref.EthernetCardBackingInfo(ctx)
+	return createCommonVnic(ctx, networkRef, ethCardType, finder)
+}
+
+// createCommonVnic creates vnid on a network given the network reference
+func createCommonVnic(ctx context.Context, network object.NetworkReference, ethCardType string, finder *find.Finder) (types.BaseVirtualDevice, error) {
+	backing, err := network.EthernetCardBackingInfo(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to create new ethernet card backing info for network %q", networkName)
+		return nil, errors.Wrapf(err, "unable to create new ethernet card backing info for network %v", network)
 	}
 	dev, err := object.EthernetCardTypes().CreateEthernetCard(ethCardType, backing)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to create new ethernet card %q for network %q", ethCardType, networkName)
+		return nil, errors.Wrapf(err, "unable to create new ethernet card %q for network %v", ethCardType, network)
 	}
 	return dev, nil
 }
@@ -80,7 +86,7 @@ func DefaultNetworkProvider(finder *find.Finder) *defaultNetworkProvider {
 }
 
 func (np *defaultNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (types.BaseVirtualDevice, error) {
-	return createCommonVnic(ctx, vif.NetworkName, getEthCardType(vif), np.finder)
+	return createVnicOnNamedNetwork(ctx, vif.NetworkName, getEthCardType(vif), np.finder)
 }
 
 type nsxtNetworkProvider struct {
@@ -112,66 +118,61 @@ func (np *nsxtNetworkProvider) GenerateNsxVnetifName(networkName, vmName string)
 	return fmt.Sprintf("%s-%s-lsp", networkName, vmName)
 }
 
-// getNetworkInventoryPath takes the network ID, returns opaque network inventory path
-// if not matched, return error
-func (np *nsxtNetworkProvider) getNetworkInventoryPath(ctx context.Context, network object.NetworkReference, networkID string) (string, error) {
+// matchOpaqueNetwork takes the network ID, returns whether the opaque network matches the networkID
+func (np *nsxtNetworkProvider) matchOpaqueNetwork(ctx context.Context, network object.NetworkReference, networkID string) bool {
 	obj, ok := network.(*object.OpaqueNetwork)
 	if !ok {
-		return "", fmt.Errorf("network %s is not opaque network", networkID)
+		return false
 	}
 
 	var net mo.OpaqueNetwork
 
 	if err := obj.Properties(ctx, obj.Reference(), []string{"summary"}, &net); err != nil {
-		return "", err
+		return false
 	}
 
 	summary, _ := net.Summary.(*vimTypes.OpaqueNetworkSummary)
-	if summary.OpaqueNetworkId == networkID {
-		return obj.InventoryPath, nil
-	}
-	return "", fmt.Errorf("opaque network with ID '%s' not matched", networkID)
+	return summary.OpaqueNetworkId == networkID
 }
 
-// getDistributedPortGroupInventoryPath takes the network ID, returns distributed port group inventory path
-// if not matched, return error
-func (np *nsxtNetworkProvider) getDistributedPortgroupInventoryPath(ctx context.Context, network object.NetworkReference, networkID string) (string, error) {
+// matchDistributedPortGroup takes the network ID, returns whether the distributed port group matches the networkID
+func (np *nsxtNetworkProvider) matchDistributedPortGroup(ctx context.Context, network object.NetworkReference, networkID string) bool {
 	obj, ok := network.(*object.DistributedVirtualPortgroup)
 	if !ok {
-		return "", fmt.Errorf("network %s is not distributed port group", networkID)
+		return false
 	}
 
 	var configInfo []types.ObjectContent
 
 	err := obj.Properties(ctx, obj.Reference(), []string{"config.logicalSwitchUuid"}, &configInfo)
 	if err != nil {
-		return "", err
+		return false
 	}
 	if len(configInfo) > 0 {
 		for _, dynamicProperty := range configInfo[0].PropSet {
 			if dynamicProperty.Val == networkID {
-				return obj.InventoryPath, nil
+				return true
 			}
 		}
 	}
-	return "", fmt.Errorf("distributed port group with ID '%s' not matched", networkID)
+	return false
 }
 
-// searchOpaqueNetworkName takes in nsx-t logical switch UUID and returns the name of the nsx-t network
-func (np *nsxtNetworkProvider) searchOpaqueNetworkName(ctx context.Context, networkID string) (string, error) {
+// searchNetworkReference takes in nsx-t logical switch UUID and returns the reference of the network
+func (np *nsxtNetworkProvider) searchNetworkReference(ctx context.Context, networkID string) (object.NetworkReference, error) {
 	networks, err := np.finder.NetworkList(ctx, "*")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	for _, network := range networks {
-		if inventoryPath, err := np.getDistributedPortgroupInventoryPath(ctx, network, networkID); err == nil {
-			return inventoryPath, nil
+		if np.matchDistributedPortGroup(ctx, network, networkID) {
+			return network, nil
 		}
-		if inventoryPath, err := np.getNetworkInventoryPath(ctx, network, networkID); err == nil {
-			return inventoryPath, nil
+		if np.matchOpaqueNetwork(ctx, network, networkID) {
+			return network, nil
 		}
 	}
-	return "", fmt.Errorf("opaque network with ID '%s' not found", networkID)
+	return nil, fmt.Errorf("opaque network with ID '%s' not found", networkID)
 }
 
 // setVnetifOwner sets owner reference for vnetif object
@@ -297,13 +298,13 @@ func (np *nsxtNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.Virt
 		log.Error(err, "Failed to get for nsx-t opaque network ID for vnetif")
 		return nil, err
 	}
-	networkName, err := np.searchOpaqueNetworkName(ctx, vnetif.Status.ProviderStatus.NsxLogicalSwitchID)
+	networkRef, err := np.searchNetworkReference(ctx, vnetif.Status.ProviderStatus.NsxLogicalSwitchID)
 	if err != nil {
 		log.Error(err, "Failed to search for nsx-t network associated with vnetif", "vnetif", vnetif)
 		return nil, err
 	}
 	// config vnic
-	dev, err := createCommonVnic(ctx, networkName, getEthCardType(vif), np.finder)
+	dev, err := createCommonVnic(ctx, networkRef, getEthCardType(vif), np.finder)
 	if err != nil {
 		return nil, err
 	}

@@ -7,6 +7,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	. "github.com/onsi/ginkgo"
@@ -362,6 +363,26 @@ var _ = Describe("Sessions", func() {
 				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+			})
+			It("should clone VMTX", func() {
+				imageName := "test-item-vmtx"
+				vmName := "CL_DeployedVMTX"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				// Expect this attempt to fail as we've not yet created the vm-template CL item
+				_, err = session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("failed to find image %q", imageName)))
+
+				// Create the vm-template CL item
+				err := integration.CloneVirtualMachineToLibraryItem(context.TODO(), vSphereConfig, session, "DC0_H0_VM0", imageName)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Now expect clone to succeed
 				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))

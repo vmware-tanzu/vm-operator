@@ -20,6 +20,7 @@ import (
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
 	govmomirest "github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vapi/vcenter"
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -315,6 +316,38 @@ func SetupContentLibrary(ctx context.Context, config *vsphere.VSphereVmProviderC
 	}
 
 	return nil
+}
+
+func CloneVirtualMachineToLibraryItem(ctx context.Context, config *vsphere.VSphereVmProviderConfig, s *vsphere.Session, src, name string) error {
+	vm, err := s.Finder.VirtualMachine(ctx, src)
+	if err != nil {
+		return err
+	}
+
+	pool, err := vm.ResourcePool(ctx)
+	if err != nil {
+		return err
+	}
+
+	return s.WithRestClient(ctx, func(c *govmomirest.Client) error {
+		spec := vcenter.Template{
+			Name:     name,
+			Library:  config.ContentSource,
+			SourceVM: vm.Reference().Value,
+			Placement: &vcenter.Placement{
+				Folder:       config.Folder,
+				ResourcePool: pool.Reference().Value,
+			},
+		}
+
+		id, err := vcenter.NewManager(c).CreateTemplate(ctx, spec)
+		if err != nil {
+			return err
+		}
+		stdlog.Printf("Created vmtx %s in library %s", id, config.ContentSource)
+
+		return nil
+	})
 }
 
 // SetupTestReconcile returns a reconcile.Reconcile implementation that delegates to inner and

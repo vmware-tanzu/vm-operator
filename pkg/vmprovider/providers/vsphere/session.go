@@ -298,8 +298,8 @@ func (s *Session) GetItemIDFromCL(ctx context.Context, itemName string) (string,
 	return itemID, errors.Wrapf(err, "failed to find image %q", itemName)
 }
 
-func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string) (*v1alpha1.VirtualMachineImage, error) {
-	itemID, err := s.GetItemIDFromCL(ctx, name)
+func (s *Session) GetItemFromCL(ctx context.Context, itemName string) (*library.Item, error) {
+	itemID, err := s.GetItemIDFromCL(ctx, itemName)
 	if err != nil {
 		return nil, err
 	}
@@ -314,12 +314,21 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string)
 	}
 
 	if item == nil {
-		return nil, errors.Errorf("item: %v is not found in CL", name)
+		return nil, errors.Errorf("item: %v is not found in CL", itemName)
 	}
 
 	// If not a supported type return nil
 	if !IsSupportedDeployType(item.Type) {
 		return nil, errors.Errorf("item: %v not a supported type: %s", item.Name, item.Type)
+	}
+
+	return item, nil
+}
+
+func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string) (*v1alpha1.VirtualMachineImage, error) {
+	item, err := s.GetItemFromCL(ctx, name)
+	if err != nil {
+		return nil, err
 	}
 
 	var vmOpts OvfPropertyRetriever = vmOptions{}
@@ -595,7 +604,17 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 	}
 
 	if s.contentlib != nil {
-		return s.cloneVirtualMachineFromCL(ctx, vm, vmConfigArgs)
+		item, err := s.GetItemFromCL(ctx, vm.Spec.ImageName)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to find image %q", vm.Spec.ImageName)
+		}
+
+		switch item.Type {
+		case library.ItemTypeOVF:
+			return s.cloneVirtualMachineFromOVFInCL(ctx, vm, vmConfigArgs)
+		case library.ItemTypeVMTX:
+			return s.cloneVirtualMachineFromInventory(ctx, vm, vmConfigArgs)
+		}
 	}
 
 	if s.useInventoryForImages {
@@ -626,9 +645,8 @@ func (s *Session) cloneVirtualMachineFromInventory(ctx context.Context, vm *v1al
 	return cloneResVm, nil
 }
 
-func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
-
-	itemID, err := s.GetItemIDFromCL(ctx, vm.Spec.ImageName)
+func (s *Session) cloneVirtualMachineFromOVFInCL(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
+	item, err := s.GetItemFromCL(ctx, vm.Spec.ImageName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find image %q", vm.Spec.ImageName)
 	}
@@ -639,10 +657,10 @@ func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.Vi
 		resourcePolicyName = vmConfigArgs.ResourcePolicy.Name
 	}
 
-	log.Info("Deploying OVF", "imageName", vm.Spec.ImageName, "vmName", name,
+	log.Info("Deploying CL item", "type", item.Type, "imageName", vm.Spec.ImageName, "vmName", name,
 		"resourcePolicyName", resourcePolicyName, "storageProfileID", vmConfigArgs.StorageProfileID)
 
-	deployedVm, err := s.deployOvf(ctx, itemID, name, vmConfigArgs.ResourcePolicy, vmConfigArgs.StorageProfileID)
+	deployedVm, err := s.deployOvf(ctx, item.ID, name, vmConfigArgs.ResourcePolicy, vmConfigArgs.StorageProfileID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
 	}
@@ -910,8 +928,7 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 
 	cloneSpec.Location.Host = rSpec.Host
 	cloneSpec.Location.Datastore = rSpec.Datastore
-	//cloneSpec.Location.DiskMoveType =
-	//string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndConsolidate)
+	cloneSpec.Location.DiskMoveType = string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveChildMostDiskBacking)
 
 	return cloneSpec, nil
 }
@@ -943,12 +960,17 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec *vimType
 func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
 	log.Info("Cloning VM", "name", cloneSpec.Config.Name, "cloneSpec", *cloneSpec)
 
-	cloneResVm, err := resSrcVm.Clone(ctx, s.folder, cloneSpec)
+	deployment, err := resSrcVm.Clone(ctx, s.folder, cloneSpec)
 	if err != nil {
 		return nil, err
 	}
 
-	return cloneResVm, nil
+	ref, err := s.Finder.ObjectReference(ctx, deployment.Reference())
+	if err != nil {
+		return nil, err
+	}
+
+	return res.NewVMFromObject(ref.(*object.VirtualMachine))
 }
 
 func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
@@ -1150,8 +1172,8 @@ func (s *Session) GetFolderByPath(ctx context.Context, path string) (*object.Fol
 func IsSupportedDeployType(t string) bool {
 	switch t {
 	case
-		//"vmtx",
-		"ovf":
+		library.ItemTypeVMTX,
+		library.ItemTypeOVF:
 		return true
 	}
 	return false

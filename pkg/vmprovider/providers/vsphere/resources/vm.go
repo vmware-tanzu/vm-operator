@@ -62,7 +62,7 @@ func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, poo
 	return nil
 }
 
-func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, cloneSpec *types.VirtualMachineCloneSpec) (*VirtualMachine, error) {
+func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, cloneSpec *types.VirtualMachineCloneSpec) (*types.ManagedObjectReference, error) {
 	log.V(5).Info("Clone VM", "name", vm.Name)
 
 	task, err := vm.vcVirtualMachine.Clone(ctx, folder, cloneSpec.Config.Name, *cloneSpec)
@@ -75,10 +75,8 @@ func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, clon
 		return nil, errors.Wrapf(err, "clone VM %q task failed", vm.Name)
 	}
 
-	clonedObjVm := object.NewVirtualMachine(folder.Client(), result.Result.(types.ManagedObjectReference))
-	clonedResVm := VirtualMachine{Name: clonedObjVm.Name(), vcVirtualMachine: clonedObjVm}
-
-	return &clonedResVm, nil
+	ref := result.Result.(types.ManagedObjectReference)
+	return &ref, nil
 }
 
 func (vm *VirtualMachine) Delete(ctx context.Context) error {

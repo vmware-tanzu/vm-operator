@@ -614,7 +614,7 @@ func LibItemToVirtualMachineImage(ctx context.Context, sess *Session, item *libr
 
 	var ovfProperties map[string]string
 
-	if imgOptions == AnnotateVmImage {
+	if imgOptions == AnnotateVmImage && item.Type == library.ItemTypeOVF {
 		var err error
 		ovfProperties, err = vmProvider.FetchOvfPropertiesFromLibrary(ctx, sess, item)
 		if err != nil {

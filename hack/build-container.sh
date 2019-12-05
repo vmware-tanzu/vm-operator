@@ -63,7 +63,7 @@ BUILD_NUMBER=${BUILD_NUMBER:-0}
 COMMIT=${COMMIT:-$(git rev-parse HEAD)}
 BRANCH=${BRANCH:-$(git rev-parse --abbrev-ref HEAD)}
 BINDIR=${BINDIR:-bin/}
-VERSION=${VERSION:"0.0"}
+VERSION=${VERSION:-0.0}
 
 build
 

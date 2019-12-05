@@ -126,8 +126,8 @@ required = [
   non-go = true
 
 [[constraint]]
-  branch = "master"
   name = "github.com/vmware/govmomi"
+  revision = "0008cf3862a7bbb382dc0f7e370cf9ec39782237"
 
 [[constraint]]
   name = "gitlab.eng.vmware.com/guest-clusters/ncp-client"

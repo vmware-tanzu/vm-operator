@@ -738,8 +738,7 @@
   revision = "ded73eae5db7e7a0ef6f55aace87a2873c5d2b74"
 
 [[projects]]
-  branch = "master"
-  digest = "1:96d9c6d22465401fbf9caae6ebbf253ccbeb916f523a6060dffe872415354484"
+  digest = "1:8cd54c54bd0587a596a02ef65a8a82055e4dd2ef474ed2bde3ef18b44e128b5a"
   name = "github.com/vmware/govmomi"
   packages = [
     ".",
@@ -772,7 +771,7 @@
     "vim25/xml",
   ]
   pruneopts = "NU"
-  revision = "f01505d273e85c71261f91457191e65fcb971be3"
+  revision = "0008cf3862a7bbb382dc0f7e370cf9ec39782237"
 
 [[projects]]
   digest = "1:93f2507c1e532e27097c890cc431fff10b6e3e90b6a134db8a3047ff6ad75187"
@@ -799,7 +798,6 @@
   source = "git@gitlab.eng.vmware.com:guest-clusters/ncp-client.git"
 
 [[projects]]
-  branch = "CNSOperator"
   digest = "1:98d4dfcf3b4483c9328bae93b106adebd32b89e6bd2829c1d718e8ecee63d23f"
   name = "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver"
   packages = ["pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"]

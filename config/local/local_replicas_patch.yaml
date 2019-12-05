@@ -1,4 +1,7 @@
 # deploy vmop with 3 replicas for leader election testing
-- op: add
-  path: /spec/replicas
-  value: 3
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-controller
+spec:
+  replicas: 3

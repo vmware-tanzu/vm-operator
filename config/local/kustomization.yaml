@@ -9,13 +9,6 @@ bases:
 - ../manager
 - ../crds/external-crds
 
-
-patchesJson6902:
-  - target:
-      group: apps
-      version: v1
-      kind: Deployment
-      name: vmoperator-controller
-    path: local_replicas_patch.yaml
-
-
+patchesStrategicMerge:
+  - local_resources_patch.yaml
+  - local_replicas_patch.yaml

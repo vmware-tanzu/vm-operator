@@ -1,0 +1,30 @@
+# needed for gce2e tests
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-apiserver
+spec:
+  template:
+    spec:
+      containers:
+        - name: apiserver
+          resources:
+            requests:
+              cpu: 200m
+            limits:
+              cpu: 200m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-controller
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          resources:
+            requests:
+              cpu: 200m
+            limits:
+              cpu: 200m

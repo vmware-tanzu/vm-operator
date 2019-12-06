@@ -34,7 +34,7 @@ import (
 
 var c client.Client
 
-const timeout = time.Second * 5
+const timeout = time.Second * 10
 
 var _ = Describe("VirtualMachineService controller", func() {
 	ns := integration.DefaultNamespace
@@ -115,8 +115,9 @@ var _ = Describe("VirtualMachineService controller", func() {
 			// Service should have been created with same name
 			serviceKey := client.ObjectKey{Name: instance.Name, Namespace: instance.Namespace}
 			service := corev1.Service{}
-			err = c.Get(context.TODO(), serviceKey, &service)
-			Expect(err).ShouldNot(HaveOccurred())
+			Eventually(func() error {
+				return c.Get(context.TODO(), serviceKey, &service)
+			}).Should(Succeed())
 
 			// Delete the VM Service object and expect it to be deleted.
 			err = c.Delete(context.TODO(), &instance)
@@ -126,18 +127,29 @@ var _ = Describe("VirtualMachineService controller", func() {
 			Eventually(func() bool {
 				vmService := vmoperatorv1alpha1.VirtualMachineService{}
 				err = c.Get(context.TODO(), serviceKey, &vmService)
-				return errors.IsNotFound(err)
-			}, timeout).Should(BeTrue())
+				if errors.IsNotFound(err) {
+					return true
+				}
+				if err != nil {
+					GinkgoWriter.Write([]byte(fmt.Sprintf("Unexpected error: %#v\n", err)))
+				}
+				return false
+			}, 3*timeout).Should(BeTrue())
 
 			// Expect the Service to be deleted too but not yet. In this testenv framework, the kube-controller is
 			// not running so this won't be garbage collected.
 			//err = c.Get(context.TODO(), serviceKey, &service)
 			//Expect(errors.IsNotFound(err)).Should(BeTrue())
 
-			reasonMap := vmrecord.ReadEvents(fakeRecorder)
-			Expect(len(reasonMap)).Should(Equal(2))
-			Expect(reasonMap[vmrecord.Success+OpCreate]).Should(Equal(1))
-			Expect(reasonMap[vmrecord.Success+OpDelete]).Should(Equal(1))
+			Eventually(func() bool {
+				reasonMap := vmrecord.ReadEvents(fakeRecorder)
+				if (len(reasonMap) != 2) || (reasonMap[vmrecord.Success+OpCreate] != 1) ||
+					(reasonMap[vmrecord.Success+OpDelete] != 1) {
+					GinkgoWriter.Write([]byte(fmt.Sprintf("reasonMap =  %v", reasonMap)))
+					return false
+				}
+				return true
+			}, timeout).Should(BeTrue())
 		})
 	})
 
@@ -253,8 +265,9 @@ var _ = Describe("VirtualMachineService controller", func() {
 				err := c.Create(context.TODO(), service)
 				Expect(err).ShouldNot(HaveOccurred())
 				currentService := &corev1.Service{}
-				err = c.Get(context.TODO(), types.NamespacedName{service.Namespace, service.Name}, currentService)
-				Expect(err).ShouldNot(HaveOccurred())
+				Eventually(func() error {
+					return c.Get(context.TODO(), types.NamespacedName{service.Namespace, service.Name}, currentService)
+				}).Should(Succeed())
 
 				changedVMService := &vmoperatorv1alpha1.VirtualMachineService{
 					ObjectMeta: metav1.ObjectMeta{
@@ -327,8 +340,9 @@ var _ = Describe("VirtualMachineService controller", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 
 				currentVMService := &vmoperatorv1alpha1.VirtualMachineService{}
-				err = c.Get(context.TODO(), types.NamespacedName{vmService.Namespace, vmService.Name}, currentVMService)
-				Expect(err).ShouldNot(HaveOccurred())
+				Eventually(func() error {
+					return c.Get(context.TODO(), types.NamespacedName{vmService.Namespace, vmService.Name}, currentVMService)
+				}).Should(Succeed())
 
 				changedVMService := &vmoperatorv1alpha1.VirtualMachineService{
 					ObjectMeta: metav1.ObjectMeta{
@@ -400,15 +414,17 @@ var _ = Describe("VirtualMachineService controller", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 
 				currentEndpoints := &corev1.Endpoints{}
-				err = c.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, currentEndpoints)
-				Expect(err).ShouldNot(HaveOccurred())
+				Eventually(func() error {
+					return c.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, currentEndpoints)
+				}).Should(Succeed())
 
 				err = r.updateEndpoints(context.TODO(), vmService, service)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				newEndpoints := &corev1.Endpoints{}
-				err = c.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, newEndpoints)
-				Expect(err).ShouldNot(HaveOccurred())
+				Eventually(func() error {
+					return c.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, newEndpoints)
+				}).Should(Succeed())
 
 				Expect(currentEndpoints).To(Equal(newEndpoints))
 			})

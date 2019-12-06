@@ -8,9 +8,10 @@ package virtualmachine
 
 import (
 	"fmt"
-	"gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	"sync"
 	"time"
+
+	"gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
@@ -232,11 +233,15 @@ var _ = Describe("VirtualMachine controller", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 
-				reasonMap := vmrecord.ReadEvents(fakeRecorder)
-				Expect(reasonMap[vmrecord.Failure+OpCreate]).Should(BeZero())
-				Expect(reasonMap[vmrecord.Failure+OpDelete]).Should(BeZero())
-				Expect(reasonMap[vmrecord.Success+OpCreate]).Should(Equal(1))
-				Expect(reasonMap[vmrecord.Success+OpDelete]).Should(Equal(1))
+				Eventually(func() bool {
+					reasonMap := vmrecord.ReadEvents(fakeRecorder)
+					if (reasonMap[vmrecord.Failure+OpCreate] != 0) || (reasonMap[vmrecord.Failure+OpDelete] != 0) ||
+						(reasonMap[vmrecord.Success+OpDelete] != 1) || (reasonMap[vmrecord.Success+OpCreate] != 1) {
+						GinkgoWriter.Write([]byte(fmt.Sprintf("reasonMap =  %v", reasonMap)))
+						return false
+					}
+					return true
+				}, timeout).Should(BeTrue())
 			})
 		})
 		Context("from inventory", func() {
@@ -278,11 +283,16 @@ var _ = Describe("VirtualMachine controller", func() {
 				err = c.Delete(context.TODO(), &instance)
 				Expect(err).ShouldNot(HaveOccurred())
 				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
-				reasonMap := vmrecord.ReadEvents(fakeRecorder)
-				Expect(reasonMap[vmrecord.Failure+OpCreate]).ShouldNot(BeZero())
-				Expect(reasonMap[vmrecord.Failure+OpDelete]).Should(BeZero())
-				Expect(reasonMap[vmrecord.Success+OpCreate]).Should(BeZero())
-				Expect(reasonMap[vmrecord.Success+OpDelete]).Should(Equal(1))
+				Eventually(func() bool {
+					reasonMap := vmrecord.ReadEvents(fakeRecorder)
+					if (reasonMap[vmrecord.Failure+OpCreate] < 1) || (reasonMap[vmrecord.Success+OpDelete] != 1) ||
+						(reasonMap[vmrecord.Failure+OpDelete] != 0) || (reasonMap[vmrecord.Success+OpCreate] != 0) {
+						GinkgoWriter.Write([]byte(fmt.Sprintf("reasonMap =  %v", reasonMap)))
+						return false
+					}
+					return true
+				}, timeout).Should(BeTrue())
+
 			})
 		})
 
@@ -332,10 +342,14 @@ var _ = Describe("VirtualMachine controller", func() {
 				err = c.Delete(context.TODO(), &instance)
 				Expect(err).ShouldNot(HaveOccurred())
 				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
-
-				reasonMap := vmrecord.ReadEvents(fakeRecorder)
-				Expect(reasonMap[vmrecord.Success+OpCreate]).Should(Equal(1))
-				Expect(reasonMap[vmrecord.Success+OpDelete]).Should(Equal(1))
+				Eventually(func() bool {
+					reasonMap := vmrecord.ReadEvents(fakeRecorder)
+					if (reasonMap[vmrecord.Success+OpDelete] != 1) || (reasonMap[vmrecord.Success+OpCreate] != 1) {
+						GinkgoWriter.Write([]byte(fmt.Sprintf("reasonMap =  %v", reasonMap)))
+						return false
+					}
+					return true
+				}, timeout).Should(BeTrue())
 			})
 		})
 	})
@@ -368,7 +382,7 @@ var _ = Describe("VirtualMachine controller", func() {
 						PowerState:   "poweredOn",
 						Ports:        []vmoperatorv1alpha1.VirtualMachinePort{},
 						StorageClass: storageClass,
-						Volumes: []vmoperatorv1alpha1.VirtualMachineVolumes {
+						Volumes: []vmoperatorv1alpha1.VirtualMachineVolumes{
 							{Name: "fake-volume-1", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-1"}},
 							{Name: "fake-volume-2", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-2"}},
 							{Name: "fake-volume-3", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-3"}},

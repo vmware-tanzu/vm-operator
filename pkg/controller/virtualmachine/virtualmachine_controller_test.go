@@ -61,7 +61,9 @@ func generateDefaultResourceQuota() *corev1.ResourceQuota {
 	}
 }
 
-func checkVmVolumeConsistency(vm *vmoperatorv1alpha1.VirtualMachine) bool {
+// Checking if the spec and status of virtual machine volumes are eventually consistent
+// The following function returns true if the vm.Spec.Volumes equal to vm.Status.Volumes
+func checkVolumeNamesConsistency(vm *vmoperatorv1alpha1.VirtualMachine) bool {
 	set := make(map[string]bool)
 	for _, volume := range vm.Spec.Volumes {
 		set[volume.Name] = true
@@ -69,9 +71,25 @@ func checkVmVolumeConsistency(vm *vmoperatorv1alpha1.VirtualMachine) bool {
 	for _, volume := range vm.Status.Volumes {
 		if set[volume.Name] {
 			delete(set, volume.Name)
+		} else {
+			return false
 		}
 	}
 	return len(set) == 0
+}
+
+// Assert the volume status updates are expected
+func assertVmVolumeStatusUpdates(updatedVm *vmoperatorv1alpha1.VirtualMachine) {
+	Eventually(func() bool {
+		vmRetrieved := &vmoperatorv1alpha1.VirtualMachine{}
+		Expect(c.Get(context.TODO(), client.ObjectKey{Name: updatedVm.Name, Namespace: updatedVm.Namespace}, vmRetrieved)).To(Succeed())
+
+		cnsNodeVmAttachmentList := &v1alpha1.CnsNodeVmAttachmentList{}
+		Expect(c.List(context.TODO(), &client.ListOptions{Namespace: updatedVm.Namespace}, cnsNodeVmAttachmentList)).To(Succeed())
+
+		// The number of vm.Status.Volumes should always be the same as the number of CNS CRs
+		return len(vmRetrieved.Status.Volumes) == len(cnsNodeVmAttachmentList.Items)
+	}, 60 * time.Second).Should(BeTrue())
 }
 
 var _ = Describe("VirtualMachine controller", func() {
@@ -367,59 +385,34 @@ var _ = Describe("VirtualMachine controller", func() {
 				}
 
 				// VirtualMachine volume status is expected to be updated properly
-				Eventually(func() int {
-					vm := &vmoperatorv1alpha1.VirtualMachine{}
-					Expect(c.Get(context.TODO(), client.ObjectKey{Name: vmName, Namespace: ns}, vm)).To(Succeed())
-					return len(vm.Status.Volumes)
-				}, 60 * time.Second).Should(Equal(len(instance.Spec.Volumes)))
-				// CnsNodeVmAttachment CRs are expected to be created properly
-				Eventually(func() int {
-					cnsNodeVmAttachmentList := &v1alpha1.CnsNodeVmAttachmentList{}
-					Expect(c.List(context.TODO(), &client.ListOptions{Namespace:ns}, cnsNodeVmAttachmentList)).To(Succeed())
-					return len(cnsNodeVmAttachmentList.Items)
-				}, 60 * time.Second).Should(Equal(len(instance.Spec.Volumes)))
+				assertVmVolumeStatusUpdates(&instance)
 
-				// Temporarily comment out the following tests due to its instability
-				// It is possible that the deletion of CNS CRs succeeds, but the CRs are still present.
-				// However the tests are expecting them to be completely deleted. Putting timeout on Eventually() won't help,
-				// because the deletion of CRs might even take longer time.
-				// TODO: 
-				//// Update the volumes under virtual machine spec
-				//vmToUpdate := &vmoperatorv1alpha1.VirtualMachine{}
-				//// It is possible c.Update fails due to the reconciliation running in background has updated the vm instance
-				//// So we put the c.Update in Eventually block
-				//var updateAttempts int
-				//Eventually(func() error {
-				//	updateAttempts ++
-				//	err = c.Get(context.TODO(), client.ObjectKey{Name: vmName, Namespace: ns}, vmToUpdate)
-				//	vmToUpdate.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolumes {
-				//		{Name: "fake-volume-1", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-1"}},
-				//		{Name: "fake-volume-4", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-4"}},
-				//	}
-				//	return c.Update(context.TODO(), vmToUpdate)
-				//}, timeout).Should(Succeed())
-				//// If c.Update has been executed multiple times, we expect to see the expectedRequest gets requeued
-				//for i := 0; i < updateAttempts; i++ {
-				//	Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
-				//}
-				//
-				//// VirtualMachine volume status is expected to be updated properly
-				//Eventually(func() int {
-				//	vmRetrieved := &vmoperatorv1alpha1.VirtualMachine{}
-				//	Expect(c.Get(context.TODO(), client.ObjectKey{Name: vmName, Namespace: ns}, vmRetrieved)).NotTo(HaveOccurred())
-				//	return len(vmRetrieved.Status.Volumes)
-				//}, 60 * time.Second).Should(Equal(len(vmToUpdate.Spec.Volumes)))
-				//// CnsNodeVmAttachment CRs are expected to be created properly
-				//Eventually(func() int {
-				//	cnsNodeVmAttachmentList := &v1alpha1.CnsNodeVmAttachmentList{}
-				//	Expect(c.List(context.TODO(), &client.ListOptions{Namespace:ns}, cnsNodeVmAttachmentList)).To(Succeed())
-				//	return len(cnsNodeVmAttachmentList.Items)
-				//}, 60 * time.Second).Should(Equal(len(vmToUpdate.Spec.Volumes)))
+				// Update the volumes under virtual machine spec
+				vmToUpdate := &vmoperatorv1alpha1.VirtualMachine{}
+				// It is possible c.Update fails due to the reconciliation running in background has updated the vm instance
+				// So we put the c.Update in Eventually block
+				updateAttempts := 0
+				Eventually(func() error {
+					updateAttempts ++
+					Expect(c.Get(context.TODO(), client.ObjectKey{Name: vmName, Namespace: ns}, vmToUpdate)).Should(Succeed())
+					vmToUpdate.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolumes {
+						{Name: "fake-volume-1", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-1"}},
+						{Name: "fake-volume-4", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-4"}},
+					}
+					return c.Update(context.TODO(), vmToUpdate)
+				}, timeout).Should(Succeed())
+				// If c.Update has been executed multiple times, we expect to see the expectedRequest gets requeued
+				for i := 0; i < updateAttempts; i++ {
+					Eventually(requests, 30 * time.Second).Should(Receive(Equal(expectedRequest)))
+				}
+
+				// VirtualMachine volume status is expected to be updated properly
+				assertVmVolumeStatusUpdates(vmToUpdate)
 
 				// Check the volume names in status are the same as in spec
 				vmRetrieved := &vmoperatorv1alpha1.VirtualMachine{}
 				Expect(c.Get(context.TODO(), client.ObjectKey{Name: vmName, Namespace: ns}, vmRetrieved)).NotTo(HaveOccurred())
-				Expect(checkVmVolumeConsistency(vmRetrieved)).To(BeTrue())
+				Expect(checkVolumeNamesConsistency(vmRetrieved)).To(BeTrue())
 
 				// Delete the VM Object then expect Reconcile
 				Expect(c.Delete(context.TODO(), &instance)).To(Succeed())

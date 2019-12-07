@@ -3,7 +3,6 @@ kind: Deployment
 metadata:
   name: vmoperator-apiserver
 spec:
-  replicas: 3
   template:
     spec:
       hostNetwork: true

@@ -1917,12 +1917,6 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref common.Referen
 							Format: "",
 						},
 					},
-					"resourcePolicy": {
-						SchemaProps: spec.SchemaProps{
-							Type:   []string{"string"},
-							Format: "",
-						},
-					},
 					"phase": {
 						SchemaProps: spec.SchemaProps{
 							Type:   []string{"string"},
@@ -1954,7 +1948,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref common.Referen
 						},
 					},
 				},
-				Required: []string{"conditions", "host", "powerState", "resourcePolicy", "phase", "vmIp", "biosUUID", "volumes"},
+				Required: []string{"conditions", "host", "powerState", "phase", "vmIp", "biosUUID", "volumes"},
 			},
 		},
 		Dependencies: []string{

@@ -7,7 +7,6 @@ package vsphere_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	. "github.com/onsi/ginkgo"
@@ -512,7 +511,7 @@ var _ = Describe("Sessions", func() {
 				clonedVM, err :=
 					session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError("Cannot clone VM if both Datastore and ProfileID are absent"))
+				Expect(err).To(MatchError("cannot clone VM when neither storage class or datastore is specified"))
 				Expect(clonedVM).Should(BeNil())
 			})
 			It("with existing content source but mandatory profile id is not set", func() {
@@ -523,8 +522,7 @@ var _ = Describe("Sessions", func() {
 				clonedVM, err :=
 					session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
 				Expect(err).To(HaveOccurred())
-				expectedError := fmt.Sprintf("storage class configuration is mandated but not specified for %s", vm.Name)
-				Expect(err).To(MatchError(expectedError))
+				Expect(err).To(MatchError("storage class is required but not specified"))
 				Expect(clonedVM).Should(BeNil())
 			})
 			It("without content source and missing mandatory profile ID", func() {
@@ -534,8 +532,7 @@ var _ = Describe("Sessions", func() {
 				clonedVM, err :=
 					session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
 				Expect(err).To(HaveOccurred())
-				expectedError := fmt.Sprintf("storage class configuration is mandated but not specified for %s", vm.Name)
-				Expect(err).To(MatchError(expectedError))
+				Expect(err).To(MatchError("storage class is required but not specified"))
 				Expect(clonedVM).Should(BeNil())
 			})
 		})

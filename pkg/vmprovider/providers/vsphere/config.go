@@ -138,7 +138,7 @@ func UpdateVMFolderAndRPInProviderConfig(clientSet kubernetes.Interface, namespa
 	}
 
 	if providerConfig.ResourcePool == "" || providerConfig.Folder == "" {
-		return errors.Errorf("Invalid resourcepool/folder in providerconfig. ResourcePool: %v, Folder: %v", providerConfig.ResourcePool, providerConfig.Folder)
+		return errors.Errorf("Invalid resourcepool/folder in providerConfig. ResourcePool: %v, Folder: %v", providerConfig.ResourcePool, providerConfig.Folder)
 	}
 
 	return nil

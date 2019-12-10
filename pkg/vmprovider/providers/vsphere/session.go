@@ -72,6 +72,7 @@ func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig
 	}
 
 	if err = s.ConfigureContent(ctx, config.ContentSource); err != nil {
+		s.Logout(ctx)
 		return nil, err
 	}
 

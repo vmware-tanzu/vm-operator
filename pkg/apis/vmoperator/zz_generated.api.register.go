@@ -154,14 +154,13 @@ type VirtualMachineSetResourcePolicy struct {
 }
 
 type VirtualMachineStatus struct {
-	Conditions         []VirtualMachineCondition
-	Host               string
-	PowerState         VirtualMachinePowerState
-	ResourcePolicyName string
-	Phase              VMStatusPhase
-	VmIp               string
-	BiosUuid           string
-	Volumes            []VirtualMachineVolumeStatus
+	Conditions []VirtualMachineCondition
+	Host       string
+	PowerState VirtualMachinePowerState
+	Phase      VMStatusPhase
+	VmIp       string
+	BiosUuid   string
+	Volumes    []VirtualMachineVolumeStatus
 }
 
 type VirtualMachineSetResourcePolicyStatus struct {

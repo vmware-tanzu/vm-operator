@@ -3,6 +3,7 @@
 set -o errexit
 set -o pipefail
 set -o nounset
+set -x
 
 VERSION=1.0.8 # latest stable version
 OS=$(go env GOOS)
@@ -17,6 +18,7 @@ TAR=kubebuilder_${VERSION}_${OS}_${ARCH}.tar.gz
 tar -zxvf $TAR
 mv kubebuilder_${VERSION}_${OS}_${ARCH} kubebuilder
 rm $TAR
+[[ -d  /usr/local/kubebuilder ]] && ls -la /usr/local/kubebuilder
 $SUDO mv kubebuilder /usr/local
 
 # vim: tabstop=4 shiftwidth=4 expandtab softtabstop=4 filetype=sh

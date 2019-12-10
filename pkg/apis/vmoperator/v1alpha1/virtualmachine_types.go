@@ -38,7 +38,7 @@ const (
 type VMStatusPhase string
 
 const (
-	Creating VMStatusPhase = "Creating"
+	Creating VMStatusPhase = "Creating" // BMV: Not used
 	Created  VMStatusPhase = "Created"
 	Deleted  VMStatusPhase = "Deleted"
 )
@@ -98,14 +98,13 @@ type VirtualMachineVolumes struct {
 }
 
 type VirtualMachineStatus struct {
-	Conditions         []VirtualMachineCondition    `json:"conditions"`
-	Host               string                       `json:"host"`
-	PowerState         VirtualMachinePowerState     `json:"powerState"`
-	ResourcePolicyName string                       `json:"resourcePolicy"`
-	Phase              VMStatusPhase                `json:"phase"`
-	VmIp               string                       `json:"vmIp"`
-	BiosUuid           string                       `json:"biosUUID"`
-	Volumes            []VirtualMachineVolumeStatus `json:"volumes"`
+	Conditions []VirtualMachineCondition    `json:"conditions"`
+	Host       string                       `json:"host"`
+	PowerState VirtualMachinePowerState     `json:"powerState"`
+	Phase      VMStatusPhase                `json:"phase"`
+	VmIp       string                       `json:"vmIp"`
+	BiosUuid   string                       `json:"biosUUID"`
+	Volumes    []VirtualMachineVolumeStatus `json:"volumes"`
 }
 
 type VirtualMachineVolumeStatus struct {

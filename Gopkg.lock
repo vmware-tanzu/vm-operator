@@ -1585,6 +1585,7 @@
     "github.com/vmware/govmomi/simulator",
     "github.com/vmware/govmomi/simulator/esx",
     "github.com/vmware/govmomi/simulator/vpx",
+    "github.com/vmware/govmomi/task",
     "github.com/vmware/govmomi/vapi/library",
     "github.com/vmware/govmomi/vapi/rest",
     "github.com/vmware/govmomi/vapi/simulator",

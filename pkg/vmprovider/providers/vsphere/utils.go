@@ -65,6 +65,7 @@ func ParsePlaceVmResponse(res *vimTypes.PlacementResult) *vimTypes.VirtualMachin
 
 func computeVMPlacement(ctx context.Context, cls *object.ClusterComputeResource, vmRef *vimTypes.ManagedObjectReference,
 	spec interface{}, placementType vimTypes.PlacementSpecPlacementType) (*vimTypes.VirtualMachineRelocateSpec, error) {
+
 	ps := vimTypes.PlacementSpec{PlacementType: string(placementType)}
 	switch placementType {
 	case vimTypes.PlacementSpecPlacementTypeClone:

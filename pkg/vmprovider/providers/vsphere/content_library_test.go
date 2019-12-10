@@ -234,7 +234,7 @@ var _ = Describe("list files in content library", func() {
 			sessRef, err := vsphere.NewSessionAndConfigure(ctx, config, nil, nil)
 			Expect(err).To(BeNil())
 			err = sessRef.WithRestClient(ctx, func(c *rest.Client) error {
-				_, err = vsphere.ReadFileFromUrl(ctx, c, sessRef, "test.com/link")
+				_, err = vsphere.ReadFileFromUrl(ctx, c, "test.com/link")
 				return err
 			})
 			Expect(err).NotTo(BeNil())
@@ -247,7 +247,7 @@ var _ = Describe("list files in content library", func() {
 			sessRef, err := vsphere.NewSessionAndConfigure(ctx, config, nil, nil)
 			Expect(err).To(BeNil())
 			err = sessRef.WithRestClient(ctx, func(c *rest.Client) error {
-				_, err = vsphere.ReadFileFromUrl(ctx, c, sessRef, fileUriToDownload)
+				_, err = vsphere.ReadFileFromUrl(ctx, c, fileUriToDownload)
 				return err
 			})
 			Expect(err).To(BeNil())

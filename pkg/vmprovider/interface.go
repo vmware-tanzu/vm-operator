@@ -24,7 +24,6 @@ type VirtualMachineProviderInterface interface {
 	ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error)
 	GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error)
 
-	ListVirtualMachines(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachine, error)
 	DoesVirtualMachineExist(ctx context.Context, namespace, name string) (bool, error)
 
 	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,

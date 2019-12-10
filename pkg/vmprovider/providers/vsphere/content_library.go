@@ -78,7 +78,7 @@ func (cs *ContentLibraryProvider) ParseAndRetrievePropsFromLibraryItem(ctx conte
 		defer deleteLibraryItemDownloadSession(cs.session, c, ctx, response.DownloadSessionId)
 
 		//read the file as string once it is prepared for download
-		downloadedFileContent, err = ReadFileFromUrl(ctx, c, cs.session, response.FileUri)
+		downloadedFileContent, err = ReadFileFromUrl(ctx, c, response.FileUri)
 		if err != nil {
 			return err
 		}
@@ -164,7 +164,7 @@ func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(
 	}
 
 	for _, file := range files {
-		log.Info("Library Item file ", libFileName, file.Name)
+		log.Info("Library Item file", libFileName, file.Name)
 		fileNameParts := strings.Split(file.Name, ".")
 		if IsSupportedDeployType(fileNameParts[len(fileNameParts)-1]) {
 			fileToDownload = file.Name
@@ -251,7 +251,7 @@ func RunTaskAtInterval(ctx context.Context, clApiCheckDelayInSecs time.Duration,
 	}
 }
 
-func ReadFileFromUrl(ctx context.Context, c *rest.Client, sess *Session, fileUri string) (io.ReadCloser, error) {
+func ReadFileFromUrl(ctx context.Context, c *rest.Client, fileUri string) (io.ReadCloser, error) {
 
 	p := soap.DefaultDownload
 

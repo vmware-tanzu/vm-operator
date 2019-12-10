@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vmware-tanzu/vm-operator/pkg"
+
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	volumeproviders "github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachine/providers"
 	v1 "k8s.io/api/core/v1"
@@ -25,7 +27,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
@@ -146,11 +147,9 @@ func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcil
 
 		if lib.ContainsString(instance.ObjectMeta.Finalizers, finalizerName) {
 			if err := r.deleteVm(ctx, instance); err != nil {
-				// return with error so that it can be retried
 				return reconcile.Result{}, err
 			}
 
-			// remove our finalizer from the list and update it.
 			instance.ObjectMeta.Finalizers = lib.RemoveString(instance.ObjectMeta.Finalizers, finalizerName)
 			if err := r.Update(ctx, instance); err != nil {
 				return reconcile.Result{}, err
@@ -172,8 +171,9 @@ func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcil
 func (r *ReconcileVirtualMachine) deleteVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
 	defer record.EmitEvent(vm, OpDelete, &err, false)
 
-	// TODO 	//  The length limit of OpId is 256, we will implement a function to detects if the total length exceeds
-	//  the limit and then “smartly” trims each component of the op id to an abbreviated version
+	// TODO The length limit of OpId is 256, we will implement a function to detects if the total length exceeds
+	//   the limit and then “smartly” trims each component of the op id to an abbreviated version
+	// BMV: Push into provider
 	opId := ctx.Value(vimtypes.ID{}).(string)
 	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-delete-"+common.RandomString(RandomLen))
 
@@ -206,14 +206,17 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 
 	// Before the VM being created or updated, figure out the Volumes[] VirtualMachineVolumes change.
 	// This step determines what CnsNodeVmAttachments need to be created or deleted
+	// BMV: Push into provider
 	vmVolumesToAdd, vmVolumesToDelete := volumeproviders.GetVmVolumesToProcess(vm)
 
-	if exists {
-		err = r.updateVm(ctx, vm)
-	} else {
+	if !exists {
 		err = r.createVm(ctx, vm)
+		if err != nil {
+			return err
+		}
 	}
 
+	err = r.updateVm(ctx, vm)
 	if err != nil {
 		return err
 	}
@@ -258,24 +261,25 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 	return nil
 }
 
-func (r *ReconcileVirtualMachine) validateStorageClass(ctx context.Context, scName string, namespace string) error {
-	allResourceQuotas := &v1.ResourceQuotaList{}
-	err := r.List(ctx, client.InNamespace(namespace), allResourceQuotas)
+func (r *ReconcileVirtualMachine) validateStorageClass(ctx context.Context, namespace, scName string) error {
+	resourceQuotas := &v1.ResourceQuotaList{}
+	err := r.List(ctx, client.InNamespace(namespace), resourceQuotas)
 	if err != nil {
-		log.Error(err, "Unable to get ResourceQuota list", "namespace", namespace)
+		log.Error(err, "Failed to list ResourceQuotas", "namespace", namespace)
 		return err
 	}
 
-	if len(allResourceQuotas.Items) == 0 {
-		return fmt.Errorf("no ResourceQuotas assigned for namespace '%s'", namespace)
+	if len(resourceQuotas.Items) == 0 {
+		return fmt.Errorf("no ResourceQuotas assigned to namespace '%s'", namespace)
 	}
 
-	for _, resourceQuota := range allResourceQuotas.Items {
+	for _, resourceQuota := range resourceQuotas.Items {
 		for resourceName := range resourceQuota.Spec.Hard {
 			resourceNameStr := resourceName.String()
 			if !strings.Contains(resourceNameStr, storageResourceQuotaStrPattern) {
 				continue
 			}
+			// BMV: Match prefix 'scName + storageResourceQuotaStrPattern'?
 			scNameFromRQ := strings.Split(resourceNameStr, storageResourceQuotaStrPattern)[0]
 			if scName == scNameFromRQ {
 				return nil
@@ -283,35 +287,31 @@ func (r *ReconcileVirtualMachine) validateStorageClass(ctx context.Context, scNa
 		}
 	}
 
-	return fmt.Errorf("StorageClass '%s' is not assigned for namespace '%s'", scName, namespace)
+	return fmt.Errorf("StorageClass '%s' is not assigned to any ResourceQuotas in namespace '%s'", scName, namespace)
 }
 
-func (r *ReconcileVirtualMachine) processStorageClass(ctx context.Context, vmSpec *v1alpha1.VirtualMachineSpec, namespace string) (string, error) {
-	scName := vmSpec.StorageClass
-	if len(scName) == 0 {
-		return "", nil
-	}
-
-	err := r.validateStorageClass(ctx, scName, namespace)
+func (r *ReconcileVirtualMachine) lookupStoragePolicyID(ctx context.Context, namespace, storageClassName string) (string, error) {
+	err := r.validateStorageClass(ctx, namespace, storageClassName)
 	if err != nil {
 		return "", err
 	}
 
-	scl := &storagetypev1.StorageClass{}
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: "", Name: scName}, scl)
+	sc := &storagetypev1.StorageClass{}
+	err = r.Client.Get(ctx, client.ObjectKey{Name: storageClassName}, sc)
 	if err != nil {
-		log.Error(err, "Failed to get storage class", "storageClass", scName)
+		log.Error(err, "Failed to get StorageClass", "storageClassName", storageClassName)
 		return "", err
 	}
 
-	return scl.Parameters["storagePolicyID"], nil
+	return sc.Parameters["storagePolicyID"], nil
 }
 
 func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
 	defer record.EmitEvent(vm, OpCreate, &err, false)
 
-	// TODO 	//  The length limit of OpId is 256, we will implement a function to detects if the total length exceeds
-	//  the limit and then "smartly" trims each component of the op id to an abbreviated version
+	// TODO The length limit of OpId is 256, we will implement a function to detects if the total length
+	//   exceeds the limit and then "smartly" trims each component of the op id to an abbreviated version.
+	// BMV: Push into provider
 	opId := ctx.Value(vimtypes.ID{}).(string)
 	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-create-"+common.RandomString(RandomLen))
 
@@ -323,29 +323,6 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 		return err
 	}
 
-	// If a resource policy is specified for this VM, make sure that the corresponding entities (RP and Folder) are
-	// created on the infra provider before creating the VM.
-	var resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy
-	if vm.Spec.ResourcePolicyName != "" {
-		resourcePolicy = &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{}
-		err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ResourcePolicyName, Namespace: vm.Namespace}, resourcePolicy)
-		if err != nil {
-			log.Error(err, "Failed to get VirtualMachineSetResourcePolicy for VirtualMachine",
-				"namespace", vm.Namespace, "name", vm.Name, "resourcePolicyName", vm.Spec.ResourcePolicyName)
-			return err
-		}
-
-		// Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy
-		rpReady, err := r.vmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
-		if err != nil {
-			log.Error(err, "Failed to check if VirtualMachineSetResourcePolicy Exist")
-			return err
-		}
-		if !rpReady {
-			return errors.New("VirtualMachineSetResourcePolicy not ready yet. Failing VirtualMachine reconcile")
-		}
-	}
-
 	var vmMetadata vmprovider.VirtualMachineMetadata
 	if metadata := vm.Spec.VmMetadata; metadata != nil {
 		configMap := &v1.ConfigMap{}
@@ -359,20 +336,41 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 		vmMetadata = configMap.Data
 	}
 
-	policyID, err := r.processStorageClass(ctx, &vm.Spec, vm.Namespace)
-	if err != nil {
-		return err
-	}
-	vm.Status.Phase = vmoperatorv1alpha1.Creating
+	var resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy
+	if policyName := vm.Spec.ResourcePolicyName; policyName != "" {
+		resourcePolicy = &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{}
+		err = r.Get(ctx, client.ObjectKey{Name: policyName, Namespace: vm.Namespace}, resourcePolicy)
+		if err != nil {
+			log.Error(err, "Failed to get VirtualMachineSetResourcePolicy",
+				"vmName", vm.NamespacedName(), "resourcePolicyName", policyName)
+			return err
+		}
 
-	err = r.vmProvider.CreateVirtualMachine(ctx, vm, *vmClass, resourcePolicy, vmMetadata, policyID)
+		// Make sure that the corresponding entities (RP and Folder) are created on the infra provider before
+		// creating the VM. Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy
+		rpReady, err := r.vmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
+		if err != nil {
+			log.Error(err, "Failed to check if VirtualMachineSetResourcePolicy exists")
+			return err
+		}
+		if !rpReady {
+			return errors.New("VirtualMachineSetResourcePolicy not ready yet. Failing VirtualMachine reconcile")
+		}
+	}
+
+	var storagePolicyID string
+	if storageClass := vm.Spec.StorageClass; storageClass != "" {
+		storagePolicyID, err = r.lookupStoragePolicyID(ctx, vm.Namespace, storageClass)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = r.vmProvider.CreateVirtualMachine(ctx, vm, *vmClass, resourcePolicy, vmMetadata, storagePolicyID)
 	if err != nil {
 		log.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())
 		return err
 	}
-
-	vm.Status.Phase = vmoperatorv1alpha1.Created
-	pkg.AddAnnotations(&vm.ObjectMeta)
 
 	return nil
 }
@@ -380,8 +378,9 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
 	defer record.EmitEvent(vm, OpUpdate, &err, false)
 
-	// TODO 	//  The length limit of OpId is 256, we will implement a function to detects if the total length exceeds
-	//  the limit and then “smartly” trims each component of the op id to an abbreviated version
+	// TODO The length limit of OpId is 256, we will implement a function to detects if the total length
+	//   exceeds the limit and then "smartly" trims each component of the op id to an abbreviated version.
+	// BMV: Push into provider
 	opId := ctx.Value(vimtypes.ID{}).(string)
 	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-update-"+common.RandomString(RandomLen))
 
@@ -393,20 +392,6 @@ func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1
 		return err
 	}
 
-	// if a resourcePolicy is specified, verify that it exists
-	if vm.Spec.ResourcePolicyName != "" {
-		resourcePolicy := &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{}
-		err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ResourcePolicyName, Namespace: vm.Namespace}, resourcePolicy)
-
-		if err != nil {
-			log.Error(err, "Failed to get ResourcePolicy for VirtualMachine",
-				"vmName", vm.NamespacedName(), "class", vm.Spec.ResourcePolicyName)
-			return err
-		}
-		// Set the resource policy name manually for now. This should be passed like VM classes ideally.
-		vm.Status.ResourcePolicyName = resourcePolicy.Name
-	}
-
 	var vmMetadata vmprovider.VirtualMachineMetadata
 	if metadata := vm.Spec.VmMetadata; metadata != nil {
 		configMap := &v1.ConfigMap{}
@@ -419,6 +404,8 @@ func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1
 
 		vmMetadata = configMap.Data
 	}
+
+	pkg.AddAnnotations(&vm.ObjectMeta)
 
 	err = r.vmProvider.UpdateVirtualMachine(ctx, vm, *vmClass, vmMetadata)
 	if err != nil {

@@ -12,8 +12,9 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
+	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	"github.com/vmware/govmomi/vim25/types"
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,16 +30,12 @@ import (
 )
 
 const (
-	VsphereVmProviderName string = "vsphere"
-
-	// Annotation Key for vSphere VC Id.
-	VmOperatorVcUuidKey = pkg.VmOperatorKey + "/vcuuid"
+	VsphereVmProviderName = "vsphere"
 
 	// Annotation Key for vSphere MoRef
 	VmOperatorMoRefKey = pkg.VmOperatorKey + "/moref"
 
-	EnvContentLibApiWaitSecs = "CONTENT_API_WAIT_SECS"
-
+	EnvContentLibApiWaitSecs     = "CONTENT_API_WAIT_SECS"
 	DefaultContentLibApiWaitSecs = 5
 )
 
@@ -46,12 +43,16 @@ type VSphereVmProvider struct {
 	sessions SessionManager
 }
 
+var _ vmprovider.VirtualMachineProviderInterface = &VSphereVmProvider{}
+
 type OvfPropertyRetriever interface {
-	FetchOvfPropertiesFromLibrary(ctx context.Context, sess *Session, item *library.Item) (map[string]string, error)
+	FetchOvfPropertiesFromLibrary(ctx context.Context, ses *Session, item *library.Item) (map[string]string, error)
 	FetchOvfPropertiesFromVM(ctx context.Context, resVm *res.VirtualMachine) (map[string]string, error)
 }
 
 type vmOptions struct{}
+
+var _ OvfPropertyRetriever = vmOptions{}
 
 type ImageOptions int
 
@@ -59,8 +60,6 @@ const (
 	AnnotateVmImage ImageOptions = iota
 	DoNotAnnotateVmImage
 )
-
-var _ vmprovider.VirtualMachineProviderInterface = &VSphereVmProvider{}
 
 var log = klogr.New()
 
@@ -72,13 +71,13 @@ func NewVSphereVmProvider(clientset *kubernetes.Clientset, ncpclient ncpclientse
 	return vmProvider, nil
 }
 
+// NewVSphereVmProviderFromConfig is only used in the integration tests.
 func NewVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderConfig) (*VSphereVmProvider, error) {
 	vmProvider := &VSphereVmProvider{
 		sessions: NewSessionManager(nil, nil),
 	}
 
-	// Support existing behavior by setting up a Session for whatever namespace we're using. This is
-	// used in the integration tests.
+	// Support existing behavior by setting up a Session for whatever namespace we're using.
 	_, err := vmProvider.sessions.NewSession(namespace, config)
 	if err != nil {
 		return nil, err
@@ -168,10 +167,6 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespa
 	return ResVmToVirtualMachineImage(ctx, namespace, resVm, AnnotateVmImage, vmOpts)
 }
 
-func (vs *VSphereVmProvider) ListVirtualMachines(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachine, error) {
-	return nil, nil
-}
-
 func (vs *VSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, namespace, name string) (bool, error) {
 	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
@@ -202,7 +197,7 @@ func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, v
 	objectMeta.SetAnnotations(annotations)
 }
 
-// DoesVirtualMachineSetResourcePolicyExist checks if the entities of a VirtualMachineSetResourcePolicy exist on vSphere
+// DoesVirtualMachineSetResourcePolicyExist checks if the entities of a VirtualMachineSetResourcePolicy exists on vSphere
 func (vs *VSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
 	if err != nil {
@@ -222,7 +217,7 @@ func (vs *VSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx contex
 	return rpExists && folderExists, nil
 }
 
-// CreateVirtualMachineSetResourcePolicy creates if a VirtualMachineSetResourcePolicy doesn't exist, updates otherwise.
+// CreateOrUpdateVirtualMachineSetResourcePolicy creates if a VirtualMachineSetResourcePolicy doesn't exist, updates otherwise.
 func (vs *VSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
 	if err != nil {
@@ -277,7 +272,8 @@ func (vs *VSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.C
 }
 
 func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmClass v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) error {
+	vmClass v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
+	vmMetadata vmprovider.VirtualMachineMetadata, storageProfileID string) error {
 
 	vmName := vm.NamespacedName()
 	log.Info("Creating VirtualMachine", "name", vmName)
@@ -289,11 +285,10 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 
 	// Determine if this is a clone or create from scratch.
 	// The later is really only useful for dummy VMs at the moment.
-	var resVm *res.VirtualMachine
 	if vm.Spec.ImageName == "" {
-		resVm, err = ses.CreateVirtualMachine(ctx, vm, vmClass, resourcePolicy, vmMetadata)
+		_, err = ses.CreateVirtualMachine(ctx, vm, vmClass, resourcePolicy, vmMetadata)
 	} else {
-		resVm, err = ses.CloneVirtualMachine(ctx, vm, vmClass, resourcePolicy, vmMetadata, profileID)
+		_, err = ses.CloneVirtualMachine(ctx, vm, vmClass, resourcePolicy, vmMetadata, storageProfileID)
 	}
 
 	if err != nil {
@@ -301,34 +296,7 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 		return transformVmError(vmName, err)
 	}
 
-	nsxtCustomizeSpec, err := ses.getCustomizationSpecs(vm.Namespace, vm.Name, &vm.Spec)
-	if err != nil {
-		return err
-	}
-	if nsxtCustomizeSpec != nil {
-		err = resVm.Customize(ctx, *nsxtCustomizeSpec)
-		if err != nil {
-			return transformVmError(vmName, err)
-		}
-	}
-
-	err = vs.mergeVmStatus(ctx, vm, resVm)
-	if err != nil {
-		return transformVmError(vmName, err)
-	}
-
-	vs.addProviderAnnotations(&vm.ObjectMeta, resVm)
-
 	return nil
-}
-
-func (vs *VSphereVmProvider) updateVm(ctx context.Context, vm *v1alpha1.VirtualMachine, configSpec *vimTypes.VirtualMachineConfigSpec, resVm *res.VirtualMachine) error {
-	err := vs.reconfigureVm(ctx, resVm, configSpec)
-	if err == nil {
-		return vs.updatePowerState(ctx, vm, resVm)
-	}
-
-	return err
 }
 
 func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
@@ -345,10 +313,6 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 	return nil
 }
 
-func (vs *VSphereVmProvider) reconfigureVm(ctx context.Context, resSrcVm *res.VirtualMachine, configSpec *vimTypes.VirtualMachineConfigSpec) error {
-	return resSrcVm.Reconfigure(ctx, configSpec)
-}
-
 // UpdateVirtualMachine updates the VM status, power state, phase etc
 func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) error {
 	vmName := vm.NamespacedName()
@@ -359,31 +323,71 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 		return err
 	}
 
+	err = vs.updateVirtualMachine(ctx, ses, vm, vmClass, vmMetadata)
+	if err != nil {
+		return transformVmError(vmName, err)
+	}
+
+	return nil
+}
+
+func (vs *VSphereVmProvider) updateVirtualMachine(ctx context.Context, ses *Session, vm *v1alpha1.VirtualMachine, vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) error {
 	resVm, err := ses.GetVirtualMachine(ctx, vm.Name)
 	if err != nil {
-		return transformVmError(vmName, err)
+		return err
 	}
 
-	// Add device change specs to configSpec
-	deviceSpecs, err := ses.GetNicChangeSpecs(ctx, vm, resVm)
+	isOff, err := resVm.IsVMPoweredOff(ctx)
 	if err != nil {
-		return transformVmError(vmName, err)
+		return err
 	}
 
-	// Get configSpec to honor VM Class
-	configSpec, err := ses.generateConfigSpec(vm.Name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
-	if err != nil {
-		return transformVmError(vmName, err)
+	// This is just a horrible, temporary hack so that we reconfigure "once" and not disrupt a running VM.
+	if isOff {
+		// Add device change specs to configSpec
+		deviceSpecs, err := ses.GetNicChangeSpecs(ctx, vm, resVm)
+		if err != nil {
+			return err
+		}
+
+		configSpec, err := ses.generateConfigSpec(vm.Name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
+		if err != nil {
+			return err
+		}
+
+		err = resVm.Reconfigure(ctx, configSpec)
+		if err != nil {
+			return err
+		}
+
+		customizationSpec, err := ses.getCustomizationSpec(vm.Namespace, vm.Name, &vm.Spec)
+		if err != nil {
+			return err
+		}
+
+		if customizationSpec != nil {
+			if err := resVm.Customize(ctx, *customizationSpec); err != nil {
+				// Ignore customization pending fault as this means we have already tried to customize the VM and it is
+				// pending. This can happen if the VM has failed to power-on since the last time we customized the VM. If
+				// we don't ignore this error, we will never be able to power-on the VM and the we will always fail here.
+				if !IsCustomizationPendingError(err) {
+					return err
+				}
+				log.Info("Ignoring customization error due to pending guest customization", "name", vm.NamespacedName())
+			}
+		}
 	}
 
-	err = vs.updateVm(ctx, vm, configSpec, resVm)
+	err = vs.updatePowerState(ctx, vm, resVm)
 	if err != nil {
-		return transformVmError(vmName, err)
+		return err
 	}
+
+	vs.addProviderAnnotations(&vm.ObjectMeta, resVm)
 
 	err = vs.mergeVmStatus(ctx, vm, resVm)
 	if err != nil {
-		return transformVmError(vmName, err)
+		return err
 	}
 
 	return nil
@@ -420,8 +424,8 @@ func (vs *VSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.Vir
 		return errors.Wrapf(err, "unable to get VirtualMachine status")
 	}
 
+	// BMV: This just ain't right.
 	vmStatus.Volumes = vm.Status.Volumes
-	vmStatus.Phase = vm.Status.Phase
 	vmStatus.DeepCopyInto(&vm.Status)
 
 	return nil
@@ -474,13 +478,13 @@ func ResVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *re
 	}, nil
 }
 
-func LibItemToVirtualMachineImage(ctx context.Context, sess *Session, item *library.Item, namespace string, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
+func LibItemToVirtualMachineImage(ctx context.Context, ses *Session, item *library.Item, namespace string, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
 
 	var ovfProperties map[string]string
 
 	if imgOptions == AnnotateVmImage {
 		var err error
-		ovfProperties, err = vmProvider.FetchOvfPropertiesFromLibrary(ctx, sess, item)
+		ovfProperties, err = vmProvider.FetchOvfPropertiesFromLibrary(ctx, ses, item)
 		if err != nil {
 			return nil, err
 		}
@@ -509,13 +513,12 @@ func LibItemToVirtualMachineImage(ctx context.Context, sess *Session, item *libr
 
 }
 
-func (vm vmOptions) FetchOvfPropertiesFromLibrary(ctx context.Context, sess *Session, item *library.Item) (map[string]string, error) {
-
-	contentLibSession := NewContentLibraryProvider(sess)
+func (vm vmOptions) FetchOvfPropertiesFromLibrary(ctx context.Context, ses *Session, item *library.Item) (map[string]string, error) {
+	contentLibSession := NewContentLibraryProvider(ses)
 
 	clDownloadHandler := createClDownloadHandler()
 
-	//fetch & parse ovf from CL and populate the properties as annotations
+	// Fetch & parse ovf from CL and populate the properties as annotations
 	ovfProperties, err := contentLibSession.ParseAndRetrievePropsFromLibraryItem(ctx, item, clDownloadHandler)
 	if err != nil {
 		return nil, err
@@ -529,8 +532,8 @@ func (vm vmOptions) FetchOvfPropertiesFromVM(ctx context.Context, resVm *res.Vir
 }
 
 func createClDownloadHandler() ContentDownloadHandler {
-
-	//integration test environment would require a much lesser wait time
+	// Integration test environment would require a much lesser wait time
+	// BMV: This envvar is never set.
 	envClApiWaitSecs := os.Getenv(EnvContentLibApiWaitSecs)
 
 	value, err := strconv.Atoi(envClApiWaitSecs)
@@ -561,4 +564,13 @@ func transformVmError(resource string, err error) error {
 
 func transformVmImageError(resource string, err error) error {
 	return transformError(vmoperator.InternalVirtualMachineImage.GetKind(), resource, err)
+}
+
+func IsCustomizationPendingError(err error) bool {
+	if te, ok := err.(task.Error); ok {
+		if _, ok := te.Fault().(*types.CustomizationPending); ok {
+			return true
+		}
+	}
+	return false
 }

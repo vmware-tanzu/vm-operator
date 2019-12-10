@@ -90,7 +90,7 @@ var _ = Describe("UpdateVMFolderAndResourcePool", func() {
 			providerConfig := &VSphereVmProviderConfig{}
 			err = UpdateVMFolderAndRPInProviderConfig(clientSet, "ns-namespace", providerConfig)
 			Expect(err).Should(HaveOccurred())
-			Expect(err.Error()).To(Equal("Invalid resourcepool/folder in providerconfig. ResourcePool: , Folder: "))
+			Expect(err.Error()).To(Equal("Invalid resourcepool/folder in providerConfig. ResourcePool: , Folder: "))
 		})
 	})
 })

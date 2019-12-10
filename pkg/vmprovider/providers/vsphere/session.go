@@ -28,7 +28,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
-	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
 
@@ -37,18 +36,20 @@ var DefaultExtraConfig = map[string]string{
 }
 
 type Session struct {
-	client               *Client
-	clientset            kubernetes.Interface
-	ncpClient            clientset.Interface
-	Finder               *find.Finder
-	datacenter           *object.Datacenter
-	cluster              *object.ClusterComputeResource
-	folder               *object.Folder
-	resourcepool         *object.ResourcePool
-	network              object.NetworkReference
-	contentlib           *library.Library
-	datastore            *object.Datastore
-	creds                *VSphereVmProviderCredentials
+	client    *Client
+	clientset kubernetes.Interface
+	ncpClient clientset.Interface
+
+	Finder       *find.Finder
+	datacenter   *object.Datacenter
+	cluster      *object.ClusterComputeResource
+	folder       *object.Folder
+	resourcepool *object.ResourcePool
+	network      object.NetworkReference
+	contentlib   *library.Library
+	datastore    *object.Datastore
+
+	userInfo             *url.Userinfo
 	extraConfig          map[string]string
 	storageClassRequired bool
 }
@@ -76,12 +77,13 @@ func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig
 		return nil, err
 	}
 
-	log.V(2).Info("New session created and configured", "Session", s.String())
+	log.V(2).Info("New session created and configured", "session", s.String())
 	return s, nil
 }
 
 func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConfig) error {
 	s.Finder = find.NewFinder(s.client.VimClient(), false)
+	s.userInfo = url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
 	dc, err := s.Finder.Datacenter(ctx, config.Datacenter)
 	if err != nil {
@@ -138,8 +140,6 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 			s.extraConfig[k] = v
 		}
 	}
-
-	s.creds = config.VcCreds
 
 	return s.initDatastore(ctx, config.Datastore)
 }
@@ -255,19 +255,17 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string,
 		return nil, err
 	}
 
-	//Return nil when the image with 'name' is not found in CL
+	// Return nil when the image with 'name' is not found in CL
 	if item == nil {
 		return nil, errors.Errorf("item: %v is not found in CL", name)
 	}
-	//if not a supported type return nil
+	// If not a supported type return nil
 	if !IsSupportedDeployType(item.Type) {
-		return nil, errors.Errorf("item: %v not a supported type", item.Name)
+		return nil, errors.Errorf("item: %v not a supported type: %s", item.Name, item.Type)
 	}
 
 	var vmOpts OvfPropertyRetriever = vmOptions{}
-
 	virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, item, namespace, AnnotateVmImage, vmOpts)
-
 	if err != nil {
 		return nil, err
 	}
@@ -322,17 +320,15 @@ func (s *Session) DoesResourcePoolExist(ctx context.Context, namespace, resource
 
 // CreateResourcePool creates a ResourcePool under the parent ResourcePool (session.resourcePool).
 func (s *Session) CreateResourcePool(ctx context.Context, rpSpec *v1alpha1.ResourcePoolSpec) (string, error) {
-	log.Info("Creating ResourcePool", "Name", rpSpec.Name)
+	log.Info("Creating ResourcePool", "name", rpSpec.Name)
 
 	// CreteResourcePool is invoked during a ResourcePolicy reconciliation to create a ResourcePool for a set of
 	// VirtualMachines. The new RP is created under the RP corresponding to the session.
 	// For a Supervisor Cluster deployment, the session's RP is the supervisor cluster namespace's RP.
 	// For IAAS deployments, the session's RP correspond to RP in provider ConfigMap.
 
-	poolSpec := types.DefaultResourceConfigSpec()
 	parentRPObj := s.resourcepool
-	childRpObj, err := parentRPObj.Create(ctx, rpSpec.Name, poolSpec)
-
+	childRpObj, err := parentRPObj.Create(ctx, rpSpec.Name, types.DefaultResourceConfigSpec())
 	if err != nil {
 		return "", err
 	}
@@ -351,16 +347,16 @@ func (s *Session) UpdateResourcePool(ctx context.Context, rpSpec *v1alpha1.Resou
 		return nil
 	}
 
-	log.V(4).Info("Updating the ResourcePool", "Name", rpSpec.Name)
+	log.V(4).Info("Updating the ResourcePool", "name", rpSpec.Name)
 	// TODO 
 	return nil
 }
 
 func (s *Session) DeleteResourcePool(ctx context.Context, resourcePoolName string) error {
-	log.Info("Deleting the ResourcePool", "Name", resourcePoolName)
+	log.Info("Deleting the ResourcePool", "name", resourcePoolName)
+
 	rpPath := s.resourcepool.InventoryPath + "/" + resourcePoolName
 	rpObj, err := GetResourcePool(ctx, s.Finder, rpPath)
-
 	if err != nil {
 		switch err.(type) {
 		case *find.NotFoundError, *find.DefaultNotFoundError:
@@ -378,7 +374,11 @@ func (s *Session) DeleteResourcePool(ctx context.Context, resourcePoolName strin
 	}
 
 	if taskResult, err := task.WaitForResult(ctx, nil); err != nil {
-		log.Error(err, "Error in deleting ResourcePool", "name", resourcePoolName, "error", taskResult.Error.LocalizedMessage)
+		msg := ""
+		if taskResult != nil && taskResult.Error != nil {
+			msg = taskResult.Error.LocalizedMessage
+		}
+		log.Error(err, "Error in deleting ResourcePool", "name", resourcePoolName, "msg", msg)
 		return err
 	}
 
@@ -387,10 +387,8 @@ func (s *Session) DeleteResourcePool(ctx context.Context, resourcePoolName strin
 
 // DoesFolderExist checks if a Folder with the given name exists.
 func (s *Session) DoesFolderExist(ctx context.Context, namespace, folderName string) (bool, error) {
-	parentFolderPath := s.folder.InventoryPath
-	childFolderPath := parentFolderPath + "/" + folderName
-
-	log.V(4).Info("Checking if a Folder exists", "name", folderName, "path", childFolderPath)
+	childFolderPath := s.folder.InventoryPath + "/" + folderName
+	log.V(4).Info("Checking if Folder exists", "name", folderName, "path", childFolderPath)
 
 	_, err := GetVMFolder(ctx, s.Finder, childFolderPath)
 	if err != nil {
@@ -424,13 +422,12 @@ func (s *Session) CreateFolder(ctx context.Context, folderSpec *v1alpha1.FolderS
 	return folderObj.Reference().Value, nil
 }
 
-// CreateFolder creates a folder under the parent Folder (session.folder).
+// DeleteFolder deletes the folder under the parent Folder (session.folder).
 func (s *Session) DeleteFolder(ctx context.Context, folderName string) error {
-	log.Info("Deleting the Folder", "Name", folderName)
+	log.Info("Deleting the Folder", "name", folderName)
 
 	folderPath := s.folder.InventoryPath + "/" + folderName
 	folderObj, err := GetVMFolder(ctx, s.Finder, folderPath)
-
 	if err != nil {
 		switch err.(type) {
 		case *find.NotFoundError, *find.DefaultNotFoundError:
@@ -447,7 +444,12 @@ func (s *Session) DeleteFolder(ctx context.Context, folderName string) error {
 	}
 
 	if taskResult, err := task.WaitForResult(ctx, nil); err != nil {
-		log.Error(err, "Error in deleting the Folder.", "name", folderName, "error", taskResult.Error.LocalizedMessage)
+		msg := ""
+		if taskResult != nil && taskResult.Error != nil {
+			msg = taskResult.Error.LocalizedMessage
+		}
+		log.Error(err, "Error deleting Folder", "name", folderName, "message", msg)
+		return err
 	}
 
 	log.V(4).Info("Deleted Folder", "name", folderName)
@@ -457,30 +459,35 @@ func (s *Session) DeleteFolder(ctx context.Context, folderName string) error {
 
 // GetRPAndFolderObjFromResourcePolicy extracts the govmomi objects for ResourcePool and Folder specified in the Resource Policy
 // Returns the sessions RP and Folder if no ResourcePolicy is specified
-func (s *Session) GetRPAndFolderObjFromResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (*object.ResourcePool, *object.Folder, error) {
+func (s *Session) GetRPAndFolderObjFromResourcePolicy(ctx context.Context,
+	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (*object.ResourcePool, *object.Folder, error) {
+
 	if resourcePolicy == nil {
 		return s.resourcepool, s.folder, nil
 	}
 
-	resourcePoolPath := s.resourcepool.InventoryPath + "/" + resourcePolicy.Spec.ResourcePool.Name
+	resourcePoolName := resourcePolicy.Spec.ResourcePool.Name
+	resourcePoolPath := s.resourcepool.InventoryPath + "/" + resourcePoolName
 	resourcePoolObj, err := GetResourcePool(ctx, s.Finder, resourcePoolPath)
 	if err != nil {
-		log.Error(err, "Unable to find resourcePool", "name", resourcePolicy.Spec.ResourcePool.Name, "path", resourcePoolPath)
+		log.Error(err, "Unable to find ResourcePool", "name", resourcePoolName, "path", resourcePoolPath)
 		return nil, nil, err
 	}
 
-	folderPath := s.folder.InventoryPath + "/" + resourcePolicy.Spec.Folder.Name
+	folderName := resourcePolicy.Spec.Folder.Name
+	folderPath := s.folder.InventoryPath + "/" + folderName
 	folderObj, err := GetVMFolder(ctx, s.Finder, folderPath)
 	if err != nil {
-		log.Error(err, "Unable to find folder", "name", resourcePolicy.Spec.Folder.Name, "path", folderPath)
+		log.Error(err, "Unable to find Folder", "name", folderName, "path", folderPath)
 		return nil, nil, err
 	}
 
 	return resourcePoolObj, folderObj, nil
 }
 
-func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
-	vmMetadata vmprovider.VirtualMachineMetadata) (*res.VirtualMachine, error) {
+func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass v1alpha1.VirtualMachineClass,
+	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy, vmMetadata vmprovider.VirtualMachineMetadata) (*res.VirtualMachine, error) {
+
 	if s.datastore == nil {
 		return nil, errors.New("Cannot create VM if Datastore is not configured")
 	}
@@ -505,37 +512,37 @@ func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 }
 
 func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmClass v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (*res.VirtualMachine, error) {
+	vmClass v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
+	vmMetadata vmprovider.VirtualMachineMetadata, storageProfileID string) (*res.VirtualMachine, error) {
 
 	name := vm.Name
 
-	if profileID == "" {
+	if storageProfileID == "" {
 		if s.storageClassRequired {
-			return nil, fmt.Errorf("storage class configuration is mandated but not specified for %s", name)
+			// The storageProfileID is obtained from a StorageClass.
+			return nil, fmt.Errorf("storage class is required but not specified")
 		}
 		if s.datastore == nil {
-			err := errors.New("Cannot clone VM if both Datastore and ProfileID are absent")
-			log.Error(err, "During a request to clone a VM")
-			return nil, err
+			return nil, fmt.Errorf("cannot clone VM when neither storage class or datastore is specified")
 		}
-		log.Info("Will attempt to clone virtual machine", "name", name, "datastore", s.datastore)
+		log.Info("Will attempt to clone virtual machine", "name", name, "datastore", s.datastore.Name())
 	} else {
-		log.Info("Will attempt to clone virtual machine", "name", name, "profileID", profileID)
+		log.Info("Will attempt to clone virtual machine", "name", name, "storageProfileID", storageProfileID)
 	}
 
 	if s.contentlib != nil {
-		return s.cloneVirtualMachineFromCL(ctx, vm, &vmClass, resourcePolicy, vmMetadata, profileID)
+		return s.cloneVirtualMachineFromCL(ctx, vm, &vmClass, resourcePolicy, vmMetadata, storageProfileID)
 	}
 
-	// Clone Virtual Machine from local:
+	// Clone Virtual Machine from local.
 	resSrcVm, err := s.lookupVm(ctx, vm.Spec.ImageName)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to lookup clone source %q", vm.Spec.ImageName)
 	}
 
-	cloneSpec, err := s.getCloneSpec(ctx, name, resSrcVm, vm, &vmClass.Spec, resourcePolicy, vmMetadata, profileID)
+	cloneSpec, err := s.getCloneSpec(ctx, name, resSrcVm, vm, &vmClass.Spec, resourcePolicy, vmMetadata, storageProfileID)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create clone spec from %q", resSrcVm.Name)
+		return nil, errors.Wrap(err, "failed to create clone spec")
 	}
 
 	cloneResVm, err := s.cloneVm(ctx, resSrcVm, cloneSpec)
@@ -546,8 +553,9 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 	return cloneResVm, nil
 }
 
-func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass *v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy, vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (
-	*res.VirtualMachine, error) {
+func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.VirtualMachine,
+	vmClass *v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
+	vmMetadata vmprovider.VirtualMachineMetadata, storageProfileID string) (*res.VirtualMachine, error) {
 
 	itemID, err := s.GetItemIDFromCL(ctx, vm.Spec.ImageName)
 	if err != nil {
@@ -555,29 +563,17 @@ func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.Vi
 	}
 
 	name := vm.Name
-	var resPolicyName string
+	resourcePolicyName := ""
 	if resourcePolicy != nil {
-		resPolicyName = resourcePolicy.Name
+		resourcePolicyName = resourcePolicy.Name
 	}
 
-	log.Info("Going to deploy ovf", "imageName", vm.Spec.ImageName, "vmName", name, "profileID", profileID, "resourcePolicyName", resPolicyName)
-	deployedVm, err := s.deployOvf(ctx, itemID, name, profileID, resourcePolicy)
+	log.Info("Going to deploy ovf", "imageName", vm.Spec.ImageName, "vmName", name,
+		"resourcePolicyName", resourcePolicyName, "storageProfileID", storageProfileID)
+
+	deployedVm, err := s.deployOvf(ctx, itemID, name, resourcePolicy, storageProfileID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
-	}
-	// Create network resource and reconfigure VM
-	nicSpecs, err := s.GetNicChangeSpecs(ctx, vm, deployedVm)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to generate device change spec for VM %q", name)
-	}
-	// configure VM device
-	configSpec, err := s.generateConfigSpec(name, &vm.Spec, &vmClass.Spec, vmMetadata, nicSpecs)
-	if err != nil {
-		return nil, err
-	}
-	err = deployedVm.Reconfigure(ctx, configSpec)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to reconfigure VM %q", name)
 	}
 
 	return deployedVm, nil
@@ -606,12 +602,10 @@ func (s *Session) lookupVm(ctx context.Context, name string) (*res.VirtualMachin
 	return res.NewVMFromObject(objVm)
 }
 
-// TODO ... jira ... move to lib package.
 func memoryQuantityToMb(q resource.Quantity) int64 {
 	return int64(math.Ceil(float64(q.Value()) / float64(1024*1024)))
 }
 
-// TODO ... jira ... move to lib package.
 func cpuQuantityToMhz(q resource.Quantity) int64 {
 	return int64(math.Ceil(float64(q.Value()) / float64(1000*1000)))
 }
@@ -638,9 +632,8 @@ func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine
 	return devices, nil
 }
 
-// GetNicChangeSpecs - Returns changes for NIC device that need to be done to get desired VM config
+// GetNicChangeSpecs returns changes for NIC device that need to be done to get desired VM config
 func (s *Session) GetNicChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMachine, resSrcVm *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
-	//nolint:prealloc
 	var deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec
 
 	if resSrcVm != nil {
@@ -649,22 +642,27 @@ func (s *Session) GetNicChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMac
 			return nil, err
 		}
 
-		// Note: If no network interface is specified in the vm spec we don't remove existing interfaces while cloning. However,
-		// if a default network is configured in vmoperator config then we update the backing for the existing network interfaces.
+		// Note: If no network interface is specified in the vm spec we don't remove existing interfaces while cloning.
+		// However, if a default network is configured in vmoperator config then we update the backing for the existing
+		// network interfaces.
 		if len(vm.Spec.NetworkInterfaces) == 0 {
-			if s.network != nil {
-				for _, dev := range netDevices {
-					backingInfo, err := s.network.EthernetCardBackingInfo(ctx)
-					if err != nil {
-						return nil, errors.Wrapf(err, "unable to create new ethernet card backing info for network %+v", s.network.Reference())
-					}
-					dev.GetVirtualDevice().Backing = backingInfo
-					deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
-						Device:    dev,
-						Operation: vimTypes.VirtualDeviceConfigSpecOperationEdit,
-					})
-				}
+			if s.network == nil {
+				return deviceSpecs, nil
 			}
+
+			backingInfo, err := s.network.EthernetCardBackingInfo(ctx)
+			if err != nil {
+				return nil, errors.Wrapf(err, "unable to create new ethernet card backing info for network %+v", s.network.Reference())
+			}
+
+			for _, dev := range netDevices {
+				dev.GetVirtualDevice().Backing = backingInfo
+				deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
+					Device:    dev,
+					Operation: vimTypes.VirtualDeviceConfigSpecOperationEdit,
+				})
+			}
+
 			return deviceSpecs, nil
 		}
 
@@ -692,25 +690,22 @@ func (s *Session) GetNicChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMac
 	return deviceSpecs, nil
 }
 
-func processStorageClass(ctx context.Context, resSrcVM *res.VirtualMachine, profileID string) (
+func processStorageProfile(ctx context.Context, resSrcVM *res.VirtualMachine, profileID string) (
 	[]types.BaseVirtualDeviceConfigSpec, []vimTypes.BaseVirtualMachineProfileSpec, error) {
-
-	if profileID == "" {
-		return nil, nil, nil
-	}
 
 	disks, err := resSrcVM.GetVirtualDisks(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	vdcs, err := disks.ConfigSpec(vimTypes.VirtualDeviceConfigSpecOperationEdit)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var vmProfile []vimTypes.BaseVirtualMachineProfileSpec
-	profileSpec := &vimTypes.VirtualMachineDefinedProfileSpec{ProfileId: profileID}
-	vmProfile = append(vmProfile, profileSpec)
+	vmProfile := []vimTypes.BaseVirtualMachineProfileSpec{
+		&vimTypes.VirtualMachineDefinedProfileSpec{ProfileId: profileID},
+	}
 
 	for _, cs := range vdcs {
 		cs.GetVirtualDeviceConfigSpec().Profile = vmProfile
@@ -720,32 +715,24 @@ func processStorageClass(ctx context.Context, resSrcVM *res.VirtualMachine, prof
 	return vdcs, vmProfile, nil
 }
 
-func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.VirtualMachine,
-	vm *v1alpha1.VirtualMachine, vmClassSpec *v1alpha1.VirtualMachineClassSpec, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
-	vmMetadata vmprovider.VirtualMachineMetadata, profileID string) (*vimTypes.VirtualMachineCloneSpec, error) {
-
-	resourcePoolObj, folderObj, err := s.GetRPAndFolderObjFromResourcePolicy(ctx, resourcePolicy)
-	if err != nil {
-		return nil, err
-	}
-
-	nicSpecs, err := s.GetNicChangeSpecs(ctx, vm, resSrcVM)
-	if err != nil {
-		return nil, err
-	}
+func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.VirtualMachine, vm *v1alpha1.VirtualMachine,
+	vmClassSpec *v1alpha1.VirtualMachineClassSpec, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
+	vmMetadata vmprovider.VirtualMachineMetadata, storageProfileID string) (*vimTypes.VirtualMachineCloneSpec, error) {
 
 	configSpec, err := s.generateConfigSpec(name, &vm.Spec, vmClassSpec, vmMetadata, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	powerOn := vm.Spec.PowerState == v1alpha1.VirtualMachinePoweredOn
 	memory := false // No full memory clones
-
 	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
-		Config:  configSpec,
-		PowerOn: powerOn,
-		Memory:  &memory,
+		Config: configSpec,
+		Memory: &memory,
+	}
+
+	nicSpecs, err := s.GetNicChangeSpecs(ctx, vm, resSrcVM)
+	if err != nil {
+		return nil, err
 	}
 
 	for _, changeSpec := range nicSpecs {
@@ -756,33 +743,44 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 		}
 	}
 
-	if profileID == "" {
-		cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
-	} else {
-		diskSpecs, vmProfile, err := processStorageClass(ctx, resSrcVM, profileID)
-		cloneSpec.Location.Profile = vmProfile
+	if storageProfileID != "" {
+		diskSpecs, vmProfile, err := processStorageProfile(ctx, resSrcVM, storageProfileID)
 		if err != nil {
 			return nil, err
 		}
 		cloneSpec.Location.DeviceChange = append(cloneSpec.Location.DeviceChange, diskSpecs...)
+		cloneSpec.Location.Profile = vmProfile
+	} else {
+		// BMV: Needed to for placement? Otherwise always overwritten below.
+		cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
 	}
 
+	resourcePoolObj, folderObj, err := s.GetRPAndFolderObjFromResourcePolicy(ctx, resourcePolicy)
+	if err != nil {
+		return nil, err
+	}
+
+	// BMV: Why NewReference() b/c we don't elsewhere?
 	cloneSpec.Location.Pool = vimTypes.NewReference(resourcePoolObj.Reference())
 	cloneSpec.Location.Folder = vimTypes.NewReference(folderObj.Reference())
+
 	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resSrcVM.ReferenceValue()}
 	rSpec, err := computeVMPlacement(ctx, s.cluster, vmRef, cloneSpec, vimTypes.PlacementSpecPlacementTypeClone)
 	if err != nil {
 		return nil, err
 	}
+
 	cloneSpec.Location.Host = rSpec.Host
 	cloneSpec.Location.Datastore = rSpec.Datastore
 	//cloneSpec.Location.DiskMoveType =
 	//string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveAllDiskBackingsAndConsolidate)
+
 	return cloneSpec, nil
 }
 
 func (s *Session) createVm(ctx context.Context, name string, configSpec *vimTypes.VirtualMachineConfigSpec,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (*res.VirtualMachine, error) {
+
 	configSpec.Files = &vimTypes.VirtualMachineFileInfo{
 		VmPathName: fmt.Sprintf("[%s]", s.datastore.Name()),
 	}
@@ -792,15 +790,11 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec *vimType
 		return nil, err
 	}
 
-	log.Info("Going to create VM.", "Name", name, "ConfigSpec", *configSpec, "Folder", folderObj.Reference().Value, "ResourcePool", resourcePoolObj.Reference().Value)
+	log.Info("Going to create VM", "name", name, "configSpec", *configSpec,
+		"resourcePool", resourcePoolObj.Reference().Value, "folder", folderObj.Reference().Value)
+
 	resVm := res.NewVMForCreate(name)
 	err = resVm.Create(ctx, folderObj, resourcePoolObj, configSpec)
-	if err != nil {
-		return nil, err
-	}
-
-	// Power on the VM
-	err = resVm.SetPowerState(ctx, v1alpha1.VirtualMachinePoweredOn)
 	if err != nil {
 		return nil, err
 	}
@@ -808,9 +802,8 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec *vimType
 	return resVm, nil
 }
 
-func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine,
-	cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
-	log.Info("Going to clone VM", "Name", cloneSpec.Config.Name, "Location", cloneSpec.Location)
+func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
+	log.Info("Going to clone VM", "name", cloneSpec.Config.Name, "cloneSpec", *cloneSpec)
 
 	cloneResVm, err := resSrcVm.Clone(ctx, s.folder, cloneSpec)
 	if err != nil {
@@ -820,42 +813,40 @@ func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine,
 	return cloneResVm, nil
 }
 
-func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, profileID string, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (*res.VirtualMachine, error) {
+func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
+	storageProfileID string) (*res.VirtualMachine, error) {
+
+	resourcePoolObj, folderObj, err := s.GetRPAndFolderObjFromResourcePolicy(ctx, resourcePolicy)
+	if err != nil {
+		return nil, err
+	}
+
+	// BMV: Could set ExtraConfig here but doesn't gain us much.
+	dSpec := vcenter.DeploymentSpec{
+		Name: vmName,
+		// TODO (): Plumb AcceptAllEULA to this Spec
+		AcceptAllEULA: true,
+	}
+
+	if storageProfileID != "" {
+		dSpec.StorageProfileID = storageProfileID
+	} else {
+		dSpec.DefaultDatastoreID = s.datastore.Reference().Value
+	}
+
+	target := vcenter.Target{
+		ResourcePoolID: resourcePoolObj.Reference().Value,
+		FolderID:       folderObj.Reference().Value,
+	}
+
+	deploy := vcenter.Deploy{
+		DeploymentSpec: dSpec,
+		Target:         target,
+	}
+
 	var deployment *types.ManagedObjectReference
-	err := s.WithRestClient(ctx, func(c *rest.Client) error {
-		manager := vcenter.NewManager(c)
-		dSpec := vcenter.DeploymentSpec{
-			Name: vmName,
-			// TODO (): Plumb AcceptAllEULA to this Spec
-			AcceptAllEULA: true,
-		}
-
-		// NOTE that if both s.datastore and profileID are defined, deployOvf will use Profile ID and ignore s.datastore.
-		// We want Profile ID to override Datastore.
-
-		if profileID == "" {
-			log.Info("WARNING: ProfileID is empty - using datastore", "datastore", s.datastore.Reference().Value)
-			dSpec.DefaultDatastoreID = s.datastore.Reference().Value
-		} else {
-			dSpec.StorageProfileID = profileID
-		}
-
-		resourcePoolObj, folderObj, err := s.GetRPAndFolderObjFromResourcePolicy(ctx, resourcePolicy)
-		if err != nil {
-			return err
-		}
-
-		target := vcenter.Target{
-			ResourcePoolID: resourcePoolObj.Reference().Value,
-			FolderID:       folderObj.Reference().Value,
-		}
-
-		deploy := vcenter.Deploy{
-			DeploymentSpec: dSpec,
-			Target:         target,
-		}
-
-		deployment, err = manager.DeployLibraryItem(ctx, itemID, deploy)
+	err = s.WithRestClient(ctx, func(c *rest.Client) error {
+		deployment, err = vcenter.NewManager(c).DeployLibraryItem(ctx, itemID, deploy)
 		return err
 	})
 
@@ -863,25 +854,17 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, p
 		return nil, err
 	}
 
-	ref, err := s.Finder.ObjectReference(ctx, vimTypes.ManagedObjectReference{
-		Type:  deployment.Type,
-		Value: deployment.Value,
-	})
+	ref, err := s.Finder.ObjectReference(ctx, deployment.Reference())
 	if err != nil {
 		return nil, err
 	}
 
-	deployedVM, err := res.NewVMFromObject(ref.(*object.VirtualMachine))
-
-	return deployedVM, err
+	return res.NewVMFromObject(ref.(*object.VirtualMachine))
 }
 
 func (s *Session) WithRestClient(ctx context.Context, f func(c *rest.Client) error) error {
 	c := rest.NewClient(s.client.VimClient())
-
-	userInfo := url.UserPassword(s.creds.Username, s.creds.Password)
-
-	err := c.Login(ctx, userInfo)
+	err := c.Login(ctx, s.userInfo)
 	if err != nil {
 		return err
 	}
@@ -944,17 +927,19 @@ func GetExtraConfig(mergedConfig map[string]string) []vimTypes.BaseOptionValue {
 	return extraConfigs
 }
 
-// generateConfigSpec generates configSpec from VM class and VM annotations
+// generateConfigSpec generates a configSpec from the VM Spec and the VM Class
 func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	metadata vmprovider.VirtualMachineMetadata, deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec) (*vimTypes.VirtualMachineConfigSpec, error) {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{
-		Name:     name,
-		NumCPUs:  int32(vmClassSpec.Hardware.Cpus),
-		MemoryMB: memoryQuantityToMb(vmClassSpec.Hardware.Memory),
+		Name:         name,
+		Annotation:   "Virtual Machine managed by VM Operator",
+		NumCPUs:      int32(vmClassSpec.Hardware.Cpus),
+		MemoryMB:     memoryQuantityToMb(vmClassSpec.Hardware.Memory),
+		DeviceChange: deviceSpecs,
 	}
 
-	//  Enable clients to differentiate the managed VMs from the regular VMs.
+	// Enable clients to differentiate the managed VMs from the regular VMs.
 	configSpec.ManagedBy = &vimTypes.ManagedByInfo{
 		ExtensionKey: "com.vmware.vcenter.wcp",
 		Type:         "VirtualMachine",
@@ -986,16 +971,13 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 
 	mergedConfig := MergeMeta(metadata, s.extraConfig)
 	renderedConfig := ApplyVmSpec(mergedConfig, vmSpec)
+	// BMV: 2f24bf4b removed the Transport check ... ???
 	configSpec.ExtraConfig = GetExtraConfig(renderedConfig)
-
-	configSpec.Annotation = fmt.Sprint("Virtual Machine managed by VM Operator")
-
-	configSpec.DeviceChange = deviceSpecs
 
 	return configSpec, nil
 }
 
-// GetPool returns resource pool for a given invt path of a moref
+// GetResourcePool returns resource pool for a given invt path of a moref
 func GetResourcePool(ctx context.Context, finder *find.Finder, rp string) (*object.ResourcePool, error) {
 	ref := types.ManagedObjectReference{Type: "ResourcePool", Value: rp}
 	if o, err := finder.ObjectReference(ctx, ref); err == nil {
@@ -1004,7 +986,7 @@ func GetResourcePool(ctx context.Context, finder *find.Finder, rp string) (*obje
 	return finder.ResourcePool(ctx, rp)
 }
 
-// GetPool returns VM folder for a given invt path of a moref
+// GetVMFolder returns VM folder for a given invt path of a moref
 func GetVMFolder(ctx context.Context, finder *find.Finder, folder string) (*object.Folder, error) {
 	ref := types.ManagedObjectReference{Type: "Folder", Value: folder}
 	if o, err := finder.ObjectReference(ctx, ref); err == nil {
@@ -1023,31 +1005,18 @@ func IsSupportedDeployType(t string) bool {
 	return false
 }
 
-// getCustomizationSpecs creates the customation spec for the vm
-// it is used to config IP for VMs connecting to nsx-t logical ports
-func (s *Session) getCustomizationSpecs(namespace, vmName string, vmSpec *v1alpha1.VirtualMachineSpec) (
-	*vimTypes.CustomizationSpec, error) {
-
-	vnifs := []*ncpv1alpha1.VirtualNetworkInterface{}
-	np := NsxtNetworkProvider(s.Finder, s.ncpClient)
-	for _, nif := range vmSpec.NetworkInterfaces {
-		if nif.NetworkType == NsxtNetworkType {
-			vnetif, err := np.waitForVnetIFStatus(namespace, nif.NetworkName, vmName)
-			if err != nil {
-				return nil, err
-			}
-			vnifs = append(vnifs, vnetif)
-		}
-	}
-
-	if len(vnifs) == 0 {
+// getCustomizationSpec creates the customization spec for the vm
+func (s *Session) getCustomizationSpec(namespace, vmName string, vmSpec *v1alpha1.VirtualMachineSpec) (*vimTypes.CustomizationSpec, error) {
+	// BMV: This isn't really right but preserve the existing behavior. The Spec NetworkInterfaces isn't
+	// what we should be using here but the VC'S VM configured Nics. The VM won't start if the customized
+	// and configured Nics counts don't match.
+	if len(vmSpec.NetworkInterfaces) == 0 {
 		return nil, nil
 	}
 
 	customSpec := &vimTypes.CustomizationSpec{
 		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{},
-		// This spec is for Linux guest OS
-		// Need to change if other guest OS needs to be supported
+		// This spec is for Linux guest OS. Need to change if other guest OS needs to be supported.
 		Identity: &vimTypes.CustomizationLinuxPrep{
 			HostName: &vimTypes.CustomizationFixedName{
 				Name: vmName,
@@ -1058,27 +1027,40 @@ func (s *Session) getCustomizationSpecs(namespace, vmName string, vmSpec *v1alph
 
 	nameserverList, err := GetNameserversFromConfigMap(s.clientset)
 	if err != nil {
-		log.Error(err, "No valid nameservers configmap data")
+		log.Error(err, "Cannot set customized DNS servers", "vmName", vmName)
 	} else {
 		customSpec.GlobalIPSettings.DnsServerList = nameserverList
 	}
 
-	for _, vnetif := range vnifs {
-		if len(vnetif.Status.IPAddresses) != 1 {
-			log.Info("customize vnetif IP address not unique", "vnetif", vnetif)
-			continue
-		}
-		nicMapping := vimTypes.CustomizationAdapterMapping{
-			MacAddress: vnetif.Status.MacAddress,
-			Adapter: vimTypes.CustomizationIPSettings{
-				Ip: &vimTypes.CustomizationFixedIp{
-					IpAddress: vnetif.Status.IPAddresses[0].IP,
+	// Used to config IP for VMs connecting to nsx-t logical ports
+	np := NsxtNetworkProvider(s.Finder, s.ncpClient)
+	for _, nif := range vmSpec.NetworkInterfaces {
+		if nif.NetworkType == NsxtNetworkType {
+			vnetif, err := np.waitForVnetIFStatus(namespace, nif.NetworkName, vmName)
+			if err != nil {
+				return nil, err
+			}
+
+			// BMV: Actually fatal since the VM won't start b/c the Nic counts won't match.
+			if len(vnetif.Status.IPAddresses) != 1 {
+				log.Info("customize vnetif IP address not unique", "vnetif", vnetif)
+				continue
+			}
+
+			nicMapping := vimTypes.CustomizationAdapterMapping{
+				MacAddress: vnetif.Status.MacAddress,
+				Adapter: vimTypes.CustomizationIPSettings{
+					Ip: &vimTypes.CustomizationFixedIp{
+						IpAddress: vnetif.Status.IPAddresses[0].IP,
+					},
+					SubnetMask: vnetif.Status.IPAddresses[0].SubnetMask,
+					Gateway:    []string{vnetif.Status.IPAddresses[0].Gateway},
 				},
-				SubnetMask: vnetif.Status.IPAddresses[0].SubnetMask,
-				Gateway:    []string{vnetif.Status.IPAddresses[0].Gateway},
-			},
+			}
+			customSpec.NicSettingMap = append(customSpec.NicSettingMap, nicMapping)
+		} else {
+			customSpec.NicSettingMap = append(customSpec.NicSettingMap, vimTypes.CustomizationAdapterMapping{})
 		}
-		customSpec.NicSettingMap = append(customSpec.NicSettingMap, nicMapping)
 	}
 
 	return customSpec, nil

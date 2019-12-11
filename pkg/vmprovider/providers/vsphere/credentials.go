@@ -1,8 +1,12 @@
+/* **********************************************************
+ * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * **********************************************************/
 package vsphere
 
 import (
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -54,8 +58,16 @@ func ProviderCredentialsToSecret(namespace string, credentials *VSphereVmProvide
 
 func InstallVSphereVmProviderSecret(clientSet *kubernetes.Clientset, namespace string, credentials *VSphereVmProviderCredentials, vcCredsSecretName string) error {
 	secret := ProviderCredentialsToSecret(namespace, credentials, vcCredsSecretName)
-	if _, err := clientSet.CoreV1().Secrets(namespace).Update(secret); err != nil {
+
+	if _, err := clientSet.CoreV1().Secrets(namespace).Get(secret.Name, metav1.GetOptions{}); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+
+		_, err = clientSet.CoreV1().Secrets(namespace).Create(secret)
 		return err
 	}
-	return nil
+
+	_, err := clientSet.CoreV1().Secrets(namespace).Update(secret)
+	return err
 }

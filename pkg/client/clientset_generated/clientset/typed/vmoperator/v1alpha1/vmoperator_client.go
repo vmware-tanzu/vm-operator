@@ -35,8 +35,8 @@ func (c *VmoperatorV1alpha1Client) VirtualMachineClasses() VirtualMachineClassIn
 	return newVirtualMachineClasses(c)
 }
 
-func (c *VmoperatorV1alpha1Client) VirtualMachineImages(namespace string) VirtualMachineImageInterface {
-	return newVirtualMachineImages(c, namespace)
+func (c *VmoperatorV1alpha1Client) VirtualMachineImages() VirtualMachineImageInterface {
+	return newVirtualMachineImages(c)
 }
 
 func (c *VmoperatorV1alpha1Client) VirtualMachineServices(namespace string) VirtualMachineServiceInterface {

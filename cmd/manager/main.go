@@ -12,39 +12,22 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
-
-	"github.com/vmware-tanzu/vm-operator/pkg"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog"
 	"k8s.io/klog/klogr"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/apis"
-	"github.com/vmware-tanzu/vm-operator/pkg/controller"
-	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
-	cnsv1alpha1 "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/signals"
+
+	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	cnsv1alpha1 "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 )
-
-func registerVsphereVmProvider(restConfig *rest.Config) error {
-	clientSet := kubernetes.NewForConfigOrDie(restConfig)
-	ncpclient := ncpclientset.NewForConfigOrDie(restConfig)
-
-	provider, err := vsphere.NewVSphereVmProvider(clientSet, ncpclient)
-	if err != nil {
-		return err
-	}
-
-	vmprovider.RegisterVmProvider(provider)
-	return nil
-}
 
 func createHealthHTTPServer(listenAddress string) (*http.Server, error) {
 	m := http.NewServeMux()
@@ -64,11 +47,9 @@ func waitForVmOperatorGroupVersion(restConfig *rest.Config) error {
 	const gv = "vmoperator.vmware.com/v1alpha1"
 	clientSet := kubernetes.NewForConfigOrDie(restConfig)
 
-	/*
-	 * If the aggregated API server is not available in time, the controller will exit early
-	 * because the VM Operator resources are not registered. Poll here to try to avoid going
-	 * into a CrashLoopBackOff loop.
-	 */
+	// If the aggregated API server is not available in time, the controller will exit early
+	// because the VM Operator resources are not registered. Poll here to try to avoid going
+	// into a CrashLoopBackOff loop.
 	err := wait.PollImmediate(100*time.Millisecond, 15*time.Second, func() (done bool, err error) {
 		resources, err := clientSet.DiscoveryClient.ServerResourcesForGroupVersion(gv)
 		if err != nil {
@@ -87,8 +68,8 @@ func waitForVmOperatorGroupVersion(restConfig *rest.Config) error {
 func main() {
 	//klog.InitFlags(nil) Usually needed but already called via an init() somewhere
 	var (
-		controllerName      string = "vmoperator-controller-manager"
-		controllerNamespace        = os.Getenv("POD_NAMESPACE")
+		controllerName      = "vmoperator-controller-manager"
+		controllerNamespace = os.Getenv("POD_NAMESPACE")
 	)
 
 	var healthAddr string
@@ -111,6 +92,7 @@ func main() {
 		log.Error(err, "unable to create the health HTTP server")
 		os.Exit(1)
 	}
+
 	go func() {
 		if err := srv.ListenAndServe(); err != nil {
 			log.Error(err, "health HTTP server error")
@@ -127,7 +109,7 @@ func main() {
 
 	// Register the vSphere provider
 	log.Info("setting up vSphere Provider")
-	if err := registerVsphereVmProvider(cfg); err != nil {
+	if _, err := vsphere.RegisterVsphereVmProvider(cfg); err != nil {
 		log.Error(err, "unable to register vSphere VM provider")
 		os.Exit(1)
 	}
@@ -138,8 +120,6 @@ func main() {
 		// Keep going and let it fail if it is going to fail
 	}
 
-	// Until we get VC events
-	syncPeriod := 10 * time.Second
 	// setting namespace when manager is not run in cluster (for testing)
 	if controllerNamespace == "" {
 		controllerNamespace = "default"
@@ -148,6 +128,7 @@ func main() {
 
 	// Create a new Cmd to provide shared dependencies and start components
 	log.Info("setting up manager")
+	syncPeriod := 10 * time.Second
 	mgr, err := manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
 		LeaderElection:          true,
 		LeaderElectionID:        controllerName + "-runtime",

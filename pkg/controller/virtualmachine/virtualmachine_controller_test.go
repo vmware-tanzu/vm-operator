@@ -8,10 +8,9 @@ package virtualmachine
 
 import (
 	"fmt"
+	stdlog "log"
 	"sync"
 	"time"
-
-	"gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
@@ -21,7 +20,6 @@ import (
 	storagetypev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,6 +31,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
+	"gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 )
 
 var c client.Client
@@ -90,12 +89,10 @@ func assertVmVolumeStatusUpdates(updatedVm *vmoperatorv1alpha1.VirtualMachine) {
 
 		// The number of vm.Status.Volumes should always be the same as the number of CNS CRs
 		return len(vmRetrieved.Status.Volumes) == len(cnsNodeVmAttachmentList.Items)
-	}, 60 * time.Second).Should(BeTrue())
+	}, 60*time.Second).Should(BeTrue())
 }
 
 var _ = Describe("VirtualMachine controller", func() {
-	ns := integration.DefaultNamespace
-	name := "fooVm"
 
 	var (
 		classInstance           vmoperatorv1alpha1.VirtualMachineClass
@@ -108,13 +105,14 @@ var _ = Describe("VirtualMachine controller", func() {
 		mgr                     manager.Manager
 		err                     error
 		leaderElectionConfigMap string
+		ns                      = integration.DefaultNamespace
 	)
 
 	BeforeEach(func() {
 		classInstance = vmoperatorv1alpha1.VirtualMachineClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: ns,
-				Name:      name,
+				Name:      "small",
 			},
 			Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
 				Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{
@@ -161,10 +159,10 @@ var _ = Describe("VirtualMachine controller", func() {
 
 		err = c.Create(context.TODO(), generateDefaultResourceQuota())
 
-		recFn, requests = SetupTestReconcile(newReconciler(mgr))
+		recFn, requests = integration.SetupTestReconcile(newReconciler(mgr))
 		Expect(add(mgr, recFn)).To(Succeed())
 
-		stopMgr, mgrStopped = StartTestManager(mgr)
+		stopMgr, mgrStopped = integration.StartTestManager(mgr)
 
 		err = c.Create(context.TODO(), &classInstance)
 		Expect(err).ShouldNot(HaveOccurred())
@@ -187,34 +185,35 @@ var _ = Describe("VirtualMachine controller", func() {
 	})
 
 	Describe("when creating/deleting a VM object", func() {
+
 		Context("from inventory", func() {
-			It("invoke the reconcile method with valid storage class", func() {
+
+			It("invokes the reconcile method with valid storage class", func() {
 				provider := vmprovider.GetVmProviderOrDie()
-				p := provider.(*vsphere.VSphereVmProvider)
-				session, err := p.GetSession(context.TODO(), ns)
-				Expect(err).NotTo(HaveOccurred())
 
 				//Configure to use inventory
 				vSphereConfig.ContentSource = ""
 				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 				Expect(err).NotTo(HaveOccurred())
 
-				vmName := "foo-vm"
+				stdlog.Printf("Listing images")
+				images, err := provider.ListVirtualMachineImages(context.TODO(), ns)
+
+				stdlog.Printf("Printing images")
+				for _, image := range images {
+					stdlog.Printf("image %s", image.Name)
+				}
+
+				vmName := "fooVM"
 				expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmName}}
-				/* TODO() This List call does not seem to not pass along the namespace
-				imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
-				err = c.List(context.TODO(), &client.ListOptions{Namespace: ns}, imageList)
-				Expect(err).ShouldNot(HaveOccurred())
-				imageName := imageList.Items[0].Name
-				*/
-				imageName := "DC0_H0_VM0"
+
 				instance = vmoperatorv1alpha1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: ns,
 						Name:      vmName,
 					},
 					Spec: vmoperatorv1alpha1.VirtualMachineSpec{
-						ImageName:    imageName,
+						ImageName:    "DC0_H0_VM0", // Default govcsim image name
 						ClassName:    classInstance.Name,
 						PowerState:   "poweredOn",
 						Ports:        []vmoperatorv1alpha1.VirtualMachinePort{},
@@ -228,10 +227,11 @@ var _ = Describe("VirtualMachine controller", func() {
 				err = c.Create(context.TODO(), &instance)
 				Expect(err).ShouldNot(HaveOccurred())
 				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
 				// Delete the VM Object then expect Reconcile
 				err = c.Delete(context.TODO(), &instance)
 				Expect(err).ShouldNot(HaveOccurred())
-				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+				Eventually(requests, time.Second*10).Should(Receive(Equal(expectedRequest)))
 
 				Eventually(func() bool {
 					reasonMap := vmrecord.ReadEvents(fakeRecorder)
@@ -244,7 +244,9 @@ var _ = Describe("VirtualMachine controller", func() {
 				}, timeout).Should(BeTrue())
 			})
 		})
+
 		Context("from inventory", func() {
+
 			It("invoke the reconcile method with invalid storage class", func() {
 				provider := vmprovider.GetVmProviderOrDie()
 				p := provider.(*vsphere.VSphereVmProvider)
@@ -297,12 +299,8 @@ var _ = Describe("VirtualMachine controller", func() {
 		})
 
 		Context("from Content Library", func() {
-			It("invoke the reconcile method", func() {
-				provider := vmprovider.GetVmProviderOrDie()
-				p := provider.(*vsphere.VSphereVmProvider)
-				session, err := p.GetSession(context.TODO(), ns)
-				Expect(err).NotTo(HaveOccurred())
 
+			It("invoke the reconcile method", func() {
 				//Configure to use Content Library
 				vSphereConfig.ContentSource = integration.GetContentSourceID()
 				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
@@ -310,13 +308,8 @@ var _ = Describe("VirtualMachine controller", func() {
 
 				vmName := "cl-deployed-vm"
 				expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmName}}
-				/* TODO() This List call does not seem to not pass along the namespace
-				imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
-				err = c.List(context.TODO(), &client.ListOptions{Namespace: ns}, imageList)
-				Expect(err).ShouldNot(HaveOccurred())
-				imageName := imageList.Items[0].Name
-				*/
 
+				// Use the CL image setup by the integration framework
 				imageName := "test-item"
 				instance = vmoperatorv1alpha1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
@@ -338,6 +331,7 @@ var _ = Describe("VirtualMachine controller", func() {
 				err = c.Create(context.TODO(), &instance)
 				Expect(err).ShouldNot(HaveOccurred())
 				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
 				// Delete the VM Object then expect Reconcile
 				err = c.Delete(context.TODO(), &instance)
 				Expect(err).ShouldNot(HaveOccurred())
@@ -360,6 +354,7 @@ var _ = Describe("VirtualMachine controller", func() {
 			It("invoke the reconcile method", func() {
 
 				provider := vmprovider.GetVmProviderOrDie()
+
 				p := provider.(*vsphere.VSphereVmProvider)
 				session, err := p.GetSession(context.TODO(), ns)
 				Expect(err).NotTo(HaveOccurred())
@@ -395,7 +390,7 @@ var _ = Describe("VirtualMachine controller", func() {
 				// vmop will create CnsNodeVmAttachment instances, however they might not be created and available in one reconcile loop.
 				// there might have several reconcile loops, and the maximum number of loops are the same as the number of volumes
 				for range instance.Spec.Volumes {
-					Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+					Eventually(requests, time.Second*10).Should(Receive(Equal(expectedRequest)))
 				}
 
 				// VirtualMachine volume status is expected to be updated properly
@@ -407,9 +402,9 @@ var _ = Describe("VirtualMachine controller", func() {
 				// So we put the c.Update in Eventually block
 				updateAttempts := 0
 				Eventually(func() error {
-					updateAttempts ++
+					updateAttempts++
 					Expect(c.Get(context.TODO(), client.ObjectKey{Name: vmName, Namespace: ns}, vmToUpdate)).Should(Succeed())
-					vmToUpdate.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolumes {
+					vmToUpdate.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolumes{
 						{Name: "fake-volume-1", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-1"}},
 						{Name: "fake-volume-4", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-4"}},
 					}
@@ -417,7 +412,7 @@ var _ = Describe("VirtualMachine controller", func() {
 				}, timeout).Should(Succeed())
 				// If c.Update has been executed multiple times, we expect to see the expectedRequest gets requeued
 				for i := 0; i < updateAttempts; i++ {
-					Eventually(requests, 30 * time.Second).Should(Receive(Equal(expectedRequest)))
+					Eventually(requests, 30*time.Second).Should(Receive(Equal(expectedRequest)))
 				}
 
 				// VirtualMachine volume status is expected to be updated properly

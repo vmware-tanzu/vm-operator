@@ -7,16 +7,20 @@ package vmoperator
 import (
 	"context"
 
-	"k8s.io/apiserver/pkg/registry/generic"
-	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/klog/klogr"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
-func NewVirtualMachineImagesREST(getter generic.RESTOptionsGetter) rest.Storage {
-	return GetRestProvider().ImagesProvider
+// VirtualMachineImages are cluster-scoped
+func (VirtualMachineImageStrategy) NamespaceScoped() bool {
+	return false
+}
+
+// VirtualMachineImages are cluster-scoped
+func (VirtualMachineImageStatusStrategy) NamespaceScoped() bool {
+	return false
 }
 
 // Validate checks that an instance of VirtualMachineImage is well formed

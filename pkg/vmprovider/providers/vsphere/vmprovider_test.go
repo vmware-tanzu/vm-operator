@@ -47,7 +47,7 @@ var _ = Describe("virtualmachine images", func() {
 				resVm, err := res.NewVMFromObject(obj)
 				Expect(err).To(BeNil())
 
-				image, err := vsphere.ResVmToVirtualMachineImage(context.TODO(), "default", resVm, vsphere.DoNotAnnotateVmImage, nil)
+				image, err := vsphere.ResVmToVirtualMachineImage(context.TODO(), resVm, vsphere.DoNotAnnotateVmImage, nil)
 				Expect(err).To(BeNil())
 				Expect(image).ToNot(BeNil())
 				Expect(image.Name).Should(Equal(obj.Name()))
@@ -63,7 +63,7 @@ var _ = Describe("virtualmachine images", func() {
 				LibraryID:    "fakeID",
 				CreationTime: &ts,
 			}
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, "default", vsphere.DoNotAnnotateVmImage, nil)
+			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, nil)
 			Expect(err).To(BeNil())
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
@@ -86,7 +86,7 @@ var _ = Describe("virtualmachine images", func() {
 				FetchOvfPropertiesFromLibrary(gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(annotations, nil).
 				AnyTimes()
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, "default", vsphere.AnnotateVmImage, mockVmProviderInterface)
+			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.AnnotateVmImage, mockVmProviderInterface)
 			Expect(err).To(BeNil())
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
@@ -112,7 +112,7 @@ var _ = Describe("virtualmachine images", func() {
 					Return(annotations, nil).
 					AnyTimes()
 
-				image, err := vsphere.ResVmToVirtualMachineImage(context.TODO(), "default", resVm, vsphere.AnnotateVmImage, mockVmProviderInterface)
+				image, err := vsphere.ResVmToVirtualMachineImage(context.TODO(), resVm, vsphere.AnnotateVmImage, mockVmProviderInterface)
 				Expect(err).To(BeNil())
 				Expect(image).ToNot(BeNil())
 				Expect(image.Name).Should(Equal(obj.Name()))
@@ -135,7 +135,7 @@ var _ = Describe("virtualmachine images", func() {
 				FetchOvfPropertiesFromLibrary(gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(nil, errors.New("error occurred when downloading library content")).
 				AnyTimes()
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, "default", vsphere.AnnotateVmImage, mockVmProviderInterface)
+			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.AnnotateVmImage, mockVmProviderInterface)
 			Expect(err).NotTo(BeNil())
 			Expect(image).To(BeNil())
 			Expect(err).Should(MatchError("error occurred when downloading library content"))

@@ -47,7 +47,7 @@ func (v *version) VirtualMachineClasses() VirtualMachineClassInformer {
 
 // VirtualMachineImages returns a VirtualMachineImageInformer.
 func (v *version) VirtualMachineImages() VirtualMachineImageInformer {
-	return &virtualMachineImageInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+	return &virtualMachineImageInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // VirtualMachineServices returns a VirtualMachineServiceInformer.

@@ -41,12 +41,12 @@ var (
 		func() runtime.Object { return &VirtualMachineClassList{} }, // Register versioned resource list
 		&vmoperator.VirtualMachineClassStrategy{builders.StorageStrategySingleton},
 	)
-	vmoperatorVirtualMachineImageStorage = builders.NewApiResourceWithStorage( // Resource status endpoint
+	vmoperatorVirtualMachineImageStorage = builders.NewApiResource( // Resource status endpoint
 		vmoperator.InternalVirtualMachineImage,
 		VirtualMachineImageSchemeFns{},
 		func() runtime.Object { return &VirtualMachineImage{} },     // Register versioned resource
 		func() runtime.Object { return &VirtualMachineImageList{} }, // Register versioned resource list
-		vmoperator.NewVirtualMachineImagesREST,
+		&vmoperator.VirtualMachineImageStrategy{builders.StorageStrategySingleton},
 	)
 	vmoperatorVirtualMachineServiceStorage = builders.NewApiResource( // Resource status endpoint
 		vmoperator.InternalVirtualMachineService,
@@ -78,7 +78,13 @@ var (
 			func() runtime.Object { return &VirtualMachineClassList{} }, // Register versioned resource list
 			&vmoperator.VirtualMachineClassStatusStrategy{builders.StatusStorageStrategySingleton},
 		), vmoperatorVirtualMachineImageStorage,
-		vmoperatorVirtualMachineServiceStorage,
+		builders.NewApiResource( // Resource status endpoint
+			vmoperator.InternalVirtualMachineImageStatus,
+			VirtualMachineImageSchemeFns{},
+			func() runtime.Object { return &VirtualMachineImage{} },     // Register versioned resource
+			func() runtime.Object { return &VirtualMachineImageList{} }, // Register versioned resource list
+			&vmoperator.VirtualMachineImageStatusStrategy{builders.StatusStorageStrategySingleton},
+		), vmoperatorVirtualMachineServiceStorage,
 		builders.NewApiResource( // Resource status endpoint
 			vmoperator.InternalVirtualMachineServiceStatus,
 			VirtualMachineServiceSchemeFns{},

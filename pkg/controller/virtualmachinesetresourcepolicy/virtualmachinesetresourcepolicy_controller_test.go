@@ -11,21 +11,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	"golang.org/x/net/context"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"golang.org/x/net/context"
-
-	"github.com/google/uuid"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var c client.Client
@@ -58,7 +57,7 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
-		stopMgr, mgrStopped = StartTestManager(mgr)
+		stopMgr, mgrStopped = integration.StartTestManager(mgr)
 	})
 
 	AfterEach(func() {
@@ -132,7 +131,7 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 			}
 
 			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: ns}}
-			recFn, requests := SetupTestReconcile(newReconciler(mgr))
+			recFn, requests := integration.SetupTestReconcile(newReconciler(mgr))
 			Expect(add(mgr, recFn)).To(Succeed())
 			// Create the VirtualMachineSetResourcePolicy object and expect the Reconcile
 			err = c.Create(context.TODO(), &instance)

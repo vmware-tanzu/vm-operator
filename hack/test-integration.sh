@@ -24,7 +24,11 @@ test_pkg() {
         CMD="$CMD -coverprofile=$OUT -coverpkg=./pkg/..."
     fi
 
-    if ! $CMD ./${PKG}/... ; then
+    # Echo the command to make it easy for devs to run specific integration tests
+    TESTCMD="$CMD ./${PKG}/..."
+    echo "Running test with: $TESTCMD"
+
+    if ! $TESTCMD ; then
         RC=1
     fi
 }
@@ -38,7 +42,7 @@ PACKAGES=(
     # apiserver has to listen on port 443 this causes a port conflict. So
     # run the tests separately and merge the coverage output.
     pkg/controller/*/
-    pkg/vmprovider
+    pkg/vmprovider/integration
 )
 COVERAGE=""
 COVERAGE_FILES=()

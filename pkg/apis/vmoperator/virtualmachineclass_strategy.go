@@ -15,10 +15,12 @@ import (
 
 const VMClassImmutable = "VM Classes are immutable"
 
+// VirtualMachineClasses are cluster-scoped
 func (VirtualMachineClassStrategy) NamespaceScoped() bool {
 	return false
 }
 
+// VirtualMachineClasses are cluster-scoped
 func (VirtualMachineClassStatusStrategy) NamespaceScoped() bool {
 	return false
 }

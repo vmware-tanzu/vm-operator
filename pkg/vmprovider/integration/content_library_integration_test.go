@@ -3,30 +3,24 @@
 // Copyright (c) 2019 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package vsphere_test
+package integration
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
-	"net/url"
 	"os"
-	"strconv"
 	"time"
 
+	"github.com/go-logr/zapr"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi"
-	"github.com/vmware/govmomi/simulator"
-	"github.com/vmware/govmomi/simulator/vpx"
 	"github.com/vmware/govmomi/vapi/library"
-	"github.com/vmware/govmomi/vapi/rest"
-	vapi "github.com/vmware/govmomi/vapi/simulator"
-	"github.com/vmware/govmomi/vim25"
+	govmomirest "github.com/vmware/govmomi/vapi/rest"
+	"go.uber.org/zap"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 
 	vmoperator "github.com/vmware-tanzu/vm-operator"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -35,86 +29,8 @@ import (
 )
 
 var (
-	ctx context.Context
-
-	sess        *vsphere.Session
-	namespace   = "base-namespace"
-	testOvfName = "photon-ova.ovf"
-
-	restClient        *rest.Client
 	fileUriToDownload string
-	downloadSessionId string
 )
-
-func newVsphereConfig(vcAddress string, vcPort int) *vsphere.VSphereVmProviderConfig {
-	return &vsphere.VSphereVmProviderConfig{
-		VcPNID:        vcAddress,
-		VcPort:        strconv.Itoa(vcPort),
-		VcCreds:       vSphereCredentials(),
-		Datacenter:    "/DC0",
-		ResourcePool:  "/DC0/host/DC0_C0/Resources",
-		Folder:        "/DC0/vm",
-		Datastore:     "/DC0/datastore/LocalDS_0",
-		ContentSource: "",
-	}
-}
-
-func vSphereCredentials() *vsphere.VSphereVmProviderCredentials {
-	return &vsphere.VSphereVmProviderCredentials{
-		Username: "some-user",
-		Password: "some-pass",
-	}
-}
-
-func setUpContentLibrary(c *govmomi.Client, config *vsphere.VSphereVmProviderConfig) error {
-	restClient = rest.NewClient(c.Client)
-	if err != nil {
-		return err
-	}
-
-	userInfo := url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
-	err = restClient.Login(ctx, userInfo)
-	if err != nil {
-		return err
-	}
-
-	return integration.SetupContentLibraryForTest(ctx, c, config, restClient, "test/resource/",
-		"photon-ova.ovf")
-}
-
-func setupTest() {
-	ctx = context.TODO()
-	m := simulator.VPX()
-
-	err := m.Create()
-	Expect(err).To(BeNil())
-
-	m.Service.TLS = new(tls.Config)
-	server := m.Service.NewServer()
-	host := server.URL.Hostname()
-
-	port, err := strconv.Atoi(server.URL.Port())
-	if err != nil {
-		server.Close()
-	}
-
-	config = newVsphereConfig(host, port)
-
-	path, handler := vapi.New(server.URL, vpx.Setting)
-	m.Service.Handle(path, handler)
-
-	client, err := govmomi.NewClient(ctx, server.URL, true)
-	Expect(err).To(BeNil())
-
-	err = setUpContentLibrary(client, config)
-	Expect(err).To(BeNil())
-
-	provider, err := vsphere.NewVSphereVmProviderFromConfig(namespace, config)
-	Expect(err).ShouldNot(HaveOccurred())
-
-	sess, err = provider.GetSession(ctx, namespace)
-	Expect(err).To(BeNil())
-}
 
 var _ = Describe("list files in content library", func() {
 
@@ -124,6 +40,10 @@ var _ = Describe("list files in content library", func() {
 	BeforeEach(func() {
 		mockController = gomock.NewController(GinkgoT())
 		mockContentProvider = mocks.NewMockContentDownloadHandler(mockController)
+
+		zapcfg := zap.NewDevelopmentConfig()
+		zapLog, _ := zapcfg.Build(zap.AddCallerSkip(1))
+		logf.SetLogger(zapr.NewLogger(zapLog))
 	})
 
 	AfterEach(func() {
@@ -131,48 +51,53 @@ var _ = Describe("list files in content library", func() {
 	})
 
 	Context("when items are present in library", func() {
+
 		It("lists the ovf and downloads the ovf", func() {
-			simulator.Test(func(ctx context.Context, client *vim25.Client) {
-				var libID string
-				var libItem *library.Item
 
-				setupTest()
+			ctx := context.Background()
+			var libItem *library.Item
 
-				libraries, err := library.NewManager(restClient).ListLibraries(ctx)
+			err := session.WithRestClient(ctx, func(c *govmomirest.Client) error {
+				mgr := library.NewManager(c)
+
+				libraries, err := mgr.ListLibraries(ctx)
 				Expect(err).To(BeNil())
 
-				libID = libraries[0]
+				libID := libraries[0]
 				item := library.Item{
-					Name:      "test-item",
+					Name:      integration.IntegrationContentLibraryItemName,
 					Type:      "ovf",
 					LibraryID: libID,
 				}
 
-				itemIDs, err := library.NewManager(restClient).FindLibraryItems(ctx,
+				itemIDs, err := mgr.FindLibraryItems(ctx,
 					library.FindItem{LibraryID: libID, Name: item.Name})
 				Expect(err).To(BeNil())
 				Expect(itemIDs).Should(HaveLen(1))
 
-				libItem, err = library.NewManager(restClient).GetLibraryItem(ctx, itemIDs[0])
+				libItem, err = mgr.GetLibraryItem(ctx, itemIDs[0])
 				Expect(err).To(BeNil())
 
-				testProvider := vsphere.ContentDownloadProvider{ApiWaitTimeSecs: 1}
-				_ = sess.WithRestClient(ctx, func(c *rest.Client) error {
-					downloadResponse, err := testProvider.GenerateDownloadUriForLibraryItem(ctx, c, libItem, sess)
-					Expect(err).To(BeNil())
-					Expect(downloadResponse).ShouldNot(BeEquivalentTo(vsphere.DownloadUriResponse{}))
-					Expect(downloadResponse.FileUri).ShouldNot(BeEmpty())
-					Expect(downloadResponse.DownloadSessionId).NotTo(BeNil())
-					fileUriToDownload = downloadResponse.FileUri
-					downloadSessionId = downloadResponse.DownloadSessionId
-					return err
-				})
+				return err
+			})
+			Expect(err).To(BeNil())
+
+			testProvider := vsphere.ContentDownloadProvider{ApiWaitTimeSecs: 1}
+			_ = session.WithRestClient(ctx, func(c *govmomirest.Client) error {
+				downloadResponse, err := testProvider.GenerateDownloadUriForLibraryItem(ctx, c, libItem, session)
+				Expect(err).To(BeNil())
+				Expect(downloadResponse).ShouldNot(BeEquivalentTo(vsphere.DownloadUriResponse{}))
+				Expect(downloadResponse.FileUri).ShouldNot(BeEmpty())
+				Expect(downloadResponse.DownloadSessionId).NotTo(BeNil())
+				fileUriToDownload = downloadResponse.FileUri
+				return err
 			})
 		})
 
 	})
 
 	Context("when invalid item id is passed", func() {
+
 		It("returns an error creating a download session", func() {
 			item := library.Item{
 				Name:      "fakeItem",
@@ -180,9 +105,10 @@ var _ = Describe("list files in content library", func() {
 				LibraryID: "fakeID",
 			}
 
+			ctx := context.Background()
 			testContentStruct := vsphere.ContentDownloadProvider{ApiWaitTimeSecs: 1}
-			err = sess.WithRestClient(ctx, func(c *rest.Client) error {
-				_, err := testContentStruct.GenerateDownloadUriForLibraryItem(ctx, c, &item, sess)
+			err := session.WithRestClient(ctx, func(c *govmomirest.Client) error {
+				_, err := testContentStruct.GenerateDownloadUriForLibraryItem(ctx, c, &item, session)
 				return err
 			})
 			Expect(err.Error()).Should(ContainSubstring("404 Not Found"))
@@ -190,8 +116,9 @@ var _ = Describe("list files in content library", func() {
 	})
 
 	Context("when ovf file is present", func() {
+
 		It("parses the ovf", func() {
-			ovfPath := vmoperator.Rootpath + "/test/resource/" + testOvfName
+			ovfPath := vmoperator.Rootpath + "/test/resource/photon-ova.ovf"
 			file, err := os.Open(ovfPath)
 			Expect(err).To(BeNil())
 
@@ -206,6 +133,7 @@ var _ = Describe("list files in content library", func() {
 	})
 
 	Context("when ovf file is absent", func() {
+
 		It("returns a path error", func() {
 			file, err := ioutil.TempFile("", "*.ovf")
 			Expect(err).To(BeNil())
@@ -219,22 +147,19 @@ var _ = Describe("list files in content library", func() {
 	})
 
 	Context("when session object is present", func() {
-		It("should be possible to generate a content library session", func() {
-			sessRef, err := vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
-			Expect(err).To(BeNil())
 
-			clProvider := vsphere.NewContentLibraryProvider(sessRef)
+		It("should be possible to generate a content library session", func() {
+			clProvider := vsphere.NewContentLibraryProvider(session)
 			Expect(clProvider).NotTo(BeNil())
 		})
 	})
 
 	Context("when url is invalid", func() {
+
 		It("should return a Err", func() {
 			ctx := context.TODO()
-			sessRef, err := vsphere.NewSessionAndConfigure(ctx, config, nil, nil)
-			Expect(err).To(BeNil())
-			err = sessRef.WithRestClient(ctx, func(c *rest.Client) error {
-				_, err = vsphere.ReadFileFromUrl(ctx, c, "test.com/link")
+			err := session.WithRestClient(ctx, func(c *govmomirest.Client) error {
+				_, err := vsphere.ReadFileFromUrl(ctx, c, "test.com/link")
 				return err
 			})
 			Expect(err).NotTo(BeNil())
@@ -242,12 +167,11 @@ var _ = Describe("list files in content library", func() {
 	})
 
 	Context("when url is valid", func() {
+
 		It("should download the file", func() {
 			ctx := context.TODO()
-			sessRef, err := vsphere.NewSessionAndConfigure(ctx, config, nil, nil)
-			Expect(err).To(BeNil())
-			err = sessRef.WithRestClient(ctx, func(c *rest.Client) error {
-				_, err = vsphere.ReadFileFromUrl(ctx, c, fileUriToDownload)
+			err := session.WithRestClient(ctx, func(c *govmomirest.Client) error {
+				_, err := vsphere.ReadFileFromUrl(ctx, c, fileUriToDownload)
 				return err
 			})
 			Expect(err).To(BeNil())
@@ -255,6 +179,7 @@ var _ = Describe("list files in content library", func() {
 	})
 
 	Context("when download of file in content library api fails", func() {
+
 		It("should return an error", func() {
 			item := library.Item{
 				Name:      "fakeItem",
@@ -265,8 +190,7 @@ var _ = Describe("list files in content library", func() {
 				GenerateDownloadUriForLibraryItem(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(vsphere.DownloadUriResponse{}, nil).
 				Times(1)
-			//s := &vsphere.Session{}
-			clProvider := vsphere.NewContentLibraryProvider(sess)
+			clProvider := vsphere.NewContentLibraryProvider(session)
 			ovfProperties, err := clProvider.ParseAndRetrievePropsFromLibraryItem(context.TODO(), &item, mockContentProvider)
 			Expect(err).Should(MatchError("error occurred downloading item fakeItem"))
 			Expect(ovfProperties).To(BeEmpty())
@@ -274,39 +198,39 @@ var _ = Describe("list files in content library", func() {
 	})
 
 	Context("when a work function is given as input", func() {
+
 		It("should return the expected response", func() {
 			apiDelay := time.Duration(2) * time.Second
 			work := func(ctx context.Context) (vsphere.TimerTaskResponse, error) {
-				for i := 1; i < 10; i++ {
-					fmt.Printf("iterating through - %v \n", i)
-				}
 				return vsphere.TimerTaskResponse{TaskDone: true}, nil
 			}
-			err = vsphere.RunTaskAtInterval(context.TODO(), apiDelay, work)
+			err := vsphere.RunTaskAtInterval(context.TODO(), apiDelay, work)
 			Expect(err).To(BeNil())
 		})
 	})
 
 	Context("when a given work function results in error", func() {
+
 		It("should return the error as expected", func() {
 			apiDelay := time.Duration(2) * time.Second
 			work := func(ctx context.Context) (vsphere.TimerTaskResponse, error) {
 				return vsphere.TimerTaskResponse{TaskDone: true}, errors.New("an error occurred when performing work")
 			}
-			err = vsphere.RunTaskAtInterval(context.TODO(), apiDelay, work)
+			err := vsphere.RunTaskAtInterval(context.TODO(), apiDelay, work)
 			Expect(err).NotTo(BeNil())
 			Expect(err.Error()).To(BeEquivalentTo("an error occurred when performing work"))
 		})
 	})
 
 	Context("when a long running work function is given as input", func() {
+
 		It("should execute only one instance of the work at a given time", func() {
 			work := func(ctx context.Context) (vsphere.TimerTaskResponse, error) {
 				time.Sleep(2 * time.Minute)
 				return vsphere.TimerTaskResponse{TaskDone: true}, nil
 			}
 			apiDelay := time.Duration(2) * time.Second
-			err = vsphere.RunTaskAtInterval(context.TODO(), apiDelay, work)
+			err := vsphere.RunTaskAtInterval(context.TODO(), apiDelay, work)
 			Expect(err).To(BeNil())
 		})
 	})

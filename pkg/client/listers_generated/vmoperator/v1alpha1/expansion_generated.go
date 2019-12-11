@@ -22,10 +22,6 @@ type VirtualMachineClassListerExpansion interface{}
 // VirtualMachineImageLister.
 type VirtualMachineImageListerExpansion interface{}
 
-// VirtualMachineImageNamespaceListerExpansion allows custom methods to be added to
-// VirtualMachineImageNamespaceLister.
-type VirtualMachineImageNamespaceListerExpansion interface{}
-
 // VirtualMachineServiceListerExpansion allows custom methods to be added to
 // VirtualMachineServiceLister.
 type VirtualMachineServiceListerExpansion interface{}

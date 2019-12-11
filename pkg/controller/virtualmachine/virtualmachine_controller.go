@@ -221,12 +221,13 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 		return err
 	}
 
+	volumeOpsErrs := volumeproviders.CombinedVolumeOpsErrors{}
 	// Create CnsNodeVMAttachments on demand if VM has been reconciled properly
-	volumeAttachErr := r.volumeProvider.AttachVolumes(ctx, vm, vmVolumesToAdd)
+	volumeOpsErrs.Append(r.volumeProvider.AttachVolumes(ctx, vm, vmVolumesToAdd))
 	// Delete CnsNodeVMAttachments on demand if VM has been reconciled properly
-	volumeDetachErr := r.volumeProvider.DetachVolumes(ctx, vm, vmVolumesToDelete)
+	volumeOpsErrs.Append(r.volumeProvider.DetachVolumes(ctx, vm, vmVolumesToDelete))
 	// Update the VirtualMachineVolumeStatus based on the status of respective CnsNodeVmAttachment instance
-	volumeStatusUpdateErr := r.volumeProvider.UpdateVmVolumesStatus(ctx, vm)
+	volumeOpsErrs.Append(r.volumeProvider.UpdateVmVolumesStatus(ctx, vm))
 	/*
 			Above code does not return immediately on error is because: we want to always call (r.Status().Update(ctx, vm))
 
@@ -248,16 +249,9 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 		return uErr
 	}
 
-	// TODO: The error handling here should be optimized along with 	if volumeAttachErr != nil {
-		return volumeAttachErr
+	if volumeOpsErrs.HasOccurred() {
+		return volumeOpsErrs
 	}
-	if volumeDetachErr != nil {
-		return volumeDetachErr
-	}
-	if volumeStatusUpdateErr != nil {
-		return volumeStatusUpdateErr
-	}
-
 	return nil
 }
 

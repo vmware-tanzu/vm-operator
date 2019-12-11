@@ -2,6 +2,8 @@ package providers
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	ptr "github.com/kubernetes/utils/pointer"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
@@ -17,6 +19,9 @@ const (
 	AttributeFirstClassDiskUUID        = "diskUUID"
 	cnsNodeVmAttachmentOwnerRefVersion = "vmoperator.vmware.com"
 	cnsNodeVmAttachmentOwnerRefKind    = "VirtualMachine"
+	VolumeOpAttach                     = "attach volume"
+	VolumeOpDetach                     = "detach volume"
+	VolumeOpUpdateStatus               = "update volume status"
 )
 
 var log = logf.Log.WithName(LoggerName)
@@ -55,7 +60,7 @@ func CnsVolumeProvider(client client.Client) *cnsVolumeProvider {
 // Note: AttachVolumes() does not call client.Status().Update(), it just updates vm object and vitualmachine_controller.go eventually
 //       will call apiserver to update the vm object
 func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToAttach map[client.ObjectKey]bool) error {
-	var err error
+	volumeOpErrors := newVolumeErrorsByOpType(VolumeOpAttach)
 	for virtualMachineVolume := range virtualMachineVolumesToAttach {
 		cnsNodeVmAttachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 		cnsNodeVmAttachment.SetName(constructCnsNodeVmAttachmentName(vm.Name, virtualMachineVolume.Name))
@@ -79,7 +84,7 @@ func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv
 		if clientCreateError != nil {
 			// Ignore if the CRD instance already exists
 			if !apierrors.IsAlreadyExists(clientCreateError) {
-				err = clientCreateError
+				volumeOpErrors.add(virtualMachineVolume.Name, clientCreateError)
 				log.Error(clientCreateError, "Unable to create CnsNodeVmAttachment", "name", cnsNodeVmAttachment.Name, "namespace", cnsNodeVmAttachment.Namespace)
 			}
 		} else {
@@ -88,8 +93,8 @@ func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv
 		// Continue creating next CnsNodeVmAttachment, reconciliation will try to create those failed ones in the retry.
 	}
 
-	if err != nil {
-		return err
+	if volumeOpErrors.hasOccurred() {
+		return volumeOpErrors
 	}
 	return nil
 }
@@ -99,7 +104,7 @@ func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv
 // Note: DetachVolumes() does not update the vm.Status.Volumes since it has been handled by UpdateVmVolumesStatus() by checking the existence of
 //       respective CnsNodeVmAttachment instance
 func (cvp *cnsVolumeProvider) DetachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToDetach map[client.ObjectKey]bool) error {
-	var err error
+	volumeOpErrors := newVolumeErrorsByOpType(VolumeOpDetach)
 	for virtualMachineVolumeToDelete := range virtualMachineVolumesToDetach {
 		cnsNodeVmAttachmentToDelete := &cnsv1alpha1.CnsNodeVmAttachment{}
 		cnsNodeVmAttachmentToDelete.SetName(constructCnsNodeVmAttachmentName(vm.Name, virtualMachineVolumeToDelete.Name))
@@ -110,14 +115,14 @@ func (cvp *cnsVolumeProvider) DetachVolumes(ctx context.Context, vm *vmoperatorv
 			if apierrors.IsNotFound(deleteError) {
 				log.Info("The CnsNodeVmAttachment instance not found. It might have been deleted already")
 			} else {
-				err = deleteError
+				volumeOpErrors.add(virtualMachineVolumeToDelete.Name, deleteError)
 				log.Error(deleteError, "Unable to delete the CnsNodeVmAttachment instance", "name", cnsNodeVmAttachmentToDelete.Name, "namespace", cnsNodeVmAttachmentToDelete.Namespace)
 			}
 		}
 	}
 
-	if err != nil {
-		return err
+	if volumeOpErrors.hasOccurred() {
+		return volumeOpErrors
 	}
 	return nil
 }
@@ -128,7 +133,7 @@ func (cvp *cnsVolumeProvider) DetachVolumes(ctx context.Context, vm *vmoperatorv
 func (cvp *cnsVolumeProvider) UpdateVmVolumesStatus(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
 	log.Info("Updating the VirtualMachineVolumeStatus for VirtualMachine", "name", vm.Name, "namespace", vm.Namespace)
 	// Updating the existing volume status
-	var err error
+	volumeOpErrors := newVolumeErrorsByOpType(VolumeOpUpdateStatus)
 	volumesForStatusUpdate := getVolumesForStatusUpdate(vm)
 	newVmVolumeStatus := make([]vmoperatorv1alpha1.VirtualMachineVolumeStatus, 0, len(volumesForStatusUpdate))
 	for volumeName, currVolumeStatus := range volumesForStatusUpdate {
@@ -160,7 +165,7 @@ func (cvp *cnsVolumeProvider) UpdateVmVolumesStatus(ctx context.Context, vm *vmo
 			if apierrors.IsNotFound(clientGetErr) {
 				log.Info("The CnsNodeVmAttachment not found. Skip updating its status", "name", cnsNodeVmAttachmentName, "namespace", cnsNodeVmAttachmentNamespace)
 			} else {
-				err = clientGetErr
+				volumeOpErrors.add(volumeName, clientGetErr)
 				log.Error(clientGetErr, "Unable to get CnsNodeVmAttachment to update the VirtualMachineVolumeStatus", "name", cnsNodeVmAttachmentName, "namespace", cnsNodeVmAttachmentNamespace)
 				// Based on the inline comments above, we retain the volume status if it exists under this error condition
 				if currVolumeStatus.Name != "" {
@@ -179,9 +184,8 @@ func (cvp *cnsVolumeProvider) UpdateVmVolumesStatus(ctx context.Context, vm *vmo
 
 	vm.Status.Volumes = newVmVolumeStatus
 
-	if err != nil {
-		log.Error(err, "Unable to update the VirtualMachineVolumeStatus for VirtualMachine", "name", vm.Name, "namespace", vm.Namespace)
-		return err
+	if volumeOpErrors.hasOccurred() {
+		return volumeOpErrors
 	}
 
 	log.Info("Updated the VirtualMachineVolumeStatus for VirtualMachine", "name", vm.Name, "namespace", vm.Namespace)
@@ -232,4 +236,70 @@ func getVolumesForStatusUpdate(vm *vmoperatorv1alpha1.VirtualMachine) map[string
 		vmVolumesSet[volumeStatus.Name] = volumeStatus
 	}
 	return vmVolumesSet
+}
+
+// This struct implements the error interface and makes caller of volume_provider.go to handle all errors for all types
+// of volume operations easily.
+//
+// Caller of volume_provider.go might invoke AttachVolumes/DetachVolumes/UpdateVmVolumesStatus in the same controller,
+// and want to handle all those volume operation errors in one place. This struct helps to append all errors and could be returned as an error
+type CombinedVolumeOpsErrors struct {
+	volumeErrorsByOpType []error
+}
+
+// This function appends error into the combined errors slice
+func (cvoe *CombinedVolumeOpsErrors) Append(volumeErrorsByOpType error) {
+	cvoe.volumeErrorsByOpType = append(cvoe.volumeErrorsByOpType, volumeErrorsByOpType)
+}
+
+// This function indicates if there are any error occurred
+func (cvoe CombinedVolumeOpsErrors) HasOccurred() bool {
+	return len(cvoe.volumeErrorsByOpType) != 0
+}
+
+// The implementation of Error() interface which construct the final error messages
+func (cvoe CombinedVolumeOpsErrors) Error() string {
+	var errorMessages []string
+	for _, errorMessage := range cvoe.volumeErrorsByOpType {
+		errorMessages = append(errorMessages, errorMessage.Error())
+	}
+	return strings.Join(errorMessages, "\n")
+}
+
+// Instantiate a new VolumeErrorsByOpType instance
+func newVolumeErrorsByOpType(volumeOptType string) *VolumeErrorsPerOpType {
+	return &VolumeErrorsPerOpType{
+		volumeOpType: volumeOptType,
+		errors:       make(map[string]error),
+	}
+}
+
+// This struct handles the errors when processing all volumes against one particular operation type.
+// e.g. attach operation runs against multiple volumes of a vm, and this struct handles all volume errors in one place
+type VolumeErrorsPerOpType struct {
+	// volumeOpType indicates the volume operation type
+	volumeOpType string
+	// volumeOpErrors is a map which stores the error against each volume. Note: There won't duplicates in volume names.
+	// key: volume name; value: error
+	errors map[string]error
+}
+
+// Using voe *VolumeErrorsByOpType as the pointer receiver is because this function updates errorsList.
+// Map and slice values behave like pointers: they are descriptors that contain pointers to the underlying map or slice data.
+func (voe *VolumeErrorsPerOpType) add(volumeName string, err error) {
+	voe.errors[volumeName] = err
+}
+
+// HasOccurred() indicates whether the error occurred
+func (voe VolumeErrorsPerOpType) hasOccurred() bool {
+	return len(voe.errors) != 0
+}
+
+// Construct the final error message which shows the overall situation of current volume operation
+func (voe VolumeErrorsPerOpType) Error() string {
+	var errorMessages []string
+	for volumeName, err := range voe.errors {
+		errorMessages = append(errorMessages, fmt.Sprintf("operation: [%s] against volume: [%s] fails due to error: [%s]", voe.volumeOpType, volumeName, err.Error()))
+	}
+	return strings.Join(errorMessages, "\n")
 }

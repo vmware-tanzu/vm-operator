@@ -17,8 +17,8 @@ import (
 type VirtualMachineImageLister interface {
 	// List lists all VirtualMachineImages in the indexer.
 	List(selector labels.Selector) (ret []*v1alpha1.VirtualMachineImage, err error)
-	// VirtualMachineImages returns an object that can list and get VirtualMachineImages.
-	VirtualMachineImages(namespace string) VirtualMachineImageNamespaceLister
+	// Get retrieves the VirtualMachineImage from the index for a given name.
+	Get(name string) (*v1alpha1.VirtualMachineImage, error)
 	VirtualMachineImageListerExpansion
 }
 
@@ -40,38 +40,9 @@ func (s *virtualMachineImageLister) List(selector labels.Selector) (ret []*v1alp
 	return ret, err
 }
 
-// VirtualMachineImages returns an object that can list and get VirtualMachineImages.
-func (s *virtualMachineImageLister) VirtualMachineImages(namespace string) VirtualMachineImageNamespaceLister {
-	return virtualMachineImageNamespaceLister{indexer: s.indexer, namespace: namespace}
-}
-
-// VirtualMachineImageNamespaceLister helps list and get VirtualMachineImages.
-type VirtualMachineImageNamespaceLister interface {
-	// List lists all VirtualMachineImages in the indexer for a given namespace.
-	List(selector labels.Selector) (ret []*v1alpha1.VirtualMachineImage, err error)
-	// Get retrieves the VirtualMachineImage from the indexer for a given namespace and name.
-	Get(name string) (*v1alpha1.VirtualMachineImage, error)
-	VirtualMachineImageNamespaceListerExpansion
-}
-
-// virtualMachineImageNamespaceLister implements the VirtualMachineImageNamespaceLister
-// interface.
-type virtualMachineImageNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all VirtualMachineImages in the indexer for a given namespace.
-func (s virtualMachineImageNamespaceLister) List(selector labels.Selector) (ret []*v1alpha1.VirtualMachineImage, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.VirtualMachineImage))
-	})
-	return ret, err
-}
-
-// Get retrieves the VirtualMachineImage from the indexer for a given namespace and name.
-func (s virtualMachineImageNamespaceLister) Get(name string) (*v1alpha1.VirtualMachineImage, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+// Get retrieves the VirtualMachineImage from the index for a given name.
+func (s *virtualMachineImageLister) Get(name string) (*v1alpha1.VirtualMachineImage, error) {
+	obj, exists, err := s.indexer.GetByKey(name)
 	if err != nil {
 		return nil, err
 	}

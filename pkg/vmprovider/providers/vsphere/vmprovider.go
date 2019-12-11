@@ -10,6 +10,8 @@ import (
 	"os"
 	"strconv"
 
+	"k8s.io/client-go/rest"
+
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/task"
@@ -71,6 +73,31 @@ func NewVSphereVmProvider(clientset *kubernetes.Clientset, ncpclient ncpclientse
 	return vmProvider, nil
 }
 
+func (vs *VSphereVmProvider) RegisterSession(namespace string, config *VSphereVmProviderConfig) error {
+
+	// Support existing behavior by setting up a Session for whatever namespace we're using. This is
+	// used in the integration tests.
+	_, err := vs.sessions.NewSession(namespace, config)
+	return err
+}
+
+func RegisterVsphereVmProvider(restConfig *rest.Config) (vmprovider.VirtualMachineProviderInterface, error) {
+	clientSet := kubernetes.NewForConfigOrDie(restConfig)
+	ncpclient := ncpclientset.NewForConfigOrDie(restConfig)
+
+	vsphereProvider, err := NewVSphereVmProvider(clientSet, ncpclient)
+	if err != nil {
+		return nil, err
+	}
+
+	provider := vmprovider.RegisterVmProviderOrDie(vsphereProvider)
+	return provider, nil
+}
+
+func UnregisterVsphereVmProvider(vmProvider vmprovider.VirtualMachineProviderInterface) {
+	vmprovider.UnregisterVmProviderOrDie(vmProvider)
+}
+
 // NewVSphereVmProviderFromConfig is only used in the integration tests.
 func NewVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderConfig) (*VSphereVmProvider, error) {
 	vmProvider := &VSphereVmProvider{
@@ -98,16 +125,16 @@ func (vs *VSphereVmProvider) GetSession(ctx context.Context, namespace string) (
 }
 
 func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
-	log.Info("Listing VirtualMachineImages", "namespace", namespace)
+	log.V(4).Info("Listing VirtualMachineImages", "namespace", namespace)
 
-	ses, err := vs.sessions.GetSession(ctx, "")
+	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
 		return nil, err
 	}
 
 	if ses.contentlib != nil {
-		//List images from Content Library
-		imagesFromCL, err := ses.ListVirtualMachineImagesFromCL(ctx, namespace)
+		// List images from Content Library
+		imagesFromCL, err := ses.ListVirtualMachineImagesFromCL(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +151,7 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 	var vmOpts OvfPropertyRetriever = vmOptions{}
 	images := make([]*v1alpha1.VirtualMachineImage, 0, len(resVms))
 	for _, resVm := range resVms {
-		image, err := ResVmToVirtualMachineImage(ctx, namespace, resVm, AnnotateVmImage, vmOpts)
+		image, err := ResVmToVirtualMachineImage(ctx, resVm, AnnotateVmImage, vmOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -138,16 +165,16 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error) {
 	vmName := fmt.Sprintf("%v/%v", namespace, name)
 
-	log.Info("Getting image for VirtualMachine", "name", vmName)
+	log.V(4).Info("Getting VirtualMachineImage for ", "name", vmName)
 
-	ses, err := vs.sessions.GetSession(ctx, "")
+	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
 		return nil, err
 	}
 
 	// Find items in Library if Content Lib has been initialized
 	if ses.contentlib != nil {
-		image, err := ses.GetVirtualMachineImageFromCL(ctx, name, namespace)
+		image, err := ses.GetVirtualMachineImageFromCL(ctx, name)
 		if err != nil {
 			return nil, err
 		}
@@ -164,7 +191,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespa
 	}
 
 	var vmOpts OvfPropertyRetriever = vmOptions{}
-	return ResVmToVirtualMachineImage(ctx, namespace, resVm, AnnotateVmImage, vmOpts)
+	return ResVmToVirtualMachineImage(ctx, resVm, AnnotateVmImage, vmOpts)
 }
 
 func (vs *VSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, namespace, name string) (bool, error) {
@@ -442,7 +469,7 @@ func (vs *VSphereVmProvider) GetClusterID(ctx context.Context, namespace string)
 	return ses.cluster.Reference().Value, nil
 }
 
-func ResVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *res.VirtualMachine, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
+func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
 	powerState, uuid, reference := resVm.ImageFields(ctx)
 
 	var ovfProperties map[string]string
@@ -462,7 +489,6 @@ func ResVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *re
 	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{
 			Name:              resVm.Name,
-			Namespace:         namespace,
 			Annotations:       ovfProperties,
 			CreationTimestamp: ts,
 		},
@@ -478,13 +504,13 @@ func ResVmToVirtualMachineImage(ctx context.Context, namespace string, resVm *re
 	}, nil
 }
 
-func LibItemToVirtualMachineImage(ctx context.Context, ses *Session, item *library.Item, namespace string, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
+func LibItemToVirtualMachineImage(ctx context.Context, sess *Session, item *library.Item, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
 
 	var ovfProperties map[string]string
 
 	if imgOptions == AnnotateVmImage {
 		var err error
-		ovfProperties, err = vmProvider.FetchOvfPropertiesFromLibrary(ctx, ses, item)
+		ovfProperties, err = vmProvider.FetchOvfPropertiesFromLibrary(ctx, sess, item)
 		if err != nil {
 			return nil, err
 		}
@@ -497,7 +523,6 @@ func LibItemToVirtualMachineImage(ctx context.Context, ses *Session, item *libra
 	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{
 			Name:              item.Name,
-			Namespace:         namespace,
 			Annotations:       ovfProperties,
 			CreationTimestamp: ts,
 		},

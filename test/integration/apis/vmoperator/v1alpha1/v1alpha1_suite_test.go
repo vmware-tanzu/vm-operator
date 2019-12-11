@@ -48,7 +48,7 @@ var _ = BeforeSuite(func() {
 		os.Exit(255)
 	}
 
-	vmprovider.RegisterVmProvider(provider)
+	vmprovider.RegisterVmProviderOrDie(provider)
 
 	if err := vmoperator.RegisterRestProvider(vmrest.NewVirtualMachineImagesREST(provider)); err != nil {
 		log.Error(err, "Failed to register REST provider")

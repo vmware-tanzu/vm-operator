@@ -3,6 +3,7 @@
 /* **********************************************************
  * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
+
 package vsphere_test
 
 import (
@@ -11,39 +12,46 @@ import (
 	"os"
 	"testing"
 
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var (
-	vcSim  *integration.VcSimInstance
-	err    error
-	config *vsphere.VSphereVmProviderConfig
+	vcSim         *integration.VcSimInstance
+	vSphereConfig *vsphere.VSphereVmProviderConfig
 )
 
 func TestVSphereIntegrationProvider(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "vSphere Provider Suite")
+	RunSpecsWithDefaultAndCustomReporters(t, "vSphere Provider Suite", []Reporter{test.NewlineReporter{}})
 }
 
 var _ = BeforeSuite(func() {
-	var err error
-	stdlog.Print("setting up integration test env..")
-	vcSim = integration.NewVcSimInstance()
-	config, err = integration.SetupEnv(vcSim)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(config).ShouldNot(Equal(nil))
+	// Enable this function call in order to see more verbose logging as part of these integration tests
+	//integration.EnableDebugLogging()
 
-	os.Setenv(vsphere.EnvContentLibApiWaitSecs, "1")
+	stdlog.Print("setting up the integration test env..")
+	vcSim = integration.NewVcSimInstance()
+	address, port := vcSim.Start()
+	vSphereConfig = integration.NewIntegrationVmOperatorConfig(address, port)
+
+	_, err := integration.SetupVcsimEnv(vSphereConfig, nil, vcSim, nil)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(vSphereConfig).ShouldNot(Equal(nil))
+
+	err = os.Setenv(vsphere.EnvContentLibApiWaitSecs, "1")
+	Expect(err).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {
-	integration.CleanupEnv(vcSim)
+	integration.TeardownVcsimEnv(vcSim)
 })
 
 func getVMClassInstance(vmName, namespace string) *vmoperatorv1alpha1.VirtualMachineClass {

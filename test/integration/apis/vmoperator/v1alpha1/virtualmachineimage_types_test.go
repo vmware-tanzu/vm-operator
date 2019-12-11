@@ -7,8 +7,6 @@ package v1alpha1
 import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/vmware-tanzu/vm-operator/test/integration"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	. "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
@@ -23,7 +21,7 @@ var _ = Describe("VirtualMachineImage", func() {
 		instance = VirtualMachineImage{}
 		instance.Name = "instance-vm-image"
 
-		client = cs.VmoperatorV1alpha1().VirtualMachineImages(integration.DefaultNamespace)
+		client = cs.VmoperatorV1alpha1().VirtualMachineImages()
 	})
 
 	AfterEach(func() {

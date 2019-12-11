@@ -11,16 +11,6 @@
   source = "github.com/rancher/goautoneg"
 
 [[projects]]
-  digest = "1:83a23c0e9d068428008e990243ed3714c31f55976a36bf06f4138708440e13be"
-  name = "cloud.google.com/go"
-  packages = [
-    "compute/metadata",
-    "internal",
-  ]
-  pruneopts = "NU"
-  revision = "3b1ae45394a234c385be014e9a488f2bb6eef821"
-
-[[projects]]
   branch = "master"
   digest = "1:c7fe86f3f0c5dec0516cf2f139e91c61fa96742a3f3c983f325f4e6d630e748f"
   name = "github.com/Azure/go-ansiterm"
@@ -30,20 +20,6 @@
   ]
   pruneopts = "NU"
   revision = "d6e3b3328b783f23731bc4d058875b0371ff8109"
-
-[[projects]]
-  digest = "1:562a67483780a8f86b63cb3302989c3a7c2ee41edcb0c4f651e105e9b33ebb56"
-  name = "github.com/Azure/go-autorest"
-  packages = [
-    "autorest",
-    "autorest/adal",
-    "autorest/azure",
-    "autorest/date",
-    "version",
-  ]
-  pruneopts = "NU"
-  revision = "bca49d5b51a50dc5bb17bbf6204c711c6dbded06"
-  version = "v10.14.0"
 
 [[projects]]
   digest = "1:8aa350e1a02aab6c55836642b74b4e8beedea111bfe5f2e2f871448a6a275313"
@@ -299,13 +275,6 @@
   version = "v0.1.1"
 
 [[projects]]
-  digest = "1:63fb48bb27ecebf837e4278133c7bf084d2e93d662a01e13720148b15893c76c"
-  name = "github.com/go-openapi/analysis"
-  packages = ["."]
-  pruneopts = "NU"
-  revision = "b44dc874b601d9e4e2f6e19140e794ba24bead3b"
-
-[[projects]]
   digest = "1:84f531449c11ec6d675a7c6cf8d6bad98ef19646d858acc402c014dfd338f72e"
   name = "github.com/go-openapi/jsonpointer"
   packages = ["."]
@@ -318,13 +287,6 @@
   packages = ["."]
   pruneopts = "NU"
   revision = "13c6e3589ad90f49bd3e3bbe2c2cb3d7a4142272"
-
-[[projects]]
-  digest = "1:c724c8767b3c70474080d2c6481a456c33c64ad915d768ed702f51a0e90481ed"
-  name = "github.com/go-openapi/loads"
-  packages = ["."]
-  pruneopts = "NU"
-  revision = "18441dfa706d924a39a030ee2c3b1d8d81917b38"
 
 [[projects]]
   digest = "1:ed03543386c23f1908beda568c213a98b180c79c64e81c36ff9e25e7d3ed46a9"
@@ -421,21 +383,6 @@
   ]
   pruneopts = "NU"
   revision = "0c5108395e2debce0d731cf0287ddf7242066aba"
-
-[[projects]]
-  digest = "1:fd4eaf5aa59ac72f1db773293722aa6e20730de60cd543d0f5626b3ba132f710"
-  name = "github.com/gophercloud/gophercloud"
-  packages = [
-    ".",
-    "openstack",
-    "openstack/identity/v2/tenants",
-    "openstack/identity/v2/tokens",
-    "openstack/identity/v3/tokens",
-    "openstack/utils",
-    "pagination",
-  ]
-  pruneopts = "NU"
-  revision = "2bf16b94fdd9b01557c4d076e567fe5cbbe5a961"
 
 [[projects]]
   digest = "1:4e89d0667f8467725b3109b9b46a25eec2e623565f9479d79e0a7fd1274ecc95"
@@ -848,11 +795,10 @@
   revision = "81e90905daefcd6fd217b62423c0908922eadb30"
 
 [[projects]]
-  digest = "1:87f5c5a8785e5f1b9f32451b46d34afab7ad67ce36e2b3c8ffd0267ac2a26e70"
+  digest = "1:732959e52f0be1342c682d06749355b257319d86c084f288e95860c7bcb15f1e"
   name = "golang.org/x/net"
   packages = [
     "context",
-    "context/ctxhttp",
     "html",
     "html/atom",
     "html/charset",
@@ -868,14 +814,11 @@
   revision = "1c05540f6879653db88113bc4a2b70aec4bd491f"
 
 [[projects]]
-  digest = "1:9b088d927e5f0e4c1f75449d7f3751fe53b198c7eef1800650c7c1f53b37bf70"
+  digest = "1:8d512539be03ec55fd9d0dcbff40a31d9a9d5e31c8bc889f8403a8ee7551723d"
   name = "golang.org/x/oauth2"
   packages = [
     ".",
-    "google",
     "internal",
-    "jws",
-    "jwt",
   ]
   pruneopts = "NU"
   revision = "a6bd8cefa1811bd24b86f8902872e4e8225f74c4"
@@ -947,16 +890,13 @@
   revision = "45ff765b4815d34d8b80220fd05c79063b185ce1"
 
 [[projects]]
-  digest = "1:7ca33fd344399f709cf79021c266a3b32cc7e208b723f1b3a9c096962a6289fc"
+  digest = "1:1f5eaea6f61705ab3226eed3462f794599c98f96e28fbdae050f2d816375ec5b"
   name = "google.golang.org/appengine"
   packages = [
-    ".",
     "internal",
-    "internal/app_identity",
     "internal/base",
     "internal/datastore",
     "internal/log",
-    "internal/modules",
     "internal/remote_api",
     "internal/urlfetch",
     "urlfetch",
@@ -1257,7 +1197,7 @@
   version = "kubernetes-1.12.3"
 
 [[projects]]
-  digest = "1:adabb8a8d17e55d8898f2c5375ab9f1646d3fd59a0cfcf921f69f847120f6d02"
+  digest = "1:6686413237c49059b16ded4bd9da35371fc5d5fdc4b8db00667866c16e2ffe9a"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
@@ -1403,17 +1343,11 @@
     "pkg/apis/clientauthentication/v1alpha1",
     "pkg/apis/clientauthentication/v1beta1",
     "pkg/version",
-    "plugin/pkg/client/auth",
-    "plugin/pkg/client/auth/azure",
     "plugin/pkg/client/auth/exec",
-    "plugin/pkg/client/auth/gcp",
-    "plugin/pkg/client/auth/oidc",
-    "plugin/pkg/client/auth/openstack",
     "rest",
     "rest/watch",
     "restmapper",
     "testing",
-    "third_party/forked/golang/template",
     "tools/auth",
     "tools/cache",
     "tools/clientcmd",
@@ -1433,7 +1367,6 @@
     "util/flowcontrol",
     "util/homedir",
     "util/integer",
-    "util/jsonpath",
     "util/retry",
     "util/workqueue",
   ]
@@ -1561,7 +1494,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/coreos/etcd",
-    "github.com/go-openapi/loads",
+    "github.com/go-logr/zapr",
     "github.com/go-openapi/spec",
     "github.com/golang/mock/gomock",
     "github.com/google/uuid",
@@ -1600,6 +1533,7 @@
     "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned",
     "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake",
     "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1",
+    "go.uber.org/zap",
     "golang.org/x/net/context",
     "google.golang.org/genproto",
     "google.golang.org/grpc",
@@ -1622,14 +1556,12 @@
     "k8s.io/apimachinery/pkg/util/wait",
     "k8s.io/apimachinery/pkg/watch",
     "k8s.io/apiserver/pkg/endpoints/request",
-    "k8s.io/apiserver/pkg/registry/generic",
     "k8s.io/apiserver/pkg/registry/rest",
     "k8s.io/client-go/discovery",
     "k8s.io/client-go/discovery/fake",
     "k8s.io/client-go/kubernetes",
     "k8s.io/client-go/kubernetes/fake",
     "k8s.io/client-go/kubernetes/scheme",
-    "k8s.io/client-go/plugin/pkg/client/auth",
     "k8s.io/client-go/rest",
     "k8s.io/client-go/testing",
     "k8s.io/client-go/tools/cache",

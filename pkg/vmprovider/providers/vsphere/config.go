@@ -4,21 +4,25 @@
 package vsphere
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/find"
+	"github.com/vmware/govmomi/object"
 	v1 "k8s.io/api/core/v1"
-	kerr "k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
-/*
- * Configuration for a Vsphere VM Provider instance.  Contains information enabling integration with a backend
- * vSphere instance for VM management.
- */
+// Configuration for a Vsphere VM Provider instance.  Contains information enabling integration with a backend
+// vSphere instance for VM management.
 type VSphereVmProviderConfig struct {
 	VcPNID               string
 	VcPort               string
@@ -114,9 +118,26 @@ func configMapsToProviderCredentials(clientSet kubernetes.Interface, baseConfigM
 	case baseConfigMap != nil && baseConfigMap.Data[vcCredsSecretNameKey] != "":
 		vcCreds, err = GetProviderCredentials(clientSet, baseConfigMap.ObjectMeta.Namespace, baseConfigMap.Data[vcCredsSecretNameKey])
 	default:
-		err = errors.Errorf("%s creds secret not set in ($%s) nor per-namespace ", vcCredsSecretNameKey, VmopNamespaceEnv)
+		err = errors.Errorf("%s creds secret not set in vmop system namespace nor per-namespace ", vcCredsSecretNameKey)
 	}
 	return
+}
+
+func ConfigToDatastore(ctx context.Context, c *govmomi.Client, config *VSphereVmProviderConfig) (*object.Datastore, error) {
+	finder := find.NewFinder(c.Client, false)
+
+	dc, err := finder.Datacenter(ctx, config.Datacenter)
+	if err != nil {
+		return nil, err
+	}
+
+	finder.SetDatacenter(dc)
+	ds, err := finder.Datastore(ctx, config.Datastore)
+	if err != nil {
+		return nil, err
+	}
+
+	return ds, nil
 }
 
 // UpdateVMFolderAndRPInProviderConfig updates the RP and vm folder in the provider config from the namespace annotation.
@@ -178,30 +199,30 @@ func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace st
 	var baseConfigMap, nsConfigMap *v1.ConfigMap
 	var err error
 
-	vmopNamespace, vmopNamespaceExists := os.LookupEnv(VmopNamespaceEnv)
-	if vmopNamespaceExists {
+	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
+	if err == nil {
 		baseConfigMap, err = clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(VSphereConfigMapName, metav1.GetOptions{})
-		if kerr.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			log.Info("could not find base provider ConfigMap", "namespace", vmopNamespace, "configMapName", VSphereConfigMapName)
 		} else if err != nil {
 			return nil, errors.Wrapf(err, "could not get base provider ConfigMap %v/%v", vmopNamespace, VSphereConfigMapName)
 		}
 	} else {
-		log.Info("unset env, will fallback to exclusively using per-namespace configuration", "namespaceEnv", VmopNamespaceEnv)
+		log.Info("unset env, will fallback to exclusively using per-namespace configuration")
 	}
 
 	if namespace != "" {
 		nsConfigMap, err = clientSet.CoreV1().ConfigMaps(namespace).Get(VSphereConfigMapName, metav1.GetOptions{})
-		if kerr.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			log.Info("could not find per-namespace provider ConfigMap", "namespace", namespace, "configMapName", VSphereConfigMapName)
 		} else if err != nil {
-			return nil, errors.Wrapf(err, "could not get per-namespace provider ConfigMap %v/%v", namespace, VSphereConfigMapName)
+			log.Error(err, "could not get per-namespace provider ConfigMap", "namespace", namespace, "configMapName", VSphereConfigMapName)
 		}
 	}
 
 	if baseConfigMap == nil && nsConfigMap == nil {
-		return nil, errors.Errorf("neither base ($%s/%s/%s) nor per-namespace (%s/%s) provider configMaps are set",
-			VmopNamespaceEnv, vmopNamespace, VSphereConfigMapName, namespace, VSphereConfigMapName)
+		return nil, errors.Errorf("neither base (%s/%s) nor per-namespace (%s/%s) provider configMaps are set",
+			vmopNamespace, VSphereConfigMapName, namespace, VSphereConfigMapName)
 	}
 
 	// Get VcCreds from per-namespace or base configMap
@@ -249,8 +270,19 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 // Install the Config Map for the VM operator in the API master
 func InstallVSphereVmProviderConfig(clientSet *kubernetes.Clientset, namespace string, config *VSphereVmProviderConfig, vcCredsSecretName string) error {
 	configMap := ProviderConfigToConfigMap(namespace, config, vcCredsSecretName)
-	if _, err := clientSet.CoreV1().ConfigMaps(namespace).Update(configMap); err != nil {
-		return err
+	if _, err := clientSet.CoreV1().ConfigMaps(namespace).Get(configMap.Name, metav1.GetOptions{}); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+
+		if _, err := clientSet.CoreV1().ConfigMaps(namespace).Create(configMap); err != nil {
+			return err
+		}
+	} else {
+		if _, err := clientSet.CoreV1().ConfigMaps(namespace).Update(configMap); err != nil {
+			return err
+		}
 	}
+
 	return InstallVSphereVmProviderSecret(clientSet, namespace, config.VcCreds, vcCredsSecretName)
 }

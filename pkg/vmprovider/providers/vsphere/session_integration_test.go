@@ -28,22 +28,25 @@ var (
 var _ = Describe("Sessions", func() {
 	var (
 		session *vsphere.Session
+		err     error
+		ctx     context.Context
 	)
 	BeforeEach(func() {
-		var err error
-		//Setup session
-		session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
+		session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
 	Describe("Query VM images", func() {
+
 		Context("From Inventory - VMs", func() {
+
 			BeforeEach(func() {
 				//set source to use VM inventory
-				config.ContentSource = ""
-				err = session.ConfigureContent(context.TODO(), config.ContentSource)
+				vSphereConfig.ContentSource = ""
+				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 				Expect(err).NotTo(HaveOccurred())
 			})
+
 			// TODO: The default govcsim setups 2 VM's per resource pool however we should create our own fixture for better
 			// consistency and avoid failures when govcsim is updated.
 			It("should list virtualmachines", func() {
@@ -58,15 +61,18 @@ var _ = Describe("Sessions", func() {
 				Expect(vm.Name).Should(Equal("DC0_H0_VM0"))
 			})
 		})
+
 		Context("From Content Library", func() {
+
 			BeforeEach(func() {
 				//set source to use CL
-				config.ContentSource = integration.GetContentSourceID()
-				err = session.ConfigureContent(context.TODO(), config.ContentSource)
+				vSphereConfig.ContentSource = integration.GetContentSourceID()
+				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 				Expect(err).NotTo(HaveOccurred())
 			})
+
 			It("should list virtualmachineimages from CL", func() {
-				images, err := session.ListVirtualMachineImagesFromCL(context.TODO(), testNamespace)
+				images, err := session.ListVirtualMachineImagesFromCL(context.TODO())
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).ShouldNot(BeEmpty())
 				Expect(images[0].ObjectMeta.Name).Should(Equal("test-item"))
@@ -74,14 +80,14 @@ var _ = Describe("Sessions", func() {
 			})
 
 			It("should get virtualmachineimage from CL", func() {
-				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "test-item", testNamespace)
+				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "test-item")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(image.ObjectMeta.Name).Should(Equal("test-item"))
 				Expect(image.Spec.Type).Should(Equal("ovf"))
 			})
 
 			It("should not get virtualmachineimage from CL", func() {
-				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "invalid", testNamespace)
+				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "invalid")
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).Should(Equal("failed to find image \"invalid\": no library items named: invalid"))
 				Expect(image).Should(BeNil())
@@ -90,14 +96,16 @@ var _ = Describe("Sessions", func() {
 	})
 
 	Describe("Clone VM", func() {
-		ctx := context.TODO()
+
 		BeforeEach(func() {
 			//set source to use VM inventory
-			config.ContentSource = ""
-			err = session.ConfigureContent(ctx, config.ContentSource)
+			vSphereConfig.ContentSource = ""
+			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
 		})
+
 		Context("without specifying any networks in VM Spec", func() {
+
 			It("should not override template networks", func() {
 				imageName := "DC0_H0_VM0"
 				vmClass := getVMClassInstance(testVMName, testNamespace)
@@ -126,7 +134,9 @@ var _ = Describe("Sessions", func() {
 
 			})
 		})
-		Context("by speciying networks in VM Spec", func() {
+
+		Context("by specifying networks in VM Spec", func() {
+
 			It("should override template networks", func() {
 				imageName := "DC0_H0_VM0"
 				vmClass := getVMClassInstance(testVMName, testNamespace)
@@ -180,16 +190,19 @@ var _ = Describe("Sessions", func() {
 				Expect(ok).Should(BeTrue())
 			})
 		})
+
 		Context("when a default network is specified", func() {
+
 			BeforeEach(func() {
 				var err error
 				// For the vcsim env the source VM is attached to a distributed port group. Hence, we are using standard
 				// vswitch port group.
-				config.Network = "VM Network"
+				vSphereConfig.Network = "VM Network"
 				//Setup new session based on the default network
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
+				session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
 				Expect(err).NotTo(HaveOccurred())
 			})
+
 			It("should override network from the template", func() {
 				imageName := "DC0_H0_VM0"
 				vmClass := getVMClassInstance(testVMName, testNamespace)
@@ -219,6 +232,7 @@ var _ = Describe("Sessions", func() {
 				Expect(ok).Should(BeTrue())
 
 			})
+
 			It("should not override networks specified in VM Spec ", func() {
 				imageName := "DC0_H0_VM0"
 				vmClass := getVMClassInstance(testVMName, testNamespace)
@@ -252,13 +266,16 @@ var _ = Describe("Sessions", func() {
 				Expect(ok).Should(BeTrue())
 			})
 		})
+
 		Context("from Content-library", func() {
+
 			BeforeEach(func() {
 				//set source to use CL
-				config.ContentSource = integration.GetContentSourceID()
-				err = session.ConfigureContent(context.TODO(), config.ContentSource)
+				vSphereConfig.ContentSource = integration.GetContentSourceID()
+				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 				Expect(err).NotTo(HaveOccurred())
 			})
+
 			It("should clone VM", func() {
 				imageName := "test-item"
 
@@ -276,13 +293,15 @@ var _ = Describe("Sessions", func() {
 
 	Context("Session creation with invalid global extraConfig", func() {
 		BeforeEach(func() {
-			os.Setenv("JSON_EXTRA_CONFIG", "invalid-json")
+			err = os.Setenv("JSON_EXTRA_CONFIG", "invalid-json")
+			Expect(err).NotTo(HaveOccurred())
 		})
 		AfterEach(func() {
-			os.Setenv("JSON_EXTRA_CONFIG", "")
+			err = os.Setenv("JSON_EXTRA_CONFIG", "")
+			Expect(err).NotTo(HaveOccurred())
 		})
 		It("Should fail", func() {
-			session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
 			Expect(err.Error()).To(MatchRegexp("Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable"))
 		})
 	})
@@ -298,242 +317,247 @@ var _ = Describe("Sessions", func() {
 		JustBeforeEach(func() {
 			//set source to use VM inventory
 
-			// Create a new session which should pick up the config
-			session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
-			Expect(err).NotTo(HaveOccurred())
-			config.ContentSource = ""
-			err = session.ConfigureContent(context.TODO(), config.ContentSource)
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
+			vSphereConfig.ContentSource = ""
+			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
 		Context("with vm metadata and global extraConfig", func() {
 			BeforeEach(func() {
-				os.Setenv("JSON_EXTRA_CONFIG", "{\""+globalKey+"\":\""+globalVal+"\"}")
+				err = os.Setenv("JSON_EXTRA_CONFIG", "{\""+globalKey+"\":\""+globalVal+"\"}")
+				Expect(err).NotTo(HaveOccurred())
 			})
 			AfterEach(func() {
-				os.Setenv("JSON_EXTRA_CONFIG", "")
+				err = os.Setenv("JSON_EXTRA_CONFIG", "")
+				Expect(err).NotTo(HaveOccurred())
 			})
 			It("should copy all the values into the VM", func() {
-				imageName := "DC0_H0_VM0"
-				vmClass := getVMClassInstance(testVMName, testNamespace)
-				vm := getVirtualMachineInstance(testVMName+"-extraConfig", testNamespace, imageName, vmClass.Name)
-				vm.Spec.VmMetadata.Transport = "ExtraConfig"
-				vmMetadata := map[string]string{localKey: localVal}
+			})
 
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "foo")
-				Expect(err).NotTo(HaveOccurred())
-				Expect(clonedVM).ShouldNot(BeNil())
+			Context("with global extraConfig", func() {
+				It("should copy the values into the VM", func() {
+					imageName := "DC0_H0_VM0"
+					vmClass := getVMClassInstance(testVMName, testNamespace)
+					vm := getVirtualMachineInstance(testVMName+"-extraConfig", testNamespace, imageName, vmClass.Name)
+					vm.Spec.VmMetadata.Transport = "ExtraConfig"
+					vmMetadata := map[string]string{localKey: localVal}
 
-				keysFound := map[string]bool{localKey: false, globalKey: false}
-				// Add all the default keys
-				for k := range vsphere.DefaultExtraConfig {
-					keysFound[k] = false
-				}
-				mo, err := clonedVM.ManagedObject(context.TODO())
-				for _, option := range mo.Config.ExtraConfig {
-					key := option.GetOptionValue().Key
-					keysFound[key] = true
-					if key == localKey {
-						Expect(option.GetOptionValue().Value).Should(Equal(localVal))
-					} else if key == globalKey {
-						Expect(option.GetOptionValue().Value).Should(Equal(globalVal))
-					} else if defaultVal, ok := vsphere.DefaultExtraConfig[key]; ok {
-						Expect(option.GetOptionValue().Value).Should(Equal(defaultVal))
+					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "foo")
+					Expect(err).NotTo(HaveOccurred())
+					Expect(clonedVM).ShouldNot(BeNil())
+
+					keysFound := map[string]bool{localKey: false, globalKey: false}
+					// Add all the default keys
+					for k := range vsphere.DefaultExtraConfig {
+						keysFound[k] = false
 					}
-				}
-				for k, v := range keysFound {
-					Expect(v).Should(BeTrue(), "Key %v not found in VM", k)
-				}
-			})
-		})
-		Context("without vm metadata or global extraConfig", func() {
-			It("should copy the default values into the VM", func() {
-				imageName := "DC0_H0_VM0"
-				vmClass := getVMClassInstance(testVMName, testNamespace)
-				vm := getVirtualMachineInstance(testVMName+"-default-extraConfig", testNamespace, imageName, vmClass.Name)
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, nil, "foo")
-				Expect(err).NotTo(HaveOccurred())
-				Expect(clonedVM).ShouldNot(BeNil())
-
-				keysFound := map[string]bool{}
-				// Add all the default keys
-				for k := range vsphere.DefaultExtraConfig {
-					keysFound[k] = false
-				}
-				mo, err := clonedVM.ManagedObject(context.TODO())
-				for _, option := range mo.Config.ExtraConfig {
-					key := option.GetOptionValue().Key
-					keysFound[key] = true
-					if defaultVal, ok := vsphere.DefaultExtraConfig[key]; ok {
-						Expect(option.GetOptionValue().Value).Should(Equal(defaultVal))
+					mo, err := clonedVM.ManagedObject(context.TODO())
+					for _, option := range mo.Config.ExtraConfig {
+						key := option.GetOptionValue().Key
+						keysFound[key] = true
+						if key == localKey {
+							Expect(option.GetOptionValue().Value).Should(Equal(localVal))
+						} else if key == globalKey {
+							Expect(option.GetOptionValue().Value).Should(Equal(globalVal))
+						} else if defaultVal, ok := vsphere.DefaultExtraConfig[key]; ok {
+							Expect(option.GetOptionValue().Value).Should(Equal(defaultVal))
+						}
 					}
-				}
-				for k, v := range keysFound {
-					Expect(v).Should(BeTrue(), "Key %v not found in VM", k)
-				}
+					for k, v := range keysFound {
+						Expect(v).Should(BeTrue(), "Key %v not found in VM", k)
+					}
+				})
 			})
-		})
-	})
+			Context("without vm metadata or global extraConfig", func() {
+				It("should copy the default values into the VM", func() {
+					imageName := "DC0_H0_VM0"
+					vmClass := getVMClassInstance(testVMName, testNamespace)
+					vm := getVirtualMachineInstance(testVMName+"-default-extraConfig", testNamespace, imageName, vmClass.Name)
+					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, nil, "foo")
+					Expect(err).NotTo(HaveOccurred())
+					Expect(clonedVM).ShouldNot(BeNil())
 
-	Describe("Resource Pool", func() {
-		var rpName string
-		var rpSpec *v1alpha1.ResourcePoolSpec
-
-		BeforeEach(func() {
-			rpName = "test-folder"
-			rpSpec = &vmoperatorv1alpha1.ResourcePoolSpec{
-				Name: rpName,
-			}
-			rpMoId, err := session.CreateResourcePool(context.TODO(), rpSpec)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(rpMoId).To(Not(BeEmpty()))
-		})
-
-		AfterEach(func() {
-			// RP would already be deleted after the deletion test. But DeleteResourcePool handles delete of an RP if it's already deleted.
-			Expect(session.DeleteResourcePool(context.TODO(), rpSpec.Name)).To(Succeed())
-		})
-
-		Context("Create a ResourcePool, verify it exists and delete it", func() {
-			JustBeforeEach(func() {
-			})
-
-			It("create is tested in setup", func() {
-				// Create is tested in JustBeforeEach
-			})
-
-			It("Verifies if a ResourcePool exists", func() {
-				exists, err := session.DoesResourcePoolExist(context.TODO(), integration.DefaultNamespace, rpSpec.Name)
-				Expect(exists).To(BeTrue())
-				Expect(err).NotTo(HaveOccurred())
-			})
-			It("delete is tested in teardown", func() {
-				// Delete is tested in JustAfterEach
+					keysFound := map[string]bool{}
+					// Add all the default keys
+					for k := range vsphere.DefaultExtraConfig {
+						keysFound[k] = false
+					}
+					mo, err := clonedVM.ManagedObject(context.TODO())
+					for _, option := range mo.Config.ExtraConfig {
+						key := option.GetOptionValue().Key
+						keysFound[key] = true
+						if defaultVal, ok := vsphere.DefaultExtraConfig[key]; ok {
+							Expect(option.GetOptionValue().Value).Should(Equal(defaultVal))
+						}
+					}
+					for k, v := range keysFound {
+						Expect(v).Should(BeTrue(), "Key %v not found in VM", k)
+					}
+				})
 			})
 		})
 
-		Context("Create two resource pools with the duplicate names", func() {
-			It("second resource pool should fail to create", func() {
-				// Try to create another ResourcePool with the same spec.
-				rpMoId, err := session.CreateResourcePool(context.TODO(), rpSpec)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("ServerFaultCode: DuplicateName"))
-				Expect(rpMoId).To(BeEmpty())
-			})
-		})
-		Context("Delete a Resource Pool that doesn't exist", func() {
-			It("should succeed", func() {
-				Expect(session.DeleteResourcePool(context.TODO(), "nonexistent-resourcepool")).To(Succeed())
-			})
-		})
-	})
-
-	Describe("Folder", func() {
-		var folderName string
-		var folderSpec *v1alpha1.FolderSpec
-
-		BeforeEach(func() {
-			folderName = "test-folder"
-			folderSpec = &vmoperatorv1alpha1.FolderSpec{
-				Name: folderName,
-			}
-		})
-
-		Context("Create a Folder, verify it exists and delete it", func() {
-			JustBeforeEach(func() {
-				folderMoId, err := session.CreateFolder(context.TODO(), folderSpec)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(folderMoId).To(Not(BeEmpty()))
-
-			})
-			JustAfterEach(func() {
-				Expect(session.DeleteFolder(context.TODO(), folderName)).To(Succeed())
-			})
-
-			It("create is tested in setup", func() {
-				// Create is tested in JustBeforeEach
-			})
-
-			It("Verifies if a Folder exists", func() {
-				exists, err := session.DoesFolderExist(context.TODO(), integration.DefaultNamespace, folderName)
-				Expect(exists).To(BeTrue())
-				Expect(err).NotTo(HaveOccurred())
-			})
-			It("delete is tested in teardown", func() {
-				// Delete is tested in JustAfterEach
-			})
-		})
-
-		Context("Create two folders with the duplicate names", func() {
-			It("Second folder should fail to create", func() {
-				folderMoId1, err := session.CreateFolder(context.TODO(), folderSpec)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(folderMoId1).To(Not(BeEmpty()))
-
-				// Try to crete another folder with the same spec.
-				folderMoId2, err := session.CreateFolder(context.TODO(), folderSpec)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("ServerFaultCode: DuplicateName"))
-				Expect(folderMoId2).To(BeEmpty())
-			})
-		})
-		Context("Delete a Folder that doesnt exist", func() {
-			It("should succeed", func() {
-				Expect(session.DeleteFolder(context.TODO(), folderSpec.Name)).To(Succeed())
-			})
-		})
-	})
-
-	Describe("Clone VM gracefully fails", func() {
-		Context("Should fail gracefully", func() {
-			var savedDatastoreAttribute string
-			vm := &vmoperatorv1alpha1.VirtualMachine{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "TestVM",
-				},
-			}
+		Describe("Resource Pool", func() {
+			var rpName string
+			var rpSpec *v1alpha1.ResourcePoolSpec
 
 			BeforeEach(func() {
-				savedDatastoreAttribute = config.Datastore
+				rpName = "test-folder"
+				rpSpec = &vmoperatorv1alpha1.ResourcePoolSpec{
+					Name: rpName,
+				}
+				rpMoId, err := session.CreateResourcePool(context.TODO(), rpSpec)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rpMoId).To(Not(BeEmpty()))
 			})
 
 			AfterEach(func() {
-				config.Datastore = savedDatastoreAttribute
-				config.ContentSource = ""
-				config.StorageClassRequired = false
+				// RP would already be deleted after the deletion test. But DeleteResourcePool handles delete of an RP if it's already deleted.
+				Expect(session.DeleteResourcePool(context.TODO(), rpSpec.Name)).To(Succeed())
 			})
 
-			It("with existing content source, empty datastore and empty profile id", func() {
-				config.Datastore = ""
-				config.ContentSource = integration.GetContentSourceID()
-				session, err := vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
-				Expect(err).NotTo(HaveOccurred())
-				clonedVM, err :=
-					session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError("cannot clone VM when neither storage class or datastore is specified"))
-				Expect(clonedVM).Should(BeNil())
+			Context("Create a ResourcePool, verify it exists and delete it", func() {
+				JustBeforeEach(func() {
+				})
+
+				It("create is tested in setup", func() {
+					// Create is tested in JustBeforeEach
+				})
+
+				It("Verifies if a ResourcePool exists", func() {
+					exists, err := session.DoesResourcePoolExist(context.TODO(), integration.DefaultNamespace, rpSpec.Name)
+					Expect(exists).To(BeTrue())
+					Expect(err).NotTo(HaveOccurred())
+				})
+				It("delete is tested in teardown", func() {
+					// Delete is tested in JustAfterEach
+				})
 			})
-			It("with existing content source but mandatory profile id is not set", func() {
-				config.ContentSource = integration.GetContentSourceID()
-				config.StorageClassRequired = true
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
-				Expect(err).NotTo(HaveOccurred())
-				clonedVM, err :=
-					session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError("storage class is required but not specified"))
-				Expect(clonedVM).Should(BeNil())
+
+			Context("Create two resource pools with the duplicate names", func() {
+				It("second resource pool should fail to create", func() {
+					// Try to create another ResourcePool with the same spec.
+					rpMoId, err := session.CreateResourcePool(context.TODO(), rpSpec)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(Equal("ServerFaultCode: DuplicateName"))
+					Expect(rpMoId).To(BeEmpty())
+				})
 			})
-			It("without content source and missing mandatory profile ID", func() {
-				config.StorageClassRequired = true
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), config, nil, nil)
-				Expect(err).NotTo(HaveOccurred())
-				clonedVM, err :=
-					session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError("storage class is required but not specified"))
-				Expect(clonedVM).Should(BeNil())
+			Context("Delete a Resource Pool that doesn't exist", func() {
+				It("should succeed", func() {
+					Expect(session.DeleteResourcePool(context.TODO(), "nonexistent-resourcepool")).To(Succeed())
+				})
+			})
+		})
+
+		Describe("Folder", func() {
+			var folderName string
+			var folderSpec *v1alpha1.FolderSpec
+
+			BeforeEach(func() {
+				folderName = "test-folder"
+				folderSpec = &vmoperatorv1alpha1.FolderSpec{
+					Name: folderName,
+				}
+			})
+
+			Context("Create a Folder, verify it exists and delete it", func() {
+				JustBeforeEach(func() {
+					folderMoId, err := session.CreateFolder(context.TODO(), folderSpec)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(folderMoId).To(Not(BeEmpty()))
+
+				})
+				JustAfterEach(func() {
+					Expect(session.DeleteFolder(context.TODO(), folderName)).To(Succeed())
+				})
+
+				It("create is tested in setup", func() {
+					// Create is tested in JustBeforeEach
+				})
+
+				It("Verifies if a Folder exists", func() {
+					exists, err := session.DoesFolderExist(context.TODO(), integration.DefaultNamespace, folderName)
+					Expect(exists).To(BeTrue())
+					Expect(err).NotTo(HaveOccurred())
+				})
+				It("delete is tested in teardown", func() {
+					// Delete is tested in JustAfterEach
+				})
+			})
+
+			Context("Create two folders with the duplicate names", func() {
+				It("Second folder should fail to create", func() {
+					folderMoId1, err := session.CreateFolder(context.TODO(), folderSpec)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(folderMoId1).To(Not(BeEmpty()))
+
+					// Try to crete another folder with the same spec.
+					folderMoId2, err := session.CreateFolder(context.TODO(), folderSpec)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(Equal("ServerFaultCode: DuplicateName"))
+					Expect(folderMoId2).To(BeEmpty())
+				})
+			})
+			Context("Delete a Folder that doesnt exist", func() {
+				It("should succeed", func() {
+					Expect(session.DeleteFolder(context.TODO(), folderSpec.Name)).To(Succeed())
+				})
+			})
+		})
+
+		Describe("Clone VM gracefully fails", func() {
+			Context("Should fail gracefully", func() {
+				var savedDatastoreAttribute string
+				vm := &vmoperatorv1alpha1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "TestVM",
+					},
+				}
+
+				BeforeEach(func() {
+					savedDatastoreAttribute = vSphereConfig.Datastore
+				})
+
+				AfterEach(func() {
+					vSphereConfig.Datastore = savedDatastoreAttribute
+					vSphereConfig.ContentSource = ""
+					vSphereConfig.StorageClassRequired = false
+				})
+
+				It("with existing content source, empty datastore and empty profile id", func() {
+					vSphereConfig.Datastore = ""
+					vSphereConfig.ContentSource = integration.GetContentSourceID()
+					session, err := vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
+					Expect(err).NotTo(HaveOccurred())
+					clonedVM, err :=
+						session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError("cannot clone VM when neither storage class or datastore is specified"))
+					Expect(clonedVM).Should(BeNil())
+				})
+				It("with existing content source but mandatory profile id is not set", func() {
+					vSphereConfig.ContentSource = integration.GetContentSourceID()
+					vSphereConfig.StorageClassRequired = true
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
+					Expect(err).NotTo(HaveOccurred())
+					clonedVM, err :=
+						session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError("storage class is required but not specified"))
+					Expect(clonedVM).Should(BeNil())
+				})
+				It("without content source and missing mandatory profile ID", func() {
+					vSphereConfig.StorageClassRequired = true
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
+					Expect(err).NotTo(HaveOccurred())
+					clonedVM, err :=
+						session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError("storage class is required but not specified"))
+					Expect(clonedVM).Should(BeNil())
+				})
 			})
 		})
 	})

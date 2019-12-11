@@ -63,7 +63,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 		r = ReconcileVirtualMachineService{mgr.GetClient(), mgr.GetScheme(), nil}
-		stopMgr, mgrStopped = StartTestManager(mgr)
+		stopMgr, mgrStopped = integration.StartTestManager(mgr)
 	})
 
 	AfterEach(func() {
@@ -102,7 +102,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 			}
 
 			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: name}}
-			recFn, requests := SetupTestReconcile(newReconciler(mgr))
+			recFn, requests := integration.SetupTestReconcile(newReconciler(mgr))
 			Expect(add(mgr, recFn)).To(Succeed())
 
 			fakeRecorder := vmrecord.GetRecorder().(*record.FakeRecorder)

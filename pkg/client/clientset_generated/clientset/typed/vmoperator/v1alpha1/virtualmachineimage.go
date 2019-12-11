@@ -18,7 +18,7 @@ import (
 // VirtualMachineImagesGetter has a method to return a VirtualMachineImageInterface.
 // A group's client should implement this interface.
 type VirtualMachineImagesGetter interface {
-	VirtualMachineImages(namespace string) VirtualMachineImageInterface
+	VirtualMachineImages() VirtualMachineImageInterface
 }
 
 // VirtualMachineImageInterface has methods to work with VirtualMachineImage resources.
@@ -38,14 +38,12 @@ type VirtualMachineImageInterface interface {
 // virtualMachineImages implements VirtualMachineImageInterface
 type virtualMachineImages struct {
 	client rest.Interface
-	ns     string
 }
 
 // newVirtualMachineImages returns a VirtualMachineImages
-func newVirtualMachineImages(c *VmoperatorV1alpha1Client, namespace string) *virtualMachineImages {
+func newVirtualMachineImages(c *VmoperatorV1alpha1Client) *virtualMachineImages {
 	return &virtualMachineImages{
 		client: c.RESTClient(),
-		ns:     namespace,
 	}
 }
 
@@ -53,7 +51,6 @@ func newVirtualMachineImages(c *VmoperatorV1alpha1Client, namespace string) *vir
 func (c *virtualMachineImages) Get(name string, options v1.GetOptions) (result *v1alpha1.VirtualMachineImage, err error) {
 	result = &v1alpha1.VirtualMachineImage{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("virtualmachineimages").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
@@ -66,7 +63,6 @@ func (c *virtualMachineImages) Get(name string, options v1.GetOptions) (result *
 func (c *virtualMachineImages) List(opts v1.ListOptions) (result *v1alpha1.VirtualMachineImageList, err error) {
 	result = &v1alpha1.VirtualMachineImageList{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("virtualmachineimages").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Do().
@@ -78,7 +74,6 @@ func (c *virtualMachineImages) List(opts v1.ListOptions) (result *v1alpha1.Virtu
 func (c *virtualMachineImages) Watch(opts v1.ListOptions) (watch.Interface, error) {
 	opts.Watch = true
 	return c.client.Get().
-		Namespace(c.ns).
 		Resource("virtualmachineimages").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Watch()
@@ -88,7 +83,6 @@ func (c *virtualMachineImages) Watch(opts v1.ListOptions) (watch.Interface, erro
 func (c *virtualMachineImages) Create(virtualMachineImage *v1alpha1.VirtualMachineImage) (result *v1alpha1.VirtualMachineImage, err error) {
 	result = &v1alpha1.VirtualMachineImage{}
 	err = c.client.Post().
-		Namespace(c.ns).
 		Resource("virtualmachineimages").
 		Body(virtualMachineImage).
 		Do().
@@ -100,7 +94,6 @@ func (c *virtualMachineImages) Create(virtualMachineImage *v1alpha1.VirtualMachi
 func (c *virtualMachineImages) Update(virtualMachineImage *v1alpha1.VirtualMachineImage) (result *v1alpha1.VirtualMachineImage, err error) {
 	result = &v1alpha1.VirtualMachineImage{}
 	err = c.client.Put().
-		Namespace(c.ns).
 		Resource("virtualmachineimages").
 		Name(virtualMachineImage.Name).
 		Body(virtualMachineImage).
@@ -115,7 +108,6 @@ func (c *virtualMachineImages) Update(virtualMachineImage *v1alpha1.VirtualMachi
 func (c *virtualMachineImages) UpdateStatus(virtualMachineImage *v1alpha1.VirtualMachineImage) (result *v1alpha1.VirtualMachineImage, err error) {
 	result = &v1alpha1.VirtualMachineImage{}
 	err = c.client.Put().
-		Namespace(c.ns).
 		Resource("virtualmachineimages").
 		Name(virtualMachineImage.Name).
 		SubResource("status").
@@ -128,7 +120,6 @@ func (c *virtualMachineImages) UpdateStatus(virtualMachineImage *v1alpha1.Virtua
 // Delete takes name of the virtualMachineImage and deletes it. Returns an error if one occurs.
 func (c *virtualMachineImages) Delete(name string, options *v1.DeleteOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("virtualmachineimages").
 		Name(name).
 		Body(options).
@@ -139,7 +130,6 @@ func (c *virtualMachineImages) Delete(name string, options *v1.DeleteOptions) er
 // DeleteCollection deletes a collection of objects.
 func (c *virtualMachineImages) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("virtualmachineimages").
 		VersionedParams(&listOptions, scheme.ParameterCodec).
 		Body(options).
@@ -151,7 +141,6 @@ func (c *virtualMachineImages) DeleteCollection(options *v1.DeleteOptions, listO
 func (c *virtualMachineImages) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1alpha1.VirtualMachineImage, err error) {
 	result = &v1alpha1.VirtualMachineImage{}
 	err = c.client.Patch(pt).
-		Namespace(c.ns).
 		Resource("virtualmachineimages").
 		SubResource(subresources...).
 		Name(name).

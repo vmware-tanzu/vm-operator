@@ -187,13 +187,25 @@ func (s *Session) ConfigureContent(ctx context.Context, contentSource string) er
 	return nil
 }
 
+// TODO: Follow up to expose this and other fields without "getters"
+func (s *Session) Datastore() *object.Datastore {
+	return s.datastore
+}
+
 func (s *Session) Logout(ctx context.Context) {
 	s.client.Logout(ctx)
 }
 
-func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace string) (
-	[]*v1alpha1.VirtualMachineImage, error) {
+func (s *Session) CreateLibrary(ctx context.Context, contentSource string) (string, error) {
+	return NewContentLibraryProvider(s).CreateLibrary(ctx, contentSource)
+}
 
+func (s *Session) CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error {
+	return NewContentLibraryProvider(s).CreateLibraryItem(ctx, libraryItem, path)
+}
+
+func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context) ([]*v1alpha1.VirtualMachineImage, error) {
+	log.V(4).Info("Listing VirtualMachineImages from CL", "content lib", s.contentlib)
 	var items []library.Item
 	var err error
 	err = s.WithRestClient(ctx, func(c *rest.Client) error {
@@ -209,7 +221,7 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace 
 		item := items[i]
 		if IsSupportedDeployType(item.Type) {
 			var vmOpts OvfPropertyRetriever = vmOptions{}
-			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, namespace, AnnotateVmImage, vmOpts)
+			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, AnnotateVmImage, vmOpts)
 			if err != nil {
 				return nil, err
 			}
@@ -222,15 +234,18 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, namespace 
 
 func (s *Session) GetItemIDFromCL(ctx context.Context, itemName string) (string, error) {
 	var itemID string
+	//var item *library.Item
 	err := s.WithRestClient(ctx, func(c *rest.Client) error {
 		itemIDs, err := library.NewManager(c).FindLibraryItems(ctx,
 			library.FindItem{LibraryID: s.contentlib.ID, Name: itemName})
 		if err != nil {
 			return err
 		}
+
 		if len(itemIDs) == 0 {
 			return errors.Errorf("no library items named: %s", itemName)
 		}
+
 		if len(itemIDs) != 1 {
 			return errors.Errorf("multiple library items named: %s", itemName)
 		}
@@ -240,7 +255,7 @@ func (s *Session) GetItemIDFromCL(ctx context.Context, itemName string) (string,
 	return itemID, errors.Wrapf(err, "failed to find image %q", itemName)
 }
 
-func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string, namespace string) (*v1alpha1.VirtualMachineImage, error) {
+func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string) (*v1alpha1.VirtualMachineImage, error) {
 	itemID, err := s.GetItemIDFromCL(ctx, name)
 	if err != nil {
 		return nil, err
@@ -259,13 +274,16 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string,
 	if item == nil {
 		return nil, errors.Errorf("item: %v is not found in CL", name)
 	}
+
 	// If not a supported type return nil
 	if !IsSupportedDeployType(item.Type) {
 		return nil, errors.Errorf("item: %v not a supported type: %s", item.Name, item.Type)
 	}
 
 	var vmOpts OvfPropertyRetriever = vmOptions{}
-	virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, item, namespace, AnnotateVmImage, vmOpts)
+
+	virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, item, AnnotateVmImage, vmOpts)
+
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +423,7 @@ func (s *Session) DoesFolderExist(ctx context.Context, namespace, folderName str
 
 // CreateFolder creates a folder under the parent Folder (session.folder).
 func (s *Session) CreateFolder(ctx context.Context, folderSpec *v1alpha1.FolderSpec) (string, error) {
-	log.Info("Creating new Folder", "name", folderSpec.Name)
+	log.Info("Creating a new Folder", "name", folderSpec.Name)
 
 	// CreateFolder is invoked during a ResourcePolicy reconciliation to create a Folder for a set of VirtualMachines.
 	// The new Folder is created under the Folder corresponding to the session.
@@ -847,6 +865,7 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, r
 	var deployment *types.ManagedObjectReference
 	err = s.WithRestClient(ctx, func(c *rest.Client) error {
 		deployment, err = vcenter.NewManager(c).DeployLibraryItem(ctx, itemID, deploy)
+		log.Info("DeployLibraryItem", "context", ctx, "itemID", itemID, "deploy", deploy)
 		return err
 	})
 

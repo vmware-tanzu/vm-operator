@@ -9,6 +9,8 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -107,7 +109,7 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 	)
 
 	BeforeEach(func() {
-		os.Unsetenv(VmopNamespaceEnv)
+		os.Unsetenv(lib.VmopNamespaceEnv)
 		baseConfigMapIn, baseSecretIn, baseProviderConfigIn = newConfig("base-namespace", "base-pnid", "base-port", "base-secret-name")
 		nsConfigMapIn, nsSecretIn, nsProviderConfigIn = newConfig("ns-namespace", "ns-pnid", "ns-port", "ns-secret-name")
 	})
@@ -115,7 +117,7 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 	Context("when a base config exists", func() {
 
 		BeforeEach(func() {
-			os.Setenv(VmopNamespaceEnv, "base-namespace")
+			os.Setenv(lib.VmopNamespaceEnv, "base-namespace")
 		})
 
 		Context("when a base secret doesn't exist", func() {
@@ -233,7 +235,7 @@ var _ = Describe("configMapsToProviderConfig", func() {
 	)
 
 	BeforeEach(func() {
-		os.Unsetenv(VmopNamespaceEnv)
+		os.Unsetenv(lib.VmopNamespaceEnv)
 		baseConfigMapIn, _, _ = newConfig("base-namespace", "base-pnid", "base-port", "base-secret-name")
 		nsConfigMapIn, _, _ = newConfig("ns-namespace", "ns-pnid", "ns-port", "ns-secret-name")
 		vcCreds = &VSphereVmProviderCredentials{"some-user", "some-pass"}

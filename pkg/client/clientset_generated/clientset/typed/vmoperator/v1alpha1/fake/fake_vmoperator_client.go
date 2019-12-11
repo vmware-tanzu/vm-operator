@@ -24,8 +24,8 @@ func (c *FakeVmoperatorV1alpha1) VirtualMachineClasses() v1alpha1.VirtualMachine
 	return &FakeVirtualMachineClasses{c}
 }
 
-func (c *FakeVmoperatorV1alpha1) VirtualMachineImages(namespace string) v1alpha1.VirtualMachineImageInterface {
-	return &FakeVirtualMachineImages{c, namespace}
+func (c *FakeVmoperatorV1alpha1) VirtualMachineImages() v1alpha1.VirtualMachineImageInterface {
+	return &FakeVirtualMachineImages{c}
 }
 
 func (c *FakeVmoperatorV1alpha1) VirtualMachineServices(namespace string) v1alpha1.VirtualMachineServiceInterface {

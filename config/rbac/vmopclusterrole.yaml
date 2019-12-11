@@ -63,8 +63,6 @@ rules:
   resources:
   - virtualmachines
   - virtualmachines/status
-  - virtualmachineimages
-  - virtualmachineimages/status
   - virtualmachineservices
   - virtualmachineservices/status
   - virtualmachineclasses
@@ -77,6 +75,19 @@ rules:
   - watch
   - update
   - patch
+- apiGroups:
+  - "vmoperator.vmware.com"
+  resources:
+  - virtualmachineimages
+  - virtualmachineimages/status
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
 - apiGroups:
   - "storage.k8s.io"
   resources:

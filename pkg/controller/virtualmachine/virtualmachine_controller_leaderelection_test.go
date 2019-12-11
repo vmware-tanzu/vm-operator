@@ -1,4 +1,5 @@
 // +build integration
+
 // Copyright (c) 2019 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -14,12 +15,13 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/vmware-tanzu/vm-operator/test/integration"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
 // The purpose of this test is to start up a vmop controller and verify leader election functionality on that controller
@@ -46,7 +48,7 @@ var _ = Describe("VM Operator Controller leader election tests", func() {
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
-		stopMgr, mgrStopped = StartTestManager(mgr)
+		stopMgr, mgrStopped = integration.StartTestManager(mgr)
 	})
 
 	AfterEach(func() {

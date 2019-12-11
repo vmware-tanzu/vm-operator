@@ -5,37 +5,37 @@
 package vmprovider
 
 import (
-	"os"
+	"fmt"
 	"sync"
-
-	"k8s.io/klog/klogr"
 )
 
 var (
 	mutex                sync.Mutex
 	registeredVmProvider VirtualMachineProviderInterface
-	log                  = klogr.New()
 )
 
-// RegisterVmProvider registers the provider.
-func RegisterVmProvider(vmProvider VirtualMachineProviderInterface) {
+// RegisterVmProviderOrDie registers the provider.
+func RegisterVmProviderOrDie(vmProvider VirtualMachineProviderInterface) VirtualMachineProviderInterface {
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	if registeredVmProvider != nil {
-		log.Error(nil, "VM provider is already registered", "providerName", registeredVmProvider.Name())
-		os.Exit(255)
+		panic(fmt.Sprintf("VM provider is already registered: providerName %s", registeredVmProvider.Name()))
 	}
 
 	registeredVmProvider = vmProvider
+	return vmProvider
 }
 
-// GetVmProvider returns the registered provider or nil.
-func GetVmProvider() VirtualMachineProviderInterface {
+func UnregisterVmProviderOrDie(vmProvider VirtualMachineProviderInterface) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	return registeredVmProvider
+	if registeredVmProvider.Name() != vmProvider.Name() {
+		panic(fmt.Sprintf("VM provider does not match unregister request: currently registered %s, to unregister %s", registeredVmProvider.Name(), vmProvider.Name()))
+	}
+
+	registeredVmProvider = nil
 }
 
 // GetVmProviderOrDie returns the registered provider or dies if not registered.
@@ -44,8 +44,7 @@ func GetVmProviderOrDie() VirtualMachineProviderInterface {
 	defer mutex.Unlock()
 
 	if registeredVmProvider == nil {
-		log.Error(nil, "No VM provider registered")
-		os.Exit(255)
+		panic("No VM provider registered")
 	}
 
 	return registeredVmProvider

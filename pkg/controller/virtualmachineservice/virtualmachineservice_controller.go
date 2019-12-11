@@ -9,18 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineservice/utils"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineservice/providers"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
-
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"github.com/vmware-tanzu/vm-operator/pkg"
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,7 +25,14 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineservice/providers"
+	"github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachineservice/utils"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 const (

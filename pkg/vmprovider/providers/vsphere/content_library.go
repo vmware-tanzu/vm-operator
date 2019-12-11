@@ -7,13 +7,14 @@ import (
 	"context"
 	"io"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"time"
 
-	"github.com/vmware/govmomi/ovf"
-
 	"github.com/pkg/errors"
+	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
@@ -91,7 +92,7 @@ func (cs *ContentLibraryProvider) ParseAndRetrievePropsFromLibraryItem(ctx conte
 		return nil, err
 	}
 
-	log.Info("downloaded library item", libItemName, item.Name)
+	log.V(4).Info("downloaded library item", libItemName, item.Name)
 	defer downloadedFileContent.Close()
 
 	ovfProperties, err := ParseOvfAndFetchProperties(downloadedFileContent)
@@ -101,6 +102,109 @@ func (cs *ContentLibraryProvider) ParseAndRetrievePropsFromLibraryItem(ctx conte
 
 	return ovfProperties, nil
 
+}
+
+func (cs *ContentLibraryProvider) CreateLibrary(ctx context.Context, contentSource string) (string, error) {
+	log.Info("Creating Library", "library", contentSource)
+
+	ds := cs.session.Datastore()
+
+	lib := library.Library{
+		Name: contentSource,
+		Type: "LOCAL",
+		Storage: []library.StorageBackings{
+			{
+				DatastoreID: ds.Reference().Value,
+				Type:        "DATASTORE",
+			},
+		},
+	}
+
+	var libID = ""
+	var err error
+
+	err = cs.session.WithRestClient(ctx, func(c *rest.Client) error {
+		libID, err = library.NewManager(c).CreateLibrary(ctx, lib)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil || libID == "" {
+		log.Error(err, "failed to create library")
+		return "", err
+	}
+
+	return libID, nil
+}
+
+func (cs *ContentLibraryProvider) CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error {
+	log.Info("Creating Library Item", "libraryItem", libraryItem, "path", path)
+
+	err := cs.session.WithRestClient(ctx, func(c *rest.Client) error {
+		libMgr := library.NewManager(c)
+
+		itemID, err := libMgr.CreateLibraryItem(ctx, libraryItem)
+		if err != nil {
+			return err
+		}
+
+		itemUpdateSessionId, err := libMgr.CreateLibraryItemUpdateSession(ctx, library.Session{LibraryItemID: itemID})
+		if err != nil {
+			return err
+		}
+
+		// Update Library item with library file "ovf"
+		uploadFunc := func(c *rest.Client, path string) error {
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			fi, err := f.Stat()
+			if err != nil {
+				return err
+			}
+
+			name := filepath.Base(path)
+
+			size := fi.Size()
+			info := library.UpdateFile{
+				Name:       name,
+				SourceType: "PUSH",
+				Size:       size,
+			}
+
+			update, err := library.NewManager(c).AddLibraryItemFile(ctx, itemUpdateSessionId, info)
+			if err != nil {
+				return err
+			}
+
+			p := soap.DefaultUpload
+			p.Headers = map[string]string{
+				"vmware-api-session-id": itemUpdateSessionId,
+			}
+
+			p.ContentLength = size
+			u, err := url.Parse(update.UploadEndpoint.URI)
+			if err != nil {
+				return err
+			}
+
+			return c.Upload(ctx, f, u, &p)
+		}
+
+		if err = uploadFunc(c, path); err != nil {
+			return err
+		}
+
+		return libMgr.CompleteLibraryItemUpdateSession(ctx, itemUpdateSessionId)
+	})
+
+	return err
 }
 
 func isInvalidResponse(response DownloadUriResponse) bool {
@@ -164,21 +268,21 @@ func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(
 	}
 
 	for _, file := range files {
-		log.Info("Library Item file", libFileName, file.Name)
+		log.V(4).Info("Library Item file ", libFileName, file.Name)
 		fileNameParts := strings.Split(file.Name, ".")
 		if IsSupportedDeployType(fileNameParts[len(fileNameParts)-1]) {
 			fileToDownload = file.Name
 			break
 		}
 	}
-	log.Info("download session created", libFileName, fileToDownload, libItemId, item.ID, libSessionId, session)
+	log.V(4).Info("download session created", libFileName, fileToDownload, libItemId, item.ID, libSessionId, session)
 
 	_, err = libManager.PrepareLibraryItemDownloadSessionFile(ctx, session, fileToDownload)
 	if err != nil {
 		return DownloadUriResponse{}, err
 	}
 
-	log.Info("request posted to prepare file", libFileName, fileToDownload, libSessionId, session)
+	log.V(4).Info("request posted to prepare file", libFileName, fileToDownload, libSessionId, session)
 
 	// content library api to prepare a file for download guarantees eventual end state of either Error or Prepared
 	// in order to avoid posting too many requests to the api we are setting a sleep of 'n' seconds between each retry
@@ -207,7 +311,7 @@ func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(
 		}
 
 		if info.Status == "PREPARED" {
-			log.Info("Download file", libFileDownloadUrl, info.DownloadEndpoint.URI)
+			log.V(4).Info("Download file", libFileDownloadUrl, info.DownloadEndpoint.URI)
 			fileDownloadUri = info.DownloadEndpoint.URI
 			returnMap[libFileDownloadUrl] = fileDownloadUri
 			return TimerTaskResponse{
@@ -278,5 +382,4 @@ func deleteLibraryItemDownloadSession(s *Session, c *rest.Client, ctx context.Co
 	if sessionError != nil {
 		log.Error(sessionError, "Error occurred when deleting download session", libSessionId, session)
 	}
-
 }

@@ -49,6 +49,7 @@ var vmoperatorApiGroup = builders.NewApiGroupBuilder(
 	).
 	WithRootScopedKinds(
 		"VirtualMachineClass",
+		"VirtualMachineImage",
 	)
 
 func GetVmoperatorAPIBuilder() *builders.APIGroupBuilder {

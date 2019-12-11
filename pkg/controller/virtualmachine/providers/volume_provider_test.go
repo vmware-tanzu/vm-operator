@@ -8,6 +8,7 @@ package providers
 
 import (
 	"context"
+	"fmt"
 
 	ptr "github.com/kubernetes/utils/pointer"
 	. "github.com/onsi/ginkgo"
@@ -316,6 +317,43 @@ var _ = Describe("Volume Provider", func() {
 
 				err := cnsVolumeProvider.DetachVolumes(context.TODO(), vm, virtualMachineVolumesToDetach)
 				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+	})
+
+	Describe("Unit tests for the error handling of volume operations", func() {
+		Context("VolumeErrorsByOpType struct", func() {
+			It("should add error and return error message properly", func() {
+				volumeErrs := newVolumeErrorsByOpType(VolumeOpAttach)
+				Expect(volumeErrs.hasOccurred()).To(BeFalse())
+				Expect(volumeErrs.Error()).To(Equal(""))
+				volumeErrs.add("dummy-volume-1", fmt.Errorf("dummy error for testing"))
+				Expect(volumeErrs.hasOccurred()).To(BeTrue())
+				Expect(volumeErrs.Error()).NotTo(Equal(""))
+			})
+		})
+
+		Context("CombinedVolumeOpsErrors struct", func() {
+			It("should add error and return error message properly", func() {
+				combinedErrors := CombinedVolumeOpsErrors{}
+				Expect(combinedErrors.HasOccurred()).To(BeFalse())
+				Expect(combinedErrors.Error()).To(Equal(""))
+
+				volumeAttachErrs := newVolumeErrorsByOpType(VolumeOpAttach)
+				volumeAttachErrs.add("dummy-volume-1", fmt.Errorf("dummy attach error for testing"))
+				combinedErrors.Append(volumeAttachErrs)
+
+				volumeDetachErrs := newVolumeErrorsByOpType(VolumeOpDetach)
+				volumeDetachErrs.add("dummy-volume-1", fmt.Errorf("dummy detach error for testing"))
+				combinedErrors.Append(volumeDetachErrs)
+
+				volumeStatusUpdateErrs := newVolumeErrorsByOpType(VolumeOpUpdateStatus)
+				volumeStatusUpdateErrs.add("dummy-volume-1", fmt.Errorf("dummy status update error for testing"))
+				combinedErrors.Append(volumeStatusUpdateErrs)
+
+				Expect(combinedErrors.HasOccurred()).To(BeTrue())
+				Expect(combinedErrors.Error()).NotTo(Equal(""))
+
 			})
 		})
 	})

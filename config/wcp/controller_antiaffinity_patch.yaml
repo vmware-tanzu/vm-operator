@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmoperator-controller
+spec:
+  template:
+    spec:
+       affinity:
+         podAntiAffinity:
+           requiredDuringSchedulingIgnoredDuringExecution:
+           - labelSelector:
+               matchExpressions:
+               - key: name
+                 operator: In
+                 values:
+                 - vmoperator-controller
+             topologyKey: "kubernetes.io/hostname"

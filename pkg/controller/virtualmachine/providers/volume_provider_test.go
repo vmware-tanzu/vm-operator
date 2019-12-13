@@ -356,6 +356,41 @@ var _ = Describe("Volume Provider", func() {
 
 			})
 		})
+
+		Context("CombinedVolumeOpsErrors struct", func() {
+			It("should add error and return error message properly when only some(but not all) operations have errors", func() {
+				combinedErrors := CombinedVolumeOpsErrors{}
+				Expect(combinedErrors.HasOccurred()).To(BeFalse())
+				Expect(combinedErrors.Error()).To(Equal(""))
+
+				combinedErrors.Append(nil)
+				combinedErrors.Append(nil)
+
+				volumeStatusUpdateErrs := newVolumeErrorsByOpType(VolumeOpUpdateStatus)
+				volumeStatusUpdateErrs.add("dummy-volume-1", fmt.Errorf("dummy status update error for testing"))
+				combinedErrors.Append(volumeStatusUpdateErrs)
+
+				Expect(combinedErrors.HasOccurred()).To(BeTrue())
+				Expect(combinedErrors.Error()).NotTo(Equal(""))
+
+			})
+		})
+
+		Context("CombinedVolumeOpsErrors struct", func() {
+			It("should have correct logic from HasOccurred() if no errors", func() {
+				combinedErrors := CombinedVolumeOpsErrors{}
+				Expect(combinedErrors.HasOccurred()).To(BeFalse())
+				Expect(combinedErrors.Error()).To(Equal(""))
+
+				combinedErrors.Append(nil)
+				combinedErrors.Append(nil)
+				combinedErrors.Append(nil)
+
+				Expect(combinedErrors.HasOccurred()).To(BeFalse())
+				Expect(combinedErrors.Error()).To(Equal(""))
+
+			})
+		})
 	})
 
 })

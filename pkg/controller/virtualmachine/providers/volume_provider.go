@@ -249,7 +249,9 @@ type CombinedVolumeOpsErrors struct {
 
 // This function appends error into the combined errors slice
 func (cvoe *CombinedVolumeOpsErrors) Append(volumeErrorsByOpType error) {
-	cvoe.volumeErrorsByOpType = append(cvoe.volumeErrorsByOpType, volumeErrorsByOpType)
+	if volumeErrorsByOpType != nil {
+		cvoe.volumeErrorsByOpType = append(cvoe.volumeErrorsByOpType, volumeErrorsByOpType)
+	}
 }
 
 // This function indicates if there are any error occurred
@@ -287,7 +289,9 @@ type VolumeErrorsPerOpType struct {
 // Using voe *VolumeErrorsByOpType as the pointer receiver is because this function updates errorsList.
 // Map and slice values behave like pointers: they are descriptors that contain pointers to the underlying map or slice data.
 func (voe *VolumeErrorsPerOpType) add(volumeName string, err error) {
-	voe.errors[volumeName] = err
+	if err != nil {
+		voe.errors[volumeName] = err
+	}
 }
 
 // HasOccurred() indicates whether the error occurred

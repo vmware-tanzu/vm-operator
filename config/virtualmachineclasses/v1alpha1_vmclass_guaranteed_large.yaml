@@ -9,8 +9,8 @@ spec:
   policies:
     resources:
       requests:
-        cpu: 2Gi
+        cpu: 4000m
         memory: 16Gi
       limits:
-        cpu: 2Gi
+        cpu: 4000m
         memory: 16Gi

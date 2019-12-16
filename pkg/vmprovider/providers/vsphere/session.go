@@ -12,14 +12,17 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"text/template"
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/vcenter"
+	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -52,6 +55,9 @@ type Session struct {
 	userInfo             *url.Userinfo
 	extraConfig          map[string]string
 	storageClassRequired bool
+
+	mutex              sync.Mutex
+	cpuMinMHzInCluster uint64 // CPU Min Frequency across all Hosts in the cluster
 }
 
 func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig, clientset kubernetes.Interface, ncpclient clientset.Interface) (*Session, error) {
@@ -82,6 +88,7 @@ func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig
 }
 
 func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConfig) error {
+
 	s.Finder = find.NewFinder(s.client.VimClient(), false)
 	s.userInfo = url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
@@ -141,6 +148,11 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		}
 	}
 
+	// Initialize min frequency
+	if err := s.initCpuMinFreq(ctx); err != nil {
+		return errors.Wrapf(err, "Failed to init CPU min frequency")
+	}
+
 	return s.initDatastore(ctx, config.Datastore)
 }
 
@@ -159,6 +171,21 @@ func (s *Session) initDatastore(ctx context.Context, datastore string) error {
 			log.Info("Datastore init OK", "datastore", s.datastore.Reference().Value)
 		}
 	}
+	return nil
+}
+
+func (s *Session) initCpuMinFreq(ctx context.Context) error {
+	if s.GetCpuMinMHzInCluster() > 0 {
+		return nil
+	}
+
+	minFreq, err := s.computeCPUInfo(ctx)
+	if err != nil {
+		return err
+	}
+
+	s.SetCpuMinMHzInCluster(minFreq)
+
 	return nil
 }
 
@@ -624,8 +651,8 @@ func memoryQuantityToMb(q resource.Quantity) int64 {
 	return int64(math.Ceil(float64(q.Value()) / float64(1024*1024)))
 }
 
-func cpuQuantityToMhz(q resource.Quantity) int64 {
-	return int64(math.Ceil(float64(q.Value()) / float64(1000*1000)))
+func CpuQuantityToMhz(q resource.Quantity, cpuFreqMhz uint64) int64 {
+	return int64(math.Ceil(float64(q.MilliValue()) * float64(cpuFreqMhz) / float64(1000)))
 }
 
 func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine) ([]vimTypes.BaseVirtualDevice, error) {
@@ -966,13 +993,14 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 
 	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
 
+	minFreq := s.GetCpuMinMHzInCluster()
 	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
-		rsv := cpuQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu)
+		rsv := CpuQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minFreq)
 		configSpec.CpuAllocation.Reservation = &rsv
 	}
 
 	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
-		lim := cpuQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu)
+		lim := CpuQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minFreq)
 		configSpec.CpuAllocation.Limit = &lim
 	}
 
@@ -1085,6 +1113,67 @@ func (s *Session) getCustomizationSpec(namespace, vmName string, vmSpec *v1alpha
 	return customSpec, nil
 }
 
+func (s *Session) GetCpuMinMHzInCluster() uint64 {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.cpuMinMHzInCluster
+}
+
+func (s *Session) SetCpuMinMHzInCluster(minFreq uint64) {
+	s.mutex.Lock()
+	prevFreq := s.cpuMinMHzInCluster
+	defer func() {
+		s.mutex.Unlock()
+		if prevFreq != minFreq {
+			log.V(4).Info("Successfully set (re)computed CPU min frequency", "prevFreq", prevFreq, "newFreq", minFreq)
+		}
+	}()
+
+	s.cpuMinMHzInCluster = minFreq
+}
+
+func (s *Session) computeCPUInfo(ctx context.Context) (uint64, error) {
+	return ComputeCPUInfo(ctx, s.cluster)
+}
+
+// ComputeCPUInfo computes the minimum frequency across all the hosts in the cluster. This is needed to convert the CPU
+// requirements specified in cores to MHz. vSphere core is assumed to be equivalent to the value of min frequency.
+// This function is adapted from wcp schedext
+func ComputeCPUInfo(ctx context.Context, cluster *object.ClusterComputeResource) (uint64, error) {
+	var cr mo.ComputeResource
+	var hosts []mo.HostSystem
+	var minFreq uint64
+
+	obj := cluster.Reference()
+
+	err := cluster.Properties(ctx, obj, nil, &cr)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(cr.Host) == 0 {
+		return 0, errors.New("No hosts found in the cluster")
+	}
+
+	pc := property.DefaultCollector(cluster.Client())
+	err = pc.Retrieve(ctx, cr.Host, []string{"summary"}, &hosts)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, h := range hosts {
+		if h.Summary.Hardware == nil {
+			continue
+		}
+		hostCpuMHz := uint64(h.Summary.Hardware.CpuMhz)
+		if hostCpuMHz < minFreq || minFreq == 0 {
+			minFreq = hostCpuMHz
+		}
+	}
+
+	return minFreq, nil
+}
+
 func (s *Session) String() string {
 	var sb strings.Builder
 	sb.WriteString("{")
@@ -1113,6 +1202,7 @@ func (s *Session) String() string {
 	if s.datastore != nil {
 		sb.WriteString(fmt.Sprintf("datastore: %s ", s.datastore.Reference().Value))
 	}
+	sb.WriteString(fmt.Sprintf("cpuMinMHzInCluster: %v ", s.cpuMinMHzInCluster))
 	sb.WriteString("}")
 	return sb.String()
 }

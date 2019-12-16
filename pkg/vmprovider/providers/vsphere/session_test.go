@@ -8,6 +8,13 @@ package vsphere_test
 import (
 	"context"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/simulator/vpx"
+	"github.com/vmware/govmomi/vim25/types"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/find"
@@ -18,7 +25,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
-var _ = Describe("GetResourcePool", func() {
+var _ = Describe("Test Session", func() {
 
 	Context("ExtraConfig priority", func() {
 		Specify("ExtraConfig map is correct with no global map", func() {
@@ -105,6 +112,68 @@ var _ = Describe("GetResourcePool", func() {
 				return nil
 			})
 			Expect(res).To(BeNil())
+		})
+	})
+
+	Context("Convert CPU units from milli-cores to MHz", func() {
+		Specify("return whole number for non-integer CPU quantity", func() {
+			q, err := resource.ParseQuantity("500m")
+			Expect(err).NotTo(HaveOccurred())
+			freq := vsphere.CpuQuantityToMhz(q, 3225)
+			expectVal := int64(1613)
+			Expect(freq).Should(BeNumerically("==", expectVal))
+		})
+
+		Specify("return whole number for integer CPU quantity", func() {
+			q, err := resource.ParseQuantity("1000m")
+			Expect(err).NotTo(HaveOccurred())
+			freq := vsphere.CpuQuantityToMhz(q, 3225)
+			expectVal := int64(3225)
+			Expect(freq).Should(BeNumerically("==", expectVal))
+		})
+	})
+
+	Context("Compute CPU Min Frequency in the Cluster", func() {
+		Specify("return cpu min frequency when natural number of hosts attached the cluster", func() {
+			res := simulator.VPX().Run(func(ctx context.Context, c *vim25.Client) error {
+				find := find.NewFinder(c)
+				cr, err := find.DefaultClusterComputeResource(ctx)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				cpuMinFreq, err := vsphere.ComputeCPUInfo(ctx, cr)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(cpuMinFreq).Should(BeNumerically(">", 0))
+
+				return nil
+			})
+			Expect(res).To(BeNil())
+		})
+
+		Specify("return cpu min frequency when the cluster contains no hosts", func() {
+			content := vpx.ServiceContent
+			s := simulator.New(simulator.NewServiceInstance(content, vpx.RootFolder))
+
+			ts := s.NewServer()
+			defer ts.Close()
+
+			ctx := context.Background()
+			c, err := govmomi.NewClient(ctx, ts.URL, true)
+			Expect(err).NotTo(HaveOccurred())
+
+			f := object.NewRootFolder(c.Client)
+
+			dc, err := f.CreateDatacenter(ctx, "foo")
+			Expect(err).NotTo(HaveOccurred())
+
+			folders, err := dc.Folders(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			cluster, err := folders.HostFolder.CreateCluster(ctx, "cluster1", types.ClusterConfigSpecEx{})
+			Expect(err).NotTo(HaveOccurred())
+
+			cpuMinFreq, err := vsphere.ComputeCPUInfo(ctx, cluster)
+			Expect(err.Error()).Should(Equal("No hosts found in the cluster"))
+			Expect(cpuMinFreq).Should(BeNumerically("==", 0))
 		})
 	})
 })

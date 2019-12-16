@@ -38,4 +38,5 @@ type VirtualMachineProviderInterface interface {
 	// Used by VirtualMachine controller to determine if entities of ResourcePolicy exist on the infrastructure provider
 	DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
+	ComputeClusterCpuMinFrequency(ctx context.Context) error
 }

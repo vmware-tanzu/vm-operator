@@ -87,3 +87,26 @@ func (sm *SessionManager) GetSession(ctx context.Context, namespace string) (*Se
 
 	return ses, nil
 }
+
+func (sm *SessionManager) ComputeClusterCpuMinFrequency(ctx context.Context) (err error) {
+	minFreq := uint64(0)
+
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+
+	// All sessions connect to the same infra
+	// Get a session, compute, and set freq in all the sessions
+	for _, s := range sm.sessions {
+		minFreq, err = s.computeCPUInfo(ctx)
+		break
+	}
+	if err != nil {
+		return err
+	}
+
+	for _, s := range sm.sessions {
+		s.SetCpuMinMHzInCluster(minFreq)
+	}
+
+	return nil
+}

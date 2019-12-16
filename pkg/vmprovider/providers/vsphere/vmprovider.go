@@ -469,6 +469,14 @@ func (vs *VSphereVmProvider) GetClusterID(ctx context.Context, namespace string)
 	return ses.cluster.Reference().Value, nil
 }
 
+func (vs *VSphereVmProvider) ComputeClusterCpuMinFrequency(ctx context.Context) error {
+	if err := vs.sessions.ComputeClusterCpuMinFrequency(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
 	powerState, uuid, reference := resVm.ImageFields(ctx)
 

@@ -35,6 +35,20 @@ func (m *MockVirtualMachineProviderInterface) EXPECT() *MockVirtualMachineProvid
 	return m.recorder
 }
 
+// ComputeClusterCpuMinFrequency mocks base method
+func (m *MockVirtualMachineProviderInterface) ComputeClusterCpuMinFrequency(arg0 context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ComputeClusterCpuMinFrequency", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ComputeClusterCpuMinFrequency indicates an expected call of ComputeClusterCpuMinFrequency
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) ComputeClusterCpuMinFrequency(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ComputeClusterCpuMinFrequency", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).ComputeClusterCpuMinFrequency), arg0)
+}
+
 // CreateOrUpdateVirtualMachineSetResourcePolicy mocks base method
 func (m *MockVirtualMachineProviderInterface) CreateOrUpdateVirtualMachineSetResourcePolicy(arg0 context.Context, arg1 *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	m.ctrl.T.Helper()
@@ -176,21 +190,6 @@ func (m *MockVirtualMachineProviderInterface) ListVirtualMachineImages(arg0 cont
 func (mr *MockVirtualMachineProviderInterfaceMockRecorder) ListVirtualMachineImages(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVirtualMachineImages", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).ListVirtualMachineImages), arg0, arg1)
-}
-
-// ListVirtualMachines mocks base method
-func (m *MockVirtualMachineProviderInterface) ListVirtualMachines(arg0 context.Context, arg1 string) ([]*v1alpha1.VirtualMachine, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListVirtualMachines", arg0, arg1)
-	ret0, _ := ret[0].([]*v1alpha1.VirtualMachine)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListVirtualMachines indicates an expected call of ListVirtualMachines
-func (mr *MockVirtualMachineProviderInterfaceMockRecorder) ListVirtualMachines(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVirtualMachines", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).ListVirtualMachines), arg0, arg1)
 }
 
 // Name mocks base method

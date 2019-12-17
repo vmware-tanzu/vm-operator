@@ -148,9 +148,12 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		}
 	}
 
-	// Initialize min frequency
-	if err := s.initCpuMinFreq(ctx); err != nil {
-		return errors.Wrapf(err, "Failed to init CPU min frequency")
+	// Initialize min frequency.  Only do so if the cluster reference is valid.  The resource pool and cluster info are
+	// not available on all sessions.
+	if s.cluster != nil {
+		if err := s.initCpuMinFreq(ctx); err != nil {
+			return errors.Wrapf(err, "Failed to init CPU min frequency")
+		}
 	}
 
 	return s.initDatastore(ctx, config.Datastore)
@@ -1143,6 +1146,10 @@ func ComputeCPUInfo(ctx context.Context, cluster *object.ClusterComputeResource)
 	var cr mo.ComputeResource
 	var hosts []mo.HostSystem
 	var minFreq uint64
+
+	if cluster == nil {
+		return 0, errors.New("Must have a valid cluster reference to compute the cpu info")
+	}
 
 	obj := cluster.Reference()
 

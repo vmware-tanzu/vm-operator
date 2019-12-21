@@ -32,6 +32,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 	"gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
+	"k8s.io/client-go/kubernetes"
 )
 
 var c client.Client
@@ -187,13 +188,13 @@ var _ = Describe("VirtualMachine controller", func() {
 	Describe("when creating/deleting a VM object", func() {
 
 		Context("from inventory", func() {
-
-			It("invokes the reconcile method with valid storage class", func() {
+			It("invoke the reconcile method with valid storage class", func() {
 				provider := vmprovider.GetVmProviderOrDie()
 
-				//Configure to use inventory
-				vSphereConfig.ContentSource = ""
-				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
+				err = vsphere.InstallVSphereVmProviderConfig(kubernetes.NewForConfigOrDie(cfg),
+					integration.DefaultNamespace,
+					integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, ""),
+					integration.SecretName)
 				Expect(err).NotTo(HaveOccurred())
 
 				stdlog.Printf("Listing images")
@@ -246,16 +247,11 @@ var _ = Describe("VirtualMachine controller", func() {
 		})
 
 		Context("from inventory", func() {
-
 			It("invoke the reconcile method with invalid storage class", func() {
-				provider := vmprovider.GetVmProviderOrDie()
-				p := provider.(*vsphere.VSphereVmProvider)
-				session, err := p.GetSession(context.TODO(), ns)
-				Expect(err).NotTo(HaveOccurred())
-
-				//Configure to use inventory
-				vSphereConfig.ContentSource = ""
-				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
+				err = vsphere.InstallVSphereVmProviderConfig(kubernetes.NewForConfigOrDie(cfg),
+					integration.DefaultNamespace,
+					integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, ""),
+					integration.SecretName)
 				Expect(err).NotTo(HaveOccurred())
 
 				vmName := "invalid-vm"
@@ -299,11 +295,11 @@ var _ = Describe("VirtualMachine controller", func() {
 		})
 
 		Context("from Content Library", func() {
-
 			It("invoke the reconcile method", func() {
-				//Configure to use Content Library
-				vSphereConfig.ContentSource = integration.GetContentSourceID()
-				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
+				err = vsphere.InstallVSphereVmProviderConfig(kubernetes.NewForConfigOrDie(cfg),
+					integration.DefaultNamespace,
+					integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, integration.GetContentSourceID()),
+					integration.SecretName)
 				Expect(err).NotTo(HaveOccurred())
 
 				vmName := "cl-deployed-vm"

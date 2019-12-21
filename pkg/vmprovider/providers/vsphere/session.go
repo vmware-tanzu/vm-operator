@@ -214,6 +214,7 @@ func (s *Session) ConfigureContent(ctx context.Context, contentSource string) er
 		return errors.Wrapf(err, "failed to init Content Library %q", contentSource)
 	}
 
+	log.Info("Content library configured to", "Content Source=", contentSource)
 	return nil
 }
 

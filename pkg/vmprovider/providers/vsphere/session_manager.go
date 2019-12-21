@@ -8,6 +8,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/vmware/govmomi/vapi/library"
+
 	"github.com/pkg/errors"
 
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
@@ -66,7 +68,21 @@ func (sm *SessionManager) GetSession(ctx context.Context, namespace string) (*Se
 	sm.mutex.Unlock()
 
 	if ok {
-		return ses, nil
+
+		config, err := GetProviderConfigFromConfigMap(sm.clientset, namespace)
+		if err != nil {
+			return nil, err
+		}
+
+		if sm.isContentSourceUnchanged(ses.contentlib, config.ContentSource) {
+			return ses, nil
+		}
+		//If Content Source has changed, logout and empty existing session.
+		ses.Logout(ctx)
+
+		sm.mutex.Lock()
+		delete(sm.sessions, namespace)
+		sm.mutex.Unlock()
 	}
 
 	ses, err := sm.createSession(ctx, namespace)
@@ -76,10 +92,14 @@ func (sm *SessionManager) GetSession(ctx context.Context, namespace string) (*Se
 
 	sm.mutex.Lock()
 	ses2, ok := sm.sessions[namespace]
+
 	if ok {
+		//Install new session and cleanup the racing session (ses2)
+		sm.sessions[namespace] = ses
 		sm.mutex.Unlock()
-		ses.Logout(ctx)
-		return ses2, nil
+
+		ses2.Logout(ctx)
+		return ses, nil
 	}
 
 	sm.sessions[namespace] = ses
@@ -109,4 +129,21 @@ func (sm *SessionManager) ComputeClusterCpuMinFrequency(ctx context.Context) (er
 	}
 
 	return nil
+}
+
+func (sm *SessionManager) isContentSourceUnchanged(cl *library.Library, contentSource string) bool {
+
+	if (cl != nil) && (cl.ID == contentSource) {
+		return true
+	}
+	//TODO: This will be removed once Name references are removed
+	if (cl != nil) && (cl.Name == contentSource) {
+		return true
+	}
+
+	if (cl == nil) && (contentSource == "") {
+		return true
+	}
+
+	return false
 }

@@ -53,10 +53,6 @@ var _ = Describe("Test Session Manager", func() {
 			Expect(err).NotTo(HaveOccurred())
 			err = sm.ComputeClusterCpuMinFrequency(ctx)
 			Expect(err).NotTo(HaveOccurred())
-
-			sess, err := sm.GetSession(ctx, "ns")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(sess.GetCpuMinMHzInCluster()).Should(BeNumerically(">", 0))
 		})
 	})
 })

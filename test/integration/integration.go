@@ -62,7 +62,7 @@ func GetContentSourceID() string {
 	return ContentSourceID
 }
 
-func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphereVmProviderConfig {
+func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int, contentSource string) *vsphere.VSphereVmProviderConfig {
 	return &vsphere.VSphereVmProviderConfig{
 		VcPNID:        vcAddress,
 		VcPort:        strconv.Itoa(vcPort),
@@ -71,7 +71,7 @@ func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphe
 		ResourcePool:  "/DC0/host/DC0_C0/Resources",
 		Folder:        "/DC0/vm",
 		Datastore:     "/DC0/datastore/LocalDS_0",
-		ContentSource: "",
+		ContentSource: contentSource,
 	}
 }
 
@@ -141,7 +141,7 @@ func SetupIntegrationEnv(namespaces []string) (*suite.Environment, *vsphere.VSph
 	vcSim := NewVcSimInstance()
 
 	address, port := vcSim.Start()
-	vSphereConfig := NewIntegrationVmOperatorConfig(address, port)
+	vSphereConfig := NewIntegrationVmOperatorConfig(address, port, "")
 
 	session, err := SetupVcsimEnv(vSphereConfig, cfg, vcSim, namespaces)
 	Expect(err).NotTo(HaveOccurred())
@@ -198,18 +198,11 @@ func SetupVcsimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Con
 
 	// Configure each requested namespace to use CL as the content source
 	for _, ns := range namespaces {
-
-		// Setup a session for the default namespace
-		session, err = vsphereVmProvider.GetSession(context.TODO(), ns)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get session: %v", err)
-		}
-
-		// Update the session to reference the new CL-based content source
-		err = session.ConfigureContent(context.Background(), ContentSourceID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to configure content: %v", err)
-		}
+		err = vsphere.InstallVSphereVmProviderConfig(kubernetes.NewForConfigOrDie(cfg),
+			ns,
+			NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, GetContentSourceID()),
+			SecretName)
+		Expect(err).NotTo(HaveOccurred())
 	}
 
 	// return the last session for use

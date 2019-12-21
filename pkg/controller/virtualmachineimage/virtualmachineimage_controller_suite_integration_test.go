@@ -32,7 +32,7 @@ var (
 )
 
 var _ = BeforeSuite(func() {
-	testEnv, _, restConfig, vcSim, session = integration.SetupIntegrationEnv([]string{"", integration.DefaultNamespace})
+	testEnv, _, restConfig, vcSim, session = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
 })
 
 var _ = AfterSuite(func() {

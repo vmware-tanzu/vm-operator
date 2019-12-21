@@ -88,18 +88,19 @@ func getVirtualMachineSetResourcePolicy(name, namespace string) *vmoperatorv1alp
 var _ = Describe("VMProvider Tests", func() {
 
 	Context("Creating a VM via vmprovider", func() {
-		vmNamespace := "test-namespace-vmp"
+		vmNamespace := integration.DefaultNamespace
 		var vmProvider *vsphere.VSphereVmProvider
 		var err error
 
-		Context("and the IP is available on create", func() {
+		BeforeEach(func() {
+			// Create a new VMProvder from the config provided by the test
+			vmProvider, err = vsphere.NewVSphereVmProvider(clientSet, nil)
+			Expect(err).NotTo(HaveOccurred())
+		})
 
+		Context("and the IP is available on create", func() {
 			It("should correctly update VirtualMachineStatus", func() {
 				vmName := "test-vm-vmp"
-
-				// Create a new VMProvder from the config provided by the test
-				vmProvider, err = vsphere.NewVSphereVmProviderFromConfig(vmNamespace, vSphereConfig)
-				Expect(err).NotTo(HaveOccurred())
 
 				// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
 				testIP := "10.0.0.1"
@@ -123,10 +124,6 @@ var _ = Describe("VMProvider Tests", func() {
 			It("should correctly update VirtualMachineStatus", func() {
 				vmName := "test-vm-vmp-noip"
 
-				// Create a new VMProvider from the config provided by the test
-				vmProvider, err := vsphere.NewVSphereVmProviderFromConfig(vmNamespace, vSphereConfig)
-				Expect(err).NotTo(HaveOccurred())
-
 				vmMetadata := map[string]string{}
 				imageName := "" // create, not clone
 				vmClass := getVMClassInstance(vmName, vmNamespace)
@@ -146,16 +143,17 @@ var _ = Describe("VMProvider Tests", func() {
 	Context("Creating and Updating a VM from Content Library", func() {
 		var vmProvider *vsphere.VSphereVmProvider
 		var err error
-		vmNamespace := "test-namespace-vmp"
+		vmNamespace := integration.DefaultNamespace
 		vmName := "test-vm-vmp-deploy"
 
 		It("reconfigure and power on without errors", func() {
 
-			//Setting VM Operator config to use CL
-			vSphereConfig.ContentSource = integration.GetContentSourceID()
+			err = vsphere.InstallVSphereVmProviderConfig(clientSet, integration.DefaultNamespace,
+				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, integration.GetContentSourceID()),
+				integration.SecretName)
+			Expect(err).NotTo(HaveOccurred())
 
-			// Create a new VMProvder from the config provided by the test
-			vmProvider, err = vsphere.NewVSphereVmProviderFromConfig(vmNamespace, vSphereConfig)
+			vmProvider, err = vsphere.NewVSphereVmProvider(clientSet, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
@@ -231,10 +229,11 @@ var _ = Describe("VMProvider Tests", func() {
 
 		JustBeforeEach(func() {
 			testPolicyName = "test-name"
-			testPolicyNamespace = "test-namespace"
+			testPolicyNamespace = integration.DefaultNamespace
 
-			vmProvider, err = vsphere.NewVSphereVmProviderFromConfig(testPolicyNamespace, vSphereConfig)
+			vmProvider, err = vsphere.NewVSphereVmProvider(clientSet, nil)
 			Expect(err).NotTo(HaveOccurred())
+
 			resourcePolicy = getVirtualMachineSetResourcePolicy(testPolicyName, testPolicyNamespace)
 			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
 		})
@@ -262,6 +261,17 @@ var _ = Describe("VMProvider Tests", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(exists).NotTo(BeTrue())
 			})
+		})
+	})
+
+	Context("Compute CPU Min Frequency in the Cluster", func() {
+		var vmProvider *vsphere.VSphereVmProvider
+		var err error
+		It("reconfigure and power on without errors", func() {
+			vmProvider, err = vsphere.NewVSphereVmProvider(clientSet, nil)
+			err = vmProvider.ComputeClusterCpuMinFrequency(context.TODO())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(session.GetCpuMinMHzInCluster()).Should(BeNumerically(">", 0))
 		})
 	})
 })

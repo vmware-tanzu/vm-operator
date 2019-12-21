@@ -42,7 +42,7 @@ var _ = BeforeSuite(func() {
 	vcsim = integration.NewVcSimInstance()
 	address, port := vcsim.Start()
 
-	provider, err := vsphere.NewVSphereVmProviderFromConfig(integration.DefaultNamespace, integration.NewIntegrationVmOperatorConfig(address, port))
+	provider, err := vsphere.NewVSphereVmProviderFromConfig(integration.DefaultNamespace, integration.NewIntegrationVmOperatorConfig(address, port, ""))
 	if err != nil {
 		log.Error(err, "Failed to create vSphere provider")
 		os.Exit(255)

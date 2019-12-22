@@ -8,5 +8,4 @@ data:
   VcCredsSecretName: wcp-vmop-sa-vc-auth
   Datacenter: <datacenter>
   StorageClassRequired: "true"
-  # TODO: Update this before we ship 1.0
-  ContentSource: Kubernetes
+  ContentSource: <content_source>

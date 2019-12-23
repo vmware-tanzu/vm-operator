@@ -370,7 +370,6 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 }
 
 func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
-	defer record.EmitEvent(vm, OpUpdate, &err, false)
 
 	// TODO The length limit of OpId is 256, we will implement a function to detects if the total length
 	//   exceeds the limit and then "smartly" trims each component of the op id to an abbreviated version.
@@ -391,6 +390,7 @@ func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1
 		configMap := &v1.ConfigMap{}
 		err := r.Get(ctx, types.NamespacedName{Name: metadata.ConfigMapName, Namespace: vm.Namespace}, configMap)
 		if err != nil {
+			record.EmitEvent(vm, OpUpdate, &err, false)
 			log.Error(err, "Failed to get VirtualMachineMetadata ConfigMap",
 				"vmName", vm.NamespacedName(), "configMapName", metadata.ConfigMapName)
 			return err

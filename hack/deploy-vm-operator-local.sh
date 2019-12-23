@@ -18,6 +18,7 @@ usage () {
 deploy-vcsim() {
     LOCAL_CONFIG=config/local-vcsim
     deploy
+    kubectl apply -f "$LOCAL_CONFIG/sc.yaml"
 }
 
 deploy() {

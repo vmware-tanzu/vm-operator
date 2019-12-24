@@ -13,6 +13,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/simulator"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,6 +23,7 @@ import (
 )
 
 func newConfig(namespace string, vcPNID string, vcPort string, vcCredsSecretName string) (*v1.ConfigMap, *v1.Secret, *VSphereVmProviderConfig) {
+
 	providerConfig := &VSphereVmProviderConfig{
 		VcPNID: vcPNID,
 		VcPort: vcPort,
@@ -29,11 +31,12 @@ func newConfig(namespace string, vcPNID string, vcPort string, vcCredsSecretName
 			Username: "some-user",
 			Password: "some-pass",
 		},
-		Datacenter:   "/DC0",
-		ResourcePool: "/DC0/host/DC0_C0/Resources",
-		Folder:       "/DC0/vm",
+		Datacenter:   simulator.Map.Any("Datacenter").Reference().Value,
+		ResourcePool: simulator.Map.Any("ResourcePool").Reference().Value,
+		Folder:       simulator.Map.Any("Folder").Reference().Value,
 		Datastore:    "/DC0/datastore/LocalDS_0",
 	}
+
 	configMap := ProviderConfigToConfigMap(namespace, providerConfig, vcCredsSecretName)
 	secret := ProviderCredentialsToSecret(namespace, providerConfig.VcCreds, vcCredsSecretName)
 	return configMap, secret, providerConfig

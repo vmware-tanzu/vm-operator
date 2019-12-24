@@ -136,10 +136,6 @@ func (sm *SessionManager) isContentSourceUnchanged(cl *library.Library, contentS
 	if (cl != nil) && (cl.ID == contentSource) {
 		return true
 	}
-	//TODO: This will be removed once Name references are removed
-	if (cl != nil) && (cl.Name == contentSource) {
-		return true
-	}
 
 	if (cl == nil) && (contentSource == "") {
 		return true

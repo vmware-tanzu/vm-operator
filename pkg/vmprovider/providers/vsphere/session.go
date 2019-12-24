@@ -87,18 +87,29 @@ func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig
 	return s, nil
 }
 
+// Skip cyclomatic complexity check until this can be refactored. Adding support for datacenter name and moId caused the complexity to go over
+// the edge. Specifying datacenter by name will be removed once all our tests have been updated to use MoId. (TODO: )
+// nolint: gocyclo, vet
 func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConfig) error {
 
+	var err error
 	s.Finder = find.NewFinder(s.client.VimClient(), false)
 	s.userInfo = url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
-	dc, err := s.Finder.Datacenter(ctx, config.Datacenter)
-	if err != nil {
-		return errors.Wrapf(err, "failed to init Datacenter %q", config.Datacenter)
+	// In production environments, Datacenter should ONLY be specified using moId to support renaming of the datacenter without breaking VM operator.
+	// Fall back to specifying Datacenter using name since our tests rely on that.
+	ref := types.ManagedObjectReference{Type: "Datacenter", Value: config.Datacenter}
+	if o, err := s.Finder.ObjectReference(ctx, ref); err != nil {
+		dc, err := s.Finder.Datacenter(ctx, config.Datacenter)
+		if err != nil {
+			return errors.Wrapf(err, "failed to init Datacenter %q", config.Datacenter)
+		}
+		s.datacenter = dc
+	} else {
+		s.datacenter = o.(*object.Datacenter)
 	}
 
-	s.datacenter = dc
-	s.Finder.SetDatacenter(dc)
+	s.Finder.SetDatacenter(s.datacenter)
 
 	// not necessary for vmimage list/get from Content Library
 	if config.ResourcePool != "" {
@@ -1188,7 +1199,7 @@ func (s *Session) String() string {
 	if s.contentlib != nil {
 		sb.WriteString(fmt.Sprintf("contentlib: %+v, ", *s.contentlib))
 	}
-	sb.WriteString(fmt.Sprintf("datacenter: %s, ", s.datacenter.Reference().Value))
+	sb.WriteString(fmt.Sprintf("datacenter: %s, ", s.datacenter))
 	if s.folder != nil {
 		sb.WriteString(fmt.Sprintf("folder: %s, ", s.folder.Reference().Value))
 	}

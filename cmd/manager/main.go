@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -44,6 +45,8 @@ func createHealthHTTPServer(listenAddress string) (*http.Server, error) {
 }
 
 func waitForVmOperatorGroupVersion(restConfig *rest.Config) error {
+	// TODO: Add tests for waitForVmOperatorGroupVersion
+
 	const gv = "vmoperator.vmware.com/v1alpha1"
 	clientSet := kubernetes.NewForConfigOrDie(restConfig)
 
@@ -53,7 +56,7 @@ func waitForVmOperatorGroupVersion(restConfig *rest.Config) error {
 	err := wait.PollImmediate(100*time.Millisecond, 15*time.Second, func() (done bool, err error) {
 		resources, err := clientSet.DiscoveryClient.ServerResourcesForGroupVersion(gv)
 		if err != nil {
-			if errors.IsServiceUnavailable(err) {
+			if errors.IsServiceUnavailable(err) || meta.IsNoMatchError(err) {
 				return false, nil
 			}
 			return false, err

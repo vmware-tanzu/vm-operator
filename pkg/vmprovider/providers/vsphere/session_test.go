@@ -10,14 +10,11 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/vmware/govmomi"
-	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/simulator/vpx"
-	"github.com/vmware/govmomi/vim25/types"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25"
 
@@ -135,6 +132,7 @@ var _ = Describe("Test Session", func() {
 
 	Context("Compute CPU Min Frequency in the Cluster", func() {
 		Specify("return cpu min frequency when natural number of hosts attached the cluster", func() {
+			// The default model used by simulator has one host and one cluster configured.
 			res := simulator.VPX().Run(func(ctx context.Context, c *vim25.Client) error {
 				find := find.NewFinder(c)
 				cr, err := find.DefaultClusterComputeResource(ctx)
@@ -150,30 +148,16 @@ var _ = Describe("Test Session", func() {
 		})
 
 		Specify("return cpu min frequency when the cluster contains no hosts", func() {
-			content := vpx.ServiceContent
-			s := simulator.New(simulator.NewServiceInstance(content, vpx.RootFolder))
-
-			ts := s.NewServer()
-			defer ts.Close()
-
-			ctx := context.Background()
-			c, err := govmomi.NewClient(ctx, ts.URL, true)
+			// The model being used is configured to have 0 hosts. (Defined in vsphere_suite_test.go/BeforeSuite)
+			c, _ := govmomi.NewClient(ctx, server.URL, true)
+			si := object.NewSearchIndex(c.Client)
+			ref, err := si.FindByInventoryPath(ctx, "/DC0/host/DC0_C0")
 			Expect(err).NotTo(HaveOccurred())
+			cr := object.NewClusterComputeResource(c.Client, ref.Reference())
 
-			f := object.NewRootFolder(c.Client)
-
-			dc, err := f.CreateDatacenter(ctx, "foo")
-			Expect(err).NotTo(HaveOccurred())
-
-			folders, err := dc.Folders(ctx)
-			Expect(err).NotTo(HaveOccurred())
-
-			cluster, err := folders.HostFolder.CreateCluster(ctx, "cluster1", types.ClusterConfigSpecEx{})
-			Expect(err).NotTo(HaveOccurred())
-
-			cpuMinFreq, err := vsphere.ComputeCPUInfo(ctx, cluster)
-			Expect(err.Error()).Should(Equal("No hosts found in the cluster"))
-			Expect(cpuMinFreq).Should(BeNumerically("==", 0))
+			cpuMinFreq, err := vsphere.ComputeCPUInfo(ctx, cr)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(cpuMinFreq).Should(BeNumerically(">", 0))
 		})
 	})
 })

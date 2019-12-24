@@ -6,14 +6,11 @@
 package vsphere_test
 
 import (
-	"context"
-	"crypto/tls"
 	"net/url"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/simulator"
 	. "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
@@ -30,28 +27,10 @@ func testConfig(vcpnid string, vcport string, user string, pass string) *VSphere
 }
 
 var _ = Describe("NewClient", func() {
-	var (
-		s     *simulator.Server
-		model *simulator.Model
-		ctx   context.Context
-	)
-	BeforeEach(func() {
-		model = simulator.VPX()
-		err := model.Create()
-		Expect(err).To(Not(HaveOccurred()))
-		model.Service.TLS = new(tls.Config)
-		ctx = context.TODO()
-	})
-
-	AfterEach(func() {
-		defer s.Close()
-		defer model.Remove()
-	})
 
 	Context("When called with valid config", func() {
 		Specify("returns a valid client and no error", func() {
-			s = model.Service.NewServer()
-			client, err := NewClient(ctx, testConfig(s.URL.Hostname(), s.URL.Port(), "some-username", "some-password"))
+			client, err := NewClient(ctx, testConfig(server.URL.Hostname(), server.URL.Port(), "some-username", "some-password"))
 			Expect(err).To(Not(HaveOccurred()))
 			Expect(client).To(Not(BeNil()))
 		})
@@ -69,7 +48,6 @@ var _ = Describe("NewClient", func() {
 
 	Context("When called with invalid VC PNID", func() {
 		Specify("returns failed to parse error", func() {
-			s = model.Service.NewServer()
 			failConfig := testConfig("test-pnid", "test-port", "test-user", "test-pass")
 			client, err := NewClient(ctx, failConfig)
 			Expect(err).To(HaveOccurred())
@@ -82,10 +60,9 @@ var _ = Describe("NewClient", func() {
 
 	DescribeTable("Should fail if given wrong username and/or wrong password",
 		func(expectedUsername, expectedPassword, username, password string) {
-			s.URL.User = url.UserPassword(expectedUsername, expectedPassword)
-			model.Service.Listen = s.URL
-			s = model.Service.NewServer()
-			config := testConfig(s.URL.Hostname(), s.URL.Port(), username, password)
+			server.URL.User = url.UserPassword(expectedUsername, expectedPassword)
+			model.Service.Listen = server.URL
+			config := testConfig(server.URL.Hostname(), server.URL.Port(), username, password)
 			client, err := NewClient(ctx, config)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(HavePrefix("login failed for url"))

@@ -8,6 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"strconv"
+	"time"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
@@ -44,6 +47,8 @@ const (
 	OpDelete       = "DeleteVMService"
 	OpUpdate       = "UpdateVMService"
 	ControllerName = "virtualmachineservice-controller"
+
+	defaultConnectTimeout = time.Second * 10
 )
 
 var log = logf.Log.WithName(ControllerName)
@@ -297,13 +302,12 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 	}
 }
 
-func findPort(vm *vmoperatorv1alpha1.VirtualMachine, svcPort *corev1.ServicePort) (int, error) {
-	portName := svcPort.TargetPort
+func findPort(vm *vmoperatorv1alpha1.VirtualMachine, portName intstr.IntOrString, portProto corev1.Protocol) (int, error) {
 	switch portName.Type {
 	case intstr.String:
 		name := portName.StrVal
 		for _, port := range vm.Spec.Ports {
-			if port.Name == name && port.Protocol == svcPort.Protocol {
+			if port.Name == name && port.Protocol == portProto {
 				return port.Port, nil
 			}
 		}
@@ -408,8 +412,9 @@ func (r *ReconcileVirtualMachineService) getVMServiceSelectedVirtualMachines(ctx
 }
 
 func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service) error {
-	log.V(5).Info("Updating VirtualMachineService endpoints", "name", vmService.NamespacedName())
-	defer log.V(5).Info("Finished updating VirtualMachineService endpoints", "name", vmService.NamespacedName())
+	logger := log.WithValues("serviceName", vmService.NamespacedName())
+	logger.V(5).Info("Updating VirtualMachineService endpoints")
+	defer logger.V(5).Info("Finished updating VirtualMachineService endpoints")
 
 	vmList, err := r.getVMServiceSelectedVirtualMachines(ctx, vmService)
 	if err != nil {
@@ -420,15 +425,30 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 
 	for i := range vmList.Items {
 		vm := vmList.Items[i]
-		log.V(5).Info("Resolving ports for VirtualMachine", "name", vm.NamespacedName())
+		logger := logger.WithValues("virtualmachine", vm.NamespacedName())
+		logger.V(5).Info("Resolving ports for VirtualMachine")
+		// Skip VM's marked for deletions
+		if vm.DeletionTimestamp != nil {
+			logger.Info("Skipping VM marked for deletion")
+			continue
+		}
 		// Handle multiple VM interfaces
 		if len(vm.Status.VmIp) == 0 {
-			log.Info("Failed to find an IP for VirtualMachine", "name", vm.NamespacedName())
+			logger.Info("Failed to find an IP for VirtualMachine")
 			continue
 		}
 		// Ignore if all required values aren't present
 		if vm.Status.Host == "" {
-			log.Info("Skipping VirtualMachine due to empty host", "name", vm.NamespacedName())
+			logger.Info("Skipping VirtualMachine due to empty host")
+			continue
+		}
+
+		// Ignore VM's that fail the readiness check (only when probes are specified)
+		// TODO: Move this out of the controller into a runnable that periodically probes a VM and manages the endpoints
+		// out-of-band from the controller. We currently rely on the controller's periodic sync to invoke the readiness
+		// probe.
+		if err := runProbe(vmService, &vm, vm.Spec.ReadinessProbe); err != nil {
+			logger.Info("Skipping VirtualMachine due to failed readiness probe check", "probeError", err)
 			continue
 		}
 
@@ -440,13 +460,13 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 			portName := servicePort.Name
 			portProto := servicePort.Protocol
 
-			log.V(5).Info("VirtualMachine port", "name", vm.NamespacedName(),
+			logger.Info("VirtualMachine port",
 				"port name", portName, "port proto", portProto)
 
-			portNum, err := findPort(&vm, servicePort)
+			portNum, err := findPort(&vm, servicePort.TargetPort, portProto)
 			if err != nil {
-				log.Error(err, "Failed to find port for service",
-					"namespace", service.Namespace, "name", service.Name)
+				logger.Info("Failed to find port for service",
+					"name", portName, "protocol", portProto, "error", err)
 				continue
 			}
 
@@ -460,7 +480,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 	err = r.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, currentEndpoints)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			log.Error(err, "Failed to list endpoints")
+			logger.Error(err, "Failed to list endpoints")
 			return err
 		}
 
@@ -471,17 +491,17 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 			},
 		}
 	} else if apiequality.Semantic.DeepEqual(currentEndpoints.Subsets, subsets) {
-		log.V(5).Info("No change, no need to update endpoints", "endpoints", currentEndpoints)
+		logger.V(5).Info("No change, no need to update endpoints", "endpoints", currentEndpoints)
 		return nil
 	}
 	newEndpoints := r.makeEndpoints(vmService, currentEndpoints, subsets)
 
 	createEndpoints := len(currentEndpoints.ResourceVersion) == 0
 	if createEndpoints {
-		log.V(5).Info("Creating service endpoints", "service name", vmService.NamespacedName(), "endpoints", newEndpoints)
+		logger.V(5).Info("Creating service endpoints", "endpoints", newEndpoints)
 		err = r.Create(ctx, newEndpoints)
 	} else {
-		log.V(5).Info("Updating service endpoints", "service name", vmService.NamespacedName(), "endpoints", newEndpoints)
+		logger.V(5).Info("Updating service endpoints", "endpoints", newEndpoints)
 		err = r.Update(ctx, newEndpoints)
 	}
 
@@ -490,8 +510,8 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 			// A request is forbidden primarily for two reasons:
 			// 1. namespace is terminating, endpoint creation is not allowed by default.
 			// 2. policy is mis-configured, in which case no service would function anywhere.
-			// Given the frequency of 1, we log at a lower level.
-			log.V(5).Info("Forbidden from creating endpoints", "error", err.Error())
+			// Given the frequency of 1, we logger at a lower level.
+			logger.V(5).Info("Forbidden from creating endpoints", "error", err.Error())
 		}
 		return err
 	}
@@ -525,4 +545,53 @@ func (r *ReconcileVirtualMachineService) updateVmServiceStatus(ctx context.Conte
 	// BMV: newVMService isn't saved after this point so annotations are missing
 	pkg.AddAnnotations(&vmService.ObjectMeta)
 	return vmService, nil
+}
+
+func runProbe(vmService *vmoperatorv1alpha1.VirtualMachineService, vm *vmoperatorv1alpha1.VirtualMachine, p *vmoperatorv1alpha1.Probe) error {
+	logger := log.WithValues("serviceName", vmService.NamespacedName(), "vm", vm.NamespacedName())
+	if p == nil {
+		logger.V(5).Info("Readiness probe not specified")
+		return nil
+	}
+	if p.TCPSocket != nil {
+		portProto := corev1.ProtocolTCP
+		portNum, err := findPort(vm, p.TCPSocket.Port, portProto)
+		if err != nil {
+			return err
+		}
+
+		var host string
+		if p.TCPSocket.Host != "" {
+			host = p.TCPSocket.Host
+		} else {
+			logger.V(5).Info("TCPSocket Host not specified, using VM IP")
+			host = vm.Status.VmIp
+		}
+
+		var timeout time.Duration
+		if p.TimeoutSeconds == 0 {
+			timeout = defaultConnectTimeout
+		} else {
+			timeout = time.Duration(p.TimeoutSeconds) * time.Second
+		}
+
+		if err := checkConnection("tcp", host, strconv.Itoa(portNum), timeout); err != nil {
+			return err
+		}
+		logger.V(5).Info("Readiness probe succeeded")
+		return nil
+	}
+	return fmt.Errorf("unknown action specified for probe in VirtualMachine %s", vm.NamespacedName())
+}
+
+func checkConnection(proto, host, port string, timeout time.Duration) error {
+	address := net.JoinHostPort(host, port)
+	conn, err := net.DialTimeout(proto, address, timeout)
+	if err != nil {
+		return err
+	}
+	if err := conn.Close(); err != nil {
+		return err
+	}
+	return nil
 }

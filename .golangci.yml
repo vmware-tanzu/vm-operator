@@ -16,7 +16,7 @@ run:
 linters-settings:
   gocyclo:
     # minimal code complexity to report
-    min-complexity: 15
+    min-complexity: 16
 
 # linters to enable
 linters:

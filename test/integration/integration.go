@@ -281,15 +281,21 @@ func SetupContentLibrary(ctx context.Context, config *vsphere.VSphereVmProviderC
 }
 
 // SetupTestReconcile returns a reconcile.Reconcile implementation that delegates to inner and
-// writes the request to requests after Reconcile is finished.
-func SetupTestReconcile(inner reconcile.Reconciler) (reconcile.Reconciler, chan reconcile.Request) {
+// writes the request to requests after Reconcile is finished. Additionally, it also writes any error from the
+// reconcile function.
+func SetupTestReconcile(inner reconcile.Reconciler) (reconcile.Reconciler, chan reconcile.Request, chan error) {
 	requests := make(chan reconcile.Request)
+	// Make errors a buffered channel so we don't block even if there are no interested receivers. This is needed for
+	// the sake of tests that don't want to make any assertions on the errors. The buffer size should be more than
+	// sufficient given the channels are setup for each test.
+	errors := make(chan error, 100)
 	fn := reconcile.Func(func(req reconcile.Request) (reconcile.Result, error) {
 		result, err := inner.Reconcile(req)
 		requests <- req
+		errors <- err
 		return result, err
 	})
-	return fn, requests
+	return fn, requests, errors
 }
 
 // StartTestManager adds recFn

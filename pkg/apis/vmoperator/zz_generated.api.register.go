@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilintstr "k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apiserver/pkg/registry/rest"
 )
 
@@ -197,15 +198,26 @@ type VirtualMachineSpec struct {
 	NetworkInterfaces  []VirtualMachineNetworkInterface
 	ResourcePolicyName string
 	Volumes            []VirtualMachineVolumes
+	ReadinessProbe     *Probe
 }
 
 type FolderSpec struct {
 	Name string
 }
 
+type Probe struct {
+	TCPSocket      *TCPSocketAction
+	TimeoutSeconds int32
+}
+
 type VirtualMachineVolumes struct {
 	Name                  string
 	PersistentVolumeClaim *corev1.PersistentVolumeClaimVolumeSource
+}
+
+type TCPSocketAction struct {
+	Port utilintstr.IntOrString
+	Host string
 }
 
 type VirtualMachineNetworkInterface struct {

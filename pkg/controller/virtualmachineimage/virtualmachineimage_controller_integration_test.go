@@ -223,7 +223,7 @@ var _ = Describe("ReconcileVirtualMachineImage", func() {
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
-		recFn, requests = integration.SetupTestReconcile(newReconciler(mgr, VirtualMachineImageDiscovererOptions{
+		recFn, requests, _ = integration.SetupTestReconcile(newReconciler(mgr, VirtualMachineImageDiscovererOptions{
 			initialDiscoveryFrequency:    1 * time.Second,
 			continuousDiscoveryFrequency: 5 * time.Second}))
 		Expect(add(mgr, recFn)).To(Succeed())

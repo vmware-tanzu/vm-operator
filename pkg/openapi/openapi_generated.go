@@ -23,7 +23,9 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.FolderSpec":                               schema_pkg_apis_vmoperator_v1alpha1_FolderSpec(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.LoadBalancerIngress":                      schema_pkg_apis_vmoperator_v1alpha1_LoadBalancerIngress(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.LoadBalancerStatus":                       schema_pkg_apis_vmoperator_v1alpha1_LoadBalancerStatus(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.Probe":                                    schema_pkg_apis_vmoperator_v1alpha1_Probe(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.ResourcePoolSpec":                         schema_pkg_apis_vmoperator_v1alpha1_ResourcePoolSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.TCPSocketAction":                          schema_pkg_apis_vmoperator_v1alpha1_TCPSocketAction(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachine":                           schema_pkg_apis_vmoperator_v1alpha1_VirtualMachine(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClass":                      schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClass(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineClassHardware":              schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineClassHardware(ref),
@@ -737,6 +739,33 @@ func schema_pkg_apis_vmoperator_v1alpha1_LoadBalancerStatus(ref common.Reference
 	}
 }
 
+func schema_pkg_apis_vmoperator_v1alpha1_Probe(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "Probe describes a health check to be performed against a VM to determine whether it is alive or ready to receive traffic.",
+				Properties: map[string]spec.Schema{
+					"tcpSocket": {
+						SchemaProps: spec.SchemaProps{
+							Description: "TCPSocket specifies an action involving a TCP port.",
+							Ref:         ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.TCPSocketAction"),
+						},
+					},
+					"timeoutSeconds": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Number of seconds after which the probe times out. Defaults to 1 second. Minimum value is 1.",
+							Type:        []string{"integer"},
+							Format:      "int32",
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.TCPSocketAction"},
+	}
+}
+
 func schema_pkg_apis_vmoperator_v1alpha1_ResourcePoolSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -764,6 +793,34 @@ func schema_pkg_apis_vmoperator_v1alpha1_ResourcePoolSpec(ref common.ReferenceCa
 		},
 		Dependencies: []string{
 			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineResourceSpec"},
+	}
+}
+
+func schema_pkg_apis_vmoperator_v1alpha1_TCPSocketAction(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "TCPSocketAction describes an action based on opening a socket",
+				Properties: map[string]spec.Schema{
+					"port": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Number or name of the port to access on the VirtualMachine. Number must be in the range 1 to 65535. Name must be an IANA_SVC_NAME.",
+							Ref:         ref("k8s.io/apimachinery/pkg/util/intstr.IntOrString"),
+						},
+					},
+					"host": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Optional: Host name to connect to, defaults to the VirtualMachine IP.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"port"},
+			},
+		},
+		Dependencies: []string{
+			"k8s.io/apimachinery/pkg/util/intstr.IntOrString"},
 	}
 }
 
@@ -1879,12 +1936,17 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSpec(ref common.Reference
 							},
 						},
 					},
+					"readinessProbe": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.Probe"),
+						},
+					},
 				},
 				Required: []string{"imageName", "className", "powerState"},
 			},
 		},
 		Dependencies: []string{
-			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineMetadata", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineNetworkInterface", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineVolumes"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.Probe", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineMetadata", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineNetworkInterface", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachinePort", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.VirtualMachineVolumes"},
 	}
 }
 

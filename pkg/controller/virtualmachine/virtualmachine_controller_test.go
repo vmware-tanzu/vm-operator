@@ -160,7 +160,7 @@ var _ = Describe("VirtualMachine controller", func() {
 
 		err = c.Create(context.TODO(), generateDefaultResourceQuota())
 
-		recFn, requests = integration.SetupTestReconcile(newReconciler(mgr))
+		recFn, requests, _ = integration.SetupTestReconcile(newReconciler(mgr))
 		Expect(add(mgr, recFn)).To(Succeed())
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)

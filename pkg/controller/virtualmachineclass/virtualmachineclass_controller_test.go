@@ -133,7 +133,7 @@ var _ = Describe("VirtualMachineClass controller", func() {
 			}
 
 			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Name: name}}
-			recFn, requests := integration.SetupTestReconcile(newReconciler(mgr))
+			recFn, requests, _ := integration.SetupTestReconcile(newReconciler(mgr))
 			Expect(add(mgr, recFn)).To(Succeed())
 			// Create the VM Class object and expect the Reconcile
 			err = c.Create(context.TODO(), &instance)

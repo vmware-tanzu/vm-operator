@@ -9,3 +9,4 @@ data:
   Datacenter: <datacenter>
   StorageClassRequired: "true"
   ContentSource: <content_source>
+  UseInventoryAsContentSource: "false"

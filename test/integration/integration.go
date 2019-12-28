@@ -64,14 +64,15 @@ func GetContentSourceID() string {
 
 func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int, contentSource string) *vsphere.VSphereVmProviderConfig {
 	return &vsphere.VSphereVmProviderConfig{
-		VcPNID:        vcAddress,
-		VcPort:        strconv.Itoa(vcPort),
-		VcCreds:       NewIntegrationVmOperatorCredentials(),
-		Datacenter:    "/DC0",
-		ResourcePool:  "/DC0/host/DC0_C0/Resources",
-		Folder:        "/DC0/vm",
-		Datastore:     "/DC0/datastore/LocalDS_0",
-		ContentSource: contentSource,
+		VcPNID:                      vcAddress,
+		VcPort:                      strconv.Itoa(vcPort),
+		VcCreds:                     NewIntegrationVmOperatorCredentials(),
+		Datacenter:                  "/DC0",
+		ResourcePool:                "/DC0/host/DC0_C0/Resources",
+		Folder:                      "/DC0/vm",
+		Datastore:                   "/DC0/datastore/LocalDS_0",
+		ContentSource:               contentSource,
+		UseInventoryAsContentSource: true,
 	}
 }
 

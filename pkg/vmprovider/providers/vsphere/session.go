@@ -52,9 +52,10 @@ type Session struct {
 	contentlib   *library.Library
 	datastore    *object.Datastore
 
-	userInfo             *url.Userinfo
-	extraConfig          map[string]string
-	storageClassRequired bool
+	userInfo              *url.Userinfo
+	extraConfig           map[string]string
+	storageClassRequired  bool
+	useInventoryForImages bool
 
 	mutex              sync.Mutex
 	cpuMinMHzInCluster uint64 // CPU Min Frequency across all Hosts in the cluster
@@ -67,10 +68,11 @@ func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig
 	}
 
 	s := &Session{
-		client:               c,
-		clientset:            clientset,
-		ncpClient:            ncpclient,
-		storageClassRequired: config.StorageClassRequired,
+		client:                c,
+		clientset:             clientset,
+		ncpClient:             ncpclient,
+		storageClassRequired:  config.StorageClassRequired,
+		useInventoryForImages: config.UseInventoryAsContentSource,
 	}
 
 	if err = s.initSession(ctx, config); err != nil {
@@ -588,20 +590,31 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 		return s.cloneVirtualMachineFromCL(ctx, vm, &vmClass, resourcePolicy, vmMetadata, storageProfileID)
 	}
 
+	if s.useInventoryForImages {
+		return s.cloneVirtualMachineFromInventory(ctx, vm, &vmClass, resourcePolicy, vmMetadata, storageProfileID)
+	}
+
+	return nil, fmt.Errorf("no Content source or inventory configured to clone VM")
+}
+
+func (s *Session) cloneVirtualMachineFromInventory(ctx context.Context, vm *v1alpha1.VirtualMachine,
+	vmClass *v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
+	vmMetadata vmprovider.VirtualMachineMetadata, storageProfileID string) (*res.VirtualMachine, error) {
+
 	// Clone Virtual Machine from local.
 	resSrcVm, err := s.lookupVm(ctx, vm.Spec.ImageName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to lookup clone source %q", vm.Spec.ImageName)
 	}
 
-	cloneSpec, err := s.getCloneSpec(ctx, name, resSrcVm, vm, &vmClass.Spec, resourcePolicy, vmMetadata, storageProfileID)
+	cloneSpec, err := s.getCloneSpec(ctx, vm.Name, resSrcVm, vm, &vmClass.Spec, resourcePolicy, vmMetadata, storageProfileID)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create clone spec")
 	}
 
 	cloneResVm, err := s.cloneVm(ctx, resSrcVm, cloneSpec)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to clone new VM %q from %q", name, resSrcVm.Name)
+		return nil, errors.Wrapf(err, "failed to clone new VM %q from %q", vm.Name, resSrcVm.Name)
 	}
 
 	return cloneResVm, nil

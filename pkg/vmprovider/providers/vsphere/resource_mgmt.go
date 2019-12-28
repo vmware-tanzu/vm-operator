@@ -7,7 +7,6 @@ package vsphere
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -28,7 +27,7 @@ func GetResourcePoolOwner(ctx context.Context, rp *object.ResourcePool) (*object
 	return object.NewClusterComputeResource(rp.Client(), owner.Owner), nil
 }
 
-func CheckPlacementRelocateSpec(spec *vimTypes.VirtualMachineRelocateSpec) bool {
+func checkPlacementRelocateSpec(spec *vimTypes.VirtualMachineRelocateSpec) bool {
 	if spec == nil {
 		log.Info("RelocateSpec is nil")
 		return false
@@ -48,12 +47,12 @@ func CheckPlacementRelocateSpec(spec *vimTypes.VirtualMachineRelocateSpec) bool 
 	return true
 }
 
-func ParsePlaceVmResponse(res *vimTypes.PlacementResult) *vimTypes.VirtualMachineRelocateSpec {
+func parsePlaceVmResponse(res *vimTypes.PlacementResult) *vimTypes.VirtualMachineRelocateSpec {
 	for _, r := range res.Recommendations {
 		if r.Reason == string(vimTypes.RecommendationReasonCodeXvmotionPlacement) {
 			for _, a := range r.Action {
 				if pa, ok := a.(*vimTypes.PlacementAction); ok {
-					if CheckPlacementRelocateSpec(pa.RelocateSpec) {
+					if checkPlacementRelocateSpec(pa.RelocateSpec) {
 						return pa.RelocateSpec
 					}
 				}
@@ -85,17 +84,10 @@ func computeVMPlacement(ctx context.Context, cls *object.ClusterComputeResource,
 	if err != nil {
 		return nil, err
 	}
-	rSpec := ParsePlaceVmResponse(res)
+	rSpec := parsePlaceVmResponse(res)
 	if rSpec == nil {
 		return nil, fmt.Errorf("no valid placement action")
 	}
 
 	return rSpec, nil
-}
-
-func isNilPtr(i interface{}) bool {
-	if i != nil {
-		return (reflect.ValueOf(i).Kind() == reflect.Ptr) && (reflect.ValueOf(i).IsNil())
-	}
-	return true
 }

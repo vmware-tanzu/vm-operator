@@ -63,54 +63,6 @@ var _ = Describe("Test Session", func() {
 		})
 	})
 
-	Context("RP as inventory path", func() {
-		Specify("returns RP object without error", func() {
-			res := simulator.VPX().Run(func(ctx context.Context, c *vim25.Client) error {
-				finder := find.NewFinder(c)
-				pools, err := finder.ResourcePoolList(ctx, "*")
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(len(pools)).ToNot(BeZero())
-
-				existingPool := pools[0]
-				pool, err := vsphere.GetResourcePoolByPath(ctx, finder, existingPool.InventoryPath)
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(pool.InventoryPath).To(Equal(existingPool.InventoryPath))
-				Expect(pool.Reference().Value).To(Equal(existingPool.Reference().Value))
-				pool, err = vsphere.GetResourcePoolByMoID(ctx, finder, existingPool.Reference().Value)
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(pool.InventoryPath).To(Equal(existingPool.InventoryPath))
-				Expect(pool.Reference().Value).To(Equal(existingPool.Reference().Value))
-				return nil
-			})
-			Expect(res).To(BeNil())
-		})
-	})
-
-	Context("Folder as inventory path", func() {
-		Specify("returns Folder object without error", func() {
-			res := simulator.VPX().Run(func(ctx context.Context, c *vim25.Client) error {
-				finder := find.NewFinder(c)
-				folders, err := finder.FolderList(ctx, "*")
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(len(folders)).ToNot(BeZero())
-
-				paths := []string{
-					folders[0].InventoryPath,
-					folders[0].Reference().Value,
-				}
-
-				for _, path := range paths {
-					folder, err := vsphere.GetVMFolder(ctx, finder, path)
-					Expect(err).ShouldNot(HaveOccurred())
-					Expect(folder.InventoryPath).To(Equal(folders[0].InventoryPath))
-				}
-
-				return nil
-			})
-			Expect(res).To(BeNil())
-		})
-	})
-
 	Context("Convert CPU units from milli-cores to MHz", func() {
 		Specify("return whole number for non-integer CPU quantity", func() {
 			q, err := resource.ParseQuantity("500m")

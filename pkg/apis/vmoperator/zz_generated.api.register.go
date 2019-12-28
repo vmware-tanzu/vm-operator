@@ -160,7 +160,8 @@ type VirtualMachineStatus struct {
 	PowerState VirtualMachinePowerState
 	Phase      VMStatusPhase
 	VmIp       string
-	BiosUuid   string
+	UniqueID   string
+	BiosUUID   string
 	Volumes    []VirtualMachineVolumeStatus
 }
 

@@ -10,16 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/klog/klogr"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-
 	"github.com/pkg/errors"
-
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
+	"k8s.io/klog/klogr"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 )
 
 type VirtualMachine struct {
@@ -137,6 +135,29 @@ func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
 	return o.Guest.IpAddress, nil
 }
 
+func (vm *VirtualMachine) InstanceUUID(ctx context.Context) (string, error) {
+	var o mo.VirtualMachine
+
+	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config.instanceUuid"}, &o)
+	if err != nil {
+		return "", err
+	}
+
+	return o.Config.InstanceUuid, nil
+}
+
+func (vm *VirtualMachine) BiosUUID(ctx context.Context) (string, error) {
+	return vm.vcVirtualMachine.UUID(ctx), nil
+}
+
+func (vm *VirtualMachine) ResourcePool(ctx context.Context) (string, error) {
+	rp, err := vm.vcVirtualMachine.ResourcePool(ctx)
+	if err != nil {
+		return "", err
+	}
+	return rp.Reference().Value, nil
+}
+
 func (vm *VirtualMachine) ReferenceValue() string {
 	return vm.vcVirtualMachine.Reference().Value
 }
@@ -173,6 +194,31 @@ func (vm *VirtualMachine) GetCreationTime(ctx context.Context) (*time.Time, erro
 	return o.Config.CreateDate, nil
 }
 
+func (vm *VirtualMachine) UniqueID(ctx context.Context) (string, error) {
+	// Notes from Alkesh Shah regarding MoIDs in VC as of 7.0
+	//
+	// MoRef IDs are unique within the scope of a single VC. Since Clusters are entities in VCs, the MoRef IDs will be unique across clusters
+	//
+	// Identity in VC is derived from a sequence. This ID is used in generating the MoId (or MoRef ID) for the entity in VC. Sequence is monotonically
+	// increasing and so during regular operation there are no dupes
+	//
+	// Backup-Restore: We now make sure that our sequence does not go back in time when restoring from a backup
+	// ( ) So this
+	// ensures that after restore we get new MoIds which are never used before… (we advance the sequence counter based on time)
+	//
+	// Discovery of VMs: We only use moids from the VM store during restore from a backup. In the unlikely event
+	// that there are two VMs which are presenting the same MoId, we will regenerate a new MoId based on the current
+	// sequence. Keep in mind, Ideally the unlikely scenario should not occur as we attempt to tamper proof the MoId
+	// stored in the VM store ( )
+	// so two VMs having the same MoId should not happen because they cannot have the same VMX path and we use VMX path
+	// for ensuring this tamper proof behavior.
+	//
+	// Removing from VC and Re-adding the VM to same VC: VM will be given a new MoId (even if the VM is added using
+	// RegisterVM operation from VC)
+	// Basically, lifetime of the identity is tied to VC’s knowledge of it’s existence in it’s inventory
+	return vm.ReferenceValue(), nil
+}
+
 // GetStatus returns a VirtualMachine's Status
 func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachineStatus, error) {
 	// TODO(bryanv) We should get all the needed fields in one call to VC.
@@ -193,10 +239,20 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 		return nil, errors.Wrapf(err, "failed to get VM hostname for VirtualMachine: %s", vm.Name)
 	}
 
+	uniqueId, err := vm.UniqueID(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to generate a unique id for VirtualMachine: %s", vm.Name)
+	}
+
 	ip, err := vm.IpAddress(ctx)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("failed to get VM IP address for VirtualMachine %s", vm.Name))
 		ip = ""
+	}
+
+	biosUUID, err := vm.BiosUUID(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get BiosUUID for VirtualMachine %s", vm.Name)
 	}
 
 	return &v1alpha1.VirtualMachineStatus{
@@ -204,7 +260,8 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 		Phase:      v1alpha1.Created,
 		PowerState: v1alpha1.VirtualMachinePowerState(ps),
 		VmIp:       ip,
-		BiosUuid:   vm.vcVirtualMachine.UUID(ctx),
+		UniqueID:   uniqueId,
+		BiosUUID:   biosUUID,
 	}, nil
 }
 

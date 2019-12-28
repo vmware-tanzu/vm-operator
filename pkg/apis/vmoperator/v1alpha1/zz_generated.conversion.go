@@ -1273,7 +1273,8 @@ func autoConvert_v1alpha1_VirtualMachineStatus_To_vmoperator_VirtualMachineStatu
 	out.PowerState = vmoperator.VirtualMachinePowerState(in.PowerState)
 	out.Phase = vmoperator.VMStatusPhase(in.Phase)
 	out.VmIp = in.VmIp
-	out.BiosUuid = in.BiosUuid
+	out.UniqueID = in.UniqueID
+	out.BiosUUID = in.BiosUUID
 	out.Volumes = *(*[]vmoperator.VirtualMachineVolumeStatus)(unsafe.Pointer(&in.Volumes))
 	return nil
 }
@@ -1289,7 +1290,8 @@ func autoConvert_vmoperator_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatu
 	out.PowerState = VirtualMachinePowerState(in.PowerState)
 	out.Phase = VMStatusPhase(in.Phase)
 	out.VmIp = in.VmIp
-	out.BiosUuid = in.BiosUuid
+	out.UniqueID = in.UniqueID
+	out.BiosUUID = in.BiosUUID
 	out.Volumes = *(*[]VirtualMachineVolumeStatus)(unsafe.Pointer(&in.Volumes))
 	return nil
 }

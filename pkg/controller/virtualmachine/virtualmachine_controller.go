@@ -10,10 +10,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vmware-tanzu/vm-operator/pkg"
-
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	volumeproviders "github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachine/providers"
 	v1 "k8s.io/api/core/v1"
 	storagetypev1 "k8s.io/api/storage/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,11 +24,13 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
+	volumeproviders "github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachine/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	cnsv1alpha1 "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
@@ -41,7 +40,6 @@ const (
 	OpCreate = "CreateVM"
 	OpDelete = "DeleteVM"
 	OpUpdate = "UpdateVM"
-	OpCheck  = "CheckVM"
 
 	ControllerName                 = "virtualmachine-controller"
 	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
@@ -136,31 +134,16 @@ func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, err
 	}
 
-	clusterID, err := r.vmProvider.GetClusterID(ctx, request.Namespace)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
+	// Use whatever clusterID is returned, even the empty string.
+	clusterID, _ := r.vmProvider.GetClusterID(ctx, request.Namespace)
 	ctx = context.WithValue(ctx, vimtypes.ID{}, "vmoperator-"+ControllerName+"-"+clusterID+"-"+instance.Name)
 
 	if !instance.ObjectMeta.DeletionTimestamp.IsZero() {
-		const finalizerName = vmoperator.VirtualMachineFinalizer
-
-		if lib.ContainsString(instance.ObjectMeta.Finalizers, finalizerName) {
-			if err := r.deleteVm(ctx, instance); err != nil {
-				return reconcile.Result{}, err
-			}
-
-			instance.ObjectMeta.Finalizers = lib.RemoveString(instance.ObjectMeta.Finalizers, finalizerName)
-			if err := r.Update(ctx, instance); err != nil {
-				return reconcile.Result{}, err
-			}
-		}
-
-		// Our finalizer has finished, so the reconciler can do nothing.
-		return reconcile.Result{}, nil
+		err = r.reconcileDelete(ctx, instance)
+		return reconcile.Result{}, err
 	}
 
-	if err := r.reconcileVm(ctx, instance); err != nil {
+	if err := r.reconcileNormal(ctx, instance); err != nil {
 		log.Error(err, "Failed to reconcile VirtualMachine", "name", instance.NamespacedName())
 		return reconcile.Result{}, err
 	}
@@ -193,21 +176,69 @@ func (r *ReconcileVirtualMachine) deleteVm(ctx context.Context, vm *vmoperatorv1
 	return nil
 }
 
+func (r *ReconcileVirtualMachine) reconcileDelete(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
+	log.Info("Reconciling VirtualMachine Deletion", "name", vm.NamespacedName())
+
+	const finalizerName = vmoperator.VirtualMachineFinalizer
+
+	if lib.ContainsString(vm.ObjectMeta.Finalizers, finalizerName) {
+		if err := r.deleteVm(ctx, vm); err != nil {
+			return err
+		}
+
+		vm.ObjectMeta.Finalizers = lib.RemoveString(vm.ObjectMeta.Finalizers, finalizerName)
+		if err := r.Update(ctx, vm); err != nil {
+			return err
+		}
+	}
+
+	// Our finalizer has finished, so the reconciler can do nothing.
+	return nil
+}
+
+func (r *ReconcileVirtualMachine) reconcileVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine,
+	volumesToAdd map[client.ObjectKey]bool, volumesToDelete map[client.ObjectKey]bool) volumeproviders.CombinedVolumeOpsErrors {
+
+	volumeOpsErrs := volumeproviders.CombinedVolumeOpsErrors{}
+
+	// Create CnsNodeVMAttachments on demand if VM has been reconciled properly
+	volumeOpsErrs.Append(r.volumeProvider.AttachVolumes(ctx, vm, volumesToAdd))
+
+	// Delete CnsNodeVMAttachments on demand if VM has been reconciled properly
+	volumeOpsErrs.Append(r.volumeProvider.DetachVolumes(ctx, vm, volumesToDelete))
+
+	// Update the VirtualMachineVolumeStatus based on the status of respective CnsNodeVmAttachment instance
+	volumeOpsErrs.Append(r.volumeProvider.UpdateVmVolumesStatus(ctx, vm))
+
+	// 1. AttachVolumes() returns error when it fails to create CnsNodeVmAttachment instances (partially or completely)
+	//  1.1 If the attach operation [succeeds partially | fails completely], there is no reason to return without
+	// calling(r.Status().Update(ctx, vm)) to update the status for the succeeded set of volumes.
+	//
+	// 2. DetachVolumes() returns error when it fails to delete CnsNodeVmAttachment instances (partially or completely)
+	//  2.1 If the detach operation [succeeds partially | fails completely], there is no reason to return without
+	// calling (r.Status().Update(ctx, vm)) to update the status for the succeeded set of volumes.
+	//
+	// 3. UpdateVmVolumesStatus() does not call client.Status().Update(), it only modifies the vm object by updating the vm.Status.Volumes.
+	// It returns error when it fails to get the CnsNodeVmAttachment instance which is supposed to exist.
+	//  3.1 If update volumes status succeeds partially, there is no reason to return without calling (r.Status().Update(ctx, vm))
+
+	return volumeOpsErrs
+}
+
 // Process a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
-func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
+func (r *ReconcileVirtualMachine) reconcileNormal(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
 	log.Info("Reconciling VirtualMachine", "name", vm.NamespacedName())
 
-	exists, err := r.vmProvider.DoesVirtualMachineExist(ctx, vm.Namespace, vm.Name)
+	exists, err := r.vmProvider.DoesVirtualMachineExist(ctx, vm)
 	if err != nil {
 		log.Error(err, "Failed to check if VirtualMachine exists from provider", "name", vm.NamespacedName())
-		record.EmitEvent(vm, OpCheck, &err, false)
 		return err
 	}
 
 	// Before the VM being created or updated, figure out the Volumes[] VirtualMachineVolumes change.
 	// This step determines what CnsNodeVmAttachments need to be created or deleted
 	// BMV: Push into provider
-	vmVolumesToAdd, vmVolumesToDelete := volumeproviders.GetVmVolumesToProcess(vm)
+	volumesToAdd, volumesToDelete := volumeproviders.GetVmVolumesToProcess(vm)
 
 	if !exists {
 		err = r.createVm(ctx, vm)
@@ -221,32 +252,11 @@ func (r *ReconcileVirtualMachine) reconcileVm(ctx context.Context, vm *vmoperato
 		return err
 	}
 
-	volumeOpsErrs := volumeproviders.CombinedVolumeOpsErrors{}
-	// Create CnsNodeVMAttachments on demand if VM has been reconciled properly
-	volumeOpsErrs.Append(r.volumeProvider.AttachVolumes(ctx, vm, vmVolumesToAdd))
-	// Delete CnsNodeVMAttachments on demand if VM has been reconciled properly
-	volumeOpsErrs.Append(r.volumeProvider.DetachVolumes(ctx, vm, vmVolumesToDelete))
-	// Update the VirtualMachineVolumeStatus based on the status of respective CnsNodeVmAttachment instance
-	volumeOpsErrs.Append(r.volumeProvider.UpdateVmVolumesStatus(ctx, vm))
-	/*
-			Above code does not return immediately on error is because: we want to always call (r.Status().Update(ctx, vm))
+	volumeOpsErrs := r.reconcileVolumes(ctx, vm, volumesToAdd, volumesToDelete)
 
-			1. AttachVolumes() returns error when it fails to create CnsNodeVmAttachment instances (partially or completely)
-			  1.1 If the attach operation [succeeds partially | fails completely], there is no reason to return without
-		          calling(r.Status().Update(ctx, vm)) to update the status for the succeeded set of volumes.
-
-			2. DetachVolumes() returns error when it fails to delete CnsNodeVmAttachment instances (partially or completely)
-			  2.1 If the detach operation [succeeds partially | fails completely], there is no reason to return without
-		          calling (r.Status().Update(ctx, vm)) to update the status for the succeeded set of volumes.
-
-			3. UpdateVmVolumesStatus() does not call client.Status().Update(), it only modifies the vm object by updating the vm.Status.Volumes.
-			   It returns error when it fails to get the CnsNodeVmAttachment instance which is supposed to exist.
-			  3.1 If update volumes status succeeds partially, there is no reason to return without calling (r.Status().Update(ctx, vm))
-	*/
-
-	if uErr := r.Status().Update(ctx, vm); uErr != nil {
-		log.Error(uErr, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
-		return uErr
+	if err := r.Status().Update(ctx, vm); err != nil {
+		log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
+		return err
 	}
 
 	if volumeOpsErrs.HasOccurred() {
@@ -348,7 +358,7 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 			return err
 		}
 		if !rpReady {
-			return errors.New("VirtualMachineSetResourcePolicy not ready yet. Failing VirtualMachine reconcile")
+			return errors.New("VirtualMachineSetResourcePolicy not actualized yet. Failing VirtualMachine reconcile")
 		}
 	}
 
@@ -360,7 +370,13 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 		}
 	}
 
-	err = r.vmProvider.CreateVirtualMachine(ctx, vm, *vmClass, resourcePolicy, vmMetadata, storagePolicyID)
+	vmConfigArgs := vmprovider.VmConfigArgs{
+		VmClass:          *vmClass,
+		VmMetadata:       vmMetadata,
+		ResourcePolicy:   resourcePolicy,
+		StorageProfileID: storagePolicyID,
+	}
+	err = r.vmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {
 		log.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())
 		return err
@@ -401,7 +417,11 @@ func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1
 
 	pkg.AddAnnotations(&vm.ObjectMeta)
 
-	err = r.vmProvider.UpdateVirtualMachine(ctx, vm, *vmClass, vmMetadata)
+	vmConfigArgs := vmprovider.VmConfigArgs{
+		VmClass:    *vmClass,
+		VmMetadata: vmMetadata,
+	}
+	err = r.vmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {
 		log.Error(err, "Provider failed to update VirtualMachine", "name", vm.NamespacedName())
 		return err

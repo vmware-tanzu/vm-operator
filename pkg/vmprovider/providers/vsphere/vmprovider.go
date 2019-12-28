@@ -142,24 +142,28 @@ func (vs *VSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 		return imagesFromCL, nil
 	}
 
-	// TODO(bryanv) Need an actual path here?
-	resVms, err := ses.ListVirtualMachines(ctx, "*")
-	if err != nil {
-		return nil, transformVmImageError("", err)
-	}
-
-	var vmOpts OvfPropertyRetriever = vmOptions{}
-	images := make([]*v1alpha1.VirtualMachineImage, 0, len(resVms))
-	for _, resVm := range resVms {
-		image, err := ResVmToVirtualMachineImage(ctx, resVm, AnnotateVmImage, vmOpts)
+	if ses.useInventoryForImages {
+		// TODO(bryanv) Need an actual path here?
+		resVms, err := ses.ListVirtualMachines(ctx, "*")
 		if err != nil {
-			return nil, err
+			return nil, transformVmImageError("", err)
 		}
 
-		images = append(images, image)
+		var vmOpts OvfPropertyRetriever = vmOptions{}
+		images := make([]*v1alpha1.VirtualMachineImage, 0, len(resVms))
+		for _, resVm := range resVms {
+			image, err := ResVmToVirtualMachineImage(ctx, resVm, AnnotateVmImage, vmOpts)
+			if err != nil {
+				return nil, err
+			}
+
+			images = append(images, image)
+		}
+
+		return images, nil
 	}
 
-	return images, nil
+	return nil, nil
 }
 
 func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error) {
@@ -185,13 +189,17 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespa
 		}
 	}
 
-	resVm, err := ses.GetVirtualMachine(ctx, name)
-	if err != nil {
-		return nil, transformVmImageError(vmName, err)
+	if ses.useInventoryForImages {
+		resVm, err := ses.GetVirtualMachine(ctx, name)
+		if err != nil {
+			return nil, transformVmImageError(vmName, err)
+		}
+
+		var vmOpts OvfPropertyRetriever = vmOptions{}
+		return ResVmToVirtualMachineImage(ctx, resVm, AnnotateVmImage, vmOpts)
 	}
 
-	var vmOpts OvfPropertyRetriever = vmOptions{}
-	return ResVmToVirtualMachineImage(ctx, resVm, AnnotateVmImage, vmOpts)
+	return nil, nil
 }
 
 func (vs *VSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, namespace, name string) (bool, error) {

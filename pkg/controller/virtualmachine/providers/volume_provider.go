@@ -65,7 +65,7 @@ func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv
 		cnsNodeVmAttachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 		cnsNodeVmAttachment.SetName(constructCnsNodeVmAttachmentName(vm.Name, virtualMachineVolume.Name))
 		cnsNodeVmAttachment.SetNamespace(virtualMachineVolume.Namespace)
-		cnsNodeVmAttachment.Spec.NodeUUID = vm.Status.BiosUuid
+		cnsNodeVmAttachment.Spec.NodeUUID = vm.Status.BiosUUID
 		// From  it puts volume name as pcvsc-<nodeuuid>
 		// cnsNodeVmAttachment.Spec.VolumeName = "pvcsc-" + cnsNodeVmAttachment.Spec.NodeUUID
 		cnsNodeVmAttachment.Spec.VolumeName = virtualMachineVolume.Name

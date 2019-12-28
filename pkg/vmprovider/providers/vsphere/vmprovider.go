@@ -10,33 +10,37 @@ import (
 	"os"
 	"strconv"
 
-	"k8s.io/client-go/rest"
-
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25/types"
-	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	corev1 "k8s.io/api/core/v1"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/klogr"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/sequence"
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
 
 const (
 	VsphereVmProviderName = "vsphere"
 
 	// Annotation Key for vSphere MoRef
-	VmOperatorMoRefKey = pkg.VmOperatorKey + "/moref"
+	VmOperatorMoRefKey          = pkg.VmOperatorKey + "/moref"
+	VmOperatorVCInstanceUUIDKey = pkg.VmOperatorKey + "/vc-instance-uuid"
+	VmOperatorInstanceUUIDKey   = pkg.VmOperatorKey + "/instance-uuid"
+	VmOperatorBiosUUIDKey       = pkg.VmOperatorKey + "/bios-uuid"
+	VmOperatorResourcePoolKey   = pkg.VmOperatorKey + "/resource-pool"
 
 	EnvContentLibApiWaitSecs     = "CONTENT_API_WAIT_SECS"
 	DefaultContentLibApiWaitSecs = 5
@@ -66,9 +70,9 @@ const (
 
 var log = klogr.New()
 
-func NewVSphereVmProvider(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface) (*VSphereVmProvider, error) {
+func NewVSphereVmProvider(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) (*VSphereVmProvider, error) {
 	vmProvider := &VSphereVmProvider{
-		sessions: NewSessionManager(clientset, ncpclient),
+		sessions: NewSessionManager(clientset, ncpclient, vmopclient),
 	}
 
 	return vmProvider, nil
@@ -85,8 +89,9 @@ func (vs *VSphereVmProvider) RegisterSession(namespace string, config *VSphereVm
 func RegisterVsphereVmProvider(restConfig *rest.Config) (vmprovider.VirtualMachineProviderInterface, error) {
 	clientSet := kubernetes.NewForConfigOrDie(restConfig)
 	ncpclient := ncpclientset.NewForConfigOrDie(restConfig)
+	vmopclient := vmopclientset.NewForConfigOrDie(restConfig)
 
-	vsphereProvider, err := NewVSphereVmProvider(clientSet, ncpclient)
+	vsphereProvider, err := NewVSphereVmProvider(clientSet, ncpclient, vmopclient)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +107,7 @@ func UnregisterVsphereVmProvider(vmProvider vmprovider.VirtualMachineProviderInt
 // NewVSphereVmProviderFromConfig is only used in the integration tests.
 func NewVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderConfig) (*VSphereVmProvider, error) {
 	vmProvider := &VSphereVmProvider{
-		sessions: NewSessionManager(nil, nil),
+		sessions: NewSessionManager(nil, nil, nil),
 	}
 
 	// Support existing behavior by setting up a Session for whatever namespace we're using.
@@ -191,7 +196,7 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespa
 	}
 
 	if ses.useInventoryForImages {
-		resVm, err := ses.GetVirtualMachine(ctx, name)
+		resVm, err := ses.lookupVmByName(ctx, name)
 		if err != nil {
 			return nil, transformVmImageError(vmName, err)
 		}
@@ -203,13 +208,13 @@ func (vs *VSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespa
 	return nil, nil
 }
 
-func (vs *VSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, namespace, name string) (bool, error) {
-	ses, err := vs.sessions.GetSession(ctx, namespace)
+func (vs *VSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
+	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
 	if err != nil {
 		return false, err
 	}
 
-	if _, err = ses.GetVirtualMachine(ctx, name); err != nil {
+	if _, err = ses.GetVirtualMachine(ctx, vm); err != nil {
 		switch err.(type) {
 		case *find.NotFoundError, *find.DefaultNotFoundError:
 			return false, nil
@@ -221,7 +226,8 @@ func (vs *VSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, namesp
 	return true, nil
 }
 
-func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, vmRes *res.VirtualMachine) {
+func (vs *VSphereVmProvider) addProviderAnnotations(session *Session, objectMeta *v1.ObjectMeta, vmRes *res.VirtualMachine) {
+
 	annotations := objectMeta.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string)
@@ -229,6 +235,36 @@ func (vs *VSphereVmProvider) addProviderAnnotations(objectMeta *v1.ObjectMeta, v
 
 	annotations[pkg.VmOperatorVmProviderKey] = VsphereVmProviderName
 	annotations[VmOperatorMoRefKey] = vmRes.ReferenceValue()
+
+	// Take missing annotations as a trigger to gather the information we need to populate the annotations.  We want to
+	// avoid putting unnecessary pressure on VC.
+	if _, ok := annotations[VmOperatorBiosUUIDKey]; !ok {
+		biosUUID, err := vmRes.BiosUUID(context.Background())
+		if err == nil {
+			annotations[VmOperatorBiosUUIDKey] = biosUUID
+		}
+	}
+
+	if _, ok := annotations[VmOperatorInstanceUUIDKey]; !ok {
+		instanceUUID, err := vmRes.InstanceUUID(context.Background())
+		if err == nil {
+			annotations[VmOperatorInstanceUUIDKey] = instanceUUID
+		}
+	}
+
+	if _, ok := annotations[VmOperatorVCInstanceUUIDKey]; !ok {
+		about, err := session.ServiceContent(context.Background())
+		if err == nil {
+			annotations[VmOperatorVCInstanceUUIDKey] = about.InstanceUuid
+		}
+	}
+
+	if _, ok := annotations[VmOperatorResourcePoolKey]; !ok {
+		resourcePool, err := vmRes.ResourcePool(context.Background())
+		if err == nil {
+			annotations[VmOperatorResourcePoolKey] = resourcePool
+		}
+	}
 
 	objectMeta.SetAnnotations(annotations)
 }
@@ -307,9 +343,7 @@ func (vs *VSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.C
 	return nil
 }
 
-func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmClass v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
-	vmMetadata vmprovider.VirtualMachineMetadata, storageProfileID string) error {
+func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
 
 	vmName := vm.NamespacedName()
 	log.Info("Creating VirtualMachine", "name", vmName)
@@ -321,15 +355,21 @@ func (vs *VSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 
 	// Determine if this is a clone or create from scratch.
 	// The later is really only useful for dummy VMs at the moment.
+	var resVm *res.VirtualMachine
 	if vm.Spec.ImageName == "" {
-		_, err = ses.CreateVirtualMachine(ctx, vm, vmClass, resourcePolicy, vmMetadata)
+		resVm, err = ses.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 	} else {
-		_, err = ses.CloneVirtualMachine(ctx, vm, vmClass, resourcePolicy, vmMetadata, storageProfileID)
+		resVm, err = ses.CloneVirtualMachine(ctx, vm, vmConfigArgs)
 	}
 
 	if err != nil {
 		log.Error(err, "Create/Clone VirtualMachine failed", "name", vmName)
 		return transformVmError(vmName, err)
+	}
+
+	err = vs.mergeVmStatus(ctx, vm, resVm)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -350,7 +390,7 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 }
 
 // UpdateVirtualMachine updates the VM status, power state, phase etc
-func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) error {
+func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
 	vmName := vm.NamespacedName()
 	log.Info("Updating VirtualMachine", "name", vmName)
 
@@ -359,7 +399,7 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 		return err
 	}
 
-	err = vs.updateVirtualMachine(ctx, ses, vm, vmClass, vmMetadata)
+	err = vs.updateVirtualMachine(ctx, ses, vm, vmConfigArgs)
 	if err != nil {
 		return transformVmError(vmName, err)
 	}
@@ -367,8 +407,8 @@ func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 	return nil
 }
 
-func (vs *VSphereVmProvider) updateVirtualMachine(ctx context.Context, ses *Session, vm *v1alpha1.VirtualMachine, vmClass v1alpha1.VirtualMachineClass, vmMetadata vmprovider.VirtualMachineMetadata) error {
-	resVm, err := ses.GetVirtualMachine(ctx, vm.Name)
+func (vs *VSphereVmProvider) updateVirtualMachine(ctx context.Context, session *Session, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+	resVm, err := session.GetVirtualMachine(ctx, vm)
 	if err != nil {
 		return err
 	}
@@ -381,12 +421,12 @@ func (vs *VSphereVmProvider) updateVirtualMachine(ctx context.Context, ses *Sess
 	// This is just a horrible, temporary hack so that we reconfigure "once" and not disrupt a running VM.
 	if isOff {
 		// Add device change specs to configSpec
-		deviceSpecs, err := ses.GetNicChangeSpecs(ctx, vm, resVm)
+		deviceSpecs, err := session.GetNicChangeSpecs(ctx, vm, resVm)
 		if err != nil {
 			return err
 		}
 
-		configSpec, err := ses.generateConfigSpec(vm.Name, &vm.Spec, &vmClass.Spec, vmMetadata, deviceSpecs)
+		configSpec, err := session.generateConfigSpec(vm.Name, &vm.Spec, &vmConfigArgs.VmClass.Spec, vmConfigArgs.VmMetadata, deviceSpecs)
 		if err != nil {
 			return err
 		}
@@ -396,7 +436,7 @@ func (vs *VSphereVmProvider) updateVirtualMachine(ctx context.Context, ses *Sess
 			return err
 		}
 
-		customizationSpec, err := ses.getCustomizationSpec(vm.Namespace, vm.Name, &vm.Spec)
+		customizationSpec, err := session.getCustomizationSpec(vm.Namespace, vm.Name, &vm.Spec)
 		if err != nil {
 			return err
 		}
@@ -419,7 +459,7 @@ func (vs *VSphereVmProvider) updateVirtualMachine(ctx context.Context, ses *Sess
 		return err
 	}
 
-	vs.addProviderAnnotations(&vm.ObjectMeta, resVm)
+	vs.addProviderAnnotations(session, &vm.ObjectMeta, resVm)
 
 	err = vs.mergeVmStatus(ctx, vm, resVm)
 	if err != nil {
@@ -438,7 +478,7 @@ func (vs *VSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelet
 		return err
 	}
 
-	resVm, err := ses.GetVirtualMachine(ctx, vmToDelete.Name)
+	resVm, err := ses.GetVirtualMachine(ctx, vmToDelete)
 	if err != nil {
 		return transformVmError(vmName, err)
 	}

@@ -14,6 +14,13 @@ import (
 
 type VirtualMachineMetadata map[string]string
 
+type VmConfigArgs struct {
+	VmClass          v1alpha1.VirtualMachineClass
+	ResourcePolicy   *v1alpha1.VirtualMachineSetResourcePolicy
+	VmMetadata       VirtualMachineMetadata
+	StorageProfileID string
+}
+
 // VirtualMachineProviderInterface is a plugable interface for VM Providers
 type VirtualMachineProviderInterface interface {
 	Name() string
@@ -26,12 +33,9 @@ type VirtualMachineProviderInterface interface {
 	ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error)
 	GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error)
 
-	DoesVirtualMachineExist(ctx context.Context, namespace, name string) (bool, error)
-
-	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-		vmClass v1alpha1.VirtualMachineClass, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy, vmMetadata VirtualMachineMetadata, profileID string) error
-	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-		vmClass v1alpha1.VirtualMachineClass, vmMetadata VirtualMachineMetadata) error
+	DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
+	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VmConfigArgs) error
+	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VmConfigArgs) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 
 	GetClusterID(ctx context.Context, namespace string) (string, error)

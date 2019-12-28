@@ -2017,6 +2017,12 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref common.Referen
 							Format: "",
 						},
 					},
+					"uniqueID": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
 					"biosUUID": {
 						SchemaProps: spec.SchemaProps{
 							Type:   []string{"string"},
@@ -2036,7 +2042,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineStatus(ref common.Referen
 						},
 					},
 				},
-				Required: []string{"conditions", "host", "powerState", "phase", "vmIp", "biosUUID", "volumes"},
+				Required: []string{"conditions", "host", "powerState", "phase", "vmIp", "uniqueID", "biosUUID", "volumes"},
 			},
 		},
 		Dependencies: []string{

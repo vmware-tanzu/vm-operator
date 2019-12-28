@@ -65,17 +65,17 @@ func (mr *MockVirtualMachineProviderInterfaceMockRecorder) CreateOrUpdateVirtual
 }
 
 // CreateVirtualMachine mocks base method
-func (m *MockVirtualMachineProviderInterface) CreateVirtualMachine(arg0 context.Context, arg1 *v1alpha1.VirtualMachine, arg2 v1alpha1.VirtualMachineClass, arg3 *v1alpha1.VirtualMachineSetResourcePolicy, arg4 vmprovider.VirtualMachineMetadata, arg5 string) error {
+func (m *MockVirtualMachineProviderInterface) CreateVirtualMachine(arg0 context.Context, arg1 *v1alpha1.VirtualMachine, arg2 vmprovider.VmConfigArgs) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateVirtualMachine", arg0, arg1, arg2, arg3, arg4, arg5)
+	ret := m.ctrl.Call(m, "CreateVirtualMachine", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateVirtualMachine indicates an expected call of CreateVirtualMachine
-func (mr *MockVirtualMachineProviderInterfaceMockRecorder) CreateVirtualMachine(arg0, arg1, arg2, arg3, arg4, arg5 interface{}) *gomock.Call {
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) CreateVirtualMachine(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVirtualMachine", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).CreateVirtualMachine), arg0, arg1, arg2, arg3, arg4, arg5)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVirtualMachine", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).CreateVirtualMachine), arg0, arg1, arg2)
 }
 
 // DeleteVirtualMachine mocks base method
@@ -107,18 +107,18 @@ func (mr *MockVirtualMachineProviderInterfaceMockRecorder) DeleteVirtualMachineS
 }
 
 // DoesVirtualMachineExist mocks base method
-func (m *MockVirtualMachineProviderInterface) DoesVirtualMachineExist(arg0 context.Context, arg1, arg2 string) (bool, error) {
+func (m *MockVirtualMachineProviderInterface) DoesVirtualMachineExist(arg0 context.Context, arg1 *v1alpha1.VirtualMachine) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DoesVirtualMachineExist", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "DoesVirtualMachineExist", arg0, arg1)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // DoesVirtualMachineExist indicates an expected call of DoesVirtualMachineExist
-func (mr *MockVirtualMachineProviderInterfaceMockRecorder) DoesVirtualMachineExist(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) DoesVirtualMachineExist(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DoesVirtualMachineExist", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).DoesVirtualMachineExist), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DoesVirtualMachineExist", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).DoesVirtualMachineExist), arg0, arg1)
 }
 
 // DoesVirtualMachineSetResourcePolicyExist mocks base method
@@ -234,15 +234,15 @@ func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVmOpSACredSecre
 }
 
 // UpdateVirtualMachine mocks base method
-func (m *MockVirtualMachineProviderInterface) UpdateVirtualMachine(arg0 context.Context, arg1 *v1alpha1.VirtualMachine, arg2 v1alpha1.VirtualMachineClass, arg3 vmprovider.VirtualMachineMetadata) error {
+func (m *MockVirtualMachineProviderInterface) UpdateVirtualMachine(arg0 context.Context, arg1 *v1alpha1.VirtualMachine, arg2 vmprovider.VmConfigArgs) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateVirtualMachine", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "UpdateVirtualMachine", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateVirtualMachine indicates an expected call of UpdateVirtualMachine
-func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVirtualMachine(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVirtualMachine(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVirtualMachine", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdateVirtualMachine), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVirtualMachine", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdateVirtualMachine), arg0, arg1, arg2)
 }

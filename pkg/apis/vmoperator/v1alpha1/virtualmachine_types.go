@@ -106,7 +106,8 @@ type VirtualMachineStatus struct {
 	PowerState VirtualMachinePowerState     `json:"powerState"`
 	Phase      VMStatusPhase                `json:"phase"`
 	VmIp       string                       `json:"vmIp"`
-	BiosUuid   string                       `json:"biosUUID"`
+	UniqueID   string                       `json:"uniqueID"`
+	BiosUUID   string                       `json:"biosUUID"`
 	Volumes    []VirtualMachineVolumeStatus `json:"volumes"`
 }
 

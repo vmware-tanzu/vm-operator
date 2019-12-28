@@ -10,33 +10,35 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/vmware/govmomi/vapi/library"
-
 	"github.com/pkg/errors"
-
-	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
+	"github.com/vmware/govmomi/vapi/library"
 	"k8s.io/client-go/kubernetes"
+
+	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
 
 type SessionManager struct {
-	clientset *kubernetes.Clientset
-	ncpclient ncpclientset.Interface
+	clientset  *kubernetes.Clientset
+	ncpclient  ncpclientset.Interface
+	vmopclient vmopclientset.Interface
 
 	mutex sync.Mutex
 	// sessions contains the map of sessions for each namespace.
 	sessions map[string]*Session
 }
 
-func NewSessionManager(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface) SessionManager {
+func NewSessionManager(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) SessionManager {
 	return SessionManager{
-		clientset: clientset,
-		ncpclient: ncpclient,
-		sessions:  make(map[string]*Session),
+		clientset:  clientset,
+		ncpclient:  ncpclient,
+		vmopclient: vmopclient,
+		sessions:   make(map[string]*Session),
 	}
 }
 
 func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProviderConfig) (*Session, error) {
-	ses, err := NewSessionAndConfigure(context.TODO(), config, sm.clientset, sm.ncpclient)
+	ses, err := NewSessionAndConfigure(context.TODO(), config, sm.clientset, sm.ncpclient, sm.vmopclient)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create session for namespace %s", namespace)
 	}
@@ -55,7 +57,7 @@ func (sm *SessionManager) createSession(ctx context.Context, namespace string) (
 		return nil, err
 	}
 
-	ses, err := NewSessionAndConfigure(ctx, config, sm.clientset, sm.ncpclient)
+	ses, err := NewSessionAndConfigure(ctx, config, sm.clientset, sm.ncpclient, sm.vmopclient)
 	if err != nil {
 		return nil, err
 	}

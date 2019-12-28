@@ -18,6 +18,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
@@ -36,7 +37,7 @@ var _ = Describe("Sessions", func() {
 	)
 	BeforeEach(func() {
 		ctx = context.Background()
-		session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
+		session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -60,7 +61,7 @@ var _ = Describe("Sessions", func() {
 			})
 
 			It("should get virtualmachine", func() {
-				vm, err := session.GetVirtualMachine(context.TODO(), "DC0_H0_VM0")
+				vm, err := session.GetVirtualMachine(context.TODO(), getSimpleVirtualMachine("DC0_H0_VM0"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(vm.Name).Should(Equal("DC0_H0_VM0"))
 			})
@@ -99,6 +100,39 @@ var _ = Describe("Sessions", func() {
 		})
 	})
 
+	Describe("GetVM", func() {
+
+		Context("When MoID is present", func() {
+
+			var vm *v1alpha1.VirtualMachine
+			var moId string
+			ctx := context.Background()
+
+			BeforeEach(func() {
+				imageName := "test-item"
+				vmName := "getVM-test"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, vmName)
+				vm = getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+				moId, err = clonedVM.UniqueID(ctx)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("should successfully find the VM", func() {
+
+				ctx := context.Background()
+
+				vm1, err := session.GetVirtualMachine(ctx, vm)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vm1.UniqueID(ctx)).To(Equal(moId))
+			})
+		})
+	})
+
 	Describe("Clone VM", func() {
 
 		BeforeEach(func() {
@@ -112,24 +146,29 @@ var _ = Describe("Sessions", func() {
 
 			It("should not override template networks", func() {
 				imageName := "DC0_H0_VM0"
-				vmClass := getVMClassInstance(testVMName, testNamespace)
-				vm := getVirtualMachineInstance(testVMName, testNamespace, imageName, vmClass.Name)
-				vmMetadata := map[string]string{}
-				resVM, err := session.GetVirtualMachine(ctx, "DC0_H0_VM0")
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vm := getVirtualMachineInstance(testVMName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				resVM, err := session.GetVirtualMachine(ctx, getSimpleVirtualMachine("DC0_H0_VM0"))
 				Expect(err).NotTo(HaveOccurred())
+
 				nicChanges, err := session.GetNicChangeSpecs(ctx, vm, resVM)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(nicChanges)).Should(Equal(0))
+
 				nicChanges, err = session.GetNicChangeSpecs(ctx, vm, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(nicChanges)).Should(Equal(0))
-				clonedVM, err := session.CloneVirtualMachine(ctx, vm, *vmClass, nil, vmMetadata, "foo")
+
+				clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM).ShouldNot(BeNil())
+
 				// Existing NIF should not be changed.
 				netDevices, err := clonedVM.GetNetworkDevices(ctx)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(netDevices)).Should(Equal(1))
+
 				dev := netDevices[0].GetVirtualDevice()
 				// For the vcsim env the source VM is attached to a distributed port group. Hence, the cloned VM
 				// should also be attached to the same network.
@@ -143,8 +182,9 @@ var _ = Describe("Sessions", func() {
 
 			It("should override template networks", func() {
 				imageName := "DC0_H0_VM0"
-				vmClass := getVMClassInstance(testVMName, testNamespace)
-				vm := getVirtualMachineInstance(testVMName+"change-net", testNamespace, imageName, vmClass.Name)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vm := getVirtualMachineInstance(testVMName+"change-net", testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
 				// Add two network interfaces to the VM and attach to different networks
 				vm.Spec.NetworkInterfaces = []vmoperatorv1alpha1.VirtualMachineNetworkInterface{
 					{
@@ -155,11 +195,14 @@ var _ = Describe("Sessions", func() {
 						EthernetCardType: "e1000",
 					},
 				}
-				resVM, err := session.GetVirtualMachine(ctx, "DC0_H0_VM0")
+
+				resVM, err := session.GetVirtualMachine(ctx, getSimpleVirtualMachine("DC0_H0_VM0"))
 				Expect(err).NotTo(HaveOccurred())
+
 				nicChanges, err := session.GetNicChangeSpecs(ctx, vm, resVM)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(nicChanges)).Should(Equal(3))
+
 				numAdd := 0
 				for _, changeSpec := range nicChanges {
 					Expect(changeSpec.GetVirtualDeviceConfigSpec().Operation).ShouldNot(Equal(vimTypes.VirtualDeviceConfigSpecOperationEdit))
@@ -169,24 +212,28 @@ var _ = Describe("Sessions", func() {
 					}
 				}
 				Expect(numAdd).Should(Equal(2))
+
 				nicChanges, err = session.GetNicChangeSpecs(ctx, vm, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(nicChanges)).Should(Equal(2))
+
 				for _, changeSpec := range nicChanges {
 					Expect(changeSpec.GetVirtualDeviceConfigSpec().Operation).Should(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
 				}
-				vmMetadata := map[string]string{}
-				clonedVM, err := session.CloneVirtualMachine(ctx, vm, *vmClass, nil, vmMetadata, "foo")
+				clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs)
 				Expect(err).NotTo(HaveOccurred())
+
 				netDevices, err := clonedVM.GetNetworkDevices(ctx)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(netDevices)).Should(Equal(2))
+
 				// The interface type should be default vmxnet3
 				dev1, ok := netDevices[0].(*vimTypes.VirtualVmxnet3)
 				Expect(ok).Should(BeTrue())
 				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
 				_, ok = dev1.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
 				Expect(ok).Should(BeTrue())
+
 				// The interface type should be e1000
 				dev2, ok := netDevices[1].(*vimTypes.VirtualE1000)
 				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
@@ -203,33 +250,38 @@ var _ = Describe("Sessions", func() {
 				// vswitch port group.
 				vSphereConfig.Network = "VM Network"
 				//Setup new session based on the default network
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
+				session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
 			It("should override network from the template", func() {
 				imageName := "DC0_H0_VM0"
-				vmClass := getVMClassInstance(testVMName, testNamespace)
-				vm := getVirtualMachineInstance(testVMName+"with-default-net", testNamespace, imageName, vmClass.Name)
-				resVM, err := session.GetVirtualMachine(ctx, "DC0_H0_VM0")
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vm := getVirtualMachineInstance(testVMName+"with-default-net", testNamespace, imageName, vmConfigArgs.VmClass.Name)
+				resVM, err := session.GetVirtualMachine(ctx, getSimpleVirtualMachine("DC0_H0_VM0"))
 				Expect(err).NotTo(HaveOccurred())
+
 				nicChanges, err := session.GetNicChangeSpecs(ctx, vm, resVM)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(nicChanges)).Should(Equal(1))
+
 				for _, changeSpec := range nicChanges {
 					Expect(changeSpec.GetVirtualDeviceConfigSpec().Operation).Should(Equal(vimTypes.VirtualDeviceConfigSpecOperationEdit))
 				}
 				nicChanges, err = session.GetNicChangeSpecs(ctx, vm, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(nicChanges)).Should(Equal(0))
-				vmMetadata := map[string]string{}
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "foo")
+
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM).ShouldNot(BeNil())
+
 				// Existing NIF should not be changed.
 				netDevices, err := clonedVM.GetNetworkDevices(context.TODO())
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(netDevices)).Should(Equal(1))
+
 				dev := netDevices[0].GetVirtualDevice()
 				// TODO: enhance the test to verify the moref of the network matches the default network.
 				_, ok := dev.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
@@ -239,8 +291,9 @@ var _ = Describe("Sessions", func() {
 
 			It("should not override networks specified in VM Spec ", func() {
 				imageName := "DC0_H0_VM0"
-				vmClass := getVMClassInstance(testVMName, testNamespace)
-				vm := getVirtualMachineInstance(testVMName+"change-default-net", testNamespace, imageName, vmClass.Name)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vm := getVirtualMachineInstance(testVMName+"change-default-net", testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
 				// Add two network interfaces to the VM and attach to different networks
 				vm.Spec.NetworkInterfaces = []vmoperatorv1alpha1.VirtualMachineNetworkInterface{
 					{
@@ -251,18 +304,22 @@ var _ = Describe("Sessions", func() {
 						EthernetCardType: "e1000",
 					},
 				}
-				vmMetadata := map[string]string{}
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "foo")
+
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 				Expect(err).NotTo(HaveOccurred())
+
 				netDevices, err := clonedVM.GetNetworkDevices(context.TODO())
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(netDevices)).Should(Equal(2))
+
 				// The interface type should be default vmxnet3
 				dev1, ok := netDevices[0].(*vimTypes.VirtualVmxnet3)
 				Expect(ok).Should(BeTrue())
+
 				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
 				_, ok = dev1.Backing.(*vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 				Expect(ok).Should(BeTrue())
+
 				// The interface type should be e1000
 				dev2, ok := netDevices[1].(*vimTypes.VirtualE1000)
 				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
@@ -282,13 +339,12 @@ var _ = Describe("Sessions", func() {
 
 			It("should clone VM", func() {
 				imageName := "test-item"
-
-				vmClass := getVMClassInstance(testVMName, testNamespace)
 				vmName := "CL_DeployedVM"
-				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmClass.Name)
 
-				vmMetadata := map[string]string{}
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "foo")
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
 			})
@@ -300,12 +356,14 @@ var _ = Describe("Sessions", func() {
 			err = os.Setenv("JSON_EXTRA_CONFIG", "invalid-json")
 			Expect(err).NotTo(HaveOccurred())
 		})
+
 		AfterEach(func() {
 			err = os.Setenv("JSON_EXTRA_CONFIG", "")
 			Expect(err).NotTo(HaveOccurred())
 		})
+
 		It("Should fail", func() {
-			session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
 			Expect(err.Error()).To(MatchRegexp("Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable"))
 		})
 	})
@@ -321,7 +379,7 @@ var _ = Describe("Sessions", func() {
 		JustBeforeEach(func() {
 			//set source to use VM inventory
 
-			session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
 			vSphereConfig.ContentSource = ""
 			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
@@ -332,11 +390,10 @@ var _ = Describe("Sessions", func() {
 				err = os.Setenv("JSON_EXTRA_CONFIG", "{\""+globalKey+"\":\""+globalVal+"\"}")
 				Expect(err).NotTo(HaveOccurred())
 			})
+
 			AfterEach(func() {
 				err = os.Setenv("JSON_EXTRA_CONFIG", "")
 				Expect(err).NotTo(HaveOccurred())
-			})
-			It("should copy all the values into the VM", func() {
 			})
 
 			Context("with global extraConfig", func() {
@@ -347,7 +404,13 @@ var _ = Describe("Sessions", func() {
 					vm.Spec.VmMetadata.Transport = "ExtraConfig"
 					vmMetadata := map[string]string{localKey: localVal}
 
-					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, vmMetadata, "foo")
+					vmConfigArgs := vmprovider.VmConfigArgs{
+						VmClass:          *vmClass,
+						ResourcePolicy:   nil,
+						VmMetadata:       vmMetadata,
+						StorageProfileID: "foo",
+					}
+					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(clonedVM).ShouldNot(BeNil())
 
@@ -378,7 +441,13 @@ var _ = Describe("Sessions", func() {
 					imageName := "DC0_H0_VM0"
 					vmClass := getVMClassInstance(testVMName, testNamespace)
 					vm := getVirtualMachineInstance(testVMName+"-default-extraConfig", testNamespace, imageName, vmClass.Name)
-					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, *vmClass, nil, nil, "foo")
+					vmConfigArgs := vmprovider.VmConfigArgs{
+						VmClass:          *vmClass,
+						ResourcePolicy:   nil,
+						VmMetadata:       nil,
+						StorageProfileID: "foo",
+					}
+					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(clonedVM).ShouldNot(BeNil())
 
@@ -422,20 +491,11 @@ var _ = Describe("Sessions", func() {
 			})
 
 			Context("Create a ResourcePool, verify it exists and delete it", func() {
-				JustBeforeEach(func() {
-				})
-
-				It("create is tested in setup", func() {
-					// Create is tested in JustBeforeEach
-				})
 
 				It("Verifies if a ResourcePool exists", func() {
 					exists, err := session.DoesResourcePoolExist(context.TODO(), integration.DefaultNamespace, rpSpec.Name)
 					Expect(exists).To(BeTrue())
 					Expect(err).NotTo(HaveOccurred())
-				})
-				It("delete is tested in teardown", func() {
-					// Delete is tested in JustAfterEach
 				})
 			})
 
@@ -448,6 +508,7 @@ var _ = Describe("Sessions", func() {
 					Expect(rpMoId).To(BeEmpty())
 				})
 			})
+
 			Context("Delete a Resource Pool that doesn't exist", func() {
 				It("should succeed", func() {
 					Expect(session.DeleteResourcePool(context.TODO(), "nonexistent-resourcepool")).To(Succeed())
@@ -473,21 +534,15 @@ var _ = Describe("Sessions", func() {
 					Expect(folderMoId).To(Not(BeEmpty()))
 
 				})
+
 				JustAfterEach(func() {
 					Expect(session.DeleteFolder(context.TODO(), folderName)).To(Succeed())
-				})
-
-				It("create is tested in setup", func() {
-					// Create is tested in JustBeforeEach
 				})
 
 				It("Verifies if a Folder exists", func() {
 					exists, err := session.DoesFolderExist(context.TODO(), integration.DefaultNamespace, folderName)
 					Expect(exists).To(BeTrue())
 					Expect(err).NotTo(HaveOccurred())
-				})
-				It("delete is tested in teardown", func() {
-					// Delete is tested in JustAfterEach
 				})
 			})
 
@@ -533,35 +588,81 @@ var _ = Describe("Sessions", func() {
 				It("with existing content source, empty datastore and empty profile id", func() {
 					vSphereConfig.Datastore = ""
 					vSphereConfig.ContentSource = integration.GetContentSourceID()
-					session, err := vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
+					session, err := vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
+
+					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}
 					clonedVM, err :=
-						session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
+						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError("cannot clone VM when neither storage class or datastore is specified"))
 					Expect(clonedVM).Should(BeNil())
 				})
+
 				It("with existing content source but mandatory profile id is not set", func() {
 					vSphereConfig.ContentSource = integration.GetContentSourceID()
 					vSphereConfig.StorageClassRequired = true
-					session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
+
+					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}
 					clonedVM, err :=
-						session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
+						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError("storage class is required but not specified"))
 					Expect(clonedVM).Should(BeNil())
 				})
+
 				It("without content source and missing mandatory profile ID", func() {
 					vSphereConfig.StorageClassRequired = true
-					session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil)
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
+
+					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}
 					clonedVM, err :=
-						session.CloneVirtualMachine(context.TODO(), vm, v1alpha1.VirtualMachineClass{}, nil, nil, "")
+						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError("storage class is required but not specified"))
 					Expect(clonedVM).Should(BeNil())
 				})
+			})
+		})
+
+		Context("RP as inventory path", func() {
+			Specify("returns RP object without error", func() {
+				pools, err := session.Finder.ResourcePoolList(ctx, "*")
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(len(pools)).ToNot(BeZero())
+
+				existingPool := pools[0]
+				pool, err := session.GetResourcePoolByPath(ctx, existingPool.InventoryPath)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(pool.InventoryPath).To(Equal(existingPool.InventoryPath))
+				Expect(pool.Reference().Value).To(Equal(existingPool.Reference().Value))
+
+				pool, err = session.GetResourcePoolByMoID(ctx, existingPool.Reference().Value)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(pool.InventoryPath).To(Equal(existingPool.InventoryPath))
+				Expect(pool.Reference().Value).To(Equal(existingPool.Reference().Value))
+			})
+		})
+
+		Context("Folder as inventory path", func() {
+			Specify("returns Folder object without error", func() {
+				folders, err := session.Finder.FolderList(ctx, "*")
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(len(folders)).ToNot(BeZero())
+
+				paths := []string{
+					folders[0].InventoryPath,
+					folders[0].Reference().Value,
+				}
+
+				for _, path := range paths {
+					folder, err := session.GetVMFolder(ctx, path)
+					Expect(err).ShouldNot(HaveOccurred())
+					Expect(folder.InventoryPath).To(Equal(folders[0].InventoryPath))
+				}
 			})
 		})
 	})
@@ -582,7 +683,7 @@ var _ = Describe("Sessions", func() {
 			moduleSpec.Uuid = moduleId
 			Expect(err).NotTo(HaveOccurred())
 			Expect(moduleId).To(Not(BeEmpty()))
-			resVm, err = session.GetVirtualMachine(ctx, "DC0_H0_VM0")
+			resVm, err = session.GetVirtualMachine(ctx, getSimpleVirtualMachine("DC0_H0_VM0"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resVm).NotTo(BeNil())
 		})
@@ -625,7 +726,7 @@ var _ = Describe("Sessions", func() {
 		var tagId string
 
 		BeforeEach(func() {
-			resVm, err = session.GetVirtualMachine(ctx, "DC0_H0_VM0")
+			resVm, err = session.GetVirtualMachine(ctx, getSimpleVirtualMachine("DC0_H0_VM0"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resVm).NotTo(BeNil())
 

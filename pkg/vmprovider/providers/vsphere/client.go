@@ -28,16 +28,23 @@ const idleTime = 5 * time.Minute
 
 // NewClient creates a new govmomi client; sets a keepalive handler to re-login on not authenticated errors.
 func NewClient(ctx context.Context, config *VSphereVmProviderConfig) (*Client, error) {
-	soapUrl, err := soap.ParseURL(net.JoinHostPort(config.VcPNID, config.VcPort))
+	soapURL, err := soap.ParseURL(net.JoinHostPort(config.VcPNID, config.VcPort))
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse %s:%s", config.VcPNID, config.VcPort)
 	}
 
 	// Decompose govmomi.NewClient so we can create a client with a custom keepalive handler which
-	// logs in on NotAuthenticated errors.
-	vimClient, err := vim25.NewClient(ctx, soap.NewClient(soapUrl, true))
+	//  logs in on NotAuthenticated errors.
+	soapClient := soap.NewClient(soapURL, config.InsecureSkipTLSVerify)
+	if !config.InsecureSkipTLSVerify {
+		err = soapClient.SetRootCAs(config.CAFilePath)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to set root CA %s: %v", config.CAFilePath, err)
+		}
+	}
+	vimClient, err := vim25.NewClient(ctx, soapClient)
 	if err != nil {
-		return nil, errors.Wrapf(err, "error creating a new vim client for url: %v", soapUrl)
+		return nil, errors.Wrapf(err, "error creating a new vim client for url: %v", soapURL)
 	}
 
 	vcClient := &govmomi.Client{
@@ -52,7 +59,7 @@ func NewClient(ctx context.Context, config *VSphereVmProviderConfig) (*Client, e
 		if _, err := methods.GetCurrentTime(ctx, rt); err != nil && isNotAuthenticatedError(err) {
 			if err = vcClient.Login(ctx, userInfo); err != nil {
 				if isInvalidLogin(err) {
-					log.Error(err, "Invalid login in keep alive handler", "url", soapUrl)
+					log.Error(err, "Invalid login in keep alive handler", "url", soapURL)
 					return err
 				}
 			}
@@ -61,7 +68,7 @@ func NewClient(ctx context.Context, config *VSphereVmProviderConfig) (*Client, e
 	})
 
 	if err = vcClient.Login(ctx, userInfo); err != nil {
-		return nil, errors.Wrapf(err, "login failed for url: %v", soapUrl)
+		return nil, errors.Wrapf(err, "login failed for url: %v", soapURL)
 	}
 
 	return &Client{

@@ -10,3 +10,5 @@ data:
   StorageClassRequired: "true"
   ContentSource: <content_source>
   UseInventoryAsContentSource: "false"
+  CAFilePath: "/etc/vmware/wcp/tls/vmca.pem"
+  InsecureSkipTLSVerify: "false"

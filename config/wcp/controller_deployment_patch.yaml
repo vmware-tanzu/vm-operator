@@ -18,3 +18,12 @@ spec:
           value: "127.0.0.1"
         - name: "KUBERNETES_SERVICE_PORT"
           value: "6443"
+        # VMoperator needs access to the VC cert bundle.
+        volumeMounts:
+        - mountPath: /etc/vmware/wcp/tls
+          name: vmca-certs
+      volumes:
+        - hostPath:
+            path: /etc/vmware/wcp/tls
+            type: Directory
+          name: vmca-certs

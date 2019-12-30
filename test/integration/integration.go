@@ -89,6 +89,7 @@ func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int, contentSource 
 		Datastore:                   "/DC0/datastore/LocalDS_0",
 		ContentSource:               contentSource,
 		UseInventoryAsContentSource: true,
+		InsecureSkipTLSVerify:       true,
 	}
 }
 

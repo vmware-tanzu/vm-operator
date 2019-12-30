@@ -31,6 +31,8 @@ type VSphereVmProviderConfig struct {
 	Network                     string
 	StorageClassRequired        bool
 	UseInventoryAsContentSource bool
+	InsecureSkipTLSVerify       bool
+	CAFilePath                  string
 }
 
 const (
@@ -38,17 +40,19 @@ const (
 	VSphereConfigMapName     = "vsphere.provider.config.vmoperator.vmware.com"
 	NameServersConfigMapName = "vmoperator-network-config"
 
-	vcPNIDKey            = "VcPNID"
-	vcPortKey            = "VcPort"
-	vcCredsSecretNameKey = "VcCredsSecretName" // nolint:gosec
-	datacenterKey        = "Datacenter"
-	resourcePoolKey      = "ResourcePool"
-	folderKey            = "Folder"
-	datastoreKey         = "Datastore"
-	contentSourceKey     = "ContentSource"
-	networkNameKey       = "Network"
-	scRequiredKey        = "StorageClassRequired"
-	useInventoryKey      = "UseInventoryAsContentSource"
+	vcPNIDKey                = "VcPNID"
+	vcPortKey                = "VcPort"
+	vcCredsSecretNameKey     = "VcCredsSecretName" // nolint:gosec
+	datacenterKey            = "Datacenter"
+	resourcePoolKey          = "ResourcePool"
+	folderKey                = "Folder"
+	datastoreKey             = "Datastore"
+	contentSourceKey         = "ContentSource"
+	networkNameKey           = "Network"
+	scRequiredKey            = "StorageClassRequired"
+	useInventoryKey          = "UseInventoryAsContentSource"
+	insecureSkipTLSVerifyKey = "InsecureSkipTLSVerify"
+	caFilePathKey            = "CAFilePath"
 
 	NamespaceRPAnnotationKey     = "vmware-system-resource-pool"
 	NamespaceFolderAnnotationKey = "vmware-system-vm-folder"
@@ -99,6 +103,28 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 		}
 	}
 
+	// Default to validating TLS by default.
+	insecureSkipTLSVerify := false
+	v, ok := dataMap[insecureSkipTLSVerifyKey]
+	if ok {
+		var err error
+		insecureSkipTLSVerify, err = strconv.ParseBool(v)
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to parse value of InsecureSkipTLSVerify")
+		}
+	}
+	// Only load the CA file path if we're not skipping TLS verification.
+	// Pick the system root CA bundle by default, but allow the user to override this using the CAFilePath
+	//  parameter
+	// Golang by default uses the system root CAs.
+	// ref: https://golang.org/src/crypto/x509/root_linux.go
+	caFilePath := "/etc/pki/tls/certs/ca-bundle.crt"
+	if !insecureSkipTLSVerify {
+		if ca, ok := dataMap[caFilePathKey]; ok {
+			caFilePath = ca
+		}
+	}
+
 	ret := &VSphereVmProviderConfig{
 		VcPNID:                      vcPNID,
 		VcPort:                      vcPort,
@@ -111,6 +137,8 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 		Network:                     dataMap[networkNameKey],
 		StorageClassRequired:        scRequired,
 		UseInventoryAsContentSource: useInventory,
+		InsecureSkipTLSVerify:       insecureSkipTLSVerify,
+		CAFilePath:                  caFilePath,
 	}
 
 	return ret, nil
@@ -224,6 +252,8 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 	dataMap[contentSourceKey] = config.ContentSource
 	dataMap[scRequiredKey] = strconv.FormatBool(config.StorageClassRequired)
 	dataMap[useInventoryKey] = strconv.FormatBool(config.UseInventoryAsContentSource)
+	dataMap[caFilePathKey] = config.CAFilePath
+	dataMap[insecureSkipTLSVerifyKey] = strconv.FormatBool(config.InsecureSkipTLSVerify)
 
 	return &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

@@ -30,10 +30,12 @@ func newConfig(namespace string, vcPNID string, vcPort string, vcCredsSecretName
 			Username: "some-user",
 			Password: "some-pass",
 		},
-		Datacenter:   simulator.Map.Any("Datacenter").Reference().Value,
-		ResourcePool: simulator.Map.Any("ResourcePool").Reference().Value,
-		Folder:       simulator.Map.Any("Folder").Reference().Value,
-		Datastore:    "/DC0/datastore/LocalDS_0",
+		Datacenter:            simulator.Map.Any("Datacenter").Reference().Value,
+		ResourcePool:          simulator.Map.Any("ResourcePool").Reference().Value,
+		Folder:                simulator.Map.Any("Folder").Reference().Value,
+		Datastore:             "/DC0/datastore/LocalDS_0",
+		InsecureSkipTLSVerify: false,
+		CAFilePath:            "/etc/pki/tls/certs/ca-bundle.crt",
 	}
 
 	configMap := ProviderConfigToConfigMap(namespace, providerConfig, vcCredsSecretName)
@@ -212,5 +214,61 @@ var _ = Describe("configMapsToProviderConfig", func() {
 			Entry("StorageClass set to false", false),
 			Entry("StorageClass set to true", true),
 		)
+	})
+
+	Describe("Tests for TLS configuration", func() {
+		var (
+			providerConfig   *VSphereVmProviderConfig
+			expectErrToOccur bool = false
+			err              error
+		)
+		JustBeforeEach(func() {
+			// We're not testing anything related to per-namespace ConfigMaps, just make them identical
+			//  to the base ConfigMap.
+			providerConfig, err = ConfigMapToProviderConfig(configMapIn, vcCreds)
+			if expectErrToOccur {
+				Expect(err).To(HaveOccurred())
+				Expect(providerConfig).To(BeNil())
+			} else {
+				Expect(err).NotTo(HaveOccurred())
+			}
+		})
+		// In most tests, we don't expect errors to occur - make that the default case.
+		AfterEach(func() {
+			expectErrToOccur = false
+		})
+		Context("when no TLS configuration is specified", func() {
+			It("defaults to using TLS with the system root CA", func() {
+				Expect(providerConfig.InsecureSkipTLSVerify).To(BeFalse())
+				Expect(providerConfig.CAFilePath).To(Equal("/etc/pki/tls/certs/ca-bundle.crt"))
+			})
+		})
+		Context("when the config chooses to ignore TLS verification", func() {
+			BeforeEach(func() {
+				configMapIn.Data["InsecureSkipTLSVerify"] = "true"
+			})
+			It("sets the insecure flag in the provider config", func() {
+				Expect(providerConfig.InsecureSkipTLSVerify).To(BeTrue())
+			})
+		})
+		Context("when the config chooses to use TLS verification and overrides the CA file path", func() {
+			BeforeEach(func() {
+				configMapIn.Data["CAFilePath"] = "/etc/a/new/ca/bundle.crt"
+				configMapIn.Data["InsecureSkipTLSVerify"] = "false"
+			})
+			It("unsets the insecure flag in the provider config", func() {
+				Expect(providerConfig.InsecureSkipTLSVerify).To(BeFalse())
+			})
+			It("uses the new CA path", func() {
+				Expect(providerConfig.CAFilePath).To(Equal("/etc/a/new/ca/bundle.crt"))
+			})
+		})
+		Context("when the TLS settings in the Config do not parse", func() {
+			BeforeEach(func() {
+				expectErrToOccur = true
+				configMapIn.Data["InsecureSkipTLSVerify"] = "Not_a_boolean"
+			})
+			It("returns an error when parsing the ConfigMap", func() {})
+		})
 	})
 })

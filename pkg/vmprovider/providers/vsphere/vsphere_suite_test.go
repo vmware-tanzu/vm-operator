@@ -8,6 +8,7 @@ package vsphere_test
 import (
 	"context"
 	"crypto/tls"
+	"os"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
@@ -19,27 +20,57 @@ var model *simulator.Model
 var server *simulator.Server
 var ctx context.Context
 
-var _ = BeforeSuite(func() {
-	model = simulator.VPX()
+var tlsTestModel *simulator.Model
+var tlsServer *simulator.Server
+var tlsServerCertPath string
+var tlsServerKeyPath string
 
-	// By Default, the model being used by vcsim has two ResourcePools
-	// (one for the cluster and host each). Setting model.Host=0 ensure
+var _ = BeforeSuite(func() {
+	ctx = context.Background()
+
+	// Set up a simulator for testing most client interactions (ignoring TLS)
+	model, server = setupModelAndServerWithSettings(&tls.Config{})
+
+	// Set up a second simulator for testing TLS.
+	tlsServerKeyPath, tlsServerCertPath = generateSelfSignedCert()
+	cert, err := tls.LoadX509KeyPair(tlsServerCertPath, tlsServerKeyPath)
+	Expect(err).NotTo(HaveOccurred())
+	tlsTestModel, tlsServer = setupModelAndServerWithSettings(&tls.Config{
+		Certificates: []tls.Certificate{
+			cert,
+		},
+		PreferServerCipherSuites: true,
+	})
+
+})
+
+func setupModelAndServerWithSettings(tlsConfig *tls.Config) (*simulator.Model, *simulator.Server) {
+	newModel := simulator.VPX()
+
+	// By Default, the Model being used by vcsim has two ResourcePools
+	// (one for the cluster and host each). Setting Model.Host=0 ensures
 	// we only have one ResourcePool, making it easier to pick the
 	// ResourcePool without having to look up using a hardcoded path.
-	model.Host = 0
+	newModel.Host = 0
 
-	err := model.Create()
-	Expect(err).To(BeNil())
+	err := newModel.Create()
+	Expect(err).ToNot(HaveOccurred())
 
-	model.Service.TLS = new(tls.Config)
-	server = model.Service.NewServer()
+	newModel.Service.TLS = tlsConfig
+	newServer := newModel.Service.NewServer()
 
-	ctx = context.Background()
-})
+	return newModel, newServer
+}
 
 var _ = AfterSuite(func() {
 	server.Close()
 	model.Remove()
+
+	tlsServer.Close()
+	tlsTestModel.Remove()
+
+	os.Remove(tlsServerKeyPath)
+	os.Remove(tlsServerCertPath)
 })
 
 func TestVSphereProvider(t *testing.T) {

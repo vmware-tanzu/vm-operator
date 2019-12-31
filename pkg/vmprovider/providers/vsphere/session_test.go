@@ -71,16 +71,15 @@ var _ = Describe("Test Session", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(len(pools)).ToNot(BeZero())
 
-				paths := []string{
-					pools[0].InventoryPath,
-					pools[0].Reference().Value,
-				}
-
-				for _, path := range paths {
-					pool, err := vsphere.GetResourcePool(ctx, finder, path)
-					Expect(err).ShouldNot(HaveOccurred())
-					Expect(pool.InventoryPath).To(Equal(pools[0].InventoryPath))
-				}
+				existingPool := pools[0]
+				pool, err := vsphere.GetResourcePoolByPath(ctx, finder, existingPool.InventoryPath)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(pool.InventoryPath).To(Equal(existingPool.InventoryPath))
+				Expect(pool.Reference().Value).To(Equal(existingPool.Reference().Value))
+				pool, err = vsphere.GetResourcePoolByMoID(ctx, finder, existingPool.Reference().Value)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(pool.InventoryPath).To(Equal(existingPool.InventoryPath))
+				Expect(pool.Reference().Value).To(Equal(existingPool.Reference().Value))
 				return nil
 			})
 			Expect(res).To(BeNil())

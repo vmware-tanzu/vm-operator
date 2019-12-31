@@ -15,7 +15,6 @@ import (
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
@@ -41,7 +40,7 @@ type testSetupData struct {
 func testSetup(ctx context.Context, c *govmomi.Client) (*testSetupData, error) {
 	tsd := testSetupData{ctx: ctx, client: c}
 	finder := find.NewFinder(c.Client, false)
-	dc, err := finder.Datacenter(ctx, simulator.Map.Any("Datacenter").Reference().Value)
+	dc, err := finder.Datacenter(ctx, "DC0")
 	if err != nil {
 		fmt.Printf("Failed to find datacenter: %v\n", err)
 		return nil, err

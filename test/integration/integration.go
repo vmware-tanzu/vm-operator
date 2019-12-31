@@ -17,6 +17,7 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test/suite"
 	. "github.com/onsi/gomega"
+	simulator "github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
 	govmomirest "github.com/vmware/govmomi/vapi/rest"
 	"go.uber.org/zap"
@@ -63,12 +64,27 @@ func GetContentSourceID() string {
 }
 
 func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int, contentSource string) *vsphere.VSphereVmProviderConfig {
+	var dcMoId string
+	var rpMoId string
+	for _, dc := range simulator.Map.All("Datacenter") {
+		if dc.Entity().Name == "DC0" {
+			dcMoId = dc.Reference().Value
+			break
+		}
+	}
+	for _, cl := range simulator.Map.All("ClusterComputeResource") {
+		if cl.Entity().Name == "DC0_C0" {
+			rpMoId = cl.(*simulator.ClusterComputeResource).ResourcePool.Reference().Value
+			break
+		}
+	}
+
 	return &vsphere.VSphereVmProviderConfig{
 		VcPNID:                      vcAddress,
 		VcPort:                      strconv.Itoa(vcPort),
 		VcCreds:                     NewIntegrationVmOperatorCredentials(),
-		Datacenter:                  "/DC0",
-		ResourcePool:                "/DC0/host/DC0_C0/Resources",
+		Datacenter:                  dcMoId,
+		ResourcePool:                rpMoId,
 		Folder:                      "/DC0/vm",
 		Datastore:                   "/DC0/datastore/LocalDS_0",
 		ContentSource:               contentSource,

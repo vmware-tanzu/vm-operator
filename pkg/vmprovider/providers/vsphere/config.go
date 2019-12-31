@@ -4,15 +4,11 @@
 package vsphere
 
 import (
-	"context"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
-	"github.com/vmware/govmomi"
-	"github.com/vmware/govmomi/find"
-	"github.com/vmware/govmomi/object"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -134,23 +130,6 @@ func configMapsToProviderCredentials(clientSet kubernetes.Interface, baseConfigM
 		err = errors.Errorf("%s creds secret not set in vmop system namespace nor per-namespace ", vcCredsSecretNameKey)
 	}
 	return
-}
-
-func ConfigToDatastore(ctx context.Context, c *govmomi.Client, config *VSphereVmProviderConfig) (*object.Datastore, error) {
-	finder := find.NewFinder(c.Client, false)
-
-	dc, err := finder.Datacenter(ctx, config.Datacenter)
-	if err != nil {
-		return nil, err
-	}
-
-	finder.SetDatacenter(dc)
-	ds, err := finder.Datastore(ctx, config.Datastore)
-	if err != nil {
-		return nil, err
-	}
-
-	return ds, nil
 }
 
 // UpdateVMFolderAndRPInProviderConfig updates the RP and vm folder in the provider config from the namespace annotation.

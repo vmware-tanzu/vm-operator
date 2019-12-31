@@ -1,0 +1,13 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachineClass
+metadata:
+  name: best-effort-small
+spec:
+  hardware:
+    cpus: 2
+    memory: 4Gi
+  policies:
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 4Gi

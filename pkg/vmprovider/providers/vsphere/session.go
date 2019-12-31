@@ -89,33 +89,24 @@ func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig
 	return s, nil
 }
 
-// Skip cyclomatic complexity check until this can be refactored. Adding support for datacenter name and moId caused the complexity to go over
-// the edge. Specifying datacenter by name will be removed once all our tests have been updated to use MoId. (TODO: )
-// nolint: gocyclo, vet
 func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConfig) error {
 
 	var err error
 	s.Finder = find.NewFinder(s.client.VimClient(), false)
 	s.userInfo = url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
-	// In production environments, Datacenter should ONLY be specified using moId to support renaming of the datacenter without breaking VM operator.
-	// Fall back to specifying Datacenter using name since our tests rely on that.
 	ref := types.ManagedObjectReference{Type: "Datacenter", Value: config.Datacenter}
-	if o, err := s.Finder.ObjectReference(ctx, ref); err != nil {
-		dc, err := s.Finder.Datacenter(ctx, config.Datacenter)
-		if err != nil {
-			return errors.Wrapf(err, "failed to init Datacenter %q", config.Datacenter)
-		}
-		s.datacenter = dc
-	} else {
-		s.datacenter = o.(*object.Datacenter)
+	o, err := s.Finder.ObjectReference(ctx, ref)
+	if err != nil {
+		return errors.Wrapf(err, "failed to init Datacenter %q", config.Datacenter)
 	}
+	s.datacenter = o.(*object.Datacenter)
 
 	s.Finder.SetDatacenter(s.datacenter)
 
 	// not necessary for vmimage list/get from Content Library
 	if config.ResourcePool != "" {
-		s.resourcepool, err = GetResourcePool(ctx, s.Finder, config.ResourcePool)
+		s.resourcepool, err = GetResourcePoolByMoID(ctx, s.Finder, config.ResourcePool)
 		if err != nil {
 			return errors.Wrapf(err, "failed to init Resource Pool %q", config.ResourcePool)
 		}
@@ -361,7 +352,7 @@ func (s *Session) DoesResourcePoolExist(ctx context.Context, namespace, resource
 	childResourcePoolPath := parentResourcePoolPath + "/" + resourcePoolName
 
 	log.V(4).Info("Checking if ResourcePool exists", "resourcePoolName", resourcePoolName, "path", childResourcePoolPath)
-	_, err := GetResourcePool(ctx, s.Finder, childResourcePoolPath)
+	_, err := GetResourcePoolByPath(ctx, s.Finder, childResourcePoolPath)
 	if err != nil {
 		switch err.(type) {
 		case *find.NotFoundError, *find.DefaultNotFoundError:
@@ -412,7 +403,7 @@ func (s *Session) DeleteResourcePool(ctx context.Context, resourcePoolName strin
 	log.Info("Deleting the ResourcePool", "name", resourcePoolName)
 
 	rpPath := s.resourcepool.InventoryPath + "/" + resourcePoolName
-	rpObj, err := GetResourcePool(ctx, s.Finder, rpPath)
+	rpObj, err := GetResourcePoolByPath(ctx, s.Finder, rpPath)
 	if err != nil {
 		switch err.(type) {
 		case *find.NotFoundError, *find.DefaultNotFoundError:
@@ -524,7 +515,7 @@ func (s *Session) GetRPAndFolderObjFromResourcePolicy(ctx context.Context,
 
 	resourcePoolName := resourcePolicy.Spec.ResourcePool.Name
 	resourcePoolPath := s.resourcepool.InventoryPath + "/" + resourcePoolName
-	resourcePoolObj, err := GetResourcePool(ctx, s.Finder, resourcePoolPath)
+	resourcePoolObj, err := GetResourcePoolByPath(ctx, s.Finder, resourcePoolPath)
 	if err != nil {
 		log.Error(err, "Unable to find ResourcePool", "name", resourcePoolName, "path", resourcePoolPath)
 		return nil, nil, err
@@ -1046,13 +1037,19 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 	return configSpec, nil
 }
 
-// GetResourcePool returns resource pool for a given invt path of a moref
-func GetResourcePool(ctx context.Context, finder *find.Finder, rp string) (*object.ResourcePool, error) {
-	ref := types.ManagedObjectReference{Type: "ResourcePool", Value: rp}
-	if o, err := finder.ObjectReference(ctx, ref); err == nil {
-		return o.(*object.ResourcePool), nil
+// GetResourcePool returns resource pool for a given a moref
+func GetResourcePoolByMoID(ctx context.Context, finder *find.Finder, moID string) (*object.ResourcePool, error) {
+	ref := types.ManagedObjectReference{Type: "ResourcePool", Value: moID}
+	o, err := finder.ObjectReference(ctx, ref)
+	if err != nil {
+		return nil, err
 	}
-	return finder.ResourcePool(ctx, rp)
+	return o.(*object.ResourcePool), nil
+}
+
+// GetResourcePool returns resource pool for a given invt path
+func GetResourcePoolByPath(ctx context.Context, finder *find.Finder, path string) (*object.ResourcePool, error) {
+	return finder.ResourcePool(ctx, path)
 }
 
 // GetVMFolder returns VM folder for a given invt path of a moref

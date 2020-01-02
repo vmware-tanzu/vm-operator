@@ -54,23 +54,19 @@ const (
 	NamespaceFolderAnnotationKey = "vmware-system-vm-folder"
 )
 
-func ConfigMapsToProviderConfig(baseConfigMap *v1.ConfigMap, nsConfigMap *v1.ConfigMap, vcCreds *VSphereVmProviderCredentials) (*VSphereVmProviderConfig, error) {
+func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProviderCredentials) (*VSphereVmProviderConfig, error) {
+	if configMap == nil {
+		return nil, errors.Errorf("Error getting the provider config from ConfigMap. ConfigMap is nil")
+	}
+
 	dataMap := make(map[string]string)
 
 	if vcCreds == nil {
 		return nil, errors.Errorf("VcCreds is unset")
 	}
 
-	if baseConfigMap != nil {
-		for key, value := range baseConfigMap.Data {
-			dataMap[key] = value
-		}
-	}
-
-	if nsConfigMap != nil {
-		for key, value := range nsConfigMap.Data {
-			dataMap[key] = value
-		}
+	for key, value := range configMap.Data {
+		dataMap[key] = value
 	}
 
 	vcPNID, ok := dataMap[vcPNIDKey]
@@ -120,16 +116,12 @@ func ConfigMapsToProviderConfig(baseConfigMap *v1.ConfigMap, nsConfigMap *v1.Con
 	return ret, nil
 }
 
-func configMapsToProviderCredentials(clientSet kubernetes.Interface, baseConfigMap *v1.ConfigMap, nsConfigMap *v1.ConfigMap) (vcCreds *VSphereVmProviderCredentials, err error) {
-	switch {
-	case nsConfigMap != nil && nsConfigMap.Data[vcCredsSecretNameKey] != "":
-		vcCreds, err = GetProviderCredentials(clientSet, nsConfigMap.ObjectMeta.Namespace, nsConfigMap.Data[vcCredsSecretNameKey])
-	case baseConfigMap != nil && baseConfigMap.Data[vcCredsSecretNameKey] != "":
-		vcCreds, err = GetProviderCredentials(clientSet, baseConfigMap.ObjectMeta.Namespace, baseConfigMap.Data[vcCredsSecretNameKey])
-	default:
-		err = errors.Errorf("%s creds secret not set in vmop system namespace nor per-namespace ", vcCredsSecretNameKey)
+func configMapToProviderCredentials(clientSet kubernetes.Interface, configMap *v1.ConfigMap) (*VSphereVmProviderCredentials, error) {
+	if configMap == nil || configMap.Data[vcCredsSecretNameKey] == "" {
+		return nil, errors.Errorf("%s creds secret not set in vmop system namespace", vcCredsSecretNameKey)
 	}
-	return
+
+	return GetProviderCredentials(clientSet, configMap.ObjectMeta.Namespace, configMap.Data[vcCredsSecretNameKey])
 }
 
 // UpdateVMFolderAndRPInProviderConfig updates the RP and vm folder in the provider config from the namespace annotation.
@@ -186,44 +178,26 @@ func GetNameserversFromConfigMap(clientSet kubernetes.Interface) ([]string, erro
 	return nameserverList, nil
 }
 
-// GetProviderConfigFromConfigMap gets the vSphere Provider ConfigMap from the API Master.
+// GetProviderConfigFromConfigMap returns a provider config constructed from vSphere Provider ConfigMap in the VM operator namespace.
 func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace string) (*VSphereVmProviderConfig, error) {
-	var baseConfigMap, nsConfigMap *v1.ConfigMap
-	var err error
 
 	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
-	if err == nil {
-		baseConfigMap, err = clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(VSphereConfigMapName, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			log.Info("could not find base provider ConfigMap", "namespace", vmopNamespace, "configMapName", VSphereConfigMapName)
-		} else if err != nil {
-			return nil, errors.Wrapf(err, "could not get base provider ConfigMap %v/%v", vmopNamespace, VSphereConfigMapName)
-		}
-	} else {
-		log.Info("unset env, will fallback to exclusively using per-namespace configuration")
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to extract the VM operator namespace from env %v", VmopNamespaceEnv)
 	}
 
-	if namespace != "" {
-		nsConfigMap, err = clientSet.CoreV1().ConfigMaps(namespace).Get(VSphereConfigMapName, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			log.Info("could not find per-namespace provider ConfigMap", "namespace", namespace, "configMapName", VSphereConfigMapName)
-		} else if err != nil {
-			log.Error(err, "could not get per-namespace provider ConfigMap", "namespace", namespace, "configMapName", VSphereConfigMapName)
-		}
+	configMap, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(VSphereConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return nil, errors.Wrapf(err, "error retrieving the provider ConfigMap %v/%v", vmopNamespace, VSphereConfigMapName)
 	}
 
-	if baseConfigMap == nil && nsConfigMap == nil {
-		return nil, errors.Errorf("neither base (%s/%s) nor per-namespace (%s/%s) provider configMaps are set",
-			vmopNamespace, VSphereConfigMapName, namespace, VSphereConfigMapName)
-	}
-
-	// Get VcCreds from per-namespace or base configMap
-	vcCreds, err := configMapsToProviderCredentials(clientSet, nsConfigMap, baseConfigMap)
+	// Get VcCreds from the configMap
+	vcCreds, err := configMapToProviderCredentials(clientSet, configMap)
 	if err != nil {
 		return nil, err
 	}
 
-	providerConfig, err := ConfigMapsToProviderConfig(baseConfigMap, nsConfigMap, vcCreds)
+	providerConfig, err := ConfigMapToProviderConfig(configMap, vcCreds)
 	if err != nil {
 		return nil, err
 	}

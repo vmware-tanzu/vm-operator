@@ -37,6 +37,12 @@ type FolderSpec struct {
 	Name string `json:"name,omitempty"`
 }
 
+// ClusterModuleSpec defines a ClusterModule in VC.
+type ClusterModuleSpec struct {
+	GroupName string `json:"groupname,omitempty"`
+	Uuid      string `json:"uuid,omitempty"`
+}
+
 // VirtualMachineSetResourcePolicySpec defines the desired state of VirtualMachineSetResourcePolicy
 type VirtualMachineSetResourcePolicySpec struct {
 	ResourcePool ResourcePoolSpec `json:"resourcepool,omitempty"`
@@ -49,6 +55,4 @@ type VirtualMachineSetResourcePolicyStatus struct {
 
 // DefaultingFunction sets default VirtualMachineSetResourcePolicy field values
 func (VirtualMachineSetResourcePolicySchemeFns) DefaultingFunction(o interface{}) {
-	// obj := o.(*VirtualMachineSetResourcePolicy)
-	// set default field values here
 }

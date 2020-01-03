@@ -294,11 +294,6 @@ required = [
   revision = "8ab6407b697782a06568d4b7f1db25550ec2e4c6"
   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_go-semver.git"
 
-# TODO figure out why this caused so much looping?
-# [[override]]
-#   name = "google.golang.org/grpc"
-#   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_grpc.git"
-
 [[override]]
   name = "github.com/prometheus/client_model"
   revision = "fa8ad6fec33561be4280a8f0514318c79d7f6cb6"
@@ -331,11 +326,6 @@ required = [
   name = "github.com/pkg/errors"
   revision = "ba968bfe8b2f7e042a574c888954fccecfa385b4"
   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_go_pkg-errors.git"
-
-# TODO Figure Out
-# [[override]]
-#   name = "k8s.io/apiextensions-apiserver"
-#   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_kubernetes_apiextensions-apiserver.git"
 
 [[override]]
   name = "github.com/golang/glog"
@@ -442,11 +432,6 @@ required = [
   revision = "c823c79ea1570fb5ff454033735a8e68575d1d0f"
   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_golang_protobuf.git"
 
-# TODO Probably delete this in favor of above
-# [[override]]
-#   name = "github.com/vmware/govmomi"
-#   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_vmware_govmomi.git"
-
 [[override]]
   name = "github.com/xiang90/probing"
   revision = "07dd2e8dfe18522e9c447ba95f2fe95262f63bb2"
@@ -456,11 +441,6 @@ required = [
   name = "k8s.io/apimachinery"
   revision = "eddba98df674a16931d2d4ba75edc3a389bf633a"
   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_kubernetes_apimachinery.git"
-
-# TODO CREATE THIS MIRROR
-# [[override]]
-#   name = "github.com/go-openapi/jsonpointer"
-#   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_go-openapi_jsonpointer.git"
 
 [[override]]
   name = "github.com/prometheus/client_golang"
@@ -491,11 +471,6 @@ required = [
   name = "github.com/ghodss/yaml"
   revision = "0ca9ea5df5451ffdf184b4428c902747c2c11cd7"
   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_ghodss_yaml.git"
-
-# TODO Figure out
-# [[override]]
-#   name = "github.com/emicklei/go-restful-swagger12"
-#   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_emicklei_go-restful-swagger12.git"
 
 [[override]]
   name = "github.com/jonboulle/clockwork"

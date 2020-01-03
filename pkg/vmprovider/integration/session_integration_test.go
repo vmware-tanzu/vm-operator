@@ -11,12 +11,15 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vapi/tags"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -559,6 +562,108 @@ var _ = Describe("Sessions", func() {
 					Expect(err).To(MatchError("storage class is required but not specified"))
 					Expect(clonedVM).Should(BeNil())
 				})
+			})
+		})
+	})
+
+	Describe("Cluster Module", func() {
+		var moduleGroup string
+		var moduleSpec *v1alpha1.ClusterModuleSpec
+		var resVm *resources.VirtualMachine
+
+		BeforeEach(func() {
+			moduleGroup = "controller-group"
+			moduleSpec = &vmoperatorv1alpha1.ClusterModuleSpec{
+				GroupName: moduleGroup,
+				Uuid:      "",
+			}
+
+			moduleId, err := session.CreateClusterModule(context.TODO())
+			moduleSpec.Uuid = moduleId
+			Expect(err).NotTo(HaveOccurred())
+			Expect(moduleId).To(Not(BeEmpty()))
+			resVm, err = session.GetVirtualMachine(ctx, "DC0_H0_VM0")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resVm).NotTo(BeNil())
+		})
+
+		AfterEach(func() {
+			Expect(session.DeleteClusterModule(context.TODO(), moduleSpec.Uuid)).To(Succeed())
+		})
+
+		Context("Create a ClusterModule, verify it exists and delete it", func() {
+			It("Verifies if a ClusterModule exists", func() {
+				exists, err := session.DoesClusterModuleExist(context.TODO(), moduleSpec.Uuid)
+				Expect(exists).To(BeTrue())
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		Context("Delete a ClusterModule that doesn't exist", func() {
+			It("should fail", func() {
+				err = session.DeleteClusterModule(context.TODO(), "nonexistent-clusterModule")
+				Expect(err).To(HaveOccurred())
+			})
+		})
+		Context("Associate a VM with a clusterModule and remove it", func() {
+			It("associate", func() {
+				err = session.AddVmToClusterModule(context.TODO(), moduleSpec.Uuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
+				Expect(err).NotTo(HaveOccurred())
+			})
+			It("remove", func() {
+				err = session.RemoveVmFromClusterModule(context.TODO(), moduleSpec.Uuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+	})
+
+	Describe("vSphere Tags", func() {
+		var resVm *resources.VirtualMachine
+		tagCatName := "tag-category-name"
+		tagName := "tag-name"
+		var catId string
+		var tagId string
+
+		BeforeEach(func() {
+			resVm, err = session.GetVirtualMachine(ctx, "DC0_H0_VM0")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resVm).NotTo(BeNil())
+
+			// Create a tag category and a tag
+			session.WithRestClient(ctx, func(c *rest.Client) error {
+				manager := tags.NewManager(c)
+
+				cat := tags.Category{
+					Name:            tagCatName,
+					Description:     "test-description",
+					Cardinality:     "SINGLE",
+					AssociableTypes: []string{"VirtualMachine"},
+				}
+
+				catId, err = manager.CreateCategory(ctx, &cat)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(catId).NotTo(BeEmpty())
+
+				tag := tags.Tag{
+					Name:        tagName,
+					Description: "test-description",
+					CategoryID:  catId,
+				}
+				tagId, err = manager.CreateTag(ctx, &tag)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(tagId).NotTo(BeEmpty())
+				return nil
+			})
+
+		})
+
+		Context("Attach a tag to a VM", func() {
+			It("Attach/Detach", func() {
+				err = session.AttachTagToVm(context.TODO(), tagName, tagCatName, resVm)
+				Expect(err).NotTo(HaveOccurred())
+				//Detach
+				err = session.DetachTagFromVm(context.TODO(), tagName, tagCatName, resVm)
+				Expect(err).NotTo(HaveOccurred())
 			})
 		})
 	})

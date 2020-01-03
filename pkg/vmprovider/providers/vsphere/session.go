@@ -21,6 +21,7 @@ import (
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/cluster"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
@@ -1228,4 +1230,138 @@ func (s *Session) String() string {
 	sb.WriteString(fmt.Sprintf("cpuMinMHzInCluster: %v ", s.cpuMinMHzInCluster))
 	sb.WriteString("}")
 	return sb.String()
+}
+
+// CreateClusterModule creates a clusterModule in vc and returns its id.
+func (s *Session) CreateClusterModule(ctx context.Context) (string, error) {
+	log.Info("Creating clusterModule")
+	var moduleId string
+	var err error
+
+	err = s.WithRestClient(ctx, func(c *rest.Client) error {
+		m := cluster.NewManager(c)
+		moduleId, err = m.CreateModule(ctx, s.cluster)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+
+	log.Info("Created clusterModule", "moduleId", moduleId)
+	return moduleId, nil
+}
+
+// DeleteClusterModule deletes a clusterModule in vc.
+func (s *Session) DeleteClusterModule(ctx context.Context, moduleId string) error {
+	log.Info("Deleting clusterModule", "moduleId", moduleId)
+
+	err := s.WithRestClient(ctx, func(c *rest.Client) error {
+		m := cluster.NewManager(c)
+		return m.DeleteModule(ctx, moduleId)
+	})
+	if err != nil {
+		return err
+	}
+
+	log.Info("Deleted clusterModule", "moduleId", moduleId)
+	return nil
+}
+
+// DoesClusterModuleExist checks whether the module with the given spec/uuid exit in vc.
+func (s *Session) DoesClusterModuleExist(ctx context.Context, moduleUuid string) (bool, error) {
+	log.Info("Checking clusterModule", "moduleId", moduleUuid)
+
+	if moduleUuid == "" {
+		return false, nil
+	}
+
+	var err error
+	moduleExists := false
+
+	err = s.WithRestClient(ctx, func(c *rest.Client) error {
+		m := cluster.NewManager(c)
+		modules, err := m.ListModules(ctx)
+		if err != nil {
+			return err
+		}
+		for _, mod := range modules {
+			if mod.Module == moduleUuid {
+				moduleExists = true
+				return nil
+			}
+		}
+		return err
+	})
+	if err != nil {
+		return false, err
+	}
+	return moduleExists, nil
+}
+
+// AddVmToClusterModule associates a VM with a clusterModule.
+func (s *Session) AddVmToClusterModule(ctx context.Context, moduleId string, vmRef mo.Reference) error {
+	log.Info("Adding vm to clusterModule", "moduleId", moduleId, "vmId", vmRef)
+
+	err := s.WithRestClient(ctx, func(c *rest.Client) error {
+		m := cluster.NewManager(c)
+		_, err := m.AddModuleMembers(ctx, moduleId, vmRef)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	log.Info("Added vm to clusterModule", "moduleId", moduleId, "vmId", vmRef)
+	return nil
+}
+
+// RemoveVmTFromClusterModule removes a VM from a clusterModule.
+func (s *Session) RemoveVmFromClusterModule(ctx context.Context, moduleId string, vmRef mo.Reference) error {
+	log.Info("Removing vm from clusterModule", "moduleId", moduleId, "vmId", vmRef)
+	var err error
+
+	err = s.WithRestClient(ctx, func(c *rest.Client) error {
+		m := cluster.NewManager(c)
+		_, err = m.RemoveModuleMembers(ctx, moduleId, vmRef)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	log.Info("Removed vm from clusterModule", "moduleId", moduleId, "vmId", vmRef)
+	return nil
+}
+
+// AttachTagToVm attaches a tag with a given name to the vm.
+func (s *Session) AttachTagToVm(ctx context.Context, tagName string, tagCatName string, resVm *res.VirtualMachine) error {
+	log.Info("Attaching tag", "tag", tagName, "vmName", resVm.Name)
+
+	return s.WithRestClient(ctx, func(c *rest.Client) error {
+		manager := tags.NewManager(c)
+		tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
+		if err != nil {
+			return err
+		}
+		vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
+		return manager.AttachTag(ctx, tag.ID, vmRef)
+
+	})
+}
+
+// DetachTagFromVm detaches a tag with a given name from the vm.
+func (s *Session) DetachTagFromVm(ctx context.Context, tagName string, tagCatName string, resVm *res.VirtualMachine) error {
+	log.Info("Detaching tag", "tag", tagName, "vmName", resVm.Name)
+
+	return s.WithRestClient(ctx, func(c *rest.Client) error {
+		manager := tags.NewManager(c)
+		tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
+		if err != nil {
+			return err
+		}
+		vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
+		return manager.DetachTag(ctx, tag.ID, vmRef)
+
+	})
 }

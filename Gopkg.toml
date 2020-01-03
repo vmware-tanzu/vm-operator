@@ -140,7 +140,7 @@ required = [
 
 [[constraint]]
   name = "github.com/vmware/govmomi"
-  revision = "0008cf3862a7bbb382dc0f7e370cf9ec39782237"
+  revision = "1ffa186c2cba3c1244ecfb544f5d4fd15e502470"
   source = "git@gitlab.eng.vmware.com:core-build/mirrors_github_govmomi.git"
 
 [[constraint]]

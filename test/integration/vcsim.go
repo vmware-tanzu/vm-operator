@@ -14,8 +14,9 @@ import (
 
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/simulator"
-	"github.com/vmware/govmomi/simulator/vpx"
-	vapi "github.com/vmware/govmomi/vapi/simulator"
+
+	_ "github.com/vmware/govmomi/vapi/simulator"
+	_ "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/cluster/simulator"
 )
 
 type VcSimInstance struct {
@@ -35,6 +36,9 @@ func NewVcSimInstance() *VcSimInstance {
 		log.Error(err, "Fail to create vc simulator")
 		os.Exit(255)
 	}
+	// Register imported simulators above (vapi/simulator, cluster/simulator)
+	vpx.Service.RegisterEndpoints = true
+
 	return &VcSimInstance{vcsim: vpx}
 }
 
@@ -50,8 +54,7 @@ func (v *VcSimInstance) Start() (vcAddress string, vcPort int) {
 		os.Exit(255)
 	}
 	//register for vapi/rest calls
-	path, handler := vapi.New(v.server.URL, vpx.Setting)
-	v.vcsim.Service.Handle(path, handler)
+
 	return v.IP, v.Port
 }
 

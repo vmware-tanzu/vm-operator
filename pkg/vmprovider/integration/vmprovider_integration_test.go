@@ -1,6 +1,6 @@
 // +build integration
 
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package integration
@@ -120,6 +120,10 @@ func getVirtualMachineSetResourcePolicy(name, namespace string) *vmoperatorv1alp
 			},
 			Folder: vmoperatorv1alpha1.FolderSpec{
 				Name: fmt.Sprintf("%s-folder", name),
+			},
+			ClusterModules: []vmoperatorv1alpha1.ClusterModuleSpec{
+				{GroupName: "ControlPlane"},
+				{GroupName: "NodeGroup1"},
 			},
 		},
 	}
@@ -397,15 +401,18 @@ var _ = Describe("VMProvider Tests", func() {
 
 			resourcePolicy = getVirtualMachineSetResourcePolicy(testPolicyName, testPolicyNamespace)
 			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
+			Expect(len(resourcePolicy.Status.ClusterModules)).Should(BeNumerically("==", 2))
 		})
 
 		JustAfterEach(func() {
 			Expect(vmProvider.DeleteVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
+			Expect(len(resourcePolicy.Status.ClusterModules)).Should(BeNumerically("==", 0))
 		})
 
 		Context("for an existing resource policy", func() {
 			It("should update VirtualMachineSetResourcePolicy", func() {
 				Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
+				Expect(len(resourcePolicy.Status.ClusterModules)).Should(BeNumerically("==", 2))
 			})
 
 			It("successfully able to find the resourcepolicy", func() {
@@ -421,6 +428,11 @@ var _ = Describe("VMProvider Tests", func() {
 				exists, err := vmProvider.DoesVirtualMachineSetResourcePolicyExist(context.TODO(), failResPolicy)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(exists).NotTo(BeTrue())
+			})
+		})
+		Context("for a resource policy with invalid cluster module", func() {
+			It("successfully able to delete the resourcepolicy", func() {
+				resourcePolicy.Status.ClusterModules = append([]vmoperatorv1alpha1.ClusterModuleStatus{vmoperatorv1alpha1.ClusterModuleStatus{"invalid-group", "invalid-uuid"}}, resourcePolicy.Status.ClusterModules...)
 			})
 		})
 	})

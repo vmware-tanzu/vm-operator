@@ -1,5 +1,5 @@
 /* **********************************************************
- * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2018-2020 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
 package vsphere
@@ -62,6 +62,7 @@ type Session struct {
 	extraConfig           map[string]string
 	storageClassRequired  bool
 	useInventoryForImages bool
+	tagInfo               map[string]string
 
 	mutex              sync.Mutex
 	cpuMinMHzInCluster uint64 // CPU Min Frequency across all Hosts in the cluster
@@ -166,6 +167,10 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 			return errors.Wrapf(err, "Failed to init CPU min frequency")
 		}
 	}
+	// Initialize tagging information
+	s.tagInfo = make(map[string]string)
+	s.tagInfo[CtrlVmVmAntiAffinityTagKey] = config.CtrlVmVmAntiAffinityTag
+	s.tagInfo[WorkerVmVmAntiAffinityTagKey] = config.WorkerVmVmAntiAffinityTag
 
 	return s.initDatastore(ctx, config.Datastore)
 }
@@ -1351,7 +1356,7 @@ func (s *Session) DeleteClusterModule(ctx context.Context, moduleId string) erro
 
 // DoesClusterModuleExist checks whether the module with the given spec/uuid exit in vc.
 func (s *Session) DoesClusterModuleExist(ctx context.Context, moduleUuid string) (bool, error) {
-	log.Info("Checking clusterModule", "moduleId", moduleUuid)
+	log.V(4).Info("Checking clusterModule", "moduleId", moduleUuid)
 
 	if moduleUuid == "" {
 		return false, nil
@@ -1377,6 +1382,7 @@ func (s *Session) DoesClusterModuleExist(ctx context.Context, moduleUuid string)
 	if err != nil {
 		return false, err
 	}
+	log.V(4).Info("Checked clusterModule", "moduleId", moduleUuid, "exist", moduleExists)
 	return moduleExists, nil
 }
 
@@ -1411,6 +1417,28 @@ func (s *Session) RemoveVmFromClusterModule(ctx context.Context, moduleId string
 	}
 	log.Info("Removed vm from clusterModule", "moduleId", moduleId, "vmId", vmRef)
 	return nil
+}
+
+// IsVmMemberOfClusterModule checks whether a given VM is a member of ClusterModule in VC.
+func (s *Session) IsVmMemberOfClusterModule(ctx context.Context, moduleId string, vmRef mo.Reference) (bool, error) {
+	var moduleMembers []types.ManagedObjectReference
+	var err error
+
+	err = s.WithRestClient(ctx, func(c *rest.Client) error {
+		m := cluster.NewManager(c)
+		moduleMembers, err = m.ListModuleMembers(ctx, moduleId)
+		return err
+	})
+	if err != nil {
+		return false, err
+	}
+	for _, member := range moduleMembers {
+		if member.Value == vmRef.Reference().Value {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // AttachTagToVm attaches a tag with a given name to the vm.

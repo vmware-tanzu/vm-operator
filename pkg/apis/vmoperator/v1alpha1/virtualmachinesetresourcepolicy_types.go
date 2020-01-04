@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -39,18 +39,24 @@ type FolderSpec struct {
 
 // ClusterModuleSpec defines a ClusterModule in VC.
 type ClusterModuleSpec struct {
-	GroupName string `json:"groupname,omitempty"`
-	Uuid      string `json:"uuid,omitempty"`
+	GroupName string `json:"groupname"`
 }
 
 // VirtualMachineSetResourcePolicySpec defines the desired state of VirtualMachineSetResourcePolicy
 type VirtualMachineSetResourcePolicySpec struct {
-	ResourcePool ResourcePoolSpec `json:"resourcepool,omitempty"`
-	Folder       FolderSpec       `json:"folder,omitempty"`
+	ResourcePool   ResourcePoolSpec    `json:"resourcepool,omitempty"`
+	Folder         FolderSpec          `json:"folder,omitempty"`
+	ClusterModules []ClusterModuleSpec `json:"clustermodules,omitempty"`
+}
+
+type ClusterModuleStatus struct {
+	GroupName  string `json:"groupname"`
+	ModuleUuid string `json:"moduleUUID"`
 }
 
 // VirtualMachineSetResourcePolicyStatus defines the observed state of VirtualMachineSetResourcePolicy
 type VirtualMachineSetResourcePolicyStatus struct {
+	ClusterModules []ClusterModuleStatus `json:"clustermodules"`
 }
 
 // DefaultingFunction sets default VirtualMachineSetResourcePolicy field values

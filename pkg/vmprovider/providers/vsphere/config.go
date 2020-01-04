@@ -1,5 +1,5 @@
 /* **********************************************************
- * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2018-2020 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 package vsphere
 
@@ -38,6 +38,8 @@ type VSphereVmProviderConfig struct {
 	UseInventoryAsContentSource bool
 	InsecureSkipTLSVerify       bool
 	CAFilePath                  string
+	CtrlVmVmAntiAffinityTag     string
+	WorkerVmVmAntiAffinityTag   string
 }
 
 type WcpClusterConfig struct {
@@ -68,6 +70,9 @@ const (
 
 	NamespaceRPAnnotationKey     = "vmware-system-resource-pool"
 	NamespaceFolderAnnotationKey = "vmware-system-vm-folder"
+
+	CtrlVmVmAntiAffinityTagKey   = "CtrlVmVmAATag"
+	WorkerVmVmAntiAffinityTagKey = "WorkerVmVmAATag"
 )
 
 const (
@@ -194,6 +199,8 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 		UseInventoryAsContentSource: useInventory,
 		InsecureSkipTLSVerify:       insecureSkipTLSVerify,
 		CAFilePath:                  caFilePath,
+		CtrlVmVmAntiAffinityTag:     dataMap[CtrlVmVmAntiAffinityTagKey],
+		WorkerVmVmAntiAffinityTag:   dataMap[WorkerVmVmAntiAffinityTagKey],
 	}
 
 	return ret, nil
@@ -309,6 +316,8 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 	dataMap[useInventoryKey] = strconv.FormatBool(config.UseInventoryAsContentSource)
 	dataMap[caFilePathKey] = config.CAFilePath
 	dataMap[insecureSkipTLSVerifyKey] = strconv.FormatBool(config.InsecureSkipTLSVerify)
+	dataMap[CtrlVmVmAntiAffinityTagKey] = config.CtrlVmVmAntiAffinityTag
+	dataMap[WorkerVmVmAntiAffinityTagKey] = config.WorkerVmVmAntiAffinityTag
 
 	return &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

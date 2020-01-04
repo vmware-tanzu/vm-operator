@@ -439,11 +439,23 @@ func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1
 
 	pkg.AddAnnotations(&vm.ObjectMeta)
 
+	var resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy
+	if policyName := vm.Spec.ResourcePolicyName; policyName != "" {
+		resourcePolicy = &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{}
+		err = r.Get(ctx, client.ObjectKey{Name: policyName, Namespace: vm.Namespace}, resourcePolicy)
+		if err != nil {
+			log.Error(err, "Failed to get VirtualMachineSetResourcePolicy",
+				"vmName", vm.NamespacedName(), "resourcePolicyName", policyName)
+			return err
+		}
+	}
 	vmConfigArgs := vmprovider.VmConfigArgs{
-		VmClass:    *vmClass,
-		VmMetadata: vmMetadata,
+		VmClass:        *vmClass,
+		VmMetadata:     vmMetadata,
+		ResourcePolicy: resourcePolicy,
 	}
 	err = r.vmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
+
 	if err != nil {
 		log.Error(err, "Provider failed to update VirtualMachine", "name", vm.NamespacedName())
 		return err

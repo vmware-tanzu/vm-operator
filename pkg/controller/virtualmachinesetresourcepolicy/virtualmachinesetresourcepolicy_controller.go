@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachinesetresourcepolicy
@@ -6,6 +6,7 @@ package virtualmachinesetresourcepolicy
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -77,14 +78,20 @@ func (r *ReconcileVirtualMachineSetResourcePolicy) reconcileCreateOrUpdate(ctx c
 	logger := log.WithValues("namespace", policy.Namespace, "name", policy.Name)
 	logger.V(4).Info("Reconciling CreateOrUpdate VirtualMachineSetResourcePolicy")
 
+	// Not so nice way of dealing with reconcile twice when updating status issue
+	var origClusterModsStatus vmoperatorv1alpha1.VirtualMachineSetResourcePolicyStatus
+	policy.Status.DeepCopyInto(&origClusterModsStatus)
+
 	err := r.vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, policy)
 	if err != nil {
 		return err
 	}
 
-	if err := r.Status().Update(ctx, policy); err != nil {
-		logger.Error(err, "Failed to update VirtualMachineSetResourcePolicy status")
-		return err
+	if !reflect.DeepEqual(origClusterModsStatus, policy.Status) {
+		if err := r.Status().Update(ctx, policy); err != nil {
+			logger.Error(err, "Failed to update VirtualMachineSetResourcePolicy status")
+			return err
+		}
 	}
 
 	logger.V(4).Info("Reconciled CreateOrUpdate VirtualMachineSetResourcePolicy without errors.")
@@ -95,7 +102,6 @@ func (r *ReconcileVirtualMachineSetResourcePolicy) reconcileCreateOrUpdate(ctx c
 // reconcileDelete reconciles a deleted VirtualMachineSetResourcePolicy resource.
 func (r *ReconcileVirtualMachineSetResourcePolicy) reconcileDelete(ctx context.Context, resourcePolicy *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy) (err error) {
 	logger := log.WithValues("namespace", resourcePolicy.Namespace, "name", resourcePolicy.Name)
-
 	// Skip deleting a VirtualMachineSetResourcePolicy if it is referenced by a VirtualMachine.
 	vmsInNamespace := &vmoperatorv1alpha1.VirtualMachineList{}
 	err = r.List(ctx, &client.ListOptions{Namespace: resourcePolicy.Namespace}, vmsInNamespace)

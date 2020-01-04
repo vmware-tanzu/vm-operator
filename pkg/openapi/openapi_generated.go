@@ -21,6 +21,7 @@ import (
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.ClusterModuleSpec":                        schema_pkg_apis_vmoperator_v1alpha1_ClusterModuleSpec(ref),
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.ClusterModuleStatus":                      schema_pkg_apis_vmoperator_v1alpha1_ClusterModuleStatus(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.FolderSpec":                               schema_pkg_apis_vmoperator_v1alpha1_FolderSpec(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.LoadBalancerIngress":                      schema_pkg_apis_vmoperator_v1alpha1_LoadBalancerIngress(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.LoadBalancerStatus":                       schema_pkg_apis_vmoperator_v1alpha1_LoadBalancerStatus(ref),
@@ -679,13 +680,33 @@ func schema_pkg_apis_vmoperator_v1alpha1_ClusterModuleSpec(ref common.ReferenceC
 							Format: "",
 						},
 					},
-					"uuid": {
+				},
+				Required: []string{"groupname"},
+			},
+		},
+		Dependencies: []string{},
+	}
+}
+
+func schema_pkg_apis_vmoperator_v1alpha1_ClusterModuleStatus(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Properties: map[string]spec.Schema{
+					"groupname": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"moduleUUID": {
 						SchemaProps: spec.SchemaProps{
 							Type:   []string{"string"},
 							Format: "",
 						},
 					},
 				},
+				Required: []string{"groupname", "moduleUUID"},
 			},
 		},
 		Dependencies: []string{},
@@ -1859,11 +1880,23 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSetResourcePolicySpec(ref
 							Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.FolderSpec"),
 						},
 					},
+					"clustermodules": {
+						SchemaProps: spec.SchemaProps{
+							Type: []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.ClusterModuleSpec"),
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.FolderSpec", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.ResourcePoolSpec"},
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.ClusterModuleSpec", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.FolderSpec", "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.ResourcePoolSpec"},
 	}
 }
 
@@ -1872,10 +1905,25 @@ func schema_pkg_apis_vmoperator_v1alpha1_VirtualMachineSetResourcePolicyStatus(r
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "VirtualMachineSetResourcePolicyStatus defines the observed state of VirtualMachineSetResourcePolicy",
-				Properties:  map[string]spec.Schema{},
+				Properties: map[string]spec.Schema{
+					"clustermodules": {
+						SchemaProps: spec.SchemaProps{
+							Type: []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.ClusterModuleStatus"),
+									},
+								},
+							},
+						},
+					},
+				},
+				Required: []string{"clustermodules"},
 			},
 		},
-		Dependencies: []string{},
+		Dependencies: []string{
+			"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.ClusterModuleStatus"},
 	}
 }
 

@@ -1,6 +1,6 @@
 // +build integration
 
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package integration
@@ -688,31 +688,35 @@ var _ = Describe("Sessions", func() {
 	Describe("Cluster Module", func() {
 		var moduleGroup string
 		var moduleSpec *v1alpha1.ClusterModuleSpec
+		var moduleStatus *v1alpha1.ClusterModuleStatus
 		var resVm *resources.VirtualMachine
 
 		BeforeEach(func() {
 			moduleGroup = "controller-group"
 			moduleSpec = &vmoperatorv1alpha1.ClusterModuleSpec{
 				GroupName: moduleGroup,
-				Uuid:      "",
 			}
 
 			moduleId, err := session.CreateClusterModule(context.TODO())
-			moduleSpec.Uuid = moduleId
+			moduleStatus = &vmoperatorv1alpha1.ClusterModuleStatus{
+				GroupName:  moduleSpec.GroupName,
+				ModuleUuid: moduleId,
+			}
 			Expect(err).NotTo(HaveOccurred())
 			Expect(moduleId).To(Not(BeEmpty()))
-			resVm, err = session.GetVirtualMachine(ctx, getSimpleVirtualMachine("DC0_H0_VM0"))
+
+			resVm, err = session.GetVirtualMachine(ctx, getSimpleVirtualMachine("DC0_C0_RP0_VM0"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resVm).NotTo(BeNil())
 		})
 
 		AfterEach(func() {
-			Expect(session.DeleteClusterModule(context.TODO(), moduleSpec.Uuid)).To(Succeed())
+			Expect(session.DeleteClusterModule(context.TODO(), moduleStatus.ModuleUuid)).To(Succeed())
 		})
 
 		Context("Create a ClusterModule, verify it exists and delete it", func() {
 			It("Verifies if a ClusterModule exists", func() {
-				exists, err := session.DoesClusterModuleExist(context.TODO(), moduleSpec.Uuid)
+				exists, err := session.DoesClusterModuleExist(context.TODO(), moduleStatus.ModuleUuid)
 				Expect(exists).To(BeTrue())
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -724,13 +728,24 @@ var _ = Describe("Sessions", func() {
 				Expect(err).To(HaveOccurred())
 			})
 		})
-		Context("Associate a VM with a clusterModule and remove it", func() {
-			It("associate", func() {
-				err = session.AddVmToClusterModule(context.TODO(), moduleSpec.Uuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
+		Context("ClusterModule-VM association", func() {
+			It("check membership doesn't exist", func() {
+				isMember, err := session.IsVmMemberOfClusterModule(context.TODO(), moduleStatus.ModuleUuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
 				Expect(err).NotTo(HaveOccurred())
+				Expect(isMember).To(BeFalse())
 			})
-			It("remove", func() {
-				err = session.RemoveVmFromClusterModule(context.TODO(), moduleSpec.Uuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
+			It("Associate a VM with a clusterModule, check the membership and remove it", func() {
+				By("Associate VM")
+				err = session.AddVmToClusterModule(context.TODO(), moduleStatus.ModuleUuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
+				Expect(err).NotTo(HaveOccurred())
+
+				By("Verify membership")
+				isMember, err := session.IsVmMemberOfClusterModule(context.TODO(), moduleStatus.ModuleUuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(isMember).To(BeTrue())
+
+				By("Remove the association")
+				err = session.RemoveVmFromClusterModule(context.TODO(), moduleStatus.ModuleUuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
 				Expect(err).NotTo(HaveOccurred())
 			})
 		})

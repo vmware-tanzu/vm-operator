@@ -1,13 +1,14 @@
 // +build integration
 
 /* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2019-2020 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
 package virtualmachinesetresourcepolicy
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -29,7 +30,7 @@ import (
 
 var c client.Client
 
-const timeout = time.Second * 5
+const timeout = time.Second * 30
 
 var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 	ns := integration.DefaultNamespace
@@ -71,6 +72,7 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 	})
 
 	Describe("when creating/deleting a VirtualMachineSetResourcePolicy", func() {
+		var resourcePolicyNameSuffix = 0
 		var (
 			resourcePolicyName     string
 			resourcePolicyInstance vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
@@ -78,7 +80,8 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 		)
 
 		BeforeEach(func() {
-			resourcePolicyName = "resourcePolicyName"
+			resourcePolicyName = "resourcePolicyName" + strconv.Itoa(resourcePolicyNameSuffix)
+			resourcePolicyNameSuffix++
 			resourcePolicyInstance = getResourcePolicyInstance(resourcePolicyName, ns)
 			expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Name: resourcePolicyName, Namespace: ns}}
 		})
@@ -135,6 +138,7 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 
 					err = c.Create(context.TODO(), &vmInstance)
 					Expect(err).NotTo(HaveOccurred())
+					Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 
 					err = c.Delete(context.TODO(), &resourcePolicyInstance)
 					Expect(err).ShouldNot(HaveOccurred())
@@ -142,7 +146,7 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 
 					expectedError := fmt.Errorf("failing VirtualMachineSetResourcePolicy deletion since VM: '%s' is referencing it, resourcePolicyName: '%s'",
 						vmInstance.NamespacedName(), resourcePolicyInstance.NamespacedName())
-					Eventually(reconcileError).Should(Receive(Equal(expectedError)))
+					Eventually(reconcileError, timeout).Should(Receive(Equal(expectedError)))
 				})
 			})
 
@@ -192,6 +196,10 @@ func getResourcePolicyInstance(name, namespace string) vmoperatorv1alpha1.Virtua
 			},
 			Folder: vmoperatorv1alpha1.FolderSpec{
 				Name: "name-folder",
+			},
+			ClusterModules: []vmoperatorv1alpha1.ClusterModuleSpec{
+				{GroupName: "ControlPlane"},
+				{GroupName: "NodeGroup1"},
 			},
 		},
 	}

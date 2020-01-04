@@ -1,5 +1,5 @@
 /* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2018-2020 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
 package pkg
@@ -17,6 +17,15 @@ const (
 
 	// Annotation Key for VM provider
 	VmOperatorVmProviderKey string = "vmoperator.vmware.com/vmprovider"
+
+	// Annotation key for tag information at vmoperator
+	ProviderTagsAnnotationKey string = "vsphere-tag"
+
+	// Annotation key for clusterModule group name information at vmoperator
+	ClusterModuleNameKey string = "vsphere-cluster-module-group"
+
+	// Tag category name used for implementing vm-vm anti-affinity policy
+	ProviderTagCategoryName string = "wp_vmvmaa_category"
 )
 
 func AddAnnotations(objectMeta *metav1.ObjectMeta) {

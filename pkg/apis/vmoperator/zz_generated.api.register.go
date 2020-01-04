@@ -166,6 +166,7 @@ type VirtualMachineStatus struct {
 }
 
 type VirtualMachineSetResourcePolicyStatus struct {
+	ClusterModules []ClusterModuleStatus
 }
 
 type VirtualMachineVolumeStatus struct {
@@ -173,6 +174,11 @@ type VirtualMachineVolumeStatus struct {
 	Attached bool
 	DiskUuid string
 	Error    string
+}
+
+type ClusterModuleStatus struct {
+	GroupName  string
+	ModuleUuid string
 }
 
 type VirtualMachineCondition struct {
@@ -185,8 +191,9 @@ type VirtualMachineCondition struct {
 }
 
 type VirtualMachineSetResourcePolicySpec struct {
-	ResourcePool ResourcePoolSpec
-	Folder       FolderSpec
+	ResourcePool   ResourcePoolSpec
+	Folder         FolderSpec
+	ClusterModules []ClusterModuleSpec
 }
 
 type VirtualMachineSpec struct {
@@ -202,8 +209,8 @@ type VirtualMachineSpec struct {
 	ReadinessProbe     *Probe
 }
 
-type FolderSpec struct {
-	Name string
+type ClusterModuleSpec struct {
+	GroupName string
 }
 
 type Probe struct {
@@ -237,6 +244,10 @@ type VirtualMachinePort struct {
 	Ip       string
 	Name     string
 	Protocol corev1.Protocol
+}
+
+type FolderSpec struct {
+	Name string
 }
 
 type ResourcePoolSpec struct {

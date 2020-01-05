@@ -41,7 +41,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			initialDiscoveryFrequency:    1 * time.Second,
 			continuousDiscoveryFrequency: 2 * time.Second,
 		}
-		imageDiscoverer = newVirtualMachineImageDiscoverer(mockClient, mockVmProvider, options)
+		imageDiscoverer = NewVirtualMachineImageDiscoverer(mockClient, mockVmProvider, options)
 	})
 
 	AfterEach(func() {

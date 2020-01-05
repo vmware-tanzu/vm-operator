@@ -48,7 +48,7 @@ type VirtualMachineImageDiscoverer struct {
 	options    VirtualMachineImageDiscovererOptions
 }
 
-func newVirtualMachineImageDiscoverer(client client.Client, vmprovider vmprovider.VirtualMachineProviderInterface,
+func NewVirtualMachineImageDiscoverer(client client.Client, vmprovider vmprovider.VirtualMachineProviderInterface,
 	options VirtualMachineImageDiscovererOptions) *VirtualMachineImageDiscoverer {
 	return &VirtualMachineImageDiscoverer{client: client, vmprovider: vmprovider, options: options}
 }
@@ -162,34 +162,34 @@ func (d *VirtualMachineImageDiscoverer) differenceImages(ctx context.Context) (e
 	return nil, added, removed
 }
 
+func (d *VirtualMachineImageDiscoverer) SyncImages() error {
+	ctx := context.Background()
+	err, added, removed := d.differenceImages(ctx)
+	if err != nil {
+		log.Error(err, "failed to difference images")
+		return err
+	}
+
+	err = d.createImages(ctx, added)
+	if err != nil {
+		log.Error(err, "failed to create all images")
+		return err
+	}
+
+	err = d.deleteImages(ctx, removed)
+	if err != nil {
+		log.Error(err, "failed to delete all images")
+		return err
+	}
+
+	return nil
+}
+
 // Blocking function to drive image discovery and differencing
 func (d *VirtualMachineImageDiscoverer) Start(stopChan <-chan struct{}, doneChan chan struct{}) {
 	log.Info("Starting VirtualMachineImageDiscoverer",
 		"initial discovery frequency", d.options.initialDiscoveryFrequency,
 		"continuous discovery frequency", d.options.continuousDiscoveryFrequency)
-
-	syncImages := func() error {
-		ctx := context.Background()
-		err, added, removed := d.differenceImages(ctx)
-		if err != nil {
-			log.Error(err, "failed to difference images")
-			return err
-		}
-
-		err = d.createImages(ctx, added)
-		if err != nil {
-			log.Error(err, "failed to create all images")
-			return err
-		}
-
-		err = d.deleteImages(ctx, removed)
-		if err != nil {
-			log.Error(err, "failed to delete all images")
-			return err
-		}
-
-		return nil
-	}
 
 	// Drive "aggressive" discovery until there is a fully successful initial sync of the images.  We do this so
 	// that there is some initial content seeded into the k8s control plane.
@@ -206,7 +206,7 @@ func (d *VirtualMachineImageDiscoverer) Start(stopChan <-chan struct{}, doneChan
 				return
 			case t := <-ticker.C:
 				log.V(4).Info("Tick at", "time", t)
-				err := syncImages()
+				err := d.SyncImages()
 
 				// If no error was received, assume a successful sync and move to a continuous discovery frequency
 				if err == nil {
@@ -235,7 +235,7 @@ func (d *VirtualMachineImageDiscoverer) Start(stopChan <-chan struct{}, doneChan
 				return
 			case t := <-ticker.C:
 				log.V(4).Info("Tick at", "time", t)
-				_ = syncImages()
+				_ = d.SyncImages()
 			}
 		}
 	}()
@@ -268,7 +268,7 @@ func AddWithOptions(mgr manager.Manager, options VirtualMachineImageDiscovererOp
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager, options VirtualMachineImageDiscovererOptions) reconcile.Reconciler {
 	vmProvider := vmprovider.GetVmProviderOrDie()
-	imageDiscoverer := newVirtualMachineImageDiscoverer(mgr.GetClient(), vmProvider, options)
+	imageDiscoverer := NewVirtualMachineImageDiscoverer(mgr.GetClient(), vmProvider, options)
 
 	return &ReconcileVirtualMachineImage{
 		Client:          mgr.GetClient(),
@@ -323,7 +323,8 @@ func (r *ReconcileVirtualMachineImage) Start(stopChan <-chan struct{}) error {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages/status,verbs=get;update;patch
 func (r *ReconcileVirtualMachineImage) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	log.V(4).Info("Reconcile VirtualMachineImage ")
+	log.V(4).Info("Reconcile VirtualMachineImage ", "namespace", request.Namespace, "name", request.Name)
+
 	// Fetch the VirtualMachineImage instance
 	instance := &vmoperatorv1alpha1.VirtualMachineImage{}
 	err := r.Get(context.TODO(), request.NamespacedName, instance)

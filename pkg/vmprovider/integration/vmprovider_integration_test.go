@@ -12,6 +12,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -274,4 +275,42 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(session.GetCpuMinMHzInCluster()).Should(BeNumerically(">", 0))
 		})
 	})
+
+	Context("Update PNID", func() {
+		It("update pnid when the same pnid is supplied", func() {
+			vmProvider, err := vsphere.NewVSphereVmProvider(clientSet, nil)
+			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, "")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Same PNID
+			config := BuildNewWcpClusterConfigMap(providerConfig.VcPNID)
+			err = vmProvider.UpdatePnid(context.TODO(), &config)
+			Expect(err).NotTo(HaveOccurred())
+		})
+		It("update pnid when a different pnid is supplied", func() {
+			vmProvider, err := vsphere.NewVSphereVmProvider(clientSet, nil)
+			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, "")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Different PNID
+			pnid := providerConfig.VcPNID + "-01"
+			config := BuildNewWcpClusterConfigMap(pnid)
+			err = vmProvider.UpdatePnid(context.TODO(), &config)
+			Expect(err).NotTo(HaveOccurred())
+			providerConfig, _ = vsphere.GetProviderConfigFromConfigMap(clientSet, "")
+			Expect(providerConfig.VcPNID).Should(Equal(pnid))
+		})
+	})
 })
+
+func BuildNewWcpClusterConfigMap(pnid string) v1.ConfigMap {
+	wcpClusterConfig := &vsphere.WcpClusterConfig{
+		VCHost: pnid,
+		VCPort: vsphere.DefaultVCPort,
+	}
+
+	configMap, err := vsphere.BuildNewWcpClusterConfigMap(wcpClusterConfig)
+	Expect(err).NotTo(HaveOccurred())
+
+	return configMap
+}

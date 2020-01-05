@@ -9,6 +9,7 @@ import (
 	gomock "github.com/golang/mock/gomock"
 	v1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmprovider "github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	v1 "k8s.io/api/core/v1"
 	reflect "reflect"
 )
 
@@ -204,6 +205,20 @@ func (m *MockVirtualMachineProviderInterface) Name() string {
 func (mr *MockVirtualMachineProviderInterfaceMockRecorder) Name() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).Name))
+}
+
+// UpdatePnid mocks base method
+func (m *MockVirtualMachineProviderInterface) UpdatePnid(arg0 context.Context, arg1 *v1.ConfigMap) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdatePnid", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdatePnid indicates an expected call of UpdatePnid
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdatePnid(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePnid", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdatePnid), arg0, arg1)
 }
 
 // UpdateVirtualMachine mocks base method

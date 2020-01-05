@@ -146,6 +146,19 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 				Expect(err).To(BeNil())
 				Expect(providerConfig).To(Equal(providerConfigIn))
 			})
+			Specify("update pnid for no namespace", func() {
+				clientSet := fake.NewSimpleClientset(configMapIn, secretIn)
+				providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "")
+				Expect(err).To(BeNil())
+				Expect(providerConfig).To(Equal(providerConfigIn))
+
+				newPnid := providerConfig.VcPNID + "-02"
+				err = PatchPnidInConfigMap(clientSet, newPnid)
+				Expect(err).NotTo(HaveOccurred())
+				providerConfig, _ = GetProviderConfigFromConfigMap(clientSet, "")
+				Expect(providerConfig.VcPNID).Should(Equal(newPnid))
+			})
+
 		})
 	})
 

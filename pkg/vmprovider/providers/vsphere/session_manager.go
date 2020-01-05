@@ -8,6 +8,8 @@ import (
 	"context"
 	"sync"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/vmware/govmomi/vapi/library"
 
 	"github.com/pkg/errors"
@@ -131,6 +133,40 @@ func (sm *SessionManager) ComputeClusterCpuMinFrequency(ctx context.Context) (er
 	return nil
 }
 
+func (sm *SessionManager) UpdatePnid(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error {
+	clusterCfg, err := BuildNewWcpClusterConfig(clusterConfigMap.Data)
+	if err != nil {
+		return err
+	}
+
+	config, err := GetProviderConfigFromConfigMap(sm.clientset, "")
+	if err != nil {
+		return err
+	}
+
+	if sm.isPnidUnchanged(config.VcPNID, clusterCfg.VCHost) {
+		return nil
+	}
+
+	if err = PatchPnidInConfigMap(sm.clientset, clusterCfg.VCHost); err != nil {
+		return err
+	}
+
+	sm.clearClientAndSessions(ctx)
+
+	return nil
+}
+
+func (sm *SessionManager) clearClientAndSessions(ctx context.Context) {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+
+	for ns, s := range sm.sessions {
+		s.Logout(ctx)
+		delete(sm.sessions, ns)
+	}
+}
+
 func (sm *SessionManager) isContentSourceUnchanged(cl *library.Library, contentSource string) bool {
 
 	if (cl != nil) && (cl.ID == contentSource) {
@@ -142,4 +178,8 @@ func (sm *SessionManager) isContentSourceUnchanged(cl *library.Library, contentS
 	}
 
 	return false
+}
+
+func (sm *SessionManager) isPnidUnchanged(oldPnid, newPnid string) bool {
+	return oldPnid == newPnid
 }

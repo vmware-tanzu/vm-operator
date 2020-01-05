@@ -18,6 +18,7 @@ import (
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25/types"
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
+	corev1 "k8s.io/api/core/v1"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -483,6 +484,10 @@ func (vs *VSphereVmProvider) ComputeClusterCpuMinFrequency(ctx context.Context) 
 	}
 
 	return nil
+}
+
+func (vs *VSphereVmProvider) UpdatePnid(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error {
+	return vs.sessions.UpdatePnid(ctx, clusterConfigMap)
 }
 
 func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {

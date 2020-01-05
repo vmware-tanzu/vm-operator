@@ -7,6 +7,8 @@ package vmprovider
 import (
 	"context"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 )
 
@@ -39,4 +41,5 @@ type VirtualMachineProviderInterface interface {
 	DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
 	ComputeClusterCpuMinFrequency(ctx context.Context) error
+	UpdatePnid(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error
 }

@@ -566,6 +566,10 @@ func (vs *VSphereVmProvider) UpdateVmOpSACredSecret(ctx context.Context) {
 	vs.sessions.clearClientAndSessions(ctx)
 }
 
+func (vs *VSphereVmProvider) UpdateVmOpConfigMap(ctx context.Context) {
+	vs.sessions.clearClientAndSessions(ctx)
+}
+
 func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
 	powerState, uuid, reference := resVm.ImageFields(ctx)
 

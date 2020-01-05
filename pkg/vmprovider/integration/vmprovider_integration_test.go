@@ -348,7 +348,11 @@ var _ = Describe("VMProvider Tests", func() {
 
 			vmProvider := vmprovider.GetVmProviderOrDie()
 			var images []*vmoperatorv1alpha1.VirtualMachineImage
-			var err error
+
+			//Configure to use Content Library
+			vSphereConfig.ContentSource = integration.GetContentSourceID()
+			err := session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
+			Expect(err).ShouldNot(HaveOccurred())
 
 			Eventually(func() int {
 				images, err = vmProvider.ListVirtualMachineImages(context.TODO(), integration.DefaultNamespace)
@@ -374,6 +378,11 @@ var _ = Describe("VMProvider Tests", func() {
 			vmProvider := vmprovider.GetVmProviderOrDie()
 
 			var image *vmoperatorv1alpha1.VirtualMachineImage
+
+			//Configure to use Content Library
+			vSphereConfig.ContentSource = integration.GetContentSourceID()
+			err := session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
+			Expect(err).ShouldNot(HaveOccurred())
 
 			Eventually(func() *vmoperatorv1alpha1.VirtualMachineImage {
 				image, _ = vmProvider.GetVirtualMachineImage(context.TODO(), integration.DefaultNamespace, integration.IntegrationContentLibraryItemName)

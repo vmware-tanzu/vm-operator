@@ -36,6 +36,19 @@ func (m *MockVirtualMachineProviderInterface) EXPECT() *MockVirtualMachineProvid
 	return m.recorder
 }
 
+// UpdateVmOpConfigMap mocks base method
+func (m *MockVirtualMachineProviderInterface) UpdateVmOpConfigMap(arg0 context.Context) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "UpdateVmOpConfigMap", arg0)
+}
+
+// UpdateVmOpConfigMap indicates an expected call of UpdateVmOpConfigMap
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVmOpConfigMap(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVmOpConfigMap", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdateVmOpConfigMap), arg0)
+}
+
+
 // ComputeClusterCpuMinFrequency mocks base method
 func (m *MockVirtualMachineProviderInterface) ComputeClusterCpuMinFrequency(arg0 context.Context) error {
 	m.ctrl.T.Helper()

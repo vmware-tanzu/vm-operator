@@ -59,12 +59,12 @@ const (
 	resourcePoolKey          = "ResourcePool"
 	folderKey                = "Folder"
 	datastoreKey             = "Datastore"
-	contentSourceKey         = "ContentSource"
 	networkNameKey           = "Network"
 	scRequiredKey            = "StorageClassRequired"
 	useInventoryKey          = "UseInventoryAsContentSource"
 	insecureSkipTLSVerifyKey = "InsecureSkipTLSVerify"
 	caFilePathKey            = "CAFilePath"
+	ContentSourceKey         = "ContentSource"
 
 	DefaultVCPort = 443
 
@@ -193,7 +193,7 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 		ResourcePool:                dataMap[resourcePoolKey],
 		Folder:                      dataMap[folderKey],
 		Datastore:                   dataMap[datastoreKey],
-		ContentSource:               dataMap[contentSourceKey],
+		ContentSource:               dataMap[ContentSourceKey],
 		Network:                     dataMap[networkNameKey],
 		StorageClassRequired:        scRequired,
 		UseInventoryAsContentSource: useInventory,
@@ -311,7 +311,7 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 	dataMap[resourcePoolKey] = config.ResourcePool
 	dataMap[folderKey] = config.Folder
 	dataMap[datastoreKey] = config.Datastore
-	dataMap[contentSourceKey] = config.ContentSource
+	dataMap[ContentSourceKey] = config.ContentSource
 	dataMap[scRequiredKey] = strconv.FormatBool(config.StorageClassRequired)
 	dataMap[useInventoryKey] = strconv.FormatBool(config.UseInventoryAsContentSource)
 	dataMap[caFilePathKey] = config.CAFilePath
@@ -340,6 +340,7 @@ func InstallVSphereVmProviderConfig(clientSet *kubernetes.Clientset, namespace s
 			return err
 		}
 	} else {
+		log.Info("Updating VM Operator configmap as it already exists")
 		if _, err := clientSet.CoreV1().ConfigMaps(namespace).Update(configMap); err != nil {
 			return err
 		}

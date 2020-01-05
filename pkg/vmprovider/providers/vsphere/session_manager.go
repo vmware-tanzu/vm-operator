@@ -11,7 +11,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/pkg/errors"
-	"github.com/vmware/govmomi/vapi/library"
 	"k8s.io/client-go/kubernetes"
 
 	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
@@ -72,21 +71,7 @@ func (sm *SessionManager) GetSession(ctx context.Context, namespace string) (*Se
 	sm.mutex.Unlock()
 
 	if ok {
-
-		config, err := GetProviderConfigFromConfigMap(sm.clientset, namespace)
-		if err != nil {
-			return nil, err
-		}
-
-		if sm.isContentSourceUnchanged(ses.contentlib, config.ContentSource) {
-			return ses, nil
-		}
-		//If Content Source has changed, logout and empty existing session.
-		ses.Logout(ctx)
-
-		sm.mutex.Lock()
-		delete(sm.sessions, namespace)
-		sm.mutex.Unlock()
+		return ses, nil
 	}
 
 	ses, err := sm.createSession(ctx, namespace)
@@ -96,14 +81,10 @@ func (sm *SessionManager) GetSession(ctx context.Context, namespace string) (*Se
 
 	sm.mutex.Lock()
 	ses2, ok := sm.sessions[namespace]
-
 	if ok {
-		//Install new session and cleanup the racing session (ses2)
-		sm.sessions[namespace] = ses
 		sm.mutex.Unlock()
-
-		ses2.Logout(ctx)
-		return ses, nil
+		ses.Logout(ctx)
+		return ses2, nil
 	}
 
 	sm.sessions[namespace] = ses
@@ -167,19 +148,6 @@ func (sm *SessionManager) clearClientAndSessions(ctx context.Context) {
 		s.Logout(ctx)
 		delete(sm.sessions, ns)
 	}
-}
-
-func (sm *SessionManager) isContentSourceUnchanged(cl *library.Library, contentSource string) bool {
-
-	if (cl != nil) && (cl.ID == contentSource) {
-		return true
-	}
-
-	if (cl == nil) && (contentSource == "") {
-		return true
-	}
-
-	return false
 }
 
 func (sm *SessionManager) isPnidUnchanged(oldPnid, newPnid string) bool {

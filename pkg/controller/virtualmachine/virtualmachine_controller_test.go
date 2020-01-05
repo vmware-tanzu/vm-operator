@@ -21,7 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -30,7 +29,6 @@ import (
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmrecord "github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -178,10 +176,9 @@ var _ = Describe("VirtualMachine controller", func() {
 		It("invoke the reconcile method with valid storage class", func() {
 			provider := vmprovider.GetVmProviderOrDie()
 
-			err = vsphere.InstallVSphereVmProviderConfig(kubernetes.NewForConfigOrDie(cfg),
-				integration.DefaultNamespace,
-				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, ""),
-				integration.SecretName)
+			//Configure to use Content Library
+			vSphereConfig.ContentSource = ""
+			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
 
 			images, err := provider.ListVirtualMachineImages(context.TODO(), ns)
@@ -233,10 +230,9 @@ var _ = Describe("VirtualMachine controller", func() {
 
 	Context("when creating/deleting a VM object from Content Library", func() {
 		It("invoke the reconcile method", func() {
-			err = vsphere.InstallVSphereVmProviderConfig(kubernetes.NewForConfigOrDie(cfg),
-				integration.DefaultNamespace,
-				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, integration.GetContentSourceID()),
-				integration.SecretName)
+			//Configure to use Content Library
+			vSphereConfig.ContentSource = integration.GetContentSourceID()
+			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
 
 			vmName := "cl-deployed-vm"

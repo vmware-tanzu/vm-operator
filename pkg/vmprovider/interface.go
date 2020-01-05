@@ -47,4 +47,5 @@ type VirtualMachineProviderInterface interface {
 	ComputeClusterCpuMinFrequency(ctx context.Context) error
 	UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error
 	UpdateVmOpSACredSecret(ctx context.Context)
+	UpdateVmOpConfigMap(ctx context.Context)
 }

@@ -4,9 +4,14 @@
 package vsphere
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
+
+	yaml "gopkg.in/yaml.v2"
+
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
@@ -35,6 +40,11 @@ type VSphereVmProviderConfig struct {
 	CAFilePath                  string
 }
 
+type WcpClusterConfig struct {
+	VCHost string `yaml:"vc_pnid"`
+	VCPort int    `yaml:"vc_port,omitempty"`
+}
+
 const (
 	VmopNamespaceEnv         = "POD_NAMESPACE"
 	VSphereConfigMapName     = "vsphere.provider.config.vmoperator.vmware.com"
@@ -54,9 +64,53 @@ const (
 	insecureSkipTLSVerifyKey = "InsecureSkipTLSVerify"
 	caFilePathKey            = "CAFilePath"
 
+	DefaultVCPort = 443
+
 	NamespaceRPAnnotationKey     = "vmware-system-resource-pool"
 	NamespaceFolderAnnotationKey = "vmware-system-vm-folder"
 )
+
+const (
+	WcpClusterConfigFileName     = "wcp-cluster-config.yaml"
+	WcpClusterConfigMapNamespace = "kube-system"
+	WcpClusterConfigMapName      = "wcp-cluster-config"
+	WcpVcPnidKey                 = "vc_pnid"
+)
+
+// BuildNewWcpClusterConfig builds and returns Config object from given config file.
+func BuildNewWcpClusterConfig(wcpClusterCfgData map[string]string) (*WcpClusterConfig, error) {
+	cfgData, ok := wcpClusterCfgData[WcpClusterConfigFileName]
+	if !ok {
+		return nil, errors.Errorf("Key %s not found", WcpClusterConfigFileName)
+	}
+
+	wcpClusterConfig := &WcpClusterConfig{}
+	err := yaml.Unmarshal([]byte(cfgData), wcpClusterConfig)
+	if err != nil {
+		return nil, err
+	}
+	if wcpClusterConfig.VCPort == 0 {
+		wcpClusterConfig.VCPort = DefaultVCPort
+	}
+	return wcpClusterConfig, nil
+}
+
+func BuildNewWcpClusterConfigMap(wcpClusterConfig *WcpClusterConfig) (v1.ConfigMap, error) {
+	bytes, err := yaml.Marshal(wcpClusterConfig)
+	if err != nil {
+		return v1.ConfigMap{}, nil
+	}
+	dataMap := make(map[string]string)
+	dataMap[WcpClusterConfigFileName] = string(bytes)
+
+	return v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      WcpClusterConfigMapName,
+			Namespace: WcpClusterConfigMapNamespace,
+		},
+		Data: dataMap,
+	}, nil
+}
 
 func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProviderCredentials) (*VSphereVmProviderConfig, error) {
 	if configMap == nil {
@@ -282,4 +336,21 @@ func InstallVSphereVmProviderConfig(clientSet *kubernetes.Clientset, namespace s
 	}
 
 	return InstallVSphereVmProviderSecret(clientSet, namespace, config.VcCreds, vcCredsSecretName)
+}
+
+// PatchPnidInConfigMap updates the ConfigMap with the new vSphere PNID.
+func PatchPnidInConfigMap(clientSet kubernetes.Interface, pnid string) error {
+	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
+	if err != nil {
+		return err
+	}
+
+	patch := fmt.Sprintf(`{"data": {"%s": "%s"}}`, vcPNIDKey, pnid)
+	_, err = clientSet.CoreV1().ConfigMaps(vmopNamespace).Patch(VSphereConfigMapName, types.StrategicMergePatchType, []byte(patch))
+	if err != nil {
+		log.Error(err, "Failed to apply patch for ConfigMap", "name", VSphereConfigMapName, "namespace", vmopNamespace, "patch", patch)
+		return err
+	}
+
+	return nil
 }

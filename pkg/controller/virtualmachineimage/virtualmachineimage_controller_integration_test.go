@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -261,4 +262,89 @@ var _ = Describe("ReconcileVirtualMachineImage", func() {
 		})
 	})
 
+})
+var _ = Describe("ReconcileVMOpConfigMap", func() {
+
+	var (
+		c                       client.Client
+		stopMgr                 chan struct{}
+		mgrStopped              *sync.WaitGroup
+		mgr                     manager.Manager
+		expectedRequest         reconcile.Request
+		recFn                   reconcile.Reconciler
+		requests                chan reconcile.Request
+		err                     error
+		leaderElectionConfigMap string
+		ns                      = integration.DefaultNamespace
+	)
+
+	BeforeEach(func() {
+		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
+		// channel when it is finished.
+
+		syncPeriod := 5 * time.Second
+		leaderElectionConfigMap = fmt.Sprintf("vmoperator-controller-manager-runtime-%s", uuid.New())
+		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod,
+			LeaderElection:          true,
+			LeaderElectionID:        leaderElectionConfigMap,
+			LeaderElectionNamespace: ns})
+		Expect(err).NotTo(HaveOccurred())
+		c = mgr.GetClient()
+
+		recFn, requests, _ = integration.SetupTestReconcile(cmReconciler(mgr))
+		Expect(addController(mgr, recFn)).To(Succeed())
+
+		stopMgr, mgrStopped = integration.StartTestManager(mgr)
+
+	})
+
+	AfterEach(func() {
+		close(stopMgr)
+		mgrStopped.Wait()
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      leaderElectionConfigMap,
+			},
+		}
+		err := c.Delete(context.Background(), configMap)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	Describe("Reconcile", func() {
+		It("invoke the reconcile method while updating VM Operator ConfigMap", func() {
+			vmOperatorConfigNamespacedName := types.NamespacedName{
+				Name:      vsphere.VSphereConfigMapName,
+				Namespace: integration.DefaultNamespace,
+			}
+
+			expectedRequest = reconcile.Request{NamespacedName: vmOperatorConfigNamespacedName}
+
+			//Delete Provider ConfigMap created for integration
+			providerConfigMap := vsphere.ProviderConfigToConfigMap(integration.DefaultNamespace,
+				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, ""),
+				integration.SecretName)
+			err = c.Delete(context.TODO(), providerConfigMap)
+			Expect(err).ShouldNot(HaveOccurred())
+			Eventually(requests, timeout).ShouldNot(Receive(Equal(expectedRequest)))
+
+			//Recreate Provider ConfigMap created for integration
+			providerConfigMap = vsphere.ProviderConfigToConfigMap(integration.DefaultNamespace,
+				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, ""),
+				integration.SecretName)
+			err = c.Create(context.TODO(), providerConfigMap)
+			Expect(err).ShouldNot(HaveOccurred())
+			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+			//Get ProviderConfigMap with a changed Content source
+			providerConfigMap = vsphere.ProviderConfigToConfigMap(integration.DefaultNamespace,
+				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, integration.GetContentSourceID()),
+				integration.SecretName)
+
+			//Call update on the ConfigMap
+			err = c.Update(context.TODO(), providerConfigMap)
+			Expect(err).ShouldNot(HaveOccurred())
+			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+		})
+	})
 })

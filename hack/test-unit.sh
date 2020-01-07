@@ -13,7 +13,7 @@ OPTIONS=""
 
 while getopts ":c:" opt ; do
     case $opt in
-        "c" ) OPTIONS="$OPTIONS -coverprofile=$OPTARG -coverpkg=pkg/..." ;;
+        "c" ) OPTIONS="$OPTIONS -coverprofile=$OPTARG -coverpkg=./pkg/...,./cmd/..." ;;
         \? ) usage ;;
     esac
 done

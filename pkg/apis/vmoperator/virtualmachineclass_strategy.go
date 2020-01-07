@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package vmoperator
 
@@ -20,7 +19,7 @@ func (VirtualMachineClassStrategy) NamespaceScoped() bool {
 	return false
 }
 
-// VirtualMachineClasses are cluster-scoped
+// VirtualMachineClassesStatus are cluster-scoped
 func (VirtualMachineClassStatusStrategy) NamespaceScoped() bool {
 	return false
 }
@@ -75,7 +74,7 @@ func validateCPU(vmclass VirtualMachineClass) field.ErrorList {
 		errors = append(errors,
 			field.Invalid(
 				field.NewPath("spec", "policies", "resources", "requests", "cpu"),
-				vmclass.Spec.Policies.Resources.Requests.Cpu.Value(), "CPU request should not be larger than Memory limit"))
+				vmclass.Spec.Policies.Resources.Requests.Cpu.Value(), "CPU request should not be larger than CPU limit"))
 	}
 
 	//TODO: Validate req and limit against hardware configuration of the class

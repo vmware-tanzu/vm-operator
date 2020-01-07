@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestLib(t *testing.T) {
+func TestVMOperator(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "VM Operator Suite")
 }

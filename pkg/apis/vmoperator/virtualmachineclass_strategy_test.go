@@ -1,10 +1,11 @@
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package vmoperator
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
@@ -12,14 +13,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
-func aVirtualMachineClassResources(requests VirtualMachineResourceSpec, limits VirtualMachineResourceSpec) VirtualMachineClassResources {
+func newVirtualMachineClassResources(requests VirtualMachineResourceSpec, limits VirtualMachineResourceSpec) VirtualMachineClassResources {
 	return VirtualMachineClassResources{
 		Requests: requests,
 		Limits:   limits,
 	}
 }
 
-func aVirtualMachineClass(hardware VirtualMachineClassHardware, policies VirtualMachineClassPolicies) VirtualMachineClass {
+func newVirtualMachineClass(hardware VirtualMachineClassHardware, policies VirtualMachineClassPolicies) VirtualMachineClass {
 	return VirtualMachineClass{
 		Spec: VirtualMachineClassSpec{
 			Hardware: hardware,
@@ -30,9 +31,8 @@ func aVirtualMachineClass(hardware VirtualMachineClassHardware, policies Virtual
 
 var _ = Describe("VirtualMachineClass Validation", func() {
 	var (
-		policies VirtualMachineClassPolicies
-
-		vmClass = VirtualMachineClass{}
+		vmMachineClassStrategy       = VirtualMachineClassStrategy{}
+		vmMachineClassStatusStrategy = VirtualMachineClassStatusStrategy{}
 
 		hardware      = VirtualMachineClassHardware{}
 		hardwareSmall = VirtualMachineClassHardware{
@@ -67,108 +67,78 @@ var _ = Describe("VirtualMachineClass Validation", func() {
 		}
 	)
 
-	type ValidateFunc func(VirtualMachineClass) field.ErrorList
-	type ValidateUpdateFunc func(VirtualMachineClass, VirtualMachineClass) field.ErrorList
-
-	BeforeEach(func() {
-		requests := VirtualMachineResourceSpec{}
-		limits := VirtualMachineResourceSpec{}
-		policies = VirtualMachineClassPolicies{
-			aVirtualMachineClassResources(requests, limits),
-		}
-	})
-
-	DescribeTable("should validate with empty",
-		func(validateFunc ValidateFunc) {
-			Expect(validateFunc(vmClass)).Should(BeEmpty())
-		},
-		Entry("for memory resources", validateMemory),
-		Entry("for CPU resources", validateCPU),
-	)
-
-	DescribeTable("should validate when no reservation or limit",
-		func(validateFunc ValidateFunc) {
-			vmClass := aVirtualMachineClass(hardware, policies)
-			Expect(validateFunc(vmClass)).Should(BeEmpty())
-		},
-		Entry("for memory resources", validateMemory),
-		Entry("for CPU resources", validateCPU),
-	)
-	DescribeTable("should validate with limit larger than reservation",
-		func(validateFunc ValidateFunc, request *VirtualMachineResourceSpec, limit *VirtualMachineResourceSpec) {
-			policies := VirtualMachineClassPolicies{
-				aVirtualMachineClassResources(*request, *limit),
+	DescribeTable("should validate resources of the VirtualMachineClass",
+		func(request *VirtualMachineResourceSpec, limit *VirtualMachineResourceSpec, expectedErr *field.Error) {
+			vmClassResources := VirtualMachineClassResources{}
+			if request != nil {
+				vmClassResources.Requests = *request
 			}
-
-			vmClass := aVirtualMachineClass(hardware, policies)
-			Expect(validateFunc(vmClass)).Should(BeEmpty())
-		},
-		Entry("for memory resources", validateMemory, &resourceSpecWithMemory100, &resourceSpecWithMemory200),
-		Entry("for CPU resources", validateCPU, &resourceSpecWithCpu1000, &resourceSpecWithCpu2000),
-	)
-
-	DescribeTable("should validate with reservation and limit equal",
-		func(validateFunc ValidateFunc, requestAndLimit *VirtualMachineResourceSpec) {
-			policies := VirtualMachineClassPolicies{
-				aVirtualMachineClassResources(*requestAndLimit, *requestAndLimit),
+			if limit != nil {
+				vmClassResources.Limits = *limit
 			}
-			vmClass := aVirtualMachineClass(hardware, policies)
-			Expect(validateFunc(vmClass)).Should(BeEmpty())
-		},
-		Entry("for memory resources", validateMemory, &resourceSpecWithMemory100),
-		Entry("for CPU resources", validateCPU, &resourceSpecWithCpu1000),
-	)
-
-	DescribeTable("should fail if reservation larger than limit",
-		func(validateFunc ValidateFunc, request *VirtualMachineResourceSpec, limit *VirtualMachineResourceSpec, expectedErr *field.Error) {
-
-			policies := VirtualMachineClassPolicies{
-				aVirtualMachineClassResources(*request, *limit),
+			policies := VirtualMachineClassPolicies{vmClassResources}
+			vmClass := newVirtualMachineClass(hardware, policies)
+			result := vmMachineClassStrategy.Validate(context.TODO(), &vmClass)
+			if expectedErr == nil {
+				Expect(result).Should(BeEmpty())
+			} else {
+				Expect(result).Should(HaveLen(1))
+				Expect(result[0]).Should(Equal(expectedErr))
 			}
-
-			vmClass := aVirtualMachineClass(hardware, policies)
-			result := validateFunc(vmClass)
-
-			Expect(result).Should(HaveLen(1))
-			Expect(result[0]).Should(Equal(expectedErr))
 		},
-		Entry("for memory resources", validateMemory, &resourceSpecWithMemory200, &resourceSpecWithMemory100,
+		Entry("empty", nil, nil, nil),
+		Entry("no reservation or limit", &VirtualMachineResourceSpec{}, &VirtualMachineResourceSpec{}, nil),
+		Entry("reservation < limit for CPU", &resourceSpecWithCpu1000, &resourceSpecWithCpu2000, nil),
+		Entry("reservation < limit for memory", &resourceSpecWithMemory100, &resourceSpecWithMemory200, nil),
+		Entry("reservation == limit for CPU", &resourceSpecWithCpu1000, &resourceSpecWithCpu1000, nil),
+		Entry("reservation == limit for memory", &resourceSpecWithMemory100, &resourceSpecWithMemory100, nil),
+		Entry("reservation > limit for CPU", &resourceSpecWithCpu2000, &resourceSpecWithCpu1000,
+			field.Invalid(field.NewPath("spec", "policies", "resources", "requests", "cpu"), resourceSpecWithCpu2000.Cpu.Value(),
+				"CPU request should not be larger than CPU limit")),
+		Entry("reservation> limit for memory", &resourceSpecWithMemory200, &resourceSpecWithMemory100,
 			field.Invalid(field.NewPath("spec", "policies", "resources", "requests", "memory"), resourceSpecWithMemory200.Memory.Value(),
 				"Memory request should not be larger than Memory limit")),
-		Entry("for CPU resources", validateCPU, &resourceSpecWithCpu2000, &resourceSpecWithCpu1000,
-			field.Invalid(field.NewPath("spec", "policies", "resources", "requests", "cpu"), resourceSpecWithCpu2000.Cpu.Value(),
-				"CPU request should not be larger than Memory limit")),
 	)
-	DescribeTable("should pass if old and new vm classes are the same",
-		func(validateFunc ValidateUpdateFunc, request *VirtualMachineResourceSpec, limit *VirtualMachineResourceSpec) {
 
+	Context("When old and new vm classes are the same", func() {
+		It("should validate class update successfully", func() {
 			policies := VirtualMachineClassPolicies{
-				aVirtualMachineClassResources(*request, *limit),
+				newVirtualMachineClassResources(resourceSpecWithCpu1000, resourceSpecWithCpu1000),
 			}
 
-			vmClass1 := aVirtualMachineClass(hardware, policies)
-			vmClass2 := aVirtualMachineClass(hardware, policies)
+			vmClass1 := newVirtualMachineClass(hardware, policies)
+			vmClass2 := newVirtualMachineClass(hardware, policies)
 
-			Expect(validateFunc(vmClass1, vmClass2)).Should(BeEmpty())
-		},
-		Entry("For changes", validateClassUpdate, &resourceSpecWithCpuMemSmall, &resourceSpecWithCpuMemLarge),
-	)
-	DescribeTable("should fail if old and new vm classes have changed",
-		func(validateFunc ValidateUpdateFunc, res1 *VirtualMachineResourceSpec, res2 *VirtualMachineResourceSpec) {
+			Expect(vmMachineClassStrategy.ValidateUpdate(context.TODO(), &vmClass1, &vmClass2)).Should(BeEmpty())
+		})
+	})
+
+	Context("When old and new vm classes have changed", func() {
+		It("should fail to validate class update", func() {
 
 			policies1 := VirtualMachineClassPolicies{
-				aVirtualMachineClassResources(*res1, *res1),
+				newVirtualMachineClassResources(resourceSpecWithCpuMemSmall, resourceSpecWithCpuMemSmall),
 			}
 			policies2 := VirtualMachineClassPolicies{
-				aVirtualMachineClassResources(*res2, *res2),
+				newVirtualMachineClassResources(resourceSpecWithCpuMemLarge, resourceSpecWithCpuMemLarge),
 			}
 
-			vmClass1 := aVirtualMachineClass(hardwareSmall, policies1)
-			vmClass2 := aVirtualMachineClass(hardwareLarge, policies2)
+			vmClass1 := newVirtualMachineClass(hardwareSmall, policies1)
+			vmClass2 := newVirtualMachineClass(hardwareLarge, policies2)
 
-			result := validateFunc(vmClass1, vmClass2)
-			Expect(result).Should(Not(BeEmpty()))
-		},
-		Entry("For changes", validateClassUpdate, &resourceSpecWithCpuMemSmall, &resourceSpecWithCpuMemLarge),
-	)
+			result := vmMachineClassStrategy.ValidateUpdate(context.TODO(), &vmClass1, &vmClass2)
+			Expect(result).Should(HaveLen(1))
+			Expect(result[0]).Should(Equal(field.Forbidden(field.NewPath("spec"), "VM Classes are immutable")))
+
+		})
+	})
+
+	Context("When always", func() {
+		It("virtual machine classes are cluster-scoped", func() {
+			Expect(vmMachineClassStrategy.NamespaceScoped()).To(BeFalse())
+		})
+		It("virtual machine classes status are cluster-scoped", func() {
+			Expect(vmMachineClassStatusStrategy.NamespaceScoped()).To(BeFalse())
+		})
+	})
 })

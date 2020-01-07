@@ -32,12 +32,9 @@ var c client.Client
 const timeout = time.Second * 5
 
 var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
-	name := "fooVm"
 	ns := integration.DefaultNamespace
 
 	var (
-		instance                vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
-		invalid                 vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
 		stopMgr                 chan struct{}
 		mgrStopped              *sync.WaitGroup
 		mgr                     manager.Manager
@@ -74,73 +71,144 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 	})
 
 	Describe("when creating/deleting a VirtualMachineSetResourcePolicy", func() {
-		It("invoke the validate method", func() {
-			// Create the VirtualMachineSetResourcePolicy object and expect this to fail
-			invalid = vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      name,
-					Namespace: ns,
-				},
-				Spec: vmoperatorv1alpha1.VirtualMachineSetResourcePolicySpec{
-					ResourcePool: vmoperatorv1alpha1.ResourcePoolSpec{
-						Name: "name-resourcepool",
-						Reservations: vmoperatorv1alpha1.VirtualMachineResourceSpec{
-							Cpu:    resource.MustParse("1000Mi"),
-							Memory: resource.MustParse("200Mi"),
-						},
-						Limits: vmoperatorv1alpha1.VirtualMachineResourceSpec{
-							Cpu:    resource.MustParse("2000Mi"),
-							Memory: resource.MustParse("100Mi"),
-						},
-					},
-					Folder: vmoperatorv1alpha1.FolderSpec{
-						Name: "name-folder",
-					},
-				},
-			}
+		var (
+			resourcePolicyName     string
+			resourcePolicyInstance vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
+			expectedRequest        reconcile.Request
+		)
 
-			err = c.Create(context.TODO(), &invalid)
-			Expect(err).To(HaveOccurred())
-
-			err = c.Delete(context.TODO(), &invalid)
-			Expect(err).To(HaveOccurred())
+		BeforeEach(func() {
+			resourcePolicyName = "resourcePolicyName"
+			resourcePolicyInstance = getResourcePolicyInstance(resourcePolicyName, ns)
+			expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Name: resourcePolicyName, Namespace: ns}}
 		})
 
-		It("invoke the reconcile method", func() {
-			instance = vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      name,
-					Namespace: ns,
-				},
-				Spec: vmoperatorv1alpha1.VirtualMachineSetResourcePolicySpec{
-					ResourcePool: vmoperatorv1alpha1.ResourcePoolSpec{
-						Name: "name-resourcepool",
-						Reservations: vmoperatorv1alpha1.VirtualMachineResourceSpec{
-							Cpu:    resource.MustParse("1000Mi"),
-							Memory: resource.MustParse("100Mi"),
-						},
-						Limits: vmoperatorv1alpha1.VirtualMachineResourceSpec{
-							Cpu:    resource.MustParse("2000Mi"),
-							Memory: resource.MustParse("200Mi"),
-						},
-					},
-					Folder: vmoperatorv1alpha1.FolderSpec{
-						Name: "name-folder",
-					},
-				},
-			}
+		Context("invalid spec is used", func() {
+			It("should fail to create a VirtualMachineSetResource", func() {
+				By("Update the ResourcePolicy spec to make it invalid")
+				resourcePolicyInstance.Spec.ResourcePool.Reservations.Memory = resource.MustParse("2000Mi")
+				resourcePolicyInstance.Spec.ResourcePool.Limits.Memory = resource.MustParse("1000Mi")
 
-			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: ns}}
-			recFn, requests, _ := integration.SetupTestReconcile(newReconciler(mgr))
-			Expect(add(mgr, recFn)).To(Succeed())
-			// Create the VirtualMachineSetResourcePolicy object and expect the Reconcile
-			err = c.Create(context.TODO(), &instance)
-			Expect(err).ShouldNot(HaveOccurred())
-			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
-			// Delete the VirtualMachineSetResourcePolicy object and expect the Reconcile
-			err = c.Delete(context.TODO(), &instance)
-			Expect(err).ShouldNot(HaveOccurred())
-			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+				err = c.Create(context.TODO(), &resourcePolicyInstance)
+				Expect(err).To(HaveOccurred())
+			})
+		})
+
+		Context("a valid spec is used", func() {
+			It("should create the VirtualMachineSetResource", func() {
+				recFn, requests, _ := integration.SetupTestReconcile(newReconciler(mgr))
+				Expect(add(mgr, recFn)).To(Succeed())
+
+				// Create the VirtualMachineSetResourcePolicy object and expect the Reconcile
+				err = c.Create(context.TODO(), &resourcePolicyInstance)
+				Expect(err).ShouldNot(HaveOccurred())
+				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+				// Delete the VirtualMachineSetResourcePolicy object and expect the Reconcile
+				err = c.Delete(context.TODO(), &resourcePolicyInstance)
+				Expect(err).ShouldNot(HaveOccurred())
+				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+			})
+		})
+
+		Context("deleting a VirtualMachineSetResourcePolicy", func() {
+			var (
+				vmInstance     vmoperatorv1alpha1.VirtualMachine
+				requests       chan reconcile.Request
+				recFn          reconcile.Reconciler
+				reconcileError chan error
+			)
+
+			BeforeEach(func() {
+				recFn, requests, reconcileError = integration.SetupTestReconcile(newReconciler(mgr))
+				Expect(add(mgr, recFn)).To(Succeed())
+
+				vmInstance = getVirtualMachineInstance("virtualMachineName", ns)
+				vmInstance.Spec.ResourcePolicyName = resourcePolicyName
+			})
+
+			Context("when a VM is referencing it", func() {
+				It("should fail to delete", func() {
+					err = c.Create(context.TODO(), &resourcePolicyInstance)
+					Expect(err).NotTo(HaveOccurred())
+					Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+					err = c.Create(context.TODO(), &vmInstance)
+					Expect(err).NotTo(HaveOccurred())
+
+					err = c.Delete(context.TODO(), &resourcePolicyInstance)
+					Expect(err).ShouldNot(HaveOccurred())
+					Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+					expectedError := fmt.Errorf("failing VirtualMachineSetResourcePolicy deletion since VM: '%s' is referencing it, resourcePolicyName: '%s'",
+						vmInstance.NamespacedName(), resourcePolicyInstance.NamespacedName())
+					Eventually(reconcileError).Should(Receive(Equal(expectedError)))
+				})
+			})
+
+			Context("when no VMs are referencing it", func() {
+				It("should successfully delete", func() {
+
+					resourcePolicyInstance.Name = "resourcePolicyName-1"
+					err = c.Create(context.TODO(), &resourcePolicyInstance)
+					Expect(err).NotTo(HaveOccurred())
+					expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Name: resourcePolicyInstance.Name, Namespace: ns}}
+					Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+					// Create a different VM since the cache might not have synced yet
+					vmInstance.Name = "virtualMachineName-1"
+					err = c.Create(context.TODO(), &vmInstance)
+					Expect(err).NotTo(HaveOccurred())
+
+					err = c.Delete(context.TODO(), &vmInstance)
+					Expect(err).NotTo(HaveOccurred())
+
+					err = c.Delete(context.TODO(), &resourcePolicyInstance)
+					Expect(err).NotTo(HaveOccurred())
+					Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+				})
+			})
 		})
 	})
 })
+
+func getResourcePolicyInstance(name, namespace string) vmoperatorv1alpha1.VirtualMachineSetResourcePolicy {
+	return vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vmoperatorv1alpha1.VirtualMachineSetResourcePolicySpec{
+			ResourcePool: vmoperatorv1alpha1.ResourcePoolSpec{
+				Name: "name-resourcepool",
+				Reservations: vmoperatorv1alpha1.VirtualMachineResourceSpec{
+					Cpu:    resource.MustParse("1000Mi"),
+					Memory: resource.MustParse("100Mi"),
+				},
+				Limits: vmoperatorv1alpha1.VirtualMachineResourceSpec{
+					Cpu:    resource.MustParse("2000Mi"),
+					Memory: resource.MustParse("200Mi"),
+				},
+			},
+			Folder: vmoperatorv1alpha1.FolderSpec{
+				Name: "name-folder",
+			},
+		},
+	}
+}
+
+func getVirtualMachineInstance(name, namespace string) vmoperatorv1alpha1.VirtualMachine {
+	return vmoperatorv1alpha1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vmoperatorv1alpha1.VirtualMachineSpec{
+			ImageName:  "DC0_H0_VM0", // Default govcsim image name
+			ClassName:  "xsmall",
+			PowerState: "poweredOn",
+			Ports:      []vmoperatorv1alpha1.VirtualMachinePort{},
+			//StorageClass: storageClass,
+		},
+	}
+}

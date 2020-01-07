@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package vmoperator
 
@@ -18,7 +17,7 @@ func (VirtualMachineImageStrategy) NamespaceScoped() bool {
 	return false
 }
 
-// VirtualMachineImages are cluster-scoped
+// VirtualMachineImagesStatus are cluster-scoped
 func (VirtualMachineImageStatusStrategy) NamespaceScoped() bool {
 	return false
 }

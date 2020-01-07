@@ -5,6 +5,7 @@ package virtualmachinesetresourcepolicy
 
 import (
 	"context"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -94,6 +95,21 @@ func (r *ReconcileVirtualMachineSetResourcePolicy) reconcileCreateOrUpdate(ctx c
 // reconcileDelete reconciles a deleted VirtualMachineSetResourcePolicy resource.
 func (r *ReconcileVirtualMachineSetResourcePolicy) reconcileDelete(ctx context.Context, resourcePolicy *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy) (err error) {
 	logger := log.WithValues("namespace", resourcePolicy.Namespace, "name", resourcePolicy.Name)
+
+	// Skip deleting a VirtualMachineSetResourcePolicy if it is referenced by a VirtualMachine.
+	vmsInNamespace := &vmoperatorv1alpha1.VirtualMachineList{}
+	err = r.List(ctx, &client.ListOptions{Namespace: resourcePolicy.Namespace}, vmsInNamespace)
+	if err != nil {
+		log.Error(err, "Failed to list VMs in namespace", "namespace", resourcePolicy.Namespace)
+		return err
+	}
+
+	for _, vm := range vmsInNamespace.Items {
+		if vm.Spec.ResourcePolicyName == resourcePolicy.Name {
+			return fmt.Errorf("failing VirtualMachineSetResourcePolicy deletion since VM: '%s' is referencing it, resourcePolicyName: '%s'",
+				vm.NamespacedName(), resourcePolicy.NamespacedName())
+		}
+	}
 
 	logger.V(4).Info("Attempting to delete VirtualMachineSetResourcePolicy")
 	if err := r.vmProvider.DeleteVirtualMachineSetResourcePolicy(ctx, resourcePolicy); err != nil {

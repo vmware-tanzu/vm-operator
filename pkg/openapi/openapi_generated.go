@@ -20,6 +20,7 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
+		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.ClusterModuleSpec":                        schema_pkg_apis_vmoperator_v1alpha1_ClusterModuleSpec(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.FolderSpec":                               schema_pkg_apis_vmoperator_v1alpha1_FolderSpec(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.LoadBalancerIngress":                      schema_pkg_apis_vmoperator_v1alpha1_LoadBalancerIngress(ref),
 		"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1.LoadBalancerStatus":                       schema_pkg_apis_vmoperator_v1alpha1_LoadBalancerStatus(ref),
@@ -663,6 +664,31 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"k8s.io/client-go/pkg/apis/clientauthentication/v1beta1.ExecCredential":        schema_pkg_apis_clientauthentication_v1beta1_ExecCredential(ref),
 		"k8s.io/client-go/pkg/apis/clientauthentication/v1beta1.ExecCredentialSpec":    schema_pkg_apis_clientauthentication_v1beta1_ExecCredentialSpec(ref),
 		"k8s.io/client-go/pkg/apis/clientauthentication/v1beta1.ExecCredentialStatus":  schema_pkg_apis_clientauthentication_v1beta1_ExecCredentialStatus(ref),
+	}
+}
+
+func schema_pkg_apis_vmoperator_v1alpha1_ClusterModuleSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "ClusterModuleSpec defines a ClusterModule in VC.",
+				Properties: map[string]spec.Schema{
+					"groupname": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"uuid": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{},
 	}
 }
 

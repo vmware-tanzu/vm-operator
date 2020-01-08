@@ -75,6 +75,7 @@ const (
 	WcpClusterConfigMapNamespace = "kube-system"
 	WcpClusterConfigMapName      = "wcp-cluster-config"
 	WcpVcPnidKey                 = "vc_pnid"
+	VmOpSecretName               = "wcp-vmop-sa-vc-auth" // nolint:gosec
 )
 
 // BuildNewWcpClusterConfig builds and returns Config object from given config file.

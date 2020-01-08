@@ -9,19 +9,18 @@ package infracluster
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
-
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
@@ -54,6 +53,12 @@ var _ = Describe("InfraClusterProvider controller", func() {
 		c = mgr.GetClient()
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
+
+		err = vsphere.InstallVSphereVmProviderConfig(clientSet,
+			ns,
+			integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, integration.GetContentSourceID()),
+			integration.SecretName)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
@@ -69,14 +74,6 @@ var _ = Describe("InfraClusterProvider controller", func() {
 				Namespace: vsphere.WcpClusterConfigMapNamespace,
 			}
 
-			// Install VMOP ConfigMap
-			clientSet := kubernetes.NewForConfigOrDie(cfg)
-			err = vsphere.InstallVSphereVmProviderConfig(kubernetes.NewForConfigOrDie(cfg),
-				integration.DefaultNamespace,
-				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, integration.GetContentSourceID()),
-				integration.SecretName)
-			Expect(err).NotTo(HaveOccurred())
-
 			expectedRequest := reconcile.Request{NamespacedName: wcpNamespacedName}
 			recFn, requests, _ := integration.SetupTestReconcile(newReconciler(mgr))
 			Expect(add(mgr, recFn)).To(Succeed())
@@ -89,7 +86,7 @@ var _ = Describe("InfraClusterProvider controller", func() {
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 
 			// Validate if PNID changed
-			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, integration.DefaultNamespace)
+			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(pnid).Should(Equal(providerConfig.VcPNID))
 
@@ -99,7 +96,7 @@ var _ = Describe("InfraClusterProvider controller", func() {
 			err = c.Update(context.TODO(), &wcpConfigMapUpdated)
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
-			providerConfig, err = vsphere.GetProviderConfigFromConfigMap(clientSet, integration.DefaultNamespace)
+			providerConfig, err = vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(pnid).Should(Equal(providerConfig.VcPNID))
 
@@ -108,13 +105,88 @@ var _ = Describe("InfraClusterProvider controller", func() {
 			err = c.Update(context.TODO(), &wcpConfigMapUpdated)
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(requests, timeout).ShouldNot(Receive(Equal(expectedRequest)))
-			providerConfig, err = vsphere.GetProviderConfigFromConfigMap(clientSet, integration.DefaultNamespace)
+			providerConfig, err = vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(pnid).Should(Equal(providerConfig.VcPNID))
 
 			// Delete WCP ConfigMap
 			err = c.Delete(context.TODO(), &wcpConfigMapUpdated)
 			Expect(err).ShouldNot(HaveOccurred())
+		})
+	})
+
+	Describe("VM operator Service Account secret rotation", func() {
+		var (
+			correctUserName   string
+			correctPassword   string
+			incorrectUserName string
+			incorrectPassword string
+		)
+
+		BeforeEach(func() {
+			correctUserName = "correctUsername"
+			correctPassword = "correctPassword"
+			incorrectUserName = "incorrectUserName"
+			incorrectPassword = "incorrectPassword"
+
+			providerCreds := vsphere.VSphereVmProviderCredentials{
+				Username: correctUserName,
+				Password: correctPassword,
+			}
+			Expect(vsphere.InstallVSphereVmProviderSecret(clientSet, ns, &providerCreds, vsphere.VmOpSecretName)).To(Succeed())
+
+			vcSim.Server.URL.User = url.UserPassword(correctUserName, correctPassword)
+			vcSim.VcSim.Service.Listen = vcSim.Server.URL
+		})
+
+		Context("without rotation", func() {
+			It("should not fail", func() {
+				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				_, err = vsphere.NewClient(context.TODO(), providerConfig)
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		Context("when a secret is updated to an invalid cred", func() {
+			It("should fail to initialize the new session", func() {
+				providerCreds := vsphere.VSphereVmProviderCredentials{
+					Username: incorrectUserName,
+					Password: incorrectPassword,
+				}
+
+				Expect(vsphere.InstallVSphereVmProviderSecret(clientSet, ns, &providerCreds, vsphere.VmOpSecretName)).To(Succeed())
+				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				_, err = vsphere.NewClient(context.TODO(), providerConfig)
+				Expect(err).Should(HaveOccurred())
+				Expect(err.Error()).To(HavePrefix("login failed for url"))
+			})
+		})
+
+		Context("when secret is rotated to a valid cred", func() {
+			It("should re-initialize all the sessions", func() {
+				By("update vcsim to use a different cred")
+				newUserName := "newUserName"
+				newPassword := "newPassword"
+
+				vcSim.Server.URL.User = url.UserPassword(newUserName, newPassword)
+				vcSim.VcSim.Service.Listen = vcSim.Server.URL
+
+				providerCreds := vsphere.VSphereVmProviderCredentials{
+					Username: newUserName,
+					Password: newPassword,
+				}
+
+				Expect(vsphere.InstallVSphereVmProviderSecret(clientSet, ns, &providerCreds, vsphere.VmOpSecretName)).To(Succeed())
+				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				_, err = vsphere.NewClient(context.TODO(), providerConfig)
+				Expect(err).NotTo(HaveOccurred())
+			})
 		})
 	})
 })

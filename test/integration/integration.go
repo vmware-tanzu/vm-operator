@@ -17,7 +17,7 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test/suite"
 	. "github.com/onsi/gomega"
-	simulator "github.com/vmware/govmomi/simulator"
+	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
 	govmomirest "github.com/vmware/govmomi/vapi/rest"
 	"go.uber.org/zap"
@@ -46,7 +46,7 @@ type VSphereVmProviderTestConfig struct {
 const (
 	IntegrationContentLibraryItemName = "test-item"
 	DefaultNamespace                  = "default"
-	SecretName                        = "vmop-test-integration-auth" // nolint:gosec
+	SecretName                        = "wcp-vmop-sa-vc-auth" // nolint:gosec
 	ContentSourceName                 = "vmop-test-integration-cl"
 )
 

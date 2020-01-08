@@ -133,7 +133,7 @@ func (sm *SessionManager) ComputeClusterCpuMinFrequency(ctx context.Context) (er
 	return nil
 }
 
-func (sm *SessionManager) UpdatePnid(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error {
+func (sm *SessionManager) UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error {
 	clusterCfg, err := BuildNewWcpClusterConfig(clusterConfigMap.Data)
 	if err != nil {
 		return err

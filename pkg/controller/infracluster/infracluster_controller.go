@@ -6,6 +6,7 @@ package infracluster
 
 import (
 	"context"
+	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -33,7 +34,7 @@ const (
 
 var log = logf.Log.WithName(ControllerName)
 
-// Add creates a new InfraPnidProvider Controller and adds it to the Manager with default RBAC. The Manager will set fields
+// Add creates a new InfraClusterProvider Controller and adds it to the Manager with default RBAC. The Manager will set fields
 // on the Controller and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
 	return add(mgr, newReconciler(mgr))
@@ -44,7 +45,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	// Get provider registered in the manager's main()
 	provider := vmprovider.GetVmProviderOrDie()
 
-	return &ReconcileInfraPnidProvider{
+	return &ReconcileInfraClusterProvider{
 		Client:     mgr.GetClient(),
 		scheme:     mgr.GetScheme(),
 		vmProvider: provider,
@@ -83,10 +84,26 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	return nil
+	// Predicate functions for VM operator service account credential secret
+	vmOpCredsSecretPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return isVmOpServiceAccountCredSecret(e.Meta.GetName(), e.Meta.GetNamespace())
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return isVmOpServiceAccountCredSecret(e.MetaNew.GetName(), e.MetaNew.GetNamespace())
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
+
+	return c.Watch(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForObject{}, vmOpCredsSecretPredicate)
 }
 
-type ReconcileInfraPnidProvider struct {
+type ReconcileInfraClusterProvider struct {
 	client.Client
 	scheme     *runtime.Scheme
 	vmProvider vmprovider.VirtualMachineProviderInterface
@@ -110,20 +127,25 @@ type ReconcileInfraPnidProvider struct {
 // This controller refreshes the VMOP config map and clears active sessions upon receiving create or update event on kube-system/wcp-cluster-config.
 //
 // +kubebuilder:rbac:groups=v1,resources=configmaps,verbs=get;watch
-func (r *ReconcileInfraPnidProvider) Reconcile(request reconcile.Request) (reconcile.Result, error) {
+func (r *ReconcileInfraClusterProvider) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	log.Info("Received reconcile request", "namespace", request.Namespace, "name", request.Name)
 	ctx := context.Background()
 
-	err := r.reconcilePnid(ctx, request)
-	if err != nil {
-		return reconcile.Result{}, err
+	// The reconcile request can be either a VCPNID update or a VM operator secret rotation. We check on the namespacedName to differentiate the two.
+	// This is an anti pattern. Usually a controller should only reconcile one object type.
+	// If the namespaced names of ConfigMap or Secret change, this code needs to be updated.
+	if isVmOpServiceAccountCredSecret(request.Name, request.Namespace) {
+		r.vmProvider.UpdateVmOpSACredSecret(ctx)
+		return reconcile.Result{}, nil
 	}
 
-	return reconcile.Result{}, nil
+	err := r.reconcileVcPNID(ctx, request)
+
+	return reconcile.Result{}, err
 }
 
-func (r *ReconcileInfraPnidProvider) reconcilePnid(ctx context.Context, request reconcile.Request) error {
-	// Fetch the ConfigMap instance
+func (r *ReconcileInfraClusterProvider) reconcileVcPNID(ctx context.Context, request reconcile.Request) error {
+	log.V(4).Info("Reconciling VC PNID")
 	instance := &corev1.ConfigMap{}
 	err := r.Get(ctx, request.NamespacedName, instance)
 	if err != nil {
@@ -136,14 +158,14 @@ func (r *ReconcileInfraPnidProvider) reconcilePnid(ctx context.Context, request 
 		return err
 	}
 
-	return r.vmProvider.UpdatePnid(ctx, instance)
+	return r.vmProvider.UpdateVcPNID(ctx, instance)
+}
+
+func isVmOpServiceAccountCredSecret(name, namespace string) bool {
+	vmopNamespace, vmopNamespaceExists := os.LookupEnv(vsphere.VmopNamespaceEnv)
+	return vmopNamespaceExists && vmopNamespace == namespace && name == vsphere.VmOpSecretName
 }
 
 func isWcpClusterConfigResource(obj metav1.Object) bool {
-	if obj.GetName() == vsphere.WcpClusterConfigMapName &&
-		obj.GetNamespace() == vsphere.WcpClusterConfigMapNamespace {
-		return true
-	}
-
-	return false
+	return obj.GetName() == vsphere.WcpClusterConfigMapName && obj.GetNamespace() == vsphere.WcpClusterConfigMapNamespace
 }

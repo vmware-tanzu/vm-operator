@@ -128,7 +128,7 @@ type ReconcileInfraClusterProvider struct {
 //
 // +kubebuilder:rbac:groups=v1,resources=configmaps,verbs=get;watch
 func (r *ReconcileInfraClusterProvider) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	log.Info("Received reconcile request", "namespace", request.Namespace, "name", request.Name)
+	log.V(4).Info("Received reconcile request", "namespace", request.Namespace, "name", request.Name)
 	ctx := context.Background()
 
 	// The reconcile request can be either a VCPNID update or a VM operator secret rotation. We check on the namespacedName to differentiate the two.

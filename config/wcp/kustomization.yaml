@@ -23,6 +23,8 @@ patchesStrategicMerge:
   - apiservice_namespace_patch.yaml
   - apiserver_service_patch.yaml
   - apiserver_deployment_patch.yaml
+  - apiserver_update_strategy_patch.yaml
   - controller_deployment_patch.yaml
   - apiserver_antiaffinity_patch.yaml
   - controller_antiaffinity_patch.yaml
+  - controller_update_strategy_patch.yaml

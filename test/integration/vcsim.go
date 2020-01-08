@@ -20,8 +20,8 @@ import (
 )
 
 type VcSimInstance struct {
-	vcsim  *simulator.Model
-	server *simulator.Server
+	VcSim  *simulator.Model
+	Server *simulator.Server
 	IP     string
 	Port   int
 }
@@ -39,17 +39,17 @@ func NewVcSimInstance() *VcSimInstance {
 	// Register imported simulators above (vapi/simulator, cluster/simulator)
 	vpx.Service.RegisterEndpoints = true
 
-	return &VcSimInstance{vcsim: vpx}
+	return &VcSimInstance{VcSim: vpx}
 }
 
 func (v *VcSimInstance) Start() (vcAddress string, vcPort int) {
 	var err error
-	v.vcsim.Service.TLS = new(tls.Config)
-	v.server = v.vcsim.Service.NewServer()
-	v.IP = v.server.URL.Hostname()
-	v.Port, err = strconv.Atoi(v.server.URL.Port())
+	v.VcSim.Service.TLS = new(tls.Config)
+	v.Server = v.VcSim.Service.NewServer()
+	v.IP = v.Server.URL.Hostname()
+	v.Port, err = strconv.Atoi(v.Server.URL.Port())
 	if err != nil {
-		v.server.Close()
+		v.Server.Close()
 		log.Error(err, "Fail to find vc simulator port")
 		os.Exit(255)
 	}
@@ -59,14 +59,14 @@ func (v *VcSimInstance) Start() (vcAddress string, vcPort int) {
 }
 
 func (v *VcSimInstance) Stop() {
-	if v.server != nil {
-		v.server.Close()
+	if v.Server != nil {
+		v.Server.Close()
 	}
-	if v.vcsim != nil {
-		v.vcsim.Remove()
+	if v.VcSim != nil {
+		v.VcSim.Remove()
 	}
 }
 
 func (v *VcSimInstance) NewClient(ctx context.Context) (*govmomi.Client, error) {
-	return govmomi.NewClient(ctx, v.server.URL, true)
+	return govmomi.NewClient(ctx, v.Server.URL, true)
 }

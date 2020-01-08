@@ -207,18 +207,30 @@ func (mr *MockVirtualMachineProviderInterfaceMockRecorder) Name() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).Name))
 }
 
-// UpdatePnid mocks base method
-func (m *MockVirtualMachineProviderInterface) UpdatePnid(arg0 context.Context, arg1 *v1.ConfigMap) error {
+// UpdateVcPNID mocks base method
+func (m *MockVirtualMachineProviderInterface) UpdateVcPNID(arg0 context.Context, arg1 *v1.ConfigMap) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdatePnid", arg0, arg1)
+	ret := m.ctrl.Call(m, "UpdateVcPNID", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// UpdatePnid indicates an expected call of UpdatePnid
-func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdatePnid(arg0, arg1 interface{}) *gomock.Call {
+// UpdateVcPNID indicates an expected call of UpdatePnid
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVcPNID(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePnid", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdatePnid), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVcPNID", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdateVcPNID), arg0, arg1)
+}
+
+// UpdateVmOpSACredSecret mocks base method
+func (m *MockVirtualMachineProviderInterface) UpdateVmOpSACredSecret(arg0 context.Context) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "UpdateVmOpSACredSecret", arg0)
+}
+
+// UpdateVmOpSACredSecret indicates an expected call of UpdateVmOpSACredSecret
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVmOpSACredSecret(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVmOpSACredSecret", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdateVmOpSACredSecret), arg0)
 }
 
 // UpdateVirtualMachine mocks base method

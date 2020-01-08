@@ -486,8 +486,12 @@ func (vs *VSphereVmProvider) ComputeClusterCpuMinFrequency(ctx context.Context) 
 	return nil
 }
 
-func (vs *VSphereVmProvider) UpdatePnid(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error {
-	return vs.sessions.UpdatePnid(ctx, clusterConfigMap)
+func (vs *VSphereVmProvider) UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error {
+	return vs.sessions.UpdateVcPNID(ctx, clusterConfigMap)
+}
+
+func (vs *VSphereVmProvider) UpdateVmOpSACredSecret(ctx context.Context) {
+	vs.sessions.clearClientAndSessions(ctx)
 }
 
 func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {

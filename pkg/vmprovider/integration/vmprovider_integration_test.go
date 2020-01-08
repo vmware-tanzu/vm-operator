@@ -284,7 +284,7 @@ var _ = Describe("VMProvider Tests", func() {
 
 			// Same PNID
 			config := BuildNewWcpClusterConfigMap(providerConfig.VcPNID)
-			err = vmProvider.UpdatePnid(context.TODO(), &config)
+			err = vmProvider.UpdateVcPNID(context.TODO(), &config)
 			Expect(err).NotTo(HaveOccurred())
 		})
 		It("update pnid when a different pnid is supplied", func() {
@@ -295,7 +295,7 @@ var _ = Describe("VMProvider Tests", func() {
 			// Different PNID
 			pnid := providerConfig.VcPNID + "-01"
 			config := BuildNewWcpClusterConfigMap(pnid)
-			err = vmProvider.UpdatePnid(context.TODO(), &config)
+			err = vmProvider.UpdateVcPNID(context.TODO(), &config)
 			Expect(err).NotTo(HaveOccurred())
 			providerConfig, _ = vsphere.GetProviderConfigFromConfigMap(clientSet, "")
 			Expect(providerConfig.VcPNID).Should(Equal(pnid))

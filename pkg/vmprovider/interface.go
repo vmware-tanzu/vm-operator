@@ -41,5 +41,6 @@ type VirtualMachineProviderInterface interface {
 	DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
 	ComputeClusterCpuMinFrequency(ctx context.Context) error
-	UpdatePnid(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error
+	UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error
+	UpdateVmOpSACredSecret(ctx context.Context)
 }

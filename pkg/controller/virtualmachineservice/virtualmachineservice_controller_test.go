@@ -72,8 +72,10 @@ var _ = Describe("VirtualMachineService controller", func() {
 		c = mgr.GetClient()
 		r = ReconcileVirtualMachineService{mgr.GetClient(), mgr.GetScheme(), nil}
 		// Setup the reconciler for all the tests
-		recFn, requests, reconcileErr = integration.SetupTestReconcile(newReconciler(mgr))
-		Expect(add(mgr, recFn)).To(Succeed())
+		r := newReconciler(mgr)
+		rvms := r.(*ReconcileVirtualMachineService)
+		recFn, requests, reconcileErr = integration.SetupTestReconcile(r)
+		Expect(add(mgr, recFn, rvms)).To(Succeed())
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
 	})
 
@@ -274,17 +276,21 @@ var _ = Describe("VirtualMachineService controller", func() {
 			vmService vmoperatorv1alpha1.VirtualMachineService
 		)
 		BeforeEach(func() {
-			label := map[string]string{"vm-match-selector": "true"}
-			vm1 = getTestVirtualMachineWithLabels(ns, "dummy-vm-match-selector-1", label)
+			labels := map[string]string{"vm-match-selector": "true"}
+			vm1 = getTestVirtualMachineWithLabels(ns, "dummy-vm-match-selector-1", labels)
 			vm2 = getTestVirtualMachine(ns, "dummy-vm-match-selector-2")
-			vmService = getTestVMServiceWithSelector(ns, "dummy-vm-service-match-selector", label)
+			vmService = getTestVMServiceWithSelector(ns, "dummy-vm-service-match-selector", labels)
 			createObjects(context.TODO(), c, []runtime.Object{&vm1, &vm2, &vmService})
 
 		})
 		It("Should use vmservice selector instead of service selector", func() {
-			vmList, err := r.getVMServiceSelectedVirtualMachines(context.TODO(), &vmService)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(len(vmList.Items)).To(Equal(1))
+			vmList := &vmoperatorv1alpha1.VirtualMachineList{}
+			var err error
+			Eventually(func() int {
+				vmList, err = r.getVirtualMachinesSelectedByVmService(context.TODO(), &vmService)
+				Expect(err).ShouldNot(HaveOccurred())
+				return len(vmList.Items)
+			}).Should(BeNumerically("==", 1))
 			Expect(vmList.Items[0].Name).To(Equal(vm1.Name))
 		})
 		AfterEach(func() {

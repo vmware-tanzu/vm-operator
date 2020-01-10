@@ -305,7 +305,7 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState v
 		return err
 	}
 
-	log.Info("VM power state", "name", vm.Name, "currentState", ps, "desiredState", desiredPowerState)
+	log.V(4).Info("VM power state", "name", vm.Name, "currentState", ps, "desiredState", desiredPowerState)
 
 	if v1alpha1.VirtualMachinePowerState(ps) == desiredPowerState {
 		return nil

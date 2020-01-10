@@ -357,6 +357,7 @@ var _ = Describe("VirtualMachine controller", func() {
 			}
 
 			// VirtualMachine volume status is expected to be updated properly
+			stdlog.Printf("Testing first status update with %v", instance)
 			assertVmVolumeStatusUpdates(&instance)
 
 			// Update the volumes under virtual machine spec
@@ -379,6 +380,7 @@ var _ = Describe("VirtualMachine controller", func() {
 			}
 
 			// VirtualMachine volume status is expected to be updated properly
+			stdlog.Printf("Testing second status update with %v",  vmToUpdate)
 			assertVmVolumeStatusUpdates(vmToUpdate)
 
 			// Check the volume names in status are the same as in spec

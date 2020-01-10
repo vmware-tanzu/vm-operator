@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	v1 "k8s.io/api/core/v1"
@@ -43,9 +44,9 @@ const (
 
 	ControllerName                 = "virtualmachine-controller"
 	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
-	// We should add more uniqueness to the OpId to prevent the collision incurred by different vm-operator to aid
-	// debugging at VPXD.
-	RandomLen = 8
+
+	// We should add more uniqueness to the OpId to prevent the collision incurred by different vm-operator to aid debugging at VPXD.
+	opIdRandomLen = 8
 )
 
 var log = logf.Log.WithName(ControllerName)
@@ -148,7 +149,22 @@ func (r *ReconcileVirtualMachine) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, err
 	}
 
-	return reconcile.Result{}, nil
+	return reconcile.Result{RequeueAfter: requeuDelay(ctx, instance)}, nil
+}
+
+// Determine if we should request a non-zero requeue delay in order to trigger a non-rate limited reconcile
+// at some point in the future.  Use this delay-based reconcile to trigger a specific reconcile to discovery the VM IP
+// address rather than relying on the resync period to do.
+//
+// TODO: It would be much prefereable to determine that a non-error resync is required at the source of the determination that
+// TODO: the VM IP isn't available rather than up here in the reconcile loop.  However, in the interest of time, we are making
+// TODO: this determination here and will have to refactor at some later date.
+func requeuDelay(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) time.Duration {
+	if vm.Status.VmIp == "" && vm.Status.PowerState == vmoperatorv1alpha1.VirtualMachinePoweredOn {
+		return 10 * time.Second
+	}
+
+	return 0
 }
 
 func (r *ReconcileVirtualMachine) deleteVm(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
@@ -158,7 +174,7 @@ func (r *ReconcileVirtualMachine) deleteVm(ctx context.Context, vm *vmoperatorv1
 	//   the limit and then “smartly” trims each component of the op id to an abbreviated version
 	// BMV: Push into provider
 	opId := ctx.Value(vimtypes.ID{}).(string)
-	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-delete-"+common.RandomString(RandomLen))
+	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-delete-"+common.RandomString(opIdRandomLen))
 
 	err = r.vmProvider.DeleteVirtualMachine(ctx, vm)
 	if err != nil {
@@ -178,6 +194,9 @@ func (r *ReconcileVirtualMachine) deleteVm(ctx context.Context, vm *vmoperatorv1
 
 func (r *ReconcileVirtualMachine) reconcileDelete(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
 	log.Info("Reconciling VirtualMachine Deletion", "name", vm.NamespacedName())
+	defer func() {
+		log.Info("Finished Reconciling VirtualMachine Deletion", "name", vm.NamespacedName())
+	}()
 
 	const finalizerName = vmoperator.VirtualMachineFinalizer
 
@@ -228,6 +247,9 @@ func (r *ReconcileVirtualMachine) reconcileVolumes(ctx context.Context, vm *vmop
 // Process a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
 func (r *ReconcileVirtualMachine) reconcileNormal(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
 	log.Info("Reconciling VirtualMachine", "name", vm.NamespacedName())
+	defer func() {
+		log.Info("Finished Reconciling VirtualMachine", "name", vm.NamespacedName())
+	}()
 
 	exists, err := r.vmProvider.DoesVirtualMachineExist(ctx, vm)
 	if err != nil {
@@ -317,7 +339,7 @@ func (r *ReconcileVirtualMachine) createVm(ctx context.Context, vm *vmoperatorv1
 	//   exceeds the limit and then "smartly" trims each component of the op id to an abbreviated version.
 	// BMV: Push into provider
 	opId := ctx.Value(vimtypes.ID{}).(string)
-	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-create-"+common.RandomString(RandomLen))
+	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-create-"+common.RandomString(opIdRandomLen))
 
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
 	err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
@@ -391,7 +413,7 @@ func (r *ReconcileVirtualMachine) updateVm(ctx context.Context, vm *vmoperatorv1
 	//   exceeds the limit and then "smartly" trims each component of the op id to an abbreviated version.
 	// BMV: Push into provider
 	opId := ctx.Value(vimtypes.ID{}).(string)
-	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-update-"+common.RandomString(RandomLen))
+	ctx = context.WithValue(ctx, vimtypes.ID{}, opId+"-update-"+common.RandomString(opIdRandomLen))
 
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
 	err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)

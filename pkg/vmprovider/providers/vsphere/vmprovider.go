@@ -14,10 +14,11 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
-	"github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/klogr"
@@ -392,7 +393,7 @@ func (vs *VSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 // UpdateVirtualMachine updates the VM status, power state, phase etc
 func (vs *VSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
 	vmName := vm.NamespacedName()
-	log.Info("Updating VirtualMachine", "name", vmName)
+	log.V(4).Info("Updating VirtualMachine", "name", vmName)
 
 	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
 	if err != nil {
@@ -442,6 +443,9 @@ func (vs *VSphereVmProvider) updateVirtualMachine(ctx context.Context, session *
 		}
 
 		if customizationSpec != nil {
+			log.Info("Customizing VM",
+				"VirtualMachine", types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name},
+				"CustomizationSpec", customizationSpec)
 			if err := resVm.Customize(ctx, *customizationSpec); err != nil {
 				// Ignore customization pending fault as this means we have already tried to customize the VM and it is
 				// pending. This can happen if the VM has failed to power-on since the last time we customized the VM. If
@@ -658,7 +662,7 @@ func transformVmImageError(resource string, err error) error {
 
 func IsCustomizationPendingError(err error) bool {
 	if te, ok := err.(task.Error); ok {
-		if _, ok := te.Fault().(*types.CustomizationPending); ok {
+		if _, ok := te.Fault().(*vimtypes.CustomizationPending); ok {
 			return true
 		}
 	}

@@ -42,11 +42,11 @@ spec:
             memory: 75Mi
           limits:
             cpu: 250m
-            memory: 150Mi
+            memory: 300Mi
         env:
         - name: "POD_NAMESPACE"
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
         - name: "MAX_CONCURRENT_RECONCILES"
-          value: "3"
+          value: "20"

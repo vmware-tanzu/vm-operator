@@ -13,13 +13,13 @@ import (
 	"github.com/pkg/errors"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/types"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
@@ -35,7 +35,7 @@ const (
 // NetworkProvider sets up network for different type of network
 type NetworkProvider interface {
 	// CreateVnic creates the VirtualEthernetCard for the network interface
-	CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (types.BaseVirtualDevice, error)
+	CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (vimtypes.BaseVirtualDevice, error)
 }
 
 func getEthCardType(vif *v1alpha1.VirtualMachineNetworkInterface) string {
@@ -47,7 +47,7 @@ func getEthCardType(vif *v1alpha1.VirtualMachineNetworkInterface) string {
 }
 
 // createVnicOnNamedNetwork creates vnic on named network
-func createVnicOnNamedNetwork(ctx context.Context, networkName, ethCardType string, finder *find.Finder) (types.BaseVirtualDevice, error) {
+func createVnicOnNamedNetwork(ctx context.Context, networkName, ethCardType string, finder *find.Finder) (vimtypes.BaseVirtualDevice, error) {
 	networkRef, err := finder.Network(ctx, networkName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to find network %q", networkName)
@@ -56,7 +56,7 @@ func createVnicOnNamedNetwork(ctx context.Context, networkName, ethCardType stri
 }
 
 // createCommonVnic creates vnid on a network given the network reference
-func createCommonVnic(ctx context.Context, network object.NetworkReference, ethCardType string, finder *find.Finder) (types.BaseVirtualDevice, error) {
+func createCommonVnic(ctx context.Context, network object.NetworkReference, ethCardType string, finder *find.Finder) (vimtypes.BaseVirtualDevice, error) {
 	backing, err := network.EthernetCardBackingInfo(ctx)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to create new ethernet card backing info for network %v", network)
@@ -68,8 +68,8 @@ func createCommonVnic(ctx context.Context, network object.NetworkReference, ethC
 	return dev, nil
 }
 
-func setVnicKey(dev types.BaseVirtualDevice, key int32) types.BaseVirtualDevice {
-	nic := dev.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+func setVnicKey(dev vimtypes.BaseVirtualDevice, key int32) vimtypes.BaseVirtualDevice {
+	nic := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 	nic.Key = key
 	return dev
 }
@@ -85,7 +85,7 @@ func DefaultNetworkProvider(finder *find.Finder) *defaultNetworkProvider {
 	}
 }
 
-func (np *defaultNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (types.BaseVirtualDevice, error) {
+func (np *defaultNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (vimtypes.BaseVirtualDevice, error) {
 	return createVnicOnNamedNetwork(ctx, vif.NetworkName, getEthCardType(vif), np.finder)
 }
 
@@ -131,7 +131,7 @@ func (np *nsxtNetworkProvider) matchOpaqueNetwork(ctx context.Context, network o
 		return false
 	}
 
-	summary, _ := net.Summary.(*vimTypes.OpaqueNetworkSummary)
+	summary, _ := net.Summary.(*vimtypes.OpaqueNetworkSummary)
 	return summary.OpaqueNetworkId == networkID
 }
 
@@ -142,7 +142,7 @@ func (np *nsxtNetworkProvider) matchDistributedPortGroup(ctx context.Context, ne
 		return false
 	}
 
-	var configInfo []types.ObjectContent
+	var configInfo []vimtypes.ObjectContent
 
 	err := obj.Properties(ctx, obj.Reference(), []string{"config.logicalSwitchUuid"}, &configInfo)
 	if err != nil {
@@ -238,9 +238,14 @@ func (np *nsxtNetworkProvider) createVirtualNetworkInterface(ctx context.Context
 				return nil, err
 			}
 		}
+	} else {
+		log.Info("Successfully created a VirtualNetworkInterface",
+			"VirtualMachine", types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name},
+			"VirtualNetworkInterface", types.NamespacedName{Namespace: vm.Namespace, Name: vnetif.Name})
 	}
 
 	// Wait until the vnetif status is available
+	// TODO: Rather than synchronously block here, place a watch on the VirtualNetworkInterface
 	result, err := np.waitForVnetIFStatus(vm.Namespace, vmif.NetworkName, vm.Name)
 	if err != nil {
 		return nil, err
@@ -286,7 +291,7 @@ func (np *nsxtNetworkProvider) waitForVnetIFStatus(namespace, networkName, vmNam
 	return result, err
 }
 
-func (np *nsxtNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (types.BaseVirtualDevice, error) {
+func (np *nsxtNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (vimtypes.BaseVirtualDevice, error) {
 	// create NCP resource
 	vnetif, err := np.createVirtualNetworkInterface(ctx, vm, vif)
 	if err != nil {
@@ -308,9 +313,9 @@ func (np *nsxtNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.Virt
 	if err != nil {
 		return nil, err
 	}
-	nic := dev.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+	nic := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 	nic.ExternalId = vnetif.Status.InterfaceID
 	nic.MacAddress = vnetif.Status.MacAddress
-	nic.AddressType = string(types.VirtualEthernetCardMacTypeManual)
+	nic.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
 	return dev, nil
 }

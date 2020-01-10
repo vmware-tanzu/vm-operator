@@ -723,15 +723,12 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 
 func (s *Session) lookupVirtualMachineByMoID(ctx context.Context, name, moId string) (*res.VirtualMachine, error) {
 
-	e, err := s.Finder.Element(ctx, types.ManagedObjectReference{Type: "VirtualMachine", Value: moId})
+	ref, err := s.Finder.ObjectReference(ctx, types.ManagedObjectReference{Type: "VirtualMachine", Value: moId})
 	if err != nil {
 		return nil, err
 	}
 
-	vm, err := s.Finder.VirtualMachine(ctx, e.Path)
-	if err != nil {
-		return nil, err
-	}
+	vm := ref.(*object.VirtualMachine)
 
 	log.V(4).Info("Found VM", "Name", vm.Name(), "Path", vm.InventoryPath, "Moref", vm.Reference())
 

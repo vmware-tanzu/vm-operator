@@ -104,28 +104,46 @@ var _ = Describe("Sessions", func() {
 
 		Context("When MoID is present", func() {
 
-			var vm *v1alpha1.VirtualMachine
-			var moId string
-			ctx := context.Background()
+			It("should successfully find the VM by MoID", func() {
 
-			BeforeEach(func() {
+				ctx := context.Background()
+
 				imageName := "test-item"
-				vmName := "getVM-test"
+				vmName := "getvm-with-moID"
 
 				vmConfigArgs := getVmConfigArgs(testNamespace, vmName)
-				vm = getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+				moId, err := clonedVM.UniqueID(ctx)
+				Expect(err).NotTo(HaveOccurred())
+
+				vm1, err := session.GetVirtualMachine(ctx, vm)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vm1.UniqueID(ctx)).To(Equal(moId))
+			})
+		})
+
+		Context("When MoID is absent", func() {
+
+			It("should successfully find the VM by path", func() {
+				ctx := context.Background()
+
+				imageName := "test-item"
+				vmName := "getvm-without-moID"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, vmName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
-				moId, err = clonedVM.UniqueID(ctx)
+				moId, err := clonedVM.UniqueID(ctx)
 				Expect(err).NotTo(HaveOccurred())
-			})
 
-			It("should successfully find the VM", func() {
-
-				ctx := context.Background()
-
+				vm.Status.UniqueID = ""
 				vm1, err := session.GetVirtualMachine(ctx, vm)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(vm1.UniqueID(ctx)).To(Equal(moId))

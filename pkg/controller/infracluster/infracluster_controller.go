@@ -6,12 +6,9 @@ package infracluster
 
 import (
 	"context"
-	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -20,10 +17,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
-
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
@@ -60,37 +57,19 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// As the value of PNID change is notified through the global config map, the configmap create or update are the feasible
-	// candidates to find out the changed PNID value. The event of configmap addition or update needs identifying source configmap
-	// and finding out the real change of the PNID.
-	wcpClusterConfigPredicate := predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			return isWcpClusterConfigResource(e.Meta)
-		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			return isWcpClusterConfigResource(e.MetaNew)
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
-		},
-		GenericFunc: func(e event.GenericEvent) bool {
-			return false
-		},
-	}
-
-	// Watch for changes to WCP Cluster's ConfigMap for PNID changes
-	err = c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForObject{}, wcpClusterConfigPredicate)
-	if err != nil {
-		return err
-	}
-
-	// Predicate functions for VM operator service account credential secret
-	vmOpCredsSecretPredicate := predicate.Funcs{
+	// Predicate functions to determine when a reconcile should be triggered for the "Watch"ed resources.
+	// We detect if a resource has been modified by comparing the ResourceVersion of old and new resources.
+	vmOpServiceAccountSecretPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return isVmOpServiceAccountCredSecret(e.Meta.GetName(), e.Meta.GetNamespace())
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return isVmOpServiceAccountCredSecret(e.MetaNew.GetName(), e.MetaNew.GetNamespace())
+			if !isVmOpServiceAccountCredSecret(e.MetaOld.GetName(), e.MetaOld.GetNamespace()) {
+				return false
+			}
+
+			predicateInstance := predicate.ResourceVersionChangedPredicate{}
+			return predicateInstance.Update(e)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return false
@@ -100,7 +79,33 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		},
 	}
 
-	return c.Watch(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForObject{}, vmOpCredsSecretPredicate)
+	wcpClusterConfigMapPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return isWcpClusterConfigMap(e.Meta.GetName(), e.Meta.GetNamespace())
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if !isWcpClusterConfigMap(e.MetaOld.GetName(), e.MetaOld.GetNamespace()) {
+				return false
+			}
+
+			predicateInstance := predicate.ResourceVersionChangedPredicate{}
+			return predicateInstance.Update(e)
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
+
+	// Watch for ConfigMap and Secret resource types.
+	err = c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForObject{}, wcpClusterConfigMapPredicate)
+	if err != nil {
+		return err
+	}
+
+	return c.Watch(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForObject{}, vmOpServiceAccountSecretPredicate)
 }
 
 type ReconcileInfraClusterProvider struct {
@@ -109,7 +114,7 @@ type ReconcileInfraClusterProvider struct {
 	vmProvider vmprovider.VirtualMachineProviderInterface
 }
 
-// Reconcile clears all the vCenter sessions and update the VMOP config map with the new PNID.
+// Reconcile clears all the vCenter sessions when a VCPNID is updated in wcp-cluster-config ConfigMap or a Service Account Secret is rotated.
 //
 // PNID, aka Primary Network Identifier, is the unique vCenter server name given to the vCenter server during deployment.
 // Generally, this will be the FQDN of the machine if the IP is resolvable; otherwise, IP is taken as PNID.
@@ -128,13 +133,14 @@ type ReconcileInfraClusterProvider struct {
 //
 // +kubebuilder:rbac:groups=v1,resources=configmaps,verbs=get;watch
 func (r *ReconcileInfraClusterProvider) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	log.V(4).Info("Received reconcile request", "namespace", request.Namespace, "name", request.Name)
+	log.Info("Received reconcile request", "namespace", request.Namespace, "name", request.Name)
 	ctx := context.Background()
 
 	// The reconcile request can be either a VCPNID update or a VM operator secret rotation. We check on the namespacedName to differentiate the two.
 	// This is an anti pattern. Usually a controller should only reconcile one object type.
 	// If the namespaced names of ConfigMap or Secret change, this code needs to be updated.
 	if isVmOpServiceAccountCredSecret(request.Name, request.Namespace) {
+		log.Info("VM operator secret has been updated. Going to invalidate session cache for all namespaces")
 		r.vmProvider.UpdateVmOpSACredSecret(ctx)
 		return reconcile.Result{}, nil
 	}
@@ -161,11 +167,11 @@ func (r *ReconcileInfraClusterProvider) reconcileVcPNID(ctx context.Context, req
 	return r.vmProvider.UpdateVcPNID(ctx, instance)
 }
 
-func isVmOpServiceAccountCredSecret(name, namespace string) bool {
-	vmopNamespace, vmopNamespaceExists := os.LookupEnv(vsphere.VmopNamespaceEnv)
-	return vmopNamespaceExists && vmopNamespace == namespace && name == vsphere.VmOpSecretName
+func isVmOpServiceAccountCredSecret(secretName, secretNamespace string) bool {
+	vmOpNamespace, err := lib.GetVmOpNamespaceFromEnv()
+	return err == nil && vmOpNamespace == secretNamespace && secretName == vsphere.VmOpSecretName
 }
 
-func isWcpClusterConfigResource(obj metav1.Object) bool {
-	return obj.GetName() == vsphere.WcpClusterConfigMapName && obj.GetNamespace() == vsphere.WcpClusterConfigMapNamespace
+func isWcpClusterConfigMap(configMapName, configMapNamespace string) bool {
+	return configMapName == vsphere.WcpClusterConfigMapName && configMapNamespace == vsphere.WcpClusterConfigMapNamespace
 }

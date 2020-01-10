@@ -73,7 +73,7 @@ func waitForVmOperatorGroupVersion(restConfig *rest.Config) error {
 var (
 	defaultProfilerAddr = ":8073"
 	defaultMetricsAddr  = ":8083"
-	defaultSyncPeriod   = time.Second * 10
+	defaultSyncPeriod   = time.Minute * 10
 )
 
 func main() {
@@ -158,10 +158,8 @@ func main() {
 
 	leaderElectionId := controllerName + "-runtime"
 	log.Info("setting up manager",
-		"LeaderElectionID", leaderElectionId,
-		"LeaderElectionNamespace", controllerNamespace,
-		"SyncPeriod", syncPeriod,
-		"MetricsBindAddres", metricsBindAddress)
+		"LeaderElectionID", leaderElectionId, "LeaderElectionNamespace", controllerNamespace,
+		"SyncPeriod", syncPeriod, "MetricsBindAddres", metricsBindAddress)
 
 	// Create a new Cmd to provide shared dependencies and start components
 	mgr, err := manager.New(cfg, manager.Options{

@@ -79,7 +79,7 @@ func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv
 				UID:                vm.UID,
 			},
 		}
-		log.Info("Attempting to create the CnsNodeVmAttachment", "name", cnsNodeVmAttachment.Name, "namespace", cnsNodeVmAttachment.Namespace)
+		log.V(4).Info("Attempting to create the CnsNodeVmAttachment", "name", cnsNodeVmAttachment.Name, "namespace", cnsNodeVmAttachment.Namespace)
 		clientCreateError := cvp.client.Create(ctx, cnsNodeVmAttachment)
 		if clientCreateError != nil {
 			// Ignore if the CRD instance already exists
@@ -131,7 +131,7 @@ func (cvp *cnsVolumeProvider) DetachVolumes(ctx context.Context, vm *vmoperatorv
 // Note: UpdateVmVolumesStatus() does not call client.Status().Update(), it just updates vm object and vitualmachine_controller.go
 //       eventually will call apiserver to update the vm object
 func (cvp *cnsVolumeProvider) UpdateVmVolumesStatus(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
-	log.Info("Updating the VirtualMachineVolumeStatus for VirtualMachine", "name", vm.Name, "namespace", vm.Namespace)
+	log.V(4).Info("Updating the VirtualMachineVolumeStatus for VirtualMachine", "name", vm.Name, "namespace", vm.Namespace)
 	// Updating the existing volume status
 	volumeOpErrors := newVolumeErrorsByOpType(VolumeOpUpdateStatus)
 	volumesForStatusUpdate := getVolumesForStatusUpdate(vm)

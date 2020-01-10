@@ -56,7 +56,9 @@ var log = logf.Log.WithName(ControllerName)
 // Add creates a new VirtualMachineService Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
-	return add(mgr, newReconciler(mgr))
+	r := newReconciler(mgr)
+	rvms := r.(*ReconcileVirtualMachineService)
+	return add(mgr, r, rvms)
 }
 
 // newReconciler returns a new reconcile.Reconciler
@@ -69,7 +71,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
-func add(mgr manager.Manager, r reconcile.Reconciler) error {
+func add(mgr manager.Manager, r reconcile.Reconciler, rvms *ReconcileVirtualMachineService) error {
 	// Create a new controller
 	c, err := controller.New(ControllerName, mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: common.GetMaxReconcileNum()})
 	if err != nil {
@@ -78,6 +80,16 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	// Watch for changes to VirtualMachineService
 	err = c.Watch(&source.Kind{Type: &vmoperatorv1alpha1.VirtualMachineService{}}, &handler.EnqueueRequestForObject{})
+	if err != nil {
+		return err
+	}
+
+	// Watch VirtualMachine resources so that VmServices can be updated in response to changes in VM IP status and VM
+	// label configuration.
+	//
+	// TODO: Ensure that we have adequate tests for these IP and label updates.
+	err = c.Watch(&source.Kind{Type: &vmoperatorv1alpha1.VirtualMachine{}},
+		&handler.EnqueueRequestsFromMapFunc{ToRequests: handler.ToRequestsFunc(rvms.virtualMachineToVirtualMachineServiceMapper)})
 	if err != nil {
 		return err
 	}
@@ -213,6 +225,29 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx context.Context,
 	return err
 }
 
+// For a given VM, determine which vmServices select that VM via label selector and return a set of reconcile requests
+// for those selecting VMServices.
+func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMapper(o handler.MapObject) []reconcile.Request {
+	var reconcileRequests []reconcile.Request
+
+	vm := o.Object.(*vmoperatorv1alpha1.VirtualMachine)
+	// Find all vm services that match this vm
+	vmServiceList, err := r.getVirtualMachineServicesSelectingVirtualMachine(context.Background(), vm)
+	if err != nil {
+		return reconcileRequests
+	}
+
+	for _, vmService := range vmServiceList {
+		log.V(4).Info("Generating reconcile request for vmService due to event on VMs",
+			"VirtualMachineService", types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name},
+			"VirtualMachine", types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name})
+		reconcileRequests = append(reconcileRequests,
+			reconcile.Request{NamespacedName: types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name}})
+	}
+
+	return reconcileRequests
+}
+
 func (r *ReconcileVirtualMachineService) makeObjectMeta(vmService *vmoperatorv1alpha1.VirtualMachineService) *metav1.ObjectMeta {
 	t := true
 	om := &metav1.ObjectMeta{
@@ -262,7 +297,8 @@ func (r *ReconcileVirtualMachineService) getVirtualNetworkName(ctx context.Conte
 	defer log.V(5).Info("Finished Get Virtual Network Name", "vmservice", vmService.NamespacedName())
 
 	vmList := &vmoperatorv1alpha1.VirtualMachineList{}
-	err := r.List(ctx, client.MatchingLabels(vmService.Spec.Selector), vmList)
+	listOptions := (&client.ListOptions{}).InNamespace(vmService.Namespace).MatchingLabels(vmService.Spec.Selector)
+	err := r.List(ctx, listOptions, vmList)
 	if err != nil {
 		return "", err
 	}
@@ -393,11 +429,11 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Conte
 				return nil, err
 			}
 		}
-		log.V(5).Info("Creating k8s service", "name", serviceKey, "service", newService)
+		log.Info("Creating k8s service", "name", serviceKey, "service", newService)
 		err = r.Create(ctx, newService)
 		defer record.EmitEvent(vmService, OpCreate, &err, false)
 	} else {
-		log.V(5).Info("Updating k8s service", "name", serviceKey, "service", newService)
+		log.Info("Updating k8s service", "name", serviceKey, "service", newService)
 		err = r.Update(ctx, newService)
 		//defer record.EmitEvent(vmService, OpUpdate, &err, false) ???
 	}
@@ -405,10 +441,53 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx context.Conte
 	return newService, err
 }
 
-func (r *ReconcileVirtualMachineService) getVMServiceSelectedVirtualMachines(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*vmoperatorv1alpha1.VirtualMachineList, error) {
+func (r *ReconcileVirtualMachineService) getVirtualMachinesSelectedByVmService(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*vmoperatorv1alpha1.VirtualMachineList, error) {
 	vmList := &vmoperatorv1alpha1.VirtualMachineList{}
-	err := r.List(ctx, client.MatchingLabels(vmService.Spec.Selector), vmList)
+	listOptions := (&client.ListOptions{}).MatchingLabels(vmService.Spec.Selector).InNamespace(vmService.Namespace)
+	err := r.List(ctx, listOptions, vmList)
 	return vmList, err
+}
+
+// TODO: This mapping function has the potential to be a performance and scaling issue.  Consider this as a candidate for profiling
+func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtualMachine(ctx context.Context, lookupVm *vmoperatorv1alpha1.VirtualMachine) ([]*vmoperatorv1alpha1.VirtualMachineService, error) {
+
+	var matchingVmServices []*vmoperatorv1alpha1.VirtualMachineService
+
+	matchFunc := func(vmService *vmoperatorv1alpha1.VirtualMachineService) error {
+		vmList, err := r.getVirtualMachinesSelectedByVmService(ctx, vmService)
+		if err != nil {
+			return err
+		}
+
+		lookupVmKey := types.NamespacedName{Namespace: lookupVm.Namespace, Name: lookupVm.Name}
+		for _, vm := range vmList.Items {
+			vmKey := types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name}
+
+			if vmKey == lookupVmKey {
+				matchingVmServices = append(matchingVmServices, vmService)
+				// Only one match is needed to add vmService, so return now.
+				return nil
+			}
+		}
+
+		return nil
+	}
+
+	vmServiceList := &vmoperatorv1alpha1.VirtualMachineServiceList{}
+	err := r.List(ctx, client.InNamespace(lookupVm.Namespace), vmServiceList)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, vmService := range vmServiceList.Items {
+		vms := vmService
+		err := matchFunc(&vms)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return matchingVmServices, nil
 }
 
 func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service) error {
@@ -416,7 +495,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 	logger.V(5).Info("Updating VirtualMachineService endpoints")
 	defer logger.V(5).Info("Finished updating VirtualMachineService endpoints")
 
-	vmList, err := r.getVMServiceSelectedVirtualMachines(ctx, vmService)
+	vmList, err := r.getVirtualMachinesSelectedByVmService(ctx, vmService)
 	if err != nil {
 		return err
 	}
@@ -460,7 +539,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 			portName := servicePort.Name
 			portProto := servicePort.Protocol
 
-			logger.Info("VirtualMachine port",
+			logger.V(5).Info("EndpointPort for VirtualMachine",
 				"port name", portName, "port proto", portProto)
 
 			portNum, err := findPort(&vm, servicePort.TargetPort, portProto)
@@ -498,10 +577,10 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 
 	createEndpoints := len(currentEndpoints.ResourceVersion) == 0
 	if createEndpoints {
-		logger.V(5).Info("Creating service endpoints", "endpoints", newEndpoints)
+		logger.Info("Creating service endpoints", "endpoints", newEndpoints)
 		err = r.Create(ctx, newEndpoints)
 	} else {
-		logger.V(5).Info("Updating service endpoints", "endpoints", newEndpoints)
+		logger.Info("Updating service endpoints", "endpoints", newEndpoints)
 		err = r.Update(ctx, newEndpoints)
 	}
 

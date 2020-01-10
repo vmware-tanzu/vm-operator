@@ -1566,6 +1566,7 @@
     "github.com/vmware/govmomi/vapi/vcenter",
     "github.com/vmware/govmomi/view",
     "github.com/vmware/govmomi/vim25",
+    "github.com/vmware/govmomi/vim25/debug",
     "github.com/vmware/govmomi/vim25/methods",
     "github.com/vmware/govmomi/vim25/mo",
     "github.com/vmware/govmomi/vim25/soap",

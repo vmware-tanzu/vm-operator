@@ -8,9 +8,11 @@ import (
 	"flag"
 	"io"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"time"
 
+	govmomidebug "github.com/vmware/govmomi/vim25/debug"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -68,6 +70,12 @@ func waitForVmOperatorGroupVersion(restConfig *rest.Config) error {
 	return err
 }
 
+var (
+	defaultProfilerAddr = ":8073"
+	defaultMetricsAddr  = ":8083"
+	defaultSyncPeriod   = time.Second * 10
+)
+
 func main() {
 	//klog.InitFlags(nil) Usually needed but already called via an init() somewhere
 	var (
@@ -81,6 +89,15 @@ func main() {
 	if err := flag.Set("v", "2"); err != nil {
 		klog.Fatalf("klog level flag has changed from -v: %v", err)
 	}
+
+	var profilerAddress, metricsBindAddress string
+	var enableGovmomiTracing bool
+	var syncPeriod time.Duration
+	flag.StringVar(&profilerAddress, "profiler-address", defaultProfilerAddr, "Bind address to expose the pprof profiler")
+	flag.StringVar(&metricsBindAddress, "metrics-addr", defaultMetricsAddr, "The address the metric endpoint binds to.")
+	flag.BoolVar(&enableGovmomiTracing, "enable-govmomi-tracing", false, "Whether to enable govmomi debug tracing.")
+	flag.DurationVar(&syncPeriod, "sync-period", defaultSyncPeriod, "The interval at which cluster-api objects are synchronized")
+
 	flag.Parse()
 
 	logf.SetLogger(klogr.New())
@@ -101,6 +118,11 @@ func main() {
 			log.Error(err, "health HTTP server error")
 		}
 	}()
+	if enableGovmomiTracing {
+		log.Info("Enabling govmomi debug tracing")
+		// Enable govmomi debug tracing
+		govmomidebug.SetProvider(&govmomidebug.FileProvider{Path: "."})
+	}
 
 	// Get a config to talk to the apiserver
 	log.Info("setting up client for manager")
@@ -129,13 +151,26 @@ func main() {
 		log.Info("ControllerNamespace defaulted to ", controllerNamespace, ". controllerNamespace should be defaulted only in testing. Manager may function incorrectly in production with it defaulted.")
 	}
 
+	if profilerAddress != "" {
+		log.Info("Profiler listening for requests", "profiler-address", profilerAddress)
+		go runProfiler(profilerAddress)
+	}
+
+	leaderElectionId := controllerName + "-runtime"
+	log.Info("setting up manager",
+		"LeaderElectionID", leaderElectionId,
+		"LeaderElectionNamespace", controllerNamespace,
+		"SyncPeriod", syncPeriod,
+		"MetricsBindAddres", metricsBindAddress)
+
 	// Create a new Cmd to provide shared dependencies and start components
-	log.Info("setting up manager")
-	syncPeriod := 10 * time.Second
-	mgr, err := manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
+	mgr, err := manager.New(cfg, manager.Options{
 		LeaderElection:          true,
-		LeaderElectionID:        controllerName + "-runtime",
-		LeaderElectionNamespace: controllerNamespace})
+		LeaderElectionID:        leaderElectionId,
+		LeaderElectionNamespace: controllerNamespace,
+		SyncPeriod:              &syncPeriod,
+		MetricsBindAddress:      metricsBindAddress,
+	})
 	if err != nil {
 		log.Error(err, "unable to set up overall controller manager")
 		os.Exit(1)
@@ -162,18 +197,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	/*
-		log.Info("setting up webhooks")
-		if err := webhook.AddToManager(mgr); err != nil {
-			log.Error(err, "unable to register webhooks to the manager")
-			os.Exit(1)
-		}
-	*/
-
 	// Start the Cmd
 	log.Info("Starting the Cmd.")
 	if err := mgr.Start(signals.SetupSignalHandler()); err != nil {
 		log.Error(err, "unable to run the manager")
 		os.Exit(1)
 	}
+}
+
+func runProfiler(addr string) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	_ = http.ListenAndServe(addr, mux)
 }

@@ -29,6 +29,7 @@ spec:
         - "/manager"
         args:
           - "--health-addr=:49201"
+          - "--metrics-addr=127.0.0.1:8083"
         livenessProbe:
           httpGet:
             path: /healthz

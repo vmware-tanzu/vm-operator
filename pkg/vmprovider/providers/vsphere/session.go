@@ -1077,7 +1077,7 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{
 		Name:         name,
-		Annotation:   "Virtual Machine managed by VM Operator",
+		Annotation:   "Virtual Machine managed by the vSphere Virtual Machine service",
 		NumCPUs:      int32(vmClassSpec.Hardware.Cpus),
 		MemoryMB:     memoryQuantityToMb(vmClassSpec.Hardware.Memory),
 		DeviceChange: deviceSpecs,

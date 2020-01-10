@@ -20,7 +20,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
@@ -283,8 +282,8 @@ func newReconciler(mgr manager.Manager, options VirtualMachineImageDiscovererOpt
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	log.Info("Adding VirtualMachineImage Reconciler")
 
-	// Create a new controller
-	c, err := controller.New(ControllerName, mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: common.GetMaxReconcileNum()})
+	// Create a new controller.  We only need one reconciler to do the job.
+	c, err := controller.New(ControllerName, mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: 1})
 	if err != nil {
 		return err
 	}

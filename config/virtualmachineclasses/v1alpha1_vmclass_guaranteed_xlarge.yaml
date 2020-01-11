@@ -11,6 +11,3 @@ spec:
       requests:
         cpu: 4000m
         memory: 32Gi
-      limits:
-        cpu: 4000m
-        memory: 32Gi

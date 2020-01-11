@@ -6,8 +6,3 @@ spec:
   hardware:
     cpus: 4
     memory: 32Gi
-  policies:
-    resources:
-      limits:
-        cpu: 4000m
-        memory: 32Gi

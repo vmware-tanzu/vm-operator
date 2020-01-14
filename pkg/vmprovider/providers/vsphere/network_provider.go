@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package vsphere
 
@@ -196,6 +195,7 @@ func (np *nsxtNetworkProvider) ownerMatch(vm *v1alpha1.VirtualMachine, vnetif *n
 		if owner.Kind != vm.Kind {
 			continue
 		}
+		// TODO: shouldn't we check that owner.UID/vm.UID are not empty?
 		if owner.UID != vm.UID {
 			return false
 		} else {
@@ -207,6 +207,13 @@ func (np *nsxtNetworkProvider) ownerMatch(vm *v1alpha1.VirtualMachine, vnetif *n
 
 // createVirtualNetworkInterface creates a NCP vnetif for a given VM network interface
 func (np *nsxtNetworkProvider) createVirtualNetworkInterface(ctx context.Context, vm *v1alpha1.VirtualMachine, vmif *v1alpha1.VirtualMachineNetworkInterface) (*ncpv1alpha1.VirtualNetworkInterface, error) {
+	if vm == nil {
+		return nil, errors.Errorf("Virtual machine can not be nil when creating vnetif")
+	}
+	if vmif == nil {
+		return nil, errors.Errorf("Virtual machine network interface can not be nil when creating vnetif")
+	}
+
 	// Create vnetif object
 	vnetifName := np.GenerateNsxVnetifName(vmif.NetworkName, vm.Name)
 	vnetif := &ncpv1alpha1.VirtualNetworkInterface{
@@ -230,7 +237,7 @@ func (np *nsxtNetworkProvider) createVirtualNetworkInterface(ctx context.Context
 		if err != nil {
 			return nil, err
 		}
-		if !np.ownerMatch(vm, vnetif) {
+		if !np.ownerMatch(vm, vnetif) { // shouldn't that be currentVnetif here?
 			copiedVnetif := currentVnetif.DeepCopy()
 			np.setVnetifOwner(vm, copiedVnetif)
 			_, err = np.client.VmwareV1alpha1().VirtualNetworkInterfaces(vm.Namespace).Update(copiedVnetif)
@@ -253,7 +260,7 @@ func (np *nsxtNetworkProvider) createVirtualNetworkInterface(ctx context.Context
 	return result, nil
 }
 
-// vnetifIsReady checks the readyness of vnetif object
+// vnetifIsReady checks the readiness of vnetif object
 func (np *nsxtNetworkProvider) vnetifIsReady(vnetif *ncpv1alpha1.VirtualNetworkInterface) bool {
 	if vnetif.Status.Conditions == nil {
 		return false

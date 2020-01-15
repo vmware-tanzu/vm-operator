@@ -1,6 +1,6 @@
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 package integration
 
 import (
@@ -24,7 +24,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -53,6 +52,7 @@ const (
 var (
 	ContentSourceID string
 	vmProvider      vmprovider.VirtualMachineProviderInterface
+	log             = logf.Log.WithName("integration")
 )
 
 func setContentSourceID(id string) {
@@ -117,12 +117,6 @@ func EnableDebugLogging() {
 		stdlog.Print(err)
 	}
 	logf.SetLogger(zapr.NewLogger(zapLog))
-
-	//klog.InitFlags(nil)
-
-	if err := flag.Set("v", "4"); err != nil {
-		klog.Fatalf("klog level flag has changed from -v: %v", err)
-	}
 }
 
 // Because of a hard coded path in buildAggregatedAPIServer, all integration tests that are using
@@ -188,7 +182,7 @@ func SetupVcsimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Con
 	// Support for bootstrapping VM operator resource requirements in Kubernetes.
 	// Generate a fake vsphere provider config that is suitable for the integration test environment.
 	// Post the resultant config map to the API Master for consumption by the VM operator
-	klog.Infof("Installing a bootstrap config map for use in integration tests.")
+	log.Info("Installing a bootstrap config map for use in integration tests.")
 
 	// Configure the environment with the location of the vmop config.
 	err := lib.SetVmOpNamespaceEnv(DefaultNamespace)

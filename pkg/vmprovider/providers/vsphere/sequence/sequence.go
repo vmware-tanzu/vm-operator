@@ -1,10 +1,15 @@
-/* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package sequence
 
-import "context"
+import (
+	"context"
+
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
+)
+
+var log = logf.Log.WithName("sequence")
 
 // TODO: Return a compound error to put in status
 type SequenceStep interface {

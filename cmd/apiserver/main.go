@@ -8,6 +8,7 @@ import (
 	"k8s.io/klog/klogr"
 
 	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/cmd/server"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis"
@@ -16,10 +17,12 @@ import (
 
 var (
 	apiVersion = "v0"
-	log        = klogr.New()
 )
 
 func main() {
+	logf.SetLogger(klogr.New())
+	log := logf.Log.WithName("apiserver-entrypoint")
+
 	log.Info("Starting vm-operator apiserver", "version", pkg.BuildVersion,
 		"buildnumber", pkg.BuildNumber, "buildtype", pkg.BuildType)
 

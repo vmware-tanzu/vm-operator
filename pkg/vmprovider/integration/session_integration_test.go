@@ -11,6 +11,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/tags"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
@@ -647,7 +648,7 @@ var _ = Describe("Sessions", func() {
 		})
 
 		Context("RP as inventory path", func() {
-			Specify("returns RP object without error", func() {
+			It("returns RP object without error", func() {
 				pools, err := session.Finder.ResourcePoolList(ctx, "*")
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(len(pools)).ToNot(BeZero())
@@ -665,22 +666,26 @@ var _ = Describe("Sessions", func() {
 			})
 		})
 
-		Context("Folder as inventory path", func() {
-			Specify("returns Folder object without error", func() {
-				folders, err := session.Finder.FolderList(ctx, "*")
+		Context("when finding folders", func() {
+			var folders []*object.Folder
+			BeforeEach(func() {
+				folders, err = session.Finder.FolderList(ctx, "*")
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(len(folders)).ToNot(BeZero())
+			})
 
-				paths := []string{
-					folders[0].InventoryPath,
-					folders[0].Reference().Value,
-				}
+			It("folder as inventory path returns Folder object without error", func() {
+				folder, err := session.GetFolderByPath(ctx, folders[0].InventoryPath)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(folder.InventoryPath).To(Equal(folders[0].InventoryPath))
+				Expect(folder.Reference().Value).To(Equal(folders[0].Reference().Value))
+			})
 
-				for _, path := range paths {
-					folder, err := session.GetVMFolder(ctx, path)
-					Expect(err).ShouldNot(HaveOccurred())
-					Expect(folder.InventoryPath).To(Equal(folders[0].InventoryPath))
-				}
+			It("folder as moid returns Folder object without error", func() {
+				folder, err := session.GetFolderByMoID(ctx, folders[0].Reference().Value)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(folder.InventoryPath).To(Equal(folders[0].InventoryPath))
+				Expect(folder.Reference().Value).To(Equal(folders[0].Reference().Value))
 			})
 		})
 	})

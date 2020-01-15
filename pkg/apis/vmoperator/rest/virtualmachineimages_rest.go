@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package rest
 
@@ -11,7 +10,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	"k8s.io/apiserver/pkg/registry/rest"
-	"k8s.io/klog/klogr"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -27,7 +26,7 @@ type VirtualMachineImagesREST struct {
 	provider vmprovider.VirtualMachineProviderInterface
 }
 
-var log = klogr.New().WithName("vm-image-rest")
+var log = logf.Log.WithName("virtual-machine-image-rest")
 
 func NewVirtualMachineImagesREST(provider vmprovider.VirtualMachineProviderInterface) vmoperator.RestProvider {
 	return vmoperator.RestProvider{

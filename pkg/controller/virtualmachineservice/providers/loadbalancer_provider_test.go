@@ -1,8 +1,7 @@
 // +build !integration
 
-/* **********************************************************
- * Copyright 2019-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package providers
 
@@ -14,11 +13,12 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/testing"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	ncpfake "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake"
@@ -33,30 +33,33 @@ const (
 
 var _ = Describe("Loadbalancer Provider", func() {
 	var (
-		err error
-
-		ctx       context.Context
-		vmService *v1alpha1.VirtualMachineService
-
+		err                  error
+		ctx                  context.Context
+		vmService            *v1alpha1.VirtualMachineService
 		loadBalancerProvider nsxtLoadbalancerProvider
-
-		lb string
-
-		ncpClient clientset.Interface
+		lb                   string
+		ncpClient            clientset.Interface
 	)
 
 	Context("Create Loadbalancer", func() {
 
 		Context("Get load balancer provider by type", func() {
 			It("should successfully get nsx-t load balancer provider", func() {
-				//TODO:  () Using static ncp client for now, replace it with runtime ncp client
+				// TODO:  () Using static ncp client for now, replace it with runtime ncp client
+				// TODO: This should be an integration test
 				Skip("Can't locate a kubeconfig in pipeline env, can test this locally")
-				loadbalancerProvider := GetLoadbalancerProviderByType(NSXTLoadBalancer)
+				cfg, err := config.GetConfig()
+				Expect(err).ShouldNot(HaveOccurred())
+				loadbalancerProvider := GetLoadbalancerProviderByType(cfg, NSXTLoadBalancer)
 				Expect(loadbalancerProvider).NotTo(BeNil())
 			})
 
 			It("should fail to get unknown type load balancer provide", func() {
-				loadbalancerProvider := GetLoadbalancerProviderByType("dummy")
+				// TODO: This should be an integration test
+				Skip("Can't locate a kubeconfig in pipeline env, can test this locally")
+				cfg, err := config.GetConfig()
+				Expect(err).ShouldNot(HaveOccurred())
+				loadbalancerProvider := GetLoadbalancerProviderByType(cfg, "dummy")
 				Expect(loadbalancerProvider).To(BeNil())
 			})
 

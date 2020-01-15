@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package resources
 
@@ -15,7 +14,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
-	"k8s.io/klog/klogr"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 )
@@ -25,7 +24,7 @@ type VirtualMachine struct {
 	vcVirtualMachine *object.VirtualMachine
 }
 
-var log = klogr.New().WithName("vmprovider")
+var log = logf.Log.WithName("vmresource")
 
 // NewVMForCreate returns a VirtualMachine that Create() can be called on
 // to create the VM and set the VirtualMachine object reference.

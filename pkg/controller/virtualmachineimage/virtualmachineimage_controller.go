@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineimage
 
@@ -55,7 +54,6 @@ func NewVirtualMachineImageDiscoverer(client client.Client, vmprovider vmprovide
 
 // Attempt to create a set of images.  Fail fast on first failure
 func (d *VirtualMachineImageDiscoverer) createImages(ctx context.Context, images []vmoperatorv1alpha1.VirtualMachineImage) error {
-	log.V(4).Info("create")
 
 	for _, image := range images {
 		img := image
@@ -71,7 +69,6 @@ func (d *VirtualMachineImageDiscoverer) createImages(ctx context.Context, images
 
 // Attempt to delete a set of images.  Fail fast on first failure
 func (d *VirtualMachineImageDiscoverer) deleteImages(ctx context.Context, images []vmoperatorv1alpha1.VirtualMachineImage) error {
-	log.V(4).Info("delete")
 
 	for _, image := range images {
 		img := image
@@ -120,7 +117,7 @@ func (d *VirtualMachineImageDiscoverer) diffImages(left []vmoperatorv1alpha1.Vir
 	// Identify added items
 	for _, r := range right {
 		if _, ok := leftMap[r.Name]; !ok {
-			log.V(4).Info("Adding", "name", r.Name)
+			log.V(4).Info("Adding Image", "name", r.Name)
 			added = append(added, r)
 		}
 	}

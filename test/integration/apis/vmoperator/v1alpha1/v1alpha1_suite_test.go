@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
 
@@ -8,30 +7,29 @@ import (
 	"os"
 	"testing"
 
-	"k8s.io/klog/klogr"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	"k8s.io/client-go/rest"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis"
+	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	vmrest "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/rest"
 	"github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/openapi"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
-
-	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-	"k8s.io/client-go/rest"
-
-	vmrest "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/rest"
 )
 
-var testenv *test.TestEnvironment
-var config *rest.Config
-var cs *clientset.Clientset
-var vcsim *integration.VcSimInstance
-var log = klogr.New()
+var (
+	testenv *test.TestEnvironment
+	config  *rest.Config
+	cs      *clientset.Clientset
+	vcsim   *integration.VcSimInstance
+	log     = logf.Log.WithName("vmoperatorv1alpha1")
+)
 
 func TestV1alpha1(t *testing.T) {
 	RegisterFailHandler(Fail)

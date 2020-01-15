@@ -60,6 +60,7 @@ func CnsVolumeProvider(client client.Client) *cnsVolumeProvider {
 // Note: AttachVolumes() does not call client.Status().Update(), it just updates vm object and vitualmachine_controller.go eventually
 //       will call apiserver to update the vm object
 func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToAttach map[client.ObjectKey]bool) error {
+	log := log.WithValues("vm", vm.NamespacedName())
 	volumeOpErrors := newVolumeErrorsByOpType(VolumeOpAttach)
 	for virtualMachineVolume := range virtualMachineVolumesToAttach {
 		cnsNodeVmAttachment := &cnsv1alpha1.CnsNodeVmAttachment{}
@@ -104,6 +105,7 @@ func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv
 // Note: DetachVolumes() does not update the vm.Status.Volumes since it has been handled by UpdateVmVolumesStatus() by checking the existence of
 //       respective CnsNodeVmAttachment instance
 func (cvp *cnsVolumeProvider) DetachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToDetach map[client.ObjectKey]bool) error {
+	log := log.WithValues("vm", vm.NamespacedName())
 	volumeOpErrors := newVolumeErrorsByOpType(VolumeOpDetach)
 	for virtualMachineVolumeToDelete := range virtualMachineVolumesToDetach {
 		cnsNodeVmAttachmentToDelete := &cnsv1alpha1.CnsNodeVmAttachment{}
@@ -131,6 +133,7 @@ func (cvp *cnsVolumeProvider) DetachVolumes(ctx context.Context, vm *vmoperatorv
 // Note: UpdateVmVolumesStatus() does not call client.Status().Update(), it just updates vm object and vitualmachine_controller.go
 //       eventually will call apiserver to update the vm object
 func (cvp *cnsVolumeProvider) UpdateVmVolumesStatus(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
+	log := log.WithValues("vm", vm.NamespacedName())
 	log.V(4).Info("Updating the VirtualMachineVolumeStatus for VirtualMachine", "name", vm.Name, "namespace", vm.Namespace)
 	// Updating the existing volume status
 	volumeOpErrors := newVolumeErrorsByOpType(VolumeOpUpdateStatus)
@@ -198,6 +201,7 @@ func (cvp *cnsVolumeProvider) UpdateVmVolumesStatus(ctx context.Context, vm *vmo
 //
 // Note: virtualmachine_strategy.go#validateVolumes() has been implemented to validate the vm.Spec.Volumes, so the vm.Spec.Volumes only contain distinct element
 func GetVmVolumesToProcess(vm *vmoperatorv1alpha1.VirtualMachine) (map[client.ObjectKey]bool, map[client.ObjectKey]bool) {
+	log := log.WithValues("vm", vm.NamespacedName())
 	log.V(4).Info("Getting the changes of VirtualMachineVolumes by processing the VirtualMachine object", "name", vm.NamespacedName())
 	vmVolumesToAttach := map[client.ObjectKey]bool{}
 	for _, desiredVirtualMachineVolume := range vm.Spec.Volumes {

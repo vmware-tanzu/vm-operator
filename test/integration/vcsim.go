@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package integration
 
@@ -9,8 +8,6 @@ import (
 	"crypto/tls"
 	"os"
 	"strconv"
-
-	"k8s.io/klog/klogr"
 
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/simulator"
@@ -25,8 +22,6 @@ type VcSimInstance struct {
 	IP     string
 	Port   int
 }
-
-var log = klogr.New()
 
 func NewVcSimInstance() *VcSimInstance {
 	vpx := simulator.VPX()

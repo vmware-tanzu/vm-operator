@@ -17,7 +17,7 @@ type VSphereVmProviderCredentials struct {
 	Password string
 }
 
-func GetSecret(clientSet kubernetes.Interface, secretNamespace string, secretName string) (*v1.Secret, error) {
+func getSecret(clientSet kubernetes.Interface, secretNamespace string, secretName string) (*v1.Secret, error) {
 	secret, err := clientSet.CoreV1().Secrets(secretNamespace).Get(secretName, metav1.GetOptions{})
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot find secret %s in namespace %s", secretName, secretNamespace)
@@ -27,7 +27,7 @@ func GetSecret(clientSet kubernetes.Interface, secretNamespace string, secretNam
 }
 
 func GetProviderCredentials(clientSet kubernetes.Interface, namespace string, secretName string) (*VSphereVmProviderCredentials, error) {
-	secret, err := GetSecret(clientSet, namespace, secretName)
+	secret, err := getSecret(clientSet, namespace, secretName)
 	if err != nil {
 		return nil, err
 	}

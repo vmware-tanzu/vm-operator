@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2018-2020 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package vsphere
 
@@ -23,7 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog/klogr"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
@@ -71,7 +70,7 @@ const (
 	DoNotAnnotateVmImage
 )
 
-var log = klogr.New()
+var log = logf.Log.WithName(VsphereVmProviderName)
 
 func NewVSphereVmProvider(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) (*VSphereVmProvider, error) {
 	vmProvider := &VSphereVmProvider{

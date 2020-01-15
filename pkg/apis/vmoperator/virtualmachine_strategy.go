@@ -8,7 +8,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/klog/klogr"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
 const (
@@ -67,7 +67,7 @@ func validateVolumes(vm *VirtualMachine) field.ErrorList {
 func (v VirtualMachineStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	vm := obj.(*VirtualMachine)
 
-	log := klogr.New()
+	log := logf.Log.WithName("virtual-machine-strategy")
 	log.V(4).Info("Validating fields for VirtualMachine", "namespace", vm.Namespace, "name", vm.Name)
 	errors := field.ErrorList{}
 

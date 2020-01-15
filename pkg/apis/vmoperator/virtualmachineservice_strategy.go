@@ -8,7 +8,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/klog/klogr"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
 const VirtualMachineServiceFinalizer string = "virtualmachineservice.vmoperator.vmware.com"
@@ -28,7 +28,7 @@ func (v VirtualMachineServiceStrategy) PrepareForCreate(ctx context.Context, obj
 func (VirtualMachineServiceStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	service := obj.(*VirtualMachineService)
 
-	log := klogr.New()
+	log := logf.Log.WithName("virtual-machine-service-strategy")
 	log.V(4).Info("Validating fields for VirtualMachineService", "namespace", service.Namespace, "name", service.Name)
 	errors := field.ErrorList{}
 

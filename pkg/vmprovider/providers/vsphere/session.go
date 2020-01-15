@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2018-2020 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package vsphere
 
@@ -93,7 +92,7 @@ func NewSessionAndConfigure(ctx context.Context, config *VSphereVmProviderConfig
 		return nil, err
 	}
 
-	log.V(2).Info("New session created and configured", "session", s.String())
+	log.V(4).Info("New session created and configured", "session", s.String())
 	return s, nil
 }
 
@@ -112,27 +111,26 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 
 	s.Finder.SetDatacenter(s.datacenter)
 
-	// not necessary for vmimage list/get from Content Library
+	// ResourcePool is only relevant for Development environments.  On WCP, the RP is extracted from an annotation
+	// on the namespace.
 	if config.ResourcePool != "" {
 		s.resourcepool, err = s.GetResourcePoolByMoID(ctx, config.ResourcePool)
 		if err != nil {
 			return errors.Wrapf(err, "failed to init Resource Pool %q", config.ResourcePool)
 		}
-	}
 
-	// not necessary for vmimage list/get from Content Library
-	if config.Folder != "" {
-		s.folder, err = s.GetVMFolder(ctx, config.Folder)
-		if err != nil {
-			return errors.Wrapf(err, "failed to init folder %q", config.Folder)
-		}
-	}
-
-	// not necessary for vmimage list/get from Content Library
-	if s.resourcepool != nil {
 		s.cluster, err = GetResourcePoolOwner(ctx, s.resourcepool)
 		if err != nil {
 			return errors.Wrapf(err, "failed to init cluster %q", config.ResourcePool)
+		}
+	}
+
+	// Folder is only relevant for Development environments.  On WCP, the folder is extracted from an annotation
+	// on the namespace.
+	if config.Folder != "" {
+		s.folder, err = s.GetFolderByPath(ctx, config.Folder)
+		if err != nil {
+			return errors.Wrapf(err, "failed to init folder %q", config.Folder)
 		}
 	}
 
@@ -153,7 +151,7 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		if err := json.Unmarshal([]byte(jsonExtraConfig), &extraConfig); err != nil {
 			return errors.Wrapf(err, "Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable")
 		}
-		log.Info("Using Json extraConfig", "extraConfig", extraConfig)
+		log.V(4).Info("Using Json extraConfig", "extraConfig", extraConfig)
 		// Over-write the default extra config values
 		for k, v := range extraConfig {
 			s.extraConfig[k] = v
@@ -182,7 +180,7 @@ func (s *Session) ServiceContent(ctx context.Context) (vimTypes.AboutInfo, error
 func (s *Session) initDatastore(ctx context.Context, datastore string) error {
 	if s.storageClassRequired {
 		if datastore != "" {
-			log.Info("Ignoring configured datastore since storage class is required")
+			log.V(4).Info("Ignoring configured datastore since storage class is required")
 		}
 	} else {
 		if datastore != "" {
@@ -191,7 +189,7 @@ func (s *Session) initDatastore(ctx context.Context, datastore string) error {
 			if err != nil {
 				return errors.Wrapf(err, "failed to init Datastore %q", datastore)
 			}
-			log.Info("Datastore init OK", "datastore", s.datastore.Reference().Value)
+			log.V(4).Info("Datastore init OK", "datastore", s.datastore.Reference().Value)
 		}
 	}
 	return nil
@@ -228,7 +226,7 @@ func (s *Session) ConfigureContent(ctx context.Context, contentSource string) er
 		return errors.Wrapf(err, "failed to init Content Library %q", contentSource)
 	}
 
-	log.Info("Content library configured to", "Content Source=", contentSource)
+	log.V(4).Info("Content library configured to", "Content Source=", contentSource)
 	return nil
 }
 
@@ -394,7 +392,7 @@ func (s *Session) CreateResourcePool(ctx context.Context, rpSpec *v1alpha1.Resou
 		return "", err
 	}
 
-	log.V(4).Info("Created ResourcePool", "name", resourcePool.Name(), "path", resourcePool.InventoryPath)
+	log.Info("Created ResourcePool", "name", resourcePool.Name(), "path", resourcePool.InventoryPath)
 
 	return resourcePool.Reference().Value, nil
 }
@@ -453,7 +451,7 @@ func (s *Session) ChildFolderPath(folderName string) string {
 func (s *Session) findFolder(ctx context.Context, folderName string) (*object.Folder, error) {
 	folderPath := s.ChildFolderPath(folderName)
 	log.V(4).Info("Checking if Folder exists", "name", folderName, "path", folderPath)
-	return s.GetVMFolder(ctx, folderPath)
+	return s.GetFolderByPath(ctx, folderPath)
 }
 
 // DoesFolderExist checks if a Folder with the given name exists.
@@ -485,7 +483,7 @@ func (s *Session) CreateFolder(ctx context.Context, folderSpec *v1alpha1.FolderS
 		return "", err
 	}
 
-	log.V(4).Info("Created Folder", "name", folder.Name(), "path", folder.InventoryPath)
+	log.Info("Created Folder", "name", folder.Name(), "path", folder.InventoryPath)
 
 	return folder.Reference().Value, nil
 }
@@ -500,7 +498,7 @@ func (s *Session) DeleteFolder(ctx context.Context, folderName string) error {
 		case *find.NotFoundError, *find.DefaultNotFoundError:
 			return nil
 		default:
-			log.V(2).Info("Error getting the to be deleted VM folder", "name", folderName, "path", s.ChildFolderPath(folderName))
+			log.Error(err, "Error finding the VM folder to delete", "name", folderName, "path", s.ChildFolderPath(folderName))
 			return err
 		}
 	}
@@ -515,11 +513,11 @@ func (s *Session) DeleteFolder(ctx context.Context, folderName string) error {
 		if taskResult != nil && taskResult.Error != nil {
 			msg = taskResult.Error.LocalizedMessage
 		}
-		log.Error(err, "Error deleting Folder", "name", folderName, "message", msg)
+		log.Error(err, "Error deleting folder", "name", folderName, "message", msg)
 		return err
 	}
 
-	log.V(4).Info("Deleted Folder", "name", folderName)
+	log.Info("Successfully deleted folder", "name", folderName)
 
 	return nil
 }
@@ -642,7 +640,7 @@ func (s *Session) cloneVirtualMachineFromCL(ctx context.Context, vm *v1alpha1.Vi
 		resourcePolicyName = vmConfigArgs.ResourcePolicy.Name
 	}
 
-	log.Info("Going to deploy ovf", "imageName", vm.Spec.ImageName, "vmName", name,
+	log.Info("Deploying OVF", "imageName", vm.Spec.ImageName, "vmName", name,
 		"resourcePolicyName", resourcePolicyName, "storageProfileID", vmConfigArgs.StorageProfileID)
 
 	deployedVm, err := s.deployOvf(ctx, itemID, name, vmConfigArgs.ResourcePolicy, vmConfigArgs.StorageProfileID)
@@ -687,9 +685,10 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 		if err == nil {
 			return resVm, nil
 		}
+		log.V(4).Info("Failed to lookup VM by MoID", "MoID", vm.Status.UniqueID, "error", err)
 	}
 
-	log.V(4).Info("Falling back to resolving VM by full path", "Name", vm.Name)
+	log.V(4).Info("Falling back to resolving VM by full path", "Namespace", vm.Namespace, "Name", vm.Name)
 
 	var folder *object.Folder
 
@@ -699,11 +698,13 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 		// by name to get the VM's Folder.
 		resourcePolicy, err := s.vmopClient.VmoperatorV1alpha1().VirtualMachineSetResourcePolicies(vm.Namespace).Get(vm.Spec.ResourcePolicyName, metav1.GetOptions{})
 		if err != nil {
+			log.Error(err, "Failed to find resource policy", "Namespace", vm.Namespace, "Name", vm.Spec.ResourcePolicyName)
 			return nil, err
 		}
 
 		folder, err = s.findFolder(ctx, resourcePolicy.Spec.Folder.Name)
 		if err != nil {
+			log.Error(err, "Failed to find folder", "Folder", resourcePolicy.Spec.Folder.Name)
 			return nil, err
 		}
 
@@ -718,6 +719,7 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 
 	foundVm, err := s.getVirtualMachineByPath(ctx, vmPath)
 	if err != nil {
+		log.Error(err, "Failed get VM by path", "path", vmPath)
 		return nil, err
 	}
 
@@ -927,7 +929,7 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec *vimType
 		return nil, err
 	}
 
-	log.Info("Going to create VM", "name", name, "configSpec", *configSpec,
+	log.Info("Creating VM", "name", name, "configSpec", *configSpec,
 		"resourcePool", resourcePool.Reference().Value, "folder", folder.Reference().Value)
 
 	resVm := res.NewVMForCreate(name)
@@ -940,7 +942,7 @@ func (s *Session) createVm(ctx context.Context, name string, configSpec *vimType
 }
 
 func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
-	log.Info("Going to clone VM", "name", cloneSpec.Config.Name, "cloneSpec", *cloneSpec)
+	log.Info("Cloning VM", "name", cloneSpec.Config.Name, "cloneSpec", *cloneSpec)
 
 	cloneResVm, err := resSrcVm.Clone(ctx, s.folder, cloneSpec)
 	if err != nil {
@@ -1116,7 +1118,7 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 	return configSpec, nil
 }
 
-// GetResourcePool returns resource pool for a given a moref
+// GetResourcePoolByMoID returns resource pool for a given a moref
 func (s *Session) GetResourcePoolByMoID(ctx context.Context, moID string) (*object.ResourcePool, error) {
 	ref := types.ManagedObjectReference{Type: "ResourcePool", Value: moID}
 	o, err := s.Finder.ObjectReference(ctx, ref)
@@ -1126,18 +1128,24 @@ func (s *Session) GetResourcePoolByMoID(ctx context.Context, moID string) (*obje
 	return o.(*object.ResourcePool), nil
 }
 
-// GetResourcePool returns resource pool for a given invt path
+// GetResourcePoolByPath returns resource pool for a given inventory path
 func (s *Session) GetResourcePoolByPath(ctx context.Context, path string) (*object.ResourcePool, error) {
 	return s.Finder.ResourcePool(ctx, path)
 }
 
-// GetVMFolder returns VM folder for a given invt path of a moref
-func (s *Session) GetVMFolder(ctx context.Context, folder string) (*object.Folder, error) {
-	ref := types.ManagedObjectReference{Type: "Folder", Value: folder}
-	if o, err := s.Finder.ObjectReference(ctx, ref); err == nil {
-		return o.(*object.Folder), nil
+// GetFolderByMoID returns a folder for a given moref
+func (s *Session) GetFolderByMoID(ctx context.Context, moID string) (*object.Folder, error) {
+	ref := types.ManagedObjectReference{Type: "Folder", Value: moID}
+	o, err := s.Finder.ObjectReference(ctx, ref)
+	if err != nil {
+		return nil, err
 	}
-	return s.Finder.Folder(ctx, folder)
+	return o.(*object.Folder), nil
+}
+
+// GetFolderByPath returns a folder for a given inventory path
+func (s *Session) GetFolderByPath(ctx context.Context, path string) (*object.Folder, error) {
+	return s.Finder.Folder(ctx, path)
 }
 
 func IsSupportedDeployType(t string) bool {

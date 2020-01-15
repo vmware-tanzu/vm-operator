@@ -37,6 +37,12 @@ verifyEnvironmentVariables() {
         exit 1
     fi
 
+    if [[ -z ${VCSA_CONTENT_SOURCE:-} ]]; then
+        echo "Error: The VCSA_CONTENT_SOURCE environment variable must be set" \
+             "to point to the ID of a valid VCSA Content Library"
+        exit 1
+    fi
+
     VCSA_DATASTORE=${VCSA_DATASTORE:-nfs0-1}
 
     if [[ -z ${VCSA_IP:-} ]]; then
@@ -77,6 +83,7 @@ patchWcpDeploymentYaml() {
         sed -i'' "s,<datacenter>,$VCSA_DATACENTER,g" "artifacts/wcp-deployment.yaml"
         sed -i'' "s, Datastore: .*, Datastore: $VCSA_DATASTORE," "artifacts/wcp-deployment.yaml"
         sed -i'' "s,<worker_dns>,$VCSA_WORKER_DNS," "artifacts/wcp-deployment.yaml"
+        sed -i'' "s,<content_source>,$VCSA_CONTENT_SOURCE,g" "artifacts/wcp-deployment.yaml"
     fi
 }
 
@@ -89,8 +96,7 @@ deploy() {
         --vc-ip $VCSA_IP \
         --vc-user root \
         --vc-password $VCSA_PASSWORD \
-        --yamlToCopy artifacts/wcp-deployment.yaml,/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/vmop.yaml \
-        --yamlToCopy artifacts/default-vmclasses.yaml,/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/40-vmclasses/default-vmclasses.yaml
+        --yamlToCopy artifacts/wcp-deployment.yaml,/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/vmop.yaml
 }
 
 undeploy() {

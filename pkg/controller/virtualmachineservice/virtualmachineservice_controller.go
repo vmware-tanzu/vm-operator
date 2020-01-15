@@ -66,7 +66,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	return &ReconcileVirtualMachineService{
 		Client:               mgr.GetClient(),
 		scheme:               mgr.GetScheme(),
-		loadbalancerProvider: providers.GetLoadbalancerProviderByType(providers.NSXTLoadBalancer),
+		loadbalancerProvider: providers.GetLoadbalancerProviderByType(mgr.GetConfig(), providers.NSXTLoadBalancer),
 	}
 }
 

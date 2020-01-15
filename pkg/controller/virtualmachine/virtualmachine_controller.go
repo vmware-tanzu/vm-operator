@@ -31,7 +31,6 @@ import (
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/controller/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
-	volumeproviders "github.com/vmware-tanzu/vm-operator/pkg/controller/virtualmachine/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	cnsv1alpha1 "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
@@ -63,10 +62,9 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	provider := vmprovider.GetVmProviderOrDie()
 
 	return &ReconcileVirtualMachine{
-		Client:         mgr.GetClient(),
-		scheme:         mgr.GetScheme(),
-		vmProvider:     provider,
-		volumeProvider: volumeproviders.CnsVolumeProvider(mgr.GetClient()),
+		Client:     mgr.GetClient(),
+		scheme:     mgr.GetScheme(),
+		vmProvider: provider,
 	}
 }
 
@@ -101,9 +99,8 @@ var _ reconcile.Reconciler = &ReconcileVirtualMachine{}
 // ReconcileVirtualMachine reconciles a VirtualMachine object
 type ReconcileVirtualMachine struct {
 	client.Client
-	scheme         *runtime.Scheme
-	vmProvider     vmprovider.VirtualMachineProviderInterface
-	volumeProvider volumeproviders.VolumeProviderInterface
+	scheme     *runtime.Scheme
+	vmProvider vmprovider.VirtualMachineProviderInterface
 }
 
 // Reconcile reads that state of the cluster for a VirtualMachine object and makes changes based on the state read
@@ -112,8 +109,6 @@ type ReconcileVirtualMachine struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses,verbs=get;list
-// +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmattachments,verbs=create;delete;get;list;watch;patch;update
-// +kubebuilder:rbac:groups=cns.vmware.com,resources=cnsnodevmattachments/status,verbs=get;list
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmware.com,resources=virtualnetworkinterfaces;virtualnetworkinterfaces/status,verbs=create;get;list;patch;delete;watch;update
 // +kubebuilder:rbac:groups="",resources=events;configmaps,verbs=get;list;watch;create;update;patch;delete
@@ -215,35 +210,6 @@ func (r *ReconcileVirtualMachine) reconcileDelete(ctx context.Context, vm *vmope
 	return nil
 }
 
-func (r *ReconcileVirtualMachine) reconcileVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine,
-	volumesToAdd map[client.ObjectKey]bool, volumesToDelete map[client.ObjectKey]bool) volumeproviders.CombinedVolumeOpsErrors {
-
-	volumeOpsErrs := volumeproviders.CombinedVolumeOpsErrors{}
-
-	// Create CnsNodeVMAttachments on demand if VM has been reconciled properly
-	volumeOpsErrs.Append(r.volumeProvider.AttachVolumes(ctx, vm, volumesToAdd))
-
-	// Delete CnsNodeVMAttachments on demand if VM has been reconciled properly
-	volumeOpsErrs.Append(r.volumeProvider.DetachVolumes(ctx, vm, volumesToDelete))
-
-	// Update the VirtualMachineVolumeStatus based on the status of respective CnsNodeVmAttachment instance
-	volumeOpsErrs.Append(r.volumeProvider.UpdateVmVolumesStatus(ctx, vm))
-
-	// 1. AttachVolumes() returns error when it fails to create CnsNodeVmAttachment instances (partially or completely)
-	//  1.1 If the attach operation [succeeds partially | fails completely], there is no reason to return without
-	// calling(r.Status().Update(ctx, vm)) to update the status for the succeeded set of volumes.
-	//
-	// 2. DetachVolumes() returns error when it fails to delete CnsNodeVmAttachment instances (partially or completely)
-	//  2.1 If the detach operation [succeeds partially | fails completely], there is no reason to return without
-	// calling (r.Status().Update(ctx, vm)) to update the status for the succeeded set of volumes.
-	//
-	// 3. UpdateVmVolumesStatus() does not call client.Status().Update(), it only modifies the vm object by updating the vm.Status.Volumes.
-	// It returns error when it fails to get the CnsNodeVmAttachment instance which is supposed to exist.
-	//  3.1 If update volumes status succeeds partially, there is no reason to return without calling (r.Status().Update(ctx, vm))
-
-	return volumeOpsErrs
-}
-
 // Process a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
 func (r *ReconcileVirtualMachine) reconcileNormal(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
 	log.Info("Reconciling VirtualMachine", "name", vm.NamespacedName())
@@ -257,11 +223,6 @@ func (r *ReconcileVirtualMachine) reconcileNormal(ctx context.Context, vm *vmope
 		return err
 	}
 
-	// Before the VM being created or updated, figure out the Volumes[] VirtualMachineVolumes change.
-	// This step determines what CnsNodeVmAttachments need to be created or deleted
-	// BMV: Push into provider
-	volumesToAdd, volumesToDelete := volumeproviders.GetVmVolumesToProcess(vm)
-
 	if !exists {
 		err = r.createVm(ctx, vm)
 		if err != nil {
@@ -274,16 +235,11 @@ func (r *ReconcileVirtualMachine) reconcileNormal(ctx context.Context, vm *vmope
 		return err
 	}
 
-	volumeOpsErrs := r.reconcileVolumes(ctx, vm, volumesToAdd, volumesToDelete)
-
 	if err := r.Status().Update(ctx, vm); err != nil {
 		log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
 		return err
 	}
 
-	if volumeOpsErrs.HasOccurred() {
-		return volumeOpsErrs
-	}
 	return nil
 }
 

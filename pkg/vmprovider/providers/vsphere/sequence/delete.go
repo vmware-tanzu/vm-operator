@@ -1,13 +1,10 @@
-/* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package sequence
 
 import (
 	"context"
-
-	"k8s.io/klog/klogr"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -17,8 +14,6 @@ type VirtualMachinePowerOffStep struct {
 	vm    *v1alpha1.VirtualMachine
 	resVm *resources.VirtualMachine
 }
-
-var log = klogr.New()
 
 func (step VirtualMachinePowerOffStep) Name() string { return "PowerOff" }
 

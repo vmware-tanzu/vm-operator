@@ -6,10 +6,9 @@ package vmoperator
 import (
 	"context"
 
-	"k8s.io/klog/klogr"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
 // VirtualMachineImages are cluster-scoped
@@ -26,7 +25,7 @@ func (VirtualMachineImageStatusStrategy) NamespaceScoped() bool {
 func (VirtualMachineImageStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	image := obj.(*VirtualMachineImage)
 
-	log := klogr.New()
+	log := logf.Log.WithName("virtual-machine-image-strategy")
 	log.V(4).Info("Validating fields for VirtualMachineImage", "namespace", image.Namespace, "name", image.Name)
 	errors := field.ErrorList{}
 	return errors

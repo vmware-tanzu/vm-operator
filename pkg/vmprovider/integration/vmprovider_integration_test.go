@@ -39,7 +39,7 @@ func createFolder(folderName string) (*object.Folder, error) {
 	}
 	_, err := session.CreateFolder(context.TODO(), folderSpec)
 	Expect(err).NotTo(HaveOccurred())
-	return session.GetVMFolder(context.Background(), session.ChildFolderPath(folderSpec.Name))
+	return session.GetFolderByPath(context.Background(), session.ChildFolderPath(folderSpec.Name))
 }
 
 func getSimpleVirtualMachine(name string) *vmoperatorv1alpha1.VirtualMachine {

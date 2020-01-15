@@ -213,6 +213,7 @@ func (r *ReconcileVirtualMachine) reconcileDelete(ctx context.Context, vm *vmope
 // Process a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
 func (r *ReconcileVirtualMachine) reconcileNormal(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
 	log.Info("Reconciling VirtualMachine", "name", vm.NamespacedName())
+	log.V(4).Info("Original VM Status", "name", vm.NamespacedName(), "status", vm.Status)
 	defer func() {
 		log.Info("Finished Reconciling VirtualMachine", "name", vm.NamespacedName())
 	}()
@@ -235,6 +236,17 @@ func (r *ReconcileVirtualMachine) reconcileNormal(ctx context.Context, vm *vmope
 		return err
 	}
 
+	if log.V(4).Enabled() {
+		// Before we update the status, get the current resource and log it
+		latestVm := &vmoperatorv1alpha1.VirtualMachine{}
+		err := r.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: vm.Name}, latestVm)
+		if err == nil {
+			log.V(4).Info("Latest resource before update", "name", vm.NamespacedName(), "resource", latestVm)
+			log.V(4).Info("Resource to update", "name", vm.NamespacedName(), "resource", vm)
+		}
+	}
+
+	log.V(4).Info("Updated VM Status", "name", vm.NamespacedName(), "status", vm.Status)
 	if err := r.Status().Update(ctx, vm); err != nil {
 		log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
 		return err

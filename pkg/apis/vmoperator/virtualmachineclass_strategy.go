@@ -9,7 +9,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/klog/klogr"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
 const VMClassImmutable = "VM Classes are immutable"
@@ -96,7 +96,7 @@ func validateClassUpdate(new, old VirtualMachineClass) field.ErrorList {
 func (VirtualMachineClassStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Object) field.ErrorList {
 	newVmClass := obj.(*VirtualMachineClass)
 	oldVmClass := old.(*VirtualMachineClass)
-	log := klogr.New()
+	log := logf.Log.WithName("virtual-machine-class-strategy")
 	log.V(4).Info("Validating Update for VirtualMachineClass", "namespace", newVmClass.Namespace, "name", newVmClass.Name)
 
 	return validateClassUpdate(*newVmClass, *oldVmClass)
@@ -106,7 +106,7 @@ func (VirtualMachineClassStrategy) ValidateUpdate(ctx context.Context, obj, old 
 func (VirtualMachineClassStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	vmClass := obj.(*VirtualMachineClass)
 
-	log := klogr.New()
+	log := logf.Log.WithName("virtual-machine-class-strategy")
 	log.V(4).Info("Validating fields for VirtualMachineClass", "namespace", vmClass.Namespace, "name", vmClass.Name)
 
 	memErrors := validateMemory(*vmClass)

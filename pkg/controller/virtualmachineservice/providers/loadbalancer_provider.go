@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package providers
 
@@ -9,19 +8,18 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
-	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/klog/klogr"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
-
+	ptr "github.com/kubernetes/utils/pointer"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 
-	ptr "github.com/kubernetes/utils/pointer"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
 
 type loadBalancerProviderType string
@@ -36,7 +34,7 @@ const (
 	ClusterNameKey                                     = "capw.vmware.com/cluster.name"
 )
 
-var log = klogr.New()
+var log = logf.Log.WithName("loadbalancer")
 
 // patchOperation represents a RFC6902 JSON patch operation.
 type patchOperation struct {
@@ -55,15 +53,10 @@ type LoadbalancerProvider interface {
 }
 
 // Get Loadbalancer Provider By Type, currently only support nsxt provider, if provider type unknown, will return nil
-func GetLoadbalancerProviderByType(providerType loadBalancerProviderType) LoadbalancerProvider {
+func GetLoadbalancerProviderByType(restConfig *rest.Config, providerType loadBalancerProviderType) LoadbalancerProvider {
 	if providerType == NSXTLoadBalancer {
-		//TODO:  () Using static ncp client for now, replace it with runtime ncp client
-		cfg, err := config.GetConfig()
-		if err != nil {
-			log.Error(err, "unable to set up client config")
-			return nil
-		}
-		ncpClient, err := ncpclientset.NewForConfig(cfg)
+		// TODO:  () Using static ncp client for now, replace it with runtime ncp client
+		ncpClient, err := ncpclientset.NewForConfig(restConfig)
 		if err != nil {
 			log.Error(err, "unable to get ncp clientset from config")
 			return nil

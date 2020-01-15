@@ -8,7 +8,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/klog/klogr"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
 const (
@@ -64,8 +64,8 @@ func validateResourcePoolCPU(resourcePolicy VirtualMachineSetResourcePolicy) fie
 // Validate checks if an instance of VirtualMachineSetResourcePolicy is well formed
 func (VirtualMachineSetResourcePolicyStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	o := obj.(*VirtualMachineSetResourcePolicy)
-	log := klogr.New()
 
+	log := logf.Log.WithName("virtual-machine-set-resource-policy-strategy")
 	log.V(4).Info("Validating fields for VirtualMachineSetResourcePolicy", "namespace", o.Namespace, "name", o.Name)
 
 	memErrors := validateResourcePoolMemory(*o)

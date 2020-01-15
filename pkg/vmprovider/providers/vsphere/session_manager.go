@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package vsphere
 
@@ -8,9 +7,8 @@ import (
 	"context"
 	"sync"
 
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 
 	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
@@ -37,6 +35,7 @@ func NewSessionManager(clientset *kubernetes.Clientset, ncpclient ncpclientset.I
 }
 
 func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProviderConfig) (*Session, error) {
+	log.V(4).Info("New session", "namespace", namespace, "config", config)
 	ses, err := NewSessionAndConfigure(context.TODO(), config, sm.clientset, sm.ncpclient, sm.vmopclient)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create session for namespace %s", namespace)
@@ -50,11 +49,12 @@ func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProvider
 }
 
 func (sm *SessionManager) createSession(ctx context.Context, namespace string) (*Session, error) {
-
 	config, err := GetProviderConfigFromConfigMap(sm.clientset, namespace)
 	if err != nil {
 		return nil, err
 	}
+
+	log.V(4).Info("Create session", "namespace", namespace, "config", config)
 
 	ses, err := NewSessionAndConfigure(ctx, config, sm.clientset, sm.ncpclient, sm.vmopclient)
 	if err != nil {

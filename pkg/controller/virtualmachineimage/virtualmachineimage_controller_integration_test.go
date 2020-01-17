@@ -224,7 +224,7 @@ var _ = Describe("ReconcileVirtualMachineImage", func() {
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
-		recFn, requests, _ = integration.SetupTestReconcile(newReconciler(mgr, VirtualMachineImageDiscovererOptions{
+		recFn, requests, _, _ = integration.SetupTestReconcile(newReconciler(mgr, VirtualMachineImageDiscovererOptions{
 			initialDiscoveryFrequency:    1 * time.Second,
 			continuousDiscoveryFrequency: 5 * time.Second}))
 		Expect(add(mgr, recFn)).To(Succeed())
@@ -291,7 +291,7 @@ var _ = Describe("ReconcileVMOpConfigMap", func() {
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
-		recFn, requests, _ = integration.SetupTestReconcile(cmReconciler(mgr))
+		recFn, requests, _, _ = integration.SetupTestReconcile(cmReconciler(mgr))
 		Expect(addController(mgr, recFn)).To(Succeed())
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)

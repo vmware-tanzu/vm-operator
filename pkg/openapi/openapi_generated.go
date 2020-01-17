@@ -800,7 +800,7 @@ func schema_pkg_apis_vmoperator_v1alpha1_Probe(ref common.ReferenceCallback) com
 					},
 					"timeoutSeconds": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Number of seconds after which the probe times out. Defaults to 1 second. Minimum value is 1.",
+							Description: "Number of seconds after which the probe times out. Defaults to 10 second. Minimum value is 1.",
 							Type:        []string{"integer"},
 							Format:      "int32",
 						},

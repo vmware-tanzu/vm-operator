@@ -50,6 +50,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 	var (
 		recFn                   reconcile.Reconciler
 		requests                chan reconcile.Request
+		reconcileResult         chan reconcile.Result
 		reconcileErr            chan error
 		stopMgr                 chan struct{}
 		mgrStopped              *sync.WaitGroup
@@ -74,7 +75,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 		// Setup the reconciler for all the tests
 		r := newReconciler(mgr)
 		rvms := r.(*ReconcileVirtualMachineService)
-		recFn, requests, reconcileErr = integration.SetupTestReconcile(r)
+		recFn, requests, reconcileResult, reconcileErr = integration.SetupTestReconcile(r)
 		Expect(add(mgr, recFn, rvms)).To(Succeed())
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
 	})
@@ -250,7 +251,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmService.Name}}
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 		})
-		It("Should create service and endpoints with subsets", func() {
+		It("Should create service and endpoints with VM's that pass the probe", func() {
 			// Note: Ideally we would expect the successVM with local IP 127.0.0.1 to be part of the endpoint. However,
 			// kubernetes doesn't allow endpoints to have an IP address in the loopback range. As a result,
 			// we end up with an error trying to create the endpoints for the VMService. The fact that we tried to add
@@ -266,6 +267,34 @@ var _ = Describe("VirtualMachineService controller", func() {
 		AfterEach(func() {
 			testServer.Close()
 			deleteObjects(context.TODO(), c, []runtime.Object{&successVM, &failedVM, &vmService})
+		})
+	})
+
+	Describe("When vmservice selector matches VM's and all of them fail probe", func() {
+		var (
+			failedVM  vmoperatorv1alpha1.VirtualMachine
+			vmService vmoperatorv1alpha1.VirtualMachineService
+		)
+		BeforeEach(func() {
+			label := map[string]string{"with-probe-requeue": "true"}
+			failedVM = getTestVirtualMachineWithProbe(ns, "dummy-vm-with-failure-probe-requeue", label, 10002)
+			vmService = getTestVMServiceWithSelector(ns, "dummy-vm-service-with-probe-requeue", label)
+			createObjects(context.TODO(), c, []runtime.Object{&failedVM, &vmService})
+			// Since Status is a sub-resource, we need to update the status separately.
+			failedVM.Status.VmIp = "192.168.1.300"
+			failedVM.Status.Host = "10.0.0.300"
+			updateObjectsStatus(context.TODO(), c, []runtime.Object{&failedVM})
+
+			// Wait for the reconciliation to happen before asserting
+			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmService.Name}}
+			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+		})
+		It("Should requeue", func() {
+			expectedResult := reconcile.Result{RequeueAfter: probeFailureRequeueTime}
+			Eventually(reconcileResult, timeout).Should(Receive(Equal(expectedResult)))
+		})
+		AfterEach(func() {
+			deleteObjects(context.TODO(), c, []runtime.Object{&failedVM, &vmService})
 		})
 	})
 

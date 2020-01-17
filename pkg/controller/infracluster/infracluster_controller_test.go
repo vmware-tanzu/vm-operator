@@ -75,7 +75,7 @@ var _ = Describe("InfraClusterProvider controller", func() {
 			}
 
 			expectedRequest := reconcile.Request{NamespacedName: wcpNamespacedName}
-			recFn, requests, _ := integration.SetupTestReconcile(newReconciler(mgr))
+			recFn, requests, _, _ := integration.SetupTestReconcile(newReconciler(mgr))
 			Expect(add(mgr, recFn)).To(Succeed())
 
 			// Create the WCP Cluster ConfigMap object and expect the Reconcile to update VMOP ConfigMap

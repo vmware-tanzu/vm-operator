@@ -148,7 +148,7 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 		err = c.Create(context.TODO(), &classInstance)
 		Expect(err).ShouldNot(HaveOccurred())
 
-		recFn, requests, _ = integration.SetupTestReconcile(newReconciler(mgr))
+		recFn, requests, _, _ = integration.SetupTestReconcile(newReconciler(mgr))
 		Expect(add(mgr, recFn)).To(Succeed())
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)

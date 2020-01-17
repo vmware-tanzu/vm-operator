@@ -99,7 +99,7 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 
 		Context("a valid spec is used", func() {
 			It("should create the VirtualMachineSetResource", func() {
-				recFn, requests, _ := integration.SetupTestReconcile(newReconciler(mgr))
+				recFn, requests, _, _ := integration.SetupTestReconcile(newReconciler(mgr))
 				Expect(add(mgr, recFn)).To(Succeed())
 
 				// Create the VirtualMachineSetResourcePolicy object and expect the Reconcile
@@ -123,7 +123,7 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 			)
 
 			BeforeEach(func() {
-				recFn, requests, reconcileError = integration.SetupTestReconcile(newReconciler(mgr))
+				recFn, requests, _, reconcileError = integration.SetupTestReconcile(newReconciler(mgr))
 				Expect(add(mgr, recFn)).To(Succeed())
 
 				vmInstance = getVirtualMachineInstance("virtualMachineName", ns)

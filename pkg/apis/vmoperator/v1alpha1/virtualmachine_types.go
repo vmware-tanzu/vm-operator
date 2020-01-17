@@ -132,7 +132,7 @@ type Probe struct {
 	// +optional
 	TCPSocket *TCPSocketAction `json:"tcpSocket,omitempty"`
 	// Number of seconds after which the probe times out.
-	// Defaults to 1 second. Minimum value is 1.
+	// Defaults to 10 second. Minimum value is 1.
 	// +optional
 	TimeoutSeconds int32 `json:"timeoutSeconds,omitempty"`
 }

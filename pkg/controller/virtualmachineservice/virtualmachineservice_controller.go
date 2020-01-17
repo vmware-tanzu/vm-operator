@@ -49,9 +49,25 @@ const (
 	ControllerName = "virtualmachineservice-controller"
 
 	defaultConnectTimeout = time.Second * 10
+
+	probeFailureRequeueTime = time.Second * 10
 )
 
 var log = logf.Log.WithName(ControllerName)
+
+// RequeueAfterError implements error interface and can be used to indicate the error should result in a requeue of
+// the object under reconciliation after the specified duration of time.
+type RequeueAfterError struct {
+	RequeueAfter time.Duration
+}
+
+func (e *RequeueAfterError) Error() string {
+	return fmt.Sprintf("requeue in: %s", e.RequeueAfter)
+}
+
+func (e *RequeueAfterError) GetRequeueAfter() time.Duration {
+	return e.RequeueAfter
+}
 
 // Add creates a new VirtualMachineService Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -166,6 +182,9 @@ func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (r
 
 	err = r.reconcileVmService(ctx, instance)
 	if err != nil {
+		if requeueErr, ok := err.(*RequeueAfterError); ok {
+			return reconcile.Result{RequeueAfter: requeueErr.GetRequeueAfter()}, nil
+		}
 		log.Error(err, "Failed to reconcile VirtualMachineService", "service", instance)
 		return reconcile.Result{}, err
 	}
@@ -500,6 +519,8 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 		return err
 	}
 
+	var probeFailureCount int
+	var updateErr error
 	var subsets []corev1.EndpointSubset
 
 	for i := range vmList.Items {
@@ -528,14 +549,14 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 		// probe.
 		if err := runProbe(vmService, &vm, vm.Spec.ReadinessProbe); err != nil {
 			logger.Info("Skipping VirtualMachine due to failed readiness probe check", "probeError", err)
+			probeFailureCount++
 			continue
 		}
 
 		epa := *r.makeEndpointAddress(vmService, &vm)
 
 		// TODO: Headless support
-		for i := range service.Spec.Ports {
-			servicePort := &service.Spec.Ports[i]
+		for _, servicePort := range service.Spec.Ports {
 			portName := servicePort.Name
 			portProto := servicePort.Protocol
 
@@ -552,6 +573,12 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 			epp := &corev1.EndpointPort{Name: portName, Port: int32(portNum), Protocol: portProto}
 			subsets = addEndpointSubset(subsets, &vm, epa, epp)
 		}
+	}
+
+	// Until is fixed, if probe fails on all selected VM's, we will aggressively requeue until the probe
+	// succeeds on one of them. Note: We don't immediately requeue to allow for updating the endpoint subsets.
+	if probeFailureCount > 0 && probeFailureCount == len(vmList.Items) {
+		updateErr = &RequeueAfterError{RequeueAfter: probeFailureRequeueTime}
 	}
 
 	// See if there's actually an update here.
@@ -571,7 +598,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 		}
 	} else if apiequality.Semantic.DeepEqual(currentEndpoints.Subsets, subsets) {
 		logger.V(5).Info("No change, no need to update endpoints", "endpoints", currentEndpoints)
-		return nil
+		return updateErr
 	}
 	newEndpoints := r.makeEndpoints(vmService, currentEndpoints, subsets)
 
@@ -594,7 +621,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx context.Context, vm
 		}
 		return err
 	}
-	return nil
+	return updateErr
 }
 
 // updateVmServiceStatus update vmservice status, sync external ip for loadbalancer type of service
@@ -648,7 +675,7 @@ func runProbe(vmService *vmoperatorv1alpha1.VirtualMachineService, vm *vmoperato
 		}
 
 		var timeout time.Duration
-		if p.TimeoutSeconds == 0 {
+		if p.TimeoutSeconds <= 0 {
 			timeout = defaultConnectTimeout
 		} else {
 			timeout = time.Duration(p.TimeoutSeconds) * time.Second

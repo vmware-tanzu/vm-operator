@@ -72,7 +72,7 @@ var _ = Describe("InfraProvider controller", func() {
 			}
 
 			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Name: name}}
-			recFn, requests, _ := integration.SetupTestReconcile(newReconciler(mgr))
+			recFn, requests, _, _ := integration.SetupTestReconcile(newReconciler(mgr))
 			Expect(add(mgr, recFn)).To(Succeed())
 			// Create the Node object and expect the Reconcile to compute cpuMinFreq
 			err = c.Create(context.TODO(), &instance)

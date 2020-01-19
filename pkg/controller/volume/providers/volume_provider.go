@@ -15,13 +15,11 @@ import (
 )
 
 const (
-	LoggerName                         = "virtualmachine-volume-provider"
-	AttributeFirstClassDiskUUID        = "diskUUID"
-	cnsNodeVmAttachmentOwnerRefVersion = "vmoperator.vmware.com"
-	cnsNodeVmAttachmentOwnerRefKind    = "VirtualMachine"
-	VolumeOpAttach                     = "attach volume"
-	VolumeOpDetach                     = "detach volume"
-	VolumeOpUpdateStatus               = "update volume status"
+	LoggerName                  = "virtualmachine-volume-provider"
+	AttributeFirstClassDiskUUID = "diskUUID"
+	VolumeOpAttach              = "attach volume"
+	VolumeOpDetach              = "detach volume"
+	VolumeOpUpdateStatus        = "update volume status"
 )
 
 var log = logf.Log.WithName(LoggerName)
@@ -72,10 +70,10 @@ func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv
 		cnsNodeVmAttachment.Spec.VolumeName = virtualMachineVolume.Name
 		cnsNodeVmAttachment.OwnerReferences = []metav1.OwnerReference{
 			{
-				APIVersion:         cnsNodeVmAttachmentOwnerRefVersion,
+				APIVersion:         "vmoperator.vmware.com/v1alpha1",
 				Controller:         ptr.BoolPtr(true),
 				BlockOwnerDeletion: ptr.BoolPtr(true),
-				Kind:               cnsNodeVmAttachmentOwnerRefKind,
+				Kind:               "VirtualMachine",
 				Name:               vm.Name,
 				UID:                vm.UID,
 			},

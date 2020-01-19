@@ -402,7 +402,7 @@ func generateAttachedCnsNodeVmAttachment(vmName string, vmVolumeName string, vmV
 	cnsNodeVmAttachment.Spec.VolumeName = vmVolumeName
 	cnsNodeVmAttachment.OwnerReferences = []metav1.OwnerReference{
 		{
-			APIVersion:         cnsNodeVmAttachmentOwnerRefVersion,
+			APIVersion:         "vmoperator.vmware.com/v1alpha1",
 			Controller:         ptr.BoolPtr(true),
 			BlockOwnerDeletion: ptr.BoolPtr(true),
 			Kind:               vmoperatorv1alpha1.VirtualMachine{}.TypeMeta.Kind,

@@ -208,19 +208,19 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 					StorageClass: storageClassName,
 					Volumes: []vmoperatorv1alpha1.VirtualMachineVolumes{
 						{Name: "fake-volume-1", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-1"}},
-						{Name: "fake-volume-2", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-2"}},
-						{Name: "fake-volume-3", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-3"}},
 					},
 				},
 			}
 
 			// Create the VM Object then expect Reconcile
 			Expect(c.Create(context.TODO(), &instance)).To(Succeed())
-			// vmop will create CnsNodeVmAttachment instances, however they might not be created and available in one reconcile loop.
-			// there might have several reconcile loops, and the maximum number of loops are the same as the number of volumes
-			for range instance.Spec.Volumes {
-				Eventually(requests, time.Second*10).Should(Receive(Equal(expectedRequest)))
-			}
+
+			// Expect one reconcile for the VM creation
+			Eventually(requests, time.Second*10).Should(Receive(Equal(expectedRequest)))
+
+			// VM Operator will create a CnsNodeVmAttachment instance for each volume.  Expect a reconcile for the
+			// creation of the CnsNodeVmAttachment resource.
+			Eventually(requests, time.Second*10).Should(Receive(Equal(expectedRequest)))
 
 			// VirtualMachine volume status is expected to be updated properly
 			stdlog.Printf("Testing first status update with %v", instance)
@@ -228,31 +228,33 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 
 			// Update the volumes under virtual machine spec
 			vmToUpdate := &vmoperatorv1alpha1.VirtualMachine{}
+
 			// It is possible c.Update fails due to the reconciliation running in background has updated the vm instance
 			// So we put the c.Update in Eventually block
-			updateAttempts := 0
 			Eventually(func() error {
-				updateAttempts++
 				Expect(c.Get(context.TODO(), client.ObjectKey{Name: vmName, Namespace: ns}, vmToUpdate)).Should(Succeed())
 				vmToUpdate.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolumes{
-					{Name: "fake-volume-1", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-1"}},
 					{Name: "fake-volume-4", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-4"}},
 				}
 				return c.Update(context.TODO(), vmToUpdate)
 			}, timeout).Should(Succeed())
-			// If c.Update has been executed multiple times, we expect to see the expectedRequest gets requeued
-			for i := 0; i < updateAttempts; i++ {
-				Eventually(requests, 30*time.Second).Should(Receive(Equal(expectedRequest)))
-			}
+
+			// We must receive a subsequent reconcile for the VM update
+			Eventually(requests, 30*time.Second).Should(Receive(Equal(expectedRequest)))
+
+			// We must receive a subsequent reconcile for the CnsNodeVmAttachment associated with the new volume.
+			Eventually(requests, 30*time.Second).Should(Receive(Equal(expectedRequest)))
 
 			// VirtualMachine volume status is expected to be updated properly
 			stdlog.Printf("Testing second status update with %v", vmToUpdate)
 			assertVmVolumeStatusUpdates(vmToUpdate)
 
 			// Check the volume names in status are the same as in spec
-			vmRetrieved := &vmoperatorv1alpha1.VirtualMachine{}
-			Expect(c.Get(context.TODO(), client.ObjectKey{Name: vmName, Namespace: ns}, vmRetrieved)).NotTo(HaveOccurred())
-			Expect(checkVolumeNamesConsistency(vmRetrieved)).To(BeTrue())
+			Eventually(func() bool {
+				vmRetrieved := &vmoperatorv1alpha1.VirtualMachine{}
+				Expect(c.Get(context.TODO(), client.ObjectKey{Name: vmName, Namespace: ns}, vmRetrieved)).NotTo(HaveOccurred())
+				return checkVolumeNamesConsistency(vmRetrieved)
+			}, 3*timeout).Should(BeTrue())
 
 			// Delete the VM Object then expect Reconcile
 			Expect(c.Delete(context.TODO(), &instance)).To(Succeed())

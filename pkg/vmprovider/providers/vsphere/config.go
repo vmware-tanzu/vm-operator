@@ -38,6 +38,7 @@ type VSphereVmProviderConfig struct {
 	CAFilePath                  string
 	CtrlVmVmAntiAffinityTag     string
 	WorkerVmVmAntiAffinityTag   string
+	TagCategoryName             string
 }
 
 type WcpClusterConfig struct {
@@ -71,6 +72,7 @@ const (
 
 	CtrlVmVmAntiAffinityTagKey   = "CtrlVmVmAATag"
 	WorkerVmVmAntiAffinityTagKey = "WorkerVmVmAATag"
+	ProviderTagCategoryNameKey   = "VmVmAntiAffinityTagCategoryName"
 )
 
 const (
@@ -199,6 +201,7 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 		CAFilePath:                  caFilePath,
 		CtrlVmVmAntiAffinityTag:     dataMap[CtrlVmVmAntiAffinityTagKey],
 		WorkerVmVmAntiAffinityTag:   dataMap[WorkerVmVmAntiAffinityTagKey],
+		TagCategoryName:             dataMap[ProviderTagCategoryNameKey],
 	}
 
 	return ret, nil

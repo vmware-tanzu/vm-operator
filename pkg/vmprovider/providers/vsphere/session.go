@@ -30,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	vmopcs "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -171,6 +172,12 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	s.tagInfo = make(map[string]string)
 	s.tagInfo[CtrlVmVmAntiAffinityTagKey] = config.CtrlVmVmAntiAffinityTag
 	s.tagInfo[WorkerVmVmAntiAffinityTagKey] = config.WorkerVmVmAntiAffinityTag
+	// Older versions of wcpsvc does not publish tag category name into the
+	if config.TagCategoryName != "" {
+		s.tagInfo[ProviderTagCategoryNameKey] = config.TagCategoryName
+	} else {
+		s.tagInfo[ProviderTagCategoryNameKey] = pkg.ProviderTagCategoryName
+	}
 
 	return s.initDatastore(ctx, config.Datastore)
 }

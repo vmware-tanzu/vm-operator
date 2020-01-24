@@ -871,7 +871,9 @@ func (vs *vSphereVmProvider) attachTagsToVmAndAddToClusterModules(ctx context.Co
 
 		// Lookup the real tag name from config and attach to the VM.
 		tagName := ses.tagInfo[annotations[pkg.ProviderTagsAnnotationKey]]
-		err = ses.AttachTagToVm(ctx, tagName, pkg.ProviderTagCategoryName, resVm)
+		tagCategoryName := ses.tagInfo[ProviderTagCategoryNameKey]
+
+		err = ses.AttachTagToVm(ctx, tagName, tagCategoryName, resVm)
 		if err != nil {
 			return err
 		}

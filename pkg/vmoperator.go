@@ -25,7 +25,7 @@ const (
 	ClusterModuleNameKey string = "vsphere-cluster-module-group"
 
 	// Tag category name used for implementing vm-vm anti-affinity policy
-	ProviderTagCategoryName string = "wp_vmvmaa_category"
+	ProviderTagCategoryName string = "vsc_vmvmaa_category"
 )
 
 func AddAnnotations(objectMeta *metav1.ObjectMeta) {

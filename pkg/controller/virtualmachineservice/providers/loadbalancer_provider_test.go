@@ -54,13 +54,9 @@ var _ = Describe("Loadbalancer Provider", func() {
 				Expect(loadbalancerProvider).NotTo(BeNil())
 			})
 
-			It("should fail to get unknown type load balancer provide", func() {
-				// TODO: This should be an integration test
-				Skip("Can't locate a kubeconfig in pipeline env, can test this locally")
-				cfg, err := config.GetConfig()
-				Expect(err).ShouldNot(HaveOccurred())
-				loadbalancerProvider := GetLoadbalancerProviderByType(cfg, "dummy")
-				Expect(loadbalancerProvider).To(BeNil())
+			It("should successfully get a noop loadbalancer provider", func() {
+				loadbalancerProvider := GetLoadbalancerProviderByType(nil, "dummy")
+				Expect(loadbalancerProvider).To(Equal(noopLoadbalancerProvider{}))
 			})
 
 			It("should successfully get nsx-t load balancer provider", func() {

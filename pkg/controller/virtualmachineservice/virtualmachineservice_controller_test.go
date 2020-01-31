@@ -57,7 +57,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 		mgr                     manager.Manager
 		err                     error
 		leaderElectionConfigMap string
-		r                       ReconcileVirtualMachineService
+		r                       *ReconcileVirtualMachineService
 	)
 
 	BeforeEach(func() {
@@ -71,12 +71,10 @@ var _ = Describe("VirtualMachineService controller", func() {
 			LeaderElectionNamespace: ns})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
-		r = ReconcileVirtualMachineService{mgr.GetClient(), mgr.GetScheme(), nil}
+		r = newReconciler(mgr).(*ReconcileVirtualMachineService)
 		// Setup the reconciler for all the tests
-		r := newReconciler(mgr)
-		rvms := r.(*ReconcileVirtualMachineService)
 		recFn, requests, reconcileResult, reconcileErr = integration.SetupTestReconcile(r)
-		Expect(add(mgr, recFn, rvms)).To(Succeed())
+		Expect(add(mgr, recFn, r)).To(Succeed())
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
 	})
 

@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 
 	ptr "github.com/kubernetes/utils/pointer"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -22,17 +24,24 @@ import (
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
 
-type loadBalancerProviderType string
-
 const (
-	LoadbalancerKind                                   = "LoadBalancer"
-	APIVersion                                         = "vmware.com/v1alpha1"
-	ServiceLoadBalancerTagKey                          = "ncp/crd_lb"
-	ServiceOwnerRefKind                                = "VirtualMachineService"
-	ServiceOwnerRefVersion                             = "vmoperator.vmware.com/v1alpha1"
-	NSXTLoadBalancer          loadBalancerProviderType = "nsx-t-lb"
-	ClusterNameKey                                     = "capw.vmware.com/cluster.name"
+	LoadbalancerKind          = "LoadBalancer"
+	APIVersion                = "vmware.com/v1alpha1"
+	ServiceLoadBalancerTagKey = "ncp/crd_lb"
+	ServiceOwnerRefKind       = "VirtualMachineService"
+	ServiceOwnerRefVersion    = "vmoperator.vmware.com/v1alpha1"
+	NSXTLoadBalancer          = "nsx-t-lb"
+	ClusterNameKey            = "capw.vmware.com/cluster.name"
 )
+
+var LBProvider string
+
+func init() {
+	LBProvider = os.Getenv("LB_PROVIDER")
+	if LBProvider == "" {
+		LBProvider = NSXTLoadBalancer
+	}
+}
 
 var log = logf.Log.WithName("loadbalancer")
 
@@ -53,7 +62,7 @@ type LoadbalancerProvider interface {
 }
 
 // Get Loadbalancer Provider By Type, currently only support nsxt provider, if provider type unknown, will return nil
-func GetLoadbalancerProviderByType(restConfig *rest.Config, providerType loadBalancerProviderType) LoadbalancerProvider {
+func GetLoadbalancerProviderByType(restConfig *rest.Config, providerType string) LoadbalancerProvider {
 	if providerType == NSXTLoadBalancer {
 		// TODO:  () Using static ncp client for now, replace it with runtime ncp client
 		ncpClient, err := ncpclientset.NewForConfig(restConfig)
@@ -63,6 +72,20 @@ func GetLoadbalancerProviderByType(restConfig *rest.Config, providerType loadBal
 		}
 		return NsxtLoadBalancerProvider(ncpClient)
 	}
+	return noopLoadbalancerProvider{}
+}
+
+type noopLoadbalancerProvider struct{}
+
+func (noopLoadbalancerProvider) GetNetworkName(virtualMachines []vmoperatorv1alpha1.VirtualMachine, vmService *vmoperatorv1alpha1.VirtualMachineService) (string, error) {
+	return vmService.Name + "-vnet", nil
+}
+
+func (noopLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) (string, error) {
+	return fmt.Sprintf("%s-%s-lb", vmService.Namespace, strings.TrimSuffix(virtualNetworkName, "-vnet")), nil
+}
+
+func (noopLoadbalancerProvider) UpdateLoadBalancerOwnerReference(ctx context.Context, loadBalancerName string, vmService *vmoperatorv1alpha1.VirtualMachineService) error {
 	return nil
 }
 

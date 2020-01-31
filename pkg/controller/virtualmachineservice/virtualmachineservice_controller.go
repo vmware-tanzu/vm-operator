@@ -82,7 +82,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	return &ReconcileVirtualMachineService{
 		Client:               mgr.GetClient(),
 		scheme:               mgr.GetScheme(),
-		loadbalancerProvider: providers.GetLoadbalancerProviderByType(mgr.GetConfig(), providers.NSXTLoadBalancer),
+		loadbalancerProvider: providers.GetLoadbalancerProviderByType(mgr.GetConfig(), providers.LBProvider),
 	}
 }
 
@@ -205,10 +205,6 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx context.Context,
 
 	loadBalancerName := ""
 	if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
-		if r.loadbalancerProvider == nil {
-			log.Error(err, "Failed to get Load balancer provider for vm service", "name", vmService.Name)
-			return err
-		}
 		//Get virtual network name from vm spec
 		virtualNetworkName, err := r.getVirtualNetworkName(ctx, vmService)
 		if err != nil {

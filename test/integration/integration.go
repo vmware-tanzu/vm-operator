@@ -67,8 +67,8 @@ func GetContentSourceID() string {
 }
 
 func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int, contentSource string) *vsphere.VSphereVmProviderConfig {
-	var dcMoId string
-	var rpMoId string
+	var dcMoId, rpMoId, folderMoId string
+
 	for _, dc := range simulator.Map.All("Datacenter") {
 		if dc.Entity().Name == "DC0" {
 			dcMoId = dc.Reference().Value
@@ -81,6 +81,12 @@ func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int, contentSource 
 			break
 		}
 	}
+	for _, folder := range simulator.Map.All("Folder") {
+		if folder.Entity().Name == "vm" {
+			folderMoId = folder.Reference().Value
+			break
+		}
+	}
 
 	return &vsphere.VSphereVmProviderConfig{
 		VcPNID:                      vcAddress,
@@ -88,8 +94,8 @@ func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int, contentSource 
 		VcCreds:                     NewIntegrationVmOperatorCredentials(),
 		Datacenter:                  dcMoId,
 		ResourcePool:                rpMoId,
-		Folder:                      "/DC0/vm",
 		Datastore:                   "/DC0/datastore/LocalDS_0",
+		Folder:                      folderMoId,
 		ContentSource:               contentSource,
 		UseInventoryAsContentSource: true,
 		InsecureSkipTLSVerify:       true,

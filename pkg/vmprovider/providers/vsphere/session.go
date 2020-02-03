@@ -130,15 +130,10 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	// Folder is only relevant for Development environments.  On WCP, the folder is extracted from an annotation
 	// on the namespace.
 	if config.Folder != "" {
-		// Sadly, folder may be a path OR a MoID.  Try MoID first and then fall back to a lookup by path.
 		s.folder, err = s.GetFolderByMoID(ctx, config.Folder)
 		if err != nil {
-			s.folder, err = s.GetFolderByPath(ctx, config.Folder)
-			if err != nil {
-				return errors.Wrapf(err, "failed to init folder %q", config.Folder)
-			}
+			return errors.Wrapf(err, "failed to init folder %q", config.Folder)
 		}
-
 	}
 
 	// Network setting is optional

@@ -44,6 +44,11 @@ const (
 	VmOperatorBiosUUIDKey       = pkg.VmOperatorKey + "/bios-uuid"
 	VmOperatorResourcePoolKey   = pkg.VmOperatorKey + "/resource-pool"
 
+	// Annotation denoting whether to fetch ovf properties for VM image
+	// and annotate VM. Value can be unset or "true" (we should fetch ovf properties)
+	// or "false" (we should not fetch ovf properties)
+	VmOperatorVMImagePropsKey = pkg.VmOperatorKey + "/annotate-vm-image-props"
+
 	EnvContentLibApiWaitSecs     = "CONTENT_API_WAIT_SECS"
 	DefaultContentLibApiWaitSecs = 5
 )
@@ -233,7 +238,8 @@ func (vs *vSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1
 	return true, nil
 }
 
-func (vs *vSphereVmProvider) addProviderAnnotations(session *Session, objectMeta *v1.ObjectMeta, vmRes *res.VirtualMachine) {
+// AddProviderAnnotations adds VM provider annotations to the VirtualMachine object
+func AddProviderAnnotations(session *Session, objectMeta *v1.ObjectMeta, vmRes *res.VirtualMachine) {
 
 	annotations := objectMeta.GetAnnotations()
 	if annotations == nil {
@@ -244,7 +250,7 @@ func (vs *vSphereVmProvider) addProviderAnnotations(session *Session, objectMeta
 	annotations[VmOperatorMoRefKey] = vmRes.ReferenceValue()
 
 	// Take missing annotations as a trigger to gather the information we need to populate the annotations.  We want to
-	// avoid putting unnecessary pressure on VC.
+	// avoid putting unnecessary pressure on content library.
 	if _, ok := annotations[VmOperatorBiosUUIDKey]; !ok {
 		biosUUID, err := vmRes.BiosUUID(context.Background())
 		if err == nil {
@@ -273,7 +279,31 @@ func (vs *vSphereVmProvider) addProviderAnnotations(session *Session, objectMeta
 		}
 	}
 
+	var vmOpts OvfPropertyRetriever = vmOptions{}
+	err := AddVmImageAnnotations(annotations, context.Background(), vmOpts, vmRes)
+	if err != nil {
+		log.Error(err, "Error adding image annotations to VM", "vm", vmRes.Name)
+	}
+
 	objectMeta.SetAnnotations(annotations)
+}
+
+// AddVmImageAnnotations adds annotations from the VM image to the the VirtualMachine object
+func AddVmImageAnnotations(annotations map[string]string, ctx context.Context, vmProvider OvfPropertyRetriever, vmRes *res.VirtualMachine) error {
+	if val, ok := annotations[VmOperatorVMImagePropsKey]; !ok || val == "true" {
+		ovfProperties, err := vmProvider.FetchOvfPropertiesFromVM(ctx, vmRes)
+		if err != nil {
+			return err
+		}
+		for ovfPropKey, ovfPropValue := range ovfProperties {
+			annotations[ovfPropKey] = ovfPropValue
+		}
+		// Signify we don't need to fetch ovf properties again since we
+		// want to avoid putting pressure on content library.
+		annotations[VmOperatorVMImagePropsKey] = "false"
+		return nil
+	}
+	return nil
 }
 
 // DoesVirtualMachineSetResourcePolicyExist checks if the entities of a VirtualMachineSetResourcePolicy exist on vSphere
@@ -495,7 +525,7 @@ func (vs *vSphereVmProvider) updateVirtualMachine(ctx context.Context, session *
 		return err
 	}
 
-	vs.addProviderAnnotations(session, &vm.ObjectMeta, resVm)
+	AddProviderAnnotations(session, &vm.ObjectMeta, resVm)
 
 	err = vs.mergeVmStatus(ctx, vm, resVm)
 	if err != nil {

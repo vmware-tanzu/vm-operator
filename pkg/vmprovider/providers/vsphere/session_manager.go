@@ -147,11 +147,11 @@ func (sm *SessionManager) UpdateVcPNID(ctx context.Context, clusterConfigMap *co
 		return err
 	}
 
-	if sm.isPnidUnchanged(config.VcPNID, clusterCfg.VCHost) {
+	if sm.isVcURLUnchanged(config, clusterCfg) {
 		return nil
 	}
 
-	if err = PatchPnidInConfigMap(sm.clientset, clusterCfg.VCHost); err != nil {
+	if err = PatchVcURLInConfigMap(sm.clientset, clusterCfg); err != nil {
 		return err
 	}
 
@@ -175,6 +175,6 @@ func (sm *SessionManager) clearSessionsAndClient(ctx context.Context) {
 
 }
 
-func (sm *SessionManager) isPnidUnchanged(oldPnid, newPnid string) bool {
-	return oldPnid == newPnid
+func (sm *SessionManager) isVcURLUnchanged(oldConfig *VSphereVmProviderConfig, newConfig *WcpClusterConfig) bool {
+	return oldConfig.VcPNID == newConfig.VcPNID && oldConfig.VcPort == newConfig.VcPort
 }

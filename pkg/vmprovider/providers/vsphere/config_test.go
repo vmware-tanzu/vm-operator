@@ -110,14 +110,14 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 	)
 
 	BeforeEach(func() {
-		os.Unsetenv(lib.VmopNamespaceEnv)
+		Expect(os.Unsetenv(lib.VmopNamespaceEnv)).To(Succeed())
 		configMapIn, secretIn, providerConfigIn = newConfig("namespace", "pnid", "port", "secret-name")
 	})
 
 	Context("when a base config exists", func() {
 
 		BeforeEach(func() {
-			os.Setenv(lib.VmopNamespaceEnv, "namespace")
+			Expect(os.Setenv(lib.VmopNamespaceEnv, "namespace")).To(Succeed())
 		})
 
 		Context("when a secret doesn't exist", func() {
@@ -146,19 +146,35 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 				Expect(err).To(BeNil())
 				Expect(providerConfig).To(Equal(providerConfigIn))
 			})
-			Specify("update pnid for no namespace", func() {
-				clientSet := fake.NewSimpleClientset(configMapIn, secretIn)
-				providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "")
-				Expect(err).To(BeNil())
-				Expect(providerConfig).To(Equal(providerConfigIn))
 
-				newPnid := providerConfig.VcPNID + "-02"
-				err = PatchPnidInConfigMap(clientSet, newPnid)
-				Expect(err).NotTo(HaveOccurred())
-				providerConfig, _ = GetProviderConfigFromConfigMap(clientSet, "")
-				Expect(providerConfig.VcPNID).Should(Equal(newPnid))
-			})
+			DescribeTable("Update VC PNID and VC Port",
+				func(newPnid string, newPort string) {
+					if newPnid != "" {
+						newPnid = providerConfigIn.VcPNID
+					}
 
+					if newPort != "" {
+						newPort = providerConfigIn.VcPort
+					}
+
+					clientSet := fake.NewSimpleClientset(configMapIn, secretIn)
+					_, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}})
+					Expect(err).NotTo(HaveOccurred())
+
+					wcpClusterCfg := WcpClusterConfig{
+						VcPNID: newPnid,
+						VcPort: newPort,
+					}
+					Expect(PatchVcURLInConfigMap(clientSet, &wcpClusterCfg)).To(Succeed())
+					providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "")
+					Expect(err).NotTo(HaveOccurred())
+					Expect(providerConfig.VcPNID).Should(Equal(newPnid))
+					Expect(providerConfig.VcPort).Should(Equal(newPort))
+				},
+				Entry("only VC PNID is updated", "some-pnid", nil),
+				Entry("only VC PNID is updated", nil, "some-port"),
+				Entry("only VC PNID is updated", "some-pnid", "some-port"),
+			)
 		})
 	})
 
@@ -182,7 +198,7 @@ var _ = Describe("ConfigMapToProviderConfig", func() {
 	)
 
 	BeforeEach(func() {
-		os.Unsetenv(lib.VmopNamespaceEnv)
+		Expect(os.Unsetenv(lib.VmopNamespaceEnv)).To(Succeed())
 		configMapIn, _, _ = newConfig("namespace", "pnid", "port", "secret-name")
 		vcCreds = &VSphereVmProviderCredentials{"some-user", "some-pass"}
 	})
@@ -191,6 +207,7 @@ var _ = Describe("ConfigMapToProviderConfig", func() {
 		providerConfig, err := ConfigMapToProviderConfig(configMapIn, vcCreds)
 		Expect(err).To(BeNil())
 		Expect(providerConfig.VcPNID).To(Equal(configMapIn.Data["VcPNID"]))
+		Expect(providerConfig.VcPort).To(Equal(configMapIn.Data["VcPort"]))
 	})
 
 	Context("when vcPNID is unset in configMap", func() {

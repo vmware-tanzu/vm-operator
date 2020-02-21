@@ -368,7 +368,7 @@ func ReadFileFromUrl(ctx context.Context, c *rest.Client, fileUri string) (io.Re
 
 	readerStream, _, err = c.Download(ctx, src, &p)
 	if err != nil {
-		log.Error(err, "Error occurred when downloading file", libFileDownloadUrl, src, "fileuri", fileUri)
+		log.Error(err, "Error occurred when downloading file", "URL", libFileDownloadUrl, "source", src, "fileURI", fileUri)
 		return nil, err
 	}
 

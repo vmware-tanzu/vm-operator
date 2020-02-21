@@ -4,7 +4,7 @@
 package vsphere
 
 import (
-	"fmt"
+	"encoding/json"
 	"os"
 	"strconv"
 	"strings"
@@ -42,8 +42,8 @@ type VSphereVmProviderConfig struct {
 }
 
 type WcpClusterConfig struct {
-	VCHost string `yaml:"vc_pnid"`
-	VCPort int    `yaml:"vc_port,omitempty"`
+	VcPNID string `yaml:"vc_pnid"`
+	VcPort string `yaml:"vc_port"`
 }
 
 const (
@@ -65,7 +65,7 @@ const (
 	caFilePathKey            = "CAFilePath"
 	ContentSourceKey         = "ContentSource"
 
-	DefaultVCPort = 443
+	DefaultVCPort = "443"
 
 	NamespaceRPAnnotationKey     = "vmware-system-resource-pool"
 	NamespaceFolderAnnotationKey = "vmware-system-vm-folder"
@@ -95,9 +95,7 @@ func BuildNewWcpClusterConfig(wcpClusterCfgData map[string]string) (*WcpClusterC
 	if err != nil {
 		return nil, err
 	}
-	if wcpClusterConfig.VCPort == 0 {
-		wcpClusterConfig.VCPort = DefaultVCPort
-	}
+
 	return wcpClusterConfig, nil
 }
 
@@ -350,15 +348,26 @@ func InstallVSphereVmProviderConfig(clientSet *kubernetes.Clientset, namespace s
 	return InstallVSphereVmProviderSecret(clientSet, namespace, config.VcCreds, vcCredsSecretName)
 }
 
-// PatchPnidInConfigMap updates the ConfigMap with the new vSphere PNID.
-func PatchPnidInConfigMap(clientSet kubernetes.Interface, pnid string) error {
+// PatchVcURLInConfigMap updates the ConfigMap with the new vSphere PNID and Port.
+func PatchVcURLInConfigMap(clientSet kubernetes.Interface, config *WcpClusterConfig) error {
 	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
 	if err != nil {
 		return err
 	}
 
-	patch := fmt.Sprintf(`{"data": {"%s": "%s"}}`, vcPNIDKey, pnid)
-	_, err = clientSet.CoreV1().ConfigMaps(vmopNamespace).Patch(VSphereConfigMapName, types.StrategicMergePatchType, []byte(patch))
+	patch := map[string]map[string]string{
+		"data": {
+			vcPNIDKey: config.VcPNID,
+			vcPortKey: config.VcPort,
+		},
+	}
+	marshaledPatch, err := json.Marshal(patch)
+	if err != nil {
+		log.Error(err, "error creating the JSON patch", "patch", patch)
+		return err
+	}
+
+	_, err = clientSet.CoreV1().ConfigMaps(vmopNamespace).Patch(VSphereConfigMapName, types.StrategicMergePatchType, marshaledPatch)
 	if err != nil {
 		log.Error(err, "Failed to apply patch for ConfigMap", "name", VSphereConfigMapName, "namespace", vmopNamespace, "patch", patch)
 		return err

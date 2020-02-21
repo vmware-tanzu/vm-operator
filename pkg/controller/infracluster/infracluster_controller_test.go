@@ -193,8 +193,8 @@ var _ = Describe("InfraClusterProvider controller", func() {
 
 func BuildNewWcpClusterConfigMap(pnid string) v1.ConfigMap {
 	wcpClusterConfig := &vsphere.WcpClusterConfig{
-		VCHost: pnid,
-		VCPort: vsphere.DefaultVCPort,
+		VcPNID: pnid,
+		VcPort: vsphere.DefaultVCPort,
 	}
 
 	configMap, err := vsphere.BuildNewWcpClusterConfigMap(wcpClusterConfig)

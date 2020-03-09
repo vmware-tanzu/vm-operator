@@ -4,21 +4,17 @@
  * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 
-// Because of a hard coded path in buildAggregatedAPIServer, all integration tests that are using
-// suite.InstallLocalTestingAPIAggregationEnvironment() must be at this level of the directory hierarchy.  Do not try
-// and move this test suite until this hard coded path is resolved in apiserver-builder.
 package integration
 
 import (
 	"context"
 	"testing"
 
-	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test"
-	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test/suite"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
@@ -27,7 +23,7 @@ import (
 var (
 	restConfig    *rest.Config
 	vcSim         *integration.VcSimInstance
-	testEnv       *suite.Environment
+	testEnv       *envtest.Environment
 	vSphereConfig *vsphere.VSphereVmProviderConfig
 	session       *vsphere.Session
 	clientSet     *kubernetes.Clientset
@@ -39,7 +35,7 @@ var (
 
 func TestVSphereIntegrationProvider(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecsWithDefaultAndCustomReporters(t, "vSphere Provider Suite", []Reporter{test.NewlineReporter{}})
+	RunSpecsWithDefaultAndCustomReporters(t, "vSphere Provider Suite", []Reporter{envtest.NewlineReporter{}})
 }
 
 var _ = BeforeSuite(func() {

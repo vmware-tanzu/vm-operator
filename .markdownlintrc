@@ -1,0 +1,20 @@
+default: false
+
+# line_length
+MD013: false
+
+# no-inline-html
+MD033:
+  # Allow these elements for rendering a collapsible table-of-contents
+  allowed_elements:
+  - details
+  - summary
+  - strong
+  - code
+  - a
+  - br
+
+# no-hard-tabs
+MD010:
+  # Allow tabs in code blocks
+  code_blocks: false

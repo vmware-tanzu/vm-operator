@@ -1,7 +1,7 @@
 // +build !integration
 
 /* **********************************************************
- * Copyright 2019-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 package vsphere_test
 

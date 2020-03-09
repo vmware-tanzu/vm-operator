@@ -1,0 +1,19 @@
+# Speeds up local testing
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: manager
+        resources:
+          limits:
+            cpu: 2000m
+            memory: 300Mi
+          requests:
+            cpu: 100m
+            memory: 75Mi

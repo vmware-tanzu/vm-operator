@@ -1,0 +1,26 @@
+# permissions to do edit virtualmachineclasses.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: virtualmachineclass-editor-role
+rules:
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachineclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachineclasses/status
+  verbs:
+  - get
+  - patch
+  - update

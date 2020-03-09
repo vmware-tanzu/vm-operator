@@ -17,21 +17,24 @@ import (
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
-	k8serror "k8s.io/apimachinery/pkg/api/errors"
+
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	//"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
+
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/sequence"
-	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
 
 const (
@@ -52,6 +55,8 @@ const (
 	EnvContentLibApiWaitSecs     = "CONTENT_API_WAIT_SECS"
 	DefaultContentLibApiWaitSecs = 5
 )
+
+//go:generate mockgen -destination=./mocks/mock_ovf_property_retriever.go -package=mocks github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere OvfPropertyRetriever
 
 type OvfPropertyRetriever interface {
 	FetchOvfPropertiesFromLibrary(ctx context.Context, ses *Session, item *library.Item) (map[string]string, error)
@@ -640,13 +645,14 @@ func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, 
 	}, nil
 }
 
-func LibItemToVirtualMachineImage(ctx context.Context, sess *Session, item *library.Item, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
+func LibItemToVirtualMachineImage(ctx context.Context, ses *Session,
+	item *library.Item, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
 
 	var ovfProperties map[string]string
 
 	if imgOptions == AnnotateVmImage && item.Type == library.ItemTypeOVF {
 		var err error
-		ovfProperties, err = vmProvider.FetchOvfPropertiesFromLibrary(ctx, sess, item)
+		ovfProperties, err = vmProvider.FetchOvfPropertiesFromLibrary(ctx, ses, item)
 		if err != nil {
 			return nil, err
 		}
@@ -656,6 +662,7 @@ func LibItemToVirtualMachineImage(ctx context.Context, sess *Session, item *libr
 	if item.CreationTime != nil {
 		ts = v1.NewTime(*item.CreationTime)
 	}
+
 	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{
 			Name:              item.Name,
@@ -671,7 +678,6 @@ func LibItemToVirtualMachineImage(ctx context.Context, sess *Session, item *libr
 			ImageSourceType: "Content Library",
 		},
 	}, nil
-
 }
 
 func (vm vmOptions) FetchOvfPropertiesFromLibrary(ctx context.Context, ses *Session, item *library.Item) (map[string]string, error) {
@@ -694,7 +700,6 @@ func (vm vmOptions) FetchOvfPropertiesFromVM(ctx context.Context, resVm *res.Vir
 
 func createClDownloadHandler() ContentDownloadHandler {
 	// Integration test environment would require a much lesser wait time
-	// BMV: This envvar is never set.
 	envClApiWaitSecs := os.Getenv(EnvContentLibApiWaitSecs)
 
 	value, err := strconv.Atoi(envClApiWaitSecs)
@@ -710,7 +715,7 @@ func createClDownloadHandler() ContentDownloadHandler {
 func transformError(resourceType string, resource string, err error) error {
 	switch err.(type) {
 	case *find.NotFoundError, *find.DefaultNotFoundError:
-		return k8serror.NewNotFound(vmoperator.Resource(resourceType), resource)
+		return k8serrors.NewNotFound(schema.GroupResource{Group: "vmoperator.vmware.com", Resource: strings.ToLower(resourceType)}, resource)
 	case *find.MultipleFoundError, *find.DefaultMultipleFoundError:
 		// Transform?
 		return err
@@ -720,11 +725,11 @@ func transformError(resourceType string, resource string, err error) error {
 }
 
 func transformVmError(resource string, err error) error {
-	return transformError(vmoperator.InternalVirtualMachine.GetKind(), resource, err)
+	return transformError("VirtualMachine", resource, err)
 }
 
 func transformVmImageError(resource string, err error) error {
-	return transformError(vmoperator.InternalVirtualMachineImage.GetKind(), resource, err)
+	return transformError("VirtualMachineImage", resource, err)
 }
 
 func IsCustomizationPendingError(err error) bool {

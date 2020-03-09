@@ -1,0 +1,7 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachineImage
+metadata:
+  name: virtualmachineimage-sample
+spec:
+  # Add fields here
+  foo: bar

@@ -1,0 +1,7 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachineClass
+metadata:
+  name: virtualmachineclass-sample
+spec:
+  # Add fields here
+  foo: bar

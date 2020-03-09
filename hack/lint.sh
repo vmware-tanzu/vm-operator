@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 
 set -o errexit
-set -o pipefail
 set -o nounset
-set -x
+set -o pipefail
 
-golangci-lint run --verbose
+# Change directories to the parent directory of the one in which this
+# script is located.
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+make lint

@@ -1,0 +1,7 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachineService
+metadata:
+  name: virtualmachineservice-sample
+spec:
+  # Add fields here
+  foo: bar

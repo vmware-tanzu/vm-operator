@@ -7,7 +7,7 @@
 package fake
 
 import (
-	v1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	v1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -119,7 +119,7 @@ func (c *FakeVirtualMachines) DeleteCollection(options *v1.DeleteOptions, listOp
 // Patch applies the patch and returns the patched virtualMachine.
 func (c *FakeVirtualMachines) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1alpha1.VirtualMachine, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(virtualmachinesResource, c.ns, name, data, subresources...), &v1alpha1.VirtualMachine{})
+		Invokes(testing.NewPatchSubresourceAction(virtualmachinesResource, c.ns, name, types.StrategicMergePatchType, data, subresources...), &v1alpha1.VirtualMachine{})
 
 	if obj == nil {
 		return nil, err

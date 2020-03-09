@@ -7,13 +7,13 @@
 package fake
 
 import (
-	v1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
-	types "k8s.io/apimachinery/pkg/types"
-	watch "k8s.io/apimachinery/pkg/watch"
-	testing "k8s.io/client-go/testing"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/testing"
 )
 
 // FakeVirtualMachineClasses implements VirtualMachineClassInterface
@@ -111,7 +111,7 @@ func (c *FakeVirtualMachineClasses) DeleteCollection(options *v1.DeleteOptions, 
 // Patch applies the patch and returns the patched virtualMachineClass.
 func (c *FakeVirtualMachineClasses) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1alpha1.VirtualMachineClass, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(virtualmachineclassesResource, name, data, subresources...), &v1alpha1.VirtualMachineClass{})
+		Invokes(testing.NewRootPatchSubresourceAction(virtualmachineclassesResource, name, pt, data, subresources...), &v1alpha1.VirtualMachineClass{})
 	if obj == nil {
 		return nil, err
 	}

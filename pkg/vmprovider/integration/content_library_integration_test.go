@@ -13,19 +13,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-logr/zapr"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vapi/library"
 	govmomirest "github.com/vmware/govmomi/vapi/rest"
-	"go.uber.org/zap"
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
-
-	vmoperator "github.com/vmware-tanzu/vm-operator"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/mocks"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
+	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 var (
@@ -41,9 +37,9 @@ var _ = Describe("list files in content library", func() {
 		mockController = gomock.NewController(GinkgoT())
 		mockContentProvider = mocks.NewMockContentDownloadHandler(mockController)
 
-		zapcfg := zap.NewDevelopmentConfig()
-		zapLog, _ := zapcfg.Build(zap.AddCallerSkip(1))
-		logf.SetLogger(zapr.NewLogger(zapLog))
+		//zapcfg := zap.NewDevelopmentConfig()
+		//zapLog, _ := zapcfg.Build(zap.AddCallerSkip(1))
+		//logf.SetLogger(zapr.NewLogger(zapLog))
 	})
 
 	AfterEach(func() {
@@ -111,6 +107,7 @@ var _ = Describe("list files in content library", func() {
 				_, err := testContentStruct.GenerateDownloadUriForLibraryItem(ctx, c, &item, session)
 				return err
 			})
+			Expect(err).ToNot(BeNil())
 			Expect(err.Error()).Should(ContainSubstring("404 Not Found"))
 		})
 	})
@@ -118,7 +115,9 @@ var _ = Describe("list files in content library", func() {
 	Context("when ovf file is present", func() {
 
 		It("parses the ovf", func() {
-			ovfPath := vmoperator.Rootpath + "/test/resource/photon-ova.ovf"
+			rootDir, err := testutil.GetRootDir()
+			Expect(err).ToNot(HaveOccurred())
+			ovfPath := rootDir + "/test/resource/photon-ova.ovf"
 			file, err := os.Open(ovfPath)
 			Expect(err).To(BeNil())
 
@@ -137,11 +136,9 @@ var _ = Describe("list files in content library", func() {
 		It("returns a path error", func() {
 			file, err := ioutil.TempFile("", "*.ovf")
 			Expect(err).To(BeNil())
+			defer file.Close()
 
-			var readerStream io.ReadCloser = file
-			defer readerStream.Close()
-
-			_, err = vsphere.ParseOvfAndFetchProperties(readerStream)
+			_, err = vsphere.ParseOvfAndFetchProperties(file)
 			Expect(err).Should(MatchError(errors.New("EOF")))
 		})
 	})

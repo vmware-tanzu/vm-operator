@@ -1,0 +1,118 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  creationTimestamp: null
+  name: virtualmachineservices.vmoperator.vmware.com
+spec:
+  group: vmoperator.vmware.com
+  names:
+    kind: VirtualMachineService
+    plural: virtualmachineservices
+    shortNames:
+    - vmservice
+  scope: Namespaced
+  subresources:
+    status: {}
+  validation:
+    openAPIV3Schema:
+      description: VirtualMachineService is the Schema for the virtualmachineservices
+        API
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: VirtualMachineServiceSpec defines the desired state of VirtualMachineService
+          properties:
+            clusterIp:
+              description: Just support cluster IP for now
+              type: string
+            externalName:
+              type: string
+            ports:
+              items:
+                properties:
+                  name:
+                    type: string
+                  port:
+                    description: The port that will be exposed on the service.
+                    format: int32
+                    type: integer
+                  protocol:
+                    description: The IP protocol for this port.  Supports "TCP", "UDP",
+                      and "SCTP". Protocol corev1.Protocol
+                    type: string
+                  targetPort:
+                    format: int32
+                    type: integer
+                required:
+                - name
+                - port
+                - protocol
+                - targetPort
+                type: object
+              type: array
+            selector:
+              additionalProperties:
+                type: string
+              type: object
+            type:
+              description: VirtualMachineService Type string describes ingress methods
+                for a service
+              type: string
+          required:
+          - ports
+          - selector
+          - type
+          type: object
+        status:
+          description: VirtualMachineServiceStatus defines the observed state of VirtualMachineService
+          properties:
+            loadBalancer:
+              description: LoadBalancer contains the current status of the load-balancer,
+                if one is present.
+              properties:
+                ingress:
+                  description: Ingress is a list containing ingress points for the
+                    load-balancer. Traffic intended for the service should be sent
+                    to these ingress points.
+                  items:
+                    description: 'LoadBalancerIngress represents the status of a load-balancer
+                      ingress point: traffic intended for the service should be sent
+                      to an ingress point.'
+                    properties:
+                      hostname:
+                        description: Hostname is set for load-balancer ingress points
+                          that are DNS based
+                        type: string
+                      ip:
+                        description: IP is set for load-balancer ingress points that
+                          are IP based
+                        type: string
+                    type: object
+                  type: array
+              type: object
+          type: object
+      type: object
+  version: v1alpha1
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

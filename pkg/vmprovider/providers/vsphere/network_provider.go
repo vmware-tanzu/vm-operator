@@ -19,9 +19,10 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
+
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 const (

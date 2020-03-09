@@ -1,7 +1,7 @@
 // +build !integration
 
 /* **********************************************************
- * Copyright 2019-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
+ * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
  * **********************************************************/
 package vsphere_test
 
@@ -41,7 +41,6 @@ var _ = BeforeSuite(func() {
 		},
 		PreferServerCipherSuites: true,
 	})
-
 })
 
 func setupModelAndServerWithSettings(tlsConfig *tls.Config) (*simulator.Model, *simulator.Server) {

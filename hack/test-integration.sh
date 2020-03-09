@@ -49,6 +49,7 @@ go test -v -race -p 1 -count=1 "${INT_GOFLAGS[@]}" -tags=integration ./controlle
 
 # Run integration tests with new framework
 # NOTE: None as of yet
+: "${ENV_GOFLAGS:=}"
 #go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" ./controllers/virtualmachine -- -enable-integration-tests -enable-unit-tests=false
 
 # Merge the coverage files.

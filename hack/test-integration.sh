@@ -1,79 +1,59 @@
 #!/usr/bin/env bash
 
+# Run the integration tests.
+# If an argument is given, the coverage will be recorded:
+# test-integration.sh [<coverage file>]
+
 set -o errexit
-set -o pipefail
 set -o nounset
+set -o pipefail
+set -x
 
-# Use tag to distinguish unit and integration tests.
-GOTEST="go test -race -tags=integration -v"
+function join_packages { local IFS=","; echo "$*"; }
 
-RC=0
+# Change directories to the parent directory of the one in which this
+# script is located.
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-usage () {
-    echo "Usage: $(basename $0) [-c coverage]"
-    exit 1
-}
+COVERAGE_FILE="${1-}"
+WEBHOOK_COVERAGE_FILE="$(pwd)/webhook.cover.out"
+INTEGRATION_COVERAGE_FILE="$(pwd)/int.cover.out"
+ENVIRONMENT_COVERAGE_FILE="$(pwd)/env.cover.out"
 
-test_pkg() {
-    PKG=${1%/}
-    CMD="$GOTEST -parallel=1"
+# shellcheck disable=SC1091
+source hack/ensure-go.sh
 
-    if [[ -n $COVERAGE ]] ; then
-        OUT=${PKG//\//-}.out
-        COVERAGE_FILES+=($OUT)
-        CMD="$CMD -coverprofile=$OUT -coverpkg=./pkg/..."
-    fi
-
-    # Echo the command to make it easy for devs to run specific integration tests
-    TESTCMD="$CMD ./${PKG}/..."
-    echo "Running test with: $TESTCMD"
-
-    if ! $TESTCMD ; then
-        RC=1
-    fi
-}
-
-PACKAGES=(
-    # Cannot run all integration tests the easy way:
-    #    $ go test -parallel=1 -tags=integration -v ./cmd/... ./pkg/...
-    #
-    # because each controller suite has a TestMain() and parallel seems to
-    # only apply to the tests run by each TestMain(). Since the aggregated
-    # apiserver has to listen on port 443 this causes a port conflict. So
-    # run the tests separately and merge the coverage output.
-    pkg/controller/*/
-    pkg/vmprovider/integration
+packages=(
+  "./controllers/..."
+  "./pkg/..."
+  "./webhooks/..."
 )
-COVERAGE=""
-COVERAGE_FILES=()
+COV_OPTS=$(join_packages "${packages[@]}")
 
-while getopts ":c:" opt ; do
-    case $opt in
-        "c" ) COVERAGE=$OPTARG ;;
-        \? ) usage ;;
-    esac
-done
+WEB_GOFLAGS=()
+INT_GOFLAGS=()
+ENV_GOFLAGS=()
 
-shift $((OPTIND - 1))
-
-if [[ $# -ne 0 ]] ; then
-    usage
+# The first argument is the name of the coverage file to use.
+if [[ -n ${COVERAGE_FILE} ]]; then
+    WEB_GOFLAGS=("-coverprofile=${WEBHOOK_COVERAGE_FILE}" "-coverpkg=${COV_OPTS}")
+    INT_GOFLAGS=("-coverprofile=${INTEGRATION_COVERAGE_FILE}" "-coverpkg=${COV_OPTS}")
+    ENV_GOFLAGS=("-coverprofile=${ENVIRONMENT_COVERAGE_FILE}" "-coverpkg=${COV_OPTS}")
 fi
 
-go clean -testcache > /dev/null
+# Run the webhook tests.
+go test -v -race -p 1 -count=1 "${WEB_GOFLAGS[@]}" ./webhooks/... -- -enable-integration-tests -enable-unit-tests=false
 
-for pkg in ${PACKAGES[@]} ; do
-    test_pkg $pkg
-done
+# Run the package integration tests.
+go test -v -race -p 1 -count=1 "${INT_GOFLAGS[@]}" -tags=integration ./controllers/... ./pkg/... ./test/integration/...
 
-if [[ ${#COVERAGE_FILES[@]} -gt 0 ]] ; then
-    gocovmerge ${COVERAGE_FILES[@]} > $COVERAGE
-    rm ${COVERAGE_FILES[@]}
+# Run integration tests with new framework
+# NOTE: None as of yet
+#go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" ./controllers/virtualmachine -- -enable-integration-tests -enable-unit-tests=false
+
+# Merge the coverage files.
+if [[ -n ${COVERAGE_FILE} ]]; then
+    touch "${ENVIRONMENT_COVERAGE_FILE}" "${INTEGRATION_COVERAGE_FILE}" "${WEBHOOK_COVERAGE_FILE}"
+    hack/tools/bin/gocovmerge "${ENVIRONMENT_COVERAGE_FILE}" "${INTEGRATION_COVERAGE_FILE}" "${WEBHOOK_COVERAGE_FILE}" > "${COVERAGE_FILE}"
+    rm -f "${ENVIRONMENT_COVERAGE_FILE}" "${INTEGRATION_COVERAGE_FILE}" "${WEBHOOK_COVERAGE_FILE}"
 fi
-
-# Upstream support for these tests was removed.
-#ginkgo -v ./test/integration/...
-
-exit $RC
-
-# vim: tabstop=4 shiftwidth=4 expandtab softtabstop=4 filetype=sh

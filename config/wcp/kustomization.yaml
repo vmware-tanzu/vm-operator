@@ -1,31 +1,5 @@
-# Adds namespace to all resources. Note: WCP treats vmware-system-* namespaces as reserved so we need that prefix
-namespace: vmware-system-vmop
-
-
-images:
-- name: vmoperator:latest
-  newName: vmware/vmop
-  newTag: 0.0.1
-
-resources:
-- namespace.yaml
-- rbac_psp.yaml
-- vsphere_provider_config.yaml
-- vmoperator_network_config.yaml
-- ../rbac
-- ../apiserver
-- ../manager
-
-patchesStrategicMerge:
-- master_node_selector_patch.yaml
-- master_toleration_patch.yaml
-- apiservice_namespace_patch.yaml
-- apiserver_service_patch.yaml
-- apiserver_deployment_patch.yaml
-- apiserver_update_strategy_patch.yaml
-- controller_deployment_patch.yaml
-- apiserver_antiaffinity_patch.yaml
-- controller_antiaffinity_patch.yaml
-- controller_update_strategy_patch.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+resources:
+- ./vmoperator
+- ./configmaps

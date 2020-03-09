@@ -2,7 +2,7 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: cp-storage-class 
+  name: cp-storage-class
 provisioner: kubernetes.io/vsphere-volume
 parameters:
     storagePolicyID: "test-policy-id"
@@ -24,4 +24,3 @@ spec:
   hard:
    cp-storage-class.storageclass.storage.k8s.io/requests.storage: 1Gi
    worker-storage-class.storageclass.storage.k8s.io/requests.storage: 1Gi
-

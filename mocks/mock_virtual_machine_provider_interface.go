@@ -7,7 +7,7 @@ package mocks
 import (
 	context "context"
 	gomock "github.com/golang/mock/gomock"
-	v1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	v1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmprovider "github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	v1 "k8s.io/api/core/v1"
 	reflect "reflect"
@@ -35,19 +35,6 @@ func NewMockVirtualMachineProviderInterface(ctrl *gomock.Controller) *MockVirtua
 func (m *MockVirtualMachineProviderInterface) EXPECT() *MockVirtualMachineProviderInterfaceMockRecorder {
 	return m.recorder
 }
-
-// UpdateVmOpConfigMap mocks base method
-func (m *MockVirtualMachineProviderInterface) UpdateVmOpConfigMap(arg0 context.Context) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "UpdateVmOpConfigMap", arg0)
-}
-
-// UpdateVmOpConfigMap indicates an expected call of UpdateVmOpConfigMap
-func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVmOpConfigMap(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVmOpConfigMap", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdateVmOpConfigMap), arg0)
-}
-
 
 // ComputeClusterCpuMinFrequency mocks base method
 func (m *MockVirtualMachineProviderInterface) ComputeClusterCpuMinFrequency(arg0 context.Context) error {
@@ -228,22 +215,10 @@ func (m *MockVirtualMachineProviderInterface) UpdateVcPNID(arg0 context.Context,
 	return ret0
 }
 
-// UpdateVcPNID indicates an expected call of UpdatePnid
+// UpdateVcPNID indicates an expected call of UpdateVcPNID
 func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVcPNID(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVcPNID", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdateVcPNID), arg0, arg1)
-}
-
-// UpdateVmOpSACredSecret mocks base method
-func (m *MockVirtualMachineProviderInterface) UpdateVmOpSACredSecret(arg0 context.Context) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "UpdateVmOpSACredSecret", arg0)
-}
-
-// UpdateVmOpSACredSecret indicates an expected call of UpdateVmOpSACredSecret
-func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVmOpSACredSecret(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVmOpSACredSecret", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdateVmOpSACredSecret), arg0)
 }
 
 // UpdateVirtualMachine mocks base method
@@ -258,4 +233,28 @@ func (m *MockVirtualMachineProviderInterface) UpdateVirtualMachine(arg0 context.
 func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVirtualMachine(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVirtualMachine", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdateVirtualMachine), arg0, arg1, arg2)
+}
+
+// UpdateVmOpConfigMap mocks base method
+func (m *MockVirtualMachineProviderInterface) UpdateVmOpConfigMap(arg0 context.Context) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "UpdateVmOpConfigMap", arg0)
+}
+
+// UpdateVmOpConfigMap indicates an expected call of UpdateVmOpConfigMap
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVmOpConfigMap(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVmOpConfigMap", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdateVmOpConfigMap), arg0)
+}
+
+// UpdateVmOpSACredSecret mocks base method
+func (m *MockVirtualMachineProviderInterface) UpdateVmOpSACredSecret(arg0 context.Context) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "UpdateVmOpSACredSecret", arg0)
+}
+
+// UpdateVmOpSACredSecret indicates an expected call of UpdateVmOpSACredSecret
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) UpdateVmOpSACredSecret(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateVmOpSACredSecret", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).UpdateVmOpSACredSecret), arg0)
 }

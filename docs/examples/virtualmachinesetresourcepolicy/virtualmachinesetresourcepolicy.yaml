@@ -1,7 +1,0 @@
-note: VirtualMachineSetResourcePolicy Example
-sample: |
-  apiVersion: vmoperator.vmware.com/v1alpha1
-  kind: VirtualMachineSetResourcePolicy
-  metadata:
-    name: virtualmachinesetresourcepolicy-example
-  spec:

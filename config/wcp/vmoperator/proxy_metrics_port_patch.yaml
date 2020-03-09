@@ -1,0 +1,6 @@
+- op: replace
+  path: /spec/template/spec/containers/1/args/0
+  value: --secure-listen-address=0.0.0.0:9848
+- op: replace
+  path: /spec/template/spec/containers/1/ports/0/containerPort
+  value: 9848

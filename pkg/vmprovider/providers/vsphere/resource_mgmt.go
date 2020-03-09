@@ -27,7 +27,7 @@ func GetResourcePoolOwner(ctx context.Context, rp *object.ResourcePool) (*object
 	return object.NewClusterComputeResource(rp.Client(), owner.Owner), nil
 }
 
-func checkPlacementRelocateSpec(spec *vimTypes.VirtualMachineRelocateSpec) bool {
+func CheckPlacementRelocateSpec(spec *vimTypes.VirtualMachineRelocateSpec) bool {
 	if spec == nil {
 		log.Info("RelocateSpec is nil")
 		return false
@@ -47,12 +47,12 @@ func checkPlacementRelocateSpec(spec *vimTypes.VirtualMachineRelocateSpec) bool 
 	return true
 }
 
-func parsePlaceVmResponse(res *vimTypes.PlacementResult) *vimTypes.VirtualMachineRelocateSpec {
+func ParsePlaceVmResponse(res *vimTypes.PlacementResult) *vimTypes.VirtualMachineRelocateSpec {
 	for _, r := range res.Recommendations {
 		if r.Reason == string(vimTypes.RecommendationReasonCodeXvmotionPlacement) {
 			for _, a := range r.Action {
 				if pa, ok := a.(*vimTypes.PlacementAction); ok {
-					if checkPlacementRelocateSpec(pa.RelocateSpec) {
+					if CheckPlacementRelocateSpec(pa.RelocateSpec) {
 						return pa.RelocateSpec
 					}
 				}
@@ -84,7 +84,7 @@ func computeVMPlacement(ctx context.Context, cls *object.ClusterComputeResource,
 	if err != nil {
 		return nil, err
 	}
-	rSpec := parsePlaceVmResponse(res)
+	rSpec := ParsePlaceVmResponse(res)
 	if rSpec == nil {
 		return nil, fmt.Errorf("no valid placement action")
 	}

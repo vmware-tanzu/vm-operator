@@ -10,35 +10,41 @@ import (
 	stdlog "log"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"sync"
 
-	"github.com/go-logr/zapr"
-	"github.com/kubernetes-incubator/apiserver-builder-alpha/pkg/test/suite"
+	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
+
+	"github.com/vmware-tanzu/vm-operator/test/testutil"
+
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
 	govmomirest "github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/vcenter"
-	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 
-	vmoperator "github.com/vmware-tanzu/vm-operator"
-	"github.com/vmware-tanzu/vm-operator/pkg/apis"
+	//"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
-	cnsv1alpha1 "gitlab.eng.vmware.com/hatchway/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
+	//cnsv1alpha1 "sigs.k8s.io/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 )
 
 type VSphereVmProviderTestConfig struct {
@@ -69,7 +75,6 @@ func GetContentSourceID() string {
 
 func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int, contentSource string) *vsphere.VSphereVmProviderConfig {
 	var dcMoId, rpMoId, folderMoId string
-
 	for _, dc := range simulator.Map.All("Datacenter") {
 		if dc.Entity().Name == "DC0" {
 			dcMoId = dc.Reference().Value
@@ -111,57 +116,37 @@ func NewIntegrationVmOperatorCredentials() *vsphere.VSphereVmProviderCredentials
 	}
 }
 
-//nolint:golint,unused,deadcode
 func EnableDebugLogging() {
-	zapcfg := zap.Config{
-		Level:            zap.NewAtomicLevelAt(zap.DebugLevel * 4),
-		Development:      true,
-		Encoding:         "console",
-		EncoderConfig:    zap.NewDevelopmentEncoderConfig(),
-		OutputPaths:      []string{"stderr"},
-		ErrorOutputPaths: []string{"stderr"},
-	}
-	zapLog, err := zapcfg.Build(zap.AddCallerSkip(1))
-	if err != nil {
-		// Log but ignore failure to enable debug logging
-		stdlog.Print(err)
-	}
-	logf.SetLogger(zapr.NewLogger(zapLog))
-
 	//klog.InitFlags(nil)
-
 	if err := flag.Set("v", "4"); err != nil {
 		klog.Fatalf("klog level flag has changed from -v: %v", err)
 	}
-
 }
 
-// Because of a hard coded path in buildAggregatedAPIServer, all integration tests that are using
-// suite.InstallLocalTestingAPIAggregationEnvironment() must be at this level of the directory hierarchy.
-// If you are calling this setup function, ensure that the tests are at the same "level" of the directory hierarchy
-// as the other integration tests.
-func SetupIntegrationEnv(namespaces []string) (*suite.Environment, *vsphere.VSphereVmProviderConfig, *rest.Config, *VcSimInstance, *vsphere.Session) {
-	// Enable this function call in order to see more verbose logging as part of these integration tests
-	EnableDebugLogging()
-	Expect(namespaces).NotTo(Equal(nil))
+func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VSphereVmProviderConfig, *rest.Config, *VcSimInstance, *vsphere.Session) {
 	Expect(len(namespaces) > 0).To(BeTrue())
-
-	stdlog.Print("setting up the local aggregated-apiserver for test env...")
-	testEnv, err := suite.InstallLocalTestingAPIAggregationEnvironment("vmoperator.vmware.com", "v1alpha1")
-	Expect(err).NotTo(HaveOccurred())
 
 	flag.Parse()
 
-	_, err = envtest.InstallCRDs(testEnv.KubeAPIServerEnvironment.Config, envtest.CRDInstallOptions{
-		Paths: []string{
-			filepath.Join(vmoperator.Rootpath, "config", "crds", "external-crds")},
-	})
+	rootDir, err := testutil.GetRootDir()
+	if err != nil {
+		panic(fmt.Sprintf("GetRootDir failed: %v", err))
+	}
+
+	testEnv := &envtest.Environment{
+		CRDDirectoryPaths: []string{
+			filepath.Join(rootDir, "config", "crd", "bases"),
+			filepath.Join(rootDir, "config", "crd", "external-crds"),
+		},
+	}
+
+	cfg, err := testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 
-	cfg := testEnv.LoopbackClientConfig
-
-	stdlog.Print("setting up the integration test env..")
-	err = apis.AddToScheme(scheme.Scheme)
+	stdlog.Print("setting up the integration test env...")
+	err = ncpv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = vmoperatorv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	err = cnsv1alpha1.SchemeBuilder.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
@@ -181,10 +166,9 @@ func SetupIntegrationEnv(namespaces []string) (*suite.Environment, *vsphere.VSph
 
 	address, port := vcSim.Start()
 	vSphereConfig := NewIntegrationVmOperatorConfig(address, port, "")
+	Expect(vSphereConfig).ToNot(BeNil())
 
-	Expect(vSphereConfig).ShouldNot(BeNil())
-
-	session, err := SetupVcsimEnv(vSphereConfig, cfg, vcSim, namespaces)
+	session, err := SetupVcSimEnv(vSphereConfig, cfg, vcSim, namespaces)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = os.Setenv(vsphere.EnvContentLibApiWaitSecs, "1")
@@ -193,19 +177,15 @@ func SetupIntegrationEnv(namespaces []string) (*suite.Environment, *vsphere.VSph
 	return testEnv, vSphereConfig, cfg, vcSim, session
 }
 
-func TeardownIntegrationEnv(testEnv *suite.Environment, vcSim *VcSimInstance) {
-	TeardownVcsimEnv(vcSim)
+func TeardownIntegrationEnv(testEnv *envtest.Environment, vcSim *VcSimInstance) {
+	TeardownVcSimEnv(vcSim)
 
-	stdlog.Print("stopping the aggregated-apiserver..")
-	err := testEnv.StopAggregatedAPIServer()
-	Expect(err).NotTo(HaveOccurred())
-
-	stdlog.Print("stopping the kube-apiserver..")
-	err = testEnv.KubeAPIServerEnvironment.Stop()
+	stdlog.Print("stopping the test environment...")
+	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func SetupVcsimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Config, vcSim *VcSimInstance, namespaces []string) (*vsphere.Session, error) {
+func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Config, vcSim *VcSimInstance, namespaces []string) (*vsphere.Session, error) {
 
 	// Support for bootstrapping VM operator resource requirements in Kubernetes.
 	// Generate a fake vsphere provider config that is suitable for the integration test environment.
@@ -250,7 +230,7 @@ func SetupVcsimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Con
 	return session, nil
 }
 
-func TeardownVcsimEnv(vcSim *VcSimInstance) {
+func TeardownVcSimEnv(vcSim *VcSimInstance) {
 	if vcSim != nil {
 		vcSim.Stop()
 	}
@@ -266,7 +246,6 @@ func setupVcSimContent(config *vsphere.VSphereVmProviderConfig, vcSim *VcSimInst
 	}
 
 	rClient := govmomirest.NewClient(c.Client)
-
 	userInfo := url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
 	err = rClient.Login(ctx, userInfo)
@@ -282,12 +261,14 @@ func setupVcSimContent(config *vsphere.VSphereVmProviderConfig, vcSim *VcSimInst
 }
 
 func CreateLibraryItem(ctx context.Context, session *vsphere.Session, name, kind, libraryId string) error {
-	// The 'Rootpath'/images directory is created and populated with ova content for CL related integration tests
-	// and cleaned up right after.
-	imagesDir := "images/"
 	ovf := "ttylinux-pc_i486-16.1.ovf"
 
-	imagePath := vmoperator.Rootpath + "/" + imagesDir + ovf
+	rootDir, err := testutil.GetRootDir()
+	if err != nil {
+		panic(fmt.Sprintf("GetRootDir failed: %v", err))
+	}
+
+	imagePath := path.Join(rootDir, "images", ovf)
 
 	libraryItem := library.Item{
 		Name:      name,

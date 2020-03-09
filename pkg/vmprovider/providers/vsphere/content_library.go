@@ -24,6 +24,8 @@ type ContentLibraryProvider struct {
 	session *Session
 }
 
+//go:generate mockgen -destination=./mocks/mock_content_library.go -package=mocks github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere ContentDownloadHandler
+
 type ContentDownloadHandler interface {
 	GenerateDownloadUriForLibraryItem(ctx context.Context, restClient *rest.Client, item *library.Item, sess *Session) (DownloadUriResponse, error)
 }

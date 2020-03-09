@@ -17,13 +17,14 @@ import (
 	"github.com/vmware/govmomi/vapi/tags"
 
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-	"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var (
@@ -457,6 +458,7 @@ var _ = Describe("Sessions", func() {
 						keysFound[k] = false
 					}
 					mo, err := clonedVM.ManagedObject(context.TODO())
+					Expect(err).NotTo(HaveOccurred())
 					for _, option := range mo.Config.ExtraConfig {
 						key := option.GetOptionValue().Key
 						keysFound[key] = true
@@ -494,6 +496,7 @@ var _ = Describe("Sessions", func() {
 						keysFound[k] = false
 					}
 					mo, err := clonedVM.ManagedObject(context.TODO())
+					Expect(err).NotTo(HaveOccurred())
 					for _, option := range mo.Config.ExtraConfig {
 						key := option.GetOptionValue().Key
 						keysFound[key] = true
@@ -792,7 +795,7 @@ var _ = Describe("Sessions", func() {
 			Expect(resVm).NotTo(BeNil())
 
 			// Create a tag category and a tag
-			session.WithRestClient(ctx, func(c *rest.Client) error {
+			err := session.WithRestClient(ctx, func(c *rest.Client) error {
 				manager := tags.NewManager(c)
 
 				cat := tags.Category{
@@ -816,7 +819,7 @@ var _ = Describe("Sessions", func() {
 				Expect(tagId).NotTo(BeEmpty())
 				return nil
 			})
-
+			Expect(err).ToNot(HaveOccurred())
 		})
 
 		Context("Attach a tag to a VM", func() {

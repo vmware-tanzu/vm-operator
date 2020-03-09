@@ -7,13 +7,13 @@
 package fake
 
 import (
-	v1alpha1 "github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
-	types "k8s.io/apimachinery/pkg/types"
-	watch "k8s.io/apimachinery/pkg/watch"
-	testing "k8s.io/client-go/testing"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/testing"
 )
 
 // FakeVirtualMachineSetResourcePolicies implements VirtualMachineSetResourcePolicyInterface
@@ -119,7 +119,7 @@ func (c *FakeVirtualMachineSetResourcePolicies) DeleteCollection(options *v1.Del
 // Patch applies the patch and returns the patched virtualMachineSetResourcePolicy.
 func (c *FakeVirtualMachineSetResourcePolicies) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1alpha1.VirtualMachineSetResourcePolicy, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(virtualmachinesetresourcepoliciesResource, c.ns, name, data, subresources...), &v1alpha1.VirtualMachineSetResourcePolicy{})
+		Invokes(testing.NewPatchSubresourceAction(virtualmachinesetresourcepoliciesResource, c.ns, name, pt, data, subresources...), &v1alpha1.VirtualMachineSetResourcePolicy{})
 
 	if obj == nil {
 		return nil, err

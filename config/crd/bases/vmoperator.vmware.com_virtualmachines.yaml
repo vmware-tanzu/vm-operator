@@ -1,0 +1,231 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  creationTimestamp: null
+  name: virtualmachines.vmoperator.vmware.com
+spec:
+  group: vmoperator.vmware.com
+  names:
+    kind: VirtualMachine
+    plural: virtualmachines
+    shortNames:
+    - vm
+  scope: Namespaced
+  subresources:
+    status: {}
+  validation:
+    openAPIV3Schema:
+      description: VirtualMachine is the Schema for the virtualmachines API
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: VirtualMachineSpec defines the desired state of VirtualMachine
+          properties:
+            className:
+              type: string
+            imageName:
+              type: string
+            networkInterfaces:
+              items:
+                properties:
+                  ethernetCardType:
+                    type: string
+                  networkName:
+                    type: string
+                  networkType:
+                    type: string
+                required:
+                - networkName
+                type: object
+              type: array
+            ports:
+              items:
+                properties:
+                  ip:
+                    type: string
+                  name:
+                    type: string
+                  port:
+                    type: integer
+                  protocol:
+                    description: Protocol defines network protocols supported for
+                      things like container ports.
+                    type: string
+                required:
+                - ip
+                - name
+                - port
+                - protocol
+                type: object
+              type: array
+            powerState:
+              type: string
+            readinessProbe:
+              description: Probe describes a health check to be performed against
+                a VM to determine whether it is alive or ready to receive traffic.
+              properties:
+                tcpSocket:
+                  description: TCPSocket specifies an action involving a TCP port.
+                  properties:
+                    host:
+                      description: 'Optional: Host name to connect to, defaults to
+                        the VirtualMachine IP.'
+                      type: string
+                    port:
+                      anyOf:
+                      - type: string
+                      - type: integer
+                      description: Number or name of the port to access on the VirtualMachine.
+                        Number must be in the range 1 to 65535. Name must be an IANA_SVC_NAME.
+                  required:
+                  - port
+                  type: object
+                timeoutSeconds:
+                  description: Number of seconds after which the probe times out.
+                    Defaults to 10 second. Minimum value is 1.
+                  format: int32
+                  type: integer
+              type: object
+            resourcePolicyName:
+              type: string
+            storageClass:
+              type: string
+            vmMetadata:
+              description: VirtualMachineMetadata defines the guest customization
+              properties:
+                configMapName:
+                  type: string
+                transport:
+                  type: string
+              type: object
+            volumes:
+              items:
+                properties:
+                  name:
+                    description: Each volume in a VM must have a unique name.
+                    type: string
+                  persistentVolumeClaim:
+                    description: persistentVolumeClaim represents a reference to a
+                      PersistentVolumeClaim (pvc) in the same namespace. The pvc must
+                      match a persistent volume provisioned (either statically or
+                      dynamically) by the Cloud Native Storage CSI.
+                    properties:
+                      claimName:
+                        description: 'ClaimName is the name of a PersistentVolumeClaim
+                          in the same namespace as the pod using this volume. More
+                          info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims'
+                        type: string
+                      readOnly:
+                        description: Will force the ReadOnly setting in VolumeMounts.
+                          Default false.
+                        type: boolean
+                    required:
+                    - claimName
+                    type: object
+                required:
+                - name
+                type: object
+              type: array
+          required:
+          - className
+          - imageName
+          - powerState
+          type: object
+        status:
+          description: VirtualMachineStatus defines the observed state of VirtualMachine
+          properties:
+            biosUUID:
+              type: string
+            conditions:
+              items:
+                properties:
+                  lastProbeTime:
+                    format: date-time
+                    type: string
+                  lastTransitionTime:
+                    format: date-time
+                    type: string
+                  message:
+                    type: string
+                  reason:
+                    type: string
+                  status:
+                    type: string
+                  type:
+                    type: string
+                required:
+                - lastProbeTime
+                - lastTransitionTime
+                - message
+                - reason
+                - status
+                - type
+                type: object
+              type: array
+            host:
+              type: string
+            phase:
+              type: string
+            powerState:
+              type: string
+            uniqueID:
+              type: string
+            vmIp:
+              type: string
+            volumes:
+              items:
+                properties:
+                  attached:
+                    description: Attached represents the state of volume attachment
+                    type: boolean
+                  diskUUID:
+                    description: DiskUuid represents the underlying virtual disk UUID
+                      and is present when attachment succeeds
+                    type: string
+                  error:
+                    description: Error represents the last error seen when attaching
+                      or detaching a volume and will be empty if attachment succeeds
+                    type: string
+                  name:
+                    description: The name of the volume in a VM.
+                    type: string
+                required:
+                - attached
+                - diskUUID
+                - error
+                - name
+                type: object
+              type: array
+          required:
+          - biosUUID
+          - host
+          - phase
+          - powerState
+          - uniqueID
+          - vmIp
+          type: object
+      type: object
+  version: v1alpha1
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

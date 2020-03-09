@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+
 	. "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 

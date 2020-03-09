@@ -1,0 +1,2 @@
+SHA1(ttylinux-pc_i486-16.1-disk1.vmdk)= ed64564a37366bfe1c93af80e2ead0cbd398c3d3
+                                                                          

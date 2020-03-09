@@ -16,12 +16,14 @@ DEPLOYED_IMAGE_VMOPERATOR_CONTROLLER_NAME ?= vmware/vmop
 ARTIFACTS_DIR := ../../artifacts
 ARTIFACTS_DIR_TMP := $(ARTIFACTS_DIR)/tmp
 
+KUSTOMIZE_TYPE ?= "wcp"
+
 ## --------------------------------------
 ## Help
 ## --------------------------------------
 
 help: ## Display this help
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)	
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 # We need to copy this kustomization file _and_ the config files above ("default" directory)
 # as those files are referenced in the kustomization file
@@ -40,5 +42,4 @@ kustomize-set-version: kustomize-copy ## Update kustomization.yaml to set the cu
 infrastructure-components: $(INFRASTRUCTURE_COMPONENTS)
 infrastructure-components: ## Build the WCP infrastructure components
 $(INFRASTRUCTURE_COMPONENTS): kustomize-set-version
-	kustomize build $(ARTIFACTS_DIR_TMP)/virtualmachineclasses > $(ARTIFACTS_DIR)/default-vmclasses.yaml
-	kustomize build $(ARTIFACTS_DIR_TMP)/wcp --load_restrictor none >$@
+	kustomize build $(ARTIFACTS_DIR_TMP)/$(KUSTOMIZE_TYPE) --load_restrictor none >$@

@@ -58,20 +58,26 @@ verifyEnvironmentVariables() {
 
     if [[ -z ${SKIP_YAML:-} ]] ; then
         if [[ -z ${VCSA_DATACENTER:-} ]]; then
-            echo "Error: The VCSA_DATACENTER environment variable must be set" \
-                 "to point to a valid VCSA Datacenter"
+            error "Error: The VCSA_DATACENTER environment variable must be set" \
+                "to point to a valid VCSA Datacenter"
             exit 1
         fi
 
         VCSA_DATASTORE=${VCSA_DATASTORE:-nfs0-1}
+
+        if [[ -z ${VCSA_CONTENT_SOURCE:-} ]]; then
+            error "Error: The VCSA_CONTENT_SOURCE environment variable must be set" \
+                "to point to the ID of a valid VCSA Content Library"
+            exit 1
+        fi
 
         if [[ -z ${VCSA_WORKER_DNS:-} ]]; then
             cmd="grep WORKER_DNS /var/lib/node.cfg | cut -d'=' -f2 | sed -e 's/^[[:space:]]*//'"
             output=$(SSHPASS="$WCP_SA_PASSWORD" sshpass -e ssh "${SSHCommonArgs[@]}" \
                         "root@$WCP_SA_IP" "$cmd")
             if [[ -z $output ]]; then
-                echo "You did not specify env VCSA_WORKER_DNS and we couldn't fetch it from the SV cluster."
-                echo "Run the following on your SV node: $cmd"
+                error "You did not specify env VCSA_WORKER_DNS and we couldn't fetch it from the SV cluster."
+                error "Run the following on your SV node: $cmd"
                 exit 1
             fi
             VCSA_WORKER_DNS=$output
@@ -80,18 +86,19 @@ verifyEnvironmentVariables() {
 }
 
 patchWcpDeploymentYaml() {
-    if [[ -f  "artifacts/wcp-deployment.yaml" ]]; then
+    if [[ ${SKIP_YAML:-} != "configmap" ]]; then
         sed -i'' "s,<vc_pnid>,$VCSA_IP,g" "artifacts/wcp-deployment.yaml"
         sed -i'' "s,<datacenter>,$VCSA_DATACENTER,g" "artifacts/wcp-deployment.yaml"
         sed -i'' "s, Datastore: .*, Datastore: $VCSA_DATASTORE," "artifacts/wcp-deployment.yaml"
         sed -i'' "s,<worker_dns>,$VCSA_WORKER_DNS," "artifacts/wcp-deployment.yaml"
+        sed -i'' "s,<content_source>,$VCSA_CONTENT_SOURCE,g" "artifacts/wcp-deployment.yaml"
     fi
 }
 
 deploy() {
     local yamlArgs=""
 
-    if [[ -z ${SKIP_YAML:-} ]]; then
+    if [[ ${SKIP_YAML:-} != "all" ]]; then
         patchWcpDeploymentYaml
         yamlArgs+="--yamlToCopy artifacts/wcp-deployment.yaml,/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/vmop.yaml"
     fi
@@ -103,7 +110,7 @@ deploy() {
         --binary bin/wcp/manager \
         --vc-ip "$VCSA_IP" \
         --vc-user root \
-        --vc-password $VCSA_PASSWORD \
+        --vc-password "$VCSA_PASSWORD" \
         $yamlArgs
 }
 

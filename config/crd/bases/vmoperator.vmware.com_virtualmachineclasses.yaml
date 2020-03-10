@@ -18,7 +18,11 @@ spec:
   validation:
     openAPIV3Schema:
       description: VirtualMachineClass is the Schema for the virtualmachineclasses
-        API
+        API. A VirtualMachineClass represents the desired specification and the observed
+        status of a VirtualMachineClass instance.  A VirtualMachineClass represents
+        a policy and configuration resource which defines a set of attributes to be
+        used in the configuration of a VirtualMachine instance.  A VirtualMachine
+        resource references a VirtualMachineClass as a required input.
       properties:
         apiVersion:
           description: 'APIVersion defines the versioned schema of this representation
@@ -36,6 +40,10 @@ spec:
           description: VirtualMachineClassSpec defines the desired state of VirtualMachineClass
           properties:
             hardware:
+              description: Hardware describes the configuration of the VirtualMachineClass
+                attributes related to virtual hardware.  The configuration specified
+                in this field is used to customize the virtual hardware characteristics
+                of any VirtualMachine associated with this VirtualMachineClass.
               properties:
                 cpus:
                   format: int64
@@ -44,10 +52,19 @@ spec:
                   type: string
               type: object
             policies:
+              description: Policies describes the configuration of the VirtualMachineClass
+                attributes related to virtual infrastructure policy.  The configuration
+                specified in this field is used to customize various policies related
+                to infrastructure resource consumption.
               properties:
                 resources:
+                  description: VirtualMachineClassResources describes the virtual
+                    hardware resource reservations and limits configuration to be
+                    used by a VirtualMachineClass.
                   properties:
                     limits:
+                      description: VirtualMachineResourceSpec describes a virtual
+                        hardware policy specification.
                       properties:
                         cpu:
                           type: string
@@ -55,6 +72,8 @@ spec:
                           type: string
                       type: object
                     requests:
+                      description: VirtualMachineResourceSpec describes a virtual
+                        hardware policy specification.
                       properties:
                         cpu:
                           type: string
@@ -65,7 +84,8 @@ spec:
               type: object
           type: object
         status:
-          description: VirtualMachineClassStatus defines the observed state of VirtualMachineClass
+          description: VirtualMachineClassStatus defines the observed state of VirtualMachineClass.  VirtualMachineClasses
+            are immutable, non-dynamic resources, so this status is currently unused.
           type: object
       type: object
   version: v1alpha1

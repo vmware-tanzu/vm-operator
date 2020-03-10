@@ -16,7 +16,7 @@ spec:
   validation:
     openAPIV3Schema:
       description: VirtualMachineSetResourcePolicy is the Schema for the virtualmachinesetresourcepolicies
-        API
+        API.
       properties:
         apiVersion:
           description: 'APIVersion defines the versioned schema of this representation
@@ -36,9 +36,14 @@ spec:
           properties:
             clustermodules:
               items:
-                description: ClusterModuleSpec defines a ClusterModule in VC.
+                description: ClusterModuleSpec defines a grouping of VirtualMachines
+                  that are to be grouped together as a logical unit by the infrastructure
+                  provider.  Within vSphere, the ClusterModuleSpec maps directly to
+                  a vSphere ClusterModule.
                 properties:
                   groupname:
+                    description: GroupName describes the name of the ClusterModule
+                      Group.
                     type: string
                 required:
                 - groupname
@@ -48,12 +53,16 @@ spec:
               description: Folder defines a Folder
               properties:
                 name:
+                  description: Name describes the name of the Folder
                   type: string
               type: object
             resourcepool:
-              description: ResourcePoolSpec defines a Resource Group
+              description: ResourcePoolSpec defines a Logical Grouping of workloads
+                that share resource policies.
               properties:
                 limits:
+                  description: Limits describes the limit to resources available to
+                    the ResourcePool.
                   properties:
                     cpu:
                       type: string
@@ -61,8 +70,11 @@ spec:
                       type: string
                   type: object
                 name:
+                  description: Name describes the name of the ResourcePool grouping.
                   type: string
                 reservations:
+                  description: Reservations describes the guaranteed resources reserved
+                    for the ResourcePool.
                   properties:
                     cpu:
                       type: string

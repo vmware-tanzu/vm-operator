@@ -214,7 +214,7 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 					PowerState:   "poweredOn",
 					Ports:        []vmoperatorv1alpha1.VirtualMachinePort{},
 					StorageClass: storageClassName,
-					Volumes: []vmoperatorv1alpha1.VirtualMachineVolumes{
+					Volumes: []vmoperatorv1alpha1.VirtualMachineVolume{
 						{Name: "fake-volume-1", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-1"}},
 					},
 				},
@@ -241,7 +241,7 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 			// So we put the c.Update in Eventually block
 			Eventually(func() error {
 				Expect(c.Get(context.TODO(), client.ObjectKey{Name: vmName, Namespace: ns}, vmToUpdate)).Should(Succeed())
-				vmToUpdate.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolumes{
+				vmToUpdate.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolume{
 					{Name: "fake-volume-4", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "fake-pvc-4"}},
 				}
 				return c.Update(context.TODO(), vmToUpdate)

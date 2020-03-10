@@ -18,7 +18,11 @@ spec:
   validation:
     openAPIV3Schema:
       description: VirtualMachineService is the Schema for the virtualmachineservices
-        API
+        API. A VirtualMachineService represents the desired specification and the
+        observed status of a VirtualMachineService instance.  A VirtualMachineService
+        represents a network service, provided by one or more VirtualMachines, that
+        is desired to be exposed to other workloads both internal and external to
+        the cluster.
       properties:
         apiVersion:
           description: 'APIVersion defines the versioned schema of this representation
@@ -33,7 +37,15 @@ spec:
         metadata:
           type: object
         spec:
-          description: VirtualMachineServiceSpec defines the desired state of VirtualMachineService
+          description: VirtualMachineServiceSpec defines the desired state of VirtualMachineService.  Each
+            VirtualMachineService exposes a set of TargetPorts on a set of VirtualMachine
+            instances as a network endpoint within or outside of the Kubernetes cluster.  The
+            VirtualMachineService is loosely coupled to the VirtualMachines that are
+            backing it through the use of a Label Selector.  In Kubernetes, a Label
+            Selector enables matching of a resource using a set of key-value pairs,
+            aka Labels.  By using a Label Selector, the VirtualMachineService can
+            be generically defined to apply to any VirtualMachine that has the appropriate
+            set of labels.
           properties:
             clusterIp:
               description: Just support cluster IP for now
@@ -41,19 +53,31 @@ spec:
             externalName:
               type: string
             ports:
+              description: Ports specifies a list of VirtualMachineServicePort to
+                expose with this VirtualMachineService.  Each of these ports will
+                be an accessible network entry point to access this service by.
               items:
+                description: VirtualMachineServicePort describes the specification
+                  of a service port to be exposed by a VirtualMachineService. This
+                  VirtualMachineServicePort specification includes attributes that
+                  define the external and internal representation of the service port.
                 properties:
                   name:
+                    description: Name describes the name to be used to identify this
+                      VirtualMachineServicePort
                     type: string
                   port:
-                    description: The port that will be exposed on the service.
+                    description: Port describes the external port that will be exposed
+                      by the service.
                     format: int32
                     type: integer
                   protocol:
-                    description: The IP protocol for this port.  Supports "TCP", "UDP",
-                      and "SCTP". Protocol corev1.Protocol
+                    description: Protocol describes the Layer 4 transport protocol
+                      for this port.  Supports "TCP", "UDP", and "SCTP".
                     type: string
                   targetPort:
+                    description: TargetPort describes the internal port open on a
+                      VirtualMachine that should be mapped to the external Port.
                     format: int32
                     type: integer
                 required:
@@ -66,10 +90,14 @@ spec:
             selector:
               additionalProperties:
                 type: string
+              description: Selector specifies a map of key-value pairs, also known
+                as a Label Selector, that is used to match this VirtualMachineService
+                with the set of VirtualMachines that should back this VirtualMachineService.
               type: object
             type:
-              description: VirtualMachineService Type string describes ingress methods
-                for a service
+              description: Type specifies a desired VirtualMachineServiceType for
+                this VirtualMachineService.  The supported types are VirtualMachineServiceTypeClusterIP
+                and VirtualMachineServiceTypeLoadBalancer.
               type: string
           required:
           - ports
@@ -80,25 +108,29 @@ spec:
           description: VirtualMachineServiceStatus defines the observed state of VirtualMachineService
           properties:
             loadBalancer:
-              description: LoadBalancer contains the current status of the load-balancer,
-                if one is present.
+              description: LoadBalancer contains the current status of the Load Balancer.  The
+                LoadBalancer status can be used to introspect the state and attributes
+                of any LoadBalancer instances that are fulfilling the VirtualmachineService.
               properties:
                 ingress:
-                  description: Ingress is a list containing ingress points for the
-                    load-balancer. Traffic intended for the service should be sent
-                    to these ingress points.
+                  description: Ingress is a list containing ingress addresses for
+                    the Load Balancer. Traffic intended for the service should be
+                    sent to any of these ingress points.
                   items:
-                    description: 'LoadBalancerIngress represents the status of a load-balancer
-                      ingress point: traffic intended for the service should be sent
-                      to an ingress point.'
+                    description: LoadBalancerIngress represents the status of a Load
+                      Balancer ingress point. Traffic intended for the service should
+                      be sent to network endpoints specified by the endpoints in the
+                      LoadBalancerStatus.  IP or Hostname may both be set in this
+                      structure.  It is up to the consumer to determine which field
+                      should be used when accessing this LoadBalancer.
                     properties:
                       hostname:
-                        description: Hostname is set for load-balancer ingress points
-                          that are DNS based
+                        description: Hostname is set for Load Balancer ingress points
+                          that are specified by a DNS address.
                         type: string
                       ip:
-                        description: IP is set for load-balancer ingress points that
-                          are IP based
+                        description: IP is set for Load Balancer ingress points that
+                          are specified by an IP address.
                         type: string
                     type: object
                   type: array

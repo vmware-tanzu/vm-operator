@@ -7,20 +7,32 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ResourcePoolSpec defines a Resource Group
+// ResourcePoolSpec defines a Logical Grouping of workloads that share resource policies.
 type ResourcePoolSpec struct {
-	Name         string                     `json:"name,omitempty"`
+	// Name describes the name of the ResourcePool grouping.
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// Reservations describes the guaranteed resources reserved for the ResourcePool.
+	// +optional
 	Reservations VirtualMachineResourceSpec `json:"reservations,omitempty"`
-	Limits       VirtualMachineResourceSpec `json:"limits,omitempty"`
+
+	// Limits describes the limit to resources available to the ResourcePool.
+	// +optional
+	Limits VirtualMachineResourceSpec `json:"limits,omitempty"`
 }
 
 // Folder defines a Folder
 type FolderSpec struct {
+	// Name describes the name of the Folder
+	// +optional
 	Name string `json:"name,omitempty"`
 }
 
-// ClusterModuleSpec defines a ClusterModule in VC.
+// ClusterModuleSpec defines a grouping of VirtualMachines that are to be grouped together as a logical unit by
+// the infrastructure provider.  Within vSphere, the ClusterModuleSpec maps directly to a vSphere ClusterModule.
 type ClusterModuleSpec struct {
+	// GroupName describes the name of the ClusterModule Group.
 	GroupName string `json:"groupname"`
 }
 
@@ -45,7 +57,7 @@ type ClusterModuleStatus struct {
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 
-// VirtualMachineSetResourcePolicy is the Schema for the virtualmachinesetresourcepolicies API
+// VirtualMachineSetResourcePolicy is the Schema for the virtualmachinesetresourcepolicies API.
 type VirtualMachineSetResourcePolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -60,7 +72,7 @@ func (res VirtualMachineSetResourcePolicy) NamespacedName() string {
 
 // +kubebuilder:object:root=true
 
-// VirtualMachineSetResourcePolicyList contains a list of VirtualMachineSetResourcePolicy
+// VirtualMachineSetResourcePolicyList contains a list of VirtualMachineSetResourcePolicy.
 type VirtualMachineSetResourcePolicyList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

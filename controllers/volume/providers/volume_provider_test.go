@@ -66,7 +66,7 @@ var _ = Describe("Volume Provider", func() {
 		Context("when new volumes under VirtualMachine object has been added", func() {
 			It("should return the new set of volume object keys to be added and empty set of volume object keys to be deleted", func() {
 				vm = generateDefaultVirtualMachine()
-				vm.Spec.Volumes = append(vm.Spec.Volumes, generateVirtualMachineVolumes(newVirtualMachineVolumeName))
+				vm.Spec.Volumes = append(vm.Spec.Volumes, generateVirtualMachineVolume(newVirtualMachineVolumeName))
 				vmVolumeToAdd, vmVolumeToDelete := GetVmVolumesToProcess(vm)
 				Expect(len(vmVolumeToAdd)).To(Equal(1))
 				Expect(vmVolumeToAdd[client.ObjectKey{Name: newVirtualMachineVolumeName, Namespace: virtualMachineNamespace}]).To(BeTrue())
@@ -77,7 +77,7 @@ var _ = Describe("Volume Provider", func() {
 		Context("when a volume under VirtualMachine object has been deleted", func() {
 			It("should return an empty set of volume object keys to be added and a set of volume object keys to be deleted", func() {
 				vm = generateDefaultVirtualMachine()
-				vm.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolumes{}
+				vm.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolume{}
 				vmVolumeToAdd, vmVolumeToDelete := GetVmVolumesToProcess(vm)
 				Expect(len(vmVolumeToAdd)).To(Equal(0))
 				Expect(len(vmVolumeToDelete)).To(Equal(1))
@@ -88,8 +88,8 @@ var _ = Describe("Volume Provider", func() {
 		Context("when a new volume under VirtualMachine object has been added, and an old volume has been deleted", func() {
 			It("should return a set of volume object keys to be added and a set of volume object keys to be deleted", func() {
 				vm = generateDefaultVirtualMachine()
-				vm.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolumes{
-					generateVirtualMachineVolumes("beta"),
+				vm.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolume{
+					generateVirtualMachineVolume("beta"),
 				}
 				vmVolumeToAdd, vmVolumeToDelete := GetVmVolumesToProcess(vm)
 				Expect(len(vmVolumeToAdd)).To(Equal(1))
@@ -126,7 +126,7 @@ var _ = Describe("Volume Provider", func() {
 		Context("if volume has been added into spec.volume, but the CnsNodeVmAttachment has not been created", func() {
 			It("UpdateVmVolumesStatus() should not add the volume status", func() {
 				vm = generateDefaultVirtualMachine()
-				vm.Spec.Volumes = append(vm.Spec.Volumes, generateVirtualMachineVolumes("beta"))
+				vm.Spec.Volumes = append(vm.Spec.Volumes, generateVirtualMachineVolume("beta"))
 				err := cnsVolumeProvider.client.Create(context.TODO(), vm)
 				Expect(err).NotTo(HaveOccurred())
 
@@ -150,7 +150,7 @@ var _ = Describe("Volume Provider", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				// Update the vm spec to remove the volumes, so there will be orphan volumes under vm.status.volumes
-				vm.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolumes{}
+				vm.Spec.Volumes = []vmoperatorv1alpha1.VirtualMachineVolume{}
 				err = cnsVolumeProvider.client.Update(context.TODO(), vm)
 				Expect(err).NotTo(HaveOccurred())
 
@@ -199,7 +199,7 @@ var _ = Describe("Volume Provider", func() {
 		Context("when multiple volumes are added", func() {
 			It("should create multiple CnsNodeVmAttachment instances", func() {
 				vm = generateDefaultVirtualMachine()
-				vm.Spec.Volumes = append(vm.Spec.Volumes, generateVirtualMachineVolumes("beta"))
+				vm.Spec.Volumes = append(vm.Spec.Volumes, generateVirtualMachineVolume("beta"))
 				// Remove default vm.status.volumes
 				vm.Status.Volumes = []vmoperatorv1alpha1.VirtualMachineVolumeStatus{}
 				err := cnsVolumeProvider.client.Create(context.TODO(), vm)
@@ -222,7 +222,7 @@ var _ = Describe("Volume Provider", func() {
 		Context("when there is an existing CnsNodeVmAttachment instance", func() {
 			It("should not return error, no additional CnsNodeVmAttachment instance gets created, and VirtualMachineVolumeStatus is set properly", func() {
 				vm = generateDefaultVirtualMachine()
-				vm.Spec.Volumes = append(vm.Spec.Volumes, generateVirtualMachineVolumes(newVirtualMachineVolumeName))
+				vm.Spec.Volumes = append(vm.Spec.Volumes, generateVirtualMachineVolume(newVirtualMachineVolumeName))
 				vm.Status.Volumes = []vmoperatorv1alpha1.VirtualMachineVolumeStatus{}
 				err := cnsVolumeProvider.client.Create(context.TODO(), vm)
 				Expect(err).NotTo(HaveOccurred())
@@ -420,8 +420,8 @@ func generateAttachedCnsNodeVmAttachment(vmName string, vmVolumeName string, vmV
 	return cnsNodeVmAttachment
 }
 
-func generateVirtualMachineVolumes(name string) vmoperatorv1alpha1.VirtualMachineVolumes {
-	return vmoperatorv1alpha1.VirtualMachineVolumes{
+func generateVirtualMachineVolume(name string) vmoperatorv1alpha1.VirtualMachineVolume {
+	return vmoperatorv1alpha1.VirtualMachineVolume{
 		Name: name,
 		PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 			ClaimName: "pvc-claim" + name,
@@ -451,8 +451,8 @@ func generateDefaultVirtualMachine() *vmoperatorv1alpha1.VirtualMachine {
 			ClassName:  virtualMachineClassName,
 			ImageName:  virtualMachineImageName,
 			PowerState: virtualMachinePowerState,
-			Volumes: []vmoperatorv1alpha1.VirtualMachineVolumes{
-				generateVirtualMachineVolumes("alpha"),
+			Volumes: []vmoperatorv1alpha1.VirtualMachineVolume{
+				generateVirtualMachineVolume("alpha"),
 			},
 		},
 		Status: vmoperatorv1alpha1.VirtualMachineStatus{

@@ -90,7 +90,7 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 					NetworkType: "",
 				},
 			},
-			Volumes: []vmopv1.VirtualMachineVolumes{
+			Volumes: []vmopv1.VirtualMachineVolume{
 				{
 					Name: DummyVolumeName,
 					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{

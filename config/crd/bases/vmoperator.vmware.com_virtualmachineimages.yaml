@@ -18,7 +18,13 @@ spec:
   validation:
     openAPIV3Schema:
       description: VirtualMachineImage is the Schema for the virtualmachineimages
-        API
+        API A VirtualMachineImage represents a VirtualMachine image (e.g. VM template)
+        that can be used as the base image for creating a VirtualMachine instance.  The
+        VirtualMachineImage is a required field of the VirtualMachine spec.  Currently,
+        VirtualMachineImages are immutable to end users.  They are created and managed
+        by a VirtualMachineImage controller whose role is to discover available images
+        in the backing infrastructure provider that should be surfaced as consumable
+        VirtualMachineImage resources.
       properties:
         apiVersion:
           description: 'APIVersion defines the versioned schema of this representation
@@ -35,13 +41,14 @@ spec:
         spec:
           description: VirtualMachineImageSpec defines the desired state of VirtualMachineImage
           properties:
-            imagePath:
-              type: string
-            imageSource:
-              type: string
             imageSourceType:
+              description: ImageSourceType describes the type of content source of
+                the VirtualMachineImage.  The only Content Source supported currently
+                is the vSphere Content Library.
               type: string
             type:
+              description: Type describes the type of the VirtualMachineImage. Currently,
+                the only supported image is "OVF"
               type: string
           required:
           - type

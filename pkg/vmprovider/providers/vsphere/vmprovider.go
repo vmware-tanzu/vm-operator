@@ -13,6 +13,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
+	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -26,11 +27,10 @@ import (
 	"k8s.io/client-go/rest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/vmware-tanzu/vm-operator/pkg"
-	//"github.com/vmware-tanzu/vm-operator/pkg/apis/vmoperator"
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg"
 	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -59,8 +59,8 @@ const (
 //go:generate mockgen -destination=./mocks/mock_ovf_property_retriever.go -package=mocks github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere OvfPropertyRetriever
 
 type OvfPropertyRetriever interface {
-	FetchOvfPropertiesFromLibrary(ctx context.Context, ses *Session, item *library.Item) (map[string]string, error)
-	FetchOvfPropertiesFromVM(ctx context.Context, resVm *res.VirtualMachine) (map[string]string, error)
+	GetOvfInfoFromLibraryItem(ctx context.Context, session *Session, item *library.Item) (*ovf.Envelope, error)
+	GetOvfInfoFromVM(ctx context.Context, resVm *res.VirtualMachine) (map[string]string, error)
 }
 
 type vmOptions struct{}
@@ -294,9 +294,9 @@ func AddProviderAnnotations(session *Session, objectMeta *v1.ObjectMeta, vmRes *
 }
 
 // AddVmImageAnnotations adds annotations from the VM image to the the VirtualMachine object
-func AddVmImageAnnotations(annotations map[string]string, ctx context.Context, vmProvider OvfPropertyRetriever, vmRes *res.VirtualMachine) error {
+func AddVmImageAnnotations(annotations map[string]string, ctx context.Context, ovfPropRetriever OvfPropertyRetriever, vmRes *res.VirtualMachine) error {
 	if val, ok := annotations[VmOperatorVMImagePropsKey]; !ok || val == "true" {
-		ovfProperties, err := vmProvider.FetchOvfPropertiesFromVM(ctx, vmRes)
+		ovfProperties, err := ovfPropRetriever.GetOvfInfoFromVM(ctx, vmRes)
 		if err != nil {
 			return err
 		}
@@ -610,14 +610,14 @@ func (vs *vSphereVmProvider) UpdateVmOpConfigMap(ctx context.Context) {
 	vs.sessions.clearSessionsAndClient(ctx)
 }
 
-func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
+func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, imgOptions ImageOptions, ovfPropRetriever OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
 	powerState, uuid, reference := resVm.ImageFields(ctx)
 
-	var ovfProperties map[string]string
+	ovfProperties := make(map[string]string)
 
 	if imgOptions == AnnotateVmImage {
 		var err error
-		ovfProperties, err = vmProvider.FetchOvfPropertiesFromVM(ctx, resVm)
+		ovfProperties, err = ovfPropRetriever.GetOvfInfoFromVM(ctx, resVm)
 		if err != nil {
 			return nil, err
 		}
@@ -645,16 +645,67 @@ func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, 
 	}, nil
 }
 
-func LibItemToVirtualMachineImage(ctx context.Context, ses *Session,
-	item *library.Item, imgOptions ImageOptions, vmProvider OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
+func GetVmwareSystemPropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]string {
+	properties := make(map[string]string)
 
-	var ovfProperties map[string]string
+	if ovfEnvelope.VirtualSystem != nil {
+		for _, product := range ovfEnvelope.VirtualSystem.Product {
+			for _, prop := range product.Property {
+				if strings.HasPrefix(prop.Key, "vmware-system") {
+					properties[prop.Key] = *prop.Default
+				}
+			}
+		}
+	}
+	return properties
+}
 
-	if imgOptions == AnnotateVmImage && item.Type == library.ItemTypeOVF {
-		var err error
-		ovfProperties, err = vmProvider.FetchOvfPropertiesFromLibrary(ctx, ses, item)
+// For a given library item, convert its attributes to return a VirtualMachineImage that represents a k8s-native
+// view of the item.
+func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *library.Item, imgOptions ImageOptions, ovfPropRetriever OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
+
+	var (
+		ovfSystemProps = make(map[string]string)
+		productInfo    = &v1alpha1.VirtualMachineImageProductInfo{}
+		osInfo         = &v1alpha1.VirtualMachineImageOSInfo{}
+	)
+
+	if item.Type == library.ItemTypeOVF {
+		ovfEnvelope, err := ovfPropRetriever.GetOvfInfoFromLibraryItem(ctx, session, item)
 		if err != nil {
 			return nil, err
+		}
+
+		if imgOptions == AnnotateVmImage {
+			systemProps := GetVmwareSystemPropertiesFromOvf(ovfEnvelope)
+			ovfSystemProps = systemProps
+		}
+
+		if ovfEnvelope.VirtualSystem != nil {
+			os := ovfEnvelope.VirtualSystem.OperatingSystem
+			product := ovfEnvelope.VirtualSystem.Product
+
+			// Use info from the first product section in the VM image, if one exists.
+			if len(product) > 0 {
+				p := product[0]
+				productInfo.Vendor = p.Vendor
+				productInfo.Product = p.Product
+				productInfo.FullVersion = p.FullVersion
+				productInfo.Version = p.Version
+			}
+
+			// Use operatng system info from the first os section in the VM image, if one exists.
+			if len(os) > 0 {
+				o := os[0]
+
+				if o.Version != nil {
+					osInfo.Version = *o.Version
+				}
+
+				if o.OSType != nil {
+					osInfo.Type = *o.OSType
+				}
+			}
 		}
 	}
 
@@ -666,7 +717,7 @@ func LibItemToVirtualMachineImage(ctx context.Context, ses *Session,
 	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{
 			Name:              item.Name,
-			Annotations:       ovfProperties,
+			Annotations:       ovfSystemProps,
 			CreationTimestamp: ts,
 		},
 		Status: v1alpha1.VirtualMachineImageStatus{
@@ -676,25 +727,28 @@ func LibItemToVirtualMachineImage(ctx context.Context, ses *Session,
 		Spec: v1alpha1.VirtualMachineImageSpec{
 			Type:            item.Type,
 			ImageSourceType: "Content Library",
+			ProductInfo:     *productInfo,
+			OSInfo:          *osInfo,
 		},
 	}, nil
 }
 
-func (vm vmOptions) FetchOvfPropertiesFromLibrary(ctx context.Context, ses *Session, item *library.Item) (map[string]string, error) {
-	contentLibSession := NewContentLibraryProvider(ses)
+func (vm vmOptions) GetOvfInfoFromLibraryItem(ctx context.Context, session *Session, item *library.Item) (*ovf.Envelope, error) {
+	contentLibSession := NewContentLibraryProvider(session)
 
 	clDownloadHandler := createClDownloadHandler()
 
-	// Fetch & parse ovf from CL and populate the properties as annotations
-	ovfProperties, err := contentLibSession.ParseAndRetrievePropsFromLibraryItem(ctx, item, clDownloadHandler)
+	ovfEnvelope, err := contentLibSession.RetrieveOvfEnvelopeFromLibraryItem(ctx, item, clDownloadHandler)
 	if err != nil {
 		return nil, err
 	}
 
-	return ovfProperties, nil
+	return ovfEnvelope, nil
 }
 
-func (vm vmOptions) FetchOvfPropertiesFromVM(ctx context.Context, resVm *res.VirtualMachine) (map[string]string, error) {
+// TODO: Convert this to return all OVF info rather than a pre-parsed map to be as consistent as possible with
+// GetOvfInfoFromLibraryItem.
+func (vm vmOptions) GetOvfInfoFromVM(ctx context.Context, resVm *res.VirtualMachine) (map[string]string, error) {
 	return resVm.GetOvfProperties(ctx)
 }
 

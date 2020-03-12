@@ -7,6 +7,40 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// VirtualMachineImageProductInfo describes optional product-related information that can be added to an image
+// template.  This information can be used by the image author to communicate details of the product contained in the
+// image.
+type VirtualMachineImageProductInfo struct {
+	// Product typically describes the type of product contained in the image.
+	// +optional
+	Product string `json:"product,omitempty"`
+
+	// Vendor typically describes the name of the vendor that is producing the image.
+	// +optional
+	Vendor string `json:"vendor,omitempty"`
+
+	// Version typically describes a short-form version of the image.
+	// +optional
+	Version string `json:"version,omitempty"`
+
+	// FullVersion typically describes a long-form version of the image.
+	// +optional
+	FullVersion string `json:"fullVersion,omitempty"`
+}
+
+// VirtualMachineImageOSInfo describes optional information related to the image operating system that can be added
+// to an image template. This information can be used by the image author to communicate details of the operating
+// system associated with the image.
+type VirtualMachineImageOSInfo struct {
+	// Version typically describes the version of the guest operating system.
+	// +optional
+	Version string `json:"version,omitempty"`
+
+	// Type typically describes the type of the guest operating system.
+	// +optional
+	Type string `json:"type,omitempty"`
+}
+
 // VirtualMachineImageSpec defines the desired state of VirtualMachineImage
 type VirtualMachineImageSpec struct {
 	// Type describes the type of the VirtualMachineImage. Currently, the only supported image is "OVF"
@@ -14,7 +48,18 @@ type VirtualMachineImageSpec struct {
 
 	// ImageSourceType describes the type of content source of the VirtualMachineImage.  The only Content Source
 	// supported currently is the vSphere Content Library.
+	// +optional
 	ImageSourceType string `json:"imageSourceType,omitempty"`
+
+	// ProductInfo describes the attributes of the VirtualMachineImage relating to the product contained in the
+	// image.
+	// +optional
+	ProductInfo VirtualMachineImageProductInfo `json:"productInfo,omitempty"`
+
+	// OSInfo describes the attributes of the VirtualMachineImage relating to the Operating System contained in the
+	// image.
+	// +optional
+	OSInfo VirtualMachineImageOSInfo `json:"osInfo,omitempty"`
 }
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage
@@ -28,6 +73,8 @@ type VirtualMachineImageStatus struct {
 // +kubebuilder:resource:scope=Cluster,shortName=vmimage
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
+// +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
 
 // VirtualMachineImage is the Schema for the virtualmachineimages API
 // A VirtualMachineImage represents a VirtualMachine image (e.g. VM template) that can be used as the base image

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/vmware/govmomi/ovf"
+
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/golang/mock/gomock"
@@ -27,7 +29,7 @@ var _ = Describe("virtualmachine images", func() {
 	var mockVmProviderInterface *mocks.MockOvfPropertyRetriever
 	var mockController *gomock.Controller
 	var (
-		versionKey    = "version"
+		versionKey    = "vmware-system-version"
 		versionVal    = "1.15"
 		imgKey        = "img-foo-1"
 		imgVal        = "bar-1"
@@ -65,7 +67,7 @@ var _ = Describe("virtualmachine images", func() {
 				imgAnnotations := map[string]string{}
 				imgAnnotations[imgKey] = imgVal
 				mockVmProviderInterface.EXPECT().
-					FetchOvfPropertiesFromVM(context.Background(), resVm).
+					GetOvfInfoFromVM(context.Background(), resVm).
 					Return(imgAnnotations, nil).
 					Times(1)
 
@@ -84,7 +86,7 @@ var _ = Describe("virtualmachine images", func() {
 				// Test that we don't fetch if we have updated image annotations
 				imgAnnotations[imgKey] = imgValUpdated
 				mockVmProviderInterface.EXPECT().
-					FetchOvfPropertiesFromVM(gomock.Any(), gomock.Any()).
+					GetOvfInfoFromVM(gomock.Any(), gomock.Any()).
 					Return(imgAnnotations, nil).
 					Times(0)
 
@@ -96,7 +98,7 @@ var _ = Describe("virtualmachine images", func() {
 				vmAnnotations[vsphere.VmOperatorVMImagePropsKey] = "true"
 				expectedAnnotations[imgKey] = imgValUpdated
 				mockVmProviderInterface.EXPECT().
-					FetchOvfPropertiesFromVM(context.Background(), resVm).
+					GetOvfInfoFromVM(context.Background(), resVm).
 					Return(imgAnnotations, nil).
 					Times(1)
 				err = vsphere.AddVmImageAnnotations(vmAnnotations, ctx, mockVmProviderInterface, resVm)
@@ -119,7 +121,7 @@ var _ = Describe("virtualmachine images", func() {
 
 				ovfFetchErr := errors.New("VC error foo bar is closed")
 				mockVmProviderInterface.EXPECT().
-					FetchOvfPropertiesFromVM(context.Background(), resVm).
+					GetOvfInfoFromVM(context.Background(), resVm).
 					Return(map[string]string{}, ovfFetchErr).
 					Times(1)
 				err = vsphere.AddVmImageAnnotations(vmAnnotations, ctx, mockVmProviderInterface, resVm)
@@ -131,6 +133,7 @@ var _ = Describe("virtualmachine images", func() {
 	})
 
 	Context("when annotate flag is set to false", func() {
+
 		It("returns a virtualmachineimage object from the VM without annotations", func() {
 
 			simulator.Test(func(ctx context.Context, c *vim25.Client) {
@@ -150,17 +153,46 @@ var _ = Describe("virtualmachine images", func() {
 
 		It("returns a virtualmachineimage object from the library without annotations", func() {
 			ts := time.Now()
+
 			item := library.Item{
 				Name:         "fakeItem",
 				Type:         "ovf",
 				LibraryID:    "fakeID",
 				CreationTime: &ts,
 			}
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, nil)
+
+			ovfEnvelope := &ovf.Envelope{
+				VirtualSystem: &ovf.VirtualSystem{
+					Product: []ovf.ProductSection{
+						{
+							Vendor:      "vendor",
+							Product:     "product",
+							FullVersion: "fullversion",
+							Version:     "version",
+							Property: []ovf.Property{{
+								Key:     versionKey,
+								Default: &versionVal,
+							},
+							},
+						}},
+				},
+			}
+
+			mockVmProviderInterface.EXPECT().
+				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(ovfEnvelope, nil).
+				AnyTimes()
+
+			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface)
 			Expect(err).To(BeNil())
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
+
+			Expect((image.Spec.ProductInfo.Vendor)).Should(Equal("vendor"))
+			Expect((image.Spec.ProductInfo.Product)).Should(Equal("product"))
+			Expect((image.Spec.ProductInfo.FullVersion)).Should(Equal("fullversion"))
+			Expect((image.Spec.ProductInfo.Version)).Should(Equal("version"))
 		})
 	})
 
@@ -173,21 +205,43 @@ var _ = Describe("virtualmachine images", func() {
 				LibraryID:    "fakeID",
 				CreationTime: &ts,
 			}
-			annotations := map[string]string{}
-			annotations[versionKey] = versionVal
+
+			ovfEnvelope := &ovf.Envelope{
+				VirtualSystem: &ovf.VirtualSystem{
+					Product: []ovf.ProductSection{
+						{
+							Vendor:      "vendor",
+							Product:     "product",
+							FullVersion: "fullversion",
+							Version:     "version",
+							Property: []ovf.Property{{
+								Key:     versionKey,
+								Default: &versionVal,
+							},
+							},
+						}},
+				},
+			}
+
 			mockVmProviderInterface.EXPECT().
-				FetchOvfPropertiesFromLibrary(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(annotations, nil).
+				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(ovfEnvelope, nil).
 				AnyTimes()
+
 			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.AnnotateVmImage, mockVmProviderInterface)
 			Expect(err).To(BeNil())
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).NotTo(BeEmpty())
 			Expect(len(image.Annotations)).To(BeEquivalentTo(1))
-			Expect(image.Annotations).Should(HaveKey("version"))
-			Expect(image.Annotations["version"]).Should(Equal("1.15"))
+			Expect(image.Annotations).Should(HaveKey("vmware-system-version"))
+			Expect(image.Annotations["vmware-system-version"]).Should(Equal("1.15"))
 			Expect(image.CreationTimestamp).To(BeEquivalentTo(v1.NewTime(ts)))
+
+			Expect((image.Spec.ProductInfo.Vendor)).Should(Equal("vendor"))
+			Expect((image.Spec.ProductInfo.Product)).Should(Equal("product"))
+			Expect((image.Spec.ProductInfo.FullVersion)).Should(Equal("fullversion"))
+			Expect((image.Spec.ProductInfo.Version)).Should(Equal("version"))
 		})
 
 		It("returns a virtualmachineimage object from the VM with annotations", func() {
@@ -201,7 +255,7 @@ var _ = Describe("virtualmachine images", func() {
 				annotations := map[string]string{}
 				annotations[versionKey] = versionVal
 				mockVmProviderInterface.EXPECT().
-					FetchOvfPropertiesFromVM(gomock.Any(), gomock.Any()).
+					GetOvfInfoFromVM(gomock.Any(), gomock.Any()).
 					Return(annotations, nil).
 					AnyTimes()
 
@@ -225,7 +279,7 @@ var _ = Describe("virtualmachine images", func() {
 				LibraryID: "fakeID",
 			}
 			mockVmProviderInterface.EXPECT().
-				FetchOvfPropertiesFromLibrary(gomock.Any(), gomock.Any(), gomock.Any()).
+				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(nil, errors.New("error occurred when downloading library content")).
 				AnyTimes()
 			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.AnnotateVmImage, mockVmProviderInterface)

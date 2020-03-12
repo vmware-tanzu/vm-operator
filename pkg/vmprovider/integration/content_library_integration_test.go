@@ -122,9 +122,11 @@ var _ = Describe("list files in content library", func() {
 			Expect(err).To(BeNil())
 
 			var readerStream io.ReadCloser = file
-			props, err := vsphere.ParseOvfAndFetchProperties(readerStream)
+			ovfEnvelope, err := vsphere.ParseOvf(readerStream)
 			Expect(err).To(BeNil())
-			Expect(props).NotTo(BeNil())
+			Expect(ovfEnvelope).NotTo(BeNil())
+
+			props := vsphere.GetVmwareSystemPropertiesFromOvf(ovfEnvelope)
 			Expect(len(props)).NotTo(BeZero())
 			Expect(props).Should(HaveKeyWithValue("vmware-system.compatibilityoffering.offers.kube-apiserver."+
 				"version", "1.14"))
@@ -138,7 +140,7 @@ var _ = Describe("list files in content library", func() {
 			Expect(err).To(BeNil())
 			defer file.Close()
 
-			_, err = vsphere.ParseOvfAndFetchProperties(file)
+			_, err = vsphere.ParseOvf(file)
 			Expect(err).Should(MatchError(errors.New("EOF")))
 		})
 	})
@@ -188,9 +190,8 @@ var _ = Describe("list files in content library", func() {
 				Return(vsphere.DownloadUriResponse{}, nil).
 				Times(1)
 			clProvider := vsphere.NewContentLibraryProvider(session)
-			ovfProperties, err := clProvider.ParseAndRetrievePropsFromLibraryItem(context.TODO(), &item, mockContentProvider)
+			_, err := clProvider.RetrieveOvfEnvelopeFromLibraryItem(context.TODO(), &item, mockContentProvider)
 			Expect(err).Should(MatchError("error occurred downloading item fakeItem"))
-			Expect(ovfProperties).To(BeEmpty())
 		})
 	})
 

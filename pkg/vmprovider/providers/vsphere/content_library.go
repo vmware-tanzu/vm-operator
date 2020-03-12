@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
 	"time"
 
 	"github.com/pkg/errors"
@@ -60,10 +59,18 @@ type DownloadUriResponse struct {
 	DownloadSessionId string
 }
 
-// ParseAndRetrievePropsFromLibraryItem downloads the supported file from content library.
-// parses the downloaded ovf and retrieves the properties defined under
-// VirtualSystem.Product.Property and return them as a map.
-func (cs *ContentLibraryProvider) ParseAndRetrievePropsFromLibraryItem(ctx context.Context, item *library.Item, clHandler ContentDownloadHandler) (map[string]string, error) {
+func ParseOvf(ovfContent io.Reader) (*ovf.Envelope, error) {
+	ovfEnvelope, err := ovf.Unmarshal(ovfContent)
+	if err != nil {
+		return nil, err
+	}
+
+	return ovfEnvelope, nil
+}
+
+// RetrieveOvfEnvelopeFromLibraryItem downloads the supported file from content library.
+// parses the downloaded ovf and returns the OVF Envelope descriptor for consumption.
+func (cs *ContentLibraryProvider) RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item *library.Item, clHandler ContentDownloadHandler) (*ovf.Envelope, error) {
 
 	var downloadedFileContent io.ReadCloser
 
@@ -97,13 +104,7 @@ func (cs *ContentLibraryProvider) ParseAndRetrievePropsFromLibraryItem(ctx conte
 	log.V(4).Info("downloaded library item", libItemName, item.Name)
 	defer downloadedFileContent.Close()
 
-	ovfProperties, err := ParseOvfAndFetchProperties(downloadedFileContent)
-	if err != nil {
-		return nil, err
-	}
-
-	return ovfProperties, nil
-
+	return ParseOvf(downloadedFileContent)
 }
 
 func (cs *ContentLibraryProvider) CreateLibrary(ctx context.Context, contentSource string) (string, error) {
@@ -215,25 +216,6 @@ func isInvalidResponse(response DownloadUriResponse) bool {
 	}
 
 	return false
-}
-
-func ParseOvfAndFetchProperties(fileContent io.Reader) (map[string]string, error) {
-	var env *ovf.Envelope
-	properties := make(map[string]string)
-
-	env, err := ovf.Unmarshal(fileContent)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, product := range env.VirtualSystem.Product {
-		for _, prop := range product.Property {
-			if strings.HasPrefix(prop.Key, "vmware-system") {
-				properties[prop.Key] = *prop.Default
-			}
-		}
-	}
-	return properties, nil
 }
 
 // GenerateDownloadUriForLibraryItem downloads the file from content library in 4 stages

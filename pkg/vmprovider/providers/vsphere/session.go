@@ -271,8 +271,8 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context) ([]*v1alph
 	for i := range items {
 		item := items[i]
 		if IsSupportedDeployType(item.Type) {
-			var vmOpts OvfPropertyRetriever = vmOptions{}
-			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, AnnotateVmImage, vmOpts)
+			var ovfInfoRetriever OvfPropertyRetriever = vmOptions{}
+			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, AnnotateVmImage, ovfInfoRetriever)
 			if err != nil {
 				return nil, err
 			}
@@ -339,9 +339,9 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string)
 		return nil, err
 	}
 
-	var vmOpts OvfPropertyRetriever = vmOptions{}
+	var ovfInfoRetriever OvfPropertyRetriever = vmOptions{}
 
-	virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, item, AnnotateVmImage, vmOpts)
+	virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, item, AnnotateVmImage, ovfInfoRetriever)
 	if err != nil {
 		return nil, err
 	}

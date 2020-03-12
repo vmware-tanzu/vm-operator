@@ -7,6 +7,7 @@ package mocks
 import (
 	context "context"
 	gomock "github.com/golang/mock/gomock"
+	ovf "github.com/vmware/govmomi/ovf"
 	library "github.com/vmware/govmomi/vapi/library"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	resources "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -36,32 +37,32 @@ func (m *MockOvfPropertyRetriever) EXPECT() *MockOvfPropertyRetrieverMockRecorde
 	return m.recorder
 }
 
-// FetchOvfPropertiesFromLibrary mocks base method
-func (m *MockOvfPropertyRetriever) FetchOvfPropertiesFromLibrary(arg0 context.Context, arg1 *vsphere.Session, arg2 *library.Item) (map[string]string, error) {
+// GetOvfInfoFromLibraryItem mocks base method
+func (m *MockOvfPropertyRetriever) GetOvfInfoFromLibraryItem(arg0 context.Context, arg1 *vsphere.Session, arg2 *library.Item) (*ovf.Envelope, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FetchOvfPropertiesFromLibrary", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "GetOvfInfoFromLibraryItem", arg0, arg1, arg2)
+	ret0, _ := ret[0].(*ovf.Envelope)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOvfInfoFromLibraryItem indicates an expected call of GetOvfInfoFromLibraryItem
+func (mr *MockOvfPropertyRetrieverMockRecorder) GetOvfInfoFromLibraryItem(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOvfInfoFromLibraryItem", reflect.TypeOf((*MockOvfPropertyRetriever)(nil).GetOvfInfoFromLibraryItem), arg0, arg1, arg2)
+}
+
+// GetOvfInfoFromVM mocks base method
+func (m *MockOvfPropertyRetriever) GetOvfInfoFromVM(arg0 context.Context, arg1 *resources.VirtualMachine) (map[string]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetOvfInfoFromVM", arg0, arg1)
 	ret0, _ := ret[0].(map[string]string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// FetchOvfPropertiesFromLibrary indicates an expected call of FetchOvfPropertiesFromLibrary
-func (mr *MockOvfPropertyRetrieverMockRecorder) FetchOvfPropertiesFromLibrary(arg0, arg1, arg2 interface{}) *gomock.Call {
+// GetOvfInfoFromVM indicates an expected call of GetOvfInfoFromVM
+func (mr *MockOvfPropertyRetrieverMockRecorder) GetOvfInfoFromVM(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchOvfPropertiesFromLibrary", reflect.TypeOf((*MockOvfPropertyRetriever)(nil).FetchOvfPropertiesFromLibrary), arg0, arg1, arg2)
-}
-
-// FetchOvfPropertiesFromVM mocks base method
-func (m *MockOvfPropertyRetriever) FetchOvfPropertiesFromVM(arg0 context.Context, arg1 *resources.VirtualMachine) (map[string]string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FetchOvfPropertiesFromVM", arg0, arg1)
-	ret0, _ := ret[0].(map[string]string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// FetchOvfPropertiesFromVM indicates an expected call of FetchOvfPropertiesFromVM
-func (mr *MockOvfPropertyRetrieverMockRecorder) FetchOvfPropertiesFromVM(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchOvfPropertiesFromVM", reflect.TypeOf((*MockOvfPropertyRetriever)(nil).FetchOvfPropertiesFromVM), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOvfInfoFromVM", reflect.TypeOf((*MockOvfPropertyRetriever)(nil).GetOvfInfoFromVM), arg0, arg1)
 }

@@ -94,9 +94,9 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 				clientCreateImageFails(mockClient, ctx, &image)
 			})
 
-			It("returns an error", func() {
+			It("returns success", func() {
 				err := imageDiscoverer.createImages(ctx, images)
-				Expect(err).To(HaveOccurred())
+				Expect(err).ToNot(HaveOccurred())
 			})
 		})
 	})

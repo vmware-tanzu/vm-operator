@@ -110,14 +110,12 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			})
 
 			imageExistsFunc := func(imageList *vmoperatorv1alpha1.VirtualMachineImageList, name string) bool {
-				found := false
 				for _, image := range imageList.Items {
 					if image.Name == name {
-						found = true
+						return true
 					}
 				}
-
-				return found
+				return false
 			}
 
 			It("should add a VirtualMachineImage to if an item is added to the library", func() {
@@ -131,6 +129,24 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 					err = c.List(context.TODO(), imageList)
 					Expect(err).ShouldNot(HaveOccurred())
 					return imageExistsFunc(imageList, imageToAddName)
+				}, timeout).Should(BeTrue())
+			})
+
+			It("should not fail fast with invalid VirtualMachineImage image name added to the library", func() {
+				var imageToAddName1 = "image-to-add2"
+				var imageToAddName2 = "image_not_to_add"
+
+				err = integration.CreateLibraryItem(ctx, session, imageToAddName1, "ovf", integration.ContentSourceID)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				err = integration.CreateLibraryItem(ctx, session, imageToAddName2, "ovf", integration.ContentSourceID)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				Eventually(func() bool {
+					imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
+					err = c.List(context.TODO(), imageList)
+					Expect(err).ShouldNot(HaveOccurred())
+					return imageExistsFunc(imageList, imageToAddName1) && !imageExistsFunc(imageList, imageToAddName2)
 				}, timeout).Should(BeTrue())
 			})
 

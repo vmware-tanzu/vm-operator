@@ -59,7 +59,7 @@ func NewVirtualMachineImageDiscoverer(
 	}
 }
 
-// Attempt to create a set of images.  Fail fast on first failure
+// Attempt to create a set of images.
 func (d *VirtualMachineImageDiscoverer) createImages(ctx goctx.Context, images []vmoperatorv1alpha1.VirtualMachineImage) error {
 
 	for _, image := range images {
@@ -67,7 +67,7 @@ func (d *VirtualMachineImageDiscoverer) createImages(ctx goctx.Context, images [
 		d.log.V(4).Info("Creating image", "name", img.Name)
 		err := d.client.Create(ctx, &img)
 		if err != nil {
-			return errors.Wrapf(err, "failed to create image %s", img.Name)
+			d.log.V(5).Info("failed to create image", "name", img.Name, "error", err)
 		}
 	}
 

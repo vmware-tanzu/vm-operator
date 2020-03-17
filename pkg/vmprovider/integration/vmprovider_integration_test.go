@@ -137,7 +137,7 @@ var _ = Describe("VMProvider Tests", func() {
 		var err error
 
 		BeforeEach(func() {
-			vmProvider = vsphere.NewVsphereMachineProviderFromClients(clientSet, nil, nil)
+			vmProvider = vsphere.NewVSphereMachineProviderFromClients(clientSet, nil, nil)
 		})
 
 		Context("and the IP is available on create", func() {
@@ -194,7 +194,7 @@ var _ = Describe("VMProvider Tests", func() {
 				integration.SecretName)
 			Expect(err).NotTo(HaveOccurred())
 
-			vmProvider = vsphere.NewVsphereMachineProviderFromClients(clientSet, nil, nil)
+			vmProvider = vsphere.NewVSphereMachineProviderFromClients(clientSet, nil, nil)
 
 			// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
 			testIP := "10.0.0.1"
@@ -338,8 +338,6 @@ var _ = Describe("VMProvider Tests", func() {
 
 	Context("ListVirtualMachineImages", func() {
 		It("should list the virtualmachineimages available in CL", func() {
-			vmProvider := vmprovider.GetService().GetRegisteredVmProviderOrDie()
-
 			var images []*vmoperatorv1alpha1.VirtualMachineImage
 
 			//Configure to use Content Library
@@ -367,8 +365,6 @@ var _ = Describe("VMProvider Tests", func() {
 	Context("GetVirtualMachineImage", func() {
 
 		It("should get the existing virtualmachineimage", func() {
-			vmProvider := vmprovider.GetService().GetRegisteredVmProviderOrDie()
-
 			var image *vmoperatorv1alpha1.VirtualMachineImage
 
 			//Configure to use Content Library
@@ -398,7 +394,7 @@ var _ = Describe("VMProvider Tests", func() {
 			testPolicyName = "test-name"
 			testPolicyNamespace = integration.DefaultNamespace
 
-			vmProvider = vsphere.NewVsphereMachineProviderFromClients(clientSet, nil, nil)
+			vmProvider = vsphere.NewVSphereMachineProviderFromClients(clientSet, nil, nil)
 
 			resourcePolicy = getVirtualMachineSetResourcePolicy(testPolicyName, testPolicyNamespace)
 			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
@@ -442,7 +438,7 @@ var _ = Describe("VMProvider Tests", func() {
 		var vmProvider vmprovider.VirtualMachineProviderInterface
 		var err error
 		It("reconfigure and power on without errors", func() {
-			vmProvider = vsphere.NewVsphereMachineProviderFromClients(clientSet, nil, nil)
+			vmProvider = vsphere.NewVSphereMachineProviderFromClients(clientSet, nil, nil)
 
 			err = vmProvider.ComputeClusterCpuMinFrequency(context.TODO())
 			Expect(err).NotTo(HaveOccurred())

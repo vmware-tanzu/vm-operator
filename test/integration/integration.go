@@ -62,7 +62,7 @@ const (
 var (
 	ContentSourceID string
 	log             = logf.Log.WithName("integration")
-	vsphereProvider vsphere.VSphereVmProviderInterface
+	vmProvider      vmprovider.VirtualMachineProviderInterface
 )
 
 func setContentSourceID(id string) {
@@ -123,15 +123,13 @@ func EnableDebugLogging() {
 	}
 }
 
-func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VSphereVmProviderConfig, *rest.Config, *VcSimInstance, *vsphere.Session) {
+func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VSphereVmProviderConfig, *rest.Config, *VcSimInstance, *vsphere.Session, vmprovider.VirtualMachineProviderInterface) {
 	Expect(len(namespaces) > 0).To(BeTrue())
 
 	flag.Parse()
 
 	rootDir, err := testutil.GetRootDir()
-	if err != nil {
-		panic(fmt.Sprintf("GetRootDir failed: %v", err))
-	}
+	Expect(err).ToNot(HaveOccurred())
 
 	testEnv := &envtest.Environment{
 		CRDDirectoryPaths: []string{
@@ -155,12 +153,9 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	ncpclient := ncpclientset.NewForConfigOrDie(cfg)
 	vmopclient := vmopclientset.NewForConfigOrDie(cfg)
 
-	vsphereProvider = vsphere.NewVSphereVmProviderFromClients(clientSet, ncpclient, vmopclient)
-	vmProvider := vsphereProvider.(vmprovider.VirtualMachineProviderInterface)
-
 	// Register the vSphere provider
 	log.Info("setting up vSphere Provider")
-	vmprovider.GetService().RegisterVmProvider(vmProvider)
+	vmProvider = vsphere.NewVSphereVmProviderFromClients(clientSet, ncpclient, vmopclient)
 
 	vcSim := NewVcSimInstance()
 
@@ -174,7 +169,7 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	err = os.Setenv(vsphere.EnvContentLibApiWaitSecs, "1")
 	Expect(err).NotTo(HaveOccurred())
 
-	return testEnv, vSphereConfig, cfg, vcSim, session
+	return testEnv, vSphereConfig, cfg, vcSim, session, vmProvider
 }
 
 func TeardownIntegrationEnv(testEnv *envtest.Environment, vcSim *VcSimInstance) {
@@ -208,7 +203,7 @@ func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Con
 	}
 
 	// Setup content library once.  The first namespace is sufficient to use
-	session, err := vsphereProvider.GetSession(context.TODO(), namespaces[0])
+	session, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), namespaces[0])
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session: %v", err)
 	}

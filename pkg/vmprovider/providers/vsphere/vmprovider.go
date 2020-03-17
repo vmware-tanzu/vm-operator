@@ -79,7 +79,7 @@ type vSphereVmProvider struct {
 	sessions SessionManager
 }
 
-func NewVSphereVmProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) VSphereVmProviderInterface {
+func NewVSphereVmProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) vmprovider.VirtualMachineProviderInterface {
 	vmProvider := &vSphereVmProvider{
 		sessions: NewSessionManager(clientset, ncpclient, vmopclient),
 	}
@@ -87,22 +87,20 @@ func NewVSphereVmProviderFromClients(clientset *kubernetes.Clientset, ncpclient 
 	return vmProvider
 }
 
-func NewVsphereMachineProviderFromRestConfig(cfg *rest.Config) vmprovider.VirtualMachineProviderInterface {
+func NewVSphereMachineProviderFromRestConfig(cfg *rest.Config) vmprovider.VirtualMachineProviderInterface {
 	clientSet := kubernetes.NewForConfigOrDie(cfg)
 	ncpclient := ncpclientset.NewForConfigOrDie(cfg)
 	vmopclient := vmopclientset.NewForConfigOrDie(cfg)
 
-	vmProvider := NewVsphereMachineProviderFromClients(clientSet, ncpclient, vmopclient)
-
-	return vmProvider
+	return NewVSphereMachineProviderFromClients(clientSet, ncpclient, vmopclient)
 }
 
-func NewVsphereMachineProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) vmprovider.VirtualMachineProviderInterface {
+func NewVSphereMachineProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) vmprovider.VirtualMachineProviderInterface {
 	vSphereProvider := NewVSphereVmProviderFromClients(clientset, ncpclient, vmopclient)
 	return vSphereProvider.(vmprovider.VirtualMachineProviderInterface)
 }
 
-func newVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderConfig) (VSphereVmProviderInterface, error) {
+func newVSphereVmProviderFromConfig(namespace string, config *VSphereVmProviderConfig) (vmprovider.VirtualMachineProviderInterface, error) {
 	vmProvider := &vSphereVmProvider{
 		sessions: NewSessionManager(nil, nil, nil),
 	}
@@ -127,13 +125,8 @@ func NewVSphereMachineProviderFromConfig(namespace string, config *VSphereVmProv
 	return vSphereProvider.(vmprovider.VirtualMachineProviderInterface), nil
 }
 
-type VSphereVmProviderInterface interface {
+type VSphereVmProviderGetSessionHack interface {
 	GetSession(ctx context.Context, namespace string) (*Session, error)
-	UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error
-	UpdateVmOpSACredSecret(ctx context.Context)
-	DoClusterModulesExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
-	CreateClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
-	DeleteClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
 }
 
 func (vs *vSphereVmProvider) Name() string {

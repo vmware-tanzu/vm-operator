@@ -30,7 +30,6 @@ import (
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
@@ -177,7 +176,7 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 			},
 		}
 
-		// Don't validate errors so that we clean up as much as possible.  Delete with Background propagation in order to trigger immmediate delete
+		// Don't validate errors so that we clean up as much as possible.  Delete with Background propagation in order to trigger immediate delete
 		// Otherwise, the API server will place a finalizer on the resource expected the GC to remove, which leads to subsequent resource creation issues.
 		err = c.Delete(ctx, storageClass, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
 		err = c.Delete(ctx, configMap, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
@@ -191,9 +190,7 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 		// TODO:  Figure out a way to mock the client error in order to cover more corner cases
 		It("invoke the reconcile method", func() {
 
-			provider := vmprovider.GetService().GetRegisteredVmProviderOrDie()
-			p := provider.(vsphere.VSphereVmProviderInterface)
-			session, err := p.GetSession(context.TODO(), ns)
+			session, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), ns)
 			Expect(err).NotTo(HaveOccurred())
 
 			//Configure to use Content Library

@@ -8,6 +8,7 @@ package integration
 
 import (
 	"context"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
@@ -26,6 +27,7 @@ var (
 	testEnv       *envtest.Environment
 	vSphereConfig *vsphere.VSphereVmProviderConfig
 	session       *vsphere.Session
+	vmProvider    vmprovider.VirtualMachineProviderInterface
 	clientSet     *kubernetes.Clientset
 
 	err error
@@ -39,7 +41,7 @@ func TestVSphereIntegrationProvider(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	testEnv, vSphereConfig, restConfig, vcSim, session = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
+	testEnv, vSphereConfig, restConfig, vcSim, session, vmProvider = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
 	clientSet = kubernetes.NewForConfigOrDie(restConfig)
 
 	ctx = context.Background()

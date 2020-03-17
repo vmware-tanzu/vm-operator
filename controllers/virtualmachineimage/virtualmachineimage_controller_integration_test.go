@@ -26,7 +26,6 @@ import (
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
@@ -61,7 +60,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 		ctrlContext := &controllerContext.ControllerManagerContext{
 			Logger:     ctrllog.Log.WithName("test"),
-			VmProvider: vmprovider.GetService().GetRegisteredVmProviderOrDie(),
+			VmProvider: vmProvider,
 		}
 
 		err = AddWithOptions(ctrlContext, mgr, VirtualMachineImageDiscovererOptions{
@@ -251,7 +250,7 @@ var _ = Describe("ReconcileVirtualMachineImage", func() {
 
 		ctrlContext := &controllerContext.ControllerManagerContext{
 			Logger:     ctrllog.Log.WithName("test"),
-			VmProvider: vmprovider.GetService().GetRegisteredVmProviderOrDie(),
+			VmProvider: vmProvider,
 		}
 
 		recFn, requests, _, _ = integration.SetupTestReconcile(newReconciler(ctrlContext, mgr, VirtualMachineImageDiscovererOptions{
@@ -322,7 +321,7 @@ var _ = Describe("ReconcileVMOpConfigMap", func() {
 
 		ctrlContext := &controllerContext.ControllerManagerContext{
 			Logger:     ctrllog.Log.WithName("test"),
-			VmProvider: vmprovider.GetService().GetRegisteredVmProviderOrDie(),
+			VmProvider: vmProvider,
 		}
 
 		recFn, requests, _, _ = integration.SetupTestReconcile(newCMReconciler(ctrlContext, mgr))

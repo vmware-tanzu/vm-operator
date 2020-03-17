@@ -34,7 +34,7 @@ var (
 )
 
 var _ = BeforeSuite(func() {
-	testEnv, _, cfg, vcSim, _ = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
+	testEnv, _, cfg, vcSim, _, _ = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
 })
 
 var _ = AfterSuite(func() {

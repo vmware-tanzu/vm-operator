@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -24,14 +25,15 @@ func TestInfraCluster(t *testing.T) {
 }
 
 var (
-	cfg       *rest.Config
-	vcSim     *integration.VcSimInstance
-	testEnv   *envtest.Environment
-	clientSet *kubernetes.Clientset
+	cfg        *rest.Config
+	vcSim      *integration.VcSimInstance
+	testEnv    *envtest.Environment
+	clientSet  *kubernetes.Clientset
+	vmProvider vmprovider.VirtualMachineProviderInterface
 )
 
 var _ = BeforeSuite(func() {
-	testEnv, _, cfg, vcSim, _ = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
+	testEnv, _, cfg, vcSim, _, vmProvider = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
 	clientSet = kubernetes.NewForConfigOrDie(cfg)
 })
 

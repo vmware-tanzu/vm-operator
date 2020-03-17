@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
@@ -28,11 +29,11 @@ var (
 	vcSim         *integration.VcSimInstance
 	testEnv       *envtest.Environment
 	vSphereConfig *vsphere.VSphereVmProviderConfig
-	session       *vsphere.Session
+	vmProvider    vmprovider.VirtualMachineProviderInterface
 )
 
 var _ = BeforeSuite(func() {
-	testEnv, vSphereConfig, cfg, vcSim, session = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
+	testEnv, vSphereConfig, cfg, vcSim, _, vmProvider = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
 })
 
 var _ = AfterSuite(func() {

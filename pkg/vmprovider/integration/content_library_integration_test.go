@@ -18,6 +18,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vapi/library"
 	govmomirest "github.com/vmware/govmomi/vapi/rest"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/mocks"
 	"github.com/vmware-tanzu/vm-operator/test/integration"

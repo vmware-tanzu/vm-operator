@@ -24,7 +24,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -72,7 +71,7 @@ var _ = Describe("InfraProvider controller", func() {
 			}
 
 			ctrlContext := &controllerContext.ControllerManagerContext{
-				VmProvider: vmprovider.GetService().GetRegisteredVmProviderOrDie(),
+				VmProvider: vmProvider,
 			}
 
 			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Name: name}}

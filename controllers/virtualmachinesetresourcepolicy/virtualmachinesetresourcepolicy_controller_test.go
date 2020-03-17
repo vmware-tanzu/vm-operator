@@ -12,8 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -92,7 +90,7 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 		Context("a valid spec is used", func() {
 			It("should create the VirtualMachineSetResource", func() {
 				ctrlContext := &controllercontext.ControllerManagerContext{
-					VmProvider: vmprovider.GetService().GetRegisteredVmProviderOrDie(),
+					VmProvider: vmProvider,
 				}
 				recFn, requests, _, _ := integration.SetupTestReconcile(newReconciler(ctrlContext, mgr))
 				Expect(add(mgr, recFn)).To(Succeed())
@@ -119,7 +117,7 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 
 			BeforeEach(func() {
 				ctrlContext := &controllercontext.ControllerManagerContext{
-					VmProvider: vmprovider.GetService().GetRegisteredVmProviderOrDie(),
+					VmProvider: vmProvider,
 				}
 				recFn, requests, _, reconcileError = integration.SetupTestReconcile(newReconciler(ctrlContext, mgr))
 				Expect(add(mgr, recFn)).To(Succeed())

@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -24,13 +25,14 @@ func TestVirtualMachineSetResourcePolicy(t *testing.T) {
 }
 
 var (
-	cfg     *rest.Config
-	vcSim   *integration.VcSimInstance
-	testEnv *envtest.Environment
+	cfg        *rest.Config
+	vcSim      *integration.VcSimInstance
+	testEnv    *envtest.Environment
+	vmProvider vmprovider.VirtualMachineProviderInterface
 )
 
 var _ = BeforeSuite(func() {
-	testEnv, _, cfg, vcSim, _ = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
+	testEnv, _, cfg, vcSim, _, vmProvider = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
 })
 
 var _ = AfterSuite(func() {

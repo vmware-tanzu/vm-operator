@@ -30,8 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	//vmrecord "github.com/vmware-tanzu/vm-operator/pkg/controller/common/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -145,7 +144,7 @@ var _ = Describe("VirtualMachine controller", func() {
 		Expect(err).ShouldNot(HaveOccurred())
 
 		ctrlContext := &controllercontext.ControllerManagerContext{
-			VmProvider: vmprovider.GetService().GetRegisteredVmProviderOrDie(),
+			VmProvider: vmProvider,
 		}
 
 		recFn, requests, _, _ = integration.SetupTestReconcile(newReconciler(ctrlContext, mgr))
@@ -181,14 +180,14 @@ var _ = Describe("VirtualMachine controller", func() {
 
 	Context("when creating/deleting a VM object from Inventory", func() {
 		It("invoke the reconcile method with valid storage class", func() {
-			provider := vmprovider.GetService().GetRegisteredVmProviderOrDie()
 
-			//Configure to use Content Library
+			// Configure to use Content Library
 			vSphereConfig.ContentSource = ""
 			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
 
-			images, err := provider.ListVirtualMachineImages(context.TODO(), ns)
+			images, err := vmProvider.ListVirtualMachineImages(context.TODO(), ns)
+			Expect(err).NotTo(HaveOccurred())
 
 			for _, image := range images {
 				stdlog.Printf("image %s", image.Name)

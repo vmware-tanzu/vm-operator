@@ -25,7 +25,6 @@ import (
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -101,7 +100,7 @@ var _ = Describe("VirtualMachineClass controller", func() {
 			}
 
 			ctrlContext := &controllerContext.ControllerManagerContext{
-				VmProvider: vmprovider.GetService().GetRegisteredVmProviderOrDie(),
+				VmProvider: vmProvider,
 			}
 
 			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Name: name}}

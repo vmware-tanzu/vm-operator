@@ -103,7 +103,6 @@ func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphere
 
 func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConfig) error {
 
-	var err error
 	s.Finder = find.NewFinder(s.client.VimClient(), false)
 	s.userInfo = url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
@@ -113,7 +112,6 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		return errors.Wrapf(err, "failed to init Datacenter %q", config.Datacenter)
 	}
 	s.datacenter = o.(*object.Datacenter)
-
 	s.Finder.SetDatacenter(s.datacenter)
 
 	// ResourcePool is only relevant for Development environments.  On WCP, the RP is extracted from an annotation
@@ -231,15 +229,16 @@ func (s *Session) ConfigureContent(ctx context.Context, contentSource string) er
 	}
 
 	var err error
-	if err = s.WithRestClient(ctx, func(c *rest.Client) error {
+	err = s.WithRestClient(ctx, func(c *rest.Client) error {
 		libManager := library.NewManager(c)
 		s.contentlib, err = libManager.GetLibraryByID(ctx, contentSource)
 		return err
-	}); err != nil {
+	})
+	if err != nil {
 		return errors.Wrapf(err, "failed to init Content Library %q", contentSource)
 	}
 
-	log.V(4).Info("Content library configured to", "Content Source=", contentSource)
+	log.V(4).Info("Content library configured to", "contentSource", contentSource)
 	return nil
 }
 
@@ -1500,7 +1499,6 @@ func (s *Session) AttachTagToVm(ctx context.Context, tagName string, tagCatName 
 		}
 		vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
 		return manager.AttachTag(ctx, tag.ID, vmRef)
-
 	})
 }
 
@@ -1516,7 +1514,6 @@ func (s *Session) DetachTagFromVm(ctx context.Context, tagName string, tagCatNam
 		}
 		vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
 		return manager.DetachTag(ctx, tag.ID, vmRef)
-
 	})
 }
 

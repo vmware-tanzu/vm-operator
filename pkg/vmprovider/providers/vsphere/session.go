@@ -28,6 +28,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 
 	ncpcs "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
@@ -1187,14 +1188,7 @@ func IsSupportedDeployType(t string) bool {
 }
 
 // getCustomizationSpec creates the customization spec for the vm
-func (s *Session) getCustomizationSpec(namespace, vmName string, vmSpec *v1alpha1.VirtualMachineSpec) (*vimTypes.CustomizationSpec, error) {
-	// BMV: This isn't really right but preserve the existing behavior. The Spec NetworkInterfaces isn't
-	// what we should be using here but the VC'S VM configured Nics. The VM won't start if the customized
-	// and configured Nics counts don't match.
-	if len(vmSpec.NetworkInterfaces) == 0 {
-		return nil, nil
-	}
-
+func (s *Session) getCustomizationSpec(ctx context.Context, namespace, vmName string, vmSpec *v1alpha1.VirtualMachineSpec, vm *res.VirtualMachine) (*vimTypes.CustomizationSpec, error) {
 	customSpec := &vimTypes.CustomizationSpec{
 		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{},
 		// This spec is for Linux guest OS. Need to change if other guest OS needs to be supported.
@@ -1213,37 +1207,54 @@ func (s *Session) getCustomizationSpec(namespace, vmName string, vmSpec *v1alpha
 		customSpec.GlobalIPSettings.DnsServerList = nameserverList
 	}
 
+	netDevices, err := vm.GetNetworkDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	nicMappings := make(map[string]vimTypes.CustomizationIPSettings)
 	// Used to config IP for VMs connecting to nsx-t logical ports
-	np := NsxtNetworkProvider(s.Finder, s.ncpClient)
 	for _, nif := range vmSpec.NetworkInterfaces {
 		if nif.NetworkType == NsxtNetworkType {
+			np := NsxtNetworkProvider(s.Finder, s.ncpClient)
 			vnetif, err := np.waitForVnetIFStatus(namespace, nif.NetworkName, vmName)
 			if err != nil {
 				return nil, err
 			}
 
-			// BMV: Actually fatal since the VM won't start b/c the Nic counts won't match.
-			if len(vnetif.Status.IPAddresses) != 1 {
-				log.Info("customize vnetif IP address not unique", "vnetif", vnetif)
+			if len(vnetif.Status.IPAddresses) == 0 {
+				log.Info("customize IP address is not set", "vnetif", vnetif)
 				continue
 			}
 
-			nicMapping := vimTypes.CustomizationAdapterMapping{
-				MacAddress: vnetif.Status.MacAddress,
-				Adapter: vimTypes.CustomizationIPSettings{
-					Ip: &vimTypes.CustomizationFixedIp{
-						IpAddress: vnetif.Status.IPAddresses[0].IP,
-					},
-					SubnetMask: vnetif.Status.IPAddresses[0].SubnetMask,
-					Gateway:    []string{vnetif.Status.IPAddresses[0].Gateway},
+			nicMappings[vnetif.Status.MacAddress] = vimTypes.CustomizationIPSettings{
+				Ip: &vimTypes.CustomizationFixedIp{
+					IpAddress: vnetif.Status.IPAddresses[0].IP,
 				},
+				SubnetMask: vnetif.Status.IPAddresses[0].SubnetMask,
+				Gateway:    []string{vnetif.Status.IPAddresses[0].Gateway},
 			}
-			customSpec.NicSettingMap = append(customSpec.NicSettingMap, nicMapping)
-		} else {
-			customSpec.NicSettingMap = append(customSpec.NicSettingMap, vimTypes.CustomizationAdapterMapping{})
 		}
 	}
 
+	for _, dev := range netDevices {
+		card, ok := dev.(vimTypes.BaseVirtualEthernetCard)
+		if !ok {
+			continue
+		}
+		nic := card.GetVirtualEthernetCard()
+		ipSettings, found := nicMappings[nic.MacAddress]
+		if !found {
+			ipSettings = vimTypes.CustomizationIPSettings{
+				Ip: &vimTypes.CustomizationDhcpIpGenerator{},
+			}
+		}
+		nicMapping := vimTypes.CustomizationAdapterMapping{
+			MacAddress: nic.MacAddress,
+			Adapter:    ipSettings,
+		}
+		customSpec.NicSettingMap = append(customSpec.NicSettingMap, nicMapping)
+	}
 	return customSpec, nil
 }
 
@@ -1507,4 +1518,56 @@ func (s *Session) DetachTagFromVm(ctx context.Context, tagName string, tagCatNam
 		return manager.DetachTag(ctx, tag.ID, vmRef)
 
 	})
+}
+
+func (s *Session) updateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
+	resVM, err := s.GetVirtualMachine(ctx, vm)
+	if err != nil {
+		return nil, err
+	}
+
+	isOff, err := resVM.IsVMPoweredOff(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// This is just a horrible, temporary hack so that we reconfigure "once" and not disrupt a running VM.
+	if isOff {
+		// Add device change specs to configSpec
+		deviceSpecs, err := s.GetNicChangeSpecs(ctx, vm, resVM)
+		if err != nil {
+			return nil, err
+		}
+
+		configSpec, err := s.generateConfigSpec(vm.Name, &vm.Spec, &vmConfigArgs.VmClass.Spec, vmConfigArgs.VmMetadata, deviceSpecs)
+		if err != nil {
+			return nil, err
+		}
+
+		err = resVM.Reconfigure(ctx, configSpec)
+		if err != nil {
+			return nil, err
+		}
+
+		customizationSpec, err := s.getCustomizationSpec(ctx, vm.Namespace, vm.Name, &vm.Spec, resVM)
+		if err != nil {
+			return nil, err
+		}
+
+		if customizationSpec != nil {
+			log.Info("Customizing VM",
+				"VirtualMachine", k8sTypes.NamespacedName{Namespace: vm.Namespace, Name: vm.Name},
+				"CustomizationSpec", customizationSpec)
+			if err := resVM.Customize(ctx, *customizationSpec); err != nil {
+				// Ignore customization pending fault as this means we have already tried to customize the VM and it is
+				// pending. This can happen if the VM has failed to power-on since the last time we customized the VM. If
+				// we don't ignore this error, we will never be able to power-on the VM and the we will always fail here.
+				if !IsCustomizationPendingError(err) {
+					return nil, err
+				}
+				log.Info("Ignoring customization error due to pending guest customization", "name", vm.NamespacedName())
+			}
+		}
+	}
+	return resVM, nil
 }

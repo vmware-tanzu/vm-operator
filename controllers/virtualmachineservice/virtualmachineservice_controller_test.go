@@ -77,7 +77,8 @@ var _ = Describe("VirtualMachineService controller", func() {
 			LeaderElectionNamespace: ns})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
-		r = newReconciler(mgr).(*ReconcileVirtualMachineService)
+		r, err = newReconciler(mgr)
+		Expect(err).NotTo(HaveOccurred())
 		recFn, requests, reconcileResult, reconcileErr = integration.SetupTestReconcile(r)
 		Expect(add(ctrlContext, mgr, recFn, r)).To(Succeed())
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
@@ -419,7 +420,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 					},
 				}
 
-				newService, err := r.createOrUpdateService(context.TODO(), changedVMService, service, "test-lb")
+				newService, err := r.createOrUpdateService(context.TODO(), changedVMService, service)
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(newService).NotTo(Equal(currentService))
 			})
@@ -429,7 +430,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 				err = c.Get(context.TODO(), types.NamespacedName{service.Namespace, service.Name}, currentService)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				newService, err := r.createOrUpdateService(context.TODO(), vmService, currentService, "test-lb")
+				newService, err := r.createOrUpdateService(context.TODO(), vmService, currentService)
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(newService).To(Equal(currentService))
 			})
@@ -459,7 +460,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 				}
 				currentService.Annotations[corev1.LastAppliedConfigAnnotation] = `{"d"}`
 
-				newService, err := r.createOrUpdateService(context.TODO(), changedVMService, service, "test-lb")
+				newService, err := r.createOrUpdateService(context.TODO(), changedVMService, service)
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(newService).NotTo(Equal(currentService))
 			})

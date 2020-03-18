@@ -5,6 +5,7 @@ go 1.13
 require (
 	cloud.google.com/go v0.38.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/envoyproxy/go-control-plane v0.9.4
 	github.com/go-logr/logr v0.1.0
 	github.com/go-logr/zapr v0.1.1 // indirect
 	github.com/gogo/protobuf v1.2.2-0.20190723190241-65acae22fc9d // indirect
@@ -30,6 +31,7 @@ require (
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45 // indirect
 	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
+	google.golang.org/grpc v1.25.1
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/yaml.v2 v2.2.4
 	k8s.io/api v0.0.0-20190918195907-bd6ac527cfd2

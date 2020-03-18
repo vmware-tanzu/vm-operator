@@ -13,8 +13,8 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/testing"
-	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
@@ -49,12 +49,16 @@ var _ = Describe("Loadbalancer Provider", func() {
 				Skip("Can't locate a kubeconfig in pipeline env, can test this locally")
 				cfg, err := config.GetConfig()
 				Expect(err).ShouldNot(HaveOccurred())
-				loadbalancerProvider := GetLoadbalancerProviderByType(cfg, NSXTLoadBalancer)
+				mgr, err := manager.New(cfg, manager.Options{})
+				Expect(err).ShouldNot(HaveOccurred())
+				loadbalancerProvider, err := GetLoadbalancerProviderByType(mgr, NSXTLoadBalancer)
+				Expect(err).ShouldNot(HaveOccurred())
 				Expect(loadbalancerProvider).NotTo(BeNil())
 			})
 
 			It("should successfully get a noop loadbalancer provider", func() {
-				loadbalancerProvider := GetLoadbalancerProviderByType(nil, "dummy")
+				loadbalancerProvider, err := GetLoadbalancerProviderByType(nil, "dummy")
+				Expect(err).NotTo(HaveOccurred())
 				Expect(loadbalancerProvider).To(Equal(noopLoadbalancerProvider{}))
 			})
 
@@ -93,20 +97,18 @@ var _ = Describe("Loadbalancer Provider", func() {
 
 				It("create loadbalancer should return error without cluster name", func() {
 					vmService.Spec.Selector = nil
-					lb, err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
+					err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
 					Expect(err).Should(HaveOccurred())
-					Expect(lb).To(Equal(""))
 				})
 			})
 
 			Context("virtual network doesn't exist", func() {
 				BeforeEach(func() {
-					lb, err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
+					err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
 				})
 
 				It("nsx-t network provider should fail to create a lb when virtual network doesn't exist", func() {
 					Expect(k8serrors.IsNotFound(err)).To(Equal(true))
-					Expect(lb).To(Equal(""))
 				})
 			})
 
@@ -124,18 +126,16 @@ var _ = Describe("Loadbalancer Provider", func() {
 					}
 					_, err = ncpClient.VmwareV1alpha1().VirtualNetworks(dummyNamespace).Create(vnet)
 					Expect(err).To(BeNil())
-					lb, err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
+					err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
 				})
 				Context("create load balancer", func() {
 					It("nsx-t network provider should successfully create a lb with virtual network", func() {
 						Expect(err).To(BeNil())
-						Expect(lb).NotTo(Equal(""))
 					})
 
 					It("nsx-t network provider should successfully get a lb with virtual network", func() {
-						lb, err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
+						err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
 						Expect(err).To(BeNil())
-						Expect(lb).NotTo(Equal(""))
 					})
 
 					It("nsx-t network provider should fail to get a lb with error", func() {
@@ -144,7 +144,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 							return true, nil, fmt.Errorf("an error occurred while getting load balancer")
 						})
 						loadBalancerProvider = nsxtLoadbalancerProvider{client: errorClient}
-						lb, err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
+						err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
 						Expect(err).To(MatchError("an error occurred while getting load balancer"))
 					})
 
@@ -157,7 +157,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 							return true, nil, fmt.Errorf("an error occurred while getting virtual networks")
 						})
 						loadBalancerProvider = nsxtLoadbalancerProvider{client: errorClient}
-						lb, err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
+						err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
 						Expect(err).To(MatchError("an error occurred while getting virtual networks"))
 					})
 
@@ -172,7 +172,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 						})
 
 						loadBalancerProvider = nsxtLoadbalancerProvider{client: errorClient}
-						lb, err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
+						err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
 						Expect(err).To(MatchError("an error occurred while create load balancers"))
 					})
 				})
@@ -411,98 +411,6 @@ var _ = Describe("Loadbalancer Provider", func() {
 					})
 				})
 
-			})
-
-			Context("Prepare patch operations for load balancer owner reference patch update", func() {
-				var (
-					loadBalancer *ncpv1alpha1.LoadBalancer
-				)
-				BeforeEach(func() {
-					vnet := &ncpv1alpha1.VirtualNetwork{
-						TypeMeta: metav1.TypeMeta{
-							Kind:       "VirtualNetwork",
-							APIVersion: "vmware.com/v1alpha1",
-						},
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "dummy-network",
-							Namespace: dummyNamespace,
-						},
-					}
-					_, err = ncpClient.VmwareV1alpha1().VirtualNetworks(dummyNamespace).Create(vnet)
-					Expect(err).To(BeNil())
-					lb, err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
-					Expect(err).To(BeNil())
-					loadBalancer, err = ncpClient.VmwareV1alpha1().LoadBalancers(vmService.Namespace).Get(lb, metav1.GetOptions{})
-					Expect(err).To(BeNil())
-
-				})
-
-				It("Should successfully assemble first lb's owner reference patch request", func() {
-					payload, err := loadBalancerProvider.PrepareLoadBalancerOwnerRefPatchOperation(loadBalancer, vmService)
-					Expect(err).To(BeNil())
-					Expect(string(payload)).To(Equal(`[{"op":"add","path":"/metadata/ownerReferences","value":[{"apiVersion":"vmoperator.vmware.com/v1alpha1","kind":"VirtualMachineService","name":"dummy-vmservice","uid":"","controller":false,"blockOwnerDeletion":true}]}]`))
-				})
-
-				It("Should successfully assemble multiple owner references patch request", func() {
-					loadBalancer.OwnerReferences = []metav1.OwnerReference{
-						{
-							UID:                vmService.UID,
-							Name:               vmService.Name,
-							Controller:         pointer.BoolPtr(false),
-							BlockOwnerDeletion: pointer.BoolPtr(true),
-							Kind:               ServiceOwnerRefKind,
-							APIVersion:         ServiceOwnerRefVersion,
-						},
-					}
-					secondVMService := &vmoperatorv1alpha1.VirtualMachineService{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "dummy-vmservice-2",
-							Namespace: dummyNamespace,
-						},
-						Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-							Type:         vmoperatorv1alpha1.VirtualMachineServiceTypeClusterIP,
-							Ports:        nil,
-							Selector:     nil,
-							ClusterIP:    "TEST",
-							ExternalName: "TEST",
-						},
-					}
-					payload, err := loadBalancerProvider.PrepareLoadBalancerOwnerRefPatchOperation(loadBalancer, secondVMService)
-					Expect(err).To(BeNil())
-					Expect(string(payload)).To(Equal(`[{"op":"add","path":"/metadata/ownerReferences/-","value":{"apiVersion":"vmoperator.vmware.com/v1alpha1","kind":"VirtualMachineService","name":"dummy-vmservice-2","uid":"","controller":false,"blockOwnerDeletion":true}}]`))
-				})
-			})
-
-			Context("Update LoadBalancer OwnerReferences", func() {
-				It("Should fail without a load balancer created", func() {
-					err := loadBalancerProvider.UpdateLoadBalancerOwnerReference(ctx, "dummy", vmService)
-					Expect(k8serrors.IsNotFound(err)).To(Equal(true))
-				})
-
-				Context("With load balancer", func() {
-					BeforeEach(func() {
-						vnet := &ncpv1alpha1.VirtualNetwork{
-							TypeMeta: metav1.TypeMeta{
-								Kind:       "VirtualNetwork",
-								APIVersion: "vmware.com/v1alpha1",
-							},
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "dummy-network",
-								Namespace: dummyNamespace,
-							},
-						}
-						_, err = ncpClient.VmwareV1alpha1().VirtualNetworks(dummyNamespace).Create(vnet)
-						Expect(err).To(BeNil())
-						lb, err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
-						Expect(err).To(BeNil())
-					})
-
-					XIt("Should fail since it is not support json patch in client-go testing now", func() {
-						//TODO: Need to update this Test case after client-go version updated
-						err := loadBalancerProvider.UpdateLoadBalancerOwnerReference(ctx, lb, vmService)
-						Expect(err).To(MatchError(`invalid JSON document`))
-					})
-				})
 			})
 
 		})

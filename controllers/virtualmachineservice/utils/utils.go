@@ -7,9 +7,12 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
@@ -43,4 +46,20 @@ func VMServiceCompareToLastApplied(newVMService *vmoperatorv1alpha1.VirtualMachi
 		return false, err
 	}
 	return apiequality.Semantic.DeepEqual(oldVMService.Spec, newVMService.Spec), nil
+}
+
+var (
+	virtualMachineServiceKind       = reflect.TypeOf(vmoperatorv1alpha1.VirtualMachineService{}).Name()
+	virtualMachineServiceAPIVersion = vmoperatorv1alpha1.GroupVersion.String()
+)
+
+func MakeVMServiceOwnerRef(vmService *vmoperatorv1alpha1.VirtualMachineService) metav1.OwnerReference {
+	return metav1.OwnerReference{
+		UID:                vmService.UID,
+		Name:               vmService.Name,
+		Controller:         pointer.BoolPtr(false),
+		BlockOwnerDeletion: pointer.BoolPtr(true),
+		Kind:               virtualMachineServiceKind,
+		APIVersion:         virtualMachineServiceAPIVersion,
+	}
 }

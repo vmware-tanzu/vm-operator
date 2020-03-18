@@ -74,20 +74,26 @@ func (e *RequeueAfterError) GetRequeueAfter() time.Duration {
 }
 
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
-	r := newReconciler(mgr)
-	rvms := r.(*ReconcileVirtualMachineService)
-	return add(ctx, mgr, r, rvms)
+	r, err := newReconciler(mgr)
+	if err != nil {
+		return err
+	}
+	return add(ctx, mgr, r, r)
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager) reconcile.Reconciler {
+func newReconciler(mgr manager.Manager) (*ReconcileVirtualMachineService, error) {
+	provider, err := providers.GetLoadbalancerProviderByType(mgr, providers.LBProvider)
+	if err != nil {
+		return nil, err
+	}
 	return &ReconcileVirtualMachineService{
 		Client:               mgr.GetClient(),
 		log:                  ctrl.Log.WithName("controllers").WithName("VirtualMachineServices"),
 		scheme:               mgr.GetScheme(),
 		recorder:             record.New(mgr.GetEventRecorderFor("virtualmachineservices")),
-		loadbalancerProvider: providers.GetLoadbalancerProviderByType(mgr.GetConfig(), providers.LBProvider),
-	}
+		loadbalancerProvider: provider,
+	}, nil
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -207,7 +213,6 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 	r.log.Info("Reconcile VirtualMachineService", "name", vmService.NamespacedName())
 	defer r.log.Info("Finished Reconcile VirtualMachineService", "name", vmService.NamespacedName())
 
-	loadBalancerName := ""
 	if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
 		// Get virtual network name from vm spec
 		virtualNetworkName, err := r.getVirtualNetworkName(ctx, vmService)
@@ -216,7 +221,7 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 			return err
 		}
 		// Get LoadBalancer to attach
-		loadBalancerName, err = r.loadbalancerProvider.EnsureLoadBalancer(ctx, vmService, virtualNetworkName)
+		err = r.loadbalancerProvider.EnsureLoadBalancer(ctx, vmService, virtualNetworkName)
 		if err != nil {
 			r.log.Error(err, "Failed to create or get load balancer for vm service", "name", vmService.Name)
 			return err
@@ -227,7 +232,7 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 	service := r.vmServiceToService(vmService)
 	r.log.V(5).Info("Translate VM Service to K8S Service", "k8s service", service)
 	// Update k8s Service
-	newService, err := r.createOrUpdateService(ctx, vmService, service, loadBalancerName)
+	newService, err := r.createOrUpdateService(ctx, vmService, service)
 	if err != nil {
 		r.log.Error(err, "Failed to update k8s services", "k8s services", service)
 		return err
@@ -267,8 +272,8 @@ func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMa
 	return reconcileRequests
 }
 
-func (r *ReconcileVirtualMachineService) makeObjectMeta(vmService *vmoperatorv1alpha1.VirtualMachineService) *metav1.ObjectMeta {
-	om := &metav1.ObjectMeta{
+func MakeObjectMeta(vmService *vmoperatorv1alpha1.VirtualMachineService) metav1.ObjectMeta {
+	om := metav1.ObjectMeta{
 		Namespace:   vmService.Namespace,
 		Name:        vmService.Name,
 		Labels:      vmService.Labels,
@@ -284,23 +289,23 @@ func (r *ReconcileVirtualMachineService) makeObjectMeta(vmService *vmoperatorv1a
 			},
 		},
 	}
-	pkg.AddAnnotations(om)
+	pkg.AddAnnotations(&om)
 
 	return om
 }
 
 func (r *ReconcileVirtualMachineService) makeEndpoints(vmService *vmoperatorv1alpha1.VirtualMachineService, currentEndpoints *corev1.Endpoints, subsets []corev1.EndpointSubset) *corev1.Endpoints {
 	newEndpoints := currentEndpoints.DeepCopy()
-	newEndpoints.ObjectMeta = *r.makeObjectMeta(vmService)
+	newEndpoints.ObjectMeta = MakeObjectMeta(vmService)
 	newEndpoints.Subsets = subsets
 	return newEndpoints
 }
 
 func (r *ReconcileVirtualMachineService) makeEndpointAddress(vmService *vmoperatorv1alpha1.VirtualMachineService, vm *vmoperatorv1alpha1.VirtualMachine) *corev1.EndpointAddress {
 	return &corev1.EndpointAddress{
-		IP:       vm.Status.VmIp,
-		NodeName: &vm.Status.Host,
+		IP: vm.Status.VmIp,
 		TargetRef: &corev1.ObjectReference{
+			APIVersion:      vmService.APIVersion,
 			Kind:            vmService.Kind,
 			Namespace:       vmService.Namespace,
 			Name:            vmService.Name,
@@ -325,8 +330,6 @@ func (r *ReconcileVirtualMachineService) getVirtualNetworkName(ctx goctx.Context
 
 //Convert vm service to k8s service
 func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperatorv1alpha1.VirtualMachineService) *corev1.Service {
-	om := r.makeObjectMeta(vmService)
-
 	servicePorts := make([]corev1.ServicePort, 0, len(vmService.Spec.Ports))
 	for _, vmPort := range vmService.Spec.Ports {
 		sport := corev1.ServicePort{
@@ -344,7 +347,7 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 			Kind:       "Service",
 			APIVersion: "core/v1",
 		},
-		ObjectMeta: *om,
+		ObjectMeta: MakeObjectMeta(vmService),
 		Spec: corev1.ServiceSpec{
 			// Don't specify selector to keep endpoints controller from interfering
 			Type:         corev1.ServiceType(vmService.Spec.Type),
@@ -371,7 +374,7 @@ func findPort(vm *vmoperatorv1alpha1.VirtualMachine, portName intstr.IntOrString
 	return 0, fmt.Errorf("no suitable port for manifest: %s", vm.UID)
 }
 
-func addEndpointSubset(subsets []corev1.EndpointSubset, vm *vmoperatorv1alpha1.VirtualMachine, epa corev1.EndpointAddress, epp *corev1.EndpointPort) []corev1.EndpointSubset {
+func addEndpointSubset(subsets []corev1.EndpointSubset, epa corev1.EndpointAddress, epp *corev1.EndpointPort) []corev1.EndpointSubset {
 	var ports []corev1.EndpointPort
 	if epp != nil {
 		ports = append(ports, *epp)
@@ -387,7 +390,7 @@ func addEndpointSubset(subsets []corev1.EndpointSubset, vm *vmoperatorv1alpha1.V
 }
 
 // Create or update k8s service
-func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service, loadBalancerName string) (*corev1.Service, error) {
+func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service) (*corev1.Service, error) {
 	serviceKey := client.ObjectKey{Name: service.Name, Namespace: service.Namespace}
 
 	r.log.V(5).Info("Updating k8s service", "k8s service name", serviceKey)
@@ -438,14 +441,6 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context
 	// create or update service
 	createService := len(currentService.ResourceVersion) == 0
 	if createService {
-		// Every time create a load balancer type vm service, need to append this vm service to load balancer owner reference list
-		if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
-			err = r.loadbalancerProvider.UpdateLoadBalancerOwnerReference(ctx, loadBalancerName, vmService)
-			if err != nil {
-				r.log.Error(err, "Update LoadBalancer Owner Reference Error", "load balancer", loadBalancerName)
-				return nil, err
-			}
-		}
 		r.log.Info("Creating k8s service", "name", serviceKey, "service", newService)
 		err = r.Create(ctx, newService)
 		defer r.recorder.EmitEvent(vmService, OpCreate, err, false)
@@ -567,7 +562,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmSe
 			}
 
 			epp := &corev1.EndpointPort{Name: portName, Port: int32(portNum), Protocol: portProto}
-			subsets = addEndpointSubset(subsets, &vm, epa, epp)
+			subsets = addEndpointSubset(subsets, epa, epp)
 		}
 	}
 

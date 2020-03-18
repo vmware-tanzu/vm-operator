@@ -37,16 +37,16 @@ func (m *MockContentDownloadHandler) EXPECT() *MockContentDownloadHandlerMockRec
 }
 
 // GenerateDownloadUriForLibraryItem mocks base method
-func (m *MockContentDownloadHandler) GenerateDownloadUriForLibraryItem(arg0 context.Context, arg1 *rest.Client, arg2 *library.Item, arg3 *vsphere.Session) (vsphere.DownloadUriResponse, error) {
+func (m *MockContentDownloadHandler) GenerateDownloadUriForLibraryItem(arg0 context.Context, arg1 *rest.Client, arg2 *library.Item) (vsphere.DownloadUriResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GenerateDownloadUriForLibraryItem", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "GenerateDownloadUriForLibraryItem", arg0, arg1, arg2)
 	ret0, _ := ret[0].(vsphere.DownloadUriResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GenerateDownloadUriForLibraryItem indicates an expected call of GenerateDownloadUriForLibraryItem
-func (mr *MockContentDownloadHandlerMockRecorder) GenerateDownloadUriForLibraryItem(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+func (mr *MockContentDownloadHandlerMockRecorder) GenerateDownloadUriForLibraryItem(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateDownloadUriForLibraryItem", reflect.TypeOf((*MockContentDownloadHandler)(nil).GenerateDownloadUriForLibraryItem), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateDownloadUriForLibraryItem", reflect.TypeOf((*MockContentDownloadHandler)(nil).GenerateDownloadUriForLibraryItem), arg0, arg1, arg2)
 }

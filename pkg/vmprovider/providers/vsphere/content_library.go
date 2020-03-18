@@ -26,7 +26,7 @@ type ContentLibraryProvider struct {
 //go:generate mockgen -destination=./mocks/mock_content_library.go -package=mocks github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere ContentDownloadHandler
 
 type ContentDownloadHandler interface {
-	GenerateDownloadUriForLibraryItem(ctx context.Context, restClient *rest.Client, item *library.Item, sess *Session) (DownloadUriResponse, error)
+	GenerateDownloadUriForLibraryItem(ctx context.Context, restClient *rest.Client, item *library.Item) (DownloadUriResponse, error)
 }
 
 type ContentDownloadProvider struct {
@@ -34,9 +34,8 @@ type ContentDownloadProvider struct {
 }
 
 type TimerTaskResponse struct {
-	TaskDone     bool
-	Err          error
-	returnValues map[string]string
+	TaskDone bool
+	Err      error
 }
 
 const (
@@ -76,7 +75,7 @@ func (cs *ContentLibraryProvider) RetrieveOvfEnvelopeFromLibraryItem(ctx context
 
 	err := cs.session.WithRestClient(ctx, func(c *rest.Client) error {
 		// download ovf from the library item
-		response, err := clHandler.GenerateDownloadUriForLibraryItem(ctx, c, item, cs.session)
+		response, err := clHandler.GenerateDownloadUriForLibraryItem(ctx, c, item)
 		if err != nil {
 			return err
 		}
@@ -85,9 +84,9 @@ func (cs *ContentLibraryProvider) RetrieveOvfEnvelopeFromLibraryItem(ctx context
 			return errors.Errorf("error occurred downloading item %v", item.Name)
 		}
 
-		defer deleteLibraryItemDownloadSession(cs.session, c, ctx, response.DownloadSessionId)
+		defer deleteLibraryItemDownloadSession(c, ctx, response.DownloadSessionId)
 
-		//read the file as string once it is prepared for download
+		// Read the file as string once it is prepared for download
 		downloadedFileContent, err = ReadFileFromUrl(ctx, c, response.FileUri)
 		if err != nil {
 			return err
@@ -110,20 +109,18 @@ func (cs *ContentLibraryProvider) RetrieveOvfEnvelopeFromLibraryItem(ctx context
 func (cs *ContentLibraryProvider) CreateLibrary(ctx context.Context, contentSource string) (string, error) {
 	log.Info("Creating Library", "library", contentSource)
 
-	ds := cs.session.Datastore()
-
 	lib := library.Library{
 		Name: contentSource,
 		Type: "LOCAL",
 		Storage: []library.StorageBackings{
 			{
-				DatastoreID: ds.Reference().Value,
+				DatastoreID: cs.session.Datastore().Reference().Value,
 				Type:        "DATASTORE",
 			},
 		},
 	}
 
-	var libID = ""
+	var libID string
 	var err error
 
 	err = cs.session.WithRestClient(ctx, func(c *rest.Client) error {
@@ -173,7 +170,6 @@ func (cs *ContentLibraryProvider) CreateLibraryItem(ctx context.Context, library
 			}
 
 			name := filepath.Base(path)
-
 			size := fi.Size()
 			info := library.UpdateFile{
 				Name:       name,
@@ -181,7 +177,7 @@ func (cs *ContentLibraryProvider) CreateLibraryItem(ctx context.Context, library
 				Size:       size,
 			}
 
-			update, err := library.NewManager(c).AddLibraryItemFile(ctx, itemUpdateSessionId, info)
+			update, err := libMgr.AddLibraryItemFile(ctx, itemUpdateSessionId, info)
 			if err != nil {
 				return err
 			}
@@ -223,33 +219,24 @@ func isInvalidResponse(response DownloadUriResponse) bool {
 // 2. list the available files and downloads only the ovf files based on filename suffix
 // 3. prepare the download session and fetch the url to be used for download
 // 4. download the file
-func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(ctx context.Context, c *rest.Client, item *library.Item, s *Session) (DownloadUriResponse, error) {
+func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(ctx context.Context, c *rest.Client, item *library.Item) (DownloadUriResponse, error) {
 
-	var (
-		fileDownloadUri    string
-		fileToDownload     string
-		downloadSessionId  string
-		clApiSleepInterval = contentSession.ApiWaitTimeSecs
-	)
-
-	libManager := library.NewManager(c)
-	var info *library.DownloadFile
+	libMgr := library.NewManager(c)
 
 	// create a download session for the file referred to by item id.
-	session, err := libManager.CreateLibraryItemDownloadSession(ctx, library.Session{
-		LibraryItemID: item.ID,
-	})
+	session, err := libMgr.CreateLibraryItemDownloadSession(ctx, library.Session{LibraryItemID: item.ID})
 	if err != nil {
 		return DownloadUriResponse{}, err
 	}
 
-	downloadSessionId = session
-
-	//list the files available for download in the library item
-	files, err := libManager.ListLibraryItemDownloadSessionFile(ctx, session)
+	// list the files available for download in the library item
+	files, err := libMgr.ListLibraryItemDownloadSessionFile(ctx, session)
 	if err != nil {
 		return DownloadUriResponse{}, err
 	}
+
+	var fileDownloadUri string
+	var fileToDownload string
 
 	for _, file := range files {
 		log.V(4).Info("Library Item file ", libFileName, file.Name)
@@ -259,34 +246,31 @@ func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(
 			break
 		}
 	}
+
 	log.V(4).Info("download session created", libFileName, fileToDownload, libItemId, item.ID, libSessionId, session)
 
-	_, err = libManager.PrepareLibraryItemDownloadSessionFile(ctx, session, fileToDownload)
+	_, err = libMgr.PrepareLibraryItemDownloadSessionFile(ctx, session, fileToDownload)
 	if err != nil {
 		return DownloadUriResponse{}, err
 	}
 
 	log.V(4).Info("request posted to prepare file", libFileName, fileToDownload, libSessionId, session)
 
-	// content library api to prepare a file for download guarantees eventual end state of either Error or Prepared
+	// content library api to prepare a file for download guarantees eventual end state of either ERROR or PREPARED
 	// in order to avoid posting too many requests to the api we are setting a sleep of 'n' seconds between each retry
-
 	work := func(ctx context.Context) (TimerTaskResponse, error) {
-		returnMap := map[string]string{}
-		emptyStruct := TimerTaskResponse{}
-
-		downloadSessResp, err := libManager.GetLibraryItemDownloadSession(ctx, session)
+		downloadSessResp, err := libMgr.GetLibraryItemDownloadSession(ctx, session)
 		if err != nil {
-			return emptyStruct, err
+			return TimerTaskResponse{}, err
 		}
 
 		if downloadSessResp.ErrorMessage != nil {
-			return emptyStruct, downloadSessResp.ErrorMessage
+			return TimerTaskResponse{}, downloadSessResp.ErrorMessage
 		}
 
-		info, err = libManager.GetLibraryItemDownloadSessionFile(ctx, session, fileToDownload)
+		info, err := libMgr.GetLibraryItemDownloadSessionFile(ctx, session, fileToDownload)
 		if err != nil {
-			return emptyStruct, err
+			return TimerTaskResponse{}, err
 		}
 
 		if info.Status == "ERROR" {
@@ -295,38 +279,32 @@ func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(
 		}
 
 		if info.Status == "PREPARED" {
-			log.V(4).Info("Download file", libFileDownloadUrl, info.DownloadEndpoint.URI)
 			fileDownloadUri = info.DownloadEndpoint.URI
-			returnMap[libFileDownloadUrl] = fileDownloadUri
+			log.V(4).Info("Download file", libFileDownloadUrl, fileDownloadUri)
 			return TimerTaskResponse{
-				TaskDone:     true,
-				returnValues: returnMap,
+				TaskDone: true,
 			}, nil
 		}
 
 		return TimerTaskResponse{}, nil
 	}
 
-	clApiDelayDuration := time.Duration(clApiSleepInterval) * time.Second
+	delay := time.Duration(contentSession.ApiWaitTimeSecs) * time.Second
 
-	err = RunTaskAtInterval(ctx, clApiDelayDuration, work)
+	err = RunTaskAtInterval(ctx, delay, work)
 	if err != nil {
 		return DownloadUriResponse{}, err
 	}
 
 	return DownloadUriResponse{
 		FileUri:           fileDownloadUri,
-		DownloadSessionId: downloadSessionId,
+		DownloadSessionId: session,
 	}, nil
-
 }
 
-//accepts a channel to send the output and function containing a unit of work which takes ticker as input and returns a timerTaskResponse struct
-//the work is considered complete when
-// 1. a struct is returned with the value of TaskDone set (or)
-// 2. there is an error returned
-func RunTaskAtInterval(ctx context.Context, clApiCheckDelayInSecs time.Duration, work func(ctx context.Context) (TimerTaskResponse, error)) error {
-
+// RunTaskAtInterval calls the work function at an period interval until either theTimerTaskResponse returned with
+// the value of TaskDone true or an error returned
+func RunTaskAtInterval(ctx context.Context, checkDelay time.Duration, work func(ctx context.Context) (TimerTaskResponse, error)) error {
 	for {
 		routineResponse, err := work(ctx)
 		if err != nil {
@@ -334,36 +312,30 @@ func RunTaskAtInterval(ctx context.Context, clApiCheckDelayInSecs time.Duration,
 		} else if routineResponse.TaskDone {
 			return nil
 		} else {
-			time.Sleep(clApiCheckDelayInSecs)
+			time.Sleep(checkDelay)
 		}
 	}
 }
 
 func ReadFileFromUrl(ctx context.Context, c *rest.Client, fileUri string) (io.ReadCloser, error) {
-
-	p := soap.DefaultDownload
-
-	var readerStream io.ReadCloser
-
 	src, err := url.Parse(fileUri)
 	if err != nil {
 		return nil, err
 	}
 
-	readerStream, _, err = c.Download(ctx, src, &p)
+	p := soap.DefaultDownload
+	readerStream, _, err := c.Download(ctx, src, &p)
 	if err != nil {
-		log.Error(err, "Error occurred when downloading file", "URL", libFileDownloadUrl, "source", src, "fileURI", fileUri)
+		log.Error(err, "Error occurred when downloading file", "source", src, "fileURI", fileUri)
 		return nil, err
 	}
 
 	return readerStream, nil
 }
 
-func deleteLibraryItemDownloadSession(s *Session, c *rest.Client, ctx context.Context, session string) {
-
-	sessionError := library.NewManager(c).DeleteLibraryItemDownloadSession(ctx, session)
-
-	if sessionError != nil {
-		log.Error(sessionError, "Error occurred when deleting download session", libSessionId, session)
+func deleteLibraryItemDownloadSession(c *rest.Client, ctx context.Context, sessionId string) {
+	err := library.NewManager(c).DeleteLibraryItemDownloadSession(ctx, sessionId)
+	if err != nil {
+		log.Error(err, "Error occurred when deleting download session", libSessionId, sessionId)
 	}
 }

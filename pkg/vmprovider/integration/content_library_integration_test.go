@@ -8,7 +8,6 @@ package integration
 import (
 	"context"
 	"errors"
-	"io"
 	"io/ioutil"
 	"os"
 	"time"
@@ -25,14 +24,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
-var (
-	fileUriToDownload string
-)
-
-var _ = Describe("list files in content library", func() {
+var _ = Describe("content library", func() {
 
 	var mockController *gomock.Controller
 	var mockContentProvider *mocks.MockContentDownloadHandler
+	var fileUriToDownload string
 
 	BeforeEach(func() {
 		mockController = gomock.NewController(GinkgoT())
@@ -67,21 +63,20 @@ var _ = Describe("list files in content library", func() {
 					LibraryID: libID,
 				}
 
-				itemIDs, err := mgr.FindLibraryItems(ctx,
-					library.FindItem{LibraryID: libID, Name: item.Name})
+				itemIDs, err := mgr.FindLibraryItems(ctx, library.FindItem{LibraryID: libID, Name: item.Name})
 				Expect(err).To(BeNil())
 				Expect(itemIDs).Should(HaveLen(1))
 
 				libItem, err = mgr.GetLibraryItem(ctx, itemIDs[0])
 				Expect(err).To(BeNil())
 
-				return err
+				return nil
 			})
 			Expect(err).To(BeNil())
 
 			testProvider := vsphere.ContentDownloadProvider{ApiWaitTimeSecs: 1}
 			_ = session.WithRestClient(ctx, func(c *govmomirest.Client) error {
-				downloadResponse, err := testProvider.GenerateDownloadUriForLibraryItem(ctx, c, libItem, session)
+				downloadResponse, err := testProvider.GenerateDownloadUriForLibraryItem(ctx, c, libItem)
 				Expect(err).To(BeNil())
 				Expect(downloadResponse).ShouldNot(BeEquivalentTo(vsphere.DownloadUriResponse{}))
 				Expect(downloadResponse.FileUri).ShouldNot(BeEmpty())
@@ -90,7 +85,6 @@ var _ = Describe("list files in content library", func() {
 				return err
 			})
 		})
-
 	})
 
 	Context("when invalid item id is passed", func() {
@@ -105,7 +99,7 @@ var _ = Describe("list files in content library", func() {
 			ctx := context.Background()
 			testContentStruct := vsphere.ContentDownloadProvider{ApiWaitTimeSecs: 1}
 			err := session.WithRestClient(ctx, func(c *govmomirest.Client) error {
-				_, err := testContentStruct.GenerateDownloadUriForLibraryItem(ctx, c, &item, session)
+				_, err := testContentStruct.GenerateDownloadUriForLibraryItem(ctx, c, &item)
 				return err
 			})
 			Expect(err).ToNot(BeNil())
@@ -120,17 +114,17 @@ var _ = Describe("list files in content library", func() {
 			Expect(err).ToNot(HaveOccurred())
 			ovfPath := rootDir + "/test/resource/photon-ova.ovf"
 			file, err := os.Open(ovfPath)
-			Expect(err).To(BeNil())
+			Expect(err).ToNot(HaveOccurred())
+			defer file.Close()
 
-			var readerStream io.ReadCloser = file
-			ovfEnvelope, err := vsphere.ParseOvf(readerStream)
+			ovfEnvelope, err := vsphere.ParseOvf(file)
 			Expect(err).To(BeNil())
 			Expect(ovfEnvelope).NotTo(BeNil())
 
 			props := vsphere.GetVmwareSystemPropertiesFromOvf(ovfEnvelope)
 			Expect(len(props)).NotTo(BeZero())
-			Expect(props).Should(HaveKeyWithValue("vmware-system.compatibilityoffering.offers.kube-apiserver."+
-				"version", "1.14"))
+			Expect(props).Should(HaveKeyWithValue(
+				"vmware-system.compatibilityoffering.offers.kube-apiserver.version", "1.14"))
 		})
 	})
 
@@ -156,10 +150,13 @@ var _ = Describe("list files in content library", func() {
 
 	Context("when url is invalid", func() {
 
-		It("should return a Err", func() {
+		It("should return an error", func() {
 			ctx := context.TODO()
 			err := session.WithRestClient(ctx, func(c *govmomirest.Client) error {
-				_, err := vsphere.ReadFileFromUrl(ctx, c, "test.com/link")
+				file, err := vsphere.ReadFileFromUrl(ctx, c, "test.com/link")
+				if file != nil {
+					_ = file.Close()
+				}
 				return err
 			})
 			Expect(err).NotTo(BeNil())
@@ -171,7 +168,10 @@ var _ = Describe("list files in content library", func() {
 		It("should download the file", func() {
 			ctx := context.TODO()
 			err := session.WithRestClient(ctx, func(c *govmomirest.Client) error {
-				_, err := vsphere.ReadFileFromUrl(ctx, c, fileUriToDownload)
+				file, err := vsphere.ReadFileFromUrl(ctx, c, fileUriToDownload)
+				if file != nil {
+					_ = file.Close()
+				}
 				return err
 			})
 			Expect(err).To(BeNil())
@@ -187,7 +187,7 @@ var _ = Describe("list files in content library", func() {
 				LibraryID: "fakeID",
 			}
 			mockContentProvider.EXPECT().
-				GenerateDownloadUriForLibraryItem(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+				GenerateDownloadUriForLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(vsphere.DownloadUriResponse{}, nil).
 				Times(1)
 			clProvider := vsphere.NewContentLibraryProvider(session)
@@ -218,19 +218,6 @@ var _ = Describe("list files in content library", func() {
 			err := vsphere.RunTaskAtInterval(context.TODO(), apiDelay, work)
 			Expect(err).NotTo(BeNil())
 			Expect(err.Error()).To(BeEquivalentTo("an error occurred when performing work"))
-		})
-	})
-
-	Context("when a long running work function is given as input", func() {
-
-		It("should execute only one instance of the work at a given time", func() {
-			work := func(ctx context.Context) (vsphere.TimerTaskResponse, error) {
-				time.Sleep(2 * time.Minute)
-				return vsphere.TimerTaskResponse{TaskDone: true}, nil
-			}
-			apiDelay := time.Duration(2) * time.Second
-			err := vsphere.RunTaskAtInterval(context.TODO(), apiDelay, work)
-			Expect(err).To(BeNil())
 		})
 	})
 })

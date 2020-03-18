@@ -256,13 +256,12 @@ func setupVcSimContent(config *vsphere.VSphereVmProviderConfig, vcSim *VcSimInst
 }
 
 func CreateLibraryItem(ctx context.Context, session *vsphere.Session, name, kind, libraryId string) error {
-	ovf := "ttylinux-pc_i486-16.1.ovf"
-
 	rootDir, err := testutil.GetRootDir()
 	if err != nil {
 		panic(fmt.Sprintf("GetRootDir failed: %v", err))
 	}
 
+	ovf := "ttylinux-pc_i486-16.1.ovf"
 	imagePath := path.Join(rootDir, "images", ovf)
 
 	libraryItem := library.Item{

@@ -1041,6 +1041,7 @@ func (s *Session) WithRestClient(ctx context.Context, f func(c *rest.Client) err
 		if err := c.Logout(ctx); err != nil {
 			log.Error(err, "failed to logout")
 		}
+		c.CloseIdleConnections()
 	}()
 
 	return f(c)
@@ -1179,8 +1180,7 @@ func (s *Session) GetFolderByPath(ctx context.Context, path string) (*object.Fol
 func IsSupportedDeployType(t string) bool {
 	switch t {
 	case
-		library.ItemTypeVMTX,
-		library.ItemTypeOVF:
+		library.ItemTypeVMTX, library.ItemTypeOVF:
 		return true
 	}
 	return false

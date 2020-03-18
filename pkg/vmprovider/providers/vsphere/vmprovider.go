@@ -22,7 +22,6 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -471,53 +470,9 @@ func (vs *vSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 }
 
 func (vs *vSphereVmProvider) updateVirtualMachine(ctx context.Context, session *Session, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
-	resVm, err := session.GetVirtualMachine(ctx, vm)
+	resVm, err := session.updateVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {
 		return err
-	}
-
-	isOff, err := resVm.IsVMPoweredOff(ctx)
-	if err != nil {
-		return err
-	}
-
-	// This is just a horrible, temporary hack so that we reconfigure "once" and not disrupt a running VM.
-	if isOff {
-		// Add device change specs to configSpec
-		deviceSpecs, err := session.GetNicChangeSpecs(ctx, vm, resVm)
-		if err != nil {
-			return err
-		}
-
-		configSpec, err := session.generateConfigSpec(vm.Name, &vm.Spec, &vmConfigArgs.VmClass.Spec, vmConfigArgs.VmMetadata, deviceSpecs)
-		if err != nil {
-			return err
-		}
-
-		err = resVm.Reconfigure(ctx, configSpec)
-		if err != nil {
-			return err
-		}
-
-		customizationSpec, err := session.getCustomizationSpec(vm.Namespace, vm.Name, &vm.Spec)
-		if err != nil {
-			return err
-		}
-
-		if customizationSpec != nil {
-			log.Info("Customizing VM",
-				"VirtualMachine", types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name},
-				"CustomizationSpec", customizationSpec)
-			if err := resVm.Customize(ctx, *customizationSpec); err != nil {
-				// Ignore customization pending fault as this means we have already tried to customize the VM and it is
-				// pending. This can happen if the VM has failed to power-on since the last time we customized the VM. If
-				// we don't ignore this error, we will never be able to power-on the VM and the we will always fail here.
-				if !IsCustomizationPendingError(err) {
-					return err
-				}
-				log.Info("Ignoring customization error due to pending guest customization", "name", vm.NamespacedName())
-			}
-		}
 	}
 
 	err = vs.attachTagsToVmAndAddToClusterModules(ctx, vm, vmConfigArgs.ResourcePolicy)

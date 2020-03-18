@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmware-system-vmop-lb-xds
+  namespace: vmware-system-vmop
+spec:
+  type: NodePort
+  ports:
+  - port: 31799
+    nodePort: 31799
+    targetPort: 31799
+    name: http
+  selector:
+    name: vmoperator-controller-manager

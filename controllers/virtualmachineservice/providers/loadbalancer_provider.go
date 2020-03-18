@@ -5,23 +5,21 @@ package providers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/rest"
-	"k8s.io/utils/pointer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers/simplelb"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
@@ -29,9 +27,8 @@ const (
 	LoadbalancerKind          = "LoadBalancer"
 	APIVersion                = "vmware.com/v1alpha1"
 	ServiceLoadBalancerTagKey = "ncp/crd_lb"
-	ServiceOwnerRefKind       = "VirtualMachineService"
-	ServiceOwnerRefVersion    = "vmoperator.vmware.com/v1alpha1"
 	NSXTLoadBalancer          = "nsx-t-lb"
+	SimpleLoadBalancer        = "simple-lb"
 	ClusterNameKey            = "capw.vmware.com/cluster.name"
 )
 
@@ -46,47 +43,37 @@ func init() {
 
 var log = logf.Log.WithName("loadbalancer")
 
-// patchOperation represents a RFC6902 JSON patch operation.
-type patchOperation struct {
-	Op    string      `json:"op"`
-	Path  string      `json:"path"`
-	Value interface{} `json:"value,omitempty"`
-}
-
 //LoadbalancerProvider sets up Loadbalancer for different type of Loadbalancer
 type LoadbalancerProvider interface {
 	GetNetworkName(virtualMachines []vmoperatorv1alpha1.VirtualMachine, vmService *vmoperatorv1alpha1.VirtualMachineService) (string, error)
 
-	EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) (string, error)
-
-	UpdateLoadBalancerOwnerReference(ctx context.Context, loadBalancerName string, vmService *vmoperatorv1alpha1.VirtualMachineService) error
+	EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) error
 }
 
 // Get Loadbalancer Provider By Type, currently only support nsxt provider, if provider type unknown, will return nil
-func GetLoadbalancerProviderByType(restConfig *rest.Config, providerType string) LoadbalancerProvider {
+func GetLoadbalancerProviderByType(mgr manager.Manager, providerType string) (LoadbalancerProvider, error) {
 	if providerType == NSXTLoadBalancer {
 		// TODO:  () Using static ncp client for now, replace it with runtime ncp client
-		ncpClient, err := ncpclientset.NewForConfig(restConfig)
+		ncpClient, err := ncpclientset.NewForConfig(mgr.GetConfig())
 		if err != nil {
 			log.Error(err, "unable to get ncp clientset from config")
-			return nil
+			return nil, err
 		}
-		return NsxtLoadBalancerProvider(ncpClient)
+		return NsxtLoadBalancerProvider(ncpClient), nil
 	}
-	return noopLoadbalancerProvider{}
+	if providerType == SimpleLoadBalancer {
+		return simplelb.New(mgr), nil
+	}
+	return noopLoadbalancerProvider{}, nil
 }
 
 type noopLoadbalancerProvider struct{}
 
-func (noopLoadbalancerProvider) GetNetworkName(virtualMachines []vmoperatorv1alpha1.VirtualMachine, vmService *vmoperatorv1alpha1.VirtualMachineService) (string, error) {
-	return vmService.Name + "-vnet", nil
+func (noopLoadbalancerProvider) GetNetworkName([]vmoperatorv1alpha1.VirtualMachine, *vmoperatorv1alpha1.VirtualMachineService) (string, error) {
+	return "", nil
 }
 
-func (noopLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) (string, error) {
-	return fmt.Sprintf("%s-%s-lb", vmService.Namespace, strings.TrimSuffix(virtualNetworkName, "-vnet")), nil
-}
-
-func (noopLoadbalancerProvider) UpdateLoadBalancerOwnerReference(ctx context.Context, loadBalancerName string, vmService *vmoperatorv1alpha1.VirtualMachineService) error {
+func (noopLoadbalancerProvider) EnsureLoadBalancer(context.Context, *vmoperatorv1alpha1.VirtualMachineService, string) error {
 	return nil
 }
 
@@ -101,7 +88,7 @@ func NsxtLoadBalancerProvider(client clientset.Interface) *nsxtLoadbalancerProvi
 	}
 }
 
-func (nl *nsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) (string, error) {
+func (nl *nsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) error {
 	return nl.ensureNSXTLoadBalancer(ctx, vmService, virtualNetworkName)
 }
 
@@ -120,6 +107,8 @@ func (nl *nsxtLoadbalancerProvider) createNSXTLoadBalancerSpec(ctx context.Conte
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      nl.getLoadbalancerName(vmService.Namespace, vmService.Spec.Selector[ClusterNameKey]),
 			Namespace: vmService.GetNamespace(),
+
+			OwnerReferences: []metav1.OwnerReference{utils.MakeVMServiceOwnerRef(vmService)},
 		},
 		Spec: ncpv1alpha1.LoadBalancerSpec{
 			Size:               ncpv1alpha1.SizeSmall,
@@ -129,11 +118,11 @@ func (nl *nsxtLoadbalancerProvider) createNSXTLoadBalancerSpec(ctx context.Conte
 }
 
 //Create or Update NSX-T Loadbalancer
-func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) (string, error) {
+func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) error {
 
 	clusterName, ok := vmService.Spec.Selector[ClusterNameKey]
 	if !ok {
-		return "", fmt.Errorf("can't create loadbalancer without cluster name")
+		return fmt.Errorf("can't create loadbalancer without cluster name")
 	}
 
 	loadBalancerName := nl.getLoadbalancerName(vmService.Namespace, clusterName)
@@ -145,7 +134,7 @@ func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, 
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			log.Error(err, "Failed to get load balancer", "name", loadBalancerName)
-			return "", err
+			return err
 		}
 		//check if the virtual network exist
 		_, err = nl.client.VmwareV1alpha1().VirtualNetworks(vmService.Namespace).Get(virtualNetworkName, metav1.GetOptions{})
@@ -155,7 +144,7 @@ func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, 
 			} else {
 				log.Error(err, "Virtual Network does not exist, can't create loadbalancer", "name", virtualNetworkName)
 			}
-			return "", err
+			return err
 		}
 		//no current loadbalancer, create a new loadbalancer
 		//We only update Loadbalancer owner reference for now, other spec should be immutable .
@@ -164,12 +153,12 @@ func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, 
 		currentLoadbalancer, err = nl.client.VmwareV1alpha1().LoadBalancers(currentLoadbalancer.Namespace).Create(currentLoadbalancer)
 		if err != nil {
 			log.Error(err, "Create loadbalancer error", "name", virtualNetworkName)
-			return "", err
+			return err
 		}
 	}
 	//annotate which loadbalancer to attach
 	addNcpAnnotations(currentLoadbalancer.Name, &vmService.ObjectMeta)
-	return currentLoadbalancer.Name, nil
+	return nil
 }
 
 //Check virtual network name from vm spec
@@ -216,46 +205,4 @@ func addNcpAnnotations(loadBalancerName string, objectMeta *metav1.ObjectMeta) {
 	}
 	annotations[ServiceLoadBalancerTagKey] = loadBalancerName
 	objectMeta.SetAnnotations(annotations)
-}
-
-// UpdateLoadBalancerOwnerReference: Update load balancer owner reference to load balancer type of vm service
-func (nl *nsxtLoadbalancerProvider) UpdateLoadBalancerOwnerReference(ctx context.Context, loadBalancerName string, vmService *vmoperatorv1alpha1.VirtualMachineService) error {
-	loadBalancer, err := nl.client.VmwareV1alpha1().LoadBalancers(vmService.Namespace).Get(loadBalancerName, metav1.GetOptions{})
-	if err != nil {
-		log.Error(err, "Load Balancer does not exist, can't set owner reference for vm service", "vm service", vmService.NamespacedName())
-		return err
-	}
-	patchOpStr, _ := nl.PrepareLoadBalancerOwnerRefPatchOperation(loadBalancer, vmService)
-	_, err = nl.client.VmwareV1alpha1().LoadBalancers(loadBalancer.Namespace).Patch(loadBalancerName, types.JSONPatchType, patchOpStr)
-	return err
-}
-
-// PrepareLoadBalancerOwnerRefPatchOperation Prepare patch operation for owner reference patch update
-func (nl *nsxtLoadbalancerProvider) PrepareLoadBalancerOwnerRefPatchOperation(loadBalancer *ncpv1alpha1.LoadBalancer, vmService *vmoperatorv1alpha1.VirtualMachineService) ([]byte, error) {
-	path := "/metadata/ownerReferences"
-	var value interface{}
-	newOwner := metav1.OwnerReference{
-		UID:                vmService.UID,
-		Name:               vmService.Name,
-		Controller:         pointer.BoolPtr(false),
-		BlockOwnerDeletion: pointer.BoolPtr(true),
-		Kind:               ServiceOwnerRefKind,
-		APIVersion:         ServiceOwnerRefVersion,
-	}
-
-	if len(loadBalancer.OwnerReferences) == 0 {
-		value = []metav1.OwnerReference{newOwner}
-	} else {
-		path += "/-"
-		value = newOwner
-	}
-
-	patchOp := []patchOperation{
-		{
-			Op:    "add",
-			Path:  path,
-			Value: value,
-		},
-	}
-	return json.Marshal(patchOp)
 }

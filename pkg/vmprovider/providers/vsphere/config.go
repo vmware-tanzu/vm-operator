@@ -5,7 +5,6 @@ package vsphere
 
 import (
 	"encoding/json"
-	"os"
 	"strconv"
 	"strings"
 
@@ -73,6 +72,7 @@ const (
 	CtrlVmVmAntiAffinityTagKey   = "CtrlVmVmAATag"
 	WorkerVmVmAntiAffinityTagKey = "WorkerVmVmAATag"
 	ProviderTagCategoryNameKey   = "VmVmAntiAffinityTagCategoryName"
+	NameserversKey               = "nameservers"
 )
 
 const (
@@ -239,17 +239,16 @@ func UpdateVMFolderAndRPInProviderConfig(clientSet kubernetes.Interface, namespa
 }
 
 func GetNameserversFromConfigMap(clientSet kubernetes.Interface) ([]string, error) {
-	vmopNamespace, vmopNamespaceExists := os.LookupEnv(VmopNamespaceEnv)
-	if !vmopNamespaceExists {
-		return nil, errors.Errorf("Cannot retrieve %v ConfigMap: unset env", NameServersConfigMapName)
+	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
+	if err != nil {
+		return nil, err
 	}
-
 	nameserversConfigMap, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(NameServersConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot retrieve %v ConfigMap", NameServersConfigMapName)
 	}
 
-	nameservers, ok := nameserversConfigMap.Data["nameservers"]
+	nameservers, ok := nameserversConfigMap.Data[NameserversKey]
 	if !ok {
 		return nil, errors.Wrapf(err, "invalid %v ConfigMap, missing key nameservers", NameServersConfigMapName)
 	}
@@ -373,5 +372,40 @@ func PatchVcURLInConfigMap(clientSet kubernetes.Interface, config *WcpClusterCon
 		return err
 	}
 
+	return nil
+}
+
+// Install the Network Config Map for the VM operator in the API master
+func InstallNetworkConfigMap(clientSet *kubernetes.Clientset, nameservers string) error {
+	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
+	if err != nil {
+		return errors.Wrapf(err, "failed to extract the VM operator namespace from env %v", VmopNamespaceEnv)
+	}
+
+	dataMap := make(map[string]string)
+
+	dataMap[NameserversKey] = nameservers
+
+	configMap := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      NameServersConfigMapName,
+			Namespace: vmopNamespace,
+		},
+		Data: dataMap,
+	}
+	if _, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(configMap.Name, metav1.GetOptions{}); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+
+		if _, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Create(configMap); err != nil {
+			return err
+		}
+	} else {
+		log.Info("Updating VM Operator network configmap as it already exists")
+		if _, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Update(configMap); err != nil {
+			return err
+		}
+	}
 	return nil
 }

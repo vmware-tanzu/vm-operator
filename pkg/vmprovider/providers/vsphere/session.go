@@ -1187,7 +1187,10 @@ func IsSupportedDeployType(t string) bool {
 }
 
 // getCustomizationSpec creates the customization spec for the vm
-func (s *Session) getCustomizationSpec(ctx context.Context, namespace, vmName string, vmSpec *v1alpha1.VirtualMachineSpec, vm *res.VirtualMachine) (*vimTypes.CustomizationSpec, error) {
+func (s *Session) GetCustomizationSpec(ctx context.Context, vm *v1alpha1.VirtualMachine, realVM *res.VirtualMachine) (*vimTypes.CustomizationSpec, error) {
+	vmName := vm.Name
+	vmSpec := &vm.Spec
+	namespace := vm.Namespace
 	customSpec := &vimTypes.CustomizationSpec{
 		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{},
 		// This spec is for Linux guest OS. Need to change if other guest OS needs to be supported.
@@ -1206,7 +1209,7 @@ func (s *Session) getCustomizationSpec(ctx context.Context, namespace, vmName st
 		customSpec.GlobalIPSettings.DnsServerList = nameserverList
 	}
 
-	netDevices, err := vm.GetNetworkDevices(ctx)
+	netDevices, err := realVM.GetNetworkDevices(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1546,7 +1549,7 @@ func (s *Session) updateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 			return nil, err
 		}
 
-		customizationSpec, err := s.getCustomizationSpec(ctx, vm.Namespace, vm.Name, &vm.Spec, resVM)
+		customizationSpec, err := s.GetCustomizationSpec(ctx, vm, resVM)
 		if err != nil {
 			return nil, err
 		}

@@ -24,7 +24,7 @@ require (
 	github.com/satori/go.uuid v1.2.0
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/testify v1.4.0 // indirect
-	github.com/vmware/govmomi v0.22.1
+	github.com/vmware/govmomi v0.22.2
 	go.uber.org/atomic v1.4.0 // indirect
 	go.uber.org/zap v1.10.0 // indirect
 	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7 // indirect

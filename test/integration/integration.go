@@ -32,19 +32,18 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
+	"k8s.io/klog/klogr"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	//"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
-	//cnsv1alpha1 "sigs.k8s.io/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 )
 
 type VSphereVmProviderTestConfig struct {
@@ -116,18 +115,34 @@ func NewIntegrationVmOperatorCredentials() *vsphere.VSphereVmProviderCredentials
 	}
 }
 
-func EnableDebugLogging() {
-	//klog.InitFlags(nil)
-	if err := flag.Set("v", "4"); err != nil {
-		klog.Fatalf("klog level flag has changed from -v: %v", err)
+func enableDebugLogging() {
+	strVal, ok := os.LookupEnv("ENABLE_DEBUG_MODE")
+	if ok {
+		stdlog.Println("Debug logging is enabled")
+		klog.InitFlags(nil)
+		dbgEnabled, err := strconv.ParseBool(strVal)
+		if err != nil {
+			stdlog.Fatalf("Failed to print ENABLE_DEBUG_MODE env variable '%s': %v", strVal, err)
+		}
+		if dbgEnabled {
+			if err := flag.Set("alsologtostderr", "true"); err != nil {
+				stdlog.Fatalf("failed to set klog logtostderr flag: %v", err)
+			}
+			if err := flag.Set("v", "4"); err != nil {
+				stdlog.Fatalf("failed to set klog level flag: %v", err)
+			}
+			flag.Parse()
+			logf.Log.Fulfill(klogr.New())
+			return
+		}
 	}
+	stdlog.Println("Debug logging is disabled")
+	flag.Parse()
 }
 
 func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VSphereVmProviderConfig, *rest.Config, *VcSimInstance, *vsphere.Session, vmprovider.VirtualMachineProviderInterface) {
 	Expect(len(namespaces) > 0).To(BeTrue())
-
-	flag.Parse()
-
+	enableDebugLogging()
 	rootDir, err := testutil.GetRootDir()
 	Expect(err).ToNot(HaveOccurred())
 

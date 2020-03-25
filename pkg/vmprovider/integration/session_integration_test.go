@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/tags"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
+	ncpfake "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake"
 )
 
 var (
@@ -34,12 +36,13 @@ var (
 
 var _ = Describe("Sessions", func() {
 	var (
-		session *vsphere.Session
+		session   *vsphere.Session
+		ncpClient *ncpfake.Clientset
 	)
 	BeforeEach(func() {
 		ctx = context.Background()
-
-		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
+		ncpClient = ncpfake.NewSimpleClientset()
+		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, clientSet, ncpClient, nil)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -57,15 +60,29 @@ var _ = Describe("Sessions", func() {
 			// TODO: The default govcsim setups 2 VM's per resource pool however we should create our own fixture for better
 			// consistency and avoid failures when govcsim is updated.
 			It("should list virtualmachines", func() {
+				svms := simulator.Map.All("VirtualMachine")
 				vms, err := session.ListVirtualMachines(context.TODO(), "*")
 				Expect(err).NotTo(HaveOccurred())
-				Expect(vms).ShouldNot(BeEmpty())
+				Expect(len(vms)).Should(Equal(len(svms)))
+			})
+
+			It("should list no virtualmachines", func() {
+				vms, err := session.ListVirtualMachines(context.TODO(), "/NonExistingDC")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vms).Should(BeEmpty())
 			})
 
 			It("should get virtualmachine", func() {
-				vm, err := session.GetVirtualMachine(context.TODO(), getSimpleVirtualMachine("DC0_H0_VM0"))
+				svm := simulator.Map.Any("VirtualMachine").(*simulator.VirtualMachine)
+				vm, err := session.GetVirtualMachine(context.TODO(), getSimpleVirtualMachine(svm.Name))
 				Expect(err).NotTo(HaveOccurred())
-				Expect(vm.Name).Should(Equal("DC0_H0_VM0"))
+				Expect(vm.Name).Should(Equal(svm.Name))
+			})
+
+			It("should not get virtualmachine", func() {
+				vm, err := session.GetVirtualMachine(context.TODO(), getSimpleVirtualMachine("NonExistingVM"))
+				Expect(err).To(HaveOccurred())
+				Expect(vm).Should(BeNil())
 			})
 		})
 
@@ -200,11 +217,15 @@ var _ = Describe("Sessions", func() {
 
 		Context("by specifying networks in VM Spec", func() {
 
+			BeforeEach(func() {
+				err := vsphere.InstallNetworkConfigMap(clientSet, "8.8.8.8 8.8.4.4")
+				Expect(err).NotTo(HaveOccurred())
+			})
+
 			It("should override template networks", func() {
 				imageName := "DC0_H0_VM0"
 				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
 				vm := getVirtualMachineInstance(testVMName+"change-net", testNamespace, imageName, vmConfigArgs.VmClass.Name)
-
 				// Add two network interfaces to the VM and attach to different networks
 				vm.Spec.NetworkInterfaces = []vmoperatorv1alpha1.VirtualMachineNetworkInterface{
 					{
@@ -259,6 +280,29 @@ var _ = Describe("Sessions", func() {
 				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
 				_, ok = dev2.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
 				Expect(ok).Should(BeTrue())
+				custSpec, err := session.GetCustomizationSpec(ctx, vm, clonedVM)
+				Expect(err).NotTo(HaveOccurred())
+				identity, ok := custSpec.Identity.(*vimTypes.CustomizationLinuxPrep)
+				Expect(ok).Should(BeTrue())
+				hostName, ok := identity.HostName.(*vimTypes.CustomizationFixedName)
+				Expect(ok).Should(BeTrue())
+				Expect(hostName.Name).Should(Equal(vm.Name))
+				dnsServers := custSpec.GlobalIPSettings.DnsServerList
+				Expect(len(dnsServers)).Should(Equal(2))
+				Expect(dnsServers).Should(ContainElement("8.8.8.8"))
+				Expect(dnsServers).Should(ContainElement("8.8.4.4"))
+				Expect(len(custSpec.NicSettingMap)).Should(Equal(2))
+				nicMapping := make(map[string]vimTypes.CustomizationIPSettings)
+				for _, ipSettings := range custSpec.NicSettingMap {
+					nicMapping[ipSettings.MacAddress] = ipSettings.Adapter
+				}
+				ipSettings, ok := nicMapping[dev1.MacAddress]
+				Expect(ok).Should(BeTrue())
+				_, ok = ipSettings.Ip.(*vimTypes.CustomizationDhcpIpGenerator)
+				ipSettings, ok = nicMapping[dev2.MacAddress]
+				Expect(ok).Should(BeTrue())
+				_, ok = ipSettings.Ip.(*vimTypes.CustomizationDhcpIpGenerator)
+				Expect(ok).Should(BeTrue())
 			})
 		})
 
@@ -306,7 +350,6 @@ var _ = Describe("Sessions", func() {
 				// TODO: enhance the test to verify the moref of the network matches the default network.
 				_, ok := dev.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
 				Expect(ok).Should(BeTrue())
-
 			})
 
 			It("should not override networks specified in VM Spec ", func() {

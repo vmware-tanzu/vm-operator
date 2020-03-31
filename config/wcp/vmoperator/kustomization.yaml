@@ -25,6 +25,7 @@ patchesStrategicMerge:
 - manager_network_patch.yaml
 - manager_anti_affinity_patch.yaml
 - service_metrics_port_patch.yaml
+- cpu_resources_patch.yaml
 
 patchesJson6902:
 - path: manager_metrics_port_patch.yaml

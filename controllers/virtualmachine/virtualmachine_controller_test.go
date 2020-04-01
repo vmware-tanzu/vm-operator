@@ -7,14 +7,10 @@
 package virtualmachine
 
 import (
-	"fmt"
 	stdlog "log"
 	"sync"
 	"time"
 
-	controllercontext "github.com/vmware-tanzu/vm-operator/pkg/context"
-
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"golang.org/x/net/context"
@@ -23,14 +19,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-
-	//"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	controllercontext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -78,19 +72,18 @@ func generateStorageClass(ns string) *storagetypev1.StorageClass {
 var _ = Describe("VirtualMachine controller", func() {
 
 	var (
-		classInstance           vmoperatorv1alpha1.VirtualMachineClass
-		storageClass            *storagetypev1.StorageClass
-		resourceQuota           *corev1.ResourceQuota
-		instance                vmoperatorv1alpha1.VirtualMachine
-		expectedRequest         reconcile.Request
-		recFn                   reconcile.Reconciler
-		requests                chan reconcile.Request
-		stopMgr                 chan struct{}
-		mgrStopped              *sync.WaitGroup
-		mgr                     manager.Manager
-		err                     error
-		leaderElectionConfigMap string
-		ns                      = integration.DefaultNamespace
+		classInstance   vmoperatorv1alpha1.VirtualMachineClass
+		storageClass    *storagetypev1.StorageClass
+		resourceQuota   *corev1.ResourceQuota
+		instance        vmoperatorv1alpha1.VirtualMachine
+		expectedRequest reconcile.Request
+		recFn           reconcile.Reconciler
+		requests        chan reconcile.Request
+		stopMgr         chan struct{}
+		mgrStopped      *sync.WaitGroup
+		mgr             manager.Manager
+		err             error
+		ns              = integration.DefaultNamespace
 	)
 
 	BeforeEach(func() {
@@ -123,11 +116,7 @@ var _ = Describe("VirtualMachine controller", func() {
 		// channel when it is finished.
 
 		syncPeriod := 5 * time.Second
-		leaderElectionConfigMap = fmt.Sprintf("vmoperator-controller-manager-runtime-%s", uuid.New())
-		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
-			LeaderElection:          true,
-			LeaderElectionID:        leaderElectionConfigMap,
-			LeaderElectionNamespace: ns})
+		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
@@ -161,17 +150,9 @@ var _ = Describe("VirtualMachine controller", func() {
 
 		ctx := context.Background()
 
-		configMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      leaderElectionConfigMap,
-			},
-		}
-
 		// Don't validate errors so that we clean up as much as possible.  Delete with Background propagation in order to trigger immmediate delete
 		// Otherwise, the API server will place a finalizer on the resource expected the GC to remove, which leads to subsequent resource creation issues.
 		err = c.Delete(ctx, storageClass, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
-		err = c.Delete(ctx, configMap, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
 		err = c.Delete(ctx, &classInstance, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
 		err = c.Delete(ctx, resourceQuota, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
 
@@ -210,7 +191,7 @@ var _ = Describe("VirtualMachine controller", func() {
 				},
 			}
 
-			//fakeRecorder := vmrecord.GetRecorder().(*record.FakeRecorder)
+			// fakeRecorder := vmrecord.GetRecorder().(*record.FakeRecorder)
 
 			// Create the VM Object then expect Reconcile
 			err = c.Create(context.TODO(), &instance)
@@ -238,7 +219,7 @@ var _ = Describe("VirtualMachine controller", func() {
 
 	Context("when creating/deleting a VM object from Content Library", func() {
 		It("invoke the reconcile method", func() {
-			//Configure to use Content Library
+			// Configure to use Content Library
 			vSphereConfig.ContentSource = integration.GetContentSourceID()
 			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
@@ -262,7 +243,7 @@ var _ = Describe("VirtualMachine controller", func() {
 				},
 			}
 
-			//fakeRecorder := vmrecord.GetRecorder().(*record.FakeRecorder)
+			// fakeRecorder := vmrecord.GetRecorder().(*record.FakeRecorder)
 
 			// Create the VM Object then expect Reconcile
 			err = c.Create(context.TODO(), &instance)

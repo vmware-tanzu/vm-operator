@@ -7,15 +7,12 @@
 package virtualmachineclass
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"golang.org/x/net/context"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,26 +31,20 @@ const timeout = time.Second * 5
 
 var _ = Describe("VirtualMachineClass controller", func() {
 	name := "foo-vm"
-	ns := integration.DefaultNamespace
 
 	var (
-		instance                vmoperatorv1alpha1.VirtualMachineClass
-		stopMgr                 chan struct{}
-		mgrStopped              *sync.WaitGroup
-		mgr                     manager.Manager
-		err                     error
-		leaderElectionConfigMap string
+		instance   vmoperatorv1alpha1.VirtualMachineClass
+		stopMgr    chan struct{}
+		mgrStopped *sync.WaitGroup
+		mgr        manager.Manager
+		err        error
 	)
 
 	BeforeEach(func() {
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 		syncPeriod := 10 * time.Second
-		leaderElectionConfigMap = fmt.Sprintf("vmoperator-controller-manager-runtime-%s", uuid.New())
-		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
-			LeaderElection:          true,
-			LeaderElectionID:        leaderElectionConfigMap,
-			LeaderElectionNamespace: ns})
+		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
@@ -63,14 +54,6 @@ var _ = Describe("VirtualMachineClass controller", func() {
 	AfterEach(func() {
 		close(stopMgr)
 		mgrStopped.Wait()
-		configMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      leaderElectionConfigMap,
-			},
-		}
-		err := c.Delete(context.Background(), configMap)
-		Expect(err).NotTo(HaveOccurred())
 	})
 
 	Describe("when creating/deleting a VM Class", func() {

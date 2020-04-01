@@ -7,14 +7,10 @@
 package volume
 
 import (
-	"fmt"
 	stdlog "log"
 	"sync"
 	"time"
 
-	"k8s.io/client-go/kubernetes/scheme"
-
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"golang.org/x/net/context"
@@ -23,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -89,19 +86,18 @@ func assertVmVolumeStatusUpdates(updatedVm *vmoperatorv1alpha1.VirtualMachine) {
 var _ = Describe("Volume Attach Detach Controller", func() {
 
 	var (
-		classInstance           vmoperatorv1alpha1.VirtualMachineClass
-		storageClass            *storagetypev1.StorageClass
-		resourceQuota           *corev1.ResourceQuota
-		instance                vmoperatorv1alpha1.VirtualMachine
-		expectedRequest         reconcile.Request
-		recFn                   reconcile.Reconciler
-		requests                chan reconcile.Request
-		stopMgr                 chan struct{}
-		mgrStopped              *sync.WaitGroup
-		mgr                     manager.Manager
-		err                     error
-		leaderElectionConfigMap string
-		ns                      = integration.DefaultNamespace
+		classInstance   vmoperatorv1alpha1.VirtualMachineClass
+		storageClass    *storagetypev1.StorageClass
+		resourceQuota   *corev1.ResourceQuota
+		instance        vmoperatorv1alpha1.VirtualMachine
+		expectedRequest reconcile.Request
+		recFn           reconcile.Reconciler
+		requests        chan reconcile.Request
+		stopMgr         chan struct{}
+		mgrStopped      *sync.WaitGroup
+		mgr             manager.Manager
+		err             error
+		ns              = integration.DefaultNamespace
 	)
 
 	BeforeEach(func() {
@@ -134,13 +130,10 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 		// channel when it is finished.
 
 		syncPeriod := 5 * time.Second
-		leaderElectionConfigMap = fmt.Sprintf("vmoperator-controller-manager-runtime-%s", uuid.New())
 		mgr, err = manager.New(cfg, manager.Options{
-			SyncPeriod:              &syncPeriod,
-			Scheme:                  scheme.Scheme,
-			LeaderElection:          true,
-			LeaderElectionID:        leaderElectionConfigMap,
-			LeaderElectionNamespace: ns})
+			SyncPeriod: &syncPeriod,
+			Scheme:     scheme.Scheme,
+		})
 		Expect(err).NotTo(HaveOccurred())
 
 		c = mgr.GetClient()
@@ -169,17 +162,9 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 
 		ctx := context.Background()
 
-		configMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      leaderElectionConfigMap,
-			},
-		}
-
 		// Don't validate errors so that we clean up as much as possible.  Delete with Background propagation in order to trigger immediate delete
 		// Otherwise, the API server will place a finalizer on the resource expected the GC to remove, which leads to subsequent resource creation issues.
 		err = c.Delete(ctx, storageClass, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
-		err = c.Delete(ctx, configMap, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
 		err = c.Delete(ctx, &classInstance, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
 		err = c.Delete(ctx, resourceQuota, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
 
@@ -193,7 +178,7 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 			session, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), ns)
 			Expect(err).NotTo(HaveOccurred())
 
-			//Configure to use Content Library
+			// Configure to use Content Library
 			vSphereConfig.ContentSource = integration.GetContentSourceID()
 			Expect(session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)).To(Succeed())
 

@@ -7,6 +7,7 @@
 package virtualmachineservice
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,29 +16,24 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"golang.org/x/net/context"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-
-	//"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	// "k8s.io/client-go/tools/record"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-
-	//vmrecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
+	// vmrecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 var c client.Client
@@ -51,16 +47,15 @@ var _ = Describe("VirtualMachineService controller", func() {
 	name := "foo-vm"
 
 	var (
-		recFn                   reconcile.Reconciler
-		requests                chan reconcile.Request
-		reconcileResult         chan reconcile.Result
-		reconcileErr            chan error
-		stopMgr                 chan struct{}
-		mgrStopped              *sync.WaitGroup
-		mgr                     manager.Manager
-		err                     error
-		leaderElectionConfigMap string
-		r                       *ReconcileVirtualMachineService
+		recFn           reconcile.Reconciler
+		requests        chan reconcile.Request
+		reconcileResult chan reconcile.Result
+		reconcileErr    chan error
+		stopMgr         chan struct{}
+		mgrStopped      *sync.WaitGroup
+		mgr             manager.Manager
+		err             error
+		r               *ReconcileVirtualMachineService
 	)
 
 	BeforeEach(func() {
@@ -70,11 +65,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 		syncPeriod := 10 * time.Second
-		leaderElectionConfigMap = fmt.Sprintf("vmoperator-controller-manager-runtime-%s", uuid.New())
-		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod,
-			LeaderElection:          true,
-			LeaderElectionID:        leaderElectionConfigMap,
-			LeaderElectionNamespace: ns})
+		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 		r, err = newReconciler(mgr)
@@ -87,15 +78,6 @@ var _ = Describe("VirtualMachineService controller", func() {
 	AfterEach(func() {
 		close(stopMgr)
 		mgrStopped.Wait()
-		configMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      leaderElectionConfigMap,
-			},
-		}
-
-		err := c.Delete(context.Background(), configMap)
-		Expect(err).NotTo(HaveOccurred())
 	})
 
 	Describe("when creating/deleting a VM Service", func() {
@@ -119,7 +101,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 				},
 			}
 
-			//fakeRecorder := vmrecord.GetRecorder().(*record.FakeRecorder)
+			// fakeRecorder := vmrecord.GetRecorder().(*record.FakeRecorder)
 
 			// Create the VM Service object and expect the Reconcile
 			err := c.Create(context.TODO(), &instance)
@@ -153,8 +135,8 @@ var _ = Describe("VirtualMachineService controller", func() {
 
 			// Expect the Service to be deleted too but not yet. In this testenv framework, the kube-controller is
 			// not running so this won't be garbage collected.
-			//err = c.Get(context.TODO(), serviceKey, &service)
-			//Expect(errors.IsNotFound(err)).Should(BeTrue())
+			// err = c.Get(context.TODO(), serviceKey, &service)
+			// Expect(errors.IsNotFound(err)).Should(BeTrue())
 
 			/*
 				Eventually(func() bool {

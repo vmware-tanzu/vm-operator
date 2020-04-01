@@ -7,20 +7,16 @@
 package virtualmachineimage
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
-	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"golang.org/x/net/context"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -35,14 +31,12 @@ const timeout = time.Second * 30
 var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 	var (
-		c                       client.Client
-		stopMgr                 chan struct{}
-		mgrStopped              *sync.WaitGroup
-		mgr                     manager.Manager
-		err                     error
-		leaderElectionConfigMap string
-		ns                      = integration.DefaultNamespace
-		ctx                     context.Context
+		c          client.Client
+		stopMgr    chan struct{}
+		mgrStopped *sync.WaitGroup
+		mgr        manager.Manager
+		err        error
+		ctx        context.Context
 	)
 
 	BeforeEach(func() {
@@ -50,11 +44,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 		// channel when it is finished.
 
 		syncPeriod := 5 * time.Second
-		leaderElectionConfigMap = fmt.Sprintf("vmoperator-controller-manager-runtime-%s", uuid.New())
-		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod,
-			LeaderElection:          true,
-			LeaderElectionID:        leaderElectionConfigMap,
-			LeaderElectionNamespace: ns})
+		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
@@ -74,14 +64,6 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 	AfterEach(func() {
 		close(stopMgr)
 		mgrStopped.Wait()
-		configMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      leaderElectionConfigMap,
-			},
-		}
-		err := c.Delete(context.Background(), configMap)
-		Expect(err).NotTo(HaveOccurred())
 	})
 
 	Describe("with VM images in inventory", func() {
@@ -223,16 +205,14 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 var _ = Describe("ReconcileVirtualMachineImage", func() {
 
 	var (
-		c                       client.Client
-		stopMgr                 chan struct{}
-		mgrStopped              *sync.WaitGroup
-		mgr                     manager.Manager
-		expectedRequest         reconcile.Request
-		recFn                   reconcile.Reconciler
-		requests                chan reconcile.Request
-		err                     error
-		leaderElectionConfigMap string
-		ns                      = integration.DefaultNamespace
+		c               client.Client
+		stopMgr         chan struct{}
+		mgrStopped      *sync.WaitGroup
+		mgr             manager.Manager
+		expectedRequest reconcile.Request
+		recFn           reconcile.Reconciler
+		requests        chan reconcile.Request
+		err             error
 	)
 
 	BeforeEach(func() {
@@ -240,11 +220,7 @@ var _ = Describe("ReconcileVirtualMachineImage", func() {
 		// channel when it is finished.
 
 		syncPeriod := 5 * time.Second
-		leaderElectionConfigMap = fmt.Sprintf("vmoperator-controller-manager-runtime-%s", uuid.New())
-		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod,
-			LeaderElection:          true,
-			LeaderElectionID:        leaderElectionConfigMap,
-			LeaderElectionNamespace: ns})
+		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
@@ -264,14 +240,6 @@ var _ = Describe("ReconcileVirtualMachineImage", func() {
 	AfterEach(func() {
 		close(stopMgr)
 		mgrStopped.Wait()
-		configMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      leaderElectionConfigMap,
-			},
-		}
-		err := c.Delete(context.Background(), configMap)
-		Expect(err).NotTo(HaveOccurred())
 	})
 
 	Describe("Reconcile", func() {
@@ -294,16 +262,14 @@ var _ = Describe("ReconcileVirtualMachineImage", func() {
 var _ = Describe("ReconcileVMOpConfigMap", func() {
 
 	var (
-		c                       client.Client
-		stopMgr                 chan struct{}
-		mgrStopped              *sync.WaitGroup
-		mgr                     manager.Manager
-		expectedRequest         reconcile.Request
-		recFn                   reconcile.Reconciler
-		requests                chan reconcile.Request
-		err                     error
-		leaderElectionConfigMap string
-		ns                      = integration.DefaultNamespace
+		c               client.Client
+		stopMgr         chan struct{}
+		mgrStopped      *sync.WaitGroup
+		mgr             manager.Manager
+		expectedRequest reconcile.Request
+		recFn           reconcile.Reconciler
+		requests        chan reconcile.Request
+		err             error
 	)
 
 	BeforeEach(func() {
@@ -311,11 +277,7 @@ var _ = Describe("ReconcileVMOpConfigMap", func() {
 		// channel when it is finished.
 
 		syncPeriod := 5 * time.Second
-		leaderElectionConfigMap = fmt.Sprintf("vmoperator-controller-manager-runtime-%s", uuid.New())
-		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod,
-			LeaderElection:          true,
-			LeaderElectionID:        leaderElectionConfigMap,
-			LeaderElectionNamespace: ns})
+		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
@@ -333,14 +295,6 @@ var _ = Describe("ReconcileVMOpConfigMap", func() {
 	AfterEach(func() {
 		close(stopMgr)
 		mgrStopped.Wait()
-		configMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      leaderElectionConfigMap,
-			},
-		}
-		err := c.Delete(context.Background(), configMap)
-		Expect(err).NotTo(HaveOccurred())
 	})
 
 	Describe("Reconcile", func() {
@@ -352,7 +306,7 @@ var _ = Describe("ReconcileVMOpConfigMap", func() {
 
 			expectedRequest = reconcile.Request{NamespacedName: vmOperatorConfigNamespacedName}
 
-			//Delete Provider ConfigMap created for integration
+			// Delete Provider ConfigMap created for integration
 			providerConfigMap := vsphere.ProviderConfigToConfigMap(integration.DefaultNamespace,
 				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, ""),
 				integration.SecretName)
@@ -360,7 +314,7 @@ var _ = Describe("ReconcileVMOpConfigMap", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).ShouldNot(Receive(Equal(expectedRequest)))
 
-			//Recreate Provider ConfigMap created for integration
+			// Recreate Provider ConfigMap created for integration
 			providerConfigMap = vsphere.ProviderConfigToConfigMap(integration.DefaultNamespace,
 				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, ""),
 				integration.SecretName)
@@ -368,12 +322,12 @@ var _ = Describe("ReconcileVMOpConfigMap", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 
-			//Get ProviderConfigMap with a changed Content source
+			// Get ProviderConfigMap with a changed Content source
 			providerConfigMap = vsphere.ProviderConfigToConfigMap(integration.DefaultNamespace,
 				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, integration.GetContentSourceID()),
 				integration.SecretName)
 
-			//Call update on the ConfigMap
+			// Call update on the ConfigMap
 			err = c.Update(context.TODO(), providerConfigMap)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))

@@ -12,7 +12,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	storagetypev1 "k8s.io/api/storage/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/go-logr/logr"
@@ -43,7 +42,6 @@ func newReconciler(ctx *context.ControllerManagerContext, mgr manager.Manager) r
 	return &VirtualMachineReconciler{
 		Client:     mgr.GetClient(),
 		Log:        ctrl.Log.WithName("controllers").WithName("VirtualMachine"),
-		Scheme:     mgr.GetScheme(),
 		recorder:   record.New(mgr.GetEventRecorderFor("virtualmachine")),
 		vmProvider: ctx.VmProvider,
 	}
@@ -61,7 +59,6 @@ func add(ctx *context.ControllerManagerContext, mgr manager.Manager, r reconcile
 type VirtualMachineReconciler struct {
 	client.Client
 	Log        logr.Logger
-	Scheme     *runtime.Scheme
 	recorder   record.Recorder
 	vmProvider vmprovider.VirtualMachineProviderInterface
 }

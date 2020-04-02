@@ -54,7 +54,6 @@ type ClusterModuleStatus struct {
 }
 
 // +genclient
-// +genclient:nonNamespaced
 // +kubebuilder:object:root=true
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status

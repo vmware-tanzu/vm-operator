@@ -99,7 +99,6 @@ type VirtualMachineServiceStatus struct {
 }
 
 // +genclient
-// +genclient:nonNamespaced
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName=vmservice
 // +kubebuilder:storageversion

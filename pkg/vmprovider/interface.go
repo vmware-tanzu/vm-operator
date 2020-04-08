@@ -48,4 +48,5 @@ type VirtualMachineProviderInterface interface {
 	UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error
 	UpdateVmOpSACredSecret(ctx context.Context)
 	UpdateVmOpConfigMap(ctx context.Context)
+	DeleteNamespaceSessionInCache(ctx context.Context, namespace string)
 }

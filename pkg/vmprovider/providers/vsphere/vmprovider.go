@@ -127,6 +127,7 @@ func NewVSphereMachineProviderFromConfig(namespace string, config *VSphereVmProv
 
 type VSphereVmProviderGetSessionHack interface {
 	GetSession(ctx context.Context, namespace string) (*Session, error)
+	IsSessionInCache(namespace string) bool
 }
 
 func (vs *vSphereVmProvider) Name() string {
@@ -138,6 +139,19 @@ func (vs *vSphereVmProvider) Initialize(stop <-chan struct{}) {
 
 func (vs *vSphereVmProvider) GetSession(ctx context.Context, namespace string) (*Session, error) {
 	return vs.sessions.GetSession(ctx, namespace)
+}
+
+func (vs *vSphereVmProvider) IsSessionInCache(namespace string) bool {
+	_, ok := vs.sessions.sessions[namespace]
+	return ok
+}
+
+func (vs *vSphereVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, namespace string) {
+	log.V(4).Info("clearing session cache", "namespace", namespace)
+
+	vs.sessions.mutex.Lock()
+	defer vs.sessions.mutex.Unlock()
+	delete(vs.sessions.sessions, namespace)
 }
 
 func (vs *vSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {

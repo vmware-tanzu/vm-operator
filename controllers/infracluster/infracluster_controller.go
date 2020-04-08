@@ -96,13 +96,40 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		},
 	}
 
-	// Watch for ConfigMap and Secret resource types.
+	namespacePredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return true
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
+
+	// Watch for ConfigMap
 	err = c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForObject{}, wcpClusterConfigMapPredicate)
 	if err != nil {
 		return err
 	}
 
-	return c.Watch(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForObject{}, vmOpServiceAccountSecretPredicate)
+	// Watch for namespace resource types.
+	err = c.Watch(&source.Kind{Type: &corev1.Namespace{}}, &handler.EnqueueRequestForObject{}, namespacePredicate)
+	if err != nil {
+		return err
+	}
+
+	// Watch for vmop serviceaccount secret
+	err = c.Watch(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForObject{}, vmOpServiceAccountSecretPredicate)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 type ReconcileInfraClusterProvider struct {
@@ -135,18 +162,29 @@ func (r *ReconcileInfraClusterProvider) Reconcile(request reconcile.Request) (re
 	r.Log.Info("Received reconcile request", "namespace", request.Namespace, "name", request.Name)
 	ctx := goctx.Background()
 
-	// The reconcile request can be either a VCPNID update or a VM operator secret rotation. We check on the namespacedName to differentiate the two.
+	// The reconcile request can be one of
+	// VCPNID update or a VM operator secret rotation or namespace deletion.
+	// We check on the namespacedName to differentiate between the different request types.
 	// This is an anti pattern. Usually a controller should only reconcile one object type.
-	// If the namespaced names of ConfigMap or Secret change, this code needs to be updated.
+	// If the namespaced names of ConfigMap or Secret change or if a namespace is deleted, the code needs to be updated.
 	if isVmOpServiceAccountCredSecret(request.Name, request.Namespace) {
 		r.Log.Info("VM operator secret has been updated. Going to invalidate session cache for all namespaces")
 		r.vmProvider.UpdateVmOpSACredSecret(ctx)
 		return reconcile.Result{}, nil
 	}
 
-	err := r.reconcileVcPNID(ctx, request)
+	if isWcpClusterConfigMap(request.Name, request.Namespace) {
+		err := r.reconcileVcPNID(ctx, request)
+		return reconcile.Result{}, err
+	}
 
-	return reconcile.Result{}, err
+	// filtering out reconcile requests for namespaces. for such requests the namespace field is empty.
+	if isNamespace(request.Namespace) {
+		err := r.reconcileNamespace(ctx, request)
+		return reconcile.Result{}, err
+	}
+
+	return reconcile.Result{}, nil
 }
 
 func (r *ReconcileInfraClusterProvider) reconcileVcPNID(ctx goctx.Context, request reconcile.Request) error {
@@ -166,6 +204,19 @@ func (r *ReconcileInfraClusterProvider) reconcileVcPNID(ctx goctx.Context, reque
 	return r.vmProvider.UpdateVcPNID(ctx, instance)
 }
 
+func (r *ReconcileInfraClusterProvider) reconcileNamespace(ctx goctx.Context, request reconcile.Request) error {
+	r.Log.V(4).Info("Reconciling namespace", "namespace", request.NamespacedName.Name)
+	instance := &corev1.Namespace{}
+
+	err := r.Get(ctx, request.NamespacedName, instance)
+	if err != nil && apiErrors.IsNotFound(err) {
+		r.vmProvider.DeleteNamespaceSessionInCache(ctx, request.NamespacedName.Name)
+		return nil
+	}
+
+	return err
+}
+
 func isVmOpServiceAccountCredSecret(secretName, secretNamespace string) bool {
 	vmOpNamespace, err := lib.GetVmOpNamespaceFromEnv()
 	return err == nil && vmOpNamespace == secretNamespace && secretName == vsphere.VmOpSecretName
@@ -173,4 +224,8 @@ func isVmOpServiceAccountCredSecret(secretName, secretNamespace string) bool {
 
 func isWcpClusterConfigMap(configMapName, configMapNamespace string) bool {
 	return configMapName == vsphere.WcpClusterConfigMapName && configMapNamespace == vsphere.WcpClusterConfigMapNamespace
+}
+
+func isNamespace(namespace string) bool {
+	return namespace == ""
 }

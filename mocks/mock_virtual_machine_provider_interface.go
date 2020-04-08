@@ -78,6 +78,18 @@ func (mr *MockVirtualMachineProviderInterfaceMockRecorder) CreateVirtualMachine(
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVirtualMachine", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).CreateVirtualMachine), arg0, arg1, arg2)
 }
 
+// DeleteNamespaceSessionInCache mocks base method
+func (m *MockVirtualMachineProviderInterface) DeleteNamespaceSessionInCache(arg0 context.Context, arg1 string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "DeleteNamespaceSessionInCache", arg0, arg1)
+}
+
+// DeleteNamespaceSessionInCache indicates an expected call of DeleteNamespaceSessionInCache
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) DeleteNamespaceSessionInCache(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteNamespaceSessionInCache", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).DeleteNamespaceSessionInCache), arg0, arg1)
+}
+
 // DeleteVirtualMachine mocks base method
 func (m *MockVirtualMachineProviderInterface) DeleteVirtualMachine(arg0 context.Context, arg1 *v1alpha1.VirtualMachine) error {
 	m.ctrl.T.Helper()

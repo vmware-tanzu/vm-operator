@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -110,6 +111,55 @@ var _ = Describe("InfraClusterProvider controller", func() {
 			// Delete WCP ConfigMap
 			err = c.Delete(context.TODO(), &wcpConfigMapUpdated)
 			Expect(err).ShouldNot(HaveOccurred())
+		})
+	})
+
+	Describe("when deleting a namespace", func() {
+
+		It("should clear session cache", func() {
+
+			var (
+				expectedRequest reconcile.Request
+				recFn           reconcile.Reconciler
+				requests        chan reconcile.Request
+				err             error
+			)
+
+			testNamespace := "test-ns"
+
+			ctrlContext := &controllerContext.ControllerManagerContext{
+				VmProvider: vmProvider,
+			}
+			expectedRequest = reconcile.Request{types.NamespacedName{Name: testNamespace}}
+			recFn, requests, _, _ = integration.SetupTestReconcile(newReconciler(ctrlContext, mgr))
+			Expect(add(mgr, recFn)).To(Succeed())
+
+			testNs, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(testNs.Name).NotTo(BeNil())
+
+			_, err = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), testNs.Name)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(clientSet.CoreV1().Namespaces().Delete(testNs.Name, metav1.NewDeleteOptions(0))).To(Succeed())
+
+			resNs, err := clientSet.CoreV1().Namespaces().Get(testNamespace, metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			resNs.Spec.Finalizers = []v1.FinalizerName{}
+			resNs.ObjectMeta.Finalizers = []string{}
+			_, err = clientSet.CoreV1().Namespaces().Finalize(resNs)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = clientSet.CoreV1().Namespaces().Get(testNamespace, metav1.GetOptions{})
+			// This is required to address a case where the namespace might not have been deleted
+			if err == nil {
+				Expect(clientSet.CoreV1().Namespaces().Delete(testNs.Name, metav1.NewDeleteOptions(0))).To(Succeed())
+			}
+
+			Eventually(requests, 10*time.Second).Should(Receive(Equal(expectedRequest)))
+
+			Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).IsSessionInCache(resNs.Name)).To(BeFalse())
 		})
 	})
 

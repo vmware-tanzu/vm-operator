@@ -90,23 +90,25 @@ func (np *defaultNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.V
 }
 
 type nsxtNetworkProvider struct {
-	finder *find.Finder
-	client clientset.Interface
+	finder  *find.Finder
+	client  clientset.Interface
+	cluster *object.ClusterComputeResource
 }
 
 // NsxtNetworkProvider returns a defaultNetworkProvider instance
-func NsxtNetworkProvider(finder *find.Finder, client clientset.Interface) *nsxtNetworkProvider {
+func NsxtNetworkProvider(finder *find.Finder, client clientset.Interface, cluster *object.ClusterComputeResource) *nsxtNetworkProvider {
 	return &nsxtNetworkProvider{
-		finder: finder,
-		client: client,
+		finder:  finder,
+		client:  client,
+		cluster: cluster,
 	}
 }
 
 // NetworkProviderByType returns the network provider based on network type
-func NetworkProviderByType(networkType string, finder *find.Finder, client clientset.Interface) (NetworkProvider, error) {
+func NetworkProviderByType(networkType string, finder *find.Finder, client clientset.Interface, cluster *object.ClusterComputeResource) (NetworkProvider, error) {
 	switch networkType {
 	case NsxtNetworkType:
-		return NsxtNetworkProvider(finder, client), nil
+		return NsxtNetworkProvider(finder, client, cluster), nil
 	case "":
 		return DefaultNetworkProvider(finder), nil
 	}
@@ -142,18 +144,60 @@ func (np *nsxtNetworkProvider) matchDistributedPortGroup(ctx context.Context, ne
 		return false
 	}
 
+	hostMoIDs, err := getClusterHostMoIDs(ctx, np.cluster)
+	if err != nil {
+		log.Error(err, "Unable to get the list of hosts for cluster")
+		return false
+	}
+
 	var configInfo []vimtypes.ObjectContent
 
-	err := obj.Properties(ctx, obj.Reference(), []string{"config.logicalSwitchUuid"}, &configInfo)
+	err = obj.Properties(ctx, obj.Reference(), []string{"config.logicalSwitchUuid", "host"}, &configInfo)
 	if err != nil {
 		return false
 	}
+
 	if len(configInfo) > 0 {
+		// Check "logicalSwitchUuid" property
+		lsIDMatch := false
 		for _, dynamicProperty := range configInfo[0].PropSet {
-			if dynamicProperty.Val == networkID {
-				return true
+			if dynamicProperty.Name == "config.logicalSwitchUuid" && dynamicProperty.Val == networkID {
+				lsIDMatch = true
+				break
 			}
 		}
+
+		// logicalSwitchUuid did not match
+		if !lsIDMatch {
+			return false
+		}
+
+		foundAllHosts := false
+		for _, dynamicProperty := range configInfo[0].PropSet {
+			// In the case of a single NSX Overlay Transport Zone for all the clusters and DVS's,
+			// multiple DVPGs(associated with different DVS's) will have the same "logicalSwitchUuid".
+			// So matching "logicalSwitchUuid" is necessary condition, but not sufficient.
+			// Checking if the DPVG has all the hosts in the cluster, along with the above would be sufficient
+			if dynamicProperty.Name == "host" {
+				if hosts, ok := dynamicProperty.Val.(vimtypes.ArrayOfManagedObjectReference); ok {
+					foundAllHosts = true
+					dvsHostSet := make(map[string]bool, len(hosts.ManagedObjectReference))
+					for _, dvsHost := range hosts.ManagedObjectReference {
+						dvsHostSet[dvsHost.Value] = true
+					}
+
+					for _, hostMoRef := range hostMoIDs {
+						if _, ok := dvsHostSet[hostMoRef.Value]; !ok {
+							foundAllHosts = false
+							break
+						}
+					}
+				}
+			}
+		}
+
+		// Implicit that lsID Matches at this point
+		return foundAllHosts
 	}
 	return false
 }
@@ -326,4 +370,19 @@ func (np *nsxtNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.Virt
 	nic.MacAddress = vnetif.Status.MacAddress
 	nic.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
 	return dev, nil
+}
+
+// Get Host MoIDs for a cluster
+func getClusterHostMoIDs(ctx context.Context, cluster *object.ClusterComputeResource) ([]vimtypes.ManagedObjectReference, error) {
+
+	var computeResource mo.ComputeResource
+	obj := cluster.Reference()
+
+	// Get the list of ESX host moRef objects for this cluster
+	err := cluster.Properties(ctx, obj, nil, &computeResource)
+	if err != nil {
+		log.Error(err, "Failed to get cluster properties")
+		return nil, err
+	}
+	return computeResource.Host, nil
 }

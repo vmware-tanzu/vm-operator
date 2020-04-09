@@ -35,7 +35,7 @@ packages=(
 cov_opts=$(join_packages "${packages[@]}")
 
 if [[ -n ${coverage_file} ]]; then
-    GOFLAGS="${GOFLAGS} -coverprofile=${coverage_file} -coverpkg=${cov_opts}"
+    GOFLAGS="${GOFLAGS} -coverprofile=${coverage_file} -coverpkg=${cov_opts} -covermode=atomic"
 fi
 
 # Tell Go how to do things.

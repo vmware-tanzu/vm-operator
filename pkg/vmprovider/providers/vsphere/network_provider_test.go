@@ -8,18 +8,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vmware/govmomi/vim25/methods"
-	"github.com/vmware/govmomi/vim25/soap"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/simulator"
-	"github.com/vmware/govmomi/simulator/esx"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/methods"
+	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
@@ -32,16 +31,21 @@ import (
 const (
 	dummyObjectName  = "dummy-object"
 	dummyNamespace   = "dummy-ns"
-	dummyNetworkName = "dummy-network"
 	dummyNsxSwitchId = "dummy-opaque-network-id"
 	macAddress       = "01-23-45-67-89-AB-CD-EF"
 	interfaceId      = "interface-id"
+
+	vcsimNetworkName    = "DC0_DVPG0"
+	dummyVirtualNetwork = "dummy-virtual-net"
 )
 
 var _ = Describe("NetworkProvider", func() {
 	var (
+		c      *govmomi.Client
 		finder *find.Finder
-		ns     *object.HostNetworkSystem
+
+		cluster *object.ClusterComputeResource
+		network object.NetworkReference
 
 		ctx   context.Context
 		vmNif *v1alpha1.VirtualMachineNetworkInterface
@@ -55,20 +59,24 @@ var _ = Describe("NetworkProvider", func() {
 
 	BeforeEach(func() {
 		ctx = context.TODO()
-		s := simulator.New(simulator.NewServiceInstance(esx.ServiceContent, esx.RootFolder))
-		client, err := vim25.NewClient(ctx, s)
+		c, _ = govmomi.NewClient(ctx, server.URL, true)
+		finder = find.NewFinder(c.Client)
+
+		dc, err := finder.DefaultDatacenter(ctx)
 		Expect(err).To(BeNil())
-		finder = find.NewFinder(client)
-		host := object.NewHostSystem(client, esx.HostSystem.Reference())
-		ns, err = host.ConfigManager().NetworkSystem(ctx)
+		finder.SetDatacenter(dc)
+
+		cluster, err = finder.DefaultClusterComputeResource(ctx)
 		Expect(err).To(BeNil())
-		finder.SetDatacenter(object.NewDatacenter(client, esx.Datacenter.Reference()))
+
+		network, err = finder.Network(ctx, vcsimNetworkName)
+		Expect(err).To(BeNil())
 
 		name = dummyObjectName
 		namespace = dummyNamespace
 
 		vmNif = &v1alpha1.VirtualMachineNetworkInterface{
-			NetworkName: dummyNetworkName,
+			NetworkName: vcsimNetworkName,
 		}
 
 		vm = &v1alpha1.VirtualMachine{
@@ -84,15 +92,34 @@ var _ = Describe("NetworkProvider", func() {
 		}
 	})
 
+	Context("when getting the network by type", func() {
+		var (
+			ncpClient clientset.Interface
+		)
+		BeforeEach(func() {
+			ncpClient = ncpfake.NewSimpleClientset()
+		})
+
+		It("should find NSX-T", func() {
+			expectedProvider := vsphere.NsxtNetworkProvider(finder, ncpClient, nil)
+
+			np, err := vsphere.NetworkProviderByType("nsx-t", finder, ncpClient, nil)
+			Expect(err).To(BeNil())
+			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
+		})
+
+		It("should find the default", func() {
+			expectedProvider := vsphere.DefaultNetworkProvider(finder)
+
+			np, err := vsphere.NetworkProviderByType("", finder, ncpClient, nil)
+			Expect(err).To(BeNil())
+			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
+		})
+	})
+
 	Context("when using default network provider", func() {
 		BeforeEach(func() {
 			np = vsphere.DefaultNetworkProvider(finder)
-
-			spec := types.HostPortGroupSpec{
-				Name:        dummyNetworkName,
-				VswitchName: "vSwitch0",
-			}
-			Expect(ns.AddPortGroup(ctx, spec)).To(BeNil())
 		})
 
 		Context("when creating vnic", func() {
@@ -104,9 +131,9 @@ var _ = Describe("NetworkProvider", func() {
 				info := dev.GetVirtualDevice().Backing
 				Expect(info).NotTo(BeNil())
 
-				deviceInfo, ok := info.(*types.VirtualEthernetCardNetworkBackingInfo)
+				deviceInfo, ok := info.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 				Expect(ok).To(BeTrue())
-				Expect(deviceInfo.DeviceName).To(Equal(dummyNetworkName))
+				Expect(deviceInfo.Port.PortgroupKey).To(Equal(network.Reference().Value))
 			})
 
 			It("should return an error if network does not exist", func() {
@@ -131,15 +158,14 @@ var _ = Describe("NetworkProvider", func() {
 		)
 		BeforeEach(func() {
 			ncpClient = ncpfake.NewSimpleClientset()
-			np = vsphere.NsxtNetworkProvider(finder, ncpClient)
-
+			np = vsphere.NsxtNetworkProvider(finder, ncpClient, cluster)
 			ncpVif = &ncpv1alpha1.VirtualNetworkInterface{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("%s-%s-lsp", vmNif.NetworkName, vm.Name),
 					Namespace: dummyNamespace,
 				},
 				Spec: ncpv1alpha1.VirtualNetworkInterfaceSpec{
-					VirtualNetwork: dummyNetworkName,
+					VirtualNetwork: dummyVirtualNetwork,
 				},
 				Status: ncpv1alpha1.VirtualNetworkInterfaceStatus{
 					MacAddress:  macAddress,
@@ -226,7 +252,9 @@ var _ = Describe("NetworkProvider", func() {
 					simulator.Map.Put(pc)
 
 					finder := find.NewFinder(c)
-					np, err := vsphere.NetworkProviderByType("nsx-t", finder, ncpClient)
+					cluster, err := finder.DefaultClusterComputeResource(ctx)
+					Expect(err).To(BeNil())
+					np, err := vsphere.NetworkProviderByType("nsx-t", finder, ncpClient, cluster)
 					Expect(err).To(BeNil())
 
 					dev, err := np.CreateVnic(ctx, vm, vmNif)
@@ -235,7 +263,6 @@ var _ = Describe("NetworkProvider", func() {
 
 					nic := dev.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 					Expect(nic).NotTo(BeNil())
-
 					Expect(nic.ExternalId).To(Equal(interfaceId))
 					Expect(nic.MacAddress).To(Equal(macAddress))
 					Expect(nic.AddressType).To(Equal(string(types.VirtualEthernetCardMacTypeManual)))
@@ -262,33 +289,8 @@ var _ = Describe("NetworkProvider", func() {
 				// But this test exercises the path that there is an existing network interface owned by a different VM
 				// and this interface should be updated with the new VM.
 				_, err := np.CreateVnic(ctx, otherVmWithDifferentUid, vmNif)
-				Expect(err).NotTo(BeNil())
+				Expect(err).To(BeNil())
 			})
-		})
-	})
-
-	Context("when getting the network by type", func() {
-		var (
-			ncpClient clientset.Interface
-		)
-		BeforeEach(func() {
-			ncpClient = ncpfake.NewSimpleClientset()
-		})
-
-		It("should find NSX-T", func() {
-			expectedProvider := vsphere.NsxtNetworkProvider(finder, ncpClient)
-
-			np, err := vsphere.NetworkProviderByType("nsx-t", finder, ncpClient)
-			Expect(err).To(BeNil())
-			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
-		})
-
-		It("should find the default", func() {
-			expectedProvider := vsphere.DefaultNetworkProvider(finder)
-
-			np, err := vsphere.NetworkProviderByType("", finder, ncpClient)
-			Expect(err).To(BeNil())
-			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 		})
 	})
 })
@@ -298,33 +300,40 @@ type propertyCollectorRetrievePropertiesOverride struct {
 	simulator.PropertyCollector
 }
 
-// RetrieveProperties overrides simulator.PropertyCollector.RetrieveProperties, returning a custom value for the "config.description" field
+// RetrieveProperties overrides simulator.PropertyCollector.RetrieveProperties, returning a custom value for the "config.logicalSwitchUuid" field
+// The property `config.logicalSwitchUuid` is not available on a dvpg object model in govmomi (@v0.22.2 at the time of writing this comment).
+// Hence, as a workaround we replace the entire property collector in the simulator with our version of property collector that returns a fake value for that property.
+// Typically, a property collector returns the queried properties & their values in a propSet object. If the specified properties are missing from the vim object,
+// it additionally populates a missingSet object with the missing properties. Here, we look for `config.logicalSwitchUuid` in the missingSet and if found, include a
+// fake value for that property in the propSet object. This ensures we are not overwriting any other properties queried by the caller.
 func (pc *propertyCollectorRetrievePropertiesOverride) RetrieveProperties(ctx *simulator.Context, req *types.RetrieveProperties) soap.HasFault {
-	body := &methods.RetrievePropertiesBody{
-		Res: &types.RetrievePropertiesResponse{
-			Returnval: []types.ObjectContent{
-				{
-					Obj: req.SpecSet[0].ObjectSet[0].Obj,
-					PropSet: []types.DynamicProperty{
-						{
-							Name: "config.logicalSwitchUuid",
-							Val:  dummyNsxSwitchId,
-						},
-					},
-				},
-			},
-		},
-	}
 
-	for _, spec := range req.SpecSet {
-		for _, prop := range spec.PropSet {
-			for _, path := range prop.PathSet {
-				if path == "config.logicalSwitchUuid" {
-					return body
-				}
+	fault := pc.PropertyCollector.RetrieveProperties(ctx, req)
+	body := fault.(*methods.RetrievePropertiesBody)
+
+	var newObjectContent []types.ObjectContent
+	//TODO: Remove this when we move to the latest govmomi that supports `config.logicalSwitchUuid` on a DVPG.
+	for _, objContent := range body.Res.Returnval {
+		missingProp := false
+		var newMissingSet []types.MissingProperty
+		for _, prop := range objContent.MissingSet {
+			if prop.Path == "config.logicalSwitchUuid" {
+				missingProp = true
+			} else {
+				newMissingSet = append(newMissingSet, prop)
 			}
 		}
+		if missingProp {
+			logicalSwitchUuidProp := types.DynamicProperty{
+				Name: "config.logicalSwitchUuid",
+				Val:  dummyNsxSwitchId,
+			}
+			objContent.PropSet = append(objContent.PropSet, logicalSwitchUuidProp)
+		}
+		// Remove the property from the MissingSet since we now have replaced its value with a fake.
+		objContent.MissingSet = newMissingSet
+		newObjectContent = append(newObjectContent, objContent)
 	}
-
-	return pc.PropertyCollector.RetrieveProperties(ctx, req)
+	body.Res.Returnval = newObjectContent
+	return body
 }

@@ -781,7 +781,7 @@ func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine
 	key := int32(-100)
 	for i := range vm.Spec.NetworkInterfaces {
 		vif := vm.Spec.NetworkInterfaces[i]
-		np, err := NetworkProviderByType(vif.NetworkType, s.Finder, s.ncpClient)
+		np, err := NetworkProviderByType(vif.NetworkType, s.Finder, s.ncpClient, s.cluster)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get network provider")
 		}
@@ -1218,7 +1218,7 @@ func (s *Session) GetCustomizationSpec(ctx context.Context, vm *v1alpha1.Virtual
 	// Used to config IP for VMs connecting to nsx-t logical ports
 	for _, nif := range vmSpec.NetworkInterfaces {
 		if nif.NetworkType == NsxtNetworkType {
-			np := NsxtNetworkProvider(s.Finder, s.ncpClient)
+			np := NsxtNetworkProvider(s.Finder, s.ncpClient, s.cluster)
 			vnetif, err := np.waitForVnetIFStatus(namespace, nif.NetworkName, vmName)
 			if err != nil {
 				return nil, err

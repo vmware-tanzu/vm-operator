@@ -236,5 +236,5 @@ type VirtualMachineList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&VirtualMachine{}, &VirtualMachineList{})
+	RegisterTypeWithScheme(&VirtualMachine{}, &VirtualMachineList{})
 }

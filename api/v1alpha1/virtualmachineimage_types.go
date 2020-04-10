@@ -102,5 +102,5 @@ type VirtualMachineImageList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&VirtualMachineImage{}, &VirtualMachineImageList{})
+	RegisterTypeWithScheme(&VirtualMachineImage{}, &VirtualMachineImageList{})
 }

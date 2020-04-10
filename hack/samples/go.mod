@@ -2,12 +2,13 @@ module github.com/vmware-tanzu/vm-operator-api/hack/samples
 
 go 1.13
 
+// The generated client is not part of the release, so point to the local version that includes the generated code
+// Note also that vm-operator-api is not specified in require the samples automatically pull in the latest
+replace github.com/vmware-tanzu/vm-operator-api => ../../../vm-operator-api
+
 require (
-	github.com/imdario/mergo v0.3.9 // indirect
 	github.com/vmware-tanzu/vm-operator-api v0.0.0
-	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
-	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	k8s.io/apimachinery v0.17.4
-	k8s.io/client-go v0.17.4
-	sigs.k8s.io/controller-runtime v0.5.0
+	k8s.io/client-go v0.17.2
+	sigs.k8s.io/controller-runtime v0.5.2
 )

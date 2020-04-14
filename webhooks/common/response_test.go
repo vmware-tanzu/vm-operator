@@ -14,7 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
@@ -22,7 +23,7 @@ import (
 var _ = Describe("Validation Response", func() {
 
 	var (
-		gr  = schema.GroupResource{Group: vmopv1.GroupVersion.Group, Resource: "VirtualMachine"}
+		gr  = schema.GroupResource{Group: vmopv1.SchemeGroupVersion.Group, Resource: "VirtualMachine"}
 		ctx *context.WebhookRequestContext
 	)
 

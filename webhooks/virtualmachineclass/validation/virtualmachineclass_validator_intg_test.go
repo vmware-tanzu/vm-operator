@@ -9,7 +9,8 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 

@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
 // ServiceEqual compares the new Service's spec with old Service's last applied config
@@ -50,7 +50,7 @@ func VMServiceCompareToLastApplied(newVMService *vmoperatorv1alpha1.VirtualMachi
 
 var (
 	virtualMachineServiceKind       = reflect.TypeOf(vmoperatorv1alpha1.VirtualMachineService{}).Name()
-	virtualMachineServiceAPIVersion = vmoperatorv1alpha1.GroupVersion.String()
+	virtualMachineServiceAPIVersion = vmoperatorv1alpha1.SchemeGroupVersion.String()
 )
 
 func MakeVMServiceOwnerRef(vmService *vmoperatorv1alpha1.VirtualMachineService) metav1.OwnerReference {

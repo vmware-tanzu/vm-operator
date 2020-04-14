@@ -15,7 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
@@ -53,7 +54,7 @@ type validator struct {
 }
 
 func (v validator) For() schema.GroupVersionKind {
-	return vmopv1.GroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachineSetResourcePolicy{}).Name())
+	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachineSetResourcePolicy{}).Name())
 }
 
 func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {

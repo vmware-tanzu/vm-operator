@@ -10,7 +10,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
 const XdsNodePort = 31799

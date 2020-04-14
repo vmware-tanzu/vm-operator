@@ -28,9 +28,11 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
 	// "k8s.io/client-go/tools/record"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 	// vmrecord "github.com/vmware-tanzu/vm-operator/pkg/record"

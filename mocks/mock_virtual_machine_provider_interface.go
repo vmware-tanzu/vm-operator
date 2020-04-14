@@ -7,7 +7,7 @@ package mocks
 import (
 	context "context"
 	gomock "github.com/golang/mock/gomock"
-	v1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	v1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	vmprovider "github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	v1 "k8s.io/api/core/v1"
 	reflect "reflect"

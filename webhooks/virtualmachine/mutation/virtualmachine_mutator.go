@@ -18,7 +18,7 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
 const (
@@ -78,7 +78,7 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 }
 
 func (m mutator) For() schema.GroupVersionKind {
-	return vmopv1.GroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachine{}).Name())
+	return vmopv1.SchemeGroupVersion.WithKind(reflect.TypeOf(vmopv1.VirtualMachine{}).Name())
 }
 
 // vmFromUnstructured returns the VirtualMachine from the unstructured object.

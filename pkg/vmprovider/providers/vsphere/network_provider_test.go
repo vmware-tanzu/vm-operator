@@ -24,7 +24,8 @@ import (
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	ncpfake "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 

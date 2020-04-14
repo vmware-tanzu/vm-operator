@@ -8,8 +8,9 @@ package integration
 
 import (
 	"context"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"testing"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"

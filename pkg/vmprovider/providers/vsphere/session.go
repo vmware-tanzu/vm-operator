@@ -33,7 +33,8 @@ import (
 
 	ncpcs "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	vmopcs "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"

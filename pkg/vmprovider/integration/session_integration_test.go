@@ -412,6 +412,20 @@ var _ = Describe("Sessions", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
 			})
+			It("should clone VM with storage policy disk provisioning", func() {
+				imageName := "test-item"
+				vmName := "CL_DeployedVM-via-policy"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				// hardwired vcsim ID for "vSAN Default Storage Policy".
+				// TODO: this test could lookup profile id by name or create a new profile
+				vmConfigArgs.StorageProfileID = "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+			})
 			It("should clone VMTX", func() {
 				imageName := "test-item-vmtx"
 				vmName := "CL_DeployedVMTX"

@@ -18,6 +18,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/pbm"
+	pbmTypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
@@ -981,6 +983,74 @@ func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, clo
 	return res.NewVMFromObject(ref.(*object.VirtualMachine))
 }
 
+// policyThickProvision returns true if the storage profile is vSAN and disk provisioning is thick, false otherwise.
+// thick provisioning is determined based on its "proportionalCapacity":
+// Percentage (0-100) of the logical size of the storage object that will be reserved upon provisioning.
+// The UI presents options for "thin" (0%), 25%, 50%, 75% and "thick" (100%)
+func policyThickProvision(profile pbmTypes.BasePbmProfile) bool {
+	cap, ok := profile.(*pbmTypes.PbmCapabilityProfile)
+	if !ok {
+		return false
+	}
+
+	if cap.ResourceType.ResourceType != string(pbmTypes.PbmProfileResourceTypeEnumSTORAGE) {
+		return false
+	}
+
+	if cap.ProfileCategory != string(pbmTypes.PbmProfileCategoryEnumREQUIREMENT) {
+		return false
+	}
+
+	sub, ok := cap.Constraints.(*pbmTypes.PbmCapabilitySubProfileConstraints)
+	if !ok {
+		return false
+	}
+
+	for _, p := range sub.SubProfiles {
+		for _, cap := range p.Capability {
+			if cap.Id.Namespace != "VSAN" || cap.Id.Id != "proportionalCapacity" {
+				continue
+			}
+
+			for _, c := range cap.Constraint {
+				for _, prop := range c.PropertyInstance {
+					if prop.Id != cap.Id.Id {
+						continue
+					}
+					if val, ok := prop.Value.(int32); ok {
+						return val == 100 // 100% == thick provisioning
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// setStorageProvisioning will change dSpec.StorageProvisioning = thick if the given storage profile is thick.
+// Currently this would only happen if the profile is vSAN with proportionalCapacity == 100%.
+func (s *Session) setStorageProvisioning(ctx context.Context, dSpec *vcenter.DeploymentSpec, storageProfileID string) error {
+	c, err := pbm.NewClient(ctx, s.client.VimClient())
+	if err != nil {
+		return err
+	}
+	profiles, err := c.RetrieveContent(ctx, []pbmTypes.PbmProfileId{{UniqueId: storageProfileID}})
+	if err != nil {
+		return err
+	}
+
+	if len(profiles) != 0 {
+		thick := policyThickProvision(profiles[0])
+		if thick {
+			dSpec.StorageProvisioning = string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThick)
+		}
+		log.Info("StorageProfile", "id", storageProfileID, "thick", thick)
+	} // else defer error handling to library.Deploy when storage profile can't be found
+
+	return nil
+}
+
 func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
 	storageProfileID string) (*res.VirtualMachine, error) {
 
@@ -993,11 +1063,16 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, r
 	dSpec := vcenter.DeploymentSpec{
 		Name: vmName,
 		// TODO (): Plumb AcceptAllEULA to this Spec
-		AcceptAllEULA: true,
+		AcceptAllEULA:       true,
+		StorageProvisioning: string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin),
 	}
 
 	if storageProfileID != "" {
 		dSpec.StorageProfileID = storageProfileID
+		err = s.setStorageProvisioning(ctx, &dSpec, storageProfileID)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		dSpec.DefaultDatastoreID = s.datastore.Reference().Value
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/simulator"
 
+	_ "github.com/vmware/govmomi/pbm/simulator"
 	_ "github.com/vmware/govmomi/vapi/simulator"
 
 	_ "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/cluster/simulator"

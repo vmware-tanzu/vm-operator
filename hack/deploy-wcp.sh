@@ -1,4 +1,4 @@
-#!/usr/bin/env bash -x
+#!/usr/bin/env bash
 # Deploy VMOP and install required CRDs in the given WCP supervisor cluster
 #
 # Usage:
@@ -7,6 +7,7 @@
 set -o errexit
 set -o nounset
 set -o pipefail
+set -x
 
 SSHCommonArgs=("-o PubkeyAuthentication=no" "-o UserKnownHostsFile=/dev/null" "-o StrictHostKeyChecking=no")
 

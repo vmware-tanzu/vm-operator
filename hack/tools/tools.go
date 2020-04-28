@@ -24,9 +24,10 @@ import (
 	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
 	_ "github.com/jstemmer/go-junit-report"
 	_ "github.com/onsi/ginkgo/ginkgo"
+	_ "github.com/t-yuki/gocover-cobertura"
 	_ "github.com/wadey/gocovmerge"
+	_ "k8s.io/code-generator"
 	_ "sigs.k8s.io/controller-tools/cmd/controller-gen"
-	_ "sigs.k8s.io/kind"
 	_ "sigs.k8s.io/kustomize/v3/cmd/kustomize"
 	_ "sigs.k8s.io/testing_frameworks/integration"
 )

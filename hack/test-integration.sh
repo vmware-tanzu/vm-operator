@@ -55,6 +55,6 @@ go test -v -race -p 1 -count=1 "${INT_GOFLAGS[@]}" -tags=integration ./controlle
 # Merge the coverage files.
 if [[ -n ${COVERAGE_FILE} ]]; then
     touch "${ENVIRONMENT_COVERAGE_FILE}" "${INTEGRATION_COVERAGE_FILE}" "${WEBHOOK_COVERAGE_FILE}"
-    hack/tools/bin/gocovmerge "${ENVIRONMENT_COVERAGE_FILE}" "${INTEGRATION_COVERAGE_FILE}" "${WEBHOOK_COVERAGE_FILE}" > "${COVERAGE_FILE}"
+    gocovmerge "${ENVIRONMENT_COVERAGE_FILE}" "${INTEGRATION_COVERAGE_FILE}" "${WEBHOOK_COVERAGE_FILE}" > "${COVERAGE_FILE}"
     rm -f "${ENVIRONMENT_COVERAGE_FILE}" "${INTEGRATION_COVERAGE_FILE}" "${WEBHOOK_COVERAGE_FILE}"
 fi

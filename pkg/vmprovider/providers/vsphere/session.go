@@ -374,19 +374,55 @@ func (s *Session) ListVirtualMachines(ctx context.Context, path string) ([]*res.
 	return vms, nil
 }
 
-func (s *Session) ChildResourcePoolPath(resourcePoolName string) string {
-	return s.resourcepool.InventoryPath + "/" + resourcePoolName
+// ChildResourcePool returns a child resource pool by a given name under the session's parent
+// resource pool, returns error if no child resource pool exists with a given name.
+func (s *Session) ChildResourcePool(ctx context.Context, resourcePoolName string) (*object.ResourcePool, error) {
+	si := object.NewSearchIndex(s.client.VimClient())
+	ref, err := si.FindChild(ctx, s.resourcepool, resourcePoolName)
+	if err != nil {
+		return nil, err
+	}
+	if ref == nil {
+		// SearchIndex returns nil when child name is not found
+		log.Error(fmt.Errorf("ResourcePool not found"), "resourcePoolName", resourcePoolName)
+		return nil, &find.NotFoundError{}
+	}
+	child, ok := ref.(*object.ResourcePool)
+	if ok {
+		// this should always be the case for a ResourcePool child
+		return child, nil
+	}
+	return nil, fmt.Errorf("ResourcePool '%s' not found. '%s' is a %T", resourcePoolName, resourcePoolName, ref)
+}
+
+// ChildFolder returns a child resource pool by a given name under the session's parent
+// resource pool, returns error if no child resource pool exists with a given name.
+func (s *Session) ChildFolder(ctx context.Context, folderName string) (*object.Folder, error) {
+	si := object.NewSearchIndex(s.client.VimClient())
+	ref, err := si.FindChild(ctx, s.folder, folderName)
+	if err != nil {
+		return nil, err
+	}
+	if ref == nil {
+		// SearchIndex returns nil when child name is not found
+		log.Error(fmt.Errorf("Folder not found"), "folderName", folderName)
+		return nil, &find.NotFoundError{}
+	}
+	child, ok := ref.(*object.Folder)
+	if ok {
+		// this should always be the case for a ResourcePool child
+		return child, nil
+	}
+	return nil, fmt.Errorf("Folder '%s' not found. '%s' is a %T", folderName, folderName, ref)
 }
 
 // DoesResourcePoolExist checks if a ResourcePool with the given name exists.
 func (s *Session) DoesResourcePoolExist(ctx context.Context, namespace, resourcePoolName string) (bool, error) {
-	resourcePoolPath := s.ChildResourcePoolPath(resourcePoolName)
-
-	log.V(4).Info("Checking if ResourcePool exists", "resourcePoolName", resourcePoolName, "path", resourcePoolPath)
-	_, err := s.GetResourcePoolByPath(ctx, resourcePoolPath)
+	log.V(4).Info("Checking if ResourcePool exists", "resourcePoolName", resourcePoolName)
+	_, err := s.ChildResourcePool(ctx, resourcePoolName)
 	if err != nil {
 		switch err.(type) {
-		case *find.NotFoundError, *find.DefaultNotFoundError:
+		case *find.NotFoundError:
 			return false, nil
 		default:
 			return false, err
@@ -432,14 +468,13 @@ func (s *Session) UpdateResourcePool(ctx context.Context, rpSpec *v1alpha1.Resou
 func (s *Session) DeleteResourcePool(ctx context.Context, resourcePoolName string) error {
 	log.Info("Deleting the ResourcePool", "name", resourcePoolName)
 
-	resourcePoolPath := s.ChildResourcePoolPath(resourcePoolName)
-	resourcePool, err := s.GetResourcePoolByPath(ctx, resourcePoolPath)
+	resourcePool, err := s.ChildResourcePool(ctx, resourcePoolName)
 	if err != nil {
 		switch err.(type) {
 		case *find.NotFoundError, *find.DefaultNotFoundError:
 			return nil
 		default:
-			log.Error(err, "Error getting the to be deleted ResourcePool", "name", resourcePoolName, "path", resourcePoolPath)
+			log.Error(err, "Error getting the ResourcePool to be deleted", "name", resourcePoolName)
 			return err
 		}
 	}
@@ -462,22 +497,12 @@ func (s *Session) DeleteResourcePool(ctx context.Context, resourcePoolName strin
 	return nil
 }
 
-func (s *Session) ChildFolderPath(folderName string) string {
-	return s.folder.InventoryPath + "/" + folderName
-}
-
-func (s *Session) findFolder(ctx context.Context, folderName string) (*object.Folder, error) {
-	folderPath := s.ChildFolderPath(folderName)
-	log.V(4).Info("Checking if Folder exists", "name", folderName, "path", folderPath)
-	return s.GetFolderByPath(ctx, folderPath)
-}
-
 // DoesFolderExist checks if a Folder with the given name exists.
 func (s *Session) DoesFolderExist(ctx context.Context, namespace, folderName string) (bool, error) {
-	_, err := s.findFolder(ctx, folderName)
+	_, err := s.ChildFolder(ctx, folderName)
 	if err != nil {
 		switch err.(type) {
-		case *find.NotFoundError, *find.DefaultNotFoundError:
+		case *find.NotFoundError:
 			return false, nil
 		default:
 			return false, err
@@ -510,13 +535,13 @@ func (s *Session) CreateFolder(ctx context.Context, folderSpec *v1alpha1.FolderS
 func (s *Session) DeleteFolder(ctx context.Context, folderName string) error {
 	log.Info("Deleting the Folder", "name", folderName)
 
-	folder, err := s.findFolder(ctx, folderName)
+	folder, err := s.ChildFolder(ctx, folderName)
 	if err != nil {
 		switch err.(type) {
 		case *find.NotFoundError, *find.DefaultNotFoundError:
 			return nil
 		default:
-			log.Error(err, "Error finding the VM folder to delete", "name", folderName, "path", s.ChildFolderPath(folderName))
+			log.Error(err, "Error finding the VM folder to delete", "name", folderName)
 			return err
 		}
 	}
@@ -550,21 +575,21 @@ func (s *Session) GetRPAndFolderFromResourcePolicy(ctx context.Context,
 	}
 
 	resourcePoolName := resourcePolicy.Spec.ResourcePool.Name
-	resourcePoolPath := s.ChildResourcePoolPath(resourcePoolName)
-	resourcePool, err := s.GetResourcePoolByPath(ctx, resourcePoolPath)
+	resourcePool, err := s.ChildResourcePool(ctx, resourcePoolName)
 	if err != nil {
-		log.Error(err, "Unable to find ResourcePool", "name", resourcePoolName, "path", resourcePoolPath)
+		log.Error(err, "Unable to find ResourcePool", "name", resourcePoolName)
 		return nil, nil, err
 	}
-	log.V(4).Info("Found RP:", "name", resourcePoolName, "path", resourcePoolPath, "obj", resourcePool.Reference().Value)
+
+	log.V(4).Info("Found RP:", "name", resourcePoolName, "moRef", resourcePool.Reference().Value)
 
 	folderName := resourcePolicy.Spec.Folder.Name
-	folder, err := s.findFolder(ctx, folderName)
+	folder, err := s.ChildFolder(ctx, folderName)
 	if err != nil {
-		log.Error(err, "Unable to find Folder", "name", folderName, "path", s.ChildFolderPath(folderName))
+		log.Error(err, "Unable to find Folder", "name", folderName)
 		return nil, nil, err
 	}
-	log.V(4).Info("Found Folder:", "name", folderName, "path", s.ChildFolderPath(folderName), "obj", folder.Reference().Value)
+	log.V(4).Info("Found Folder:", "name", folderName, "moRef", folder.Reference().Value)
 
 	return resourcePool, folder, nil
 }
@@ -729,15 +754,18 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 			return nil, err
 		}
 
-		folder, err = s.findFolder(ctx, resourcePolicy.Spec.Folder.Name)
+		vmFolderName := resourcePolicy.Spec.Folder.Name
+		vmFolder, err := s.ChildFolder(ctx, vmFolderName)
+
 		if err != nil {
-			log.Error(err, "Failed to find folder", "Folder", resourcePolicy.Spec.Folder.Name)
+			log.Error(err, "Failed to find folder", "folderName", vmFolderName, "moRef", vmFolder.Reference().Value)
 			return nil, err
 		}
 
 	} else {
 		// Developer enablement path: Use the default folder and RP for the session.
-		folder = s.folder
+		// TODO: AKP: If any of the parent objects have been renamed, the cached inventory path will be stale.
+		// 		folder = s.folder
 	}
 
 	vmPath := folder.InventoryPath + "/" + vm.Name
@@ -1233,11 +1261,6 @@ func (s *Session) GetResourcePoolByMoID(ctx context.Context, moID string) (*obje
 	return o.(*object.ResourcePool), nil
 }
 
-// GetResourcePoolByPath returns resource pool for a given inventory path
-func (s *Session) GetResourcePoolByPath(ctx context.Context, path string) (*object.ResourcePool, error) {
-	return s.Finder.ResourcePool(ctx, path)
-}
-
 // GetFolderByMoID returns a folder for a given moref
 func (s *Session) GetFolderByMoID(ctx context.Context, moID string) (*object.Folder, error) {
 	ref := types.ManagedObjectReference{Type: "Folder", Value: moID}
@@ -1246,11 +1269,6 @@ func (s *Session) GetFolderByMoID(ctx context.Context, moID string) (*object.Fol
 		return nil, err
 	}
 	return o.(*object.Folder), nil
-}
-
-// GetFolderByPath returns a folder for a given inventory path
-func (s *Session) GetFolderByPath(ctx context.Context, path string) (*object.Folder, error) {
-	return s.Finder.Folder(ctx, path)
 }
 
 func IsSupportedDeployType(t string) bool {
@@ -1594,6 +1612,46 @@ func (s *Session) DetachTagFromVm(ctx context.Context, tagName string, tagCatNam
 		vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
 		return manager.DetachTag(ctx, tag.ID, vmRef)
 	})
+}
+
+// RenameSessionCluster renames the cluster corresponding to this session. Used only in integration tests for now.
+func (s *Session) RenameSessionCluster(ctx context.Context, name string) error {
+	task, err := s.cluster.Rename(ctx, name)
+	if err != nil {
+		log.Error(err, "Failed to invoke rename for cluster", "clusterMoID", s.cluster.Reference().Value)
+		return err
+	}
+
+	if taskResult, err := task.WaitForResult(ctx, nil); err != nil {
+		msg := ""
+		if taskResult != nil && taskResult.Error != nil {
+			msg = taskResult.Error.LocalizedMessage
+		}
+		log.Error(err, "Error in renaming cluster", "clusterMoID", s.cluster.Reference().Value, "msg", msg)
+		return err
+	}
+
+	return nil
+}
+
+// RenameSessionFolder renames the folder corresponding to this session. Used only by integration tests for now.
+func (s *Session) RenameSessionFolder(ctx context.Context, name string) error {
+	task, err := s.folder.Rename(ctx, name)
+	if err != nil {
+		log.Error(err, "Failed to invoke rename for folder", "folderMoID", s.folder.Reference().Value)
+		return err
+	}
+
+	if taskResult, err := task.WaitForResult(ctx, nil); err != nil {
+		msg := ""
+		if taskResult != nil && taskResult.Error != nil {
+			msg = taskResult.Error.LocalizedMessage
+		}
+		log.Error(err, "Error in renaming cluster", "clusterMoID", s.folder.Reference().Value, "msg", msg)
+		return err
+	}
+
+	return nil
 }
 
 func (s *Session) updateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {

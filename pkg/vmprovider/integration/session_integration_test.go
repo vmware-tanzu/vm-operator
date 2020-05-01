@@ -12,7 +12,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/tags"
@@ -589,8 +589,27 @@ var _ = Describe("Sessions", func() {
 			})
 
 			Context("Create a ResourcePool, verify it exists and delete it", func() {
-
 				It("Verifies if a ResourcePool exists", func() {
+					exists, err := session.DoesResourcePoolExist(context.TODO(), integration.DefaultNamespace, rpSpec.Name)
+					Expect(exists).To(BeTrue())
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			Context("Create a ResourcePool, rename the VC cluster, verify that resource pool is still found", func() {
+				var (
+					defaultVCSimCluster string
+					newClusterName      string
+				)
+				BeforeEach(func() {
+					defaultVCSimCluster = simulator.Map.Any("ClusterComputeResource").Entity().Name
+					newClusterName = "newCluster"
+					Expect(session.RenameSessionCluster(context.TODO(), newClusterName)).To(Succeed())
+				})
+				AfterEach(func() {
+					Expect(session.RenameSessionCluster(context.TODO(), defaultVCSimCluster)).To(Succeed())
+				})
+				It("Verify that the resource pool exists", func() {
 					exists, err := session.DoesResourcePoolExist(context.TODO(), integration.DefaultNamespace, rpSpec.Name)
 					Expect(exists).To(BeTrue())
 					Expect(err).NotTo(HaveOccurred())
@@ -604,6 +623,15 @@ var _ = Describe("Sessions", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(Equal("ServerFaultCode: DuplicateName"))
 					Expect(rpMoId).To(BeEmpty())
+				})
+			})
+
+			Context("ChildResourcePool", func() {
+				It("returns NotFoundError for a resource pool that doesn't exist", func() {
+					_, err := session.ChildResourcePool(context.TODO(), "nonExistentResourcePool")
+					Expect(err).To(HaveOccurred())
+					_, ok := err.(*find.NotFoundError)
+					Expect(ok).Should(BeTrue())
 				})
 			})
 
@@ -625,12 +653,12 @@ var _ = Describe("Sessions", func() {
 				}
 			})
 
-			Context("Create a Folder, verify it exists and delete it", func() {
+			Context("Create a folder, verify it exists and delete it", func() {
 				JustBeforeEach(func() {
+
 					folderMoId, err := session.CreateFolder(context.TODO(), folderSpec)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(folderMoId).To(Not(BeEmpty()))
-
 				})
 
 				JustAfterEach(func() {
@@ -657,6 +685,16 @@ var _ = Describe("Sessions", func() {
 					Expect(folderMoId2).To(BeEmpty())
 				})
 			})
+
+			Context("ChildFolder", func() {
+				It("returns NotFoundError for a folder that doesn't exist", func() {
+					_, err := session.ChildFolder(context.TODO(), "nonExistentFolderName")
+					Expect(err).To(HaveOccurred())
+					_, ok := err.(*find.NotFoundError)
+					Expect(ok).Should(BeTrue())
+				})
+			})
+
 			Context("Delete a Folder that doesnt exist", func() {
 				It("should succeed", func() {
 					Expect(session.DeleteFolder(context.TODO(), folderSpec.Name)).To(Succeed())
@@ -731,19 +769,14 @@ var _ = Describe("Sessions", func() {
 			})
 		})
 
-		Context("RP as inventory path", func() {
+		Context("RP as moID", func() {
 			It("returns RP object without error", func() {
 				pools, err := session.Finder.ResourcePoolList(ctx, "*")
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(len(pools)).ToNot(BeZero())
 
 				existingPool := pools[0]
-				pool, err := session.GetResourcePoolByPath(ctx, existingPool.InventoryPath)
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(pool.InventoryPath).To(Equal(existingPool.InventoryPath))
-				Expect(pool.Reference().Value).To(Equal(existingPool.Reference().Value))
-
-				pool, err = session.GetResourcePoolByMoID(ctx, existingPool.Reference().Value)
+				pool, err := session.GetResourcePoolByMoID(ctx, existingPool.Reference().Value)
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(pool.InventoryPath).To(Equal(existingPool.InventoryPath))
 				Expect(pool.Reference().Value).To(Equal(existingPool.Reference().Value))
@@ -751,21 +784,11 @@ var _ = Describe("Sessions", func() {
 		})
 
 		Context("when finding folders", func() {
-			var folders []*object.Folder
-			BeforeEach(func() {
-				folders, err = session.Finder.FolderList(ctx, "*")
+			It("folder as moid returns Folder object without error", func() {
+				folders, err := session.Finder.FolderList(ctx, "*")
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(len(folders)).ToNot(BeZero())
-			})
 
-			It("folder as inventory path returns Folder object without error", func() {
-				folder, err := session.GetFolderByPath(ctx, folders[0].InventoryPath)
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(folder.InventoryPath).To(Equal(folders[0].InventoryPath))
-				Expect(folder.Reference().Value).To(Equal(folders[0].Reference().Value))
-			})
-
-			It("folder as moid returns Folder object without error", func() {
 				folder, err := session.GetFolderByMoID(ctx, folders[0].Reference().Value)
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(folder.InventoryPath).To(Equal(folders[0].InventoryPath))

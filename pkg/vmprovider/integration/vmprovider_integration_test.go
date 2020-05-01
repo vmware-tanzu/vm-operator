@@ -30,8 +30,8 @@ func createResourcePool(rpName string) (*object.ResourcePool, error) {
 	}
 	_, err := session.CreateResourcePool(context.TODO(), rpSpec)
 	Expect(err).NotTo(HaveOccurred())
-	return session.GetResourcePoolByPath(context.Background(), session.ChildResourcePoolPath(rpSpec.Name))
 
+	return session.ChildResourcePool(context.TODO(), rpSpec.Name)
 }
 
 func createFolder(folderName string) (*object.Folder, error) {
@@ -40,7 +40,8 @@ func createFolder(folderName string) (*object.Folder, error) {
 	}
 	_, err := session.CreateFolder(context.TODO(), folderSpec)
 	Expect(err).NotTo(HaveOccurred())
-	return session.GetFolderByPath(context.Background(), session.ChildFolderPath(folderSpec.Name))
+
+	return session.ChildFolder(context.TODO(), folderSpec.Name)
 }
 
 func getSimpleVirtualMachine(name string) *vmoperatorv1alpha1.VirtualMachine {

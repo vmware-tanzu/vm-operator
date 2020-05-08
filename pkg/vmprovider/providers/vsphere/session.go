@@ -374,46 +374,56 @@ func (s *Session) ListVirtualMachines(ctx context.Context, path string) ([]*res.
 	return vms, nil
 }
 
-// ChildResourcePool returns a child resource pool by a given name under the session's parent
-// resource pool, returns error if no child resource pool exists with a given name.
-func (s *Session) ChildResourcePool(ctx context.Context, resourcePoolName string) (*object.ResourcePool, error) {
+// findChildEntity finds a child entity by a given name under a parent object
+func (s *Session) findChildEntity(ctx context.Context, parent object.Reference, childName string) (object.Reference, error) {
 	si := object.NewSearchIndex(s.client.VimClient())
-	ref, err := si.FindChild(ctx, s.resourcepool, resourcePoolName)
+	ref, err := si.FindChild(ctx, parent, childName)
 	if err != nil {
 		return nil, err
 	}
 	if ref == nil {
 		// SearchIndex returns nil when child name is not found
-		log.Error(fmt.Errorf("ResourcePool not found"), "resourcePoolName", resourcePoolName)
+		log.Error(fmt.Errorf("entity not found"), "name", childName)
 		return nil, &find.NotFoundError{}
 	}
-	child, ok := ref.(*object.ResourcePool)
-	if ok {
-		// this should always be the case for a ResourcePool child
-		return child, nil
+
+	// We have found a child entity with the given name. Populate the inventory path before returning.
+	child, err := s.Finder.ObjectReference(ctx, ref.Reference())
+	if err != nil {
+		log.Error(err, "error when setting inventory path for the object", "moRef", child.Reference().Value)
+		return nil, err
 	}
-	return nil, fmt.Errorf("ResourcePool '%s' not found. '%s' is a %T", resourcePoolName, resourcePoolName, ref)
+	return child, err
+}
+
+// ChildResourcePool returns a child resource pool by a given name under the session's parent
+// resource pool, returns error if no child resource pool exists with a given name.
+func (s *Session) ChildResourcePool(ctx context.Context, resourcePoolName string) (*object.ResourcePool, error) {
+	resourcePool, err := s.findChildEntity(ctx, s.resourcepool, resourcePoolName)
+	if err != nil {
+		return nil, err
+	}
+
+	rp, ok := resourcePool.(*object.ResourcePool)
+	if !ok {
+		return nil, fmt.Errorf("ResourcePool '%s' not found. '%s' is a %T", resourcePoolName, resourcePoolName, rp)
+	}
+	return resourcePool.(*object.ResourcePool), err
 }
 
 // ChildFolder returns a child resource pool by a given name under the session's parent
 // resource pool, returns error if no child resource pool exists with a given name.
 func (s *Session) ChildFolder(ctx context.Context, folderName string) (*object.Folder, error) {
-	si := object.NewSearchIndex(s.client.VimClient())
-	ref, err := si.FindChild(ctx, s.folder, folderName)
+	folder, err := s.findChildEntity(ctx, s.folder, folderName)
 	if err != nil {
 		return nil, err
 	}
-	if ref == nil {
-		// SearchIndex returns nil when child name is not found
-		log.Error(fmt.Errorf("Folder not found"), "folderName", folderName)
-		return nil, &find.NotFoundError{}
+
+	folder, ok := folder.(*object.Folder)
+	if !ok {
+		return nil, fmt.Errorf("Folder '%s' not found. '%s' is a %T", folderName, folderName, folder)
 	}
-	child, ok := ref.(*object.Folder)
-	if ok {
-		// this should always be the case for a ResourcePool child
-		return child, nil
-	}
-	return nil, fmt.Errorf("Folder '%s' not found. '%s' is a %T", folderName, folderName, ref)
+	return folder.(*object.Folder), err
 }
 
 // DoesResourcePoolExist checks if a ResourcePool with the given name exists.
@@ -754,11 +764,11 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 			return nil, err
 		}
 
-		vmFolderName := resourcePolicy.Spec.Folder.Name
-		vmFolder, err := s.ChildFolder(ctx, vmFolderName)
+		folderName := resourcePolicy.Spec.Folder.Name
+		folder, err = s.ChildFolder(ctx, folderName)
 
 		if err != nil {
-			log.Error(err, "Failed to find folder", "folderName", vmFolderName, "moRef", vmFolder.Reference().Value)
+			log.Error(err, "Failed to find folder", "folderName", folderName, "moRef", folder.Reference().Value)
 			return nil, err
 		}
 

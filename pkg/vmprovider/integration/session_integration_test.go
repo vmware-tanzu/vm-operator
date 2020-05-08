@@ -22,12 +22,13 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-	ncpfake "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake"
 
+	vmopfake "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
+	ncpfake "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake"
 )
 
 var (
@@ -37,13 +38,15 @@ var (
 
 var _ = Describe("Sessions", func() {
 	var (
-		session   *vsphere.Session
-		ncpClient *ncpfake.Clientset
+		session    *vsphere.Session
+		ncpClient  *ncpfake.Clientset
+		vmopClient *vmopfake.Clientset
 	)
 	BeforeEach(func() {
 		ctx = context.Background()
 		ncpClient = ncpfake.NewSimpleClientset()
-		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, clientSet, ncpClient, nil)
+		vmopClient = vmopfake.NewSimpleClientset()
+		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, clientSet, ncpClient, vmopClient)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -147,26 +150,57 @@ var _ = Describe("Sessions", func() {
 		})
 
 		Context("When MoID is absent", func() {
+			Context("When a resourcepolicy exists", func() {
+				It("should successfully find the VM by path", func() {
+					namespace := integration.DefaultNamespace
+					vmName := "getvm-with-rp-and-without-moID"
+					resourcePolicy := getVirtualMachineSetResourcePolicy(vmName, namespace)
+					_, err := vmopClient.VmoperatorV1alpha1().VirtualMachineSetResourcePolicies(namespace).Create(resourcePolicy)
+					Expect(err).NotTo(HaveOccurred())
 
-			It("should successfully find the VM by path", func() {
-				ctx := context.Background()
+					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
 
-				imageName := "test-item"
-				vmName := "getvm-without-moID"
+					imageName := "test-item"
+					vmConfigArgs := getVmConfigArgs(namespace, vmName)
+					vm := getVirtualMachineInstance(vmName, namespace, imageName, vmConfigArgs.VmClass.Name)
+					vm.Spec.ResourcePolicyName = resourcePolicy.Name
+					vmConfigArgs.ResourcePolicy = resourcePolicy
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, vmName)
-				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(clonedVM.Name).Should(Equal(vmName))
+					moId, err := clonedVM.UniqueID(ctx)
+					Expect(err).NotTo(HaveOccurred())
 
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(clonedVM.Name).Should(Equal(vmName))
-				moId, err := clonedVM.UniqueID(ctx)
-				Expect(err).NotTo(HaveOccurred())
+					vm.Status.UniqueID = ""
 
-				vm.Status.UniqueID = ""
-				vm1, err := session.GetVirtualMachine(ctx, vm)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(vm1.UniqueID(ctx)).To(Equal(moId))
+					vm1, err := session.GetVirtualMachine(ctx, vm)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(vm1.UniqueID(ctx)).To(Equal(moId))
+				})
+			})
+
+			Context("When a resourcepolicy doesn't exist", func() {
+				It("should successfully find the VM by path", func() {
+					ctx := context.Background()
+					imageName := "test-item"
+					vmName := "getvm-without-moID"
+
+					vmConfigArgs := getVmConfigArgs(testNamespace, vmName)
+					vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(clonedVM.Name).Should(Equal(vmName))
+					moId, err := clonedVM.UniqueID(ctx)
+					Expect(err).NotTo(HaveOccurred())
+
+					vm.Status.UniqueID = ""
+
+					vm1, err := session.GetVirtualMachine(ctx, vm)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(vm1.UniqueID(ctx)).To(Equal(moId))
+				})
 			})
 		})
 	})

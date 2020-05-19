@@ -12,6 +12,6 @@ import (
 
 func setupVmProvider(ctx *context.ControllerManagerContext, cfg *rest.Config) error {
 	ctx.Logger.Info("Setting up vSphere Provider")
-	ctx.VmProvider = vsphere.NewVSphereMachineProviderFromRestConfig(cfg)
+	ctx.VmProvider = vsphere.NewVSphereMachineProviderFromRestConfig(cfg, ctx.Client)
 	return nil
 }

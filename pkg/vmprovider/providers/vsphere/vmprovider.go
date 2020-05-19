@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
@@ -31,7 +32,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
-	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/sequence"
@@ -80,24 +80,23 @@ type vSphereVmProvider struct {
 	sessions SessionManager
 }
 
-func NewVSphereVmProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) vmprovider.VirtualMachineProviderInterface {
+func NewVSphereVmProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, ctrlruntimeClient ctrlruntime.Client) vmprovider.VirtualMachineProviderInterface {
 	vmProvider := &vSphereVmProvider{
-		sessions: NewSessionManager(clientset, ncpclient, vmopclient),
+		sessions: NewSessionManager(clientset, ncpclient, ctrlruntimeClient),
 	}
 
 	return vmProvider
 }
 
-func NewVSphereMachineProviderFromRestConfig(cfg *rest.Config) vmprovider.VirtualMachineProviderInterface {
+func NewVSphereMachineProviderFromRestConfig(cfg *rest.Config, client ctrlruntime.Client) vmprovider.VirtualMachineProviderInterface {
 	clientSet := kubernetes.NewForConfigOrDie(cfg)
 	ncpclient := ncpclientset.NewForConfigOrDie(cfg)
-	vmopclient := vmopclientset.NewForConfigOrDie(cfg)
 
-	return NewVSphereMachineProviderFromClients(clientSet, ncpclient, vmopclient)
+	return NewVSphereMachineProviderFromClients(clientSet, ncpclient, client)
 }
 
-func NewVSphereMachineProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) vmprovider.VirtualMachineProviderInterface {
-	vSphereProvider := NewVSphereVmProviderFromClients(clientset, ncpclient, vmopclient)
+func NewVSphereMachineProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, ctrlruntimeClient ctrlruntime.Client) vmprovider.VirtualMachineProviderInterface {
+	vSphereProvider := NewVSphereVmProviderFromClients(clientset, ncpclient, ctrlruntimeClient)
 	return vSphereProvider.(vmprovider.VirtualMachineProviderInterface)
 }
 

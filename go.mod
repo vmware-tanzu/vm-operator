@@ -11,7 +11,6 @@ replace (
 )
 
 require (
-	cloud.google.com/go v0.38.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/envoyproxy/go-control-plane v0.9.4
 	github.com/go-logr/logr v0.1.0
@@ -32,7 +31,6 @@ require (
 	go.uber.org/atomic v1.4.0 // indirect
 	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7 // indirect
 	golang.org/x/net v0.0.0-20191004110552-13f9640d40b9
-	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45 // indirect
 	google.golang.org/grpc v1.25.1
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/yaml.v2 v2.2.8

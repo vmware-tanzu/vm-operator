@@ -21,9 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	vmopfake "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -38,15 +37,13 @@ var (
 
 var _ = Describe("Sessions", func() {
 	var (
-		session    *vsphere.Session
-		ncpClient  *ncpfake.Clientset
-		vmopClient *vmopfake.Clientset
+		session   *vsphere.Session
+		ncpClient *ncpfake.Clientset
 	)
 	BeforeEach(func() {
 		ctx = context.Background()
 		ncpClient = ncpfake.NewSimpleClientset()
-		vmopClient = vmopfake.NewSimpleClientset()
-		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, clientSet, ncpClient, vmopClient)
+		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, clientSet, ncpClient, ctrlruntimeClient)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -153,10 +150,9 @@ var _ = Describe("Sessions", func() {
 			Context("When a resourcepolicy exists", func() {
 				It("should successfully find the VM by path", func() {
 					namespace := integration.DefaultNamespace
-					vmName := "getvm-with-rp-and-without-moID"
+					vmName := "getvm-with-rp-and-without-moid"
 					resourcePolicy := getVirtualMachineSetResourcePolicy(vmName, namespace)
-					_, err := vmopClient.VmoperatorV1alpha1().VirtualMachineSetResourcePolicies(namespace).Create(resourcePolicy)
-					Expect(err).NotTo(HaveOccurred())
+					Expect(ctrlruntimeClient.Create(ctx, resourcePolicy)).To(Succeed())
 
 					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
 
@@ -262,7 +258,7 @@ var _ = Describe("Sessions", func() {
 				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
 				vm := getVirtualMachineInstance(testVMName+"change-net", testNamespace, imageName, vmConfigArgs.VmClass.Name)
 				// Add two network interfaces to the VM and attach to different networks
-				vm.Spec.NetworkInterfaces = []vmoperatorv1alpha1.VirtualMachineNetworkInterface{
+				vm.Spec.NetworkInterfaces = []vmopv1alpha1.VirtualMachineNetworkInterface{
 					{
 						NetworkName: "VM Network",
 					},
@@ -393,7 +389,7 @@ var _ = Describe("Sessions", func() {
 				vm := getVirtualMachineInstance(testVMName+"change-default-net", testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				// Add two network interfaces to the VM and attach to different networks
-				vm.Spec.NetworkInterfaces = []vmoperatorv1alpha1.VirtualMachineNetworkInterface{
+				vm.Spec.NetworkInterfaces = []vmopv1alpha1.VirtualMachineNetworkInterface{
 					{
 						NetworkName: "DC0_DVPG0",
 					},
@@ -609,7 +605,7 @@ var _ = Describe("Sessions", func() {
 
 			BeforeEach(func() {
 				rpName = "test-folder"
-				rpSpec = &vmoperatorv1alpha1.ResourcePoolSpec{
+				rpSpec = &vmopv1alpha1.ResourcePoolSpec{
 					Name: rpName,
 				}
 				rpMoId, err := session.CreateResourcePool(context.TODO(), rpSpec)
@@ -682,7 +678,7 @@ var _ = Describe("Sessions", func() {
 
 			BeforeEach(func() {
 				folderName = "test-folder"
-				folderSpec = &vmoperatorv1alpha1.FolderSpec{
+				folderSpec = &vmopv1alpha1.FolderSpec{
 					Name: folderName,
 				}
 			})
@@ -741,7 +737,7 @@ var _ = Describe("Sessions", func() {
 				var savedDatastoreAttribute string
 				var err error
 
-				vm := &vmoperatorv1alpha1.VirtualMachine{
+				vm := &vmopv1alpha1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "TestVM",
 					},
@@ -839,12 +835,12 @@ var _ = Describe("Sessions", func() {
 
 		BeforeEach(func() {
 			moduleGroup = "controller-group"
-			moduleSpec = &vmoperatorv1alpha1.ClusterModuleSpec{
+			moduleSpec = &vmopv1alpha1.ClusterModuleSpec{
 				GroupName: moduleGroup,
 			}
 
 			moduleId, err := session.CreateClusterModule(context.TODO())
-			moduleStatus = &vmoperatorv1alpha1.ClusterModuleStatus{
+			moduleStatus = &vmopv1alpha1.ClusterModuleStatus{
 				GroupName:  moduleSpec.GroupName,
 				ModuleUuid: moduleId,
 			}

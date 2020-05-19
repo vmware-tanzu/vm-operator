@@ -17,7 +17,7 @@ import (
 
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
@@ -28,17 +28,18 @@ import (
 	"github.com/vmware/govmomi/vapi/library"
 	govmomirest "github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/vcenter"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	"k8s.io/klog/klogr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -140,6 +141,17 @@ func enableDebugLogging() {
 	flag.Parse()
 }
 
+// GetVmopClient gets a vm-operator-api client
+// This is separate from NewVMService so that a fake client can be injected for testing
+func GetVmopClient(config *rest.Config) (client.Client, error) {
+	scheme := runtime.NewScheme()
+	_ = vmopv1alpha1.AddToScheme(scheme)
+	client, err := client.New(config, client.Options{
+		Scheme: scheme,
+	})
+	return client, err
+}
+
 func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VSphereVmProviderConfig, *rest.Config, *VcSimInstance, *vsphere.Session, vmprovider.VirtualMachineProviderInterface) {
 	Expect(len(namespaces) > 0).To(BeTrue())
 	enableDebugLogging()
@@ -159,18 +171,19 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	stdlog.Print("setting up the integration test env...")
 	err = ncpv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
-	err = vmoperatorv1alpha1.AddToScheme(scheme.Scheme)
+	err = vmopv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	err = cnsv1alpha1.SchemeBuilder.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	clientSet := kubernetes.NewForConfigOrDie(cfg)
 	ncpclient := ncpclientset.NewForConfigOrDie(cfg)
-	vmopclient := vmopclientset.NewForConfigOrDie(cfg)
+	client, err := GetVmopClient(cfg)
+	Expect(err).NotTo(HaveOccurred())
 
 	// Register the vSphere provider
 	log.Info("setting up vSphere Provider")
-	vmProvider = vsphere.NewVSphereVmProviderFromClients(clientSet, ncpclient, vmopclient)
+	vmProvider = vsphere.NewVSphereVmProviderFromClients(clientSet, ncpclient, client)
 
 	vcSim := NewVcSimInstance()
 

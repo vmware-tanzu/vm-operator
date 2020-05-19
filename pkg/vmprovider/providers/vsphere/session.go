@@ -29,16 +29,15 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
 	ncpcs "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
-	vmopcs "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/cluster"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -49,10 +48,10 @@ var DefaultExtraConfig = map[string]string{
 }
 
 type Session struct {
-	client     *Client
-	clientset  kubernetes.Interface
-	vmopClient vmopcs.Interface
-	ncpClient  ncpcs.Interface
+	client            *Client
+	clientset         kubernetes.Interface
+	ncpClient         ncpcs.Interface
+	ctrlruntimeClient ctrlruntime.Client
 
 	Finder       *find.Finder
 	datacenter   *object.Datacenter
@@ -73,10 +72,8 @@ type Session struct {
 	cpuMinMHzInCluster uint64 // CPU Min Frequency across all Hosts in the cluster
 }
 
-func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphereVmProviderConfig,
-	clientset kubernetes.Interface,
-	ncpclient ncpcs.Interface,
-	vmopclient vmopcs.Interface) (*Session, error) {
+func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphereVmProviderConfig, clientset kubernetes.Interface,
+	ncpclient ncpcs.Interface, ctrlruntimeClient ctrlruntime.Client) (*Session, error) {
 	var err error
 
 	if client == nil {
@@ -87,7 +84,7 @@ func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphere
 		client:                client,
 		clientset:             clientset,
 		ncpClient:             ncpclient,
-		vmopClient:            vmopclient,
+		ctrlruntimeClient:     ctrlruntimeClient,
 		storageClassRequired:  config.StorageClassRequired,
 		useInventoryForImages: config.UseInventoryAsContentSource,
 	}
@@ -755,10 +752,10 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 	var folder *object.Folder
 
 	if vm.Spec.ResourcePolicyName != "" {
-
 		// Lookup the VM by name using the full inventory path to the VM.  To do so, we need to acquire the resource policy
 		// by name to get the VM's Folder.
-		resourcePolicy, err := s.vmopClient.VmoperatorV1alpha1().VirtualMachineSetResourcePolicies(vm.Namespace).Get(vm.Spec.ResourcePolicyName, metav1.GetOptions{})
+		resourcePolicy := v1alpha1.VirtualMachineSetResourcePolicy{}
+		err := s.ctrlruntimeClient.Get(ctx, ctrlruntime.ObjectKey{Name: vm.Spec.ResourcePolicyName, Namespace: vm.Namespace}, &resourcePolicy)
 		if err != nil {
 			log.Error(err, "Failed to find resource policy", "Namespace", vm.Namespace, "Name", vm.Spec.ResourcePolicyName)
 			return nil, err

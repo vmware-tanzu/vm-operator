@@ -12,27 +12,26 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
-
-	vmopclientset "github.com/vmware-tanzu/vm-operator/pkg/client/clientset_generated/clientset"
+	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type SessionManager struct {
-	client     *Client
-	clientset  *kubernetes.Clientset
-	ncpclient  ncpclientset.Interface
-	vmopclient vmopclientset.Interface
+	client            *Client
+	clientset         *kubernetes.Clientset
+	ncpclient         ncpclientset.Interface
+	ctrlruntimeClient ctrlruntime.Client
 
 	mutex sync.Mutex
 	// sessions contains the map of sessions for each namespace.
 	sessions map[string]*Session
 }
 
-func NewSessionManager(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, vmopclient vmopclientset.Interface) SessionManager {
+func NewSessionManager(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, ctrlruntimeClient ctrlruntime.Client) SessionManager {
 	return SessionManager{
-		clientset:  clientset,
-		ncpclient:  ncpclient,
-		vmopclient: vmopclient,
-		sessions:   make(map[string]*Session),
+		clientset:         clientset,
+		ncpclient:         ncpclient,
+		ctrlruntimeClient: ctrlruntimeClient,
+		sessions:          make(map[string]*Session),
 	}
 }
 
@@ -62,7 +61,7 @@ func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProvider
 		return nil, err
 	}
 
-	ses, err := NewSessionAndConfigure(context.TODO(), client, config, sm.clientset, sm.ncpclient, sm.vmopclient)
+	ses, err := NewSessionAndConfigure(context.TODO(), client, config, sm.clientset, sm.ncpclient, sm.ctrlruntimeClient)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create session for namespace %s", namespace)
 	}
@@ -85,7 +84,7 @@ func (sm *SessionManager) createSession(ctx context.Context, namespace string) (
 		return nil, err
 	}
 
-	ses, err := NewSessionAndConfigure(ctx, client, config, sm.clientset, sm.ncpclient, sm.vmopclient)
+	ses, err := NewSessionAndConfigure(ctx, client, config, sm.clientset, sm.ncpclient, sm.ctrlruntimeClient)
 	if err != nil {
 		return nil, err
 	}

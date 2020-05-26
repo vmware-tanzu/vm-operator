@@ -5,7 +5,6 @@
 package lib
 
 import (
-	"errors"
 	"fmt"
 	"os"
 )
@@ -27,7 +26,7 @@ func SetVmOpNamespaceEnv(namespace string) error {
 func GetVmOpNamespaceFromEnv() (string, error) {
 	vmopNamespace, vmopNamespaceExists := os.LookupEnv(VmopNamespaceEnv)
 	if !vmopNamespaceExists {
-		return "", errors.New("VM operator namespace is not set")
+		return "", fmt.Errorf("VM Operator namespace envvar %s is not set", VmopNamespaceEnv)
 	}
 	return vmopNamespace, nil
 }

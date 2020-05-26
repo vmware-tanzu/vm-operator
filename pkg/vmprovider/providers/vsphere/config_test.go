@@ -59,7 +59,7 @@ var _ = Describe("UpdateVMFolderAndResourcePool", func() {
 			ns, err = clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace", Annotations: annotations}})
 			Expect(err).ShouldNot(HaveOccurred())
 			providerConfig := &VSphereVmProviderConfig{}
-			Expect(UpdateVMFolderAndRPInProviderConfig(clientSet, ns.Name, providerConfig)).To(Succeed())
+			Expect(UpdateProviderConfigFromNamespace(clientSet, ns.Name, providerConfig)).To(Succeed())
 			Expect(providerConfig.ResourcePool).To(Equal(namespaceRP))
 			Expect(providerConfig.Folder).To(Equal(namespaceVMFolder))
 		})
@@ -74,7 +74,7 @@ var _ = Describe("UpdateVMFolderAndResourcePool", func() {
 			providerConfigFolder := "namesapce-test-vmfolder"
 			providerConfig.ResourcePool = providerConfigRP
 			providerConfig.Folder = providerConfigFolder
-			Expect(UpdateVMFolderAndRPInProviderConfig(clientSet, ns.Name, providerConfig)).To(Succeed())
+			Expect(UpdateProviderConfigFromNamespace(clientSet, ns.Name, providerConfig)).To(Succeed())
 			Expect(providerConfig.ResourcePool).To(Equal(providerConfigRP))
 			Expect(providerConfig.Folder).To(Equal(providerConfigFolder))
 		})
@@ -83,20 +83,23 @@ var _ = Describe("UpdateVMFolderAndResourcePool", func() {
 		Specify("returns error", func() {
 			clientSet := fake.NewSimpleClientset()
 			providerConfig := &VSphereVmProviderConfig{}
-			err = UpdateVMFolderAndRPInProviderConfig(clientSet, "test-namespace", providerConfig)
+			err = UpdateProviderConfigFromNamespace(clientSet, "test-namespace", providerConfig)
 			Expect(err).Should(HaveOccurred())
-			Expect(err.Error()).To(Equal("could not find the namespace: test-namespace: namespaces \"test-namespace\" not found"))
+			Expect(err.Error()).To(Equal("could not get the namespace: test-namespace: namespaces \"test-namespace\" not found"))
 		})
 	})
-	Context("ResourcePool and Folder not present in either providerConfig or namespace annotations", func() {
-		It("should return an error", func() {
+	Context("ResourcePool and Folder not present in namespace annotations", func() {
+		It("should not modify config", func() {
 			clientSet := fake.NewSimpleClientset()
 			ns, err = clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}})
 			Expect(err).ShouldNot(HaveOccurred())
-			providerConfig := &VSphereVmProviderConfig{}
-			err = UpdateVMFolderAndRPInProviderConfig(clientSet, "namespace", providerConfig)
-			Expect(err).Should(HaveOccurred())
-			Expect(err.Error()).To(Equal("Invalid resourcepool/folder in providerConfig. ResourcePool: , Folder: "))
+			providerConfig := VSphereVmProviderConfig{}
+			providerConfig.ResourcePool = "foo"
+			providerConfig.Folder = "bar"
+			providerConfigIn := providerConfig
+			err = UpdateProviderConfigFromNamespace(clientSet, "namespace", &providerConfigIn)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(providerConfig).To(Equal(providerConfigIn))
 		})
 	})
 })
@@ -127,6 +130,20 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 				Expect(err).To(BeNil())
 				providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "namespace")
 				Expect(err).NotTo(BeNil())
+				Expect(providerConfig).To(BeNil())
+			})
+		})
+
+		Context("ResourcePool and Folder not present in either providerConfig or namespace annotations", func() {
+			Specify("should return an error", func() {
+				delete(configMapIn.Data, "ResourcePool")
+				delete(configMapIn.Data, "Folder")
+				clientSet := fake.NewSimpleClientset(configMapIn, secretIn)
+				_, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}})
+				Expect(err).ToNot(HaveOccurred())
+				providerConfig, err := GetProviderConfigFromConfigMap(clientSet, "namespace")
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("missing ResourcePool and Folder in ProviderConfig. ResourcePool: , Folder: "))
 				Expect(providerConfig).To(BeNil())
 			})
 		})
@@ -200,7 +217,7 @@ var _ = Describe("ConfigMapToProviderConfig", func() {
 	BeforeEach(func() {
 		Expect(os.Unsetenv(lib.VmopNamespaceEnv)).To(Succeed())
 		configMapIn, _, _ = newConfig("namespace", "pnid", "port", "secret-name")
-		vcCreds = &VSphereVmProviderCredentials{"some-user", "some-pass"}
+		vcCreds = &VSphereVmProviderCredentials{Username: "some-user", Password: "some-pass"}
 	})
 
 	It("verifies that a config is correctly extracted from the configMap", func() {
@@ -214,14 +231,6 @@ var _ = Describe("ConfigMapToProviderConfig", func() {
 		Specify("return an error", func() {
 			delete(configMapIn.Data, "VcPNID")
 			providerConfig, err := ConfigMapToProviderConfig(configMapIn, vcCreds)
-			Expect(err).NotTo(BeNil())
-			Expect(providerConfig).To(BeNil())
-		})
-	})
-
-	Context("when vcCreds is unset", func() {
-		Specify("return an error", func() {
-			providerConfig, err := ConfigMapToProviderConfig(configMapIn, nil)
 			Expect(err).NotTo(BeNil())
 			Expect(providerConfig).To(BeNil())
 		})
@@ -249,7 +258,7 @@ var _ = Describe("ConfigMapToProviderConfig", func() {
 	Describe("Tests for TLS configuration", func() {
 		var (
 			providerConfig   *VSphereVmProviderConfig
-			expectErrToOccur bool = false
+			expectErrToOccur bool
 			err              error
 		)
 		JustBeforeEach(func() {

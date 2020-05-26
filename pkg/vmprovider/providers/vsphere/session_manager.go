@@ -21,8 +21,8 @@ type SessionManager struct {
 	ncpclient         ncpclientset.Interface
 	ctrlruntimeClient ctrlruntime.Client
 
-	mutex sync.Mutex
 	// sessions contains the map of sessions for each namespace.
+	mutex    sync.Mutex
 	sessions map[string]*Session
 }
 
@@ -68,7 +68,6 @@ func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProvider
 
 	sm.sessions[namespace] = ses
 	return ses, nil
-
 }
 
 func (sm *SessionManager) createSession(ctx context.Context, namespace string) (*Session, error) {
@@ -157,7 +156,7 @@ func (sm *SessionManager) UpdateVcPNID(ctx context.Context, clusterConfigMap *co
 
 	sm.clearSessionsAndClient(ctx)
 
-	return err
+	return nil
 }
 
 func (sm *SessionManager) clearSessionsAndClient(ctx context.Context) {

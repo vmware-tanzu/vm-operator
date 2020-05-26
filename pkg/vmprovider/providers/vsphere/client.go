@@ -28,10 +28,6 @@ const idleTime = 5 * time.Minute
 
 // NewClient creates a new govmomi client; sets a keepalive handler to re-login on not authenticated errors.
 func NewClient(ctx context.Context, config *VSphereVmProviderConfig) (*Client, error) {
-	if config == nil {
-		return nil, errors.New("Config cannot be nil")
-	}
-
 	soapURL, err := soap.ParseURL(net.JoinHostPort(config.VcPNID, config.VcPort))
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse %s:%s", config.VcPNID, config.VcPort)

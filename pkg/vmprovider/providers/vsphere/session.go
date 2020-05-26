@@ -37,7 +37,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/cluster"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -74,12 +73,6 @@ type Session struct {
 
 func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphereVmProviderConfig, clientset kubernetes.Interface,
 	ncpclient ncpcs.Interface, ctrlruntimeClient ctrlruntime.Client) (*Session, error) {
-	var err error
-
-	if client == nil {
-		return nil, errors.New("Session could not be created with a nil VC client")
-	}
-
 	s := &Session{
 		client:                client,
 		clientset:             clientset,
@@ -89,11 +82,7 @@ func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphere
 		useInventoryForImages: config.UseInventoryAsContentSource,
 	}
 
-	if err = s.initSession(ctx, config); err != nil {
-		return nil, err
-	}
-
-	if err = s.ConfigureContent(ctx, config.ContentSource); err != nil {
+	if err := s.initSession(ctx, config); err != nil {
 		return nil, err
 	}
 
@@ -168,16 +157,16 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 			return errors.Wrapf(err, "Failed to init CPU min frequency")
 		}
 	}
+
+	if err := s.ConfigureContent(ctx, config.ContentSource); err != nil {
+		return err
+	}
+
 	// Initialize tagging information
 	s.tagInfo = make(map[string]string)
 	s.tagInfo[CtrlVmVmAntiAffinityTagKey] = config.CtrlVmVmAntiAffinityTag
 	s.tagInfo[WorkerVmVmAntiAffinityTagKey] = config.WorkerVmVmAntiAffinityTag
-	// Older versions of wcpsvc does not publish tag category name into the
-	if config.TagCategoryName != "" {
-		s.tagInfo[ProviderTagCategoryNameKey] = config.TagCategoryName
-	} else {
-		s.tagInfo[ProviderTagCategoryNameKey] = pkg.ProviderTagCategoryName
-	}
+	s.tagInfo[ProviderTagCategoryNameKey] = config.TagCategoryName
 
 	return s.initDatastore(ctx, config.Datastore)
 }
@@ -601,35 +590,8 @@ func (s *Session) GetRPAndFolderFromResourcePolicy(ctx context.Context,
 	return resourcePool, folder, nil
 }
 
-func (s *Session) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
-
-	if s.datastore == nil {
-		return nil, errors.New("Cannot create VM if Datastore is not configured")
-	}
-
-	nicSpecs, err := s.GetNicChangeSpecs(ctx, vm, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	name := vm.Name
-	configSpec, err := s.generateConfigSpec(name, &vm.Spec, &vmConfigArgs.VmClass.Spec, vmConfigArgs.VmMetadata, nicSpecs)
-	if err != nil {
-		return nil, err
-	}
-
-	resVm, err := s.createVm(ctx, name, configSpec, vmConfigArgs.ResourcePolicy)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create new VM %q", name)
-	}
-
-	return resVm, nil
-}
-
 func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
-
 	if vmConfigArgs.StorageProfileID == "" {
-
 		if s.storageClassRequired {
 			// The storageProfileID is obtained from a StorageClass.
 			return nil, fmt.Errorf("storage class is required but not specified")
@@ -763,12 +725,10 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 
 		folderName := resourcePolicy.Spec.Folder.Name
 		folder, err = s.ChildFolder(ctx, folderName)
-
 		if err != nil {
-			log.Error(err, "Failed to find folder", "folderName", folderName, "moRef", folder.Reference().Value)
+			log.Error(err, "Failed to find folder", "folderName", folderName)
 			return nil, err
 		}
-
 	} else {
 		// Developer enablement path: Use the default folder and RP for the session.
 		// TODO: AKP: If any of the parent objects have been renamed, the cached inventory path will be stale.
@@ -976,30 +936,6 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 	cloneSpec.Location.DiskMoveType = string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveChildMostDiskBacking)
 
 	return cloneSpec, nil
-}
-
-func (s *Session) createVm(ctx context.Context, name string, configSpec *vimTypes.VirtualMachineConfigSpec,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (*res.VirtualMachine, error) {
-
-	configSpec.Files = &vimTypes.VirtualMachineFileInfo{
-		VmPathName: fmt.Sprintf("[%s]", s.datastore.Name()),
-	}
-
-	resourcePool, folder, err := s.GetRPAndFolderFromResourcePolicy(ctx, resourcePolicy)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Info("Creating VM", "name", name, "configSpec", *configSpec,
-		"resourcePool", resourcePool.Reference().Value, "folder", folder.Reference().Value)
-
-	resVm := res.NewVMForCreate(name)
-	err = resVm.Create(ctx, folder, resourcePool, configSpec)
-	if err != nil {
-		return nil, err
-	}
-
-	return resVm, nil
 }
 
 func (s *Session) cloneVm(ctx context.Context, resSrcVm *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
@@ -1287,11 +1223,10 @@ func IsSupportedDeployType(t string) bool {
 	return false
 }
 
-// getCustomizationSpec creates the customization spec for the vm
+// GetCustomizationSpec creates the customization spec for the vm
 func (s *Session) GetCustomizationSpec(ctx context.Context, vm *v1alpha1.VirtualMachine, realVM *res.VirtualMachine) (*vimTypes.CustomizationSpec, error) {
 	vmName := vm.Name
-	vmSpec := &vm.Spec
-	namespace := vm.Namespace
+
 	customSpec := &vimTypes.CustomizationSpec{
 		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{},
 		// This spec is for Linux guest OS. Need to change if other guest OS needs to be supported.
@@ -1317,10 +1252,10 @@ func (s *Session) GetCustomizationSpec(ctx context.Context, vm *v1alpha1.Virtual
 
 	nicMappings := make(map[string]vimTypes.CustomizationIPSettings)
 	// Used to config IP for VMs connecting to nsx-t logical ports
-	for _, nif := range vmSpec.NetworkInterfaces {
+	for _, nif := range vm.Spec.NetworkInterfaces {
 		if nif.NetworkType == NsxtNetworkType {
 			np := NsxtNetworkProvider(s.Finder, s.ncpClient, s.cluster)
-			vnetif, err := np.waitForVnetIFStatus(namespace, nif.NetworkName, vmName)
+			vnetif, err := np.waitForVnetIFStatus(vm.Namespace, nif.NetworkName, vmName)
 			if err != nil {
 				return nil, err
 			}
@@ -1369,15 +1304,13 @@ func (s *Session) GetCpuMinMHzInCluster() uint64 {
 
 func (s *Session) SetCpuMinMHzInCluster(minFreq uint64) {
 	s.mutex.Lock()
-	prevFreq := s.cpuMinMHzInCluster
-	defer func() {
-		s.mutex.Unlock()
-		if prevFreq != minFreq {
-			log.V(4).Info("Successfully set (re)computed CPU min frequency", "prevFreq", prevFreq, "newFreq", minFreq)
-		}
-	}()
+	defer s.mutex.Unlock()
 
-	s.cpuMinMHzInCluster = minFreq
+	if s.cpuMinMHzInCluster != minFreq {
+		prevFreq := s.cpuMinMHzInCluster
+		s.cpuMinMHzInCluster = minFreq
+		log.V(4).Info("Successfully set (re)computed CPU min frequency", "prevFreq", prevFreq, "newFreq", minFreq)
+	}
 }
 
 func (s *Session) computeCPUInfo(ctx context.Context) (uint64, error) {
@@ -1552,7 +1485,7 @@ func (s *Session) AddVmToClusterModule(ctx context.Context, moduleId string, vmR
 	return nil
 }
 
-// RemoveVmTFromClusterModule removes a VM from a clusterModule.
+// RemoveVmFromClusterModule removes a VM from a clusterModule.
 func (s *Session) RemoveVmFromClusterModule(ctx context.Context, moduleId string, vmRef mo.Reference) error {
 	log.Info("Removing vm from clusterModule", "moduleId", moduleId, "vmId", vmRef)
 	var err error

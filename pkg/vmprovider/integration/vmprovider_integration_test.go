@@ -108,81 +108,7 @@ func getVirtualMachineInstance(name, namespace, imageName, className string) *vm
 	}
 }
 
-func getVirtualMachineSetResourcePolicy(name, namespace string) *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy {
-	return &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      fmt.Sprintf("%s-resourcepolicy", name),
-		},
-		Spec: vmoperatorv1alpha1.VirtualMachineSetResourcePolicySpec{
-			ResourcePool: vmoperatorv1alpha1.ResourcePoolSpec{
-				Name:         fmt.Sprintf("%s-resourcepool", name),
-				Reservations: vmoperatorv1alpha1.VirtualMachineResourceSpec{},
-				Limits:       vmoperatorv1alpha1.VirtualMachineResourceSpec{},
-			},
-			Folder: vmoperatorv1alpha1.FolderSpec{
-				Name: fmt.Sprintf("%s-folder", name),
-			},
-			ClusterModules: []vmoperatorv1alpha1.ClusterModuleSpec{
-				{GroupName: "ControlPlane"},
-				{GroupName: "NodeGroup1"},
-			},
-		},
-	}
-}
-
 var _ = Describe("VMProvider Tests", func() {
-
-	Context("Creating a VM via vmprovider", func() {
-		vmNamespace := integration.DefaultNamespace
-		var vmProvider vmprovider.VirtualMachineProviderInterface
-		var err error
-
-		BeforeEach(func() {
-			vmProvider = vsphere.NewVSphereMachineProviderFromClients(clientSet, nil, nil)
-		})
-
-		Context("and the IP is available on create", func() {
-			It("should correctly update VirtualMachineStatus", func() {
-				vmName := "test-vm-vmp"
-
-				// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
-				testIP := "10.0.0.1"
-				vmMetadata := map[string]string{"SET.guest.ipAddress": testIP}
-				imageName := "" // create, not clone
-				vmClass := getVMClassInstance(vmName, vmNamespace)
-				vm := getVirtualMachineInstance(vmName, vmNamespace, imageName, vmClass.Name)
-				Expect(vm.Status.BiosUUID).Should(BeEmpty())
-
-				// Note that createVirtualMachine has the side effect of changing the vm input value
-				vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, nil, vmMetadata, "foo"}
-				err := vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
-				Expect(err).NotTo(HaveOccurred())
-				//Expect(vm.Status.VmIp).Should(Equal(testIP))
-				//Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
-				//Expect(vm.Status.BiosUUID).ShouldNot(BeEmpty())
-			})
-		})
-
-		Context("and the IP is not available on create", func() {
-
-			It("should correctly update VirtualMachineStatus", func() {
-				vmName := "test-vm-vmp-noip"
-				imageName := "" // create, not clone
-				vmConfigArgs := getVmConfigArgs(vmNamespace, vmName)
-
-				vm := getVirtualMachineInstance(vmName, vmNamespace, imageName, vmConfigArgs.VmClass.Name)
-				Expect(vm.Status.BiosUUID).Should(BeEmpty())
-
-				// Note that createVirtualMachine has the side effect of changing the vm input value
-				err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
-				Expect(err).NotTo(HaveOccurred())
-				//Expect(vm.Status.VmIp).Should(BeEmpty())
-				//Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
-				//Expect(vm.Status.BiosUUID).ShouldNot(BeEmpty())
-			})
-		})
-	})
 
 	Context("When using Content Library", func() {
 		var vmProvider vmprovider.VirtualMachineProviderInterface
@@ -381,58 +307,6 @@ var _ = Describe("VMProvider Tests", func() {
 			}, time.Second*15).ShouldNot(BeNil())
 
 			Expect(image.Name).Should(BeEquivalentTo(integration.IntegrationContentLibraryItemName))
-		})
-	})
-
-	Context("VirtualMachineSetResourcePolicy", func() {
-		var (
-			vmProvider          vmprovider.VirtualMachineProviderInterface
-			resourcePolicy      *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
-			testPolicyName      string
-			testPolicyNamespace string
-		)
-
-		JustBeforeEach(func() {
-			testPolicyName = "test-name"
-			testPolicyNamespace = integration.DefaultNamespace
-
-			vmProvider = vsphere.NewVSphereMachineProviderFromClients(clientSet, nil, nil)
-
-			resourcePolicy = getVirtualMachineSetResourcePolicy(testPolicyName, testPolicyNamespace)
-			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
-			Expect(len(resourcePolicy.Status.ClusterModules)).Should(BeNumerically("==", 2))
-		})
-
-		JustAfterEach(func() {
-			Expect(vmProvider.DeleteVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
-			Expect(len(resourcePolicy.Status.ClusterModules)).Should(BeNumerically("==", 0))
-		})
-
-		Context("for an existing resource policy", func() {
-			It("should update VirtualMachineSetResourcePolicy", func() {
-				Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
-				Expect(len(resourcePolicy.Status.ClusterModules)).Should(BeNumerically("==", 2))
-			})
-
-			It("successfully able to find the resourcepolicy", func() {
-				exists, err := vmProvider.DoesVirtualMachineSetResourcePolicyExist(context.TODO(), resourcePolicy)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(exists).To(BeTrue())
-			})
-		})
-
-		Context("for an absent resource policy", func() {
-			It("should fail to find the resource policy without any errors", func() {
-				failResPolicy := getVirtualMachineSetResourcePolicy("test-policy", testPolicyNamespace)
-				exists, err := vmProvider.DoesVirtualMachineSetResourcePolicyExist(context.TODO(), failResPolicy)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(exists).NotTo(BeTrue())
-			})
-		})
-		Context("for a resource policy with invalid cluster module", func() {
-			It("successfully able to delete the resourcepolicy", func() {
-				resourcePolicy.Status.ClusterModules = append([]vmoperatorv1alpha1.ClusterModuleStatus{vmoperatorv1alpha1.ClusterModuleStatus{"invalid-group", "invalid-uuid"}}, resourcePolicy.Status.ClusterModules...)
-			})
 		})
 	})
 

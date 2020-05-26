@@ -5,11 +5,12 @@ package vsphere
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,48 +41,48 @@ type VSphereVmProviderConfig struct {
 	TagCategoryName             string
 }
 
-type WcpClusterConfig struct {
-	VcPNID string `yaml:"vc_pnid"`
-	VcPort string `yaml:"vc_port"`
-}
-
 const (
-	VmopNamespaceEnv         = "POD_NAMESPACE"
-	VSphereConfigMapName     = "vsphere.provider.config.vmoperator.vmware.com"
-	NameServersConfigMapName = "vmoperator-network-config"
-
-	vcPNIDKey                = "VcPNID"
-	vcPortKey                = "VcPort"
-	vcCredsSecretNameKey     = "VcCredsSecretName" // nolint:gosec
-	datacenterKey            = "Datacenter"
-	resourcePoolKey          = "ResourcePool"
-	folderKey                = "Folder"
-	datastoreKey             = "Datastore"
-	networkNameKey           = "Network"
-	scRequiredKey            = "StorageClassRequired"
-	useInventoryKey          = "UseInventoryAsContentSource"
-	insecureSkipTLSVerifyKey = "InsecureSkipTLSVerify"
-	caFilePathKey            = "CAFilePath"
-	ContentSourceKey         = "ContentSource"
-
 	DefaultVCPort = "443"
 
-	NamespaceRPAnnotationKey     = "vmware-system-resource-pool"
-	NamespaceFolderAnnotationKey = "vmware-system-vm-folder"
-
+	VSphereConfigMapName = "vsphere.provider.config.vmoperator.vmware.com"
+	// Keys in VSphereConfigMapName
+	vcPNIDKey                    = "VcPNID"
+	vcPortKey                    = "VcPort"
+	vcCredsSecretNameKey         = "VcCredsSecretName" // nolint:gosec
+	datacenterKey                = "Datacenter"
+	resourcePoolKey              = "ResourcePool"
+	folderKey                    = "Folder"
+	datastoreKey                 = "Datastore"
+	networkNameKey               = "Network"
+	scRequiredKey                = "StorageClassRequired"
+	useInventoryKey              = "UseInventoryAsContentSource"
+	insecureSkipTLSVerifyKey     = "InsecureSkipTLSVerify"
+	caFilePathKey                = "CAFilePath"
+	ContentSourceKey             = "ContentSource"
 	CtrlVmVmAntiAffinityTagKey   = "CtrlVmVmAATag"
 	WorkerVmVmAntiAffinityTagKey = "WorkerVmVmAATag"
 	ProviderTagCategoryNameKey   = "VmVmAntiAffinityTagCategoryName"
-	NameserversKey               = "nameservers"
+
+	// Namespace annotations set by WCP
+	NamespaceRPAnnotationKey     = "vmware-system-resource-pool"
+	NamespaceFolderAnnotationKey = "vmware-system-vm-folder"
+
+	NetworkConfigMapName = "vmoperator-network-config"
+	// Keys in the NetworkConfigMapName
+	NameserversKey = "nameservers"
 )
 
 const (
 	WcpClusterConfigFileName     = "wcp-cluster-config.yaml"
 	WcpClusterConfigMapNamespace = "kube-system"
 	WcpClusterConfigMapName      = "wcp-cluster-config"
-	WcpVcPnidKey                 = "vc_pnid"
 	VmOpSecretName               = "wcp-vmop-sa-vc-auth" // nolint:gosec
 )
+
+type WcpClusterConfig struct {
+	VcPNID string `yaml:"vc_pnid"`
+	VcPort string `yaml:"vc_port"`
+}
 
 // BuildNewWcpClusterConfig builds and returns Config object from given config file.
 func BuildNewWcpClusterConfig(wcpClusterCfgData map[string]string) (*WcpClusterConfig, error) {
@@ -104,6 +105,7 @@ func BuildNewWcpClusterConfigMap(wcpClusterConfig *WcpClusterConfig) (v1.ConfigM
 	if err != nil {
 		return v1.ConfigMap{}, nil
 	}
+
 	dataMap := make(map[string]string)
 	dataMap[WcpClusterConfigFileName] = string(bytes)
 
@@ -117,15 +119,7 @@ func BuildNewWcpClusterConfigMap(wcpClusterConfig *WcpClusterConfig) (v1.ConfigM
 }
 
 func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProviderCredentials) (*VSphereVmProviderConfig, error) {
-	if configMap == nil {
-		return nil, errors.Errorf("Error getting the provider config from ConfigMap. ConfigMap is nil")
-	}
-
 	dataMap := make(map[string]string)
-
-	if vcCreds == nil {
-		return nil, errors.Errorf("VcCreds is unset")
-	}
 
 	for key, value := range configMap.Data {
 		dataMap[key] = value
@@ -133,17 +127,16 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 
 	vcPNID, ok := dataMap[vcPNIDKey]
 	if !ok {
-		return nil, errors.Errorf("missing configMap data field %s", vcPNIDKey)
+		return nil, errors.New("missing configMap data field VcPNID")
 	}
 
 	vcPort, ok := dataMap[vcPortKey]
 	if !ok {
-		vcPort = "443"
+		vcPort = DefaultVCPort
 	}
 
 	scRequired := false
-	s, ok := dataMap[scRequiredKey]
-	if ok {
+	if s, ok := dataMap[scRequiredKey]; ok {
 		var err error
 		scRequired, err = strconv.ParseBool(s)
 		if err != nil {
@@ -152,8 +145,7 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 	}
 
 	useInventory := false
-	u, ok := dataMap[useInventoryKey]
-	if ok {
+	if u, ok := dataMap[useInventoryKey]; ok {
 		var err error
 		useInventory, err = strconv.ParseBool(u)
 		if err != nil {
@@ -163,8 +155,7 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 
 	// Default to validating TLS by default.
 	insecureSkipTLSVerify := false
-	v, ok := dataMap[insecureSkipTLSVerifyKey]
-	if ok {
+	if v, ok := dataMap[insecureSkipTLSVerifyKey]; ok {
 		var err error
 		insecureSkipTLSVerify, err = strconv.ParseBool(v)
 		if err != nil {
@@ -206,33 +197,29 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 }
 
 func configMapToProviderCredentials(clientSet kubernetes.Interface, configMap *v1.ConfigMap) (*VSphereVmProviderCredentials, error) {
-	if configMap == nil || configMap.Data[vcCredsSecretNameKey] == "" {
+	if configMap.Data[vcCredsSecretNameKey] == "" {
 		return nil, errors.Errorf("%s creds secret not set in vmop system namespace", vcCredsSecretNameKey)
 	}
 
 	return GetProviderCredentials(clientSet, configMap.ObjectMeta.Namespace, configMap.Data[vcCredsSecretNameKey])
 }
 
-// UpdateVMFolderAndRPInProviderConfig updates the RP and vm folder in the provider config from the namespace annotation.
-func UpdateVMFolderAndRPInProviderConfig(clientSet kubernetes.Interface, namespace string, providerConfig *VSphereVmProviderConfig) error {
+// UpdateProviderConfigFromNamespace updates provider config for this specific namespace
+func UpdateProviderConfigFromNamespace(clientSet kubernetes.Interface, namespace string, providerConfig *VSphereVmProviderConfig) error {
 	ns, err := clientSet.CoreV1().Namespaces().Get(namespace, metav1.GetOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "could not find the namespace: %s", namespace)
+		return errors.Wrapf(err, "could not get the namespace: %s", namespace)
 	}
 
 	resourcePool := ns.ObjectMeta.Annotations[NamespaceRPAnnotationKey]
 	vmFolder := ns.ObjectMeta.Annotations[NamespaceFolderAnnotationKey]
 
-	if resourcePool == "" || vmFolder == "" {
-		log.Info("Incomplete namespace resource annotations", "namespace", namespace,
-			"resourcePool", resourcePool, "vmFolder", vmFolder)
-	} else {
+	if resourcePool != "" && vmFolder != "" {
 		providerConfig.ResourcePool = resourcePool
 		providerConfig.Folder = vmFolder
-	}
-
-	if providerConfig.ResourcePool == "" || providerConfig.Folder == "" {
-		return errors.Errorf("Invalid resourcepool/folder in providerConfig. ResourcePool: %v, Folder: %v", providerConfig.ResourcePool, providerConfig.Folder)
+	} else {
+		log.Info("Incomplete namespace resource annotations", "namespace", namespace,
+			"resourcePool", resourcePool, "vmFolder", vmFolder)
 	}
 
 	return nil
@@ -243,23 +230,23 @@ func GetNameserversFromConfigMap(clientSet kubernetes.Interface) ([]string, erro
 	if err != nil {
 		return nil, err
 	}
-	nameserversConfigMap, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(NameServersConfigMapName, metav1.GetOptions{})
+	nameserversConfigMap, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(NetworkConfigMapName, metav1.GetOptions{})
 	if err != nil {
-		return nil, errors.Wrapf(err, "cannot retrieve %v ConfigMap", NameServersConfigMapName)
+		return nil, errors.Wrapf(err, "cannot retrieve %v ConfigMap", NetworkConfigMapName)
 	}
 
 	nameservers, ok := nameserversConfigMap.Data[NameserversKey]
 	if !ok {
-		return nil, errors.Wrapf(err, "invalid %v ConfigMap, missing key nameservers", NameServersConfigMapName)
+		return nil, errors.Wrapf(err, "invalid %v ConfigMap, missing key nameservers", NetworkConfigMapName)
 	}
 
 	nameserverList := strings.Fields(nameservers)
 	if len(nameserverList) == 0 {
-		return nil, errors.Errorf("No nameservers in %v ConfigMap", NameServersConfigMapName)
+		return nil, errors.Errorf("No nameservers in %v ConfigMap", NetworkConfigMapName)
 	}
 
 	if len(nameserverList) == 1 && nameserverList[0] == "<worker_dns>" {
-		return nil, errors.Errorf("No valid nameservers in %v ConfigMap. It still contains <worker_dns> key.", NameServersConfigMapName)
+		return nil, errors.Errorf("No valid nameservers in %v ConfigMap. It still contains <worker_dns> key", NetworkConfigMapName)
 	}
 
 	// do we need to validate that these look like valid ipv4 addresses?
@@ -268,10 +255,9 @@ func GetNameserversFromConfigMap(clientSet kubernetes.Interface) ([]string, erro
 
 // GetProviderConfigFromConfigMap returns a provider config constructed from vSphere Provider ConfigMap in the VM operator namespace.
 func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace string) (*VSphereVmProviderConfig, error) {
-
 	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to extract the VM operator namespace from env %v", VmopNamespaceEnv)
+		return nil, err
 	}
 
 	configMap, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(VSphereConfigMapName, metav1.GetOptions{})
@@ -279,7 +265,6 @@ func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace st
 		return nil, errors.Wrapf(err, "error retrieving the provider ConfigMap %v/%v", vmopNamespace, VSphereConfigMapName)
 	}
 
-	// Get VcCreds from the configMap
 	vcCreds, err := configMapToProviderCredentials(clientSet, configMap)
 	if err != nil {
 		return nil, err
@@ -291,8 +276,16 @@ func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace st
 	}
 
 	if namespace != "" {
-		if err := UpdateVMFolderAndRPInProviderConfig(clientSet, namespace, providerConfig); err != nil {
-			return nil, errors.Wrapf(err, "error in updating RP and VM folder")
+		if err := UpdateProviderConfigFromNamespace(clientSet, namespace, providerConfig); err != nil {
+			return nil, errors.Wrapf(err, "error updating provider config from namespace")
+		}
+
+		// Preserve the existing behavior but this isn't quite right. We assume in various places that
+		// we always have a ResourcePool, but we only check that in the namespace case. Whatever we
+		// happen to currently do with a client without it set doesn't need it so it "works".
+		if providerConfig.ResourcePool == "" || providerConfig.Folder == "" {
+			return nil, fmt.Errorf("missing ResourcePool and Folder in ProviderConfig. "+
+				"ResourcePool: %v, Folder: %v", providerConfig.ResourcePool, providerConfig.Folder)
 		}
 	}
 
@@ -379,7 +372,7 @@ func PatchVcURLInConfigMap(clientSet kubernetes.Interface, config *WcpClusterCon
 func InstallNetworkConfigMap(clientSet *kubernetes.Clientset, nameservers string) error {
 	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
 	if err != nil {
-		return errors.Wrapf(err, "failed to extract the VM operator namespace from env %v", VmopNamespaceEnv)
+		return err
 	}
 
 	dataMap := make(map[string]string)
@@ -388,7 +381,7 @@ func InstallNetworkConfigMap(clientSet *kubernetes.Clientset, nameservers string
 
 	configMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      NameServersConfigMapName,
+			Name:      NetworkConfigMapName,
 			Namespace: vmopNamespace,
 		},
 		Data: dataMap,

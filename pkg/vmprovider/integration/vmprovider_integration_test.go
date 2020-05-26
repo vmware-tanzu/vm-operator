@@ -117,12 +117,12 @@ var _ = Describe("VMProvider Tests", func() {
 		vmName := "test-vm-vmp-deploy"
 
 		BeforeEach(func() {
-			err = vsphere.InstallVSphereVmProviderConfig(clientSet, integration.DefaultNamespace,
+			err = vsphere.InstallVSphereVmProviderConfig(k8sClient, integration.DefaultNamespace,
 				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, integration.GetContentSourceID()),
 				integration.SecretName)
 			Expect(err).NotTo(HaveOccurred())
 
-			vmProvider = vsphere.NewVSphereMachineProviderFromClients(clientSet, nil, nil)
+			vmProvider = vsphere.NewVSphereVmProviderFromClients(nil, k8sClient)
 
 			// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
 			testIP := "10.0.0.1"
@@ -268,14 +268,14 @@ var _ = Describe("VMProvider Tests", func() {
 		It("should list the virtualmachineimages available in CL", func() {
 			var images []*vmoperatorv1alpha1.VirtualMachineImage
 
-			//Configure to use Content Library
+			// Configure to use Content Library
 			vSphereConfig.ContentSource = integration.GetContentSourceID()
 			err := session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).ShouldNot(HaveOccurred())
 
 			Eventually(func() int {
 				images, err = vmProvider.ListVirtualMachineImages(context.TODO(), integration.DefaultNamespace)
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				return len(images)
 			}, time.Second*15).Should(BeNumerically(">", 0))
 
@@ -283,9 +283,9 @@ var _ = Describe("VMProvider Tests", func() {
 			for _, image := range images {
 				if image.Name == integration.IntegrationContentLibraryItemName {
 					found = true
+					break
 				}
 			}
-
 			Expect(found).Should(BeTrue())
 		})
 	})
@@ -295,14 +295,14 @@ var _ = Describe("VMProvider Tests", func() {
 		It("should get the existing virtualmachineimage", func() {
 			var image *vmoperatorv1alpha1.VirtualMachineImage
 
-			//Configure to use Content Library
+			// Configure to use Content Library
 			vSphereConfig.ContentSource = integration.GetContentSourceID()
 			err := session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).ShouldNot(HaveOccurred())
 
 			Eventually(func() *vmoperatorv1alpha1.VirtualMachineImage {
 				image, err = vmProvider.GetVirtualMachineImage(context.TODO(), integration.DefaultNamespace, integration.IntegrationContentLibraryItemName)
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				return image
 			}, time.Second*15).ShouldNot(BeNil())
 
@@ -311,12 +311,9 @@ var _ = Describe("VMProvider Tests", func() {
 	})
 
 	Context("Compute CPU Min Frequency in the Cluster", func() {
-		var vmProvider vmprovider.VirtualMachineProviderInterface
-		var err error
 		It("reconfigure and power on without errors", func() {
-			vmProvider = vsphere.NewVSphereMachineProviderFromClients(clientSet, nil, nil)
-
-			err = vmProvider.ComputeClusterCpuMinFrequency(context.TODO())
+			vmProvider := vsphere.NewVSphereVmProviderFromClients(nil, k8sClient)
+			err := vmProvider.ComputeClusterCpuMinFrequency(context.TODO())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(session.GetCpuMinMHzInCluster()).Should(BeNumerically(">", 0))
 		})
@@ -324,8 +321,8 @@ var _ = Describe("VMProvider Tests", func() {
 
 	Context("Update PNID", func() {
 		It("update pnid when the same pnid is supplied", func() {
-			vmProvider := vsphere.NewVSphereVmProviderFromClients(clientSet, nil, nil)
-			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, "")
+			vmProvider := vsphere.NewVSphereVmProviderFromClients(nil, k8sClient)
+			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(k8sClient, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Same PNID
@@ -333,9 +330,15 @@ var _ = Describe("VMProvider Tests", func() {
 			err = vmProvider.UpdateVcPNID(context.TODO(), &config)
 			Expect(err).NotTo(HaveOccurred())
 		})
-		It("update pnid when a different pnid is supplied", func() {
-			vmProvider := vsphere.NewVSphereVmProviderFromClients(clientSet, nil, nil)
-			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, "")
+
+		// This test ends up causes races with other tests in this suite because it changes the PNID
+		// but all the tests in this directory run in the same suite with the same testenv so the
+		// same apiserver. We could restore the valid PNID after but we should really fix the tests
+		// to use a unique vcsim env per Describe() context. This VM Provider code is also executed
+		// and tested in the infra controller test so disable it here.
+		XIt("update pnid when a different pnid is supplied", func() {
+			vmProvider := vsphere.NewVSphereVmProviderFromClients(nil, k8sClient)
+			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(k8sClient, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Different PNID
@@ -343,7 +346,7 @@ var _ = Describe("VMProvider Tests", func() {
 			config := BuildNewWcpClusterConfigMap(pnid)
 			err = vmProvider.UpdateVcPNID(context.TODO(), &config)
 			Expect(err).NotTo(HaveOccurred())
-			providerConfig, _ = vsphere.GetProviderConfigFromConfigMap(clientSet, "")
+			providerConfig, _ = vsphere.GetProviderConfigFromConfigMap(k8sClient, "")
 			Expect(providerConfig.VcPNID).Should(Equal(pnid))
 		})
 	})

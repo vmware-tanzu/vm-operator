@@ -26,8 +26,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
-var c client.Client
-
 const timeout = time.Second * 5
 
 var _ = Describe("VirtualMachineClass controller", func() {
@@ -38,6 +36,7 @@ var _ = Describe("VirtualMachineClass controller", func() {
 		stopMgr    chan struct{}
 		mgrStopped *sync.WaitGroup
 		mgr        manager.Manager
+		c          client.Client
 		err        error
 	)
 

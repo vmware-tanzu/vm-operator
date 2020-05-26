@@ -15,22 +15,11 @@ import (
 	"strconv"
 	"sync"
 
-	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
-
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-
-	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
-
-	"github.com/vmware-tanzu/vm-operator/test/testutil"
-
 	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/simulator"
-	"github.com/vmware/govmomi/vapi/library"
-	govmomirest "github.com/vmware/govmomi/vapi/rest"
-	"github.com/vmware/govmomi/vapi/vcenter"
+
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	"k8s.io/klog/klogr"
@@ -40,9 +29,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/vmware/govmomi/simulator"
+	"github.com/vmware/govmomi/vapi/library"
+	govmomirest "github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vapi/vcenter"
+
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/test/testutil"
 
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
@@ -141,15 +141,19 @@ func enableDebugLogging() {
 	flag.Parse()
 }
 
-// GetVmopClient gets a vm-operator-api client
+// GetCtrlRuntimeClient gets a vm-operator-api client
 // This is separate from NewVMService so that a fake client can be injected for testing
-func GetVmopClient(config *rest.Config) (client.Client, error) {
-	scheme := runtime.NewScheme()
-	_ = vmopv1alpha1.AddToScheme(scheme)
-	client, err := client.New(config, client.Options{
-		Scheme: scheme,
+// This should really take the Scheme as a param.
+func GetCtrlRuntimeClient(config *rest.Config) (client.Client, error) {
+	s := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(s)
+	_ = vmopv1alpha1.AddToScheme(s)
+	_ = ncpv1alpha1.AddToScheme(s)
+	_ = cnsv1alpha1.SchemeBuilder.AddToScheme(s)
+	controllerClient, err := client.New(config, client.Options{
+		Scheme: s,
 	})
-	return client, err
+	return controllerClient, err
 }
 
 func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VSphereVmProviderConfig, *rest.Config, *VcSimInstance, *vsphere.Session, vmprovider.VirtualMachineProviderInterface) {
@@ -169,21 +173,21 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	Expect(err).NotTo(HaveOccurred())
 
 	stdlog.Print("setting up the integration test env...")
-	err = ncpv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
+	// BMV: We should not use the global Scheme here. Need to plumb this down to the controller Manager.
 	err = vmopv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = ncpv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	err = cnsv1alpha1.SchemeBuilder.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	clientSet := kubernetes.NewForConfigOrDie(cfg)
-	ncpclient := ncpclientset.NewForConfigOrDie(cfg)
-	client, err := GetVmopClient(cfg)
+	ncpClient := ncpclientset.NewForConfigOrDie(cfg)
+	k8sClient, err := GetCtrlRuntimeClient(cfg)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Register the vSphere provider
 	log.Info("setting up vSphere Provider")
-	vmProvider = vsphere.NewVSphereVmProviderFromClients(clientSet, ncpclient, client)
+	vmProvider = vsphere.NewVSphereVmProviderFromClients(ncpClient, k8sClient)
 
 	vcSim := NewVcSimInstance()
 
@@ -191,7 +195,7 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	vSphereConfig := NewIntegrationVmOperatorConfig(address, port, "")
 	Expect(vSphereConfig).ToNot(BeNil())
 
-	session, err := SetupVcSimEnv(vSphereConfig, cfg, vcSim, namespaces)
+	session, err := SetupVcSimEnv(vSphereConfig, k8sClient, vcSim, namespaces)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = os.Setenv(vsphere.EnvContentLibApiWaitSecs, "1")
@@ -208,7 +212,7 @@ func TeardownIntegrationEnv(testEnv *envtest.Environment, vcSim *VcSimInstance) 
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Config, vcSim *VcSimInstance, namespaces []string) (*vsphere.Session, error) {
+func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, client client.Client, vcSim *VcSimInstance, namespaces []string) (*vsphere.Session, error) {
 
 	// Support for bootstrapping VM operator resource requirements in Kubernetes.
 	// Generate a fake vsphere provider config that is suitable for the integration test environment.
@@ -225,7 +229,7 @@ func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Con
 	// Generate a fake vsphere provider config that is suitable for the integration test environment.
 	// Post the resultant config map to the API Master for consumption by the VM operator
 	klog.Infof("Installing a bootstrap config map for use in integration tests.")
-	err = vsphere.InstallVSphereVmProviderConfig(kubernetes.NewForConfigOrDie(cfg), DefaultNamespace, vSphereConfig, SecretName)
+	err = vsphere.InstallVSphereVmProviderConfig(client, DefaultNamespace, vSphereConfig, SecretName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install vm operator config: %v", err)
 	}
@@ -243,7 +247,7 @@ func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, cfg *rest.Con
 
 	// Configure each requested namespace to use CL as the content source
 	for _, ns := range namespaces {
-		err = vsphere.InstallVSphereVmProviderConfig(kubernetes.NewForConfigOrDie(cfg),
+		err = vsphere.InstallVSphereVmProviderConfig(client,
 			ns,
 			NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, GetContentSourceID()),
 			SecretName)

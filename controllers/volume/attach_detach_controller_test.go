@@ -32,8 +32,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
-var c client.Client
-
 const (
 	timeout          = time.Second * 10
 	storageClassName = "foo-class"
@@ -70,20 +68,6 @@ func checkVolumeNamesConsistency(vm *vmoperatorv1alpha1.VirtualMachine) bool {
 	return len(set) == 0
 }
 
-// Assert the volume status updates are expected
-func assertVmVolumeStatusUpdates(updatedVm *vmoperatorv1alpha1.VirtualMachine) {
-	Eventually(func() bool {
-		vmRetrieved := &vmoperatorv1alpha1.VirtualMachine{}
-		Expect(c.Get(context.TODO(), client.ObjectKey{Name: updatedVm.Name, Namespace: updatedVm.Namespace}, vmRetrieved)).To(Succeed())
-
-		cnsNodeVmAttachmentList := &cnsv1alpha1.CnsNodeVmAttachmentList{}
-		Expect(c.List(context.TODO(), cnsNodeVmAttachmentList, client.InNamespace(updatedVm.Namespace))).To(Succeed())
-
-		// The number of vm.Status.Volumes should always be the same as the number of CNS CRs
-		return len(vmRetrieved.Status.Volumes) == len(cnsNodeVmAttachmentList.Items)
-	}, 60*time.Second).Should(BeTrue())
-}
-
 var _ = Describe("Volume Attach Detach Controller", func() {
 
 	var (
@@ -97,6 +81,7 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 		stopMgr         chan struct{}
 		mgrStopped      *sync.WaitGroup
 		mgr             manager.Manager
+		c               client.Client
 		err             error
 		ns              = integration.DefaultNamespace
 	)
@@ -171,6 +156,20 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 
 		stdlog.Printf("Cleaned up after test")
 	})
+
+	// Assert the volume status updates are expected
+	assertVmVolumeStatusUpdates := func(updatedVm *vmoperatorv1alpha1.VirtualMachine) {
+		Eventually(func() bool {
+			vmRetrieved := &vmoperatorv1alpha1.VirtualMachine{}
+			Expect(c.Get(context.TODO(), client.ObjectKey{Name: updatedVm.Name, Namespace: updatedVm.Namespace}, vmRetrieved)).To(Succeed())
+
+			cnsNodeVmAttachmentList := &cnsv1alpha1.CnsNodeVmAttachmentList{}
+			Expect(c.List(context.TODO(), cnsNodeVmAttachmentList, client.InNamespace(updatedVm.Namespace))).To(Succeed())
+
+			// The number of vm.Status.Volumes should always be the same as the number of CNS CRs
+			return len(vmRetrieved.Status.Volumes) == len(cnsNodeVmAttachmentList.Items)
+		}, 60*time.Second).Should(BeTrue())
+	}
 
 	Context("when updating a VM object by attaching/detaching volumes", func() {
 		// TODO:  Figure out a way to mock the client error in order to cover more corner cases

@@ -26,8 +26,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
-var c client.Client
-
 const timeout = time.Second * 5
 
 var _ = Describe("InfraClusterProvider controller", func() {
@@ -36,10 +34,12 @@ var _ = Describe("InfraClusterProvider controller", func() {
 		stopMgr    chan struct{}
 		mgrStopped *sync.WaitGroup
 		mgr        manager.Manager
-		err        error
+		c          client.Client
 	)
 
 	BeforeEach(func() {
+		var err error
+
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 		syncPeriod := 10 * time.Second
@@ -49,7 +49,7 @@ var _ = Describe("InfraClusterProvider controller", func() {
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
 
-		err = vsphere.InstallVSphereVmProviderConfig(clientSet,
+		err = vsphere.InstallVSphereVmProviderConfig(c,
 			ns,
 			integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, integration.GetContentSourceID()),
 			integration.SecretName)
@@ -80,14 +80,16 @@ var _ = Describe("InfraClusterProvider controller", func() {
 			// Create the WCP Cluster ConfigMap object and expect the Reconcile to update VMOP ConfigMap
 			pnid := "pnid-01"
 			wcpConfigMap := BuildNewWcpClusterConfigMap(pnid)
-			err = c.Create(context.TODO(), &wcpConfigMap)
+			err := c.Create(context.TODO(), &wcpConfigMap)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 
 			// Validate if PNID changed
-			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(pnid).Should(Equal(providerConfig.VcPNID))
+			Eventually(func() string {
+				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(c, ns)
+				Expect(err).ShouldNot(HaveOccurred())
+				return providerConfig.VcPNID
+			}, timeout).Should(Equal(pnid))
 
 			// Update WCP Cluster ConfigMap
 			pnid = "pnid-02"
@@ -95,18 +97,24 @@ var _ = Describe("InfraClusterProvider controller", func() {
 			err = c.Update(context.TODO(), &wcpConfigMapUpdated)
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
-			providerConfig, err = vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(pnid).Should(Equal(providerConfig.VcPNID))
+
+			Eventually(func() string {
+				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(c, ns)
+				Expect(err).ShouldNot(HaveOccurred())
+				return providerConfig.VcPNID
+			}, timeout).Should(Equal(pnid))
 
 			// Update ConfigMap with the same PNID
 			wcpConfigMapUpdated = BuildNewWcpClusterConfigMap(pnid)
 			err = c.Update(context.TODO(), &wcpConfigMapUpdated)
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(requests, timeout).ShouldNot(Receive(Equal(expectedRequest)))
-			providerConfig, err = vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(pnid).Should(Equal(providerConfig.VcPNID))
+
+			Eventually(func() string {
+				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(c, ns)
+				Expect(err).ShouldNot(HaveOccurred())
+				return providerConfig.VcPNID
+			}, timeout).Should(Equal(pnid))
 
 			// Delete WCP ConfigMap
 			err = c.Delete(context.TODO(), &wcpConfigMapUpdated)
@@ -122,7 +130,6 @@ var _ = Describe("InfraClusterProvider controller", func() {
 				expectedRequest reconcile.Request
 				recFn           reconcile.Reconciler
 				requests        chan reconcile.Request
-				err             error
 			)
 
 			testNamespace := "test-ns"
@@ -181,7 +188,7 @@ var _ = Describe("InfraClusterProvider controller", func() {
 				Username: correctUserName,
 				Password: correctPassword,
 			}
-			Expect(vsphere.InstallVSphereVmProviderSecret(clientSet, ns, &providerCreds, vsphere.VmOpSecretName)).To(Succeed())
+			Expect(vsphere.InstallVSphereVmProviderSecret(c, ns, &providerCreds, vsphere.VmOpSecretName)).To(Succeed())
 
 			vcSim.Server.URL.User = url.UserPassword(correctUserName, correctPassword)
 			vcSim.VcSim.Service.Listen = vcSim.Server.URL
@@ -189,7 +196,7 @@ var _ = Describe("InfraClusterProvider controller", func() {
 
 		Context("without rotation", func() {
 			It("should not fail", func() {
-				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
+				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(c, ns)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				_, err = vsphere.NewClient(context.TODO(), providerConfig)
@@ -204,8 +211,8 @@ var _ = Describe("InfraClusterProvider controller", func() {
 					Password: incorrectPassword,
 				}
 
-				Expect(vsphere.InstallVSphereVmProviderSecret(clientSet, ns, &providerCreds, vsphere.VmOpSecretName)).To(Succeed())
-				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
+				Expect(vsphere.InstallVSphereVmProviderSecret(c, ns, &providerCreds, vsphere.VmOpSecretName)).To(Succeed())
+				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(c, ns)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				_, err = vsphere.NewClient(context.TODO(), providerConfig)
@@ -228,8 +235,8 @@ var _ = Describe("InfraClusterProvider controller", func() {
 					Password: newPassword,
 				}
 
-				Expect(vsphere.InstallVSphereVmProviderSecret(clientSet, ns, &providerCreds, vsphere.VmOpSecretName)).To(Succeed())
-				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(clientSet, ns)
+				Expect(vsphere.InstallVSphereVmProviderSecret(c, ns, &providerCreds, vsphere.VmOpSecretName)).To(Succeed())
+				providerConfig, err := vsphere.GetProviderConfigFromConfigMap(c, ns)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				_, err = vsphere.NewClient(context.TODO(), providerConfig)

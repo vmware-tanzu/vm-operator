@@ -10,7 +10,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes/fake"
+
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	. "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
@@ -29,8 +30,8 @@ var _ = Describe("GetProviderCredentials", func() {
 	Context("when a good secret exists", func() {
 		Specify("returns good credentials with no error", func() {
 			secretIn, credsIn := newSecret("some-name", "some-namespace", "some-user", "some-pass")
-			clientSet := fake.NewSimpleClientset(secretIn)
-			credsOut, err := GetProviderCredentials(clientSet, secretIn.ObjectMeta.Namespace, secretIn.ObjectMeta.Name)
+			client := clientfake.NewFakeClient(secretIn)
+			credsOut, err := GetProviderCredentials(client, secretIn.ObjectMeta.Namespace, secretIn.ObjectMeta.Name)
 			Expect(credsOut).To(Equal(credsIn))
 			Expect(err).To(BeNil())
 		})
@@ -41,8 +42,8 @@ var _ = Describe("GetProviderCredentials", func() {
 		Context("with empty username", func() {
 			Specify("returns no credentials with error", func() {
 				secretIn, _ := newSecret("some-name", "some-namespace", "", "some-pass")
-				clientSet := fake.NewSimpleClientset(secretIn)
-				credsOut, err := GetProviderCredentials(clientSet, secretIn.ObjectMeta.Namespace, secretIn.ObjectMeta.Name)
+				client := clientfake.NewFakeClient(secretIn)
+				credsOut, err := GetProviderCredentials(client, secretIn.ObjectMeta.Namespace, secretIn.ObjectMeta.Name)
 				Expect(credsOut).To(BeNil())
 				Expect(err).NotTo(BeNil())
 			})
@@ -51,8 +52,8 @@ var _ = Describe("GetProviderCredentials", func() {
 		Context("with empty password", func() {
 			Specify("returns no credentials with error", func() {
 				secretIn, _ := newSecret("some-name", "some-namespace", "some-user", "")
-				clientSet := fake.NewSimpleClientset(secretIn)
-				credsOut, err := GetProviderCredentials(clientSet, secretIn.ObjectMeta.Namespace, secretIn.ObjectMeta.Name)
+				client := clientfake.NewFakeClient(secretIn)
+				credsOut, err := GetProviderCredentials(client, secretIn.ObjectMeta.Namespace, secretIn.ObjectMeta.Name)
 				Expect(credsOut).To(BeNil())
 				Expect(err).NotTo(BeNil())
 			})
@@ -61,8 +62,8 @@ var _ = Describe("GetProviderCredentials", func() {
 
 	Context("when no secret exists", func() {
 		Specify("returns no credentials with error", func() {
-			clientSet := fake.NewSimpleClientset()
-			credsOut, err := GetProviderCredentials(clientSet, "none-namespace", "none-name")
+			client := clientfake.NewFakeClient()
+			credsOut, err := GetProviderCredentials(client, "none-namespace", "none-name")
 			Expect(credsOut).To(BeNil())
 			Expect(err).NotTo(BeNil())
 		})

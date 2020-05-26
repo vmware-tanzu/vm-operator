@@ -23,11 +23,12 @@ import (
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	ncpfake "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
-	ncpfake "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake"
 )
 
 var (
@@ -43,7 +44,7 @@ var _ = Describe("Sessions", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		ncpClient = ncpfake.NewSimpleClientset()
-		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, clientSet, ncpClient, ctrlruntimeClient)
+		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, ncpClient, k8sClient)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -170,7 +171,7 @@ var _ = Describe("Sessions", func() {
 					namespace := integration.DefaultNamespace
 					vmName := "getvm-with-rp-and-without-moid"
 					resourcePolicy := getVirtualMachineSetResourcePolicy(vmName, namespace)
-					Expect(ctrlruntimeClient.Create(ctx, resourcePolicy)).To(Succeed())
+					Expect(k8sClient.Create(ctx, resourcePolicy)).To(Succeed())
 
 					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
 
@@ -260,14 +261,13 @@ var _ = Describe("Sessions", func() {
 				// should also be attached to the same network.
 				_, ok := dev.Backing.(*vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 				Expect(ok).Should(BeTrue())
-
 			})
 		})
 
 		Context("by specifying networks in VM Spec", func() {
 
 			BeforeEach(func() {
-				err := vsphere.InstallNetworkConfigMap(clientSet, "8.8.8.8 8.8.4.4")
+				err := vsphere.InstallNetworkConfigMap(k8sClient, "8.8.8.8 8.8.4.4")
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -358,12 +358,13 @@ var _ = Describe("Sessions", func() {
 		Context("when a default network is specified", func() {
 
 			BeforeEach(func() {
-				// For the vcsim env the source VM is attached to a distributed port group. Hence, we are using standard
-				// vswitch port group.
+				// For the vcsim env the source VM is attached to a distributed port group. Hence, we are
+				// using standard vswitch port group.
+				// BMV: Is this used outside of the tests?!?
 				vSphereConfig.Network = "VM Network"
 
-				//Setup new session based on the default network
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
+				// Setup new session based on the default network
+				session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -507,7 +508,7 @@ var _ = Describe("Sessions", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 		It("Should fail", func() {
-			session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
 			Expect(err.Error()).To(MatchRegexp("Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable"))
 		})
 	})
@@ -523,7 +524,7 @@ var _ = Describe("Sessions", func() {
 		JustBeforeEach(func() {
 			//set source to use VM inventory
 
-			session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
 			vSphereConfig.ContentSource = ""
 			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
 			Expect(err).NotTo(HaveOccurred())
@@ -775,7 +776,7 @@ var _ = Describe("Sessions", func() {
 					vSphereConfig.Datastore = ""
 					vSphereConfig.ContentSource = integration.GetContentSourceID()
 
-					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}
@@ -790,7 +791,7 @@ var _ = Describe("Sessions", func() {
 					vSphereConfig.ContentSource = integration.GetContentSourceID()
 					vSphereConfig.StorageClassRequired = true
 
-					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}
@@ -804,7 +805,7 @@ var _ = Describe("Sessions", func() {
 				It("without content source and missing mandatory profile ID", func() {
 					vSphereConfig.StorageClassRequired = true
 
-					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}

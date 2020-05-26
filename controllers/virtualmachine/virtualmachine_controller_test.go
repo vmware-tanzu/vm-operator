@@ -29,8 +29,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
-var c client.Client
-
 const (
 	timeout          = time.Second * 10
 	storageClassName = "foo-class"
@@ -83,6 +81,7 @@ var _ = Describe("VirtualMachine controller", func() {
 		stopMgr         chan struct{}
 		mgrStopped      *sync.WaitGroup
 		mgr             manager.Manager
+		c               client.Client
 		err             error
 		ns              = integration.DefaultNamespace
 	)

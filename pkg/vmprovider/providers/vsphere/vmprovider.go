@@ -16,19 +16,18 @@ import (
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	corev1 "k8s.io/api/core/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
-
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -79,24 +78,17 @@ type vSphereVmProvider struct {
 	sessions SessionManager
 }
 
-func NewVSphereVmProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, ctrlruntimeClient ctrlruntime.Client) vmprovider.VirtualMachineProviderInterface {
+func NewVSphereVmProviderFromClients(ncpClient ncpclientset.Interface, client ctrlruntime.Client) vmprovider.VirtualMachineProviderInterface {
 	vmProvider := &vSphereVmProvider{
-		sessions: NewSessionManager(clientset, ncpclient, ctrlruntimeClient),
+		sessions: NewSessionManager(ncpClient, client),
 	}
 
 	return vmProvider
 }
 
 func NewVSphereMachineProviderFromRestConfig(cfg *rest.Config, client ctrlruntime.Client) vmprovider.VirtualMachineProviderInterface {
-	clientSet := kubernetes.NewForConfigOrDie(cfg)
-	ncpclient := ncpclientset.NewForConfigOrDie(cfg)
-
-	return NewVSphereMachineProviderFromClients(clientSet, ncpclient, client)
-}
-
-func NewVSphereMachineProviderFromClients(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, ctrlruntimeClient ctrlruntime.Client) vmprovider.VirtualMachineProviderInterface {
-	vSphereProvider := NewVSphereVmProviderFromClients(clientset, ncpclient, ctrlruntimeClient)
-	return vSphereProvider.(vmprovider.VirtualMachineProviderInterface)
+	ncpClient := ncpclientset.NewForConfigOrDie(cfg)
+	return NewVSphereVmProviderFromClients(ncpClient, client)
 }
 
 type VSphereVmProviderGetSessionHack interface {
@@ -298,7 +290,6 @@ func AddVmImageAnnotations(annotations map[string]string, ctx context.Context, o
 		// Signify we don't need to fetch ovf properties again since we
 		// want to avoid putting pressure on content library.
 		annotations[VmOperatorVMImagePropsKey] = "false"
-		return nil
 	}
 	return nil
 }
@@ -363,7 +354,6 @@ func (vs *vSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 	}
 
 	err = vs.updateVirtualMachine(ctx, ses, vm, vmConfigArgs)
-
 	if err != nil {
 		return transformVmError(vmName, err)
 	}
@@ -551,7 +541,7 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 				productInfo.Version = p.Version
 			}
 
-			// Use operatng system info from the first os section in the VM image, if one exists.
+			// Use operating system info from the first os section in the VM image, if one exists.
 			if len(os) > 0 {
 				o := os[0]
 

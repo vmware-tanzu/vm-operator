@@ -128,7 +128,6 @@ func (np *nsxtNetworkProvider) matchOpaqueNetwork(ctx context.Context, network o
 	}
 
 	var net mo.OpaqueNetwork
-
 	if err := obj.Properties(ctx, obj.Reference(), []string{"summary"}, &net); err != nil {
 		return false
 	}
@@ -151,7 +150,6 @@ func (np *nsxtNetworkProvider) matchDistributedPortGroup(ctx context.Context, ne
 	}
 
 	var configInfo []vimtypes.ObjectContent
-
 	err = obj.Properties(ctx, obj.Reference(), []string{"config.logicalSwitchUuid", "host"}, &configInfo)
 	if err != nil {
 		return false
@@ -323,11 +321,9 @@ func (np *nsxtNetworkProvider) vnetifIsReady(vnetif *ncpv1alpha1.VirtualNetworkI
 func (np *nsxtNetworkProvider) waitForVnetIFStatus(namespace, networkName, vmName string) (*ncpv1alpha1.VirtualNetworkInterface, error) {
 	vnetifName := np.GenerateNsxVnetifName(networkName, vmName)
 
-	client := np.client
-
 	var result *ncpv1alpha1.VirtualNetworkInterface
 	err := wait.PollImmediate(retryInterval, retryTimeout, func() (bool, error) {
-		vnetif, err := client.VmwareV1alpha1().VirtualNetworkInterfaces(namespace).Get(vnetifName, metav1.GetOptions{})
+		vnetif, err := np.client.VmwareV1alpha1().VirtualNetworkInterfaces(namespace).Get(vnetifName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -351,7 +347,7 @@ func (np *nsxtNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.Virt
 		return nil, err
 	}
 	if vnetif.Status.ProviderStatus == nil || vnetif.Status.ProviderStatus.NsxLogicalSwitchID == "" {
-		err = fmt.Errorf("Failed to get for nsx-t opaque network ID for vnetif '%+v'", vnetif)
+		err = fmt.Errorf("failed to get for nsx-t opaque network ID for vnetif '%+v'", vnetif)
 		log.Error(err, "Failed to get for nsx-t opaque network ID for vnetif")
 		return nil, err
 	}
@@ -365,16 +361,17 @@ func (np *nsxtNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.Virt
 	if err != nil {
 		return nil, err
 	}
+
 	nic := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 	nic.ExternalId = vnetif.Status.InterfaceID
 	nic.MacAddress = vnetif.Status.MacAddress
 	nic.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
+
 	return dev, nil
 }
 
 // Get Host MoIDs for a cluster
 func getClusterHostMoIDs(ctx context.Context, cluster *object.ClusterComputeResource) ([]vimtypes.ManagedObjectReference, error) {
-
 	var computeResource mo.ComputeResource
 	obj := cluster.Reference()
 

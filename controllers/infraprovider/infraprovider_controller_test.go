@@ -24,8 +24,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
-var c client.Client
-
 const timeout = time.Second * 5
 
 var _ = Describe("InfraProvider controller", func() {
@@ -33,10 +31,11 @@ var _ = Describe("InfraProvider controller", func() {
 		stopMgr    chan struct{}
 		mgrStopped *sync.WaitGroup
 		mgr        manager.Manager
-		err        error
+		c          client.Client
 	)
 
 	BeforeEach(func() {
+		var err error
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 		syncPeriod := 10 * time.Second
@@ -69,7 +68,7 @@ var _ = Describe("InfraProvider controller", func() {
 			recFn, requests, _, _ := integration.SetupTestReconcile(newReconciler(ctrlContext, mgr))
 			Expect(add(mgr, recFn)).To(Succeed())
 			// Create the Node object and expect the Reconcile to compute cpuMinFreq
-			err = c.Create(context.TODO(), &instance)
+			err := c.Create(context.TODO(), &instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 			// Delete the Node object and expect the Reconcile to compute cpuMinFreq

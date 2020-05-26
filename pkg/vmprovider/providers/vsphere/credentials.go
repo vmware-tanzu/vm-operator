@@ -4,11 +4,14 @@
 package vsphere
 
 import (
+	"context"
+
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
+	"k8s.io/apimachinery/pkg/types"
+	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // VSphereVmProviderCredentials wraps the data needed to login to vCenter.
@@ -17,10 +20,11 @@ type VSphereVmProviderCredentials struct {
 	Password string
 }
 
-func GetProviderCredentials(clientSet kubernetes.Interface, namespace string, secretName string) (*VSphereVmProviderCredentials, error) {
-	secret, err := clientSet.CoreV1().Secrets(namespace).Get(secretName, metav1.GetOptions{})
-	if err != nil {
-		return nil, errors.Wrapf(err, "cannot find secret %s in namespace %s", secretName, namespace)
+func GetProviderCredentials(client ctrlruntime.Client, namespace string, secretName string) (*VSphereVmProviderCredentials, error) {
+	secret := &v1.Secret{}
+	secretKey := types.NamespacedName{Namespace: namespace, Name: secretName}
+	if err := client.Get(context.Background(), secretKey, secret); err != nil {
+		return nil, errors.Wrapf(err, "cannot find secret %s", secretKey)
 	}
 
 	var credentials VSphereVmProviderCredentials
@@ -47,18 +51,16 @@ func ProviderCredentialsToSecret(namespace string, credentials *VSphereVmProvide
 	}
 }
 
-func InstallVSphereVmProviderSecret(clientSet *kubernetes.Clientset, namespace string, credentials *VSphereVmProviderCredentials, vcCredsSecretName string) error {
+func InstallVSphereVmProviderSecret(client ctrlruntime.Client, namespace string, credentials *VSphereVmProviderCredentials, vcCredsSecretName string) error {
 	secret := ProviderCredentialsToSecret(namespace, credentials, vcCredsSecretName)
 
-	if _, err := clientSet.CoreV1().Secrets(namespace).Get(secret.Name, metav1.GetOptions{}); err != nil {
-		if !apierrors.IsNotFound(err) {
+	if err := client.Create(context.Background(), secret); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
 			return err
 		}
 
-		_, err = clientSet.CoreV1().Secrets(namespace).Create(secret)
-		return err
+		return client.Update(context.Background(), secret)
 	}
 
-	_, err := clientSet.CoreV1().Secrets(namespace).Update(secret)
-	return err
+	return nil
 }

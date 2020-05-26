@@ -7,31 +7,27 @@ import (
 	"context"
 	"sync"
 
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
 
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type SessionManager struct {
-	client            *Client
-	clientset         *kubernetes.Clientset
-	ncpclient         ncpclientset.Interface
-	ctrlruntimeClient ctrlruntime.Client
+	client    *Client
+	ncpClient ncpclientset.Interface
+	k8sClient ctrlruntime.Client
 
 	// sessions contains the map of sessions for each namespace.
 	mutex    sync.Mutex
 	sessions map[string]*Session
 }
 
-func NewSessionManager(clientset *kubernetes.Clientset, ncpclient ncpclientset.Interface, ctrlruntimeClient ctrlruntime.Client) SessionManager {
+func NewSessionManager(ncpClient ncpclientset.Interface, k8sClient ctrlruntime.Client) SessionManager {
 	return SessionManager{
-		clientset:         clientset,
-		ncpclient:         ncpclient,
-		ctrlruntimeClient: ctrlruntimeClient,
-		sessions:          make(map[string]*Session),
+		ncpClient: ncpClient,
+		k8sClient: k8sClient,
+		sessions:  make(map[string]*Session),
 	}
 }
 
@@ -50,28 +46,8 @@ func (sm *SessionManager) getClient(context context.Context, config *VSphereVmPr
 	return sm.client, nil
 }
 
-// NewSession is only used in testing
-func (sm *SessionManager) NewSession(namespace string, config *VSphereVmProviderConfig) (*Session, error) {
-	log.V(4).Info("New session", "namespace", namespace, "config", config)
-	sm.mutex.Lock()
-	defer sm.mutex.Unlock()
-
-	client, err := sm.getClient(context.TODO(), config)
-	if err != nil {
-		return nil, err
-	}
-
-	ses, err := NewSessionAndConfigure(context.TODO(), client, config, sm.clientset, sm.ncpclient, sm.ctrlruntimeClient)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create session for namespace %s", namespace)
-	}
-
-	sm.sessions[namespace] = ses
-	return ses, nil
-}
-
 func (sm *SessionManager) createSession(ctx context.Context, namespace string) (*Session, error) {
-	config, err := GetProviderConfigFromConfigMap(sm.clientset, namespace)
+	config, err := GetProviderConfigFromConfigMap(sm.k8sClient, namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +59,7 @@ func (sm *SessionManager) createSession(ctx context.Context, namespace string) (
 		return nil, err
 	}
 
-	ses, err := NewSessionAndConfigure(ctx, client, config, sm.clientset, sm.ncpclient, sm.ctrlruntimeClient)
+	ses, err := NewSessionAndConfigure(ctx, client, config, sm.ncpClient, sm.k8sClient)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +117,7 @@ func (sm *SessionManager) UpdateVcPNID(ctx context.Context, clusterConfigMap *co
 		return err
 	}
 
-	config, err := GetProviderConfigFromConfigMap(sm.clientset, "")
+	config, err := GetProviderConfigFromConfigMap(sm.k8sClient, "")
 	if err != nil {
 		return err
 	}
@@ -150,7 +126,7 @@ func (sm *SessionManager) UpdateVcPNID(ctx context.Context, clusterConfigMap *co
 		return nil
 	}
 
-	if err = PatchVcURLInConfigMap(sm.clientset, clusterCfg); err != nil {
+	if err = PatchVcURLInConfigMap(sm.k8sClient, clusterCfg); err != nil {
 		return err
 	}
 

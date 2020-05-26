@@ -30,7 +30,6 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
 	k8sTypes "k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
 	ncpcs "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
@@ -47,17 +46,16 @@ var DefaultExtraConfig = map[string]string{
 }
 
 type Session struct {
-	client            *Client
-	clientset         kubernetes.Interface
-	ncpClient         ncpcs.Interface
-	ctrlruntimeClient ctrlruntime.Client
+	client    *Client
+	ncpClient ncpcs.Interface
+	k8sClient ctrlruntime.Client
 
 	Finder       *find.Finder
 	datacenter   *object.Datacenter
 	cluster      *object.ClusterComputeResource
 	folder       *object.Folder
 	resourcepool *object.ResourcePool
-	network      object.NetworkReference
+	network      object.NetworkReference // BMV: Dead? (never set in ConfigMap)
 	contentlib   *library.Library
 	datastore    *object.Datastore
 
@@ -71,13 +69,13 @@ type Session struct {
 	cpuMinMHzInCluster uint64 // CPU Min Frequency across all Hosts in the cluster
 }
 
-func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphereVmProviderConfig, clientset kubernetes.Interface,
-	ncpclient ncpcs.Interface, ctrlruntimeClient ctrlruntime.Client) (*Session, error) {
+func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphereVmProviderConfig,
+	ncpClient ncpcs.Interface, k8sClient ctrlruntime.Client) (*Session, error) {
+
 	s := &Session{
 		client:                client,
-		clientset:             clientset,
-		ncpClient:             ncpclient,
-		ctrlruntimeClient:     ctrlruntimeClient,
+		ncpClient:             ncpClient,
+		k8sClient:             k8sClient,
 		storageClassRequired:  config.StorageClassRequired,
 		useInventoryForImages: config.UseInventoryAsContentSource,
 	}
@@ -686,6 +684,7 @@ func (s *Session) cloneVirtualMachineFromInventory(ctx context.Context, vm *v1al
 }
 
 func (s *Session) cloneVirtualMachineFromOVFInCL(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
+	// BMV: Pass item from the caller
 	item, err := s.GetItemFromCL(ctx, vm.Spec.ImageName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find image %q", vm.Spec.ImageName)
@@ -723,7 +722,6 @@ func (s *Session) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 }
 
 func (s *Session) lookupVmByName(ctx context.Context, name string) (*res.VirtualMachine, error) {
-
 	vm, err := s.Finder.VirtualMachine(ctx, name)
 	if err != nil {
 		return nil, err
@@ -738,7 +736,7 @@ func (s *Session) getVirtualMachineByPath(ctx context.Context, path string) (*ob
 func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) (*res.VirtualMachine, error) {
 	// Lookup by MoID first, falling back to lookup by full path
 	if vm.Status.UniqueID != "" {
-		resVm, err := s.lookupVirtualMachineByMoID(ctx, vm.Name, vm.Status.UniqueID)
+		resVm, err := s.lookupVirtualMachineByMoID(ctx, vm.Status.UniqueID)
 		if err == nil {
 			return resVm, nil
 		}
@@ -752,10 +750,11 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 	if vm.Spec.ResourcePolicyName != "" {
 		// Lookup the VM by name using the full inventory path to the VM.  To do so, we need to acquire the resource policy
 		// by name to get the VM's Folder.
-		resourcePolicy := v1alpha1.VirtualMachineSetResourcePolicy{}
-		err := s.ctrlruntimeClient.Get(ctx, ctrlruntime.ObjectKey{Name: vm.Spec.ResourcePolicyName, Namespace: vm.Namespace}, &resourcePolicy)
+		resourcePolicy := &v1alpha1.VirtualMachineSetResourcePolicy{}
+		resourcePolicyKey := ctrlruntime.ObjectKey{Name: vm.Spec.ResourcePolicyName, Namespace: vm.Namespace}
+		err := s.k8sClient.Get(ctx, resourcePolicyKey, resourcePolicy)
 		if err != nil {
-			log.Error(err, "Failed to find resource policy", "Namespace", vm.Namespace, "Name", vm.Spec.ResourcePolicyName)
+			log.Error(err, "Failed to find resource policy", "name", resourcePolicyKey)
 			return nil, err
 		}
 
@@ -772,7 +771,6 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 	}
 
 	vmPath := folder.InventoryPath + "/" + vm.Name
-
 	log.V(4).Info("Looking up vm path by", "path", vmPath)
 
 	foundVm, err := s.getVirtualMachineByPath(ctx, vmPath)
@@ -786,15 +784,13 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 	return res.NewVMFromObject(foundVm)
 }
 
-func (s *Session) lookupVirtualMachineByMoID(ctx context.Context, name, moId string) (*res.VirtualMachine, error) {
-
+func (s *Session) lookupVirtualMachineByMoID(ctx context.Context, moId string) (*res.VirtualMachine, error) {
 	ref, err := s.Finder.ObjectReference(ctx, types.ManagedObjectReference{Type: "VirtualMachine", Value: moId})
 	if err != nil {
 		return nil, err
 	}
 
 	vm := ref.(*object.VirtualMachine)
-
 	log.V(4).Info("Found VM", "Name", vm.Name(), "Path", vm.InventoryPath, "Moref", vm.Reference())
 
 	return res.NewVMFromObject(vm)
@@ -810,6 +806,7 @@ func CpuQuantityToMhz(q resource.Quantity, cpuFreqMhz uint64) int64 {
 
 func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine) ([]vimTypes.BaseVirtualDevice, error) {
 	devices := make([]vimTypes.BaseVirtualDevice, 0, len(vm.Spec.NetworkInterfaces))
+
 	// The clients should ensure that existing device keys are not reused as temporary key values for the new device to
 	// be added, hence use unique negative integers as temporary keys.
 	key := int32(-100)
@@ -1274,7 +1271,7 @@ func (s *Session) GetCustomizationSpec(ctx context.Context, vm *v1alpha1.Virtual
 		},
 	}
 
-	nameserverList, err := GetNameserversFromConfigMap(s.clientset)
+	nameserverList, err := GetNameserversFromConfigMap(s.k8sClient)
 	if err != nil {
 		log.Error(err, "Cannot set customized DNS servers", "vmName", vmName)
 	} else {
@@ -1481,10 +1478,8 @@ func (s *Session) DoesClusterModuleExist(ctx context.Context, moduleUuid string)
 		return false, nil
 	}
 
-	var err error
 	moduleExists := false
-
-	err = s.WithRestClient(ctx, func(c *rest.Client) error {
+	err := s.WithRestClient(ctx, func(c *rest.Client) error {
 		m := cluster.NewManager(c)
 		modules, err := m.ListModules(ctx)
 		if err != nil {
@@ -1524,11 +1519,10 @@ func (s *Session) AddVmToClusterModule(ctx context.Context, moduleId string, vmR
 // RemoveVmFromClusterModule removes a VM from a clusterModule.
 func (s *Session) RemoveVmFromClusterModule(ctx context.Context, moduleId string, vmRef mo.Reference) error {
 	log.Info("Removing vm from clusterModule", "moduleId", moduleId, "vmId", vmRef)
-	var err error
 
-	err = s.WithRestClient(ctx, func(c *rest.Client) error {
+	err := s.WithRestClient(ctx, func(c *rest.Client) error {
 		m := cluster.NewManager(c)
-		_, err = m.RemoveModuleMembers(ctx, moduleId, vmRef)
+		_, err := m.RemoveModuleMembers(ctx, moduleId, vmRef)
 		return err
 	})
 	if err != nil {

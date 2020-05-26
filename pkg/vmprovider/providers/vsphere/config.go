@@ -4,7 +4,7 @@
 package vsphere
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -15,7 +15,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
+
+	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
@@ -196,18 +197,18 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 	return ret, nil
 }
 
-func configMapToProviderCredentials(clientSet kubernetes.Interface, configMap *v1.ConfigMap) (*VSphereVmProviderCredentials, error) {
+func configMapToProviderCredentials(client ctrlruntime.Client, configMap *v1.ConfigMap) (*VSphereVmProviderCredentials, error) {
 	if configMap.Data[vcCredsSecretNameKey] == "" {
 		return nil, errors.Errorf("%s creds secret not set in vmop system namespace", vcCredsSecretNameKey)
 	}
 
-	return GetProviderCredentials(clientSet, configMap.ObjectMeta.Namespace, configMap.Data[vcCredsSecretNameKey])
+	return GetProviderCredentials(client, configMap.ObjectMeta.Namespace, configMap.Data[vcCredsSecretNameKey])
 }
 
 // UpdateProviderConfigFromNamespace updates provider config for this specific namespace
-func UpdateProviderConfigFromNamespace(clientSet kubernetes.Interface, namespace string, providerConfig *VSphereVmProviderConfig) error {
-	ns, err := clientSet.CoreV1().Namespaces().Get(namespace, metav1.GetOptions{})
-	if err != nil {
+func UpdateProviderConfigFromNamespace(client ctrlruntime.Client, namespace string, providerConfig *VSphereVmProviderConfig) error {
+	ns := &v1.Namespace{}
+	if err := client.Get(context.Background(), types.NamespacedName{Name: namespace}, ns); err != nil {
 		return errors.Wrapf(err, "could not get the namespace: %s", namespace)
 	}
 
@@ -225,17 +226,19 @@ func UpdateProviderConfigFromNamespace(clientSet kubernetes.Interface, namespace
 	return nil
 }
 
-func GetNameserversFromConfigMap(clientSet kubernetes.Interface) ([]string, error) {
+func GetNameserversFromConfigMap(client ctrlruntime.Client) ([]string, error) {
 	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
 	if err != nil {
 		return nil, err
 	}
-	nameserversConfigMap, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(NetworkConfigMapName, metav1.GetOptions{})
-	if err != nil {
+
+	configMap := &v1.ConfigMap{}
+	configMapKey := types.NamespacedName{Name: NetworkConfigMapName, Namespace: vmopNamespace}
+	if err := client.Get(context.Background(), configMapKey, configMap); err != nil {
 		return nil, errors.Wrapf(err, "cannot retrieve %v ConfigMap", NetworkConfigMapName)
 	}
 
-	nameservers, ok := nameserversConfigMap.Data[NameserversKey]
+	nameservers, ok := configMap.Data[NameserversKey]
 	if !ok {
 		return nil, errors.Wrapf(err, "invalid %v ConfigMap, missing key nameservers", NetworkConfigMapName)
 	}
@@ -254,18 +257,20 @@ func GetNameserversFromConfigMap(clientSet kubernetes.Interface) ([]string, erro
 }
 
 // GetProviderConfigFromConfigMap returns a provider config constructed from vSphere Provider ConfigMap in the VM operator namespace.
-func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace string) (*VSphereVmProviderConfig, error) {
+func GetProviderConfigFromConfigMap(client ctrlruntime.Client, namespace string) (*VSphereVmProviderConfig, error) {
 	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
 	if err != nil {
 		return nil, err
 	}
 
-	configMap, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(VSphereConfigMapName, metav1.GetOptions{})
+	configMap := &v1.ConfigMap{}
+	configMapKey := types.NamespacedName{Name: VSphereConfigMapName, Namespace: vmopNamespace}
+	err = client.Get(context.Background(), configMapKey, configMap)
 	if err != nil {
-		return nil, errors.Wrapf(err, "error retrieving the provider ConfigMap %v/%v", vmopNamespace, VSphereConfigMapName)
+		return nil, errors.Wrapf(err, "error retrieving the provider ConfigMap %s", configMapKey)
 	}
 
-	vcCreds, err := configMapToProviderCredentials(clientSet, configMap)
+	vcCreds, err := configMapToProviderCredentials(client, configMap)
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +281,7 @@ func GetProviderConfigFromConfigMap(clientSet kubernetes.Interface, namespace st
 	}
 
 	if namespace != "" {
-		if err := UpdateProviderConfigFromNamespace(clientSet, namespace, providerConfig); err != nil {
+		if err := UpdateProviderConfigFromNamespace(client, namespace, providerConfig); err != nil {
 			return nil, errors.Wrapf(err, "error updating provider config from namespace")
 		}
 
@@ -320,48 +325,45 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 }
 
 // Install the Config Map for the VM operator in the API master
-func InstallVSphereVmProviderConfig(clientSet *kubernetes.Clientset, namespace string, config *VSphereVmProviderConfig, vcCredsSecretName string) error {
+// Used only in testing.
+func InstallVSphereVmProviderConfig(client ctrlruntime.Client, namespace string, config *VSphereVmProviderConfig, vcCredsSecretName string) error {
 	configMap := ProviderConfigToConfigMap(namespace, config, vcCredsSecretName)
-	if _, err := clientSet.CoreV1().ConfigMaps(namespace).Get(configMap.Name, metav1.GetOptions{}); err != nil {
-		if !apierrors.IsNotFound(err) {
+
+	if err := client.Create(context.Background(), configMap); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
 			return err
 		}
 
-		if _, err := clientSet.CoreV1().ConfigMaps(namespace).Create(configMap); err != nil {
-			return err
-		}
-	} else {
-		log.Info("Updating VM Operator configmap as it already exists")
-		if _, err := clientSet.CoreV1().ConfigMaps(namespace).Update(configMap); err != nil {
+		log.Info("Updating VM Operator ConfigMap as it already exists")
+		if err := client.Update(context.Background(), configMap); err != nil {
 			return err
 		}
 	}
 
-	return InstallVSphereVmProviderSecret(clientSet, namespace, config.VcCreds, vcCredsSecretName)
+	return InstallVSphereVmProviderSecret(client, namespace, config.VcCreds, vcCredsSecretName)
 }
 
 // PatchVcURLInConfigMap updates the ConfigMap with the new vSphere PNID and Port.
-func PatchVcURLInConfigMap(clientSet kubernetes.Interface, config *WcpClusterConfig) error {
+// BMV: This doesn't really have to be a Patch.
+func PatchVcURLInConfigMap(client ctrlruntime.Client, config *WcpClusterConfig) error {
 	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
 	if err != nil {
 		return err
 	}
 
-	patch := map[string]map[string]string{
-		"data": {
-			vcPNIDKey: config.VcPNID,
-			vcPortKey: config.VcPort,
-		},
-	}
-	marshaledPatch, err := json.Marshal(patch)
-	if err != nil {
-		log.Error(err, "error creating the JSON patch", "patch", patch)
+	configMap := &v1.ConfigMap{}
+	configMapKey := types.NamespacedName{Name: VSphereConfigMapName, Namespace: vmopNamespace}
+	if err := client.Get(context.Background(), configMapKey, configMap); err != nil {
 		return err
 	}
 
-	_, err = clientSet.CoreV1().ConfigMaps(vmopNamespace).Patch(VSphereConfigMapName, types.StrategicMergePatchType, marshaledPatch)
+	origConfigMap := configMap.DeepCopyObject()
+	configMap.Data[vcPNIDKey] = config.VcPNID
+	configMap.Data[vcPortKey] = config.VcPort
+
+	err = client.Patch(context.Background(), configMap, ctrlruntime.MergeFrom(origConfigMap))
 	if err != nil {
-		log.Error(err, "Failed to apply patch for ConfigMap", "name", VSphereConfigMapName, "namespace", vmopNamespace, "patch", patch)
+		log.Error(err, "Failed to apply patch for ConfigMap", "configMapName", configMapKey)
 		return err
 	}
 
@@ -369,14 +371,14 @@ func PatchVcURLInConfigMap(clientSet kubernetes.Interface, config *WcpClusterCon
 }
 
 // Install the Network Config Map for the VM operator in the API master
-func InstallNetworkConfigMap(clientSet *kubernetes.Clientset, nameservers string) error {
+// Used only in testing.
+func InstallNetworkConfigMap(client ctrlruntime.Client, nameservers string) error {
 	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
 	if err != nil {
 		return err
 	}
 
 	dataMap := make(map[string]string)
-
 	dataMap[NameserversKey] = nameservers
 
 	configMap := &v1.ConfigMap{
@@ -386,19 +388,16 @@ func InstallNetworkConfigMap(clientSet *kubernetes.Clientset, nameservers string
 		},
 		Data: dataMap,
 	}
-	if _, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Get(configMap.Name, metav1.GetOptions{}); err != nil {
-		if !apierrors.IsNotFound(err) {
+
+	err = client.Create(context.Background(), configMap)
+	if err != nil {
+		if !apierrors.IsAlreadyExists(err) {
 			return err
 		}
 
-		if _, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Create(configMap); err != nil {
-			return err
-		}
-	} else {
-		log.Info("Updating VM Operator network configmap as it already exists")
-		if _, err := clientSet.CoreV1().ConfigMaps(vmopNamespace).Update(configMap); err != nil {
-			return err
-		}
+		log.Info("Updating VM Operator ConfigMap since it already exists")
+		return client.Update(context.Background(), configMap)
 	}
+
 	return nil
 }

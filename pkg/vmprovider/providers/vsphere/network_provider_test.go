@@ -207,7 +207,7 @@ var _ = Describe("NetworkProvider", func() {
 				It("should return an error", func() {
 					_, err := np.CreateVnic(ctx, vm, vmNif)
 					Expect(err).NotTo(BeNil())
-					Expect(err.Error()).To(ContainSubstring("Failed to get for nsx-t opaque network ID for vnetif '"))
+					Expect(err.Error()).To(ContainSubstring("failed to get for nsx-t opaque network ID for vnetif '"))
 				})
 			})
 
@@ -219,7 +219,7 @@ var _ = Describe("NetworkProvider", func() {
 				It("should return an error", func() {
 					_, err := np.CreateVnic(ctx, vm, vmNif)
 					Expect(err).NotTo(BeNil())
-					Expect(err.Error()).To(ContainSubstring("Failed to get for nsx-t opaque network ID for vnetif '"))
+					Expect(err.Error()).To(ContainSubstring("failed to get for nsx-t opaque network ID for vnetif '"))
 				})
 			})
 

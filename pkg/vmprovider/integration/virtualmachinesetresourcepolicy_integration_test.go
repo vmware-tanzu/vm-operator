@@ -14,8 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -46,7 +45,6 @@ var _ = Describe("vSphere VM provider tests", func() {
 
 	Context("VirtualMachineSetResourcePolicy", func() {
 		var (
-			vmProvider          vmprovider.VirtualMachineProviderInterface
 			resourcePolicy      *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
 			testPolicyName      string
 			testPolicyNamespace string
@@ -55,8 +53,6 @@ var _ = Describe("vSphere VM provider tests", func() {
 		JustBeforeEach(func() {
 			testPolicyName = "test-name"
 			testPolicyNamespace = integration.DefaultNamespace
-
-			vmProvider = vsphere.NewVSphereMachineProviderFromClients(clientSet, nil, nil)
 
 			resourcePolicy = getVirtualMachineSetResourcePolicy(testPolicyName, testPolicyNamespace)
 			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy)).To(Succeed())
@@ -89,9 +85,15 @@ var _ = Describe("vSphere VM provider tests", func() {
 				Expect(exists).NotTo(BeTrue())
 			})
 		})
+
 		Context("for a resource policy with invalid cluster module", func() {
 			It("successfully able to delete the resourcepolicy", func() {
-				resourcePolicy.Status.ClusterModules = append([]vmoperatorv1alpha1.ClusterModuleStatus{vmoperatorv1alpha1.ClusterModuleStatus{"invalid-group", "invalid-uuid"}}, resourcePolicy.Status.ClusterModules...)
+				resourcePolicy.Status.ClusterModules = append([]vmoperatorv1alpha1.ClusterModuleStatus{
+					{
+						GroupName:  "invalid-group",
+						ModuleUuid: "invalid-uuid",
+					},
+				}, resourcePolicy.Status.ClusterModules...)
 			})
 		})
 	})

@@ -12,6 +12,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -133,6 +134,22 @@ func (d *VirtualMachineImageDiscoverer) diffImages(left []vmoperatorv1alpha1.Vir
 	return added, removed, updated
 }
 
+// getContentProviderManagedImages fetches the VM images from a given content provider
+func (d *VirtualMachineImageDiscoverer) getImagesFromContentProvider(ctx goctx.Context,
+	contentSource vmoperatorv1alpha1.ContentSource) ([]*vmoperatorv1alpha1.VirtualMachineImage, error) {
+	providerRef := contentSource.Spec.ProviderRef
+
+	// Currently, the only supported content provider is content library, so we directly fetch the object in a ContentLibraryProvider resource.
+	// Once we support multiple content providers, this will be modified to fetch the resource based on the provider ref kind.
+	contentLibrary := vmoperatorv1alpha1.ContentLibraryProvider{}
+	if err := d.client.Get(ctx, types.NamespacedName{Name: providerRef.Name, Namespace: providerRef.Namespace}, &contentLibrary); err != nil {
+		return nil, err
+	}
+	d.log.V(4).Info("listing images from content library", "contentLibraryName", contentLibrary.Name, "contentLibraryUUID", contentLibrary.Spec.UUID)
+
+	return d.vmProvider.ListVirtualMachineImagesFromContentLibrary(ctx, contentLibrary)
+}
+
 func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (error, []vmoperatorv1alpha1.VirtualMachineImage, []vmoperatorv1alpha1.VirtualMachineImage) {
 	d.log.V(4).Info("Differencing images")
 
@@ -147,10 +164,34 @@ func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (err
 
 	k8sManagedImages := k8sManagedImageList.Items
 
-	// List the cluster-scoped VirtualMachineImages.
-	providerManagedImages, err := d.vmProvider.ListVirtualMachineImages(ctx, "")
+	// List the cluster-scoped VirtualMachineImages
+	// If we have a content sources installed
+	//  - calls into the content provider to list VM images from the content source
+	// else
+	//  - calls into the provider to list VM images from the session configured Content Source.
+
+	// AKP: protect this with a FSS?
+	contentSourceList := &vmoperatorv1alpha1.ContentSourceList{}
+	err = d.client.List(ctx, contentSourceList)
 	if err != nil {
-		return errors.Wrap(err, "failed to list images from backend"), nil, nil
+		return errors.Wrap(err, "failed to list content sources from control plane"), nil, nil
+	}
+
+	var providerManagedImages []*vmoperatorv1alpha1.VirtualMachineImage
+	if len(contentSourceList.Items) == 0 {
+		providerManagedImages, err = d.vmProvider.ListVirtualMachineImages(ctx, "")
+		if err != nil {
+			return errors.Wrap(err, "failed to list images from backend"), nil, nil
+		}
+	} else {
+		for _, contentSource := range contentSourceList.Items {
+			images, err := d.getImagesFromContentProvider(ctx, contentSource)
+			if err != nil {
+				return nil, nil, nil
+			}
+
+			providerManagedImages = append(providerManagedImages, images...)
+		}
 	}
 
 	var convertedImages []vmoperatorv1alpha1.VirtualMachineImage

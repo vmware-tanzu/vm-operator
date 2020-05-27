@@ -1,0 +1,20 @@
+# permissions to do viewer contentsources.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: contentsource-viewer-role
+rules:
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - contentsources
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - contentsources/status
+  verbs:
+  - get

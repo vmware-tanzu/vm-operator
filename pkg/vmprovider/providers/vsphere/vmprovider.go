@@ -128,6 +128,18 @@ func (vs *vSphereVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, 
 	delete(vs.sessions.sessions, namespace)
 }
 
+// ListVirtualMachineImagesFromContentLibrary lists VM images from a ContentLibrary
+func (vs *vSphereVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx context.Context, contentLibrary v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary", "name", contentLibrary.Name, "UUID", contentLibrary.Spec.UUID)
+
+	ses, err := vs.sessions.GetSession(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return ses.ListVirtualMachineImagesFromCL(ctx, contentLibrary.Spec.UUID)
+}
+
 func (vs *vSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
 	log.V(4).Info("Listing VirtualMachineImages", "namespace", namespace)
 
@@ -138,7 +150,7 @@ func (vs *vSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 
 	if ses.contentlib != nil {
 		// List images from Content Library
-		imagesFromCL, err := ses.ListVirtualMachineImagesFromCL(ctx)
+		imagesFromCL, err := ses.ListVirtualMachineImagesFromCL(ctx, ses.contentlib.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -289,6 +301,18 @@ func AddVmImageAnnotations(annotations map[string]string, ctx context.Context, o
 		return nil
 	}
 	return nil
+}
+
+// DoesContentLiraryExists checks if a ContentLibrary exists on the vSphere infrastructure
+// AKP: move to content provider
+func (vs *vSphereVmProvider) DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error) {
+	// GetSession with empty namespace grabs a cluster scoped session
+	ses, err := vs.sessions.GetSession(ctx, "")
+	if err != nil {
+		return false, err
+	}
+
+	return ses.DoesContentLibraryExist(ctx, contentLibrary.Spec.UUID)
 }
 
 func (vs *vSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {

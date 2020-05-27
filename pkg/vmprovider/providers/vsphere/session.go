@@ -240,16 +240,32 @@ func (s *Session) CreateLibrary(ctx context.Context, contentSource string) (stri
 	return NewContentLibraryProvider(s).CreateLibrary(ctx, contentSource)
 }
 
+func (s *Session) DeleteContentLibrary(ctx context.Context, libID string) error {
+	err := s.WithRestClient(ctx, func(c *rest.Client) error {
+		libManager := library.NewManager(c)
+		lib, err := libManager.GetLibraryByID(ctx, libID)
+		if err != nil {
+			return err
+		}
+
+		return libManager.DeleteLibrary(ctx, lib)
+	})
+
+	return err
+}
+
 func (s *Session) CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error {
 	return NewContentLibraryProvider(s).CreateLibraryItem(ctx, libraryItem, path)
 }
 
-func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context) ([]*v1alpha1.VirtualMachineImage, error) {
-	log.V(4).Info("Listing VirtualMachineImages from CL", "content lib", s.contentlib)
+// Lists all the VirtualMahchineImages from a CL by a given UUID.
+func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID string) ([]*v1alpha1.VirtualMachineImage, error) {
+	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary", "contentLibraryUUID", clUUID)
+
 	var items []library.Item
 	var err error
 	err = s.WithRestClient(ctx, func(c *rest.Client) error {
-		items, err = library.NewManager(c).GetLibraryItems(ctx, s.contentlib.ID)
+		items, err = library.NewManager(c).GetLibraryItems(ctx, clUUID)
 		return err
 	})
 	if err != nil {
@@ -270,6 +286,26 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context) ([]*v1alph
 	}
 
 	return images, err
+}
+
+// DoesContentLibraryExist checks if a ContentLibrary by id "clID" exists on vSphere inventory.
+func (s *Session) DoesContentLibraryExist(ctx context.Context, clID string) (bool, error) {
+	err := s.WithRestClient(ctx, func(c *rest.Client) error {
+		libManager := library.NewManager(c)
+		_, err := libManager.GetLibraryByID(ctx, clID)
+		return err
+	})
+
+	// govmomi vapi rest client doesn't expose it's error type so we cannot check and return no error for Not Found. Instead we rely
+	// on the error message itself. This is not ideal since we are relying on the error message being sent by client which can change any time.
+	if err != nil {
+		if strings.Contains(err.Error(), "404 Not Found") {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
 }
 
 func (s *Session) GetItemIDFromCL(ctx context.Context, itemName string) (string, error) {

@@ -26,7 +26,7 @@ require (
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/procfs v0.0.5 // indirect
 	github.com/satori/go.uuid v1.2.0
-	github.com/vmware-tanzu/vm-operator-api v0.1.3
+	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20200526221424-f7c09901feb9
 	github.com/vmware/govmomi v0.22.2
 	go.uber.org/atomic v1.4.0 // indirect
 	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7 // indirect
@@ -36,9 +36,9 @@ require (
 	gopkg.in/yaml.v2 v2.2.8
 	k8s.io/api v0.17.4
 	k8s.io/apimachinery v0.17.4
-	k8s.io/client-go v0.17.2
+	k8s.io/client-go v0.0.0-20190918200256-06eb1244587a
 	k8s.io/klog v1.0.0
-	k8s.io/utils v0.0.0-20191114184206-e782cd3c129f
+	k8s.io/utils v0.0.0-20190506122338-8fab8cb257d5
 	sigs.k8s.io/controller-runtime v0.3.0
 	sigs.k8s.io/testing_frameworks v0.1.2-0.20190130140139-57f07443c2d4 // indirect
 	sigs.k8s.io/yaml v1.1.0

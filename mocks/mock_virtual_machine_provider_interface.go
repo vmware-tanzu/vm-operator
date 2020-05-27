@@ -118,6 +118,21 @@ func (mr *MockVirtualMachineProviderInterfaceMockRecorder) DeleteVirtualMachineS
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVirtualMachineSetResourcePolicy", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).DeleteVirtualMachineSetResourcePolicy), arg0, arg1)
 }
 
+// DoesContentLibraryExist mocks base method
+func (m *MockVirtualMachineProviderInterface) DoesContentLibraryExist(arg0 context.Context, arg1 *v1alpha1.ContentLibraryProvider) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DoesContentLibraryExist", arg0, arg1)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DoesContentLibraryExist indicates an expected call of DoesContentLibraryExist
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) DoesContentLibraryExist(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DoesContentLibraryExist", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).DoesContentLibraryExist), arg0, arg1)
+}
+
 // DoesVirtualMachineExist mocks base method
 func (m *MockVirtualMachineProviderInterface) DoesVirtualMachineExist(arg0 context.Context, arg1 *v1alpha1.VirtualMachine) (bool, error) {
 	m.ctrl.T.Helper()
@@ -203,6 +218,21 @@ func (m *MockVirtualMachineProviderInterface) ListVirtualMachineImages(arg0 cont
 func (mr *MockVirtualMachineProviderInterfaceMockRecorder) ListVirtualMachineImages(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVirtualMachineImages", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).ListVirtualMachineImages), arg0, arg1)
+}
+
+// ListVirtualMachineImagesFromContentLibrary mocks base method
+func (m *MockVirtualMachineProviderInterface) ListVirtualMachineImagesFromContentLibrary(arg0 context.Context, arg1 v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListVirtualMachineImagesFromContentLibrary", arg0, arg1)
+	ret0, _ := ret[0].([]*v1alpha1.VirtualMachineImage)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListVirtualMachineImagesFromContentLibrary indicates an expected call of ListVirtualMachineImagesFromContentLibrary
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) ListVirtualMachineImagesFromContentLibrary(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVirtualMachineImagesFromContentLibrary", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).ListVirtualMachineImagesFromContentLibrary), arg0, arg1)
 }
 
 // Name mocks base method

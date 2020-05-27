@@ -120,6 +120,41 @@ rules:
 - apiGroups:
   - vmoperator.vmware.com
   resources:
+  - contentlibraryproviders
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - contentlibraryproviders/status
+  verbs:
+  - get
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - contentsources
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - contentsources/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
   - virtualmachine
   verbs:
   - get

@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2018 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package vmprovider
 
@@ -49,4 +48,8 @@ type VirtualMachineProviderInterface interface {
 	UpdateVmOpSACredSecret(ctx context.Context)
 	UpdateVmOpConfigMap(ctx context.Context)
 	DeleteNamespaceSessionInCache(ctx context.Context, namespace string)
+
+	// AKP move to content provider interface
+	DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error)
+	ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error)
 }

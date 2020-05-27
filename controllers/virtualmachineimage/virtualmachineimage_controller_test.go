@@ -3,9 +3,8 @@
 //go:generate mockgen -destination=../../mocks/mock_virtual_machine_provider_interface.go -package=mocks github.com/vmware-tanzu/vm-operator/pkg/vmprovider VirtualMachineProviderInterface
 //go:generate mockgen -destination=../../mocks/mock_client.go -package=mocks sigs.k8s.io/controller-runtime/pkg/client Client
 
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 //nolint:golint,dupl // The dupl linter is too aggressive in labeling this code as duplicate.
 package virtualmachineimage
@@ -305,10 +304,14 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 		Context("when vmprovider image list fails", func() {
 			ctx := context.Background()
-			var imageList v1alpha1.VirtualMachineImageList
+			var (
+				imageList         v1alpha1.VirtualMachineImageList
+				contentSourceList v1alpha1.ContentSourceList
+			)
 
 			BeforeEach(func() {
 				clientListImageSucceeds(mockClient, ctx, &imageList)
+				clientListContentSourceSucceeds(mockClient, ctx, &contentSourceList)
 				vmproviderListImageFails(mockVmProvider, ctx, "")
 			})
 
@@ -326,16 +329,41 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 					Name: "image",
 				},
 			}}
-			var imageList v1alpha1.VirtualMachineImageList
+			var (
+				imageList         v1alpha1.VirtualMachineImageList
+				contentSourceList v1alpha1.ContentSourceList
+			)
 
 			BeforeEach(func() {
 				clientListImageSucceeds(mockClient, ctx, &imageList)
+				clientListContentSourceSucceeds(mockClient, ctx, &contentSourceList)
 				vmproviderListImageSucceeds(mockVmProvider, ctx, "", images)
 			})
 
 			It("returns success", func() {
 				err, _, _ := imageDiscoverer.differenceImages(ctx)
 				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+
+		Context("when image list succeeds, but content source list fails", func() {
+			ctx := context.Background()
+
+			var (
+				imageList         v1alpha1.VirtualMachineImageList
+				contentSourceList v1alpha1.ContentSourceList
+			)
+
+			BeforeEach(func() {
+				clientListImageSucceeds(mockClient, ctx, &imageList)
+				clientListContentSourceFails(mockClient, ctx, &contentSourceList)
+
+			})
+
+			It("returns an error", func() {
+				err, _, _ := imageDiscoverer.differenceImages(ctx)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to list content sources from control plane"))
 			})
 		})
 	})
@@ -352,9 +380,11 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			images := []*v1alpha1.VirtualMachineImage{image}
 
 			var imageList v1alpha1.VirtualMachineImageList
+			var contentSourceList v1alpha1.ContentSourceList
 
 			BeforeEach(func() {
 				clientListImageSucceeds(mockClient, ctx, &imageList)
+				clientListContentSourceSucceeds(mockClient, ctx, &contentSourceList)
 				vmproviderListImageSucceeds(mockVmProvider, ctx, "", images)
 				clientCreateImageSucceeds(mockClient, ctx, image)
 			})
@@ -398,6 +428,15 @@ func clientDeleteImageFails(m *mocks.MockClient, ctx context.Context, image *v1a
 
 func clientListImageSucceeds(m *mocks.MockClient, ctx context.Context, imageList *v1alpha1.VirtualMachineImageList) *gomock.Call {
 	return m.EXPECT().List(gomock.Eq(ctx), gomock.Eq(imageList)).MinTimes(1).MaxTimes(1).Return(nil)
+}
+
+// Mock a successful list ContentSources API call. Returns nil so we can test the original flow of using configmap based VirtualMachineImages.
+func clientListContentSourceSucceeds(m *mocks.MockClient, ctx context.Context, contentSourceList *v1alpha1.ContentSourceList) *gomock.Call {
+	return m.EXPECT().List(gomock.Eq(ctx), gomock.Eq(contentSourceList)).MinTimes(1).MaxTimes(1).Return(nil)
+}
+
+func clientListContentSourceFails(m *mocks.MockClient, ctx context.Context, contentSourceList *v1alpha1.ContentSourceList) *gomock.Call {
+	return m.EXPECT().List(gomock.Eq(ctx), gomock.Eq(contentSourceList)).MinTimes(1).MaxTimes(1).Return(fmt.Errorf("failed to list content sources from control plane"))
 }
 
 func clientListImageFails(m *mocks.MockClient, ctx context.Context, imageList *v1alpha1.VirtualMachineImageList) *gomock.Call {

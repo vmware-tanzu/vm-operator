@@ -1,8 +1,7 @@
 // +build integration
 
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineimage
 
@@ -28,6 +27,15 @@ import (
 )
 
 const timeout = time.Second * 30
+
+func imageExistsFunc(imageList *vmoperatorv1alpha1.VirtualMachineImageList, name string) bool {
+	for _, image := range imageList.Items {
+		if image.Name == name {
+			return true
+		}
+	}
+	return false
+}
 
 var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
@@ -67,6 +75,109 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 		mgrStopped.Wait()
 	})
 
+	// The default integration test env is setup using the ConfigMap based approach.
+	// The following test creates a ContentSource which points to a Content Library, uploads an image to the
+	// library and expects the VM image to show up in the ListVirtualMachineImages call.
+	// Once we move to the ContentSource based approach entirely, we can modify the default integration test env to use
+	// content sources and get rid of this test.
+
+	Context("with a ContentSource pointing to a content library", func() {
+		var (
+			libID            string
+			clName           string
+			contentSource    *vmoperatorv1alpha1.ContentSource
+			contentLibrary   *vmoperatorv1alpha1.ContentLibraryProvider
+			imageToAddNameCs string
+		)
+
+		// Function to create a content library
+		aContentLibraryProvider := func(name string, libID string) *vmoperatorv1alpha1.ContentLibraryProvider {
+			return &vmoperatorv1alpha1.ContentLibraryProvider{
+				TypeMeta: metav1.TypeMeta{
+					Kind: "ContentLibraryProvider",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name,
+				},
+				Spec: vmoperatorv1alpha1.ContentLibraryProviderSpec{
+					UUID: libID,
+				},
+			}
+		}
+
+		// Function to create a content source with a ProviderRef to a content library with the same name.
+		aContentSource := func(name string, contentLibrary *vmoperatorv1alpha1.ContentLibraryProvider) *vmoperatorv1alpha1.ContentSource {
+			return &vmoperatorv1alpha1.ContentSource{
+				TypeMeta: metav1.TypeMeta{
+					Kind: "ContentSource",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name,
+				},
+				Spec: vmoperatorv1alpha1.ContentSourceSpec{
+					vmoperatorv1alpha1.ContentProviderReference{
+						APIVersion: contentLibrary.APIVersion,
+						Kind:       contentLibrary.Kind,
+						Name:       contentLibrary.Name,
+					},
+				},
+			}
+		}
+
+		BeforeEach(func() {
+			clName = "content-library-name"
+			// Create a Cotent Library to back the content source.
+			libID, err = session.CreateLibrary(context.TODO(), clName)
+			Expect(err).NotTo(HaveOccurred())
+
+			contentLibrary = aContentLibraryProvider(clName, libID)
+			Expect(c.Create(context.TODO(), contentLibrary)).To(Succeed())
+
+			contentSource = aContentSource(clName, contentLibrary)
+			Expect(c.Create(context.TODO(), contentSource)).To(Succeed())
+		})
+
+		Context("with an image in the ContentSource pointed library", func() {
+
+			It("should only list the image from the ContentSource library", func() {
+
+				imageToAddNameCs = "contentsource-image-contentsource"
+				Expect(integration.CreateLibraryItem(context.TODO(), session, imageToAddNameCs, "ovf", libID)).To(Succeed())
+
+				// Wait for the image to show up in list VM images.
+				Eventually(func() bool {
+					imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
+					err := c.List(context.TODO(), imageList)
+					Expect(err).ShouldNot(HaveOccurred())
+					return imageExistsFunc(imageList, imageToAddNameCs)
+				}, timeout).Should(BeTrue())
+			})
+		})
+
+		AfterEach(func() {
+			// Delete the Content Library created by the test
+			Expect(session.DeleteContentLibrary(context.TODO(), libID)).To(Succeed())
+
+			// Delete the VirtualMachineImage from API server
+			existingImage := vmoperatorv1alpha1.VirtualMachineImage{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: imageToAddNameCs,
+				},
+			}
+			Expect(c.Delete(context.TODO(), &existingImage)).To(Succeed())
+			Eventually(func() bool {
+				imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
+				err := c.List(context.TODO(), imageList)
+				Expect(err).ShouldNot(HaveOccurred())
+				return !imageExistsFunc(imageList, imageToAddNameCs)
+			}, timeout).Should(BeTrue())
+
+			// Delete the Content Source resource
+			Expect(c.Delete(context.TODO(), contentSource)).To(Succeed())
+		})
+
+	})
+
 	Describe("with VM images in inventory", func() {
 
 		Context("with an initial image in the CL", func() {
@@ -90,15 +201,6 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			BeforeEach(func() {
 				ctx = context.Background()
 			})
-
-			imageExistsFunc := func(imageList *vmoperatorv1alpha1.VirtualMachineImageList, name string) bool {
-				for _, image := range imageList.Items {
-					if image.Name == name {
-						return true
-					}
-				}
-				return false
-			}
 
 			It("should add a VirtualMachineImage to if an item is added to the library", func() {
 				var imageToAddName = "image-to-add"

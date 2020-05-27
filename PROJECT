@@ -16,4 +16,10 @@ resources:
 - group: vmoperator
   kind: VirtualMachineImage
   version: v1alpha1
+- group: vmoperator
+  kind: ContentSource
+  version: v1alpha1
+- group: vmoperator
+  kind: ContentLibraryProvider
+  version: v1alpha1
 version: "2"

@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package controllers
@@ -50,6 +50,7 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(cfg).ToNot(BeNil())
 
 	err = vmoperatorv1alpha1.AddToScheme(scheme.Scheme)
+
 	// +kubebuilder:scaffold:scheme
 	Expect(err).NotTo(HaveOccurred())
 

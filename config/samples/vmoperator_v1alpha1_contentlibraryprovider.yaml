@@ -1,0 +1,6 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: ContentLibraryProvider
+metadata:
+  name: contentlibraryprovider-sample
+spec:
+  uuid: contentlibrary-uuid

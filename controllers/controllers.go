@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package controllers
@@ -9,6 +9,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/contentsource"
 	"github.com/vmware-tanzu/vm-operator/controllers/infracluster"
 	"github.com/vmware-tanzu/vm-operator/controllers/infraprovider"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
@@ -21,6 +22,9 @@ import (
 
 // AddToManager adds all controllers to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+	if err := contentsource.AddToManager(ctx, mgr); err != nil {
+		return errors.Wrap(err, "failed to initialize ContentSource controller")
+	}
 	if err := infracluster.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize InfraCluster controller")
 	}

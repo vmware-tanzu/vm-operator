@@ -55,6 +55,21 @@ type VirtualMachineNetworkInterface struct {
 	EthernetCardType string `json:"ethernetCardType,omitempty"`
 }
 
+// VirtualMachineMetadataTransport is used to indicate the transport used by VirtualMachineMetadata
+type VirtualMachineMetadataTransport string
+
+const (
+	// VirtualMachineMetadataExtraConfigTransport will set the VirtualMachineMetadata ConfigMap data as
+	// extraConfig key value fields on the VM.
+	VirtualMachineMetadataExtraConfigTransport VirtualMachineMetadataTransport = "ExtraConfig"
+
+	// VirtualMachineMetadataOvfEnvTransport will set the VirtualMachineMetadata ConfigMap data as
+	// vApp properties on the VM, which will be exposed as OvfEnv to the Guest VM. Only properties
+	// marked userConfigurable and already present in either OVF Properties of a VirtualMachineImage
+	// or as vApp properties on an existing VM or VMTX will be set, all others will be ignored.
+	VirtualMachineMetadataOvfEnvTransport VirtualMachineMetadataTransport = "OvfEnv"
+)
+
 // VirtualMachineMetadata defines any metadata that should be passed to the VirtualMachine instance.  A typical use
 // case is for this metadata to be used for Guest Customization, however the intended use of the metadata is
 // agnostic to the VirtualMachine controller.  VirtualMachineMetadata is read from a configured ConfigMap and then
@@ -66,9 +81,8 @@ type VirtualMachineMetadata struct {
 	ConfigMapName string `json:"configMapName,omitempty"`
 
 	// Transport describes the name of a supported VirtualMachineMetadata transport "protocol".  Currently, the only supported
-	// transport prototocol is "ExtraConfig".  The ExtraConfig protocol places the VM Metadata as "ExtraConfig" on the
-	// vSphere VM ConfigSpec when creating the VirtualMachine.
-	Transport string `json:"transport,omitempty"`
+	// transport prototocos are "ExtraConfig" and "OvfEnv".
+	Transport VirtualMachineMetadataTransport `json:"transport,omitempty"`
 }
 
 // VirtualMachineVolume describes a Volume that should be attached to a specific VirtualMachine.  Currently,

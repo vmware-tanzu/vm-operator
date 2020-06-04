@@ -110,6 +110,19 @@ rules:
   - update
   - watch
 - apiGroups:
+  - netoperator.vmware.com
+  resources:
+  - networkinterfaces
+  - vmxnet3networkinterfaces
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - storage.k8s.io
   resources:
   - storageclasses

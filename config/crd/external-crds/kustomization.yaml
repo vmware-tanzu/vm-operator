@@ -1,3 +1,5 @@
-# Install CnsNodeVmAttachment CRD
+# Install external CRDs
 resources:
   - cnsnodevmattachment-crd.yaml
+  - netoperator.vmware.com_networkinterfaces.yaml
+  - netoperator.vmware.com_vmxnet3networkinterfaces.yaml

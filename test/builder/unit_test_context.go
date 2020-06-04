@@ -15,9 +15,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
+	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
+	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -124,6 +125,7 @@ func NewFakeClient(initObjects ...runtime.Object) (client.Client, *runtime.Schem
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = vmopv1.AddToScheme(scheme)
 	_ = cnsv1alpha1.AddToScheme(scheme)
+	_ = netopv1alpha1.AddToScheme(scheme)
 
 	fakeClient := clientfake.NewFakeClientWithScheme(scheme, initObjects...)
 

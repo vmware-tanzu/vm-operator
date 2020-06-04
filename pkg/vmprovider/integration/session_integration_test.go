@@ -340,17 +340,12 @@ var _ = Describe("Sessions", func() {
 				Expect(len(dnsServers)).Should(Equal(2))
 				Expect(dnsServers).Should(ContainElement("8.8.8.8"))
 				Expect(dnsServers).Should(ContainElement("8.8.4.4"))
+
 				Expect(len(custSpec.NicSettingMap)).Should(Equal(2))
-				nicMapping := make(map[string]vimTypes.CustomizationIPSettings)
-				for _, ipSettings := range custSpec.NicSettingMap {
-					nicMapping[ipSettings.MacAddress] = ipSettings.Adapter
-				}
-				ipSettings, ok := nicMapping[dev1.MacAddress]
-				Expect(ok).Should(BeTrue())
-				_, ok = ipSettings.Ip.(*vimTypes.CustomizationDhcpIpGenerator)
-				ipSettings, ok = nicMapping[dev2.MacAddress]
-				Expect(ok).Should(BeTrue())
-				_, ok = ipSettings.Ip.(*vimTypes.CustomizationDhcpIpGenerator)
+				customization := custSpec.NicSettingMap[0]
+				_, ok = customization.Adapter.Ip.(*vimTypes.CustomizationDhcpIpGenerator)
+				customization = custSpec.NicSettingMap[1]
+				_, ok = customization.Adapter.Ip.(*vimTypes.CustomizationDhcpIpGenerator)
 				Expect(ok).Should(BeTrue())
 			})
 		})

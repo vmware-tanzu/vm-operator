@@ -321,7 +321,7 @@ func (vs *vSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 
 	resVm, err := ses.CloneVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {
-		log.Error(err, "Create/Clone VirtualMachine failed", "name", vmName)
+		log.Error(err, "Clone VirtualMachine failed", "name", vmName)
 		return transformVmError(vmName, err)
 	}
 

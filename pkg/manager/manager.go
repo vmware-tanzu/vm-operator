@@ -16,6 +16,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -38,6 +39,7 @@ func New(opts Options) (Manager, error) {
 	_ = clientgoscheme.AddToScheme(opts.Scheme)
 	_ = vmopv1.AddToScheme(opts.Scheme)
 	_ = cnsv1alpha1.AddToScheme(opts.Scheme)
+	_ = netopv1alpha1.AddToScheme(opts.Scheme)
 	// +kubebuilder:scaffold:scheme
 
 	// Build the controller manager.

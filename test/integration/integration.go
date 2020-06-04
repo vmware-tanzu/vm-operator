@@ -37,14 +37,15 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
+	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
+
+	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
-
-	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 )
 
 type VSphereVmProviderTestConfig struct {
@@ -149,6 +150,7 @@ func GetCtrlRuntimeClient(config *rest.Config) (client.Client, error) {
 	_ = clientgoscheme.AddToScheme(s)
 	_ = vmopv1alpha1.AddToScheme(s)
 	_ = ncpv1alpha1.AddToScheme(s)
+	_ = netopv1alpha1.AddToScheme(s)
 	_ = cnsv1alpha1.SchemeBuilder.AddToScheme(s)
 	controllerClient, err := client.New(config, client.Options{
 		Scheme: s,
@@ -177,6 +179,8 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	err = vmopv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	err = ncpv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = netopv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	err = cnsv1alpha1.SchemeBuilder.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())

@@ -256,7 +256,7 @@ func (s *Session) CreateLibraryItem(ctx context.Context, libraryItem library.Ite
 	return NewContentLibraryProvider(s).CreateLibraryItem(ctx, libraryItem, path)
 }
 
-// Lists all the VirtualMahchineImages from a CL by a given UUID.
+// Lists all the VirtualMachineImages from a CL by a given UUID.
 func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID string) ([]*v1alpha1.VirtualMachineImage, error) {
 	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary", "contentLibraryUUID", clUUID)
 
@@ -348,7 +348,6 @@ func (s *Session) GetItemFromCL(ctx context.Context, itemName string) (*library.
 		return nil, errors.Errorf("item: %v is not found in CL", itemName)
 	}
 
-	// If not a supported type return nil
 	if !IsSupportedDeployType(item.Type) {
 		return nil, errors.Errorf("item: %v not a supported type: %s", item.Name, item.Type)
 	}
@@ -812,7 +811,7 @@ func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine
 	key := int32(-100)
 	for i := range vm.Spec.NetworkInterfaces {
 		vif := vm.Spec.NetworkInterfaces[i]
-		np, err := NetworkProviderByType(vif.NetworkType, s.Finder, s.ncpClient, s.cluster)
+		np, err := NetworkProviderByType(vif.NetworkType, s.k8sClient, s.ncpClient, s.client.VimClient(), s.Finder, s.cluster)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get network provider")
 		}
@@ -820,8 +819,11 @@ func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create vnic '%v'", vif)
 		}
-		dev = setVnicKey(dev, key)
+
+		nic := dev.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+		nic.Key = key
 		devices = append(devices, dev)
+
 		key--
 	}
 	return devices, nil
@@ -831,6 +833,7 @@ func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine
 func (s *Session) GetNicChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMachine, resSrcVm *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 	var deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec
 
+	// BMV: resSrcVm is never nil
 	if resSrcVm != nil {
 		netDevices, err := resSrcVm.GetNetworkDevices(ctx)
 		if err != nil {
@@ -840,6 +843,7 @@ func (s *Session) GetNicChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMac
 		// Note: If no network interface is specified in the vm spec we don't remove existing interfaces while cloning.
 		// However, if a default network is configured in vmoperator config then we update the backing for the existing
 		// network interfaces.
+		// BMV: This default network will have to go away for net-op
 		if len(vm.Spec.NetworkInterfaces) == 0 {
 			if s.network == nil {
 				return deviceSpecs, nil
@@ -861,7 +865,7 @@ func (s *Session) GetNicChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMac
 			return deviceSpecs, nil
 		}
 
-		// Remove any existing NICs
+		// Remove all existing NICs
 		for _, dev := range netDevices {
 			deviceSpecs = append(deviceSpecs, &vimTypes.VirtualDeviceConfigSpec{
 				Device:    dev,
@@ -1278,54 +1282,56 @@ func (s *Session) GetCustomizationSpec(ctx context.Context, vm *v1alpha1.Virtual
 		customSpec.GlobalIPSettings.DnsServerList = nameserverList
 	}
 
-	netDevices, err := realVM.GetNetworkDevices(ctx)
-	if err != nil {
-		return nil, err
-	}
+	var interfaceCustomizations []vimTypes.CustomizationAdapterMapping
+	if len(vm.Spec.NetworkInterfaces) == 0 {
+		// In the corresponding code in GetNicChangeSpecs(), none of the existing interfaces were changed,
+		// so GetNetworkDevices() will give us all the original interfaces. Assume they should be
+		// configured for DHCP since that was the behavior of the prior code. The config is currently
+		// really only used in the test environments.
+		netDevices, err := realVM.GetNetworkDevices(ctx)
+		if err != nil {
+			return nil, err
+		}
 
-	nicMappings := make(map[string]vimTypes.CustomizationIPSettings)
-	// Used to config IP for VMs connecting to nsx-t logical ports
-	for _, nif := range vm.Spec.NetworkInterfaces {
-		if nif.NetworkType == NsxtNetworkType {
-			np := NsxtNetworkProvider(s.Finder, s.ncpClient, s.cluster)
-			vnetif, err := np.waitForVnetIFStatus(vm.Namespace, nif.NetworkName, vmName)
-			if err != nil {
-				return nil, err
-			}
-
-			if len(vnetif.Status.IPAddresses) == 0 {
-				log.Info("customize IP address is not set", "vnetif", vnetif)
+		for _, dev := range netDevices {
+			card, ok := dev.(vimTypes.BaseVirtualEthernetCard)
+			if !ok {
 				continue
 			}
 
-			nicMappings[vnetif.Status.MacAddress] = vimTypes.CustomizationIPSettings{
-				Ip: &vimTypes.CustomizationFixedIp{
-					IpAddress: vnetif.Status.IPAddresses[0].IP,
+			interfaceCustomizations = append(interfaceCustomizations, vimTypes.CustomizationAdapterMapping{
+				MacAddress: card.GetVirtualEthernetCard().MacAddress,
+				Adapter: vimTypes.CustomizationIPSettings{
+					Ip: &vimTypes.CustomizationDhcpIpGenerator{},
 				},
-				SubnetMask: vnetif.Status.IPAddresses[0].SubnetMask,
-				Gateway:    []string{vnetif.Status.IPAddresses[0].Gateway},
+			})
+		}
+	} else {
+		// In the corresponding code in GetNicChangeSpecs(), any existing interfaces were removed, and
+		// the interfaces in NetworkInterfaces[] were added in order. There is an assumption here that
+		// net devices are in the same order, and that they are created in in PCI order for GOSC. That is
+		// not really an issue right now because we only ever one network interface. If needed, we can
+		// later sort the devices by key like WCP does, but in general NIC reconciliation is difficult
+		// with what's currently available. This code is in general pretty brittle.
+		for idx := range vm.Spec.NetworkInterfaces {
+			nif := vm.Spec.NetworkInterfaces[idx]
+
+			np, err := NetworkProviderByType(nif.NetworkType, s.k8sClient, s.ncpClient, s.client.VimClient(), s.Finder, s.cluster)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to get network provider")
 			}
+
+			customization, err := np.GetInterfaceGuestCustomization(vm, &nif)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to get guest customization for interface %+v", nif)
+			}
+
+			interfaceCustomizations = append(interfaceCustomizations, *customization)
 		}
 	}
 
-	for _, dev := range netDevices {
-		card, ok := dev.(vimTypes.BaseVirtualEthernetCard)
-		if !ok {
-			continue
-		}
-		nic := card.GetVirtualEthernetCard()
-		ipSettings, found := nicMappings[nic.MacAddress]
-		if !found {
-			ipSettings = vimTypes.CustomizationIPSettings{
-				Ip: &vimTypes.CustomizationDhcpIpGenerator{},
-			}
-		}
-		nicMapping := vimTypes.CustomizationAdapterMapping{
-			MacAddress: nic.MacAddress,
-			Adapter:    ipSettings,
-		}
-		customSpec.NicSettingMap = append(customSpec.NicSettingMap, nicMapping)
-	}
+	customSpec.NicSettingMap = interfaceCustomizations
+
 	return customSpec, nil
 }
 

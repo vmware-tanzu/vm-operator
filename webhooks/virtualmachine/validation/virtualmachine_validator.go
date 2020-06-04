@@ -19,13 +19,13 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
 
 const (
-	webHookName     = "default"
-	nsxtNetworkType = "nsx-t"
+	webHookName = "default"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha1,name=default.validating.virtualmachine.vmoperator.vmware.com
@@ -130,7 +130,7 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, i))
 		}
 		switch nif.NetworkType {
-		case nsxtNetworkType, "":
+		case vsphere.NsxtNetworkType, vsphere.VdsNetworkType, "":
 		default:
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, i))
 		}

@@ -359,7 +359,7 @@ func (vm *VirtualMachine) GetVirtualDisks(ctx context.Context) (object.VirtualDe
 	return deviceList.SelectByType((*types.VirtualDisk)(nil)), nil
 }
 
-func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) ([]types.BaseVirtualDevice, error) {
+func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) (object.VirtualDeviceList, error) {
 	log.V(4).Info("GetNetworkDevices", "name", vm.Name)
 	devices, err := vm.vcVirtualMachine.Device(ctx)
 	if err != nil {

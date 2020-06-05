@@ -25,7 +25,6 @@ import (
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/util"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -67,10 +66,6 @@ type VirtualMachineReconciler struct {
 const (
 	finalizerName                  = "virtualmachine.vmoperator.vmware.com"
 	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
-
-	// We should add more uniqueness to the OpId to prevent the collision incurred by different vm-operator
-	// to aid debugging at VPXD.
-	opIdRandomLen = 8
 )
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;create;update;patch;delete
@@ -130,12 +125,6 @@ func requeueDelay(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) time
 func (r *VirtualMachineReconciler) deleteVm(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
 	defer r.recorder.EmitEvent(vm, "Delete", err, false)
 
-	// TODO The length limit of OpId is 256, we will implement a function to detects if the total length exceeds
-	//   the limit and then “smartly” trims each component of the op id to an abbreviated version
-	// BMV: Push into provider
-	opId := ctx.Value(vimtypes.ID{}).(string)
-	ctx = goctx.WithValue(ctx, vimtypes.ID{}, opId+"-delete-"+util.RandomString(opIdRandomLen))
-
 	err = r.vmProvider.DeleteVirtualMachine(ctx, vm)
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
@@ -187,21 +176,8 @@ func (r *VirtualMachineReconciler) reconcileNormal(ctx goctx.Context, vm *vmoper
 		}
 	}
 
-	exists, err := r.vmProvider.DoesVirtualMachineExist(ctx, vm)
-	if err != nil {
-		r.Log.Error(err, "Failed to check if VirtualMachine exists from provider", "name", vm.NamespacedName())
-		return err
-	}
-
-	if !exists {
-		err = r.createVm(ctx, vm)
-		if err != nil {
-			return err
-		}
-	}
-
-	err = r.updateVm(ctx, vm)
-	if err != nil {
+	if err := r.createOrUpdateVm(ctx, vm); err != nil {
+		r.Log.Error(err, "Failed to reconcile VirtualMachine")
 		return err
 	}
 
@@ -269,17 +245,10 @@ func (r *VirtualMachineReconciler) lookupStoragePolicyID(ctx goctx.Context, name
 	return sc.Parameters["storagePolicyID"], nil
 }
 
-func (r *VirtualMachineReconciler) createVm(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
-	defer r.recorder.EmitEvent(vm, "Create", err, false)
-
-	// TODO The length limit of OpId is 256, we will implement a function to detects if the total length
-	//   exceeds the limit and then "smartly" trims each component of the op id to an abbreviated version.
-	// BMV: Push into provider
-	opId := ctx.Value(vimtypes.ID{}).(string)
-	ctx = goctx.WithValue(ctx, vimtypes.ID{}, opId+"-create-"+util.RandomString(opIdRandomLen))
-
+// createOrUpdateVm calls into the VM provider to reconcile a VirtualMachine
+func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
-	err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
+	err := r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
 	if err != nil {
 		r.Log.Error(err, "Failed to get VirtualMachineClass for VirtualMachine",
 			"vmName", vm.NamespacedName(), "class", vm.Spec.ClassName)
@@ -310,7 +279,7 @@ func (r *VirtualMachineReconciler) createVm(ctx goctx.Context, vm *vmoperatorv1a
 		}
 
 		// Make sure that the corresponding entities (RP and Folder) are created on the infra provider before
-		// creating the VM. Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy
+		// reconciling the VM. Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy.
 		rpReady, err := r.vmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
 		if err != nil {
 			r.Log.Error(err, "Failed to check if VirtualMachineSetResourcePolicy exists")
@@ -335,62 +304,25 @@ func (r *VirtualMachineReconciler) createVm(ctx goctx.Context, vm *vmoperatorv1a
 		ResourcePolicy:   resourcePolicy,
 		StorageProfileID: storagePolicyID,
 	}
-	err = r.vmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
+
+	exists, err := r.vmProvider.DoesVirtualMachineExist(ctx, vm)
 	if err != nil {
-		r.Log.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())
+		r.Log.Error(err, "Failed to check if VirtualMachine exists from provider", "name", vm.NamespacedName())
 		return err
 	}
 
-	return nil
-}
-
-func (r *VirtualMachineReconciler) updateVm(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
-
-	// TODO The length limit of OpId is 256, we will implement a function to detects if the total length
-	//   exceeds the limit and then "smartly" trims each component of the op id to an abbreviated version.
-	// BMV: Push into provider
-	opId := ctx.Value(vimtypes.ID{}).(string)
-	ctx = goctx.WithValue(ctx, vimtypes.ID{}, opId+"-update-"+util.RandomString(opIdRandomLen))
-
-	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
-	err = r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
-	if err != nil {
-		r.Log.Error(err, "Failed to get VirtualMachineClass for VirtualMachine",
-			"vmName", vm.NamespacedName(), "class", vm.Spec.ClassName)
-		return err
-	}
-
-	var vmMetadata vmprovider.VirtualMachineMetadata
-	if metadata := vm.Spec.VmMetadata; metadata != nil {
-		configMap := &v1.ConfigMap{}
-		err := r.Get(ctx, types.NamespacedName{Name: metadata.ConfigMapName, Namespace: vm.Namespace}, configMap)
+	if !exists {
+		err = r.vmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 		if err != nil {
-			r.Log.Error(err, "Failed to get VirtualMachineMetadata ConfigMap",
-				"vmName", vm.NamespacedName(), "configMapName", metadata.ConfigMapName)
+			r.Log.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())
 			return err
 		}
-
-		vmMetadata = configMap.Data
 	}
+
+	// At this point, the VirtualMachine is either created, or it already exists. Call into the provider for update.
 
 	pkg.AddAnnotations(&vm.ObjectMeta)
 
-	var resourcePolicy *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
-	if policyName := vm.Spec.ResourcePolicyName; policyName != "" {
-		resourcePolicy = &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{}
-		err = r.Get(ctx, client.ObjectKey{Name: policyName, Namespace: vm.Namespace}, resourcePolicy)
-		if err != nil {
-			r.Log.Error(err, "Failed to get VirtualMachineSetResourcePolicy",
-				"vmName", vm.NamespacedName(), "resourcePolicyName", policyName)
-			return err
-		}
-	}
-
-	vmConfigArgs := vmprovider.VmConfigArgs{
-		VmClass:        *vmClass,
-		VmMetadata:     vmMetadata,
-		ResourcePolicy: resourcePolicy,
-	}
 	err = r.vmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {
 		r.Log.Error(err, "Provider failed to update VirtualMachine", "name", vm.NamespacedName())

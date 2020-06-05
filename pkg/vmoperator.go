@@ -23,6 +23,10 @@ const (
 
 	// Annotation key for clusterModule group name information at vmoperator
 	ClusterModuleNameKey string = "vsphere-cluster-module-group"
+
+	// OPIDLength represents the length of the OPID. Used to correlate an operation in the controller.
+	// This should be increased if there are any evidences of opID collision.
+	OPIDLength int = 8
 )
 
 func AddAnnotations(objectMeta *metav1.ObjectMeta) {

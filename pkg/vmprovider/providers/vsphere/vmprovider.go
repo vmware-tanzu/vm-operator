@@ -29,6 +29,7 @@ import (
 
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/util"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -307,6 +308,9 @@ func (vs *vSphereVmProvider) DoesContentLibraryExist(ctx context.Context, conten
 }
 
 func (vs *vSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+	createOpID := ctx.Value(vimtypes.ID{}).(string)
+	ctx = context.WithValue(ctx, vimtypes.ID{}, createOpID+"-create-"+util.RandomString(pkg.OPIDLength))
+
 	vmName := vm.NamespacedName()
 	log.Info("Creating VirtualMachine", "name", vmName)
 
@@ -345,6 +349,9 @@ func (vs *vSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 
 // UpdateVirtualMachine updates the VM status, power state, phase etc
 func (vs *vSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+	updateOpID := ctx.Value(vimtypes.ID{}).(string)
+	ctx = context.WithValue(ctx, vimtypes.ID{}, updateOpID+"-update-"+util.RandomString(pkg.OPIDLength))
+
 	vmName := vm.NamespacedName()
 	log.V(4).Info("Updating VirtualMachine", "name", vmName)
 

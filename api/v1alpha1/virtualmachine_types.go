@@ -80,8 +80,8 @@ type VirtualMachineMetadata struct {
 	// The format of the contents of the VM Metadata are not parsed or interpreted by the VirtualMachine controller.
 	ConfigMapName string `json:"configMapName,omitempty"`
 
-	// Transport describes the name of a supported VirtualMachineMetadata transport "protocol".  Currently, the only supported
-	// transport prototocos are "ExtraConfig" and "OvfEnv".
+	// Transport describes the name of a supported VirtualMachineMetadata transport protocol.  Currently, the only supported
+	// transport protocols are "ExtraConfig" and "OvfEnv".
 	Transport VirtualMachineMetadataTransport `json:"transport,omitempty"`
 }
 

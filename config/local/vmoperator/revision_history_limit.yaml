@@ -1,0 +1,9 @@
+# Speeds up local testing
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  revisionHistoryLimit: 1

@@ -22,6 +22,7 @@ resources:
 
 patchesStrategicMerge:
 - cpu_resources_patch.yaml
+- revision_history_limit.yaml
 
 patchesJson6902:
 - path: namespace_patch.yaml

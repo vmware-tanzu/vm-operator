@@ -12,6 +12,7 @@ package virtualmachineimage
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/golang/mock/gomock"
@@ -312,13 +313,27 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			BeforeEach(func() {
 				clientListImageSucceeds(mockClient, ctx, &imageList)
 				clientListContentSourceSucceeds(mockClient, ctx, &contentSourceList)
-				vmproviderListImageFails(mockVmProvider, ctx, "")
 			})
 
-			It("returns an error", func() {
-				err, _, _ := imageDiscoverer.differenceImages(ctx)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to list images from vmprovider"))
+			Context("because the content library is not found", func() {
+				BeforeEach(func() {
+					vmproviderListImageFailsWithCLNotFound(mockVmProvider, ctx, "")
+				})
+				It("does not return an error", func() {
+					err, _, _ := imageDiscoverer.differenceImages(ctx)
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			Context("with some other error", func() {
+				BeforeEach(func() {
+					vmproviderListImageFails(mockVmProvider, ctx, "")
+				})
+				It("returns an error", func() {
+					err, _, _ := imageDiscoverer.differenceImages(ctx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("failed to list images from vmprovider"))
+				})
 			})
 		})
 
@@ -449,4 +464,8 @@ func vmproviderListImageSucceeds(m *mocks.MockVirtualMachineProviderInterface, c
 
 func vmproviderListImageFails(m *mocks.MockVirtualMachineProviderInterface, ctx context.Context, ns string) *gomock.Call {
 	return m.EXPECT().ListVirtualMachineImages(gomock.Eq(ctx), gomock.Eq(ns)).MinTimes(1).MaxTimes(1).Return(nil, fmt.Errorf("failed to list images from vmprovider"))
+}
+
+func vmproviderListImageFailsWithCLNotFound(m *mocks.MockVirtualMachineProviderInterface, ctx context.Context, ns string) *gomock.Call {
+	return m.EXPECT().ListVirtualMachineImages(gomock.Eq(ctx), gomock.Eq(ns)).MinTimes(1).MaxTimes(1).Return(nil, fmt.Errorf(http.StatusText(http.StatusNotFound)))
 }

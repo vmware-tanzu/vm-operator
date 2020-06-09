@@ -5,14 +5,13 @@ package vsphere
 
 import (
 	"context"
-	"net/http"
-	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 // DoesVirtualMachineSetResourcePolicyExist checks if the entities of a VirtualMachineSetResourcePolicy exist on vSphere
@@ -180,10 +179,6 @@ func (vs *vSphereVmProvider) CreateClusterModules(ctx context.Context, resourceP
 	return nil
 }
 
-func IsNotFoundError(err error) bool {
-	return strings.HasSuffix(err.Error(), http.StatusText(http.StatusNotFound))
-}
-
 // DeleteClusterModules deletes all the ClusterModules associated with a given VirtualMachineSetResourcePolicy in VC.
 func (vs *vSphereVmProvider) DeleteClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
@@ -194,13 +189,13 @@ func (vs *vSphereVmProvider) DeleteClusterModules(ctx context.Context, resourceP
 	for _, moduleStatus := range resourcePolicy.Status.ClusterModules {
 		err = ses.DeleteClusterModule(ctx, moduleStatus.ModuleUuid)
 		// If the clusterModule has already been deleted, we can ignore the error and proceed.
-		if err != nil && !IsNotFoundError(err) {
+		if err != nil && !lib.IsNotFoundError(err) {
 			break
 		}
 		i++
 	}
 	resourcePolicy.Status.ClusterModules = resourcePolicy.Status.ClusterModules[i:]
-	if err != nil && !IsNotFoundError(err) {
+	if err != nil && !lib.IsNotFoundError(err) {
 		return err
 	}
 	return nil

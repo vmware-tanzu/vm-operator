@@ -21,6 +21,7 @@ import (
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
@@ -165,12 +166,11 @@ func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (err
 	k8sManagedImages := k8sManagedImageList.Items
 
 	// List the cluster-scoped VirtualMachineImages
-	// If we have a content sources installed
-	//  - calls into the content provider to list VM images from the content source
+	// If we have ContentSource custom resource available
+	//  - calls into the content provider to list VM images from each ContentSourceProvider
 	// else
-	//  - calls into the provider to list VM images from the session configured Content Source.
+	//  - calls into the provider to list VM images from the content source configured by the ConfigMap.
 
-	// AKP: protect this with a FSS?
 	contentSourceList := &vmoperatorv1alpha1.ContentSourceList{}
 	err = d.client.List(ctx, contentSourceList)
 	if err != nil {
@@ -181,7 +181,14 @@ func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (err
 	if len(contentSourceList.Items) == 0 {
 		providerManagedImages, err = d.vmProvider.ListVirtualMachineImages(ctx, "")
 		if err != nil {
-			return errors.Wrap(err, "failed to list images from backend"), nil, nil
+			// If the VM provider cannot reach the configured content library (e.g. when a library is deleted), it returns http
+			// not found error. We log and return empty image list here so the existing VM image templates can be cleaned up from the API server.
+
+			if !lib.IsNotFoundError(err) {
+				return errors.Wrap(err, "failed to list images from backend"), nil, nil
+			}
+
+			d.log.Error(err, "VM provider failed to find the Content Library")
 		}
 	} else {
 		for _, contentSource := range contentSourceList.Items {

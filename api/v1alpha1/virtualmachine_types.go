@@ -21,12 +21,22 @@ const (
 type VMStatusPhase string
 
 const (
+	// The Creating phase indicates that the VirtualMachine is being created by the backing infrastructure provider.
+	Creating VMStatusPhase = "Creating"
+
 	// The Created phase indicates that the VirtualMachine has been already been created by the backing infrastructure
 	// provider.
 	Created VMStatusPhase = "Created"
 
+	// The Deleting phase indicates that the VirtualMachine is being deleted by the backing infrastructure provider.
+	Deleting VMStatusPhase = "Deleting"
+
 	// The Deleted phase indicates that the VirtualMachine has been deleted by the backing infrastructure provider.
 	Deleted VMStatusPhase = "Deleted"
+
+	// The Unknown phase indicates that the VirtualMachine status cannot be determined from the backing infrastructure
+	// provider.
+	Unknown VMStatusPhase = "Unknown"
 )
 
 // VirtualMachinePort is unused and can be considered deprecated.

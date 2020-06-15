@@ -14,6 +14,9 @@ SSHCommonArgs=("-o PubkeyAuthentication=no" "-o UserKnownHostsFile=/dev/null" "-
 # VM service FSS
 FSS_WCP_VMSERVICE_VALUE=${FSS_WCP_VMSERVICE_VALUE:-false}
 
+# Using VDS Networking
+VSPHERE_NETWORKING_VALUE=${VSPHERE_NETWORKING_VALUE:-false}
+
 # Change directories to the parent directory of the one in which this
 # script is located.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -97,11 +100,17 @@ patchWcpDeploymentYaml() {
         sed -i'' "s,<worker_dns>,$VCSA_WORKER_DNS," "artifacts/wcp-deployment.yaml"
         sed -i'' "s,<content_source>,$VCSA_CONTENT_SOURCE,g" "artifacts/wcp-deployment.yaml"
 
-        sed -E -i'.orig' "s,\"?<FSS_WCP_VMSERVICE_VALUE>\"?,\"$FSS_WCP_VMSERVICE_VALUE\",g" "artifacts/wcp-deployment.yaml"
-        if grep -q "<FSS_WCP_VMSERVICE_VALUE>" artifacts/wcp-deployment.yaml; then
-            echo "Failed to subst <FSS_WCP_VMSERVICE_VALUE> in artifacts/wcp-deployment.yaml"
-            exit 1
-        fi
+    fi
+
+    sed -E -i '' "s,\"?<FSS_WCP_VMSERVICE_VALUE>\"?,\"$FSS_WCP_VMSERVICE_VALUE\",g" "artifacts/wcp-deployment.yaml"
+    if grep -q "<FSS_WCP_VMSERVICE_VALUE>" artifacts/wcp-deployment.yaml; then
+        echo "Failed to subst <FSS_WCP_VMSERVICE_VALUE> in artifacts/wcp-deployment.yaml"
+        exit 1
+    fi
+    sed -E -i '' "s,\"?<VSPHERE_NETWORKING_VALUE>\"?,\"$VSPHERE_NETWORKING_VALUE\",g" "artifacts/wcp-deployment.yaml"
+    if grep -q "<VSPHERE_NETWORKING_VALUE>" artifacts/wcp-deployment.yaml; then
+        echo "Failed to subst VSPHERE_NETWORKING_VALUE in artifacts/wcp-deployment.yaml"
+        exit 1
     fi
 }
 

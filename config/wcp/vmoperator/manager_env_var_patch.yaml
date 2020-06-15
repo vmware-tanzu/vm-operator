@@ -15,3 +15,9 @@
   value:
     name: FSS_WCP_VMSERVICE
     value: "<FSS_WCP_VMSERVICE_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: VSPHERE_NETWORKING
+    value: "<VSPHERE_NETWORKING_VALUE>"

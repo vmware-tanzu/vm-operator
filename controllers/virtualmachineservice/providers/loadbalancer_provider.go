@@ -38,6 +38,11 @@ var LBProvider string
 func init() {
 	LBProvider = os.Getenv("LB_PROVIDER")
 	if LBProvider == "" {
+		vdsNetwork := os.Getenv("VSPHERE_NETWORKING")
+		if vdsNetwork == "true" {
+			// Use noopLoadbalancerProvider
+			return
+		}
 		LBProvider = NSXTLoadBalancer
 	}
 }

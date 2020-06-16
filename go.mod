@@ -11,6 +11,7 @@ replace (
 )
 
 require (
+	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/envoyproxy/go-control-plane v0.9.4
 	github.com/go-logr/logr v0.1.0
@@ -26,14 +27,17 @@ require (
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/procfs v0.0.5 // indirect
 	github.com/satori/go.uuid v1.2.0
-	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20200608164648-ed0f14f8ed1a
+	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20200623184558-3ce54f9f622f
 	github.com/vmware/govmomi v0.22.2
 	go.uber.org/atomic v1.4.0 // indirect
 	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7 // indirect
+	golang.org/x/lint v0.0.0-20190313153728-d0100b6bd8b3 // indirect
 	golang.org/x/net v0.0.0-20191004110552-13f9640d40b9
+	golang.org/x/tools v0.0.0-20190524140312-2c0ae7006135 // indirect
 	google.golang.org/grpc v1.25.1
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/yaml.v2 v2.2.8
+	honnef.co/go/tools v0.0.0-20190523083050-ea95bdfd59fc // indirect
 	k8s.io/api v0.17.4
 	k8s.io/apimachinery v0.17.4
 	k8s.io/client-go v0.0.0-20190918200256-06eb1244587a

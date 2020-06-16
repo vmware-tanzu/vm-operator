@@ -219,6 +219,38 @@ spec:
                 underlying infrastructure provider that is exposed to the Guest OS
                 BIOS as a unique hardware identifier.
               type: string
+            conditions:
+              description: Conditions describes the current condition information
+                of the VirtualMachine.
+              items:
+                description: VirtualMachineCondition contains condition information
+                  for a VirtualMachine.
+                properties:
+                  lastTransitionTime:
+                    description: The last time the condition transitioned from one
+                      status to another.
+                    format: date-time
+                    type: string
+                  message:
+                    description: Human-readable message indicating details about last
+                      transition.
+                    type: string
+                  reason:
+                    description: Unique, one-word, CamelCase reason for the condition's
+                      last transition.
+                    type: string
+                  status:
+                    description: Status of the condition, one of ('True', 'False',
+                      'Unknown').
+                    type: string
+                  type:
+                    description: Type of the condition.
+                    type: string
+                required:
+                - status
+                - type
+                type: object
+              type: array
             host:
               description: Host describes the hostname or IP address of the infrastructure
                 host that the VirtualMachine is executing on.

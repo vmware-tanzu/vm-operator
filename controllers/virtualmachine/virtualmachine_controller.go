@@ -150,6 +150,11 @@ func (r *VirtualMachineReconciler) reconcileDelete(ctx goctx.Context, vm *vmoper
 	}()
 
 	if lib.ContainsString(vm.ObjectMeta.Finalizers, finalizerName) {
+		vm.Status.Phase = vmoperatorv1alpha1.Deleting
+		if err := r.Status().Update(ctx, vm); err != nil {
+			r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
+			return err
+		}
 		if err := r.deleteVm(ctx, vm); err != nil {
 			return err
 		}
@@ -306,9 +311,15 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmope
 	}
 
 	if !exists {
+		vm.Status.Phase = vmoperatorv1alpha1.Creating
+		if err = r.Status().Update(ctx, vm); err != nil {
+			r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
+			return err
+		}
 		err = r.vmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 		if err != nil {
 			r.Log.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())
+			r.recorder.EmitEvent(vm, "Create", err, false)
 			return err
 		}
 	}
@@ -320,6 +331,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmope
 	err = r.vmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {
 		r.Log.Error(err, "Provider failed to update VirtualMachine", "name", vm.NamespacedName())
+		r.recorder.EmitEvent(vm, "Update", err, false)
 		return err
 	}
 

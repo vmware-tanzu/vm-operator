@@ -23,19 +23,32 @@ import (
 )
 
 // newContentsource returns a new ContentSource object
-func newContentSource(name, namespace string) *vmopv1alpha1.ContentSource {
+func newContentSource(name string) *vmopv1alpha1.ContentSource {
 	return &vmopv1alpha1.ContentSource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name: name,
 		},
 		Spec: vmopv1alpha1.ContentSourceSpec{
 			ProviderRef: vmopv1alpha1.ContentProviderReference{
 				APIVersion: "vmoperator.vmware.com/v1alpha1",
 				Kind:       "ContentLibraryProvider",
 				Name:       name,
-				Namespace:  namespace,
 			},
+		},
+	}
+}
+
+// newContentLibraryProvider returns a new ContentLibraryProvider object
+func newContentLibraryProvider(name string, libID string) *vmopv1alpha1.ContentLibraryProvider {
+	return &vmopv1alpha1.ContentLibraryProvider{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "ContentLibraryProvider",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: vmopv1alpha1.ContentLibraryProviderSpec{
+			UUID: libID,
 		},
 	}
 }
@@ -47,6 +60,9 @@ var _ = Describe("ContentSource controller", func() {
 		mgr        manager.Manager
 		err        error
 		k8sClient  client.Client
+		timeout    time.Duration
+		recFn      reconcile.Reconciler
+		requests   chan reconcile.Request
 	)
 
 	BeforeEach(func() {
@@ -58,6 +74,14 @@ var _ = Describe("ContentSource controller", func() {
 		k8sClient = mgr.GetClient()
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
+
+		ctrlContext := &context.ControllerManagerContext{
+			VmProvider: vmProvider,
+		}
+		recFn, requests, _, _ = integration.SetupTestReconcile(newReconciler(ctrlContext, mgr))
+		Expect(add(mgr, recFn)).To(Succeed())
+
+		timeout = 30 * time.Second
 	})
 
 	AfterEach(func() {
@@ -68,23 +92,46 @@ var _ = Describe("ContentSource controller", func() {
 	Context("create a content source", func() {
 		It("will create the resource the API server", func() {
 			contentSourceName := "test-contentsource"
-			testns := "test-ns"
-			ctrlContext := &context.ControllerManagerContext{}
-			recFn, requests, _, _ := integration.SetupTestReconcile(newReconciler(ctrlContext, mgr))
-			Expect(add(mgr, recFn)).To(Succeed())
-
-			obj := newContentSource(contentSourceName, testns)
+			obj := newContentSource(contentSourceName)
 			key := client.ObjectKey{
 				Name: obj.GetName(),
 			}
 
 			expectedRequest := reconcile.Request{key}
 
-			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
-			Eventually(requests, 10*time.Second).Should(Receive(Equal(expectedRequest)))
+			By("Creating the ContentLibraryProvider")
+			clProvider := newContentLibraryProvider(contentSourceName, "fake-cl-uuid")
+			Expect(k8sClient.Create(ctx, clProvider)).To(Succeed())
 
+			// Wait for the clProvider to show up on the API server
+			Eventually(func() bool {
+				clProvider := vmopv1alpha1.ContentLibraryProvider{}
+				err := k8sClient.Get(ctx, key, &clProvider)
+				return err == nil
+			}, timeout).Should(BeTrue())
+
+			By("Creating the ContentSource with a ProviderRef")
+			Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+			// Wait for the object to show up on the API server
+			Eventually(func() bool {
+				contentSource := vmopv1alpha1.ContentSource{}
+				err := k8sClient.Get(ctx, key, &contentSource)
+				return err == nil
+			}, timeout).Should(BeTrue())
+
+			By("Deleting the ContentSource object")
 			Expect(k8sClient.Delete(ctx, obj)).To(Succeed())
-			Eventually(requests, 10*time.Second).Should(Receive(Equal(expectedRequest)))
+			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+			// Wait for the object to be deleted
+			Eventually(func() bool {
+				contentSource := vmopv1alpha1.ContentSource{}
+				err := k8sClient.Get(ctx, key, &contentSource)
+				return err != nil
+			}, timeout).Should(BeTrue())
+
 		})
 	})
 })

@@ -9,3 +9,9 @@
   value:
     name: KUBERNETES_SERVICE_PORT
     value: "6443"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_VMSERVICE
+    value: "<FSS_WCP_VMSERVICE_VALUE>"

@@ -123,7 +123,9 @@ func requeueDelay(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) time
 }
 
 func (r *VirtualMachineReconciler) deleteVm(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
-	defer r.recorder.EmitEvent(vm, "Delete", err, false)
+	defer func() {
+		r.recorder.EmitEvent(vm, "Delete", err, false)
+	}()
 
 	err = r.vmProvider.DeleteVirtualMachine(ctx, vm)
 	if err != nil {

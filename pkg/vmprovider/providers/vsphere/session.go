@@ -889,29 +889,26 @@ func (s *Session) GetNicChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMac
 	return deviceSpecs, nil
 }
 
-func processStorageProfile(ctx context.Context, resSrcVM *res.VirtualMachine, profileID string) (
-	[]types.BaseVirtualDeviceConfigSpec, []vimTypes.BaseVirtualMachineProfileSpec, error) {
+func createDiskLocators(ctx context.Context, resSrcVM *res.VirtualMachine, datastore *vimTypes.ManagedObjectReference, vmProfile []vimTypes.BaseVirtualMachineProfileSpec) (
+	[]types.VirtualMachineRelocateSpecDiskLocator, error) {
 
 	disks, err := resSrcVM.GetVirtualDisks(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	vdcs, err := disks.ConfigSpec(vimTypes.VirtualDeviceConfigSpecOperationEdit)
-	if err != nil {
-		return nil, nil, err
+	var diskLocators []types.VirtualMachineRelocateSpecDiskLocator
+	for _, disk := range disks {
+		dl := types.VirtualMachineRelocateSpecDiskLocator{
+			DiskId:    disk.GetVirtualDevice().Key,
+			Datastore: *datastore,
+			Profile:   vmProfile,
+			//TODO: Check if policy is encripted and select diskMoveType
+			DiskMoveType: string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveChildMostDiskBacking),
+		}
+		diskLocators = append(diskLocators, dl)
 	}
-
-	vmProfile := []vimTypes.BaseVirtualMachineProfileSpec{
-		&vimTypes.VirtualMachineDefinedProfileSpec{ProfileId: profileID},
-	}
-
-	for _, cs := range vdcs {
-		cs.GetVirtualDeviceConfigSpec().Profile = vmProfile
-		cs.GetVirtualDeviceConfigSpec().FileOperation = ""
-	}
-
-	return vdcs, vmProfile, nil
+	return diskLocators, nil
 }
 
 func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.VirtualMachine,
@@ -942,12 +939,9 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 	}
 
 	if vmConfigArgs.StorageProfileID != "" {
-		diskSpecs, vmProfile, err := processStorageProfile(ctx, resSrcVM, vmConfigArgs.StorageProfileID)
-		if err != nil {
-			return nil, err
+		cloneSpec.Location.Profile = []vimTypes.BaseVirtualMachineProfileSpec{
+			&vimTypes.VirtualMachineDefinedProfileSpec{ProfileId: vmConfigArgs.StorageProfileID},
 		}
-		cloneSpec.Location.DeviceChange = append(cloneSpec.Location.DeviceChange, diskSpecs...)
-		cloneSpec.Location.Profile = vmProfile
 	} else {
 		// BMV: Needed to for placement? Otherwise always overwritten below.
 		cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
@@ -968,9 +962,14 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 		return nil, err
 	}
 
+	diskLocators, err := createDiskLocators(ctx, resSrcVM, rSpec.Datastore, cloneSpec.Location.Profile)
+	if err != nil {
+		return nil, err
+	}
+
 	cloneSpec.Location.Host = rSpec.Host
 	cloneSpec.Location.Datastore = rSpec.Datastore
-	cloneSpec.Location.DiskMoveType = string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveChildMostDiskBacking)
+	cloneSpec.Location.Disk = diskLocators
 
 	return cloneSpec, nil
 }

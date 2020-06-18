@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/onsi/ginkgo"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
@@ -26,14 +25,6 @@ func GetRootDir() (string, error) {
 	}
 	t := "test" + string(os.PathSeparator)
 	return s[:strings.Index(s, t)], nil
-}
-
-// Log is a method to log to STDOUT, since ginkgo only gives us a Writer.
-func Log(format string, a ...interface{}) {
-	// nolint:errcheck
-	ginkgo.GinkgoWriter.Write([]byte(fmt.Sprintf(format, a...)))
-	// nolint:errcheck
-	ginkgo.GinkgoWriter.Write([]byte(fmt.Sprintf("\n")))
 }
 
 // FindModuleDir returns the on-disk directory for the provided Go module.

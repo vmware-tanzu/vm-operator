@@ -58,7 +58,7 @@ func getVmConfigArgs(namespace, name string) vmprovider.VmConfigArgs {
 	return vmprovider.VmConfigArgs{
 		VmClass:          *vmClass,
 		ResourcePolicy:   nil,
-		VmMetadata:       map[string]string{},
+		VmMetadata:       &vmprovider.VmMetadata{},
 		StorageProfileID: "foo",
 	}
 }
@@ -101,9 +101,6 @@ func getVirtualMachineInstance(name, namespace, imageName, className string) *vm
 			ClassName:  className,
 			PowerState: vmoperatorv1alpha1.VirtualMachinePoweredOn,
 			Ports:      []vmoperatorv1alpha1.VirtualMachinePort{},
-			VmMetadata: &vmoperatorv1alpha1.VirtualMachineMetadata{
-				Transport: "ExtraConfig",
-			},
 		},
 	}
 }
@@ -126,7 +123,10 @@ var _ = Describe("VMProvider Tests", func() {
 
 			// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
 			testIP := "10.0.0.1"
-			vmMetadata := map[string]string{"SET.guest.ipAddress": testIP}
+			vmMetadata := &vmprovider.VmMetadata{
+				Data:      map[string]string{"SET.guest.ipAddress": testIP},
+				Transport: vmoperatorv1alpha1.VirtualMachineMetadataExtraConfigTransport,
+			}
 			imageName := integration.IntegrationContentLibraryItemName
 			vmClass := getVMClassInstance(vmName, vmNamespace)
 			vm := getVirtualMachineInstance(vmName, vmNamespace, imageName, vmClass.Name)
@@ -209,14 +209,14 @@ var _ = Describe("VMProvider Tests", func() {
 			vmConfigArgs1 := vmprovider.VmConfigArgs{
 				VmClass:          *getVMClassInstance(sameVmName, vmNamespace1),
 				ResourcePolicy:   resourcePolicy1,
-				VmMetadata:       map[string]string{},
+				VmMetadata:       &vmprovider.VmMetadata{},
 				StorageProfileID: "foo",
 			}
 
 			vmConfigArgs2 := vmprovider.VmConfigArgs{
 				VmClass:          *getVMClassInstance(sameVmName, vmNamespace2),
 				ResourcePolicy:   resourcePolicy2,
-				VmMetadata:       map[string]string{},
+				VmMetadata:       &vmprovider.VmMetadata{},
 				StorageProfileID: "foo",
 			}
 
@@ -228,13 +228,10 @@ var _ = Describe("VMProvider Tests", func() {
 					Name:      sameVmName,
 				},
 				Spec: vmoperatorv1alpha1.VirtualMachineSpec{
-					ImageName:  imageName,
-					ClassName:  vmConfigArgs1.VmClass.Name,
-					PowerState: vmoperatorv1alpha1.VirtualMachinePoweredOn,
-					Ports:      []vmoperatorv1alpha1.VirtualMachinePort{},
-					VmMetadata: &vmoperatorv1alpha1.VirtualMachineMetadata{
-						Transport: "ExtraConfig",
-					},
+					ImageName:          imageName,
+					ClassName:          vmConfigArgs1.VmClass.Name,
+					PowerState:         vmoperatorv1alpha1.VirtualMachinePoweredOn,
+					Ports:              []vmoperatorv1alpha1.VirtualMachinePort{},
 					ResourcePolicyName: resourcePolicy1.Name,
 				},
 			}
@@ -249,13 +246,10 @@ var _ = Describe("VMProvider Tests", func() {
 					Name:      sameVmName,
 				},
 				Spec: vmoperatorv1alpha1.VirtualMachineSpec{
-					ImageName:  imageName,
-					ClassName:  vmConfigArgs2.VmClass.Name,
-					PowerState: vmoperatorv1alpha1.VirtualMachinePoweredOn,
-					Ports:      []vmoperatorv1alpha1.VirtualMachinePort{},
-					VmMetadata: &vmoperatorv1alpha1.VirtualMachineMetadata{
-						Transport: "ExtraConfig",
-					},
+					ImageName:          imageName,
+					ClassName:          vmConfigArgs2.VmClass.Name,
+					PowerState:         vmoperatorv1alpha1.VirtualMachinePoweredOn,
+					Ports:              []vmoperatorv1alpha1.VirtualMachinePort{},
 					ResourcePolicyName: resourcePolicy2.Name,
 				},
 			}

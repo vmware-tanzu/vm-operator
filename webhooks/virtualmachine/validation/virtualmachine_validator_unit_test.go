@@ -55,14 +55,16 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidImageName   bool
-		invalidClassName   bool
-		invalidNetworkName bool
-		invalidNetworkType bool
-		invalidVolumeName  bool
-		dupVolumeName      bool
-		invalidPVC         bool
-		invalidPVCName     bool
+		invalidImageName         bool
+		invalidClassName         bool
+		invalidNetworkName       bool
+		invalidNetworkType       bool
+		invalidVolumeName        bool
+		dupVolumeName            bool
+		invalidPVC               bool
+		invalidPVCName           bool
+		invalidMetadataTransport bool
+		invalidMetadataConfigMap bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -91,6 +93,12 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidPVCName {
 			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = ""
+		}
+		if args.invalidMetadataTransport {
+			ctx.vm.Spec.VmMetadata.Transport = "blah"
+		}
+		if args.invalidMetadataConfigMap {
+			ctx.vm.Spec.VmMetadata.ConfigMapName = ""
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
@@ -123,6 +131,8 @@ func unitTestsValidateCreate() {
 		Entry("should deny duplicated volume names", createArgs{dupVolumeName: true}, false, "spec.volumes[1].name must be unique", nil),
 		Entry("should deny invalid PVC", createArgs{invalidPVC: true}, false, "spec.volumes[0].persistentVolumeClaim must be specified", nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false, "spec.volumes[0].persistentVolumeClaim.claimName must be specified", nil),
+		Entry("should deny invalid vmmetadata transport", createArgs{invalidMetadataTransport: true}, false, "spec.vmmetadata.transport is not supported", nil),
+		Entry("should deny invalid vmmetadata transport", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmmetadata.configmapname must be specified", nil),
 	)
 }
 

@@ -97,7 +97,7 @@ func loadbalancerVM(vmService *vmopv1alpha1.VirtualMachineService) *vmopv1alpha1
 			PowerState: "poweredOn",
 			VmMetadata: &vmopv1alpha1.VirtualMachineMetadata{
 				ConfigMapName: metadataCMName(vmService),
-				Transport:     "ExtraConfig",
+				Transport:     vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
 			},
 		},
 	}

@@ -274,17 +274,29 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 	}, nil
 }
 
+func (vm *VirtualMachine) GetVAppVmConfigInfo(ctx context.Context) (*types.VmConfigInfo, error) {
+	log.V(5).Info("GetVAppVmConfigInfo", "name", vm.Name)
+	moVM, err := vm.ManagedObject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if moVM.Config.VAppConfig == nil {
+		return nil, nil
+	}
+	return moVM.Config.VAppConfig.GetVmConfigInfo(), nil
+}
+
 func (vm *VirtualMachine) GetOvfProperties(ctx context.Context) (map[string]string, error) {
 	log.V(5).Info("GetOvfProperties", "name", vm.Name)
-	moVM, err := vm.ManagedObject(ctx)
+	vAppConfig, err := vm.GetVAppVmConfigInfo(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	properties := make(map[string]string)
 
-	if vAppConfig := moVM.Config.VAppConfig; vAppConfig != nil {
-		props := vAppConfig.GetVmConfigInfo().Property
+	if vAppConfig != nil {
+		props := vAppConfig.Property
 		for _, prop := range props {
 			if strings.HasPrefix(prop.Id, "vmware-system") {
 				if prop.Value != "" {

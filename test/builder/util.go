@@ -14,11 +14,12 @@ import (
 )
 
 const (
-	DummyImageName   = "dummyImageName"
-	DummyClassName   = "dummyClassName"
-	DummyNetworkName = "dummyNetworkName"
-	DummyVolumeName  = "dummyVolumeName"
-	DummyPVCName     = "dummyPVCName"
+	DummyImageName      = "dummyImageName"
+	DummyClassName      = "dummyClassName"
+	DummyNetworkName    = "dummyNetworkName"
+	DummyVolumeName     = "dummyVolumeName"
+	DummyPVCName        = "dummyPVCName"
+	DummyMetadataCMName = "dummyMetadataCMName"
 )
 
 var (
@@ -97,6 +98,10 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 						ClaimName: DummyPVCName,
 					},
 				},
+			},
+			VmMetadata: &vmopv1.VirtualMachineMetadata{
+				ConfigMapName: DummyMetadataCMName,
+				Transport:     "ExtraConfig",
 			},
 		},
 	}

@@ -257,17 +257,9 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmope
 		return err
 	}
 
-	var vmMetadata vmprovider.VirtualMachineMetadata
-	if metadata := vm.Spec.VmMetadata; metadata != nil {
-		configMap := &v1.ConfigMap{}
-		err := r.Get(ctx, types.NamespacedName{Name: metadata.ConfigMapName, Namespace: vm.Namespace}, configMap)
-		if err != nil {
-			r.Log.Error(err, "Failed to get VirtualMachineMetadata ConfigMap",
-				"vmName", vm.NamespacedName(), "configMapName", metadata.ConfigMapName)
-			return err
-		}
-
-		vmMetadata = configMap.Data
+	vmMetadata, err := r.getVmMetadata(ctx, vm)
+	if err != nil {
+		return err
 	}
 
 	var resourcePolicy *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
@@ -332,4 +324,28 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmope
 	}
 
 	return nil
+}
+
+func (r *VirtualMachineReconciler) getVmMetadata(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) (*vmprovider.VmMetadata, error) {
+	inMetadata := vm.Spec.VmMetadata
+	if inMetadata == nil {
+		return nil, nil
+	}
+
+	outMetadata := vmprovider.VmMetadata{
+		Transport: inMetadata.Transport,
+	}
+
+	vmMetadataConfigMap := &v1.ConfigMap{}
+	err := r.Get(ctx, types.NamespacedName{Name: inMetadata.ConfigMapName, Namespace: vm.Namespace}, vmMetadataConfigMap)
+	if err != nil {
+		return nil, err
+	}
+
+	outMetadata.Data = make(map[string]string)
+	for k, v := range vmMetadataConfigMap.Data {
+		outMetadata.Data[k] = v
+	}
+
+	return &outMetadata, nil
 }

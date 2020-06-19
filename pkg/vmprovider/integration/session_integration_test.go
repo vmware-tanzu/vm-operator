@@ -20,7 +20,6 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	ncpfake "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake"
@@ -541,9 +540,13 @@ var _ = Describe("Sessions", func() {
 					imageName := "DC0_H0_VM0"
 					vmClass := getVMClassInstance(testVMName, testNamespace)
 					vm := getVirtualMachineInstance(testVMName+"-extraConfig", testNamespace, imageName, vmClass.Name)
-					vm.Spec.VmMetadata.Transport = "ExtraConfig"
-					vmMetadata := map[string]string{localKey: localVal}
-
+					vm.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
+						Transport: vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
+					}
+					vmMetadata := &vmprovider.VmMetadata{
+						Data:      map[string]string{localKey: localVal},
+						Transport: vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
+					}
 					vmConfigArgs := vmprovider.VmConfigArgs{
 						VmClass:          *vmClass,
 						ResourcePolicy:   nil,
@@ -615,7 +618,7 @@ var _ = Describe("Sessions", func() {
 
 		Describe("Resource Pool", func() {
 			var rpName string
-			var rpSpec *v1alpha1.ResourcePoolSpec
+			var rpSpec *vmopv1alpha1.ResourcePoolSpec
 
 			BeforeEach(func() {
 				rpName = "test-folder"
@@ -688,7 +691,7 @@ var _ = Describe("Sessions", func() {
 
 		Describe("Folder", func() {
 			var folderName string
-			var folderSpec *v1alpha1.FolderSpec
+			var folderSpec *vmopv1alpha1.FolderSpec
 
 			BeforeEach(func() {
 				folderName = "test-folder"
@@ -774,7 +777,7 @@ var _ = Describe("Sessions", func() {
 					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
-					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}
+					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, ""}
 					clonedVM, err :=
 						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).To(HaveOccurred())
@@ -789,7 +792,7 @@ var _ = Describe("Sessions", func() {
 					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
-					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}
+					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, ""}
 					clonedVM, err :=
 						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).To(HaveOccurred())
@@ -803,7 +806,7 @@ var _ = Describe("Sessions", func() {
 					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
-					vmConfigArgs := vmprovider.VmConfigArgs{v1alpha1.VirtualMachineClass{}, nil, nil, ""}
+					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, ""}
 					clonedVM, err :=
 						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).To(HaveOccurred())
@@ -843,8 +846,8 @@ var _ = Describe("Sessions", func() {
 
 	Describe("Cluster Module", func() {
 		var moduleGroup string
-		var moduleSpec *v1alpha1.ClusterModuleSpec
-		var moduleStatus *v1alpha1.ClusterModuleStatus
+		var moduleSpec *vmopv1alpha1.ClusterModuleSpec
+		var moduleStatus *vmopv1alpha1.ClusterModuleStatus
 		var resVm *resources.VirtualMachine
 
 		BeforeEach(func() {

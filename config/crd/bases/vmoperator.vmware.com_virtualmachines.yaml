@@ -163,10 +163,8 @@ spec:
                   type: string
                 transport:
                   description: Transport describes the name of a supported VirtualMachineMetadata
-                    transport "protocol".  Currently, the only supported transport
-                    prototocol is "ExtraConfig".  The ExtraConfig protocol places
-                    the VM Metadata as "ExtraConfig" on the vSphere VM ConfigSpec
-                    when creating the VirtualMachine.
+                    transport protocol.  Currently, the only supported transport protocols
+                    are "ExtraConfig" and "OvfEnv".
                   type: string
               type: object
             volumes:

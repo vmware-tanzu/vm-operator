@@ -99,6 +99,20 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 
 func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
 	var validationErrs []string
+
+	if vm.Spec.VmMetadata == nil {
+		return validationErrs
+	}
+
+	if vm.Spec.VmMetadata.Transport != vmopv1.VirtualMachineMetadataExtraConfigTransport &&
+		vm.Spec.VmMetadata.Transport != vmopv1.VirtualMachineMetadataOvfEnvTransport {
+		validationErrs = append(validationErrs, messages.MetadataTransportNotSupported)
+	}
+
+	if vm.Spec.VmMetadata.ConfigMapName == "" {
+		validationErrs = append(validationErrs, messages.MetadataTransportConfigMapNotSpecified)
+	}
+
 	return validationErrs
 }
 

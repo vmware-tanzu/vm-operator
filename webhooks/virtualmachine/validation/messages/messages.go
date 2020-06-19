@@ -13,4 +13,6 @@ const (
 	PersistentVolumeClaimNotSpecifiedFmt     = "spec.volumes[%d].persistentVolumeClaim must be specified"
 	PersistentVolumeClaimNameNotSpecifiedFmt = "spec.volumes[%d].persistentVolumeClaim.claimName must be specified"
 	VolumeNameDuplicateFmt                   = "spec.volumes[%d].name must be unique"
+	MetadataTransportNotSupported            = "spec.vmmetadata.transport is not supported"
+	MetadataTransportConfigMapNotSpecified   = "spec.vmmetadata.configmapname must be specified"
 )

@@ -914,7 +914,7 @@ func createDiskLocators(ctx context.Context, resSrcVM *res.VirtualMachine, datas
 func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.VirtualMachine,
 	vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
 
-	configSpec, err := s.generateConfigSpec(name, &vm.Spec, &vmConfigArgs.VmClass.Spec, vmConfigArgs.VmMetadata, nil)
+	configSpec, err := s.generateConfigSpec(name, &vm.Spec, &vmConfigArgs.VmClass.Spec, vmConfigArgs.VmMetadata, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1150,7 +1150,7 @@ func ApplyVmSpec(meta map[string]string, vmSpec *v1alpha1.VirtualMachineSpec) ma
 	return result
 }
 
-func MergeMeta(vmSpecMeta, globalMeta map[string]string) map[string]string {
+func MergeExtraConfig(vmSpecMeta, globalMeta map[string]string) map[string]string {
 	if len(globalMeta) == 0 {
 		return vmSpecMeta
 	}
@@ -1179,9 +1179,52 @@ func GetExtraConfig(mergedConfig map[string]string) []vimTypes.BaseOptionValue {
 	return extraConfigs
 }
 
+func GetvAppConfigSpec(ctx context.Context, resVm *res.VirtualMachine, vmConfigArgs *vmprovider.VmConfigArgs) (*vimTypes.VmConfigSpec, error) {
+	if vmConfigArgs.VmMetadata == nil || vmConfigArgs.VmMetadata.Transport != v1alpha1.VirtualMachineMetadataOvfEnvTransport {
+		return nil, nil
+	}
+	vAppConfigInfo, err := resVm.GetVAppVmConfigInfo(ctx)
+	if err != nil || vAppConfigInfo == nil {
+		return nil, err
+	}
+	return GetMergedvAppConfigSpec(vmConfigArgs.VmMetadata.Data, vAppConfigInfo.Property), nil
+}
+
+// Prepare a vApp VmConfigSpec which will set the vmMetadata supplied key/value fields. Only
+// fields marked userConfigurable and pre-existing on the VM (ie. originated from the OVF Image)
+// will be set, and all others will be ignored.
+func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppPropertyInfo) *vimTypes.VmConfigSpec {
+	outProps := []vimTypes.VAppPropertySpec{}
+	for _, vmProp := range vmProps {
+		if vmProp.UserConfigurable == nil || !*vmProp.UserConfigurable {
+			continue
+		}
+		inPropValue, found := inProps[vmProp.Id]
+		if !found {
+			continue
+		}
+
+		vmPropCopy := vmProp
+		vmPropCopy.Value = inPropValue
+		outProp := vimTypes.VAppPropertySpec{
+			ArrayUpdateSpec: vimTypes.ArrayUpdateSpec{
+				Operation: vimTypes.ArrayUpdateOperationEdit,
+			},
+			Info: &vmPropCopy,
+		}
+		outProps = append(outProps, outProp)
+	}
+
+	if len(outProps) == 0 {
+		return nil
+	}
+	return &vimTypes.VmConfigSpec{Property: outProps}
+}
+
 // generateConfigSpec generates a configSpec from the VM Spec and the VM Class
 func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
-	metadata vmprovider.VirtualMachineMetadata, deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec) (*vimTypes.VirtualMachineConfigSpec, error) {
+	vmMetadata *vmprovider.VmMetadata, deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec,
+	vAppConfigSpec vimTypes.BaseVmConfigSpec) (*vimTypes.VirtualMachineConfigSpec, error) {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{
 		Name:         name,
@@ -1189,6 +1232,10 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 		NumCPUs:      int32(vmClassSpec.Hardware.Cpus),
 		MemoryMB:     memoryQuantityToMb(vmClassSpec.Hardware.Memory),
 		DeviceChange: deviceSpecs,
+	}
+
+	if vAppConfigSpec != nil {
+		configSpec.VAppConfig = vAppConfigSpec.GetVmConfigSpec()
 	}
 
 	// Enable clients to differentiate the managed VMs from the regular VMs.
@@ -1222,10 +1269,12 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 		configSpec.MemoryAllocation.Limit = &lim
 	}
 
-	mergedConfig := MergeMeta(metadata, s.extraConfig)
-	renderedConfig := ApplyVmSpec(mergedConfig, vmSpec)
-	// BMV: 2f24bf4b removed the Transport check ... ???
-	configSpec.ExtraConfig = GetExtraConfig(renderedConfig)
+	mergedConfig := s.extraConfig
+	if vmMetadata != nil && vmMetadata.Data != nil && vmMetadata.Transport == v1alpha1.VirtualMachineMetadataExtraConfigTransport {
+		mergedConfig = MergeExtraConfig(vmMetadata.Data, s.extraConfig)
+	}
+	renderedExtraConfig := ApplyVmSpec(mergedConfig, vmSpec)
+	configSpec.ExtraConfig = GetExtraConfig(renderedExtraConfig)
 
 	return configSpec, nil
 }
@@ -1648,7 +1697,12 @@ func (s *Session) updateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 			return nil, err
 		}
 
-		configSpec, err := s.generateConfigSpec(vm.Name, &vm.Spec, &vmConfigArgs.VmClass.Spec, vmConfigArgs.VmMetadata, deviceSpecs)
+		vAppConfigSpec, err := GetvAppConfigSpec(ctx, resVM, &vmConfigArgs)
+		if err != nil {
+			return nil, err
+		}
+
+		configSpec, err := s.generateConfigSpec(vm.Name, &vm.Spec, &vmConfigArgs.VmClass.Spec, vmConfigArgs.VmMetadata, deviceSpecs, vAppConfigSpec)
 		if err != nil {
 			return nil, err
 		}

@@ -212,8 +212,8 @@ github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXf
 github.com/stretchr/testify v1.3.0 h1:TivCn/peBQ7UY8ooIcPgZFpTNSz0Q2U6UrFlUfqbe0Q=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20170815181823-89b8d40f7ca8/go.mod h1:ncp9v5uamzpCO7NfCPTXjqaC+bZgJeR0sMTm6dMHP7U=
-github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20200526221424-f7c09901feb9 h1:77R1xVpW3CMvYbPmOOWsJwSB5xQTFEVHJaHoj6xqHKc=
-github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20200526221424-f7c09901feb9/go.mod h1:mubK0QMyaA2TbeAmGsu2GVfiqDFppNUAUqoMPoKFgzM=
+github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20200608164648-ed0f14f8ed1a h1:XHO/XMVE8amFE3XZubTgkdcMPF6xJhGKxhkt8In2Mxw=
+github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20200608164648-ed0f14f8ed1a/go.mod h1:mubK0QMyaA2TbeAmGsu2GVfiqDFppNUAUqoMPoKFgzM=
 github.com/vmware/govmomi v0.22.2 h1:hmLv4f+RMTTseqtJRijjOWzwELiaLMIoHv2D6H3bF4I=
 github.com/vmware/govmomi v0.22.2/go.mod h1:Y+Wq4lst78L85Ge/F8+ORXIWiKYqaro1vhAulACy9Lc=
 github.com/vmware/vmw-guestinfo v0.0.0-20170707015358-25eff159a728/go.mod h1:x9oS4Wk2s2u4tS29nEaDLdzvuHdB19CvSGJjPgkZJNk=

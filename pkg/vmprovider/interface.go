@@ -11,12 +11,15 @@ import (
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
-type VirtualMachineMetadata map[string]string
+type VmMetadata struct {
+	Data      map[string]string
+	Transport v1alpha1.VirtualMachineMetadataTransport
+}
 
 type VmConfigArgs struct {
 	VmClass          v1alpha1.VirtualMachineClass
 	ResourcePolicy   *v1alpha1.VirtualMachineSetResourcePolicy
-	VmMetadata       VirtualMachineMetadata
+	VmMetadata       *VmMetadata
 	StorageProfileID string
 }
 

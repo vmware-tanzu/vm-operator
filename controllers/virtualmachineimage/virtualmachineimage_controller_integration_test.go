@@ -6,6 +6,7 @@
 package virtualmachineimage
 
 import (
+	"os"
 	"sync"
 	"time"
 
@@ -68,9 +69,12 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
+
+		os.Setenv("FSS_WCP_VMSERVICE", "false")
 	})
 
 	AfterEach(func() {
+		os.Unsetenv("FSS_WCP_VMSERVICE")
 		close(stopMgr)
 		mgrStopped.Wait()
 	})
@@ -125,6 +129,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 		}
 
 		BeforeEach(func() {
+			os.Setenv("FSS_WCP_VMSERVICE", "true")
 			clName = "content-library-name"
 			// Create a content library to back the ContentSource
 			libID, err = session.CreateLibrary(context.TODO(), clName)

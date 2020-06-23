@@ -5,6 +5,7 @@ package virtualmachineimage
 
 import (
 	goctx "context"
+	"os"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -171,14 +172,23 @@ func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (err
 	// else
 	//  - calls into the provider to list VM images from the content source configured by the ConfigMap.
 
-	contentSourceList := &vmoperatorv1alpha1.ContentSourceList{}
-	err = d.client.List(ctx, contentSourceList)
-	if err != nil {
-		return errors.Wrap(err, "failed to list content sources from control plane"), nil, nil
-	}
-
 	var providerManagedImages []*vmoperatorv1alpha1.VirtualMachineImage
-	if len(contentSourceList.Items) == 0 {
+	if os.Getenv("FSS_WCP_VMSERVICE") == "true" {
+		contentSourceList := &vmoperatorv1alpha1.ContentSourceList{}
+		err = d.client.List(ctx, contentSourceList)
+		if err != nil {
+			return errors.Wrap(err, "failed to list content sources from control plane"), nil, nil
+		}
+
+		for _, contentSource := range contentSourceList.Items {
+			images, err := d.getImagesFromContentProvider(ctx, contentSource)
+			if err != nil {
+				return nil, nil, nil
+			}
+
+			providerManagedImages = append(providerManagedImages, images...)
+		}
+	} else {
 		providerManagedImages, err = d.vmProvider.ListVirtualMachineImages(ctx, "")
 		if err != nil {
 			// If the VM provider cannot reach the configured content library (e.g. when a library is deleted), it returns http
@@ -190,15 +200,7 @@ func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (err
 
 			d.log.Error(err, "VM provider failed to find the Content Library")
 		}
-	} else {
-		for _, contentSource := range contentSourceList.Items {
-			images, err := d.getImagesFromContentProvider(ctx, contentSource)
-			if err != nil {
-				return nil, nil, nil
-			}
 
-			providerManagedImages = append(providerManagedImages, images...)
-		}
 	}
 
 	var convertedImages []vmoperatorv1alpha1.VirtualMachineImage

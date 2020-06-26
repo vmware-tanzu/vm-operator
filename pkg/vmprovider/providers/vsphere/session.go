@@ -22,7 +22,6 @@ import (
 	pbmTypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/library"
-	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -46,7 +45,7 @@ var DefaultExtraConfig = map[string]string{
 }
 
 type Session struct {
-	client    *Client
+	Client    *Client
 	ncpClient ncpcs.Interface
 	k8sClient ctrlruntime.Client
 
@@ -73,7 +72,7 @@ func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphere
 	ncpClient ncpcs.Interface, k8sClient ctrlruntime.Client) (*Session, error) {
 
 	s := &Session{
-		client:                client,
+		Client:                client,
 		ncpClient:             ncpClient,
 		k8sClient:             k8sClient,
 		storageClassRequired:  config.StorageClassRequired,
@@ -90,7 +89,7 @@ func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphere
 
 func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConfig) error {
 
-	s.Finder = find.NewFinder(s.client.VimClient(), false)
+	s.Finder = find.NewFinder(s.Client.VimClient(), false)
 	s.userInfo = url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
 	ref := types.ManagedObjectReference{Type: "Datacenter", Value: config.Datacenter}
@@ -170,7 +169,7 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 }
 
 func (s *Session) ServiceContent(ctx context.Context) (vimTypes.AboutInfo, error) {
-	return s.client.client.ServiceContent.About, nil
+	return s.Client.VimClient().ServiceContent.About, nil
 }
 
 func (s *Session) initDatastore(ctx context.Context, datastore string) error {
@@ -215,15 +214,13 @@ func (s *Session) ConfigureContent(ctx context.Context, contentSource string) er
 		return nil
 	}
 
-	var err error
-	err = s.WithRestClient(ctx, func(c *rest.Client) error {
-		libManager := library.NewManager(c)
-		s.contentlib, err = libManager.GetLibraryByID(ctx, contentSource)
-		return err
-	})
+	restClient := s.Client.RestClient()
+	lib, err := library.NewManager(restClient).GetLibraryByID(ctx, contentSource)
 	if err != nil {
 		return errors.Wrapf(err, "failed to init Content Library %q", contentSource)
 	}
+
+	s.contentlib = lib
 
 	log.V(4).Info("Content library configured to", "contentSource", contentSource)
 	return nil
@@ -239,17 +236,15 @@ func (s *Session) CreateLibrary(ctx context.Context, contentSource string) (stri
 }
 
 func (s *Session) DeleteContentLibrary(ctx context.Context, libID string) error {
-	err := s.WithRestClient(ctx, func(c *rest.Client) error {
-		libManager := library.NewManager(c)
-		lib, err := libManager.GetLibraryByID(ctx, libID)
-		if err != nil {
-			return err
-		}
+	restClient := s.Client.RestClient()
 
-		return libManager.DeleteLibrary(ctx, lib)
-	})
+	libManager := library.NewManager(restClient)
+	lib, err := libManager.GetLibraryByID(ctx, libID)
+	if err != nil {
+		return err
+	}
 
-	return err
+	return libManager.DeleteLibrary(ctx, lib)
 }
 
 func (s *Session) CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error {
@@ -260,12 +255,8 @@ func (s *Session) CreateLibraryItem(ctx context.Context, libraryItem library.Ite
 func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID string) ([]*v1alpha1.VirtualMachineImage, error) {
 	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary", "contentLibraryUUID", clUUID)
 
-	var items []library.Item
-	var err error
-	err = s.WithRestClient(ctx, func(c *rest.Client) error {
-		items, err = library.NewManager(c).GetLibraryItems(ctx, clUUID)
-		return err
-	})
+	restClient := s.Client.RestClient()
+	items, err := library.NewManager(restClient).GetLibraryItems(ctx, clUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -288,11 +279,9 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID str
 
 // DoesContentLibraryExist checks if a ContentLibrary by id "clID" exists on vSphere inventory.
 func (s *Session) DoesContentLibraryExist(ctx context.Context, clID string) (bool, error) {
-	err := s.WithRestClient(ctx, func(c *rest.Client) error {
-		libManager := library.NewManager(c)
-		_, err := libManager.GetLibraryByID(ctx, clID)
-		return err
-	})
+	restClient := s.Client.RestClient()
+	libManager := library.NewManager(restClient)
+	_, err := libManager.GetLibraryByID(ctx, clID)
 
 	// govmomi vapi rest client doesn't expose it's error type so we cannot check and return no error for Not Found. Instead we rely
 	// on the error message itself. This is not ideal since we are relying on the error message being sent by client which can change any time.
@@ -307,26 +296,22 @@ func (s *Session) DoesContentLibraryExist(ctx context.Context, clID string) (boo
 }
 
 func (s *Session) GetItemIDFromCL(ctx context.Context, itemName string) (string, error) {
-	var itemID string
+	restClient := s.Client.RestClient()
+	itemIDs, err := library.NewManager(restClient).FindLibraryItems(ctx,
+		library.FindItem{LibraryID: s.contentlib.ID, Name: itemName})
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to find image %q", itemName)
+	}
 
-	err := s.WithRestClient(ctx, func(c *rest.Client) error {
-		itemIDs, err := library.NewManager(c).FindLibraryItems(ctx,
-			library.FindItem{LibraryID: s.contentlib.ID, Name: itemName})
-		if err != nil {
-			return err
-		}
+	if len(itemIDs) == 0 {
+		return "", errors.Errorf("no library items named: %s", itemName)
+	}
 
-		if len(itemIDs) == 0 {
-			return errors.Errorf("no library items named: %s", itemName)
-		}
+	if len(itemIDs) != 1 {
+		return "", errors.Errorf("multiple library items named: %s", itemName)
+	}
 
-		if len(itemIDs) != 1 {
-			return errors.Errorf("multiple library items named: %s", itemName)
-		}
-		itemID = itemIDs[0]
-		return nil
-	})
-	return itemID, errors.Wrapf(err, "failed to find image %q", itemName)
+	return itemIDs[0], nil
 }
 
 func (s *Session) GetItemFromCL(ctx context.Context, itemName string) (*library.Item, error) {
@@ -335,11 +320,8 @@ func (s *Session) GetItemFromCL(ctx context.Context, itemName string) (*library.
 		return nil, err
 	}
 
-	var item *library.Item
-	err = s.WithRestClient(ctx, func(c *rest.Client) error {
-		item, err = library.NewManager(c).GetLibraryItem(ctx, itemID)
-		return err
-	})
+	restClient := s.Client.RestClient()
+	item, err := library.NewManager(restClient).GetLibraryItem(ctx, itemID)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +377,7 @@ func (s *Session) ListVirtualMachines(ctx context.Context, path string) ([]*res.
 
 // findChildEntity finds a child entity by a given name under a parent object
 func (s *Session) findChildEntity(ctx context.Context, parent object.Reference, childName string) (object.Reference, error) {
-	si := object.NewSearchIndex(s.client.VimClient())
+	si := object.NewSearchIndex(s.Client.VimClient())
 	ref, err := si.FindChild(ctx, parent, childName)
 	if err != nil {
 		return nil, err
@@ -811,7 +793,7 @@ func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine
 	key := int32(-100)
 	for i := range vm.Spec.NetworkInterfaces {
 		vif := vm.Spec.NetworkInterfaces[i]
-		np, err := NetworkProviderByType(vif.NetworkType, s.k8sClient, s.ncpClient, s.client.VimClient(), s.Finder, s.cluster)
+		np, err := NetworkProviderByType(vif.NetworkType, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get network provider")
 		}
@@ -1038,7 +1020,7 @@ func policyThickProvision(profile pbmTypes.BasePbmProfile) bool {
 // setStorageProvisioning will change dSpec.StorageProvisioning = thick if the given storage profile is thick.
 // Currently this would only happen if the profile is vSAN with proportionalCapacity == 100%.
 func (s *Session) setStorageProvisioning(ctx context.Context, dSpec *vcenter.DeploymentSpec, storageProfileID string) error {
-	c, err := pbm.NewClient(ctx, s.client.VimClient())
+	c, err := pbm.NewClient(ctx, s.Client.VimClient())
 	if err != nil {
 		return err
 	}
@@ -1094,13 +1076,10 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, r
 		Target:         target,
 	}
 
-	var deployment *types.ManagedObjectReference
-	err = s.WithRestClient(ctx, func(c *rest.Client) error {
-		deployment, err = vcenter.NewManager(c).DeployLibraryItem(ctx, itemID, deploy)
-		log.Info("DeployLibraryItem", "context", ctx, "itemID", itemID, "deploy", deploy)
-		return err
-	})
+	log.Info("DeployLibraryItem", "context", ctx, "itemID", itemID, "deploy", deploy)
 
+	restClient := s.Client.RestClient()
+	deployment, err := vcenter.NewManager(restClient).DeployLibraryItem(ctx, itemID, deploy)
 	if err != nil {
 		return nil, err
 	}
@@ -1111,23 +1090,6 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, r
 	}
 
 	return res.NewVMFromObject(ref.(*object.VirtualMachine))
-}
-
-func (s *Session) WithRestClient(ctx context.Context, f func(c *rest.Client) error) error {
-	c := rest.NewClient(s.client.VimClient())
-	err := c.Login(ctx, s.userInfo)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err := c.Logout(ctx); err != nil {
-			log.Error(err, "failed to logout")
-		}
-		c.CloseIdleConnections()
-	}()
-
-	return f(c)
 }
 
 func renderTemplate(name, text string, obj interface{}) string {
@@ -1364,7 +1326,7 @@ func (s *Session) GetCustomizationSpec(ctx context.Context, vm *v1alpha1.Virtual
 		for idx := range vm.Spec.NetworkInterfaces {
 			nif := vm.Spec.NetworkInterfaces[idx]
 
-			np, err := NetworkProviderByType(nif.NetworkType, s.k8sClient, s.ncpClient, s.client.VimClient(), s.Finder, s.cluster)
+			np, err := NetworkProviderByType(nif.NetworkType, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to get network provider")
 			}
@@ -1456,8 +1418,8 @@ func isNilPtr(i interface{}) bool {
 func (s *Session) String() string {
 	var sb strings.Builder
 	sb.WriteString("{")
-	if s.client != nil {
-		sb.WriteString(fmt.Sprintf("client: %v, ", *s.client))
+	if s.Client != nil {
+		sb.WriteString(fmt.Sprintf("client: %+v, ", s.Client))
 	}
 	if !isNilPtr(s.ncpClient) {
 		sb.WriteString(fmt.Sprintf("ncpClient: %+v, ", s.ncpClient))
@@ -1489,17 +1451,9 @@ func (s *Session) String() string {
 // CreateClusterModule creates a clusterModule in vc and returns its id.
 func (s *Session) CreateClusterModule(ctx context.Context) (string, error) {
 	log.Info("Creating clusterModule")
-	var moduleId string
-	var err error
 
-	err = s.WithRestClient(ctx, func(c *rest.Client) error {
-		m := cluster.NewManager(c)
-		moduleId, err = m.CreateModule(ctx, s.cluster)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+	restClient := s.Client.RestClient()
+	moduleId, err := cluster.NewManager(restClient).CreateModule(ctx, s.cluster)
 	if err != nil {
 		return "", err
 	}
@@ -1512,11 +1466,8 @@ func (s *Session) CreateClusterModule(ctx context.Context) (string, error) {
 func (s *Session) DeleteClusterModule(ctx context.Context, moduleId string) error {
 	log.Info("Deleting clusterModule", "moduleId", moduleId)
 
-	err := s.WithRestClient(ctx, func(c *rest.Client) error {
-		m := cluster.NewManager(c)
-		return m.DeleteModule(ctx, moduleId)
-	})
-	if err != nil {
+	restClient := s.Client.RestClient()
+	if err := cluster.NewManager(restClient).DeleteModule(ctx, moduleId); err != nil {
 		return err
 	}
 
@@ -1532,40 +1483,31 @@ func (s *Session) DoesClusterModuleExist(ctx context.Context, moduleUuid string)
 		return false, nil
 	}
 
-	moduleExists := false
-	err := s.WithRestClient(ctx, func(c *rest.Client) error {
-		m := cluster.NewManager(c)
-		modules, err := m.ListModules(ctx)
-		if err != nil {
-			return err
-		}
-		for _, mod := range modules {
-			if mod.Module == moduleUuid {
-				moduleExists = true
-				return nil
-			}
-		}
-		return err
-	})
+	restClient := s.Client.RestClient()
+	m := cluster.NewManager(restClient)
+	modules, err := m.ListModules(ctx)
 	if err != nil {
 		return false, err
 	}
-	log.V(4).Info("Checked clusterModule", "moduleId", moduleUuid, "exist", moduleExists)
-	return moduleExists, nil
+	for _, mod := range modules {
+		if mod.Module == moduleUuid {
+			return true, nil
+		}
+	}
+
+	log.V(4).Info("ClusterModule doesn't exist", "moduleId", moduleUuid)
+	return false, nil
 }
 
 // AddVmToClusterModule associates a VM with a clusterModule.
 func (s *Session) AddVmToClusterModule(ctx context.Context, moduleId string, vmRef mo.Reference) error {
 	log.Info("Adding vm to clusterModule", "moduleId", moduleId, "vmId", vmRef)
 
-	err := s.WithRestClient(ctx, func(c *rest.Client) error {
-		m := cluster.NewManager(c)
-		_, err := m.AddModuleMembers(ctx, moduleId, vmRef)
-		return err
-	})
-	if err != nil {
+	restClient := s.Client.RestClient()
+	if _, err := cluster.NewManager(restClient).AddModuleMembers(ctx, moduleId, vmRef); err != nil {
 		return err
 	}
+
 	log.Info("Added vm to clusterModule", "moduleId", moduleId, "vmId", vmRef)
 	return nil
 }
@@ -1574,31 +1516,23 @@ func (s *Session) AddVmToClusterModule(ctx context.Context, moduleId string, vmR
 func (s *Session) RemoveVmFromClusterModule(ctx context.Context, moduleId string, vmRef mo.Reference) error {
 	log.Info("Removing vm from clusterModule", "moduleId", moduleId, "vmId", vmRef)
 
-	err := s.WithRestClient(ctx, func(c *rest.Client) error {
-		m := cluster.NewManager(c)
-		_, err := m.RemoveModuleMembers(ctx, moduleId, vmRef)
-		return err
-	})
-	if err != nil {
+	restClient := s.Client.RestClient()
+	if _, err := cluster.NewManager(restClient).RemoveModuleMembers(ctx, moduleId, vmRef); err != nil {
 		return err
 	}
+
 	log.Info("Removed vm from clusterModule", "moduleId", moduleId, "vmId", vmRef)
 	return nil
 }
 
 // IsVmMemberOfClusterModule checks whether a given VM is a member of ClusterModule in VC.
 func (s *Session) IsVmMemberOfClusterModule(ctx context.Context, moduleId string, vmRef mo.Reference) (bool, error) {
-	var moduleMembers []types.ManagedObjectReference
-	var err error
-
-	err = s.WithRestClient(ctx, func(c *rest.Client) error {
-		m := cluster.NewManager(c)
-		moduleMembers, err = m.ListModuleMembers(ctx, moduleId)
-		return err
-	})
+	restClient := s.Client.RestClient()
+	moduleMembers, err := cluster.NewManager(restClient).ListModuleMembers(ctx, moduleId)
 	if err != nil {
 		return false, err
 	}
+
 	for _, member := range moduleMembers {
 		if member.Value == vmRef.Reference().Value {
 			return true, nil
@@ -1612,30 +1546,30 @@ func (s *Session) IsVmMemberOfClusterModule(ctx context.Context, moduleId string
 func (s *Session) AttachTagToVm(ctx context.Context, tagName string, tagCatName string, resVm *res.VirtualMachine) error {
 	log.Info("Attaching tag", "tag", tagName, "vmName", resVm.Name)
 
-	return s.WithRestClient(ctx, func(c *rest.Client) error {
-		manager := tags.NewManager(c)
-		tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
-		if err != nil {
-			return err
-		}
-		vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
-		return manager.AttachTag(ctx, tag.ID, vmRef)
-	})
+	restClient := s.Client.RestClient()
+	manager := tags.NewManager(restClient)
+	tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
+	if err != nil {
+		return err
+	}
+
+	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
+	return manager.AttachTag(ctx, tag.ID, vmRef)
 }
 
 // DetachTagFromVm detaches a tag with a given name from the vm.
 func (s *Session) DetachTagFromVm(ctx context.Context, tagName string, tagCatName string, resVm *res.VirtualMachine) error {
 	log.Info("Detaching tag", "tag", tagName, "vmName", resVm.Name)
 
-	return s.WithRestClient(ctx, func(c *rest.Client) error {
-		manager := tags.NewManager(c)
-		tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
-		if err != nil {
-			return err
-		}
-		vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
-		return manager.DetachTag(ctx, tag.ID, vmRef)
-	})
+	restClient := s.Client.RestClient()
+	manager := tags.NewManager(restClient)
+	tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
+	if err != nil {
+		return err
+	}
+
+	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
+	return manager.DetachTag(ctx, tag.ID, vmRef)
 }
 
 // RenameSessionCluster renames the cluster corresponding to this session. Used only in integration tests for now.

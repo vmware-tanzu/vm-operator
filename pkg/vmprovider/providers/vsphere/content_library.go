@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere
@@ -71,30 +71,21 @@ func ParseOvf(ovfContent io.Reader) (*ovf.Envelope, error) {
 // parses the downloaded ovf and returns the OVF Envelope descriptor for consumption.
 func (cs *ContentLibraryProvider) RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item *library.Item, clHandler ContentDownloadHandler) (*ovf.Envelope, error) {
 
-	var downloadedFileContent io.ReadCloser
+	restClient := cs.session.Client.RestClient()
+	// download ovf from the library item
+	response, err := clHandler.GenerateDownloadUriForLibraryItem(ctx, restClient, item)
+	if err != nil {
+		return nil, err
+	}
 
-	err := cs.session.WithRestClient(ctx, func(c *rest.Client) error {
-		// download ovf from the library item
-		response, err := clHandler.GenerateDownloadUriForLibraryItem(ctx, c, item)
-		if err != nil {
-			return err
-		}
+	if isInvalidResponse(response) {
+		return nil, errors.Errorf("error occurred downloading item %v", item.Name)
+	}
 
-		if isInvalidResponse(response) {
-			return errors.Errorf("error occurred downloading item %v", item.Name)
-		}
+	defer deleteLibraryItemDownloadSession(restClient, ctx, response.DownloadSessionId)
 
-		defer deleteLibraryItemDownloadSession(c, ctx, response.DownloadSessionId)
-
-		// Read the file as string once it is prepared for download
-		downloadedFileContent, err = ReadFileFromUrl(ctx, c, response.FileUri)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	})
-
+	// Read the file as string once it is prepared for download
+	downloadedFileContent, err := ReadFileFromUrl(ctx, restClient, response.FileUri)
 	if err != nil || downloadedFileContent == nil {
 		log.Error(err, "error occurred when downloading file from library item", libItemName, item.Name)
 		return nil, err
@@ -120,18 +111,9 @@ func (cs *ContentLibraryProvider) CreateLibrary(ctx context.Context, contentSour
 		},
 	}
 
-	var libID string
-	var err error
+	restClient := cs.session.Client.RestClient()
 
-	err = cs.session.WithRestClient(ctx, func(c *rest.Client) error {
-		libID, err = library.NewManager(c).CreateLibrary(ctx, lib)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	})
-
+	libID, err := library.NewManager(restClient).CreateLibrary(ctx, lib)
 	if err != nil || libID == "" {
 		log.Error(err, "failed to create library")
 		return "", err
@@ -143,67 +125,61 @@ func (cs *ContentLibraryProvider) CreateLibrary(ctx context.Context, contentSour
 func (cs *ContentLibraryProvider) CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error {
 	log.Info("Creating Library Item", "libraryItem", libraryItem, "path", path)
 
-	err := cs.session.WithRestClient(ctx, func(c *rest.Client) error {
-		libMgr := library.NewManager(c)
+	restClient := cs.session.Client.RestClient()
 
-		itemID, err := libMgr.CreateLibraryItem(ctx, libraryItem)
+	libMgr := library.NewManager(restClient)
+	itemID, err := libMgr.CreateLibraryItem(ctx, libraryItem)
+	if err != nil {
+		return err
+	}
+
+	itemUpdateSessionId, err := libMgr.CreateLibraryItemUpdateSession(ctx, library.Session{LibraryItemID: itemID})
+	if err != nil {
+		return err
+	}
+
+	// Update Library item with library file "ovf"
+	uploadFunc := func(c *rest.Client, path string) error {
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		fi, err := f.Stat()
 		if err != nil {
 			return err
 		}
 
-		itemUpdateSessionId, err := libMgr.CreateLibraryItemUpdateSession(ctx, library.Session{LibraryItemID: itemID})
+		name := filepath.Base(path)
+		size := fi.Size()
+		info := library.UpdateFile{
+			Name:       name,
+			SourceType: "PUSH",
+			Size:       size,
+		}
+
+		update, err := libMgr.AddLibraryItemFile(ctx, itemUpdateSessionId, info)
 		if err != nil {
 			return err
 		}
 
-		// Update Library item with library file "ovf"
-		uploadFunc := func(c *rest.Client, path string) error {
-			f, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
+		p := soap.DefaultUpload
+		p.ContentLength = size
 
-			fi, err := f.Stat()
-			if err != nil {
-				return err
-			}
-
-			name := filepath.Base(path)
-			size := fi.Size()
-			info := library.UpdateFile{
-				Name:       name,
-				SourceType: "PUSH",
-				Size:       size,
-			}
-
-			update, err := libMgr.AddLibraryItemFile(ctx, itemUpdateSessionId, info)
-			if err != nil {
-				return err
-			}
-
-			p := soap.DefaultUpload
-			p.Headers = map[string]string{
-				"vmware-api-session-id": itemUpdateSessionId,
-			}
-
-			p.ContentLength = size
-			u, err := url.Parse(update.UploadEndpoint.URI)
-			if err != nil {
-				return err
-			}
-
-			return c.Upload(ctx, f, u, &p)
-		}
-
-		if err = uploadFunc(c, path); err != nil {
+		u, err := url.Parse(update.UploadEndpoint.URI)
+		if err != nil {
 			return err
 		}
 
-		return libMgr.CompleteLibraryItemUpdateSession(ctx, itemUpdateSessionId)
-	})
+		return c.Upload(ctx, f, u, &p)
+	}
 
-	return err
+	if err = uploadFunc(restClient, path); err != nil {
+		return err
+	}
+
+	return libMgr.CompleteLibraryItemUpdateSession(ctx, itemUpdateSessionId)
 }
 
 func isInvalidResponse(response DownloadUriResponse) bool {

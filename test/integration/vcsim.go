@@ -50,7 +50,6 @@ func (v *VcSimInstance) Start() (vcAddress string, vcPort int) {
 		log.Error(err, "Fail to find vc simulator port")
 		os.Exit(255)
 	}
-	//register for vapi/rest calls
 
 	return v.IP, v.Port
 }

@@ -14,7 +14,6 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/simulator"
-	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/tags"
 
 	vimTypes "github.com/vmware/govmomi/vim25/types"
@@ -132,7 +131,7 @@ var _ = Describe("Sessions", func() {
 			It("should not get virtualmachineimage from CL", func() {
 				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "invalid")
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).Should(Equal("failed to find image \"invalid\": no library items named: invalid"))
+				Expect(err.Error()).Should(Equal("no library items named: invalid"))
 				Expect(image).Should(BeNil())
 			})
 		})
@@ -922,32 +921,30 @@ var _ = Describe("Sessions", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resVm).NotTo(BeNil())
 
+			restClient := session.Client.RestClient()
+
 			// Create a tag category and a tag
-			err := session.WithRestClient(ctx, func(c *rest.Client) error {
-				manager := tags.NewManager(c)
+			manager := tags.NewManager(restClient)
 
-				cat := tags.Category{
-					Name:            tagCatName,
-					Description:     "test-description",
-					Cardinality:     "SINGLE",
-					AssociableTypes: []string{"VirtualMachine"},
-				}
+			cat := tags.Category{
+				Name:            tagCatName,
+				Description:     "test-description",
+				Cardinality:     "SINGLE",
+				AssociableTypes: []string{"VirtualMachine"},
+			}
 
-				catId, err = manager.CreateCategory(ctx, &cat)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(catId).NotTo(BeEmpty())
+			catId, err = manager.CreateCategory(ctx, &cat)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(catId).NotTo(BeEmpty())
 
-				tag := tags.Tag{
-					Name:        tagName,
-					Description: "test-description",
-					CategoryID:  catId,
-				}
-				tagId, err = manager.CreateTag(ctx, &tag)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(tagId).NotTo(BeEmpty())
-				return nil
-			})
-			Expect(err).ToNot(HaveOccurred())
+			tag := tags.Tag{
+				Name:        tagName,
+				Description: "test-description",
+				CategoryID:  catId,
+			}
+			tagId, err = manager.CreateTag(ctx, &tag)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(tagId).NotTo(BeEmpty())
 		})
 
 		Context("Attach a tag to a VM", func() {

@@ -23,8 +23,6 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/methods"
-	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -418,14 +416,16 @@ var _ = Describe("NetworkProvider", func() {
 			Context("should succeed", func() {
 
 				createInterface := func(ctx context.Context, c *vim25.Client) {
-					// config.logicalSwitchUuid not yet supported in govcsim.
-					pc := new(propertyCollectorRetrievePropertiesOverride)
-					pc.Self = c.ServiceContent.PropertyCollector
-					simulator.Map.Put(pc)
-
 					finder := find.NewFinder(c)
 					cluster, err := finder.DefaultClusterComputeResource(ctx)
 					Expect(err).ToNot(HaveOccurred())
+
+					net, err := finder.Network(ctx, "DC0_DVPG0")
+					Expect(err).To(BeNil())
+					dvpg := simulator.Map.Get(net.Reference()).(*simulator.DistributedVirtualPortgroup)
+					dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
+					dvpg.Config.BackingType = "nsx"
+
 					np := vsphere.NsxtNetworkProvider(ncpClient, finder, cluster)
 
 					dev, err := np.CreateVnic(ctx, vm, vmNif)
@@ -500,46 +500,3 @@ var _ = Describe("NetworkProvider", func() {
 		})
 	})
 })
-
-// See https://github.com/dougm/govmomi/commit/ef3672a24c5dcfcc4637c771a7f96fff4ff23938
-type propertyCollectorRetrievePropertiesOverride struct {
-	simulator.PropertyCollector
-}
-
-// RetrieveProperties overrides simulator.PropertyCollector.RetrieveProperties, returning a custom value for the "config.logicalSwitchUuid" field
-// The property `config.logicalSwitchUuid` is not available on a dvpg object model in govmomi (@v0.22.2 at the time of writing this comment).
-// Hence, as a workaround we replace the entire property collector in the simulator with our version of property collector that returns a fake value for that property.
-// Typically, a property collector returns the queried properties & their values in a propSet object. If the specified properties are missing from the vim object,
-// it additionally populates a missingSet object with the missing properties. Here, we look for `config.logicalSwitchUuid` in the missingSet and if found, include a
-// fake value for that property in the propSet object. This ensures we are not overwriting any other properties queried by the caller.
-func (pc *propertyCollectorRetrievePropertiesOverride) RetrieveProperties(ctx *simulator.Context, req *types.RetrieveProperties) soap.HasFault {
-
-	fault := pc.PropertyCollector.RetrieveProperties(ctx, req)
-	body := fault.(*methods.RetrievePropertiesBody)
-
-	var newObjectContent []types.ObjectContent
-	//TODO: Remove this when we move to the latest govmomi that supports `config.logicalSwitchUuid` on a DVPG.
-	for _, objContent := range body.Res.Returnval {
-		missingProp := false
-		var newMissingSet []types.MissingProperty
-		for _, prop := range objContent.MissingSet {
-			if prop.Path == "config.logicalSwitchUuid" {
-				missingProp = true
-			} else {
-				newMissingSet = append(newMissingSet, prop)
-			}
-		}
-		if missingProp {
-			logicalSwitchUuidProp := types.DynamicProperty{
-				Name: "config.logicalSwitchUuid",
-				Val:  dummyNsxSwitchId,
-			}
-			objContent.PropSet = append(objContent.PropSet, logicalSwitchUuidProp)
-		}
-		// Remove the property from the MissingSet since we now have replaced its value with a fake.
-		objContent.MissingSet = newMissingSet
-		newObjectContent = append(newObjectContent, objContent)
-	}
-	body.Res.Returnval = newObjectContent
-	return body
-}

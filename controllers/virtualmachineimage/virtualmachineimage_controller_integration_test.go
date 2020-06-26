@@ -6,13 +6,13 @@
 package virtualmachineimage
 
 import (
+	"context"
 	"os"
 	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"golang.org/x/net/context"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -70,11 +70,14 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
 
-		os.Setenv("FSS_WCP_VMSERVICE", "false")
+		ctx = context.Background()
+
+		// Reinitialize the session and client in case it is invalidated by other tests.
+		session, err = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), integration.DefaultNamespace)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
-		os.Unsetenv("FSS_WCP_VMSERVICE")
 		close(stopMgr)
 		mgrStopped.Wait()
 	})
@@ -130,9 +133,10 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 		BeforeEach(func() {
 			os.Setenv("FSS_WCP_VMSERVICE", "true")
+
 			clName = "content-library-name"
 			// Create a content library to back the ContentSource
-			libID, err = session.CreateLibrary(context.TODO(), clName)
+			libID, err = session.CreateLibrary(ctx, clName)
 			Expect(err).NotTo(HaveOccurred())
 
 			contentLibrary = aContentLibraryProvider(clName, libID)
@@ -142,24 +146,9 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			Expect(c.Create(context.TODO(), contentSource)).To(Succeed())
 		})
 
-		Context("with an image in the ContentSource pointed library", func() {
-
-			It("should only list the image from the ContentSource library", func() {
-
-				imageToAddNameCs = "contentsource-image-contentsource"
-				Expect(integration.CreateLibraryItem(context.TODO(), session, imageToAddNameCs, "ovf", libID)).To(Succeed())
-
-				// Wait for the image to show up in list VM images.
-				Eventually(func() bool {
-					imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
-					err := c.List(context.TODO(), imageList)
-					Expect(err).ShouldNot(HaveOccurred())
-					return imageExistsFunc(imageList, imageToAddNameCs)
-				}, timeout).Should(BeTrue())
-			})
-		})
-
 		AfterEach(func() {
+			os.Unsetenv("FSS_WCP_VMSERVICE")
+
 			// Delete the Content Library created by the test
 			Expect(session.DeleteContentLibrary(context.TODO(), libID)).To(Succeed())
 
@@ -181,24 +170,40 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			Expect(c.Delete(context.TODO(), contentSource)).To(Succeed())
 		})
 
+		Context("with an image in the ContentSource pointed library", func() {
+
+			It("should only list the image from the ContentSource library", func() {
+
+				imageToAddNameCs = "contentsource-image-contentsource"
+				Expect(integration.CreateLibraryItem(ctx, session, imageToAddNameCs, "ovf", libID)).To(Succeed())
+
+				// Wait for the image to show up in list VM images.
+				Eventually(func() bool {
+					imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
+					err := c.List(context.TODO(), imageList)
+					Expect(err).ShouldNot(HaveOccurred())
+					return imageExistsFunc(imageList, imageToAddNameCs)
+				}, timeout).Should(BeTrue())
+			})
+		})
 	})
 
 	Describe("when the session's content library is deleted", func() {
 		BeforeEach(func() {
 			// update the session's content source to point to a CL that we will delete. This is done so we don't delete the content library being used by the
 			// integration test framework.
-			tempSessionCL, err := session.CreateLibrary(context.TODO(), "temporary-content-library")
+			tempSessionCL, err := session.CreateLibrary(ctx, "temporary-content-library")
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(session.ConfigureContent(context.TODO(), tempSessionCL)).To(Succeed())
+			Expect(session.ConfigureContent(ctx, tempSessionCL)).To(Succeed())
 
 			// Delete the content library pointed by the session
-			Expect(session.DeleteContentLibrary(context.TODO(), tempSessionCL)).To(Succeed())
+			Expect(session.DeleteContentLibrary(ctx, tempSessionCL)).To(Succeed())
 		})
 		It("returns empty list of images", func() {
 			Eventually(func() bool {
 				imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
-				err = c.List(context.Background(), imageList)
+				err = c.List(ctx, imageList)
 				Expect(err).ShouldNot(HaveOccurred())
 				return len(imageList.Items) == 0
 			}, timeout).Should(BeTrue())
@@ -218,7 +223,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 				Eventually(func() bool {
 					imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
-					err = c.List(context.Background(), imageList)
+					err = c.List(ctx, imageList)
 					Expect(err).ShouldNot(HaveOccurred())
 
 					return len(imageList.Items) == 1 && imageList.Items[0].Name == integration.IntegrationContentLibraryItemName
@@ -229,10 +234,6 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 		Context("with a Content Library configured", func() {
 			var err error
-
-			BeforeEach(func() {
-				ctx = context.Background()
-			})
 
 			It("should add a VirtualMachineImage to if an item is added to the library", func() {
 				var imageToAddName = "image-to-add"

@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	stdlog "log"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -31,7 +30,6 @@ import (
 
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
-	govmomirest "github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/vcenter"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -244,8 +242,7 @@ func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, client client
 		return nil, fmt.Errorf("failed to get session: %v", err)
 	}
 
-	err = setupVcSimContent(vSphereConfig, vcSim, session)
-	if err != nil {
+	if err := SetupContentLibrary(vSphereConfig, session); err != nil {
 		return nil, fmt.Errorf("failed to setup the VC Simulator: %v", err)
 	}
 
@@ -267,30 +264,6 @@ func TeardownVcSimEnv(vcSim *VcSimInstance) {
 	}
 }
 
-func setupVcSimContent(config *vsphere.VSphereVmProviderConfig, vcSim *VcSimInstance, session *vsphere.Session) (err error) {
-	ctx := context.TODO()
-
-	c, err := vcSim.NewClient(ctx)
-	if err != nil {
-		stdlog.Printf("Failed to create client %v", err)
-		return err
-	}
-
-	rClient := govmomirest.NewClient(c.Client)
-	userInfo := url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
-
-	err = rClient.Login(ctx, userInfo)
-	if err != nil {
-		stdlog.Printf("Failed to login %v", err)
-		return err
-	}
-	defer func() {
-		err = rClient.Logout(ctx)
-	}()
-
-	return SetupContentLibrary(ctx, config, session)
-}
-
 func CreateLibraryItem(ctx context.Context, session *vsphere.Session, name, kind, libraryId string) error {
 	rootDir, err := testutil.GetRootDir()
 	if err != nil {
@@ -309,8 +282,10 @@ func CreateLibraryItem(ctx context.Context, session *vsphere.Session, name, kind
 	return session.CreateLibraryItem(ctx, libraryItem, imagePath)
 }
 
-func SetupContentLibrary(ctx context.Context, config *vsphere.VSphereVmProviderConfig, session *vsphere.Session) error {
+func SetupContentLibrary(config *vsphere.VSphereVmProviderConfig, session *vsphere.Session) error {
 	stdlog.Printf("Setting up Content Library: %+v\n", *config)
+
+	ctx := context.Background()
 
 	libID, err := session.CreateLibrary(ctx, ContentSourceName)
 	if err != nil {
@@ -340,25 +315,26 @@ func CloneVirtualMachineToLibraryItem(ctx context.Context, config *vsphere.VSphe
 		return err
 	}
 
-	return s.WithRestClient(ctx, func(c *govmomirest.Client) error {
-		spec := vcenter.Template{
-			Name:     name,
-			Library:  config.ContentSource,
-			SourceVM: vm.Reference().Value,
-			Placement: &vcenter.Placement{
-				Folder:       config.Folder,
-				ResourcePool: pool.Reference().Value,
-			},
-		}
+	restClient := s.Client.RestClient()
 
-		id, err := vcenter.NewManager(c).CreateTemplate(ctx, spec)
-		if err != nil {
-			return err
-		}
-		stdlog.Printf("Created vmtx %s in library %s", id, config.ContentSource)
+	spec := vcenter.Template{
+		Name:     name,
+		Library:  config.ContentSource,
+		SourceVM: vm.Reference().Value,
+		Placement: &vcenter.Placement{
+			Folder:       config.Folder,
+			ResourcePool: pool.Reference().Value,
+		},
+	}
 
-		return nil
-	})
+	id, err := vcenter.NewManager(restClient).CreateTemplate(ctx, spec)
+	if err != nil {
+		return err
+	}
+	stdlog.Printf("Created vmtx %s in library %s", id, config.ContentSource)
+
+	return nil
+
 }
 
 // SetupTestReconcile returns a reconcile.Reconcile implementation that delegates to inner and

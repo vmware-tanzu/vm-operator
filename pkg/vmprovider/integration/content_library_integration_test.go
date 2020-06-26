@@ -1,6 +1,6 @@
 // +build integration
 
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package integration
@@ -16,7 +16,6 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vapi/library"
-	govmomirest "github.com/vmware/govmomi/vapi/rest"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/mocks"
@@ -46,44 +45,35 @@ var _ = Describe("content library", func() {
 	Context("when items are present in library", func() {
 
 		It("lists the ovf and downloads the ovf", func() {
-
 			ctx := context.Background()
-			var libItem *library.Item
 
-			err := session.WithRestClient(ctx, func(c *govmomirest.Client) error {
-				mgr := library.NewManager(c)
+			restClient := session.Client.RestClient()
+			mgr := library.NewManager(restClient)
+			libraries, err := mgr.ListLibraries(ctx)
+			Expect(err).To(BeNil())
 
-				libraries, err := mgr.ListLibraries(ctx)
-				Expect(err).To(BeNil())
+			libID := libraries[0]
+			item := library.Item{
+				Name:      integration.IntegrationContentLibraryItemName,
+				Type:      "ovf",
+				LibraryID: libID,
+			}
 
-				libID := libraries[0]
-				item := library.Item{
-					Name:      integration.IntegrationContentLibraryItemName,
-					Type:      "ovf",
-					LibraryID: libID,
-				}
+			itemIDs, err := mgr.FindLibraryItems(ctx, library.FindItem{LibraryID: libID, Name: item.Name})
+			Expect(err).To(BeNil())
+			Expect(itemIDs).Should(HaveLen(1))
 
-				itemIDs, err := mgr.FindLibraryItems(ctx, library.FindItem{LibraryID: libID, Name: item.Name})
-				Expect(err).To(BeNil())
-				Expect(itemIDs).Should(HaveLen(1))
-
-				libItem, err = mgr.GetLibraryItem(ctx, itemIDs[0])
-				Expect(err).To(BeNil())
-
-				return nil
-			})
+			libItem, err := mgr.GetLibraryItem(ctx, itemIDs[0])
 			Expect(err).To(BeNil())
 
 			testProvider := vsphere.ContentDownloadProvider{ApiWaitTimeSecs: 1}
-			_ = session.WithRestClient(ctx, func(c *govmomirest.Client) error {
-				downloadResponse, err := testProvider.GenerateDownloadUriForLibraryItem(ctx, c, libItem)
-				Expect(err).To(BeNil())
-				Expect(downloadResponse).ShouldNot(BeEquivalentTo(vsphere.DownloadUriResponse{}))
-				Expect(downloadResponse.FileUri).ShouldNot(BeEmpty())
-				Expect(downloadResponse.DownloadSessionId).NotTo(BeNil())
-				fileUriToDownload = downloadResponse.FileUri
-				return err
-			})
+
+			downloadResponse, err := testProvider.GenerateDownloadUriForLibraryItem(ctx, restClient, libItem)
+			Expect(err).To(BeNil())
+			Expect(downloadResponse).ShouldNot(BeEquivalentTo(vsphere.DownloadUriResponse{}))
+			Expect(downloadResponse.FileUri).ShouldNot(BeEmpty())
+			Expect(downloadResponse.DownloadSessionId).NotTo(BeNil())
+			fileUriToDownload = downloadResponse.FileUri
 		})
 	})
 
@@ -98,11 +88,10 @@ var _ = Describe("content library", func() {
 
 			ctx := context.Background()
 			testContentStruct := vsphere.ContentDownloadProvider{ApiWaitTimeSecs: 1}
-			err := session.WithRestClient(ctx, func(c *govmomirest.Client) error {
-				_, err := testContentStruct.GenerateDownloadUriForLibraryItem(ctx, c, &item)
-				return err
-			})
-			Expect(err).ToNot(BeNil())
+
+			restClient := session.Client.RestClient()
+			_, err := testContentStruct.GenerateDownloadUriForLibraryItem(ctx, restClient, &item)
+			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("404 Not Found"))
 		})
 	})
@@ -152,13 +141,12 @@ var _ = Describe("content library", func() {
 
 		It("should return an error", func() {
 			ctx := context.TODO()
-			err := session.WithRestClient(ctx, func(c *govmomirest.Client) error {
-				file, err := vsphere.ReadFileFromUrl(ctx, c, "test.com/link")
-				if file != nil {
-					_ = file.Close()
-				}
-				return err
-			})
+
+			restClient := session.Client.RestClient()
+			file, err := vsphere.ReadFileFromUrl(ctx, restClient, "test.com/link")
+			if file != nil {
+				_ = file.Close()
+			}
 			Expect(err).NotTo(BeNil())
 		})
 	})
@@ -167,13 +155,13 @@ var _ = Describe("content library", func() {
 
 		It("should download the file", func() {
 			ctx := context.TODO()
-			err := session.WithRestClient(ctx, func(c *govmomirest.Client) error {
-				file, err := vsphere.ReadFileFromUrl(ctx, c, fileUriToDownload)
-				if file != nil {
-					_ = file.Close()
-				}
-				return err
-			})
+
+			restClient := session.Client.RestClient()
+			file, err := vsphere.ReadFileFromUrl(ctx, restClient, fileUriToDownload)
+			if file != nil {
+				_ = file.Close()
+			}
+
 			Expect(err).To(BeNil())
 		})
 	})

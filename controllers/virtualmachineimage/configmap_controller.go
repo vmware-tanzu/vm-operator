@@ -101,8 +101,8 @@ func (r *ReconcileVMOpConfigMap) Reconcile(request reconcile.Request) (reconcile
 	// repopulate the cache.
 	r.vmProvider.UpdateVmOpConfigMap(goctx.TODO())
 
-	//Sync new set of images
-	//TODO: Merge thread contexts to sync images with a watch on source.Channel in the vmimage-controller
+	// Sync new set of images
+	// TODO: Merge thread contexts to sync images with a watch on source.Channel in the vmimage-controller
 	err := r.imageDiscoverer.SyncImages()
 	if err != nil {
 		r.log.Error(err, "failed to Sync Images after Content Source changed")

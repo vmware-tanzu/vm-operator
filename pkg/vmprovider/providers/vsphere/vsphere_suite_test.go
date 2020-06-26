@@ -1,8 +1,8 @@
 // +build !integration
 
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 package vsphere_test
 
 import (
@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/simulator"
+	_ "github.com/vmware/govmomi/vapi/simulator"
 )
 
 var model *simulator.Model
@@ -54,6 +55,8 @@ func setupModelAndServerWithSettings(tlsConfig *tls.Config) (*simulator.Model, *
 
 	err := newModel.Create()
 	Expect(err).ToNot(HaveOccurred())
+
+	newModel.Service.RegisterEndpoints = true
 
 	newModel.Service.TLS = tlsConfig
 	newServer := newModel.Service.NewServer()

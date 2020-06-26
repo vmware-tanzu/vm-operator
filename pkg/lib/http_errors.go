@@ -11,3 +11,7 @@ import (
 func IsNotFoundError(err error) bool {
 	return strings.HasSuffix(err.Error(), http.StatusText(http.StatusNotFound))
 }
+
+func IsUnAuthorizedError(err error) bool {
+	return strings.HasSuffix(err.Error(), http.StatusText(http.StatusUnauthorized))
+}

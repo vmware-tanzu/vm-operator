@@ -30,60 +30,28 @@ import (
 )
 
 const (
-	timeout          = time.Second * 10
-	storageClassName = "foo-class"
+	timeout               = time.Second * 10
+	storageClassName      = "foo-class"
+	metadataConfigMapName = "test-metadata-cm"
 )
-
-func generateDefaultResourceQuota() *corev1.ResourceQuota {
-	return &corev1.ResourceQuota{
-		TypeMeta: metav1.TypeMeta{
-			Kind: "ResourceQuota",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "rq-for-unit-test",
-			Namespace: integration.DefaultNamespace,
-		},
-		Spec: corev1.ResourceQuotaSpec{
-			Hard: corev1.ResourceList{
-				storageClassName + ".storageclass.storage.k8s.io/persistentvolumeclaims": resource.MustParse("1"),
-				"simple-class" + ".storageclass.storage.k8s.io/persistentvolumeclaims":   resource.MustParse("1"),
-				"limits.cpu":    resource.MustParse("2"),
-				"limits.memory": resource.MustParse("2Gi"),
-			},
-		},
-	}
-}
-
-func generateStorageClass(ns string) *storagetypev1.StorageClass {
-	parameters := make(map[string]string)
-	parameters["storagePolicyID"] = "foo"
-
-	return &storagetypev1.StorageClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: ns,
-			Name:      storageClassName,
-		},
-		Provisioner: "foo",
-		Parameters:  parameters,
-	}
-}
 
 var _ = Describe("VirtualMachine controller", func() {
 
 	var (
-		classInstance   vmoperatorv1alpha1.VirtualMachineClass
-		storageClass    *storagetypev1.StorageClass
-		resourceQuota   *corev1.ResourceQuota
-		instance        vmoperatorv1alpha1.VirtualMachine
-		expectedRequest reconcile.Request
-		recFn           reconcile.Reconciler
-		requests        chan reconcile.Request
-		stopMgr         chan struct{}
-		mgrStopped      *sync.WaitGroup
-		mgr             manager.Manager
-		c               client.Client
-		err             error
-		ns              = integration.DefaultNamespace
+		classInstance     vmoperatorv1alpha1.VirtualMachineClass
+		metadataConfigMap corev1.ConfigMap
+		storageClass      *storagetypev1.StorageClass
+		resourceQuota     *corev1.ResourceQuota
+		instance          vmoperatorv1alpha1.VirtualMachine
+		expectedRequest   reconcile.Request
+		recFn             reconcile.Reconciler
+		requests          chan reconcile.Request
+		stopMgr           chan struct{}
+		mgrStopped        *sync.WaitGroup
+		mgr               manager.Manager
+		c                 client.Client
+		err               error
+		ns                = integration.DefaultNamespace
 	)
 
 	BeforeEach(func() {
@@ -112,6 +80,45 @@ var _ = Describe("VirtualMachine controller", func() {
 			},
 		}
 
+		storageClass = &storagetypev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      storageClassName,
+			},
+			Provisioner: "foo",
+			Parameters: map[string]string{
+				"storagePolicyID": "foo",
+			},
+		}
+
+		metadataConfigMap = corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      metadataConfigMapName,
+			},
+			Data: map[string]string{
+				"somekey": "somevalue",
+			},
+		}
+
+		resourceQuota = &corev1.ResourceQuota{
+			TypeMeta: metav1.TypeMeta{
+				Kind: "ResourceQuota",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "rq-for-unit-test",
+				Namespace: integration.DefaultNamespace,
+			},
+			Spec: corev1.ResourceQuotaSpec{
+				Hard: corev1.ResourceList{
+					storageClassName + ".storageclass.storage.k8s.io/persistentvolumeclaims": resource.MustParse("1"),
+					"simple-class" + ".storageclass.storage.k8s.io/persistentvolumeclaims":   resource.MustParse("1"),
+					"limits.cpu":    resource.MustParse("2"),
+					"limits.memory": resource.MustParse("2Gi"),
+				},
+			},
+		}
+
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 
@@ -120,16 +127,16 @@ var _ = Describe("VirtualMachine controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
-		storageClass = generateStorageClass(ns)
-
 		err = c.Create(context.TODO(), storageClass)
 		Expect(err).ShouldNot(HaveOccurred())
 
-		resourceQuota = generateDefaultResourceQuota()
 		err = c.Create(context.TODO(), resourceQuota)
 		Expect(err).ShouldNot(HaveOccurred())
 
 		err = c.Create(context.TODO(), &classInstance)
+		Expect(err).ShouldNot(HaveOccurred())
+
+		err = c.Create(context.TODO(), &metadataConfigMap)
 		Expect(err).ShouldNot(HaveOccurred())
 
 		ctrlContext := &controllercontext.ControllerManagerContext{
@@ -155,6 +162,7 @@ var _ = Describe("VirtualMachine controller", func() {
 		err = c.Delete(ctx, storageClass, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
 		err = c.Delete(ctx, &classInstance, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
 		err = c.Delete(ctx, resourceQuota, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
+		err = c.Delete(ctx, &metadataConfigMap, client.PropagationPolicy(metav1.DeletePropagationBackground), client.GracePeriodSeconds(0))
 
 		stdlog.Printf("Cleaned up after test")
 	})
@@ -185,9 +193,13 @@ var _ = Describe("VirtualMachine controller", func() {
 				Spec: vmoperatorv1alpha1.VirtualMachineSpec{
 					ImageName:    "DC0_H0_VM0", // Default govcsim image name
 					ClassName:    classInstance.Name,
-					PowerState:   "poweredOn",
+					PowerState:   vmoperatorv1alpha1.VirtualMachinePoweredOn,
 					Ports:        []vmoperatorv1alpha1.VirtualMachinePort{},
 					StorageClass: storageClassName,
+					VmMetadata: &vmoperatorv1alpha1.VirtualMachineMetadata{
+						Transport:     vmoperatorv1alpha1.VirtualMachineMetadataOvfEnvTransport,
+						ConfigMapName: metadataConfigMapName,
+					},
 				},
 			}
 
@@ -237,9 +249,13 @@ var _ = Describe("VirtualMachine controller", func() {
 				Spec: vmoperatorv1alpha1.VirtualMachineSpec{
 					ImageName:    imageName,
 					ClassName:    classInstance.Name,
-					PowerState:   "poweredOn",
+					PowerState:   vmoperatorv1alpha1.VirtualMachinePoweredOn,
 					Ports:        []vmoperatorv1alpha1.VirtualMachinePort{},
 					StorageClass: storageClassName,
+					VmMetadata: &vmoperatorv1alpha1.VirtualMachineMetadata{
+						Transport:     vmoperatorv1alpha1.VirtualMachineMetadataOvfEnvTransport,
+						ConfigMapName: metadataConfigMapName,
+					},
 				},
 			}
 

@@ -40,11 +40,23 @@ func intgTestsValidateCreate() {
 		ctx *intgValidatingWebhookContext
 	)
 
-	validateCreate := func(expectedAllowed bool, expectedReason string, expectedErr error) {
+	type createArgs struct {
+		invalidImageName         bool
+		invalidMetadataTransport bool
+		invalidMetadataConfigMap bool
+	}
+
+	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		vm := ctx.vm.DeepCopy()
 
-		if !expectedAllowed {
+		if args.invalidImageName {
 			vm.Spec.ImageName = ""
+		}
+		if args.invalidMetadataTransport {
+			vm.Spec.VmMetadata.Transport = "blah"
+		}
+		if args.invalidMetadataConfigMap {
+			vm.Spec.VmMetadata.ConfigMapName = ""
 		}
 
 		err := ctx.Client.Create(ctx, vm)
@@ -66,8 +78,10 @@ func intgTestsValidateCreate() {
 	})
 
 	DescribeTable("create table", validateCreate,
-		Entry("should work", true, "", nil),
-		Entry("should not work for invalid", false, "spec.imageName must be specified", nil),
+		Entry("should work", createArgs{}, true, "", nil),
+		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false, "spec.imageName must be specified", nil),
+		Entry("should not work for invalid metadata transport", createArgs{invalidMetadataTransport: true}, false, "spec.vmmetadata.transport is not supported", nil),
+		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmmetadata.configmapname must be specified", nil),
 	)
 }
 

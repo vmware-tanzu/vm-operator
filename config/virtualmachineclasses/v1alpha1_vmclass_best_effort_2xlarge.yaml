@@ -1,0 +1,8 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachineClass
+metadata:
+  name: best-effort-2xlarge
+spec:
+  hardware:
+    cpus: 8
+    memory: 64Gi

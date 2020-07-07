@@ -102,15 +102,18 @@ patchWcpDeploymentYaml() {
 
     fi
 
-    sed -E -i '' "s,\"?<FSS_WCP_VMSERVICE_VALUE>\"?,\"$FSS_WCP_VMSERVICE_VALUE\",g" "artifacts/wcp-deployment.yaml"
+    sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_VALUE>\"?,\"$FSS_WCP_VMSERVICE_VALUE\",g" "artifacts/wcp-deployment.yaml"
     if grep -q "<FSS_WCP_VMSERVICE_VALUE>" artifacts/wcp-deployment.yaml; then
         echo "Failed to subst <FSS_WCP_VMSERVICE_VALUE> in artifacts/wcp-deployment.yaml"
         exit 1
     fi
-    sed -E -i '' "s,\"?<VSPHERE_NETWORKING_VALUE>\"?,\"$VSPHERE_NETWORKING_VALUE\",g" "artifacts/wcp-deployment.yaml"
+    sed -i'' -E "s,\"?<VSPHERE_NETWORKING_VALUE>\"?,\"$VSPHERE_NETWORKING_VALUE\",g" "artifacts/wcp-deployment.yaml"
     if grep -q "<VSPHERE_NETWORKING_VALUE>" artifacts/wcp-deployment.yaml; then
         echo "Failed to subst VSPHERE_NETWORKING_VALUE in artifacts/wcp-deployment.yaml"
         exit 1
+    fi
+    if  [[ ! -z "$INSECURE_TLS" ]]; then
+        sed -i'' -E "s,InsecureSkipTLSVerify: \"?false\"?,InsecureSkipTLSVerify: \"$INSECURE_TLS\",g" "artifacts/wcp-deployment.yaml"
     fi
 }
 
@@ -120,6 +123,9 @@ deploy() {
     if [[ ${SKIP_YAML:-} != "all" ]]; then
         patchWcpDeploymentYaml
         yamlArgs+="--yamlToCopy artifacts/wcp-deployment.yaml,/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/vmop.yaml"
+        if [[ ${SKIP_YAML:-} != "vmclasses" ]]; then
+            yamlArgs+=" --yamlToCopy artifacts/default-vmclasses.yaml,/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/40-vmclasses/default-vmclasses.yaml"
+        fi
     fi
 
     # shellcheck disable=SC2086

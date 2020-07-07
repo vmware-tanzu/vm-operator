@@ -4,8 +4,14 @@ resources:
   - v1alpha1_vmclass_guaranteed_medium.yaml
   - v1alpha1_vmclass_guaranteed_large.yaml
   - v1alpha1_vmclass_guaranteed_xlarge.yaml
+  - v1alpha1_vmclass_guaranteed_2xlarge.yaml
+  - v1alpha1_vmclass_guaranteed_4xlarge.yaml
+  - v1alpha1_vmclass_guaranteed_8xlarge.yaml
   - v1alpha1_vmclass_best_effort_xsmall.yaml
   - v1alpha1_vmclass_best_effort_small.yaml
   - v1alpha1_vmclass_best_effort_medium.yaml
   - v1alpha1_vmclass_best_effort_large.yaml
   - v1alpha1_vmclass_best_effort_xlarge.yaml
+  - v1alpha1_vmclass_best_effort_2xlarge.yaml
+  - v1alpha1_vmclass_best_effort_4xlarge.yaml
+  - v1alpha1_vmclass_best_effort_8xlarge.yaml

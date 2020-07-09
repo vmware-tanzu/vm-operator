@@ -7,7 +7,7 @@ INFRASTRUCTURE_COMPONENTS := infrastructure-components.yaml
 
 # The way the images appear in the kustomize files.
 # We only want the actual sha1 to identify the product version the way the
-# container is tagged on the master VM This must be the same name (and version)
+# container is tagged on the control plane VM This must be the same name (and version)
 # that is being applied in cayman-photon file:
 # - support/scripts/dockerfiles/vmop/build.sh
 DEPLOYED_IMAGE_VERSION = $(BUILD_VERSION)

@@ -72,10 +72,12 @@ verifyEnvironmentVariables() {
 
         VCSA_DATASTORE=${VCSA_DATASTORE:-nfs0-1}
 
-        if [[ -z ${VCSA_CONTENT_SOURCE:-} ]]; then
-            error "Error: The VCSA_CONTENT_SOURCE environment variable must be set" \
-                "to point to the ID of a valid VCSA Content Library"
-            exit 1
+        if [[ ${FSS_WCP_VMSERVICE_VALUE:-} != "true" ]]; then
+            if [[ -z ${VCSA_CONTENT_SOURCE:-} ]]; then
+                error "Error: The VCSA_CONTENT_SOURCE environment variable must be set" \
+                      "to point to the ID of a valid VCSA Content Library"
+                exit 1
+            fi
         fi
 
         if [[ -z ${VCSA_WORKER_DNS:-} ]]; then
@@ -98,8 +100,13 @@ patchWcpDeploymentYaml() {
         sed -i'' "s,<datacenter>,$VCSA_DATACENTER,g" "artifacts/wcp-deployment.yaml"
         sed -i'' "s, Datastore: .*, Datastore: $VCSA_DATASTORE," "artifacts/wcp-deployment.yaml"
         sed -i'' "s,<worker_dns>,$VCSA_WORKER_DNS," "artifacts/wcp-deployment.yaml"
-        sed -i'' "s,<content_source>,$VCSA_CONTENT_SOURCE,g" "artifacts/wcp-deployment.yaml"
 
+        # If the WCP_VMService FSS is enabled, unset the ContentSource key in the configmap
+        if [[ ${FSS_WCP_VMSERVICE_VALUE} == "true" ]]; then
+            sed -i'' "/<content_source>/d" "artifacts/wcp-deployment.yaml"
+        else
+            sed -i'' "s,<content_source>,$VCSA_CONTENT_SOURCE,g" "artifacts/wcp-deployment.yaml"
+        fi
     fi
 
     sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_VALUE>\"?,\"$FSS_WCP_VMSERVICE_VALUE\",g" "artifacts/wcp-deployment.yaml"

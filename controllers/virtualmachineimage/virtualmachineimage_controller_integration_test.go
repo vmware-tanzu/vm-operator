@@ -7,12 +7,15 @@ package virtualmachineimage
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,6 +26,7 @@ import (
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
@@ -38,15 +42,57 @@ func imageExistsFunc(imageList *vmoperatorv1alpha1.VirtualMachineImageList, name
 	return false
 }
 
+func getVmConfigArgs(namespace, name string) vmprovider.VmConfigArgs {
+	vmClass := getVMClassInstance(name, namespace)
+
+	return vmprovider.VmConfigArgs{
+		VmClass:          *vmClass,
+		ResourcePolicy:   nil,
+		VmMetadata:       &vmprovider.VmMetadata{},
+		StorageProfileID: "foo",
+	}
+}
+
+func getVMClassInstance(vmName, namespace string) *vmoperatorv1alpha1.VirtualMachineClass {
+	return &vmoperatorv1alpha1.VirtualMachineClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      fmt.Sprintf("%s-class", vmName),
+		},
+		Spec: vmoperatorv1alpha1.VirtualMachineClassSpec{
+			Hardware: vmoperatorv1alpha1.VirtualMachineClassHardware{
+				Cpus:   4,
+				Memory: resource.MustParse("1Mi"),
+			},
+		},
+	}
+}
+
+func getVirtualMachineInstance(name, namespace, imageName, className string) *vmoperatorv1alpha1.VirtualMachine {
+	return &vmoperatorv1alpha1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: vmoperatorv1alpha1.VirtualMachineSpec{
+			ImageName:  imageName,
+			ClassName:  className,
+			PowerState: vmoperatorv1alpha1.VirtualMachinePoweredOn,
+			Ports:      []vmoperatorv1alpha1.VirtualMachinePort{},
+		},
+	}
+}
+
 var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 	var (
-		c          client.Client
-		stopMgr    chan struct{}
-		mgrStopped *sync.WaitGroup
-		mgr        manager.Manager
-		err        error
-		ctx        context.Context
+		c              client.Client
+		stopMgr        chan struct{}
+		mgrStopped     *sync.WaitGroup
+		mgr            manager.Manager
+		err            error
+		ctx            context.Context
+		vmImageSession *vsphere.Session
 	)
 
 	BeforeEach(func() {
@@ -75,6 +121,11 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 		// Reinitialize the session and client in case it is invalidated by other tests.
 		session, err = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), integration.DefaultNamespace)
 		Expect(err).NotTo(HaveOccurred())
+
+		// "" namespace is used to list VirtualMachineImages. Reset the session's content library to the default CL.
+		vmImageSession, err = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), "")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(vmImageSession.ConfigureContent(ctx, integration.ContentSourceID)).To(Succeed())
 	})
 
 	AfterEach(func() {
@@ -139,51 +190,78 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			libID, err = session.CreateLibrary(ctx, clName)
 			Expect(err).NotTo(HaveOccurred())
 
+			imageToAddNameCs = "contentsource-image-contentsource"
+			Expect(integration.CreateLibraryItem(ctx, session, imageToAddNameCs, "ovf", libID)).To(Succeed())
+
 			contentLibrary = aContentLibraryProvider(clName, libID)
 			Expect(c.Create(context.TODO(), contentLibrary)).To(Succeed())
 
 			contentSource = aContentSource(clName, contentLibrary)
 			Expect(c.Create(context.TODO(), contentSource)).To(Succeed())
+
+			// Wait for the image to show up in list VM images.
+			Eventually(func() bool {
+				imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
+				err := c.List(context.TODO(), imageList)
+				Expect(err).ShouldNot(HaveOccurred())
+				return imageExistsFunc(imageList, imageToAddNameCs)
+			}, timeout).Should(BeTrue())
 		})
 
 		AfterEach(func() {
 			os.Unsetenv("FSS_WCP_VMSERVICE")
 
+			// Delete the ContentSource resource
+			Expect(c.Delete(context.TODO(), contentSource)).To(Succeed())
+			Eventually(func() error {
+				cs := &vmoperatorv1alpha1.ContentSource{}
+				csObjectKey := types.NamespacedName{Name: contentSource.Name, Namespace: contentSource.Namespace}
+
+				err := c.Get(context.TODO(), csObjectKey, cs)
+				return err
+			}, timeout).ShouldNot(Succeed())
+
+			// Delete the ContentLibraryProvider resouce. Ideally this should not be needed since ContentLibraryProvider has an
+			// OwnerReference to the ContentSource. We delete explicitly here so we do not have to wait for the reconcile.
+			Expect(c.Delete(context.TODO(), contentLibrary)).To(Succeed())
+			Eventually(func() error {
+				cl := &vmoperatorv1alpha1.ContentLibraryProvider{}
+				clObjectKey := types.NamespacedName{Name: contentLibrary.Name, Namespace: contentLibrary.Namespace}
+
+				err := c.Get(context.TODO(), clObjectKey, cl)
+				return err
+			}, timeout).ShouldNot(Succeed())
+
 			// Delete the Content Library created by the test
 			Expect(session.DeleteContentLibrary(context.TODO(), libID)).To(Succeed())
 
-			// Delete the VirtualMachineImage from API server
-			existingImage := vmoperatorv1alpha1.VirtualMachineImage{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: imageToAddNameCs,
-				},
-			}
-			Expect(c.Delete(context.TODO(), &existingImage)).To(Succeed())
-			Eventually(func() bool {
-				imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
-				err := c.List(context.TODO(), imageList)
-				Expect(err).ShouldNot(HaveOccurred())
-				return !imageExistsFunc(imageList, imageToAddNameCs)
-			}, timeout).Should(BeTrue())
-
-			// Delete the Content Source resource
-			Expect(c.Delete(context.TODO(), contentSource)).To(Succeed())
+			session, err = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), "")
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		Context("with an image in the ContentSource pointed library", func() {
 
 			It("should only list the image from the ContentSource library", func() {
+				// Tested by the BeforeEach/AfterEach block.
+			})
 
-				imageToAddNameCs = "contentsource-image-contentsource"
-				Expect(integration.CreateLibraryItem(ctx, session, imageToAddNameCs, "ovf", libID)).To(Succeed())
+			It("should successfully be able to clone a VirtualMachine", func() {
+				testNamespace := "vmservice-test-clone-ns"
+				ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
+				Expect(c.Create(context.TODO(), ns)).To(Succeed())
 
-				// Wait for the image to show up in list VM images.
-				Eventually(func() bool {
-					imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
-					err := c.List(context.TODO(), imageList)
-					Expect(err).ShouldNot(HaveOccurred())
-					return imageExistsFunc(imageList, imageToAddNameCs)
-				}, timeout).Should(BeTrue())
+				// Configure the test to use the test namespace. This will make sure that the session is using content library from
+				// ContentSource resources.
+				session, err = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), testNamespace)
+				Expect(err).NotTo(HaveOccurred())
+
+				vmName := "vmservice-vm"
+				vmConfigArgs := getVmConfigArgs(testNamespace, vmName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageToAddNameCs, vmConfigArgs.VmClass.Name)
+
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
 			})
 		})
 	})
@@ -195,11 +273,12 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			tempSessionCL, err := session.CreateLibrary(ctx, "temporary-content-library")
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(session.ConfigureContent(ctx, tempSessionCL)).To(Succeed())
+			Expect(vmImageSession.ConfigureContent(ctx, tempSessionCL)).To(Succeed())
 
 			// Delete the content library pointed by the session
 			Expect(session.DeleteContentLibrary(ctx, tempSessionCL)).To(Succeed())
 		})
+
 		It("returns empty list of images", func() {
 			Eventually(func() bool {
 				imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
@@ -207,11 +286,6 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 				return len(imageList.Items) == 0
 			}, timeout).Should(BeTrue())
-		})
-
-		AfterEach(func() {
-			// Restore session's content library
-			Expect(session.ConfigureContent(context.TODO(), integration.ContentSourceID)).To(Succeed())
 		})
 	})
 

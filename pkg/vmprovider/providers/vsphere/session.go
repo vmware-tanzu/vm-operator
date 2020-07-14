@@ -206,7 +206,7 @@ func (s *Session) initCpuMinFreq(ctx context.Context) error {
 }
 
 func (s *Session) ConfigureContent(ctx context.Context, contentSource string) error {
-	log.V(4).Info("Configuring library Content", "contentSource", contentSource)
+	log.V(4).Info("Configuring content library for session", "clUUID", contentSource)
 
 	if contentSource == "" {
 		log.V(4).Info("Content library configured to nothing")

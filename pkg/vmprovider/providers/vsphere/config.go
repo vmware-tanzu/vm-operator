@@ -6,16 +6,17 @@ package vsphere
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"gopkg.in/yaml.v2"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -294,7 +295,43 @@ func GetProviderConfigFromConfigMap(client ctrlruntime.Client, namespace string)
 		}
 	}
 
+	// With VMService, we are using ContentSource CRD to specify a content library association.
+	if os.Getenv("FSS_WCP_VMSERVICE") == "true" {
+		contentSource, err := getCLUUIDFromContentSource(client)
+		if err != nil {
+			return nil, err
+		}
+
+		log.V(4).Info("Setting the CL UUID from ContentSource resource", "clUUID", contentSource)
+		providerConfig.ContentSource = contentSource
+	}
+
 	return providerConfig, nil
+}
+
+// getCLUUIDFromContentSource gets the content library UUID from the installed ContentSource resource.
+func getCLUUIDFromContentSource(client ctrlruntime.Reader) (string, error) {
+	log.V(4).Info("Extracting CL UUID from the ContentSource resource")
+	contentSourceList := &v1alpha1.ContentSourceList{}
+	if err := client.List(context.Background(), contentSourceList); err != nil {
+		return "", errors.Wrap(err, "failed to list content sources from control plane")
+	}
+
+	if len(contentSourceList.Items) == 0 {
+		return "", fmt.Errorf("No ContentSource resource configured")
+	}
+
+	// For now, we only have one content library. This needs to be modified when we start supporting multiple CLs.
+	// TODO: 	clProviderRef := contentSourceList.Items[0].Spec.ProviderRef
+	clObjKey := ctrlruntime.ObjectKey{Name: clProviderRef.Name, Namespace: clProviderRef.Namespace}
+
+	clProvider := &v1alpha1.ContentLibraryProvider{}
+	if err := client.Get(context.Background(), clObjKey, clProvider); err != nil {
+		return "", errors.Wrapf(err, "failed to get the ContentLibraryProvider from API server. clProviderName: %s, clProviderNamespace: %s",
+			clProviderRef.Name, clProviderRef.Namespace)
+	}
+
+	return clProvider.Spec.UUID, nil
 }
 
 func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig, vcCredsSecretName string) *v1.ConfigMap {

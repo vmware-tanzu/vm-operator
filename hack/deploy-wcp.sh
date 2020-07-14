@@ -119,7 +119,7 @@ patchWcpDeploymentYaml() {
         echo "Failed to subst VSPHERE_NETWORKING_VALUE in artifacts/wcp-deployment.yaml"
         exit 1
     fi
-    if  [[ ! -z "$INSECURE_TLS" ]]; then
+    if  [[ ! -z ${INSECURE_TLS:-} ]]; then
         sed -i'' -E "s,InsecureSkipTLSVerify: \"?false\"?,InsecureSkipTLSVerify: \"$INSECURE_TLS\",g" "artifacts/wcp-deployment.yaml"
     fi
 }

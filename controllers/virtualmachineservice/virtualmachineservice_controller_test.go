@@ -1,8 +1,7 @@
 // +build integration
 
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineservice
 
@@ -448,8 +447,174 @@ var _ = Describe("VirtualMachineService controller", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(newService).NotTo(Equal(currentService))
 			})
-		})
 
+		})
+		Describe("when handling labels while reconciling a VirtualMachineService", func() {
+			var (
+				virtualMachineServiceToReconcile *vmoperatorv1alpha1.VirtualMachineService
+				serviceReconciledFromVMService   *corev1.Service
+				port                             vmoperatorv1alpha1.VirtualMachineServicePort
+				// Labels that exist on the VMService.
+				vmServiceLabels map[string]string
+				// Labels that are expected on the Service.
+				expectedServiceLabels map[string]string
+				testVMServiceName     string
+				testVMServicePort     int32
+			)
+			JustBeforeEach(func() {
+				port = vmoperatorv1alpha1.VirtualMachineServicePort{
+					Name:       "foo",
+					Protocol:   "TCP",
+					Port:       testVMServicePort,
+					TargetPort: testVMServicePort,
+				}
+
+				virtualMachineServiceToReconcile = &vmoperatorv1alpha1.VirtualMachineService{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ns,
+						Name:      testVMServiceName,
+						Labels:    vmServiceLabels,
+					},
+					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+						Type:     "ClusterIP",
+						Ports:    []vmoperatorv1alpha1.VirtualMachineServicePort{port},
+						Selector: map[string]string{"foo": "bar"},
+					},
+				}
+
+				Expect(c.Create(context.TODO(), virtualMachineServiceToReconcile)).To(Succeed())
+
+				// Make sure the reconcile happened. The 'requests' channel is sent to after a reconcile
+				//  is completed.
+				Eventually(requests, timeout).Should(Receive(Equal(reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      virtualMachineServiceToReconcile.Name,
+						Namespace: virtualMachineServiceToReconcile.Namespace}})))
+
+				// Each test gets a handle to the underlying service, so set it up.
+				Eventually(func() error {
+					serviceReconciledFromVMService = &corev1.Service{}
+					time.Sleep(2 * time.Second)
+					return c.Get(context.TODO(), types.NamespacedName{
+						Name:      virtualMachineServiceToReconcile.Name,
+						Namespace: virtualMachineServiceToReconcile.Namespace}, serviceReconciledFromVMService)
+				}, 30*time.Second, 5*time.Second).Should(Succeed(), "Expected service to be created from VirtualMachineService")
+			})
+			JustAfterEach(func() {
+				// Make the assertions about the labels on the service.
+				Eventually(requests, timeout).Should(Receive())
+
+				Eventually(func() map[string]string {
+					reconciledService := &corev1.Service{}
+					err := c.Get(context.TODO(), types.NamespacedName{
+						Name:      virtualMachineServiceToReconcile.Name,
+						Namespace: virtualMachineServiceToReconcile.Namespace}, reconciledService)
+					if err != nil {
+						return nil
+					}
+					return reconciledService.Labels
+				}, 30*time.Second, 2*time.Second).Should(Equal(expectedServiceLabels))
+			})
+			AfterEach(func() {
+				Expect(c.Delete(context.TODO(), virtualMachineServiceToReconcile)).To(Succeed())
+			})
+			Context("when there are existing labels on the Service, but none on the VMService", func() {
+				BeforeEach(func() {
+					testVMServiceName = "test-vmservice-without-labels"
+					testVMServicePort = 50
+				})
+				It("should preserve existing labels on the Service created from the VMService", func() {
+					// Generate a deep copy to use for patching.
+					newServiceCopy := serviceReconciledFromVMService.DeepCopy()
+
+					// Patch the service with a fake label to simulate what NetOperator does.
+					// Add some fake labels to the 'current' service. They should be preserved
+					// when the createOrUpdate() method returns.
+					testLabelKey := "a.run.tanzu.vmware.com.label.for.lbapi"
+					testLabelValue := "a.label.value"
+					serviceReconciledFromVMService.Labels = make(map[string]string)
+					serviceReconciledFromVMService.Labels[testLabelKey] = testLabelValue
+					serviceReconciledFromVMService.Annotations = make(map[string]string)
+
+					// Use a patch to add the label. This is how an external controller might behave.
+					Eventually(func() error {
+						patch := client.MergeFrom(newServiceCopy)
+						return c.Patch(context.TODO(), serviceReconciledFromVMService, patch)
+					}, 30*time.Second, 2*time.Second).Should(Succeed(), "Should eventually be able to patch the Service")
+
+					expectedServiceLabels = map[string]string{
+						testLabelKey: testLabelValue,
+					}
+
+					// Wait for two reconcile cycles to validate that the label was not removed.
+					// The second one is just in case the first one happened mid-patch.
+					Eventually(requests, timeout).Should(Receive())
+					Eventually(requests, timeout).Should(Receive())
+
+					s := &corev1.Service{}
+					err = c.Get(context.TODO(), types.NamespacedName{Name: serviceReconciledFromVMService.Name,
+						Namespace: serviceReconciledFromVMService.Namespace}, s)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(s.Labels).To(HaveKeyWithValue(testLabelKey, testLabelValue), "Label should never be removed from the Service")
+				})
+			})
+			Context("when both the VirtualMachineService and the Service have labels", func() {
+				BeforeEach(func() {
+					testVMServiceName = "vm-service-with-labels"
+					testVMServicePort = 51
+					vmServiceLabels = map[string]string{"a.vmservice.label": "a.vmservice.label.value"}
+				})
+				It("should merge existing labels on the Service with those on the VMService", func() {
+					// Patch the service with a fake label to simulate what NetOperator does.
+					// Add some fake labels to the 'current' service. They should be preserved
+					// when the createOrUpdate() method returns.
+					testLabelKey := "a.run.tanzu.vmware.com.label.for.lbapi"
+					testLabelValue := "a.label.value"
+					// The regular client.MergeFrom() patch overwrites the existing labels, presumably because it's
+					//  a merge patch. Use a JSON patch to ensure we don't overwrite the existing labels.
+					Eventually(func() error {
+						patchData := []byte(fmt.Sprintf(`[{"op": "add",
+						"path": "/metadata/labels/%s",
+						"value": "%s"}]`, testLabelKey, testLabelValue))
+						patch := client.ConstantPatch(types.JSONPatchType, patchData)
+						return c.Patch(context.TODO(), serviceReconciledFromVMService, patch)
+					}, 30*time.Second, 2*time.Second).Should(Succeed(), "Should eventually be able to patch the Service")
+
+					expectedServiceLabels = map[string]string{
+						testLabelKey:        testLabelValue,
+						"a.vmservice.label": "a.vmservice.label.value",
+					}
+				})
+			})
+			Context("when both the VirtualMachineService and the Service have conflicting labels", func() {
+				BeforeEach(func() {
+					testVMServiceName = "vm-service-conflict-labels"
+					testVMServicePort = 52
+					vmServiceLabels = map[string]string{"a.vmservice.label": "a.vmservice.label.value"}
+				})
+				It("should prefer the label on the VMService", func() {
+					// Patch the service with a fake label to simulate what NetOperator does.
+					// Add some fake labels to the 'current' service. They should be preserved
+					// when the createOrUpdate() method returns.
+					testLabelKey := "a.vmservice.label"
+					testLabelValue := "a.label.value"
+					// The regular client.MergeFrom() patch overwrites the existing labels, presumably because it's
+					//  a merge patch. Use a JSON patch to ensure we don't overwrite the existing labels.
+					Eventually(func() error {
+						patchData := []byte(fmt.Sprintf(`[{"op": "add",
+						"path": "/metadata/labels/%s",
+						"value": "%s"}]`, testLabelKey, testLabelValue))
+						patch := client.ConstantPatch(types.JSONPatchType, patchData)
+						return c.Patch(context.TODO(), serviceReconciledFromVMService, patch)
+					}, 30*time.Second, 2*time.Second).Should(Succeed(), "Should eventually be able to patch the Service")
+
+					expectedServiceLabels = map[string]string{
+						"a.vmservice.label": "a.vmservice.label.value",
+					}
+				})
+			})
+		})
 		Describe("when update vm service", func() {
 			It("should update vm service when it is not the same with exist vm service", func() {
 				err := c.Create(context.TODO(), vmService)

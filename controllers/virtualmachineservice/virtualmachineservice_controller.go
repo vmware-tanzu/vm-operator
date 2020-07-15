@@ -1,6 +1,5 @@
-/* **********************************************************
- * Copyright 2018-2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineservice
 
@@ -421,7 +420,8 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context
 
 	// just update possible changed service fields
 	newService := currentService.DeepCopy()
-	newService.Labels = service.Labels
+	// Set the labels by merging the labels in the existing metadata and the ones coming from the VMservice.
+	r.mergeLabels(newService, service, currentService)
 	newService.Spec.Type = service.Spec.Type
 	newService.Spec.ExternalName = service.Spec.ExternalName
 
@@ -452,6 +452,39 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context
 	}
 
 	return newService, err
+}
+
+// mergeLabels is a helper method that merges the labels in the 'existingService' metadata
+//  with the desired labels.
+// The main use case for this is to avoid clobbering labels that are added by
+// other controllers to services that were generated from a
+// VirtualMachineService
+// eg. in a Proliferation environment, Net-Operator sets labels on Services to indicate the gateway to be used
+//  by LBAPI-operator.
+func (r *ReconcileVirtualMachineService) mergeLabels(newService, desiredService, existingService *corev1.Service) {
+	if newService.Labels == nil {
+		// This is probably being extra defensive.
+		// Then again, does it hurt?
+		newService.Labels = make(map[string]string)
+	}
+	for k, v := range existingService.Labels {
+		newService.Labels[k] = v
+	}
+	// Now merge the labels with the labels in the desired spec.
+	// Desired spec will always win.
+	// This can be a problem if two controllers start writing the same sets of
+	// labels, though.
+	for k, v := range desiredService.Labels {
+		if oldValue, ok := newService.Labels[k]; ok {
+			r.log.V(5).Info("Replacing previous label value on service",
+				"service", newService.Name,
+				"namespace", newService.Namespace,
+				"key", k,
+				"oldValue", oldValue,
+				"newValue", v)
+		}
+		newService.Labels[k] = v
+	}
 }
 
 func (r *ReconcileVirtualMachineService) getVirtualMachinesSelectedByVmService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*vmoperatorv1alpha1.VirtualMachineList, error) {

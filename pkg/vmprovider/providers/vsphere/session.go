@@ -630,7 +630,7 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 
 		switch item.Type {
 		case library.ItemTypeOVF:
-			return s.cloneVirtualMachineFromOVFInCL(ctx, vm, vmConfigArgs)
+			return s.cloneVirtualMachineFromLibItemInCL(ctx, vm, vmConfigArgs, item)
 		case library.ItemTypeVMTX:
 			return s.cloneVirtualMachineFromInventory(ctx, vm, vmConfigArgs)
 		}
@@ -664,13 +664,7 @@ func (s *Session) cloneVirtualMachineFromInventory(ctx context.Context, vm *v1al
 	return cloneResVm, nil
 }
 
-func (s *Session) cloneVirtualMachineFromOVFInCL(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
-	// BMV: Pass item from the caller
-	item, err := s.GetItemFromCL(ctx, vm.Spec.ImageName)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to find image %q", vm.Spec.ImageName)
-	}
-
+func (s *Session) cloneVirtualMachineFromLibItemInCL(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs, item *library.Item) (*res.VirtualMachine, error) {
 	name := vm.Name
 	resourcePolicyName := ""
 	if vmConfigArgs.ResourcePolicy != nil {

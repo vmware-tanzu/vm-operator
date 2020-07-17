@@ -15,6 +15,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -50,6 +51,7 @@ func unitTestsReconcile() {
 		vmCtx            *vmopContext.VirtualMachineContext
 		vm               *vmopv1alpha1.VirtualMachine
 		vmClass          *vmopv1alpha1.VirtualMachineClass
+		vmImage          *vmopv1alpha1.VirtualMachineImage
 		vmMetaData       *corev1.ConfigMap
 		vmResourcePolicy *vmopv1alpha1.VirtualMachineSetResourcePolicy
 		storageClass     *storagev1.StorageClass
@@ -63,6 +65,12 @@ func unitTestsReconcile() {
 			},
 		}
 
+		vmImage = &vmopv1alpha1.VirtualMachineImage{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dummy-image",
+			},
+		}
+
 		vm = &vmopv1alpha1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
@@ -70,6 +78,7 @@ func unitTestsReconcile() {
 			},
 			Spec: vmopv1alpha1.VirtualMachineSpec{
 				ClassName: vmClass.Name,
+				ImageName: vmImage.Name,
 			},
 		}
 
@@ -145,10 +154,63 @@ func unitTestsReconcile() {
 		fakeVmProvider = nil
 	})
 
+	Context("getCLUUID", func() {
+
+		cl := &vmopv1alpha1.ContentLibraryProvider{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dummy-cl",
+			},
+			Spec: vmopv1alpha1.ContentLibraryProviderSpec{
+				UUID: "dummy-cl-uuid",
+			},
+		}
+
+		When("the VirtualMachine Spec's VirtualMachineImage does not exist", func() {
+			It("returns an error", func() {
+				clUUID, err := reconciler.GetCLUUID(vmCtx)
+				Expect(clUUID).To(BeEmpty())
+				Expect(err).To(HaveOccurred())
+				Expect(apiErrors.IsNotFound(err)).To(BeTrue())
+			})
+		})
+
+		When("VirtualMachineImage does not have an OwnerReference", func() {
+			BeforeEach(func() {
+				initObjects = append(initObjects, vmImage, cl)
+			})
+
+			It("returns an empty content library UUID", func() {
+				clUUID, err := reconciler.GetCLUUID(vmCtx)
+				Expect(clUUID).To(BeEmpty())
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		When("VirtualMachineImage has an OwnerReference", func() {
+			BeforeEach(func() {
+				vmImage.OwnerReferences = []metav1.OwnerReference{
+					{
+						Kind: "ContentLibraryProvider",
+						Name: "dummy-cl",
+					},
+				}
+
+				initObjects = append(initObjects, vmImage, cl)
+			})
+
+			It("returns the content library UUID from the OwnerReference", func() {
+				clUUID, err := reconciler.GetCLUUID(vmCtx)
+				Expect(clUUID).To(Equal(cl.Spec.UUID))
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+	})
+
 	Context("ReconcileNormal", func() {
 
 		BeforeEach(func() {
-			initObjects = append(initObjects, vm, vmClass)
+			initObjects = append(initObjects, vm, vmClass, vmImage)
 		})
 
 		When("the WCP_VMService FSS is enabled", func() {
@@ -409,7 +471,7 @@ func unitTestsReconcile() {
 	Context("ReconcileDelete", func() {
 
 		BeforeEach(func() {
-			initObjects = append(initObjects, vm, vmClass)
+			initObjects = append(initObjects, vm, vmClass, vmImage)
 		})
 
 		JustBeforeEach(func() {

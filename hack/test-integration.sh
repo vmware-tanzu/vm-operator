@@ -52,11 +52,13 @@ CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${INT_GOFLAGS[@]}" -tags=integrati
 # Run integration tests with new framework
 # go test: -race requires cgo
 CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" \
-    ./controllers/infracluster \
-    ./controllers/infraprovider \
-    ./controllers/virtualmachine \
-    ./controllers/virtualmachineclass \
-    -- -enable-integration-tests -enable-unit-tests=false
+           ./controllers/contentsource \
+           ./controllers/infracluster \
+           ./controllers/infraprovider \
+           ./controllers/virtualmachine \
+           ./controllers/virtualmachineimage \
+           ./controllers/virtualmachineclass \
+           -- -enable-integration-tests -enable-unit-tests=false
 
 # Merge the coverage files.
 if [[ -n ${COVERAGE_FILE} ]]; then

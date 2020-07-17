@@ -7,8 +7,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/pkg/errors"
-	"github.com/vmware/govmomi/vapi/library"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
@@ -24,8 +22,6 @@ type SessionManager struct {
 	// sessions contains the map of sessions for each namespace.
 	mutex    sync.Mutex
 	sessions map[string]*Session
-
-	contentLibrary *library.Library
 }
 
 func NewSessionManager(ncpClient ncpclientset.Interface, k8sClient ctrlruntime.Client, scheme *runtime.Scheme) SessionManager {
@@ -76,41 +72,12 @@ func (sm *SessionManager) createSession(ctx context.Context, namespace string) (
 		return nil, err
 	}
 
-	if err := sm.ConfigureContentLibrary(ctx, config.ContentSource); err != nil {
-		return nil, err
-	}
-
 	ses, err := NewSessionAndConfigure(ctx, client, config, sm.ncpClient, sm.k8sClient, sm.scheme)
 	if err != nil {
 		return nil, err
 	}
 
 	return ses, nil
-}
-
-func (sm *SessionManager) ConfigureContentLibrary(ctx context.Context, clUUID string) error {
-	// Until the time a CL is configured, the provider configmap will point to an empty CL.
-	if clUUID == "" {
-		log.V(4).Info("Content library will be unset")
-		sm.contentLibrary = nil
-		return nil
-	}
-
-	restClient := sm.client.RestClient()
-	lib, err := library.NewManager(restClient).GetLibraryByID(ctx, clUUID)
-	if err != nil {
-		return errors.Wrapf(err, "failed to init Content Library %q", clUUID)
-	}
-
-	if sm.contentLibrary == nil {
-		log.Info("Configuring content library", "clUUID", lib.ID)
-	} else {
-		log.Info("Updating content library", "fromCLUUID", sm.contentLibrary.ID, "toCLUUID", lib.ID)
-	}
-
-	sm.contentLibrary = lib
-
-	return nil
 }
 
 func (sm *SessionManager) GetSession(ctx context.Context, namespace string) (*Session, error) {

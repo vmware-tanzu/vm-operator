@@ -33,19 +33,9 @@ func GetVmOpNamespaceFromEnv() (string, error) {
 }
 
 var IsVMServiceFSSEnabled = func() bool {
-	return os.Getenv("FSS_WCP_VMSERVICE") == "true"
+	return os.Getenv(VMServiceFSS) == "true"
 }
 
 var IsT1PerNamespaceEnabled = func() bool {
 	return os.Getenv("FSS_WCP_T1_PERNAMESPACE") == "true"
-}
-
-// EnableVMServiceFSS enables the VM service FSS. Currently, only used in tests.
-func EnableVMServiceFSS() {
-	os.Setenv(VMServiceFSS, "true")
-}
-
-// EnableVMServiceFSS disables the VM service FSS. Currently, only used in tests.
-func DisableVMServiceFSS() {
-	os.Unsetenv(VMServiceFSS)
 }

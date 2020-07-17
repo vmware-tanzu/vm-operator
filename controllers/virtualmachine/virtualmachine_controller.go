@@ -16,7 +16,6 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -268,6 +267,30 @@ func (r *VirtualMachineReconciler) getStoragePolicyID(ctx *context.VirtualMachin
 	return sc.Parameters["storagePolicyID"], nil
 }
 
+func (r *VirtualMachineReconciler) GetCLUUID(ctx *context.VirtualMachineContext) (string, error) {
+	vmImage := &vmopv1alpha1.VirtualMachineImage{}
+	imageName := ctx.VM.Spec.ImageName
+
+	if err := r.Get(ctx, client.ObjectKey{Name: imageName}, vmImage); err != nil {
+		ctx.Logger.Error(err, "Failed to get VirtualMachineImage", "imageName", imageName)
+		return "", err
+	}
+
+	for _, ownerRef := range vmImage.OwnerReferences {
+		if ownerRef.Kind == "ContentLibraryProvider" {
+			clProvider := &vmopv1alpha1.ContentLibraryProvider{}
+			if err := r.Get(ctx, client.ObjectKey{Name: ownerRef.Name}, clProvider); err != nil {
+				r.Logger.Error(err, "error retrieving the ContentLibraryProvider from the API server", "clProviderName", ownerRef.Name)
+				return "", err
+			}
+
+			return clProvider.Spec.UUID, nil
+		}
+	}
+
+	return "", nil
+}
+
 // getVMClass checks if a VM class specified by a VM spec is valid. When the VMServiceFSSEnabled is enabled,
 // a valid VM Class binding for the class in the VM's namespace must exist.
 func (r *VirtualMachineReconciler) getVMClass(ctx *context.VirtualMachineContext) (*vmopv1alpha1.VirtualMachineClass, error) {
@@ -364,6 +387,11 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 		return err
 	}
 
+	clUUID, err := r.GetCLUUID(ctx)
+	if err != nil {
+		return err
+	}
+
 	vmMetadata, err := r.getVMMetadata(ctx)
 	if err != nil {
 		return err
@@ -381,10 +409,11 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 
 	vm := ctx.VM
 	vmConfigArgs := vmprovider.VmConfigArgs{
-		VmClass:          *vmClass,
-		VmMetadata:       vmMetadata,
-		ResourcePolicy:   resourcePolicy,
-		StorageProfileID: storagePolicyID,
+		VmClass:            *vmClass,
+		VmMetadata:         vmMetadata,
+		ResourcePolicy:     resourcePolicy,
+		StorageProfileID:   storagePolicyID,
+		ContentLibraryUUID: clUUID,
 	}
 
 	exists, err := r.VmProvider.DoesVirtualMachineExist(ctx, vm)

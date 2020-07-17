@@ -108,8 +108,6 @@ func NewVSphereMachineProviderFromRestConfig(cfg *rest.Config, client ctrlruntim
 type VSphereVmProviderGetSessionHack interface {
 	GetSession(ctx context.Context, namespace string) (*Session, error)
 	IsSessionInCache(namespace string) bool
-	GetContentLibrary() *library.Library
-	SetContentLibrary(ctx context.Context, clUUID string) error
 }
 
 func (vs *vSphereVmProvider) Name() string {
@@ -138,14 +136,6 @@ func (vs *vSphereVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, 
 	delete(vs.sessions.sessions, namespace)
 }
 
-func (vs *vSphereVmProvider) GetContentLibrary() *library.Library {
-	return vs.sessions.contentLibrary
-}
-
-func (vs *vSphereVmProvider) SetContentLibrary(ctx context.Context, clUUID string) error {
-	return vs.sessions.ConfigureContentLibrary(ctx, clUUID)
-}
-
 // ListVirtualMachineImagesFromContentLibrary lists VM images from a ContentLibrary
 func (vs *vSphereVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx context.Context, contentLibrary v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
 	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary", "name", contentLibrary.Name, "UUID", contentLibrary.Spec.UUID)
@@ -156,83 +146,6 @@ func (vs *vSphereVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx cont
 	}
 
 	return ses.ListVirtualMachineImagesFromCL(ctx, contentLibrary.Spec.UUID)
-}
-
-func (vs *vSphereVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
-	log.V(4).Info("Listing VirtualMachineImages", "namespace", namespace)
-
-	ses, err := vs.sessions.GetSession(ctx, namespace)
-	if err != nil {
-		return nil, err
-	}
-
-	if vs.sessions.contentLibrary != nil {
-		// List images from Content Library
-		imagesFromCL, err := ses.ListVirtualMachineImagesFromCL(ctx, vs.sessions.contentLibrary.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		return imagesFromCL, nil
-	}
-
-	if ses.useInventoryForImages {
-		// TODO(bryanv) Need an actual path here?
-		resVms, err := ses.ListVirtualMachines(ctx, "*")
-		if err != nil {
-			return nil, transformVmImageError("", err)
-		}
-
-		var vmOpts OvfPropertyRetriever = vmOptions{}
-		images := make([]*v1alpha1.VirtualMachineImage, 0, len(resVms))
-		for _, resVm := range resVms {
-			image, err := ResVmToVirtualMachineImage(ctx, resVm, AnnotateVmImage, vmOpts)
-			if err != nil {
-				return nil, err
-			}
-
-			images = append(images, image)
-		}
-
-		return images, nil
-	}
-
-	return nil, nil
-}
-
-func (vs *vSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error) {
-	vmName := fmt.Sprintf("%v/%v", namespace, name)
-	log.V(4).Info("Getting VirtualMachineImage for ", "name", vmName)
-
-	ses, err := vs.sessions.GetSession(ctx, namespace)
-	if err != nil {
-		return nil, err
-	}
-
-	// Find items in Library if Content Lib has been initialized
-	if vs.sessions.contentLibrary != nil {
-		image, err := ses.GetVirtualMachineImageFromCL(ctx, vs.sessions.contentLibrary, name)
-		if err != nil {
-			return nil, err
-		}
-
-		// If image is found return image or continue
-		if image != nil {
-			return image, nil
-		}
-	}
-
-	if ses.useInventoryForImages {
-		resVm, err := ses.lookupVmByName(ctx, name)
-		if err != nil {
-			return nil, transformVmImageError(vmName, err)
-		}
-
-		var vmOpts OvfPropertyRetriever = vmOptions{}
-		return ResVmToVirtualMachineImage(ctx, resVm, AnnotateVmImage, vmOpts)
-	}
-
-	return nil, nil
 }
 
 func (vs *vSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
@@ -254,54 +167,55 @@ func (vs *vSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1
 }
 
 // AddProviderAnnotations adds VM provider annotations to the VirtualMachine object
-func AddProviderAnnotations(session *Session, objectMeta *v1.ObjectMeta, vmRes *res.VirtualMachine) {
+// AKP: No comsumers of this yet. So commenting out. Uncomment when we start to add these in `vs.updateVirtualMachine`.
+// func AddProviderAnnotations(session *Session, objectMeta *v1.ObjectMeta, vmRes *res.VirtualMachine) {
 
-	annotations := objectMeta.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
+// 	annotations := objectMeta.GetAnnotations()
+// 	if annotations == nil {
+// 		annotations = make(map[string]string)
+// 	}
 
-	annotations[pkg.VmOperatorVmProviderKey] = VsphereVmProviderName
-	annotations[VmOperatorMoRefKey] = vmRes.ReferenceValue()
+// 	annotations[pkg.VmOperatorVmProviderKey] = VsphereVmProviderName
+// 	annotations[VmOperatorMoRefKey] = vmRes.ReferenceValue()
 
-	// Take missing annotations as a trigger to gather the information we need to populate the annotations.  We want to
-	// avoid putting unnecessary pressure on content library.
-	if _, ok := annotations[VmOperatorBiosUUIDKey]; !ok {
-		biosUUID, err := vmRes.BiosUUID(context.Background())
-		if err == nil {
-			annotations[VmOperatorBiosUUIDKey] = biosUUID
-		}
-	}
+// 	// Take missing annotations as a trigger to gather the information we need to populate the annotations.  We want to
+// 	// avoid putting unnecessary pressure on content library.
+// 	if _, ok := annotations[VmOperatorBiosUUIDKey]; !ok {
+// 		biosUUID, err := vmRes.BiosUUID(context.Background())
+// 		if err == nil {
+// 			annotations[VmOperatorBiosUUIDKey] = biosUUID
+// 		}
+// 	}
 
-	if _, ok := annotations[VmOperatorInstanceUUIDKey]; !ok {
-		instanceUUID, err := vmRes.InstanceUUID(context.Background())
-		if err == nil {
-			annotations[VmOperatorInstanceUUIDKey] = instanceUUID
-		}
-	}
+// 	if _, ok := annotations[VmOperatorInstanceUUIDKey]; !ok {
+// 		instanceUUID, err := vmRes.InstanceUUID(context.Background())
+// 		if err == nil {
+// 			annotations[VmOperatorInstanceUUIDKey] = instanceUUID
+// 		}
+// 	}
 
-	if _, ok := annotations[VmOperatorVCInstanceUUIDKey]; !ok {
-		about, err := session.ServiceContent(context.Background())
-		if err == nil {
-			annotations[VmOperatorVCInstanceUUIDKey] = about.InstanceUuid
-		}
-	}
+// 	if _, ok := annotations[VmOperatorVCInstanceUUIDKey]; !ok {
+// 		about, err := session.ServiceContent(context.Background())
+// 		if err == nil {
+// 			annotations[VmOperatorVCInstanceUUIDKey] = about.InstanceUuid
+// 		}
+// 	}
 
-	if _, ok := annotations[VmOperatorResourcePoolKey]; !ok {
-		resourcePool, err := vmRes.ResourcePool(context.Background())
-		if err == nil {
-			annotations[VmOperatorResourcePoolKey] = resourcePool
-		}
-	}
+// 	if _, ok := annotations[VmOperatorResourcePoolKey]; !ok {
+// 		resourcePool, err := vmRes.ResourcePool(context.Background())
+// 		if err == nil {
+// 			annotations[VmOperatorResourcePoolKey] = resourcePool
+// 		}
+// 	}
 
-	var vmOpts OvfPropertyRetriever = vmOptions{}
-	err := AddVmImageAnnotations(annotations, context.Background(), vmOpts, vmRes)
-	if err != nil {
-		log.Error(err, "Error adding image annotations to VM", "vm", vmRes.Name)
-	}
+// 	var vmOpts OvfPropertyRetriever = vmOptions{}
+// 	err := AddVmImageAnnotations(annotations, context.Background(), vmOpts, vmRes)
+// 	if err != nil {
+// 		log.Error(err, "Error adding image annotations to VM", "vm", vmRes.Name)
+// 	}
 
-	objectMeta.SetAnnotations(annotations)
-}
+// 	objectMeta.SetAnnotations(annotations)
+// }
 
 // AddVmImageAnnotations adds annotations from the VM image to the the VirtualMachine object
 func AddVmImageAnnotations(annotations map[string]string, ctx context.Context, ovfPropRetriever OvfPropertyRetriever, vmRes *res.VirtualMachine) error {
@@ -351,14 +265,13 @@ func (vs *vSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 		return err
 	}
 
-	resVm, err := ses.CloneVirtualMachine(ctx, vm, vmConfigArgs, vs.sessions.contentLibrary)
+	resVm, err := ses.CloneVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {
 		log.Error(err, "Clone VirtualMachine failed", "name", vmName)
 		return transformVmError(vmName, err)
 	}
 
-	err = vs.mergeVmStatus(ctx, vm, resVm)
-	if err != nil {
+	if err := vs.mergeVmStatus(ctx, vm, resVm); err != nil {
 		return err
 	}
 
@@ -709,10 +622,6 @@ func transformError(resourceType string, resource string, err error) error {
 
 func transformVmError(resource string, err error) error {
 	return transformError("VirtualMachine", resource, err)
-}
-
-func transformVmImageError(resource string, err error) error {
-	return transformError("VirtualMachineImage", resource, err)
 }
 
 func IsCustomizationPendingError(err error) bool {

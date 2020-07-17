@@ -1,6 +1,6 @@
-/* **********************************************************
- * Copyright 2018-2020 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 package vsphere
 
 import (
@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"gopkg.in/yaml.v2"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,7 +31,6 @@ type VSphereVmProviderConfig struct {
 	ResourcePool                string
 	Folder                      string
 	Datastore                   string
-	ContentSource               string
 	Network                     string
 	StorageClassRequired        bool
 	UseInventoryAsContentSource bool
@@ -46,8 +44,8 @@ type VSphereVmProviderConfig struct {
 const (
 	DefaultVCPort = "443"
 
-	VSphereConfigMapName = "vsphere.provider.config.vmoperator.vmware.com"
-	// Keys in VSphereConfigMapName
+	ProviderConfigMapName = "vsphere.provider.config.vmoperator.vmware.com"
+	// Keys in provider ConfigMap
 	vcPNIDKey                    = "VcPNID"
 	vcPortKey                    = "VcPort"
 	vcCredsSecretNameKey         = "VcCredsSecretName" // nolint:gosec
@@ -186,7 +184,6 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 		ResourcePool:                dataMap[resourcePoolKey],
 		Folder:                      dataMap[folderKey],
 		Datastore:                   dataMap[datastoreKey],
-		ContentSource:               dataMap[ContentSourceKey],
 		Network:                     dataMap[networkNameKey],
 		StorageClassRequired:        scRequired,
 		UseInventoryAsContentSource: useInventory,
@@ -267,7 +264,7 @@ func GetProviderConfigFromConfigMap(client ctrlruntime.Client, namespace string)
 	}
 
 	configMap := &v1.ConfigMap{}
-	configMapKey := types.NamespacedName{Name: VSphereConfigMapName, Namespace: vmopNamespace}
+	configMapKey := types.NamespacedName{Name: ProviderConfigMapName, Namespace: vmopNamespace}
 	err = client.Get(context.Background(), configMapKey, configMap)
 	if err != nil {
 		return nil, errors.Wrapf(err, "error retrieving the provider ConfigMap %s", configMapKey)
@@ -297,43 +294,7 @@ func GetProviderConfigFromConfigMap(client ctrlruntime.Client, namespace string)
 		}
 	}
 
-	// With VMService, we are using ContentSource CRD to specify a content library association.
-	if lib.IsVMServiceFSSEnabled() {
-		contentSource, err := getCLUUIDFromContentSource(client)
-		if err != nil {
-			return nil, err
-		}
-
-		log.V(4).Info("Setting the CL UUID from ContentSource resource", "clUUID", contentSource)
-		providerConfig.ContentSource = contentSource
-	}
-
 	return providerConfig, nil
-}
-
-// getCLUUIDFromContentSource gets the content library UUID from the installed ContentSource resource.
-func getCLUUIDFromContentSource(client ctrlruntime.Reader) (string, error) {
-	log.V(4).Info("Extracting CL UUID from the ContentSource resource")
-	contentSourceList := &v1alpha1.ContentSourceList{}
-	if err := client.List(context.Background(), contentSourceList); err != nil {
-		return "", errors.Wrap(err, "failed to list content sources from control plane")
-	}
-
-	if len(contentSourceList.Items) == 0 {
-		return "", fmt.Errorf("No ContentSource resource configured")
-	}
-
-	// For now, we only have one content library. This needs to be modified when we start supporting multiple CLs.
-	// TODO: 	clProviderRef := contentSourceList.Items[0].Spec.ProviderRef
-	clObjKey := ctrlruntime.ObjectKey{Name: clProviderRef.Name, Namespace: clProviderRef.Namespace}
-
-	clProvider := &v1alpha1.ContentLibraryProvider{}
-	if err := client.Get(context.Background(), clObjKey, clProvider); err != nil {
-		return "", errors.Wrapf(err, "failed to get the ContentLibraryProvider from API server. clProviderName: %s, clProviderNamespace: %s",
-			clProviderRef.Name, clProviderRef.Namespace)
-	}
-
-	return clProvider.Spec.UUID, nil
 }
 
 func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig, vcCredsSecretName string) *v1.ConfigMap {
@@ -347,7 +308,6 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 	dataMap[resourcePoolKey] = config.ResourcePool
 	dataMap[folderKey] = config.Folder
 	dataMap[datastoreKey] = config.Datastore
-	dataMap[ContentSourceKey] = config.ContentSource
 	dataMap[scRequiredKey] = strconv.FormatBool(config.StorageClassRequired)
 	dataMap[useInventoryKey] = strconv.FormatBool(config.UseInventoryAsContentSource)
 	dataMap[caFilePathKey] = config.CAFilePath
@@ -357,7 +317,7 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 
 	return &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      VSphereConfigMapName,
+			Name:      ProviderConfigMapName,
 			Namespace: namespace,
 		},
 		Data: dataMap,
@@ -392,7 +352,7 @@ func PatchVcURLInConfigMap(client ctrlruntime.Client, vcPNID, vcPort string) err
 	}
 
 	configMap := &v1.ConfigMap{}
-	configMapKey := types.NamespacedName{Name: VSphereConfigMapName, Namespace: vmopNamespace}
+	configMapKey := types.NamespacedName{Name: ProviderConfigMapName, Namespace: vmopNamespace}
 	if err := client.Get(context.Background(), configMapKey, configMap); err != nil {
 		return err
 	}

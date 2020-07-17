@@ -1,8 +1,7 @@
 // +build integration
 
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package volume
 
@@ -28,7 +27,6 @@ import (
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -139,8 +137,6 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 		Expect(add(ctrlContext, mgr, recFn)).To(Succeed())
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
-
-		Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(context.TODO(), integration.GetContentSourceID())).To(Succeed())
 	})
 
 	AfterEach(func() {

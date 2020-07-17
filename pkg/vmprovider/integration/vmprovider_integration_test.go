@@ -8,8 +8,6 @@ package integration
 import (
 	"context"
 	"fmt"
-	stdlog "log"
-	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -57,10 +55,11 @@ func getVmConfigArgs(namespace, name string) vmprovider.VmConfigArgs {
 	vmClass := getVMClassInstance(name, namespace)
 
 	return vmprovider.VmConfigArgs{
-		VmClass:          *vmClass,
-		ResourcePolicy:   nil,
-		VmMetadata:       &vmprovider.VmMetadata{},
-		StorageProfileID: "foo",
+		VmClass:            *vmClass,
+		ResourcePolicy:     nil,
+		VmMetadata:         &vmprovider.VmMetadata{},
+		StorageProfileID:   "foo",
+		ContentLibraryUUID: integration.GetContentSourceID(),
 	}
 }
 
@@ -107,21 +106,10 @@ func getVirtualMachineInstance(name, namespace, imageName, className string) *vm
 }
 
 var _ = Describe("VMProvider Inventory Tests", func() {
-
-	BeforeEach(func() {
-		Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(ctx, "")).To(Succeed())
-	})
-
 	Context("When using inventory", func() {
 		It("should support controller like workflow", func() {
 			vmNamespace := integration.DefaultNamespace
 			vmName := "test-vm-vmp-invt-deploy"
-
-			images, err := vmProvider.ListVirtualMachineImages(context.TODO(), integration.DefaultNamespace)
-			Expect(err).NotTo(HaveOccurred())
-			for _, image := range images {
-				stdlog.Printf("image %s\n", image.Name)
-			}
 
 			vmMetadata := &vmprovider.VmMetadata{
 				Transport: vmoperatorv1alpha1.VirtualMachineMetadataOvfEnvTransport,
@@ -136,7 +124,7 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(exists).To(BeFalse())
 
-			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, nil, vmMetadata, "foo"}
+			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, nil, vmMetadata, "foo", ""}
 			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -157,9 +145,6 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 })
 
 var _ = Describe("VMProvider Tests", func() {
-	BeforeEach(func() {
-		Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(ctx, integration.GetContentSourceID())).To(Succeed())
-	})
 
 	Context("When using Content Library", func() {
 		var vmProvider vmprovider.VirtualMachineProviderInterface
@@ -169,7 +154,7 @@ var _ = Describe("VMProvider Tests", func() {
 
 		BeforeEach(func() {
 			err = vsphere.InstallVSphereVmProviderConfig(k8sClient, integration.DefaultNamespace,
-				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, integration.GetContentSourceID()),
+				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port),
 				integration.SecretName)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -192,7 +177,7 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(exists).To(BeFalse())
 
 			// CreateVirtualMachine from CL
-			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, nil, vmMetadata, "foo"}
+			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, nil, vmMetadata, "foo", integration.GetContentSourceID()}
 			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -318,42 +303,6 @@ var _ = Describe("VMProvider Tests", func() {
 			}
 			err = vmProvider.CreateVirtualMachine(context.TODO(), vm2, vmConfigArgs2)
 			Expect(err).NotTo(HaveOccurred())
-		})
-	})
-
-	Context("ListVirtualMachineImages", func() {
-		It("should list the virtualmachineimages available in CL", func() {
-			var images []*vmoperatorv1alpha1.VirtualMachineImage
-
-			Eventually(func() int {
-				images, err = vmProvider.ListVirtualMachineImages(context.TODO(), integration.DefaultNamespace)
-				Expect(err).ToNot(HaveOccurred())
-				return len(images)
-			}, time.Second*15).Should(BeNumerically(">", 0))
-
-			found := false
-			for _, image := range images {
-				if image.Name == integration.IntegrationContentLibraryItemName {
-					found = true
-					break
-				}
-			}
-			Expect(found).Should(BeTrue())
-		})
-	})
-
-	Context("GetVirtualMachineImage", func() {
-
-		It("should get the existing virtualmachineimage", func() {
-			var image *vmoperatorv1alpha1.VirtualMachineImage
-
-			Eventually(func() *vmoperatorv1alpha1.VirtualMachineImage {
-				image, err = vmProvider.GetVirtualMachineImage(context.TODO(), integration.DefaultNamespace, integration.IntegrationContentLibraryItemName)
-				Expect(err).ToNot(HaveOccurred())
-				return image
-			}, time.Second*15).ShouldNot(BeNil())
-
-			Expect(image.Name).Should(BeEquivalentTo(integration.IntegrationContentLibraryItemName))
 		})
 	})
 

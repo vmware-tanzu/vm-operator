@@ -7,195 +7,398 @@ import (
 	goCtx "context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
 const (
-	controllerName = "ContentSource"
-	finalizerName  = "contentsource.vmoperator.vmware.com"
+	finalizerName = "contentsource.vmoperator.vmware.com"
 )
-
-type ContentSourceReconciler struct {
-	client.Client
-	Log        logr.Logger
-	Scheme     *runtime.Scheme
-	vmProvider vmprovider.VirtualMachineProviderInterface
-}
-
-// newReconciler returns a new reconcile.Reconciler
-func newReconciler(ctx *context.ControllerManagerContext, mgr manager.Manager) reconcile.Reconciler {
-	return &ContentSourceReconciler{
-		Client:     mgr.GetClient(),
-		Log:        ctrl.Log.WithName("controllers").WithName(controllerName),
-		Scheme:     mgr.GetScheme(),
-		vmProvider: ctx.VmProvider,
-	}
-}
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
-	return add(mgr, newReconciler(ctx, mgr))
+	var (
+		controlledType     = &vmopv1alpha1.ContentSource{}
+		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
+
+		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
+		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
+	)
+
+	r := NewReconciler(
+		mgr.GetClient(),
+		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
+		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		ctx.VmProvider,
+	)
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(controlledType).
+		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
+		Owns(&vmopv1alpha1.ContentLibraryProvider{}).
+		Complete(r)
 }
 
-func add(mgr manager.Manager, r reconcile.Reconciler) error {
-	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
+func NewReconciler(
+	client client.Client,
+	logger logr.Logger,
+	recorder record.Recorder,
+	vmProvider vmprovider.VirtualMachineProviderInterface) *ContentSourceReconciler {
+
+	return &ContentSourceReconciler{
+		Client:     client,
+		Logger:     logger,
+		Recorder:   recorder,
+		VmProvider: vmProvider,
+	}
+}
+
+// ContentSourceReconciler reconciles a ContentSource object
+type ContentSourceReconciler struct {
+	client.Client
+	Logger     logr.Logger
+	Recorder   record.Recorder
+	VmProvider vmprovider.VirtualMachineProviderInterface
+}
+
+// Best effort attempt to create a set of VirtualMachineImages resources on the API server.
+func (r *ContentSourceReconciler) CreateImages(ctx goCtx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
+	var retErr error
+	for _, image := range images {
+		img := image
+		r.Logger.V(4).Info("Creating VirtualMachineImage", "name", img.Name)
+		if err := r.Create(ctx, &img); err != nil {
+			retErr = err
+			r.Logger.Error(err, "failed to create VirtualMachineImage", "name", img.Name)
+		}
+	}
+
+	return retErr
+}
+
+// Best effort attempt to delete a set of VirtualMachineImages resources from the API server.
+func (r *ContentSourceReconciler) DeleteImages(ctx goCtx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
+	var retErr error
+	for _, image := range images {
+		img := image
+		r.Logger.V(4).Info("Deleting image", "name", img.Name)
+		if err := r.Delete(ctx, &img); err != nil {
+			retErr = err
+			r.Logger.Error(err, "failed to delete VirtualMachineImage", "name", img.Name)
+		}
+	}
+
+	return retErr
+}
+
+// Best effort attempt to update a set of VirtualMachineImages resources on the API server.
+func (r *ContentSourceReconciler) UpdateImages(ctx goCtx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
+	var retErr error
+	for _, image := range images {
+		img := image
+		r.Logger.V(4).Info("Updating image", "name", img.Name)
+		if err := r.Update(ctx, &img); err != nil {
+			retErr = err
+			r.Logger.Error(err, "failed to update VirtualMachineImage", "name", img.Name)
+		}
+	}
+
+	return retErr
+}
+
+// Difference two lists of VirtualMachineImages producing 3 lists: images that have been added to "right", images that
+// have been removed in "right", and images that have been updated in "right".
+func (r *ContentSourceReconciler) DiffImages(left []vmopv1alpha1.VirtualMachineImage, right []vmopv1alpha1.VirtualMachineImage) (
+	added []vmopv1alpha1.VirtualMachineImage,
+	removed []vmopv1alpha1.VirtualMachineImage,
+	updated []vmopv1alpha1.VirtualMachineImage) {
+
+	leftMap := make(map[string]int, len(left))
+	rightMap := make(map[string]int, len(right))
+
+	for i, item := range left {
+		leftMap[item.Name] = i
+	}
+
+	for i, item := range right {
+		rightMap[item.Name] = i
+	}
+
+	// Difference
+	for _, l := range left {
+		i, ok := rightMap[l.Name]
+		if !ok {
+			// Identify removed items
+			r.Logger.V(4).Info("Removing Image", "name", l.Name)
+			removed = append(removed, l)
+		} else {
+			// Identify updated items. Update can be a spec or a metadata update (OwnerRef)
+			r.Logger.V(4).Info("Updating Image", "name", l.Name)
+			ri := right[i]
+			if !reflect.DeepEqual(l.Spec, ri.Spec) {
+				// We can't use `r` here since it is a synthesized object which doesnt have necessary fields to call Update
+				// on (e.g. resourceVersion), so we update `l` with the possibly updated fields
+				l.Spec = ri.DeepCopy().Spec
+				updated = append(updated, l)
+			} else if !equality.Semantic.DeepEqual(l.OwnerReferences, ri.OwnerReferences) {
+				l.OwnerReferences = ri.DeepCopy().OwnerReferences
+				updated = append(updated, l)
+			}
+		}
+	}
+
+	// Identify added items
+	for _, ri := range right {
+		if _, ok := leftMap[ri.Name]; !ok {
+			r.Logger.V(4).Info("Adding Image", "name", ri.Name)
+			added = append(added, ri)
+		}
+	}
+
+	return added, removed, updated
+}
+
+// GetContentProviderManagedImages fetches the VM images from a given content provider. Also sets the owner ref in the images.
+func (r *ContentSourceReconciler) GetImagesFromContentProvider(ctx goCtx.Context,
+	contentSource vmopv1alpha1.ContentSource) ([]*vmopv1alpha1.VirtualMachineImage, error) {
+	providerRef := contentSource.Spec.ProviderRef
+
+	// Currently, the only supported content provider is content library, so we assume that the providerRef is of ContentLibraryProvider kind.
+	clProvider := vmopv1alpha1.ContentLibraryProvider{}
+	if err := r.Get(ctx, client.ObjectKey{Name: providerRef.Name, Namespace: providerRef.Namespace}, &clProvider); err != nil {
+		return nil, err
+	}
+	r.Logger.V(4).Info("listing images from content library", "clProviderName", clProvider.Name, "clProviderUUID", clProvider.Spec.UUID)
+
+	images, err := r.VmProvider.ListVirtualMachineImagesFromContentLibrary(ctx, clProvider)
 	if err != nil {
+		r.Logger.Error(err, "error listing images from provider")
+		return nil, err
+	}
+
+	for _, img := range images {
+		img.OwnerReferences = []metav1.OwnerReference{{
+			APIVersion: clProvider.APIVersion,
+			Kind:       clProvider.Kind,
+			Name:       clProvider.Name,
+			UID:        clProvider.UID,
+		}}
+	}
+
+	return images, nil
+}
+
+func (r *ContentSourceReconciler) DifferenceImages(ctx goCtx.Context) (error, []vmopv1alpha1.VirtualMachineImage, []vmopv1alpha1.VirtualMachineImage, []vmopv1alpha1.VirtualMachineImage) {
+	r.Logger.V(4).Info("Differencing images")
+
+	// List the existing images from both the vm provider backend and the Kubernetes control plane (etcd).
+	// Difference this list and update the k8s control plane to reflect the state of the image inventory from
+	// the backend.
+	k8sManagedImageList := &vmopv1alpha1.VirtualMachineImageList{}
+	if err := r.List(ctx, k8sManagedImageList); err != nil {
+		return errors.Wrap(err, "failed to list VirtualMachineImages from control plane"), nil, nil, nil
+	}
+
+	k8sManagedImages := k8sManagedImageList.Items
+
+	// List the cluster-scoped VirtualMachineImages from the content source configured by the ContentSource resources.
+	contentSourceList := &vmopv1alpha1.ContentSourceList{}
+	if err := r.List(ctx, contentSourceList); err != nil {
+		return errors.Wrap(err, "failed to list ContentSources from control plane"), nil, nil, nil
+	}
+
+	// Best effort to list VirtualMachineImages from all content sources.
+	var providerManagedImages []*vmopv1alpha1.VirtualMachineImage
+	for _, contentSource := range contentSourceList.Items {
+		images, err := r.GetImagesFromContentProvider(ctx, contentSource)
+		if err != nil {
+			r.Logger.Error(err, "Error in listing VirtualMachineImages from ContentSource", "csName", contentSource.Name)
+			continue
+		}
+
+		providerManagedImages = append(providerManagedImages, images...)
+	}
+
+	var convertedImages []vmopv1alpha1.VirtualMachineImage
+	for _, img := range providerManagedImages {
+		convertedImages = append(convertedImages, *img)
+	}
+
+	// Difference the kubernetes images with the provider images
+	added, removed, updated := r.DiffImages(k8sManagedImages, convertedImages)
+	r.Logger.V(4).Info("Differenced", "added", added, "removed", removed, "updated", updated)
+
+	return nil, added, removed, updated
+}
+
+// SyncImages syncs images from all the content sources installed.
+func (r *ContentSourceReconciler) SyncImages(ctx goCtx.Context) error {
+	err, added, removed, updated := r.DifferenceImages(ctx)
+	if err != nil {
+		r.Logger.Error(err, "failed to difference images")
 		return err
 	}
 
-	// Watch ContentSource type resource
-	err = c.Watch(
-		&source.Kind{Type: &vmopv1alpha1.ContentSource{}},
-		&handler.EnqueueRequestForObject{})
-	if err != nil {
-		return err
+	// Best effort to sync VirtualMachineImage resources between provider and API server.
+	createErr := r.CreateImages(ctx, added)
+	if createErr != nil {
+		r.Logger.Error(createErr, "failed to create VirtualMachineImages")
 	}
 
-	// Watch ContentLibraryProvider resource and enqueue request to the owner ContentSource.
-	err = c.Watch(
-		&source.Kind{Type: &vmopv1alpha1.ContentLibraryProvider{}},
-		&handler.EnqueueRequestForOwner{
-			IsController: true,
-			OwnerType:    &vmopv1alpha1.ContentSource{}})
-	if err != nil {
-		return err
+	updateErr := r.UpdateImages(ctx, updated)
+	if updateErr != nil {
+		r.Logger.Error(updateErr, "failed to update VirtualMachineImages")
+	}
+
+	deleteErr := r.DeleteImages(ctx, removed)
+	if deleteErr != nil {
+		r.Logger.Error(deleteErr, "failed to delete VirtualMachineImages")
+	}
+
+	if createErr != nil || updateErr != nil || deleteErr != nil {
+		return fmt.Errorf("Error in syncing VirtualMachineImage resources between provider and API server")
 	}
 
 	return nil
 }
 
-// GetContentProvider fetches the content provider object from the API server
+// GetContentProvider fetches the ContentLibraryProvider object from the API server.
 func GetContentProvider(ctx goCtx.Context, c client.Client, ref vmopv1alpha1.ContentProviderReference) (*vmopv1alpha1.ContentLibraryProvider, error) {
 	contentLibrary := &vmopv1alpha1.ContentLibraryProvider{}
 	if err := c.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: ref.Namespace}, contentLibrary); err != nil {
-		return nil, fmt.Errorf("failed to retrieve object from API server. kind: %v, namespace: %v, name: %v",
+		return nil, errors.Wrapf(err, "failed to retrieve object from API server. kind: %v, namespace: %v, name: %v",
 			ref.Kind, ref.Namespace, ref.Name)
 	}
 
 	return contentLibrary, nil
 }
 
-// reconcileProviderRef reconciles a ContentSource's provider reference. Verifies that the content provider pointed by
+// ReconcileProviderRef reconciles a ContentSource's provider reference. Verifies that the content provider pointed by
 // the provider ref exists on the infrastructure.
-func (r *ContentSourceReconciler) reconcileProviderRef(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) error {
-	logger := r.Log.WithValues("contentSourceName", contentSource.Name)
+func (r *ContentSourceReconciler) ReconcileProviderRef(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+	logger := r.Logger.WithValues("contentSourceName", contentSource.Name)
 
 	logger.Info("Reconciling content provider reference")
 
 	defer func() {
-		logger.Info("Finished reconciling content provider reference")
+		r.Logger.Info("Finished reconciling content provider reference", "contentSourceName", contentSource.Name)
 	}()
 
 	// ProviderRef should always be set.
-	// AKP: This will move to a content provider interface so we are not calling into vmprovider from a content source
 	providerRef := contentSource.Spec.ProviderRef
-	if providerRef.Kind == "ContentLibraryProvider" {
-		contentLibrary, err := GetContentProvider(ctx, r.Client, contentSource.Spec.ProviderRef)
-		if err != nil {
+	if providerRef.Kind != "ContentLibraryProvider" {
+		logger.Info("Unknown provider. Only ContentLibraryProvider is supported", "providerRefName", providerRef.Name, "providerRefKind", providerRef.Kind)
+		return nil
+	}
+
+	contentLibrary := &vmopv1alpha1.ContentLibraryProvider{}
+	if err := r.Get(ctx, client.ObjectKey{Name: providerRef.Name, Namespace: providerRef.Namespace}, contentLibrary); err != nil {
+		logger.Error(err, "failed to get ContentLibraryProvider resource", "providerRefName", providerRef.Name, "providerRefKind", providerRef.Kind)
+		return err
+	}
+
+	logger = logger.WithValues("contentLibraryName", contentLibrary.Name, "contentLibraryUUID", contentLibrary.Spec.UUID)
+
+	logger.V(4).Info("ContentLibraryProvider backing the ContentSource found")
+
+	beforeObj := contentLibrary.DeepCopy()
+
+	isController := true
+	// Set an ownerref to the ContentSource
+	ownerRef := metav1.OwnerReference{
+		APIVersion: contentSource.APIVersion,
+		Kind:       contentSource.Kind,
+		Name:       contentSource.Name,
+		UID:        contentSource.UID,
+		Controller: &isController,
+	}
+
+	contentLibrary.SetOwnerReferences([]metav1.OwnerReference{ownerRef})
+
+	exists, err := r.VmProvider.DoesContentLibraryExist(ctx, contentLibrary)
+	if err != nil {
+		logger.Error(err, "error in checking if the content library exists on provider")
+		return err
+	}
+
+	if !exists {
+		return fmt.Errorf("Content library does not exist on provider. contentLibraryUUID: %s", contentLibrary.Spec.UUID)
+	}
+
+	if !equality.Semantic.DeepEqual(beforeObj, contentLibrary) {
+		if err := r.Update(ctx, contentLibrary); err != nil {
+			logger.Error(err, "error updating the ContentLibraryProvider")
 			return err
-		}
-
-		logger = r.Log.WithValues("contentSourceName", contentSource.Name, "contentLibraryName", contentLibrary.Name,
-			"contentLibraryUUID", contentLibrary.Spec.UUID)
-
-		logger.V(4).Info("Content library provider found")
-
-		beforeObj := contentLibrary.DeepCopy()
-
-		// Set an ownerref to the ContentSource
-		ownerRef := metav1.OwnerReference{
-			APIVersion: contentSource.APIVersion,
-			Kind:       contentSource.Kind,
-			Name:       contentSource.Name,
-			UID:        contentSource.UID,
-		}
-
-		contentLibrary.SetOwnerReferences([]metav1.OwnerReference{ownerRef})
-
-		exists, err := r.vmProvider.DoesContentLibraryExist(ctx, contentLibrary)
-		if err != nil {
-			logger.Error(err, "error in checking if a content library exists")
-			return err
-		}
-
-		if !exists {
-			return errors.New("ContentLibrary does not exist")
-		}
-
-		// We can refactor some of the image syncing logic from VM image controller to here. When a CL is created, deleted and
-		// on the regular sync period, we can sync the images here. We can also have a goroutine which checks for vSphere events
-		// related to the content library pointed by the content source.
-
-		// Update the object if needed
-		if !reflect.DeepEqual(beforeObj, contentLibrary) {
-			if err := r.Update(ctx, contentLibrary); err != nil {
-				return errors.Wrapf(err, "error updating the content library resource")
-			}
 		}
 	}
 
 	return nil
 }
 
-// reconcileDeleteProviderRef reconciles a delete for a provider reference. Currently, no op.
-func (r *ContentSourceReconciler) reconcileDeleteProviderRef(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) error {
-	logger := r.Log.WithValues("contentSourceName", contentSource.Name)
+// ReconcileDeleteProviderRef reconciles a delete for a provider reference. Currently, no op.
+func (r *ContentSourceReconciler) ReconcileDeleteProviderRef(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+	logger := r.Logger.WithValues("contentSourceName", contentSource.Name)
 
 	providerRef := contentSource.Spec.ProviderRef
 
-	logger.Info("Reconciling delete for a content provider", "contentProviderName", providerRef.Name,
+	logger.V(4).Info("Reconciling delete for a content provider", "contentProviderName", providerRef.Name,
 		"contentProviderKind", providerRef.Kind, "contentProviderAPIVersion", providerRef.APIVersion)
 
-	// Call into the content provider to clean up any state, if needed. We can delete the VM images from the CL here.
-	// For now, VM image controller's SyncImage will do the job for us.
+	// NoOp. The VirtualMachineImages are automatically deleted because of OwnerReference.
 
 	return nil
 }
 
-// reconcile reconciles a content source. Calls into the provider to reconcile the content provider.
-func (r *ContentSourceReconciler) reconcile(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) (reconcile.Result, error) {
-	logger := r.Log.WithValues("name", contentSource.Name)
+// ReconcileNormal reconciles a content source. Calls into the provider to reconcile the content provider.
+func (r *ContentSourceReconciler) ReconcileNormal(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+	logger := r.Logger.WithValues("name", contentSource.Name)
 
 	logger.Info("Reconciling ContentSource CreateOrUpdate")
 
-	// Add our finalizer so we can clean up any state when the object is deleted
-	if !lib.ContainsString(contentSource.ObjectMeta.Finalizers, finalizerName) {
-		contentSource.ObjectMeta.Finalizers = append(contentSource.ObjectMeta.Finalizers, finalizerName)
+	if !controllerutil.ContainsFinalizer(contentSource, finalizerName) {
+		controllerutil.AddFinalizer(contentSource, finalizerName)
 		if err := r.Update(ctx, contentSource); err != nil {
-			return reconcile.Result{}, nil
+			return err
 		}
 	}
 
-	if err := r.reconcileProviderRef(ctx, contentSource); err != nil {
+	// TODO: If a ContentSource is deleted before we can add an OwnerReference to the ContentLibraryProvider,
+	// we will have an orphan ContentLibraryProvider resource in the cluster.
+	if err := r.ReconcileProviderRef(ctx, contentSource); err != nil {
 		logger.Error(err, "error in reconciling the provider ref")
-		return reconcile.Result{}, err
+		return err
+	}
+
+	if err := r.SyncImages(ctx); err != nil {
+		logger.Info("Error in syncing image")
+		return err
 	}
 
 	logger.Info("Finished reconciling ContentSource")
-	return reconcile.Result{}, nil
+	return nil
 }
 
-// reconcileDelete reconciles a content source delete. We use a finalizer here to clean up any state if needed.
-func (r *ContentSourceReconciler) reconcileDelete(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) (reconcile.Result, error) {
-	logger := r.Log.WithValues("name", contentSource.Name)
+// ReconcileDelete reconciles a content source delete. We use a finalizer here to clean up any state if needed.
+func (r *ContentSourceReconciler) ReconcileDelete(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+	logger := r.Logger.WithValues("name", contentSource.Name)
 
 	defer func() {
 		logger.Info("Finished Reconciling ContentSource Deletion")
@@ -204,18 +407,18 @@ func (r *ContentSourceReconciler) reconcileDelete(ctx goCtx.Context, contentSour
 	logger.Info("Reconciling ContentSource deletion")
 
 	if lib.ContainsString(contentSource.ObjectMeta.Finalizers, finalizerName) {
-		if err := r.reconcileDeleteProviderRef(ctx, contentSource); err != nil {
+		if err := r.ReconcileDeleteProviderRef(ctx, contentSource); err != nil {
 			logger.Error(err, "error when reconciling the provider ref")
-			return reconcile.Result{}, nil
+			return err
 		}
 
 		contentSource.ObjectMeta.Finalizers = lib.RemoveString(contentSource.ObjectMeta.Finalizers, finalizerName)
 		if err := r.Update(ctx, contentSource); err != nil {
-			return reconcile.Result{}, err
+			return err
 		}
 	}
 
-	return reconcile.Result{}, nil
+	return nil
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsources,verbs=get;list;watch;create;update;patch;delete
@@ -224,23 +427,27 @@ func (r *ContentSourceReconciler) reconcileDelete(ctx goCtx.Context, contentSour
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentlibraryproviders/status,verbs=get
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsourcebindings,verbs=get;list;watch
 
-func (r *ContentSourceReconciler) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	r.Log.Info("Received reconcile request", "name", request.Name)
+func (r *ContentSourceReconciler) Reconcile(request ctrl.Request) (ctrl.Result, error) {
+	r.Logger.Info("Received reconcile request", "name", request.Name)
 
 	ctx := goCtx.Background()
 	instance := &vmopv1alpha1.ContentSource{}
-	err := r.Get(ctx, request.NamespacedName, instance)
-	if err != nil {
+	if err := r.Get(ctx, request.NamespacedName, instance); err != nil {
 		if apiErrors.IsNotFound(err) {
-			return reconcile.Result{}, nil
+			return ctrl.Result{}, nil
 		}
-		return reconcile.Result{}, err
+		return ctrl.Result{}, err
 	}
 
-	// Handle deletion reconciliation loop.
-	if !instance.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, instance)
+	// Handle deletion
+	if !instance.DeletionTimestamp.IsZero() {
+		err := r.ReconcileDelete(ctx, instance)
+		return ctrl.Result{}, err
 	}
 
-	return r.reconcile(ctx, instance)
+	if err := r.ReconcileNormal(ctx, instance); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
 }

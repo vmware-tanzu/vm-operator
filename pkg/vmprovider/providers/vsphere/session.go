@@ -305,22 +305,6 @@ func (s *Session) GetItemFromCL(ctx context.Context, cl *library.Library, itemNa
 	return item, nil
 }
 
-func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, cl *library.Library, name string) (*v1alpha1.VirtualMachineImage, error) {
-	item, err := s.GetItemFromCL(ctx, cl, name)
-	if err != nil {
-		return nil, err
-	}
-
-	var ovfInfoRetriever OvfPropertyRetriever = vmOptions{}
-
-	virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, item, AnnotateVmImage, ovfInfoRetriever, s.guestOSDescriptorIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	return virtualMachineImage, nil
-}
-
 func (s *Session) ListVirtualMachines(ctx context.Context, path string) ([]*res.VirtualMachine, error) {
 	var vms []*res.VirtualMachine
 
@@ -573,7 +557,7 @@ func (s *Session) GetRPAndFolderFromResourcePolicy(ctx context.Context,
 	return resourcePool, folder, nil
 }
 
-func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs, cl *library.Library) (*res.VirtualMachine, error) {
+func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
 	if vmConfigArgs.StorageProfileID == "" {
 		if s.storageClassRequired {
 			// The storageProfileID is obtained from a StorageClass.
@@ -589,7 +573,13 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 		log.Info("Will attempt to clone virtual machine", "name", vm.Name, "storageProfileID", vmConfigArgs.StorageProfileID)
 	}
 
-	if cl != nil {
+	// CLUUID can be empty when we want to clone from inventory VMs. This is not a supported workflow but we have tests that use this.
+	if vmConfigArgs.ContentLibraryUUID != "" {
+		cl, err := library.NewManager(s.Client.RestClient()).GetLibraryByID(ctx, vmConfigArgs.ContentLibraryUUID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to init Content Library %q", vmConfigArgs.ContentLibraryUUID)
+		}
+
 		item, err := s.GetItemFromCL(ctx, cl, vm.Spec.ImageName)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to find image %q", vm.Spec.ImageName)

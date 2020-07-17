@@ -114,6 +114,8 @@ rules:
   resources:
   - contentlibraryproviders
   verbs:
+  - create
+  - delete
   - get
   - list
   - update
@@ -139,6 +141,7 @@ rules:
   verbs:
   - create
   - delete
+  - deletecollection
   - get
   - list
   - patch

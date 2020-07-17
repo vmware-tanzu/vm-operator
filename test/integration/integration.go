@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -73,7 +74,7 @@ func GetContentSourceID() string {
 	return ContentSourceID
 }
 
-func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int, contentSource string) *vsphere.VSphereVmProviderConfig {
+func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphereVmProviderConfig {
 	var dcMoId, rpMoId, folderMoId string
 	for _, dc := range simulator.Map.All("Datacenter") {
 		if dc.Entity().Name == "DC0" {
@@ -102,7 +103,6 @@ func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int, contentSource 
 		ResourcePool:                rpMoId,
 		Datastore:                   "/DC0/datastore/LocalDS_0",
 		Folder:                      folderMoId,
-		ContentSource:               contentSource,
 		UseInventoryAsContentSource: true,
 		InsecureSkipTLSVerify:       true,
 	}
@@ -195,7 +195,7 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	vcSim := NewVcSimInstance()
 
 	address, port := vcSim.Start()
-	vSphereConfig := NewIntegrationVmOperatorConfig(address, port, "")
+	vSphereConfig := NewIntegrationVmOperatorConfig(address, port)
 	Expect(vSphereConfig).ToNot(BeNil())
 
 	session, err := SetupVcSimEnv(vSphereConfig, k8sClient, vcSim, namespaces)
@@ -245,7 +245,7 @@ func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, client client
 		return nil, fmt.Errorf("failed to get session: %v", err)
 	}
 
-	if err := SetupContentLibrary(vSphereConfig, session); err != nil {
+	if err := SetupContentLibrary(client, session); err != nil {
 		return nil, fmt.Errorf("failed to setup the VC Simulator: %v", err)
 	}
 
@@ -253,8 +253,9 @@ func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, client client
 	for _, ns := range namespaces {
 		err = vsphere.InstallVSphereVmProviderConfig(client,
 			ns,
-			NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port, GetContentSourceID()),
-			SecretName)
+			NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port),
+			SecretName,
+		)
 		Expect(err).NotTo(HaveOccurred())
 	}
 
@@ -280,8 +281,9 @@ func CreateLibraryItem(ctx context.Context, session *vsphere.Session, name, kind
 	return session.CreateLibraryItem(ctx, libraryItem, imagePath)
 }
 
-func SetupContentLibrary(config *vsphere.VSphereVmProviderConfig, session *vsphere.Session) error {
-	stdlog.Printf("Setting up Content Library: %+v\n", *config)
+// SetupContentLibrary creates ContentSource and CotentLibraryProvider resources for the vSphere content library.
+func SetupContentLibrary(client client.Client, session *vsphere.Session) error {
+	stdlog.Printf("Setting up ContentLibraryPrvider and ContentSource for integration tests")
 
 	ctx := context.Background()
 
@@ -290,12 +292,40 @@ func SetupContentLibrary(config *vsphere.VSphereVmProviderConfig, session *vsphe
 		return err
 	}
 
+	if err := CreateLibraryItem(ctx, session, IntegrationContentLibraryItemName, "ovf", libID); err != nil {
+		return err
+	}
+
 	// Assign ContentSourceID to be used for integration tests
 	setContentSourceID(libID)
-	config.ContentSource = libID
 
-	err = CreateLibraryItem(ctx, session, IntegrationContentLibraryItemName, "ovf", libID)
-	if err != nil {
+	clProvider := &vmopv1alpha1.ContentLibraryProvider{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: libID,
+		},
+		Spec: vmopv1alpha1.ContentLibraryProviderSpec{
+			UUID: libID,
+		},
+	}
+
+	cs := &vmopv1alpha1.ContentSource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: libID,
+		},
+		Spec: vmopv1alpha1.ContentSourceSpec{
+			ProviderRef: vmopv1alpha1.ContentProviderReference{
+				Name: clProvider.ObjectMeta.Name,
+				Kind: "ContentLibraryProvider",
+			},
+		},
+	}
+
+	// Create ContentSource and ContentLibraryProvider resources for the content library.
+	if err := client.Create(ctx, clProvider); err != nil {
+		return err
+	}
+
+	if err := client.Create(ctx, cs); err != nil {
 		return err
 	}
 
@@ -317,7 +347,7 @@ func CloneVirtualMachineToLibraryItem(ctx context.Context, config *vsphere.VSphe
 
 	spec := vcenter.Template{
 		Name:     name,
-		Library:  config.ContentSource,
+		Library:  GetContentSourceID(),
 		SourceVM: vm.Reference().Value,
 		Placement: &vcenter.Placement{
 			Folder:       config.Folder,
@@ -329,7 +359,7 @@ func CloneVirtualMachineToLibraryItem(ctx context.Context, config *vsphere.VSphe
 	if err != nil {
 		return err
 	}
-	stdlog.Printf("Created vmtx %s in library %s", id, config.ContentSource)
+	stdlog.Printf("Created vmtx %s in library %s", id, GetContentSourceID())
 
 	return nil
 

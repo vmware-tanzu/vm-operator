@@ -37,11 +37,8 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	if err := virtualmachineclass.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachineClass controller")
 	}
-	if err := virtualmachineimage.AddToManagerCM(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachineImage ConfigMap controller")
-	}
 	if err := virtualmachineimage.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachineImage controller")
+		return errors.Wrap(err, "failed to initialize VirtualMachineImage controllers")
 	}
 	if err := virtualmachineservice.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachineService controller")

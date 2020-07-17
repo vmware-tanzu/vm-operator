@@ -27,6 +27,9 @@ type funcs struct {
 	UpdateVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
 	DeleteVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 
+	ListVirtualMachineImagesFromContentLibraryFn func(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error)
+	DoesContentLibraryExistFn                    func(ctx context.Context, cl *v1alpha1.ContentLibraryProvider) (bool, error)
+
 	UpdateVcPNIDFn                  func(ctx context.Context, vcPNID, vcPort string) error
 	ClearSessionsAndClientFn        func(ctx context.Context)
 	DeleteNamespaceSessionInCacheFn func(ctx context.Context, namespace string)
@@ -177,10 +180,24 @@ func (s *FakeVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, name
 }
 
 func (s *FakeVmProvider) DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error) {
+	s.Lock()
+	defer s.Unlock()
+	if s.DoesContentLibraryExistFn != nil {
+		return s.DoesContentLibraryExistFn(ctx, contentLibrary)
+	}
+
 	return true, nil
 }
 
 func (s *FakeVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.ListVirtualMachineImagesFromContentLibraryFn != nil {
+		return s.ListVirtualMachineImagesFromContentLibraryFn(ctx, cl)
+	}
+
+	// No-op for now.
 	return []*v1alpha1.VirtualMachineImage{}, nil
 }
 

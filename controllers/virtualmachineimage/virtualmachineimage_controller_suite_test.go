@@ -1,18 +1,27 @@
-// +build !integration
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
-package virtualmachineimage
+package virtualmachineimage_test
 
 import (
 	"testing"
 
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineimage"
+	"github.com/vmware-tanzu/vm-operator/pkg/manager"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func TestServices(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "VirtualMachineImage Controller Suite")
+var suite = builder.NewTestSuiteForController(
+	virtualmachineimage.AddToManager,
+	manager.InitializeProvidersNoopFn,
+)
+
+func TestVirtualMachineImage(t *testing.T) {
+	suite.Register(t, "VirtualMachineImage controller suite", intgTests, unitTests)
 }
+
+var _ = BeforeSuite(suite.BeforeSuite)
+
+var _ = AfterSuite(suite.AfterSuite)

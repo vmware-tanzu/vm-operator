@@ -35,6 +35,7 @@ func intgTests() {
 
 		vm                *vmopv1alpha1.VirtualMachine
 		vmKey             types.NamespacedName
+		vmImage           *vmopv1alpha1.VirtualMachineImage
 		vmClass           *vmopv1alpha1.VirtualMachineClass
 		metadataConfigMap *corev1.ConfigMap
 		storageClass      *storagev1.StorageClass
@@ -65,6 +66,12 @@ func intgTests() {
 						},
 					},
 				},
+			},
+		}
+
+		vmImage = &vmopv1alpha1.VirtualMachineImage{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dummy-image",
 			},
 		}
 
@@ -159,6 +166,7 @@ func intgTests() {
 			intgFakeVmProvider.Unlock()
 
 			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, vmImage)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, metadataConfigMap)).To(Succeed())
@@ -180,6 +188,8 @@ func intgTests() {
 
 			By("Delete cluster scoped resources", func() {
 				err := ctx.Client.Delete(ctx, vmClass)
+				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+				err = ctx.Client.Delete(ctx, vmImage)
 				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 				err = ctx.Client.Delete(ctx, storageClass)
 				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())

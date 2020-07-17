@@ -15,10 +15,11 @@ type VmMetadata struct {
 }
 
 type VmConfigArgs struct {
-	VmClass          v1alpha1.VirtualMachineClass
-	ResourcePolicy   *v1alpha1.VirtualMachineSetResourcePolicy
-	VmMetadata       *VmMetadata
-	StorageProfileID string
+	VmClass            v1alpha1.VirtualMachineClass
+	ResourcePolicy     *v1alpha1.VirtualMachineSetResourcePolicy
+	VmMetadata         *VmMetadata
+	StorageProfileID   string
+	ContentLibraryUUID string
 }
 
 // VirtualMachineProviderInterface is a plugable interface for VM Providers
@@ -29,9 +30,6 @@ type VirtualMachineProviderInterface interface {
 	// to perform housekeeping or run custom controllers specific to the cloud provider.
 	// Any tasks started here should be cleaned up when the stop channel closes.
 	Initialize(stop <-chan struct{})
-
-	ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error)
-	GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error)
 
 	DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
 	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VmConfigArgs) error
@@ -49,7 +47,6 @@ type VirtualMachineProviderInterface interface {
 	DeleteNamespaceSessionInCache(ctx context.Context, namespace string)
 	ComputeClusterCpuMinFrequency(ctx context.Context) error
 
-	// AKP move to content provider interface
 	DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error)
 	ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error)
 }

@@ -7,6 +7,7 @@ resources:
 
 patchesStrategicMerge:
 - manifests_label_patch.yaml
+- webhookcainjection_patch.yaml
 
 configurations:
 - kustomizeconfig.yaml

@@ -9,6 +9,7 @@ resources:
 - ../manager
 - ../rbac
 - ../webhook
+- ../certmanager
 
 patchesStrategicMerge:
 - manager_auth_proxy_patch.yaml
@@ -57,18 +58,6 @@ vars:
     name: controller-manager
   fieldref:
     fieldpath: metadata.annotations["webhooks.vmoperator.vmware.com/service-container-port"]
-- name: WEBHOOK_SECRET_NAMESPACE
-  objref:
-    apiVersion: v1
-    kind: Secret
-    name: webhook-server-cert
-  fieldref:
-    fieldpath: metadata.namespace
-- name: WEBHOOK_SECRET_NAME
-  objref:
-    apiVersion: v1
-    kind: Secret
-    name: webhook-server-cert
 - name: WEBHOOK_SECRET_VOLUME_MOUNT_PATH
   objref:
     apiVersion: apps/v1
@@ -83,3 +72,34 @@ vars:
     name: controller-manager
   fieldref:
     fieldpath: metadata.annotations["webhooks.vmoperator.vmware.com/secret-volume-name"]
+- name: WEBHOOK_CERTIFICATE_NAMESPACE # namespace of the certificate CR
+  objref:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1alpha2
+    name: serving-cert # this name should match the one in certificate.yaml
+  fieldref:
+    fieldpath: metadata.namespace
+- name: WEBHOOK_CERTIFICATE_NAME
+  objref:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1alpha2
+    name: serving-cert # this name should match the one in certificate.yaml
+- name: WEBHOOK_SECRET_NAMESPACE
+  objref:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1alpha2
+    name: serving-cert # this name should match the one in certificate.yaml
+  fieldref:
+    fieldpath: metadata.namespace
+- name: WEBHOOK_SECRET_NAME
+  objref:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1alpha2
+    name: serving-cert # this name should match the one in certificate.yaml
+  fieldref:
+    fieldpath: spec.secretName
+

@@ -21,6 +21,26 @@ if $KUBECTL get deployment -n ${VMOP_NAMESPACE} ${VMOP_DEPLOYMENT} >/dev/null 2>
     DEPLOYMENT_EXISTS=1
 fi
 
+# Deploy and check cert-manager
+CERTMANAGER_NAMESPACE="cert-manager"
+CERTMANAGER_DEPLOYMENTS=(
+  cert-manager
+  cert-manager-cainjector
+  cert-manager-webhook
+)
+CERTMANAGER_VERSION=v0.13.1
+
+CERTMAN_EXISTS=""
+if $KUBECTL get deployment -n ${CERTMANAGER_NAMESPACE} ${CERTMANAGER_DEPLOYMENTS[0]} >/dev/null 2>&1 ; then
+  CERTMAN_EXISTS="exists"
+fi
+if [[ -z $CERTMAN_EXISTS ]]; then
+  $KUBECTL apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/${CERTMANAGER_VERSION}/cert-manager.yaml
+  for dep in "${CERTMANAGER_DEPLOYMENTS[@]}"; do
+    $KUBECTL rollout status -n "${CERTMANAGER_NAMESPACE}" deployment "${dep}"
+  done
+fi
+
 # Hack to reduce the number of replicas deployed from 3 to 1
 # when deploying onto a single node kind cluster.
 NODE_COUNT=$(kubectl get node --no-headers 2>/dev/null | wc -l)

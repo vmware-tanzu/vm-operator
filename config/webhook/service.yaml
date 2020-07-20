@@ -11,11 +11,3 @@ spec:
     targetPort: $(WEBHOOK_SERVICE_CONTAINER_PORT)
   selector:
     control-plane: controller-manager
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: webhook-server-cert
-  namespace: system
-  annotations:
-    webhooks.vmoperator.vmware.com/rotation-interval: 6h

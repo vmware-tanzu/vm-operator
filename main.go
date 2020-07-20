@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"path"
 	"strconv"
 	"time"
 
@@ -21,7 +22,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/webhooks"
-	"github.com/vmware-tanzu/vm-operator/webhooks/certman"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrlruntime "sigs.k8s.io/controller-runtime"
@@ -49,6 +49,13 @@ var (
 	defaultWebhookSecretVolumeMountPath = manager.DefaultWebhookSecretVolumeMountPath
 	defaultWatchNamespace               = manager.DefaultWatchNamespace
 	defaultContainerNode                = manager.DefaultContainerNode
+)
+
+const (
+	// serverKeyName is the name of the server private key
+	serverKeyName = "tls.key"
+	// serverCertName is the name of the serving certificate
+	serverCertName = "tls.crt"
 )
 
 func init() {
@@ -234,10 +241,8 @@ func main() {
 		go runProfiler(*profilerAddress)
 	}
 
-	sigHandler := ctrlsig.SetupSignalHandler()
-
-	setupLog.Info("creating certificate manager")
-	setupAndForWaitCertManager(setupLog, managerOpts, sigHandler)
+	setupLog.Info("wait for webhook certificates")
+	waitForWebhookCertificates(setupLog, managerOpts)
 
 	// Create a function that adds all of the controllers and webhooks to the manager.
 	addToManager := func(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
@@ -259,52 +264,49 @@ func main() {
 	}
 
 	setupLog.Info("starting controller manager")
+	sigHandler := ctrlsig.SetupSignalHandler()
 	if err := mgr.Start(sigHandler); err != nil {
 		setupLog.Error(err, "problem running controller manager")
 		os.Exit(1)
 	}
 }
 
-func setupAndForWaitCertManager(setupLog logr.Logger, managerOpts manager.Options, stopCh <-chan struct{}) {
-	opts := certman.Options{
-		Logger:                        ctrllog.Log.WithName("certman"),
-		CertDir:                       managerOpts.WebhookSecretVolumeMountPath,
-		WebhookConfigLabelKey:         "webhooks.vmoperator.vmware.com",
-		RotationIntervalAnnotationKey: "webhooks.vmoperator.vmware.com/rotation-interval",
-		RotationCountAnnotationKey:    "webhooks.vmoperator.vmware.com/rotation-count",
-		NextRotationAnnotationKey:     "webhooks.vmoperator.vmware.com/next-rotation",
-		SecretNamespace:               managerOpts.WebhookSecretNamespace,
-		SecretName:                    managerOpts.WebhookSecretName,
-		ServiceNamespace:              managerOpts.WebhookServiceNamespace,
-		ServiceName:                   managerOpts.WebhookServiceName,
+func waitForWebhookCertificates(setupLog logr.Logger, managerOpts manager.Options) {
+	waitOnCertsStartTime := time.Now()
+	for {
+		select {
+		case <-certDirReady(managerOpts.WebhookSecretVolumeMountPath):
+			return
+		case <-time.After(time.Second * 5):
+			setupLog.Info("waiting on certificates", "elapsed", time.Since(waitOnCertsStartTime).String())
+		}
 	}
-	certMan, err := certman.New(opts)
-	if err != nil {
-		setupLog.Error(err, "problem creating certificate manager")
-		os.Exit(1)
-	}
+}
 
-	setupLog.Info("starting certificate manager")
+// CertDirReady returns a channel that is closed when there are certificates
+// available in the configured certificate directory. If CertDir is
+// empty or the specified directory does not exist, then the returned channel
+// is never closed.
+func certDirReady(certDir string) <-chan struct{} {
+	done := make(chan struct{})
 	go func() {
-		if err := certMan.Start(stopCh); err != nil {
-			setupLog.Error(err, "unexpected failure in certificate manager")
-			os.Exit(1)
+		crtPath := path.Join(certDir, serverCertName)
+		keyPath := path.Join(certDir, serverKeyName)
+		for {
+			if file, err := os.Stat(crtPath); err == nil {
+				if file.Size() > 0 {
+					if file, err := os.Stat(keyPath); err == nil {
+						if file.Size() > 0 {
+							close(done)
+							return
+						}
+					}
+				}
+			}
+			time.Sleep(time.Second * 1)
 		}
 	}()
-
-	blockUntilCertsAreReady := func() {
-		waitOnCertsStartTime := time.Now()
-		for {
-			select {
-			case <-certMan.CertDirReady():
-				return
-			case <-time.After(time.Second * 5):
-				setupLog.Info("waiting on certificates", "elapsed", time.Since(waitOnCertsStartTime).String())
-			}
-		}
-	}
-
-	blockUntilCertsAreReady()
+	return done
 }
 
 func runProfiler(addr string) {

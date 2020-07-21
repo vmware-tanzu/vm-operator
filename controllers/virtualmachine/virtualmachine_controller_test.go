@@ -26,6 +26,7 @@ import (
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	controllercontext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -53,6 +54,15 @@ var _ = Describe("VirtualMachine controller", func() {
 		err               error
 		ns                = integration.DefaultNamespace
 	)
+
+	vmExists := func(vms []*vmoperatorv1alpha1.VirtualMachineImage, vmName string) bool {
+		for _, vm := range vms {
+			if vm.Name == vmName {
+				return true
+			}
+		}
+		return false
+	}
 
 	BeforeEach(func() {
 		classInstance = vmoperatorv1alpha1.VirtualMachineClass{
@@ -147,6 +157,9 @@ var _ = Describe("VirtualMachine controller", func() {
 		Expect(add(ctrlContext, mgr, recFn)).To(Succeed())
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
+
+		// Configure CL
+		Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(context.TODO(), integration.GetContentSourceID())).To(Succeed())
 	})
 
 	AfterEach(func() {
@@ -170,10 +183,8 @@ var _ = Describe("VirtualMachine controller", func() {
 	Context("when creating/deleting a VM object from Inventory", func() {
 		It("invoke the reconcile method with valid storage class", func() {
 
-			// Configure to use Content Library
-			vSphereConfig.ContentSource = ""
-			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
-			Expect(err).NotTo(HaveOccurred())
+			// Configure CL to point to inventory.
+			Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(context.TODO(), "")).To(Succeed())
 
 			images, err := vmProvider.ListVirtualMachineImages(context.TODO(), ns)
 			Expect(err).NotTo(HaveOccurred())
@@ -210,10 +221,22 @@ var _ = Describe("VirtualMachine controller", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 
+			Eventually(func() bool {
+				vms, err := vmProvider.ListVirtualMachineImages(context.TODO(), ns)
+				Expect(err).NotTo(HaveOccurred())
+				return vmExists(vms, vmName)
+			}, timeout)
+
 			// Delete the VM Object then expect Reconcile
 			err = c.Delete(context.TODO(), &instance)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, time.Second*10).Should(Receive(Equal(expectedRequest)))
+
+			Eventually(func() bool {
+				vms, err := vmProvider.ListVirtualMachineImages(context.TODO(), ns)
+				Expect(err).NotTo(HaveOccurred())
+				return !vmExists(vms, vmName)
+			}, timeout)
 
 			/*
 				Eventually(func() bool {
@@ -231,10 +254,6 @@ var _ = Describe("VirtualMachine controller", func() {
 
 	Context("when creating/deleting a VM object from Content Library", func() {
 		It("invoke the reconcile method", func() {
-			// Configure to use Content Library
-			vSphereConfig.ContentSource = integration.GetContentSourceID()
-			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
-			Expect(err).NotTo(HaveOccurred())
 
 			vmName := "cl-deployed-vm"
 			expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmName}}

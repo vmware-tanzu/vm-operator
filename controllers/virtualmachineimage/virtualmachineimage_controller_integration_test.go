@@ -86,13 +86,12 @@ func getVirtualMachineInstance(name, namespace, imageName, className string) *vm
 var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 	var (
-		c              client.Client
-		stopMgr        chan struct{}
-		mgrStopped     *sync.WaitGroup
-		mgr            manager.Manager
-		err            error
-		ctx            context.Context
-		vmImageSession *vsphere.Session
+		c          client.Client
+		stopMgr    chan struct{}
+		mgrStopped *sync.WaitGroup
+		mgr        manager.Manager
+		err        error
+		ctx        context.Context
 	)
 
 	BeforeEach(func() {
@@ -122,10 +121,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 		session, err = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), integration.DefaultNamespace)
 		Expect(err).NotTo(HaveOccurred())
 
-		// "" namespace is used to list VirtualMachineImages. Reset the session's content library to the default CL.
-		vmImageSession, err = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), "")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(vmImageSession.ConfigureContent(ctx, integration.ContentSourceID)).To(Succeed())
+		Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(ctx, integration.GetContentSourceID())).To(Succeed())
 	})
 
 	AfterEach(func() {
@@ -259,7 +255,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 				vmConfigArgs := getVmConfigArgs(testNamespace, vmName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageToAddNameCs, vmConfigArgs.VmClass.Name)
 
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetContentLibrary())
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
 			})
@@ -273,7 +269,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			tempSessionCL, err := session.CreateLibrary(ctx, "temporary-content-library")
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(vmImageSession.ConfigureContent(ctx, tempSessionCL)).To(Succeed())
+			Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(ctx, tempSessionCL)).To(Succeed())
 
 			// Delete the content library pointed by the session
 			Expect(session.DeleteContentLibrary(ctx, tempSessionCL)).To(Succeed())

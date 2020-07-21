@@ -138,6 +138,8 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 		Expect(add(ctrlContext, mgr, recFn)).To(Succeed())
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
+
+		Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(context.TODO(), integration.GetContentSourceID())).To(Succeed())
 	})
 
 	AfterEach(func() {
@@ -174,13 +176,6 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 	Context("when updating a VM object by attaching/detaching volumes", func() {
 		// TODO:  Figure out a way to mock the client error in order to cover more corner cases
 		It("invoke the reconcile method", func() {
-
-			session, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), ns)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Configure to use Content Library
-			vSphereConfig.ContentSource = integration.GetContentSourceID()
-			Expect(session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)).To(Succeed())
 
 			vmName := "volume-test-vm"
 			expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmName}}

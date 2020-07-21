@@ -55,7 +55,6 @@ type Session struct {
 	folder       *object.Folder
 	resourcepool *object.ResourcePool
 	network      object.NetworkReference // BMV: Dead? (never set in ConfigMap)
-	contentlib   *library.Library
 	datastore    *object.Datastore
 
 	userInfo              *url.Userinfo
@@ -155,10 +154,6 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		}
 	}
 
-	if err := s.ConfigureContent(ctx, config.ContentSource); err != nil {
-		return err
-	}
-
 	// Initialize tagging information
 	s.tagInfo = make(map[string]string)
 	s.tagInfo[CtrlVmVmAntiAffinityTagKey] = config.CtrlVmVmAntiAffinityTag
@@ -202,27 +197,6 @@ func (s *Session) initCpuMinFreq(ctx context.Context) error {
 
 	s.SetCpuMinMHzInCluster(minFreq)
 
-	return nil
-}
-
-func (s *Session) ConfigureContent(ctx context.Context, contentSource string) error {
-	log.V(4).Info("Configuring content library for session", "clUUID", contentSource)
-
-	if contentSource == "" {
-		log.V(4).Info("Content library configured to nothing")
-		s.contentlib = nil
-		return nil
-	}
-
-	restClient := s.Client.RestClient()
-	lib, err := library.NewManager(restClient).GetLibraryByID(ctx, contentSource)
-	if err != nil {
-		return errors.Wrapf(err, "failed to init Content Library %q", contentSource)
-	}
-
-	s.contentlib = lib
-
-	log.V(4).Info("Content library configured to", "contentSource", contentSource)
 	return nil
 }
 
@@ -295,10 +269,10 @@ func (s *Session) DoesContentLibraryExist(ctx context.Context, clID string) (boo
 	return true, nil
 }
 
-func (s *Session) GetItemIDFromCL(ctx context.Context, itemName string) (string, error) {
+func (s *Session) GetItemIDFromCL(ctx context.Context, cl *library.Library, itemName string) (string, error) {
 	restClient := s.Client.RestClient()
 	itemIDs, err := library.NewManager(restClient).FindLibraryItems(ctx,
-		library.FindItem{LibraryID: s.contentlib.ID, Name: itemName})
+		library.FindItem{LibraryID: cl.ID, Name: itemName})
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to find image %q", itemName)
 	}
@@ -314,8 +288,8 @@ func (s *Session) GetItemIDFromCL(ctx context.Context, itemName string) (string,
 	return itemIDs[0], nil
 }
 
-func (s *Session) GetItemFromCL(ctx context.Context, itemName string) (*library.Item, error) {
-	itemID, err := s.GetItemIDFromCL(ctx, itemName)
+func (s *Session) GetItemFromCL(ctx context.Context, cl *library.Library, itemName string) (*library.Item, error) {
+	itemID, err := s.GetItemIDFromCL(ctx, cl, itemName)
 	if err != nil {
 		return nil, err
 	}
@@ -337,8 +311,8 @@ func (s *Session) GetItemFromCL(ctx context.Context, itemName string) (*library.
 	return item, nil
 }
 
-func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, name string) (*v1alpha1.VirtualMachineImage, error) {
-	item, err := s.GetItemFromCL(ctx, name)
+func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, cl *library.Library, name string) (*v1alpha1.VirtualMachineImage, error) {
+	item, err := s.GetItemFromCL(ctx, cl, name)
 	if err != nil {
 		return nil, err
 	}
@@ -605,7 +579,7 @@ func (s *Session) GetRPAndFolderFromResourcePolicy(ctx context.Context,
 	return resourcePool, folder, nil
 }
 
-func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
+func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs, cl *library.Library) (*res.VirtualMachine, error) {
 	if vmConfigArgs.StorageProfileID == "" {
 		if s.storageClassRequired {
 			// The storageProfileID is obtained from a StorageClass.
@@ -622,15 +596,15 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 		log.Info("Will attempt to clone virtual machine", "name", vm.Name, "storageProfileID", vmConfigArgs.StorageProfileID)
 	}
 
-	if s.contentlib != nil {
-		item, err := s.GetItemFromCL(ctx, vm.Spec.ImageName)
+	if cl != nil {
+		item, err := s.GetItemFromCL(ctx, cl, vm.Spec.ImageName)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to find image %q", vm.Spec.ImageName)
 		}
 
 		switch item.Type {
 		case library.ItemTypeOVF:
-			return s.cloneVirtualMachineFromLibItemInCL(ctx, vm, vmConfigArgs, item)
+			return s.cloneVirtualMachineFromOVFInCL(ctx, vm, vmConfigArgs, cl, item)
 		case library.ItemTypeVMTX:
 			return s.cloneVirtualMachineFromInventory(ctx, vm, vmConfigArgs)
 		}
@@ -664,7 +638,8 @@ func (s *Session) cloneVirtualMachineFromInventory(ctx context.Context, vm *v1al
 	return cloneResVm, nil
 }
 
-func (s *Session) cloneVirtualMachineFromLibItemInCL(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs, item *library.Item) (*res.VirtualMachine, error) {
+func (s *Session) cloneVirtualMachineFromOVFInCL(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs, cl *library.Library, item *library.Item) (*res.VirtualMachine, error) {
+
 	name := vm.Name
 	resourcePolicyName := ""
 	if vmConfigArgs.ResourcePolicy != nil {
@@ -1417,9 +1392,6 @@ func (s *Session) String() string {
 	}
 	if !isNilPtr(s.ncpClient) {
 		sb.WriteString(fmt.Sprintf("ncpClient: %+v, ", s.ncpClient))
-	}
-	if s.contentlib != nil {
-		sb.WriteString(fmt.Sprintf("contentlib: %+v, ", *s.contentlib))
 	}
 	sb.WriteString(fmt.Sprintf("datacenter: %s, ", s.datacenter))
 	if s.folder != nil {

@@ -106,6 +106,9 @@ func getVirtualMachineInstance(name, namespace, imageName, className string) *vm
 }
 
 var _ = Describe("VMProvider Tests", func() {
+	BeforeEach(func() {
+		Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(ctx, integration.GetContentSourceID())).To(Succeed())
+	})
 
 	Context("When using Content Library", func() {
 		var vmProvider vmprovider.VirtualMachineProviderInterface
@@ -262,11 +265,6 @@ var _ = Describe("VMProvider Tests", func() {
 		It("should list the virtualmachineimages available in CL", func() {
 			var images []*vmoperatorv1alpha1.VirtualMachineImage
 
-			// Configure to use Content Library
-			vSphereConfig.ContentSource = integration.GetContentSourceID()
-			err := session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
-			Expect(err).ShouldNot(HaveOccurred())
-
 			Eventually(func() int {
 				images, err = vmProvider.ListVirtualMachineImages(context.TODO(), integration.DefaultNamespace)
 				Expect(err).ToNot(HaveOccurred())
@@ -288,11 +286,6 @@ var _ = Describe("VMProvider Tests", func() {
 
 		It("should get the existing virtualmachineimage", func() {
 			var image *vmoperatorv1alpha1.VirtualMachineImage
-
-			// Configure to use Content Library
-			vSphereConfig.ContentSource = integration.GetContentSourceID()
-			err := session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
-			Expect(err).ShouldNot(HaveOccurred())
 
 			Eventually(func() *vmoperatorv1alpha1.VirtualMachineImage {
 				image, err = vmProvider.GetVirtualMachineImage(context.TODO(), integration.DefaultNamespace, integration.IntegrationContentLibraryItemName)

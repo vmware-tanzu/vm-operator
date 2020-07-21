@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/simulator"
+	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/tags"
 
 	vimTypes "github.com/vmware/govmomi/vim25/types"
@@ -44,6 +45,7 @@ var _ = Describe("Sessions", func() {
 		ncpClient = ncpfake.NewSimpleClientset()
 		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, ncpClient, k8sClient)
 		Expect(err).NotTo(HaveOccurred())
+		Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(ctx, integration.GetContentSourceID())).To(Succeed())
 	})
 
 	Describe("Does content library exists", func() {
@@ -67,13 +69,6 @@ var _ = Describe("Sessions", func() {
 	Describe("Query VM images", func() {
 
 		Context("From Inventory - VMs", func() {
-
-			BeforeEach(func() {
-				//set source to use VM inventory
-				vSphereConfig.ContentSource = ""
-				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
-				Expect(err).NotTo(HaveOccurred())
-			})
 
 			// TODO: The default govcsim setups 2 VM's per resource pool however we should create our own fixture for better
 			// consistency and avoid failures when govcsim is updated.
@@ -106,13 +101,6 @@ var _ = Describe("Sessions", func() {
 
 		Context("From Content Library", func() {
 
-			BeforeEach(func() {
-				//set source to use CL
-				vSphereConfig.ContentSource = integration.GetContentSourceID()
-				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
-				Expect(err).NotTo(HaveOccurred())
-			})
-
 			It("should list virtualmachineimages from CL", func() {
 				images, err := session.ListVirtualMachineImagesFromCL(context.TODO(), integration.ContentSourceID)
 				Expect(err).NotTo(HaveOccurred())
@@ -122,14 +110,16 @@ var _ = Describe("Sessions", func() {
 			})
 
 			It("should get virtualmachineimage from CL", func() {
-				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "test-item")
+				cl := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetContentLibrary()
+				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), cl, "test-item")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(image.ObjectMeta.Name).Should(Equal("test-item"))
 				Expect(image.Spec.Type).Should(Equal("ovf"))
 			})
 
 			It("should not get virtualmachineimage from CL", func() {
-				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), "invalid")
+				cl := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetContentLibrary()
+				image, err := session.GetVirtualMachineImageFromCL(context.TODO(), cl, "invalid")
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).Should(Equal("no library items named: invalid"))
 				Expect(image).Should(BeNil())
@@ -138,6 +128,14 @@ var _ = Describe("Sessions", func() {
 	})
 
 	Describe("GetVM", func() {
+
+		var (
+			cl *library.Library
+		)
+
+		BeforeEach(func() {
+			cl = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetContentLibrary()
+		})
 
 		Context("When MoID is present", func() {
 
@@ -151,7 +149,7 @@ var _ = Describe("Sessions", func() {
 				vmConfigArgs := getVmConfigArgs(testNamespace, vmName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
-				clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs)
+				clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs, cl)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
 				moId, err := clonedVM.UniqueID(ctx)
@@ -179,7 +177,7 @@ var _ = Describe("Sessions", func() {
 					vm.Spec.ResourcePolicyName = resourcePolicy.Name
 					vmConfigArgs.ResourcePolicy = resourcePolicy
 
-					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(clonedVM.Name).Should(Equal(vmName))
 					moId, err := clonedVM.UniqueID(ctx)
@@ -202,7 +200,7 @@ var _ = Describe("Sessions", func() {
 					vmConfigArgs := getVmConfigArgs(testNamespace, vmName)
 					vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
-					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(clonedVM.Name).Should(Equal(vmName))
 					moId, err := clonedVM.UniqueID(ctx)
@@ -221,10 +219,8 @@ var _ = Describe("Sessions", func() {
 	Describe("Clone VM", func() {
 
 		BeforeEach(func() {
-			//set source to use VM inventory
-			vSphereConfig.ContentSource = ""
-			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
-			Expect(err).NotTo(HaveOccurred())
+			// Set content library to nil, to use images from inventory.
+			// Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(ctx, "")).To(Succeed())
 		})
 
 		Context("without specifying any networks in VM Spec", func() {
@@ -245,7 +241,7 @@ var _ = Describe("Sessions", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(nicChanges)).Should(Equal(0))
 
-				clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs)
+				clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM).ShouldNot(BeNil())
 
@@ -308,7 +304,7 @@ var _ = Describe("Sessions", func() {
 				for _, changeSpec := range nicChanges {
 					Expect(changeSpec.GetVirtualDeviceConfigSpec().Operation).Should(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
 				}
-				clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs)
+				clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs, nil)
 				Expect(err).NotTo(HaveOccurred())
 
 				netDevices, err := clonedVM.GetNetworkDevices(ctx)
@@ -380,7 +376,7 @@ var _ = Describe("Sessions", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(nicChanges)).Should(Equal(0))
 
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM).ShouldNot(BeNil())
 
@@ -411,7 +407,7 @@ var _ = Describe("Sessions", func() {
 					},
 				}
 
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, nil)
 				Expect(err).NotTo(HaveOccurred())
 
 				netDevices, err := clonedVM.GetNetworkDevices(context.TODO())
@@ -436,11 +432,14 @@ var _ = Describe("Sessions", func() {
 
 		Context("from Content-library", func() {
 
+			var (
+				cl *library.Library
+			)
+
 			BeforeEach(func() {
-				//set source to use CL
-				vSphereConfig.ContentSource = integration.GetContentSourceID()
-				err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
-				Expect(err).NotTo(HaveOccurred())
+				// Use default CL as content source
+				Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(ctx, integration.GetContentSourceID())).To(Succeed())
+				cl = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetContentLibrary()
 			})
 
 			It("should clone VM", func() {
@@ -450,7 +449,7 @@ var _ = Describe("Sessions", func() {
 				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
 			})
@@ -464,7 +463,7 @@ var _ = Describe("Sessions", func() {
 				vmConfigArgs.StorageProfileID = "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
 			})
@@ -476,7 +475,7 @@ var _ = Describe("Sessions", func() {
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				// Expect this attempt to fail as we've not yet created the vm-template CL item
-				_, err = session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				_, err = session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("failed to find image %q", imageName)))
 
 				// Create the vm-template CL item
@@ -484,7 +483,7 @@ var _ = Describe("Sessions", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				// Now expect clone to succeed
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
 			})
@@ -515,12 +514,7 @@ var _ = Describe("Sessions", func() {
 		)
 
 		JustBeforeEach(func() {
-			//set source to use VM inventory
-
 			session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
-			vSphereConfig.ContentSource = ""
-			err = session.ConfigureContent(context.TODO(), vSphereConfig.ContentSource)
-			Expect(err).NotTo(HaveOccurred())
 		})
 
 		Context("with vm metadata and global extraConfig", func() {
@@ -552,7 +546,7 @@ var _ = Describe("Sessions", func() {
 						VmMetadata:       vmMetadata,
 						StorageProfileID: "foo",
 					}
-					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, nil)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(clonedVM).ShouldNot(BeNil())
 
@@ -590,7 +584,7 @@ var _ = Describe("Sessions", func() {
 						VmMetadata:       nil,
 						StorageProfileID: "foo",
 					}
-					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, nil)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(clonedVM).ShouldNot(BeNil())
 
@@ -752,6 +746,7 @@ var _ = Describe("Sessions", func() {
 			Context("Should fail gracefully", func() {
 				var savedDatastoreAttribute string
 				var err error
+				var cl *library.Library
 
 				vm := &vmopv1alpha1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
@@ -761,31 +756,31 @@ var _ = Describe("Sessions", func() {
 
 				BeforeEach(func() {
 					savedDatastoreAttribute = vSphereConfig.Datastore
+
+					// Reference to the CL. Points to the default content library (set in outermost BeforeEach)
+					cl = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetContentLibrary()
 				})
 
 				AfterEach(func() {
 					vSphereConfig.Datastore = savedDatastoreAttribute
-					vSphereConfig.ContentSource = ""
 					vSphereConfig.StorageClassRequired = false
 				})
 
 				It("with existing content source, empty datastore and empty profile id", func() {
 					vSphereConfig.Datastore = ""
-					vSphereConfig.ContentSource = integration.GetContentSourceID()
 
 					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, ""}
 					clonedVM, err :=
-						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError("cannot clone VM when neither storage class or datastore is specified"))
 					Expect(clonedVM).Should(BeNil())
 				})
 
 				It("with existing content source but mandatory profile id is not set", func() {
-					vSphereConfig.ContentSource = integration.GetContentSourceID()
 					vSphereConfig.StorageClassRequired = true
 
 					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
@@ -793,7 +788,7 @@ var _ = Describe("Sessions", func() {
 
 					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, ""}
 					clonedVM, err :=
-						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError("storage class is required but not specified"))
 					Expect(clonedVM).Should(BeNil())
@@ -807,7 +802,7 @@ var _ = Describe("Sessions", func() {
 
 					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, ""}
 					clonedVM, err :=
-						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, nil)
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError("storage class is required but not specified"))
 					Expect(clonedVM).Should(BeNil())

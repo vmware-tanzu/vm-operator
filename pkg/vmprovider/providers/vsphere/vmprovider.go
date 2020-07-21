@@ -92,9 +92,14 @@ func NewVSphereMachineProviderFromRestConfig(cfg *rest.Config, client ctrlruntim
 	return NewVSphereVmProviderFromClients(ncpClient, client)
 }
 
+// VSphereVmProviderGetSessionHack is an interface that exposes helpful functions to access certain resources without polluting the vm provider interface.
+// Typical usecase might be a VM image test that wants to set a custom content library.
+// ONLY USED IN TESTS.
 type VSphereVmProviderGetSessionHack interface {
 	GetSession(ctx context.Context, namespace string) (*Session, error)
 	IsSessionInCache(namespace string) bool
+	GetContentLibrary() *library.Library
+	SetContentLibrary(ctx context.Context, clUUID string) error
 }
 
 func (vs *vSphereVmProvider) Name() string {
@@ -121,6 +126,14 @@ func (vs *vSphereVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, 
 	delete(vs.sessions.sessions, namespace)
 }
 
+func (vs *vSphereVmProvider) GetContentLibrary() *library.Library {
+	return vs.sessions.contentLibrary
+}
+
+func (vs *vSphereVmProvider) SetContentLibrary(ctx context.Context, clUUID string) error {
+	return vs.sessions.ConfigureContentLibrary(ctx, clUUID)
+}
+
 // ListVirtualMachineImagesFromContentLibrary lists VM images from a ContentLibrary
 func (vs *vSphereVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx context.Context, contentLibrary v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
 	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary", "name", contentLibrary.Name, "UUID", contentLibrary.Spec.UUID)
@@ -141,9 +154,9 @@ func (vs *vSphereVmProvider) ListVirtualMachineImages(ctx context.Context, names
 		return nil, err
 	}
 
-	if ses.contentlib != nil {
+	if vs.sessions.contentLibrary != nil {
 		// List images from Content Library
-		imagesFromCL, err := ses.ListVirtualMachineImagesFromCL(ctx, ses.contentlib.ID)
+		imagesFromCL, err := ses.ListVirtualMachineImagesFromCL(ctx, vs.sessions.contentLibrary.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -185,8 +198,8 @@ func (vs *vSphereVmProvider) GetVirtualMachineImage(ctx context.Context, namespa
 	}
 
 	// Find items in Library if Content Lib has been initialized
-	if ses.contentlib != nil {
-		image, err := ses.GetVirtualMachineImageFromCL(ctx, name)
+	if vs.sessions.contentLibrary != nil {
+		image, err := ses.GetVirtualMachineImageFromCL(ctx, vs.sessions.contentLibrary, name)
 		if err != nil {
 			return nil, err
 		}
@@ -319,7 +332,7 @@ func (vs *vSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 		return err
 	}
 
-	resVm, err := ses.CloneVirtualMachine(ctx, vm, vmConfigArgs)
+	resVm, err := ses.CloneVirtualMachine(ctx, vm, vmConfigArgs, vs.sessions.contentLibrary)
 	if err != nil {
 		log.Error(err, "Clone VirtualMachine failed", "name", vmName)
 		return transformVmError(vmName, err)

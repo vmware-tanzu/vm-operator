@@ -365,10 +365,11 @@ func (s *Session) findChildEntity(ctx context.Context, parent object.Reference, 
 	// We have found a child entity with the given name. Populate the inventory path before returning.
 	child, err := s.Finder.ObjectReference(ctx, ref.Reference())
 	if err != nil {
-		log.Error(err, "error when setting inventory path for the object", "moRef", child.Reference().Value)
+		log.Error(err, "error when setting inventory path for the object", "moRef", ref.Reference().Value)
 		return nil, err
 	}
-	return child, err
+
+	return child, nil
 }
 
 // ChildResourcePool returns a child resource pool by a given name under the session's parent

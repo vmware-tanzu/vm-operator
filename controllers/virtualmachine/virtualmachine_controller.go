@@ -11,6 +11,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	storagetypev1 "k8s.io/api/storage/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -150,11 +151,14 @@ func (r *VirtualMachineReconciler) reconcileDelete(ctx goctx.Context, vm *vmoper
 	}()
 
 	if lib.ContainsString(vm.ObjectMeta.Finalizers, finalizerName) {
-		vm.Status.Phase = vmoperatorv1alpha1.Deleting
-		if err := r.Status().Update(ctx, vm); err != nil {
-			r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
-			return err
+		if vm.Status.Phase != vmoperatorv1alpha1.Deleting {
+			vm.Status.Phase = vmoperatorv1alpha1.Deleting
+			if err := r.Update(ctx, vm); err != nil {
+				r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
+				return err
+			}
 		}
+
 		if err := r.deleteVm(ctx, vm); err != nil {
 			return err
 		}
@@ -183,6 +187,8 @@ func (r *VirtualMachineReconciler) reconcileNormal(ctx goctx.Context, vm *vmoper
 		}
 	}
 
+	vmCopy := vm.DeepCopy()
+
 	if err := r.createOrUpdateVm(ctx, vm); err != nil {
 		r.Log.Error(err, "Failed to reconcile VirtualMachine")
 		return err
@@ -199,9 +205,11 @@ func (r *VirtualMachineReconciler) reconcileNormal(ctx goctx.Context, vm *vmoper
 	}
 
 	r.Log.V(4).Info("Updated VM Status", "name", vm.NamespacedName(), "status", vm.Status)
-	if err := r.Status().Update(ctx, vm); err != nil {
-		r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
-		return err
+	if !apiequality.Semantic.DeepEqual(vmCopy, vm) {
+		if err := r.Update(ctx, vm); err != nil {
+			r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
+			return err
+		}
 	}
 
 	return nil
@@ -311,11 +319,14 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmope
 	}
 
 	if !exists {
-		vm.Status.Phase = vmoperatorv1alpha1.Creating
-		if err = r.Status().Update(ctx, vm); err != nil {
-			r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
-			return err
+		if vm.Status.Phase != vmoperatorv1alpha1.Creating {
+			vm.Status.Phase = vmoperatorv1alpha1.Creating
+			if err = r.Update(ctx, vm); err != nil {
+				r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
+				return err
+			}
 		}
+
 		err = r.vmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 		if err != nil {
 			r.Log.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())

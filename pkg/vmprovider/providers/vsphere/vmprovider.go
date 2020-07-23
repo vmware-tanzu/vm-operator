@@ -397,7 +397,10 @@ func (vs *vSphereVmProvider) updateVirtualMachine(ctx context.Context, session *
 		return err
 	}
 
-	AddProviderAnnotations(session, &vm.ObjectMeta, resVm)
+	// We were doing Status().Update() so these were never getting applied to the VM.
+	// Some of these annotations like the OVF properties as massive so disable all of
+	// until we can figure out what we actually needed or want.
+	//AddProviderAnnotations(session, &vm.ObjectMeta, resVm)
 
 	err = vs.mergeVmStatus(ctx, vm, resVm)
 	if err != nil {

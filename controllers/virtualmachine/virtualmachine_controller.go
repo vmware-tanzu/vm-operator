@@ -205,8 +205,8 @@ func (r *VirtualMachineReconciler) reconcileNormal(ctx goctx.Context, vm *vmoper
 	}
 
 	r.Log.V(4).Info("Updated VM Status", "name", vm.NamespacedName(), "status", vm.Status)
-	if !apiequality.Semantic.DeepEqual(vmCopy, vm) {
-		if err := r.Update(ctx, vm); err != nil {
+	if !apiequality.Semantic.DeepEqual(vmCopy.Status, vm.Status) {
+		if err := r.Status().Update(ctx, vm); err != nil {
 			r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
 			return err
 		}

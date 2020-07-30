@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 
@@ -289,8 +290,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 		Context("with an initial image in the CL", func() {
 
-			It("should list the VM images", func() {
-
+			BeforeEach(func() {
 				Eventually(func() bool {
 					imageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
 					err = c.List(ctx, imageList)
@@ -298,7 +298,29 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 					return len(imageList.Items) == 1 && imageList.Items[0].Name == integration.IntegrationContentLibraryItemName
 				}, timeout).Should(BeTrue())
+			})
 
+			It("should list the VM images", func() {
+				// tested in BeforeEach
+			})
+
+			It("should update the image metadata if it is out of date", func() {
+				var clImage vmoperatorv1alpha1.VirtualMachineImage
+				imageKey := client.ObjectKey{Name: integration.IntegrationContentLibraryItemName}
+				Expect(c.Get(ctx, imageKey, &clImage)).To(Succeed())
+
+				// Remove annotations from the clImage.
+				prevOSInfo := clImage.Spec.OSInfo
+				clImage.Spec.OSInfo = vmoperatorv1alpha1.VirtualMachineImageOSInfo{}
+				Expect(c.Update(ctx, &clImage)).To(Succeed())
+
+				// Eventually, image sync should have updated the objects with correct metadata.
+				Eventually(func() bool {
+					image := vmoperatorv1alpha1.VirtualMachineImage{}
+					Expect(c.Get(ctx, imageKey, &image)).To(Succeed())
+
+					return reflect.DeepEqual(image.Spec.OSInfo, prevOSInfo)
+				}, timeout).Should(BeTrue())
 			})
 		})
 

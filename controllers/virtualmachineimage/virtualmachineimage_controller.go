@@ -6,6 +6,7 @@ package virtualmachineimage
 import (
 	goctx "context"
 	"os"
+	"reflect"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -64,18 +65,17 @@ func NewVirtualMachineImageDiscoverer(
 }
 
 // Attempt to create a set of images.
-func (d *VirtualMachineImageDiscoverer) createImages(ctx goctx.Context, images []vmoperatorv1alpha1.VirtualMachineImage) error {
+func (d *VirtualMachineImageDiscoverer) createImages(ctx goctx.Context, images []vmoperatorv1alpha1.VirtualMachineImage) {
 
 	for _, image := range images {
 		img := image
 		d.log.V(4).Info("Creating image", "name", img.Name)
 		err := d.client.Create(ctx, &img)
 		if err != nil {
-			d.log.V(5).Info("failed to create image", "name", img.Name, "error", err)
+			d.log.Error(err, "failed to create image", "name", img.Name)
 		}
 	}
 
-	return nil
 }
 
 // Attempt to delete a set of images.  Fail fast on first failure
@@ -93,6 +93,20 @@ func (d *VirtualMachineImageDiscoverer) deleteImages(ctx goctx.Context, images [
 	return nil
 }
 
+// Attempt to update a set of images.
+func (d *VirtualMachineImageDiscoverer) updateImages(ctx goctx.Context, images []vmoperatorv1alpha1.VirtualMachineImage) {
+
+	for _, image := range images {
+		img := image
+		d.log.V(4).Info("Updating image", "name", img.Name)
+		err := d.client.Update(ctx, &img)
+		if err != nil {
+			d.log.Error(err, "failed to update image", "name", img.Name)
+		}
+	}
+
+}
+
 // Difference two lists of VirtualMachineImages producing 3 lists: images that have been added to "right", images that
 // have been removed in "right", and images that have been updated in "right".
 func (d *VirtualMachineImageDiscoverer) diffImages(left []vmoperatorv1alpha1.VirtualMachineImage, right []vmoperatorv1alpha1.VirtualMachineImage) (
@@ -100,28 +114,33 @@ func (d *VirtualMachineImageDiscoverer) diffImages(left []vmoperatorv1alpha1.Vir
 	removed []vmoperatorv1alpha1.VirtualMachineImage,
 	updated []vmoperatorv1alpha1.VirtualMachineImage) {
 
-	leftMap := make(map[string]bool)
-	rightMap := make(map[string]bool)
+	leftMap := make(map[string]int)
+	rightMap := make(map[string]int)
 
-	for _, item := range left {
-		leftMap[item.Name] = true
+	for i, item := range left {
+		leftMap[item.Name] = i
 	}
 
-	for _, item := range right {
-		rightMap[item.Name] = true
+	for i, item := range right {
+		rightMap[item.Name] = i
 	}
 
 	// Difference
 	for _, l := range left {
-		_, ok := rightMap[l.Name]
+		i, ok := rightMap[l.Name]
 		if !ok {
 			// Identify removed items
 			d.log.V(4).Info("Removing Image", "name", l.Name)
 			removed = append(removed, l)
 		} else {
-			// Note, this adds every existing image to the updated list without actually performing a deep comparison.
+			// Identify updated items
 			d.log.V(4).Info("Updating Image", "name", l.Name)
-			updated = append(updated, l)
+			r := right[i]
+			if !reflect.DeepEqual(l.Spec, r.Spec) {
+				// We can't use `r` here since it is a synthesized object which doesnt have necessary fields to call Update on (e.g. resourceVersion)
+				l.Spec = r.DeepCopy().Spec
+				updated = append(updated, l)
+			}
 		}
 	}
 
@@ -152,7 +171,7 @@ func (d *VirtualMachineImageDiscoverer) getImagesFromContentProvider(ctx goctx.C
 	return d.vmProvider.ListVirtualMachineImagesFromContentLibrary(ctx, contentLibrary)
 }
 
-func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (error, []vmoperatorv1alpha1.VirtualMachineImage, []vmoperatorv1alpha1.VirtualMachineImage) {
+func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (error, []vmoperatorv1alpha1.VirtualMachineImage, []vmoperatorv1alpha1.VirtualMachineImage, []vmoperatorv1alpha1.VirtualMachineImage) {
 	d.log.V(4).Info("Differencing images")
 
 	// List the existing images from both the vm provider backend and the Kubernetes control plane (etcd).
@@ -161,7 +180,7 @@ func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (err
 	k8sManagedImageList := &vmoperatorv1alpha1.VirtualMachineImageList{}
 	err := d.client.List(ctx, k8sManagedImageList)
 	if err != nil {
-		return errors.Wrap(err, "failed to list images from control plane"), nil, nil
+		return errors.Wrap(err, "failed to list images from control plane"), nil, nil, nil
 	}
 
 	k8sManagedImages := k8sManagedImageList.Items
@@ -177,13 +196,13 @@ func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (err
 		contentSourceList := &vmoperatorv1alpha1.ContentSourceList{}
 		err = d.client.List(ctx, contentSourceList)
 		if err != nil {
-			return errors.Wrap(err, "failed to list content sources from control plane"), nil, nil
+			return errors.Wrap(err, "failed to list content sources from control plane"), nil, nil, nil
 		}
 
 		for _, contentSource := range contentSourceList.Items {
 			images, err := d.getImagesFromContentProvider(ctx, contentSource)
 			if err != nil {
-				return nil, nil, nil
+				return nil, nil, nil, nil
 			}
 
 			providerManagedImages = append(providerManagedImages, images...)
@@ -195,7 +214,7 @@ func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (err
 			// not found error. We log and return empty image list here so the existing VM image templates can be cleaned up from the API server.
 
 			if !lib.IsNotFoundError(err) {
-				return errors.Wrap(err, "failed to list images from backend"), nil, nil
+				return errors.Wrap(err, "failed to list images from backend"), nil, nil, nil
 			}
 
 			d.log.Error(err, "VM provider failed to find the Content Library")
@@ -210,32 +229,31 @@ func (d *VirtualMachineImageDiscoverer) differenceImages(ctx goctx.Context) (err
 	}
 
 	// Difference the kubernetes images with the provider images
-	// TODO: Ignore updated for now
-	added, removed, _ := d.diffImages(k8sManagedImages, convertedImages)
-	d.log.V(4).Info("Differenced", "added", added, "removed", removed)
+	added, removed, updated := d.diffImages(k8sManagedImages, convertedImages)
+	d.log.V(4).Info("Differenced", "added", added, "removed", removed, "updated", updated)
 
-	return nil, added, removed
+	return nil, added, removed, updated
 }
 
 func (d *VirtualMachineImageDiscoverer) SyncImages() error {
 	ctx := goctx.Background()
-	err, added, removed := d.differenceImages(ctx)
+	err, added, removed, updated := d.differenceImages(ctx)
 	if err != nil {
 		d.log.Error(err, "failed to difference images")
 		return err
 	}
 
-	err = d.createImages(ctx, added)
-	if err != nil {
-		d.log.Error(err, "failed to create all images")
-		return err
-	}
+	// Create VM image resources. Ignore failure since the controller will retry during next sync.
+	d.createImages(ctx, added)
 
 	err = d.deleteImages(ctx, removed)
 	if err != nil {
 		d.log.Error(err, "failed to delete all images")
 		return err
 	}
+
+	// Update VM image resources. Ignore failure since the controller will retry during next sync.
+	d.updateImages(ctx, updated)
 
 	return nil
 }

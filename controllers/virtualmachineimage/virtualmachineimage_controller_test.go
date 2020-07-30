@@ -65,8 +65,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			})
 
 			It("return success", func() {
-				err := imageDiscoverer.createImages(ctx, images)
-				Expect(err).NotTo(HaveOccurred())
+				imageDiscoverer.createImages(ctx, images)
 			})
 		})
 
@@ -81,24 +80,37 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			})
 
 			It("return success", func() {
-				err := imageDiscoverer.createImages(ctx, images)
-				Expect(err).NotTo(HaveOccurred())
+				imageDiscoverer.createImages(ctx, images)
+			})
+		})
+	})
+
+	Describe("updateImages", func() {
+		Context("when images is empty", func() {
+			var images []v1alpha1.VirtualMachineImage
+			ctx := context.Background()
+
+			BeforeEach(func() {
+				clientUpdateImageNotCalled(mockClient)
+			})
+
+			It("return success", func() {
+				imageDiscoverer.updateImages(ctx, images)
 			})
 		})
 
-		Context("when client create fails", func() {
+		Context("when images is non-empty", func() {
 			var images []v1alpha1.VirtualMachineImage
 			ctx := context.Background()
 
 			BeforeEach(func() {
 				image := v1alpha1.VirtualMachineImage{}
 				images = append(images, image)
-				clientCreateImageFails(mockClient, ctx, &image)
+				clientUpdateImageSucceeds(mockClient, ctx, &image)
 			})
 
-			It("returns success", func() {
-				err := imageDiscoverer.createImages(ctx, images)
-				Expect(err).ToNot(HaveOccurred())
+			It("return success", func() {
+				imageDiscoverer.updateImages(ctx, images)
 			})
 		})
 	})
@@ -205,21 +217,53 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 		Context("when left and right are non-empty and the same", func() {
 			var left []v1alpha1.VirtualMachineImage
 			var right []v1alpha1.VirtualMachineImage
-			var image v1alpha1.VirtualMachineImage
+			var imageL v1alpha1.VirtualMachineImage
+			var imageR v1alpha1.VirtualMachineImage
 
 			BeforeEach(func() {
-				image = v1alpha1.VirtualMachineImage{}
-				left = append(left, image)
-				right = append(right, image)
+				imageL = v1alpha1.VirtualMachineImage{}
+				imageR = v1alpha1.VirtualMachineImage{}
 			})
 
-			It("return a non-empty updated set", func() {
-				added, removed, updated := imageDiscoverer.diffImages(left, right)
-				Expect(added).To(BeEmpty())
-				Expect(removed).To(BeEmpty())
-				Expect(updated).ToNot(BeEmpty())
-				Expect(updated).To(HaveLen(1))
+			JustBeforeEach(func() {
+				left = append(left, imageL)
+				right = append(right, imageR)
 			})
+
+			Context("when left and right have a different spec", func() {
+				BeforeEach(func() {
+					imageL = v1alpha1.VirtualMachineImage{
+						Spec: v1alpha1.VirtualMachineImageSpec{
+							Type: "left-type",
+						},
+					}
+
+					imageR = v1alpha1.VirtualMachineImage{
+						Spec: v1alpha1.VirtualMachineImageSpec{
+							Type: "right-type",
+						},
+					}
+				})
+
+				It("should return a non-empty updated spec", func() {
+					added, removed, updated := imageDiscoverer.diffImages(left, right)
+					Expect(added).To(BeEmpty())
+					Expect(removed).To(BeEmpty())
+					Expect(updated).ToNot(BeEmpty())
+					Expect(updated).To(HaveLen(1))
+				})
+			})
+
+			Context("when left and right have samespec", func() {
+				It("should return an empty updated spec", func() {
+					added, removed, updated := imageDiscoverer.diffImages(left, right)
+					Expect(added).To(BeEmpty())
+					Expect(removed).To(BeEmpty())
+					Expect(updated).ToNot(BeEmpty())
+					Expect(updated).To(HaveLen(1))
+				})
+			})
+
 		})
 
 		Context("when left and right are non-empty and unique", func() {
@@ -281,8 +325,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 				Expect(added).To(HaveLen(1))
 				Expect(added).To(ContainElement(imageRight))
 				Expect(removed).To(BeEmpty())
-				Expect(updated).ToNot(BeEmpty())
-				Expect(updated).To(HaveLen(1))
+				Expect(updated).To(BeEmpty())
 			})
 		})
 	})
@@ -306,7 +349,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			})
 
 			It("returns an error", func() {
-				err, _, _ := imageDiscoverer.differenceImages(ctx)
+				err, _, _, _ := imageDiscoverer.differenceImages(ctx)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to list images from control plane"))
 			})
@@ -328,7 +371,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 						vmproviderListImageFailsWithCLNotFound(mockVmProvider, ctx, "")
 					})
 					It("does not return an error", func() {
-						err, _, _ := imageDiscoverer.differenceImages(ctx)
+						err, _, _, _ := imageDiscoverer.differenceImages(ctx)
 						Expect(err).NotTo(HaveOccurred())
 					})
 				})
@@ -338,7 +381,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 						vmproviderListImageFails(mockVmProvider, ctx, "")
 					})
 					It("returns an error", func() {
-						err, _, _ := imageDiscoverer.differenceImages(ctx)
+						err, _, _, _ := imageDiscoverer.differenceImages(ctx)
 						Expect(err).To(HaveOccurred())
 						Expect(err.Error()).To(ContainSubstring("failed to list images from vmprovider"))
 					})
@@ -362,7 +405,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 				})
 
 				It("returns success", func() {
-					err, _, _ := imageDiscoverer.differenceImages(ctx)
+					err, _, _, _ := imageDiscoverer.differenceImages(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				})
 			})
@@ -391,7 +434,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 				})
 
 				It("returns an error", func() {
-					err, _, _ := imageDiscoverer.differenceImages(ctx)
+					err, _, _, _ := imageDiscoverer.differenceImages(ctx)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("failed to list content sources from control plane"))
 				})
@@ -440,8 +483,12 @@ func clientCreateImageSucceeds(m *mocks.MockClient, ctx context.Context, image *
 	return m.EXPECT().Create(gomock.Eq(ctx), gomock.Eq(image)).MinTimes(1).MaxTimes(1).Return(nil)
 }
 
-func clientCreateImageFails(m *mocks.MockClient, ctx context.Context, image *v1alpha1.VirtualMachineImage) *gomock.Call {
-	return m.EXPECT().Create(gomock.Eq(ctx), gomock.Eq(image)).MinTimes(1).MaxTimes(1).Return(fmt.Errorf("failed to create image"))
+func clientUpdateImageNotCalled(m *mocks.MockClient) *gomock.Call {
+	return m.EXPECT().Update(gomock.Nil(), gomock.Nil()).MinTimes(0).MaxTimes(0)
+}
+
+func clientUpdateImageSucceeds(m *mocks.MockClient, ctx context.Context, image *v1alpha1.VirtualMachineImage) *gomock.Call {
+	return m.EXPECT().Update(gomock.Eq(ctx), gomock.Eq(image)).MinTimes(1).MaxTimes(1).Return(nil)
 }
 
 func clientDeleteImageNotCalled(m *mocks.MockClient) *gomock.Call {

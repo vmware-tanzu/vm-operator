@@ -358,7 +358,7 @@ func (s *Session) findChildEntity(ctx context.Context, parent object.Reference, 
 	}
 	if ref == nil {
 		// SearchIndex returns nil when child name is not found
-		log.Error(fmt.Errorf("entity not found"), "name", childName)
+		log.Error(fmt.Errorf("entity not found"), "child entity not found on vSphere", "name", childName)
 		return nil, &find.NotFoundError{}
 	}
 
@@ -575,7 +575,7 @@ func (s *Session) GetRPAndFolderFromResourcePolicy(ctx context.Context,
 		log.Error(err, "Unable to find Folder", "name", folderName)
 		return nil, nil, err
 	}
-	log.V(4).Info("Found Folder:", "name", folderName, "moRef", folder.Reference().Value)
+	log.V(4).Info("Found Folder", "name", folderName, "moRef", folder.Reference().Value)
 
 	return resourcePool, folder, nil
 }
@@ -691,10 +691,10 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 		if err == nil {
 			return resVm, nil
 		}
-		log.V(4).Info("Failed to lookup VM by MoID", "MoID", vm.Status.UniqueID, "error", err)
+		log.V(4).Info("Failed to lookup VM by MoID", "moID", vm.Status.UniqueID, "error", err)
 	}
 
-	log.V(4).Info("Falling back to resolving VM by full path", "Namespace", vm.Namespace, "Name", vm.Name)
+	log.V(4).Info("Falling back to resolving VM by full path", "namespace", vm.Namespace, "name", vm.Name)
 
 	var folder *object.Folder
 
@@ -730,7 +730,7 @@ func (s *Session) GetVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMac
 		return nil, err
 	}
 
-	log.V(4).Info("Found VM", "VM", foundVm.Reference())
+	log.V(4).Info("Found VM", "vm", foundVm.Reference())
 
 	return res.NewVMFromObject(foundVm)
 }
@@ -742,7 +742,7 @@ func (s *Session) lookupVirtualMachineByMoID(ctx context.Context, moId string) (
 	}
 
 	vm := ref.(*object.VirtualMachine)
-	log.V(4).Info("Found VM", "Name", vm.Name(), "Path", vm.InventoryPath, "Moref", vm.Reference())
+	log.V(4).Info("Found VM", "name", vm.Name(), "path", vm.InventoryPath, "moRef", vm.Reference())
 
 	return res.NewVMFromObject(vm)
 }
@@ -1046,7 +1046,7 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, r
 		Target:         target,
 	}
 
-	log.Info("DeployLibraryItem", "context", ctx, "itemID", itemID, "deploy", deploy)
+	log.Info("DeployLibraryItem", "itemID", itemID, "deploy", deploy)
 
 	restClient := s.Client.RestClient()
 	deployment, err := vcenter.NewManager(restClient).DeployLibraryItem(ctx, itemID, deploy)
@@ -1328,7 +1328,7 @@ func (s *Session) SetCpuMinMHzInCluster(minFreq uint64) {
 	if s.cpuMinMHzInCluster != minFreq {
 		prevFreq := s.cpuMinMHzInCluster
 		s.cpuMinMHzInCluster = minFreq
-		log.V(4).Info("Successfully set (re)computed CPU min frequency", "prevFreq", prevFreq, "newFreq", minFreq)
+		log.V(4).Info("Successfully set CPU min frequency", "prevFreq", prevFreq, "newFreq", minFreq)
 	}
 }
 
@@ -1620,8 +1620,8 @@ func (s *Session) updateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 
 		if customizationSpec != nil {
 			log.Info("Customizing VM",
-				"VirtualMachine", k8sTypes.NamespacedName{Namespace: vm.Namespace, Name: vm.Name},
-				"CustomizationSpec", customizationSpec)
+				"vm", k8sTypes.NamespacedName{Namespace: vm.Namespace, Name: vm.Name},
+				"customizationSpec", customizationSpec)
 			if err := resVM.Customize(ctx, *customizationSpec); err != nil {
 				// Ignore customization pending fault as this means we have already tried to customize the VM and it is
 				// pending. This can happen if the VM has failed to power-on since the last time we customized the VM. If

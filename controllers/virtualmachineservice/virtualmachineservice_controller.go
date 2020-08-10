@@ -5,7 +5,6 @@ package virtualmachineservice
 
 import (
 	goctx "context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -301,16 +300,16 @@ func (r *ReconcileVirtualMachineService) makeEndpoints(vmService *vmoperatorv1al
 	return newEndpoints
 }
 
-func (r *ReconcileVirtualMachineService) makeEndpointAddress(vmService *vmoperatorv1alpha1.VirtualMachineService, vm *vmoperatorv1alpha1.VirtualMachine) *corev1.EndpointAddress {
+func (r *ReconcileVirtualMachineService) makeEndpointAddress(vm *vmoperatorv1alpha1.VirtualMachine) *corev1.EndpointAddress {
 	return &corev1.EndpointAddress{
 		IP: vm.Status.VmIp,
 		TargetRef: &corev1.ObjectReference{
-			APIVersion:      vmService.APIVersion,
-			Kind:            vmService.Kind,
-			Namespace:       vmService.Namespace,
-			Name:            vmService.Name,
-			UID:             vmService.UID,
-			ResourceVersion: vmService.ResourceVersion,
+			APIVersion:      vm.APIVersion,
+			Kind:            vm.Kind,
+			Namespace:       vm.Namespace,
+			Name:            vm.Name,
+			UID:             vm.UID,
+			ResourceVersion: vm.ResourceVersion,
 		}}
 }
 
@@ -578,7 +577,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmSe
 			continue
 		}
 
-		epa := *r.makeEndpointAddress(vmService, &vm)
+		epa := *r.makeEndpointAddress(&vm)
 
 		// TODO: Headless support
 		for _, servicePort := range service.Spec.Ports {
@@ -655,9 +654,8 @@ func (r *ReconcileVirtualMachineService) updateVmServiceStatus(ctx goctx.Context
 	defer r.log.V(5).Info("Finished updating VirtualMachineService", "name", vmService.NamespacedName())
 	// if could update loadbalancer external IP
 	if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer && len(newService.Status.LoadBalancer.Ingress) > 0 {
-		vmServiceStatusStr, _ := json.Marshal(vmService.Status)
-		serviceStatusStr, _ := json.Marshal(newService.Status)
-		if string(vmServiceStatusStr) != string(serviceStatusStr) {
+
+		if !apiequality.Semantic.DeepEqual(vmService.Status, newService.Status) {
 			//copy service ingress array to vm service ingress array
 			vmService.Status.LoadBalancer.Ingress = make([]vmoperatorv1alpha1.LoadBalancerIngress, len(newService.Status.LoadBalancer.Ingress))
 			for idx, ingress := range newService.Status.LoadBalancer.Ingress {
@@ -671,6 +669,7 @@ func (r *ReconcileVirtualMachineService) updateVmServiceStatus(ctx goctx.Context
 				r.log.Error(err, "Failed to update VirtualMachineService Status", "name", vmService.NamespacedName())
 				return nil, err
 			}
+
 		}
 	}
 	// BMV: newVMService isn't saved after this point so annotations are missing

@@ -175,8 +175,8 @@ spec:
                 service.
               items:
                 description: VirtualMachineVolume describes a Volume that should be
-                  attached to a specific VirtualMachine.  Currently, only PersistentVolumes
-                  are supported.
+                  attached to a specific VirtualMachine. Only one of PersistentVolumeClaim,
+                  VsphereVolume should be specified.
                 properties:
                   name:
                     description: Name specifies the name of the VirtualMachineVolume.  Each
@@ -200,6 +200,35 @@ spec:
                         type: boolean
                     required:
                     - claimName
+                    type: object
+                  storagePolicyID:
+                    description: Storage Policy Based Management (SPBM) profile ID
+                      associated with the StoragePolicyName. This currently only applies
+                      to volumes with VsphereVolumeSource. Volumes with PersistentVolumeClaimVolumeSource
+                      have their storage policy ID specified in the PersistentVolume
+                      spec.
+                    type: string
+                  storagePolicyName:
+                    description: Storage Policy Based Management (SPBM) profile name.
+                      This currently only applies to volumes with VsphereVolumeSource.
+                      Volumes with PersistentVolumeClaimVolumeSource have their storage
+                      policy name specified in the PersistentVolume spec.
+                    type: string
+                  vSphereVolume:
+                    description: VsphereVolume represents a reference to a VsphereVolumeSource
+                      in the same namespace. Only one of PersistentVolumeClaim or
+                      VsphereVolume can be specified. This is enforced via a webhook
+                    properties:
+                      capacity:
+                        additionalProperties:
+                          type: string
+                        description: A description of the virtual volume's resources
+                          and capacity
+                        type: object
+                      deviceKey:
+                        description: Device key of vSphere disk.  Empty deviceKey
+                          means it should be created in vSphere.
+                        type: integer
                     type: object
                 required:
                 - name

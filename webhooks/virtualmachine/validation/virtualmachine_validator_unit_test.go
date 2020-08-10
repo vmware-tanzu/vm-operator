@@ -4,9 +4,13 @@
 package validation_test
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -14,6 +18,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
 
 func unitTests() {
@@ -61,7 +66,8 @@ func unitTestsValidateCreate() {
 		invalidNetworkType       bool
 		invalidVolumeName        bool
 		dupVolumeName            bool
-		invalidPVC               bool
+		invalidVolumeSource      bool
+		multipleVolumeSource     bool
 		invalidPVCName           bool
 		invalidMetadataTransport bool
 		invalidMetadataConfigMap bool
@@ -88,8 +94,13 @@ func unitTestsValidateCreate() {
 		if args.dupVolumeName {
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, ctx.vm.Spec.Volumes[0])
 		}
-		if args.invalidPVC {
+		if args.invalidVolumeSource {
 			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
+			ctx.vm.Spec.Volumes[0].VsphereVolume = nil
+		}
+		if args.multipleVolumeSource {
+			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = &corev1.PersistentVolumeClaimVolumeSource{}
+			ctx.vm.Spec.Volumes[0].VsphereVolume = &vmopv1.VsphereVolumeSource{}
 		}
 		if args.invalidPVCName {
 			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = ""
@@ -123,16 +134,17 @@ func unitTestsValidateCreate() {
 
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
-		Entry("should deny invalid class name", createArgs{invalidClassName: true}, false, "spec.className must be specified", nil),
-		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false, "spec.imageName must be specified", nil),
-		Entry("should deny invalid network name", createArgs{invalidNetworkName: true}, false, "spec.networkInterfaces[0].networkName must be specified", nil),
-		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, "spec.networkInterfaces[0].networkType is not supported", nil),
-		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false, "spec.volumes[0].name must be specified", nil),
-		Entry("should deny duplicated volume names", createArgs{dupVolumeName: true}, false, "spec.volumes[1].name must be unique", nil),
-		Entry("should deny invalid PVC", createArgs{invalidPVC: true}, false, "spec.volumes[0].persistentVolumeClaim must be specified", nil),
-		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false, "spec.volumes[0].persistentVolumeClaim.claimName must be specified", nil),
-		Entry("should deny invalid vmmetadata transport", createArgs{invalidMetadataTransport: true}, false, "spec.vmmetadata.transport is not supported", nil),
-		Entry("should deny invalid vmmetadata transport", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmmetadata.configmapname must be specified", nil),
+		Entry("should deny invalid class name", createArgs{invalidClassName: true}, false, messages.ClassNotSpecified, nil),
+		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false, messages.ImageNotSpecified, nil),
+		Entry("should deny invalid network name", createArgs{invalidNetworkName: true}, false, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, 0), nil),
+		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0), nil),
+		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameNotSpecifiedFmt, 0), nil),
+		Entry("should deny duplicated volume names", createArgs{dupVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameDuplicateFmt, 1), nil),
+		Entry("should deny invalid volume source spec", createArgs{invalidVolumeSource: true}, false, fmt.Sprintf(messages.VolumeNotSpecifiedFmt, 0, 0), nil),
+		Entry("should deny multiple volume source spec", createArgs{multipleVolumeSource: true}, false, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, 0, 0), nil),
+		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, 0), nil),
+		Entry("should deny invalid vmmetadata transport", createArgs{invalidMetadataTransport: true}, false, messages.MetadataTransportNotSupported, nil),
+		Entry("should deny invalid vmmetadata transport", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
 	)
 }
 

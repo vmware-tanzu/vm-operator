@@ -167,10 +167,12 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 		} else {
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNameNotSpecifiedFmt, i))
 		}
-
-		if volume.PersistentVolumeClaim == nil {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimNotSpecifiedFmt, i))
-		} else if volume.PersistentVolumeClaim.ClaimName == "" {
+		if volume.PersistentVolumeClaim == nil && volume.VsphereVolume == nil {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNotSpecifiedFmt, i, i))
+		}
+		if volume.PersistentVolumeClaim != nil && volume.VsphereVolume != nil {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, i, i))
+		} else if volume.PersistentVolumeClaim != nil && volume.PersistentVolumeClaim.ClaimName == "" {
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, i))
 		}
 	}

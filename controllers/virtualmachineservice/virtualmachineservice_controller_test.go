@@ -32,6 +32,7 @@ import (
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg"
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 	// vmrecord "github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -299,7 +300,6 @@ var _ = Describe("VirtualMachineService controller", func() {
 			vm2 = getTestVirtualMachine(ns, "dummy-vm-match-selector-2")
 			vmService = getTestVMServiceWithSelector(ns, "dummy-vm-service-match-selector", labels)
 			createObjects(context.TODO(), c, []runtime.Object{&vm1, &vm2, &vmService})
-
 		})
 		It("Should use vmservice selector instead of service selector", func() {
 			vmList := &vmoperatorv1alpha1.VirtualMachineList{}
@@ -313,7 +313,6 @@ var _ = Describe("VirtualMachineService controller", func() {
 		})
 		AfterEach(func() {
 			deleteObjects(context.TODO(), c, []runtime.Object{&vm1, &vm2, &vmService})
-
 		})
 	})
 
@@ -615,42 +614,37 @@ var _ = Describe("VirtualMachineService controller", func() {
 				})
 			})
 		})
-		Describe("when update vm service", func() {
-			It("should update vm service when it is not the same with exist vm service", func() {
-				err := c.Create(context.TODO(), vmService)
-				Expect(err).ShouldNot(HaveOccurred())
+		Describe("UpdateVmStatus", func() {
+			It("Should add VirtualMachineService Status and Annotations if they dont exist", func() {
+				Expect(c.Create(context.TODO(), vmService)).To(Succeed())
+				Expect(r.updateVmService(context.TODO(), vmService, service)).To(Succeed())
 
-				currentVMService := &vmoperatorv1alpha1.VirtualMachineService{}
-				Eventually(func() error {
-					return c.Get(context.TODO(), types.NamespacedName{vmService.Namespace, vmService.Name}, currentVMService)
-				}).Should(Succeed())
+				// Eventually, the VM service should be updated with the LB Ingress IPs and annotations.
+				Eventually(func() bool {
+					vmSvc := &vmoperatorv1alpha1.VirtualMachineService{}
+					vmSvcKey := client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name}
+					Expect(c.Get(context.TODO(), vmSvcKey, vmSvc)).To(Succeed())
 
-				changedVMService := &vmoperatorv1alpha1.VirtualMachineService{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace:       ns,
-						Name:            "dummy-service",
-						ResourceVersion: currentVMService.ResourceVersion,
-					},
-					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-						Type:     vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer,
-						Ports:    []vmoperatorv1alpha1.VirtualMachineServicePort{vmPort},
-						Selector: map[string]string{"foo": "bar"},
-					},
-				}
+					vmSvcLBIngress := vmSvc.Status.LoadBalancer.Ingress
+					svcLBIngress := service.Status.LoadBalancer.Ingress
+					if len(svcLBIngress) != len(vmSvcLBIngress) {
+						return false
+					}
 
-				newVMService, err := r.updateVmServiceStatus(context.TODO(), changedVMService, service)
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(newVMService).NotTo(Equal(currentVMService))
-			})
+					for idx, ingress := range vmSvcLBIngress {
+						if ingress.IP != svcLBIngress[idx].IP || ingress.Hostname != svcLBIngress[idx].Hostname {
+							return false
+						}
+					}
 
-			It("should not update vm service when it is the same with exist vm service", func() {
-				currentVMService := &vmoperatorv1alpha1.VirtualMachineService{}
-				err = c.Get(context.TODO(), types.NamespacedName{vmService.Namespace, vmService.Name}, currentVMService)
-				Expect(err).ShouldNot(HaveOccurred())
+					// Ensure that correct annotations are set.
+					if val, ok := vmSvc.GetAnnotations()[pkg.VmOperatorVersionKey]; !ok || val != "v1" {
+						return false
+					}
 
-				newVMService, err := r.updateVmServiceStatus(context.TODO(), currentVMService, service)
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(newVMService).To(Equal(currentVMService))
+					return true
+				}, timeout).Should(BeTrue())
+
 			})
 		})
 

@@ -19,8 +19,8 @@ require (
 	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
 	github.com/golang/mock v1.3.1
-	github.com/google/btree v1.0.0 // indirect
 	github.com/google/go-cmp v0.4.0 // indirect
+	github.com/google/gofuzz v1.0.0 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/imdario/mergo v0.3.8 // indirect
@@ -47,9 +47,10 @@ require (
 	k8s.io/apimachinery v0.17.4
 	k8s.io/client-go v11.0.0+incompatible
 	k8s.io/klog v1.0.0
+	k8s.io/kube-openapi v0.0.0-20190603182131-db7b694dc208 // indirect
+	k8s.io/kubernetes v1.14.10
 	k8s.io/utils v0.0.0-20190506122338-8fab8cb257d5
 	sigs.k8s.io/controller-runtime v0.3.0
-	sigs.k8s.io/kind v0.5.1 // indirect
 	sigs.k8s.io/testing_frameworks v0.1.2-0.20190130140139-57f07443c2d4 // indirect
 	sigs.k8s.io/yaml v1.1.0
 )

@@ -10,10 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/record"
-
-	"github.com/go-logr/logr"
-
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -21,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	endpointsv1 "k8s.io/kubernetes/pkg/api/v1/endpoints"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,15 +28,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	vimtypes "github.com/vmware/govmomi/vim25/types"
-
+	"github.com/go-logr/logr"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 const (
@@ -236,16 +234,22 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 		r.log.Error(err, "Failed to update k8s services", "k8s services", service)
 		return err
 	}
+
 	// Update endpoints
 	err = r.updateEndpoints(ctx, vmService, newService)
 	if err != nil {
 		r.log.Error(err, "Failed to update VirtualMachineService endpoints", "name", vmService.NamespacedName())
 		return err
 	}
-	// Update vm service
-	newVMService, err := r.updateVmServiceStatus(ctx, vmService, newService)
-	r.log.V(5).Info("Updated new vm services", "new vm service", newVMService)
-	return err
+
+	// Update VirtualMachineService resource
+	err = r.updateVmService(ctx, vmService, newService)
+	if err != nil {
+		r.log.Error(err, "Failed to update VirtualMachineService Status", "name", vmService.NamespacedName())
+		return err
+	}
+
+	return nil
 }
 
 // For a given VM, determine which vmServices select that VM via label selector and return a set of reconcile requests
@@ -599,6 +603,9 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmSe
 		}
 	}
 
+	// Repack subsets in canonical order so that comparison of two subsets gives consistent results.
+	subsets = endpointsv1.RepackSubsets(subsets)
+
 	// Until is fixed, if probe fails on all selected VM's, we will aggressively requeue until the probe
 	// succeeds on one of them. Note: We don't immediately requeue to allow for updating the endpoint subsets.
 	if probeFailureCount > 0 && probeFailureCount == len(vmList.Items) {
@@ -649,32 +656,46 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmSe
 }
 
 // updateVmServiceStatus update vmservice status, sync external ip for loadbalancer type of service
-func (r *ReconcileVirtualMachineService) updateVmServiceStatus(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, newService *corev1.Service) (*vmoperatorv1alpha1.VirtualMachineService, error) {
+func (r *ReconcileVirtualMachineService) updateVmService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, newService *corev1.Service) error {
 	r.log.V(5).Info("Updating VirtualMachineService", "name", vmService.NamespacedName())
 	defer r.log.V(5).Info("Finished updating VirtualMachineService", "name", vmService.NamespacedName())
-	// if could update loadbalancer external IP
-	if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer && len(newService.Status.LoadBalancer.Ingress) > 0 {
 
-		if !apiequality.Semantic.DeepEqual(vmService.Status, newService.Status) {
-			//copy service ingress array to vm service ingress array
-			vmService.Status.LoadBalancer.Ingress = make([]vmoperatorv1alpha1.LoadBalancerIngress, len(newService.Status.LoadBalancer.Ingress))
-			for idx, ingress := range newService.Status.LoadBalancer.Ingress {
-				vmIngress := vmoperatorv1alpha1.LoadBalancerIngress{
-					IP:       ingress.IP,
-					Hostname: ingress.Hostname,
-				}
-				vmService.Status.LoadBalancer.Ingress[idx] = vmIngress
-			}
-			if err := r.Status().Update(ctx, vmService); err != nil {
-				r.log.Error(err, "Failed to update VirtualMachineService Status", "name", vmService.NamespacedName())
-				return nil, err
-			}
+	newVMService := vmService.DeepCopy()
 
+	// Update the load balancer's external IP.
+	if newVMService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
+		//copy service ingress array to vm service ingress array
+		newVMService.Status.LoadBalancer.Ingress = make([]vmoperatorv1alpha1.LoadBalancerIngress, len(newService.Status.LoadBalancer.Ingress))
+		for idx, ingress := range newService.Status.LoadBalancer.Ingress {
+			vmIngress := vmoperatorv1alpha1.LoadBalancerIngress{
+				IP:       ingress.IP,
+				Hostname: ingress.Hostname,
+			}
+			newVMService.Status.LoadBalancer.Ingress[idx] = vmIngress
 		}
 	}
-	// BMV: newVMService isn't saved after this point so annotations are missing
-	pkg.AddAnnotations(&vmService.ObjectMeta)
-	return vmService, nil
+
+	// We need to compare Status subresource separately since updating the object will not update the subresource itself.
+	if !apiequality.Semantic.DeepEqual(vmService.Status, newVMService.Status) {
+		r.log.V(5).Info("Updating the vmService status", "vmService", newVMService)
+		if err := r.Status().Update(ctx, newVMService); err != nil {
+			r.log.Error(err, "Error in updating the vmService status", "vmService", newVMService)
+			return err
+		}
+	}
+
+	pkg.AddAnnotations(&newVMService.ObjectMeta)
+
+	// Update the resource to reflect the Annotations.
+	if !apiequality.Semantic.DeepEqual(vmService.ObjectMeta, newVMService.ObjectMeta) {
+		r.log.V(5).Info("Updating the vmService resource", "vmService", newVMService)
+		if err := r.Update(ctx, newVMService); err != nil {
+			r.log.Error(err, "Error in updating vmService resource", "vmService", newVMService)
+			return err
+		}
+	}
+
+	return nil
 }
 
 func runProbe(vmService *vmoperatorv1alpha1.VirtualMachineService, vm *vmoperatorv1alpha1.VirtualMachine, p *vmoperatorv1alpha1.Probe) error {

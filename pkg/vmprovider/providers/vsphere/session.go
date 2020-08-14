@@ -863,6 +863,53 @@ func createDiskLocators(ctx context.Context, resSrcVM *res.VirtualMachine, datas
 	return diskLocators, nil
 }
 
+func resizeTemplateDisks(ctx context.Context, cloneSpec *vimTypes.VirtualMachineCloneSpec, resSrcVM *res.VirtualMachine, specVolumes []v1alpha1.VirtualMachineVolume) error {
+	vmDevices, err := resSrcVM.GetVirtualDisks(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, specVolume := range specVolumes {
+		if specVolume.VsphereVolume != nil && specVolume.VsphereVolume.DeviceKey != nil {
+			foundMatch := false
+			for _, vmDevice := range vmDevices {
+				vmDisk, ok := vmDevice.(*types.VirtualDisk)
+				if !ok {
+					// This should never happen since "GetVirtualDisks" should only filter to only return items of
+					// type VirtualDisk but, for safety, we skip these in case they are not
+					continue
+				}
+				// XXX (dramdass): Right now, we only resize disks that exist in the VM template. The disks are keyed by
+				// deviceKey and the desired specified size must be larger than the original size. The number of disks
+				// is expected to be of magnitude O(1) so we the nested loop is ok here.
+				if vmDisk.GetVirtualDevice().Key == int32(*specVolume.VsphereVolume.DeviceKey) {
+					foundMatch = true
+					oldSizeInBytes := vmDisk.CapacityInBytes
+					newSizeInBytes := specVolume.VsphereVolume.Capacity.StorageEphemeral().Value()
+					if newSizeInBytes < oldSizeInBytes {
+						// TODO (dramdass) The validating webhook should check this as well. The webhook should also
+						// validate the requirement that desired size is a multiple of MB
+						return errors.Errorf("cannot shrink disk size from %d to %d", oldSizeInBytes, newSizeInBytes)
+					}
+					vmDisk.CapacityInBytes = newSizeInBytes
+					if cloneSpec.Config == nil {
+						cloneSpec.Config = &types.VirtualMachineConfigSpec{}
+					}
+					cloneSpec.Config.DeviceChange = append(cloneSpec.Config.DeviceChange, &types.VirtualDeviceConfigSpec{
+						Operation: types.VirtualDeviceConfigSpecOperationEdit,
+						Device:    vmDisk,
+					})
+					break
+				}
+			}
+			if !foundMatch {
+				return errors.Errorf("could not find volume with device key %d", *specVolume.VsphereVolume.DeviceKey)
+			}
+		}
+	}
+	return nil
+}
+
 func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.VirtualMachine,
 	vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
 
@@ -919,6 +966,10 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 		return nil, err
 	}
 
+	err = resizeTemplateDisks(ctx, cloneSpec, resSrcVM, vm.Spec.Volumes)
+	if err != nil {
+		return nil, err
+	}
 	cloneSpec.Location.Host = rSpec.Host
 	cloneSpec.Location.Datastore = rSpec.Datastore
 	cloneSpec.Location.Disk = diskLocators

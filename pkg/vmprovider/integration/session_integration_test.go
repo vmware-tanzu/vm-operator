@@ -8,6 +8,8 @@ package integration
 import (
 	"context"
 	"fmt"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"os"
 
 	. "github.com/onsi/ginkgo"
@@ -434,6 +436,7 @@ var _ = Describe("Sessions", func() {
 
 			var (
 				cl *library.Library
+				clonedDeployedVMTX *resources.VirtualMachine
 			)
 
 			BeforeEach(func() {
@@ -449,9 +452,9 @@ var _ = Describe("Sessions", func() {
 				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
+				clonedDeployedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(clonedVM.Name).Should(Equal(vmName))
+				Expect(clonedDeployedVM.Name).Should(Equal(vmName))
 			})
 			It("should clone VM with storage policy disk provisioning", func() {
 				imageName := "test-item"
@@ -483,10 +486,60 @@ var _ = Describe("Sessions", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				// Now expect clone to succeed
+				clonedDeployedVMTX, err = session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedDeployedVMTX.Name).Should(Equal(vmName))
+			})
+			It("should clone VMTX with resized disk", func() {
+				imageName := "test-item-vmtx"
+				vmName := "CL_DeployedVMTX-resized"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				virtualDisks, err := clonedDeployedVMTX.GetVirtualDisks(context.TODO())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(virtualDisks)).Should(Equal(1))
+
+				// The device type should be virtual disk
+				disk1, ok := virtualDisks[0].(*vimTypes.VirtualDisk)
+				Expect(ok).Should(BeTrue())
+				disk1Key := int(disk1.Key)
+				desiredSize := resource.MustParse(fmt.Sprintf("%d", disk1.CapacityInBytes))
+				// Make new size 10KB larger
+				desiredSize.Add(resource.MustParse("1Mi"))
+
+				vm.Spec.Volumes = []vmopv1alpha1.VirtualMachineVolume{
+					vmopv1alpha1.VirtualMachineVolume{
+						Name: "resized-root-disk",
+						VsphereVolume: &vmopv1alpha1.VsphereVolumeSource{
+							Capacity: corev1.ResourceList{
+								corev1.ResourceEphemeralStorage: desiredSize,
+							},
+							DeviceKey: &disk1Key,
+						},
+					},
+				}
 				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
+
+				clonedVMDisks, err := clonedVM.GetVirtualDisks(context.TODO())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(clonedVMDisks)).Should(Equal(1))
+
+				// The device type should be virtual disk
+				clonedVMDisk1, ok := clonedVMDisks[0].(*vimTypes.VirtualDisk)
+				Expect(ok).Should(BeTrue())
+
+				Expect(clonedVMDisk1.Key).Should(Equal(disk1.Key))
+
+				// Check that cloned VM disk is the desired size
+				resultingSize := resource.MustParse(fmt.Sprintf("%d", clonedVMDisk1.CapacityInBytes))
+				Expect(resultingSize.Value()).Should(Equal(desiredSize.Value()))
+
 			})
+
 		})
 	})
 

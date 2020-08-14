@@ -209,8 +209,10 @@ func GetVmVolumesToProcess(vm *vmoperatorv1alpha1.VirtualMachine) (map[client.Ob
 	log.V(4).Info("Getting the changes of VirtualMachineVolumes by processing the VirtualMachine object", "name", vm.NamespacedName())
 	vmVolumesToAttach := map[client.ObjectKey]bool{}
 	for _, desiredVirtualMachineVolume := range vm.Spec.Volumes {
-		objectKey := client.ObjectKey{Name: desiredVirtualMachineVolume.Name, Namespace: vm.Namespace}
-		vmVolumesToAttach[objectKey] = true
+		if desiredVirtualMachineVolume.PersistentVolumeClaim != nil {
+			objectKey := client.ObjectKey{Name: desiredVirtualMachineVolume.Name, Namespace: vm.Namespace}
+			vmVolumesToAttach[objectKey] = true
+		}
 	}
 
 	vmVolumesToDetach := map[client.ObjectKey]bool{}

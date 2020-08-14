@@ -45,10 +45,11 @@ require (
 	gopkg.in/yaml.v2 v2.3.0
 	k8s.io/api v0.17.4
 	k8s.io/apimachinery v0.17.4
-	k8s.io/client-go v0.0.0-20190918200256-06eb1244587a
+	k8s.io/client-go v11.0.0+incompatible
 	k8s.io/klog v1.0.0
 	k8s.io/utils v0.0.0-20190506122338-8fab8cb257d5
 	sigs.k8s.io/controller-runtime v0.3.0
+	sigs.k8s.io/kind v0.5.1 // indirect
 	sigs.k8s.io/testing_frameworks v0.1.2-0.20190130140139-57f07443c2d4 // indirect
 	sigs.k8s.io/yaml v1.1.0
 )

@@ -117,8 +117,9 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 
 		syncPeriod := 5 * time.Second
 		mgr, err = manager.New(cfg, manager.Options{
-			SyncPeriod: &syncPeriod,
-			Scheme:     scheme.Scheme,
+			SyncPeriod:         &syncPeriod,
+			Scheme:             scheme.Scheme,
+			MetricsBindAddress: "0",
 		})
 		Expect(err).NotTo(HaveOccurred())
 

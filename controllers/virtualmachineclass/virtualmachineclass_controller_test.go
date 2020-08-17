@@ -44,7 +44,7 @@ var _ = Describe("VirtualMachineClass controller", func() {
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 		syncPeriod := 10 * time.Second
-		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod})
+		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod, MetricsBindAddress: "0"})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 

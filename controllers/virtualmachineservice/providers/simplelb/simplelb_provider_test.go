@@ -152,10 +152,8 @@ var _ = Describe("", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(controlPlane.calls).To(HaveLen(1))
-				Expect(controlPlane.calls[0]).To(Equal(cpArgs{
-					service:   svc,
-					endpoints: eps,
-				}))
+				Expect(controlPlane.calls[0].service.Name).To(Equal(svc.Name))
+				Expect(controlPlane.calls[0].endpoints.Name).To(Equal(eps.Name))
 			})
 		})
 	})

@@ -151,7 +151,6 @@ func NewTestSuiteForVirtualMachineWebhook(
 	// located.
 	testSuite.init(addToManagerFn,
 		nil,
-		"--admission-control=ValidatingAdmissionWebhook",
 		"--cert-dir="+certDir)
 
 	return testSuite
@@ -183,7 +182,6 @@ func NewTestSuiteForValidatingWebhook(
 	// located.
 	testSuite.init(addToManagerFn,
 		nil,
-		"--admission-control=ValidatingAdmissionWebhook",
 		"--cert-dir="+certDir)
 
 	return testSuite
@@ -215,7 +213,6 @@ func NewTestSuiteForMutatingWebhook(
 	// located.
 	testSuite.init(addToManagerFn,
 		nil,
-		"--admission-control=MutatingAdmissionWebhook",
 		"--cert-dir="+certDir)
 
 	return testSuite

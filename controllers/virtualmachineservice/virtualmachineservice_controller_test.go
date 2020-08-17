@@ -67,7 +67,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 		syncPeriod := 10 * time.Second
-		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod})
+		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod, MetricsBindAddress: "0"})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 		r, err = newReconciler(mgr)
@@ -500,7 +500,6 @@ var _ = Describe("VirtualMachineService controller", func() {
 			})
 			JustAfterEach(func() {
 				// Make the assertions about the labels on the service.
-
 				Eventually(requests, timeout).Should(Receive(Equal(reconcile.Request{
 					NamespacedName: types.NamespacedName{
 						Name:      virtualMachineServiceToReconcile.Name,
@@ -518,6 +517,8 @@ var _ = Describe("VirtualMachineService controller", func() {
 				}, 30*time.Second, 2*time.Second).Should(Equal(expectedServiceLabels))
 			})
 			AfterEach(func() {
+				// BMV: The controller is already stopped by now, so this won't actually be deleted (unless
+				// we remove the finalizer now).
 				Expect(c.Delete(context.TODO(), virtualMachineServiceToReconcile)).To(Succeed())
 			})
 			Context("when there are existing labels on the Service, but none on the VMService", func() {

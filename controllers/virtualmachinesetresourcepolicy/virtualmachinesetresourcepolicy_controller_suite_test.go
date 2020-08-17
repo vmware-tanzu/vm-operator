@@ -14,6 +14,7 @@ import (
 
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
@@ -21,7 +22,7 @@ import (
 
 func TestVirtualMachineSetResourcePolicy(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecsWithDefaultAndCustomReporters(t, "VirtualMachineSetResourcePolicy Suite", []Reporter{envtest.NewlineReporter{}})
+	RunSpecsWithDefaultAndCustomReporters(t, "VirtualMachineSetResourcePolicy Suite", []Reporter{printer.NewlineReporter{}})
 }
 
 var (

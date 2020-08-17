@@ -49,7 +49,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 				Skip("Can't locate a kubeconfig in pipeline env, can test this locally")
 				cfg, err := config.GetConfig()
 				Expect(err).ShouldNot(HaveOccurred())
-				mgr, err := manager.New(cfg, manager.Options{})
+				mgr, err := manager.New(cfg, manager.Options{MetricsBindAddress: "0"})
 				Expect(err).ShouldNot(HaveOccurred())
 				loadbalancerProvider, err := GetLoadbalancerProviderByType(mgr, NSXTLoadBalancer)
 				Expect(err).ShouldNot(HaveOccurred())

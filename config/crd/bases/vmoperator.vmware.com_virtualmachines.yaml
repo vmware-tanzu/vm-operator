@@ -3,15 +3,19 @@
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.2.9
   creationTimestamp: null
   name: virtualmachines.vmoperator.vmware.com
 spec:
   group: vmoperator.vmware.com
   names:
     kind: VirtualMachine
+    listKind: VirtualMachineList
     plural: virtualmachines
     shortNames:
     - vm
+    singular: virtualmachine
   scope: Namespaced
   subresources:
     status: {}
@@ -25,12 +29,12 @@ spec:
         apiVersion:
           description: 'APIVersion defines the versioned schema of this representation
             of an object. Servers should convert recognized schemas to the latest
-            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
           type: string
         kind:
           description: 'Kind is a string value representing the REST resource this
             object represents. Servers may infer this from the endpoint the client
-            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
           type: string
         metadata:
           type: object
@@ -124,12 +128,13 @@ spec:
                       type: string
                     port:
                       anyOf:
-                      - type: string
                       - type: integer
+                      - type: string
                       description: Port specifies a number or name of the port to
                         access on the VirtualMachine. If the format of port is a number,
                         it must be in the range 1 to 65535. If the format of name
                         is a string, it must be an IANA_SVC_NAME.
+                      x-kubernetes-int-or-string: true
                   required:
                   - port
                   type: object
@@ -221,7 +226,11 @@ spec:
                     properties:
                       capacity:
                         additionalProperties:
-                          type: string
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
                         description: A description of the virtual volume's resources
                           and capacity
                         type: object

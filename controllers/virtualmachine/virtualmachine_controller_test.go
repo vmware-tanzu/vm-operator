@@ -133,7 +133,7 @@ var _ = Describe("VirtualMachine controller", func() {
 		// channel when it is finished.
 
 		syncPeriod := 5 * time.Second
-		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod})
+		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod, MetricsBindAddress: "0"})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 

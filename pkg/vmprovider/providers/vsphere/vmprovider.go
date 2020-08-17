@@ -114,6 +114,8 @@ func (vs *vSphereVmProvider) GetSession(ctx context.Context, namespace string) (
 }
 
 func (vs *vSphereVmProvider) IsSessionInCache(namespace string) bool {
+	vs.sessions.mutex.Lock()
+	defer vs.sessions.mutex.Unlock()
 	_, ok := vs.sessions.sessions[namespace]
 	return ok
 }

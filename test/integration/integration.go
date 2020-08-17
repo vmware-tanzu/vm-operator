@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"sync"
 
+	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -209,9 +210,11 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 func TeardownIntegrationEnv(testEnv *envtest.Environment, vcSim *VcSimInstance) {
 	TeardownVcSimEnv(vcSim)
 
-	stdlog.Print("stopping the test environment...")
-	err := testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
+	if testEnv != nil {
+		stdlog.Print("stopping the test environment...")
+		err := testEnv.Stop()
+		Expect(err).NotTo(HaveOccurred())
+	}
 }
 
 func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, client client.Client, vcSim *VcSimInstance, namespaces []string) (*vsphere.Session, error) {
@@ -363,8 +366,9 @@ func StartTestManager(mgr manager.Manager) (chan struct{}, *sync.WaitGroup) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
+		defer GinkgoRecover()
+		defer wg.Done()
 		Expect(mgr.Start(stop)).To(Succeed())
-		wg.Done()
 	}()
 	cache := mgr.GetCache()
 	result := cache.WaitForCacheSync(stop)

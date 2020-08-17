@@ -100,7 +100,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 		// channel when it is finished.
 
 		syncPeriod := 5 * time.Second
-		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod})
+		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod, MetricsBindAddress: "0"})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
@@ -448,7 +448,7 @@ var _ = Describe("ReconcileVirtualMachineImage", func() {
 		// channel when it is finished.
 
 		syncPeriod := 5 * time.Second
-		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod})
+		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod, MetricsBindAddress: "0"})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 
@@ -506,7 +506,7 @@ var _ = Describe("ReconcileVMOpConfigMap", func() {
 		// channel when it is finished.
 
 		syncPeriod := 5 * time.Second
-		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod})
+		mgr, err = manager.New(restConfig, manager.Options{SyncPeriod: &syncPeriod, MetricsBindAddress: "0"})
 		Expect(err).NotTo(HaveOccurred())
 		c = mgr.GetClient()
 

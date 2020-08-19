@@ -493,15 +493,18 @@ var _ = Describe("VirtualMachineService controller", func() {
 				// Each test gets a handle to the underlying service, so set it up.
 				Eventually(func() error {
 					serviceReconciledFromVMService = &corev1.Service{}
-					time.Sleep(2 * time.Second)
 					return c.Get(context.TODO(), types.NamespacedName{
 						Name:      virtualMachineServiceToReconcile.Name,
 						Namespace: virtualMachineServiceToReconcile.Namespace}, serviceReconciledFromVMService)
-				}, 30*time.Second, 5*time.Second).Should(Succeed(), "Expected service to be created from VirtualMachineService")
+				}, 30*time.Second, 1*time.Second).Should(Succeed(), "Expected service to be created from VirtualMachineService")
 			})
 			JustAfterEach(func() {
 				// Make the assertions about the labels on the service.
-				Eventually(requests, timeout).Should(Receive())
+
+				Eventually(requests, timeout).Should(Receive(Equal(reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      virtualMachineServiceToReconcile.Name,
+						Namespace: virtualMachineServiceToReconcile.Namespace}})))
 
 				Eventually(func() map[string]string {
 					reconciledService := &corev1.Service{}

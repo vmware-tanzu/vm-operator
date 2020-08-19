@@ -627,13 +627,21 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmSe
 				Labels: service.Labels,
 			},
 		}
-	} else if apiequality.Semantic.DeepEqual(currentEndpoints.Subsets, subsets) {
+	} else if apiequality.Semantic.DeepEqual(endpointsv1.RepackSubsets(currentEndpoints.Subsets), subsets) {
+		// Ideally, we dont have to update both the endpoints (current endpoints and the calculated one) before comparing since after the first update
+		// we expect the endpoint subsets to always be in canonical order. However, some controller is re-ordering these endpoint subsets. We sort both
+		// sides for a consistent comparison result. PR: 2623292
+
 		logger.V(5).Info("No change, no need to update endpoints", "endpoints", currentEndpoints)
 		return updateErr
 	}
+
 	newEndpoints := r.makeEndpoints(vmService, currentEndpoints, subsets)
 
 	createEndpoints := len(currentEndpoints.ResourceVersion) == 0
+
+	logger.V(5).Info("EndpointSubsets have diverged. Will trigger Endpoint Create or Update", "currentEndpoints", currentEndpoints, "newEndpoints", newEndpoints, "isCreate", createEndpoints)
+
 	if createEndpoints {
 		logger.Info("Creating service endpoints", "endpoints", newEndpoints)
 		err = r.Create(ctx, newEndpoints)
@@ -657,8 +665,8 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmSe
 
 // updateVmServiceStatus update vmservice status, sync external ip for loadbalancer type of service
 func (r *ReconcileVirtualMachineService) updateVmService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, newService *corev1.Service) error {
-	r.log.V(5).Info("Updating VirtualMachineService", "name", vmService.NamespacedName())
-	defer r.log.V(5).Info("Finished updating VirtualMachineService", "name", vmService.NamespacedName())
+	r.log.V(5).Info("Updating VirtualMachineService Status", "name", vmService.NamespacedName())
+	defer r.log.V(5).Info("Finished updating VirtualMachineService Status", "name", vmService.NamespacedName())
 
 	newVMService := vmService.DeepCopy()
 

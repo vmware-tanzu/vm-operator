@@ -435,8 +435,9 @@ var _ = Describe("Sessions", func() {
 		Context("from Content-library", func() {
 
 			var (
-				cl *library.Library
+				cl                 *library.Library
 				clonedDeployedVMTX *resources.VirtualMachine
+				clonedDeployedVM   *resources.VirtualMachine
 			)
 
 			BeforeEach(func() {
@@ -452,7 +453,8 @@ var _ = Describe("Sessions", func() {
 				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
-				clonedDeployedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
+				var err error
+				clonedDeployedVM, err = session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedDeployedVM.Name).Should(Equal(vmName))
 			})
@@ -469,6 +471,59 @@ var _ = Describe("Sessions", func() {
 				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
+			})
+			It("should clone VM with resized disk", func() {
+				imageName := "test-item"
+				vmName := "CL_DeployedVM-resized"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				virtualDisks, err := clonedDeployedVM.GetVirtualDisks(context.TODO())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(virtualDisks)).Should(Equal(1))
+
+				// The device type should be virtual disk
+				disk1, ok := virtualDisks[0].(*vimTypes.VirtualDisk)
+				disk1Key := int(disk1.Key)
+				Expect(ok).Should(BeTrue())
+				desiredSize := resource.MustParse(fmt.Sprintf("%d", disk1.CapacityInBytes))
+				// Make new size 1MB larger
+				desiredSize.Add(resource.MustParse("1Mi"))
+
+				vm.Spec.Volumes = []vmopv1alpha1.VirtualMachineVolume{
+					vmopv1alpha1.VirtualMachineVolume{
+						Name: "resized-root-disk",
+						VsphereVolume: &vmopv1alpha1.VsphereVolumeSource{
+							Capacity: corev1.ResourceList{
+								corev1.ResourceEphemeralStorage: desiredSize,
+							},
+							DeviceKey: &disk1Key,
+						},
+					},
+				}
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+
+				// UpdateVirtualMachine calls a Reconfigure on the cloned VM with a config spec
+				// with the updated desired size of the VM disks
+				session.UpdateVirtualMachine(context.TODO(), vm, vmConfigArgs)
+
+				clonedVMDisks, err := clonedVM.GetVirtualDisks(context.TODO())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(clonedVMDisks)).Should(Equal(1))
+
+				// The device type should be virtual disk
+				clonedVMDisk1, ok := clonedVMDisks[0].(*vimTypes.VirtualDisk)
+				Expect(ok).Should(BeTrue())
+
+				Expect(clonedVMDisk1.Key).Should(Equal(disk1.Key))
+
+				// Check that cloned VM disk is the desired size
+				resultingSize := resource.MustParse(fmt.Sprintf("%d", clonedVMDisk1.CapacityInBytes))
+				Expect(resultingSize.Value()).Should(Equal(desiredSize.Value()))
+
 			})
 			It("should clone VMTX", func() {
 				imageName := "test-item-vmtx"
@@ -506,7 +561,7 @@ var _ = Describe("Sessions", func() {
 				Expect(ok).Should(BeTrue())
 				disk1Key := int(disk1.Key)
 				desiredSize := resource.MustParse(fmt.Sprintf("%d", disk1.CapacityInBytes))
-				// Make new size 10KB larger
+				// Make new size 1MB larger
 				desiredSize.Add(resource.MustParse("1Mi"))
 
 				vm.Spec.Volumes = []vmopv1alpha1.VirtualMachineVolume{

@@ -382,7 +382,7 @@ func (vs *vSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alp
 }
 
 func (vs *vSphereVmProvider) updateVirtualMachine(ctx context.Context, session *Session, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
-	resVm, err := session.updateVirtualMachine(ctx, vm, vmConfigArgs)
+	resVm, err := session.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {
 		return err
 	}

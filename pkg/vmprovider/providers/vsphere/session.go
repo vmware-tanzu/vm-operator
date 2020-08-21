@@ -863,7 +863,7 @@ func createDiskLocators(ctx context.Context, resSrcVM *res.VirtualMachine, datas
 	return diskLocators, nil
 }
 
-func resizeTemplateDisks(ctx context.Context, cloneSpec *vimTypes.VirtualMachineCloneSpec, resSrcVM *res.VirtualMachine, specVolumes []v1alpha1.VirtualMachineVolume) error {
+func resizeTemplateDisks(ctx context.Context, configSpec *vimTypes.VirtualMachineConfigSpec, resSrcVM *res.VirtualMachine, specVolumes []v1alpha1.VirtualMachineVolume) error {
 	vmDevices, err := resSrcVM.GetVirtualDisks(ctx)
 	if err != nil {
 		return err
@@ -892,10 +892,10 @@ func resizeTemplateDisks(ctx context.Context, cloneSpec *vimTypes.VirtualMachine
 						return errors.Errorf("cannot shrink disk size from %d to %d", oldSizeInBytes, newSizeInBytes)
 					}
 					vmDisk.CapacityInBytes = newSizeInBytes
-					if cloneSpec.Config == nil {
-						cloneSpec.Config = &types.VirtualMachineConfigSpec{}
+					if configSpec == nil {
+						configSpec = &types.VirtualMachineConfigSpec{}
 					}
-					cloneSpec.Config.DeviceChange = append(cloneSpec.Config.DeviceChange, &types.VirtualDeviceConfigSpec{
+					configSpec.DeviceChange = append(configSpec.DeviceChange, &types.VirtualDeviceConfigSpec{
 						Operation: types.VirtualDeviceConfigSpecOperationEdit,
 						Device:    vmDisk,
 					})
@@ -966,7 +966,7 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 		return nil, err
 	}
 
-	err = resizeTemplateDisks(ctx, cloneSpec, resSrcVM, vm.Spec.Volumes)
+	err = resizeTemplateDisks(ctx, cloneSpec.Config, resSrcVM, vm.Spec.Volumes)
 	if err != nil {
 		return nil, err
 	}
@@ -1630,7 +1630,7 @@ func (s *Session) RenameSessionFolder(ctx context.Context, name string) error {
 	return nil
 }
 
-func (s *Session) updateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
+func (s *Session) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
 	resVM, err := s.GetVirtualMachine(ctx, vm)
 	if err != nil {
 		return nil, err
@@ -1655,6 +1655,11 @@ func (s *Session) updateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 		}
 
 		configSpec, err := s.generateConfigSpec(vm.Name, &vm.Spec, &vmConfigArgs.VmClass.Spec, vmConfigArgs.VmMetadata, deviceSpecs, vAppConfigSpec)
+		if err != nil {
+			return nil, err
+		}
+
+		err = resizeTemplateDisks(ctx, configSpec, resVM, vm.Spec.Volumes)
 		if err != nil {
 			return nil, err
 		}

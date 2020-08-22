@@ -20,7 +20,6 @@ import (
 func NewControllerManagerContext(client client.Client, scheme *runtime.Scheme) *context.ControllerManagerContext {
 	return &context.ControllerManagerContext{
 		Context:                 goctx.Background(),
-		Client:                  client,
 		Logger:                  ctrllog.Log.WithName(ControllerManagerName),
 		Scheme:                  scheme,
 		Namespace:               ControllerManagerNamespace,

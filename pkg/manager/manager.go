@@ -16,10 +16,13 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
 // Manager is a VM Operator controller manager.
@@ -38,6 +41,7 @@ func New(opts Options) (Manager, error) {
 
 	_ = clientgoscheme.AddToScheme(opts.Scheme)
 	_ = vmopv1.AddToScheme(opts.Scheme)
+	_ = ncpv1alpha1.AddToScheme(opts.Scheme)
 	_ = cnsv1alpha1.AddToScheme(opts.Scheme)
 	_ = netopv1alpha1.AddToScheme(opts.Scheme)
 	// +kubebuilder:scaffold:scheme
@@ -67,16 +71,14 @@ func New(opts Options) (Manager, error) {
 		LeaderElectionID:        opts.LeaderElectionID,
 		LeaderElectionNamespace: opts.PodNamespace,
 		MaxConcurrentReconciles: opts.MaxConcurrentReconciles,
-		Client:                  mgr.GetClient(),
 		Logger:                  opts.Logger.WithName(opts.PodName),
 		Recorder:                record.New(mgr.GetEventRecorderFor(fmt.Sprintf("%s/%s", opts.PodNamespace, opts.PodName))),
 		Scheme:                  opts.Scheme,
 		ContainerNode:           opts.ContainerNode,
 	}
 
-	// Initialize the VMProvider early.
-	if err := setupVmProvider(controllerManagerContext, opts.KubeConfig); err != nil {
-		return nil, errors.Wrap(err, "failed to setup VM provider")
+	if err := opts.InitializeProviders(controllerManagerContext, mgr); err != nil {
+		return nil, err
 	}
 
 	// Add the requested items to the manager.
@@ -90,6 +92,11 @@ func New(opts Options) (Manager, error) {
 		Manager: mgr,
 		ctx:     controllerManagerContext,
 	}, nil
+}
+
+func InitializeProviders(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+	ctx.VmProvider = vsphere.NewVSphereMachineProviderFromRestConfig(mgr.GetConfig(), mgr.GetClient())
+	return nil
 }
 
 type manager struct {

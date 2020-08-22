@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder
@@ -9,23 +9,29 @@ import (
 	"strings"
 )
 
-type TestFlags struct {
-	// IntegrationTestsEnabled is set to true with the -enable-integration-tests
-	// flag.
+// testFlags contains the configurations we'd like to get from the command line,
+// that could be used to tune tests behavior
+type testFlags struct {
+	// rootDir is the root directory of the checked-out project and is set with
+	// the -root-dir flag.
+	// Defaults to ../../
+	RootDir string
+
+	// integrationTestsEnabled is set to true with the -enable-integration-tests flag.
 	// Defaults to false.
 	IntegrationTestsEnabled bool
 
-	// UnitTestsEnabled is set to true with the -enable-unit-tests flag.
+	// unitTestsEnabled is set to true with the -enable-unit-tests flag.
 	// Defaults to true.
 	UnitTestsEnabled bool
 }
 
 var (
-	flags TestFlags
+	flags testFlags
 )
 
 func init() {
-	flags = TestFlags{}
+	flags = testFlags{}
 	// Create a special flagset used to parse the -enable-integration-tests
 	// and -enable-unit-tests flags. A special flagset is used so as not to
 	// interfere with whatever Ginkgo or Kubernetes might be doing with the
@@ -50,8 +56,6 @@ func init() {
 	// Ginkgo will complain that the flags are not recognized.
 	flag.Bool("enable-integration-tests", false, "Enables integration tests")
 	flag.Bool("enable-unit-tests", true, "Enables unit tests")
-}
 
-func GetTestFlags() TestFlags {
-	return flags
+	flag.StringVar(&flags.RootDir, "root-dir", "../..", "Root project directory")
 }

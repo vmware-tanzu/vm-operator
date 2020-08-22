@@ -24,6 +24,19 @@ import (
 // webhooks to add to the manager.
 type AddToManagerFunc func(*context.ControllerManagerContext, ctrlmgr.Manager) error
 
+var AddToManagerNoopFn AddToManagerFunc = func(_ *context.ControllerManagerContext, _ ctrlmgr.Manager) error {
+	return nil
+}
+
+// InitializeProvidersFunc is a function that can be optionally specified with
+// the manager's Options in order to explicitly decide what providers in the
+// context are initialized.
+type InitializeProvidersFunc func(*context.ControllerManagerContext, ctrlmgr.Manager) error
+
+var InitializeProvidersNoopFn InitializeProvidersFunc = func(_ *context.ControllerManagerContext, _ ctrlmgr.Manager) error {
+	return nil
+}
+
 // Options describes the options used to create a new GCM manager.
 type Options struct {
 	// LeaderElectionEnabled is a flag that enables leader election.
@@ -107,9 +120,12 @@ type Options struct {
 	Scheme     *runtime.Scheme
 	NewCache   cache.NewCacheFunc
 
-	// AddToManager is a function that can be optionally specified with
-	// the manager's Options in order to explicitly decide what controllers
-	// and webhooks to add to the manager.
+	// InitializeProviders is a function that can be optionally specified with the manager's Options in order
+	// to explicitly initialize the providers.
+	InitializeProviders InitializeProvidersFunc
+
+	// AddToManager is a function that can be optionally specified with the manager's Options in order
+	// to explicitly decide what controllers and webhooks to add to the manager.
 	AddToManager AddToManagerFunc
 }
 
@@ -173,5 +189,13 @@ func (o *Options) defaults() {
 
 	if o.WebhookSecretVolumeMountPath == "" {
 		o.WebhookSecretVolumeMountPath = DefaultWebhookSecretVolumeMountPath
+	}
+
+	if o.InitializeProviders == nil {
+		o.InitializeProviders = InitializeProvidersNoopFn
+	}
+
+	if o.AddToManager == nil {
+		o.AddToManager = AddToManagerNoopFn
 	}
 }

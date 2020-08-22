@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder
@@ -13,23 +13,18 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
-	//nolint
 	. "github.com/onsi/ginkgo"
-	//nolint
 	. "github.com/onsi/gomega"
 
 	"github.com/pkg/errors"
-	admissionregv1 "k8s.io/api/admissionregistration/v1beta1"
 
-	//apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
-	//"k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	//metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	admissionregv1 "k8s.io/api/admissionregistration/v1beta1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
@@ -39,20 +34,29 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/yaml"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/util/remote"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
-	"github.com/vmware-tanzu/vm-operator/pkg/manager"
+	ctrlCtx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
-	//"gitlab.eng.vmware.com/core-build/guest-cluster-controller/webhooks/capi"
 )
 
-var (
-	separator = "\n---\n"
-)
+// AddToContextFunc is the function TestSuite calls to add to the Controller context
+type AddToContextFunc func(ctrlContext *ctrlCtx.ControllerManagerContext, mgr manager.Manager) error
+
+// AddToContextNoopFn is a noop function of the AddToContextFunc type.
+var AddToContextNoopFn = func(_ *ctrlCtx.ControllerManagerContext, _ manager.Manager) error {
+	return nil
+}
+
+// Reconciler is a base type for builder's reconcilers
+type Reconciler interface{}
+
+// NewReconcilerFunc is a base type for functions that return a reconciler
+type NewReconcilerFunc func() Reconciler
 
 func init() {
 	klog.InitFlags(nil)
@@ -60,27 +64,32 @@ func init() {
 	logf.SetLogger(klogr.New())
 }
 
-// TestSuite is used for unit and integration testing builder.
+// TestSuite is used for unit and integration testing builder. Each TestSuite
+// contains one independent test environment and a controller manager
 type TestSuite struct {
 	context.Context
-	addToManagerFn        manager.AddToManagerFunc
-	rootDir               string
-	certDir               string
-	integrationTestClient client.Client
-	config                *rest.Config
-	done                  chan struct{}
+
+	flags                 testFlags
 	envTest               envtest.Environment
-	flags                 TestFlags
-	manager               manager.Manager
-	pki                   pkiToolchain
-	validator             builder.Validator
-	mutator               builder.Mutator
-	newReconcilerFn       builder.NewReconcilerFunc
-	webhookName           string
-	managerRunning        bool
-	managerRunningMutex   sync.Mutex
-	webhookYaml           []byte
-	//capiWebhookValidator  capi.Validator
+	config                *rest.Config
+	integrationTestClient client.Client
+
+	// Controller specific fields
+	addToContextFn      AddToContextFunc
+	addToManagerFn      pkgmgr.AddToManagerFunc
+	integrationTest     bool
+	manager             pkgmgr.Manager
+	managerDone         chan struct{}
+	managerRunning      bool
+	managerRunningMutex sync.Mutex
+
+	// Webhook specific fields
+	webhookName string
+	certDir     string
+	validator   builder.Validator
+	mutator     builder.Mutator
+	pki         pkiToolchain
+	webhookYaml []byte
 }
 
 func (s *TestSuite) isWebhookTest() bool {
@@ -91,67 +100,53 @@ func (s *TestSuite) GetEnvTestConfig() *rest.Config {
 	return s.config
 }
 
-// NewTestSuiteForController returns a new test suite used for unit and
-// integration testing controllers created using the "pkg/builder"
-// package.
-func NewTestSuiteForController(
-	addToManagerFn manager.AddToManagerFunc,
-	newReconcilerFn builder.NewReconcilerFunc) *TestSuite {
+func getCrdPaths(crdPaths ...string) []string {
+	rootDir := testutil.GetRootDirOrDie()
 
-	testSuite := &TestSuite{
-		Context: context.Background(),
-	}
-	testSuite.init(addToManagerFn, newReconcilerFn)
-
-	if testSuite.flags.UnitTestsEnabled {
-		if newReconcilerFn == nil {
-			panic("newReconcilerFn is nil")
-		}
-	}
-
-	return testSuite
+	return append(crdPaths,
+		filepath.Join(rootDir, "config", "crd", "bases"),
+		filepath.Join(rootDir, "config", "crd", "external-crds"),
+	)
 }
 
-// NewTestSuiteForPackage returns a new test suite for envtest-based
-// integration testing of packages that aren't controllers or webhooks.
-func NewTestSuiteForPackage(
-	addToManagerFn manager.AddToManagerFunc) *TestSuite {
-
-	testSuite := &TestSuite{
-		Context: context.Background(),
-	}
-	testSuite.init(addToManagerFn, nil)
-
-	return testSuite
+// NewTestSuite returns a new test suite used for unit and/or integration test
+func NewTestSuite() *TestSuite {
+	return NewTestSuiteForController(
+		pkgmgr.AddToManagerNoopFn,
+		AddToContextNoopFn,
+		getCrdPaths()...,
+	)
 }
 
-// NewTestSuiteForVirtualMachineWebhook returns a new test suite used for unit and
-// integration testing validating webhooks created using the "pkg/builder"
-// package.
-func NewTestSuiteForVirtualMachineWebhook(
-	addToManagerFn manager.AddToManagerFunc,
-	//newValidatorFn func() capi.Validator,
-	webhookName string) *TestSuite {
+// NewFunctionalTestSuite returns a new test suite used for functional tests.
+// The functional test starts all the controllers, and creates all the providers
+// so it is a more fully functioning env than an integration test with a single
+// controller running.
+func NewFunctionalTestSuite(addToManagerFunc func(ctx *ctrlCtx.ControllerManagerContext, mgr manager.Manager) error) *TestSuite {
+	return NewTestSuiteForController(
+		addToManagerFunc,
+		pkgmgr.InitializeProviders,
+		getCrdPaths()...,
+	)
+}
+
+// NewTestSuiteForController returns a new test suite used for controller integration test
+func NewTestSuiteForController(addToManagerFn pkgmgr.AddToManagerFunc, addToContextFn AddToContextFunc, crdPaths ...string) *TestSuite {
+
+	if addToManagerFn == nil {
+		panic("addToManagerFn is nil")
+	}
+	if addToContextFn == nil {
+		panic("addToContextFn is nil")
+	}
 
 	testSuite := &TestSuite{
-		Context: context.Background(),
-		//capiWebhookValidator: newValidatorFn(),
-		webhookName: webhookName,
+		Context:         context.Background(),
+		integrationTest: true,
+		addToManagerFn:  addToManagerFn,
+		addToContextFn:  addToContextFn,
 	}
-
-	// Create a temp directory for the certs needed for testing webhooks.
-	certDir, err := ioutil.TempDir(os.TempDir(), "")
-	if err != nil {
-		panic(errors.Wrap(err, "failed to create temp dir for certs"))
-	}
-	testSuite.certDir = certDir
-
-	// Init the test suite with the flags to enable the validating admission
-	// webhooks as well as a custom directory for where certificates are
-	// located.
-	testSuite.init(addToManagerFn,
-		nil,
-		"--cert-dir="+certDir)
+	testSuite.init(crdPaths)
 
 	return testSuite
 }
@@ -160,45 +155,43 @@ func NewTestSuiteForVirtualMachineWebhook(
 // integration testing validating webhooks created using the "pkg/builder"
 // package.
 func NewTestSuiteForValidatingWebhook(
-	addToManagerFn manager.AddToManagerFunc,
+	addToManagerFn pkgmgr.AddToManagerFunc,
 	newValidatorFn func() builder.Validator,
 	webhookName string) *TestSuite {
 
-	testSuite := &TestSuite{
-		Context:     context.Background(),
-		validator:   newValidatorFn(),
-		webhookName: webhookName,
-	}
-
-	// Create a temp directory for the certs needed for testing webhooks.
-	certDir, err := ioutil.TempDir(os.TempDir(), "")
-	if err != nil {
-		panic(errors.Wrap(err, "failed to create temp dir for certs"))
-	}
-	testSuite.certDir = certDir
-
-	// Init the test suite with the flags to enable the validating admission
-	// webhooks as well as a custom directory for where certificates are
-	// located.
-	testSuite.init(addToManagerFn,
-		nil,
-		"--cert-dir="+certDir)
-
-	return testSuite
+	return newTestSuiteForWebhook(addToManagerFn, newValidatorFn, nil, webhookName)
 }
 
 // NewTestSuiteForMutatingWebhook returns a new test suite used for unit and
 // integration testing mutating webhooks created using the "pkg/builder"
 // package.
 func NewTestSuiteForMutatingWebhook(
-	addToManagerFn manager.AddToManagerFunc,
+	addToManagerFn pkgmgr.AddToManagerFunc,
+	newMutatorFn func() builder.Mutator,
+	webhookName string) *TestSuite {
+
+	return newTestSuiteForWebhook(addToManagerFn, nil, newMutatorFn, webhookName)
+}
+
+func newTestSuiteForWebhook(
+	addToManagerFn pkgmgr.AddToManagerFunc,
+	newValidatorFn func() builder.Validator,
 	newMutatorFn func() builder.Mutator,
 	webhookName string) *TestSuite {
 
 	testSuite := &TestSuite{
-		Context:     context.Background(),
-		mutator:     newMutatorFn(),
-		webhookName: webhookName,
+		Context:         context.Background(),
+		integrationTest: true,
+		addToManagerFn:  addToManagerFn,
+		addToContextFn:  AddToContextNoopFn,
+		webhookName:     webhookName,
+	}
+
+	if newValidatorFn != nil {
+		testSuite.validator = newValidatorFn()
+	}
+	if newMutatorFn != nil {
+		testSuite.mutator = newMutatorFn()
 	}
 
 	// Create a temp directory for the certs needed for testing webhooks.
@@ -208,44 +201,25 @@ func NewTestSuiteForMutatingWebhook(
 	}
 	testSuite.certDir = certDir
 
-	// Init the test suite with the flags to enable the mutating admission
-	// webhooks as well as a custom directory for where certificates are
-	// located.
-	testSuite.init(addToManagerFn,
-		nil,
+	testSuite.init(
+		getCrdPaths(),
 		"--cert-dir="+certDir)
 
 	return testSuite
 }
 
-func (s *TestSuite) init(addToManagerFn manager.AddToManagerFunc, newReconcilerFn builder.NewReconcilerFunc, additionalAPIServerFlags ...string) {
-	var err error
-
-	s.flags = GetTestFlags()
-	s.newReconcilerFn = newReconcilerFn
-	s.rootDir, err = testutil.GetRootDir()
-	if err != nil {
-		panic(fmt.Sprintf("GetRootDir failed: %v", err))
-	}
+func (s *TestSuite) init(crdPaths []string, additionalAPIServerFlags ...string) {
+	// Initialize the test flags.
+	s.flags = flags
 
 	if s.flags.IntegrationTestsEnabled {
-		if addToManagerFn == nil {
-			panic("addToManagerFn is nil")
-		}
-
 		apiServerFlags := append([]string{"--allow-privileged=true"}, envtest.DefaultKubeAPIServerFlags...)
 		if len(additionalAPIServerFlags) > 0 {
 			apiServerFlags = append(apiServerFlags, additionalAPIServerFlags...)
 		}
 
-		s.addToManagerFn = addToManagerFn
 		s.envTest = envtest.Environment{
-			CRDDirectoryPaths: []string{
-				filepath.Join(s.rootDir, "config", "crd", "bases"),
-				filepath.Join(s.rootDir, "config", "crd", "external-crds"),
-				//filepath.Join(s.rootDir, "test", "stubcrds"),
-				//filepath.Join(testutil.FindModuleDir("gitlab.eng.vmware.com/core-build/cluster-api-provider-wcp"), "config", "crd", "bases"),
-			},
+			CRDDirectoryPaths:  crdPaths,
 			KubeAPIServerFlags: apiServerFlags,
 		}
 	}
@@ -277,7 +251,8 @@ func (s *TestSuite) Register(t *testing.T, name string, runIntegrationTestsFn, r
 	}
 
 	if s.flags.IntegrationTestsEnabled {
-		SetDefaultEventuallyTimeout(time.Second * 30)
+		SetDefaultEventuallyTimeout(time.Second * 10)
+		SetDefaultEventuallyPollingInterval(time.Second)
 		RunSpecsWithDefaultAndCustomReporters(t, name, []Reporter{printer.NewlineReporter{}})
 	} else if s.flags.UnitTestsEnabled {
 		RunSpecs(t, name)
@@ -290,38 +265,10 @@ func (s *TestSuite) Register(t *testing.T, name string, runIntegrationTestsFn, r
 // Returns nil if unit testing is disabled.
 func (s *TestSuite) NewUnitTestContextForController(initObjects ...runtime.Object) *UnitTestContextForController {
 	if s.flags.UnitTestsEnabled {
-		ctx := NewUnitTestContextForController(s.newReconcilerFn, initObjects)
-		reconcileNormalAndExpectSuccess(ctx)
+		ctx := NewUnitTestContextForController(initObjects)
 		return ctx
 	}
 	return nil
-}
-
-// NewUnitTestContextForControllerWithVirtualMachine returns a new unit test context for this
-// suite's reconciler.
-//
-// Returns nil if unit testing is disabled.
-func (s *TestSuite) NewUnitTestContextForControllerWithVirtualMachine(vm *vmopv1.VirtualMachine,
-	initObjects []runtime.Object, positiveTestCase bool) *UnitTestContextForController {
-
-	if s.flags.UnitTestsEnabled {
-		ctx := NewUnitTestContextForController(s.newReconcilerFn, initObjects)
-		if positiveTestCase {
-			reconcileNormalAndExpectSuccess(ctx)
-			// Update the VirtualMachine and its status in the fake client.
-			//Expect(ctx.Client.Update(ctx, ctx.Cluster)).To(Succeed())
-			//Expect(ctx.Client.Status().Update(ctx, ctx.Cluster)).To(Succeed())
-		}
-		return ctx
-	}
-	return nil
-}
-
-func reconcileNormalAndExpectSuccess(ctx *UnitTestContextForController) {
-	// Manually invoke the reconciliation. This is poor design, but in order
-	// to support unit testing with a minimum set of dependencies that does
-	// not include the Kubernetes envtest package, this is required.
-	Expect(ctx.ReconcileNormal()).ShouldNot(HaveOccurred())
 }
 
 // NewUnitTestContextForValidatingWebhook returns a new unit test context for this
@@ -369,12 +316,10 @@ func (s *TestSuite) AfterSuite() {
 // Create a new Manager with default values
 func (s *TestSuite) createManager() {
 	var err error
-	s.done = make(chan struct{})
-	s.manager, err = manager.New(manager.Options{
-		KubeConfig: s.config,
-		// Create a new Scheme for each controller. Don't use a global scheme otherwise manager reset
-		// will try to reinitialize the global scheme which causes errors
-		Scheme:      runtime.NewScheme(),
+
+	s.managerDone = make(chan struct{})
+	s.manager, err = pkgmgr.New(pkgmgr.Options{
+		KubeConfig:  s.config,
 		MetricsAddr: "0",
 		NewCache: func(config *rest.Config, opts cache.Options) (cache.Cache, error) {
 			syncPeriod := 1 * time.Second
@@ -385,12 +330,14 @@ func (s *TestSuite) createManager() {
 	})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(s.manager).ToNot(BeNil())
-	s.integrationTestClient = s.manager.GetClient()
+
+	// Inject test suite parameters into the context.
+	err = s.addToContextFn(s.manager.GetContext(), s.manager)
+	Expect(err).NotTo(HaveOccurred())
 }
 
 func (s *TestSuite) initializeManager() {
-	// If one or more webhooks are being tested then go ahead and configure the
-	// webhook server.
+	// If one or more webhooks are being tested then go ahead and configure the webhook server.
 	if s.isWebhookTest() {
 		By("configuring webhook server", func() {
 			s.manager.GetWebhookServer().Host = "127.0.0.1"
@@ -422,23 +369,9 @@ func (s *TestSuite) startManager() {
 		defer GinkgoRecover()
 
 		s.setManagerRunning(true)
-		Expect(s.manager.Start(s.done)).ToNot(HaveOccurred())
+		Expect(s.manager.Start(s.managerDone)).ToNot(HaveOccurred())
 		s.setManagerRunning(false)
 	}()
-}
-
-// Blocks until the manager has stopped running
-// Removes state applied in postConfigureManager()
-func (s *TestSuite) stopManager() {
-	close(s.done)
-	Eventually(func() bool {
-		return s.getManagerRunning()
-	}).Should(BeFalse())
-	if s.webhookYaml != nil {
-		Eventually(func() error {
-			return remote.DeleteYAML(s, s.integrationTestClient, s.webhookYaml)
-		}).Should(Succeed())
-	}
 }
 
 // Applies configuration to the Manager after it has started
@@ -449,7 +382,7 @@ func (s *TestSuite) postConfigureManager() {
 	if s.isWebhookTest() {
 		By("installing the webhook(s)", func() {
 			// ASSERT that the file for validating webhook file exists.
-			validatingWebhookFile := path.Join(s.rootDir, "config", "webhook", "manifests.yaml")
+			validatingWebhookFile := path.Join(testutil.GetRootDirOrDie(), "config", "webhook", "manifests.yaml")
 			Expect(validatingWebhookFile).Should(BeAnExistingFile())
 
 			// UNMARSHAL the contents of the validating webhook file into MutatingWebhookConfiguration and
@@ -475,9 +408,7 @@ func (s *TestSuite) postConfigureManager() {
 		// It can take a few seconds for the webhook server to come online.
 		// This step blocks until the webserver can be successfully accessed.
 		By("waiting for the webhook server to come online", func() {
-			addr := fmt.Sprintf("%s:%d",
-				s.manager.GetWebhookServer().Host,
-				s.manager.GetWebhookServer().Port)
+			addr := net.JoinHostPort(s.manager.GetWebhookServer().Host, strconv.Itoa(s.manager.GetWebhookServer().Port))
 			dialer := &net.Dialer{Timeout: time.Second}
 			//nolint:gosec
 			tlsConfig := &tls.Config{InsecureSkipVerify: true}
@@ -486,29 +417,17 @@ func (s *TestSuite) postConfigureManager() {
 				if err != nil {
 					return err
 				}
-				conn.Close()
+				_ = conn.Close()
 				return nil
 			}).Should(Succeed())
 		})
 	}
 }
 
-// Start a whole new manager in the current context
-// Optional to stop the manager before starting a new one
-func (s *TestSuite) startNewManager(ctx *IntegrationTestContext) {
-	if s.getManagerRunning() {
-		s.stopManager()
-	}
-	s.createManager()
-	s.initializeManager()
-	s.startManager()
-	s.postConfigureManager()
-	ctx.Client = s.integrationTestClient
-}
-
 func (s *TestSuite) beforeSuiteForIntegrationTesting() {
+	var err error
+
 	By("bootstrapping test environment", func() {
-		var err error
 		s.config, err = s.envTest.Start()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(s.config).ToNot(BeNil())
@@ -518,7 +437,6 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 	// PKI toolchain to use with the webhook server.
 	if s.isWebhookTest() {
 		By("generating the pki toolchain", func() {
-			var err error
 			s.pki, err = generatePKIToolchain()
 			Expect(err).ToNot(HaveOccurred())
 			// Write the CA pub key and cert pub and private keys to the cert dir.
@@ -527,58 +445,63 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 		})
 	}
 
-	By("setting up a new manager", func() {
-		s.createManager()
-		s.initializeManager()
-	})
+	if s.integrationTest {
+		By("setting up a new manager", func() {
+			s.createManager()
+			s.initializeManager()
+		})
 
-	By("starting the manager", func() {
-		s.startManager()
-	})
+		s.integrationTestClient, err = client.New(s.manager.GetConfig(), client.Options{Scheme: s.manager.GetScheme()})
+		Expect(err).NotTo(HaveOccurred())
 
-	By("configuring the manager", func() {
-		s.postConfigureManager()
-	})
+		By("starting the manager", func() {
+			s.startManager()
+		})
 
-	// If the test is about capi validation webhook then create a config map and set environment variable
-	/*
-		if s.capiWebhookValidator != nil {
-			testCMName, testNS := "test-cm", "test-namespace"
-
-			cm := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testCMName,
-					Namespace: testNS,
-				},
-				Data: map[string]string{
-					"system.unsecured": "true",
-				},
-			}
-			Expect(s.integrationTestClient.Create(s, cm)).To(BeNil())
-		}
-	*/
+		By("configuring the manager", func() {
+			s.postConfigureManager()
+		})
+	}
 }
 
 func (s *TestSuite) afterSuiteForIntegrationTesting() {
+	if s.integrationTest {
+		By("tearing down the manager", func() {
+			close(s.managerDone)
+			Eventually(s.getManagerRunning).Should(BeFalse())
+
+			if s.webhookYaml != nil {
+				Eventually(func() error {
+					return remote.DeleteYAML(s, s.integrationTestClient, s.webhookYaml)
+				}).Should(Succeed())
+			}
+		})
+	}
+
 	By("tearing down the test environment", func() {
-		close(s.done)
 		Expect(s.envTest.Stop()).To(Succeed())
 	})
 }
 
-func parseWebhookConfig(path string) (mutatingWebhookConfig admissionregv1.MutatingWebhookConfiguration, validatingWebhookConfig admissionregv1.ValidatingWebhookConfiguration) {
+func parseWebhookConfig(path string) (
+	mutatingWebhookConfig admissionregv1.MutatingWebhookConfiguration,
+	validatingWebhookConfig admissionregv1.ValidatingWebhookConfiguration) {
+
+	const separator = "\n---\n"
+
 	// READ the validating webhook file.
 	yamlIn, err := ioutil.ReadFile(path)
 	Expect(err).ShouldNot(HaveOccurred())
 	Expect(yamlIn).ShouldNot(BeEmpty())
 
+	// Assumes mutating and then validating are present.
 	sep := len([]byte(separator))
 	i := bytes.Index(yamlIn, []byte(separator))
 	j := bytes.LastIndex(yamlIn, []byte(separator))
-	mbytes := yamlIn[i+sep : j]
-	vbytes := yamlIn[j+sep:]
-	Expect(yaml.Unmarshal(mbytes, &mutatingWebhookConfig)).To(Succeed())
-	Expect(yaml.Unmarshal(vbytes, &validatingWebhookConfig)).To(Succeed())
+	mBytes := yamlIn[i+sep : j]
+	vBytes := yamlIn[j+sep:]
+	Expect(yaml.Unmarshal(mBytes, &mutatingWebhookConfig)).To(Succeed())
+	Expect(yaml.Unmarshal(vBytes, &validatingWebhookConfig)).To(Succeed())
 	return mutatingWebhookConfig, validatingWebhookConfig
 }
 
@@ -591,8 +514,7 @@ func updateValidatingWebhookConfig(webhookConfig admissionregv1.ValidatingWebhoo
 	//   2. Use the test webhook endpoint
 	for _, webhook := range webhookConfig.Webhooks {
 		if webhook.Name == webhookName {
-			url := fmt.Sprintf("https://%s:%d%s", host, port,
-				*webhook.ClientConfig.Service.Path)
+			url := fmt.Sprintf("https://%s:%d%s", host, port, *webhook.ClientConfig.Service.Path)
 			webhook.ClientConfig.CABundle = key
 			webhook.ClientConfig.Service = nil
 			webhook.ClientConfig.URL = &url
@@ -613,8 +535,7 @@ func updateMutatingWebhookConfig(webhookConfig admissionregv1.MutatingWebhookCon
 	//   2. Use the test webhook endpoint
 	for _, webhook := range webhookConfig.Webhooks {
 		if webhook.Name == webhookName {
-			url := fmt.Sprintf("https://%s:%d%s", host, port,
-				*webhook.ClientConfig.Service.Path)
+			url := fmt.Sprintf("https://%s:%d%s", host, port, *webhook.ClientConfig.Service.Path)
 			webhook.ClientConfig.CABundle = key
 			webhook.ClientConfig.Service = nil
 			webhook.ClientConfig.URL = &url

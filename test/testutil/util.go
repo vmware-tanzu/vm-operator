@@ -27,6 +27,15 @@ func GetRootDir() (string, error) {
 	return s[:strings.Index(s, t)], nil
 }
 
+// GetRootDirOrDie returns the root directory of this git repo or dies
+func GetRootDirOrDie() string {
+	rootDir, err := GetRootDir()
+	if err != nil {
+		klog.Fatal(err)
+	}
+	return rootDir
+}
+
 // FindModuleDir returns the on-disk directory for the provided Go module.
 func FindModuleDir(module string) string {
 	cmd := exec.Command("go", "mod", "download", "-json", module)

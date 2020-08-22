@@ -256,6 +256,7 @@ func main() {
 	}
 
 	setupLog.Info("creating controller manager")
+	managerOpts.InitializeProviders = manager.InitializeProviders
 	managerOpts.AddToManager = addToManager
 	mgr, err := manager.New(managerOpts)
 	if err != nil {

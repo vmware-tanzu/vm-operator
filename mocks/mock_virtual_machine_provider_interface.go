@@ -163,21 +163,6 @@ func (mr *MockVirtualMachineProviderInterfaceMockRecorder) DoesVirtualMachineSet
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DoesVirtualMachineSetResourcePolicyExist", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).DoesVirtualMachineSetResourcePolicyExist), arg0, arg1)
 }
 
-// GetClusterID mocks base method
-func (m *MockVirtualMachineProviderInterface) GetClusterID(arg0 context.Context, arg1 string) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetClusterID", arg0, arg1)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetClusterID indicates an expected call of GetClusterID
-func (mr *MockVirtualMachineProviderInterfaceMockRecorder) GetClusterID(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClusterID", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).GetClusterID), arg0, arg1)
-}
-
 // GetVirtualMachineImage mocks base method
 func (m *MockVirtualMachineProviderInterface) GetVirtualMachineImage(arg0 context.Context, arg1, arg2 string) (*v1alpha1.VirtualMachineImage, error) {
 	m.ctrl.T.Helper()

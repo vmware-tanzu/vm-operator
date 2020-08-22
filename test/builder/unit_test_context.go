@@ -11,6 +11,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -50,8 +51,8 @@ type UnitTestContextForController struct {
 	// context is the context.ControllerManagerContext for being tested.
 	context.ControllerManagerContext
 
-	// reconciler is the builder.Reconciler being unit tested.
-	Reconciler Reconciler
+	// reconciler is the reconcile.Reconciler being unit tested.
+	Reconciler reconcile.Reconciler
 }
 
 // UnitTestContextForValidatingWebhook is used for unit testing validating webhooks.

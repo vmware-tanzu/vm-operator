@@ -9,20 +9,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
+
 	v1 "k8s.io/api/core/v1"
 	storagetypev1 "k8s.io/api/storage/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/go-logr/logr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -34,16 +33,23 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
+const (
+	finalizerName                  = "virtualmachine.vmoperator.vmware.com"
+	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
+	controllerName                 = "virtualmachine-controller"
+)
+
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
-	return add(ctx, mgr, newReconciler(ctx, mgr))
+	return add(ctx, mgr, NewReconciler(ctx, mgr))
 }
 
-func newReconciler(ctx *context.ControllerManagerContext, mgr manager.Manager) reconcile.Reconciler {
+func NewReconciler(ctx *context.ControllerManagerContext, mgr manager.Manager) reconcile.Reconciler {
+	var controllerNameLong = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerName)
 	return &VirtualMachineReconciler{
 		Client:     mgr.GetClient(),
-		Log:        ctrl.Log.WithName("controllers").WithName("VirtualMachine"),
-		recorder:   record.New(mgr.GetEventRecorderFor("virtualmachine")),
+		Logger:     ctx.Logger.WithName("controllers").WithName(controllerName),
+		recorder:   record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		vmProvider: ctx.VmProvider,
 	}
 }
@@ -59,15 +65,10 @@ func add(ctx *context.ControllerManagerContext, mgr manager.Manager, r reconcile
 // VirtualMachineReconciler reconciles a VirtualMachine object
 type VirtualMachineReconciler struct {
 	client.Client
-	Log        logr.Logger
+	Logger     logr.Logger
 	recorder   record.Recorder
 	vmProvider vmprovider.VirtualMachineProviderInterface
 }
-
-const (
-	finalizerName                  = "virtualmachine.vmoperator.vmware.com"
-	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
-)
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines/status,verbs=get;update;patch
@@ -90,18 +91,22 @@ func (r *VirtualMachineReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		}
 		return ctrl.Result{}, err
 	}
-
-	// Use whatever clusterID is returned, even the empty string.
-	clusterID, _ := r.vmProvider.GetClusterID(ctx, req.Namespace)
-	ctx = goctx.WithValue(ctx, vimtypes.ID{}, fmt.Sprintf("vmoperator-vmctrl-%s-%s", clusterID, instance.Name))
+	vmContext := &context.VirtualMachineContext{
+		Context: ctx,
+		VMObjectKey: client.ObjectKey{
+			Namespace: req.Namespace,
+			Name:      req.Name,
+		},
+		VM: instance,
+	}
 
 	if !instance.ObjectMeta.DeletionTimestamp.IsZero() {
-		err = r.reconcileDelete(ctx, instance)
+		err = r.ReconcileDelete(vmContext)
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileNormal(ctx, instance); err != nil {
-		r.Log.Error(err, "Failed to reconcile VirtualMachine", "name", instance.NamespacedName())
+	if err := r.ReconcileNormal(vmContext); err != nil {
+		r.Logger.Error(err, "Failed to reconcile VirtualMachine", "name", instance.NamespacedName())
 		return ctrl.Result{}, err
 	}
 
@@ -123,7 +128,8 @@ func requeueDelay(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) time
 	return 0
 }
 
-func (r *VirtualMachineReconciler) deleteVm(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) (err error) {
+func (r *VirtualMachineReconciler) deleteVm(ctx *context.VirtualMachineContext) (err error) {
+	vm := ctx.VM
 	defer func() {
 		r.recorder.EmitEvent(vm, "Delete", err, false)
 	}()
@@ -131,35 +137,36 @@ func (r *VirtualMachineReconciler) deleteVm(ctx goctx.Context, vm *vmoperatorv1a
 	err = r.vmProvider.DeleteVirtualMachine(ctx, vm)
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
-			r.Log.Info("To be deleted VirtualMachine was not found", "name", vm.NamespacedName())
+			r.Logger.Info("To be deleted VirtualMachine was not found", "name", vm.NamespacedName())
 			return nil
 		}
-		r.Log.Error(err, "Failed to delete VirtualMachine", "name", vm.NamespacedName())
+		r.Logger.Error(err, "Failed to delete VirtualMachine", "name", vm.NamespacedName())
 		return err
 	}
 
 	vm.Status.Phase = vmoperatorv1alpha1.Deleted
-	r.Log.V(4).Info("Deleted VirtualMachine", "name", vm.NamespacedName())
+	r.Logger.V(4).Info("Deleted VirtualMachine", "name", vm.NamespacedName())
 
 	return nil
 }
 
-func (r *VirtualMachineReconciler) reconcileDelete(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
-	r.Log.Info("Reconciling VirtualMachine Deletion", "name", vm.NamespacedName())
+func (r *VirtualMachineReconciler) ReconcileDelete(ctx *context.VirtualMachineContext) error {
+	vm := ctx.VM
+	r.Logger.Info("Reconciling VirtualMachine Deletion", "name", vm.NamespacedName())
 	defer func() {
-		r.Log.Info("Finished Reconciling VirtualMachine Deletion", "name", vm.NamespacedName())
+		r.Logger.Info("Finished Reconciling VirtualMachine Deletion", "name", vm.NamespacedName())
 	}()
 
 	if lib.ContainsString(vm.ObjectMeta.Finalizers, finalizerName) {
 		if vm.Status.Phase != vmoperatorv1alpha1.Deleting {
 			vm.Status.Phase = vmoperatorv1alpha1.Deleting
 			if err := r.Update(ctx, vm); err != nil {
-				r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
+				r.Logger.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
 				return err
 			}
 		}
 
-		if err := r.deleteVm(ctx, vm); err != nil {
+		if err := r.deleteVm(ctx); err != nil {
 			return err
 		}
 
@@ -173,11 +180,12 @@ func (r *VirtualMachineReconciler) reconcileDelete(ctx goctx.Context, vm *vmoper
 }
 
 // Process a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
-func (r *VirtualMachineReconciler) reconcileNormal(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
-	r.Log.Info("Reconciling VirtualMachine", "name", vm.NamespacedName())
-	r.Log.V(4).Info("Original VM Status", "name", vm.NamespacedName(), "status", vm.Status)
+func (r *VirtualMachineReconciler) ReconcileNormal(ctx *context.VirtualMachineContext) error {
+	vm := ctx.VM
+	r.Logger.Info("Reconciling VirtualMachine", "name", vm.NamespacedName())
+	r.Logger.V(4).Info("Original VM Status", "name", vm.NamespacedName(), "status", vm.Status)
 	defer func() {
-		r.Log.Info("Finished Reconciling VirtualMachine", "name", vm.NamespacedName())
+		r.Logger.Info("Finished Reconciling VirtualMachine", "name", vm.NamespacedName())
 	}()
 
 	if !lib.ContainsString(vm.ObjectMeta.Finalizers, finalizerName) {
@@ -190,24 +198,24 @@ func (r *VirtualMachineReconciler) reconcileNormal(ctx goctx.Context, vm *vmoper
 	vmCopy := vm.DeepCopy()
 
 	if err := r.createOrUpdateVm(ctx, vm); err != nil {
-		r.Log.Error(err, "Failed to reconcile VirtualMachine")
+		r.Logger.Error(err, "Failed to reconcile VirtualMachine")
 		return err
 	}
 
-	if r.Log.V(4).Enabled() {
+	if r.Logger.V(4).Enabled() {
 		// Before we update the status, get the current resource and log it
 		latestVm := &vmoperatorv1alpha1.VirtualMachine{}
-		err := r.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: vm.Name}, latestVm)
+		err := r.Get(ctx, ctx.VMObjectKey, latestVm)
 		if err == nil {
-			r.Log.V(4).Info("Latest resource before update", "name", vm.NamespacedName(), "resource", latestVm)
-			r.Log.V(4).Info("Resource to update", "name", vm.NamespacedName(), "resource", vm)
+			r.Logger.V(4).Info("Latest resource before update", "name", vm.NamespacedName(), "resource", latestVm)
+			r.Logger.V(4).Info("Resource to update", "name", vm.NamespacedName(), "resource", vm)
 		}
 	}
 
-	r.Log.V(4).Info("Updated VM Status", "name", vm.NamespacedName(), "status", vm.Status)
+	r.Logger.V(4).Info("Updated VM Status", "name", vm.NamespacedName(), "status", vm.Status)
 	if !apiequality.Semantic.DeepEqual(vmCopy.Status, vm.Status) {
 		if err := r.Status().Update(ctx, vm); err != nil {
-			r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
+			r.Logger.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
 			return err
 		}
 	}
@@ -215,11 +223,11 @@ func (r *VirtualMachineReconciler) reconcileNormal(ctx goctx.Context, vm *vmoper
 	return nil
 }
 
-func (r *VirtualMachineReconciler) validateStorageClass(ctx goctx.Context, namespace, scName string) error {
+func (r *VirtualMachineReconciler) validateStorageClass(ctx *context.VirtualMachineContext, namespace, scName string) error {
 	resourceQuotas := &v1.ResourceQuotaList{}
 	err := r.List(ctx, resourceQuotas, client.InNamespace(namespace))
 	if err != nil {
-		r.Log.Error(err, "Failed to list ResourceQuotas", "namespace", namespace)
+		r.Logger.Error(err, "Failed to list ResourceQuotas", "namespace", namespace)
 		return err
 	}
 
@@ -244,16 +252,16 @@ func (r *VirtualMachineReconciler) validateStorageClass(ctx goctx.Context, names
 	return fmt.Errorf("StorageClass '%s' is not assigned to any ResourceQuotas in namespace '%s'", scName, namespace)
 }
 
-func (r *VirtualMachineReconciler) lookupStoragePolicyID(ctx goctx.Context, namespace, storageClassName string) (string, error) {
+func (r *VirtualMachineReconciler) lookupStoragePolicyID(ctx *context.VirtualMachineContext, namespace, storageClassName string) (string, error) {
 	err := r.validateStorageClass(ctx, namespace, storageClassName)
 	if err != nil {
 		return "", err
 	}
 
 	sc := &storagetypev1.StorageClass{}
-	err = r.Client.Get(ctx, client.ObjectKey{Name: storageClassName}, sc)
+	err = r.Get(ctx, client.ObjectKey{Name: storageClassName}, sc)
 	if err != nil {
-		r.Log.Error(err, "Failed to get StorageClass", "storageClassName", storageClassName)
+		r.Logger.Error(err, "Failed to get StorageClass", "storageClassName", storageClassName)
 		return "", err
 	}
 
@@ -261,16 +269,16 @@ func (r *VirtualMachineReconciler) lookupStoragePolicyID(ctx goctx.Context, name
 }
 
 // createOrUpdateVm calls into the VM provider to reconcile a VirtualMachine
-func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) error {
+func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineContext, vm *vmoperatorv1alpha1.VirtualMachine) error {
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
 	err := r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
 	if err != nil {
-		r.Log.Error(err, "Failed to get VirtualMachineClass for VirtualMachine",
+		r.Logger.Error(err, "Failed to get VirtualMachineClass for VirtualMachine",
 			"vmName", vm.NamespacedName(), "class", vm.Spec.ClassName)
 		return err
 	}
 
-	vmMetadata, err := r.getVmMetadata(ctx, vm)
+	vmMetadata, err := r.getVmMetadata(ctx)
 	if err != nil {
 		return err
 	}
@@ -280,7 +288,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmope
 		resourcePolicy = &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{}
 		err = r.Get(ctx, client.ObjectKey{Name: policyName, Namespace: vm.Namespace}, resourcePolicy)
 		if err != nil {
-			r.Log.Error(err, "Failed to get VirtualMachineSetResourcePolicy",
+			r.Logger.Error(err, "Failed to get VirtualMachineSetResourcePolicy",
 				"vmName", vm.NamespacedName(), "resourcePolicyName", policyName)
 			return err
 		}
@@ -289,7 +297,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmope
 		// reconciling the VM. Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy.
 		rpReady, err := r.vmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
 		if err != nil {
-			r.Log.Error(err, "Failed to check if VirtualMachineSetResourcePolicy exists")
+			r.Logger.Error(err, "Failed to check if VirtualMachineSetResourcePolicy exists")
 			return err
 		}
 		if !rpReady {
@@ -314,7 +322,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmope
 
 	exists, err := r.vmProvider.DoesVirtualMachineExist(ctx, vm)
 	if err != nil {
-		r.Log.Error(err, "Failed to check if VirtualMachine exists from provider", "name", vm.NamespacedName())
+		r.Logger.Error(err, "Failed to check if VirtualMachine exists from provider", "name", vm.NamespacedName())
 		return err
 	}
 
@@ -322,14 +330,14 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmope
 		if vm.Status.Phase != vmoperatorv1alpha1.Creating {
 			vm.Status.Phase = vmoperatorv1alpha1.Creating
 			if err = r.Update(ctx, vm); err != nil {
-				r.Log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
+				r.Logger.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())
 				return err
 			}
 		}
 
 		err = r.vmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 		if err != nil {
-			r.Log.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())
+			r.Logger.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())
 			r.recorder.EmitEvent(vm, "Create", err, false)
 			return err
 		}
@@ -341,7 +349,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmope
 
 	err = r.vmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {
-		r.Log.Error(err, "Provider failed to update VirtualMachine", "name", vm.NamespacedName())
+		r.Logger.Error(err, "Provider failed to update VirtualMachine", "name", vm.NamespacedName())
 		r.recorder.EmitEvent(vm, "Update", err, false)
 		return err
 	}
@@ -349,7 +357,8 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx goctx.Context, vm *vmope
 	return nil
 }
 
-func (r *VirtualMachineReconciler) getVmMetadata(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) (*vmprovider.VmMetadata, error) {
+func (r *VirtualMachineReconciler) getVmMetadata(ctx *context.VirtualMachineContext) (*vmprovider.VmMetadata, error) {
+	vm := ctx.VM
 	inMetadata := vm.Spec.VmMetadata
 	if inMetadata == nil {
 		return nil, nil

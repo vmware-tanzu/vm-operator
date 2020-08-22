@@ -4,6 +4,7 @@
 package context
 
 import (
+	"context"
 	"fmt"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -13,7 +14,7 @@ import (
 
 // VirtualMachineContext is the context used for VirtualMachineControllers.
 type VirtualMachineContext struct {
-	*ControllerContext
+	context.Context
 	VM          *vmopv1.VirtualMachine
 	VMObjectKey client.ObjectKey
 }

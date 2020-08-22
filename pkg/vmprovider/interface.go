@@ -40,8 +40,6 @@ type VirtualMachineProviderInterface interface {
 	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VmConfigArgs) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 
-	GetClusterID(ctx context.Context, namespace string) (string, error)
-
 	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
 	// Used by VirtualMachine controller to determine if entities of ResourcePolicy exist on the infrastructure provider
 	DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)

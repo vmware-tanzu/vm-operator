@@ -322,9 +322,16 @@ func (vs *vSphereVmProvider) DoesContentLibraryExist(ctx context.Context, conten
 	return ses.DoesContentLibraryExist(ctx, contentLibrary.Spec.UUID)
 }
 
+// Op-ID is used to trace operations in vSphere
+func (vs *vSphereVmProvider) getOpId(ctx context.Context, vm *v1alpha1.VirtualMachine, operation string) string {
+	clusterID, _ := vs.getClusterID(ctx, vm.Namespace)
+	opIDPrefix := fmt.Sprintf("vmoperator-vmctrl-%s-%s", clusterID, vm.Name)
+	opID := strings.Join([]string{opIDPrefix, operation, util.RandomString(pkg.OPIDLength)}, "-")
+	return opID
+}
+
 func (vs *vSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
-	createOpID := ctx.Value(vimtypes.ID{}).(string)
-	ctx = context.WithValue(ctx, vimtypes.ID{}, createOpID+"-create-"+util.RandomString(pkg.OPIDLength))
+	ctx = context.WithValue(ctx, vimtypes.ID{}, vs.getOpId(ctx, vm, "create"))
 
 	vmName := vm.NamespacedName()
 	log.Info("Creating VirtualMachine", "name", vmName)
@@ -364,8 +371,7 @@ func (vs *vSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.
 
 // UpdateVirtualMachine updates the VM status, power state, phase etc
 func (vs *vSphereVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
-	updateOpID := ctx.Value(vimtypes.ID{}).(string)
-	ctx = context.WithValue(ctx, vimtypes.ID{}, updateOpID+"-update-"+util.RandomString(pkg.OPIDLength))
+	ctx = context.WithValue(ctx, vimtypes.ID{}, vs.getOpId(ctx, vm, "update"))
 
 	vmName := vm.NamespacedName()
 	log.V(4).Info("Updating VirtualMachine", "name", vmName)
@@ -450,7 +456,7 @@ func (vs *vSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.Vir
 	return nil
 }
 
-func (vs *vSphereVmProvider) GetClusterID(ctx context.Context, namespace string) (string, error) {
+func (vs *vSphereVmProvider) getClusterID(ctx context.Context, namespace string) (string, error) {
 	ses, err := vs.sessions.GetSession(ctx, namespace)
 	if err != nil {
 		return "", err

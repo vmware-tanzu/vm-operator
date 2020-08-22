@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -149,12 +150,13 @@ var _ = Describe("VirtualMachine controller", func() {
 		err = c.Create(context.TODO(), &metadataConfigMap)
 		Expect(err).ShouldNot(HaveOccurred())
 
-		ctrlContext := &controllercontext.ControllerManagerContext{
+		ctrlMgrContext := &controllercontext.ControllerManagerContext{
+			Logger:     ctrl.Log.WithName("controllers"),
 			VmProvider: vmProvider,
 		}
 
-		recFn, requests, _, _ = integration.SetupTestReconcile(newReconciler(ctrlContext, mgr))
-		Expect(add(ctrlContext, mgr, recFn)).To(Succeed())
+		recFn, requests, _, _ = integration.SetupTestReconcile(NewReconciler(ctrlMgrContext, mgr))
+		Expect(add(ctrlMgrContext, mgr, recFn)).To(Succeed())
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
 

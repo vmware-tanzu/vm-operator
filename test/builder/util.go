@@ -26,31 +26,6 @@ var (
 	converter runtime.UnstructuredConverter = runtime.DefaultUnstructuredConverter
 )
 
-/*
-import (
-	"encoding/json"
-	"fmt"
-	"math/rand"
-	"strings"
-
-	"k8s.io/apimachinery/pkg/api/resource"
-)
-
-const (
-	// DummyDistributionVersion must be in semver format to pass validation
-	DummyDistributionVersion             = "v1.15.5+vmware.1.66-guest.1.821"
-	DummyIncompatibleDistributionVersion = "v1.19.0+vmware.1-guest.1"
-)
-
-func DummyVirtualMachineImage() *vmopv1.VirtualMachineImage {
-	image := FakeVirtualMachineImage(DummyDistributionVersion)
-	// Using image.GenerateName causes problems with unit tests
-	// nolint:gosec This doesn't need to be a secure prng
-	image.Name = fmt.Sprintf("test-%d", rand.Int())
-	return image
-}
-*/
-
 func DummyVirtualMachineClass() *vmopv1.VirtualMachineClass {
 	return &vmopv1.VirtualMachineClass{
 		ObjectMeta: metav1.ObjectMeta{

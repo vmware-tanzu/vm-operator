@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -37,9 +36,6 @@ type ControllerManagerContext struct {
 	// WatchNamespace is the namespace the controllers watch for changes. If
 	// no value is specified then all namespaces are watched.
 	WatchNamespace string
-
-	// Client is the controller manager's client.
-	Client client.Client
 
 	// Logger is the controller manager's logger.
 	Logger logr.Logger

@@ -127,7 +127,7 @@ var _ = Describe("InfraClusterProvider controller", func() {
 		// BMV: This controller is kind of broken b/c we don't add our own finalizer. The design behind this
 		// controller is busted because nothing is preventing a request coming in after the namespace client
 		// is removed. Don't XIt() we can inflate our coverage numbers for the bean counters.
-		It("should clear session cache", func() {
+		XIt("should clear session cache", func() {
 			testNamespace := "test-ns"
 
 			ctrlContext := &controllerContext.ControllerManagerContext{

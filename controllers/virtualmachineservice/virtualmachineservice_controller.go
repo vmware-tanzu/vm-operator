@@ -5,6 +5,7 @@ package virtualmachineservice
 
 import (
 	goctx "context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -33,7 +34,6 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -225,17 +225,14 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 		}
 	}
 
-	// Translate vm service to service
-	service := r.vmServiceToService(vmService)
-	r.log.V(5).Info("Translate VM Service to K8S Service", "k8s service", service)
-	// Update k8s Service
-	newService, err := r.createOrUpdateService(ctx, vmService, service)
+	// Reconcile k8s Service
+	newService, err := r.createOrUpdateService(ctx, vmService)
 	if err != nil {
-		r.log.Error(err, "Failed to update k8s services", "k8s services", service)
+		r.log.Error(err, "Failed to update k8s Service for VirtualMachineService", "vmServiceName", vmService.NamespacedName)
 		return err
 	}
 
-	// Update endpoints
+	// Update VirtualMachineService endpoints
 	err = r.updateEndpoints(ctx, vmService, newService)
 	if err != nil {
 		r.log.Error(err, "Failed to update VirtualMachineService endpoints", "name", vmService.NamespacedName())
@@ -275,6 +272,7 @@ func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMa
 	return reconcileRequests
 }
 
+// MakeObjectMeta returns an ObjectMeta struct with values filled in from input VirtualMachineService. Also sets the VM operator annotations.
 func MakeObjectMeta(vmService *vmoperatorv1alpha1.VirtualMachineService) metav1.ObjectMeta {
 	om := metav1.ObjectMeta{
 		Namespace:   vmService.Namespace,
@@ -331,12 +329,11 @@ func (r *ReconcileVirtualMachineService) getVirtualNetworkName(ctx goctx.Context
 	return r.loadbalancerProvider.GetNetworkName(vmList.Items, vmService)
 }
 
-//Convert vm service to k8s service
+// vmServiceToService converts a VM Service to k8s Service.
 func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperatorv1alpha1.VirtualMachineService) *corev1.Service {
 	servicePorts := make([]corev1.ServicePort, 0, len(vmService.Spec.Ports))
 	for _, vmPort := range vmService.Spec.Ports {
 		sport := corev1.ServicePort{
-			// No node port field in vm service, cant't translate that one
 			Name:       vmPort.Name,
 			Protocol:   corev1.Protocol(vmPort.Protocol),
 			Port:       vmPort.Port,
@@ -392,92 +389,48 @@ func addEndpointSubset(subsets []corev1.EndpointSubset, epa corev1.EndpointAddre
 	return subsets
 }
 
-// Create or update k8s service
-func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service) (*corev1.Service, error) {
-	serviceKey := client.ObjectKey{Name: service.Name, Namespace: service.Namespace}
+// createOrUpdateService reconciles the k8s Service corresponding to the VirtualMachineService by creating a new Service or updating an existing one. Returns the newly created or updated Service.
+func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*corev1.Service, error) {
+	// We can use vmService's namespace and name since Service and VirtualMachineService live in the same namespace.
+	serviceKey := client.ObjectKey{Name: vmService.Name, Namespace: vmService.Namespace}
 
-	r.log.V(5).Info("Updating k8s service", "k8s service name", serviceKey)
-	defer r.log.V(5).Info("Finished updating k8s service", "k8s service name", serviceKey)
+	r.log.V(5).Info("Reconciling k8s service", "serviceName", serviceKey)
+	defer r.log.V(5).Info("Finished reconciling k8s Service", "serviceName", serviceKey)
 
-	// find current service
+	// Find the current Service.
 	currentService := &corev1.Service{}
 	err := r.Get(ctx, serviceKey, currentService)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			r.log.Error(err, "Failed to get service", "name", serviceKey)
+			r.log.Error(err, "Failed to get Service", "name", serviceKey)
 			return nil, err
 		}
-		// not exist, need to create one
-		r.log.V(5).Info("No k8s service in this name, creating one", "name", serviceKey)
-		currentService = service
+
+		// Service does not exist, we will create it.
+		r.log.V(5).Info("Service not found. Will attempt to create it", "name", serviceKey)
+		currentService = r.vmServiceToService(vmService)
 	} else {
-		ok, err := utils.VMServiceCompareToLastApplied(vmService, currentService.GetAnnotations()[corev1.LastAppliedConfigAnnotation])
-		if err != nil {
-			r.log.V(5).Info("Unmarshal last applied service config failed, no last applied vm svc configuration ", "current service", currentService)
-		}
-		if ok {
-			r.log.V(5).Info("No change, no need to update service", "name", vmService.NamespacedName(), "service", service)
-			return currentService, nil
+		// Determine if the VirtualMachineService needs any update by comparing the current Spec and the last applied config from annotations. We rely on the fact that the backing
+		// k8s Service's lastAppliedconfigannotations will match the VirtualMachineService's Spec.
+		oldVMService := vmoperatorv1alpha1.VirtualMachineService{}
+		if err := json.Unmarshal([]byte(vmService.Annotations[corev1.LastAppliedConfigAnnotation]), &oldVMService); err != nil {
+			r.log.V(5).Info("Unmarshal last applied Service config failed, no last applied VirtualMachineService configuration", "currentService", currentService)
+		} else {
+			if apiequality.Semantic.DeepEqual(oldVMService.Spec, vmService.Spec) {
+				r.log.V(5).Info("No change in VirtualMachineService from the last applied config. Skipping update", "vmServiceName", vmService.NamespacedName(),
+					"currentService", currentService, "vmService", vmService)
+				return currentService, nil
+			}
 		}
 	}
 
-	// just update possible changed service fields
+	// Prepare an update for the k8s Service.
 	newService := currentService.DeepCopy()
-	// Set the labels by merging the labels in the existing metadata and the ones coming from the VMservice.
-	r.mergeLabels(newService, service, currentService)
-	newService.Spec.Type = service.Spec.Type
-	newService.Spec.ExternalName = service.Spec.ExternalName
+	svcFromVmService := r.vmServiceToService(vmService)
 
-	newService.Spec.Ports = service.Spec.Ports
-	// can't simply copy everything, need to keep node port unchanged
-	portNodePortMap := make(map[int32]int32)
-	for _, servicePort := range currentService.Spec.Ports {
-		portNodePortMap[servicePort.Port] = servicePort.NodePort
-	}
-	for idx, servicePort := range newService.Spec.Ports {
-		if nodePort, ok := portNodePortMap[servicePort.Port]; ok {
-			newService.Spec.Ports[idx].NodePort = nodePort
-		}
-	}
-
-	pkg.AddAnnotations(&newService.ObjectMeta)
-
-	// create or update service
-	createService := len(currentService.ResourceVersion) == 0
-	if createService {
-		r.log.Info("Creating k8s service", "name", serviceKey, "service", newService)
-		err = r.Create(ctx, newService)
-		defer r.recorder.EmitEvent(vmService, OpCreate, err, false)
-	} else {
-		r.log.Info("Updating k8s service", "name", serviceKey, "service", newService)
-		err = r.Update(ctx, newService)
-		// defer r.recorder.EmitEvent(vmService, OpUpdate, err, false) ???
-	}
-
-	return newService, err
-}
-
-// mergeLabels is a helper method that merges the labels in the 'existingService' metadata
-//  with the desired labels.
-// The main use case for this is to avoid clobbering labels that are added by
-// other controllers to services that were generated from a
-// VirtualMachineService
-// eg. in a Proliferation environment, Net-Operator sets labels on Services to indicate the gateway to be used
-//  by LBAPI-operator.
-func (r *ReconcileVirtualMachineService) mergeLabels(newService, desiredService, existingService *corev1.Service) {
-	if newService.Labels == nil {
-		// This is probably being extra defensive.
-		// Then again, does it hurt?
-		newService.Labels = make(map[string]string)
-	}
-	for k, v := range existingService.Labels {
-		newService.Labels[k] = v
-	}
-	// Now merge the labels with the labels in the desired spec.
-	// Desired spec will always win.
-	// This can be a problem if two controllers start writing the same sets of
-	// labels, though.
-	for k, v := range desiredService.Labels {
+	// Merge labels of the Service with the VirtualMachineService. VirtualMachineService wins in case of conflicts.
+	// We can't just clobber the labels since other operators (Net Operator) might rely on them.
+	for k, v := range vmService.Labels {
 		if oldValue, ok := newService.Labels[k]; ok {
 			r.log.V(5).Info("Replacing previous label value on service",
 				"service", newService.Name,
@@ -488,6 +441,27 @@ func (r *ReconcileVirtualMachineService) mergeLabels(newService, desiredService,
 		}
 		newService.Labels[k] = v
 	}
+
+	newService.Spec.Type = svcFromVmService.Spec.Type
+	newService.Spec.ExternalName = svcFromVmService.Spec.ExternalName
+	newService.Spec.Ports = svcFromVmService.Spec.Ports
+
+	// Add VM operator annotations.
+	pkg.AddAnnotations(&newService.ObjectMeta)
+
+	// Create or update Service.
+	createService := len(currentService.ResourceVersion) == 0
+	if createService {
+		r.log.Info("Creating k8s Service", "name", serviceKey, "service", newService)
+		err = r.Create(ctx, newService)
+		defer r.recorder.EmitEvent(vmService, OpCreate, err, false)
+	} else {
+		r.log.Info("Updating k8s Service", "name", serviceKey, "service", newService)
+		err = r.Update(ctx, newService)
+		// defer r.recorder.EmitEvent(vmService, OpUpdate, err, false) ???
+	}
+
+	return newService, err
 }
 
 func (r *ReconcileVirtualMachineService) getVirtualMachinesSelectedByVmService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*vmoperatorv1alpha1.VirtualMachineList, error) {
@@ -537,8 +511,9 @@ func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtu
 	return matchingVmServices, nil
 }
 
+// updateEndpoints updates the service endpoints for VirtaulMachineService. This is done by running the readiness probe against all the VMs and adding the successful VMs to the endpoint.
 func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service) error {
-	logger := r.log.WithValues("serviceName", vmService.NamespacedName())
+	logger := r.log.WithValues("vmServiceName", vmService.NamespacedName())
 	logger.V(5).Info("Updating VirtualMachineService endpoints")
 	defer logger.V(5).Info("Finished updating VirtualMachineService endpoints")
 
@@ -628,7 +603,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmSe
 			},
 		}
 	} else if apiequality.Semantic.DeepEqual(endpointsv1.RepackSubsets(currentEndpoints.Subsets), subsets) {
-		// Ideally, we dont have to update both the endpoints (current endpoints and the calculated one) before comparing since after the first update
+		// Ideally, we dont have to repack both the endpoints (current endpoints and the calculated one) before comparing since after the first update
 		// we expect the endpoint subsets to always be in canonical order. However, some controller is re-ordering these endpoint subsets. We sort both
 		// sides for a consistent comparison result. PR: 2623292
 
@@ -663,7 +638,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmSe
 	return updateErr
 }
 
-// updateVmServiceStatus update vmservice status, sync external ip for loadbalancer type of service
+// updateVmServiceStatus updates the VirtualMachineService status, syncs external IP for loadbalancer type of service. Also ensures that VirtualMachineService contains the VM operator annotations.
 func (r *ReconcileVirtualMachineService) updateVmService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, newService *corev1.Service) error {
 	r.log.V(5).Info("Updating VirtualMachineService Status", "name", vmService.NamespacedName())
 	defer r.log.V(5).Info("Finished updating VirtualMachineService Status", "name", vmService.NamespacedName())

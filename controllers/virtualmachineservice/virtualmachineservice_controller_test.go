@@ -18,24 +18,23 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/json"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	// "k8s.io/client-go/tools/record"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
-	// vmrecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 var c client.Client
@@ -43,38 +42,53 @@ var c client.Client
 const timeout = time.Second * 30
 
 var _ = Describe("VirtualMachineService controller", func() {
-	ns := integration.DefaultNamespace
-	// here "name" must be confine the a DNS-1035 style which must consist of lower case alphanumeric characters or '-',
-	// regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')
-	name := "foo-vm"
+	SetDefaultEventuallyTimeout(timeout)
 
 	var (
-		recFn           reconcile.Reconciler
-		requests        chan reconcile.Request
-		reconcileResult chan reconcile.Result
-		reconcileErr    chan error
-		stopMgr         chan struct{}
-		mgrStopped      *sync.WaitGroup
-		mgr             manager.Manager
-		err             error
-		r               *ReconcileVirtualMachineService
+		ctx              context.Context
+		recFn            reconcile.Reconciler
+		requests         chan reconcile.Request
+		reconcileResult  chan reconcile.Result
+		reconcileErr     chan error
+		stopMgr          chan struct{}
+		mgrStopped       *sync.WaitGroup
+		mgr              manager.Manager
+		err              error
+		r                *ReconcileVirtualMachineService
+		serviceNamespace string
 	)
 
 	BeforeEach(func() {
+		serviceNamespace = integration.DefaultNamespace
+
 		ctrlContext := &controllerContext.ControllerManagerContext{
 			Logger: ctrllog.Log.WithName("test"),
 		}
+
 		// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 		// channel when it is finished.
 		syncPeriod := 10 * time.Second
-		mgr, err = manager.New(cfg, manager.Options{SyncPeriod: &syncPeriod, MetricsBindAddress: "0"})
+		mgr, err = manager.New(cfg, manager.Options{
+			SyncPeriod:         &syncPeriod,
+			MetricsBindAddress: "0",
+		})
 		Expect(err).NotTo(HaveOccurred())
-		c = mgr.GetClient()
+
 		r, err = newReconciler(mgr)
 		Expect(err).NotTo(HaveOccurred())
 		recFn, requests, reconcileResult, reconcileErr = integration.SetupTestReconcile(r)
+
 		Expect(add(ctrlContext, mgr, recFn, r)).To(Succeed())
+
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
+
+		// Context for tests to use.
+		ctx = context.TODO()
+
+		// Set up a client for tests to use that will talk to API server directly. We can not use the maanger client here because it talks
+		// to the cache which might take some time to sync after we write objects to it.
+		c, err = client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
+		Expect(err).ShouldNot(HaveOccurred())
 	})
 
 	AfterEach(func() {
@@ -84,48 +98,30 @@ var _ = Describe("VirtualMachineService controller", func() {
 
 	Describe("when creating/deleting a VM Service", func() {
 		It("invoke the reconcile method", func() {
-			port := vmoperatorv1alpha1.VirtualMachineServicePort{
-				Name:       "foo",
-				Protocol:   "TCP",
-				Port:       42,
-				TargetPort: 42,
-			}
-
-			instance := vmoperatorv1alpha1.VirtualMachineService{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
-					Name:      name,
-				},
-				Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-					Type:     "ClusterIP",
-					Ports:    []vmoperatorv1alpha1.VirtualMachineServicePort{port},
-					Selector: map[string]string{"foo": "bar"},
-				},
-			}
-
-			// fakeRecorder := vmrecord.GetRecorder().(*record.FakeRecorder)
+			name := "foo-vmservice"
+			vmService := getVmServiceOfType(name, serviceNamespace, vmoperatorv1alpha1.VirtualMachineServiceTypeClusterIP)
 
 			// Create the VM Service object and expect the Reconcile
-			err := c.Create(context.TODO(), &instance)
+			err := c.Create(ctx, vmService)
 			Expect(err).ShouldNot(HaveOccurred())
-			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: name}}
+			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: serviceNamespace, Name: name}}
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 
 			// Service should have been created with same name
-			serviceKey := client.ObjectKey{Name: instance.Name, Namespace: instance.Namespace}
+			serviceKey := client.ObjectKey{Name: vmService.Name, Namespace: vmService.Namespace}
 			service := corev1.Service{}
 			Eventually(func() error {
-				return c.Get(context.TODO(), serviceKey, &service)
+				return c.Get(ctx, serviceKey, &service)
 			}).Should(Succeed())
 
 			// Delete the VM Service object and expect it to be deleted.
-			err = c.Delete(context.TODO(), &instance)
+			err = c.Delete(ctx, vmService)
 			Expect(err).ShouldNot(HaveOccurred())
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 
 			Eventually(func() bool {
 				vmService := vmoperatorv1alpha1.VirtualMachineService{}
-				err = c.Get(context.TODO(), serviceKey, &vmService)
+				err = c.Get(ctx, serviceKey, &vmService)
 				if errors.IsNotFound(err) {
 					return true
 				}
@@ -133,51 +129,34 @@ var _ = Describe("VirtualMachineService controller", func() {
 					GinkgoWriter.Write([]byte(fmt.Sprintf("Unexpected error: %#v\n", err)))
 				}
 				return false
-			}, 3*timeout).Should(BeTrue())
-
-			// Expect the Service to be deleted too but not yet. In this testenv framework, the kube-controller is
-			// not running so this won't be garbage collected.
-			// err = c.Get(context.TODO(), serviceKey, &service)
-			// Expect(errors.IsNotFound(err)).Should(BeTrue())
-
-			/*
-				Eventually(func() bool {
-					reasonMap := vmrecord.ReadEvents(fakeRecorder)
-					if (len(reasonMap) != 2) || (reasonMap[vmrecord.Success+OpCreate] != 1) ||
-						(reasonMap[vmrecord.Success+OpDelete] != 1) {
-						GinkgoWriter.Write([]byte(fmt.Sprintf("reasonMap =  %v", reasonMap)))
-						return false
-					}
-					return true
-				}, timeout).Should(BeTrue())
-			*/
+			}).Should(BeTrue())
 		})
 	})
 
-	Describe("When vmservice selector matches virtual machines with no IP", func() {
+	Describe("When VirtualMachineService selector matches virtual machines with no IP", func() {
 		var (
 			vm1       vmoperatorv1alpha1.VirtualMachine
 			vm2       vmoperatorv1alpha1.VirtualMachine
 			vmService vmoperatorv1alpha1.VirtualMachineService
 		)
 		BeforeEach(func() {
-			vm1 = getTestVirtualMachine(ns, "dummy-vm-with-no-ip-1")
-			vm2 = getTestVirtualMachine(ns, "dummy-vm-with-no-ip-2")
-			vmService = getTestVMService(ns, "dummy-vm-service-no-ip")
-			createObjects(context.TODO(), c, []runtime.Object{&vm1, &vm2, &vmService})
-			// Wait for the reconciliation to happen before asserting
-			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmService.Name}}
+			// Create dummy VMs and rely on the the fact that they will not get an IP since there is no VM controller to reconcile the VMs.
+			vm1 = getTestVirtualMachine(serviceNamespace, "dummy-vm-with-no-ip-1")
+			vm2 = getTestVirtualMachine(serviceNamespace, "dummy-vm-with-no-ip-2")
+			vmService = getTestVMService(serviceNamespace, "dummy-vm-service-no-ip")
+			createObjects(ctx, c, []runtime.Object{&vm1, &vm2, &vmService})
+			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: serviceNamespace, Name: vmService.Name}}
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 		})
-		It("Should create service and endpoints with no subsets", func() {
-			assertServiceWithNoEndpointSubsets(context.TODO(), c, vmService.Namespace, vmService.Name)
+		It("Should create Service and Endpoints with no subsets", func() {
+			assertServiceWithNoEndpointSubsets(ctx, c, vmService.Namespace, vmService.Name)
 		})
 		AfterEach(func() {
-			deleteObjects(context.TODO(), c, []runtime.Object{&vm1, &vm2, &vmService})
+			deleteObjects(ctx, c, []runtime.Object{&vm1, &vm2, &vmService})
 		})
 	})
 
-	Describe("When vmservice selector matches virtual machines with no probe", func() {
+	Describe("When VirtualMachineService selector matches virtual machines with no probe", func() {
 		var (
 			vm1       vmoperatorv1alpha1.VirtualMachine
 			vm2       vmoperatorv1alpha1.VirtualMachine
@@ -185,34 +164,37 @@ var _ = Describe("VirtualMachineService controller", func() {
 		)
 		BeforeEach(func() {
 			label := map[string]string{"no-probe": "true"}
-			vm1 = getTestVirtualMachineWithLabels(ns, "dummy-vm-with-no-probe-1", label)
-			vm2 = getTestVirtualMachineWithLabels(ns, "dummy-vm-with-no-probe-2", label)
-			vmService = getTestVMServiceWithSelector(ns, "dummy-vm-service-no-probe", label)
-			createObjects(context.TODO(), c, []runtime.Object{&vm1, &vm2, &vmService})
+			vm1 = getTestVirtualMachineWithLabels(serviceNamespace, "dummy-vm-with-no-probe-1", label)
+			vm2 = getTestVirtualMachineWithLabels(serviceNamespace, "dummy-vm-with-no-probe-2", label)
+			vmService = getTestVMServiceWithSelector(serviceNamespace, "dummy-vm-service-no-probe", label)
+			createObjects(ctx, c, []runtime.Object{&vm1, &vm2, &vmService})
+
 			// Since Status is a sub-resource, we need to update the status separately.
 			vm1.Status.VmIp = "192.168.1.100"
 			vm1.Status.Host = "10.0.0.100"
 			vm2.Status.VmIp = "192.168.1.200"
 			vm2.Status.Host = "10.0.0.200"
-			updateObjectsStatus(context.TODO(), c, []runtime.Object{&vm1, &vm2})
-			// Wait for the reconciliation to happen before asserting
-			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmService.Name}}
+			updateObjectsStatus(ctx, c, []runtime.Object{&vm1, &vm2})
+
+			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: serviceNamespace, Name: vmService.Name}}
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 		})
-		It("Should create service and endpoints with subsets", func() {
-			subsets := assertServiceWithEndpointSubsets(context.TODO(), c, vmService.Namespace, vmService.Name)
+
+		It("Should create Service and Endpoints with subsets", func() {
+			subsets := assertServiceWithEndpointSubsets(ctx, c, vmService.Namespace, vmService.Name)
 			if subsets[0].Addresses[0].IP == vm1.Status.VmIp {
 				Expect(subsets[0].Addresses[1].IP).To(Equal(vm2.Status.VmIp))
 			} else {
 				Expect(subsets[0].Addresses[0].IP).To(Equal(vm1.Status.VmIp))
 			}
 		})
+
 		AfterEach(func() {
-			deleteObjects(context.TODO(), c, []runtime.Object{&vm1, &vm2, &vmService})
+			deleteObjects(ctx, c, []runtime.Object{&vm1, &vm2, &vmService})
 		})
 	})
 
-	Describe("When vmservice selector matches virtual machines with probe", func() {
+	Describe("When VirtualMachineService selector matches virtual machines with probe", func() {
 		var (
 			successVM  vmoperatorv1alpha1.VirtualMachine
 			failedVM   vmoperatorv1alpha1.VirtualMachine
@@ -226,28 +208,28 @@ var _ = Describe("VirtualMachineService controller", func() {
 			testServer, testHost, testPort = setupTestServer()
 			// Setup two VM's one that will pass the readiness probe and one that will fail
 			label := map[string]string{"with-probe": "true"}
-			successVM = getTestVirtualMachineWithProbe(ns, "dummy-vm-with-success-probe", label, testPort)
-			failedVM = getTestVirtualMachineWithProbe(ns, "dummy-vm-with-failure-probe", label, 10001)
-			vmService = getTestVMServiceWithSelector(ns, "dummy-vm-service-with-probe", label)
-			createObjects(context.TODO(), c, []runtime.Object{&successVM, &failedVM, &vmService})
+			successVM = getTestVirtualMachineWithProbe(serviceNamespace, "dummy-vm-with-success-probe", label, testPort)
+			failedVM = getTestVirtualMachineWithProbe(serviceNamespace, "dummy-vm-with-failure-probe", label, 10001)
+			vmService = getTestVMServiceWithSelector(serviceNamespace, "dummy-vm-service-with-probe", label)
+			createObjects(ctx, c, []runtime.Object{&successVM, &failedVM, &vmService})
 			// Since Status is a sub-resource, we need to update the status separately.
 			successVM.Status.VmIp = testHost
 			successVM.Status.Host = "10.0.0.100"
 			failedVM.Status.VmIp = "192.168.1.200"
 			failedVM.Status.Host = "10.0.0.200"
-			updateObjectsStatus(context.TODO(), c, []runtime.Object{&successVM, &failedVM})
+			updateObjectsStatus(ctx, c, []runtime.Object{&successVM, &failedVM})
 
 			// Wait for the reconciliation to happen before asserting
-			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmService.Name}}
+			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: serviceNamespace, Name: vmService.Name}}
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 		})
-		It("Should create service and endpoints with VM's that pass the probe", func() {
+		It("Should create Service and Endpoints with VMs that pass the probe", func() {
 			// Note: Ideally we would expect the successVM with local IP 127.0.0.1 to be part of the endpoint. However,
 			// kubernetes doesn't allow endpoints to have an IP address in the loopback range. As a result,
 			// we end up with an error trying to create the endpoints for the VMService. The fact that we tried to add
 			// an endpoint with the loopback address from the test server asserts that the endpoint passed the
 			// readiness probe.
-			// subsets := assertServiceWithEndpointSubsets(context.TODO(), c, vmService.Namespace, vmService.Name)
+			// subsets := assertServiceWithEndpointSubsets(ctx, c, vmService.Namespace, vmService.Name)
 			// Expect(subsets[0].Addresses[0].IP).To(Equal(successVM.Status.VmIp))
 			Eventually(reconcileErr, timeout).Should(Receive(
 				MatchError(fmt.Sprintf("Endpoints \"dummy-vm-service-with-probe\" is invalid: subsets[0].addresses[0].ip: "+
@@ -256,27 +238,27 @@ var _ = Describe("VirtualMachineService controller", func() {
 		})
 		AfterEach(func() {
 			testServer.Close()
-			deleteObjects(context.TODO(), c, []runtime.Object{&successVM, &failedVM, &vmService})
+			deleteObjects(ctx, c, []runtime.Object{&successVM, &failedVM, &vmService})
 		})
 	})
 
-	Describe("When vmservice selector matches VM's and all of them fail probe", func() {
+	Describe("When VirtualMachineService selector matches VM's and all of them fail probe", func() {
 		var (
 			failedVM  vmoperatorv1alpha1.VirtualMachine
 			vmService vmoperatorv1alpha1.VirtualMachineService
 		)
 		BeforeEach(func() {
 			label := map[string]string{"with-probe-requeue": "true"}
-			failedVM = getTestVirtualMachineWithProbe(ns, "dummy-vm-with-failure-probe-requeue", label, 10002)
-			vmService = getTestVMServiceWithSelector(ns, "dummy-vm-service-with-probe-requeue", label)
-			createObjects(context.TODO(), c, []runtime.Object{&failedVM, &vmService})
+			failedVM = getTestVirtualMachineWithProbe(serviceNamespace, "dummy-vm-with-failure-probe-requeue", label, 10002)
+			vmService = getTestVMServiceWithSelector(serviceNamespace, "dummy-vm-service-with-probe-requeue", label)
+			createObjects(ctx, c, []runtime.Object{&failedVM, &vmService})
 			// Since Status is a sub-resource, we need to update the status separately.
 			failedVM.Status.VmIp = "192.168.1.300"
 			failedVM.Status.Host = "10.0.0.300"
-			updateObjectsStatus(context.TODO(), c, []runtime.Object{&failedVM})
+			updateObjectsStatus(ctx, c, []runtime.Object{&failedVM})
 
 			// Wait for the reconciliation to happen before asserting
-			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: vmService.Name}}
+			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: serviceNamespace, Name: vmService.Name}}
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 		})
 		It("Should requeue", func() {
@@ -284,11 +266,11 @@ var _ = Describe("VirtualMachineService controller", func() {
 			Eventually(reconcileResult, timeout).Should(Receive(Equal(expectedResult)))
 		})
 		AfterEach(func() {
-			deleteObjects(context.TODO(), c, []runtime.Object{&failedVM, &vmService})
+			deleteObjects(ctx, c, []runtime.Object{&failedVM, &vmService})
 		})
 	})
 
-	Describe("When vmservice selector matches virtual machines", func() {
+	Describe("When VirtualMachineService selector matches virtual machines", func() {
 		var (
 			vm1       vmoperatorv1alpha1.VirtualMachine
 			vm2       vmoperatorv1alpha1.VirtualMachine
@@ -296,338 +278,202 @@ var _ = Describe("VirtualMachineService controller", func() {
 		)
 		BeforeEach(func() {
 			labels := map[string]string{"vm-match-selector": "true"}
-			vm1 = getTestVirtualMachineWithLabels(ns, "dummy-vm-match-selector-1", labels)
-			vm2 = getTestVirtualMachine(ns, "dummy-vm-match-selector-2")
-			vmService = getTestVMServiceWithSelector(ns, "dummy-vm-service-match-selector", labels)
-			createObjects(context.TODO(), c, []runtime.Object{&vm1, &vm2, &vmService})
+			vm1 = getTestVirtualMachineWithLabels(serviceNamespace, "dummy-vm-match-selector-1", labels)
+			vm2 = getTestVirtualMachine(serviceNamespace, "dummy-vm-match-selector-2")
+			vmService = getTestVMServiceWithSelector(serviceNamespace, "dummy-vm-service-match-selector", labels)
+			createObjects(ctx, c, []runtime.Object{&vm1, &vm2, &vmService})
 		})
-		It("Should use vmservice selector instead of service selector", func() {
+		It("Should use VirtualMachineService selector instead of Service selector", func() {
 			vmList := &vmoperatorv1alpha1.VirtualMachineList{}
 			var err error
 			Eventually(func() int {
-				vmList, err = r.getVirtualMachinesSelectedByVmService(context.TODO(), &vmService)
+				vmList, err = r.getVirtualMachinesSelectedByVmService(ctx, &vmService)
 				Expect(err).ShouldNot(HaveOccurred())
 				return len(vmList.Items)
 			}).Should(BeNumerically("==", 1))
 			Expect(vmList.Items[0].Name).To(Equal(vm1.Name))
 		})
 		AfterEach(func() {
-			deleteObjects(context.TODO(), c, []runtime.Object{&vm1, &vm2, &vmService})
+			deleteObjects(ctx, c, []runtime.Object{&vm1, &vm2, &vmService})
 		})
 	})
 
-	Describe("when update k8s objects", func() {
+	Describe("Reconcile k8s Service", func() {
 		var (
-			port = corev1.ServicePort{
-				Name:     "foo",
-				Protocol: "TCP",
-				Port:     42,
-				TargetPort: intstr.IntOrString{
-					Type:   intstr.Int,
-					IntVal: 8080,
-					StrVal: "",
-				},
-			}
-
-			vmPort = vmoperatorv1alpha1.VirtualMachineServicePort{
-				Name:       "foo",
-				Protocol:   "TCP",
-				Port:       42,
-				TargetPort: 42,
-			}
-
-			service = &corev1.Service{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "Service",
-					APIVersion: "core/v1",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace:   ns,
-					Name:        "dummy-service",
-					Annotations: map[string]string{corev1.LastAppliedConfigAnnotation: `{"apiVersion":"vmoperator.vmware.com/v1alpha1","kind":"VirtualMachineService","metadata":{"annotations":{},"name":"dummy-service","namespace":"default"},"spec":{"ports":[{"name":"foo","port":42,"protocol":"TCP","targetPort":42}],"selector":{"foo":"bar"},"type":"LoadBalancer"}}`},
-				},
-				Spec: corev1.ServiceSpec{
-					Type:  corev1.ServiceTypeLoadBalancer,
-					Ports: []corev1.ServicePort{port},
-				},
-				Status: corev1.ServiceStatus{
-					LoadBalancer: corev1.LoadBalancerStatus{
-						Ingress: []corev1.LoadBalancerIngress{
-							{
-								IP:       "10.0.0.1",
-								Hostname: "TEST",
-							},
-						},
-					},
-				},
-			}
-			vmService = &vmoperatorv1alpha1.VirtualMachineService{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
-					Name:      "dummy-service",
-				},
-				Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-					Type:     vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer,
-					Ports:    []vmoperatorv1alpha1.VirtualMachineServicePort{vmPort},
-					Selector: map[string]string{"foo": "bar"},
-				},
-			}
+			serviceName   string
+			service       *corev1.Service
+			vmServiceName string
+			vmService     *vmoperatorv1alpha1.VirtualMachineService
 		)
 
-		Describe("when update service", func() {
-			It("should update service when it is not the same service", func() {
-				err := c.Create(context.TODO(), service)
-				Expect(err).ShouldNot(HaveOccurred())
-				currentService := &corev1.Service{}
-				Eventually(func() error {
-					return c.Get(context.TODO(), types.NamespacedName{service.Namespace, service.Name}, currentService)
-				}).Should(Succeed())
+		Describe("Create Or Update k8s Service", func() {
+			BeforeEach(func() {
+				serviceName = "dummy-service"
+				service = getService(serviceName, serviceNamespace)
 
-				changedVMService := &vmoperatorv1alpha1.VirtualMachineService{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: ns,
-						Name:      "dummy-service",
-					},
-					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-						Type: vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer,
-						Ports: []vmoperatorv1alpha1.VirtualMachineServicePort{
-							{
-								Name:       "test",
-								Protocol:   "TCP",
-								Port:       80,
-								TargetPort: 80,
-							},
-						},
-						Selector: map[string]string{"foo": "bar"},
-					},
-				}
+				vmServiceName = "dummy-service"
+				vmService = getVmService(vmServiceName, serviceNamespace)
 
-				newService, err := r.createOrUpdateService(context.TODO(), changedVMService, service)
+				err := c.Create(ctx, service)
 				Expect(err).ShouldNot(HaveOccurred())
-				Expect(newService).NotTo(Equal(currentService))
 			})
 
-			It("should not update service when it is the same service", func() {
-				currentService := &corev1.Service{}
-				err = c.Get(context.TODO(), types.NamespacedName{service.Namespace, service.Name}, currentService)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				newService, err := r.createOrUpdateService(context.TODO(), vmService, currentService)
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(newService).To(Equal(currentService))
-			})
-
-			It("should update service for invalid format service annotation", func() {
-				currentService := &corev1.Service{}
-				err = c.Get(context.TODO(), types.NamespacedName{service.Namespace, service.Name}, currentService)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				changedVMService := &vmoperatorv1alpha1.VirtualMachineService{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: ns,
-						Name:      "dummy-service-invalid-format",
-					},
-					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-						Type: vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer,
-						Ports: []vmoperatorv1alpha1.VirtualMachineServicePort{
-							{
-								Name:       "test",
-								Protocol:   "TCP",
-								Port:       80,
-								TargetPort: 80,
-							},
-						},
-						Selector: map[string]string{"foo": "bar"},
-					},
-				}
-				currentService.Annotations[corev1.LastAppliedConfigAnnotation] = `{"d"}`
-
-				newService, err := r.createOrUpdateService(context.TODO(), changedVMService, service)
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(newService).NotTo(Equal(currentService))
-			})
-
-		})
-		Describe("when handling labels while reconciling a VirtualMachineService", func() {
-			var (
-				virtualMachineServiceToReconcile *vmoperatorv1alpha1.VirtualMachineService
-				serviceReconciledFromVMService   *corev1.Service
-				port                             vmoperatorv1alpha1.VirtualMachineServicePort
-				// Labels that exist on the VMService.
-				vmServiceLabels map[string]string
-				// Labels that are expected on the Service.
-				expectedServiceLabels map[string]string
-				testVMServiceName     string
-				testVMServicePort     int32
-			)
-			JustBeforeEach(func() {
-				port = vmoperatorv1alpha1.VirtualMachineServicePort{
-					Name:       "foo",
-					Protocol:   "TCP",
-					Port:       testVMServicePort,
-					TargetPort: testVMServicePort,
-				}
-
-				virtualMachineServiceToReconcile = &vmoperatorv1alpha1.VirtualMachineService{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: ns,
-						Name:      testVMServiceName,
-						Labels:    vmServiceLabels,
-					},
-					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-						Type:     "ClusterIP",
-						Ports:    []vmoperatorv1alpha1.VirtualMachineServicePort{port},
-						Selector: map[string]string{"foo": "bar"},
-					},
-				}
-
-				Expect(c.Create(context.TODO(), virtualMachineServiceToReconcile)).To(Succeed())
-
-				// Make sure the reconcile happened. The 'requests' channel is sent to after a reconcile
-				//  is completed.
-				Eventually(requests, timeout).Should(Receive(Equal(reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name:      virtualMachineServiceToReconcile.Name,
-						Namespace: virtualMachineServiceToReconcile.Namespace}})))
-
-				// Each test gets a handle to the underlying service, so set it up.
-				Eventually(func() error {
-					serviceReconciledFromVMService = &corev1.Service{}
-					return c.Get(context.TODO(), types.NamespacedName{
-						Name:      virtualMachineServiceToReconcile.Name,
-						Namespace: virtualMachineServiceToReconcile.Namespace}, serviceReconciledFromVMService)
-				}, 30*time.Second, 1*time.Second).Should(Succeed(), "Expected service to be created from VirtualMachineService")
-			})
-			JustAfterEach(func() {
-				// Make the assertions about the labels on the service.
-				Eventually(requests, timeout).Should(Receive(Equal(reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name:      virtualMachineServiceToReconcile.Name,
-						Namespace: virtualMachineServiceToReconcile.Namespace}})))
-
-				Eventually(func() map[string]string {
-					reconciledService := &corev1.Service{}
-					err := c.Get(context.TODO(), types.NamespacedName{
-						Name:      virtualMachineServiceToReconcile.Name,
-						Namespace: virtualMachineServiceToReconcile.Namespace}, reconciledService)
-					if err != nil {
-						return nil
-					}
-					return reconciledService.Labels
-				}, 30*time.Second, 2*time.Second).Should(Equal(expectedServiceLabels))
-			})
 			AfterEach(func() {
-				// BMV: The controller is already stopped by now, so this won't actually be deleted (unless
-				// we remove the finalizer now).
-				Expect(c.Delete(context.TODO(), virtualMachineServiceToReconcile)).To(Succeed())
+				err := c.Delete(ctx, service)
+				Expect(err).NotTo(HaveOccurred())
 			})
-			Context("when there are existing labels on the Service, but none on the VMService", func() {
-				BeforeEach(func() {
-					testVMServiceName = "test-vmservice-without-labels"
-					testVMServicePort = 50
-				})
-				It("should preserve existing labels on the Service created from the VMService", func() {
-					// Generate a deep copy to use for patching.
-					newServiceCopy := serviceReconciledFromVMService.DeepCopy()
 
-					// Patch the service with a fake label to simulate what NetOperator does.
-					// Add some fake labels to the 'current' service. They should be preserved
-					// when the createOrUpdate() method returns.
-					testLabelKey := "a.run.tanzu.vmware.com.label.for.lbapi"
-					testLabelValue := "a.label.value"
-					serviceReconciledFromVMService.Labels = make(map[string]string)
-					serviceReconciledFromVMService.Labels[testLabelKey] = testLabelValue
-					serviceReconciledFromVMService.Annotations = make(map[string]string)
+			It("Should update the k8s Service to match with the VirtualMachineService", func() {
+				svc := corev1.Service{}
+				Expect(c.Get(ctx, client.ObjectKey{Namespace: serviceNamespace, Name: serviceName}, &svc)).To(Succeed())
 
-					// Use a patch to add the label. This is how an external controller might behave.
-					Eventually(func() error {
-						patch := client.MergeFrom(newServiceCopy)
-						return c.Patch(context.TODO(), serviceReconciledFromVMService, patch)
-					}, 30*time.Second, 2*time.Second).Should(Succeed(), "Should eventually be able to patch the Service")
+				// Modify the VirtualMachineService, corresponding Service should also be modified.
+				externalName := "someExternalName"
+				vmService.Spec.ExternalName = externalName
 
-					expectedServiceLabels = map[string]string{
-						testLabelKey: testLabelValue,
-					}
+				newService, err := r.createOrUpdateService(ctx, vmService)
+				Expect(err).ShouldNot(HaveOccurred())
 
-					// Wait for two reconcile cycles to validate that the label was not removed.
-					// The second one is just in case the first one happened mid-patch.
-					Eventually(requests, timeout).Should(Receive())
-					Eventually(requests, timeout).Should(Receive())
+				Expect(newService.Spec.ExternalName).To(Equal(externalName))
+			})
 
-					s := &corev1.Service{}
-					err = c.Get(context.TODO(), types.NamespacedName{Name: serviceReconciledFromVMService.Name,
-						Namespace: serviceReconciledFromVMService.Namespace}, s)
-					Expect(err).NotTo(HaveOccurred())
+			It("Should not update the k8s Service if there is no update", func() {
+				currentService := &corev1.Service{}
+				err = c.Get(ctx, types.NamespacedName{service.Namespace, service.Name}, currentService)
+				Expect(err).ShouldNot(HaveOccurred())
 
-					Expect(s.Labels).To(HaveKeyWithValue(testLabelKey, testLabelValue), "Label should never be removed from the Service")
+				newService, err := r.createOrUpdateService(ctx, vmService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				// Expect(apiEquality.Semantic.DeepEqual(newService, currentService)).To(BeTrue())
+				// TypeMeta is not filled in the client go returned struct. Compare Spec and ObjectMeta explicitly.
+				// https://github.com/kubernetes/client-go/issues/308
+				// Expect(newService.ObjectMeta).To(Equal(currentService.ObjectMeta))
+				Eventually(func() bool {
+					svc := corev1.Service{}
+					err = c.Get(ctx, types.NamespacedName{service.Namespace, service.Name}, &svc)
+
+					return err == nil && apiEquality.Semantic.DeepEqual(newService, currentService)
 				})
 			})
-			Context("when both the VirtualMachineService and the Service have labels", func() {
-				BeforeEach(func() {
-					testVMServiceName = "vm-service-with-labels"
-					testVMServicePort = 51
-					vmServiceLabels = map[string]string{"a.vmservice.label": "a.vmservice.label.value"}
-				})
-				It("should merge existing labels on the Service with those on the VMService", func() {
-					// Patch the service with a fake label to simulate what NetOperator does.
-					// Add some fake labels to the 'current' service. They should be preserved
-					// when the createOrUpdate() method returns.
-					testLabelKey := "a.run.tanzu.vmware.com.label.for.lbapi"
-					testLabelValue := "a.label.value"
-					// The regular client.MergeFrom() patch overwrites the existing labels, presumably because it's
-					//  a merge patch. Use a JSON patch to ensure we don't overwrite the existing labels.
-					Eventually(func() error {
-						patchData := []byte(fmt.Sprintf(`[{"op": "add",
-						"path": "/metadata/labels/%s",
-						"value": "%s"}]`, testLabelKey, testLabelValue))
-						patch := client.ConstantPatch(types.JSONPatchType, patchData)
-						return c.Patch(context.TODO(), serviceReconciledFromVMService, patch)
-					}, 30*time.Second, 2*time.Second).Should(Succeed(), "Should eventually be able to patch the Service")
 
-					expectedServiceLabels = map[string]string{
-						testLabelKey:        testLabelValue,
-						"a.vmservice.label": "a.vmservice.label.value",
-					}
+			It("Should update the k8s Service when the last applied config cannot be parsed from the service annotations", func() {
+				currentService := &corev1.Service{}
+				err = c.Get(ctx, types.NamespacedName{service.Namespace, service.Name}, currentService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				// Update the Service with invalid annotations.
+				someAnnotations := `{"d"}`
+				currentService.Annotations = make(map[string]string)
+				currentService.Annotations[corev1.LastAppliedConfigAnnotation] = someAnnotations
+				Expect(c.Update(ctx, currentService)).To(Succeed())
+
+				Eventually(func() bool {
+					svc := corev1.Service{}
+					err := c.Get(ctx, types.NamespacedName{service.Namespace, service.Name}, &svc)
+					return err == nil && svc.Annotations[corev1.LastAppliedConfigAnnotation] == someAnnotations
+				}).Should(BeTrue())
+
+				externalName := "test-externalname"
+				vmService.Spec.ExternalName = externalName
+				newService, err := r.createOrUpdateService(ctx, vmService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				// `createOrUpdateService` should update the service to match with the Service corresponding to the
+				Expect(newService.Spec.ExternalName).Should(Equal(externalName))
+			})
+		})
+
+		Describe("When Service has labels", func() {
+			var (
+				svcLabelKey   string
+				svcLabelValue string
+				serviceName   string
+				service       *corev1.Service
+				vmService     *vmoperatorv1alpha1.VirtualMachineService
+			)
+
+			BeforeEach(func() {
+				serviceName = "dummy-label-service"
+				service = getService(serviceName, serviceNamespace)
+
+				svcLabelKey = "a.run.tanzu.vmware.com.label.for.lbapi"
+				svcLabelValue = "a.label.value"
+				service.Labels = make(map[string]string)
+				service.Labels[svcLabelKey] = svcLabelValue
+				// Clear up the last applied annotations so reconcile does not return early.
+				service.Annotations = make(map[string]string)
+				service.Annotations[corev1.LastAppliedConfigAnnotation] = ""
+
+				err := c.Create(ctx, service)
+				Expect(err).NotTo(HaveOccurred())
+
+				vmService = getVmService(serviceName, serviceNamespace)
+				err = c.Create(ctx, vmService)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			AfterEach(func() {
+				err := c.Delete(ctx, service)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = c.Delete(ctx, vmService)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			Context("When there are existing labels on the Service, but none on the VMService", func() {
+				It("Should preserve existing labels on the Service", func() {
+					newService, err := r.createOrUpdateService(ctx, vmService)
+					Expect(err).ShouldNot(HaveOccurred())
+
+					Expect(newService.Labels).To(HaveLen(1))
+					Expect(newService.Labels).To(HaveKeyWithValue(svcLabelKey, svcLabelValue))
 				})
 			})
+
+			Context("when both the VirtualMachineService and the Service have non-intersecting labels", func() {
+				It("Should have union of labels from Service and VirtualMachineService", func() {
+					// Set label on VirtualMachineService that is non-conflicting with the Service.
+					vmService.Labels = make(map[string]string)
+					labelKey := "non-intersecting-label-key"
+					labelValue := "label-value"
+					vmService.Labels[labelKey] = labelValue
+
+					newService, err := r.createOrUpdateService(ctx, vmService)
+					Expect(err).ShouldNot(HaveOccurred())
+
+					Expect(newService.Labels).To(HaveLen(2))
+					Expect(newService.Labels).To(HaveKeyWithValue(svcLabelKey, svcLabelValue))
+					Expect(newService.Labels).To(HaveKeyWithValue(labelKey, labelValue))
+				})
+			})
+
 			Context("when both the VirtualMachineService and the Service have conflicting labels", func() {
-				BeforeEach(func() {
-					testVMServiceName = "vm-service-conflict-labels"
-					testVMServicePort = 52
-					vmServiceLabels = map[string]string{"a.vmservice.label": "a.vmservice.label.value"}
-				})
-				It("should prefer the label on the VMService", func() {
-					// Patch the service with a fake label to simulate what NetOperator does.
-					// Add some fake labels to the 'current' service. They should be preserved
-					// when the createOrUpdate() method returns.
-					testLabelKey := "a.vmservice.label"
-					testLabelValue := "a.label.value"
-					// The regular client.MergeFrom() patch overwrites the existing labels, presumably because it's
-					//  a merge patch. Use a JSON patch to ensure we don't overwrite the existing labels.
-					Eventually(func() error {
-						patchData := []byte(fmt.Sprintf(`[{"op": "add",
-						"path": "/metadata/labels/%s",
-						"value": "%s"}]`, testLabelKey, testLabelValue))
-						patch := client.ConstantPatch(types.JSONPatchType, patchData)
-						return c.Patch(context.TODO(), serviceReconciledFromVMService, patch)
-					}, 30*time.Second, 2*time.Second).Should(Succeed(), "Should eventually be able to patch the Service")
+				It("Should have union of labels from Service and VirtualMachineService, with VirtualMachineService winning the conflict", func() {
+					// Set label on VirtualMachineService that is non-conflicting with the Service.
+					vmService.Labels = make(map[string]string)
+					labelValue := "label-value"
+					vmService.Labels[svcLabelKey] = labelValue
 
-					expectedServiceLabels = map[string]string{
-						"a.vmservice.label": "a.vmservice.label.value",
-					}
+					newService, err := r.createOrUpdateService(ctx, vmService)
+					Expect(err).ShouldNot(HaveOccurred())
+
+					Expect(newService.Labels).To(HaveLen(1))
+					Expect(newService.Labels).To(HaveKeyWithValue(svcLabelKey, labelValue))
 				})
 			})
 		})
+
 		Describe("UpdateVmStatus", func() {
 			It("Should add VirtualMachineService Status and Annotations if they dont exist", func() {
-				Expect(c.Create(context.TODO(), vmService)).To(Succeed())
-				Expect(r.updateVmService(context.TODO(), vmService, service)).To(Succeed())
+				Expect(c.Create(ctx, vmService)).To(Succeed())
+				Expect(r.updateVmService(ctx, vmService, service)).To(Succeed())
 
 				// Eventually, the VM service should be updated with the LB Ingress IPs and annotations.
 				Eventually(func() bool {
 					vmSvc := &vmoperatorv1alpha1.VirtualMachineService{}
 					vmSvcKey := client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name}
-					Expect(c.Get(context.TODO(), vmSvcKey, vmSvc)).To(Succeed())
+					Expect(c.Get(ctx, vmSvcKey, vmSvc)).To(Succeed())
 
 					vmSvcLBIngress := vmSvc.Status.LoadBalancer.Ingress
 					svcLBIngress := service.Status.LoadBalancer.Ingress
@@ -652,20 +498,43 @@ var _ = Describe("VirtualMachineService controller", func() {
 			})
 		})
 
-		Describe("when update endpoints", func() {
-			It("should update endpoints when it is not the same with exist endpoints", func() {
-				currentEndpoints := &corev1.Endpoints{}
-				err = c.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: integration.DefaultNamespace}, currentEndpoints)
-				Expect(err).ShouldNot(HaveOccurred())
+		Describe("When Updating endpoints", func() {
+			var (
+				serviceName string
+				service     *corev1.Service
+				vmService   *vmoperatorv1alpha1.VirtualMachineService
+			)
 
+			BeforeEach(func() {
+				serviceName = "dummy-endpoints-service"
+				service = getService(serviceName, serviceNamespace)
+				vmService = getVmService(serviceName, serviceNamespace)
+
+				err := c.Create(ctx, service)
+				Expect(err).ShouldNot(HaveOccurred())
+			})
+
+			AfterEach(func() {
+				err := c.Delete(ctx, service)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("should update endpoints when it is not the same with existing endpoints", func() {
+				// We need the VMService becasue the endpoints use the its UID as a OwnerReference
+				Expect(c.Create(ctx, vmService)).To(Succeed())
+
+				currentEndpoints := &corev1.Endpoints{}
+
+				// Dummy Service with updated fields.
+				port := getServicePort("foo", "TCP", 44, 8080)
 				changedService := &corev1.Service{
 					TypeMeta: metav1.TypeMeta{
 						Kind:       "Service",
 						APIVersion: "core/v1",
 					},
 					ObjectMeta: metav1.ObjectMeta{
-						Namespace: integration.DefaultNamespace,
-						Name:      name,
+						Namespace: serviceNamespace,
+						Name:      serviceName,
 						Labels:    map[string]string{"foo": "bar"},
 					},
 					Spec: corev1.ServiceSpec{
@@ -673,37 +542,41 @@ var _ = Describe("VirtualMachineService controller", func() {
 						Ports: []corev1.ServicePort{port},
 					},
 				}
-				err = r.updateEndpoints(context.TODO(), vmService, changedService)
+
+				err = r.updateEndpoints(ctx, vmService, changedService)
 				Expect(err).ShouldNot(HaveOccurred())
 
+				// Wait for the Endpoint to be created.
 				newEndpoints := &corev1.Endpoints{}
-				err = c.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: integration.DefaultNamespace}, currentEndpoints)
-				Expect(err).ShouldNot(HaveOccurred())
+				Eventually(func() error {
+					err := c.Get(ctx, types.NamespacedName{Name: serviceName, Namespace: serviceNamespace}, newEndpoints)
+					return err
+				}).Should(Succeed())
+
 				Expect(currentEndpoints).NotTo(Equal(newEndpoints))
 			})
 
-			It("should not update endpoints when it is the same with exist endpoints", func() {
+			It("should not update endpoints when it is the same with existing endpoints", func() {
 				endpoints := &corev1.Endpoints{
 					ObjectMeta: metav1.ObjectMeta{
-						Namespace: ns,
-						Name:      "dummy-service",
+						Namespace: serviceNamespace,
+						Name:      serviceName,
 					},
 					Subsets: nil,
 				}
-				err = c.Create(context.TODO(), endpoints)
+				err = c.Create(ctx, endpoints)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				currentEndpoints := &corev1.Endpoints{}
-				Eventually(func() error {
-					return c.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, currentEndpoints)
-				}).Should(Succeed())
+				err = c.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, currentEndpoints)
+				Expect(err).NotTo(HaveOccurred())
 
-				err = r.updateEndpoints(context.TODO(), vmService, service)
+				err = r.updateEndpoints(ctx, vmService, service)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				newEndpoints := &corev1.Endpoints{}
 				Eventually(func() error {
-					return c.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, newEndpoints)
+					return c.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, newEndpoints)
 				}).Should(Succeed())
 
 				Expect(currentEndpoints).To(Equal(newEndpoints))
@@ -782,4 +655,95 @@ func setupTestServer() (*httptest.Server, string, int) {
 	portInt, err := strconv.Atoi(port)
 	Expect(err).NotTo(HaveOccurred())
 	return s, host, portInt
+}
+
+func getServicePort(name string, protocol corev1.Protocol, port, targetPort int32) corev1.ServicePort {
+	return corev1.ServicePort{
+		Name:     name,
+		Protocol: protocol,
+		Port:     port,
+		TargetPort: intstr.IntOrString{
+			Type:   intstr.Int,
+			IntVal: targetPort,
+		},
+	}
+}
+
+func getVmServicePort(name, protocol string, port, targetPort int32) vmoperatorv1alpha1.VirtualMachineServicePort {
+	return vmoperatorv1alpha1.VirtualMachineServicePort{
+		Name:       name,
+		Protocol:   protocol,
+		Port:       port,
+		TargetPort: targetPort,
+	}
+}
+
+func getFakeLastAppliedConfiguration(vmService *vmoperatorv1alpha1.VirtualMachineService) string {
+	service, err := json.Marshal(vmService)
+	if err != nil {
+		return ""
+	}
+
+	return string(service)
+}
+
+func getService(name, namespace string) *corev1.Service {
+	// Get ServicePort with dummy values.
+	port := getServicePort("foo", "TCP", 42, 8080)
+
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: corev1.ServiceSpec{
+			Type:  corev1.ServiceTypeLoadBalancer,
+			Ports: []corev1.ServicePort{port},
+		},
+		Status: corev1.ServiceStatus{
+			LoadBalancer: corev1.LoadBalancerStatus{
+				Ingress: []corev1.LoadBalancerIngress{
+					{
+						IP:       "10.0.0.1",
+						Hostname: "TEST",
+					},
+				},
+			},
+		},
+	}
+}
+
+func getVmService(name, namespace string) *vmoperatorv1alpha1.VirtualMachineService {
+	// Get VirtualMachineServicePort with dummy values.
+	vmServicePort := getVmServicePort("foo", "TCP", 42, 42)
+
+	return &vmoperatorv1alpha1.VirtualMachineService{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+			Type:     vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer,
+			Ports:    []vmoperatorv1alpha1.VirtualMachineServicePort{vmServicePort},
+			Selector: map[string]string{"foo": "bar"},
+		},
+	}
+
+}
+
+func getVmServiceOfType(name, namespace string, serviceType vmoperatorv1alpha1.VirtualMachineServiceType) *vmoperatorv1alpha1.VirtualMachineService {
+	// Get VirtualMachineServicePort with dummy values.
+	vmServicePort := getVmServicePort("foo", "TCP", 42, 42)
+
+	return &vmoperatorv1alpha1.VirtualMachineService{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+			Type:     serviceType,
+			Ports:    []vmoperatorv1alpha1.VirtualMachineServicePort{vmServicePort},
+			Selector: map[string]string{"foo": "bar"},
+		},
+	}
 }

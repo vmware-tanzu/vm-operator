@@ -4,6 +4,7 @@
 resources:
 - bases/vmoperator.vmware.com_virtualmachines.yaml
 - bases/vmoperator.vmware.com_virtualmachineclasses.yaml
+- bases/vmoperator.vmware.com_virtualmachineclassbindings.yaml
 - bases/vmoperator.vmware.com_virtualmachinesetresourcepolicies.yaml
 - bases/vmoperator.vmware.com_virtualmachineservices.yaml
 - bases/vmoperator.vmware.com_virtualmachineimages.yaml

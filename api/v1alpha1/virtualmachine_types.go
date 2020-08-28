@@ -48,12 +48,13 @@ type VirtualMachinePort struct {
 }
 
 // VirtualMachineNetworkInterface defines the properties of a network interface to attach to a VirtualMachine
-// instance.  A VirtualMachineNetworkInterface describes network integration configuration that is to be
-// used by the VirtualMachine controller when integrating the VirtualMachine into a VirtualNetwork.  Currently,
-// only integration with NSX-T network integration is supported using this VirtualMachineNetworkInterface structure.
+// instance.  A VirtualMachineNetworkInterface describes network interface configuration that is used by the
+// VirtualMachine controller when integrating the VirtualMachine into a VirtualNetwork.  Currently, only NSX-T
+// and vSphere Distributed Switch (VDS) type network integrations are supported using this VirtualMachineNetworkInterface
+// structure.
 type VirtualMachineNetworkInterface struct {
-	// NetworkType describes the type of VIrtualNetwork that is referenced by the NetworkName.  Currently, the only
-	// supported NetworkType is "nsx-t".
+	// NetworkType describes the type of VirtualNetwork that is referenced by the NetworkName.  Currently, the only
+	// supported NetworkTypes are "nsx-t" and "vsphere-distributed".
 	NetworkType string `json:"networkType,omitempty"`
 
 	// NetworkName describes the name of an existing virtual network that this interface should be added to.  For
@@ -107,14 +108,14 @@ type VirtualMachineVolume struct {
 	// Volumes with PersistentVolumeClaimVolumeSource have their storage policy ID specified in the
 	// PersistentVolume spec.
 	// +optional
-	StoragePolicyID   *string `json:"storagePolicyID,omitempty"`
+	StoragePolicyID *string `json:"storagePolicyID,omitempty"`
 
 	// Storage Policy Based Management (SPBM) profile name.
 	// This currently only applies to volumes with VsphereVolumeSource.
 	// Volumes with PersistentVolumeClaimVolumeSource have their storage policy name specified in the
 	// PersistentVolume spec.
 	// +optional
-	StoragePolicyName   *string `json:"storagePolicyName,omitempty"`
+	StoragePolicyName *string `json:"storagePolicyName,omitempty"`
 
 	// PersistentVolumeClaim represents a reference to a PersistentVolumeClaim in the same namespace. The PersistentVolumeClaim
 	// must match a persistent volume provisioned (either statically or dynamically) by the cluster's CSI provider.
@@ -131,11 +132,11 @@ type VirtualMachineVolume struct {
 type VsphereVolumeSource struct {
 	// A description of the virtual volume's resources and capacity
 	// +optional
-	Capacity        corev1.ResourceList `json:"capacity,omitempty"`
+	Capacity corev1.ResourceList `json:"capacity,omitempty"`
 
 	// Device key of vSphere disk.  Empty deviceKey means it should be created in vSphere.
 	// +optional
-	DeviceKey          *int `json:"deviceKey,omitempty"`
+	DeviceKey *int `json:"deviceKey,omitempty"`
 }
 
 // Probe describes a health check to be performed against a VirtualMachine to determine whether it is

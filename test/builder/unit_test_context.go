@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	clientgorecord "k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -22,6 +23,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/context/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 // UnitTestContext is used for general purpose unit testing.
@@ -48,11 +50,17 @@ func (ctx *UnitTestContext) AfterEach() {
 
 // UnitTestContextForController is used for unit testing controllers.
 type UnitTestContextForController struct {
+	// Client is the k8s client to access resources.
+	Client client.Client
+
 	// context is the context.ControllerManagerContext for being tested.
 	context.ControllerManagerContext
 
 	// reconciler is the reconcile.Reconciler being unit tested.
 	Reconciler reconcile.Reconciler
+
+	// Events is a channel that fake recorder records events to.
+	Events chan string
 }
 
 // UnitTestContextForValidatingWebhook is used for unit testing validating webhooks.
@@ -72,12 +80,21 @@ type UnitTestContextForValidatingWebhook struct {
 // for unit testing controllers.
 func NewUnitTestContextForController(initObjects []runtime.Object) *UnitTestContextForController {
 	fakeClient, scheme := NewFakeClient(initObjects...)
-
+	fakeControllerManagerContext := fake.NewControllerManagerContext(scheme)
+	recorder, events := NewFakeRecorder()
+	fakeControllerManagerContext.Recorder = recorder
 	ctx := &UnitTestContextForController{
-		ControllerManagerContext: *fake.NewControllerManagerContext(fakeClient, scheme),
+		Client:                   fakeClient,
+		ControllerManagerContext: *fakeControllerManagerContext,
+		Events:                   events,
 	}
 
 	return ctx
+}
+
+// AfterEach should be invoked by ginkgo.AfterEach to cleanup
+func (ctx *UnitTestContextForController) AfterEach() {
+	// Nothing yet to do.
 }
 
 // NewUnitTestContextForValidatingWebhook returns a new
@@ -87,8 +104,8 @@ func NewUnitTestContextForValidatingWebhook(
 	obj, oldObj *unstructured.Unstructured,
 	initObjects ...runtime.Object) *UnitTestContextForValidatingWebhook {
 
-	fakeClient, scheme := NewFakeClient(initObjects...)
-	fakeManagerContext := fake.NewControllerManagerContext(fakeClient, scheme)
+	_, scheme := NewFakeClient(initObjects...)
+	fakeManagerContext := fake.NewControllerManagerContext(scheme)
 	fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
 	ctx := &UnitTestContextForValidatingWebhook{
@@ -118,8 +135,8 @@ func NewUnitTestContextForMutatingWebhook(
 	mutator builder.Mutator,
 	obj *unstructured.Unstructured) *UnitTestContextForMutatingWebhook {
 
-	fakeClient, scheme := NewFakeClient()
-	fakeManagerContext := fake.NewControllerManagerContext(fakeClient, scheme)
+	_, scheme := NewFakeClient()
+	fakeManagerContext := fake.NewControllerManagerContext(scheme)
 	fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
 	ctx := &UnitTestContextForMutatingWebhook{
@@ -142,4 +159,10 @@ func NewFakeClient(initObjects ...runtime.Object) (client.Client, *runtime.Schem
 	fakeClient := clientfake.NewFakeClientWithScheme(scheme, initObjects...)
 
 	return fakeClient, scheme
+}
+
+func NewFakeRecorder() (record.Recorder, chan string) {
+	fakeEventRecorder := clientgorecord.NewFakeRecorder(1024)
+	recorder := record.New(fakeEventRecorder)
+	return recorder, fakeEventRecorder.Events
 }

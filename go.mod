@@ -22,8 +22,9 @@ require (
 	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20200828171338-bdcedc88d47d
 	github.com/vmware/govmomi v0.23.0
 	go.uber.org/atomic v1.4.0 // indirect
-	golang.org/x/net v0.0.0-20200520004742-59133d7f0dd7
+	golang.org/x/net v0.0.0-20200822124328-c89045814202
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
+	golang.org/x/tools v0.0.0-20200831203904-5a2aa26beb65 // indirect
 	google.golang.org/grpc v1.27.0
 	google.golang.org/protobuf v1.24.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect

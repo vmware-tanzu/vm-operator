@@ -74,6 +74,10 @@ func (cs *ContentLibraryProvider) RetrieveOvfEnvelopeFromLibraryItem(ctx context
 	restClient := cs.session.Client.RestClient()
 	// download ovf from the library item
 	response, err := clHandler.GenerateDownloadUriForLibraryItem(ctx, restClient, item)
+
+	// GenerateDownloadUriForLibraryItem may return error even in case when DownloadSession
+	// was created successfully. We need to close DownloadSession in this case.
+	defer deleteLibraryItemDownloadSession(restClient, ctx, response.DownloadSessionId)
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +85,6 @@ func (cs *ContentLibraryProvider) RetrieveOvfEnvelopeFromLibraryItem(ctx context
 	if isInvalidResponse(response) {
 		return nil, errors.Errorf("error occurred downloading item %v", item.Name)
 	}
-
-	defer deleteLibraryItemDownloadSession(restClient, ctx, response.DownloadSessionId)
 
 	// Read the file as string once it is prepared for download
 	downloadedFileContent, err := ReadFileFromUrl(ctx, restClient, response.FileUri)
@@ -182,8 +184,10 @@ func (cs *ContentLibraryProvider) CreateLibraryItem(ctx context.Context, library
 	return libMgr.CompleteLibraryItemUpdateSession(ctx, itemUpdateSessionId)
 }
 
+// DownloadUriResponse considered to be not valid if either DownloadSessionId or
+// FileUri are not set
 func isInvalidResponse(response DownloadUriResponse) bool {
-	if response == (DownloadUriResponse{}) || response.DownloadSessionId == "" || response.FileUri == "" {
+	if response.DownloadSessionId == "" || response.FileUri == "" {
 		return true
 	}
 
@@ -196,19 +200,23 @@ func isInvalidResponse(response DownloadUriResponse) bool {
 // 3. prepare the download session and fetch the url to be used for download
 // 4. download the file
 func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(ctx context.Context, c *rest.Client, item *library.Item) (DownloadUriResponse, error) {
+	response := DownloadUriResponse{}
 
 	libMgr := library.NewManager(c)
 
 	// create a download session for the file referred to by item id.
 	session, err := libMgr.CreateLibraryItemDownloadSession(ctx, library.Session{LibraryItemID: item.ID})
 	if err != nil {
-		return DownloadUriResponse{}, err
+		return response, err
 	}
+
+	log.V(4).Info("download session created", libItemId, item.ID, libSessionId, session)
+	response.DownloadSessionId = session
 
 	// list the files available for download in the library item
 	files, err := libMgr.ListLibraryItemDownloadSessionFile(ctx, session)
 	if err != nil {
-		return DownloadUriResponse{}, err
+		return response, err
 	}
 
 	var fileDownloadUri string
@@ -223,11 +231,13 @@ func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(
 		}
 	}
 
-	log.V(4).Info("download session created", libFileName, fileToDownload, libItemId, item.ID, libSessionId, session)
+	if fileToDownload == "" {
+		return response, errors.Errorf("No files with supported deploy type are available for download for %s", item.ID)
+	}
 
 	_, err = libMgr.PrepareLibraryItemDownloadSessionFile(ctx, session, fileToDownload)
 	if err != nil {
-		return DownloadUriResponse{}, err
+		return response, err
 	}
 
 	log.V(4).Info("request posted to prepare file", libFileName, fileToDownload, libSessionId, session)
@@ -269,13 +279,12 @@ func (contentSession ContentDownloadProvider) GenerateDownloadUriForLibraryItem(
 
 	err = RunTaskAtInterval(ctx, delay, work)
 	if err != nil {
-		return DownloadUriResponse{}, err
+		return response, err
 	}
 
-	return DownloadUriResponse{
-		FileUri:           fileDownloadUri,
-		DownloadSessionId: session,
-	}, nil
+	response.FileUri = fileDownloadUri
+
+	return response, nil
 }
 
 // RunTaskAtInterval calls the work function at an period interval until either theTimerTaskResponse returned with
@@ -310,8 +319,9 @@ func ReadFileFromUrl(ctx context.Context, c *rest.Client, fileUri string) (io.Re
 }
 
 func deleteLibraryItemDownloadSession(c *rest.Client, ctx context.Context, sessionId string) {
-	err := library.NewManager(c).DeleteLibraryItemDownloadSession(ctx, sessionId)
-	if err != nil {
-		log.Error(err, "Error occurred when deleting download session", libSessionId, sessionId)
+	if sessionId != "" {
+		if err := library.NewManager(c).DeleteLibraryItemDownloadSession(ctx, sessionId); err != nil {
+			log.Error(err, "Error occurred when deleting download session", libSessionId, sessionId)
+		}
 	}
 }

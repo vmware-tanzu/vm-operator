@@ -35,18 +35,19 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
-const (
-	dummyObjectName     = "dummy-object"
-	dummyNamespace      = "dummy-ns"
-	dummyNsxSwitchId    = "dummy-opaque-network-id"
-	macAddress          = "01-23-45-67-89-AB-CD-EF"
-	interfaceId         = "interface-id"
-	dummyVirtualNetwork = "dummy-virtual-net"
-	vcsimPortGroup      = "dvportgroup-11"
-	vcsimNetworkName    = "DC0_DVPG0"
-)
-
 var _ = Describe("NetworkProvider", func() {
+
+	const (
+		dummyObjectName     = "dummy-object"
+		dummyNamespace      = "dummy-ns"
+		dummyNsxSwitchId    = "dummy-opaque-network-id"
+		macAddress          = "01-23-45-67-89-AB-CD-EF"
+		interfaceId         = "interface-id"
+		dummyVirtualNetwork = "dummy-virtual-net"
+		vcsimPortGroup      = "dvportgroup-11"
+		vcsimNetworkName    = "DC0_DVPG0"
+	)
+
 	var (
 		c      *govmomi.Client
 		finder *find.Finder
@@ -108,8 +109,8 @@ var _ = Describe("NetworkProvider", func() {
 			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 		})
 
-		It("should find VDS", func() {
-			expectedProvider := vsphere.VdsNetworkProvider(nil, nil, nil)
+		It("should find VDS (NetOP)", func() {
+			expectedProvider := vsphere.NetOpNetworkProvider(nil, nil, nil, nil)
 
 			np, err := vsphere.NetworkProviderByType("vsphere-distributed", nil, nil, nil, nil, nil)
 			Expect(err).ToNot(HaveOccurred())
@@ -164,12 +165,12 @@ var _ = Describe("NetworkProvider", func() {
 
 			It("should ignore if vm is nil", func() {
 				_, err := np.CreateVnic(ctx, nil, vmNif)
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 			})
 		})
 	})
 
-	Context("when using VDS network provider", func() {
+	Context("when using NetOP network provider", func() {
 		var (
 			k8sClient ctrlruntime.Client
 			netIf     *netopv1alpha1.NetworkInterface
@@ -177,6 +178,9 @@ var _ = Describe("NetworkProvider", func() {
 		)
 
 		BeforeEach(func() {
+			vmNif.NetworkType = vsphere.VdsNetworkType
+			vm.Spec.NetworkInterfaces[0].NetworkType = vsphere.VdsNetworkType
+
 			netIf = &netopv1alpha1.NetworkInterface{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("%s-%s", vmNif.NetworkName, vm.Name),
@@ -212,7 +216,7 @@ var _ = Describe("NetworkProvider", func() {
 			_ = netopv1alpha1.AddToScheme(scheme)
 
 			k8sClient = clientfake.NewFakeClientWithScheme(scheme, netIf)
-			np = vsphere.VdsNetworkProvider(k8sClient, c.Client, finder)
+			np = vsphere.NetOpNetworkProvider(k8sClient, c.Client, finder, cluster)
 		})
 
 		Context("when creating vnic", func() {
@@ -267,6 +271,74 @@ var _ = Describe("NetworkProvider", func() {
 				Expect(backing).To(BeAssignableToTypeOf(&types.VirtualEthernetCardDistributedVirtualPortBackingInfo{}))
 				backingInfo := backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 				Expect(backingInfo.Port.PortgroupKey).To(Equal(vcsimPortGroup))
+			})
+
+			Context("interface without MAC address", func() {
+				BeforeEach(func() {
+					netIf.Status.MacAddress = ""
+				})
+
+				It("should succeed with generated mac", func() {
+					dev, err := np.CreateVnic(ctx, vm, vmNif)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(dev).NotTo(BeNil())
+
+					nic := dev.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+					Expect(nic).NotTo(BeNil())
+					Expect(nic.ExternalId).To(Equal(interfaceId))
+					Expect(nic.MacAddress).To(BeEmpty())
+					Expect(nic.AddressType).To(Equal(string(types.VirtualEthernetCardMacTypeGenerated)))
+				})
+			})
+
+			Context("with NSX-T NetworkType", func() {
+
+				BeforeEach(func() {
+					vmNif.NetworkType = vsphere.NsxtNetworkType
+					vm.Spec.NetworkInterfaces[0] = *vmNif
+					netIf.Status.NetworkID = dummyNsxSwitchId
+					netIf.Status.IPConfigs = nil
+				})
+
+				Context("should succeed", func() {
+
+					createInterface := func(ctx context.Context, c *vim25.Client) {
+						finder := find.NewFinder(c)
+						cluster, err := finder.DefaultClusterComputeResource(ctx)
+						Expect(err).ToNot(HaveOccurred())
+
+						net, err := finder.Network(ctx, "DC0_DVPG0")
+						Expect(err).ToNot(HaveOccurred())
+						dvpg := simulator.Map.Get(net.Reference()).(*simulator.DistributedVirtualPortgroup)
+						dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
+						dvpg.Config.BackingType = "nsx"
+
+						np = vsphere.NetOpNetworkProvider(k8sClient, c, finder, cluster)
+
+						dev, err := np.CreateVnic(ctx, vm, vmNif)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(dev).NotTo(BeNil())
+
+						nic := dev.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+						Expect(nic).NotTo(BeNil())
+						Expect(nic.ExternalId).To(Equal(interfaceId))
+						Expect(nic.MacAddress).To(Equal(macAddress))
+						Expect(nic.AddressType).To(Equal(string(types.VirtualEthernetCardMacTypeManual)))
+					}
+
+					It("with no provider IP configuration", func() {
+						res := simulator.VPX().Run(func(ctx context.Context, c *vim25.Client) error {
+							createInterface(ctx, c)
+
+							cust, err := np.GetInterfaceGuestCustomization(vm, vmNif)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(cust.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
+
+							return nil
+						})
+						Expect(res).To(BeNil())
+					})
+				})
 			})
 
 			Context("expected guest customization", func() {
@@ -360,7 +432,7 @@ var _ = Describe("NetworkProvider", func() {
 		// This runs after all BeforeEach()
 		JustBeforeEach(func() {
 			_, err := ncpClient.VmwareV1alpha1().VirtualNetworkInterfaces(dummyNamespace).Create(ncpVif)
-			Expect(err).To(BeNil())
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		Context("when creating vnic", func() {
@@ -421,7 +493,7 @@ var _ = Describe("NetworkProvider", func() {
 					Expect(err).ToNot(HaveOccurred())
 
 					net, err := finder.Network(ctx, "DC0_DVPG0")
-					Expect(err).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
 					dvpg := simulator.Map.Get(net.Reference()).(*simulator.DistributedVirtualPortgroup)
 					dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
 					dvpg.Config.BackingType = "nsx"
@@ -495,7 +567,7 @@ var _ = Describe("NetworkProvider", func() {
 				// But this test exercises the path that there is an existing network interface owned by a different VM
 				// and this interface should be updated with the new VM.
 				_, err := np.CreateVnic(ctx, otherVmWithDifferentUid, vmNif)
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 			})
 		})
 	})

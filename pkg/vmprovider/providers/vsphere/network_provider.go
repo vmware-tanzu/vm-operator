@@ -54,11 +54,12 @@ type NetworkProvider interface {
 func NetworkProviderByType(networkType string, k8sClient ctrlruntime.Client, ncpClient ncpclientset.Interface,
 	vimClient *vim25.Client, finder *find.Finder, cluster *object.ClusterComputeResource) (NetworkProvider, error) {
 
+	// TODO Need way to determine to use NetOP for NSXT
 	switch networkType {
 	case NsxtNetworkType:
 		return NsxtNetworkProvider(ncpClient, finder, cluster), nil
 	case VdsNetworkType:
-		return VdsNetworkProvider(k8sClient, vimClient, finder), nil
+		return NetOpNetworkProvider(k8sClient, vimClient, finder, cluster), nil
 	case "":
 		return DefaultNetworkProvider(finder), nil
 	}
@@ -121,19 +122,21 @@ func (np *defaultNetworkProvider) GetInterfaceGuestCustomization(vm *v1alpha1.Vi
 
 // +kubebuilder:rbac:groups=netoperator.vmware.com,resources=networkinterfaces;vmxnet3networkinterfaces,verbs=get;list;watch;create;update;patch;delete
 
-// VdsNetworkProvider returns a vdsNetworkProvider instance
-func VdsNetworkProvider(k8sClient ctrlruntime.Client, vimClient *vim25.Client, finder *find.Finder) *vdsNetworkProvider {
-	return &vdsNetworkProvider{
+// NetOpNetworkProvider returns a netOpNetworkProvider instance
+func NetOpNetworkProvider(k8sClient ctrlruntime.Client, vimClient *vim25.Client, finder *find.Finder, cluster *object.ClusterComputeResource) *netOpNetworkProvider {
+	return &netOpNetworkProvider{
 		k8sClient: k8sClient,
 		vimClient: vimClient,
 		finder:    finder,
+		cluster:   cluster,
 	}
 }
 
-type vdsNetworkProvider struct {
+type netOpNetworkProvider struct {
 	k8sClient ctrlruntime.Client
 	vimClient *vim25.Client
 	finder    *find.Finder
+	cluster   *object.ClusterComputeResource
 }
 
 func netOpEthCardType(_ string) netopv1alpha1.NetworkInterfaceType {
@@ -141,16 +144,16 @@ func netOpEthCardType(_ string) netopv1alpha1.NetworkInterfaceType {
 	return netopv1alpha1.NetworkInterfaceTypeVMXNet3
 }
 
-func (np *vdsNetworkProvider) generateNetIfName(networkName, vmName string) string {
+func (np *netOpNetworkProvider) generateNetIfName(networkName, vmName string) string {
 	// BMV: This is similar to what NSX does but isn't really right: we can only have one
 	// interface per network. Although if we had multiple interfaces per network, we really
 	// don't have a way to identify each NIC so true reconciliation is broken. We might
-	// later be able to use the ExternalId to correctly aassociate interfaces.
+	// later be able to use the ExternalId to correctly associate interfaces.
 	return fmt.Sprintf("%s-%s", networkName, vmName)
 }
 
 // createNetworkInterface creates a netop NetworkInterface for a given VM network interface
-func (np *vdsNetworkProvider) createNetworkInterface(ctx context.Context, vm *v1alpha1.VirtualMachine,
+func (np *netOpNetworkProvider) createNetworkInterface(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmIf *v1alpha1.VirtualMachineNetworkInterface) (*netopv1alpha1.NetworkInterface, error) {
 
 	networkName := vmIf.NetworkName
@@ -206,7 +209,7 @@ func (np *vdsNetworkProvider) createNetworkInterface(ctx context.Context, vm *v1
 	return netIf, nil
 }
 
-func (np *vdsNetworkProvider) networkForPortGroupId(portGroupId string) (object.NetworkReference, error) {
+func (np *netOpNetworkProvider) networkForPortGroupId(portGroupId string) (object.NetworkReference, error) {
 	pgObjRef := vimtypes.ManagedObjectReference{
 		Type:  "DistributedVirtualPortgroup",
 		Value: portGroupId,
@@ -215,7 +218,20 @@ func (np *vdsNetworkProvider) networkForPortGroupId(portGroupId string) (object.
 	return object.NewDistributedVirtualPortgroup(np.vimClient, pgObjRef), nil
 }
 
-func (np *vdsNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (vimtypes.BaseVirtualDevice, error) {
+func (np *netOpNetworkProvider) getNetworkRef(ctx context.Context, networkType, networkID string) (object.NetworkReference, error) {
+	switch networkType {
+	case VdsNetworkType:
+		return np.networkForPortGroupId(networkID)
+	case NsxtNetworkType:
+		return searchNsxtNetworkReference(ctx, np.finder, np.cluster, networkID)
+	default:
+		return nil, fmt.Errorf("unsupported NetOP network type %s", networkType)
+	}
+}
+
+func (np *netOpNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine,
+	vif *v1alpha1.VirtualMachineNetworkInterface) (vimtypes.BaseVirtualDevice, error) {
+
 	netIf, err := np.createNetworkInterface(ctx, vm, vif)
 	if err != nil {
 		return nil, err
@@ -227,7 +243,7 @@ func (np *vdsNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.Virtu
 		return nil, err
 	}
 
-	networkRef, err := np.networkForPortGroupId(netIf.Status.NetworkID)
+	networkRef, err := np.getNetworkRef(ctx, vif.NetworkType, netIf.Status.NetworkID)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +268,7 @@ func (np *vdsNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.Virtu
 	return dev, nil
 }
 
-func (np *vdsNetworkProvider) GetInterfaceGuestCustomization(vm *v1alpha1.VirtualMachine,
+func (np *netOpNetworkProvider) GetInterfaceGuestCustomization(vm *v1alpha1.VirtualMachine,
 	vmIf *v1alpha1.VirtualMachineNetworkInterface) (*vimtypes.CustomizationAdapterMapping, error) {
 
 	netIf, err := np.waitForNetworkInterfaceStatus(context.Background(), vm, vmIf)
@@ -302,7 +318,7 @@ func (np *vdsNetworkProvider) GetInterfaceGuestCustomization(vm *v1alpha1.Virtua
 	}, nil
 }
 
-func (np *vdsNetworkProvider) netIfIsReady(netIf *netopv1alpha1.NetworkInterface) bool {
+func (np *netOpNetworkProvider) netIfIsReady(netIf *netopv1alpha1.NetworkInterface) bool {
 	for _, cond := range netIf.Status.Conditions {
 		if cond.Type == netopv1alpha1.NetworkInterfaceReady {
 			return cond.Status == corev1.ConditionTrue
@@ -311,7 +327,7 @@ func (np *vdsNetworkProvider) netIfIsReady(netIf *netopv1alpha1.NetworkInterface
 	return false
 }
 
-func (np *vdsNetworkProvider) waitForNetworkInterfaceStatus(ctx context.Context, vm *v1alpha1.VirtualMachine,
+func (np *netOpNetworkProvider) waitForNetworkInterfaceStatus(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmIf *v1alpha1.VirtualMachineNetworkInterface) (*netopv1alpha1.NetworkInterface, error) {
 
 	netIfName := np.generateNetIfName(vmIf.NetworkName, vm.Name)
@@ -354,103 +370,6 @@ func NsxtNetworkProvider(client ncpclientset.Interface, finder *find.Finder, clu
 // GenerateNsxVnetifName generates the vnetif name for the VM
 func (np *nsxtNetworkProvider) GenerateNsxVnetifName(networkName, vmName string) string {
 	return fmt.Sprintf("%s-%s-lsp", networkName, vmName)
-}
-
-// matchOpaqueNetwork takes the network ID, returns whether the opaque network matches the networkID
-func (np *nsxtNetworkProvider) matchOpaqueNetwork(ctx context.Context, network object.NetworkReference, networkID string) bool {
-	obj, ok := network.(*object.OpaqueNetwork)
-	if !ok {
-		return false
-	}
-
-	var net mo.OpaqueNetwork
-	if err := obj.Properties(ctx, obj.Reference(), []string{"summary"}, &net); err != nil {
-		return false
-	}
-
-	summary, _ := net.Summary.(*vimtypes.OpaqueNetworkSummary)
-	return summary.OpaqueNetworkId == networkID
-}
-
-// matchDistributedPortGroup takes the network ID, returns whether the distributed port group matches the networkID
-func (np *nsxtNetworkProvider) matchDistributedPortGroup(ctx context.Context, network object.NetworkReference, networkID string) bool {
-	obj, ok := network.(*object.DistributedVirtualPortgroup)
-	if !ok {
-		return false
-	}
-
-	hostMoIDs, err := getClusterHostMoIDs(ctx, np.cluster)
-	if err != nil {
-		log.Error(err, "Unable to get the list of hosts for cluster")
-		return false
-	}
-
-	var configInfo []vimtypes.ObjectContent
-	err = obj.Properties(ctx, obj.Reference(), []string{"config.logicalSwitchUuid", "host"}, &configInfo)
-	if err != nil {
-		return false
-	}
-
-	if len(configInfo) > 0 {
-		// Check "logicalSwitchUuid" property
-		lsIDMatch := false
-		for _, dynamicProperty := range configInfo[0].PropSet {
-			if dynamicProperty.Name == "config.logicalSwitchUuid" && dynamicProperty.Val == networkID {
-				lsIDMatch = true
-				break
-			}
-		}
-
-		// logicalSwitchUuid did not match
-		if !lsIDMatch {
-			return false
-		}
-
-		foundAllHosts := false
-		for _, dynamicProperty := range configInfo[0].PropSet {
-			// In the case of a single NSX Overlay Transport Zone for all the clusters and DVS's,
-			// multiple DVPGs(associated with different DVS's) will have the same "logicalSwitchUuid".
-			// So matching "logicalSwitchUuid" is necessary condition, but not sufficient.
-			// Checking if the DPVG has all the hosts in the cluster, along with the above would be sufficient
-			if dynamicProperty.Name == "host" {
-				if hosts, ok := dynamicProperty.Val.(vimtypes.ArrayOfManagedObjectReference); ok {
-					foundAllHosts = true
-					dvsHostSet := make(map[string]bool, len(hosts.ManagedObjectReference))
-					for _, dvsHost := range hosts.ManagedObjectReference {
-						dvsHostSet[dvsHost.Value] = true
-					}
-
-					for _, hostMoRef := range hostMoIDs {
-						if _, ok := dvsHostSet[hostMoRef.Value]; !ok {
-							foundAllHosts = false
-							break
-						}
-					}
-				}
-			}
-		}
-
-		// Implicit that lsID Matches at this point
-		return foundAllHosts
-	}
-	return false
-}
-
-// searchNetworkReference takes in nsx-t logical switch UUID and returns the reference of the network
-func (np *nsxtNetworkProvider) searchNetworkReference(ctx context.Context, networkID string) (object.NetworkReference, error) {
-	networks, err := np.finder.NetworkList(ctx, "*")
-	if err != nil {
-		return nil, err
-	}
-	for _, network := range networks {
-		if np.matchDistributedPortGroup(ctx, network, networkID) {
-			return network, nil
-		}
-		if np.matchOpaqueNetwork(ctx, network, networkID) {
-			return network, nil
-		}
-	}
-	return nil, fmt.Errorf("opaque network with ID '%s' not found", networkID)
 }
 
 // setVnetifOwner sets owner reference for vnetif object
@@ -578,7 +497,7 @@ func (np *nsxtNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.Virt
 		return nil, err
 	}
 
-	networkRef, err := np.searchNetworkReference(ctx, vnetif.Status.ProviderStatus.NsxLogicalSwitchID)
+	networkRef, err := searchNsxtNetworkReference(ctx, np.finder, np.cluster, vnetif.Status.ProviderStatus.NsxLogicalSwitchID)
 	if err != nil {
 		log.Error(err, "Failed to search for nsx-t network associated with vnetif", "vnetif", vnetif)
 		return nil, err
@@ -624,6 +543,22 @@ func (np *nsxtNetworkProvider) GetInterfaceGuestCustomization(vm *v1alpha1.Virtu
 	}, nil
 }
 
+// matchOpaqueNetwork takes the network ID, returns whether the opaque network matches the networkID
+func matchOpaqueNetwork(ctx context.Context, network object.NetworkReference, networkID string) bool {
+	obj, ok := network.(*object.OpaqueNetwork)
+	if !ok {
+		return false
+	}
+
+	var opaqueNet mo.OpaqueNetwork
+	if err := obj.Properties(ctx, obj.Reference(), []string{"summary"}, &opaqueNet); err != nil {
+		return false
+	}
+
+	summary, _ := opaqueNet.Summary.(*vimtypes.OpaqueNetworkSummary)
+	return summary.OpaqueNetworkId == networkID
+}
+
 // Get Host MoIDs for a cluster
 func getClusterHostMoIDs(ctx context.Context, cluster *object.ClusterComputeResource) ([]vimtypes.ManagedObjectReference, error) {
 	var computeResource mo.ComputeResource
@@ -636,4 +571,85 @@ func getClusterHostMoIDs(ctx context.Context, cluster *object.ClusterComputeReso
 		return nil, err
 	}
 	return computeResource.Host, nil
+}
+
+// matchDistributedPortGroup takes the network ID, returns whether the distributed port group matches the networkID
+func matchDistributedPortGroup(ctx context.Context, cluster *object.ClusterComputeResource, network object.NetworkReference, networkID string) bool {
+	obj, ok := network.(*object.DistributedVirtualPortgroup)
+	if !ok {
+		return false
+	}
+
+	hostMoIDs, err := getClusterHostMoIDs(ctx, cluster)
+	if err != nil {
+		log.Error(err, "Unable to get the list of hosts for cluster")
+		return false
+	}
+
+	var configInfo []vimtypes.ObjectContent
+	err = obj.Properties(ctx, obj.Reference(), []string{"config.logicalSwitchUuid", "host"}, &configInfo)
+	if err != nil {
+		return false
+	}
+
+	if len(configInfo) > 0 {
+		// Check "logicalSwitchUuid" property
+		lsIDMatch := false
+		for _, dynamicProperty := range configInfo[0].PropSet {
+			if dynamicProperty.Name == "config.logicalSwitchUuid" && dynamicProperty.Val == networkID {
+				lsIDMatch = true
+				break
+			}
+		}
+
+		// logicalSwitchUuid did not match
+		if !lsIDMatch {
+			return false
+		}
+
+		foundAllHosts := false
+		for _, dynamicProperty := range configInfo[0].PropSet {
+			// In the case of a single NSX Overlay Transport Zone for all the clusters and DVS's,
+			// multiple DVPGs(associated with different DVS's) will have the same "logicalSwitchUuid".
+			// So matching "logicalSwitchUuid" is necessary condition, but not sufficient.
+			// Checking if the DPVG has all the hosts in the cluster, along with the above would be sufficient
+			if dynamicProperty.Name == "host" {
+				if hosts, ok := dynamicProperty.Val.(vimtypes.ArrayOfManagedObjectReference); ok {
+					foundAllHosts = true
+					dvsHostSet := make(map[string]bool, len(hosts.ManagedObjectReference))
+					for _, dvsHost := range hosts.ManagedObjectReference {
+						dvsHostSet[dvsHost.Value] = true
+					}
+
+					for _, hostMoRef := range hostMoIDs {
+						if _, ok := dvsHostSet[hostMoRef.Value]; !ok {
+							foundAllHosts = false
+							break
+						}
+					}
+				}
+			}
+		}
+
+		// Implicit that lsID Matches at this point
+		return foundAllHosts
+	}
+	return false
+}
+
+// searchNsxtNetworkReference takes in nsx-t logical switch UUID and returns the reference of the network
+func searchNsxtNetworkReference(ctx context.Context, finder *find.Finder, cluster *object.ClusterComputeResource, networkID string) (object.NetworkReference, error) {
+	networks, err := finder.NetworkList(ctx, "*")
+	if err != nil {
+		return nil, err
+	}
+	for _, network := range networks {
+		if matchDistributedPortGroup(ctx, cluster, network, networkID) {
+			return network, nil
+		}
+		if matchOpaqueNetwork(ctx, network, networkID) {
+			return network, nil
+		}
+	}
+	return nil, fmt.Errorf("opaque network with ID '%s' not found", networkID)
 }

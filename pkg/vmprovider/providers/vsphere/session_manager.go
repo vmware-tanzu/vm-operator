@@ -36,8 +36,11 @@ func NewSessionManager(ncpClient ncpclientset.Interface, k8sClient ctrlruntime.C
 }
 
 func (sm *SessionManager) getClient(context context.Context, config *VSphereVmProviderConfig) (*Client, error) {
-	if sm.client != nil {
-		return sm.client, nil
+	sm.mutex.Lock()
+	client := sm.client
+	sm.mutex.Unlock()
+	if client != nil {
+		return client, nil
 	}
 
 	client, err := NewClient(context, config)
@@ -45,7 +48,15 @@ func (sm *SessionManager) getClient(context context.Context, config *VSphereVmPr
 		return nil, err
 	}
 
-	sm.client = client
+	sm.mutex.Lock()
+	if sm.client == nil {
+		sm.client = client
+		client = nil
+	}
+	sm.mutex.Unlock()
+	if client != nil {
+		client.Logout(context)
+	}
 
 	return sm.client, nil
 }

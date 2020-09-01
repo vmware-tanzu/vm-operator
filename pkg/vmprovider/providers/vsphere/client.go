@@ -37,6 +37,7 @@ func SoapKeepAliveHandlerFn(sc *soap.Client, sm *session.Manager, userInfo *url.
 	return func() error {
 		ctx := context.Background()
 		if _, err := methods.GetCurrentTime(ctx, sc); err != nil && isNotAuthenticatedError(err) {
+			log.Info("Re-authenticating vim client")
 			if err = sm.Login(ctx, userInfo); err != nil {
 				if isInvalidLogin(err) {
 					log.Error(err, "Invalid login in keepalive handler", "url", sc.URL())
@@ -59,6 +60,7 @@ func RestKeepAliveHandlerFn(c *rest.Client, userInfo *url.Userinfo) func() error
 		ctx := context.Background()
 		if sess, err := c.Session(ctx); err == nil && sess == nil {
 			// session is Unauthorized.
+			log.Info("Re-authenticating REST client")
 			if err = c.Login(ctx, userInfo); err != nil {
 				log.Error(err, "Invalid login in keep alive handler", "url", c.URL())
 				return err
@@ -73,6 +75,7 @@ func RestKeepAliveHandlerFn(c *rest.Client, userInfo *url.Userinfo) func() error
 
 // newRestClient creates a rest client which is configured to use a custom keepalive handler function.
 func newRestClient(ctx context.Context, vimClient *vim25.Client, config *VSphereVmProviderConfig) (*rest.Client, error) {
+	log.Info("Creating new REST Client", "VcPNID", config.VcPNID, "VcPort", config.VcPort)
 	restClient := rest.NewClient(vimClient)
 
 	userInfo := url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
@@ -90,6 +93,7 @@ func newRestClient(ctx context.Context, vimClient *vim25.Client, config *VSphere
 
 // newVimClient creates a new vim25 client which is configured to use a custom keepalive handler function.
 func newVimClient(ctx context.Context, config *VSphereVmProviderConfig) (*vim25.Client, *session.Manager, error) {
+	log.Info("Creating new vim Client", "VcPNID", config.VcPNID, "VcPort", config.VcPort)
 	soapURL, err := soap.ParseURL(net.JoinHostPort(config.VcPNID, config.VcPort))
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to parse %s:%s", config.VcPNID, config.VcPort)
@@ -170,13 +174,13 @@ func (c *Client) RestClient() *rest.Client {
 }
 
 func (c *Client) Logout(ctx context.Context) {
+	clientURL := c.vimClient.URL()
+	log.Info("vsphere client logging out from", "VC", clientURL.Host)
 	if err := c.sessionManager.Logout(ctx); err != nil {
-		clientURL := c.vimClient.URL()
 		log.Error(err, "Error logging out the vim25 session", "username", clientURL.User.Username(), "host", clientURL.Host)
 	}
 
 	if err := c.restClient.Logout(ctx); err != nil {
-		clientURL := c.restClient.URL()
 		log.Error(err, "Error logging out the rest session", "username", clientURL.User.Username(), "host", clientURL.Host)
 	}
 }

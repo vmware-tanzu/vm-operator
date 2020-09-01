@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"reflect"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -175,8 +177,23 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 		} else if volume.PersistentVolumeClaim != nil && volume.PersistentVolumeClaim.ClaimName == "" {
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, i))
 		}
+
+		if volume.VsphereVolume != nil {
+			validationErrs = append(validationErrs, v.validateVsphereVolume(ctx, volume.VsphereVolume, i)...)
+		}
 	}
 
+	return validationErrs
+}
+
+func (v validator) validateVsphereVolume(ctx *context.WebhookRequestContext, vsphereVolume *vmopv1.VsphereVolumeSource, specVolIndex int) []string {
+	var validationErrs []string
+	if vsphereVolume != nil {
+		// Validate that the desired size is a multiple of a megabyte
+		if _, mbMultiple := vsphereVolume.Capacity.StorageEphemeral().AsScale(resource.Mega); !mbMultiple {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, specVolIndex))
+		}
+	}
 	return validationErrs
 }
 

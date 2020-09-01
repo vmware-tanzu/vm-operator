@@ -16,4 +16,5 @@ const (
 	MetadataTransportConfigMapNotSpecified   = "spec.vmmetadata.configmapname must be specified"
 	MultipleVolumeSpecifiedFmt               = "only one of spec.volumes[%d].persistentVolumeClaim/spec.volumes[%d].vsphereVolume must be specified"
 	VolumeNotSpecifiedFmt                    = "one of spec.volumes[%d].persistentVolumeClaim/spec.volumes[%d].vsphereVolume must be specified"
+	VsphereVolumeSizeNotMBMultipleFmt        = "spec.volumes[%d].vsphereVolume.capacity.ephemeral-storage must be a multiple of MB"
 )

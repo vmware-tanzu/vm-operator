@@ -49,8 +49,8 @@ func NewReconciler(ctx *context.ControllerManagerContext, mgr manager.Manager) r
 	return &VirtualMachineReconciler{
 		Client:     mgr.GetClient(),
 		Logger:     ctx.Logger.WithName("controllers").WithName(controllerName),
-		recorder:   record.New(mgr.GetEventRecorderFor(controllerNameLong)),
-		vmProvider: ctx.VmProvider,
+		Recorder:   record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		VmProvider: ctx.VmProvider,
 	}
 }
 
@@ -66,8 +66,8 @@ func add(ctx *context.ControllerManagerContext, mgr manager.Manager, r reconcile
 type VirtualMachineReconciler struct {
 	client.Client
 	Logger     logr.Logger
-	recorder   record.Recorder
-	vmProvider vmprovider.VirtualMachineProviderInterface
+	Recorder   record.Recorder
+	VmProvider vmprovider.VirtualMachineProviderInterface
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;create;update;patch;delete
@@ -131,10 +131,10 @@ func requeueDelay(ctx goctx.Context, vm *vmoperatorv1alpha1.VirtualMachine) time
 func (r *VirtualMachineReconciler) deleteVm(ctx *context.VirtualMachineContext) (err error) {
 	vm := ctx.VM
 	defer func() {
-		r.recorder.EmitEvent(vm, "Delete", err, false)
+		r.Recorder.EmitEvent(vm, "Delete", err, false)
 	}()
 
-	err = r.vmProvider.DeleteVirtualMachine(ctx, vm)
+	err = r.VmProvider.DeleteVirtualMachine(ctx, vm)
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
 			r.Logger.Info("To be deleted VirtualMachine was not found", "name", vm.NamespacedName())
@@ -295,7 +295,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 
 		// Make sure that the corresponding entities (RP and Folder) are created on the infra provider before
 		// reconciling the VM. Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy.
-		rpReady, err := r.vmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
+		rpReady, err := r.VmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
 		if err != nil {
 			r.Logger.Error(err, "Failed to check if VirtualMachineSetResourcePolicy exists")
 			return err
@@ -319,8 +319,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 		ResourcePolicy:   resourcePolicy,
 		StorageProfileID: storagePolicyID,
 	}
-
-	exists, err := r.vmProvider.DoesVirtualMachineExist(ctx, vm)
+	exists, err := r.VmProvider.DoesVirtualMachineExist(ctx, vm)
 	if err != nil {
 		r.Logger.Error(err, "Failed to check if VirtualMachine exists from provider", "name", vm.NamespacedName())
 		return err
@@ -335,10 +334,10 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 			}
 		}
 
-		err = r.vmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
+		err = r.VmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 		if err != nil {
 			r.Logger.Error(err, "Provider failed to create VirtualMachine", "name", vm.NamespacedName())
-			r.recorder.EmitEvent(vm, "Create", err, false)
+			r.Recorder.EmitEvent(vm, "Create", err, false)
 			return err
 		}
 	}
@@ -347,10 +346,10 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 
 	pkg.AddAnnotations(&vm.ObjectMeta)
 
-	err = r.vmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
+	err = r.VmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {
 		r.Logger.Error(err, "Provider failed to update VirtualMachine", "name", vm.NamespacedName())
-		r.recorder.EmitEvent(vm, "Update", err, false)
+		r.Recorder.EmitEvent(vm, "Update", err, false)
 		return err
 	}
 

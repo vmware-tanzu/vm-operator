@@ -19,5 +19,5 @@ func TestVirtualMachine(t *testing.T) {
 }
 
 func unitTests() {
-	Describe("Invoking ReconcileNormal", unitTestsReconcileNormal)
+	Describe("Invoking Reconcile", unitTestsReconcile)
 }

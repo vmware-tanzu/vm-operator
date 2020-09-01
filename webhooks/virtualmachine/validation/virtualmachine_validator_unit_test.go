@@ -6,6 +6,8 @@ package validation_test
 import (
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
@@ -60,17 +62,18 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidImageName         bool
-		invalidClassName         bool
-		invalidNetworkName       bool
-		invalidNetworkType       bool
-		invalidVolumeName        bool
-		dupVolumeName            bool
-		invalidVolumeSource      bool
-		multipleVolumeSource     bool
-		invalidPVCName           bool
-		invalidMetadataTransport bool
-		invalidMetadataConfigMap bool
+		invalidImageName           bool
+		invalidClassName           bool
+		invalidNetworkName         bool
+		invalidNetworkType         bool
+		invalidVolumeName          bool
+		dupVolumeName              bool
+		invalidVolumeSource        bool
+		multipleVolumeSource       bool
+		invalidPVCName             bool
+		invalidMetadataTransport   bool
+		invalidMetadataConfigMap   bool
+		invalidVsphereVolumeSource bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -111,6 +114,16 @@ func unitTestsValidateCreate() {
 		if args.invalidMetadataConfigMap {
 			ctx.vm.Spec.VmMetadata.ConfigMapName = ""
 		}
+		if args.invalidVsphereVolumeSource {
+			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
+			deviceKey := 2000
+			ctx.vm.Spec.Volumes[0].VsphereVolume = &vmopv1.VsphereVolumeSource{
+				DeviceKey: &deviceKey,
+				Capacity: map[corev1.ResourceName]resource.Quantity{
+					"ephemeral-storage": resource.MustParse("1Ki"),
+				},
+			}
+		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
@@ -143,6 +156,7 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid volume source spec", createArgs{invalidVolumeSource: true}, false, fmt.Sprintf(messages.VolumeNotSpecifiedFmt, 0, 0), nil),
 		Entry("should deny multiple volume source spec", createArgs{multipleVolumeSource: true}, false, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, 0, 0), nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, 0), nil),
+		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, 0), nil),
 		Entry("should deny invalid vmmetadata transport", createArgs{invalidMetadataTransport: true}, false, messages.MetadataTransportNotSupported, nil),
 		Entry("should deny invalid vmmetadata transport", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
 	)

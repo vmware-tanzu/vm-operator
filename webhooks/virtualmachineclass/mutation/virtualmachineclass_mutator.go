@@ -25,7 +25,7 @@ const (
 	webHookName = "default"
 )
 
-// -kubebuilder:webhook:path=/default-mutate-vmoperator-vmware-com-v1alpha1-virtualmachineclass,mutating=true,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachineclasses,verbs=create;update,versions=v1alpha1,name=default.mutating.virtualmachineclass.vmoperator.vmware.com
+// -kubebuilder:webhook:path=/default-mutate-vmoperator-vmware-com-v1alpha1-virtualmachineclass,mutating=true,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachineclasses,verbs=create;update,versions=v1alpha1,name=default.mutating.virtualmachineclass.vmoperator.vmware.com,sideEffects=None
 // -kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclass,verbs=get;list
 // -kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclass/status,verbs=get
 

@@ -24,6 +24,7 @@ webhooks:
     - UPDATE
     resources:
     - virtualmachines
+  sideEffects: None
 
 ---
 apiVersion: admissionregistration.k8s.io/v1beta1
@@ -50,6 +51,7 @@ webhooks:
     - UPDATE
     resources:
     - virtualmachines
+  sideEffects: None
 - clientConfig:
     caBundle: Cg==
     service:
@@ -68,6 +70,7 @@ webhooks:
     - UPDATE
     resources:
     - virtualmachineclasses
+  sideEffects: None
 - clientConfig:
     caBundle: Cg==
     service:
@@ -86,6 +89,7 @@ webhooks:
     - UPDATE
     resources:
     - virtualmachineservices
+  sideEffects: None
 - clientConfig:
     caBundle: Cg==
     service:
@@ -104,3 +108,4 @@ webhooks:
     - UPDATE
     resources:
     - virtualmachinesetresourcepolicies
+  sideEffects: None

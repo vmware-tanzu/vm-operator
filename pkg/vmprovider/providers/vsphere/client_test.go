@@ -50,20 +50,20 @@ var _ = Describe("keepalive handler", func() {
 	var (
 		sessionIdleTimeout = time.Second / 2
 		keepAliveIdle      = sessionIdleTimeout / 2
-		sessionCheckPause  = 2 * sessionIdleTimeout
+		sessionCheckPause  = 3 * sessionIdleTimeout // Avoid unit test thread waking up before session expires
 		simulatorIdleTime  time.Duration
 	)
 
 	assertSoapSessionValid := func(ctx context.Context, m *session.Manager) {
 		s, err := m.UserSession(ctx)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(s).NotTo(BeNil())
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		ExpectWithOffset(1, s).NotTo(BeNil())
 	}
 
 	assertSoapSessionExpired := func(ctx context.Context, m *session.Manager) {
 		s, err := m.UserSession(ctx)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(s).To(BeNil())
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		ExpectWithOffset(1, s).To(BeNil())
 	}
 
 	BeforeEach(func() {

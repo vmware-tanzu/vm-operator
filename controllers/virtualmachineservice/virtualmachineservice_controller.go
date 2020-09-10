@@ -46,9 +46,9 @@ const (
 
 	finalizerName = "virtualmachineservice.vmoperator.vmware.com"
 
-	OpCreate       = "CreateVMService"
-	OpDelete       = "DeleteVMService"
-	OpUpdate       = "UpdateVMService"
+	OpCreate       = "CreateK8sService"
+	OpDelete       = "DeleteK8sService"
+	OpUpdate       = "UpdateK8sService"
 	ControllerName = "virtualmachineservice-controller"
 
 	defaultConnectTimeout = time.Second * 10

@@ -41,7 +41,8 @@ import (
 )
 
 var DefaultExtraConfig = map[string]string{
-	"disk.enableUUID": "TRUE",
+	"disk.enableUUID":                    "TRUE",
+	"vmware.tools.gosc.ignoretoolscheck": "TRUE",
 }
 
 type Session struct {

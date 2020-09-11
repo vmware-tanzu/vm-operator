@@ -20,6 +20,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass/validation/messages"
 )
@@ -90,7 +91,11 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	validationErrs = append(validationErrs, v.validateAllowedChanges(ctx, vmClass, oldVMClass)...)
+	// If the WCP_VMService FSS is enabled, we allow VirtualMachineClasses edits.
+	if !lib.IsVMServiceFSSEnabled() {
+		validationErrs = append(validationErrs, v.validateAllowedChanges(ctx, vmClass, oldVMClass)...)
+	}
+
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
 

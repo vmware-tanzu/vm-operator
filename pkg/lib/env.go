@@ -30,3 +30,7 @@ func GetVmOpNamespaceFromEnv() (string, error) {
 	}
 	return vmopNamespace, nil
 }
+
+var IsVMServiceFSSEnabled = func() bool {
+	return os.Getenv("FSS_WCP_VMSERVICE") == "true"
+}

@@ -14,6 +14,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -158,6 +159,29 @@ func unitTestsValidateUpdate() {
 	})
 	AfterEach(func() {
 		ctx = nil
+	})
+
+	Context("WCP_VMService FSS is set", func() {
+		var oldVMServiceFSS func() bool
+
+		BeforeEach(func() {
+			oldVMServiceFSS = lib.IsVMServiceFSSEnabled
+
+			lib.IsVMServiceFSSEnabled = func() bool {
+				return true
+			}
+		})
+		AfterEach(func() {
+			lib.IsVMServiceFSSEnabled = oldVMServiceFSS
+		})
+
+		DescribeTable("update table with VMService FSS", validateUpdate,
+			Entry("should allow", updateArgs{}, true, nil, nil),
+			Entry("should allow hw cpu change", updateArgs{changeHwCpu: true}, true, nil, nil),
+			Entry("should allow hw memory change", updateArgs{changeHwMemory: true}, true, nil, nil),
+			Entry("should allow policy cpu change", updateArgs{changeCpu: true}, true, nil, nil),
+			Entry("should allow policy memory change", updateArgs{changeMemory: true}, true, nil, nil),
+		)
 	})
 
 	DescribeTable("update table", validateUpdate,

@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/json"
+	clientgorecord "k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -34,6 +35,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -304,7 +306,14 @@ var _ = Describe("VirtualMachineService controller", func() {
 			service       *corev1.Service
 			vmServiceName string
 			vmService     *vmoperatorv1alpha1.VirtualMachineService
+			recorder      record.Recorder
+			events        chan string
 		)
+
+		BeforeEach(func() {
+			recorder, events = newFakeRecorder()
+			r.recorder = recorder
+		})
 
 		Describe("Create Or Update k8s Service", func() {
 			BeforeEach(func() {
@@ -334,6 +343,9 @@ var _ = Describe("VirtualMachineService controller", func() {
 				newService, err := r.createOrUpdateService(ctx, vmService)
 				Expect(err).ShouldNot(HaveOccurred())
 
+				// Channel should receive an Update event
+				Expect(events).Should(Receive(ContainSubstring(OpUpdate)))
+
 				Expect(newService.Spec.ExternalName).To(Equal(externalName))
 			})
 
@@ -348,6 +360,10 @@ var _ = Describe("VirtualMachineService controller", func() {
 
 				newService, err := r.createOrUpdateService(ctx, vmService)
 				Expect(err).ShouldNot(HaveOccurred())
+
+				// Channel should receive an Update event
+				Expect(events).Should(Receive(ContainSubstring(OpUpdate)))
+
 				Expect(newService.Spec.Ports[0].NodePort).To(Equal(nodePortPreUpdate))
 			})
 
@@ -356,45 +372,45 @@ var _ = Describe("VirtualMachineService controller", func() {
 				err = c.Get(ctx, types.NamespacedName{service.Namespace, service.Name}, currentService)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				newService, err := r.createOrUpdateService(ctx, vmService)
+				_, err := r.createOrUpdateService(ctx, vmService)
 				Expect(err).ShouldNot(HaveOccurred())
+
+				//Channel should not receive an Update event
+				Expect(events).ShouldNot(Receive(ContainSubstring(OpUpdate)))
 
 				// Expect(apiEquality.Semantic.DeepEqual(newService, currentService)).To(BeTrue())
 				// TypeMeta is not filled in the client go returned struct. Compare Spec and ObjectMeta explicitly.
 				// https://github.com/kubernetes/client-go/issues/308
 				// Expect(newService.ObjectMeta).To(Equal(currentService.ObjectMeta))
 				Eventually(func() bool {
-					svc := corev1.Service{}
-					err = c.Get(ctx, types.NamespacedName{service.Namespace, service.Name}, &svc)
+					newService := corev1.Service{}
+					err = c.Get(ctx, types.NamespacedName{service.Namespace, service.Name}, &newService)
 
 					return err == nil && apiEquality.Semantic.DeepEqual(newService, currentService)
 				})
 			})
 
-			It("Should update the k8s Service when the last applied config cannot be parsed from the service annotations", func() {
+			It("Should not update the k8s Service with change in VirtualMachine's selector", func() {
 				currentService := &corev1.Service{}
 				err = c.Get(ctx, types.NamespacedName{service.Namespace, service.Name}, currentService)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				// Update the Service with invalid annotations.
-				someAnnotations := `{"d"}`
-				currentService.Annotations = make(map[string]string)
-				currentService.Annotations[corev1.LastAppliedConfigAnnotation] = someAnnotations
-				Expect(c.Update(ctx, currentService)).To(Succeed())
+				// Modify the VirtualMachineService's selector
+				selector := map[string]string{"bar": "foo"}
+				vmService.Spec.Selector = selector
 
-				Eventually(func() bool {
-					svc := corev1.Service{}
-					err := c.Get(ctx, types.NamespacedName{service.Namespace, service.Name}, &svc)
-					return err == nil && svc.Annotations[corev1.LastAppliedConfigAnnotation] == someAnnotations
-				}).Should(BeTrue())
-
-				externalName := "test-externalname"
-				vmService.Spec.ExternalName = externalName
-				newService, err := r.createOrUpdateService(ctx, vmService)
+				_, err := r.createOrUpdateService(ctx, vmService)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				// `createOrUpdateService` should update the service to match with the Service corresponding to the
-				Expect(newService.Spec.ExternalName).Should(Equal(externalName))
+				//Channel should not receive an Update event
+				Expect(events).ShouldNot(Receive(ContainSubstring(OpUpdate)))
+
+				Eventually(func() bool {
+					newService := corev1.Service{}
+					err = c.Get(ctx, types.NamespacedName{service.Namespace, service.Name}, &newService)
+
+					return err == nil && apiEquality.Semantic.DeepEqual(newService, currentService)
+				})
 			})
 		})
 
@@ -415,9 +431,6 @@ var _ = Describe("VirtualMachineService controller", func() {
 				svcLabelValue = "a.label.value"
 				service.Labels = make(map[string]string)
 				service.Labels[svcLabelKey] = svcLabelValue
-				// Clear up the last applied annotations so reconcile does not return early.
-				service.Annotations = make(map[string]string)
-				service.Annotations[corev1.LastAppliedConfigAnnotation] = ""
 
 				err := c.Create(ctx, service)
 				Expect(err).NotTo(HaveOccurred())
@@ -436,17 +449,20 @@ var _ = Describe("VirtualMachineService controller", func() {
 			})
 
 			Context("When there are existing labels on the Service, but none on the VMService", func() {
-				It("Should preserve existing labels on the Service", func() {
+				It("Should preserve existing labels on the Service and shouldn't update the k8s Service", func() {
 					newService, err := r.createOrUpdateService(ctx, vmService)
 					Expect(err).ShouldNot(HaveOccurred())
 
 					Expect(newService.Labels).To(HaveLen(1))
 					Expect(newService.Labels).To(HaveKeyWithValue(svcLabelKey, svcLabelValue))
+
+					// Channel shouldn't receive an Update event
+					Expect(events).ShouldNot(Receive(ContainSubstring(OpUpdate)))
 				})
 			})
 
 			Context("when both the VirtualMachineService and the Service have non-intersecting labels", func() {
-				It("Should have union of labels from Service and VirtualMachineService", func() {
+				It("Should have union of labels from Service and VirtualMachineService and should update the k8s Service", func() {
 					// Set label on VirtualMachineService that is non-conflicting with the Service.
 					vmService.Labels = make(map[string]string)
 					labelKey := "non-intersecting-label-key"
@@ -459,11 +475,15 @@ var _ = Describe("VirtualMachineService controller", func() {
 					Expect(newService.Labels).To(HaveLen(2))
 					Expect(newService.Labels).To(HaveKeyWithValue(svcLabelKey, svcLabelValue))
 					Expect(newService.Labels).To(HaveKeyWithValue(labelKey, labelValue))
+
+					// Channel should receive an Update event
+					Expect(events).Should(Receive(ContainSubstring(OpUpdate)))
 				})
 			})
 
 			Context("when both the VirtualMachineService and the Service have conflicting labels", func() {
-				It("Should have union of labels from Service and VirtualMachineService, with VirtualMachineService winning the conflict", func() {
+				It("Should have union of labels from Service and VirtualMachineService, with VirtualMachineService " +
+					"winning the conflict and should update the k8s Service", func() {
 					// Set label on VirtualMachineService that is non-conflicting with the Service.
 					vmService.Labels = make(map[string]string)
 					labelValue := "label-value"
@@ -474,6 +494,9 @@ var _ = Describe("VirtualMachineService controller", func() {
 
 					Expect(newService.Labels).To(HaveLen(1))
 					Expect(newService.Labels).To(HaveKeyWithValue(svcLabelKey, labelValue))
+
+					// Channel should receive an Update event
+					Expect(events).Should(Receive(ContainSubstring(OpUpdate)))
 				})
 			})
 		})
@@ -704,12 +727,18 @@ func getFakeLastAppliedConfiguration(vmService *vmoperatorv1alpha1.VirtualMachin
 
 func getService(name, namespace string) *corev1.Service {
 	// Get ServicePort with dummy values.
-	port := getServicePort("foo", "TCP", 42, 8080, 30007)
+	port := getServicePort("foo", "TCP", 42, 42, 30007)
+
+	// Get annotations
+	const VmOperatorVersionKey string = "vmoperator.vmware.com/version"
+	annotations := make(map[string]string)
+	annotations[VmOperatorVersionKey] = "v1"
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      name,
+			Namespace:   namespace,
+			Name:        name,
+			Annotations: annotations,
 		},
 		Spec: corev1.ServiceSpec{
 			Type:  corev1.ServiceTypeLoadBalancer,
@@ -761,4 +790,10 @@ func getVmServiceOfType(name, namespace string, serviceType vmoperatorv1alpha1.V
 			Selector: map[string]string{"foo": "bar"},
 		},
 	}
+}
+
+func newFakeRecorder() (record.Recorder, chan string) {
+	fakeEventRecorder := clientgorecord.NewFakeRecorder(1024)
+	recorder := record.New(fakeEventRecorder)
+	return recorder, fakeEventRecorder.Events
 }

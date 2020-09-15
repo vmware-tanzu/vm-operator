@@ -5,7 +5,6 @@ package virtualmachineservice
 
 import (
 	goctx "context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -202,7 +201,7 @@ func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (r
 
 func (r *ReconcileVirtualMachineService) deleteVmService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (err error) {
 	r.log.Info("Delete VirtualMachineService", "service", vmService)
-	defer r.recorder.EmitEvent(vmService, OpDelete, err, false)
+	r.recorder.EmitEvent(vmService, OpDelete, err, false)
 	return nil
 }
 
@@ -409,37 +408,29 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context
 		// Service does not exist, we will create it.
 		r.log.V(5).Info("Service not found. Will attempt to create it", "name", serviceKey)
 		currentService = r.vmServiceToService(vmService)
-	} else {
-		// Determine if the VirtualMachineService needs any update by comparing the current Spec and the last applied config from annotations. We rely on the fact that the backing
-		// k8s Service's lastAppliedconfigannotations will match the VirtualMachineService's Spec.
-		oldVMService := vmoperatorv1alpha1.VirtualMachineService{}
-		if err := json.Unmarshal([]byte(vmService.Annotations[corev1.LastAppliedConfigAnnotation]), &oldVMService); err != nil {
-			r.log.V(5).Info("Unmarshal last applied Service config failed, no last applied VirtualMachineService configuration", "currentService", currentService)
-		} else {
-			if apiequality.Semantic.DeepEqual(oldVMService.Spec, vmService.Spec) {
-				r.log.V(5).Info("No change in VirtualMachineService from the last applied config. Skipping update", "vmServiceName", vmService.NamespacedName(),
-					"currentService", currentService, "vmService", vmService)
-				return currentService, nil
-			}
-		}
 	}
 
-	// Prepare an update for the k8s Service.
+	// Determine if VirtualMachineService needs any update by comparing current k8s to newService synthesized from
+	// VirtualMachineService
 	newService := currentService.DeepCopy()
 	svcFromVmService := r.vmServiceToService(vmService)
 
 	// Merge labels of the Service with the VirtualMachineService. VirtualMachineService wins in case of conflicts.
 	// We can't just clobber the labels since other operators (Net Operator) might rely on them.
-	for k, v := range vmService.Labels {
-		if oldValue, ok := newService.Labels[k]; ok {
-			r.log.V(5).Info("Replacing previous label value on service",
-				"service", newService.Name,
-				"namespace", newService.Namespace,
-				"key", k,
-				"oldValue", oldValue,
-				"newValue", v)
+	if newService.Labels == nil {
+		newService.Labels = vmService.Labels
+	} else {
+		for k, v := range vmService.Labels {
+			if oldValue, ok := newService.Labels[k]; ok {
+				r.log.V(5).Info("Replacing previous label value on service",
+					"service", newService.Name,
+					"namespace", newService.Namespace,
+					"key", k,
+					"oldValue", oldValue,
+					"newValue", v)
+			}
+			newService.Labels[k] = v
 		}
-		newService.Labels[k] = v
 	}
 
 	newService.Spec.Type = svcFromVmService.Spec.Type
@@ -454,16 +445,19 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context
 	// Add VM operator annotations.
 	pkg.AddAnnotations(&newService.ObjectMeta)
 
-	// Create or update Service.
+	// Create or update or don't update Service.
 	createService := len(currentService.ResourceVersion) == 0
 	if createService {
 		r.log.Info("Creating k8s Service", "name", serviceKey, "service", newService)
 		err = r.Create(ctx, newService)
-		defer r.recorder.EmitEvent(vmService, OpCreate, err, false)
-	} else {
+		r.recorder.EmitEvent(vmService, OpCreate, err, false)
+	} else if !apiequality.Semantic.DeepEqual(currentService, newService) {
 		r.log.Info("Updating k8s Service", "name", serviceKey, "service", newService)
 		err = r.Update(ctx, newService)
-		// defer r.recorder.EmitEvent(vmService, OpUpdate, err, false) ???
+		r.recorder.EmitEvent(vmService, OpUpdate, err, false)
+	} else {
+		r.log.V(5).Info("No need to update current K8s Service. Skipping Update",
+			"vmServiceName", vmService.NamespacedName(), "currentService", currentService, "vmService", vmService)
 	}
 
 	return newService, err

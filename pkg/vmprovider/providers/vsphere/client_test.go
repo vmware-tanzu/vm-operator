@@ -141,7 +141,7 @@ var _ = Describe("keepalive handler", func() {
 						assertSoapSessionValid(ctx, m1)
 
 						// Sleep for time > sessionIdleTimeout
-						time.Sleep(2 * sessionIdleTimeout)
+						time.Sleep(sessionCheckPause)
 
 						// Session should be expired now
 						assertSoapSessionExpired(ctx, m1)
@@ -153,7 +153,7 @@ var _ = Describe("keepalive handler", func() {
 						Expect(m1.Login(ctx, simulator.DefaultLogin)).To(Succeed())
 
 						// Wait for the keepalive handler to get called
-						time.Sleep(2 * sessionIdleTimeout)
+						time.Sleep(sessionCheckPause)
 
 						// Session should be valid since Login starts a new one
 						assertSoapSessionValid(ctx, m1)
@@ -169,7 +169,7 @@ var _ = Describe("keepalive handler", func() {
 						// session expired since it is terminated
 						assertSoapSessionExpired(ctx, m1)
 
-						time.Sleep(2 * sessionIdleTimeout)
+						time.Sleep(sessionCheckPause)
 
 						// keepalive handler must have re-logged in
 						assertSoapSessionValid(ctx, m1)
@@ -192,7 +192,7 @@ var _ = Describe("keepalive handler", func() {
 						assertSoapSessionValid(ctx, m1)
 
 						// Sleep for time > sessionIdleTimeout
-						time.Sleep(2 * sessionIdleTimeout)
+						time.Sleep(sessionCheckPause)
 
 						// Session should be expired now
 						assertSoapSessionExpired(ctx, m1)
@@ -204,7 +204,7 @@ var _ = Describe("keepalive handler", func() {
 						Expect(m1.Login(ctx, simulator.DefaultLogin)).To(Succeed())
 
 						// Wait for the keepalive handler to get called
-						time.Sleep(2 * sessionIdleTimeout)
+						time.Sleep(sessionCheckPause)
 
 						// Session should be valid since Login starts a new one
 						assertSoapSessionValid(ctx, m1)
@@ -221,7 +221,7 @@ var _ = Describe("keepalive handler", func() {
 						assertSoapSessionExpired(ctx, m1)
 
 						// Wait for keepalive handler to be called
-						time.Sleep(2 * sessionIdleTimeout)
+						time.Sleep(sessionCheckPause)
 
 						// keepalive handler should error out, session still invalid
 						assertSoapSessionExpired(ctx, m1)
@@ -254,7 +254,7 @@ var _ = Describe("keepalive handler", func() {
 					assertRestSessionValid(ctx, c)
 
 					// Sleep for time > sessionIdleTimeout
-					time.Sleep(2 * sessionIdleTimeout)
+					time.Sleep(sessionCheckPause)
 
 					// Session should be expired now
 					assertRestSessionExpired(ctx, c)

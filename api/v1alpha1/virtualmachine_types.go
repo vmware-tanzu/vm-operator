@@ -215,6 +215,30 @@ type VirtualMachineSpec struct {
 	// responding to the probe.
 	// +optional
 	ReadinessProbe *Probe `json:"readinessProbe,omitempty"`
+
+	// AdvancedOptions describes a set of optional, advanced options for configuring a VirtualMachine
+	AdvancedOptions *VirtualMachineAdvancedOptions `json:"advancedOptions,omitempty"`
+}
+
+// AdvancedOptions describes a set of optional, advanced options for configuring a VirtualMachine
+type VirtualMachineAdvancedOptions struct {
+	// DefaultProvisioningOptions specifies the provisioning type to be used by default for VirtualMachine volumes exclusively
+	// owned by this VirtualMachine. This does not apply to PersistentVolumeClaim volumes that are created and managed externally.
+	DefaultVolumeProvisioningOptions *VirtualMachineVolumeProvisioningOptions `json:"defaultVolumeProvisioningOptions,omitempty"`
+}
+
+// VirtualMachineVolumeProvisioningOptions specifies the provisioning options for the a VirtualMachineVolume.
+type VirtualMachineVolumeProvisioningOptions struct {
+	// ThinProvisioned specifies whether to use thin provisioning for the VirtualMachineVolume.
+	// This means a sparse (allocate on demand) format with additional space optimizations.
+	ThinProvisioned *bool `json:"thinProvisioned,omitempty"`
+
+	// EagerZeroed specifies whether to use eager zero provisioning for the VirtualMachineVolume.
+	// An eager zeroed thick disk has all space allocated and wiped clean of any previous contents
+	// on the physical media at creation time. Such disks may take longer time during creation
+	// compared to other disk formats.
+	// EagerZeroed is only applicable if ThinProvisioned is false. This is validated by the webhook.
+	EagerZeroed *bool `json:"eagerZeroed,omitempty"`
 }
 
 // VirtualMachineVolumeStatus defines the observed state of a VirtualMachineVolume instance.

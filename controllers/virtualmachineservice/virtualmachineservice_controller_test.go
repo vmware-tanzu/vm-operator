@@ -337,6 +337,20 @@ var _ = Describe("VirtualMachineService controller", func() {
 				Expect(newService.Spec.ExternalName).To(Equal(externalName))
 			})
 
+			It("Should not clobber the nodePort while updating service", func() {
+				svc := corev1.Service{}
+				Expect(c.Get(ctx, client.ObjectKey{Namespace: serviceNamespace, Name: serviceName}, &svc)).To(Succeed())
+				nodePortPreUpdate := svc.Spec.Ports[0].NodePort
+
+				// Modify the VirtualMachineService to trigger an update in backing k8s service.
+				externalName := "someExternalName"
+				vmService.Spec.ExternalName = externalName
+
+				newService, err := r.createOrUpdateService(ctx, vmService)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(newService.Spec.Ports[0].NodePort).To(Equal(nodePortPreUpdate))
+			})
+
 			It("Should not update the k8s Service if there is no update", func() {
 				currentService := &corev1.Service{}
 				err = c.Get(ctx, types.NamespacedName{service.Namespace, service.Name}, currentService)
@@ -526,7 +540,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 				currentEndpoints := &corev1.Endpoints{}
 
 				// Dummy Service with updated fields.
-				port := getServicePort("foo", "TCP", 44, 8080)
+				port := getServicePort("foo", "TCP", 44, 8080, 30007)
 				changedService := &corev1.Service{
 					TypeMeta: metav1.TypeMeta{
 						Kind:       "Service",
@@ -657,7 +671,7 @@ func setupTestServer() (*httptest.Server, string, int) {
 	return s, host, portInt
 }
 
-func getServicePort(name string, protocol corev1.Protocol, port, targetPort int32) corev1.ServicePort {
+func getServicePort(name string, protocol corev1.Protocol, port, targetPort int32, nodePort int32) corev1.ServicePort {
 	return corev1.ServicePort{
 		Name:     name,
 		Protocol: protocol,
@@ -666,6 +680,7 @@ func getServicePort(name string, protocol corev1.Protocol, port, targetPort int3
 			Type:   intstr.Int,
 			IntVal: targetPort,
 		},
+		NodePort:nodePort,
 	}
 }
 
@@ -689,7 +704,7 @@ func getFakeLastAppliedConfiguration(vmService *vmoperatorv1alpha1.VirtualMachin
 
 func getService(name, namespace string) *corev1.Service {
 	// Get ServicePort with dummy values.
-	port := getServicePort("foo", "TCP", 42, 8080)
+	port := getServicePort("foo", "TCP", 42, 8080, 30007)
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{

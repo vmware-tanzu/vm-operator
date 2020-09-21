@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/vapi/library"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,6 +20,7 @@ type SessionManager struct {
 	client    *Client
 	ncpClient ncpclientset.Interface
 	k8sClient ctrlruntime.Client
+	scheme    *runtime.Scheme
 
 	// sessions contains the map of sessions for each namespace.
 	mutex    sync.Mutex
@@ -27,10 +29,11 @@ type SessionManager struct {
 	contentLibrary *library.Library
 }
 
-func NewSessionManager(ncpClient ncpclientset.Interface, k8sClient ctrlruntime.Client) SessionManager {
+func NewSessionManager(ncpClient ncpclientset.Interface, k8sClient ctrlruntime.Client, scheme *runtime.Scheme) SessionManager {
 	return SessionManager{
 		ncpClient: ncpClient,
 		k8sClient: k8sClient,
+		scheme:    scheme,
 		sessions:  make(map[string]*Session),
 	}
 }
@@ -78,7 +81,7 @@ func (sm *SessionManager) createSession(ctx context.Context, namespace string) (
 		return nil, err
 	}
 
-	ses, err := NewSessionAndConfigure(ctx, client, config, sm.ncpClient, sm.k8sClient)
+	ses, err := NewSessionAndConfigure(ctx, client, config, sm.ncpClient, sm.k8sClient, sm.scheme)
 	if err != nil {
 		return nil, err
 	}

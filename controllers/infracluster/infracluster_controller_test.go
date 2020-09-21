@@ -152,7 +152,7 @@ var _ = Describe("InfraClusterProvider controller", func() {
 
 			Eventually(func() bool {
 				return vmProvider.(vsphere.VSphereVmProviderGetSessionHack).IsSessionInCache(testNs.Name)
-			}, timeout)//.Should(BeFalse())
+			}, timeout) //.Should(BeFalse())
 		})
 	})
 

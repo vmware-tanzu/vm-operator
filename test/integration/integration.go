@@ -190,7 +190,7 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 
 	// Register the vSphere provider
 	log.Info("setting up vSphere Provider")
-	vmProvider = vsphere.NewVSphereVmProviderFromClients(ncpClient, k8sClient)
+	vmProvider = vsphere.NewVSphereVmProviderFromClients(ncpClient, k8sClient, scheme.Scheme)
 
 	vcSim := NewVcSimInstance()
 

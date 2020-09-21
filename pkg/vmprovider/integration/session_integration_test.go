@@ -46,7 +46,7 @@ var _ = Describe("Sessions", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		ncpClient = ncpfake.NewSimpleClientset()
-		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, ncpClient, k8sClient)
+		session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, ncpClient, k8sClient, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(ctx, integration.GetContentSourceID())).To(Succeed())
 	})
@@ -356,7 +356,7 @@ var _ = Describe("Sessions", func() {
 				vSphereConfig.Network = "VM Network"
 
 				// Setup new session based on the default network
-				session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
+				session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -722,7 +722,7 @@ var _ = Describe("Sessions", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 		It("Should fail", func() {
-			session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 			Expect(err.Error()).To(MatchRegexp("Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable"))
 		})
 	})
@@ -736,7 +736,7 @@ var _ = Describe("Sessions", func() {
 		)
 
 		JustBeforeEach(func() {
-			session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
+			session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 		})
 
 		Context("with vm metadata and global extraConfig", func() {
@@ -991,7 +991,7 @@ var _ = Describe("Sessions", func() {
 				It("with existing content source, empty datastore and empty profile id", func() {
 					vSphereConfig.Datastore = ""
 
-					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, ""}
@@ -1005,7 +1005,7 @@ var _ = Describe("Sessions", func() {
 				It("with existing content source but mandatory profile id is not set", func() {
 					vSphereConfig.StorageClassRequired = true
 
-					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, ""}
@@ -1019,7 +1019,7 @@ var _ = Describe("Sessions", func() {
 				It("without content source and missing mandatory profile ID", func() {
 					vSphereConfig.StorageClassRequired = true
 
-					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil)
+					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, ""}

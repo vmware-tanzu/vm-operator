@@ -28,6 +28,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/runtime"
 	k8sTypes "k8s.io/apimachinery/pkg/types"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -49,6 +50,7 @@ type Session struct {
 	Client    *Client
 	ncpClient ncpcs.Interface
 	k8sClient ctrlruntime.Client
+	scheme    *runtime.Scheme
 
 	Finder       *find.Finder
 	datacenter   *object.Datacenter
@@ -69,12 +71,13 @@ type Session struct {
 }
 
 func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphereVmProviderConfig,
-	ncpClient ncpcs.Interface, k8sClient ctrlruntime.Client) (*Session, error) {
+	ncpClient ncpcs.Interface, k8sClient ctrlruntime.Client, scheme *runtime.Scheme) (*Session, error) {
 
 	s := &Session{
 		Client:                client,
 		ncpClient:             ncpClient,
 		k8sClient:             k8sClient,
+		scheme:                scheme,
 		storageClassRequired:  config.StorageClassRequired,
 		useInventoryForImages: config.UseInventoryAsContentSource,
 	}
@@ -764,7 +767,7 @@ func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine
 	key := int32(-100)
 	for i := range vm.Spec.NetworkInterfaces {
 		vif := vm.Spec.NetworkInterfaces[i]
-		np, err := NetworkProviderByType(vif.NetworkType, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster)
+		np, err := NetworkProviderByType(vif.NetworkType, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get network provider")
 		}
@@ -1382,7 +1385,7 @@ func (s *Session) GetCustomizationSpec(ctx context.Context, vm *v1alpha1.Virtual
 		for idx := range vm.Spec.NetworkInterfaces {
 			nif := vm.Spec.NetworkInterfaces[idx]
 
-			np, err := NetworkProviderByType(nif.NetworkType, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster)
+			np, err := NetworkProviderByType(nif.NetworkType, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to get network provider")
 			}

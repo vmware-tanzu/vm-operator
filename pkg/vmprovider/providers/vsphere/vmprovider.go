@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
@@ -79,17 +80,17 @@ type vSphereVmProvider struct {
 	sessions SessionManager
 }
 
-func NewVSphereVmProviderFromClients(ncpClient ncpclientset.Interface, client ctrlruntime.Client) vmprovider.VirtualMachineProviderInterface {
+func NewVSphereVmProviderFromClients(ncpClient ncpclientset.Interface, client ctrlruntime.Client, scheme *runtime.Scheme) vmprovider.VirtualMachineProviderInterface {
 	vmProvider := &vSphereVmProvider{
-		sessions: NewSessionManager(ncpClient, client),
+		sessions: NewSessionManager(ncpClient, client, scheme),
 	}
 
 	return vmProvider
 }
 
-func NewVSphereMachineProviderFromRestConfig(cfg *rest.Config, client ctrlruntime.Client) vmprovider.VirtualMachineProviderInterface {
+func NewVSphereMachineProviderFromRestConfig(cfg *rest.Config, client ctrlruntime.Client, scheme *runtime.Scheme) vmprovider.VirtualMachineProviderInterface {
 	ncpClient := ncpclientset.NewForConfigOrDie(cfg)
-	return NewVSphereVmProviderFromClients(ncpClient, client)
+	return NewVSphereVmProviderFromClients(ncpClient, client, scheme)
 }
 
 // VSphereVmProviderGetSessionHack is an interface that exposes helpful functions to access certain resources without polluting the vm provider interface.

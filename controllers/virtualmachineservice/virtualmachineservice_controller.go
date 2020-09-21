@@ -446,6 +446,11 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context
 	newService.Spec.ExternalName = svcFromVmService.Spec.ExternalName
 	newService.Spec.Ports = svcFromVmService.Spec.Ports
 
+	// Maintain the existing mapping of ServicePort -> NodePort
+	// as un-setting it will cause the apiserver to allocate a
+	// new NodePort on an Update.
+	populateNodePorts(currentService, newService)
+
 	// Add VM operator annotations.
 	pkg.AddAnnotations(&newService.ObjectMeta)
 
@@ -730,4 +735,16 @@ func checkConnection(proto, host, port string, timeout time.Duration) error {
 		return err
 	}
 	return nil
+}
+
+func populateNodePorts(oldService *corev1.Service, targetService *corev1.Service) {
+	nodePortMap := map[string]int32{}
+	for _, port := range oldService.Spec.Ports {
+		nodePortMap[port.Name] = port.NodePort
+	}
+	for i := 0; i < len(targetService.Spec.Ports); i++ {
+		if val, ok := nodePortMap[targetService.Spec.Ports[i].Name]; ok {
+			targetService.Spec.Ports[i].NodePort = val
+		}
+	}
 }

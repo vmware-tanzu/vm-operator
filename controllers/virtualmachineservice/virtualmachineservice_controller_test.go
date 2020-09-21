@@ -482,7 +482,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 			})
 
 			Context("when both the VirtualMachineService and the Service have conflicting labels", func() {
-				It("Should have union of labels from Service and VirtualMachineService, with VirtualMachineService " +
+				It("Should have union of labels from Service and VirtualMachineService, with VirtualMachineService "+
 					"winning the conflict and should update the k8s Service", func() {
 					// Set label on VirtualMachineService that is non-conflicting with the Service.
 					vmService.Labels = make(map[string]string)
@@ -703,7 +703,7 @@ func getServicePort(name string, protocol corev1.Protocol, port, targetPort int3
 			Type:   intstr.Int,
 			IntVal: targetPort,
 		},
-		NodePort:nodePort,
+		NodePort: nodePort,
 	}
 }
 

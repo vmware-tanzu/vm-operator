@@ -46,6 +46,8 @@ var _ = Describe("NetworkProvider", func() {
 		dummyVirtualNetwork = "dummy-virtual-net"
 		vcsimPortGroup      = "dvportgroup-11"
 		vcsimNetworkName    = "DC0_DVPG0"
+		dummyNetIfName      = "dummy-netIf-name"
+		doesNotExist        = "does-not-exist"
 	)
 
 	var (
@@ -104,15 +106,15 @@ var _ = Describe("NetworkProvider", func() {
 		It("should find NSX-T", func() {
 			expectedProvider := vsphere.NsxtNetworkProvider(nil, nil, nil)
 
-			np, err := vsphere.NetworkProviderByType("nsx-t", nil, nil, nil, nil, nil)
+			np, err := vsphere.NetworkProviderByType("nsx-t", nil, nil, nil, nil, nil, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 		})
 
 		It("should find VDS (NetOP)", func() {
-			expectedProvider := vsphere.NetOpNetworkProvider(nil, nil, nil, nil)
+			expectedProvider := vsphere.NetOpNetworkProvider(nil, nil, nil, nil, nil)
 
-			np, err := vsphere.NetworkProviderByType("vsphere-distributed", nil, nil, nil, nil, nil)
+			np, err := vsphere.NetworkProviderByType("vsphere-distributed", nil, nil, nil, nil, nil, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 		})
@@ -120,7 +122,7 @@ var _ = Describe("NetworkProvider", func() {
 		It("should find the default", func() {
 			expectedProvider := vsphere.DefaultNetworkProvider(nil)
 
-			np, err := vsphere.NetworkProviderByType("", nil, nil, nil, nil, nil)
+			np, err := vsphere.NetworkProviderByType("", nil, nil, nil, nil, nil, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 		})
@@ -158,9 +160,9 @@ var _ = Describe("NetworkProvider", func() {
 
 			It("should return an error if network does not exist", func() {
 				_, err := np.CreateVnic(ctx, vm, &v1alpha1.VirtualMachineNetworkInterface{
-					NetworkName: "does-not-exist",
+					NetworkName: doesNotExist,
 				})
-				Expect(err).To(MatchError("unable to find network \"does-not-exist\": network 'does-not-exist' not found"))
+				Expect(err).To(MatchError(fmt.Sprintf("unable to find network \"%s\": network '%s' not found", doesNotExist, doesNotExist)))
 			})
 
 			It("should ignore if vm is nil", func() {
@@ -216,7 +218,7 @@ var _ = Describe("NetworkProvider", func() {
 			_ = netopv1alpha1.AddToScheme(scheme)
 
 			k8sClient = clientfake.NewFakeClientWithScheme(scheme, netIf)
-			np = vsphere.NetOpNetworkProvider(k8sClient, c.Client, finder, cluster)
+			np = vsphere.NetOpNetworkProvider(k8sClient, c.Client, finder, cluster, scheme)
 		})
 
 		Context("when creating vnic", func() {
@@ -246,13 +248,13 @@ var _ = Describe("NetworkProvider", func() {
 
 			Context("when the referenced network is not found", func() {
 				BeforeEach(func() {
-					netIf.Status.NetworkID = "does-not-exist"
+					netIf.Status.NetworkID = doesNotExist
 				})
 
 				It("should return an error", func() {
 					_, err := np.CreateVnic(ctx, vm, vmNif)
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("unable to get ethernet card backing info for network DistributedVirtualPortgroup:does-not-exist"))
+					Expect(err.Error()).To(ContainSubstring("unable to get ethernet card backing info for network DistributedVirtualPortgroup:" + doesNotExist))
 				})
 			})
 
@@ -291,6 +293,64 @@ var _ = Describe("NetworkProvider", func() {
 				})
 			})
 
+			Context("with NetworkInterfaceProvider Referenced in vmNif", func() {
+				BeforeEach(func() {
+					netIf.Name = dummyNetIfName
+					vmNif.ProviderRef = &v1alpha1.NetworkInterfaceProviderReference{
+						APIGroup:   "netoperator.vmware.com",
+						APIVersion: "v1alpha1",
+						Kind:       "NetworkInterface",
+						Name:       dummyNetIfName,
+					}
+					vm.Spec.NetworkInterfaces[0] = *vmNif
+				})
+
+				It("should succeed", func() {
+					dev, err := np.CreateVnic(ctx, vm, vmNif)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(dev).NotTo(BeNil())
+
+					nic := dev.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+					Expect(nic).NotTo(BeNil())
+					Expect(nic.ExternalId).To(Equal(interfaceId))
+					Expect(nic.MacAddress).To(Equal(macAddress))
+					Expect(nic.AddressType).To(Equal(string(types.VirtualEthernetCardMacTypeManual)))
+
+					backing := nic.Backing
+					Expect(backing).To(BeAssignableToTypeOf(&types.VirtualEthernetCardDistributedVirtualPortBackingInfo{}))
+					backingInfo := backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+					Expect(backingInfo.Port.PortgroupKey).To(Equal(vcsimPortGroup))
+				})
+
+				Context("referencing wrong netIf name", func() {
+					BeforeEach(func() {
+						vmNif.ProviderRef.Name = doesNotExist
+						vm.Spec.NetworkInterfaces[0] = *vmNif
+					})
+
+					It("should return an error", func() {
+						_, err := np.CreateVnic(ctx, vm, vmNif)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("cannot get NetworkInterface"))
+					})
+				})
+
+				Context("referencing unsupported GVK", func() {
+					BeforeEach(func() {
+						vmNif.ProviderRef.APIVersion = "unsupported-version"
+						vmNif.ProviderRef.APIGroup = "unsupported-group"
+						vmNif.ProviderRef.Kind = "unsupported-kind"
+						vm.Spec.NetworkInterfaces[0] = *vmNif
+					})
+
+					It("should return an error", func() {
+						_, err := np.CreateVnic(ctx, vm, vmNif)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("unsupported NetworkInterface ProviderRef"))
+					})
+				})
+			})
+
 			Context("with NSX-T NetworkType", func() {
 
 				BeforeEach(func() {
@@ -306,6 +366,9 @@ var _ = Describe("NetworkProvider", func() {
 						finder := find.NewFinder(c)
 						cluster, err := finder.DefaultClusterComputeResource(ctx)
 						Expect(err).ToNot(HaveOccurred())
+						scheme := runtime.NewScheme()
+						_ = clientgoscheme.AddToScheme(scheme)
+						_ = netopv1alpha1.AddToScheme(scheme)
 
 						net, err := finder.Network(ctx, "DC0_DVPG0")
 						Expect(err).ToNot(HaveOccurred())
@@ -313,7 +376,7 @@ var _ = Describe("NetworkProvider", func() {
 						dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
 						dvpg.Config.BackingType = "nsx"
 
-						np = vsphere.NetOpNetworkProvider(k8sClient, c, finder, cluster)
+						np = vsphere.NetOpNetworkProvider(k8sClient, c, finder, cluster, scheme)
 
 						dev, err := np.CreateVnic(ctx, vm, vmNif)
 						Expect(err).ToNot(HaveOccurred())
@@ -476,12 +539,12 @@ var _ = Describe("NetworkProvider", func() {
 
 			Context("when the referenced network is not found", func() {
 				BeforeEach(func() {
-					ncpVif.Status.ProviderStatus.NsxLogicalSwitchID = "does-not-exist"
+					ncpVif.Status.ProviderStatus.NsxLogicalSwitchID = doesNotExist
 				})
 
 				It("should return an error", func() {
 					_, err := np.CreateVnic(ctx, vm, vmNif)
-					Expect(err).To(MatchError("opaque network with ID 'does-not-exist' not found"))
+					Expect(err).To(MatchError(fmt.Sprintf("opaque network with ID '%s' not found", doesNotExist)))
 				})
 			})
 

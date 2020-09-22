@@ -225,6 +225,10 @@ type VirtualMachineAdvancedOptions struct {
 	// DefaultProvisioningOptions specifies the provisioning type to be used by default for VirtualMachine volumes exclusively
 	// owned by this VirtualMachine. This does not apply to PersistentVolumeClaim volumes that are created and managed externally.
 	DefaultVolumeProvisioningOptions *VirtualMachineVolumeProvisioningOptions `json:"defaultVolumeProvisioningOptions,omitempty"`
+
+	// ChangeBlockTracking specifies the enablement of incremental backup support for this VirtualMachine, which can be utilized
+	// by external backup systems such as VMware Data Recovery.
+	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
 }
 
 // VirtualMachineVolumeProvisioningOptions specifies the provisioning options for the a VirtualMachineVolume.

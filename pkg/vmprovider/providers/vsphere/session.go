@@ -651,7 +651,7 @@ func (s *Session) cloneVirtualMachineFromOVFInCL(ctx context.Context, vm *v1alph
 	log.Info("Deploying CL item", "type", item.Type, "imageName", vm.Spec.ImageName, "vmName", name,
 		"resourcePolicyName", resourcePolicyName, "storageProfileID", vmConfigArgs.StorageProfileID)
 
-	deployedVm, err := s.deployOvf(ctx, item.ID, name, vmConfigArgs.ResourcePolicy, vmConfigArgs.StorageProfileID)
+	deployedVm, err := s.deployOvf(ctx, item.ID, name, vmConfigArgs.ResourcePolicy, vmConfigArgs.StorageProfileID, vm.Spec.AdvancedOptions)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to deploy new VM %q from %q", name, vm.Spec.ImageName)
 	}
@@ -1039,31 +1039,48 @@ func policyThickProvision(profile pbmTypes.BasePbmProfile) bool {
 	return false
 }
 
-// setStorageProvisioning will change dSpec.StorageProvisioning = thick if the given storage profile is thick.
-// Currently this would only happen if the profile is vSAN with proportionalCapacity == 100%.
-func (s *Session) setStorageProvisioning(ctx context.Context, dSpec *vcenter.DeploymentSpec, storageProfileID string) error {
-	c, err := pbm.NewClient(ctx, s.Client.VimClient())
-	if err != nil {
-		return err
-	}
-	profiles, err := c.RetrieveContent(ctx, []pbmTypes.PbmProfileId{{UniqueId: storageProfileID}})
-	if err != nil {
-		return err
-	}
-
-	if len(profiles) != 0 {
-		thick := policyThickProvision(profiles[0])
-		if thick {
-			dSpec.StorageProvisioning = string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThick)
+// getStorageProvisioning gets the storage provisioning based on the VM advanced options section of the spec if present. If absent,
+// the storage profile ID is used to try to determine provisioning.
+func (s *Session) getStorageProvisioning(ctx context.Context, advOpts *v1alpha1.VirtualMachineAdvancedOptions, storageProfileID string) (string, error) {
+	// Try to get storage provisioning from VM advanced options section of the spec
+	if advOpts != nil && advOpts.DefaultVolumeProvisioningOptions != nil {
+		// Webhook has already validated the combination of provisioning options so we can set to EagerZeroedThick if set.
+		if advOpts.DefaultVolumeProvisioningOptions.EagerZeroed != nil && *advOpts.DefaultVolumeProvisioningOptions.EagerZeroed {
+			return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeEagerZeroedThick), nil
 		}
-		log.Info("StorageProfile", "id", storageProfileID, "thick", thick)
-	} // else defer error handling to library.Deploy when storage profile can't be found
+		if advOpts.DefaultVolumeProvisioningOptions.ThinProvisioned != nil {
+			if *advOpts.DefaultVolumeProvisioningOptions.ThinProvisioned {
+				return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
+			}
+			// If user specifies ThinProvisioning as false explicitly, we take that to mean use thick provisioning.
+			return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThick), nil
+		}
+	}
 
-	return nil
+	// If we didn't get the storage provisioning from the VM advanced options, try to get it from the storageProfile
+	if storageProfileID != "" {
+		c, err := pbm.NewClient(ctx, s.Client.VimClient())
+		if err != nil {
+			return "", err
+		}
+		profiles, err := c.RetrieveContent(ctx, []pbmTypes.PbmProfileId{{UniqueId: storageProfileID}})
+		if err != nil {
+			return "", err
+		}
+
+		if len(profiles) != 0 {
+			thick := policyThickProvision(profiles[0])
+			if thick {
+				return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThick), nil
+			}
+		} // else defer error handling to library.Deploy when storage profile can't be found
+	}
+
+	return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
 }
 
 func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy,
-	storageProfileID string) (*res.VirtualMachine, error) {
+	storageProfileID string, vmAdvancedOptions *v1alpha1.VirtualMachineAdvancedOptions) (*res.VirtualMachine, error) {
 
 	resourcePool, folder, err := s.GetRPAndFolderFromResourcePolicy(ctx, resourcePolicy)
 	if err != nil {
@@ -1074,17 +1091,15 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, r
 	dSpec := vcenter.DeploymentSpec{
 		Name: vmName,
 		// TODO (): Plumb AcceptAllEULA to this Spec
-		AcceptAllEULA:       true,
-		StorageProvisioning: string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin),
+		AcceptAllEULA:    true,
+		StorageProfileID: storageProfileID,
 	}
-
-	if storageProfileID != "" {
-		dSpec.StorageProfileID = storageProfileID
-		err = s.setStorageProvisioning(ctx, &dSpec, storageProfileID)
-		if err != nil {
-			return nil, err
-		}
-	} else {
+	dSpec.StorageProvisioning, err = s.getStorageProvisioning(ctx, vmAdvancedOptions, storageProfileID)
+	if err != nil {
+		return nil, err
+	}
+	// If no storage profile, fall back to the datastore.
+	if dSpec.StorageProfileID == "" {
 		dSpec.DefaultDatastoreID = s.datastore.Reference().Value
 	}
 

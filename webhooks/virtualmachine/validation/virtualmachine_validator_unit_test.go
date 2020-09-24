@@ -74,6 +74,7 @@ func unitTestsValidateCreate() {
 		invalidMetadataTransport   bool
 		invalidMetadataConfigMap   bool
 		invalidVsphereVolumeSource bool
+		invalidVmVolumeProvOpts    bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -124,6 +125,15 @@ func unitTestsValidateCreate() {
 				},
 			}
 		}
+		if args.invalidVmVolumeProvOpts {
+			setProvOpts := true
+			ctx.vm.Spec.AdvancedOptions = &vmopv1.VirtualMachineAdvancedOptions{
+				DefaultVolumeProvisioningOptions: &vmopv1.VirtualMachineVolumeProvisioningOptions{
+					EagerZeroed:     &setProvOpts,
+					ThinProvisioned: &setProvOpts,
+				},
+			}
+		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
@@ -157,8 +167,9 @@ func unitTestsValidateCreate() {
 		Entry("should deny multiple volume source spec", createArgs{multipleVolumeSource: true}, false, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, 0, 0), nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, 0), nil),
 		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, 0), nil),
+		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVmVolumeProvOpts: true}, false, fmt.Sprintf(messages.EagerZeroedAndThinProvisionedNotSupported), nil),
 		Entry("should deny invalid vmmetadata transport", createArgs{invalidMetadataTransport: true}, false, messages.MetadataTransportNotSupported, nil),
-		Entry("should deny invalid vmmetadata transport", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
+		Entry("should deny invalid vmmetadata configmap", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
 	)
 }
 

@@ -74,6 +74,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	validationErrs = append(validationErrs, v.validateClass(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateVmVolumeProvisioningOptions(ctx, vm)...)
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
@@ -192,6 +193,17 @@ func (v validator) validateVsphereVolume(ctx *context.WebhookRequestContext, vsp
 		// Validate that the desired size is a multiple of a megabyte
 		if _, mbMultiple := vsphereVolume.Capacity.StorageEphemeral().AsScale(resource.Mega); !mbMultiple {
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, specVolIndex))
+		}
+	}
+	return validationErrs
+}
+
+func (v validator) validateVmVolumeProvisioningOptions(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
+	var validationErrs []string
+	if vm.Spec.AdvancedOptions != nil && vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions != nil {
+		provOpts := vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions
+		if provOpts.ThinProvisioned != nil && *provOpts.ThinProvisioned && provOpts.EagerZeroed != nil && *provOpts.EagerZeroed {
+			validationErrs = append(validationErrs, messages.EagerZeroedAndThinProvisionedNotSupported)
 		}
 	}
 	return validationErrs

@@ -8,9 +8,10 @@ package integration
 import (
 	"context"
 	"fmt"
+	"os"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -467,6 +468,48 @@ var _ = Describe("Sessions", func() {
 				// TODO: this test could lookup profile id by name or create a new profile
 				vmConfigArgs.StorageProfileID = "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+			})
+			It("should clone VM with VM volume disk thin provisioning option", func() {
+				imageName := "test-item"
+				vmName := "CL_DeployedVM-via-policy-thin-provisioned"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				// hardwired vcsim ID for "vSAN Default Storage Policy" - this is to show we explicitly use
+				// the spec volume provisioning if the user specifies it
+				vmConfigArgs.StorageProfileID = "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+				thinProvisioned := true
+				volOptions := &vmopv1alpha1.VirtualMachineVolumeProvisioningOptions{
+					ThinProvisioned: &thinProvisioned,
+				}
+				vm.Spec.AdvancedOptions = &vmopv1alpha1.VirtualMachineAdvancedOptions{
+					DefaultVolumeProvisioningOptions: volOptions,
+				}
+
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+			})
+			It("should clone VM with VM volume disk eager zeroed option", func() {
+				imageName := "test-item"
+				vmName := "CL_DeployedVM-via-policy-eager-zeroed"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				// hardwired vcsim ID for "vSAN Default Storage Policy" - this is to show we explicitly use
+				// the spec volume provisioning if the user specifies it
+				vmConfigArgs.StorageProfileID = "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+				eagerZeroed := true
+				volOptions := &vmopv1alpha1.VirtualMachineVolumeProvisioningOptions{
+					EagerZeroed: &eagerZeroed,
+				}
+				vm.Spec.AdvancedOptions = &vmopv1alpha1.VirtualMachineAdvancedOptions{
+					DefaultVolumeProvisioningOptions: volOptions,
+				}
 
 				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
 				Expect(err).NotTo(HaveOccurred())

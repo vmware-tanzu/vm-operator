@@ -47,6 +47,18 @@ type VirtualMachinePort struct {
 	Protocol corev1.Protocol `json:"protocol"`
 }
 
+// NetworkInterfaceProviderReference contains info to locate a network interface provider object.
+type NetworkInterfaceProviderReference struct {
+	// APIGroup is the group for the resource being referenced.
+	APIGroup string `json:"apiGroup"`
+	// Kind is the type of resource being referenced
+	Kind string `json:"kind"`
+	// Name is the name of resource being referenced
+	Name string `json:"name"`
+	// API version of the referent.
+	APIVersion string `json:"apiVersion,omitempty"`
+}
+
 // VirtualMachineNetworkInterface defines the properties of a network interface to attach to a VirtualMachine
 // instance.  A VirtualMachineNetworkInterface describes network interface configuration that is used by the
 // VirtualMachine controller when integrating the VirtualMachine into a VirtualNetwork.  Currently, only NSX-T
@@ -60,6 +72,10 @@ type VirtualMachineNetworkInterface struct {
 	// NetworkName describes the name of an existing virtual network that this interface should be added to.  For
 	// NSX-T networks, this is the name of a pre-existing NSX-T VirtualNetwork.
 	NetworkName string `json:"networkName"`
+
+	// ProviderRef is reference to a network interface provider object that specifies the network interface configuration.
+	// If unset, default configuration is assumed.
+	ProviderRef *NetworkInterfaceProviderReference `json:"providerRef,omitempty"`
 
 	// EthernetCardType describes an optional ethernet card that should be used by the VirtualNetworkInterface (vNIC)
 	// associated with this network integration.  The default is "vmxnet3".

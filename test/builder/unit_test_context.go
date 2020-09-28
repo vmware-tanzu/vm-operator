@@ -50,11 +50,11 @@ func (ctx *UnitTestContext) AfterEach() {
 
 // UnitTestContextForController is used for unit testing controllers.
 type UnitTestContextForController struct {
-	// Client is the k8s client to access resources.
-	Client client.Client
-
 	// context is the context.ControllerManagerContext for being tested.
 	context.ControllerManagerContext
+
+	// Client is the k8s client to access resources.
+	Client client.Client
 
 	// reconciler is the reconcile.Reconciler being unit tested.
 	Reconciler reconcile.Reconciler
@@ -84,8 +84,8 @@ func NewUnitTestContextForController(initObjects []runtime.Object) *UnitTestCont
 	recorder, events := NewFakeRecorder()
 	fakeControllerManagerContext.Recorder = recorder
 	ctx := &UnitTestContextForController{
-		Client:                   fakeClient,
 		ControllerManagerContext: *fakeControllerManagerContext,
+		Client:                   fakeClient,
 		Events:                   events,
 	}
 

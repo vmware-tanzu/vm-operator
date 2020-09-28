@@ -1,3 +1,6 @@
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 package fake
 
 import (
@@ -41,10 +44,8 @@ func (s *FakeVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alph
 		Namespace: vm.Namespace,
 		Name:      vm.Name,
 	}
-	if _, ok := s.vmMap[objectKey]; ok {
-		return true, nil
-	}
-	return false, nil
+	_, ok := s.vmMap[objectKey]
+	return ok, nil
 }
 
 func (s *FakeVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
@@ -173,7 +174,8 @@ func (s *FakeVmProvider) deleteFromResourcePolicyMap(rp *v1alpha1.VirtualMachine
 }
 
 func NewFakeVmProvider() *FakeVmProvider {
-	provider := FakeVmProvider{}
-	provider.vmMap = map[client.ObjectKey]*v1alpha1.VirtualMachine{}
+	provider := FakeVmProvider{
+		vmMap: map[client.ObjectKey]*v1alpha1.VirtualMachine{},
+	}
 	return &provider
 }

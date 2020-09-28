@@ -27,6 +27,7 @@ import (
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	controllercontext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
@@ -155,7 +156,14 @@ var _ = Describe("VirtualMachine controller", func() {
 			VmProvider: vmProvider,
 		}
 
-		recFn, requests, _, _ = integration.SetupTestReconcile(NewReconciler(ctrlMgrContext, mgr))
+		recFn, requests, _, _ = integration.SetupTestReconcile(
+			NewReconciler(
+				mgr.GetClient(),
+				ctrlMgrContext.Logger.WithName("virtualmachine-test"),
+				record.New(mgr.GetEventRecorderFor("virtualmachine-test")),
+				ctrlMgrContext.VmProvider,
+			),
+		)
 		Expect(add(ctrlMgrContext, mgr, recFn)).To(Succeed())
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)

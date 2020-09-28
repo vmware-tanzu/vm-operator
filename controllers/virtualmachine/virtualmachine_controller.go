@@ -6,6 +6,7 @@ package virtualmachine
 import (
 	goctx "context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -16,10 +17,10 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -36,30 +37,54 @@ import (
 const (
 	finalizerName                  = "virtualmachine.vmoperator.vmware.com"
 	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
-	controllerName                 = "virtualmachine-controller"
 )
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
-	return add(ctx, mgr, NewReconciler(ctx, mgr))
+	var (
+		controlledType     = &vmoperatorv1alpha1.VirtualMachine{}
+		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
+
+		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
+		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
+	)
+
+	r := NewReconciler(
+		mgr.GetClient(),
+		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
+		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		ctx.VmProvider,
+	)
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(controlledType).
+		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
+		Owns(&cnsv1alpha1.CnsNodeVmAttachment{}). // BMV: Still needed here?
+		Complete(r)
 }
 
-func NewReconciler(ctx *context.ControllerManagerContext, mgr manager.Manager) reconcile.Reconciler {
-	var controllerNameLong = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerName)
-	return &VirtualMachineReconciler{
-		Client:     mgr.GetClient(),
-		Logger:     ctrllog.Log.WithName("controllers").WithName(controllerName),
-		Recorder:   record.New(mgr.GetEventRecorderFor(controllerNameLong)),
-		VmProvider: ctx.VmProvider,
-	}
-}
-
+// BMV: Temp compat for old integration tests.
+//nolint
 func add(ctx *context.ControllerManagerContext, mgr manager.Manager, r reconcile.Reconciler) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&vmoperatorv1alpha1.VirtualMachine{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
 		Owns(&cnsv1alpha1.CnsNodeVmAttachment{}).
 		Complete(r)
+}
+
+func NewReconciler(
+	client client.Client,
+	logger logr.Logger,
+	recorder record.Recorder,
+	vmProvider vmprovider.VirtualMachineProviderInterface) *VirtualMachineReconciler {
+
+	return &VirtualMachineReconciler{
+		Client:     client,
+		Logger:     logger,
+		Recorder:   recorder,
+		VmProvider: vmProvider,
+	}
 }
 
 // VirtualMachineReconciler reconciles a VirtualMachine object
@@ -91,13 +116,11 @@ func (r *VirtualMachineReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		}
 		return ctrl.Result{}, err
 	}
+
 	vmContext := &context.VirtualMachineContext{
-		Context: ctx,
-		VMObjectKey: client.ObjectKey{
-			Namespace: req.Namespace,
-			Name:      req.Name,
-		},
-		VM: instance,
+		Context:     ctx,
+		VMObjectKey: req.NamespacedName,
+		VM:          instance,
 	}
 
 	if !instance.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -182,6 +205,7 @@ func (r *VirtualMachineReconciler) ReconcileDelete(ctx *context.VirtualMachineCo
 // Process a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
 func (r *VirtualMachineReconciler) ReconcileNormal(ctx *context.VirtualMachineContext) error {
 	vm := ctx.VM
+
 	r.Logger.Info("Reconciling VirtualMachine", "name", vm.NamespacedName())
 	r.Logger.V(4).Info("Original VM Status", "name", vm.NamespacedName(), "status", vm.Status)
 	defer func() {
@@ -204,6 +228,7 @@ func (r *VirtualMachineReconciler) ReconcileNormal(ctx *context.VirtualMachineCo
 
 	if r.Logger.V(4).Enabled() {
 		// Before we update the status, get the current resource and log it
+		// BMV: Due to the client cache, this isn't necessarily "latest".
 		latestVm := &vmoperatorv1alpha1.VirtualMachine{}
 		err := r.Get(ctx, ctx.VMObjectKey, latestVm)
 		if err == nil {

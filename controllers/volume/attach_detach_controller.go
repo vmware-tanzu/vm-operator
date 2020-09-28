@@ -127,6 +127,12 @@ func (r *ReconcileVolume) reconcileNormal(ctx goctx.Context, origVM *vmoperatorv
 		r.log.Info("Finished Reconciling VirtualMachine for processing volumes", "name", origVM.NamespacedName())
 	}()
 
+	if origVM.Status.BiosUUID == "" {
+		// defer reconcileVolumes() until the VM has been created and BiosUUID is set.
+		r.log.Info("VM does not yet have a BIOS UUID", "name", origVM.NamespacedName())
+		return nil
+	}
+
 	vm := origVM.DeepCopy()
 
 	// Before the VM being created or updated, figure out the Volumes[] VirtualMachineVolumes change.

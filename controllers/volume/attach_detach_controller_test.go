@@ -198,8 +198,17 @@ var _ = Describe("Volume Attach Detach Controller", func() {
 				},
 			}
 
-			// Create the VM Object then expect Reconcile
+			// Create the VM Object
 			Expect(c.Create(context.TODO(), &instance)).To(Succeed())
+
+			// Should not receive a reconcile until BiosUUID is set
+			Eventually(requests, time.Second).ShouldNot(Receive(Equal(expectedRequest)))
+
+			// Update Status.BiosUUID then expect Reconcile
+			instance.Status = vmoperatorv1alpha1.VirtualMachineStatus{
+				BiosUUID: "1-2-3-4",
+			}
+			Expect(c.Status().Update(context.Background(), &instance)).To(Succeed())
 
 			// Expect one reconcile for the VM creation
 			Eventually(requests, time.Second*10).Should(Receive(Equal(expectedRequest)))

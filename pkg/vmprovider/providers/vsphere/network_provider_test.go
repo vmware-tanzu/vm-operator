@@ -102,6 +102,67 @@ var _ = Describe("NetworkProvider", func() {
 		}
 	})
 
+	Context("when getting the Network Provider", func() {
+		Context("with ProviderRef set", func() {
+			It("should return NetOp Provider", func() {
+				vmNif.ProviderRef = &v1alpha1.NetworkInterfaceProviderReference{
+					APIGroup:   "netoperator.vmware.com",
+					APIVersion: "v1alpha1",
+					Kind:       "NetworkInterface",
+					Name:       dummyNetIfName,
+				}
+				scheme := runtime.NewScheme()
+				_ = clientgoscheme.AddToScheme(scheme)
+				_ = netopv1alpha1.AddToScheme(scheme)
+
+				expectedProvider := vsphere.NetOpNetworkProvider(nil, nil, nil, nil, nil)
+				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil, scheme)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
+			})
+
+			It("should return error with unsupported group", func() {
+				vmNif.ProviderRef = &v1alpha1.NetworkInterfaceProviderReference{
+					APIGroup: "unsupported-group",
+					Name:     dummyNetIfName,
+				}
+				scheme := runtime.NewScheme()
+				_ = clientgoscheme.AddToScheme(scheme)
+				_ = netopv1alpha1.AddToScheme(scheme)
+				_, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil, scheme)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("unsupported APIGroup for ProviderRef"))
+			})
+		})
+
+		Context("with NetworkType when ProviderRef unset", func() {
+			It("should find NSX-T", func() {
+				vmNif.NetworkType = vsphere.NsxtNetworkType
+				expectedProvider := vsphere.NsxtNetworkProvider(nil, nil, nil)
+
+				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
+			})
+
+			It("should find VDS (NetOP)", func() {
+				vmNif.NetworkType = vsphere.VdsNetworkType
+				expectedProvider := vsphere.NetOpNetworkProvider(nil, nil, nil, nil, nil)
+
+				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
+			})
+
+			It("should find the default", func() {
+				expectedProvider := vsphere.DefaultNetworkProvider(nil)
+				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
+			})
+		})
+	})
+
 	Context("when getting the network by type", func() {
 		It("should find NSX-T", func() {
 			expectedProvider := vsphere.NsxtNetworkProvider(nil, nil, nil)

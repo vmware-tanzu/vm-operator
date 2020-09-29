@@ -8,6 +8,7 @@ import (
 	"reflect"
 
 	"github.com/pkg/errors"
+	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -128,7 +129,7 @@ func (v validator) validateCPU(ctx *context.WebhookRequestContext, vmRP *vmopv1.
 func (v validator) validateAllowedChanges(ctx *context.WebhookRequestContext, vmRP, oldVMRP *vmopv1.VirtualMachineSetResourcePolicy) []string {
 	var validationErrs []string
 
-	if !reflect.DeepEqual(vmRP.Spec, oldVMRP.Spec) {
+	if !apiEquality.Semantic.DeepEqual(vmRP.Spec, oldVMRP.Spec) {
 		validationErrs = append(validationErrs, messages.UpdatingImmutableFieldsNotAllowed)
 	}
 

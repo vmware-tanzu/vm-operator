@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -36,10 +37,16 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 	ns := integration.DefaultNamespace
 
 	var (
-		stopMgr    chan struct{}
-		mgrStopped *sync.WaitGroup
-		mgr        manager.Manager
-		err        error
+		resourcePolicyName     string
+		resourcePolicyInstance vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
+		mgrStopped             *sync.WaitGroup
+		stopMgr                chan struct{}
+		mgr                    manager.Manager
+		err                    error
+		recFn                  reconcile.Reconciler
+		requests               chan reconcile.Request
+		expectedRequest        reconcile.Request
+		reconcileError         chan error
 	)
 
 	BeforeEach(func() {
@@ -51,6 +58,14 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 		c = mgr.GetClient()
 
 		stopMgr, mgrStopped = integration.StartTestManager(mgr)
+
+		ctrlContext := &controllercontext.ControllerManagerContext{
+			Logger:     ctrl.Log.WithName("controllers"),
+			VmProvider: vmProvider,
+		}
+
+		recFn, requests, _, reconcileError = integration.SetupTestReconcile(NewReconciler(ctrlContext, mgr))
+		Expect(add(mgr, recFn)).To(Succeed())
 	})
 
 	AfterEach(func() {
@@ -60,26 +75,17 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 
 	Describe("when creating/deleting a VirtualMachineSetResourcePolicy", func() {
 		var resourcePolicyNameSuffix = 0
-		var (
-			resourcePolicyName     string
-			resourcePolicyInstance vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
-			expectedRequest        reconcile.Request
-		)
 
 		BeforeEach(func() {
 			resourcePolicyName = "resourcepolicy-name" + strconv.Itoa(resourcePolicyNameSuffix)
 			resourcePolicyNameSuffix++
 			resourcePolicyInstance = getResourcePolicyInstance(resourcePolicyName, ns)
 			expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Name: resourcePolicyName, Namespace: ns}}
+
 		})
 
 		Context("a valid spec is used", func() {
 			It("should create the VirtualMachineSetResource", func() {
-				ctrlContext := &controllercontext.ControllerManagerContext{
-					VmProvider: vmProvider,
-				}
-				recFn, requests, _, _ := integration.SetupTestReconcile(newReconciler(ctrlContext, mgr))
-				Expect(add(mgr, recFn)).To(Succeed())
 
 				// Create the VirtualMachineSetResourcePolicy object and expect the Reconcile
 				err = c.Create(context.TODO(), &resourcePolicyInstance)
@@ -95,19 +101,10 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 
 		Context("deleting a VirtualMachineSetResourcePolicy", func() {
 			var (
-				vmInstance     vmoperatorv1alpha1.VirtualMachine
-				requests       chan reconcile.Request
-				recFn          reconcile.Reconciler
-				reconcileError chan error
+				vmInstance vmoperatorv1alpha1.VirtualMachine
 			)
 
 			BeforeEach(func() {
-				ctrlContext := &controllercontext.ControllerManagerContext{
-					VmProvider: vmProvider,
-				}
-				recFn, requests, _, reconcileError = integration.SetupTestReconcile(newReconciler(ctrlContext, mgr))
-				Expect(add(mgr, recFn)).To(Succeed())
-
 				vmInstance = getVirtualMachineInstance("virtualmachine-name", ns)
 				vmInstance.Spec.ResourcePolicyName = resourcePolicyName
 			})
@@ -134,7 +131,6 @@ var _ = Describe("VirtualMachineSetResourcePolicy controller", func() {
 
 			Context("when no VMs are referencing it", func() {
 				It("should successfully delete", func() {
-
 					resourcePolicyInstance.Name = "resource-policy-name-1"
 					err = c.Create(context.TODO(), &resourcePolicyInstance)
 					Expect(err).NotTo(HaveOccurred())

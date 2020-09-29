@@ -1,41 +1,23 @@
-// +build integration
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
-
-package virtualmachinesetresourcepolicy
+package virtualmachinesetresourcepolicy_test
 
 import (
 	"testing"
 
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 
-	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	"github.com/vmware-tanzu/vm-operator/test/integration"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func TestVirtualMachineSetResourcePolicy(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecsWithDefaultAndCustomReporters(t, "VirtualMachineSetResourcePolicy Suite", []Reporter{printer.NewlineReporter{}})
+var suite = builder.NewTestSuiteForController(virtualmachinesetresourcepolicy.AddToManager, builder.AddToContextNoopFn)
+
+func TestVirtualMachine(t *testing.T) {
+	suite.Register(t, "VirtualMachineSetResourcePolicy controller suite", nil, unitTests)
 }
 
-var (
-	cfg        *rest.Config
-	vcSim      *integration.VcSimInstance
-	testEnv    *envtest.Environment
-	vmProvider vmprovider.VirtualMachineProviderInterface
-)
-
-var _ = BeforeSuite(func() {
-	testEnv, _, cfg, vcSim, _, vmProvider = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
-})
-
-var _ = AfterSuite(func() {
-	integration.TeardownIntegrationEnv(testEnv, vcSim)
-})
+func unitTests() {
+	Describe("Invoking Reconcile", unitTestsReconcile)
+}

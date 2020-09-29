@@ -52,6 +52,31 @@ type NetworkProvider interface {
 	GetInterfaceGuestCustomization(vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (*vimtypes.CustomizationAdapterMapping, error)
 }
 
+// GetNetworkProvider returns the network provider based on the vmNif providerRef and network type
+func GetNetworkProvider(vif *v1alpha1.VirtualMachineNetworkInterface, k8sClient ctrlruntime.Client, ncpClient ncpclientset.Interface,
+	vimClient *vim25.Client, finder *find.Finder, cluster *object.ClusterComputeResource, scheme *runtime.Scheme) (NetworkProvider, error) {
+
+	// Until we determine a way to handle NSX-t for Netop and NCP
+	// Workaround: if a valid NetOp Type is provided use NetOpNetworkProvider
+	if vif.ProviderRef != nil {
+		netOpNetworkIf := &netopv1alpha1.NetworkInterface{}
+
+		gvk, err := apiutil.GVKForObject(netOpNetworkIf, scheme)
+		if err != nil {
+			return nil, errors.Wrapf(err, "cannot get GroupVersionKind for NetworkInterface object")
+		}
+
+		if gvk.Group != vif.ProviderRef.APIGroup {
+			err := fmt.Errorf("unsupported APIGroup for ProviderRef: %+v Supported: %+v", vif.ProviderRef.APIGroup, gvk.Group)
+			return nil, err
+		}
+
+		return NetOpNetworkProvider(k8sClient, vimClient, finder, cluster, scheme), nil
+	}
+
+	return NetworkProviderByType(vif.NetworkType, k8sClient, ncpClient, vimClient, finder, cluster, scheme)
+}
+
 // NetworkProviderByType returns the network provider based on network type
 func NetworkProviderByType(networkType string, k8sClient ctrlruntime.Client, ncpClient ncpclientset.Interface,
 	vimClient *vim25.Client, finder *find.Finder, cluster *object.ClusterComputeResource, scheme *runtime.Scheme) (NetworkProvider, error) {

@@ -767,7 +767,7 @@ func (s *Session) getNicsFromVM(ctx context.Context, vm *v1alpha1.VirtualMachine
 	key := int32(-100)
 	for i := range vm.Spec.NetworkInterfaces {
 		vif := vm.Spec.NetworkInterfaces[i]
-		np, err := NetworkProviderByType(vif.NetworkType, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
+		np, err := GetNetworkProvider(&vif, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get network provider")
 		}
@@ -1385,7 +1385,7 @@ func (s *Session) GetCustomizationSpec(ctx context.Context, vm *v1alpha1.Virtual
 		for idx := range vm.Spec.NetworkInterfaces {
 			nif := vm.Spec.NetworkInterfaces[idx]
 
-			np, err := NetworkProviderByType(nif.NetworkType, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
+			np, err := GetNetworkProvider(&nif, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to get network provider")
 			}

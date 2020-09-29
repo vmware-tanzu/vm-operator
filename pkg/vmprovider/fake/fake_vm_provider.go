@@ -25,6 +25,10 @@ type FakeVmProvider struct {
 	CreateVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
 	UpdateVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
 	DeleteVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
+
+	resourcePolicyMap                          map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy
+	DoesVirtualMachineSetResourcePolicyExistFn func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
+	DeleteVirtualMachineSetResourcePolicyFn    func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
 }
 
 func (s *FakeVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
@@ -70,7 +74,7 @@ func (s *FakeVmProvider) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.
 	if s.DeleteVirtualMachineFn != nil {
 		return s.DeleteVirtualMachineFn(ctx, vm)
 	}
-	s.deleteFromMap(vm)
+	s.deleteFromVMMap(vm)
 	return nil
 }
 
@@ -89,10 +93,28 @@ func (s *FakeVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx conte
 }
 
 func (s *FakeVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
-	return true, nil
+	s.Lock()
+	defer s.Unlock()
+	if s.DoesVirtualMachineSetResourcePolicyExistFn != nil {
+		return s.DoesVirtualMachineSetResourcePolicyExistFn(ctx, resourcePolicy)
+	}
+	objectKey := client.ObjectKey{
+		Namespace: resourcePolicy.Namespace,
+		Name:      resourcePolicy.Name,
+	}
+	_, found := s.resourcePolicyMap[objectKey]
+
+	return found, nil
 }
 
 func (s *FakeVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+	s.Lock()
+	defer s.Unlock()
+	if s.DeleteVirtualMachineSetResourcePolicyFn != nil {
+		return s.DeleteVirtualMachineSetResourcePolicyFn(ctx, resourcePolicy)
+	}
+	s.deleteFromResourcePolicyMap(resourcePolicy)
+
 	return nil
 }
 
@@ -134,12 +156,20 @@ func (s *FakeVmProvider) addToMap(vm *v1alpha1.VirtualMachine) {
 	s.vmMap[objectKey] = vm
 }
 
-func (s *FakeVmProvider) deleteFromMap(vm *v1alpha1.VirtualMachine) {
+func (s *FakeVmProvider) deleteFromVMMap(vm *v1alpha1.VirtualMachine) {
 	objectKey := client.ObjectKey{
 		Namespace: vm.Namespace,
 		Name:      vm.Name,
 	}
 	delete(s.vmMap, objectKey)
+}
+
+func (s *FakeVmProvider) deleteFromResourcePolicyMap(rp *v1alpha1.VirtualMachineSetResourcePolicy) {
+	objectKey := client.ObjectKey{
+		Namespace: rp.Namespace,
+		Name:      rp.Name,
+	}
+	delete(s.resourcePolicyMap, objectKey)
 }
 
 func NewFakeVmProvider() *FakeVmProvider {

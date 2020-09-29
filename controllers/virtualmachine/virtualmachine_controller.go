@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine
@@ -16,10 +16,10 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -48,7 +48,7 @@ func NewReconciler(ctx *context.ControllerManagerContext, mgr manager.Manager) r
 	var controllerNameLong = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerName)
 	return &VirtualMachineReconciler{
 		Client:     mgr.GetClient(),
-		Logger:     ctx.Logger.WithName("controllers").WithName(controllerName),
+		Logger:     ctrllog.Log.WithName("controllers").WithName(controllerName),
 		Recorder:   record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		VmProvider: ctx.VmProvider,
 	}

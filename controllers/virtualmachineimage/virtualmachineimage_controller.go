@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -58,7 +59,7 @@ func NewVirtualMachineImageDiscoverer(
 
 	return &VirtualMachineImageDiscoverer{
 		client:     client,
-		log:        ctx.Logger.WithName("VirtualMachineImageDiscover"),
+		log:        ctrllog.Log.WithName("VirtualMachineImageDiscover"),
 		vmProvider: ctx.VmProvider,
 		options:    options,
 	}

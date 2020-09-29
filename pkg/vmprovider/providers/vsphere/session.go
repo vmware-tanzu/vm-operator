@@ -842,7 +842,7 @@ func (s *Session) GetNicChangeSpecs(ctx context.Context, vm *v1alpha1.VirtualMac
 	return deviceSpecs, nil
 }
 
-func createDiskLocators(ctx context.Context, resSrcVM *res.VirtualMachine, datastore *vimTypes.ManagedObjectReference, vmProfile []vimTypes.BaseVirtualMachineProfileSpec) (
+func createDiskLocators(ctx context.Context, resSrcVM *res.VirtualMachine, datastore *vimTypes.ManagedObjectReference, vmProfile []vimTypes.BaseVirtualMachineProfileSpec, storageProvisioning string) (
 	[]types.VirtualMachineRelocateSpecDiskLocator, error) {
 
 	disks, err := resSrcVM.GetVirtualDisks(ctx)
@@ -858,6 +858,20 @@ func createDiskLocators(ctx context.Context, resSrcVM *res.VirtualMachine, datas
 			Profile:   vmProfile,
 			//TODO: Check if policy is encripted and select diskMoveType
 			DiskMoveType: string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveChildMostDiskBacking),
+		}
+		if vmDiskBacking, ok := disk.(*types.VirtualDisk).Backing.(*types.VirtualDiskFlatVer2BackingInfo); ok {
+			setProv := true
+			if storageProvisioning == string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin) {
+				vmDiskBacking.ThinProvisioned = &setProv
+			}
+			if storageProvisioning == string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThick) {
+				setProv = false
+				vmDiskBacking.ThinProvisioned = &setProv
+			}
+			if storageProvisioning == string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeEagerZeroedThick) {
+				vmDiskBacking.EagerlyScrub = &setProv
+			}
+			dl.DiskBackingInfo = vmDiskBacking
 		}
 		diskLocators = append(diskLocators, dl)
 	}
@@ -962,7 +976,12 @@ func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.V
 		return nil, err
 	}
 
-	diskLocators, err := createDiskLocators(ctx, resSrcVM, rSpec.Datastore, cloneSpec.Location.Profile)
+	storageProvisioning, err := s.getStorageProvisioning(ctx, vm.Spec.AdvancedOptions, vmConfigArgs.StorageProfileID)
+	if err != nil {
+		return nil, err
+	}
+
+	diskLocators, err := createDiskLocators(ctx, resSrcVM, rSpec.Datastore, cloneSpec.Location.Profile, storageProvisioning)
 	if err != nil {
 		return nil, err
 	}

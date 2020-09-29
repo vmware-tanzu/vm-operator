@@ -588,6 +588,77 @@ var _ = Describe("Sessions", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedDeployedVMTX.Name).Should(Equal(vmName))
 			})
+			It("should clone VMTX with eager zeroed", func() {
+				imageName := "test-item-vmtx"
+				vmName := "CL_DeployedVMTX-eager-zeroed"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				eagerZeroed := true
+				volOptions := &vmopv1alpha1.VirtualMachineVolumeProvisioningOptions{
+					EagerZeroed: &eagerZeroed,
+				}
+				vm.Spec.AdvancedOptions = &vmopv1alpha1.VirtualMachineAdvancedOptions{
+					DefaultVolumeProvisioningOptions: volOptions,
+				}
+
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+				// The device type should be virtual disk
+				clonedVMDisks, err := clonedVM.GetVirtualDisks(context.TODO())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(clonedVMDisks)).Should(Equal(1))
+
+				clonedVMDisk1, ok := clonedVMDisks[0].(*vimTypes.VirtualDisk)
+				Expect(ok).Should(BeTrue())
+
+				_, ok = clonedVMDisk1.Backing.(*vimTypes.VirtualDiskFlatVer2BackingInfo)
+				Expect(ok).Should(BeTrue())
+
+				/* - vcsim does not seem to support this (dramdass)
+				// Check that cloned VM disk is eager zeroed
+				Expect(diskBacking.EagerlyScrub).ShouldNot(BeNil())
+				Expect(*diskBacking.EagerlyScrub).Should(BeTrue())
+				*/
+			})
+			It("should clone VMTX with thin provisioned", func() {
+				imageName := "test-item-vmtx"
+				vmName := "CL_DeployedVMTX-thin-provisioned"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				thinProvisioned := true
+				volOptions := &vmopv1alpha1.VirtualMachineVolumeProvisioningOptions{
+					ThinProvisioned: &thinProvisioned,
+				}
+				vm.Spec.AdvancedOptions = &vmopv1alpha1.VirtualMachineAdvancedOptions{
+					DefaultVolumeProvisioningOptions: volOptions,
+				}
+
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs, cl)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+
+				clonedVMDisks, err := clonedVM.GetVirtualDisks(context.TODO())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(len(clonedVMDisks)).Should(Equal(1))
+
+				// The device type should be virtual disk
+				clonedVMDisk1, ok := clonedVMDisks[0].(*vimTypes.VirtualDisk)
+				Expect(ok).Should(BeTrue())
+
+				_, ok = clonedVMDisk1.Backing.(*vimTypes.VirtualDiskFlatVer2BackingInfo)
+				Expect(ok).Should(BeTrue())
+
+				/* - vcsim does not seem to support this (dramdass)
+				// Check that cloned VM disk is thin provisioned
+				Expect(diskBacking.ThinProvisioned).ShouldNot(BeNil())
+				Expect(*diskBacking.ThinProvisioned).Should(BeTrue())
+				*/
+			})
 			It("should clone VMTX with resized disk", func() {
 				imageName := "test-item-vmtx"
 				vmName := "CL_DeployedVMTX-resized"

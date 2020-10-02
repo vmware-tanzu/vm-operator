@@ -44,14 +44,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
-// AddToContextFunc is the function TestSuite calls to add to the Controller context
-type AddToContextFunc func(ctrlContext *ctrlCtx.ControllerManagerContext, mgr manager.Manager) error
-
-// AddToContextNoopFn is a noop function of the AddToContextFunc type.
-var AddToContextNoopFn = func(_ *ctrlCtx.ControllerManagerContext, _ manager.Manager) error {
-	return nil
-}
-
 // Reconciler is a base type for builder's reconcilers
 type Reconciler interface{}
 
@@ -75,8 +67,8 @@ type TestSuite struct {
 	integrationTestClient client.Client
 
 	// Controller specific fields
-	addToContextFn      AddToContextFunc
 	addToManagerFn      pkgmgr.AddToManagerFunc
+	initProvidersFn     pkgmgr.InitializeProvidersFunc
 	integrationTest     bool
 	manager             pkgmgr.Manager
 	managerDone         chan struct{}
@@ -113,8 +105,7 @@ func getCrdPaths(crdPaths ...string) []string {
 func NewTestSuite() *TestSuite {
 	return NewTestSuiteForController(
 		pkgmgr.AddToManagerNoopFn,
-		AddToContextNoopFn,
-		getCrdPaths()...,
+		pkgmgr.InitializeProvidersNoopFn,
 	)
 }
 
@@ -126,27 +117,26 @@ func NewFunctionalTestSuite(addToManagerFunc func(ctx *ctrlCtx.ControllerManager
 	return NewTestSuiteForController(
 		addToManagerFunc,
 		pkgmgr.InitializeProviders,
-		getCrdPaths()...,
 	)
 }
 
 // NewTestSuiteForController returns a new test suite used for controller integration test
-func NewTestSuiteForController(addToManagerFn pkgmgr.AddToManagerFunc, addToContextFn AddToContextFunc, crdPaths ...string) *TestSuite {
+func NewTestSuiteForController(addToManagerFn pkgmgr.AddToManagerFunc, initProvidersFn pkgmgr.InitializeProvidersFunc) *TestSuite {
 
 	if addToManagerFn == nil {
 		panic("addToManagerFn is nil")
 	}
-	if addToContextFn == nil {
-		panic("addToContextFn is nil")
+	if initProvidersFn == nil {
+		panic("initProvidersFn is nil")
 	}
 
 	testSuite := &TestSuite{
 		Context:         context.Background(),
 		integrationTest: true,
 		addToManagerFn:  addToManagerFn,
-		addToContextFn:  addToContextFn,
+		initProvidersFn: initProvidersFn,
 	}
-	testSuite.init(crdPaths)
+	testSuite.init(getCrdPaths())
 
 	return testSuite
 }
@@ -183,7 +173,7 @@ func newTestSuiteForWebhook(
 		Context:         context.Background(),
 		integrationTest: true,
 		addToManagerFn:  addToManagerFn,
-		addToContextFn:  AddToContextNoopFn,
+		initProvidersFn: pkgmgr.InitializeProvidersNoopFn,
 		webhookName:     webhookName,
 	}
 
@@ -291,7 +281,6 @@ func (s *TestSuite) NewUnitTestContextForValidatingWebhook(
 //
 // Returns nil if unit testing is disabled.
 func (s *TestSuite) NewUnitTestContextForMutatingWebhook(obj *unstructured.Unstructured) *UnitTestContextForMutatingWebhook {
-
 	if s.flags.UnitTestsEnabled {
 		ctx := NewUnitTestContextForMutatingWebhook(s.mutator, obj)
 		return ctx
@@ -326,14 +315,11 @@ func (s *TestSuite) createManager() {
 			opts.Resync = &syncPeriod
 			return cache.New(config, opts)
 		},
-		AddToManager: s.addToManagerFn,
+		AddToManager:        s.addToManagerFn,
+		InitializeProviders: s.initProvidersFn,
 	})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(s.manager).ToNot(BeNil())
-
-	// Inject test suite parameters into the context.
-	err = s.addToContextFn(s.manager.GetContext(), s.manager)
-	Expect(err).NotTo(HaveOccurred())
 }
 
 func (s *TestSuite) initializeManager() {
@@ -356,9 +342,8 @@ func (s *TestSuite) setManagerRunning(isRunning bool) {
 
 // Returns true if the manager is running, false otherwise
 func (s *TestSuite) getManagerRunning() bool {
-	var result bool
 	s.managerRunningMutex.Lock()
-	result = s.managerRunning
+	result := s.managerRunning
 	s.managerRunningMutex.Unlock()
 	return result
 }

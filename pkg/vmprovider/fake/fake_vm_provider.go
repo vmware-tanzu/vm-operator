@@ -23,6 +23,7 @@ import (
 // expected to evolve as more tests get added in the future.
 type FakeVmProvider struct {
 	sync.Mutex
+
 	vmMap                     map[client.ObjectKey]*v1alpha1.VirtualMachine
 	DoesVirtualMachineExistFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
 	CreateVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
@@ -32,6 +33,23 @@ type FakeVmProvider struct {
 	resourcePolicyMap                          map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy
 	DoesVirtualMachineSetResourcePolicyExistFn func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicyFn    func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
+}
+
+var _ vmprovider.VirtualMachineProviderInterface = &FakeVmProvider{}
+
+func (s *FakeVmProvider) Reset() {
+	s.Lock()
+	defer s.Unlock()
+
+	s.vmMap = make(map[client.ObjectKey]*v1alpha1.VirtualMachine)
+	s.DoesVirtualMachineExistFn = nil
+	s.CreateVirtualMachineFn = nil
+	s.UpdateVirtualMachineFn = nil
+	s.DeleteVirtualMachineFn = nil
+
+	s.resourcePolicyMap = make(map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy)
+	s.DoesVirtualMachineSetResourcePolicyExistFn = nil
+	s.DeleteVirtualMachineSetResourcePolicyFn = nil
 }
 
 func (s *FakeVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
@@ -54,7 +72,7 @@ func (s *FakeVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.
 	if s.CreateVirtualMachineFn != nil {
 		return s.CreateVirtualMachineFn(ctx, vm, vmConfigArgs)
 	}
-	s.addToMap(vm)
+	s.addToVMMap(vm)
 	vm.Status.Phase = v1alpha1.Created
 	return nil
 }
@@ -65,7 +83,7 @@ func (s *FakeVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.
 	if s.UpdateVirtualMachineFn != nil {
 		return s.UpdateVirtualMachineFn(ctx, vm, vmConfigArgs)
 	}
-	s.addToMap(vm)
+	s.addToVMMap(vm)
 	return nil
 }
 
@@ -149,7 +167,7 @@ func (s *FakeVmProvider) GetVirtualMachineImage(ctx context.Context, namespace, 
 	return nil, nil
 }
 
-func (s *FakeVmProvider) addToMap(vm *v1alpha1.VirtualMachine) {
+func (s *FakeVmProvider) addToVMMap(vm *v1alpha1.VirtualMachine) {
 	objectKey := client.ObjectKey{
 		Namespace: vm.Namespace,
 		Name:      vm.Name,
@@ -175,7 +193,8 @@ func (s *FakeVmProvider) deleteFromResourcePolicyMap(rp *v1alpha1.VirtualMachine
 
 func NewFakeVmProvider() *FakeVmProvider {
 	provider := FakeVmProvider{
-		vmMap: map[client.ObjectKey]*v1alpha1.VirtualMachine{},
+		vmMap:             map[client.ObjectKey]*v1alpha1.VirtualMachine{},
+		resourcePolicyMap: map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy{},
 	}
 	return &provider
 }

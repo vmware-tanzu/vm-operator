@@ -7,6 +7,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -189,7 +190,11 @@ func (cvp *cnsVolumeProvider) UpdateVmVolumesStatus(ctx context.Context, vm *vmo
 		}
 	}
 
-	vm.Status.Volumes = newVmVolumeStatus
+	// When there are multiple volumes, the ordering seems to change after updating volume status. We need to ensure that
+	// we sort when we update volume status. Otherwise, this will result in an unwanted status update call.
+	sortedVmVolumeStatus := sortVmVolumeStatus(newVmVolumeStatus)
+
+	vm.Status.Volumes = sortedVmVolumeStatus
 
 	if volumeOpErrors.hasOccurred() {
 		return volumeOpErrors
@@ -316,4 +321,12 @@ func (voe VolumeErrorsPerOpType) Error() string {
 		errorMessages = append(errorMessages, fmt.Sprintf("operation: [%s] against volume: [%s] fails due to error: [%s]", voe.volumeOpType, volumeName, err.Error()))
 	}
 	return strings.Join(errorMessages, "\n")
+}
+
+// Sort volumes in VirtualMachineVolumeStatus
+func sortVmVolumeStatus(vmVolumeStatus []vmoperatorv1alpha1.VirtualMachineVolumeStatus) []vmoperatorv1alpha1.VirtualMachineVolumeStatus {
+	sort.Slice(vmVolumeStatus, func(i, j int) bool {
+		return vmVolumeStatus[i].DiskUuid < vmVolumeStatus[j].DiskUuid
+	})
+	return vmVolumeStatus
 }

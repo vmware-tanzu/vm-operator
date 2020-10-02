@@ -47,13 +47,13 @@ CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${WEB_GOFLAGS[@]}" ./webhooks/... 
 
 # Run the package integration tests.
 # go test: -race requires cgo
-CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${INT_GOFLAGS[@]}" -tags=integration ./controllers/... ./pkg/... ./test/integration/... -- -enable-integration-tests -enable-unit-tests=false
+CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${INT_GOFLAGS[@]}" -tags=integration ./controllers/... ./pkg/... ./test/integration/...
 
 # Run integration tests with new framework
-# NOTE: None as of yet
-: "${ENV_GOFLAGS:=}"
 # go test: -race requires cgo
-#CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" ./controllers/virtualmachine -- -enable-integration-tests -enable-unit-tests=false
+CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" \
+    ./controllers/virtualmachine \
+    -- -enable-integration-tests -enable-unit-tests=false
 
 # Merge the coverage files.
 if [[ -n ${COVERAGE_FILE} ]]; then

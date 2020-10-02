@@ -1,3 +1,5 @@
+// +build !integration
+
 // Copyright (c) 2019 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -23,9 +25,14 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+func unitTests() {
+	Describe("Invoking Reconcile", unitTestsReconcile)
+}
+
+const finalizer = "virtualmachine.vmoperator.vmware.com"
+
 func unitTestsReconcile() {
 	const (
-		finalizer     = "virtualmachine.vmoperator.vmware.com"
 		providerError = "provider error"
 	)
 

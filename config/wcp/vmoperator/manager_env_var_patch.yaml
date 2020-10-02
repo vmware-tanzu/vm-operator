@@ -21,3 +21,9 @@
   value:
     name: VSPHERE_NETWORKING
     value: "<VSPHERE_NETWORKING_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_T1_PERNAMESPACE
+    value: "<FSS_WCP_T1_PERNAMESPACE_VALUE>"

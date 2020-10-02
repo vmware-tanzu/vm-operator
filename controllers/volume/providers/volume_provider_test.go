@@ -64,6 +64,15 @@ var _ = Describe("Volume Provider", func() {
 	})
 
 	Describe("Unit tests for GetVmVolumesToProcess()", func() {
+		Context("Validating sortVmVolumeStatus() function ", func() {
+			It("sortedVmVolumeStatus should be same as newVmVolumeStatus returned by sortVmVolumeStatus()", func() {
+				sortedVmVolumeStatus := generateVolumesbydiskUuid([]string{"1", "2", "3", "4"})
+				unsortedVmVolumeStatus := generateVolumesbydiskUuid([]string{"2", "3", "1", "4"})
+				newVmVolumeStatus := sortVmVolumeStatus(unsortedVmVolumeStatus)
+				Expect(newVmVolumeStatus).To(Equal(sortedVmVolumeStatus))
+			})
+		})
+
 		Context("when new volumes under VirtualMachine object has been added", func() {
 			It("should return the new set of volume object keys to be added and empty set of volume object keys to be deleted", func() {
 				vm = generateDefaultVirtualMachine()
@@ -431,10 +440,11 @@ func generateVirtualMachineVolume(name string) vmoperatorv1alpha1.VirtualMachine
 	}
 }
 
-func generateVirtualMachineVolumeStatus(name string) vmoperatorv1alpha1.VirtualMachineVolumeStatus {
+func generateVirtualMachineVolumeStatus(name string, diskUuid string) vmoperatorv1alpha1.VirtualMachineVolumeStatus {
 	return vmoperatorv1alpha1.VirtualMachineVolumeStatus{
 		Name:     name,
 		Attached: false,
+		DiskUuid: diskUuid,
 		Error:    "",
 	}
 }
@@ -458,8 +468,16 @@ func generateDefaultVirtualMachine() *vmoperatorv1alpha1.VirtualMachine {
 		},
 		Status: vmoperatorv1alpha1.VirtualMachineStatus{
 			Volumes: []vmoperatorv1alpha1.VirtualMachineVolumeStatus{
-				generateVirtualMachineVolumeStatus("alpha"),
+				generateVirtualMachineVolumeStatus("alpha", "1"),
 			},
 		},
 	}
+}
+
+func generateVolumesbydiskUuid(diskUuids []string) []vmoperatorv1alpha1.VirtualMachineVolumeStatus {
+	volumes := []vmoperatorv1alpha1.VirtualMachineVolumeStatus{}
+	for _, diskUuid := range diskUuids {
+		volumes = append(volumes, generateVirtualMachineVolumeStatus("foo", diskUuid))
+	}
+	return volumes
 }

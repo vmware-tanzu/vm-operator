@@ -142,8 +142,6 @@ func (r *ReconcileVolume) reconcileNormal(ctx goctx.Context, origVM *vmoperatorv
 
 	volumeOpsErrs := r.reconcileVolumes(ctx, vm, volumesToAdd, volumesToDelete)
 
-	// TODO: When there are multiple volumes, the ordering seems to change. We need to do an in-place update of the
-	//  volume status. Otherwise, this will result in an unwanted status update call.
 	if !apiequality.Semantic.DeepEqual(vm.Status.Volumes, origVM.Status.Volumes) {
 		if err := r.Status().Update(ctx, vm); err != nil {
 			r.log.Error(err, "Failed to update VirtualMachine status", "name", vm.NamespacedName())

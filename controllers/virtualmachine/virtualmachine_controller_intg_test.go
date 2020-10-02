@@ -10,6 +10,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
@@ -19,7 +20,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
-func TestVirtualMachine(t *testing.T) {
+func TestVirtualMachineOldIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecsWithDefaultAndCustomReporters(t, "VirtualMachine Suite", []Reporter{printer.NewlineReporter{}})
 }

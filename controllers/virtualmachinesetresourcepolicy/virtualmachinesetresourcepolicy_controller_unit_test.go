@@ -1,3 +1,5 @@
+// +build !integration
+
 // Copyright (c) 2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -16,6 +18,10 @@ import (
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
+
+func unitTests() {
+	Describe("Invoking Reconcile", unitTestsReconcile)
+}
 
 const (
 	finalizer = "virtualmachinesetresourcepolicy.vmoperator.vmware.com"

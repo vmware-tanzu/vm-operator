@@ -104,6 +104,20 @@ func (mr *MockVirtualMachineProviderInterfaceMockRecorder) DeleteVirtualMachine(
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVirtualMachine", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).DeleteVirtualMachine), arg0, arg1)
 }
 
+// InvokeFsrVirtualMachine mocks base method
+func (m *MockVirtualMachineProviderInterface) InvokeFsrVirtualMachine(arg0 context.Context, arg1 *v1alpha1.VirtualMachine) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InvokeFsrVirtualMachine", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InvokeFsrVirtualMachine indicates an expected call of InvokeFsrVirtualMachine
+func (mr *MockVirtualMachineProviderInterfaceMockRecorder) InvokeFsrVirtualMachine(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InvokeFsrVirtualMachine", reflect.TypeOf((*MockVirtualMachineProviderInterface)(nil).InvokeFsrVirtualMachine), arg0, arg1)
+}
+
 // DeleteVirtualMachineSetResourcePolicy mocks base method
 func (m *MockVirtualMachineProviderInterface) DeleteVirtualMachineSetResourcePolicy(arg0 context.Context, arg1 *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	m.ctrl.T.Helper()

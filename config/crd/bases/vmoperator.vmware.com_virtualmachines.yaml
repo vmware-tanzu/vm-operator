@@ -311,6 +311,10 @@ spec:
                 underlying infrastructure provider that is exposed to the Guest OS
                 BIOS as a unique hardware identifier.
               type: string
+            changeBlockTracking:
+              description: ChangeBlockTracking describes the CBT enablement status
+                on the VirtualMachine.
+              type: boolean
             conditions:
               description: Conditions describes the current condition information
                 of the VirtualMachine.

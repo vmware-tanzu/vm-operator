@@ -162,6 +162,14 @@ func (vm *VirtualMachine) ResourcePool(ctx context.Context) (string, error) {
 	return rp.Reference().Value, nil
 }
 
+func (vm *VirtualMachine) ChangeTrackingEnabled(ctx context.Context) (*bool, error) {
+	configInfo, err := vm.GetConfigInfo(ctx)
+	if configInfo == nil || err != nil {
+		return nil, err
+	}
+	return configInfo.ChangeTrackingEnabled, nil
+}
+
 func (vm *VirtualMachine) ReferenceValue() string {
 	log.V(5).Info("ReferenceValue", "name", vm.Name)
 	return vm.vcVirtualMachine.Reference().Value
@@ -264,14 +272,29 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 		return nil, errors.Wrapf(err, "failed to get BiosUUID for VirtualMachine %s", vm.Name)
 	}
 
+	cbt, err := vm.ChangeTrackingEnabled(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get ChangeTrackingEnabled for VirtualMachine %s", vm.Name)
+	}
+
 	return &v1alpha1.VirtualMachineStatus{
-		Host:       hostname,
-		Phase:      v1alpha1.Created,
-		PowerState: v1alpha1.VirtualMachinePowerState(ps),
-		VmIp:       ip,
-		UniqueID:   uniqueId,
-		BiosUUID:   biosUUID,
+		Host:                hostname,
+		Phase:               v1alpha1.Created,
+		PowerState:          v1alpha1.VirtualMachinePowerState(ps),
+		VmIp:                ip,
+		UniqueID:            uniqueId,
+		BiosUUID:            biosUUID,
+		ChangeBlockTracking: cbt,
 	}, nil
+}
+
+func (vm *VirtualMachine) GetConfigInfo(ctx context.Context) (*types.VirtualMachineConfigInfo, error) {
+	log.V(5).Info("GetConfigInfo", "name", vm.Name)
+	moVM, err := vm.ManagedObject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return moVM.Config, nil
 }
 
 func (vm *VirtualMachine) GetVAppVmConfigInfo(ctx context.Context) (*types.VmConfigInfo, error) {

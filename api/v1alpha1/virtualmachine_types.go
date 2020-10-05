@@ -305,6 +305,9 @@ type VirtualMachineStatus struct {
 	// Volumes describes a list of current status information for each Volume that is desired to be attached to the
 	// VirtualMachine.
 	Volumes []VirtualMachineVolumeStatus `json:"volumes,omitempty"`
+
+	// ChangeBlockTracking describes the CBT enablement status on the VirtualMachine.
+	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
 }
 
 // VirtualMachineCondition contains condition information for a VirtualMachine.

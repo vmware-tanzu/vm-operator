@@ -928,6 +928,70 @@ func resizeTemplateDisks(ctx context.Context, configSpec *vimTypes.VirtualMachin
 	return nil
 }
 
+func (s *Session) InvokeFsrVirtualMachine(ctx context.Context, resVm *res.VirtualMachine) error {
+	vmRef := vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
+
+	log.Info("Invoking FSR on VM", "name", resVm.Name)
+	task, err := VirtualMachineFSR(ctx, vmRef, s.Client.vimClient)
+	if err != nil {
+		log.Error(err, "InvokeFSR call failed", "name", resVm.Name)
+		return err
+	}
+
+	if err = task.Wait(ctx); err != nil {
+		log.Error(err, "InvokeFSR task failed", "name", resVm.Name)
+		return err
+	}
+
+	return nil
+}
+
+func GetCBTConfigSpec(vm *v1alpha1.VirtualMachine, resVmCbt *bool) *vimTypes.VirtualMachineConfigSpec {
+	if vm.Spec.AdvancedOptions == nil || vm.Spec.AdvancedOptions.ChangeBlockTracking == nil {
+		return nil
+	}
+	if vm.Status.ChangeBlockTracking != nil && *vm.Status.ChangeBlockTracking == *vm.Spec.AdvancedOptions.ChangeBlockTracking &&
+		resVmCbt != nil && *resVmCbt == *vm.Spec.AdvancedOptions.ChangeBlockTracking {
+		return nil
+	}
+	configSpec := &vimTypes.VirtualMachineConfigSpec{
+		ChangeTrackingEnabled: vm.Spec.AdvancedOptions.ChangeBlockTracking,
+	}
+	return configSpec
+}
+
+func (s *Session) updateChangeBlockTracking(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine, isOff bool) error {
+	resVmCbt, err := resVm.ChangeTrackingEnabled(ctx)
+	if err != nil {
+		return err
+	}
+
+	configSpec := GetCBTConfigSpec(vm, resVmCbt)
+	if configSpec == nil {
+		return nil
+	}
+
+	log.Info("Updating changeBlockTracking", "vm", vm.NamespacedName(), "cbt", *configSpec.ChangeTrackingEnabled)
+	err = resVm.Reconfigure(ctx, configSpec)
+	if err != nil {
+		return err
+	}
+
+	if !isOff {
+		// For CBT changes to take effect on a powered on VM, a checkpoint save/restore is needed.
+		//  tracks the implementation of this FSR internally to vSphere.
+		err := s.InvokeFsrVirtualMachine(ctx, resVm)
+		if err != nil {
+			log.Error(err, "Failed to invoke FSR for CBT Update", "name", vm.NamespacedName())
+			return err
+		}
+	}
+
+	vm.Status.ChangeBlockTracking = vm.Spec.AdvancedOptions.ChangeBlockTracking
+
+	return nil
+}
+
 func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.VirtualMachine,
 	vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
 
@@ -1669,12 +1733,12 @@ func (s *Session) RenameSessionFolder(ctx context.Context, name string) error {
 }
 
 func (s *Session) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
-	resVM, err := s.GetVirtualMachine(ctx, vm)
+	resVm, err := s.GetVirtualMachine(ctx, vm)
 	if err != nil {
 		return nil, err
 	}
 
-	isOff, err := resVM.IsVMPoweredOff(ctx)
+	isOff, err := resVm.IsVMPoweredOff(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1682,12 +1746,12 @@ func (s *Session) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 	// This is just a horrible, temporary hack so that we reconfigure "once" and not disrupt a running VM.
 	if isOff {
 		// Add device change specs to configSpec
-		deviceSpecs, err := s.GetNicChangeSpecs(ctx, vm, resVM)
+		deviceSpecs, err := s.GetNicChangeSpecs(ctx, vm, resVm)
 		if err != nil {
 			return nil, err
 		}
 
-		vAppConfigSpec, err := GetvAppConfigSpec(ctx, resVM, &vmConfigArgs)
+		vAppConfigSpec, err := GetvAppConfigSpec(ctx, resVm, &vmConfigArgs)
 		if err != nil {
 			return nil, err
 		}
@@ -1697,17 +1761,17 @@ func (s *Session) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 			return nil, err
 		}
 
-		err = resizeTemplateDisks(ctx, configSpec, resVM, vm.Spec.Volumes)
+		err = resizeTemplateDisks(ctx, configSpec, resVm, vm.Spec.Volumes)
 		if err != nil {
 			return nil, err
 		}
 
-		err = resVM.Reconfigure(ctx, configSpec)
+		err = resVm.Reconfigure(ctx, configSpec)
 		if err != nil {
 			return nil, err
 		}
 
-		customizationSpec, err := s.GetCustomizationSpec(ctx, vm, resVM)
+		customizationSpec, err := s.GetCustomizationSpec(ctx, vm, resVm)
 		if err != nil {
 			return nil, err
 		}
@@ -1716,7 +1780,7 @@ func (s *Session) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 			log.Info("Customizing VM",
 				"vm", k8sTypes.NamespacedName{Namespace: vm.Namespace, Name: vm.Name},
 				"customizationSpec", customizationSpec)
-			if err := resVM.Customize(ctx, *customizationSpec); err != nil {
+			if err := resVm.Customize(ctx, *customizationSpec); err != nil {
 				// Ignore customization pending fault as this means we have already tried to customize the VM and it is
 				// pending. This can happen if the VM has failed to power-on since the last time we customized the VM. If
 				// we don't ignore this error, we will never be able to power-on the VM and the we will always fail here.
@@ -1727,5 +1791,11 @@ func (s *Session) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 			}
 		}
 	}
-	return resVM, nil
+
+	err = s.updateChangeBlockTracking(ctx, vm, resVm, isOff)
+	if err != nil {
+		return nil, err
+	}
+
+	return resVm, nil
 }

@@ -26,6 +26,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
+var (
+	falseVar = false
+	trueVar  = true
+)
+
 var _ = Describe("Test Session", func() {
 
 	Context("ExtraConfig priority", func() {
@@ -68,10 +73,6 @@ var _ = Describe("Test Session", func() {
 	})
 
 	Context("GetvAppConfigSpec", func() {
-		var (
-			falseVar = false
-			trueVar  = true
-		)
 
 		Specify("return nil for non ovfenv transport", func() {
 			vmConfigArgs := &vmprovider.VmConfigArgs{
@@ -189,6 +190,77 @@ var _ = Describe("Test Session", func() {
 			cpuMinFreq, err := vsphere.ComputeCPUInfo(ctx, cr)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(cpuMinFreq).Should(BeNumerically(">", 0))
+		})
+	})
+
+	Context("Update ChangeBlockTracking", func() {
+
+		var vmSpec *v1alpha1.VirtualMachine
+		var resVmCbt *bool
+
+		BeforeEach(func() {
+			vmSpec = &v1alpha1.VirtualMachine{
+				Spec: v1alpha1.VirtualMachineSpec{
+					AdvancedOptions: &v1alpha1.VirtualMachineAdvancedOptions{},
+				},
+				Status: v1alpha1.VirtualMachineStatus{},
+			}
+		})
+
+		Context("spec cbt unset", func() {
+
+			BeforeEach(func() {
+				vmSpec.Spec.AdvancedOptions.ChangeBlockTracking = nil
+				resVmCbt = nil
+			})
+
+			It("resVm cbt and status cbt unset", func() {
+				configSpec := vsphere.GetCBTConfigSpec(vmSpec, resVmCbt)
+				Expect(configSpec).To(BeNil())
+			})
+			It("resVm cbt set", func() {
+				resVmCbt = &trueVar
+				configSpec := vsphere.GetCBTConfigSpec(vmSpec, resVmCbt)
+				Expect(configSpec).To(BeNil())
+			})
+			It("status cbt set", func() {
+				vmSpec.Status.ChangeBlockTracking = &trueVar
+				configSpec := vsphere.GetCBTConfigSpec(vmSpec, resVmCbt)
+				Expect(configSpec).To(BeNil())
+			})
+		})
+
+		Context("spec cbt set", func() {
+
+			BeforeEach(func() {
+				vmSpec.Spec.AdvancedOptions.ChangeBlockTracking = &trueVar
+				vmSpec.Status.ChangeBlockTracking = nil
+				resVmCbt = nil
+			})
+
+			It("resVm cbt and status cbt unset", func() {
+				configSpec := vsphere.GetCBTConfigSpec(vmSpec, resVmCbt)
+				Expect(configSpec).ToNot(BeNil())
+				Expect(configSpec.ChangeTrackingEnabled).Should(Equal(&trueVar))
+			})
+			It("resVm cbt set", func() {
+				resVmCbt = &trueVar
+				configSpec := vsphere.GetCBTConfigSpec(vmSpec, resVmCbt)
+				Expect(configSpec).ToNot(BeNil())
+				Expect(configSpec.ChangeTrackingEnabled).Should(Equal(&trueVar))
+			})
+			It("status cbt set", func() {
+				vmSpec.Status.ChangeBlockTracking = &trueVar
+				configSpec := vsphere.GetCBTConfigSpec(vmSpec, resVmCbt)
+				Expect(configSpec).ToNot(BeNil())
+				Expect(configSpec.ChangeTrackingEnabled).Should(Equal(&trueVar))
+			})
+			It("resVm cbt and status cbt set", func() {
+				vmSpec.Status.ChangeBlockTracking = &trueVar
+				resVmCbt = &trueVar
+				configSpec := vsphere.GetCBTConfigSpec(vmSpec, resVmCbt)
+				Expect(configSpec).To(BeNil())
+			})
 		})
 	})
 })

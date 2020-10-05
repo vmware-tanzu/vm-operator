@@ -39,6 +39,7 @@ type VirtualMachineProviderInterface interface {
 	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VmConfigArgs) error
 	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VmConfigArgs) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
+	InvokeFsrVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 
 	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
 	// Used by VirtualMachine controller to determine if entities of ResourcePolicy exist on the infrastructure provider

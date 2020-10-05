@@ -21,6 +21,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers/simplelb"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
@@ -30,21 +31,26 @@ const (
 	ServiceLoadBalancerTagKey = "ncp/crd_lb"
 	NSXTLoadBalancer          = "nsx-t-lb"
 	SimpleLoadBalancer        = "simple-lb"
+	NoOpLoadBalancer          = ""
 	ClusterNameKey            = "capw.vmware.com/cluster.name"
 )
 
 var LBProvider string
 
-func init() {
+func SetLBProvider() {
 	LBProvider = os.Getenv("LB_PROVIDER")
 	if LBProvider == "" {
 		vdsNetwork := os.Getenv("VSPHERE_NETWORKING")
-		if vdsNetwork == "true" {
+		if vdsNetwork == "true" || lib.IsT1PerNamespaceEnabled() {
 			// Use noopLoadbalancerProvider
 			return
 		}
 		LBProvider = NSXTLoadBalancer
 	}
+}
+
+func init() {
+	SetLBProvider()
 }
 
 var log = logf.Log.WithName("loadbalancer")

@@ -33,8 +33,10 @@ import (
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
@@ -619,6 +621,34 @@ var _ = Describe("VirtualMachineService controller", func() {
 				Expect(currentEndpoints).To(Equal(newEndpoints))
 			})
 		})
+	})
+})
+
+var _ = Describe("SetLBProvider", func() {
+	var origIsT1PerNamespaceEnabled func() bool
+	var origLBProvider string
+	BeforeEach(func() {
+		origIsT1PerNamespaceEnabled = lib.IsT1PerNamespaceEnabled
+		origLBProvider = providers.LBProvider
+		providers.LBProvider = ""
+	})
+	AfterEach(func() {
+		lib.IsT1PerNamespaceEnabled = origIsT1PerNamespaceEnabled
+		providers.LBProvider = origLBProvider
+	})
+	It("Should create No-Op load-balancer when WCP_T1_PERNAMESPACE is true", func() {
+		lib.IsT1PerNamespaceEnabled = func() bool {
+			return true
+		}
+		providers.SetLBProvider()
+		Expect(providers.LBProvider).To(Equal(providers.NoOpLoadBalancer))
+	})
+	It("Should create NSX-T load-balancer when WCP_T1_PERNAMESPACE is false", func() {
+		lib.IsT1PerNamespaceEnabled = func() bool {
+			return false
+		}
+		providers.SetLBProvider()
+		Expect(providers.LBProvider).To(Equal(providers.NSXTLoadBalancer))
 	})
 })
 

@@ -34,3 +34,7 @@ func GetVmOpNamespaceFromEnv() (string, error) {
 var IsVMServiceFSSEnabled = func() bool {
 	return os.Getenv("FSS_WCP_VMSERVICE") == "true"
 }
+
+var IsT1PerNamespaceEnabled = func() bool {
+	return os.Getenv("FSS_WCP_T1_PERNAMESPACE") == "true"
+}

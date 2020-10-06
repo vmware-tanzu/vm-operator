@@ -105,6 +105,16 @@ var _ = Describe("VirtualMachineService controller", func() {
 			name := "foo-vmservice"
 			vmService := getVmServiceOfType(name, serviceNamespace, vmoperatorv1alpha1.VirtualMachineServiceTypeClusterIP)
 
+			// Add dummy labels and annotations to vmService
+			dummyLabelKey := "dummy-label-key"
+			dummyLabelVal := "dummy-label-val"
+			dummyAnnotationKey := "dummy-annotation-key"
+			dummyAnnotationVal := "dummy-annotation-val"
+			vmService.Labels = make(map[string]string)
+			vmService.Annotations = make(map[string]string)
+			vmService.Labels[dummyLabelKey] = dummyLabelVal
+			vmService.Annotations[dummyAnnotationKey] = dummyAnnotationVal
+
 			// Create the VM Service object and expect the Reconcile
 			err := c.Create(ctx, vmService)
 			Expect(err).ShouldNot(HaveOccurred())
@@ -117,6 +127,10 @@ var _ = Describe("VirtualMachineService controller", func() {
 			Eventually(func() error {
 				return c.Get(ctx, serviceKey, &service)
 			}).Should(Succeed())
+
+			// Service should have label and annotations replicated on vmService create
+			Expect(service.Labels).To(HaveKeyWithValue(dummyLabelKey, dummyLabelVal))
+			Expect(service.Annotations).To(HaveKeyWithValue(dummyAnnotationKey, dummyAnnotationVal))
 
 			// Delete the VM Service object and expect it to be deleted.
 			err = c.Delete(ctx, vmService)
@@ -499,6 +513,57 @@ var _ = Describe("VirtualMachineService controller", func() {
 
 					// Channel should receive an Update event
 					Expect(events).Should(Receive(ContainSubstring(OpUpdate)))
+				})
+			})
+		})
+		Describe("When Service has new annotations", func() {
+			var (
+				serviceName          string
+				service              *corev1.Service
+				serviceAnnotationKey string
+				serviceAnnotationVal string
+				vmService            *vmoperatorv1alpha1.VirtualMachineService
+			)
+
+			BeforeEach(func() {
+				serviceName = "dummy-service"
+				service = getService(serviceName, serviceNamespace)
+
+				annotations := service.ObjectMeta.GetAnnotations()
+				if annotations == nil {
+					annotations = make(map[string]string)
+				}
+				serviceAnnotationKey = "dummy-service-annotation"
+				serviceAnnotationVal = "blah"
+
+				annotations[serviceAnnotationKey] = serviceAnnotationVal
+				service.ObjectMeta.SetAnnotations(annotations)
+
+				err := c.Create(ctx, service)
+				Expect(err).NotTo(HaveOccurred())
+
+				vmService = getVmService(serviceName, serviceNamespace)
+				err = c.Create(ctx, vmService)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			AfterEach(func() {
+				err := c.Delete(ctx, service)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = c.Delete(ctx, vmService)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			Context("When there are annotations added to the Service", func() {
+				It("Should preserve existing annotations on the Service and shouldn't update the k8s Service", func() {
+					newService, err := r.createOrUpdateService(ctx, vmService)
+					Expect(err).ShouldNot(HaveOccurred())
+
+					Expect(newService.Annotations).To(HaveKeyWithValue(serviceAnnotationKey, serviceAnnotationVal))
+
+					// Channel should receive an Update event
+					Expect(events).ShouldNot(Receive(ContainSubstring(OpUpdate)))
 				})
 			})
 		})

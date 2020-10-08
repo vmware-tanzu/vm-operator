@@ -116,9 +116,8 @@ func isClusterModulePresent(ctx context.Context, session *Session, moduleSpec v1
 			moduleExists, err := session.DoesClusterModuleExist(ctx, module.ModuleUuid)
 			if err != nil {
 				return false, err
-			} else {
-				return moduleExists, nil
 			}
+			return moduleExists, nil
 		}
 	}
 	return false, nil
@@ -157,7 +156,6 @@ func updateOrAddClusterModuleStatus(new v1alpha1.ClusterModuleStatus, resourcePo
 
 // CreateClusterModules creates all the ClusterModules that has not created yet for a given VirtualMachineSetResourcePolicy in VC.
 func (vs *vSphereVmProvider) CreateClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
-
 	ses, err := vs.sessions.GetSession(ctx, resourcePolicy.Namespace)
 	if err != nil {
 		return err

@@ -11,6 +11,7 @@ import (
 
 const (
 	VmopNamespaceEnv = "POD_NAMESPACE"
+	VMServiceFSS     = "FSS_WCP_VMSERVICE"
 )
 
 // SetVmOpNamespaceEnv sets the VM Operator pod's namespace in the environment
@@ -37,4 +38,14 @@ var IsVMServiceFSSEnabled = func() bool {
 
 var IsT1PerNamespaceEnabled = func() bool {
 	return os.Getenv("FSS_WCP_T1_PERNAMESPACE") == "true"
+}
+
+// EnableVMServiceFSS enables the VM service FSS. Currently, only used in tests.
+func EnableVMServiceFSS() {
+	os.Setenv(VMServiceFSS, "true")
+}
+
+// EnableVMServiceFSS disables the VM service FSS. Currently, only used in tests.
+func DisableVMServiceFSS() {
+	os.Unsetenv(VMServiceFSS)
 }

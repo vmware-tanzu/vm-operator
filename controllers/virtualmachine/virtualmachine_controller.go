@@ -293,13 +293,45 @@ func (r *VirtualMachineReconciler) lookupStoragePolicyID(ctx *context.VirtualMac
 	return sc.Parameters["storagePolicyID"], nil
 }
 
-// createOrUpdateVm calls into the VM provider to reconcile a VirtualMachine
-func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineContext, vm *vmoperatorv1alpha1.VirtualMachine) error {
+// getVMClass checks if a VM class specified by a VM spec is valid. This check involves the validating that a VirtualMachineClassBinding resource
+// exists with ClassRef pointing to the VM class specified in the namespace. We also validate that class exists on the API server.
+// Note: This class definition will be used to create the VM. Further changes to the VM class definition will not have any impact on this VM.
+func (r *VirtualMachineReconciler) getVMClass(ctx *context.VirtualMachineContext, vm *vmoperatorv1alpha1.VirtualMachine) (*vmoperatorv1alpha1.VirtualMachineClass, error) {
+	if lib.IsVMServiceFSSEnabled() {
+		// Validate that a VirtualMachineClassBinding exists for this class.
+		classBindingList := &vmoperatorv1alpha1.VirtualMachineClassBindingList{}
+
+		// Filter the bindings for the specified VM class in this namespace.
+		if err := r.List(ctx, classBindingList,
+			client.InNamespace(vm.Namespace),
+			client.MatchingFields{
+				"classRef.Kind": "VirtualMachineClass",
+				"classRef.name": vm.Spec.ClassName,
+			}); err != nil {
+			r.Logger.Error(err, "Error in listing VirtualMachineClassBinding resources for VM class", "className", vm.Spec.ClassName)
+			return nil, err
+		}
+
+		if len(classBindingList.Items) == 0 {
+			return nil, fmt.Errorf("VM class binding does not exist for VM class: %v", vm.Spec.ClassName)
+		}
+	}
+
 	vmClass := &vmoperatorv1alpha1.VirtualMachineClass{}
 	err := r.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)
 	if err != nil {
 		r.Logger.Error(err, "Failed to get VirtualMachineClass for VirtualMachine",
 			"vmName", vm.NamespacedName(), "class", vm.Spec.ClassName)
+		return nil, err
+	}
+
+	return vmClass, nil
+}
+
+// createOrUpdateVm calls into the VM provider to reconcile a VirtualMachine
+func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineContext, vm *vmoperatorv1alpha1.VirtualMachine) error {
+	vmClass, err := r.getVMClass(ctx, vm)
+	if err != nil {
 		return err
 	}
 

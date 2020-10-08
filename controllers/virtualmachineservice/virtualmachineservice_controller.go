@@ -305,12 +305,11 @@ func (r *ReconcileVirtualMachineService) makeEndpointAddress(vm *vmoperatorv1alp
 	return &corev1.EndpointAddress{
 		IP: vm.Status.VmIp,
 		TargetRef: &corev1.ObjectReference{
-			APIVersion:      vm.APIVersion,
-			Kind:            vm.Kind,
-			Namespace:       vm.Namespace,
-			Name:            vm.Name,
-			UID:             vm.UID,
-			ResourceVersion: vm.ResourceVersion,
+			APIVersion: vm.APIVersion,
+			Kind:       vm.Kind,
+			Namespace:  vm.Namespace,
+			Name:       vm.Name,
+			UID:        vm.UID,
 		}}
 }
 

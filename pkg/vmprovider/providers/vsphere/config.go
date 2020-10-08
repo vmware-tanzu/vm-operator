@@ -6,7 +6,6 @@ package vsphere
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -296,7 +295,7 @@ func GetProviderConfigFromConfigMap(client ctrlruntime.Client, namespace string)
 	}
 
 	// With VMService, we are using ContentSource CRD to specify a content library association.
-	if os.Getenv("FSS_WCP_VMSERVICE") == "true" {
+	if lib.IsVMServiceFSSEnabled() {
 		contentSource, err := getCLUUIDFromContentSource(client)
 		if err != nil {
 			return nil, err

@@ -8,7 +8,6 @@ package virtualmachineimage
 import (
 	"context"
 	"fmt"
-	"os"
 	"reflect"
 	"sync"
 	"time"
@@ -27,6 +26,7 @@ import (
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
@@ -180,7 +180,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 		}
 
 		BeforeEach(func() {
-			os.Setenv("FSS_WCP_VMSERVICE", "true")
+			lib.EnableVMServiceFSS()
 
 			clName = "content-library-name"
 			// Create a content library to back the ContentSource
@@ -206,7 +206,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 		})
 
 		AfterEach(func() {
-			os.Unsetenv("FSS_WCP_VMSERVICE")
+			lib.DisableVMServiceFSS()
 
 			// Delete the ContentSource resource
 			Expect(c.Delete(context.TODO(), contentSource)).To(Succeed())

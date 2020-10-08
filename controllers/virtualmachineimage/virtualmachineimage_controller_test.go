@@ -456,7 +456,6 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 			var imageList v1alpha1.VirtualMachineImageList
 
 			BeforeEach(func() {
-				os.Setenv("FSS_WCP_VMSERVICE", "false")
 				clientListImageSucceeds(mockClient, ctx, &imageList)
 				vmproviderListImageSucceeds(mockVmProvider, ctx, "", images)
 				clientCreateImageSucceeds(mockClient, ctx, image)

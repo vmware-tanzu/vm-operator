@@ -8,6 +8,8 @@ package virtualmachine_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 
 	. "github.com/onsi/ginkgo"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -45,6 +48,7 @@ func unitTestsReconcile() {
 		vmCtx          *vmopContext.VirtualMachineContext
 		vm             *vmoperatorv1alpha1.VirtualMachine
 		vmClass        *vmoperatorv1alpha1.VirtualMachineClass
+		vmClassBinding *vmoperatorv1alpha1.VirtualMachineClassBinding
 	)
 
 	BeforeEach(func() {
@@ -97,6 +101,53 @@ func unitTestsReconcile() {
 
 		BeforeEach(func() {
 			initObjects = append(initObjects, vm, vmClass)
+		})
+
+		When("the WCP_VMService FSS is enabled", func() {
+			var oldVMServiceEnableFunc func() bool
+
+			BeforeEach(func() {
+				oldVMServiceEnableFunc = lib.IsVMServiceFSSEnabled
+				lib.IsVMServiceFSSEnabled = func() bool {
+					return true
+				}
+			})
+
+			AfterEach(func() {
+				lib.IsVMServiceFSSEnabled = oldVMServiceEnableFunc
+			})
+
+			Context("VirtualMachineClassBinding does not exist for the class", func() {
+				It("should fail to reconcile the VM with the appropriate error", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(fmt.Errorf("VM class binding does not exist for VM class: %v", vm.Spec.ClassName)))
+				})
+			})
+
+			Context("VirtualMachineClassBinding exists for the class", func() {
+				BeforeEach(func() {
+					vmClassBinding = &vmoperatorv1alpha1.VirtualMachineClassBinding{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "dummy-classbinding",
+							Namespace: vm.Namespace,
+						},
+						ClassRef: vmoperatorv1alpha1.ClassReference{
+							APIVersion: vmoperatorv1alpha1.SchemeGroupVersion.Group,
+							Name:       vm.Spec.ClassName,
+							Kind:       reflect.TypeOf(vmClass).Elem().Name(),
+						},
+					}
+					initObjects = append(initObjects, vmClassBinding)
+				})
+
+				It("should successfully reconcile the VM, add finalizer and verify the phase", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
+					expectPhase(vmCtx, ctx.Client, vmoperatorv1alpha1.Created)
+				})
+			})
 		})
 
 		It("will have finalizer set after reconciliation", func() {

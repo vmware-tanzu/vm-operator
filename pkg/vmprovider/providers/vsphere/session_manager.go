@@ -135,14 +135,12 @@ func (sm *SessionManager) GetSession(ctx context.Context, namespace string) (*Se
 	return ses, nil
 }
 
-func (sm *SessionManager) ComputeClusterCpuMinFrequency(ctx context.Context) (err error) {
-	minFreq := uint64(0)
-
+func (sm *SessionManager) ComputeClusterCpuMinFrequency(ctx context.Context) error {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 
-	// All sessions connect to the same infra
-	// Get a session, compute, and set freq in all the sessions
+	var minFreq uint64
+	var err error
 	for _, s := range sm.sessions {
 		minFreq, err = s.computeCPUInfo(ctx)
 		break
@@ -169,7 +167,7 @@ func (sm *SessionManager) UpdateVcPNID(ctx context.Context, clusterConfigMap *co
 		return err
 	}
 
-	if sm.isVcURLUnchanged(config, clusterCfg) {
+	if config.VcPNID == clusterCfg.VcPNID && config.VcPort == clusterCfg.VcPort {
 		return nil
 	}
 
@@ -194,9 +192,4 @@ func (sm *SessionManager) clearSessionsAndClient(ctx context.Context) {
 		sm.client.Logout(ctx)
 		sm.client = nil
 	}
-
-}
-
-func (sm *SessionManager) isVcURLUnchanged(oldConfig *VSphereVmProviderConfig, newConfig *WcpClusterConfig) bool {
-	return oldConfig.VcPNID == newConfig.VcPNID && oldConfig.VcPort == newConfig.VcPort
 }

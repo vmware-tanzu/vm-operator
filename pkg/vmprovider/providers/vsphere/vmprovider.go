@@ -316,7 +316,7 @@ func AddVmImageAnnotations(annotations map[string]string, ctx context.Context, o
 	return nil
 }
 
-// DoesContentLiraryExists checks if a ContentLibrary exists on the vSphere infrastructure
+// DoesContentLibraryExist checks if a ContentLibrary exists on the vSphere infrastructure
 // AKP: move to content provider
 func (vs *vSphereVmProvider) DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error) {
 	// GetSession with empty namespace grabs a cluster scoped session
@@ -498,7 +498,6 @@ func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, 
 	powerState, uuid, reference := resVm.ImageFields(ctx)
 
 	ovfProperties := make(map[string]string)
-
 	if imgOptions == AnnotateVmImage {
 		var err error
 		ovfProperties, err = ovfPropRetriever.GetOvfInfoFromVM(ctx, resVm)

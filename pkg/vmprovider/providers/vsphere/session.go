@@ -8,9 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"net/url"
 	"os"
-	"reflect"
 	"strings"
 	"sync"
 	"text/template"
@@ -56,11 +54,10 @@ type Session struct {
 	datacenter   *object.Datacenter
 	cluster      *object.ClusterComputeResource
 	folder       *object.Folder
-	resourcepool *object.ResourcePool
+	resourcePool *object.ResourcePool
 	network      object.NetworkReference // BMV: Dead? (never set in ConfigMap)
 	datastore    *object.Datastore
 
-	userInfo              *url.Userinfo
 	extraConfig           map[string]string
 	storageClassRequired  bool
 	useInventoryForImages bool
@@ -73,6 +70,12 @@ type Session struct {
 
 func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphereVmProviderConfig,
 	ncpClient ncpcs.Interface, k8sClient ctrlruntime.Client, scheme *runtime.Scheme) (*Session, error) {
+
+	if log.V(4).Enabled() {
+		configCopy := *config
+		configCopy.VcCreds = nil
+		log.V(4).Info("Creating new Session", "config", &configCopy)
+	}
 
 	s := &Session{
 		Client:                client,
@@ -91,10 +94,9 @@ func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphere
 	return s, nil
 }
 
+//nolint:complexity
 func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConfig) error {
-
 	s.Finder = find.NewFinder(s.Client.VimClient(), false)
-	s.userInfo = url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 
 	ref := types.ManagedObjectReference{Type: "Datacenter", Value: config.Datacenter}
 	o, err := s.Finder.ObjectReference(ctx, ref)
@@ -111,24 +113,37 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		}
 	}
 
-	// ResourcePool is only relevant for Development environments.  On WCP, the RP is extracted from an annotation
-	// on the namespace.
+	// On WCP, the RP is extracted from an annotation on the namespace.
 	if config.ResourcePool != "" {
-		s.resourcepool, err = s.GetResourcePoolByMoID(ctx, config.ResourcePool)
+		s.resourcePool, err = s.GetResourcePoolByMoID(ctx, config.ResourcePool)
 		if err != nil {
 			return errors.Wrapf(err, "failed to init Resource Pool %q", config.ResourcePool)
 		}
+
 		// TODO: Remove this and fetch from config.Cluster once we populate the value from wcpsvc
 		if s.cluster == nil {
-			s.cluster, err = GetResourcePoolOwner(ctx, s.resourcepool)
+			s.cluster, err = GetResourcePoolOwner(ctx, s.resourcePool)
 			if err != nil {
-				return errors.Wrapf(err, "failed to init cluster %q", config.ResourcePool)
+				return errors.Wrapf(err, "failed to init cluster from Resource Pool %q", config.ResourcePool)
 			}
 		}
 	}
 
-	// Folder is only relevant for Development environments.  On WCP, the folder is extracted from an annotation
-	// on the namespace.
+	// Initialize fields that require a cluster.
+	if s.cluster != nil {
+		minFreq, err := s.computeCPUInfo(ctx)
+		if err != nil {
+			return errors.Wrapf(err, "failed to init minimum CPU frequency")
+		}
+		s.SetCpuMinMHzInCluster(minFreq)
+
+		s.guestOSDescriptorIDs, err = GetValidGuestOSDescriptorIDs(ctx, s.cluster, s.Client.vimClient)
+		if err != nil {
+			return errors.Wrapf(err, "failed to init guestOS descriptors for cluster")
+		}
+	}
+
+	// On WCP, the Folder is extracted from an annotation on the namespace.
 	if config.Folder != "" {
 		s.folder, err = s.GetFolderByMoID(ctx, config.Folder)
 		if err != nil {
@@ -136,39 +151,38 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		}
 	}
 
-	// Network setting is optional
+	// Network setting is optional.
 	if config.Network != "" {
 		s.network, err = s.Finder.Network(ctx, config.Network)
 		if err != nil {
 			return errors.Wrapf(err, "failed to init Network %q", config.Network)
 		}
-		log.V(4).Info("Using default network", "network", config.Network)
 	}
 
-	// Apply default extra config values
+	if s.storageClassRequired {
+		if config.Datastore != "" {
+			log.V(4).Info("Ignoring configured datastore since storage class is required")
+		}
+	} else {
+		if config.Datastore != "" {
+			s.datastore, err = s.Finder.Datastore(ctx, config.Datastore)
+			if err != nil {
+				return errors.Wrapf(err, "failed to init Datastore %q", config.Datastore)
+			}
+		}
+	}
+
+	// Apply default extra config values. Allow for the option to specify extraConfig to be applied to all VMs
 	s.extraConfig = DefaultExtraConfig
-	// Allow for the option to specify extraConfig to be applied to all VMs
 	if jsonExtraConfig := os.Getenv("JSON_EXTRA_CONFIG"); jsonExtraConfig != "" {
 		extraConfig := make(map[string]string)
 		if err := json.Unmarshal([]byte(jsonExtraConfig), &extraConfig); err != nil {
-			return errors.Wrapf(err, "Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable")
+			return errors.Wrap(err, "Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable")
 		}
 		log.V(4).Info("Using Json extraConfig", "extraConfig", extraConfig)
 		// Over-write the default extra config values
 		for k, v := range extraConfig {
 			s.extraConfig[k] = v
-		}
-	}
-
-	// Initialize min frequency.  Only do so if the cluster reference is valid.  The resource pool and cluster info are
-	// not available on all sessions.
-	if s.cluster != nil {
-		if err := s.initCpuMinFreq(ctx); err != nil {
-			return errors.Wrapf(err, "Failed to init CPU min frequency")
-		}
-
-		if err := s.setValidGuestOSDescriptorIDs(ctx); err != nil {
-			return errors.Wrapf(err, "Failed to init guestOS descriptors for cluster")
 		}
 	}
 
@@ -178,59 +192,11 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	s.tagInfo[WorkerVmVmAntiAffinityTagKey] = config.WorkerVmVmAntiAffinityTag
 	s.tagInfo[ProviderTagCategoryNameKey] = config.TagCategoryName
 
-	return s.initDatastore(ctx, config.Datastore)
+	return nil
 }
 
 func (s *Session) ServiceContent(ctx context.Context) (vimTypes.AboutInfo, error) {
 	return s.Client.VimClient().ServiceContent.About, nil
-}
-
-func (s *Session) initDatastore(ctx context.Context, datastore string) error {
-	if s.storageClassRequired {
-		if datastore != "" {
-			log.V(4).Info("Ignoring configured datastore since storage class is required")
-		}
-	} else {
-		if datastore != "" {
-			var err error
-			s.datastore, err = s.Finder.Datastore(ctx, datastore)
-			if err != nil {
-				return errors.Wrapf(err, "failed to init Datastore %q", datastore)
-			}
-			log.V(4).Info("Datastore init OK", "datastore", s.datastore.Reference().Value)
-		}
-	}
-	return nil
-}
-
-func (s *Session) initCpuMinFreq(ctx context.Context) error {
-	if s.GetCpuMinMHzInCluster() > 0 {
-		return nil
-	}
-
-	minFreq, err := s.computeCPUInfo(ctx)
-	if err != nil {
-		return err
-	}
-
-	s.SetCpuMinMHzInCluster(minFreq)
-
-	return nil
-}
-
-func (s *Session) setValidGuestOSDescriptorIDs(ctx context.Context) error {
-	var err error
-	s.guestOSDescriptorIDs, err = GetValidGuestOSDescriptorIDs(ctx, s.cluster, s.Client.vimClient)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// TODO: Follow up to expose this and other fields without "getters"
-func (s *Session) Datastore() *object.Datastore {
-	return s.datastore
 }
 
 func (s *Session) CreateLibrary(ctx context.Context, contentSource string) (string, error) {
@@ -403,16 +369,16 @@ func (s *Session) findChildEntity(ctx context.Context, parent object.Reference, 
 // ChildResourcePool returns a child resource pool by a given name under the session's parent
 // resource pool, returns error if no child resource pool exists with a given name.
 func (s *Session) ChildResourcePool(ctx context.Context, resourcePoolName string) (*object.ResourcePool, error) {
-	resourcePool, err := s.findChildEntity(ctx, s.resourcepool, resourcePoolName)
+	resourcePool, err := s.findChildEntity(ctx, s.resourcePool, resourcePoolName)
 	if err != nil {
 		return nil, err
 	}
 
 	rp, ok := resourcePool.(*object.ResourcePool)
 	if !ok {
-		return nil, fmt.Errorf("ResourcePool '%s' not found. '%s' is a %T", resourcePoolName, resourcePoolName, rp)
+		return nil, fmt.Errorf("ResourcePool %q is not expected ResourcePool type but a %T", resourcePoolName, resourcePool)
 	}
-	return resourcePool.(*object.ResourcePool), err
+	return rp, nil
 }
 
 // ChildFolder returns a child resource pool by a given name under the session's parent
@@ -423,11 +389,11 @@ func (s *Session) ChildFolder(ctx context.Context, folderName string) (*object.F
 		return nil, err
 	}
 
-	folder, ok := folder.(*object.Folder)
+	f, ok := folder.(*object.Folder)
 	if !ok {
-		return nil, fmt.Errorf("Folder '%s' not found. '%s' is a %T", folderName, folderName, folder)
+		return nil, fmt.Errorf("Folder %q is not expected Folder type but a %T", folderName, folder)
 	}
-	return folder.(*object.Folder), err
+	return f, err
 }
 
 // DoesResourcePoolExist checks if a ResourcePool with the given name exists.
@@ -450,12 +416,11 @@ func (s *Session) DoesResourcePoolExist(ctx context.Context, namespace, resource
 func (s *Session) CreateResourcePool(ctx context.Context, rpSpec *v1alpha1.ResourcePoolSpec) (string, error) {
 	log.Info("Creating ResourcePool with session", "name", rpSpec.Name)
 
-	// CreteResourcePool is invoked during a ResourcePolicy reconciliation to create a ResourcePool for a set of
+	// CreateResourcePool is invoked during a ResourcePolicy reconciliation to create a ResourcePool for a set of
 	// VirtualMachines. The new RP is created under the RP corresponding to the session.
 	// For a Supervisor Cluster deployment, the session's RP is the supervisor cluster namespace's RP.
 	// For IAAS deployments, the session's RP correspond to RP in provider ConfigMap.
-
-	resourcePool, err := s.resourcepool.Create(ctx, rpSpec.Name, types.DefaultResourceConfigSpec())
+	resourcePool, err := s.resourcePool.Create(ctx, rpSpec.Name, types.DefaultResourceConfigSpec())
 	if err != nil {
 		return "", err
 	}
@@ -585,7 +550,7 @@ func (s *Session) GetRPAndFolderFromResourcePolicy(ctx context.Context,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (*object.ResourcePool, *object.Folder, error) {
 
 	if resourcePolicy == nil {
-		return s.resourcepool, s.folder, nil
+		return s.resourcePool, s.folder, nil
 	}
 
 	resourcePoolName := resourcePolicy.Spec.ResourcePool.Name
@@ -620,7 +585,6 @@ func (s *Session) CloneVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualM
 		}
 
 		log.Info("Will attempt to clone virtual machine", "name", vm.Name, "datastore", s.datastore.Name())
-
 	} else {
 		log.Info("Will attempt to clone virtual machine", "name", vm.Name, "storageProfileID", vmConfigArgs.StorageProfileID)
 	}
@@ -668,7 +632,6 @@ func (s *Session) cloneVirtualMachineFromInventory(ctx context.Context, vm *v1al
 }
 
 func (s *Session) cloneVirtualMachineFromOVFInCL(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs, cl *library.Library, item *library.Item) (*res.VirtualMachine, error) {
-
 	name := vm.Name
 	resourcePolicyName := ""
 	if vmConfigArgs.ResourcePolicy != nil {
@@ -869,7 +832,7 @@ func createDiskLocators(ctx context.Context, resSrcVM *res.VirtualMachine, datas
 			DiskId:    disk.GetVirtualDevice().Key,
 			Datastore: *datastore,
 			Profile:   vmProfile,
-			//TODO: Check if policy is encripted and select diskMoveType
+			//TODO: Check if policy is encrypted and select diskMoveType
 			DiskMoveType: string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveChildMostDiskBacking),
 		}
 		if vmDiskBacking, ok := disk.(*types.VirtualDisk).Backing.(*types.VirtualDiskFlatVer2BackingInfo); ok {
@@ -1190,6 +1153,7 @@ func (s *Session) deployOvf(ctx context.Context, itemID string, vmName string, r
 		AcceptAllEULA:    true,
 		StorageProfileID: storageProfileID,
 	}
+
 	dSpec.StorageProvisioning, err = s.getStorageProvisioning(ctx, vmAdvancedOptions, storageProfileID)
 	if err != nil {
 		return nil, err
@@ -1551,39 +1515,29 @@ func ComputeCPUInfo(ctx context.Context, cluster *object.ClusterComputeResource)
 	return minFreq, nil
 }
 
-func isNilPtr(i interface{}) bool {
-	if i != nil {
-		return (reflect.ValueOf(i).Kind() == reflect.Ptr) && (reflect.ValueOf(i).IsNil())
-	}
-	return true
-}
-
 func (s *Session) String() string {
 	var sb strings.Builder
 	sb.WriteString("{")
-	if s.Client != nil {
-		sb.WriteString(fmt.Sprintf("client: %+v, ", s.Client))
+	if s.datacenter != nil {
+		sb.WriteString(fmt.Sprintf("datacenter: %s, ", s.datacenter.Reference().Value))
 	}
-	if !isNilPtr(s.ncpClient) {
-		sb.WriteString(fmt.Sprintf("ncpClient: %+v, ", s.ncpClient))
-	}
-	sb.WriteString(fmt.Sprintf("datacenter: %s, ", s.datacenter))
 	if s.folder != nil {
 		sb.WriteString(fmt.Sprintf("folder: %s, ", s.folder.Reference().Value))
 	}
 	if s.network != nil {
 		sb.WriteString(fmt.Sprintf("network: %s, ", s.network.Reference().Value))
 	}
-	if s.resourcepool != nil {
-		sb.WriteString(fmt.Sprintf("resourcepool: %s, ", s.resourcepool.Reference().Value))
+	if s.resourcePool != nil {
+		sb.WriteString(fmt.Sprintf("resourcePool: %s, ", s.resourcePool.Reference().Value))
 	}
 	if s.cluster != nil {
 		sb.WriteString(fmt.Sprintf("cluster: %s, ", s.cluster.Reference().Value))
 	}
 	if s.datastore != nil {
-		sb.WriteString(fmt.Sprintf("datastore: %s ", s.datastore.Reference().Value))
+		sb.WriteString(fmt.Sprintf("datastore: %s, ", s.datastore.Reference().Value))
 	}
-	sb.WriteString(fmt.Sprintf("cpuMinMHzInCluster: %v ", s.cpuMinMHzInCluster))
+	sb.WriteString(fmt.Sprintf("cpuMinMHzInCluster: %v, ", s.GetCpuMinMHzInCluster()))
+	sb.WriteString(fmt.Sprintf("tagInfo: %v ", s.tagInfo))
 	sb.WriteString("}")
 	return sb.String()
 }
@@ -1624,8 +1578,7 @@ func (s *Session) DoesClusterModuleExist(ctx context.Context, moduleUuid string)
 	}
 
 	restClient := s.Client.RestClient()
-	m := cluster.NewManager(restClient)
-	modules, err := m.ListModules(ctx)
+	modules, err := cluster.NewManager(restClient).ListModules(ctx)
 	if err != nil {
 		return false, err
 	}

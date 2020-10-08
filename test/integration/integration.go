@@ -268,13 +268,8 @@ func TeardownVcSimEnv(vcSim *VcSimInstance) {
 }
 
 func CreateLibraryItem(ctx context.Context, session *vsphere.Session, name, kind, libraryId string) error {
-	rootDir, err := testutil.GetRootDir()
-	if err != nil {
-		panic(fmt.Sprintf("GetRootDir failed: %v", err))
-	}
-
 	ovf := "ttylinux-pc_i486-16.1.ovf"
-	imagePath := path.Join(rootDir, "images", ovf)
+	imagePath := path.Join(testutil.GetRootDirOrDie(), "images", ovf)
 
 	libraryItem := library.Item{
 		Name:      name,

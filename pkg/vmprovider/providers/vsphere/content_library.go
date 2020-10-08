@@ -99,6 +99,7 @@ func (cs *ContentLibraryProvider) RetrieveOvfEnvelopeFromLibraryItem(ctx context
 	return ParseOvf(downloadedFileContent)
 }
 
+// Only used in testing.
 func (cs *ContentLibraryProvider) CreateLibrary(ctx context.Context, contentSource string) (string, error) {
 	log.Info("Creating Library", "library", contentSource)
 
@@ -107,14 +108,13 @@ func (cs *ContentLibraryProvider) CreateLibrary(ctx context.Context, contentSour
 		Type: "LOCAL",
 		Storage: []library.StorageBackings{
 			{
-				DatastoreID: cs.session.Datastore().Reference().Value,
+				DatastoreID: cs.session.datastore.Reference().Value,
 				Type:        "DATASTORE",
 			},
 		},
 	}
 
 	restClient := cs.session.Client.RestClient()
-
 	libID, err := library.NewManager(restClient).CreateLibrary(ctx, lib)
 	if err != nil || libID == "" {
 		log.Error(err, "failed to create library")

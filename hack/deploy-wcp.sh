@@ -73,6 +73,12 @@ verifyEnvironmentVariables() {
             exit 1
         fi
 
+        if [[ -z ${VCSA_CLUSTER:-} ]]; then
+            error "Error: The VCSA_CLUSTER environment variable must be set" \
+                "to point to a valid VCSA Cluster"
+            exit 1
+        fi
+
         VCSA_DATASTORE=${VCSA_DATASTORE:-nfs0-1}
 
         if [[ ${FSS_WCP_VMSERVICE_VALUE:-} != "true" ]]; then
@@ -100,6 +106,7 @@ verifyEnvironmentVariables() {
 patchWcpDeploymentYaml() {
     if [[ ${SKIP_YAML:-} != "configmap" ]]; then
         sed -i'' "s,<vc_pnid>,$VCSA_IP,g" "artifacts/wcp-deployment.yaml"
+        sed -i'' "s,<cluster>,$VCSA_CLUSTER,g" "artifacts/wcp-deployment.yaml"
         sed -i'' "s,<datacenter>,$VCSA_DATACENTER,g" "artifacts/wcp-deployment.yaml"
         sed -i'' "s, Datastore: .*, Datastore: $VCSA_DATASTORE," "artifacts/wcp-deployment.yaml"
         sed -i'' "s,<worker_dns>,$VCSA_WORKER_DNS," "artifacts/wcp-deployment.yaml"

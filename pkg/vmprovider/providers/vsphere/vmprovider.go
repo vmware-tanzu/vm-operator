@@ -10,6 +10,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/methods"
+	"github.com/vmware/govmomi/vim25/mo"
+
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/ovf"
@@ -539,9 +544,45 @@ func GetVmwareSystemPropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]stri
 	return properties
 }
 
+// GetValidGuestOSDescriptorIDs fetches valid guestOS descriptor IDs for the cluster
+func GetValidGuestOSDescriptorIDs(ctx context.Context, cluster *object.ClusterComputeResource, client *vim25.Client) (map[string]bool, error) {
+	if cluster == nil {
+		return nil, fmt.Errorf("No cluster exists, can't get OS Descriptors")
+	}
+
+	log.V(4).Info("Validating if the GuestOS Type in the ovf is a valid customizable type")
+	var computeResource mo.ComputeResource
+	obj := cluster.Reference()
+
+	err := cluster.Properties(ctx, obj, []string{"environmentBrowser"}, &computeResource)
+	if err != nil {
+		log.Error(err, "Failed to get cluster properties")
+		return nil, err
+	}
+
+	req := vimtypes.QueryConfigOptionEx{
+		This: *computeResource.EnvironmentBrowser,
+		Spec: &vimtypes.EnvironmentBrowserConfigOptionQuerySpec{},
+	}
+
+	opt, err := methods.QueryConfigOptionEx(ctx, client.RoundTripper, &req)
+	if err != nil {
+		log.Error(err, "Failed to query config options for valid GuestOS types")
+		return nil, err
+	}
+
+	guestOSDescriptorIDs := make(map[string]bool)
+	for _, descriptor := range opt.Returnval.GuestOSDescriptor {
+		guestOSDescriptorIDs[descriptor.Id] = true
+	}
+
+	return guestOSDescriptorIDs, nil
+}
+
 // For a given library item, convert its attributes to return a VirtualMachineImage that represents a k8s-native
 // view of the item.
-func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *library.Item, imgOptions ImageOptions, ovfPropRetriever OvfPropertyRetriever) (*v1alpha1.VirtualMachineImage, error) {
+func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *library.Item, imgOptions ImageOptions, ovfPropRetriever OvfPropertyRetriever,
+	gOSids map[string]bool) (*v1alpha1.VirtualMachineImage, error) {
 
 	var (
 		ovfSystemProps = make(map[string]string)
@@ -593,6 +634,9 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 		ts = v1.NewTime(*item.CreationTime)
 	}
 
+	// Check for existence of osType in cluster's GOS Descriptors
+	isGOSCSupported := gOSids[osInfo.Type]
+
 	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{
 			Name:              item.Name,
@@ -600,8 +644,9 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 			CreationTimestamp: ts,
 		},
 		Status: v1alpha1.VirtualMachineImageStatus{
-			Uuid:       item.ID,
-			InternalId: item.Name,
+			Uuid:          item.ID,
+			InternalId:    item.Name,
+			GOSCSupported: &isGOSCSupported,
 		},
 		Spec: v1alpha1.VirtualMachineImageSpec{
 			Type:            item.Type,

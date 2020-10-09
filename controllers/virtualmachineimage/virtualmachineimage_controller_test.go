@@ -1,7 +1,7 @@
 // +build !integration
 
 //go:generate mockgen -destination=../../mocks/mock_virtual_machine_provider_interface.go -package=mocks github.com/vmware-tanzu/vm-operator/pkg/vmprovider VirtualMachineProviderInterface
-//go:generate mockgen -destination=../../mocks/mock_client.go -package=mocks sigs.k8s.io/controller-runtime/pkg/client Client
+//go:generate mockgen -destination=../../mocks/mock_client.go -package=mocks sigs.k8s.io/controller-runtime/pkg/client Client,StatusWriter
 
 // Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
@@ -30,15 +30,17 @@ import (
 
 var _ = Describe("VirtualMachineImageDiscoverer", func() {
 	var (
-		mockCtrl        *gomock.Controller
-		mockClient      *mocks.MockClient
-		mockVmProvider  *mocks.MockVirtualMachineProviderInterface
-		imageDiscoverer *VirtualMachineImageDiscoverer
+		mockCtrl         *gomock.Controller
+		mockClient       *mocks.MockClient
+		mockStatusWriter *mocks.MockStatusWriter
+		mockVmProvider   *mocks.MockVirtualMachineProviderInterface
+		imageDiscoverer  *VirtualMachineImageDiscoverer
 	)
 
 	BeforeEach(func() {
 		mockCtrl = gomock.NewController(GinkgoT())
 		mockClient = mocks.NewMockClient(mockCtrl)
+		mockStatusWriter = mocks.NewMockStatusWriter(mockCtrl)
 		mockVmProvider = mocks.NewMockVirtualMachineProviderInterface(mockCtrl)
 		ctrlContext := &ctrlContext.ControllerManagerContext{
 			Logger:     ctrllog.Log.WithName("test"),
@@ -62,6 +64,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 			BeforeEach(func() {
 				clientCreateImageNotCalled(mockClient)
+				clientStatusUpdateNotCalled(mockClient)
 			})
 
 			It("return success", func() {
@@ -77,6 +80,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 				image := v1alpha1.VirtualMachineImage{}
 				images = append(images, image)
 				clientCreateImageSucceeds(mockClient, ctx, &image)
+				clientStatusUpdateSucceeds(ctx, mockClient, mockStatusWriter, &image)
 			})
 
 			It("return success", func() {
@@ -92,6 +96,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 
 			BeforeEach(func() {
 				clientUpdateImageNotCalled(mockClient)
+				clientStatusUpdateNotCalled(mockClient)
 			})
 
 			It("return success", func() {
@@ -107,6 +112,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 				image := v1alpha1.VirtualMachineImage{}
 				images = append(images, image)
 				clientUpdateImageSucceeds(mockClient, ctx, &image)
+				clientStatusUpdateSucceeds(ctx, mockClient, mockStatusWriter, &image)
 			})
 
 			It("return success", func() {
@@ -459,6 +465,7 @@ var _ = Describe("VirtualMachineImageDiscoverer", func() {
 				clientListImageSucceeds(mockClient, ctx, &imageList)
 				vmproviderListImageSucceeds(mockVmProvider, ctx, "", images)
 				clientCreateImageSucceeds(mockClient, ctx, image)
+				clientStatusUpdateSucceeds(ctx, mockClient, mockStatusWriter, image)
 			})
 
 			It("should stop the ticker", func(done Done) {
@@ -480,6 +487,15 @@ func clientCreateImageNotCalled(m *mocks.MockClient) *gomock.Call {
 
 func clientCreateImageSucceeds(m *mocks.MockClient, ctx context.Context, image *v1alpha1.VirtualMachineImage) *gomock.Call {
 	return m.EXPECT().Create(gomock.Eq(ctx), gomock.Eq(image)).MinTimes(1).MaxTimes(1).Return(nil)
+}
+
+func clientStatusUpdateNotCalled(m *mocks.MockClient) *gomock.Call {
+	return m.EXPECT().Status().MinTimes(0).MaxTimes(0)
+}
+
+func clientStatusUpdateSucceeds(ctx context.Context, m *mocks.MockClient, statusWriter *mocks.MockStatusWriter, image *v1alpha1.VirtualMachineImage) *gomock.Call {
+	m.EXPECT().Status().AnyTimes().Return(statusWriter)
+	return statusWriter.EXPECT().Update(gomock.Eq(ctx), gomock.Eq(image)).MinTimes(1).MaxTimes(1).Return(nil)
 }
 
 func clientUpdateImageNotCalled(m *mocks.MockClient) *gomock.Call {

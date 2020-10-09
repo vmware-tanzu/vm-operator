@@ -15,8 +15,9 @@ spec:
   - JSONPath: .spec.osInfo.type
     name: OsType
     type: string
-  - JSONPath: .status.supportedOS
-    name: SupportedOS
+  - JSONPath: .status.goscSupported
+    name: GOSC_Supported
+    priority: 1
     type: boolean
   group: vmoperator.vmware.com
   names:
@@ -104,12 +105,14 @@ spec:
         status:
           description: VirtualMachineImageStatus defines the observed state of VirtualMachineImage
           properties:
+            goscSupported:
+              description: GOSCSupported describes whether the VirtualMachineImage
+                is GuestOS customizable based on supported OSTypes for the cluster
+              type: boolean
             internalId:
               type: string
             powerState:
               type: string
-            supportedOS:
-              type: boolean
             uuid:
               type: string
           required:

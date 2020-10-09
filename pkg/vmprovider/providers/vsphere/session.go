@@ -66,8 +66,9 @@ type Session struct {
 	useInventoryForImages bool
 	tagInfo               map[string]string
 
-	mutex              sync.Mutex
-	cpuMinMHzInCluster uint64 // CPU Min Frequency across all Hosts in the cluster
+	mutex                sync.Mutex
+	cpuMinMHzInCluster   uint64 // CPU Min Frequency across all Hosts in the cluster
+	guestOSDescriptorIDs map[string]bool
 }
 
 func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphereVmProviderConfig,
@@ -103,6 +104,13 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	s.datacenter = o.(*object.Datacenter)
 	s.Finder.SetDatacenter(s.datacenter)
 
+	if config.Cluster != "" {
+		s.cluster, err = s.GetClusterByMoID(ctx, config.Cluster)
+		if err != nil {
+			return errors.Wrapf(err, "failed to init Cluster %q", config.Cluster)
+		}
+	}
+
 	// ResourcePool is only relevant for Development environments.  On WCP, the RP is extracted from an annotation
 	// on the namespace.
 	if config.ResourcePool != "" {
@@ -110,10 +118,12 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		if err != nil {
 			return errors.Wrapf(err, "failed to init Resource Pool %q", config.ResourcePool)
 		}
-
-		s.cluster, err = GetResourcePoolOwner(ctx, s.resourcepool)
-		if err != nil {
-			return errors.Wrapf(err, "failed to init cluster %q", config.ResourcePool)
+		// TODO: Remove this and fetch from config.Cluster once we populate the value from wcpsvc
+		if s.cluster == nil {
+			s.cluster, err = GetResourcePoolOwner(ctx, s.resourcepool)
+			if err != nil {
+				return errors.Wrapf(err, "failed to init cluster %q", config.ResourcePool)
+			}
 		}
 	}
 
@@ -155,6 +165,10 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	if s.cluster != nil {
 		if err := s.initCpuMinFreq(ctx); err != nil {
 			return errors.Wrapf(err, "Failed to init CPU min frequency")
+		}
+
+		if err := s.setValidGuestOSDescriptorIDs(ctx); err != nil {
+			return errors.Wrapf(err, "Failed to init guestOS descriptors for cluster")
 		}
 	}
 
@@ -204,6 +218,16 @@ func (s *Session) initCpuMinFreq(ctx context.Context) error {
 	return nil
 }
 
+func (s *Session) setValidGuestOSDescriptorIDs(ctx context.Context) error {
+	var err error
+	s.guestOSDescriptorIDs, err = GetValidGuestOSDescriptorIDs(ctx, s.cluster, s.Client.vimClient)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // TODO: Follow up to expose this and other fields without "getters"
 func (s *Session) Datastore() *object.Datastore {
 	return s.datastore
@@ -244,7 +268,7 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID str
 		item := items[i]
 		if IsSupportedDeployType(item.Type) {
 			var ovfInfoRetriever OvfPropertyRetriever = vmOptions{}
-			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, AnnotateVmImage, ovfInfoRetriever)
+			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, AnnotateVmImage, ovfInfoRetriever, s.guestOSDescriptorIDs)
 			if err != nil {
 				return nil, err
 			}
@@ -323,7 +347,7 @@ func (s *Session) GetVirtualMachineImageFromCL(ctx context.Context, cl *library.
 
 	var ovfInfoRetriever OvfPropertyRetriever = vmOptions{}
 
-	virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, item, AnnotateVmImage, ovfInfoRetriever)
+	virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, item, AnnotateVmImage, ovfInfoRetriever, s.guestOSDescriptorIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -1348,6 +1372,16 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 	configSpec.ExtraConfig = GetExtraConfig(renderedExtraConfig)
 
 	return configSpec, nil
+}
+
+// GetClusterByMoID returns resource pool for a given a moref
+func (s *Session) GetClusterByMoID(ctx context.Context, moID string) (*object.ClusterComputeResource, error) {
+	ref := types.ManagedObjectReference{Type: "ClusterComputeResource", Value: moID}
+	o, err := s.Finder.ObjectReference(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return o.(*object.ClusterComputeResource), nil
 }
 
 // GetResourcePoolByMoID returns resource pool for a given a moref

@@ -28,6 +28,7 @@ type VSphereVmProviderConfig struct {
 	VcPort                      string
 	VcCreds                     *VSphereVmProviderCredentials
 	Datacenter                  string
+	Cluster                     string
 	ResourcePool                string
 	Folder                      string
 	Datastore                   string
@@ -51,6 +52,7 @@ const (
 	vcPortKey                    = "VcPort"
 	vcCredsSecretNameKey         = "VcCredsSecretName" // nolint:gosec
 	datacenterKey                = "Datacenter"
+	clusterKey                   = "Cluster"
 	resourcePoolKey              = "ResourcePool"
 	folderKey                    = "Folder"
 	datastoreKey                 = "Datastore"
@@ -180,6 +182,7 @@ func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProvid
 		VcPort:                      vcPort,
 		VcCreds:                     vcCreds,
 		Datacenter:                  dataMap[datacenterKey],
+		Cluster:                     dataMap[clusterKey],
 		ResourcePool:                dataMap[resourcePoolKey],
 		Folder:                      dataMap[folderKey],
 		Datastore:                   dataMap[datastoreKey],
@@ -340,6 +343,7 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 	dataMap[vcPortKey] = config.VcPort
 	dataMap[vcCredsSecretNameKey] = vcCredsSecretName
 	dataMap[datacenterKey] = config.Datacenter
+	dataMap[clusterKey] = config.Cluster
 	dataMap[resourcePoolKey] = config.ResourcePool
 	dataMap[folderKey] = config.Folder
 	dataMap[datastoreKey] = config.Datastore

@@ -75,6 +75,12 @@ func (d *VirtualMachineImageDiscoverer) createImages(ctx goctx.Context, images [
 		if err != nil {
 			d.log.Error(err, "failed to create image", "name", img.Name)
 		}
+
+		// Update status sub resource for the vm image
+		err = d.client.Status().Update(ctx, &img)
+		if err != nil {
+			d.log.Error(err, "failed to update status sub resource for image", "name", img.Name)
+		}
 	}
 
 }
@@ -103,6 +109,12 @@ func (d *VirtualMachineImageDiscoverer) updateImages(ctx goctx.Context, images [
 		err := d.client.Update(ctx, &img)
 		if err != nil {
 			d.log.Error(err, "failed to update image", "name", img.Name)
+		}
+
+		// Update status sub resource for the vm image
+		err = d.client.Status().Update(ctx, &img)
+		if err != nil {
+			d.log.Error(err, "failed to update status sub resource for image", "name", img.Name)
 		}
 	}
 
@@ -137,9 +149,10 @@ func (d *VirtualMachineImageDiscoverer) diffImages(left []vmoperatorv1alpha1.Vir
 			// Identify updated items
 			d.log.V(4).Info("Updating Image", "name", l.Name)
 			r := right[i]
-			if !reflect.DeepEqual(l.Spec, r.Spec) {
+			if !reflect.DeepEqual(l.Spec, r.Spec) || !reflect.DeepEqual(l.Status, r.Status) {
 				// We can't use `r` here since it is a synthesized object which doesnt have necessary fields to call Update on (e.g. resourceVersion)
 				l.Spec = r.DeepCopy().Spec
+				l.Status = r.DeepCopy().Status
 				updated = append(updated, l)
 			}
 		}

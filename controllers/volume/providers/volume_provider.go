@@ -67,7 +67,15 @@ func CnsVolumeProvider(client client.Client) *cnsVolumeProvider {
 func (cvp *cnsVolumeProvider) AttachVolumes(ctx context.Context, vm *vmoperatorv1alpha1.VirtualMachine, virtualMachineVolumesToAttach map[client.ObjectKey]bool) error {
 	log := log.WithValues("vm", vm.NamespacedName())
 	volumeOpErrors := newVolumeErrorsByOpType(VolumeOpAttach)
-	for virtualMachineVolume := range virtualMachineVolumesToAttach {
+	// Use Spec.Volume order when attaching as a best effort to preserve spec order.
+	// There is no guarantee order will be preserved however, as the CNS reconciler may not receive/process the requests in order.
+	// Create() errors below may also result in attachments being out of the original spec order.
+	for _, volume := range vm.Spec.Volumes {
+		virtualMachineVolume := client.ObjectKey{Name: volume.Name, Namespace: vm.Namespace}
+		if !virtualMachineVolumesToAttach[virtualMachineVolume] {
+			continue
+		}
+
 		cnsNodeVmAttachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 		cnsNodeVmAttachment.SetName(constructCnsNodeVmAttachmentName(vm.Name, virtualMachineVolume.Name))
 		cnsNodeVmAttachment.SetNamespace(virtualMachineVolume.Namespace)

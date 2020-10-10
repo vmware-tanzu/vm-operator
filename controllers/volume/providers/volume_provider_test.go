@@ -226,6 +226,11 @@ var _ = Describe("Volume Provider", func() {
 				err = cnsVolumeProvider.client.List(context.TODO(), cnsNodeVmAttachmentList)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(cnsNodeVmAttachmentList.Items)).To(Equal(2))
+				// Test Spec.Volumes attachment order is maintained
+				for i, volume := range vm.Spec.Volumes {
+					name := constructCnsNodeVmAttachmentName(vm.Name, volume.Name)
+					Expect(name).To(Equal(cnsNodeVmAttachmentList.Items[i].Name))
+				}
 			})
 		})
 

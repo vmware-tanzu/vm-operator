@@ -662,20 +662,6 @@ func (s *Session) cloneVirtualMachineFromOVFInCL(ctx context.Context, vm *v1alph
 	return deployedVm, nil
 }
 
-func (s *Session) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
-	resVm, err := s.GetVirtualMachine(ctx, vm)
-	if err != nil {
-		return err
-	}
-
-	err = resVm.Delete(ctx)
-	if err != nil {
-		return errors.Wrapf(err, "failed to delete VM %q", vm.Name)
-	}
-
-	return nil
-}
-
 func (s *Session) lookupVmByName(ctx context.Context, name string) (*res.VirtualMachine, error) {
 	vm, err := s.Finder.VirtualMachine(ctx, name)
 	if err != nil {

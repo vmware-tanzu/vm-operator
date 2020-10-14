@@ -8,6 +8,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	stdlog "log"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -105,6 +106,54 @@ func getVirtualMachineInstance(name, namespace, imageName, className string) *vm
 	}
 }
 
+var _ = Describe("VMProvider Inventory Tests", func() {
+
+	BeforeEach(func() {
+		Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(ctx, "")).To(Succeed())
+	})
+
+	Context("When using inventory", func() {
+		It("should support controller like workflow", func() {
+			vmNamespace := integration.DefaultNamespace
+			vmName := "test-vm-vmp-invt-deploy"
+
+			images, err := vmProvider.ListVirtualMachineImages(context.TODO(), integration.DefaultNamespace)
+			Expect(err).NotTo(HaveOccurred())
+			for _, image := range images {
+				stdlog.Printf("image %s\n", image.Name)
+			}
+
+			vmMetadata := &vmprovider.VmMetadata{
+				Transport: vmoperatorv1alpha1.VirtualMachineMetadataOvfEnvTransport,
+			}
+			imageName := "DC0_H0_VM0" // Default govcsim image name
+			vmClass := getVMClassInstance(vmName, vmNamespace)
+			vm := getVirtualMachineInstance(vmName, vmNamespace, imageName, vmClass.Name)
+			Expect(vm.Status.BiosUUID).Should(BeEmpty())
+
+			exists, err := vmProvider.DoesVirtualMachineExist(ctx, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(exists).To(BeFalse())
+
+			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, nil, vmMetadata, "foo"}
+			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Update Virtual Machine to Reconfigure with VM Class config
+			err = vmProvider.UpdateVirtualMachine(context.TODO(), vm, vmConfigArgs)
+			Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
+			Expect(vm.Status.BiosUUID).ShouldNot(BeEmpty())
+
+			exists, err = vmProvider.DoesVirtualMachineExist(ctx, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(exists).To(BeTrue())
+
+			err = vmProvider.DeleteVirtualMachine(ctx, vm)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+})
+
 var _ = Describe("VMProvider Tests", func() {
 	BeforeEach(func() {
 		Expect(vmProvider.(vsphere.VSphereVmProviderGetSessionHack).SetContentLibrary(ctx, integration.GetContentSourceID())).To(Succeed())
@@ -135,17 +184,24 @@ var _ = Describe("VMProvider Tests", func() {
 			vm := getVirtualMachineInstance(vmName, vmNamespace, imageName, vmClass.Name)
 			Expect(vm.Status.BiosUUID).Should(BeEmpty())
 
+			exists, err := vmProvider.DoesVirtualMachineExist(ctx, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(exists).To(BeFalse())
+
 			// CreateVirtualMachine from CL
 			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, nil, vmMetadata, "foo"}
 			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
 			Expect(err).NotTo(HaveOccurred())
-			//Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOff))
 
 			// Update Virtual Machine to Reconfigure with VM Class config
 			err = vmProvider.UpdateVirtualMachine(context.TODO(), vm, vmConfigArgs)
 			Expect(vm.Status.VmIp).Should(Equal(testIP))
 			Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
 			Expect(vm.Status.BiosUUID).ShouldNot(BeEmpty())
+		})
+
+		It("should work", func() {
+			// Everything done in the BeforeEach().
 		})
 
 		// DWB: Disabling this test until I work with Doug M. to determine why there is a FileAlreadyExists error being

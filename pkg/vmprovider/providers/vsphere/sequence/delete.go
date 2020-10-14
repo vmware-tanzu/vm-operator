@@ -55,8 +55,8 @@ func (seq VirtualMachineDeleteSequence) GetName() string {
 
 func (seq VirtualMachineDeleteSequence) Execute(ctx context.Context) error {
 	for _, step := range seq.steps {
-		err := step.Execute(ctx)
 		log.Info("Executing step", "step", step.Name())
+		err := step.Execute(ctx)
 		if err != nil {
 			log.Error(err, "Step failed", "step", step.Name())
 			return err

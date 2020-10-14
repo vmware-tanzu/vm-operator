@@ -242,7 +242,7 @@ func (s *TestSuite) Register(t *testing.T, name string, runIntegrationTestsFn, r
 
 	if s.flags.IntegrationTestsEnabled {
 		SetDefaultEventuallyTimeout(time.Second * 10)
-		SetDefaultEventuallyPollingInterval(time.Second)
+		SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
 		RunSpecsWithDefaultAndCustomReporters(t, name, []Reporter{printer.NewlineReporter{}})
 	} else if s.flags.UnitTestsEnabled {
 		RunSpecs(t, name)

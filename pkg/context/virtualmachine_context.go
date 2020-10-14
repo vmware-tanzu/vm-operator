@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/go-logr/logr"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
@@ -15,8 +15,8 @@ import (
 // VirtualMachineContext is the context used for VirtualMachineControllers.
 type VirtualMachineContext struct {
 	context.Context
-	VM          *vmopv1.VirtualMachine
-	VMObjectKey client.ObjectKey
+	Logger logr.Logger
+	VM     *vmopv1.VirtualMachine
 }
 
 func (v *VirtualMachineContext) String() string {

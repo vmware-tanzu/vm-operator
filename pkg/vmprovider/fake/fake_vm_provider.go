@@ -167,10 +167,6 @@ func (s *FakeVmProvider) GetVirtualMachineImage(ctx context.Context, namespace, 
 	return nil, nil
 }
 
-func (s *FakeVmProvider) InvokeFsrVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
-	return nil
-}
-
 func (s *FakeVmProvider) addToVMMap(vm *v1alpha1.VirtualMachine) {
 	objectKey := client.ObjectKey{
 		Namespace: vm.Namespace,

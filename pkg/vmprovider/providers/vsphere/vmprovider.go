@@ -443,23 +443,6 @@ func (vs *vSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelet
 	return nil
 }
 
-func (vs *vSphereVmProvider) InvokeFsrVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
-	vmName := vm.NamespacedName()
-	log.Info("Invoking FRS on VirtualMachine", "name", vmName)
-
-	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
-	if err != nil {
-		return err
-	}
-
-	resVm, err := ses.GetVirtualMachine(ctx, vm)
-	if err != nil {
-		return transformVmError(vmName, err)
-	}
-
-	return ses.InvokeFsrVirtualMachine(ctx, resVm)
-}
-
 // mergeVmStatus merges the v1alpha1 VM's status with resource VM's status
 func (vs *vSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
 	vmStatus, err := resVm.GetStatus(ctx)

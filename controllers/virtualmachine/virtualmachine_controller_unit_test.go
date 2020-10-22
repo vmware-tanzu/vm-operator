@@ -50,7 +50,6 @@ func unitTestsReconcile() {
 		vmCtx            *vmopContext.VirtualMachineContext
 		vm               *vmopv1alpha1.VirtualMachine
 		vmClass          *vmopv1alpha1.VirtualMachineClass
-		vmClassBinding   *vmopv1alpha1.VirtualMachineClassBinding
 		vmMetaData       *corev1.ConfigMap
 		vmResourcePolicy *vmopv1alpha1.VirtualMachineSetResourcePolicy
 		storageClass     *storagev1.StorageClass
@@ -154,11 +153,24 @@ func unitTestsReconcile() {
 
 		When("the WCP_VMService FSS is enabled", func() {
 			var oldVMServiceEnableFunc func() bool
+			var vmClassBinding *vmopv1alpha1.VirtualMachineClassBinding
 
 			BeforeEach(func() {
 				oldVMServiceEnableFunc = lib.IsVMServiceFSSEnabled
 				lib.IsVMServiceFSSEnabled = func() bool {
 					return true
+				}
+
+				vmClassBinding = &vmopv1alpha1.VirtualMachineClassBinding{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "dummy-class-binding",
+						Namespace: vm.Namespace,
+					},
+					ClassRef: vmopv1alpha1.ClassReference{
+						APIVersion: vmopv1alpha1.SchemeGroupVersion.Group,
+						Name:       vm.Spec.ClassName,
+						Kind:       reflect.TypeOf(vmClass).Elem().Name(),
+					},
 				}
 			})
 
@@ -166,27 +178,29 @@ func unitTestsReconcile() {
 				lib.IsVMServiceFSSEnabled = oldVMServiceEnableFunc
 			})
 
-			Context("VirtualMachineClassBinding does not exist for the class", func() {
-				It("should fail to reconcile the VM with the appropriate error", func() {
+			Context("No VirtualMachineClassBindings exist in namespace", func() {
+				It("return an error", func() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace dummy-ns", vm.Spec.ClassName)))
+					Expect(err).To(MatchError(fmt.Errorf("no VirtualMachineClassBindings exist in namespace %s", vm.Namespace)))
+				})
+			})
+
+			Context("VirtualMachineBinding is not for VM Class", func() {
+				BeforeEach(func() {
+					vmClassBinding.ClassRef.Name = "blah-blah-binding"
+					initObjects = append(initObjects, vmClassBinding)
+				})
+
+				It("returns an error", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vm.Spec.ClassName, vm.Namespace)))
 				})
 			})
 
 			Context("VirtualMachineClassBinding exists for the class", func() {
 				BeforeEach(func() {
-					vmClassBinding = &vmopv1alpha1.VirtualMachineClassBinding{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "dummy-classbinding",
-							Namespace: vm.Namespace,
-						},
-						ClassRef: vmopv1alpha1.ClassReference{
-							APIVersion: vmopv1alpha1.SchemeGroupVersion.Group,
-							Name:       vm.Spec.ClassName,
-							Kind:       reflect.TypeOf(vmClass).Elem().Name(),
-						},
-					}
 					initObjects = append(initObjects, vmClassBinding)
 				})
 

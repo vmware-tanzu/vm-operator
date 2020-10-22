@@ -9,6 +9,7 @@ resources:
 - bases/vmoperator.vmware.com_virtualmachineservices.yaml
 - bases/vmoperator.vmware.com_virtualmachineimages.yaml
 - bases/vmoperator.vmware.com_contentsources.yaml
+- bases/vmoperator.vmware.com_contentsourcebindings.yaml
 - bases/vmoperator.vmware.com_contentlibraryproviders.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 

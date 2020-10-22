@@ -222,6 +222,7 @@ func (r *ContentSourceReconciler) reconcileDelete(ctx goCtx.Context, contentSour
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsources/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentlibraryproviders,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentlibraryproviders/status,verbs=get
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsourcebindings,verbs=get;list;watch
 
 func (r *ContentSourceReconciler) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	r.Log.Info("Received reconcile request", "name", request.Name)

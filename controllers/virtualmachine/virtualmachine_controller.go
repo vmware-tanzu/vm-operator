@@ -273,21 +273,26 @@ func (r *VirtualMachineReconciler) getVMClass(ctx *context.VirtualMachineContext
 	className := ctx.VM.Spec.ClassName
 
 	if lib.IsVMServiceFSSEnabled() {
-		// Validate that a VirtualMachineClassBinding exists for this class.
-		matchingFields := client.MatchingFields{
-			"classRef.Kind": "VirtualMachineClass",
-			"classRef.name": className,
-		}
-
-		// Filter the bindings for the specified VM class in this namespace.
 		classBindingList := &vmopv1alpha1.VirtualMachineClassBindingList{}
-		if err := r.List(ctx, classBindingList, client.InNamespace(ctx.VM.Namespace), matchingFields); err != nil {
-			ctx.Logger.Error(err, "Failed to list VirtualMachineClassBindings for VM Class",
-				"className", className)
+		if err := r.List(ctx, classBindingList, client.InNamespace(ctx.VM.Namespace)); err != nil {
+			ctx.Logger.Error(err, "Failed to list VirtualMachineClassBindings")
 			return nil, err
 		}
 
 		if len(classBindingList.Items) == 0 {
+			return nil, fmt.Errorf("no VirtualMachineClassBindings exist in namespace %s", ctx.VM.Namespace)
+		}
+
+		// Filter the bindings for the specified VM class.
+		var matchingClassBinding bool
+		for _, classBinding := range classBindingList.Items {
+			if classBinding.ClassRef.Kind == "VirtualMachineClass" && classBinding.ClassRef.Name == className {
+				matchingClassBinding = true
+				break
+			}
+		}
+
+		if !matchingClassBinding {
 			return nil, fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s",
 				className, ctx.VM.Namespace)
 		}

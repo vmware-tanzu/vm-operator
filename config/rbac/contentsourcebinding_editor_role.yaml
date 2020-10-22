@@ -1,0 +1,18 @@
+# permissions to do edit contentsourcebindings.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: contentsourcebinding-editor-role
+rules:
+  - apiGroups:
+      - vmoperator.vmware.com
+    resources:
+      - contentsourcebindings
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch

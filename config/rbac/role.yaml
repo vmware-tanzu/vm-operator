@@ -127,6 +127,14 @@ rules:
 - apiGroups:
   - vmoperator.vmware.com
   resources:
+  - contentsourcebindings
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
   - contentsources
   verbs:
   - create

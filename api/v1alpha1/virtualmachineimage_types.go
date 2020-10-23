@@ -67,7 +67,7 @@ type VirtualMachineImageStatus struct {
 	Uuid        string `json:"uuid,omitempty"`
 	InternalId  string `json:"internalId"`
 	PowerState  string `json:"powerState,omitempty"`
-	SupportedOS bool   `json:"supportedOS,omitempty"`
+	SupportedOS *bool  `json:"supportedOS,omitempty"`
 }
 
 // +genclient
@@ -78,7 +78,7 @@ type VirtualMachineImageStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
 // +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
-// +kubebuilder:printcolumn:name="SupportedOS",type="bool",JSONPath=".status.supportedOS"
+// +kubebuilder:printcolumn:name="SupportedOS",type="boolean",JSONPath=".status.supportedOS"
 
 // VirtualMachineImage is the Schema for the virtualmachineimages API
 // A VirtualMachineImage represents a VirtualMachine image (e.g. VM template) that can be used as the base image

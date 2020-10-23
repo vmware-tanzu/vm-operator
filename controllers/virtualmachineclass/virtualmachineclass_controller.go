@@ -5,55 +5,94 @@ package virtualmachineclass
 
 import (
 	goctx "context"
+	"fmt"
+	"reflect"
+	"strings"
 
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/runtime"
+	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
-	return add(mgr, newReconciler(ctx, mgr))
-}
+	var (
+		controlledType     = &vmopv1alpha1.VirtualMachineClass{}
+		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
-// newReconciler returns a new reconcile.Reconciler
-func newReconciler(ctx *context.ControllerManagerContext, mgr manager.Manager) reconcile.Reconciler {
-	return &VirtualMachineClassReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("VirtualMachineClass"),
-		Scheme: mgr.GetScheme(),
-	}
-}
+		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
+		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
+	)
 
-// add adds a new Controller to mgr with r as the reconcile.Reconciler
-func add(mgr manager.Manager, r reconcile.Reconciler) error {
+	r := NewReconciler(
+		mgr.GetClient(),
+		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
+		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&vmoperatorv1alpha1.VirtualMachineClass{}).
+		For(controlledType).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(r)
+}
+
+func NewReconciler(
+	client client.Client,
+	logger logr.Logger,
+	recorder record.Recorder) *VirtualMachineClassReconciler {
+
+	return &VirtualMachineClassReconciler{
+		Client:   client,
+		Logger:   logger,
+		Recorder: recorder,
+	}
 }
 
 // VirtualMachineClassReconciler reconciles a VirtualMachineClass object
 type VirtualMachineClassReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Logger   logr.Logger
+	Recorder record.Recorder
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses/status,verbs=get;update;patch
 
 func (r *VirtualMachineClassReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	_ = goctx.Background()
-	_ = r.Log.WithValues("virtualmachineclass", req.NamespacedName)
+	ctx := goctx.Background()
 
-	// your logic here
+	vmClass := &vmopv1alpha1.VirtualMachineClass{}
+	err := r.Get(ctx, req.NamespacedName, vmClass)
+	if err != nil {
+		if apiErrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	vmClassCtx := &context.VirtualMachineClassContext{
+		Context: ctx,
+		Logger:  ctrl.Log.WithName("VirtualMachineClass").WithValues("name", req.Name),
+		VMClass: vmClass,
+	}
+
+	if err := r.ReconcileNormal(vmClassCtx); err != nil {
+		vmClassCtx.Logger.Error(err, "Failed to reconcile VirtualMachineClass")
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *VirtualMachineClassReconciler) ReconcileNormal(_ *context.VirtualMachineClassContext) error {
+	// NoOp.
+	return nil
 }

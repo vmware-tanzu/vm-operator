@@ -53,6 +53,7 @@ CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${INT_GOFLAGS[@]}" -tags=integrati
 # go test: -race requires cgo
 CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" \
     ./controllers/virtualmachine \
+    ./controllers/virtualmachineclass \
     -- -enable-integration-tests -enable-unit-tests=false
 
 # Merge the coverage files.

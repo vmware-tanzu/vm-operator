@@ -1,40 +1,27 @@
-// +build integration
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
-
-package virtualmachineclass
+package virtualmachineclass_test
 
 import (
 	"testing"
 
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	"github.com/vmware-tanzu/vm-operator/test/integration"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
+	"github.com/vmware-tanzu/vm-operator/pkg/manager"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
+)
+
+var suite = builder.NewTestSuiteForController(
+	virtualmachineclass.AddToManager,
+	manager.InitializeProvidersNoopFn,
 )
 
 func TestVirtualMachineClass(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecsWithDefaultAndCustomReporters(t, "VirtualMachineClass Suite", []Reporter{printer.NewlineReporter{}})
+	suite.Register(t, "VirtualMachineClass controller suite", intgTests, unitTests)
 }
 
-var (
-	cfg        *rest.Config
-	vcSim      *integration.VcSimInstance
-	testEnv    *envtest.Environment
-	vmProvider vmprovider.VirtualMachineProviderInterface
-)
+var _ = BeforeSuite(suite.BeforeSuite)
 
-var _ = BeforeSuite(func() {
-	testEnv, _, cfg, vcSim, _, vmProvider = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
-})
-
-var _ = AfterSuite(func() {
-	integration.TeardownIntegrationEnv(testEnv, vcSim)
-})
+var _ = AfterSuite(suite.AfterSuite)

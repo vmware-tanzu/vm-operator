@@ -165,7 +165,6 @@ type Probe struct {
 	// TimeoutSeconds specifies a number of seconds after which the probe times out.
 	// Defaults to 10 seconds. Minimum value is 1.
 	// +optional
-	// +kubebuilder:default:=10
 	// +kubebuilder:validation:Minimum:=1
 	// +kubebuilder:validation:Maximum:=60
 	TimeoutSeconds int32 `json:"timeoutSeconds,omitempty"`
@@ -173,7 +172,6 @@ type Probe struct {
 	// PeriodSeconds specifics how often (in seconds) to perform the probe.
 	// Defaults to 10 seconds. Minimum value is 1.
 	// +optional
-	// +kubebuilder:default:=10
 	// +kubebuilder:validation:Minimum:=1
 	PeriodSeconds int32 `json:"periodSeconds,omitempty"`
 }

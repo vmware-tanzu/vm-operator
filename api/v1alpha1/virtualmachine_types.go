@@ -165,7 +165,17 @@ type Probe struct {
 	// TimeoutSeconds specifies a number of seconds after which the probe times out.
 	// Defaults to 10 seconds. Minimum value is 1.
 	// +optional
+	// +kubebuilder:default:=10
+	// +kubebuilder:validation:Minimum:=1
+	// +kubebuilder:validation:Maximum:=60
 	TimeoutSeconds int32 `json:"timeoutSeconds,omitempty"`
+
+	// PeriodSeconds specifics how often (in seconds) to perform the probe.
+	// Defaults to 10 seconds. Minimum value is 1.
+	// +optional
+	// +kubebuilder:default:=10
+	// +kubebuilder:validation:Minimum:=1
+	PeriodSeconds int32 `json:"periodSeconds,omitempty"`
 }
 
 // TCPSocketAction describes an action based on opening a socket.
@@ -330,6 +340,9 @@ type VirtualMachineCondition struct {
 
 // VirtualMachineConditionType indicates the type of VirtualMachineCondition.
 type VirtualMachineConditionType string
+
+// VirtualMachineReady is a condition type which indicates the readiness probe result of the VM.
+const VirtualMachineReady VirtualMachineConditionType = "Ready"
 
 // +genclient
 // +kubebuilder:object:root=true

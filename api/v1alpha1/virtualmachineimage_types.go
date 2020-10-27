@@ -81,6 +81,8 @@ type VirtualMachineImageStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
 // +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
+// +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"
+// +kubebuilder:printcolumn:name="Source",type="string",JSONPath=".spec.imageSourceType"
 // +kubebuilder:printcolumn:name="GOSC_Supported",type="boolean",priority=1,JSONPath=".status.goscSupported"
 
 // VirtualMachineImage is the Schema for the virtualmachineimages API

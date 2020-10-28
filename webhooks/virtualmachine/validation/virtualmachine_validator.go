@@ -9,14 +9,16 @@ import (
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/api/resource"
-
-	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/pkg/errors"
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
@@ -36,7 +38,7 @@ const (
 
 // AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator())
+	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create VirtualMachine validation webhook")
 	}
@@ -46,14 +48,16 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) er
 }
 
 // NewValidator returns the package's Validator.
-func NewValidator() builder.Validator {
+func NewValidator(client client.Client) builder.Validator {
 	return validator{
+		client: client,
 		// TODO BMV Use the Context.scheme instead
 		converter: runtime.DefaultUnstructuredConverter,
 	}
 }
 
 type validator struct {
+	client    client.Client
 	converter runtime.UnstructuredConverter
 }
 
@@ -124,6 +128,21 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 
 	if vm.Spec.ImageName == "" {
 		return []string{messages.ImageNotSpecified}
+	}
+
+	val := vm.Annotations[vsphere.VMOperatorVMGOSCustomizeCheckKey]
+
+	if val != vsphere.VMOperatorVMGOSCustomizeDisable {
+		image := vmopv1.VirtualMachineImage{}
+		err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image)
+		if err != nil {
+			validationErrs = append(validationErrs, fmt.Sprintf("error validating image: %v", err))
+			return validationErrs
+		}
+
+		if image.Status.GuestOSCustomizable != nil && !*image.Status.GuestOSCustomizable {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.GuestOSCustomizationNotSupported, image.Spec.OSInfo.Type, image.Name))
+		}
 	}
 
 	return validationErrs

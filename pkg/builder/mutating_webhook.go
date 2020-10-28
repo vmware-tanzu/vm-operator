@@ -63,10 +63,10 @@ func NewMutatingWebhook(
 
 	// Build the WebhookContext.
 	webhookContext := &context.WebhookContext{
-		ControllerManagerContext: ctx,
-		Name:                     webhookNameShort,
-		Recorder:                 record.New(mgr.GetEventRecorderFor(webhookNameLong)),
-		Logger:                   ctx.Logger.WithName(webhookNameShort),
+		Context:  ctx,
+		Name:     webhookNameShort,
+		Recorder: record.New(mgr.GetEventRecorderFor(webhookNameLong)),
+		Logger:   ctx.Logger.WithName(webhookNameShort),
 	}
 
 	// Initialize the webhook's decoder.

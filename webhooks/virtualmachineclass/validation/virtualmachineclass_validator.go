@@ -8,14 +8,14 @@ import (
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/api/resource"
-
-	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/pkg/errors"
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
@@ -35,7 +35,7 @@ const (
 
 // AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator())
+	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create VirtualMachineClass validation webhook")
 	}
@@ -45,7 +45,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) er
 }
 
 // NewValidator returns the package's Validator.
-func NewValidator() builder.Validator {
+func NewValidator(_ client.Client) builder.Validator {
 	return validator{
 		converter: runtime.DefaultUnstructuredConverter,
 	}

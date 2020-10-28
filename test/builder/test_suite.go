@@ -78,7 +78,7 @@ type TestSuite struct {
 	// Webhook specific fields
 	webhookName string
 	certDir     string
-	validator   builder.Validator
+	validatorFn builder.ValidatorFunc
 	mutator     builder.Mutator
 	pki         pkiToolchain
 	webhookYaml []byte
@@ -146,7 +146,7 @@ func NewTestSuiteForController(addToManagerFn pkgmgr.AddToManagerFunc, initProvi
 // package.
 func NewTestSuiteForValidatingWebhook(
 	addToManagerFn pkgmgr.AddToManagerFunc,
-	newValidatorFn func() builder.Validator,
+	newValidatorFn builder.ValidatorFunc,
 	webhookName string) *TestSuite {
 
 	return newTestSuiteForWebhook(addToManagerFn, newValidatorFn, nil, webhookName)
@@ -165,7 +165,7 @@ func NewTestSuiteForMutatingWebhook(
 
 func newTestSuiteForWebhook(
 	addToManagerFn pkgmgr.AddToManagerFunc,
-	newValidatorFn func() builder.Validator,
+	newValidatorFn builder.ValidatorFunc,
 	newMutatorFn func() builder.Mutator,
 	webhookName string) *TestSuite {
 
@@ -178,7 +178,7 @@ func newTestSuiteForWebhook(
 	}
 
 	if newValidatorFn != nil {
-		testSuite.validator = newValidatorFn()
+		testSuite.validatorFn = newValidatorFn
 	}
 	if newMutatorFn != nil {
 		testSuite.mutator = newMutatorFn()
@@ -270,7 +270,7 @@ func (s *TestSuite) NewUnitTestContextForValidatingWebhook(
 	initObjects ...runtime.Object) *UnitTestContextForValidatingWebhook {
 
 	if s.flags.UnitTestsEnabled {
-		ctx := NewUnitTestContextForValidatingWebhook(s.validator, obj, oldObj, initObjects...)
+		ctx := NewUnitTestContextForValidatingWebhook(s.validatorFn, obj, oldObj, initObjects...)
 		return ctx
 	}
 	return nil

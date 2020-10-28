@@ -14,12 +14,14 @@ import (
 )
 
 const (
-	DummyImageName      = "dummyImageName"
+	DummyImageName      = "dummy-image-name"
 	DummyClassName      = "dummyClassName"
 	DummyNetworkName    = "dummyNetworkName"
 	DummyVolumeName     = "dummyVolumeName"
 	DummyPVCName        = "dummyPVCName"
 	DummyMetadataCMName = "dummyMetadataCMName"
+	DummyDistroVersion  = "dummyDistroVersion"
+	DummyOSType         = "dummy-osType"
 )
 
 var (
@@ -129,6 +131,25 @@ func DummyVirtualMachineSetResourcePolicy() *vmopv1.VirtualMachineSetResourcePol
 					GroupName: "dummy-cluster-modules",
 				},
 			},
+		},
+	}
+}
+
+func DummyVirtualMachineImage(imageName string) *vmopv1.VirtualMachineImage {
+	return &vmopv1.VirtualMachineImage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: imageName,
+		},
+		Spec: vmopv1.VirtualMachineImageSpec{
+			ProductInfo: vmopv1.VirtualMachineImageProductInfo{
+				FullVersion: DummyDistroVersion,
+			},
+			OSInfo: vmopv1.VirtualMachineImageOSInfo{
+				Type: DummyOSType,
+			},
+		},
+		Status: vmopv1.VirtualMachineImageStatus{
+			InternalId: DummyImageName,
 		},
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -407,14 +408,19 @@ func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) (object.Virtual
 
 func (vm *VirtualMachine) Customize(ctx context.Context, spec types.CustomizationSpec) error {
 	log.V(5).Info("Customize", "name", vm.Name)
-	task, err := vm.vcVirtualMachine.Customize(ctx, spec)
+	customizeTask, err := vm.vcVirtualMachine.Customize(ctx, spec)
 	if err != nil {
 		log.Error(err, "Failed to customize VM", "name", vm.Name)
 		return err
 	}
 
-	_, err = task.WaitForResult(ctx, nil)
+	_, err = customizeTask.WaitForResult(ctx, nil)
 	if err != nil {
+		// Fetch fault messages if present
+		fault := err.(task.Error).Fault().GetMethodFault()
+		if fault != nil {
+			err = errors.Wrapf(err, "Fault messages: %v", fault.FaultMessage)
+		}
 		log.Error(err, "Failed to complete customization for VM", "name", vm.Name)
 		return err
 	}

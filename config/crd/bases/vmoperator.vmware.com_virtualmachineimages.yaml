@@ -21,8 +21,8 @@ spec:
   - JSONPath: .spec.imageSourceType
     name: Source
     type: string
-  - JSONPath: .status.goscSupported
-    name: GOSC_Supported
+  - JSONPath: .status.guestOsCustomizable
+    name: GuestOSCustomizable
     priority: 1
     type: boolean
   group: vmoperator.vmware.com
@@ -111,15 +111,18 @@ spec:
         status:
           description: VirtualMachineImageStatus defines the observed state of VirtualMachineImage
           properties:
-            goscSupported:
-              description: GOSCSupported describes whether the VirtualMachineImage
-                is GuestOS customizable based on supported OSTypes for the cluster
+            guestOsCustomizable:
+              description: GuestOSCustomizable indicates whether the VirtualMachineImage's
+                osType is supported for customisation on the cluster
               type: boolean
             internalId:
+              description: Deprecated
               type: string
             powerState:
+              description: Deprecated
               type: string
             uuid:
+              description: Deprecated
               type: string
           required:
           - internalId

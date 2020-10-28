@@ -57,6 +57,11 @@ const (
 	// or "false" (we should not fetch ovf properties)
 	VmOperatorVMImagePropsKey = pkg.VmOperatorKey + "/annotate-vm-image-props"
 
+	// TODO: Rename and move to vmoperator-api
+	// Annotation key to skip validation checks of GuestOS Type
+	VMOperatorVMGOSCustomizeCheckKey = pkg.VmOperatorKey + "/guest-os-customization-check"
+	VMOperatorVMGOSCustomizeDisable  = "disable"
+
 	EnvContentLibApiWaitSecs     = "CONTENT_API_WAIT_SECS"
 	DefaultContentLibApiWaitSecs = 5
 )
@@ -584,9 +589,10 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 	gOSids map[string]bool) (*v1alpha1.VirtualMachineImage, error) {
 
 	var (
-		ovfSystemProps = make(map[string]string)
-		productInfo    = &v1alpha1.VirtualMachineImageProductInfo{}
-		osInfo         = &v1alpha1.VirtualMachineImageOSInfo{}
+		ovfSystemProps        = make(map[string]string)
+		productInfo           = &v1alpha1.VirtualMachineImageProductInfo{}
+		osInfo                = &v1alpha1.VirtualMachineImageOSInfo{}
+		isGuestOSCustomizable bool
 	)
 
 	if item.Type == library.ItemTypeOVF {
@@ -633,19 +639,15 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 		ts = v1.NewTime(*item.CreationTime)
 	}
 
-	// Check for existence of osType in cluster's GOS Descriptors
-	isGOSCSupported := gOSids[osInfo.Type]
-
-	return &v1alpha1.VirtualMachineImage{
+	image := &v1alpha1.VirtualMachineImage{
 		ObjectMeta: v1.ObjectMeta{
 			Name:              item.Name,
 			Annotations:       ovfSystemProps,
 			CreationTimestamp: ts,
 		},
 		Status: v1alpha1.VirtualMachineImageStatus{
-			Uuid:          item.ID,
-			InternalId:    item.Name,
-			GOSCSupported: &isGOSCSupported,
+			Uuid:       item.ID,
+			InternalId: item.Name,
 		},
 		Spec: v1alpha1.VirtualMachineImageSpec{
 			Type:            item.Type,
@@ -653,7 +655,16 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 			ProductInfo:     *productInfo,
 			OSInfo:          *osInfo,
 		},
-	}, nil
+	}
+
+	// If the GuestOS Descriptors IDs were populated from the cluster
+	// Set the image's Status
+	if item.Type == library.ItemTypeOVF && len(gOSids) > 0 {
+		isGuestOSCustomizable = gOSids[osInfo.Type]
+		image.Status.GuestOSCustomizable = &isGuestOSCustomizable
+	}
+
+	return image, nil
 }
 
 func (vm vmOptions) GetOvfInfoFromLibraryItem(ctx context.Context, session *Session, item *library.Item) (*ovf.Envelope, error) {

@@ -69,6 +69,9 @@ type UnitTestContextForValidatingWebhook struct {
 	// and is used for unit testing.
 	context.WebhookRequestContext
 
+	// Client is the k8s client to access resources.
+	Client client.Client
+
 	// Key may be used to lookup Ctx.Obj with Ctx.Client.Get.
 	Key client.ObjectKey
 
@@ -100,18 +103,19 @@ func (ctx *UnitTestContextForController) AfterEach() {
 // NewUnitTestContextForValidatingWebhook returns a new
 // UnitTestContextForValidatingWebhook for unit testing validating webhooks.
 func NewUnitTestContextForValidatingWebhook(
-	validator builder.Validator,
+	validatorFn builder.ValidatorFunc,
 	obj, oldObj *unstructured.Unstructured,
 	initObjects ...runtime.Object) *UnitTestContextForValidatingWebhook {
 
-	_, scheme := NewFakeClient(initObjects...)
+	fakeClient, scheme := NewFakeClient(initObjects...)
 	fakeManagerContext := fake.NewControllerManagerContext(scheme)
 	fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
 	ctx := &UnitTestContextForValidatingWebhook{
 		WebhookRequestContext: *(fake.NewWebhookRequestContext(fakeWebhookContext, obj, oldObj)),
+		Client:                fakeClient,
 		Key:                   client.ObjectKey{Namespace: obj.GetNamespace(), Name: obj.GetName()},
-		Validator:             validator,
+		Validator:             validatorFn(fakeClient),
 	}
 
 	return ctx

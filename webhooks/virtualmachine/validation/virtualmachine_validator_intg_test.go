@@ -4,13 +4,16 @@
 package validation_test
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
 
 func intgTests() {
@@ -21,7 +24,8 @@ func intgTests() {
 
 type intgValidatingWebhookContext struct {
 	builder.IntegrationTestContext
-	vm *vmopv1.VirtualMachine
+	vm      *vmopv1.VirtualMachine
+	vmImage *vmopv1.VirtualMachineImage
 }
 
 func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
@@ -30,6 +34,7 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 	}
 
 	ctx.vm = builder.DummyVirtualMachine()
+	ctx.vmImage = builder.DummyVirtualMachineImage(ctx.vm.Spec.ImageName)
 	ctx.vm.Namespace = ctx.Namespace
 
 	return ctx
@@ -42,6 +47,10 @@ func intgTestsValidateCreate() {
 
 	type createArgs struct {
 		invalidImageName         bool
+		imageNotFound            bool
+		validGuestOSType         bool
+		invalidGuestOSType       bool
+		gOSCSkipAnnotation       bool
 		invalidMetadataTransport bool
 		invalidMetadataConfigMap bool
 	}
@@ -51,6 +60,30 @@ func intgTestsValidateCreate() {
 
 		if args.invalidImageName {
 			vm.Spec.ImageName = ""
+		}
+
+		// Delete image before VM create
+		if args.imageNotFound {
+			err := ctx.Client.Delete(ctx, ctx.vmImage)
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		// Setting the annotation skips GuestOSType validation
+		// works with validGuestOSType or invalidGuestOSType
+		if args.gOSCSkipAnnotation {
+			vm.Annotations = make(map[string]string)
+			vm.Annotations[vsphere.VMOperatorVMGOSCustomizeCheckKey] = vsphere.VMOperatorVMGOSCustomizeDisable
+		}
+
+		if args.validGuestOSType {
+			ctx.vmImage.Status.GuestOSCustomizable = &[]bool{true}[0]
+			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
+			Expect(err).ToNot(HaveOccurred())
+		}
+		if args.invalidGuestOSType {
+			ctx.vmImage.Status.GuestOSCustomizable = &[]bool{false}[0]
+			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
+			Expect(err).ToNot(HaveOccurred())
 		}
 		if args.invalidMetadataTransport {
 			vm.Spec.VmMetadata.Transport = "blah"
@@ -72,14 +105,23 @@ func intgTestsValidateCreate() {
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
+		// Setting up a VirtualMachineImage for the VM
+		err := ctx.Client.Create(ctx, ctx.vmImage)
+		Expect(err).ToNot(HaveOccurred())
+		err = ctx.Client.Status().Update(ctx, ctx.vmImage)
+		Expect(err).ToNot(HaveOccurred())
 	})
 	AfterEach(func() {
+		_ = ctx.Client.Delete(ctx, ctx.vmImage)
 		ctx = nil
 	})
 
 	DescribeTable("create table", validateCreate,
 		Entry("should work", createArgs{}, true, "", nil),
+		Entry("should work for image with valid osType", createArgs{validGuestOSType: true}, true, "", nil),
+		Entry("should work despite osType when VMGOSCustomizeCheckKey is disabled", createArgs{gOSCSkipAnnotation: true, invalidGuestOSType: true}, true, "", nil),
 		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false, "spec.imageName must be specified", nil),
+		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSCustomizationNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
 		Entry("should not work for invalid metadata transport", createArgs{invalidMetadataTransport: true}, false, "spec.vmmetadata.transport is not supported", nil),
 		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmmetadata.configmapname must be specified", nil),
 	)
@@ -93,6 +135,12 @@ func intgTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
+		// Setting up a VirtualMachineImage for the VM
+		err := ctx.Client.Create(ctx, ctx.vmImage)
+		Expect(err).ToNot(HaveOccurred())
+		err = ctx.Client.Status().Update(ctx, ctx.vmImage)
+		Expect(err).ToNot(HaveOccurred())
+		//Create the VM
 		err = ctx.Client.Create(ctx, ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -100,7 +148,8 @@ func intgTestsValidateUpdate() {
 		err = ctx.Client.Update(suite, ctx.vm)
 	})
 	AfterEach(func() {
-		err = nil
+		err := ctx.Client.Delete(ctx, ctx.vmImage)
+		Expect(err).ToNot(HaveOccurred())
 		ctx = nil
 	})
 
@@ -123,6 +172,12 @@ func intgTestsValidateDelete() {
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
+		// Setting up a VirtualMachineImage for the VM
+		err := ctx.Client.Create(ctx, ctx.vmImage)
+		Expect(err).ToNot(HaveOccurred())
+		err = ctx.Client.Status().Update(ctx, ctx.vmImage)
+		Expect(err).ToNot(HaveOccurred())
+		// Create the VM
 		err = ctx.Client.Create(ctx, ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -130,7 +185,8 @@ func intgTestsValidateDelete() {
 		err = ctx.Client.Delete(suite, ctx.vm)
 	})
 	AfterEach(func() {
-		err = nil
+		err := ctx.Client.Delete(ctx, ctx.vmImage)
+		Expect(err).ToNot(HaveOccurred())
 		ctx = nil
 	})
 

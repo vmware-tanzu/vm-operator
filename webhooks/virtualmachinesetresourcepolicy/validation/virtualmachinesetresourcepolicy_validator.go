@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"reflect"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/pkg/errors"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -34,7 +36,7 @@ const (
 
 // AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator())
+	hook, err := builder.NewValidatingWebhook(ctx, mgr, webHookName, NewValidator(mgr.GetClient()))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create VirtualMachineSetResourcePolicy validation webhook")
 	}
@@ -44,7 +46,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) er
 }
 
 // NewValidator returns the package's Validator.
-func NewValidator() builder.Validator {
+func NewValidator(_ client.Client) builder.Validator {
 	return validator{
 		converter: runtime.DefaultUnstructuredConverter,
 	}

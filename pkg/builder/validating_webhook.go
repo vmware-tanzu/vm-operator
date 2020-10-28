@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
 	"github.com/pkg/errors"
+
 	admissionv1 "k8s.io/api/admission/v1beta1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -48,6 +50,8 @@ type Validator interface {
 	ValidateUpdate(*context.WebhookRequestContext) admission.Response
 }
 
+type ValidatorFunc func(client client.Client) Validator
+
 // NewValidatingWebhook returns a new admissions webhook for validating requests.
 func NewValidatingWebhook(
 	ctx *context.ControllerManagerContext,
@@ -70,10 +74,10 @@ func NewValidatingWebhook(
 
 	// Build the webhookContext.
 	webhookContext := &context.WebhookContext{
-		ControllerManagerContext: ctx,
-		Name:                     webhookNameShort,
-		Recorder:                 record.New(mgr.GetEventRecorderFor(webhookNameLong)),
-		Logger:                   ctx.Logger.WithName(webhookNameShort),
+		Context:  ctx,
+		Name:     webhookNameShort,
+		Recorder: record.New(mgr.GetEventRecorderFor(webhookNameLong)),
+		Logger:   ctx.Logger.WithName(webhookNameShort),
 	}
 
 	// Initialize the webhook's decoder.

@@ -31,14 +31,17 @@ func unitTests() {
 
 type unitValidatingWebhookContext struct {
 	builder.UnitTestContextForValidatingWebhook
-	vm    *vmopv1.VirtualMachine
-	oldVM *vmopv1.VirtualMachine
+	vm      *vmopv1.VirtualMachine
+	oldVM   *vmopv1.VirtualMachine
+	vmImage *vmopv1.VirtualMachineImage
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
 	vm := builder.DummyVirtualMachine()
 	obj, err := builder.ToUnstructured(vm)
 	Expect(err).ToNot(HaveOccurred())
+
+	vmImage := builder.DummyVirtualMachineImage(vm.Spec.ImageName)
 
 	var oldVM *vmopv1.VirtualMachine
 	var oldObj *unstructured.Unstructured
@@ -50,9 +53,10 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	}
 
 	return &unitValidatingWebhookContext{
-		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj),
+		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, vmImage),
 		vm:                                  vm,
 		oldVM:                               oldVM,
+		vmImage:                             vmImage,
 	}
 }
 
@@ -63,6 +67,7 @@ func unitTestsValidateCreate() {
 
 	type createArgs struct {
 		invalidImageName           bool
+		invalidGuestOSType         bool
 		invalidClassName           bool
 		invalidNetworkName         bool
 		invalidNetworkType         bool
@@ -85,6 +90,11 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidImageName {
 			ctx.vm.Spec.ImageName = ""
+		}
+		if args.invalidGuestOSType {
+			ctx.vmImage.Status.GuestOSCustomizable = &[]bool{false}[0]
+			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
+			Expect(err).ToNot(HaveOccurred())
 		}
 		if args.invalidNetworkName {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkName = ""
@@ -141,7 +151,7 @@ func unitTestsValidateCreate() {
 		response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(expectedAllowed))
 		if expectedReason != "" {
-			Expect(string(response.Result.Reason)).To(Equal(expectedReason))
+			Expect(string(response.Result.Reason)).To(ContainSubstring(expectedReason))
 		}
 		if expectedErr != nil {
 			Expect(response.Result.Message).To(Equal(expectedErr.Error()))
@@ -159,6 +169,7 @@ func unitTestsValidateCreate() {
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should deny invalid class name", createArgs{invalidClassName: true}, false, messages.ClassNotSpecified, nil),
 		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false, messages.ImageNotSpecified, nil),
+		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSCustomizationNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
 		Entry("should deny invalid network name", createArgs{invalidNetworkName: true}, false, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, 0), nil),
 		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0), nil),
 		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameNotSpecifiedFmt, 0), nil),

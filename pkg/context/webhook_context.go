@@ -4,6 +4,7 @@
 package context
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -13,9 +14,7 @@ import (
 
 // WebhookContext is the context of a webhook.
 type WebhookContext struct {
-	// ControllerManagerContext is the context of the controller manager to
-	// which this webhook belongs.
-	*ControllerManagerContext
+	context.Context
 
 	// Name is the name of the webhook.
 	Name string
@@ -27,7 +26,7 @@ type WebhookContext struct {
 	Recorder record.Recorder
 }
 
-// String returns ControllerManagerName/WebhookName.
+// String returns WebhookName.
 func (c *WebhookContext) String() string {
-	return fmt.Sprintf("%s/%s", c.ControllerManagerContext.String(), c.Name)
+	return fmt.Sprintf("%s/%s", c.Name, c.Name)
 }

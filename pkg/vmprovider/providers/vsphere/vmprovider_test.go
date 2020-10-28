@@ -321,7 +321,7 @@ var _ = Describe("virtualmachine images", func() {
 		})
 	})
 
-	Context("with ovf info having an OperatingSystemSection", func() {
+	Context("LibItemToVirtualMachineImage and GuestOSCustomizable", func() {
 		var (
 			item                library.Item
 			ovfEnvelope         *ovf.Envelope
@@ -378,8 +378,8 @@ var _ = Describe("virtualmachine images", func() {
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
 
-			//SupportedOS in Status is to true
-			Expect((image.Status.GOSCSupported)).Should(Equal(supportedTrue))
+			// GuestOSCustomizable in Status is to true
+			Expect((image.Status.GuestOSCustomizable)).Should(Equal(supportedTrue))
 
 		})
 		It("ovfEnvelope has a invalid GuestOSType", func() {
@@ -403,8 +403,8 @@ var _ = Describe("virtualmachine images", func() {
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
 
-			//SupportedOS in Status is to false
-			Expect((image.Status.GOSCSupported)).Should(Equal(supportedFalse))
+			// GuestOSCustomizable in Status is to false
+			Expect((image.Status.GuestOSCustomizable)).Should(Equal(supportedFalse))
 		})
 
 		It("ovfEnvelope has a empty string GuestOSType", func() {
@@ -428,8 +428,21 @@ var _ = Describe("virtualmachine images", func() {
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
 
-			//SupportedOS in Status is to false
-			Expect((image.Status.GOSCSupported)).Should(Equal(supportedFalse))
+			// GuestOSCustomizable in Status is to false
+			Expect((image.Status.GuestOSCustomizable)).Should(Equal(supportedFalse))
+		})
+
+		It("with vmtx type GuestOSCustomizable flag is not set", func() {
+			item.Type = "vmtx"
+			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, nil, supportedGuestOsIds)
+			Expect(err).To(BeNil())
+			Expect(image).ToNot(BeNil())
+			Expect(image.Name).Should(Equal("fakeItem"))
+			Expect(image.Annotations).To(BeEmpty())
+
+			// GuestOSCustomizable in Status is unset
+			var unset *bool = nil
+			Expect((image.Status.GuestOSCustomizable)).Should(Equal(unset))
 		})
 	})
 

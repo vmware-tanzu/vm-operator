@@ -14,9 +14,9 @@ import (
 // webhooks with a fake client.
 func NewWebhookContext(ctx *context.ControllerManagerContext) *context.WebhookContext {
 	return &context.WebhookContext{
-		ControllerManagerContext: ctx,
-		Name:                     WebhookName,
-		Logger:                   ctx.Logger.WithName(WebhookName),
-		Recorder:                 record.New(clientrecord.NewFakeRecorder(1024)),
+		Context:  ctx,
+		Name:     WebhookName,
+		Logger:   ctx.Logger.WithName(WebhookName),
+		Recorder: record.New(clientrecord.NewFakeRecorder(1024)),
 	}
 }

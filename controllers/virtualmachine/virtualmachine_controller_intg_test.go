@@ -6,6 +6,8 @@ package virtualmachine_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -213,6 +215,24 @@ func intgTests() {
 					}
 					return ""
 				}).Should(Equal(vmopv1alpha1.Created), "waiting for expected VM Phase")
+			})
+
+			By("VirtualMachine should not be updated in steady-state", func() {
+				vm := getVirtualMachine(ctx, vmKey)
+				Expect(vm).ToNot(BeNil())
+				rv := vm.GetResourceVersion()
+				Expect(rv).ToNot(BeEmpty())
+				expected := fmt.Sprintf("%s :: %d", rv, vm.GetGeneration())
+				// The resync period is 1 second, so balance between giving enough time vs a slow test.
+				// Note: the kube-apiserver we test against (obtained from kubebuilder) is old and
+				// appears to behavior differently than newer versions (like used in the SV) in that noop
+				// Status subresource updates don't increment the ResourceVersion.
+				Consistently(func() string {
+					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
+						return fmt.Sprintf("%s :: %d", vm.GetResourceVersion(), vm.GetGeneration())
+					}
+					return ""
+				}, 4*time.Second).Should(Equal(expected))
 			})
 		})
 

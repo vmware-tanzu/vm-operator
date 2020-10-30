@@ -214,7 +214,7 @@ func (r *VirtualMachineReconciler) ReconcileNormal(ctx *context.VirtualMachineCo
 	}
 
 	ctx.Logger.V(4).Info("Updated VM Status", "status", vm.Status)
-	if !equality.Semantic.DeepEqual(vmStatusCopy, vm.Status) {
+	if !equality.Semantic.DeepEqual(vmStatusCopy, &vm.Status) {
 		if err := r.Status().Update(ctx, vm); err != nil {
 			ctx.Logger.Error(err, "Failed to update VirtualMachine status")
 			return err

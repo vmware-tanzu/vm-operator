@@ -348,10 +348,11 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 		ObjectMeta: MakeObjectMeta(vmService),
 		Spec: corev1.ServiceSpec{
 			// Don't specify selector to keep endpoints controller from interfering
-			Type:         corev1.ServiceType(vmService.Spec.Type),
-			Ports:        servicePorts,
-			ExternalName: vmService.Spec.ExternalName,
-			ClusterIP:    vmService.Spec.ClusterIP,
+			Type:           corev1.ServiceType(vmService.Spec.Type),
+			Ports:          servicePorts,
+			ExternalName:   vmService.Spec.ExternalName,
+			ClusterIP:      vmService.Spec.ClusterIP,
+			LoadBalancerIP: vmService.Spec.LoadBalancerIP,
 		},
 	}
 }
@@ -435,6 +436,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context
 	newService.Spec.Type = svcFromVmService.Spec.Type
 	newService.Spec.ExternalName = svcFromVmService.Spec.ExternalName
 	newService.Spec.Ports = svcFromVmService.Spec.Ports
+	newService.Spec.LoadBalancerIP = svcFromVmService.Spec.LoadBalancerIP
 
 	// Maintain the existing mapping of ServicePort -> NodePort
 	// as un-setting it will cause the apiserver to allocate a

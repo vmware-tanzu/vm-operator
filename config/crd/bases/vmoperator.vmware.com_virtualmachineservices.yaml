@@ -56,6 +56,13 @@ spec:
               type: string
             externalName:
               type: string
+            loadBalancerIP:
+              description: 'Only applies to Service Type: LoadBalancer LoadBalancer
+                will get created with the IP specified in this field. This feature
+                depends on whether the underlying loadbalancer provider supports specifying
+                the loadBalancerIP when a load balancer is created. This field will
+                be ignored if the provider does not support the feature.'
+              type: string
             ports:
               description: Ports specifies a list of VirtualMachineServicePort to
                 expose with this VirtualMachineService.  Each of these ports will

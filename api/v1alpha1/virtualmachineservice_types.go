@@ -85,6 +85,14 @@ type VirtualMachineServiceSpec struct {
 	// VirtualMachineService with the set of VirtualMachines that should back this VirtualMachineService.
 	Selector map[string]string `json:"selector"`
 
+	// Only applies to Service Type: LoadBalancer
+	// LoadBalancer will get created with the IP specified in this field.
+	// This feature depends on whether the underlying loadbalancer provider supports specifying
+	// the loadBalancerIP when a load balancer is created.
+	// This field will be ignored if the provider does not support the feature.
+	// +optional
+	LoadBalancerIP string `json:"loadBalancerIP,omitempty"`
+
 	// Just support cluster IP for now
 	ClusterIP    string `json:"clusterIp,omitempty"`
 	ExternalName string `json:"externalName,omitempty"`

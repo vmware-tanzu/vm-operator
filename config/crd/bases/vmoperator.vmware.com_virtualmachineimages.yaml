@@ -15,6 +15,12 @@ spec:
   - JSONPath: .spec.osInfo.type
     name: OsType
     type: string
+  - JSONPath: .spec.type
+    name: Format
+    type: string
+  - JSONPath: .spec.imageSourceType
+    name: Source
+    type: string
   - JSONPath: .status.goscSupported
     name: GOSC_Supported
     priority: 1

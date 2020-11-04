@@ -355,6 +355,8 @@ var _ = Describe("VirtualMachineService controller", func() {
 				// Modify the VirtualMachineService, corresponding Service should also be modified.
 				externalName := "someExternalName"
 				vmService.Spec.ExternalName = externalName
+				loadBalancerIP := "1.1.1.1"
+				vmService.Spec.LoadBalancerIP = loadBalancerIP
 
 				newService, err := r.createOrUpdateService(ctx, vmService)
 				Expect(err).ShouldNot(HaveOccurred())
@@ -363,6 +365,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 				Expect(events).Should(Receive(ContainSubstring(OpUpdate)))
 
 				Expect(newService.Spec.ExternalName).To(Equal(externalName))
+				Expect(newService.Spec.LoadBalancerIP).To(Equal(loadBalancerIP))
 			})
 
 			It("Should not clobber the nodePort while updating service", func() {

@@ -58,6 +58,7 @@ func New(opts Options) (Manager, error) {
 		NewCache:                opts.NewCache,
 		CertDir:                 opts.WebhookSecretVolumeMountPath,
 		Port:                    opts.WebhookServiceContainerPort,
+		NewClient:               NewSelectiveCacheClient,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create manager")
@@ -75,6 +76,7 @@ func New(opts Options) (Manager, error) {
 		Recorder:                record.New(mgr.GetEventRecorderFor(fmt.Sprintf("%s/%s", opts.PodNamespace, opts.PodName))),
 		Scheme:                  opts.Scheme,
 		ContainerNode:           opts.ContainerNode,
+		SyncPeriod:              opts.SyncPeriod,
 	}
 
 	if err := opts.InitializeProviders(controllerManagerContext, mgr); err != nil {

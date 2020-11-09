@@ -5,6 +5,7 @@ package context
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -66,6 +67,11 @@ type ControllerManagerContext struct {
 
 	// ContainerNode should be true if we're running guest cluster nodes in containers.
 	ContainerNode bool
+
+	// SyncPeriod determines the minimum frequency at which watched resources are
+	// reconciled. A lower period will correct entropy more quickly, but reduce
+	// responsiveness to change if there are many watched resources.
+	SyncPeriod time.Duration
 
 	// VmProvider is the controller manager's VM Provider
 	VmProvider vmprovider.VirtualMachineProviderInterface

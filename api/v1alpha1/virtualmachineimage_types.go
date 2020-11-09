@@ -64,13 +64,18 @@ type VirtualMachineImageSpec struct {
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage
 type VirtualMachineImageStatus struct {
+	// Deprecated
 	Uuid          string `json:"uuid,omitempty"`
+
+	// Deprecated
 	InternalId    string `json:"internalId"`
+
+	// Deprecated
 	PowerState    string `json:"powerState,omitempty"`
 
-	// GOSCSupported describes whether the VirtualMachineImage is GuestOS customizable based on
-	// supported OSTypes for the cluster
-	GOSCSupported *bool  `json:"goscSupported,omitempty"`
+	// GuestOSCustomizable indicates whether the VirtualMachineImage's osType is supported for
+	// customisation on the cluster
+	GuestOSCustomizable *bool  `json:"guestOsCustomizable,omitempty"`
 }
 
 // +genclient
@@ -83,7 +88,7 @@ type VirtualMachineImageStatus struct {
 // +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
 // +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Source",type="string",JSONPath=".spec.imageSourceType"
-// +kubebuilder:printcolumn:name="GOSC_Supported",type="boolean",priority=1,JSONPath=".status.goscSupported"
+// +kubebuilder:printcolumn:name="GuestOSCustomizable",type="boolean",priority=1,JSONPath=".status.guestOsCustomizable"
 
 // VirtualMachineImage is the Schema for the virtualmachineimages API
 // A VirtualMachineImage represents a VirtualMachine image (e.g. VM template) that can be used as the base image

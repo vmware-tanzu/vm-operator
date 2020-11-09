@@ -5,13 +5,12 @@
 package mocks
 
 import (
-	"context"
-	"reflect"
-
-	"github.com/golang/mock/gomock"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	context "context"
+	gomock "github.com/golang/mock/gomock"
+	runtime "k8s.io/apimachinery/pkg/runtime"
+	types "k8s.io/apimachinery/pkg/types"
+	reflect "reflect"
+	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // MockClient is a mock of Client interface

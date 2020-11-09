@@ -29,7 +29,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	"k8s.io/klog/klogr"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
@@ -308,13 +307,8 @@ func (s *TestSuite) createManager() {
 
 	s.managerDone = make(chan struct{})
 	s.manager, err = pkgmgr.New(pkgmgr.Options{
-		KubeConfig:  s.config,
-		MetricsAddr: "0",
-		NewCache: func(config *rest.Config, opts cache.Options) (cache.Cache, error) {
-			syncPeriod := 1 * time.Second
-			opts.Resync = &syncPeriod
-			return cache.New(config, opts)
-		},
+		KubeConfig:          s.config,
+		MetricsAddr:         "0",
 		AddToManager:        s.addToManagerFn,
 		InitializeProviders: s.initProvidersFn,
 	})

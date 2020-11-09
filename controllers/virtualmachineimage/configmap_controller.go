@@ -99,7 +99,7 @@ func (r *ReconcileVMOpConfigMap) Reconcile(request reconcile.Request) (reconcile
 	// A newly created VMOP ConfigMap or changes to the Content Source
 	// needs to clear the namespace session cache, so that all subsequent requests will create a new session and
 	// repopulate the cache.
-	r.vmProvider.UpdateVmOpConfigMap(goctx.TODO())
+	r.vmProvider.ClearSessionsAndClient(goctx.TODO())
 
 	// Sync new set of images
 	// TODO: Merge thread contexts to sync images with a watch on source.Channel in the vmimage-controller

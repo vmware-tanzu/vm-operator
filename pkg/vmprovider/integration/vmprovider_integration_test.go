@@ -373,8 +373,7 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Same PNID
-			config := BuildNewWcpClusterConfigMap(providerConfig.VcPNID)
-			err = vmProvider.UpdateVcPNID(context.TODO(), &config)
+			err = vmProvider.UpdateVcPNID(context.TODO(), providerConfig.VcPNID, vsphere.DefaultVCPort)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -390,23 +389,10 @@ var _ = Describe("VMProvider Tests", func() {
 
 			// Different PNID
 			pnid := providerConfig.VcPNID + "-01"
-			config := BuildNewWcpClusterConfigMap(pnid)
-			err = vmProvider.UpdateVcPNID(context.TODO(), &config)
+			err = vmProvider.UpdateVcPNID(context.TODO(), pnid, vsphere.DefaultVCPort)
 			Expect(err).NotTo(HaveOccurred())
 			providerConfig, _ = vsphere.GetProviderConfigFromConfigMap(k8sClient, "")
 			Expect(providerConfig.VcPNID).Should(Equal(pnid))
 		})
 	})
 })
-
-func BuildNewWcpClusterConfigMap(pnid string) v1.ConfigMap {
-	wcpClusterConfig := &vsphere.WcpClusterConfig{
-		VcPNID: pnid,
-		VcPort: vsphere.DefaultVCPort,
-	}
-
-	configMap, err := vsphere.BuildNewWcpClusterConfigMap(wcpClusterConfig)
-	Expect(err).NotTo(HaveOccurred())
-
-	return configMap
-}

@@ -21,9 +21,10 @@ import (
 // IntegrationTestContext contains one separate namespace
 type IntegrationTestContext struct {
 	context.Context
-	Client    client.Client
-	Namespace string
-	suite     *TestSuite
+	Client       client.Client
+	Namespace    string
+	PodNamespace string
+	suite        *TestSuite
 }
 
 func (*IntegrationTestContext) GetLogger() logr.Logger {
@@ -51,9 +52,10 @@ func (ctx *IntegrationTestContext) AfterEach() {
 // with the IntegrationTestContext returned by this function
 func (s *TestSuite) NewIntegrationTestContext() *IntegrationTestContext {
 	ctx := &IntegrationTestContext{
-		Context: context.Background(),
-		Client:  s.integrationTestClient,
-		suite:   s,
+		Context:      context.Background(),
+		Client:       s.integrationTestClient,
+		PodNamespace: s.manager.GetContext().Namespace,
+		suite:        s,
 	}
 
 	By("Creating a temporary namespace", func() {

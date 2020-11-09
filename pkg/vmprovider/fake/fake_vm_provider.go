@@ -7,7 +7,6 @@ import (
 	"context"
 	"sync"
 
-	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -21,19 +20,27 @@ import (
 // to simulate scenarios, this provider also exposes a few function variables
 // to override certain behaviors. The functionality of this provider is
 // expected to evolve as more tests get added in the future.
-type FakeVmProvider struct {
-	sync.Mutex
 
-	vmMap                     map[client.ObjectKey]*v1alpha1.VirtualMachine
+type funcs struct {
 	DoesVirtualMachineExistFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
 	CreateVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
 	UpdateVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
 	DeleteVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 
-	resourcePolicyMap                          map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy
+	UpdateVcPNIDFn                  func(ctx context.Context, vcPNID, vcPort string) error
+	ClearSessionsAndClientFn        func(ctx context.Context)
+	DeleteNamespaceSessionInCacheFn func(ctx context.Context, namespace string)
+
 	DoesVirtualMachineSetResourcePolicyExistFn func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicyFn    func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
 	ComputeClusterCpuMinFrequencyFn            func(ctx context.Context) error
+}
+
+type FakeVmProvider struct {
+	sync.Mutex
+	funcs
+	vmMap             map[client.ObjectKey]*v1alpha1.VirtualMachine
+	resourcePolicyMap map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy
 }
 
 var _ vmprovider.VirtualMachineProviderInterface = &FakeVmProvider{}
@@ -42,16 +49,9 @@ func (s *FakeVmProvider) Reset() {
 	s.Lock()
 	defer s.Unlock()
 
+	s.funcs = funcs{}
 	s.vmMap = make(map[client.ObjectKey]*v1alpha1.VirtualMachine)
-	s.DoesVirtualMachineExistFn = nil
-	s.CreateVirtualMachineFn = nil
-	s.UpdateVirtualMachineFn = nil
-	s.DeleteVirtualMachineFn = nil
-	s.ComputeClusterCpuMinFrequencyFn = nil
-
 	s.resourcePolicyMap = make(map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy)
-	s.DoesVirtualMachineSetResourcePolicyExistFn = nil
-	s.DeleteVirtualMachineSetResourcePolicyFn = nil
 }
 
 func (s *FakeVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
@@ -149,15 +149,32 @@ func (s *FakeVmProvider) ComputeClusterCpuMinFrequency(ctx context.Context) erro
 	return nil
 }
 
-func (s *FakeVmProvider) UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error {
+func (s *FakeVmProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error {
+	s.Lock()
+	defer s.Unlock()
+	if s.UpdateVcPNIDFn != nil {
+		return s.UpdateVcPNIDFn(ctx, vcPNID, vcPort)
+	}
 	return nil
 }
 
-func (s *FakeVmProvider) UpdateVmOpSACredSecret(ctx context.Context) {}
+func (s *FakeVmProvider) ClearSessionsAndClient(ctx context.Context) {
+	s.Lock()
+	defer s.Unlock()
 
-func (s *FakeVmProvider) UpdateVmOpConfigMap(ctx context.Context) {}
+	if s.ClearSessionsAndClientFn != nil {
+		s.ClearSessionsAndClientFn(ctx)
+	}
+}
 
-func (s *FakeVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, namespace string) {}
+func (s *FakeVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, namespace string) {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.DeleteNamespaceSessionInCacheFn != nil {
+		s.DeleteNamespaceSessionInCacheFn(ctx, namespace)
+	}
+}
 
 func (s *FakeVmProvider) DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error) {
 	return true, nil

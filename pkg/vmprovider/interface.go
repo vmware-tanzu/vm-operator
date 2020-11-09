@@ -6,8 +6,6 @@ package vmprovider
 import (
 	"context"
 
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
@@ -44,11 +42,12 @@ type VirtualMachineProviderInterface interface {
 	// Used by VirtualMachine controller to determine if entities of ResourcePolicy exist on the infrastructure provider
 	DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
-	ComputeClusterCpuMinFrequency(ctx context.Context) error
-	UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error
-	UpdateVmOpSACredSecret(ctx context.Context)
-	UpdateVmOpConfigMap(ctx context.Context)
+
+	// "Infra" related
+	UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error
+	ClearSessionsAndClient(ctx context.Context)
 	DeleteNamespaceSessionInCache(ctx context.Context, namespace string)
+	ComputeClusterCpuMinFrequency(ctx context.Context) error
 
 	// AKP move to content provider interface
 	DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error)

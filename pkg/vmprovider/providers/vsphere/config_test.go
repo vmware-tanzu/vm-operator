@@ -177,11 +177,7 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 					ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
 					client := clientfake.NewFakeClient(configMapIn, secretIn, ns)
 
-					wcpClusterCfg := WcpClusterConfig{
-						VcPNID: newPnid,
-						VcPort: newPort,
-					}
-					Expect(PatchVcURLInConfigMap(client, &wcpClusterCfg)).To(Succeed())
+					Expect(PatchVcURLInConfigMap(client, newPnid, newPort)).To(Succeed())
 					providerConfig, err := GetProviderConfigFromConfigMap(client, "")
 					Expect(err).NotTo(HaveOccurred())
 					Expect(providerConfig.VcPNID).Should(Equal(newPnid))

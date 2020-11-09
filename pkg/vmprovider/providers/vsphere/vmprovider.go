@@ -22,7 +22,6 @@ import (
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -487,15 +486,11 @@ func (vs *vSphereVmProvider) ComputeClusterCpuMinFrequency(ctx context.Context) 
 	return nil
 }
 
-func (vs *vSphereVmProvider) UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error {
-	return vs.sessions.UpdateVcPNID(ctx, clusterConfigMap)
+func (vs *vSphereVmProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error {
+	return vs.sessions.UpdateVcPNID(ctx, vcPNID, vcPort)
 }
 
-func (vs *vSphereVmProvider) UpdateVmOpSACredSecret(ctx context.Context) {
-	vs.sessions.clearSessionsAndClient(ctx)
-}
-
-func (vs *vSphereVmProvider) UpdateVmOpConfigMap(ctx context.Context) {
+func (vs *vSphereVmProvider) ClearSessionsAndClient(ctx context.Context) {
 	vs.sessions.clearSessionsAndClient(ctx)
 }
 

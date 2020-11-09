@@ -1,130 +1,84 @@
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package infracluster
 
 import (
 	goctx "context"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
-	ctrl "sigs.k8s.io/controller-runtime"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
-
 	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
 const (
-	controllerName = "infracluster-controller"
+	VcCredsSecretName = "wcp-vmop-sa-vc-auth" // nolint:gosec
 )
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
-	return add(mgr, newReconciler(ctx, mgr))
-}
+	var (
+		controllerName      = "infracluster"
+		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controllerName))
+		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
+	)
 
-func newReconciler(ctx *context.ControllerManagerContext, mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileInfraClusterProvider{
-		Client:     mgr.GetClient(),
-		Log:        ctrl.Log.WithName("controllers").WithName("InfraCluster"),
-		Scheme:     mgr.GetScheme(),
-		vmProvider: ctx.VmProvider,
-	}
-}
+	r := NewReconciler(
+		mgr.GetClient(),
+		ctrl.Log.WithName("controllers").WithName(controllerName),
+		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
+		ctx.Namespace, // Aka lib.GetVmOpNamespaceFromEnv()
+		ctx.VmProvider,
+	)
 
-// add adds a new Controller to mgr with r as the reconcile.Reconciler
-func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return err
 	}
 
-	// Predicate functions to determine when a reconcile should be triggered for the "Watch"ed resources.
-	// We detect if a resource has been modified by comparing the ResourceVersion of old and new resources.
-	vmOpServiceAccountSecretPredicate := predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			return isVmOpServiceAccountCredSecret(e.Meta.GetName(), e.Meta.GetNamespace())
-		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			if !isVmOpServiceAccountCredSecret(e.MetaOld.GetName(), e.MetaOld.GetNamespace()) {
-				return false
-			}
-
-			predicateInstance := predicate.ResourceVersionChangedPredicate{}
-			return predicateInstance.Update(e)
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
-		},
-		GenericFunc: func(e event.GenericEvent) bool {
-			return false
-		},
-	}
-
-	wcpClusterConfigMapPredicate := predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			return isWcpClusterConfigMap(e.Meta.GetName(), e.Meta.GetNamespace())
-		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			if !isWcpClusterConfigMap(e.MetaOld.GetName(), e.MetaOld.GetNamespace()) {
-				return false
-			}
-
-			predicateInstance := predicate.ResourceVersionChangedPredicate{}
-			return predicateInstance.Update(e)
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
-		},
-		GenericFunc: func(e event.GenericEvent) bool {
-			return false
-		},
-	}
-
-	namespacePredicate := predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			return false
-		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			return false
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			return true
-		},
-		GenericFunc: func(e event.GenericEvent) bool {
-			return false
-		},
-	}
-
-	// Watch for ConfigMap
-	err = c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForObject{}, wcpClusterConfigMapPredicate)
+	err = addCredSecretWatch(mgr, c, ctx.SyncPeriod, r.vmOpNamespace)
 	if err != nil {
 		return err
 	}
 
-	// Watch for namespace resource types.
-	err = c.Watch(&source.Kind{Type: &corev1.Namespace{}}, &handler.EnqueueRequestForObject{}, namespacePredicate)
+	err = addWcpClusterCMWatch(mgr, c, ctx.SyncPeriod)
 	if err != nil {
 		return err
 	}
 
-	// Watch for vmop serviceaccount secret
-	err = c.Watch(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForObject{}, vmOpServiceAccountSecretPredicate)
+	// Kind of busted. Short resync period kind of saves this.
+	err = c.Watch(&source.Kind{Type: &corev1.Namespace{}}, &handler.EnqueueRequestForObject{},
+		predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return false
+			},
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				return false
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				return true
+			},
+			GenericFunc: func(e event.GenericEvent) bool {
+				return false
+			},
+		})
 	if err != nil {
 		return err
 	}
@@ -132,100 +86,141 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	return nil
 }
 
-type ReconcileInfraClusterProvider struct {
-	client.Client
-	Log        logr.Logger
-	Scheme     *runtime.Scheme
-	vmProvider vmprovider.VirtualMachineProviderInterface
-}
-
-// Reconcile clears all the vCenter sessions when a VCPNID is updated in wcp-cluster-config ConfigMap or a Service Account Secret is rotated.
-//
-// PNID, aka Primary Network Identifier, is the unique vCenter server name given to the vCenter server during deployment.
-// Generally, this will be the FQDN of the machine if the IP is resolvable; otherwise, IP is taken as PNID.
-//
-// The VMOP config map is installed with initial PNID at the time of the Supervisor enable workflow. How the wcpsvc communicates
-// the PNID changes to components running on API master (like schedExt/imageSvc etc) is by updating a global kube-system/wcp-cluster-config
-// ConfigMap. This update happens automatically as a part of the wcpsvc controller. Components like schedExt watch this configmap and
-// update the information internally. VMOP, like other controllers, listens on the changes in the global configmap, refresh its internal data,
-// and cleans up any connected vCenter sessions.
-//
-// The vSphere VM provider registration would create a singleton VM provider object with SessionManger to hold a per-namespace session map with
-// each session establishes a client connection with vCenter. The per-namespace client would turn out to be a per-manager client in the future
-// to reduce the in-house management connections to vCenter.
-//
-// This controller refreshes the VMOP config map and clears active sessions upon receiving create or update event on kube-system/wcp-cluster-config.
-//
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
-
-func (r *ReconcileInfraClusterProvider) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	r.Log.Info("Received reconcile request", "namespace", request.Namespace, "name", request.Name)
-	ctx := goctx.Background()
-
-	// The reconcile request can be one of
-	// VCPNID update or a VM operator secret rotation or namespace deletion.
-	// We check on the namespacedName to differentiate between the different request types.
-	// This is an anti pattern. Usually a controller should only reconcile one object type.
-	// If the namespaced names of ConfigMap or Secret change or if a namespace is deleted, the code needs to be updated.
-	if isVmOpServiceAccountCredSecret(request.Name, request.Namespace) {
-		r.Log.Info("VM operator secret has been updated. Going to invalidate session cache for all namespaces")
-		r.vmProvider.UpdateVmOpSACredSecret(ctx)
-		return reconcile.Result{}, nil
-	}
-
-	if isWcpClusterConfigMap(request.Name, request.Namespace) {
-		err := r.reconcileVcPNID(ctx, request)
-		return reconcile.Result{}, err
-	}
-
-	// filtering out reconcile requests for namespaces. for such requests the namespace field is empty.
-	if isNamespace(request.Namespace) {
-		err := r.reconcileNamespace(ctx, request)
-		return reconcile.Result{}, err
-	}
-
-	return reconcile.Result{}, nil
-}
-
-func (r *ReconcileInfraClusterProvider) reconcileVcPNID(ctx goctx.Context, request reconcile.Request) error {
-	r.Log.V(4).Info("Reconciling VC PNID")
-	instance := &corev1.ConfigMap{}
-	err := r.Get(ctx, request.NamespacedName, instance)
+func addCredSecretWatch(mgr manager.Manager, c controller.Controller, syncPeriod time.Duration, ns string) error {
+	nsCache, err := pkgmgr.NewNamespaceCache(mgr, &syncPeriod, ns)
 	if err != nil {
-		if apiErrors.IsNotFound(err) {
-			// Object not found, return.  Created objects are automatically garbage collected.
-			// For additional cleanup logic use finalizers.
-			return nil
-		}
-		// Error reading the object - requeue the request.
 		return err
 	}
 
-	return r.vmProvider.UpdateVcPNID(ctx, instance)
+	return c.Watch(source.NewKindWithCache(&corev1.Secret{}, nsCache), &handler.EnqueueRequestForObject{},
+		predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return e.Meta.GetName() == VcCredsSecretName
+			},
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				return e.MetaOld.GetName() == VcCredsSecretName
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				return false
+			},
+			GenericFunc: func(e event.GenericEvent) bool {
+				return false
+			},
+		},
+		predicate.ResourceVersionChangedPredicate{},
+	)
 }
 
-func (r *ReconcileInfraClusterProvider) reconcileNamespace(ctx goctx.Context, request reconcile.Request) error {
-	r.Log.V(4).Info("Reconciling namespace", "namespace", request.NamespacedName.Name)
-	instance := &corev1.Namespace{}
+func addWcpClusterCMWatch(mgr manager.Manager, c controller.Controller, syncPeriod time.Duration) error {
+	nsCache, err := pkgmgr.NewNamespaceCache(mgr, &syncPeriod, WcpClusterConfigMapNamespace)
+	if err != nil {
+		return err
+	}
 
-	err := r.Get(ctx, request.NamespacedName, instance)
-	if err != nil && apiErrors.IsNotFound(err) {
-		r.vmProvider.DeleteNamespaceSessionInCache(ctx, request.NamespacedName.Name)
+	return c.Watch(source.NewKindWithCache(&corev1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
+		predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return e.Meta.GetName() == WcpClusterConfigMapName
+			},
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				return e.MetaOld.GetName() == WcpClusterConfigMapName
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				return false
+			},
+			GenericFunc: func(e event.GenericEvent) bool {
+				return false
+			},
+		},
+		predicate.ResourceVersionChangedPredicate{},
+	)
+}
+
+func NewReconciler(
+	client client.Client,
+	logger logr.Logger,
+	recorder record.Recorder,
+	vmOpNamespace string,
+	vmProvider vmprovider.VirtualMachineProviderInterface) *InfraClusterReconciler {
+
+	return &InfraClusterReconciler{
+		Client:        client,
+		Logger:        logger,
+		Recorder:      recorder,
+		vmOpNamespace: vmOpNamespace,
+		vmProvider:    vmProvider,
+	}
+}
+
+type InfraClusterReconciler struct {
+	client.Client
+	Logger        logr.Logger
+	Recorder      record.Recorder
+	vmOpNamespace string
+	vmProvider    vmprovider.VirtualMachineProviderInterface
+}
+
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
+
+func (r *InfraClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
+	ctx := goctx.Background()
+
+	// This is totally wrong and we should break this controller apart so we're not
+	// watching different types.
+
+	if req.Name == VcCredsSecretName && req.Namespace == r.vmOpNamespace {
+		return ctrl.Result{}, r.reconcileVcCreds(ctx, req)
+	}
+
+	if req.Name == WcpClusterConfigMapName && req.Namespace == WcpClusterConfigMapNamespace {
+		return ctrl.Result{}, r.reconcileWcpClusterConfig(ctx, req)
+	}
+
+	if req.Namespace == "" {
+		return ctrl.Result{}, r.reconcileNamespace(ctx, req)
+	}
+
+	r.Logger.Error(nil, "Reconciling unexpected object", "req", req.NamespacedName)
+	return ctrl.Result{}, nil
+}
+
+func (r *InfraClusterReconciler) reconcileVcCreds(ctx goctx.Context, req ctrl.Request) error {
+	r.Logger.Info("Reconciling updated VM Operator credentials", "secret", req.NamespacedName)
+	r.vmProvider.ClearSessionsAndClient(ctx)
+	return nil
+}
+
+func (r *InfraClusterReconciler) reconcileWcpClusterConfig(ctx goctx.Context, req ctrl.Request) error {
+	r.Logger.V(4).Info("Reconciling WCP Cluster Config", "configMap", req.NamespacedName)
+
+	cm := &corev1.ConfigMap{}
+	if err := r.Get(ctx, req.NamespacedName, cm); err != nil {
+		if !apiErrors.IsNotFound(err) {
+			return err
+		}
 		return nil
 	}
 
-	return err
+	clusterConfig, err := ParseWcpClusterConfig(cm.Data)
+	if err != nil {
+		// No point of retrying until the object is updated.
+		return nil
+	}
+
+	return r.vmProvider.UpdateVcPNID(ctx, clusterConfig.VcPNID, clusterConfig.VcPort)
 }
 
-func isVmOpServiceAccountCredSecret(secretName, secretNamespace string) bool {
-	vmOpNamespace, err := lib.GetVmOpNamespaceFromEnv()
-	return err == nil && vmOpNamespace == secretNamespace && secretName == vsphere.VmOpSecretName
-}
+func (r *InfraClusterReconciler) reconcileNamespace(ctx goctx.Context, req ctrl.Request) error {
+	r.Logger.V(1).Info("Reconciling namespace", "namespace", req.NamespacedName.Name)
 
-func isWcpClusterConfigMap(configMapName, configMapNamespace string) bool {
-	return configMapName == vsphere.WcpClusterConfigMapName && configMapNamespace == vsphere.WcpClusterConfigMapNamespace
-}
+	ns := &corev1.Namespace{}
+	if err := r.Get(ctx, req.NamespacedName, ns); err != nil {
+		if !apiErrors.IsNotFound(err) {
+			return err
+		}
 
-func isNamespace(namespace string) bool {
-	return namespace == ""
+		r.vmProvider.DeleteNamespaceSessionInCache(ctx, req.NamespacedName.Name)
+	}
+
+	return nil
 }

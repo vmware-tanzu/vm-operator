@@ -9,7 +9,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/vapi/library"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
@@ -156,22 +155,17 @@ func (sm *SessionManager) ComputeClusterCpuMinFrequency(ctx context.Context) err
 	return nil
 }
 
-func (sm *SessionManager) UpdateVcPNID(ctx context.Context, clusterConfigMap *corev1.ConfigMap) error {
-	clusterCfg, err := BuildNewWcpClusterConfig(clusterConfigMap.Data)
-	if err != nil {
-		return err
-	}
-
+func (sm *SessionManager) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error {
 	config, err := GetProviderConfigFromConfigMap(sm.k8sClient, "")
 	if err != nil {
 		return err
 	}
 
-	if config.VcPNID == clusterCfg.VcPNID && config.VcPort == clusterCfg.VcPort {
+	if config.VcPNID == vcPNID && config.VcPort == vcPort {
 		return nil
 	}
 
-	if err = PatchVcURLInConfigMap(sm.k8sClient, clusterCfg); err != nil {
+	if err = PatchVcURLInConfigMap(sm.k8sClient, vcPNID, vcPort); err != nil {
 		return err
 	}
 

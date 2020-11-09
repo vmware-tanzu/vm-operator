@@ -385,7 +385,7 @@ func InstallVSphereVmProviderConfig(client ctrlruntime.Client, namespace string,
 
 // PatchVcURLInConfigMap updates the ConfigMap with the new vSphere PNID and Port.
 // BMV: This doesn't really have to be a Patch.
-func PatchVcURLInConfigMap(client ctrlruntime.Client, config *WcpClusterConfig) error {
+func PatchVcURLInConfigMap(client ctrlruntime.Client, vcPNID, vcPort string) error {
 	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
 	if err != nil {
 		return err
@@ -398,8 +398,8 @@ func PatchVcURLInConfigMap(client ctrlruntime.Client, config *WcpClusterConfig) 
 	}
 
 	origConfigMap := configMap.DeepCopyObject()
-	configMap.Data[vcPNIDKey] = config.VcPNID
-	configMap.Data[vcPortKey] = config.VcPort
+	configMap.Data[vcPNIDKey] = vcPNID
+	configMap.Data[vcPortKey] = vcPort
 
 	err = client.Patch(context.Background(), configMap, ctrlruntime.MergeFrom(origConfigMap))
 	if err != nil {

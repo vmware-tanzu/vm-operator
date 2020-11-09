@@ -1,0 +1,169 @@
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package infracluster_test
+
+import (
+	"context"
+	"sync/atomic"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/vmware-tanzu/vm-operator/controllers/infracluster"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
+)
+
+func intgTests() {
+
+	var (
+		ctx *builder.IntegrationTestContext
+	)
+
+	BeforeEach(func() {
+		ctx = suite.NewIntegrationTestContext()
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		intgFakeVmProvider.Reset()
+	})
+
+	Context("VcCredsSecret", func() {
+		var secret *corev1.Secret
+
+		BeforeEach(func() {
+			secret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ctx.PodNamespace,
+					Name:      infracluster.VcCredsSecretName,
+				},
+			}
+		})
+
+		AfterEach(func() {
+			err := ctx.Client.Delete(ctx, secret)
+			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+		})
+
+		When("Secret is updated", func() {
+			var called int32
+
+			BeforeEach(func() {
+				intgFakeVmProvider.Lock()
+				intgFakeVmProvider.ClearSessionsAndClientFn = func(_ context.Context) {
+					atomic.AddInt32(&called, 1)
+				}
+				intgFakeVmProvider.Unlock()
+
+				Expect(ctx.Client.Create(ctx, secret)).To(Succeed())
+			})
+
+			It("Clears sessions", func() {
+				// Wait for initial reconcile.
+				Eventually(func() int32 { return atomic.LoadInt32(&called) }).Should(Equal(int32(1)))
+
+				secret.StringData = map[string]string{"foo": "vmware-bar"}
+				Expect(ctx.Client.Update(ctx, secret)).To(Succeed())
+
+				Eventually(func() int32 { return atomic.LoadInt32(&called) }).Should(Equal(int32(2)))
+			})
+		})
+	})
+
+	Context("WcpClusterConfigMap", func() {
+		var configMap *corev1.ConfigMap
+
+		BeforeEach(func() {
+			var err error
+			configMap, err = infracluster.NewWcpClusterConfigMap(infracluster.WcpClusterConfig{
+				VcPNID: "dummy-pnid",
+				VcPort: "dummy-port",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(configMap).ToNot(BeNil())
+		})
+
+		AfterEach(func() {
+			err := ctx.Client.Delete(ctx, configMap)
+			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+		})
+
+		When("ConfigMap is updated", func() {
+			var savedPnid, savedPort string
+
+			BeforeEach(func() {
+				intgFakeVmProvider.Lock()
+				intgFakeVmProvider.UpdateVcPNIDFn = func(_ context.Context, pnid, port string) error {
+					savedPnid = pnid
+					savedPort = port
+					return nil
+				}
+				intgFakeVmProvider.Unlock()
+				Expect(ctx.Client.Create(ctx, configMap)).To(Succeed())
+			})
+
+			It("Updates provider", func() {
+				var err error
+				configMap, err = infracluster.NewWcpClusterConfigMap(infracluster.WcpClusterConfig{
+					VcPNID: "new-pnid",
+					VcPort: "new-port",
+				})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ctx.Client.Update(ctx, configMap)).To(Succeed())
+
+				Eventually(func() string {
+					intgFakeVmProvider.Lock()
+					defer intgFakeVmProvider.Unlock()
+					return savedPnid + "::" + savedPort
+				}).Should(Equal("new-pnid::new-port"))
+			})
+		})
+	})
+
+	// The behavior of this isn't quite right, and the lack of a Finalize on the controller-runtime
+	// client makes this hard to test in the limited envtest environment.
+	XContext("Namespace", func() {
+		var namespace *corev1.Namespace
+
+		BeforeEach(func() {
+			namespace = &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "dummy-namespace",
+				},
+			}
+			Expect(ctx.Client.Create(ctx, namespace)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			err := ctx.Client.Delete(ctx, namespace)
+			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+		})
+
+		When("namespace is deleted", func() {
+			var savedNamespace string
+
+			BeforeEach(func() {
+				intgFakeVmProvider.Lock()
+				intgFakeVmProvider.DeleteNamespaceSessionInCacheFn = func(_ context.Context, namespace string) {
+					savedNamespace = namespace
+				}
+				intgFakeVmProvider.Unlock()
+			})
+
+			It("Clears namespace session", func() {
+				Expect(ctx.Client.Delete(ctx, namespace)).To(Succeed())
+
+				Eventually(func() string {
+					intgFakeVmProvider.Lock()
+					defer intgFakeVmProvider.Unlock()
+					return savedNamespace
+				}).Should(Equal(namespace.Name))
+			})
+		})
+	})
+}

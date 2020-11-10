@@ -4,6 +4,9 @@
 package builder
 
 import (
+	"fmt"
+	"math/rand"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -87,7 +90,9 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 func DummyVirtualMachineService() *vmopv1.VirtualMachineService {
 	return &vmopv1.VirtualMachineService{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "test-",
+			// Using image.GenerateName causes problems with unit tests
+			// nolint:gosec This doesn't need to be a secure prng
+			Name: fmt.Sprintf("test-%d", rand.Int()),
 		},
 		Spec: vmopv1.VirtualMachineServiceSpec{
 			Type: vmopv1.VirtualMachineServiceTypeLoadBalancer,

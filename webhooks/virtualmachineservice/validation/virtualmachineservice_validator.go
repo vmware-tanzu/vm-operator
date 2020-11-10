@@ -4,6 +4,7 @@
 package validation
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -95,6 +97,11 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 
 func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vmService *vmopv1.VirtualMachineService) []string {
 	var validationErrs []string
+
+	if len(validation.IsDNS1123Label(vmService.Name)) != 0 {
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.NameNotDNSComplaint, vmService.Name))
+	}
+
 	return validationErrs
 }
 

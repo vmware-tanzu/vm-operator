@@ -55,6 +55,7 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
+		invalidDNSName  bool
 		invalidType     bool
 		invalidPorts    bool
 		invalidSelector bool
@@ -63,6 +64,10 @@ func unitTestsValidateCreate() {
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		var err error
 
+		if args.invalidDNSName {
+			// Name that doesn't conform to DNS Label format "[a-z0-9]([-a-z0-9]*[a-z0-9])?"
+			ctx.vmService.Name = "MyVMService"
+		}
 		if args.invalidType {
 			ctx.vmService.Spec.Type = ""
 		}
@@ -79,7 +84,7 @@ func unitTestsValidateCreate() {
 		response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(expectedAllowed))
 		if expectedReason != "" {
-			Expect(string(response.Result.Reason)).To(Equal(expectedReason))
+			Expect(string(response.Result.Reason)).To(ContainSubstring(expectedReason))
 		}
 		if expectedErr != nil {
 			Expect(response.Result.Message).To(Equal(expectedErr.Error()))
@@ -98,6 +103,7 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid type", createArgs{invalidType: true}, false, "spec.type must be specified", nil),
 		Entry("should deny invalid ports", createArgs{invalidPorts: true}, false, "spec.ports must be specified", nil),
 		Entry("should deny invalid selector", createArgs{invalidSelector: true}, false, "spec.selector must be specified", nil),
+		Entry("should deny invalid name", createArgs{invalidDNSName: true}, false, "does not conform to the kubernetes DNS_LABEL rules", nil),
 	)
 }
 

@@ -310,6 +310,9 @@ type VirtualMachineStatus struct {
 	// Guest OS BIOS as a unique hardware identifier.
 	BiosUUID string `json:"biosUUID"`
 
+	// InstanceUUID describes the unique instance UUID provided by the underlying infrastructure provider, such as vSphere.
+	InstanceUUID string `json:"instanceUUID"`
+
 	// Volumes describes a list of current status information for each Volume that is desired to be attached to the
 	// VirtualMachine.
 	Volumes []VirtualMachineVolumeStatus `json:"volumes,omitempty"`

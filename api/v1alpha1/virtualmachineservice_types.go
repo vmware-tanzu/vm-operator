@@ -93,7 +93,6 @@ type VirtualMachineServiceSpec struct {
 	// +optional
 	LoadBalancerIP string `json:"loadBalancerIP,omitempty"`
 
-	// Just support cluster IP for now
 	ClusterIP    string `json:"clusterIp,omitempty"`
 	ExternalName string `json:"externalName,omitempty"`
 }

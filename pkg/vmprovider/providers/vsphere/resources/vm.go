@@ -273,6 +273,11 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 		return nil, errors.Wrapf(err, "failed to get BiosUUID for VirtualMachine %s", vm.Name)
 	}
 
+	instanceUUID, err := vm.InstanceUUID(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get InstanceUUID for VirtualMachine %s", vm.Name)
+	}
+
 	cbt, err := vm.ChangeTrackingEnabled(ctx)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get ChangeTrackingEnabled for VirtualMachine %s", vm.Name)
@@ -285,6 +290,7 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 		VmIp:                ip,
 		UniqueID:            uniqueId,
 		BiosUUID:            biosUUID,
+		InstanceUUID:        instanceUUID,
 		ChangeBlockTracking: cbt,
 	}, nil
 }

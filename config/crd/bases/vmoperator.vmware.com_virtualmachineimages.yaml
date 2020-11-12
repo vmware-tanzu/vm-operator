@@ -18,9 +18,6 @@ spec:
   - JSONPath: .spec.type
     name: Format
     type: string
-  - JSONPath: .spec.imageSourceType
-    name: Source
-    type: string
   - JSONPath: .status.guestOsCustomizable
     name: GuestOSCustomizable
     priority: 1

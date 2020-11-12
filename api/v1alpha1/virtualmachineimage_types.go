@@ -87,7 +87,6 @@ type VirtualMachineImageStatus struct {
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
 // +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
 // +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"
-// +kubebuilder:printcolumn:name="Source",type="string",JSONPath=".spec.imageSourceType"
 // +kubebuilder:printcolumn:name="GuestOSCustomizable",type="boolean",priority=1,JSONPath=".status.guestOsCustomizable"
 
 // VirtualMachineImage is the Schema for the virtualmachineimages API

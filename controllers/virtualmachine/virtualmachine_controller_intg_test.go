@@ -147,11 +147,13 @@ func intgTests() {
 
 	Context("Reconcile", func() {
 		dummyBiosUUID := "biosUUID42"
+		dummyInstanceUUID := "instanceUUID1234"
 
 		BeforeEach(func() {
 			intgFakeVmProvider.Lock()
 			intgFakeVmProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, _ vmprovider.VmConfigArgs) error {
 				vm.Status.BiosUUID = dummyBiosUUID
+				vm.Status.InstanceUUID = dummyInstanceUUID
 				return nil
 			}
 			intgFakeVmProvider.Unlock()
@@ -208,6 +210,13 @@ func intgTests() {
 					}
 					return ""
 				}).Should(Equal(dummyBiosUUID), "waiting for expected BiosUUID")
+
+				Eventually(func() string {
+					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
+						return vm.Status.InstanceUUID
+					}
+					return ""
+				}).Should(Equal(dummyInstanceUUID), "waiting for expected InstanceUUID")
 
 				Eventually(func() vmopv1alpha1.VMStatusPhase {
 					if vm := getVirtualMachine(ctx, vmKey); vm != nil {

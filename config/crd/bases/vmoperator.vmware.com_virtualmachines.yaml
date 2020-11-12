@@ -359,6 +359,10 @@ spec:
               description: Host describes the hostname or IP address of the infrastructure
                 host that the VirtualMachine is executing on.
               type: string
+            instanceUUID:
+              description: InstanceUUID describes the unique instance UUID provided
+                by the underlying infrastructure provider, such as vSphere.
+              type: string
             phase:
               description: Phase describes the current phase information of the VirtualMachine.
               type: string
@@ -406,6 +410,7 @@ spec:
           required:
           - biosUUID
           - host
+          - instanceUUID
           - phase
           - powerState
           - uniqueID

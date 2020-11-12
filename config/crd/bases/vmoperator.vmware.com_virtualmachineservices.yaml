@@ -52,7 +52,6 @@ spec:
             set of labels.
           properties:
             clusterIp:
-              description: Just support cluster IP for now
               type: string
             externalName:
               type: string

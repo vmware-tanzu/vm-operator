@@ -130,6 +130,7 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 			vmClass := getVMClassInstance(vmName, vmNamespace)
 			vm := getVirtualMachineInstance(vmName, vmNamespace, imageName, vmClass.Name)
 			Expect(vm.Status.BiosUUID).Should(BeEmpty())
+			Expect(vm.Status.InstanceUUID).Should(BeEmpty())
 
 			exists, err := vmProvider.DoesVirtualMachineExist(ctx, vm)
 			Expect(err).ToNot(HaveOccurred())
@@ -143,6 +144,7 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 			err = vmProvider.UpdateVirtualMachine(context.TODO(), vm, vmConfigArgs)
 			Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
 			Expect(vm.Status.BiosUUID).ShouldNot(BeEmpty())
+			Expect(vm.Status.InstanceUUID).ShouldNot(BeEmpty())
 
 			exists, err = vmProvider.DoesVirtualMachineExist(ctx, vm)
 			Expect(err).ToNot(HaveOccurred())
@@ -183,6 +185,7 @@ var _ = Describe("VMProvider Tests", func() {
 			vmClass := getVMClassInstance(vmName, vmNamespace)
 			vm := getVirtualMachineInstance(vmName, vmNamespace, imageName, vmClass.Name)
 			Expect(vm.Status.BiosUUID).Should(BeEmpty())
+			Expect(vm.Status.InstanceUUID).Should(BeEmpty())
 
 			exists, err := vmProvider.DoesVirtualMachineExist(ctx, vm)
 			Expect(err).ToNot(HaveOccurred())
@@ -198,6 +201,7 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(vm.Status.VmIp).Should(Equal(testIP))
 			Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
 			Expect(vm.Status.BiosUUID).ShouldNot(BeEmpty())
+			Expect(vm.Status.InstanceUUID).ShouldNot(BeEmpty())
 		})
 
 		It("should work", func() {

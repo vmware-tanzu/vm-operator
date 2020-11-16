@@ -103,7 +103,7 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid type", createArgs{invalidType: true}, false, "spec.type must be specified", nil),
 		Entry("should deny invalid ports", createArgs{invalidPorts: true}, false, "spec.ports must be specified", nil),
 		Entry("should deny invalid selector", createArgs{invalidSelector: true}, false, "spec.selector must be specified", nil),
-		Entry("should deny invalid name", createArgs{invalidDNSName: true}, false, "does not conform to the kubernetes DNS_LABEL rules", nil),
+		Entry("should deny invalid name", createArgs{invalidDNSName: true}, false, "metadata.name is invalid", nil),
 	)
 }
 

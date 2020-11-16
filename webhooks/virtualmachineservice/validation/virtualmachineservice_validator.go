@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -98,8 +99,9 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vmService *vmopv1.VirtualMachineService) []string {
 	var validationErrs []string
 
-	if len(validation.IsDNS1123Label(vmService.Name)) != 0 {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.NameNotDNSComplaint, vmService.Name))
+	errs := validation.IsDNS1123Label(vmService.Name)
+	if len(errs) != 0 {
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.NameNotDNSComplaint, vmService.Name, strings.Join(errs, ",")))
 	}
 
 	return validationErrs

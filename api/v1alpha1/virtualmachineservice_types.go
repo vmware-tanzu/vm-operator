@@ -93,6 +93,14 @@ type VirtualMachineServiceSpec struct {
 	// +optional
 	LoadBalancerIP string `json:"loadBalancerIP,omitempty"`
 
+	// LoadBalancerSourceRanges is an array of IP addresses in the format of
+	// CIDRs, for example: 103.21.244.0/22 and 10.0.0.0/24.
+	// If specified and supported by the platform, this will restrict
+	// ingress traffic to the specified client IPs. This field will be ignored if the
+	// loadbalancer provider does not support the feature.
+	// +optional
+	LoadBalancerSourceRanges []string `json:"loadBalancerSourceRanges,omitempty"`
+
 	ClusterIP    string `json:"clusterIp,omitempty"`
 	ExternalName string `json:"externalName,omitempty"`
 }

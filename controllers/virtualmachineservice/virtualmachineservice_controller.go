@@ -33,6 +33,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -340,7 +341,7 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 		servicePorts = append(servicePorts, sport)
 	}
 
-	return &corev1.Service{
+	svc := &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Service",
 			APIVersion: "core/v1",
@@ -348,13 +349,43 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 		ObjectMeta: MakeObjectMeta(vmService),
 		Spec: corev1.ServiceSpec{
 			// Don't specify selector to keep endpoints controller from interfering
-			Type:           corev1.ServiceType(vmService.Spec.Type),
-			Ports:          servicePorts,
-			ExternalName:   vmService.Spec.ExternalName,
-			ClusterIP:      vmService.Spec.ClusterIP,
-			LoadBalancerIP: vmService.Spec.LoadBalancerIP,
+			Type:                     corev1.ServiceType(vmService.Spec.Type),
+			Ports:                    servicePorts,
+			ExternalName:             vmService.Spec.ExternalName,
+			ClusterIP:                vmService.Spec.ClusterIP,
+			LoadBalancerIP:           vmService.Spec.LoadBalancerIP,
+			LoadBalancerSourceRanges: vmService.Spec.LoadBalancerSourceRanges,
 		},
 	}
+
+	// When VirtualMachineService is created with annotation
+	// labelServiceExternalTrafficPolicyKey, use its value for the
+	// Service.Spec.ExternalTrafficPolicy
+	if externalTrafficPolicy, ok := svc.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]; ok {
+		switch corev1.ServiceExternalTrafficPolicyType(externalTrafficPolicy) {
+		// Only two valid values are accepted
+		case corev1.ServiceExternalTrafficPolicyTypeLocal, corev1.ServiceExternalTrafficPolicyTypeCluster:
+			{
+				svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyType(externalTrafficPolicy)
+			}
+		default:
+			r.log.V(5).Info("Unknown externalTrafficPolicy configured in VirtualMachineService label, skip it", "externalTrafficPolicy", externalTrafficPolicy)
+		}
+	}
+	// When VirtualMachineService is created with annotation
+	// labelServiceHealthCheckNodePortKey, use its value for the
+	// Service.Spec.HealthCheckNodePort
+	if healthCheckNodePortString, ok := svc.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]; ok {
+		//nolint:gosec ignore the overflow warning
+		healthCheckNodePort, err := strconv.Atoi(healthCheckNodePortString)
+		if err != nil {
+			r.log.V(5).Info("Invalid healthCheckNodePort configured in VirtualMachineService label, skip it", "healthCheckNodePort", healthCheckNodePortString)
+		} else {
+			svc.Spec.HealthCheckNodePort = int32(healthCheckNodePort)
+		}
+	}
+
+	return svc
 }
 
 func findPort(vm *vmoperatorv1alpha1.VirtualMachine, portName intstr.IntOrString, portProto corev1.Protocol) (int, error) {
@@ -437,6 +468,15 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context
 	newService.Spec.ExternalName = svcFromVmService.Spec.ExternalName
 	newService.Spec.Ports = svcFromVmService.Spec.Ports
 	newService.Spec.LoadBalancerIP = svcFromVmService.Spec.LoadBalancerIP
+	if svcFromVmService.Spec.LoadBalancerSourceRanges != nil {
+		newService.Spec.LoadBalancerSourceRanges = svcFromVmService.Spec.LoadBalancerSourceRanges
+	}
+	if svcFromVmService.Spec.ExternalTrafficPolicy != "" {
+		newService.Spec.ExternalTrafficPolicy = svcFromVmService.Spec.ExternalTrafficPolicy
+	}
+	if svcFromVmService.Spec.HealthCheckNodePort != 0 {
+		newService.Spec.HealthCheckNodePort = svcFromVmService.Spec.HealthCheckNodePort
+	}
 
 	// Maintain the existing mapping of ServicePort -> NodePort
 	// as un-setting it will cause the apiserver to allocate a

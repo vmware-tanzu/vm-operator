@@ -22,6 +22,8 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
+
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
@@ -76,8 +78,9 @@ var _ = Describe("Loadbalancer Provider", func() {
 
 				vmService = &vmoperatorv1alpha1.VirtualMachineService{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "dummy-vmservice",
-						Namespace: dummyNamespace,
+						Name:        "dummy-vmservice",
+						Namespace:   dummyNamespace,
+						Annotations: make(map[string]string),
 					},
 					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
 						Type:         vmoperatorv1alpha1.VirtualMachineServiceTypeClusterIP,
@@ -113,8 +116,11 @@ var _ = Describe("Loadbalancer Provider", func() {
 			})
 
 			Context("virtual network exists", func() {
+				var (
+					vnet *ncpv1alpha1.VirtualNetwork
+				)
 				BeforeEach(func() {
-					vnet := &ncpv1alpha1.VirtualNetwork{
+					vnet = &ncpv1alpha1.VirtualNetwork{
 						TypeMeta: metav1.TypeMeta{
 							Kind:       "VirtualNetwork",
 							APIVersion: "vmware.com/v1alpha1",
@@ -124,6 +130,8 @@ var _ = Describe("Loadbalancer Provider", func() {
 							Namespace: vmService.GetNamespace(),
 						},
 					}
+				})
+				JustBeforeEach(func() {
 					_, err = ncpClient.VmwareV1alpha1().VirtualNetworks(dummyNamespace).Create(vnet)
 					Expect(err).To(BeNil())
 					err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
@@ -131,6 +139,28 @@ var _ = Describe("Loadbalancer Provider", func() {
 				Context("create load balancer", func() {
 					It("nsx-t network provider should successfully create a lb with virtual network", func() {
 						Expect(err).To(BeNil())
+						By("ensuring VirtualMachineService has the ncp loadbalancer annotation")
+						Expect(vmService.Annotations).ToNot(BeNil())
+						_, exists := vmService.Annotations[ServiceLoadBalancerTagKey]
+						Expect(exists).To(BeTrue())
+					})
+
+					Context("vmservice has the healthCheckNodePort label", func() {
+						BeforeEach(func() {
+							vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
+						})
+						AfterEach(func() {
+							delete(vmService.Labels, utils.AnnotationServiceHealthCheckNodePortKey)
+						})
+						It("nsx-t network provider should successfully create a lb with virtual network", func() {
+							Expect(err).To(BeNil())
+							By("ensuring VirtualMachineService has the ncp healthCheckNodePort annotation")
+							Expect(vmService.Annotations).ToNot(BeNil())
+							hcPort, exists := vmService.Annotations[ServiceLoadBalancerHealthCheckNodePortTagKey]
+							Expect(exists).To(BeTrue())
+							Expect(hcPort).To(Equal("30012"))
+						})
+
 					})
 
 					It("nsx-t network provider should successfully get a lb with virtual network", func() {

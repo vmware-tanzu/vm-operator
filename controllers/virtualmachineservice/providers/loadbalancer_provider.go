@@ -26,13 +26,14 @@ import (
 )
 
 const (
-	LoadbalancerKind          = "LoadBalancer"
-	APIVersion                = "vmware.com/v1alpha1"
-	ServiceLoadBalancerTagKey = "ncp/crd_lb"
-	NSXTLoadBalancer          = "nsx-t-lb"
-	SimpleLoadBalancer        = "simple-lb"
-	NoOpLoadBalancer          = ""
-	ClusterNameKey            = "capw.vmware.com/cluster.name"
+	LoadbalancerKind                             = "LoadBalancer"
+	APIVersion                                   = "vmware.com/v1alpha1"
+	ServiceLoadBalancerTagKey                    = "ncp/crd_lb"
+	ServiceLoadBalancerHealthCheckNodePortTagKey = "ncp/healthCheckNodePort"
+	NSXTLoadBalancer                             = "nsx-t-lb"
+	SimpleLoadBalancer                           = "simple-lb"
+	NoOpLoadBalancer                             = ""
+	ClusterNameKey                               = "capw.vmware.com/cluster.name"
 )
 
 var LBProvider string
@@ -216,5 +217,10 @@ func addNcpAnnotations(loadBalancerName string, objectMeta *metav1.ObjectMeta) {
 		annotations = make(map[string]string)
 	}
 	annotations[ServiceLoadBalancerTagKey] = loadBalancerName
+
+	if healthCheckNodePortString, ok := annotations[utils.AnnotationServiceHealthCheckNodePortKey]; ok {
+		annotations[ServiceLoadBalancerHealthCheckNodePortTagKey] = healthCheckNodePortString
+	}
+
 	objectMeta.SetAnnotations(annotations)
 }

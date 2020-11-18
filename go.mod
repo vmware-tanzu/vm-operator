@@ -19,7 +19,7 @@ require (
 	github.com/prometheus/client_golang v1.7.1 // indirect
 	github.com/satori/go.uuid v1.2.0
 	github.com/stretchr/testify v1.6.1 // indirect
-	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20201112002848-ea1530fd9488
+	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20201118171008-5ca641b0e126
 	github.com/vmware/govmomi v0.23.0
 	go.uber.org/atomic v1.4.0 // indirect
 	golang.org/x/net v0.0.0-20200822124328-c89045814202

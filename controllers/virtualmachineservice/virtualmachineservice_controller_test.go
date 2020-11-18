@@ -34,6 +34,7 @@ import (
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -357,6 +358,12 @@ var _ = Describe("VirtualMachineService controller", func() {
 				vmService.Spec.ExternalName = externalName
 				loadBalancerIP := "1.1.1.1"
 				vmService.Spec.LoadBalancerIP = loadBalancerIP
+				vmService.Spec.LoadBalancerSourceRanges = []string{"1.1.1.0/24", "2.2.2.2/28"}
+				if vmService.Annotations == nil {
+					vmService.Annotations = make(map[string]string)
+				}
+				vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
+				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
 
 				newService, err := r.createOrUpdateService(ctx, vmService)
 				Expect(err).ShouldNot(HaveOccurred())
@@ -366,6 +373,9 @@ var _ = Describe("VirtualMachineService controller", func() {
 
 				Expect(newService.Spec.ExternalName).To(Equal(externalName))
 				Expect(newService.Spec.LoadBalancerIP).To(Equal(loadBalancerIP))
+				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeLocal))
+				Expect(newService.Spec.HealthCheckNodePort).To(Equal(int32(30012)))
+				Expect(newService.Spec.LoadBalancerSourceRanges).To(Equal([]string{"1.1.1.0/24", "2.2.2.2/28"}))
 			})
 
 			It("Should not clobber the nodePort while updating service", func() {

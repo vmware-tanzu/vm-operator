@@ -23,6 +23,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
 
+const updateSuffix = "-updated"
+
 func unitTests() {
 	Describe("Invoking ValidateCreate", unitTestsValidateCreate)
 	Describe("Invoking ValidateUpdate", unitTestsValidateUpdate)
@@ -191,18 +193,22 @@ func unitTestsValidateUpdate() {
 	)
 
 	type updateArgs struct {
-		changeClassName bool
-		changeImageName bool
+		changeClassName    bool
+		changeImageName    bool
+		changeStorageClass bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		var err error
 
 		if args.changeClassName {
-			ctx.vm.Spec.ClassName += "-updated"
+			ctx.vm.Spec.ClassName += updateSuffix
 		}
 		if args.changeImageName {
-			ctx.vm.Spec.ImageName += "-updated"
+			ctx.vm.Spec.ImageName += updateSuffix
+		}
+		if args.changeStorageClass {
+			ctx.vm.Spec.StorageClass += updateSuffix
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
@@ -227,8 +233,9 @@ func unitTestsValidateUpdate() {
 
 	DescribeTable("update table", validateUpdate,
 		Entry("should allow", updateArgs{}, true, nil, nil),
-		Entry("should deny class name change", updateArgs{changeClassName: true}, false, "updates to immutable fields are not allowed", nil),
-		Entry("should deny image name change", updateArgs{changeImageName: true}, false, "updates to immutable fields are not allowed", nil),
+		Entry("should deny class name change", updateArgs{changeClassName: true}, false, "updates to immutable fields are not allowed: [Spec.ClassName]", nil),
+		Entry("should deny image name change", updateArgs{changeImageName: true}, false, "updates to immutable fields are not allowed: [Spec.ImageName]", nil),
+		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, "updates to immutable fields are not allowed: [Spec.StorageClass]", nil),
 	)
 
 	When("the update is performed while object deletion", func() {

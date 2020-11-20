@@ -159,7 +159,16 @@ func intgTestsValidateUpdate() {
 		})
 		It("should deny the request", func() {
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("updates to immutable fields are not allowed"))
+			Expect(err.Error()).To(ContainSubstring("updates to immutable fields are not allowed: [Spec.ImageName]"))
+		})
+	})
+	When("update is performed with changed storageClass name", func() {
+		BeforeEach(func() {
+			ctx.vm.Spec.StorageClass += "-2"
+		})
+		It("should deny the request", func() {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("updates to immutable fields are not allowed: [Spec.StorageClass]"))
 		})
 	})
 }

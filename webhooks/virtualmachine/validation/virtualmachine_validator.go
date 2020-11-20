@@ -231,18 +231,24 @@ func (v validator) validateVmVolumeProvisioningOptions(ctx *context.WebhookReque
 // validateAllowedChanges returns true only if immutable fields have not been modified.
 // TODO BMV Exactly what is immutable?
 func (v validator) validateAllowedChanges(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) []string {
-	var validationErrs []string
+	var validationErrs, fieldNames []string
 	allowed := true
 
 	if vm.Spec.ImageName != oldVM.Spec.ImageName {
 		allowed = false
+		fieldNames = append(fieldNames, "Spec.ImageName")
 	}
 	if vm.Spec.ClassName != oldVM.Spec.ClassName {
 		allowed = false
+		fieldNames = append(fieldNames, "Spec.ClassName")
+	}
+	if vm.Spec.StorageClass != oldVM.Spec.StorageClass {
+		allowed = false
+		fieldNames = append(fieldNames, "Spec.StorageClass")
 	}
 
 	if !allowed {
-		validationErrs = append(validationErrs, messages.UpdatingImmutableFieldsNotAllowed)
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.UpdatingImmutableFieldsNotAllowed, fieldNames))
 	}
 
 	return validationErrs

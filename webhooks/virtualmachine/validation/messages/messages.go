@@ -4,7 +4,7 @@
 package messages
 
 const (
-	UpdatingImmutableFieldsNotAllowed         = "updates to immutable fields are not allowed"
+	UpdatingImmutableFieldsNotAllowed         = "updates to immutable fields are not allowed: %s"
 	ImageNotSpecified                         = "spec.imageName must be specified"
 	ClassNotSpecified                         = "spec.className must be specified"
 	NetworkNameNotSpecifiedFmt                = "spec.networkInterfaces[%d].networkName must be specified"

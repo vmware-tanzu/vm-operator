@@ -33,6 +33,7 @@ type FakeVmProvider struct {
 	resourcePolicyMap                          map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy
 	DoesVirtualMachineSetResourcePolicyExistFn func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicyFn    func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
+	ComputeClusterCpuMinFrequencyFn            func(ctx context.Context) error
 }
 
 var _ vmprovider.VirtualMachineProviderInterface = &FakeVmProvider{}
@@ -46,6 +47,7 @@ func (s *FakeVmProvider) Reset() {
 	s.CreateVirtualMachineFn = nil
 	s.UpdateVirtualMachineFn = nil
 	s.DeleteVirtualMachineFn = nil
+	s.ComputeClusterCpuMinFrequencyFn = nil
 
 	s.resourcePolicyMap = make(map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy)
 	s.DoesVirtualMachineSetResourcePolicyExistFn = nil
@@ -138,6 +140,12 @@ func (s *FakeVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Conte
 }
 
 func (s *FakeVmProvider) ComputeClusterCpuMinFrequency(ctx context.Context) error {
+	s.Lock()
+	defer s.Unlock()
+	if s.ComputeClusterCpuMinFrequencyFn != nil {
+		return s.ComputeClusterCpuMinFrequencyFn(ctx)
+	}
+
 	return nil
 }
 

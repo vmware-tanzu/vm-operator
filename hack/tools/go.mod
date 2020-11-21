@@ -1,7 +1,6 @@
 module github.com/vmware-tanzu/vm-operator/hack/tools
 
-go 1.13
-
+go 1.15
 require (
 	github.com/golang/mock v1.3.1
 	github.com/golangci/golangci-lint v1.23.8

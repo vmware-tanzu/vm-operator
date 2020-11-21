@@ -5,7 +5,6 @@ package builder
 
 import (
 	"fmt"
-	"math/rand"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -13,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/google/uuid"
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
@@ -91,8 +91,7 @@ func DummyVirtualMachineService() *vmopv1.VirtualMachineService {
 	return &vmopv1.VirtualMachineService{
 		ObjectMeta: metav1.ObjectMeta{
 			// Using image.GenerateName causes problems with unit tests
-			// nolint:gosec This doesn't need to be a secure prng
-			Name: fmt.Sprintf("test-%d", rand.Int()),
+			Name: fmt.Sprintf("test-%s", uuid.New()),
 		},
 		Spec: vmopv1.VirtualMachineServiceSpec{
 			Type: vmopv1.VirtualMachineServiceTypeLoadBalancer,

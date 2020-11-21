@@ -94,7 +94,7 @@ func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphere
 	return s, nil
 }
 
-//nolint:complexity
+//nolint:gocyclo
 func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConfig) error {
 	s.Finder = find.NewFinder(s.Client.VimClient(), false)
 

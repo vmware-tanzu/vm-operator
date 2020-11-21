@@ -1,6 +1,6 @@
 module github.com/vmware-tanzu/vm-operator
 
-go 1.13
+go 1.15
 
 require (
 	cloud.google.com/go v0.46.3 // indirect

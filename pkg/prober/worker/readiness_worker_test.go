@@ -1,15 +1,20 @@
-//go:generate mockgen -destination=../../../mocks/mock_probe.go -package=mocks github.com/vmware-tanzu/vm-operator/pkg/prober/probe Probe
-
 // +build !integration
 
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+
+//go:generate mockgen -destination=../../../mocks/mock_probe.go -package=mocks github.com/vmware-tanzu/vm-operator/pkg/prober/probe Probe
+
 package worker
 
 import (
 	goctx "context"
 	"testing"
 
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -19,13 +24,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/mocks"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -78,20 +81,11 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 		prober.TCPProbe = mockProbe
 	})
 
-	getVMCondition := func(vm *vmopv1alpha1.VirtualMachine, conditionType vmopv1alpha1.VirtualMachineConditionType) metav1.ConditionStatus {
-		for _, c := range vm.Status.Conditions {
-			if c.Type != conditionType {
-				continue
-			}
-			return c.Status
-		}
-		return ""
-	}
-
-	checkVirtualMachineCondition := func(c client.Client, objKey client.ObjectKey, expectedCondition metav1.ConditionStatus) {
-		Expect(fakeClient.Get(ctx, objKey, vm)).Should(Succeed())
-		status := getVMCondition(vm, vmopv1alpha1.VirtualMachineReady)
-		Expect(status).Should(Equal(expectedCondition))
+	checkVirtualMachineCondition := func(c client.Client, objKey client.ObjectKey, expectedCondition corev1.ConditionStatus) {
+		Expect(c.Get(ctx, objKey, vm)).Should(Succeed())
+		condition := conditions.Get(vm, vmopv1alpha1.ReadyCondition)
+		Expect(condition).ToNot(BeNil())
+		Expect(condition.Status).Should(Equal(expectedCondition))
 	}
 
 	Context("VM has TCP readiness probe", func() {
@@ -113,13 +107,13 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 
 		When("new VirtualMachineCondition is in a transition", func() {
 			It("Should update the VirtualMachineCondition when probe succeeds", func() {
-				mockProbe.EXPECT().Probe(ctx).Return(probe.Success, nil)
+				mockProbe.EXPECT().Probe(gomock.Any()).Return(probe.Success, nil)
 
 				err := testWorker.DoProbe(vm)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				By("Should set VirtualMachineReady condition status as true", func() {
-					checkVirtualMachineCondition(fakeClient, vmKey, metav1.ConditionTrue)
+					checkVirtualMachineCondition(fakeClient, vmKey, corev1.ConditionTrue)
 				})
 
 				By("Conditions in VM status should be updated", func() {
@@ -130,13 +124,13 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 			})
 
 			It("Should update the VirtualMachineCondition when probe fails", func() {
-				mockProbe.EXPECT().Probe(ctx).Return(probe.Failure, nil)
+				mockProbe.EXPECT().Probe(gomock.Any()).Return(probe.Failure, nil)
 
 				err := testWorker.DoProbe(vm)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				By("Should set VirtualMachineReady condition value as false", func() {
-					checkVirtualMachineCondition(fakeClient, vmKey, metav1.ConditionFalse)
+					checkVirtualMachineCondition(fakeClient, vmKey, corev1.ConditionFalse)
 				})
 
 				By("Conditions in VM status should be updated", func() {
@@ -148,17 +142,13 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 
 			When("new VirtualMachineCondition isn't in a transition", func() {
 				It("Shouldn't update the VirtualMachineCondition in status", func() {
-					vmReadyCondition := vmopv1alpha1.VirtualMachineCondition{
-						Type:   vmopv1alpha1.VirtualMachineReady,
-						Status: metav1.ConditionTrue,
-						Reason: readyReason,
-					}
-					vm.Status.Conditions = append(vm.Status.Conditions, vmReadyCondition)
+					vmReadyCondition := conditions.TrueCondition(vmopv1alpha1.ReadyCondition)
+					vm.Status.Conditions = append(vm.Status.Conditions, *vmReadyCondition)
 					Expect(fakeClient.Status().Update(ctx, vm)).To(Succeed())
 					Expect(fakeClient.Get(ctx, vmKey, vm)).Should(Succeed())
 					oldStatus = vm.Status
 
-					mockProbe.EXPECT().Probe(ctx).Return(probe.Success, nil)
+					mockProbe.EXPECT().Probe(gomock.Any()).Return(probe.Success, nil)
 
 					err := testWorker.DoProbe(vm)
 					Expect(err).ShouldNot(HaveOccurred())

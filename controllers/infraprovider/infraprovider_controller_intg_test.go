@@ -41,7 +41,6 @@ func intgTests() {
 	})
 
 	Context("Reconcile", func() {
-
 		var isCalled int32
 
 		BeforeEach(func() {
@@ -60,7 +59,7 @@ func intgTests() {
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 		})
 
-		It("Verify that provider is called to update CPU frequncy", func() {
+		It("Verify that provider is called to update CPU frequency", func() {
 			Eventually(func() int32 {
 				return atomic.LoadInt32(&isCalled)
 			}).Should(Equal(int32(1)))

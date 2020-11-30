@@ -223,6 +223,25 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 			r.log.Error(err, "Failed to create or get load balancer for vm service", "name", vmService.Name)
 			return err
 		}
+		annotations, err := r.loadbalancerProvider.GetVMServiceAnnotations(ctx, vmService)
+		if err != nil {
+			r.log.Error(err, "Failed to get loadbalancer annotations for vm service", "name", vmService.Name)
+			return err
+		}
+		// Initialize VM Service Annotation when it is nil
+		if vmService.Annotations == nil {
+			vmService.Annotations = make(map[string]string)
+		}
+		for k, v := range annotations {
+			if oldValue, ok := vmService.Annotations[k]; ok {
+				r.log.V(5).Info("Replacing previous annotation value on vm service",
+					"vmServiceName", vmService.NamespacedName,
+					"key", k,
+					"oldValue", oldValue,
+					"newValue", v)
+			}
+			vmService.Annotations[k] = v
+		}
 	}
 
 	// Reconcile k8s Service

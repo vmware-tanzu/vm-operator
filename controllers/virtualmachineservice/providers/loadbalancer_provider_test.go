@@ -8,6 +8,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -23,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
@@ -43,6 +45,58 @@ var _ = Describe("Loadbalancer Provider", func() {
 	)
 
 	Context("Create Loadbalancer", func() {
+		Context("Get default load balancer type", func() {
+			var (
+				origlbProvider string
+			)
+			BeforeEach(func() {
+				origlbProvider = os.Getenv("LB_Provider")
+			})
+			AfterEach(func() {
+				os.Setenv("LB_PROVIDER", origlbProvider)
+			})
+			JustBeforeEach(func() {
+				SetLBProvider()
+			})
+			Context("LB_PROVIDER is non-empty", func() {
+				BeforeEach(func() {
+					By("setting LB_PROVIDER to a random string")
+					Expect(os.Setenv("LB_PROVIDER", "random")).ShouldNot(HaveOccurred())
+				})
+				It("should defaults to empty", func() {
+					Expect(LBProvider).Should(Equal("random"))
+				})
+			})
+			Context("LB_PROVIDER is empty", func() {
+				Context("is not VDS networking", func() {
+					BeforeEach(func() {
+						By("unsetting LB_PROVIDER")
+						Expect(os.Unsetenv("LB_PROVIDER")).ShouldNot(HaveOccurred())
+					})
+					It("should defaults to nsx-t", func() {
+						Expect(LBProvider).Should(Equal(NSXTLoadBalancer))
+					})
+				})
+				Context("is VDS networking", func() {
+					var (
+						origvSphereNetworking string
+					)
+					BeforeEach(func() {
+						origvSphereNetworking = os.Getenv("VSPHERE_NETWORKING")
+						By("unsetting LB_PROVIDER")
+						Expect(os.Unsetenv("LB_PROVIDER")).ShouldNot(HaveOccurred())
+						By("setting VSPHERE_NETWORKING")
+						Expect(os.Setenv("VSPHERE_NETWORKING", "true")).ShouldNot(HaveOccurred())
+					})
+					AfterEach(func() {
+						os.Setenv("VSHPERE_NETWORKING", origvSphereNetworking)
+					})
+					It("should be noop loadbalancer provider", func() {
+						Expect(LBProvider).Should(Equal(""))
+					})
+				})
+			})
+		})
 
 		Context("Get load balancer provider by type", func() {
 			It("should successfully get nsx-t load balancer provider", func() {
@@ -65,16 +119,62 @@ var _ = Describe("Loadbalancer Provider", func() {
 			})
 
 			It("should successfully get nsx-t load balancer provider", func() {
-				loadbalancerProvider := NsxtLoadBalancerProvider(ncpClient)
+				loadbalancerProvider := NsxtLoadBalancerProvider(ncpClient, lib.IsT1PerNamespaceEnabled())
 				Expect(loadbalancerProvider).NotTo(BeNil())
 			})
 		})
 
+		Context("ltest noop loadbalancer provider", func() {
+			var (
+				lbprovider *noopLoadbalancerProvider
+			)
+			JustBeforeEach(func() {
+				lbprovider = &noopLoadbalancerProvider{}
+			})
+			Context("test GetNetworkName", func() {
+				var (
+					networkName string
+				)
+				JustBeforeEach(func() {
+					networkName, err = lbprovider.GetNetworkName([]vmoperatorv1alpha1.VirtualMachine{}, nil)
+				})
+				It("should return empty", func() {
+					Expect(networkName).To(Equal(""))
+					Expect(err).To(BeNil())
+				})
+			})
+			Context("test EnsureLoadBalancer", func() {
+				JustBeforeEach(func() {
+					err = lbprovider.EnsureLoadBalancer(context.Background(), nil, "")
+				})
+				It("should return empty", func() {
+					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+			Context("test GetVMServiceAnnotations", func() {
+				var (
+					annotations map[string]string
+				)
+				JustBeforeEach(func() {
+					annotations, err = lbprovider.GetVMServiceAnnotations(context.Background(), nil)
+				})
+				It("should return empty", func() {
+					Expect(annotations).To(BeNil())
+					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+		})
 		Context("nsx-t loadbalancer provider", func() {
+			var (
+				vmServiceAnnotations    map[string]string
+				isT1PerNamespaceEnabled bool
+			)
+
 			BeforeEach(func() {
 				ncpClient = ncpfake.NewSimpleClientset()
 
-				loadBalancerProvider = nsxtLoadbalancerProvider{client: ncpClient}
+				// By default, disable T1PerNamespaceEnabled FSS
+				isT1PerNamespaceEnabled = false
 
 				vmService = &vmoperatorv1alpha1.VirtualMachineService{
 					ObjectMeta: metav1.ObjectMeta{
@@ -90,6 +190,71 @@ var _ = Describe("Loadbalancer Provider", func() {
 						ExternalName: "TEST",
 					},
 				}
+			})
+			JustBeforeEach(func() {
+				loadBalancerProvider = nsxtLoadbalancerProvider{ncpClient, isT1PerNamespaceEnabled}
+			})
+			When("T1PerNamespace FSS is on", func() {
+				BeforeEach(func() {
+					isT1PerNamespaceEnabled = true
+				})
+				It("should skip the EnsureLoadBalancer", func() {
+					By("providing an invalid VMService spec")
+					vmService.Spec.Selector = nil
+
+					By("ensuring calling EnsureLoadBalancer returns successfully")
+					err = loadBalancerProvider.EnsureLoadBalancer(ctx, vmService, "dummy-network")
+					Expect(err).ShouldNot(HaveOccurred())
+				})
+			})
+			Context("testing GetVMServiceAnnotations", func() {
+				It("should get load balancer name in the annotation", func() {
+					vmServiceAnnotations, err = loadBalancerProvider.GetVMServiceAnnotations(ctx, vmService)
+					Expect(vmServiceAnnotations).ToNot(BeNil())
+					name := vmServiceAnnotations[ServiceLoadBalancerTagKey]
+					Expect(name).To(Equal("dummy-test-lb"))
+				})
+				When("vmService is invalid", func() {
+					It("should fail to get VMServiceAnnotations", func() {
+						By("providing an invalid VMService spec")
+						vmService.Spec.Selector = nil
+						By("ensuring calling GetVMServiceAnnotations returns an error")
+						_, err = loadBalancerProvider.GetVMServiceAnnotations(ctx, vmService)
+						Expect(err).Should(HaveOccurred())
+					})
+				})
+				When("T1PerNamespace FSS is on", func() {
+					BeforeEach(func() {
+						isT1PerNamespaceEnabled = true
+					})
+					It("should not get load balancer name in the annotation", func() {
+						vmServiceAnnotations, err = loadBalancerProvider.GetVMServiceAnnotations(ctx, vmService)
+						_, exist := vmServiceAnnotations[ServiceLoadBalancerTagKey]
+						Expect(exist).To(BeFalse())
+					})
+				})
+				When("VMService has healthCheckNodePort defined in the annotation", func() {
+					BeforeEach(func() {
+						vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
+					})
+					It("should get health check node port in the annotation", func() {
+						vmServiceAnnotations, err = loadBalancerProvider.GetVMServiceAnnotations(ctx, vmService)
+						Expect(vmServiceAnnotations).ToNot(BeNil())
+						port := vmServiceAnnotations[ServiceLoadBalancerHealthCheckNodePortTagKey]
+						Expect(port).To(Equal("30012"))
+					})
+					When("T1PerNamespace FSS is on", func() {
+						BeforeEach(func() {
+							isT1PerNamespaceEnabled = true
+						})
+						It("should get health check node port in the annotation", func() {
+							vmServiceAnnotations, err = loadBalancerProvider.GetVMServiceAnnotations(ctx, vmService)
+							Expect(vmServiceAnnotations).ToNot(BeNil())
+							port := vmServiceAnnotations[ServiceLoadBalancerHealthCheckNodePortTagKey]
+							Expect(port).To(Equal("30012"))
+						})
+					})
+				})
 			})
 
 			Context("load balancer name", func() {
@@ -130,7 +295,9 @@ var _ = Describe("Loadbalancer Provider", func() {
 							Namespace: vmService.GetNamespace(),
 						},
 					}
+
 				})
+
 				JustBeforeEach(func() {
 					_, err = ncpClient.VmwareV1alpha1().VirtualNetworks(dummyNamespace).Create(vnet)
 					Expect(err).To(BeNil())
@@ -138,29 +305,8 @@ var _ = Describe("Loadbalancer Provider", func() {
 				})
 				Context("create load balancer", func() {
 					It("nsx-t network provider should successfully create a lb with virtual network", func() {
+
 						Expect(err).To(BeNil())
-						By("ensuring VirtualMachineService has the ncp loadbalancer annotation")
-						Expect(vmService.Annotations).ToNot(BeNil())
-						_, exists := vmService.Annotations[ServiceLoadBalancerTagKey]
-						Expect(exists).To(BeTrue())
-					})
-
-					Context("vmservice has the healthCheckNodePort label", func() {
-						BeforeEach(func() {
-							vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
-						})
-						AfterEach(func() {
-							delete(vmService.Labels, utils.AnnotationServiceHealthCheckNodePortKey)
-						})
-						It("nsx-t network provider should successfully create a lb with virtual network", func() {
-							Expect(err).To(BeNil())
-							By("ensuring VirtualMachineService has the ncp healthCheckNodePort annotation")
-							Expect(vmService.Annotations).ToNot(BeNil())
-							hcPort, exists := vmService.Annotations[ServiceLoadBalancerHealthCheckNodePortTagKey]
-							Expect(exists).To(BeTrue())
-							Expect(hcPort).To(Equal("30012"))
-						})
-
 					})
 
 					It("nsx-t network provider should successfully get a lb with virtual network", func() {

@@ -64,6 +64,11 @@ func (s *simpleLoadBalancerProvider) EnsureLoadBalancer(ctx context.Context, vmS
 	return s.updateLBConfig(ctx, vmService)
 }
 
+// No annotation is added for simple LoadBalancer
+func (s *simpleLoadBalancerProvider) GetVMServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+	return nil, nil
+}
+
 func (s *simpleLoadBalancerProvider) ensureLBVM(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, cm *corev1.ConfigMap) error {
 	if err := s.client.Get(ctx, types.NamespacedName{Namespace: cm.Namespace, Name: cm.Name}, cm); err != nil {
 		if !apierrors.IsNotFound(err) {

@@ -42,7 +42,7 @@ func SetLBProvider() {
 	LBProvider = os.Getenv("LB_PROVIDER")
 	if LBProvider == "" {
 		vdsNetwork := os.Getenv("VSPHERE_NETWORKING")
-		if vdsNetwork == "true" || lib.IsT1PerNamespaceEnabled() {
+		if vdsNetwork == "true" {
 			// Use noopLoadbalancerProvider
 			return
 		}
@@ -61,6 +61,9 @@ type LoadbalancerProvider interface {
 	GetNetworkName(virtualMachines []vmoperatorv1alpha1.VirtualMachine, vmService *vmoperatorv1alpha1.VirtualMachineService) (string, error)
 
 	EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) error
+
+	// GetServiceAnnotations returns the annotations, if any, to place on a VM Service.
+	GetVMServiceAnnotations(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error)
 }
 
 // Get Loadbalancer Provider By Type, currently only support nsxt provider, if provider type unknown, will return nil
@@ -72,7 +75,7 @@ func GetLoadbalancerProviderByType(mgr manager.Manager, providerType string) (Lo
 			log.Error(err, "unable to get ncp clientset from config")
 			return nil, err
 		}
-		return NsxtLoadBalancerProvider(ncpClient), nil
+		return NsxtLoadBalancerProvider(ncpClient, lib.IsT1PerNamespaceEnabled()), nil
 	}
 	if providerType == SimpleLoadBalancer {
 		return simplelb.New(mgr), nil
@@ -90,19 +93,58 @@ func (noopLoadbalancerProvider) EnsureLoadBalancer(context.Context, *vmoperatorv
 	return nil
 }
 
+func (noopLoadbalancerProvider) GetVMServiceAnnotations(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error) {
+	return nil, nil
+}
+
 type nsxtLoadbalancerProvider struct {
 	client clientset.Interface
+	// Feature switch for T1 Per Namespace
+	isT1PerNamespaceEnabled bool
 }
 
 //NsxLoadbalancerProvider returns a nsxLoadbalancerProvider instance
-func NsxtLoadBalancerProvider(client clientset.Interface) *nsxtLoadbalancerProvider {
+func NsxtLoadBalancerProvider(client clientset.Interface, isT1PerNamespaceEnabled bool) *nsxtLoadbalancerProvider {
 	return &nsxtLoadbalancerProvider{
-		client: client,
+		client:                  client,
+		isT1PerNamespaceEnabled: isT1PerNamespaceEnabled,
 	}
 }
 
 func (nl *nsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) error {
-	return nl.ensureNSXTLoadBalancer(ctx, vmService, virtualNetworkName)
+	// When T1PerNamespace is enabled, skip the reconciliation of NSX-T Load
+	// Balancers
+	if !nl.isT1PerNamespaceEnabled {
+		if err := nl.ensureNSXTLoadBalancer(ctx, vmService, virtualNetworkName); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// GetVMServiceAnnotations provides the intended NSX-T specific annotations on
+// VM Service. The responsibility is left to the caller to actually set them
+func (nl *nsxtLoadbalancerProvider) GetVMServiceAnnotations(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error) {
+	res := make(map[string]string)
+
+	// When T1PerNamespace is disabled, add the LoadBalancer's name in the
+	// annotation
+	if !nl.isT1PerNamespaceEnabled {
+		clusterName, ok := vmService.Spec.Selector[ClusterNameKey]
+		if !ok {
+			return res, fmt.Errorf("unable to find the cluster name in the VirtualMachineService spec")
+		}
+
+		loadBalancerName := nl.getLoadbalancerName(vmService.Namespace, clusterName)
+		res[ServiceLoadBalancerTagKey] = loadBalancerName
+	}
+
+	if healthCheckNodePortString, ok := vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]; ok {
+		res[ServiceLoadBalancerHealthCheckNodePortTagKey] = healthCheckNodePortString
+	}
+
+	return res, nil
 }
 
 //Loadbalancer name formatting
@@ -132,10 +174,9 @@ func (nl *nsxtLoadbalancerProvider) createNSXTLoadBalancerSpec(ctx context.Conte
 
 //Create or Update NSX-T Loadbalancer
 func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) error {
-
 	clusterName, ok := vmService.Spec.Selector[ClusterNameKey]
 	if !ok {
-		return fmt.Errorf("can't create loadbalancer without cluster name")
+		return fmt.Errorf("unable to find the cluster name in the VirtualMachineService spec")
 	}
 
 	loadBalancerName := nl.getLoadbalancerName(vmService.Namespace, clusterName)
@@ -143,7 +184,7 @@ func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, 
 	log.V(5).Info("Get or create loadbalancer", "name", loadBalancerName)
 	defer log.V(5).Info("Finished get or create Loadbalancer", "name", loadBalancerName)
 	//Get current loadbalancer
-	currentLoadbalancer, err := nl.client.VmwareV1alpha1().LoadBalancers(vmService.Namespace).Get(loadBalancerName, metav1.GetOptions{})
+	_, err := nl.client.VmwareV1alpha1().LoadBalancers(vmService.Namespace).Get(loadBalancerName, metav1.GetOptions{})
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			log.Error(err, "Failed to get load balancer", "name", loadBalancerName)
@@ -161,16 +202,14 @@ func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, 
 		}
 		//no current loadbalancer, create a new loadbalancer
 		//We only update Loadbalancer owner reference for now, other spec should be immutable .
-		currentLoadbalancer = nl.createNSXTLoadBalancerSpec(ctx, vmService, virtualNetworkName)
+		currentLoadbalancer := nl.createNSXTLoadBalancerSpec(ctx, vmService, virtualNetworkName)
 		log.Info("Creating loadBalancer", "name", currentLoadbalancer.Name, "loadBalancer", currentLoadbalancer)
-		currentLoadbalancer, err = nl.client.VmwareV1alpha1().LoadBalancers(currentLoadbalancer.Namespace).Create(currentLoadbalancer)
+		_, err = nl.client.VmwareV1alpha1().LoadBalancers(currentLoadbalancer.Namespace).Create(currentLoadbalancer)
 		if err != nil {
 			log.Error(err, "Create loadbalancer error", "name", virtualNetworkName)
 			return err
 		}
 	}
-	//annotate which loadbalancer to attach
-	addNcpAnnotations(currentLoadbalancer.Name, &vmService.ObjectMeta)
 	return nil
 }
 
@@ -208,19 +247,4 @@ func (nl *nsxtLoadbalancerProvider) GetNetworkName(virtualMachines []vmoperatorv
 		}
 	}
 	return networkName, nil
-}
-
-// VM service add annotations
-func addNcpAnnotations(loadBalancerName string, objectMeta *metav1.ObjectMeta) {
-	annotations := objectMeta.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-	annotations[ServiceLoadBalancerTagKey] = loadBalancerName
-
-	if healthCheckNodePortString, ok := annotations[utils.AnnotationServiceHealthCheckNodePortKey]; ok {
-		annotations[ServiceLoadBalancerHealthCheckNodePortTagKey] = healthCheckNodePortString
-	}
-
-	objectMeta.SetAnnotations(annotations)
 }

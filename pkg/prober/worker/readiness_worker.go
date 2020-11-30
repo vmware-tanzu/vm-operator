@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package worker
@@ -8,20 +8,23 @@ import (
 	"fmt"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/pkg/errors"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 const (
-	// readyReason, notReadyReason and unknownReason represent reasons for probe events and VirtualMachineCondition.
+	// readyReason, notReadyReason and unknownReason represent reasons for probe events and Condition.
 	readyReason    string = "Ready"
 	notReadyReason string = "NotReady"
 	unknownReason  string = "Unknown"
@@ -64,22 +67,38 @@ func (w *readinessWorker) AddAfterToQueue(item client.ObjectKey, periodSeconds i
 
 // ProcessProbeResult processes probe results to get VirtualMachineReady condition value and
 // sets the VirtualMachineReady condition in vm status if the new condition status is a transition.
-func (w *readinessWorker) ProcessProbeResult(vm *vmopv1alpha1.VirtualMachine, res probe.Result, err error) error {
-	status, reason, message := w.getConditionValue(res, err)
-	oldVM := vm.DeepCopy()
-	if statusChanged := SetVirtualMachineCondition(vm, vmopv1alpha1.VirtualMachineReady, status, reason, message); statusChanged {
-		// if new condition is a transition, update VM status
-		// note: right now, this patch will fail unless most of the VM status has been populated
-		patchErr := w.client.Status().Patch(goctx.Background(), vm, client.MergeFrom(oldVM))
-		w.recorder.Eventf(vm, reason, message)
-		return patchErr
+func (w *readinessWorker) ProcessProbeResult(ctx *context.ProbeContext, res probe.Result, resErr error) error {
+	vm := ctx.VM
+	condition := w.getCondition(res, resErr)
+
+	// We only send event when either the condition type is added or its status changes, not
+	// if either its reason, severity, or message changes.
+	if c := conditions.Get(vm, condition.Type); c == nil || c.Status != condition.Status {
+		if condition.Status == corev1.ConditionTrue {
+			w.recorder.Eventf(vm, readyReason, "")
+		} else {
+			w.recorder.Eventf(vm, condition.Reason, condition.Message)
+		}
+	}
+
+	conditions.Set(vm, condition)
+
+	err := ctx.PatchHelper.Patch(ctx, vm, patch.WithOwnedConditions{
+		Conditions: []vmopv1alpha1.ConditionType{vmopv1alpha1.ReadyCondition},
+	})
+	if err != nil {
+		return errors.Wrapf(err, "patched failed")
 	}
 
 	return nil
 }
 
 func (w *readinessWorker) DoProbe(vm *vmopv1alpha1.VirtualMachine) error {
-	ctx := w.createProbeContext(vm)
+	ctx, err := w.createProbeContext(vm)
+	if err != nil {
+		return err
+	}
+
 	if ctx.ProbeSpec == nil {
 		ctx.Logger.V(4).Info("readiness probe not specified")
 		return nil
@@ -89,18 +108,24 @@ func (w *readinessWorker) DoProbe(vm *vmopv1alpha1.VirtualMachine) error {
 	if err != nil {
 		ctx.Logger.Error(err, "readiness probe fails")
 	}
-	return w.ProcessProbeResult(vm, res, err)
+	return w.ProcessProbeResult(ctx, res, err)
 }
 
 // createProbeContext creates a probe context for readiness probe.
-func (w *readinessWorker) createProbeContext(vm *vmopv1alpha1.VirtualMachine) *context.ProbeContext {
-	return &context.ProbeContext{
-		Context:   goctx.Background(),
-		Logger:    ctrl.Log.WithName("readiness-probe").WithValues("vmName", vm.NamespacedName()),
-		VM:        vm,
-		ProbeSpec: vm.Spec.ReadinessProbe,
-		ProbeType: "readiness",
+func (w *readinessWorker) createProbeContext(vm *vmopv1alpha1.VirtualMachine) (*context.ProbeContext, error) {
+	patchHelper, err := patch.NewHelper(vm, w.client)
+	if err != nil {
+		return nil, err
 	}
+
+	return &context.ProbeContext{
+		Context:     goctx.Background(),
+		Logger:      ctrl.Log.WithName("readiness-probe").WithValues("vmName", vm.NamespacedName()),
+		PatchHelper: patchHelper,
+		VM:          vm,
+		ProbeSpec:   vm.Spec.ReadinessProbe,
+		ProbeType:   "readiness",
+	}, nil
 }
 
 // getProbe returns a specific type of probe method.
@@ -121,23 +146,19 @@ func (w *readinessWorker) runProbe(ctx *context.ProbeContext) (probe.Result, err
 	return probe.Unknown, fmt.Errorf("unknown action specified for VM %s readiness probe", ctx.VM.NamespacedName())
 }
 
-// getConditionValue returns condition status, reason and messages based on VM probe results.
-func (w *readinessWorker) getConditionValue(res probe.Result, err error) (status metav1.ConditionStatus, reason, message string) {
+// getCondition returns condition based on VM probe results.
+func (w *readinessWorker) getCondition(res probe.Result, err error) *vmopv1alpha1.Condition {
+	msg := ""
 	if err != nil {
-		message = err.Error()
+		msg = err.Error()
 	}
 
 	switch res {
 	case probe.Success:
-		status = metav1.ConditionTrue
-		reason = readyReason
-	case probe.Unknown:
-		status = metav1.ConditionUnknown
-		reason = unknownReason
+		return conditions.TrueCondition(vmopv1alpha1.ReadyCondition)
 	case probe.Failure:
-		status = metav1.ConditionFalse
-		reason = notReadyReason
+		return conditions.FalseCondition(vmopv1alpha1.ReadyCondition, notReadyReason, vmopv1alpha1.ConditionSeverityInfo, msg)
+	default: // probe.Unknown
+		return conditions.UnknownCondition(vmopv1alpha1.ReadyCondition, unknownReason, msg)
 	}
-
-	return status, reason, message
 }

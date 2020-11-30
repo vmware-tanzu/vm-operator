@@ -30,6 +30,7 @@ func intgTests() {
 
 	AfterEach(func() {
 		ctx.AfterEach()
+		ctx = nil
 		intgFakeVmProvider.Reset()
 	})
 
@@ -70,7 +71,7 @@ func intgTests() {
 				secret.StringData = map[string]string{"foo": "vmware-bar"}
 				Expect(ctx.Client.Update(ctx, secret)).To(Succeed())
 
-				Eventually(func() int32 { return atomic.LoadInt32(&called) }).Should(Equal(int32(2)))
+				Eventually(func() int32 { return atomic.LoadInt32(&called) }).Should(BeNumerically(">=", int32(2)))
 			})
 		})
 	})

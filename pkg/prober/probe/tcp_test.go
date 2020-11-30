@@ -10,16 +10,16 @@ import (
 	"strconv"
 	"testing"
 
-	ctrl "sigs.k8s.io/controller-runtime"
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	ctrl "sigs.k8s.io/controller-runtime"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
 var _ = Describe("TCP probe", func() {

@@ -6,7 +6,7 @@ package probe
 import (
 	"time"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
 type Result int

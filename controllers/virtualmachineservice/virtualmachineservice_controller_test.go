@@ -714,12 +714,12 @@ var _ = Describe("SetLBProvider", func() {
 		lib.IsT1PerNamespaceEnabled = origIsT1PerNamespaceEnabled
 		providers.LBProvider = origLBProvider
 	})
-	It("Should create No-Op load-balancer when WCP_T1_PERNAMESPACE is true", func() {
+	It("Should still create NSX-T load-balancer when WCP_T1_PERNAMESPACE is true", func() {
 		lib.IsT1PerNamespaceEnabled = func() bool {
 			return true
 		}
 		providers.SetLBProvider()
-		Expect(providers.LBProvider).To(Equal(providers.NoOpLoadBalancer))
+		Expect(providers.LBProvider).To(Equal(providers.NSXTLoadBalancer))
 	})
 	It("Should create NSX-T load-balancer when WCP_T1_PERNAMESPACE is false", func() {
 		lib.IsT1PerNamespaceEnabled = func() bool {

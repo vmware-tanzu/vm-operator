@@ -19,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -73,8 +72,9 @@ func unitTestsReconcile() {
 
 		vm = &vmopv1alpha1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-vm",
-				Namespace: "dummy-ns",
+				Name:       "dummy-vm",
+				Namespace:  "dummy-ns",
+				Finalizers: []string{finalizer},
 			},
 			Spec: vmopv1alpha1.VirtualMachineSpec{
 				ClassName: vmClass.Name,
@@ -270,16 +270,28 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
-					expectPhase(vmCtx, ctx.Client, vmopv1alpha1.Created)
+					Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Created))
 				})
 			})
 		})
 
-		It("will have finalizer set after successful reconciliation", func() {
+		When("object does not have finalizer set", func() {
+			BeforeEach(func() {
+				vm.Finalizers = nil
+			})
+
+			It("will set finalizer", func() {
+				err := reconciler.ReconcileNormal(vmCtx)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
+			})
+		})
+
+		It("will have finalizer set upon successful reconciliation", func() {
 			err := reconciler.ReconcileNormal(vmCtx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
-			expectPhase(vmCtx, ctx.Client, vmopv1alpha1.Created)
+			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Created))
 		})
 
 		It("will return error when provider fails to create VM", func() {
@@ -292,7 +304,7 @@ func unitTestsReconcile() {
 			Expect(err).To(HaveOccurred())
 			Expect(err).To(MatchError(providerError))
 			expectEvent(ctx, "CreateFailure")
-			expectPhase(vmCtx, ctx.Client, vmopv1alpha1.Creating)
+			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Creating))
 		})
 
 		It("will return error when provider fails to update VM", func() {
@@ -305,7 +317,7 @@ func unitTestsReconcile() {
 			Expect(err).To(HaveOccurred())
 			Expect(err).To(MatchError(providerError))
 			expectEvent(ctx, "UpdateFailure")
-			//expectPhase(vmCtx, ctx.Client, vmopv1alpha1.Created) VM won't be updated: bug until we Patch().
+			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Created))
 		})
 
 		It("can be called multiple times", func() {
@@ -478,7 +490,7 @@ func unitTestsReconcile() {
 			// Create the VM to be deleted
 			err := reconciler.ReconcileNormal(vmCtx)
 			Expect(err).NotTo(HaveOccurred())
-			expectPhase(vmCtx, ctx.Client, vmopv1alpha1.Created)
+			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Created))
 		})
 
 		It("will delete the created VM and emit corresponding event", func() {
@@ -490,7 +502,7 @@ func unitTestsReconcile() {
 			Expect(vmExists).To(BeFalse())
 
 			expectEvent(ctx, "DeleteSuccess")
-			expectPhase(vmCtx, ctx.Client, vmopv1alpha1.Deleted)
+			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Deleted))
 		})
 
 		It("will emit corresponding event during delete failure", func() {
@@ -506,7 +518,7 @@ func unitTestsReconcile() {
 			Expect(vmExists).To(BeTrue())
 
 			expectEvent(ctx, "DeleteFailure")
-			expectPhase(vmCtx, ctx.Client, vmopv1alpha1.Deleting)
+			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Deleting))
 		})
 	})
 }
@@ -516,11 +528,4 @@ func expectEvent(ctx *builder.UnitTestContextForController, eventStr string) {
 	Eventually(ctx.Events).Should(Receive(&event))
 	eventComponents := strings.Split(event, " ")
 	ExpectWithOffset(1, eventComponents[1]).To(Equal(eventStr))
-}
-
-func expectPhase(ctx *vmopContext.VirtualMachineContext, k8sClient client.Client, expectedPhase vmopv1alpha1.VMStatusPhase) {
-	vm := &vmopv1alpha1.VirtualMachine{}
-	err := k8sClient.Get(ctx, client.ObjectKey{Namespace: ctx.VM.Namespace, Name: ctx.VM.Name}, vm)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	ExpectWithOffset(1, vm.Status.Phase).To(Equal(expectedPhase))
 }

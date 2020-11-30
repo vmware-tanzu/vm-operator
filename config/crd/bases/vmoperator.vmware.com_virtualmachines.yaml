@@ -74,7 +74,7 @@ spec:
               type: object
             className:
               description: ClassName describes the name of a VirtualMachineClass that
-                is to be used as the overlayed resource configuration of VirtualMachine.  A
+                is to be used as the overlaid resource configuration of VirtualMachine.  A
                 VirtualMachineClass is used to further customize the attributes of
                 the VirtualMachine instance.  See VirtualMachineClass for more description.
               type: string
@@ -107,8 +107,11 @@ spec:
                     type: string
                   networkName:
                     description: NetworkName describes the name of an existing virtual
-                      network that this interface should be added to.  For NSX-T networks,
-                      this is the name of a pre-existing NSX-T VirtualNetwork.
+                      network that this interface should be added to. For "nsx-t"
+                      NetworkType, this is the name of a pre-existing NSX-T VirtualNetwork.
+                      If unspecified, the default network for the namespace will be
+                      used. For "vsphere-distributed" NetworkType, the NetworkName
+                      must be specified.
                     type: string
                   networkType:
                     description: NetworkType describes the type of VirtualNetwork
@@ -138,8 +141,6 @@ spec:
                     - kind
                     - name
                     type: object
-                required:
-                - networkName
                 type: object
               type: array
             ports:
@@ -327,28 +328,40 @@ spec:
               description: Conditions describes the current condition information
                 of the VirtualMachine.
               items:
-                description: VirtualMachineCondition contains condition information
-                  for a VirtualMachine.
+                description: Condition defines an observation of a VM Operator API
+                  resource operational state.
                 properties:
                   lastTransitionTime:
-                    description: The last time the condition transitioned from one
-                      status to another.
+                    description: Last time the condition transitioned from one status
+                      to another. This should be when the underlying condition changed.
+                      If that is not known, then using the time when the API field
+                      changed is acceptable.
                     format: date-time
                     type: string
                   message:
-                    description: Human-readable message indicating details about last
-                      transition.
+                    description: A human readable message indicating details about
+                      the transition. This field may be empty.
                     type: string
                   reason:
-                    description: Unique, one-word, CamelCase reason for the condition's
-                      last transition.
+                    description: The reason for the condition's last transition in
+                      CamelCase. The specific API may choose whether or not this field
+                      is considered a guaranteed API. This field may not be empty.
+                    type: string
+                  severity:
+                    description: Severity provides an explicit classification of Reason
+                      code, so the users or machines can immediately understand the
+                      current situation and act accordingly. The Severity field MUST
+                      be set only when Status=False.
                     type: string
                   status:
-                    description: Status of the condition, one of ('True', 'False',
-                      'Unknown').
+                    description: Status of the condition, one of True, False, Unknown.
                     type: string
                   type:
-                    description: Type of the condition.
+                    description: Type of condition in CamelCase or in foo.example.com/CamelCase.
+                      Many .condition.type values are consistent across resources
+                      like Available, but because arbitrary conditions can be useful
+                      (see .node.status.conditions), the ability to deconflict is
+                      important.
                     type: string
                 required:
                 - status
@@ -398,7 +411,7 @@ spec:
                       or detaching a volume.  Error will be empty if attachment succeeds.
                     type: string
                   name:
-                    description: Name is the the name of the volume in a VirtualMachine.
+                    description: Name is the name of the volume in a VirtualMachine.
                     type: string
                 required:
                 - attached
@@ -407,14 +420,6 @@ spec:
                 - name
                 type: object
               type: array
-          required:
-          - biosUUID
-          - host
-          - instanceUUID
-          - phase
-          - powerState
-          - uniqueID
-          - vmIp
           type: object
       type: object
   version: v1alpha1

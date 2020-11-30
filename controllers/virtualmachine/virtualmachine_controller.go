@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/pkg/errors"
 
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,9 +24,9 @@ import (
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
@@ -92,12 +92,11 @@ type VirtualMachineReconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclassbindings,verbs=get;list;watch
 
-func (r *VirtualMachineReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
+func (r *VirtualMachineReconciler) Reconcile(req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx := goctx.Background()
 
 	vm := &vmopv1alpha1.VirtualMachine{}
-	err := r.Get(ctx, req.NamespacedName, vm)
-	if err != nil {
+	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
 		if apiErrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -109,6 +108,19 @@ func (r *VirtualMachineReconciler) Reconcile(req ctrl.Request) (ctrl.Result, err
 		Logger:  ctrl.Log.WithName("VirtualMachine").WithValues("name", vm.NamespacedName()),
 		VM:      vm,
 	}
+
+	patchHelper, err := patch.NewHelper(vm, r.Client)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrapf(err, "failed to init patch helper for %s", vmCtx.String())
+	}
+	defer func() {
+		if err := patchHelper.Patch(ctx, vm); err != nil {
+			if reterr == nil {
+				reterr = err
+			}
+			vmCtx.Logger.Error(err, "patch failed")
+		}
+	}()
 
 	if !vm.DeletionTimestamp.IsZero() {
 		err = r.ReconcileDelete(vmCtx)
@@ -166,24 +178,14 @@ func (r *VirtualMachineReconciler) ReconcileDelete(ctx *context.VirtualMachineCo
 	}()
 
 	if controllerutil.ContainsFinalizer(vm, finalizerName) {
-		if vm.Status.Phase != vmopv1alpha1.Deleting {
-			vm.Status.Phase = vmopv1alpha1.Deleting
-			if err := r.Status().Update(ctx, vm); err != nil {
-				ctx.Logger.Error(err, "Failed to update VirtualMachine Status Phase")
-				return err
-			}
-		}
+		vm.Status.Phase = vmopv1alpha1.Deleting
 
 		if err := r.deleteVm(ctx); err != nil {
 			return err
 		}
 
-		vm.Status.Phase = vmopv1alpha1.Deleted // BMV: Not actually saved.
-
+		vm.Status.Phase = vmopv1alpha1.Deleted
 		controllerutil.RemoveFinalizer(vm, finalizerName)
-		if err := r.Update(ctx, vm); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -191,33 +193,22 @@ func (r *VirtualMachineReconciler) ReconcileDelete(ctx *context.VirtualMachineCo
 
 // Process a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
 func (r *VirtualMachineReconciler) ReconcileNormal(ctx *context.VirtualMachineContext) error {
-	vm := ctx.VM
-	vmStatusCopy := vm.Status.DeepCopy()
+	if !controllerutil.ContainsFinalizer(ctx.VM, finalizerName) {
+		// The finalizer must be present before proceeding in order to ensure that the VM will
+		// be cleaned up. Return immediately after here to let the patcher helper update the
+		// object, and then we'll proceed on the next reconciliation.
+		controllerutil.AddFinalizer(ctx.VM, finalizerName)
+		return nil
+	}
 
 	ctx.Logger.Info("Reconciling VirtualMachine")
-	ctx.Logger.V(4).Info("Original VM Status", "status", vm.Status)
 	defer func() {
 		ctx.Logger.Info("Finished Reconciling VirtualMachine")
 	}()
 
-	if !controllerutil.ContainsFinalizer(vm, finalizerName) {
-		controllerutil.AddFinalizer(vm, finalizerName)
-		if err := r.Update(ctx, vm); err != nil {
-			return err
-		}
-	}
-
 	if err := r.createOrUpdateVm(ctx); err != nil {
 		ctx.Logger.Error(err, "Failed to reconcile VirtualMachine")
 		return err
-	}
-
-	ctx.Logger.V(4).Info("Updated VM Status", "status", vm.Status)
-	if !equality.Semantic.DeepEqual(vmStatusCopy, &vm.Status) {
-		if err := r.Status().Update(ctx, vm); err != nil {
-			ctx.Logger.Error(err, "Failed to update VirtualMachine status")
-			return err
-		}
 	}
 
 	return nil
@@ -423,13 +414,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 	}
 
 	if !exists {
-		if vm.Status.Phase != vmopv1alpha1.Creating {
-			vm.Status.Phase = vmopv1alpha1.Creating
-			if err = r.Status().Update(ctx, vm); err != nil {
-				ctx.Logger.Error(err, "Failed to update VirtualMachine Status Phase")
-				return err
-			}
-		}
+		vm.Status.Phase = vmopv1alpha1.Creating
 
 		err = r.VmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 		if err != nil {
@@ -439,9 +424,9 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 		}
 	}
 
-	// At this point, the VirtualMachine is either created, or it already exists. Call into the provider for update.
+	// At this point, the VirtualMachine is either created, or it already existed. Call into the provider for update.
 	vm.Status.Phase = vmopv1alpha1.Created
-	pkg.AddAnnotations(&vm.ObjectMeta) // BMV: Not actually saved.
+	//pkg.AddAnnotations(&vm.ObjectMeta) // BMV: Not actually saved.
 
 	err = r.VmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {

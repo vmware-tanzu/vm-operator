@@ -6,7 +6,7 @@ package mocks
 
 import (
 	gomock "github.com/golang/mock/gomock"
-	context "github.com/vmware-tanzu/vm-operator/pkg/context"
+	context "github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	probe "github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	reflect "reflect"
 )

@@ -26,3 +26,15 @@ const (
 type Probe interface {
 	Probe(ctx *context.ProbeContext) (Result, error)
 }
+
+// Prober contains different type of probes, currently we only have tcp probe.
+type Prober struct {
+	TCPProbe Probe
+}
+
+// NewProber creates a new prober.
+func NewProber() *Prober {
+	return &Prober{
+		TCPProbe: NewTcpProber(),
+	}
+}

@@ -20,10 +20,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -213,7 +215,6 @@ func unitTestsReconcile() {
 	})
 
 	Context("ReconcileNormal", func() {
-
 		BeforeEach(func() {
 			initObjects = append(initObjects, vm, vmClass, vmImage)
 		})
@@ -246,37 +247,117 @@ func unitTestsReconcile() {
 			})
 
 			Context("No VirtualMachineClassBindings exist in namespace", func() {
-				It("return an error", func() {
+				It("return an error and sets VirtualMacinePreReqReady Condition to false", func() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(fmt.Errorf("no VirtualMachineClassBindings exist in namespace %s", vm.Namespace)))
+					Expect(err).To(MatchError(fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vm.Spec.ClassName, vm.Namespace)))
+
+					msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s",
+						vmCtx.VM.Spec.ClassName, vmCtx.VM.Namespace)
+
+					expectedCondition := vmopv1alpha1.Conditions{
+						*conditions.FalseCondition(
+							vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+							vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+							vmopv1alpha1.ConditionSeverityError,
+							msg),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 				})
 			})
 
-			Context("VirtualMachineBinding is not for VM Class", func() {
+			Context("VirtualMachineBinding is not present for VM Class", func() {
 				BeforeEach(func() {
 					vmClassBinding.ClassRef.Name = "blah-blah-binding"
 					initObjects = append(initObjects, vmClassBinding)
 				})
 
-				It("returns an error", func() {
+				It("returns an error and sets the VirtualMachinePrereqReady Condition to false, ", func() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vm.Spec.ClassName, vm.Namespace)))
+
+					msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s",
+						vmCtx.VM.Spec.ClassName, vmCtx.VM.Namespace)
+					expectedCondition := vmopv1alpha1.Conditions{
+						*conditions.FalseCondition(
+							vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+							vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+							vmopv1alpha1.ConditionSeverityError,
+							msg),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 				})
 			})
 
-			Context("VirtualMachineClassBinding exists for the class", func() {
+			Context("VirtualMachineClass and VirtualMachineClassBinding exists", func() {
 				BeforeEach(func() {
 					initObjects = append(initObjects, vmClassBinding)
 				})
 
-				It("should successfully reconcile the VM, add finalizer and verify the phase", func() {
+				It("should successfully reconcile the VM, add finalizer, verify the phase and Conditions", func() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
 					Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Created))
+
+					expectedCondition := vmopv1alpha1.Conditions{
+						*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 				})
+			})
+
+			When("A missing VirtualMachineClassBinding is added to the namespace in the subsequent reconcile", func() {
+				It("successfully reconciles and marks the VirtualMachinePrereqReady Condition to True", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vm.Spec.ClassName, vm.Namespace)))
+
+					msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s",
+						vmCtx.VM.Spec.ClassName, vmCtx.VM.Namespace)
+
+					expectedCondition := vmopv1alpha1.Conditions{
+						*conditions.FalseCondition(
+							vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+							vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+							vmopv1alpha1.ConditionSeverityError,
+							msg),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+
+					By("VirtualMachineClassBinding is added to the namespace")
+					Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
+
+					By("Reconciling again")
+					err = reconciler.ReconcileNormal(vmCtx)
+					Expect(err).NotTo(HaveOccurred())
+
+					expectedCondition = vmopv1alpha1.Conditions{
+						*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+				})
+			})
+		})
+
+		Context("VirtualMachineClass does not exist for the class specified in the VM spec", func() {
+			It("returns error and sets the VirtualMachinePrereqReady Condition to false", func() {
+				vmCtx.VM.Spec.ClassName = "non-existent-class"
+				err := reconciler.ReconcileNormal(vmCtx)
+				Expect(err).To(HaveOccurred())
+				Expect(apiErrors.IsNotFound(err)).To(BeTrue())
+
+				err = apiErrors.NewNotFound(schema.ParseGroupResource("virtualmachineclasses.vmoperator.vmware.com"), vmCtx.VM.Spec.ClassName)
+				msg := fmt.Sprintf("Failed to get VirtualMachineClass %s: %s", vmCtx.VM.Spec.ClassName, err)
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(
+						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+						vmopv1alpha1.VirtualMachineClassNotFoundReason,
+						vmopv1alpha1.ConditionSeverityError,
+						msg),
+				}
+				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 			})
 		})
 
@@ -550,7 +631,8 @@ func unitTestsReconcile() {
 
 func expectEvent(ctx *builder.UnitTestContextForController, eventStr string) {
 	var event string
-	Eventually(ctx.Events).Should(Receive(&event))
+	// This does not work if we have more than one events and the first one does not match.
+	EventuallyWithOffset(1, ctx.Events).Should(Receive(&event))
 	eventComponents := strings.Split(event, " ")
 	ExpectWithOffset(1, eventComponents[1]).To(Equal(eventStr))
 }

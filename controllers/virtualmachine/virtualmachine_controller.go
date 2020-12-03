@@ -26,6 +26,7 @@ import (
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -309,19 +310,34 @@ func (r *VirtualMachineReconciler) GetCLUUID(ctx *context.VirtualMachineContext)
 func (r *VirtualMachineReconciler) getVMClass(ctx *context.VirtualMachineContext) (*vmopv1alpha1.VirtualMachineClass, error) {
 	className := ctx.VM.Spec.ClassName
 
+	vmClass := &vmopv1alpha1.VirtualMachineClass{}
+	if err := r.Get(ctx, client.ObjectKey{Name: className}, vmClass); err != nil {
+		msg := fmt.Sprintf("Failed to get VirtualMachineClass %s: %s", ctx.VM.Spec.ClassName, err)
+		conditions.MarkFalse(ctx.VM,
+			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+			vmopv1alpha1.VirtualMachineClassNotFoundReason,
+			vmopv1alpha1.ConditionSeverityError,
+			msg)
+
+		ctx.Logger.Error(err, "Failed to get VirtualMachineClass", "className", className)
+		return nil, err
+	}
+
 	if lib.IsVMServiceFSSEnabled() {
 		classBindingList := &vmopv1alpha1.VirtualMachineClassBindingList{}
 		if err := r.List(ctx, classBindingList, client.InNamespace(ctx.VM.Namespace)); err != nil {
-			ctx.Logger.Error(err, "Failed to list VirtualMachineClassBindings")
-			return nil, err
-		}
+			msg := fmt.Sprintf("Failed to list VirtualMachineClassBindings in namespace: %s", ctx.VM.Namespace)
+			conditions.MarkFalse(ctx.VM,
+				vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+				vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+				vmopv1alpha1.ConditionSeverityError,
+				msg)
 
-		if len(classBindingList.Items) == 0 {
-			return nil, fmt.Errorf("no VirtualMachineClassBindings exist in namespace %s", ctx.VM.Namespace)
+			return nil, errors.Wrap(err, msg)
 		}
 
 		// Filter the bindings for the specified VM class.
-		var matchingClassBinding bool
+		matchingClassBinding := false
 		for _, classBinding := range classBindingList.Items {
 			if classBinding.ClassRef.Kind == "VirtualMachineClass" && classBinding.ClassRef.Name == className {
 				matchingClassBinding = true
@@ -330,17 +346,15 @@ func (r *VirtualMachineReconciler) getVMClass(ctx *context.VirtualMachineContext
 		}
 
 		if !matchingClassBinding {
-			return nil, fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s",
-				className, ctx.VM.Namespace)
-		}
-	}
+			msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %v, namespace: %v", ctx.VM.Spec.ClassName, ctx.VM.Namespace)
+			conditions.MarkFalse(ctx.VM,
+				vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+				vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+				vmopv1alpha1.ConditionSeverityError,
+				msg)
 
-	vmClass := &vmopv1alpha1.VirtualMachineClass{}
-	err := r.Get(ctx, client.ObjectKey{Name: className}, vmClass)
-	if err != nil {
-		ctx.Logger.Error(err, "Failed to get VirtualMachineClass for VirtualMachine",
-			"className", className)
-		return nil, err
+			return nil, fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", className, ctx.VM.Namespace)
+		}
 	}
 
 	return vmClass, nil
@@ -419,6 +433,9 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 	if err != nil {
 		return err
 	}
+
+	// Update VirtualMachine conditions to indicate all prereqs have been met.
+	conditions.MarkTrue(ctx.VM, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
 
 	vm := ctx.VM
 	vmConfigArgs := vmprovider.VmConfigArgs{

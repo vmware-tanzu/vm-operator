@@ -195,7 +195,7 @@ type VirtualMachineSpec struct {
 	// attributes that may help users to identify the desired image to use.
 	ImageName string `json:"imageName"`
 
-	// ClassName describes the name of a VirtualMachineClass that is to be used as the overlayed resource configuration
+	// ClassName describes the name of a VirtualMachineClass that is to be used as the overlaid resource configuration
 	// of VirtualMachine.  A VirtualMachineClass is used to further customize the attributes of the VirtualMachine
 	// instance.  See VirtualMachineClass for more description.
 	ClassName string `json:"className"`
@@ -255,7 +255,7 @@ type VirtualMachineAdvancedOptions struct {
 	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
 }
 
-// VirtualMachineVolumeProvisioningOptions specifies the provisioning options for the a VirtualMachineVolume.
+// VirtualMachineVolumeProvisioningOptions specifies the provisioning options for a VirtualMachineVolume.
 type VirtualMachineVolumeProvisioningOptions struct {
 	// ThinProvisioned specifies whether to use thin provisioning for the VirtualMachineVolume.
 	// This means a sparse (allocate on demand) format with additional space optimizations.
@@ -271,7 +271,7 @@ type VirtualMachineVolumeProvisioningOptions struct {
 
 // VirtualMachineVolumeStatus defines the observed state of a VirtualMachineVolume instance.
 type VirtualMachineVolumeStatus struct {
-	// Name is the the name of the volume in a VirtualMachine.
+	// Name is the name of the volume in a VirtualMachine.
 	Name string `json:"name"`
 
 	// Attached represents whether a volume has been successfully attached to the VirtualMachine or not.

@@ -92,9 +92,7 @@ type VirtualMachineImageStatus struct {
 // VirtualMachineImage is the Schema for the virtualmachineimages API
 // A VirtualMachineImage represents a VirtualMachine image (e.g. VM template) that can be used as the base image
 // for creating a VirtualMachine instance.  The VirtualMachineImage is a required field of the VirtualMachine
-// spec.  Currently, VirtualMachineImages are immutable to end users.  They are created and managed by a
-// VirtualMachineImage controller whose role is to discover available images in the backing infrastructure provider
-// that should be surfaced as consumable VirtualMachineImage resources.
+// spec.  Currently, VirtualMachineImages are immutable to end users.
 type VirtualMachineImage struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

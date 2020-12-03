@@ -362,6 +362,7 @@ func (vs *vSphereVmProvider) mergeVmStatus(ctx context.Context, vm *v1alpha1.Vir
 
 	// BMV: This just ain't right.
 	vmStatus.Volumes = vm.Status.Volumes
+	vmStatus.Conditions = vm.Status.Conditions
 	vmStatus.DeepCopyInto(&vm.Status)
 
 	return nil

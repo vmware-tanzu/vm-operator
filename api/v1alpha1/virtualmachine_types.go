@@ -67,6 +67,7 @@ type NetworkInterfaceProviderReference struct {
 type VirtualMachineNetworkInterface struct {
 	// NetworkType describes the type of VirtualNetwork that is referenced by the NetworkName.  Currently, the only
 	// supported NetworkTypes are "nsx-t" and "vsphere-distributed".
+	// +optional
 	NetworkType string `json:"networkType,omitempty"`
 
 	// NetworkName describes the name of an existing virtual network that this interface should be added to.  For
@@ -75,10 +76,12 @@ type VirtualMachineNetworkInterface struct {
 
 	// ProviderRef is reference to a network interface provider object that specifies the network interface configuration.
 	// If unset, default configuration is assumed.
+	// +optional
 	ProviderRef *NetworkInterfaceProviderReference `json:"providerRef,omitempty"`
 
 	// EthernetCardType describes an optional ethernet card that should be used by the VirtualNetworkInterface (vNIC)
 	// associated with this network integration.  The default is "vmxnet3".
+	// +optional
 	EthernetCardType string `json:"ethernetCardType,omitempty"`
 }
 
@@ -287,37 +290,47 @@ type VirtualMachineVolumeStatus struct {
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.
 type VirtualMachineStatus struct {
 	// Host describes the hostname or IP address of the infrastructure host that the VirtualMachine is executing on.
-	Host string `json:"host"`
+	// +optional
+	Host string `json:"host,omitempty"`
 
 	// PowerState describes the current power state of the VirtualMachine.
-	PowerState VirtualMachinePowerState `json:"powerState"`
+	// +optional
+	PowerState VirtualMachinePowerState `json:"powerState,omitempty"`
 
 	// Phase describes the current phase information of the VirtualMachine.
-	Phase VMStatusPhase `json:"phase"`
+	// +optional
+	Phase VMStatusPhase `json:"phase,omitempty"`
 
 	// Conditions describes the current condition information of the VirtualMachine.
+	// +optional
 	Conditions []VirtualMachineCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
 	// VmIp describes the IP address of the VirtualMachine.  Currently, a VirtualMachine only supports a single
 	// network interface and interface address.
-	VmIp string `json:"vmIp"`
+	// +optional
+	VmIp string `json:"vmIp,omitempty"`
 
 	// UniqueID describes a unique identifier that is provided by the underlying infrastructure provider, such as
 	// vSphere.
-	UniqueID string `json:"uniqueID"`
+	// +optional
+	UniqueID string `json:"uniqueID,omitempty"`
 
 	// BiosUUID describes a unique identifier provided by the underlying infrastructure provider that is exposed to the
 	// Guest OS BIOS as a unique hardware identifier.
-	BiosUUID string `json:"biosUUID"`
+	// +optional
+	BiosUUID string `json:"biosUUID,omitempty"`
 
 	// InstanceUUID describes the unique instance UUID provided by the underlying infrastructure provider, such as vSphere.
-	InstanceUUID string `json:"instanceUUID"`
+	// +optional
+	InstanceUUID string `json:"instanceUUID,omitempty"`
 
 	// Volumes describes a list of current status information for each Volume that is desired to be attached to the
 	// VirtualMachine.
+	// +optional
 	Volumes []VirtualMachineVolumeStatus `json:"volumes,omitempty"`
 
 	// ChangeBlockTracking describes the CBT enablement status on the VirtualMachine.
+	// +optional
 	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
 }
 

@@ -48,6 +48,12 @@ func createObjects(ctx context.Context, ctrlClient client.Client, runtimeObjects
 	}
 }
 
+func updateObjects(ctx context.Context, ctrlClient client.Client, runtimeObjects []runtime.Object) {
+	for _, obj := range runtimeObjects {
+		Expect(ctrlClient.Update(ctx, obj)).To(Succeed())
+	}
+}
+
 func updateObjectsStatus(ctx context.Context, ctrlClient client.StatusClient, runtimeObjects []runtime.Object) {
 	for _, obj := range runtimeObjects {
 		Expect(ctrlClient.Status().Update(ctx, obj)).To(Succeed())

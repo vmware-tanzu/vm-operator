@@ -30,6 +30,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
@@ -49,12 +50,18 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
+	proberManager, err := prober.AddToVirtualMachineController(mgr)
+	if err != nil {
+		return err
+	}
+
 	r := NewReconciler(
 		mgr.GetClient(),
 		ctx.MaxConcurrentReconciles,
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		ctx.VmProvider,
+		proberManager,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -68,7 +75,8 @@ func NewReconciler(
 	numReconcilers int,
 	logger logr.Logger,
 	recorder record.Recorder,
-	vmProvider vmprovider.VirtualMachineProviderInterface) *VirtualMachineReconciler {
+	vmProvider vmprovider.VirtualMachineProviderInterface,
+	prober prober.Manager) *VirtualMachineReconciler {
 
 	// Limit the maximum number of VirtualMachine creates by the provider. Calculated as MAX_CREATE_VMS_ON_PROVIDER
 	// (default 80) percent of the total number of reconciler threads.
@@ -80,6 +88,7 @@ func NewReconciler(
 		Recorder:                         recorder,
 		VmProvider:                       vmProvider,
 		MaxConcurrentCreateVMsOnProvider: maxConcurrentCreateVMsOnProvider,
+		Prober:                           prober,
 	}
 }
 
@@ -89,6 +98,7 @@ type VirtualMachineReconciler struct {
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VmProvider vmprovider.VirtualMachineProviderInterface
+	Prober     prober.Manager
 	// To manipulate the number of VMs being created on provider.
 	mutex sync.Mutex
 	// Number of VMs being created on the provider.
@@ -211,6 +221,9 @@ func (r *VirtualMachineReconciler) ReconcileDelete(ctx *context.VirtualMachineCo
 		controllerutil.RemoveFinalizer(vm, finalizerName)
 	}
 
+	// Remove the VM from prober manager if ReconcileDelete succeeds.
+	r.Prober.RemoveFromProberManager(vm)
+
 	return nil
 }
 
@@ -233,6 +246,9 @@ func (r *VirtualMachineReconciler) ReconcileNormal(ctx *context.VirtualMachineCo
 		ctx.Logger.Error(err, "Failed to reconcile VirtualMachine")
 		return err
 	}
+
+	// Add this VM to prober manager if ReconcileNormal succeeds.
+	r.Prober.AddToProberManager(ctx.VM)
 
 	return nil
 }

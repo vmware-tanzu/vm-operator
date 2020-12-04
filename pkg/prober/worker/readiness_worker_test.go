@@ -71,7 +71,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 		prober.TCPProbe = mockProbe
 	})
 
-	checkVirtualMachineCondition := func(c client.Client, objKey client.ObjectKey, expectedCondition corev1.ConditionStatus) {
+	checkReadyCondition := func(c client.Client, objKey client.ObjectKey, expectedCondition corev1.ConditionStatus) {
 		Expect(c.Get(ctx, objKey, vm)).Should(Succeed())
 		condition := conditions.Get(vm, vmopv1alpha1.ReadyCondition)
 		Expect(condition).ToNot(BeNil())
@@ -97,15 +97,15 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 			Expect(fakeClient.Delete(ctx, vm)).To(Succeed())
 		})
 
-		When("new VirtualMachineCondition is in a transition", func() {
-			It("Should update the VirtualMachineCondition when probe succeeds", func() {
+		When("new ReadyCondition is in a transition", func() {
+			It("Should update ReadyCondition when probe succeeds", func() {
 				mockProbe.EXPECT().Probe(gomock.Any()).Return(probe.Success, nil)
 
 				err := testWorker.DoProbe(ctx)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				By("Should set ReadyCondition status as true", func() {
-					checkVirtualMachineCondition(fakeClient, vmKey, corev1.ConditionTrue)
+					checkReadyCondition(fakeClient, vmKey, corev1.ConditionTrue)
 				})
 
 				By("Conditions in VM status should be updated", func() {
@@ -115,14 +115,14 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 				})
 			})
 
-			It("Should update the VirtualMachineCondition when probe fails", func() {
+			It("Should update ReadyCondition when probe fails", func() {
 				mockProbe.EXPECT().Probe(gomock.Any()).Return(probe.Failure, nil)
 
 				err := testWorker.DoProbe(ctx)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				By("Should set ReadyCondition value as false", func() {
-					checkVirtualMachineCondition(fakeClient, vmKey, corev1.ConditionFalse)
+					checkReadyCondition(fakeClient, vmKey, corev1.ConditionFalse)
 				})
 
 				By("Conditions in VM status should be updated", func() {
@@ -132,7 +132,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 				})
 			})
 
-			When("new VirtualMachineCondition isn't in a transition", func() {
+			When("new ReadyCondition isn't in a transition", func() {
 				It("Shouldn't update the Condition in status", func() {
 					vmReadyCondition := conditions.TrueCondition(vmopv1alpha1.ReadyCondition)
 					vm.Status.Conditions = append(vm.Status.Conditions, *vmReadyCondition)

@@ -35,6 +35,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	controllerContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
@@ -51,8 +52,6 @@ var _ = Describe("VirtualMachineService controller", func() {
 		ctx              context.Context
 		recFn            reconcile.Reconciler
 		requests         chan reconcile.Request
-		reconcileResult  chan reconcile.Result
-		reconcileErr     chan error
 		stopMgr          chan struct{}
 		mgrStopped       *sync.WaitGroup
 		mgr              manager.Manager
@@ -79,7 +78,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 
 		r, err = newReconciler(mgr)
 		Expect(err).NotTo(HaveOccurred())
-		recFn, requests, reconcileResult, reconcileErr = integration.SetupTestReconcile(r)
+		recFn, requests, _, _ = integration.SetupTestReconcile(r)
 
 		Expect(add(ctrlContext, mgr, recFn, r)).To(Succeed())
 
@@ -213,77 +212,100 @@ var _ = Describe("VirtualMachineService controller", func() {
 
 	Describe("When VirtualMachineService selector matches virtual machines with probe", func() {
 		var (
-			successVM  vmoperatorv1alpha1.VirtualMachine
-			failedVM   vmoperatorv1alpha1.VirtualMachine
-			vmService  vmoperatorv1alpha1.VirtualMachineService
-			testServer *httptest.Server
-			testHost   string
+			successVM         vmoperatorv1alpha1.VirtualMachine
+			failedVM          vmoperatorv1alpha1.VirtualMachine
+			vmService         vmoperatorv1alpha1.VirtualMachineService
+			readyCondition    *vmoperatorv1alpha1.Condition
+			notReadyCondition *vmoperatorv1alpha1.Condition
 		)
 		BeforeEach(func() {
-			// A test server that will simulate a VM's readiness probe endpoint
-			var testPort int
-			testServer, testHost, testPort = setupTestServer()
 			// Setup two VM's one that will pass the readiness probe and one that will fail
 			label := map[string]string{"with-probe": "true"}
-			successVM = getTestVirtualMachineWithProbe(serviceNamespace, "dummy-vm-with-success-probe", label, testPort)
+			successVM = getTestVirtualMachineWithProbe(serviceNamespace, "dummy-vm-with-success-probe", label, 10001)
 			failedVM = getTestVirtualMachineWithProbe(serviceNamespace, "dummy-vm-with-failure-probe", label, 10001)
 			vmService = getTestVMServiceWithSelector(serviceNamespace, "dummy-vm-service-with-probe", label)
 			createObjects(ctx, c, []runtime.Object{&successVM, &failedVM, &vmService})
+
 			// Since Status is a sub-resource, we need to update the status separately.
-			successVM.Status.VmIp = testHost
+			successVM.Status.VmIp = "192.168.1.100"
 			successVM.Status.Host = "10.0.0.100"
+			readyCondition = conditions.TrueCondition(vmoperatorv1alpha1.ReadyCondition)
+			conditions.Set(&successVM, readyCondition)
 			failedVM.Status.VmIp = "192.168.1.200"
 			failedVM.Status.Host = "10.0.0.200"
+			notReadyCondition = conditions.FalseCondition(vmoperatorv1alpha1.ReadyCondition, "notReady", vmoperatorv1alpha1.ConditionSeverityInfo, "")
+			conditions.Set(&failedVM, notReadyCondition)
 			updateObjectsStatus(ctx, c, []runtime.Object{&successVM, &failedVM})
 
 			// Wait for the reconciliation to happen before asserting
 			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: serviceNamespace, Name: vmService.Name}}
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
 		})
+
 		It("Should create Service and Endpoints with VMs that pass the probe", func() {
-			// Note: Ideally we would expect the successVM with local IP 127.0.0.1 to be part of the endpoint. However,
-			// kubernetes doesn't allow endpoints to have an IP address in the loopback range. As a result,
-			// we end up with an error trying to create the endpoints for the VMService. The fact that we tried to add
-			// an endpoint with the loopback address from the test server asserts that the endpoint passed the
-			// readiness probe.
-			// subsets := assertServiceWithEndpointSubsets(ctx, c, vmService.Namespace, vmService.Name)
-			// Expect(subsets[0].Addresses[0].IP).To(Equal(successVM.Status.VmIp))
-			Eventually(reconcileErr, timeout).Should(Receive(
-				MatchError(fmt.Sprintf("Endpoints \"dummy-vm-service-with-probe\" is invalid: subsets[0].addresses[0].ip: "+
-					"Invalid value: \"%s\": may not be in the loopback range (127.0.0.0/8)", testHost))))
-
+			subsets := assertServiceWithEndpointSubsets(ctx, c, vmService.Namespace, vmService.Name)
+			Expect(subsets[0].Addresses[0].IP).To(Equal(successVM.Status.VmIp))
 		})
+
+		When("VMs are not in the Old Service endpoint subsets", func() {
+			It("Should not add VM to endpoint subsets when Ready Condition is missing if readiness probe is set", func() {
+				Expect(c.Get(ctx, client.ObjectKey{Name: failedVM.Name, Namespace: failedVM.Namespace}, &failedVM)).To(Succeed())
+				conditions.Delete(&failedVM, vmoperatorv1alpha1.ReadyCondition)
+				updateObjectsStatus(ctx, c, []runtime.Object{&failedVM})
+
+				// Wait for the reconciliation to happen before asserting
+				expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: serviceNamespace, Name: vmService.Name}}
+				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+				subsets := assertServiceWithEndpointSubsets(ctx, c, vmService.Namespace, vmService.Name)
+				Expect(len(subsets)).To(Equal(1))
+				Expect(subsets[0].Addresses[0].IP).To(Equal(successVM.Status.VmIp))
+			})
+
+			It("Should add VM to endpoint subsets if readiness probe is not set", func() {
+				failedVM.Spec.ReadinessProbe = nil
+				updateObjects(ctx, c, []runtime.Object{&failedVM})
+
+				// Wait for the reconciliation to happen before asserting
+				expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: serviceNamespace, Name: vmService.Name}}
+				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+				subsets := assertServiceWithEndpointSubsets(ctx, c, vmService.Namespace, vmService.Name)
+				Expect(len(subsets)).To(Equal(1))
+				if subsets[0].Addresses[0].IP == successVM.Status.VmIp {
+					Expect(subsets[0].Addresses[1].IP).To(Equal(failedVM.Status.VmIp))
+				} else {
+					Expect(subsets[0].Addresses[0].IP).To(Equal(failedVM.Status.VmIp))
+				}
+			})
+		})
+
+		When("VMs are in the Old Service endpoint subsets", func() {
+			It("Should not remove VM if its Ready condition is missing in the status", func() {
+				conditions.Delete(&successVM, vmoperatorv1alpha1.ReadyCondition)
+				updateObjectsStatus(ctx, c, []runtime.Object{&successVM})
+
+				// Wait for the reconciliation to happen before asserting
+				expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: serviceNamespace, Name: vmService.Name}}
+				Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
+
+				subsets := assertServiceWithEndpointSubsets(ctx, c, vmService.Namespace, vmService.Name)
+				Expect(subsets[0].Addresses[0].IP).To(Equal(successVM.Status.VmIp))
+			})
+		})
+
 		AfterEach(func() {
-			testServer.Close()
 			deleteObjects(ctx, c, []runtime.Object{&successVM, &failedVM, &vmService})
-		})
-	})
 
-	Describe("When VirtualMachineService selector matches VM's and all of them fail probe", func() {
-		var (
-			failedVM  vmoperatorv1alpha1.VirtualMachine
-			vmService vmoperatorv1alpha1.VirtualMachineService
-		)
-		BeforeEach(func() {
-			label := map[string]string{"with-probe-requeue": "true"}
-			failedVM = getTestVirtualMachineWithProbe(serviceNamespace, "dummy-vm-with-failure-probe-requeue", label, 10002)
-			vmService = getTestVMServiceWithSelector(serviceNamespace, "dummy-vm-service-with-probe-requeue", label)
-			createObjects(ctx, c, []runtime.Object{&failedVM, &vmService})
-			// Since Status is a sub-resource, we need to update the status separately.
-			failedVM.Status.VmIp = "192.168.1.300"
-			failedVM.Status.Host = "10.0.0.300"
-			updateObjectsStatus(ctx, c, []runtime.Object{&failedVM})
-
-			// Wait for the reconciliation to happen before asserting
+			// Make sure the VM service is eventually deleted.
 			expectedRequest := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: serviceNamespace, Name: vmService.Name}}
 			Eventually(requests, timeout).Should(Receive(Equal(expectedRequest)))
-		})
-		It("Should requeue", func() {
-			expectedResult := reconcile.Result{RequeueAfter: probeFailureRequeueTime}
-			Eventually(reconcileResult, timeout).Should(Receive(Equal(expectedResult)))
-		})
-		AfterEach(func() {
-			deleteObjects(ctx, c, []runtime.Object{&failedVM, &vmService})
+
+			Eventually(func() bool {
+				serviceKey := client.ObjectKey{Name: vmService.Name, Namespace: vmService.Namespace}
+				err = c.Get(ctx, serviceKey, &vmService)
+				return errors.IsNotFound(err)
+			}).Should(BeTrue())
 		})
 	})
 

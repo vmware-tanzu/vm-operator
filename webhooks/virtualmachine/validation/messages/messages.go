@@ -9,7 +9,7 @@ const (
 	ClassNotSpecified                         = "spec.className must be specified"
 	NetworkNameNotSpecifiedFmt                = "spec.networkInterfaces[%d].networkName must be specified"
 	NetworkTypeNotSupportedFmt                = "spec.networkInterfaces[%d].networkType is not supported"
-	MultipleNetworkInterfacesNotSupportedFmt  = "Multiple network interfaces of a VM cannot be connected to the same network %s"
+	MultipleNetworkInterfacesNotSupportedFmt  = "Multiple network interfaces cannot be connected to the same network. Duplicate NetworkName: spec.networkInterfaces[%d].networkName"
 	VolumeNameNotSpecifiedFmt                 = "spec.volumes[%d].name must be specified"
 	PersistentVolumeClaimNameNotSpecifiedFmt  = "spec.volumes[%d].persistentVolumeClaim.claimName must be specified"
 	VolumeNameDuplicateFmt                    = "spec.volumes[%d].name must be unique"

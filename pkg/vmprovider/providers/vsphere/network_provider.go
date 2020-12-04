@@ -434,7 +434,11 @@ func NsxtNetworkProvider(client ncpclientset.Interface, finder *find.Finder, clu
 
 // GenerateNsxVnetifName generates the vnetif name for the VM
 func (np *nsxtNetworkProvider) GenerateNsxVnetifName(networkName, vmName string) string {
-	return fmt.Sprintf("%s-%s-lsp", networkName, vmName)
+	vnetifName := fmt.Sprintf("%s-lsp", vmName)
+	if networkName != "" {
+		vnetifName = fmt.Sprintf("%s-%s", networkName, vnetifName)
+	}
+	return vnetifName
 }
 
 // setVnetifOwner sets owner reference for vnetif object

@@ -28,6 +28,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -58,6 +59,8 @@ func unitTestsReconcile() {
 		vmResourcePolicy *vmopv1alpha1.VirtualMachineSetResourcePolicy
 		storageClass     *storagev1.StorageClass
 		resourceQuota    *corev1.ResourceQuota
+
+		fakeProbeManager *proberfake.FakeProberManager
 	)
 
 	BeforeEach(func() {
@@ -136,14 +139,17 @@ func unitTestsReconcile() {
 		// Explicitly set the max reconciler threads, otherwise it defaults to 0 and the reconciler thinks
 		// no VM creations are allowed.
 		ctx.MaxConcurrentReconciles = 1
+		fakeProbeManagerIf := proberfake.NewFakeProberManager()
 		reconciler = virtualmachine.NewReconciler(
 			ctx.Client,
 			ctx.MaxConcurrentReconciles,
 			ctx.Logger,
 			ctx.Recorder,
 			ctx.VmProvider,
+			fakeProbeManagerIf,
 		)
 		fakeVmProvider = ctx.VmProvider.(*providerfake.FakeVmProvider)
+		fakeProbeManager = fakeProbeManagerIf.(*proberfake.FakeProberManager)
 
 		vmCtx = &vmopContext.VirtualMachineContext{
 			Context: ctx,
@@ -584,6 +590,26 @@ func unitTestsReconcile() {
 				})
 			})
 		})
+
+		It("Should not call add to Prober Manager if ReconcileNormal fails", func() {
+			// Simulate an error during VM create
+			fakeVmProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+				return errors.New(providerError)
+			}
+
+			err := reconciler.ReconcileNormal(vmCtx)
+			Expect(err).To(HaveOccurred())
+			Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeFalse())
+		})
+
+		It("Should call add to Prober Manager if ReconcileNormal succeeds", func() {
+			fakeProbeManager.AddToProberManagerFn = func(vm *vmopv1alpha1.VirtualMachine) {
+				fakeProbeManager.IsAddToProberManagerCalled = true
+			}
+
+			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+			Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeTrue())
+		})
 	})
 
 	Context("ReconcileDelete", func() {
@@ -625,6 +651,26 @@ func unitTestsReconcile() {
 
 			expectEvent(ctx, "DeleteFailure")
 			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Deleting))
+		})
+
+		It("Should not remove from Prober Manager if ReconcileDelete fails", func() {
+			// Simulate delete failure
+			fakeVmProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
+				return errors.New(providerError)
+			}
+
+			err := reconciler.ReconcileDelete(vmCtx)
+			Expect(err).To(HaveOccurred())
+			Expect(fakeProbeManager.IsRemoveFromProberManagerCalled).Should(BeFalse())
+		})
+
+		It("Should remove from Prober Manager if ReconcileDelete succeeds", func() {
+			fakeProbeManager.RemoveFromProberManagerFn = func(vm *vmopv1alpha1.VirtualMachine) {
+				fakeProbeManager.IsRemoveFromProberManagerCalled = true
+			}
+
+			Expect(reconciler.ReconcileDelete(vmCtx)).Should(Succeed())
+			Expect(fakeProbeManager.IsRemoveFromProberManagerCalled).Should(BeTrue())
 		})
 	})
 }

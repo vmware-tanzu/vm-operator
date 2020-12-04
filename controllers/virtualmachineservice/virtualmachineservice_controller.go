@@ -6,9 +6,7 @@ package virtualmachineservice
 import (
 	goctx "context"
 	"fmt"
-	"net"
 	"strconv"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -24,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -35,6 +32,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
@@ -49,25 +47,7 @@ const (
 	OpDelete       = "DeleteK8sService"
 	OpUpdate       = "UpdateK8sService"
 	ControllerName = "virtualmachineservice-controller"
-
-	defaultConnectTimeout = time.Second * 10
-
-	probeFailureRequeueTime = time.Second * 10
 )
-
-// RequeueAfterError implements error interface and can be used to indicate the error should result in a requeue of
-// the object under reconciliation after the specified duration of time.
-type RequeueAfterError struct {
-	RequeueAfter time.Duration
-}
-
-func (e *RequeueAfterError) Error() string {
-	return fmt.Sprintf("requeue in: %s", e.RequeueAfter)
-}
-
-func (e *RequeueAfterError) GetRequeueAfter() time.Duration {
-	return e.RequeueAfter
-}
 
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	r, err := newReconciler(mgr)
@@ -187,9 +167,6 @@ func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (r
 
 	err = r.reconcileVmService(ctx, instance)
 	if err != nil {
-		if requeueErr, ok := err.(*RequeueAfterError); ok {
-			return reconcile.Result{RequeueAfter: requeueErr.GetRequeueAfter()}, nil
-		}
 		r.log.Error(err, "Failed to reconcile VirtualMachineService", "service", instance)
 		return reconcile.Result{}, err
 	}
@@ -506,6 +483,29 @@ func (r *ReconcileVirtualMachineService) getVirtualMachinesSelectedByVmService(c
 	return vmList, err
 }
 
+// getVMsReferencedByServiceEndpoints gets all VMs that are referenced by service endpoints
+// returns a map, key is the VM uid and value is a boolean value indicating whether this VM is included in the endpoint subsets.
+func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(ctx goctx.Context, service *corev1.Service) (map[types.UID]bool, error) {
+	currentEndpoints := &corev1.Endpoints{}
+
+	if err := r.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, currentEndpoints); err != nil {
+		r.log.Error(err, "Failed to get endpoints.", "name", service.Name, "namespace", service.Namespace)
+		return map[types.UID]bool{}, err
+	}
+
+	subsets := currentEndpoints.Subsets
+	vmToSubsetsMap := make(map[types.UID]bool)
+
+	for _, subset := range subsets {
+		for _, epa := range subset.Addresses {
+			if epa.TargetRef != nil {
+				vmToSubsetsMap[epa.TargetRef.UID] = true
+			}
+		}
+	}
+	return vmToSubsetsMap, nil
+}
+
 // TODO: This mapping function has the potential to be a performance and scaling issue.  Consider this as a candidate for profiling
 func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtualMachine(ctx goctx.Context, lookupVm *vmoperatorv1alpha1.VirtualMachine) ([]*vmoperatorv1alpha1.VirtualMachineService, error) {
 	var matchingVmServices []*vmoperatorv1alpha1.VirtualMachineService
@@ -553,75 +553,13 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmSe
 	logger.V(5).Info("Updating VirtualMachineService endpoints")
 	defer logger.V(5).Info("Finished updating VirtualMachineService endpoints")
 
-	vmList, err := r.getVirtualMachinesSelectedByVmService(ctx, vmService)
+	subsets, err := r.generateSubsetsForService(ctx, service, vmService, logger)
 	if err != nil {
 		return err
 	}
 
-	var probeFailureCount int
-	var updateErr error
-	var subsets []corev1.EndpointSubset
-
-	for i := range vmList.Items {
-		vm := vmList.Items[i]
-		logger := logger.WithValues("virtualmachine", vm.NamespacedName())
-		logger.V(5).Info("Resolving ports for VirtualMachine")
-		// Skip VM's marked for deletions
-		if vm.DeletionTimestamp != nil {
-			logger.Info("Skipping VM marked for deletion")
-			continue
-		}
-		// Handle multiple VM interfaces
-		if len(vm.Status.VmIp) == 0 {
-			logger.Info("Failed to find an IP for VirtualMachine")
-			continue
-		}
-		// Ignore if all required values aren't present
-		if vm.Status.Host == "" {
-			logger.Info("Skipping VirtualMachine due to empty host")
-			continue
-		}
-
-		// Ignore VM's that fail the readiness check (only when probes are specified)
-		// TODO: Move this out of the controller into a runnable that periodically probes a VM and manages the endpoints
-		// out-of-band from the controller. We currently rely on the controller's periodic sync to invoke the readiness
-		// probe.
-		if err := runProbe(vmService, &vm, vm.Spec.ReadinessProbe); err != nil {
-			logger.Info("Skipping VirtualMachine due to failed readiness probe check", "probeError", err)
-			probeFailureCount++
-			continue
-		}
-
-		epa := *r.makeEndpointAddress(&vm)
-
-		// TODO: Headless support
-		for _, servicePort := range service.Spec.Ports {
-			portName := servicePort.Name
-			portProto := servicePort.Protocol
-
-			logger.V(5).Info("EndpointPort for VirtualMachine",
-				"port name", portName, "port proto", portProto)
-
-			portNum, err := findPort(&vm, servicePort.TargetPort, portProto)
-			if err != nil {
-				logger.Info("Failed to find port for service",
-					"name", portName, "protocol", portProto, "error", err)
-				continue
-			}
-
-			epp := &corev1.EndpointPort{Name: portName, Port: int32(portNum), Protocol: portProto}
-			subsets = addEndpointSubset(subsets, epa, epp)
-		}
-	}
-
 	// Repack subsets in canonical order so that comparison of two subsets gives consistent results.
 	subsets = endpointsv1.RepackSubsets(subsets)
-
-	// Until is fixed, if probe fails on all selected VM's, we will aggressively requeue until the probe
-	// succeeds on one of them. Note: We don't immediately requeue to allow for updating the endpoint subsets.
-	if probeFailureCount > 0 && probeFailureCount == len(vmList.Items) {
-		updateErr = &RequeueAfterError{RequeueAfter: probeFailureRequeueTime}
-	}
 
 	// See if there's actually an update here.
 	currentEndpoints := &corev1.Endpoints{}
@@ -644,7 +582,7 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmSe
 		// sides for a consistent comparison result. PR: 2623292
 
 		logger.V(5).Info("No change, no need to update endpoints", "endpoints", currentEndpoints)
-		return updateErr
+		return nil
 	}
 
 	newEndpoints := r.makeEndpoints(vmService, currentEndpoints, subsets)
@@ -671,7 +609,90 @@ func (r *ReconcileVirtualMachineService) updateEndpoints(ctx goctx.Context, vmSe
 		}
 		return err
 	}
-	return updateErr
+	return nil
+}
+
+// generateSubsetsForService generates endpoint subsets for a given service.
+func (r *ReconcileVirtualMachineService) generateSubsetsForService(ctx goctx.Context, service *corev1.Service,
+	vmService *vmoperatorv1alpha1.VirtualMachineService, logger logr.Logger) ([]corev1.EndpointSubset, error) {
+	vmList, err := r.getVirtualMachinesSelectedByVmService(ctx, vmService)
+	if err != nil {
+		return []corev1.EndpointSubset{}, err
+	}
+
+	var subsets []corev1.EndpointSubset
+	var vmInSubsetsMap map[types.UID]bool
+	var vmInSubsetsMapSet bool
+
+	for i := range vmList.Items {
+		vm := vmList.Items[i]
+		logger := logger.WithValues("virtualmachine", vm.NamespacedName())
+		logger.V(5).Info("Resolving ports for VirtualMachine")
+		// Skip VM's marked for deletions
+		if !vm.DeletionTimestamp.IsZero() {
+			logger.Info("Skipping VM marked for deletion")
+			continue
+		}
+		// TODO: Handle multiple VM interfaces
+		if len(vm.Status.VmIp) == 0 {
+			logger.Info("Failed to find an IP for VirtualMachine")
+			continue
+		}
+		// Ignore if all required values aren't present
+		if vm.Status.Host == "" {
+			logger.Info("Skipping VirtualMachine due to empty host")
+			continue
+		}
+
+		// Ignore VMs that fail the readiness check (only when probes are specified)
+		// If VM has Ready condition in the status and the value is true, we add the VM to the subset.
+		// If this condition is missing but the probe spec is set, which may happen right after upgrade when it is first released,
+		// we check the service's backing endpoints and determine whether this VM needs to be added to the subset.
+		// If this VM isn't in the old endpoint subsets, we skip it.
+		// Otherwise, we consider this VM as ready and add it to the subset.
+		if vm.Spec.ReadinessProbe != nil {
+			if condition := conditions.Get(&vm, vmoperatorv1alpha1.ReadyCondition); condition == nil {
+				// Ready condition type is missing in VM status
+				// Don't update endpoint subsets for this VM
+				if !vmInSubsetsMapSet {
+					vmInSubsetsMap, err = r.getVMsReferencedByServiceEndpoints(ctx, service)
+					vmInSubsetsMapSet = err == nil
+				}
+
+				if _, ok := vmInSubsetsMap[vm.UID]; !ok {
+					// This VM was not included in service's backing endpoints. We skip it.
+					logger.Info("Skipping VirtualMachine due to missing Ready condition", "name", vm.NamespacedName())
+					continue
+				}
+			} else if condition.Status != corev1.ConditionTrue {
+				logger.Info("Skipping VirtualMachine due to failed readiness probe check", "probeError", condition.Message)
+				continue
+			}
+		}
+
+		epa := *r.makeEndpointAddress(&vm)
+
+		// TODO: Headless support
+		for _, servicePort := range service.Spec.Ports {
+			portName := servicePort.Name
+			portProto := servicePort.Protocol
+
+			logger.V(5).Info("EndpointPort for VirtualMachine",
+				"port name", portName, "port proto", portProto)
+
+			portNum, err := findPort(&vm, servicePort.TargetPort, portProto)
+			if err != nil {
+				logger.Info("Failed to find port for service",
+					"name", portName, "protocol", portProto, "error", err)
+				continue
+			}
+
+			epp := &corev1.EndpointPort{Name: portName, Port: int32(portNum), Protocol: portProto}
+			subsets = addEndpointSubset(subsets, epa, epp)
+		}
+	}
+
+	return subsets, nil
 }
 
 // updateVmServiceStatus updates the VirtualMachineService status, syncs external IP for loadbalancer type of service. Also ensures that VirtualMachineService contains the VM operator annotations.
@@ -714,57 +735,6 @@ func (r *ReconcileVirtualMachineService) updateVmService(ctx goctx.Context, vmSe
 		}
 	}
 
-	return nil
-}
-
-func runProbe(vmService *vmoperatorv1alpha1.VirtualMachineService, vm *vmoperatorv1alpha1.VirtualMachine, p *vmoperatorv1alpha1.Probe) error {
-	var log = logf.Log.WithName(ControllerName)
-
-	logger := log.WithValues("serviceName", vmService.NamespacedName(), "vm", vm.NamespacedName())
-	if p == nil {
-		logger.V(5).Info("Readiness probe not specified")
-		return nil
-	}
-	if p.TCPSocket != nil {
-		portProto := corev1.ProtocolTCP
-		portNum, err := findPort(vm, p.TCPSocket.Port, portProto)
-		if err != nil {
-			return err
-		}
-
-		var host string
-		if p.TCPSocket.Host != "" {
-			host = p.TCPSocket.Host
-		} else {
-			logger.V(5).Info("TCPSocket Host not specified, using VM IP")
-			host = vm.Status.VmIp
-		}
-
-		var timeout time.Duration
-		if p.TimeoutSeconds <= 0 {
-			timeout = defaultConnectTimeout
-		} else {
-			timeout = time.Duration(p.TimeoutSeconds) * time.Second
-		}
-
-		if err := checkConnection("tcp", host, strconv.Itoa(portNum), timeout); err != nil {
-			return err
-		}
-		logger.V(5).Info("Readiness probe succeeded")
-		return nil
-	}
-	return fmt.Errorf("unknown action specified for probe in VirtualMachine %s", vm.NamespacedName())
-}
-
-func checkConnection(proto, host, port string, timeout time.Duration) error {
-	address := net.JoinHostPort(host, port)
-	conn, err := net.DialTimeout(proto, address, timeout)
-	if err != nil {
-		return err
-	}
-	if err := conn.Close(); err != nil {
-		return err
-	}
 	return nil
 }
 

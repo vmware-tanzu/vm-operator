@@ -163,16 +163,17 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 	var networkNames = map[string]struct{}{}
 
 	for i, nif := range vm.Spec.NetworkInterfaces {
-		if nif.NetworkName == "" {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, i))
-		}
 		switch nif.NetworkType {
-		case vsphere.NsxtNetworkType, vsphere.VdsNetworkType, "":
+		case vsphere.NsxtNetworkType, "":
+		case vsphere.VdsNetworkType:
+			if nif.NetworkName == "" {
+				validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, i))
+			}
 		default:
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, i))
 		}
 		if _, ok := networkNames[nif.NetworkName]; ok {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, nif.NetworkName))
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, i))
 		}
 		networkNames[nif.NetworkName] = struct{}{}
 	}

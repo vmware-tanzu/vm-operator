@@ -6,7 +6,6 @@ package worker
 import (
 	goctx "context"
 	"fmt"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/workqueue"
@@ -57,16 +56,25 @@ func (w *readinessWorker) GetQueue() workqueue.DelayingInterface {
 	return w.queue
 }
 
-func (w *readinessWorker) AddAfterToQueue(item client.ObjectKey, periodSeconds int32) {
-	if periodSeconds <= 0 {
-		w.queue.Add(item)
-		return
+// CreateProbeContext creates a probe context for readiness probe.
+func (w *readinessWorker) CreateProbeContext(vm *vmopv1alpha1.VirtualMachine) (*context.ProbeContext, error) {
+	patchHelper, err := patch.NewHelper(vm, w.client)
+	if err != nil {
+		return nil, err
 	}
-	w.queue.AddAfter(item, time.Duration(periodSeconds)*time.Second)
+
+	return &context.ProbeContext{
+		Context:     goctx.Background(),
+		Logger:      ctrl.Log.WithName("readiness-probe").WithValues("vmName", vm.NamespacedName()),
+		PatchHelper: patchHelper,
+		VM:          vm,
+		ProbeSpec:   vm.Spec.ReadinessProbe,
+		ProbeType:   "readiness",
+	}, nil
 }
 
-// ProcessProbeResult processes probe results to get VirtualMachineReady condition value and
-// sets the VirtualMachineReady condition in vm status if the new condition status is a transition.
+// ProcessProbeResult processes probe results to get ReadyCondition and
+// sets the ReadyCondition in vm status if the new condition status is a transition.
 func (w *readinessWorker) ProcessProbeResult(ctx *context.ProbeContext, res probe.Result, resErr error) error {
 	vm := ctx.VM
 	condition := w.getCondition(res, resErr)
@@ -93,39 +101,12 @@ func (w *readinessWorker) ProcessProbeResult(ctx *context.ProbeContext, res prob
 	return nil
 }
 
-func (w *readinessWorker) DoProbe(vm *vmopv1alpha1.VirtualMachine) error {
-	ctx, err := w.createProbeContext(vm)
-	if err != nil {
-		return err
-	}
-
-	if ctx.ProbeSpec == nil {
-		ctx.Logger.V(4).Info("readiness probe not specified")
-		return nil
-	}
-
+func (w *readinessWorker) DoProbe(ctx *context.ProbeContext) error {
 	res, err := w.runProbe(ctx)
 	if err != nil {
 		ctx.Logger.Error(err, "readiness probe fails")
 	}
 	return w.ProcessProbeResult(ctx, res, err)
-}
-
-// createProbeContext creates a probe context for readiness probe.
-func (w *readinessWorker) createProbeContext(vm *vmopv1alpha1.VirtualMachine) (*context.ProbeContext, error) {
-	patchHelper, err := patch.NewHelper(vm, w.client)
-	if err != nil {
-		return nil, err
-	}
-
-	return &context.ProbeContext{
-		Context:     goctx.Background(),
-		Logger:      ctrl.Log.WithName("readiness-probe").WithValues("vmName", vm.NamespacedName()),
-		PatchHelper: patchHelper,
-		VM:          vm,
-		ProbeSpec:   vm.Spec.ReadinessProbe,
-		ProbeType:   "readiness",
-	}, nil
 }
 
 // getProbe returns a specific type of probe method.

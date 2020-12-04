@@ -19,6 +19,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
@@ -101,6 +102,7 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidNetworkName {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkName = ""
+			ctx.vm.Spec.NetworkInterfaces[0].NetworkType = vsphere.VdsNetworkType
 		}
 		if args.invalidNetworkType {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkType = "bogusNetworkType"
@@ -176,10 +178,10 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid class name", createArgs{invalidClassName: true}, false, messages.ClassNotSpecified, nil),
 		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false, messages.ImageNotSpecified, nil),
 		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSCustomizationNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
-		Entry("should deny invalid network name", createArgs{invalidNetworkName: true}, false, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, 0), nil),
+		Entry("should deny invalid network name for VDS network type", createArgs{invalidNetworkName: true}, false, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, 0), nil),
 		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0), nil),
 		Entry("should deny connection of multiple network interfaces of a VM to the same network", createArgs{multipleNetIfToSameNetwork: true},
-			false, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, builder.DummyNetworkName), nil),
+			false, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, 1), nil),
 		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameNotSpecifiedFmt, 0), nil),
 		Entry("should deny duplicated volume names", createArgs{dupVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameDuplicateFmt, 1), nil),
 		Entry("should deny invalid volume source spec", createArgs{invalidVolumeSource: true}, false, fmt.Sprintf(messages.VolumeNotSpecifiedFmt, 0, 0), nil),

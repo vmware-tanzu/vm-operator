@@ -5,7 +5,6 @@ package worker
 
 import (
 	"k8s.io/client-go/util/workqueue"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -16,7 +15,7 @@ import (
 // Worker represents a prober worker interface.
 type Worker interface {
 	GetQueue() workqueue.DelayingInterface
-	AddAfterToQueue(item client.ObjectKey, periodSeconds int32)
-	DoProbe(vm *vmopv1alpha1.VirtualMachine) error
+	CreateProbeContext(vm *vmopv1alpha1.VirtualMachine) (*context.ProbeContext, error)
+	DoProbe(ctx *context.ProbeContext) error
 	ProcessProbeResult(ctx *context.ProbeContext, res probe.Result, resErr error) error
 }

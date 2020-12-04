@@ -6,12 +6,15 @@ package prober
 import (
 	goctx "context"
 	"fmt"
+	"reflect"
+	"sync"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/go-logr/logr"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -29,11 +32,17 @@ const (
 	// defaultPeriodSeconds represents the default value for the frequency (in seconds) to perform the probe.
 	// We use the same default value as the kubernetes container probe.
 	defaultPeriodSeconds = 10
+
+	// the number of readiness workers.
+	// TODO: find a way to calibrate it.
+	numberOfReadinessWorkers = 5
 )
 
 // Manager represents a prober manager interface.
-// TODO: add runnable interface and other functions
 type Manager interface {
+	ctrlmgr.Runnable
+	AddToProberManager(vm *vmoperatorv1alpha1.VirtualMachine)
+	RemoveFromProberManager(vm *vmoperatorv1alpha1.VirtualMachine)
 }
 
 // manager represents the probe manager, which implements the ManagerInterface.
@@ -43,18 +52,102 @@ type manager struct {
 	prober         *probe.Prober
 	log            logr.Logger
 	recorder       vmoprecord.Recorder
+
+	workersWG sync.WaitGroup
+
+	// We will use AddAfter to add an item to the queue, which will insert the item to a heap first
+	// if the time duration set in the AddAfter is not zero. vmReadinessProbeList can be used to avoid
+	// adding VMs to the readiness queue when this VM is already in the heap but not in the queue.
+	readinessMutex       sync.Mutex
+	vmReadinessProbeList map[string]*vmoperatorv1alpha1.Probe
 }
 
 // NewManger initializes a prober manager.
 func NewManger(client client.Client, record vmoprecord.Recorder) Manager {
 	probeManager := &manager{
-		client:         client,
-		readinessQueue: workqueue.NewNamedDelayingQueue(readinessProbeQueueName),
-		prober:         probe.NewProber(),
-		log:            ctrl.Log.WithName(proberManagerName),
-		recorder:       record,
+		client:               client,
+		readinessQueue:       workqueue.NewNamedDelayingQueue(readinessProbeQueueName),
+		prober:               probe.NewProber(),
+		log:                  ctrl.Log.WithName(proberManagerName),
+		recorder:             record,
+		vmReadinessProbeList: make(map[string]*vmoperatorv1alpha1.Probe),
 	}
 	return probeManager
+}
+
+// AddToVirtualMachineController adds the probe manager to the vm controller.
+func AddToVirtualMachineController(mgr ctrlmgr.Manager) (Manager, error) {
+	probeRecorder := vmoprecord.New(mgr.GetEventRecorderFor(proberManagerName))
+	m := NewManger(mgr.GetClient(), probeRecorder)
+
+	// Add the probe manager explicitly as runnable in order to receive a Start() event.
+	err := mgr.Add(m)
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// AddToProberManager adds a VM to the prober manager.
+func (m *manager) AddToProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
+	m.log.V(4).Info("Add to prober manager", "vm", vm.NamespacedName())
+	m.readinessMutex.Lock()
+	defer m.readinessMutex.Unlock()
+
+	if vm.Spec.ReadinessProbe != nil {
+		// if the VM is not in the list, or its readiness probe spec has been updated, immediately add it to the queue
+		// otherwise, ignore it.
+		newProbe := vm.Spec.ReadinessProbe
+		if oldProbe, ok := m.vmReadinessProbeList[vm.NamespacedName()]; ok && reflect.DeepEqual(oldProbe, newProbe) {
+			m.log.V(4).Info("VM is already in the readiness probe list and its probe spec is not updated, skip it", "vm", vm.NamespacedName())
+			return
+		}
+
+		m.readinessQueue.Add(client.ObjectKey{Name: vm.Name, Namespace: vm.Namespace})
+		m.vmReadinessProbeList[vm.NamespacedName()] = newProbe
+	} else {
+		delete(m.vmReadinessProbeList, vm.NamespacedName())
+	}
+}
+
+// RemoveFromProberManager removes a VM from the prober manager.
+func (m *manager) RemoveFromProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
+	m.log.V(4).Info("Remove from prober manager", "vm", vm.NamespacedName())
+	m.readinessMutex.Lock()
+	defer m.readinessMutex.Unlock()
+
+	delete(m.vmReadinessProbeList, vm.NamespacedName())
+}
+
+// Start starts the probe manager
+func (m *manager) Start(stopChan <-chan struct{}) error {
+	m.log.Info("Start VirtualMachine Probe Manager")
+	defer m.log.Info("Stop VirtualMachine Probe Manager")
+
+	m.log.Info("Starting readiness workers", "count", numberOfReadinessWorkers)
+	m.workersWG.Add(numberOfReadinessWorkers)
+	for i := 0; i < numberOfReadinessWorkers; i++ {
+		readinessWorker := worker.NewReadinessWorker(m.readinessQueue, m.prober, m.client, m.recorder)
+		m.worker(readinessWorker)
+	}
+
+	<-stopChan
+	m.readinessQueue.ShutDown()
+	m.workersWG.Wait()
+	return nil
+}
+
+// worker starts the probe manager workers, which are used to process items from queues.
+func (m *manager) worker(in worker.Worker) {
+	go func() {
+		defer m.workersWG.Done()
+
+		for {
+			if quit := m.processItemFromQueue(in); quit {
+				return
+			}
+		}
+	}()
 }
 
 // processItemFromQueue gets a VM from a probe queue and processes the VM.
@@ -95,9 +188,8 @@ func (m *manager) processItemFromQueue(w worker.Worker) bool {
 	}
 
 	err = m.processVMProbe(w, ctx)
-	// Set addAfter as true if there is no error. Immediately re-queue the request if error occurs.
-	addAfter := err == nil
-	m.addItemToQueue(queue, ctx, addAfter)
+	// Immediately re-queue the request if error occurs.
+	m.addItemToQueue(queue, ctx, item, err != nil)
 
 	return false
 }
@@ -114,13 +206,10 @@ func (m *manager) processVMProbe(w worker.Worker, ctx *context.ProbeContext) err
 	return w.DoProbe(ctx)
 }
 
-// addItemToQueue adds the vm to the queue. If addAfter is false, immediately add the item.
+// addItemToQueue adds the vm to the queue. If immediate is true, immediately add the item.
 // Otherwise, add to queue after a time period.
-func (m *manager) addItemToQueue(queue workqueue.DelayingInterface, ctx *context.ProbeContext, addAfter bool) {
-	vm := ctx.VM
-	item := client.ObjectKey{Name: vm.Name, Namespace: vm.Namespace}
-	if !addAfter {
-		// if fails to update conditions in VM status, immediately re-queue the request
+func (m *manager) addItemToQueue(queue workqueue.DelayingInterface, ctx *context.ProbeContext, item client.ObjectKey, immediate bool) {
+	if immediate {
 		queue.Add(item)
 	} else {
 		periodSeconds := ctx.ProbeSpec.PeriodSeconds

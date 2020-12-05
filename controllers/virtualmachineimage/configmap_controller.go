@@ -5,31 +5,29 @@ package virtualmachineimage
 
 import (
 	goctx "context"
-	"reflect"
-
-	"github.com/go-logr/logr"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/go-logr/logr"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
-)
-
-const (
-	OpDeleteVMOpConfig      = "DeleteVMOpConfigMap"
-	ConfigMapControllerName = "configmapconfig-controller"
 )
 
 // AddToManager adds the ConfigMap controller and VirtualMachineImage controller to the manager.
@@ -43,65 +41,71 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 // addConfigMapControllerToManager adds the ConfigMap controller to manager.
 func addConfigMapControllerToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
-	var (
-		controlledType     = &corev1.ConfigMap{}
-		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
-	)
+	controllerName := "virtualmachineimage-configmap"
 
 	r := NewCMReconciler(
 		mgr.GetClient(),
-		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
-		ctx.Namespace,
+		ctrl.Log.WithName("controllers").WithName(controllerName),
 		ctx.VmProvider,
 	)
 
-	return ctrl.NewControllerManagedBy(mgr).
-		For(controlledType).
-		WithEventFilter(
-			predicate.Funcs{
-				// Queue a reconcile if the ConfigMap is created with a non empty ContentSource key.
-				CreateFunc: func(e event.CreateEvent) bool {
-					return e.Meta.GetName() == vsphere.ProviderConfigMapName &&
-						e.Meta.GetNamespace() == r.vmOpNamespace &&
-						e.Object.(*corev1.ConfigMap).Data[vsphere.ContentSourceKey] != ""
-				},
-				// Queue a reconcile if the ContentSource key has been updated.
-				UpdateFunc: func(e event.UpdateEvent) bool {
-					return e.MetaOld.GetName() == vsphere.ProviderConfigMapName &&
-						e.MetaOld.GetNamespace() == r.vmOpNamespace &&
-						e.ObjectOld.(*corev1.ConfigMap).Data[vsphere.ContentSourceKey] !=
-							e.ObjectNew.(*corev1.ConfigMap).Data[vsphere.ContentSourceKey]
-				},
-				// Ignore a CM deletion since without a provider CM, VM operator cannot function anyway.
-				DeleteFunc: func(e event.DeleteEvent) bool {
-					return false
-				},
-				GenericFunc: func(e event.GenericEvent) bool {
-					return false
-				},
+	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
+	if err != nil {
+		return err
+	}
+
+	err = addConfigMapWatch(mgr, c, ctx.SyncPeriod, ctx.Namespace)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod time.Duration, ns string) error {
+	nsCache, err := pkgmgr.NewNamespaceCache(mgr, &syncPeriod, ns)
+	if err != nil {
+		return err
+	}
+
+	return c.Watch(source.NewKindWithCache(&corev1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
+		predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return e.Meta.GetName() == vsphere.ProviderConfigMapName &&
+					e.Object.(*corev1.ConfigMap).Data[vsphere.ContentSourceKey] != ""
 			},
-		).Complete(r)
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				return e.MetaOld.GetName() == vsphere.ProviderConfigMapName &&
+					e.ObjectOld.(*corev1.ConfigMap).Data[vsphere.ContentSourceKey] !=
+						e.ObjectNew.(*corev1.ConfigMap).Data[vsphere.ContentSourceKey]
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				return false
+			},
+			GenericFunc: func(e event.GenericEvent) bool {
+				return false
+			},
+		},
+		predicate.ResourceVersionChangedPredicate{},
+	)
 }
 
 func NewCMReconciler(
 	client client.Client,
 	logger logr.Logger,
-	vmOpNamespace string,
 	vmProvider vmprovider.VirtualMachineProviderInterface) *ConfigMapReconciler {
 
 	return &ConfigMapReconciler{
-		Client:        client,
-		Logger:        logger,
-		vmOpNamespace: vmOpNamespace,
-		vmProvider:    vmProvider,
+		Client:     client,
+		Logger:     logger,
+		vmProvider: vmProvider,
 	}
 }
 
 type ConfigMapReconciler struct {
 	client.Client
-	Logger        logr.Logger
-	vmOpNamespace string
-	vmProvider    vmprovider.VirtualMachineProviderInterface
+	Logger     logr.Logger
+	vmProvider vmprovider.VirtualMachineProviderInterface
 }
 
 func (r *ConfigMapReconciler) CreateContentSourceResources(ctx goctx.Context, clUUID string) error {
@@ -182,8 +186,8 @@ func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *corev1.Conf
 		return err
 	}
 
-	clUUID, ok := cm.Data[vsphere.ContentSourceKey]
-	if !ok || clUUID == "" {
+	clUUID := cm.Data[vsphere.ContentSourceKey]
+	if clUUID == "" {
 		r.Logger.V(4).Info("ContentSource key not found/unset in provider ConfigMap. No op reconcile",
 			"configMapNamespace", cm.Namespace, "configMapName", cm.Name)
 		return nil

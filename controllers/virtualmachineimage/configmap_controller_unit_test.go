@@ -44,7 +44,6 @@ func unitTestsCM() {
 			reconciler = virtualmachineimage.NewCMReconciler(
 				ctx.Client,
 				ctx.Logger,
-				ctx.Namespace,
 				ctx.VmProvider,
 			)
 		})

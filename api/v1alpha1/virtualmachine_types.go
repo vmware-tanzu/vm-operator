@@ -71,8 +71,10 @@ type VirtualMachineNetworkInterface struct {
 	NetworkType string `json:"networkType,omitempty"`
 
 	// NetworkName describes the name of an existing virtual network that this interface should be added to.  For
-	// NSX-T networks, this is the name of a pre-existing NSX-T VirtualNetwork.
-	NetworkName string `json:"networkName"`
+	// NSX-T networks, this is the name of a pre-existing NSX-T VirtualNetwork. If unspecified, the network
+	// interface provider will connect this interface to the default network for the namespace.
+	// +optional
+	NetworkName string `json:"networkName,omitempty"`
 
 	// ProviderRef is reference to a network interface provider object that specifies the network interface configuration.
 	// If unset, default configuration is assumed.

@@ -541,7 +541,7 @@ func unitTestsReconcile() {
 				vm.Spec.StorageClass = storageClass.Name
 			})
 
-			When("ResourceQuotas exists but no StorageClass", func() {
+			When("StorageClass does not exist", func() {
 				BeforeEach(func() {
 					initObjects = append(initObjects, resourceQuota)
 				})
@@ -552,34 +552,7 @@ func unitTestsReconcile() {
 				})
 			})
 
-			When("StorageClass exists but no ResourceQuotas", func() {
-				BeforeEach(func() {
-					initObjects = append(initObjects, storageClass)
-				})
-
-				It("returns an error", func() {
-					err := reconciler.ReconcileNormal(vmCtx)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("no ResourceQuotas assigned to namespace"))
-				})
-			})
-
-			When("StorageClass exists but not assigned to ResourceQuota", func() {
-				BeforeEach(func() {
-					resourceQuota.Spec.Hard = corev1.ResourceList{
-						"blah.storageclass.storage.k8s.io/persistentvolumeclaims": resource.MustParse("42"),
-					}
-					initObjects = append(initObjects, storageClass, resourceQuota)
-				})
-
-				It("returns an error", func() {
-					err := reconciler.ReconcileNormal(vmCtx)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("is not assigned to any ResourceQuotas"))
-				})
-			})
-
-			When("StorageClass exists and is assigned to ResourceQuota", func() {
+			When("StorageClass exists", func() {
 				BeforeEach(func() {
 					initObjects = append(initObjects, storageClass, resourceQuota)
 				})

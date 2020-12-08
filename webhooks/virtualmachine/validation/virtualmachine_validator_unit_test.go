@@ -88,6 +88,9 @@ func unitTestsValidateCreate() {
 		invalidMetadataConfigMap   bool
 		invalidVsphereVolumeSource bool
 		invalidVmVolumeProvOpts    bool
+		invalidStorageClass        bool
+		invalidResourceQuota       bool
+		validStorageClass          bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -162,6 +165,25 @@ func unitTestsValidateCreate() {
 				},
 			}
 		}
+		// StorageClass specifies but not assigned to ResourceQuota
+		if args.invalidStorageClass {
+			ctx.vm.Spec.StorageClass = "invalid"
+			rlName := builder.DummyStorageClassName + ".storageclass.storage.k8s.io/persistentvolumeclaims"
+			resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
+			Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
+		}
+		// StorageClass specifies but no ResourceQuotas
+		if args.invalidResourceQuota {
+			ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
+		}
+		// StorageClass specifies and is assigned to ResourceQuota
+		if args.validStorageClass {
+			ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
+			storageClass := builder.DummyStorageClass()
+			rlName := storageClass.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
+			resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
+			Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
+		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
@@ -203,6 +225,9 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVmVolumeProvOpts: true}, false, fmt.Sprintf(messages.EagerZeroedAndThinProvisionedNotSupported), nil),
 		Entry("should deny invalid vmMetadata transport", createArgs{invalidMetadataTransport: true}, false, messages.MetadataTransportNotSupported, nil),
 		Entry("should deny invalid vmMetadata configmap", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
+		Entry("should deny invalid resource quota", createArgs{invalidResourceQuota: true}, false, fmt.Sprintf(messages.NoResourceQuota, ""), nil),
+		Entry("should deny invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, "invalid", ""), nil),
+		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
 	)
 }
 

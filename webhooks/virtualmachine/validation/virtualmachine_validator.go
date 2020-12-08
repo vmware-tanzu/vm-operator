@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -32,7 +33,8 @@ import (
 )
 
 const (
-	webHookName = "default"
+	webHookName                    = "default"
+	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha1,name=default.validating.virtualmachine.vmoperator.vmware.com,sideEffects=None
@@ -79,6 +81,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	validationErrs = append(validationErrs, v.validateMetadata(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateImage(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateClass(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateStorageClass(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVmVolumeProvisioningOptions(ctx, vm)...)
@@ -158,6 +161,38 @@ func (v validator) validateClass(ctx *context.WebhookRequestContext, vm *vmopv1.
 		return []string{messages.ClassNotSpecified}
 	}
 
+	return validationErrs
+}
+
+func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
+	if vm.Spec.StorageClass == "" {
+		return nil
+	}
+
+	var validationErrs []string
+	scName := vm.Spec.StorageClass
+	namespace := vm.Namespace
+
+	resourceQuotas := &v1.ResourceQuotaList{}
+	if err := v.client.List(ctx, resourceQuotas, client.InNamespace(namespace)); err != nil {
+		validationErrs = append(validationErrs, fmt.Sprintf("error validating storageClass: %v", err))
+		return validationErrs
+	}
+
+	if len(resourceQuotas.Items) == 0 {
+		validationErrs = append(validationErrs, fmt.Sprintf("no ResourceQuotas assigned to namespace %s", namespace))
+		return validationErrs
+	}
+
+	prefix := scName + storageResourceQuotaStrPattern
+	for _, resourceQuota := range resourceQuotas.Items {
+		for resourceName := range resourceQuota.Spec.Hard {
+			if strings.HasPrefix(resourceName.String(), prefix) {
+				return validationErrs
+			}
+		}
+	}
+	validationErrs = append(validationErrs, fmt.Sprintf("StorageClass %s is not assigned to any ResourceQuotas in namespace %s", scName, namespace))
 	return validationErrs
 }
 

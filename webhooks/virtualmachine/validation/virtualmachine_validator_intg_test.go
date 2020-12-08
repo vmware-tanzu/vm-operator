@@ -53,6 +53,7 @@ func intgTestsValidateCreate() {
 		gOSCSkipAnnotation       bool
 		invalidMetadataTransport bool
 		invalidMetadataConfigMap bool
+		invalidStorageClass      bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -91,6 +92,15 @@ func intgTestsValidateCreate() {
 		if args.invalidMetadataConfigMap {
 			vm.Spec.VmMetadata.ConfigMapName = ""
 		}
+		// StorageClass specifies but not assigned to ResourceQuota
+		if args.invalidStorageClass {
+			vm.Spec.StorageClass = builder.DummyStorageClassName
+			storageClass := builder.DummyStorageClass()
+			rlName := "blah.storageclass.storage.k8s.io/persistentvolumeclaims"
+			resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
+			Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
+		}
 
 		err := ctx.Client.Create(ctx, vm)
 		if expectedAllowed {
@@ -124,6 +134,7 @@ func intgTestsValidateCreate() {
 		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSCustomizationNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
 		Entry("should not work for invalid metadata transport", createArgs{invalidMetadataTransport: true}, false, "spec.vmmetadata.transport is not supported", nil),
 		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmmetadata.configmapname must be specified", nil),
+		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, builder.DummyStorageClassName, ""), nil),
 	)
 }
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -17,14 +18,16 @@ import (
 )
 
 const (
-	DummyImageName      = "dummy-image-name"
-	DummyClassName      = "dummyClassName"
-	DummyNetworkName    = "dummyNetworkName"
-	DummyVolumeName     = "dummy-volume-name"
-	DummyPVCName        = "dummyPVCName"
-	DummyMetadataCMName = "dummyMetadataCMName"
-	DummyDistroVersion  = "dummyDistroVersion"
-	DummyOSType         = "dummy-osType"
+	DummyImageName         = "dummy-image-name"
+	DummyClassName         = "dummyClassName"
+	DummyNetworkName       = "dummyNetworkName"
+	DummyVolumeName        = "dummy-volume-name"
+	DummyPVCName           = "dummyPVCName"
+	DummyMetadataCMName    = "dummyMetadataCMName"
+	DummyDistroVersion     = "dummyDistroVersion"
+	DummyOSType            = "dummy-osType"
+	DummyStorageClassName  = "dummy-storage-class"
+	DummyResourceQuotaName = "dummy-resource-quota"
 )
 
 var (
@@ -158,6 +161,32 @@ func DummyVirtualMachineImage(imageName string) *vmopv1.VirtualMachineImage {
 		},
 		Status: vmopv1.VirtualMachineImageStatus{
 			InternalId: DummyImageName,
+		},
+	}
+}
+
+func DummyStorageClass() *storagev1.StorageClass {
+	return &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: DummyStorageClassName,
+		},
+		Provisioner: "foo",
+		Parameters: map[string]string{
+			"storagePolicyID": "id42",
+		},
+	}
+}
+
+func DummyResourceQuota(namespace, rlName string) *corev1.ResourceQuota {
+	return &corev1.ResourceQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      DummyResourceQuotaName,
+			Namespace: namespace,
+		},
+		Spec: corev1.ResourceQuotaSpec{
+			Hard: corev1.ResourceList{
+				corev1.ResourceName(rlName): resource.MustParse("1"),
+			},
 		},
 	}
 }

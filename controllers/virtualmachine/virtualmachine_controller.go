@@ -35,10 +35,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
-const (
-	finalizerName                  = "virtualmachine.vmoperator.vmware.com"
-	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
-)
+const finalizerName = "virtualmachine.vmoperator.vmware.com"
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
@@ -251,42 +248,14 @@ func (r *VirtualMachineReconciler) ReconcileNormal(ctx *context.VirtualMachineCo
 	return nil
 }
 
-func (r *VirtualMachineReconciler) validateStorageClass(ctx *context.VirtualMachineContext, namespace, scName string) error {
-	resourceQuotas := &v1.ResourceQuotaList{}
-	if err := r.List(ctx, resourceQuotas, client.InNamespace(namespace)); err != nil {
-		ctx.Logger.Error(err, "Failed to list ResourceQuotas in namespace", "namespace", namespace)
-		return err
-	}
-
-	if len(resourceQuotas.Items) == 0 {
-		return fmt.Errorf("no ResourceQuotas assigned to namespace %s", namespace)
-	}
-
-	prefix := scName + storageResourceQuotaStrPattern
-	for _, resourceQuota := range resourceQuotas.Items {
-		for resourceName := range resourceQuota.Spec.Hard {
-			if strings.HasPrefix(resourceName.String(), prefix) {
-				return nil
-			}
-		}
-	}
-
-	return fmt.Errorf("StorageClass %s is not assigned to any ResourceQuotas in namespace %s", scName, namespace)
-}
-
 func (r *VirtualMachineReconciler) getStoragePolicyID(ctx *context.VirtualMachineContext) (string, error) {
 	scName := ctx.VM.Spec.StorageClass
 	if scName == "" {
 		return "", nil
 	}
 
-	err := r.validateStorageClass(ctx, ctx.VM.Namespace, scName)
-	if err != nil {
-		return "", err
-	}
-
 	sc := &storagev1.StorageClass{}
-	err = r.Get(ctx, client.ObjectKey{Name: scName}, sc)
+	err := r.Get(ctx, client.ObjectKey{Name: scName}, sc)
 	if err != nil {
 		ctx.Logger.Error(err, "Failed to get StorageClass", "storageClass", scName)
 		return "", err

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -130,8 +131,12 @@ func unitTestsReconcile() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
+		// Explicitly set the max reconciler threads, otherwise it defaults to 0 and the reconciler thinks
+		// no VM creations are allowed.
+		ctx.MaxConcurrentReconciles = 1
 		reconciler = virtualmachine.NewReconciler(
 			ctx.Client,
+			ctx.MaxConcurrentReconciles,
 			ctx.Logger,
 			ctx.Recorder,
 			ctx.VmProvider,
@@ -292,6 +297,26 @@ func unitTestsReconcile() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
 			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Created))
+		})
+
+		When("number of reconcilers creating VirtualMachines on the provider are more than the configured threshold", func() {
+
+			var isCalled int32
+
+			It("does not call into the provider to create the new VM", func() {
+				intgFakeVmProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+					atomic.AddInt32(&isCalled, 1)
+					return nil
+				}
+
+				// Simulate a recociler that does not have any threads available to update the status of existing VMs.
+				reconciler.NumVMsBeingCreatedOnProvider = 1
+				reconciler.MaxConcurrentCreateVMsOnProvider = 0
+
+				err := reconciler.ReconcileNormal(vmCtx)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(isCalled).To(Equal(int32(0)))
+			})
 		})
 
 		It("will return error when provider fails to create VM", func() {

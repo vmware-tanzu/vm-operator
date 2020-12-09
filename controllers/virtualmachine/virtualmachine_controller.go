@@ -6,8 +6,10 @@ package virtualmachine
 import (
 	goctx "context"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -48,6 +50,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 	r := NewReconciler(
 		mgr.GetClient(),
+		ctx.MaxConcurrentReconciles,
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		ctx.VmProvider,
@@ -61,15 +64,21 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 func NewReconciler(
 	client client.Client,
+	numReconcilers int,
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider vmprovider.VirtualMachineProviderInterface) *VirtualMachineReconciler {
 
+	// Limit the maximum number of VirtualMachine creates by the provider. Calculated as MAX_CREATE_VMS_ON_PROVIDER
+	// (default 80) percent of the total number of reconciler threads.
+	maxConcurrentCreateVMsOnProvider := int(math.Ceil((float64(numReconcilers) * float64(lib.MaxConcurrentCreateVMsOnProvider())) / float64(100)))
+
 	return &VirtualMachineReconciler{
-		Client:     client,
-		Logger:     logger,
-		Recorder:   recorder,
-		VmProvider: vmProvider,
+		Client:                           client,
+		Logger:                           logger,
+		Recorder:                         recorder,
+		VmProvider:                       vmProvider,
+		MaxConcurrentCreateVMsOnProvider: maxConcurrentCreateVMsOnProvider,
 	}
 }
 
@@ -79,6 +88,13 @@ type VirtualMachineReconciler struct {
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VmProvider vmprovider.VirtualMachineProviderInterface
+	// To manipulate the number of VMs being created on provider.
+	mutex sync.Mutex
+	// Number of VMs being created on the provider.
+	NumVMsBeingCreatedOnProvider int
+	// Max number of concurrent VM create operations allowed on the provider.
+	// TODO: Remove once we have a tuned number from scale testing.
+	MaxConcurrentCreateVMsOnProvider int
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;create;update;patch;delete
@@ -143,6 +159,12 @@ func (r *VirtualMachineReconciler) Reconcile(req ctrl.Request) (_ ctrl.Result, r
 // TODO: the VM IP isn't available rather than up here in the reconcile loop.  However, in the interest of time, we are making
 // TODO: this determination here and will have to refactor at some later date.
 func requeueDelay(ctx *context.VirtualMachineContext) time.Duration {
+	// If the VM is in Creating phase, the reconciler has run out of threads to Create VMs on the provider. Do not queue
+	// immediately to avoid exponential backoff.
+	if ctx.VM.Status.Phase == vmopv1alpha1.Creating {
+		return 10 * time.Second
+	}
+
 	if ctx.VM.Status.VmIp == "" && ctx.VM.Status.PowerState == vmopv1alpha1.VirtualMachinePoweredOn {
 		return 10 * time.Second
 	}
@@ -414,7 +436,29 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 	}
 
 	if !exists {
+		// Set the phase to Creating first so we do not queue the reconcile immediately if we do not have threads available.
 		vm.Status.Phase = vmopv1alpha1.Creating
+
+		// Return and requeue the reconcile request so the provider has reconciler threads available to update the Status of
+		// existing VirtualMachines.
+		// Ignore overflow since we never expect this to go beyond 32 bits.
+		r.mutex.Lock()
+
+		if r.NumVMsBeingCreatedOnProvider >= r.MaxConcurrentCreateVMsOnProvider {
+			ctx.Logger.Info("Not enough workers to update VirtualMachine status. Re-queueing the reconcile request")
+			// Return nil here so we don't requeue immediately and cause an exponential backoff.
+			r.mutex.Unlock()
+			return nil
+		}
+
+		r.NumVMsBeingCreatedOnProvider += 1
+		r.mutex.Unlock()
+
+		defer func() {
+			r.mutex.Lock()
+			r.NumVMsBeingCreatedOnProvider -= 1
+			r.mutex.Unlock()
+		}()
 
 		err = r.VmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 		if err != nil {

@@ -10,8 +10,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -45,6 +47,7 @@ func addConfigMapControllerToManager(ctx *context.ControllerManagerContext, mgr 
 
 	r := NewCMReconciler(
 		mgr.GetClient(),
+		mgr.GetScheme(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
 		ctx.VmProvider,
 	)
@@ -92,11 +95,13 @@ func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod 
 
 func NewCMReconciler(
 	client client.Client,
+	scheme *runtime.Scheme,
 	logger logr.Logger,
 	vmProvider vmprovider.VirtualMachineProviderInterface) *ConfigMapReconciler {
 
 	return &ConfigMapReconciler{
 		Client:     client,
+		scheme:     scheme,
 		Logger:     logger,
 		vmProvider: vmProvider,
 	}
@@ -104,6 +109,7 @@ func NewCMReconciler(
 
 type ConfigMapReconciler struct {
 	client.Client
+	scheme     *runtime.Scheme
 	Logger     logr.Logger
 	vmProvider vmprovider.VirtualMachineProviderInterface
 }
@@ -133,11 +139,17 @@ func (r *ConfigMapReconciler) CreateContentSourceResources(ctx goctx.Context, cl
 		},
 	}
 
+	gvk, err := apiutil.GVKForObject(clProvider, r.scheme)
+	if err != nil {
+		r.Logger.Error(err, "error extracting the scheme from the ContentLibraryProvider")
+		return err
+	}
+
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, cs, func() error {
 		cs.Spec = vmopv1alpha1.ContentSourceSpec{
 			ProviderRef: vmopv1alpha1.ContentProviderReference{
-				APIVersion: clProvider.APIVersion,
-				Kind:       clProvider.Kind,
+				APIVersion: gvk.GroupVersion().String(),
+				Kind:       gvk.Kind,
 				Name:       clProvider.Name,
 			},
 		}

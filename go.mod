@@ -24,7 +24,6 @@ require (
 	github.com/stretchr/testify v1.6.1 // indirect
 	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20201214230752-152d0e7ba6cf
 	github.com/vmware/govmomi v0.23.0
-	go.uber.org/atomic v1.4.0 // indirect
 	golang.org/x/net v0.0.0-20200822124328-c89045814202
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect

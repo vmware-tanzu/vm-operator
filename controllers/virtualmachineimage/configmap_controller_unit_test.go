@@ -43,6 +43,7 @@ func unitTestsCM() {
 			ctx = suite.NewUnitTestContextForController(initObjects...)
 			reconciler = virtualmachineimage.NewCMReconciler(
 				ctx.Client,
+				ctx.Scheme,
 				ctx.Logger,
 				ctx.VmProvider,
 			)
@@ -65,13 +66,16 @@ func unitTestsCM() {
 					cs := &vmopv1alpha1.ContentSource{}
 					err = ctx.Client.Get(ctx, objKey, cs)
 					Expect(err).NotTo(HaveOccurred())
-					Expect(cs.Spec.ProviderRef.Name).To(Equal(clUUID))
 
 					By("ContentLibraryProvider should be created for the CL")
 					cl := &vmopv1alpha1.ContentLibraryProvider{}
 					err = ctx.Client.Get(ctx, objKey, cl)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(cl.Spec.UUID).To(Equal(clUUID))
+
+					Expect(cs.Spec.ProviderRef.Name).To(Equal(clUUID))
+					Expect(cs.Spec.ProviderRef.Kind).To(Equal(cl.Kind))
+					Expect(cs.Spec.ProviderRef.APIVersion).To(Equal(cl.APIVersion))
 				})
 			})
 		})

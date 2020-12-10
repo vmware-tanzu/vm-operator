@@ -70,6 +70,10 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 					NetworkName: DummyNetworkName,
 					NetworkType: "",
 				},
+				{
+					NetworkName: DummyNetworkName + "-2",
+					NetworkType: "",
+				},
 			},
 			Volumes: []vmopv1.VirtualMachineVolume{
 				{

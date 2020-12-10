@@ -147,19 +147,16 @@ func (r *ContentSourceReconciler) DiffImages(left []vmopv1alpha1.VirtualMachineI
 		i, ok := rightMap[l.Name]
 		if !ok {
 			// Identify removed items
-			r.Logger.V(4).Info("Removing Image", "name", l.Name)
 			removed = append(removed, l)
 		} else {
-			// Identify updated items. Update can be a spec or a metadata update (OwnerRef)
-			r.Logger.V(4).Info("Updating Image", "name", l.Name)
-			ri := right[i]
-			if !reflect.DeepEqual(l.Spec, ri.Spec) {
-				// We can't use `r` here since it is a synthesized object which doesnt have necessary fields to call Update
-				// on (e.g. resourceVersion), so we update `l` with the possibly updated fields
-				l.Spec = ri.DeepCopy().Spec
-				updated = append(updated, l)
-			} else if !equality.Semantic.DeepEqual(l.OwnerReferences, ri.OwnerReferences) {
-				l.OwnerReferences = ri.DeepCopy().OwnerReferences
+			beforeUpdate := l.DeepCopy()
+
+			// Identify updated items. We only care about OwnerReference and Spec update.
+			l.Spec = right[i].Spec
+			l.OwnerReferences = right[i].OwnerReferences
+			l.Annotations = right[i].Annotations
+
+			if !equality.Semantic.DeepEqual(l, *beforeUpdate) {
 				updated = append(updated, l)
 			}
 		}
@@ -168,7 +165,6 @@ func (r *ContentSourceReconciler) DiffImages(left []vmopv1alpha1.VirtualMachineI
 	// Identify added items
 	for _, ri := range right {
 		if _, ok := leftMap[ri.Name]; !ok {
-			r.Logger.V(4).Info("Adding Image", "name", ri.Name)
 			added = append(added, ri)
 		}
 	}
@@ -219,7 +215,7 @@ func (r *ContentSourceReconciler) DifferenceImages(ctx goCtx.Context) (error, []
 
 	k8sManagedImages := k8sManagedImageList.Items
 
-	// List the cluster-scoped VirtualMachineImages from the content source configured by the ContentSource resources.
+	// List the cluster-scoped VirtualMachineImages from the content sources configured by the ContentSource resources.
 	contentSourceList := &vmopv1alpha1.ContentSourceList{}
 	if err := r.List(ctx, contentSourceList); err != nil {
 		return errors.Wrap(err, "failed to list ContentSources from control plane"), nil, nil, nil
@@ -333,21 +329,20 @@ func (r *ContentSourceReconciler) ReconcileProviderRef(ctx goCtx.Context, conten
 
 	contentLibrary.SetOwnerReferences([]metav1.OwnerReference{ownerRef})
 
-	exists, err := r.VmProvider.DoesContentLibraryExist(ctx, contentLibrary)
-	if err != nil {
-		logger.Error(err, "error in checking if the content library exists on provider")
-		return err
-	}
-
-	if !exists {
-		return fmt.Errorf("Content library does not exist on provider. contentLibraryUUID: %s", contentLibrary.Spec.UUID)
-	}
-
 	if !equality.Semantic.DeepEqual(beforeObj, contentLibrary) {
 		if err := r.Update(ctx, contentLibrary); err != nil {
 			logger.Error(err, "error updating the ContentLibraryProvider")
 			return err
 		}
+	}
+
+	exists, err := r.VmProvider.DoesContentLibraryExist(ctx, contentLibrary)
+	if err != nil {
+		logger.Error(err, "error in checking if the content library exists on provider")
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("Content library does not exist on provider. contentLibraryUUID: %s", contentLibrary.Spec.UUID)
 	}
 
 	return nil
@@ -388,7 +383,7 @@ func (r *ContentSourceReconciler) ReconcileNormal(ctx goCtx.Context, contentSour
 	}
 
 	if err := r.SyncImages(ctx); err != nil {
-		logger.Info("Error in syncing image")
+		logger.Error(err, "Error in syncing image from the content provider")
 		return err
 	}
 

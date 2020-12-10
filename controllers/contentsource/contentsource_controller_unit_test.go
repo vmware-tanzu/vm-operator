@@ -389,7 +389,7 @@ func unitTestsCRUDImage() {
 			})
 		})
 
-		Context("when left and right are non-empty and the same", func() {
+		Context("when left and right are not empty", func() {
 			var left []v1alpha1.VirtualMachineImage
 			var right []v1alpha1.VirtualMachineImage
 			var imageL v1alpha1.VirtualMachineImage
@@ -398,6 +398,8 @@ func unitTestsCRUDImage() {
 			BeforeEach(func() {
 				imageL = v1alpha1.VirtualMachineImage{}
 				imageR = v1alpha1.VirtualMachineImage{}
+				left = []v1alpha1.VirtualMachineImage{}
+				right = []v1alpha1.VirtualMachineImage{}
 			})
 
 			JustBeforeEach(func() {
@@ -405,7 +407,7 @@ func unitTestsCRUDImage() {
 				right = append(right, imageR)
 			})
 
-			Context("when left and right have a different spec", func() {
+			Context("when left and right have a different Spec", func() {
 				BeforeEach(func() {
 					imageL = v1alpha1.VirtualMachineImage{
 						Spec: v1alpha1.VirtualMachineImageSpec{
@@ -429,13 +431,62 @@ func unitTestsCRUDImage() {
 				})
 			})
 
-			Context("when left and right have samespec", func() {
+			Context("when left and right have same Spec", func() {
 				It("should return an empty updated spec", func() {
+					added, removed, updated := reconciler.DiffImages(left, right)
+					Expect(added).To(BeEmpty())
+					Expect(removed).To(BeEmpty())
+					Expect(updated).To(BeEmpty())
+				})
+			})
+
+			When("left and right have different Annotations", func() {
+				var annotations = map[string]string{
+					"key": "value",
+				}
+
+				BeforeEach(func() {
+					imageL = v1alpha1.VirtualMachineImage{}
+
+					imageR = v1alpha1.VirtualMachineImage{
+						ObjectMeta: metav1.ObjectMeta{
+							Annotations: annotations,
+						},
+					}
+				})
+
+				It("should return left with annotation set", func() {
 					added, removed, updated := reconciler.DiffImages(left, right)
 					Expect(added).To(BeEmpty())
 					Expect(removed).To(BeEmpty())
 					Expect(updated).ToNot(BeEmpty())
 					Expect(updated).To(HaveLen(1))
+					Expect(updated[0].Annotations).To(Equal(annotations))
+				})
+			})
+
+			When("left and right have different OwnerReference", func() {
+				var ownerRef = []metav1.OwnerReference{{
+					Name: "dummy-name",
+				}}
+
+				BeforeEach(func() {
+					imageL = v1alpha1.VirtualMachineImage{}
+
+					imageR = v1alpha1.VirtualMachineImage{
+						ObjectMeta: metav1.ObjectMeta{
+							OwnerReferences: ownerRef,
+						},
+					}
+				})
+
+				It("should return left with annotation set", func() {
+					added, removed, updated := reconciler.DiffImages(left, right)
+					Expect(added).To(BeEmpty())
+					Expect(removed).To(BeEmpty())
+					Expect(updated).ToNot(BeEmpty())
+					Expect(updated).To(HaveLen(1))
+					Expect(updated[0].OwnerReferences).To(Equal(ownerRef))
 				})
 			})
 

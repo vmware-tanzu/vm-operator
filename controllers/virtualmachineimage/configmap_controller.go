@@ -89,7 +89,6 @@ func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod 
 				return false
 			},
 		},
-		predicate.ResourceVersionChangedPredicate{},
 	)
 }
 
@@ -170,17 +169,17 @@ func (r *ConfigMapReconciler) CreateContentSourceResources(ctx goctx.Context, cl
 func (r *ConfigMapReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := goctx.Background()
 
+	// If the WCP_VMService FSS is enabled, we do not use the provider ConfigMap for content discovery.
+	if lib.IsVMServiceFSSEnabled() {
+		return ctrl.Result{}, nil
+	}
+
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, req.NamespacedName, cm); err != nil {
 		if apiErrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
-	}
-
-	// If the WCP_VMService FSS is enabled, we do not use the provider ConfigMap for content discovery.
-	if lib.IsVMServiceFSSEnabled() {
-		return ctrl.Result{}, nil
 	}
 
 	if err := r.ReconcileNormal(ctx, cm); err != nil {

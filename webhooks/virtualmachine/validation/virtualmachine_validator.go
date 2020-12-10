@@ -160,6 +160,7 @@ func (v validator) validateClass(ctx *context.WebhookRequestContext, vm *vmopv1.
 
 func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
 	var validationErrs []string
+	var networkNames = map[string]struct{}{}
 
 	for i, nif := range vm.Spec.NetworkInterfaces {
 		if nif.NetworkName == "" {
@@ -170,6 +171,10 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 		default:
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, i))
 		}
+		if _, ok := networkNames[nif.NetworkName]; ok {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, nif.NetworkName))
+		}
+		networkNames[nif.NetworkName] = struct{}{}
 	}
 
 	return validationErrs

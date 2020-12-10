@@ -73,6 +73,7 @@ func unitTestsValidateCreate() {
 		invalidClassName           bool
 		invalidNetworkName         bool
 		invalidNetworkType         bool
+		multipleNetIfToSameNetwork bool
 		invalidVolumeName          bool
 		dupVolumeName              bool
 		invalidVolumeSource        bool
@@ -103,6 +104,9 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidNetworkType {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkType = "bogusNetworkType"
+		}
+		if args.multipleNetIfToSameNetwork {
+			ctx.vm.Spec.NetworkInterfaces[1].NetworkName = ctx.vm.Spec.NetworkInterfaces[0].NetworkName
 		}
 		if args.invalidVolumeName {
 			ctx.vm.Spec.Volumes[0].Name = ""
@@ -174,6 +178,8 @@ func unitTestsValidateCreate() {
 		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSCustomizationNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
 		Entry("should deny invalid network name", createArgs{invalidNetworkName: true}, false, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, 0), nil),
 		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0), nil),
+		Entry("should deny connection of multiple network interfaces of a VM to the same network", createArgs{multipleNetIfToSameNetwork: true},
+			false, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, builder.DummyNetworkName), nil),
 		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameNotSpecifiedFmt, 0), nil),
 		Entry("should deny duplicated volume names", createArgs{dupVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameDuplicateFmt, 1), nil),
 		Entry("should deny invalid volume source spec", createArgs{invalidVolumeSource: true}, false, fmt.Sprintf(messages.VolumeNotSpecifiedFmt, 0, 0), nil),

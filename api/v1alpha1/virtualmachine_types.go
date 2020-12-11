@@ -306,7 +306,7 @@ type VirtualMachineStatus struct {
 
 	// Conditions describes the current condition information of the VirtualMachine.
 	// +optional
-	Conditions []VirtualMachineCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	Conditions []Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
 	// VmIp describes the IP address of the VirtualMachine.  Currently, a VirtualMachine only supports a single
 	// network interface and interface address.
@@ -337,29 +337,13 @@ type VirtualMachineStatus struct {
 	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
 }
 
-// VirtualMachineCondition contains condition information for a VirtualMachine.
-type VirtualMachineCondition struct {
-	// Type of the condition.
-	Type VirtualMachineConditionType `json:"type"`
-
-	// Status of the condition, one of ('True', 'False', 'Unknown').
-	Status metav1.ConditionStatus `json:"status"`
-
-	// The last time the condition transitioned from one status to another.
-	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
-
-	// Unique, one-word, CamelCase reason for the condition's last transition.
-	Reason string `json:"reason,omitempty"`
-
-	// Human-readable message indicating details about last transition.
-	Message string `json:"message,omitempty"`
+func (vm *VirtualMachine) GetConditions() Conditions {
+	return vm.Status.Conditions
 }
 
-// VirtualMachineConditionType indicates the type of VirtualMachineCondition.
-type VirtualMachineConditionType string
-
-// VirtualMachineReady is a condition type which indicates the readiness probe result of the VM.
-const VirtualMachineReady VirtualMachineConditionType = "Ready"
+func (vm *VirtualMachine) SetConditions(conditions Conditions) {
+	vm.Status.Conditions = conditions
+}
 
 // +genclient
 // +kubebuilder:object:root=true

@@ -125,20 +125,6 @@ type VirtualMachineVolume struct {
 	// have a unique name.
 	Name string `json:"name"`
 
-	// Storage Policy Based Management (SPBM) profile ID associated with the StoragePolicyName.
-	// This currently only applies to volumes with VsphereVolumeSource.
-	// Volumes with PersistentVolumeClaimVolumeSource have their storage policy ID specified in the
-	// PersistentVolume spec.
-	// +optional
-	StoragePolicyID *string `json:"storagePolicyID,omitempty"`
-
-	// Storage Policy Based Management (SPBM) profile name.
-	// This currently only applies to volumes with VsphereVolumeSource.
-	// Volumes with PersistentVolumeClaimVolumeSource have their storage policy name specified in the
-	// PersistentVolume spec.
-	// +optional
-	StoragePolicyName *string `json:"storagePolicyName,omitempty"`
-
 	// PersistentVolumeClaim represents a reference to a PersistentVolumeClaim in the same namespace. The PersistentVolumeClaim
 	// must match a persistent volume provisioned (either statically or dynamically) by the cluster's CSI provider.
 	// +optional

@@ -245,24 +245,6 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID str
 	return images, err
 }
 
-// DoesContentLibraryExist checks if a ContentLibrary by id "clID" exists on vSphere inventory.
-func (s *Session) DoesContentLibraryExist(ctx context.Context, clID string) (bool, error) {
-	restClient := s.Client.RestClient()
-	libManager := library.NewManager(restClient)
-	_, err := libManager.GetLibraryByID(ctx, clID)
-
-	// govmomi vapi rest client doesn't expose it's error type so we cannot check and return no error for Not Found. Instead we rely
-	// on the error message itself. This is not ideal since we are relying on the error message being sent by client which can change any time.
-	if err != nil {
-		if strings.Contains(err.Error(), "404 Not Found") {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return true, nil
-}
-
 func (s *Session) GetItemIDFromCL(ctx context.Context, cl *library.Library, itemName string) (string, error) {
 	restClient := s.Client.RestClient()
 	itemIDs, err := library.NewManager(restClient).FindLibraryItems(ctx,

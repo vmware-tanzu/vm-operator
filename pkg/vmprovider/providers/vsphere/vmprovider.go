@@ -234,18 +234,6 @@ func AddVmImageAnnotations(annotations map[string]string, ctx context.Context, o
 	return nil
 }
 
-// DoesContentLibraryExist checks if a ContentLibrary exists on the vSphere infrastructure
-// AKP: move to content provider
-func (vs *vSphereVmProvider) DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error) {
-	// GetSession with empty namespace grabs a cluster scoped session
-	ses, err := vs.sessions.GetSession(ctx, "")
-	if err != nil {
-		return false, err
-	}
-
-	return ses.DoesContentLibraryExist(ctx, contentLibrary.Spec.UUID)
-}
-
 // Op-ID is used to trace operations in vSphere
 func (vs *vSphereVmProvider) getOpId(ctx context.Context, vm *v1alpha1.VirtualMachine, operation string) string {
 	clusterID, _ := vs.getClusterID(ctx, vm.Namespace)

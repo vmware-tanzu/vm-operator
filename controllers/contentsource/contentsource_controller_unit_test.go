@@ -6,6 +6,7 @@ package contentsource_test
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -80,53 +81,6 @@ func reconcileProviderRef() {
 	})
 
 	Context("ReconcileProviderRef", func() {
-		When("the ContentLibraryProvider does not exist", func() {
-			BeforeEach(func() {
-				initObjects = append(initObjects, &cs)
-			})
-			It("returns an error", func() {
-				err := reconciler.ReconcileProviderRef(ctx, &cs)
-				Expect(err).To(HaveOccurred())
-				Expect(apiErrors.IsNotFound(err)).To(BeTrue())
-			})
-		})
-		When("error in checking if the content library exists on vSphere", func() {
-			BeforeEach(func() {
-				initObjects = []runtime.Object{&cs, &cl}
-			})
-
-			It("fails with an error", func() {
-				expectedError := fmt.Errorf("error in checking if a content library exists on vSphere")
-				fakeVmProvider.Lock()
-				fakeVmProvider.DoesContentLibraryExistFn = func(ctx context.Context, cl *v1alpha1.ContentLibraryProvider) (bool, error) {
-					return false, expectedError
-				}
-				fakeVmProvider.Unlock()
-
-				err := reconciler.ReconcileProviderRef(ctx, &cs)
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(expectedError))
-			})
-		})
-
-		When("the content library does not exist on vSphere", func() {
-			BeforeEach(func() {
-				initObjects = []runtime.Object{&cs, &cl}
-			})
-
-			It("fails with an error", func() {
-				fakeVmProvider.Lock()
-				fakeVmProvider.DoesContentLibraryExistFn = func(ctx context.Context, cl *v1alpha1.ContentLibraryProvider) (bool, error) {
-					return false, nil
-				}
-				fakeVmProvider.Unlock()
-
-				err := reconciler.ReconcileProviderRef(ctx, &cs)
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(fmt.Errorf("Content library does not exist on provider. contentLibraryUUID: %s", cl.Spec.UUID)))
-			})
-		})
-
 		Context("with a ContentLibraryProvider pointing to a vSphere content library", func() {
 			BeforeEach(func() {
 				initObjects = []runtime.Object{&cs, &cl}
@@ -690,6 +644,29 @@ func unitTestsCRUDImage() {
 				Expect(imageExists(img1.Name, removed)).To(BeTrue())
 
 				Expect(updated).To(BeEmpty())
+			})
+		})
+
+		Context("with a ContentSource pointing to a non-existent content library", func() {
+			BeforeEach(func() {
+				initObjects = append(initObjects, img1, &cl, &cs)
+			})
+
+			It("returns the list of VirtualMachineImages from the valid CL", func() {
+				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+					// Simulate non-existent content library on vSphere.
+					return nil, fmt.Errorf(http.StatusText(http.StatusNotFound))
+				}
+				err, added, removed, updated := reconciler.DifferenceImages(ctx)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(added).To(BeNil())
+
+				Expect(removed).NotTo(BeEmpty())
+				Expect(removed).To(HaveLen(1))
+				Expect(imageExists(img1.Name, removed)).To(BeTrue())
+
+				Expect(updated).To(BeNil())
 			})
 		})
 	})

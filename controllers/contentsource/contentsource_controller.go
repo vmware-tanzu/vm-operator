@@ -88,6 +88,13 @@ func (r *ContentSourceReconciler) CreateImages(ctx goCtx.Context, images []vmopv
 		if err := r.Create(ctx, &img); err != nil {
 			retErr = err
 			r.Logger.Error(err, "failed to create VirtualMachineImage", "name", img.Name)
+			continue
+		}
+
+		// Update status sub resource for the VirtualMachineImage.
+		if err := r.Status().Update(ctx, &img); err != nil {
+			retErr = err
+			r.Logger.Error(err, "failed to update status sub resource for image", "name", img.Name)
 		}
 	}
 
@@ -118,6 +125,13 @@ func (r *ContentSourceReconciler) UpdateImages(ctx goCtx.Context, images []vmopv
 		if err := r.Update(ctx, &img); err != nil {
 			retErr = err
 			r.Logger.Error(err, "failed to update VirtualMachineImage", "name", img.Name)
+			continue
+		}
+
+		// Update status sub resource for the VirtualMachineImage.
+		if err := r.Status().Update(ctx, &img); err != nil {
+			retErr = err
+			r.Logger.Error(err, "failed to update status sub resource for image", "name", img.Name)
 		}
 	}
 
@@ -152,9 +166,10 @@ func (r *ContentSourceReconciler) DiffImages(left []vmopv1alpha1.VirtualMachineI
 			beforeUpdate := l.DeepCopy()
 
 			// Identify updated items. We only care about OwnerReference and Spec update.
-			l.Spec = right[i].Spec
-			l.OwnerReferences = right[i].OwnerReferences
 			l.Annotations = right[i].Annotations
+			l.OwnerReferences = right[i].OwnerReferences
+			l.Spec = right[i].Spec
+			l.Status = right[i].Status
 
 			if !equality.Semantic.DeepEqual(l, *beforeUpdate) {
 				updated = append(updated, l)
@@ -186,7 +201,7 @@ func (r *ContentSourceReconciler) GetImagesFromContentProvider(ctx goCtx.Context
 
 	images, err := r.VmProvider.ListVirtualMachineImagesFromContentLibrary(ctx, clProvider)
 	if err != nil {
-		r.Logger.Error(err, "error listing images from provider")
+		r.Logger.Error(err, "error listing images from provider", "contentLibraryUUID", clProvider.Spec.UUID)
 		return nil, err
 	}
 
@@ -226,8 +241,12 @@ func (r *ContentSourceReconciler) DifferenceImages(ctx goCtx.Context) (error, []
 	for _, contentSource := range contentSourceList.Items {
 		images, err := r.GetImagesFromContentProvider(ctx, contentSource)
 		if err != nil {
-			r.Logger.Error(err, "Error in listing VirtualMachineImages from ContentSource", "csName", contentSource.Name)
-			continue
+			if lib.IsNotFoundError(err) {
+				r.Logger.Error(err, "content library not found on provider", "contentSourceName", contentSource.Name)
+				continue
+			}
+			r.Logger.Error(err, "Error listing VirtualMachineImages from the content provider", "contentSourceName", contentSource.Name)
+			return err, nil, nil, nil
 		}
 
 		providerManagedImages = append(providerManagedImages, images...)
@@ -307,7 +326,7 @@ func (r *ContentSourceReconciler) ReconcileProviderRef(ctx goCtx.Context, conten
 
 	contentLibrary := &vmopv1alpha1.ContentLibraryProvider{}
 	if err := r.Get(ctx, client.ObjectKey{Name: providerRef.Name, Namespace: providerRef.Namespace}, contentLibrary); err != nil {
-		logger.Error(err, "failed to get ContentLibraryProvider resource", "providerRefName", providerRef.Name, "providerRefKind", providerRef.Kind)
+		logger.Error(err, "failed to get ContentLibraryProvider resource", "providerRefName", providerRef.Name, "providerNamespace", providerRef.Namespace, "providerRefKind", providerRef.Kind)
 		return err
 	}
 
@@ -334,15 +353,6 @@ func (r *ContentSourceReconciler) ReconcileProviderRef(ctx goCtx.Context, conten
 			logger.Error(err, "error updating the ContentLibraryProvider")
 			return err
 		}
-	}
-
-	exists, err := r.VmProvider.DoesContentLibraryExist(ctx, contentLibrary)
-	if err != nil {
-		logger.Error(err, "error in checking if the content library exists on provider")
-		return err
-	}
-	if !exists {
-		return fmt.Errorf("Content library does not exist on provider. contentLibraryUUID: %s", contentLibrary.Spec.UUID)
 	}
 
 	return nil

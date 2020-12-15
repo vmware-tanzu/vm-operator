@@ -269,19 +269,6 @@ spec:
                     required:
                     - claimName
                     type: object
-                  storagePolicyID:
-                    description: Storage Policy Based Management (SPBM) profile ID
-                      associated with the StoragePolicyName. This currently only applies
-                      to volumes with VsphereVolumeSource. Volumes with PersistentVolumeClaimVolumeSource
-                      have their storage policy ID specified in the PersistentVolume
-                      spec.
-                    type: string
-                  storagePolicyName:
-                    description: Storage Policy Based Management (SPBM) profile name.
-                      This currently only applies to volumes with VsphereVolumeSource.
-                      Volumes with PersistentVolumeClaimVolumeSource have their storage
-                      policy name specified in the PersistentVolume spec.
-                    type: string
                   vSphereVolume:
                     description: VsphereVolume represents a reference to a VsphereVolumeSource
                       in the same namespace. Only one of PersistentVolumeClaim or

@@ -60,13 +60,7 @@ func intgTestsCM() {
 			csList := &vmopv1alpha1.ContentSourceList{}
 			Expect(ctx.Client.List(ctx, csList)).To(Succeed())
 
-			for _, cs := range csList.Items {
-				if cs.Name == csName && cs.Spec.ProviderRef.Name == clName {
-					return true
-				}
-			}
-
-			return false
+			return len(csList.Items) == 1 && csList.Items[0].Name == csName && csList.Items[0].Spec.ProviderRef.Name == clName
 		}
 
 		JustBeforeEach(func() {
@@ -94,11 +88,12 @@ func intgTestsCM() {
 			})
 
 			It("a ContentSource is created", func() {
-				// For now, only verify that the custom resources exist. Ideally, we should also check that no additional resources are present.
-				// However, it is not possible to do that because the OwnerRef is maintained by the ContentSource controller that is not running
-				// in this suite.
 				Eventually(func() bool {
 					return csExists(clUUID, clUUID) && clExists(clUUID)
+				}).Should(BeTrue())
+
+				Eventually(func() bool {
+					return clExists(clUUID)
 				}).Should(BeTrue())
 			})
 		})
@@ -110,14 +105,27 @@ func intgTestsCM() {
 			})
 
 			It("ContentSource is updated to point to the new CL UUID from ConfigMap", func() {
+				// Wait for the initial ContentSources to be available.
+				Eventually(func() bool {
+					return csExists(clUUID, clUUID) && clExists(clUUID)
+				}).Should(BeTrue())
+
 				newCLUUID := "new-cl"
 				cm.Data[vsphere.ContentSourceKey] = newCLUUID
 				Expect(ctx.Client.Update(ctx, cm)).NotTo(HaveOccurred())
 
 				Eventually(func() bool {
-					return csExists(newCLUUID, newCLUUID) && clExists(newCLUUID)
+					return csExists(newCLUUID, newCLUUID)
+				}).Should(BeTrue())
+
+				// For now, only verify that the custom resources exist. Ideally, we should also check that no additional resources are present.
+				// However, it is not possible to do that because the OwnerRef is maintained by the ContentSource controller that is not running
+				// in this suite.
+				Eventually(func() bool {
+					return clExists(newCLUUID)
 				}).Should(BeTrue())
 			})
+
 		})
 	})
 }

@@ -49,7 +49,7 @@ func unitTestsCM() {
 			)
 		})
 
-		Context("CreateContentSourceResources", func() {
+		Context("CreateOrUpdateContentSourceResources", func() {
 			BeforeEach(func() {
 				cm.Data[vsphere.ContentSourceKey] = clUUID
 				initObjects = append(initObjects, cm)
@@ -57,7 +57,7 @@ func unitTestsCM() {
 
 			When("called with a CL UUID", func() {
 				It("creates ContentSource and ContentLibraryProvider resources", func() {
-					err := reconciler.CreateContentSourceResources(ctx, clUUID)
+					err := reconciler.CreateOrUpdateContentSourceResources(ctx, clUUID)
 					Expect(err).NotTo(HaveOccurred())
 
 					objKey := client.ObjectKey{Name: clUUID}

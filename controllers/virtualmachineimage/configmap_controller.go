@@ -113,8 +113,9 @@ type ConfigMapReconciler struct {
 	vmProvider vmprovider.VirtualMachineProviderInterface
 }
 
-func (r *ConfigMapReconciler) CreateContentSourceResources(ctx goctx.Context, clUUID string) error {
+func (r *ConfigMapReconciler) CreateOrUpdateContentSourceResources(ctx goctx.Context, clUUID string) error {
 	r.Logger.Info("Creating ContentLibraryProvider and ContentSource resource for content library", "contentLibraryUUID", clUUID)
+
 	clProvider := &vmopv1alpha1.ContentLibraryProvider{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: clUUID,
@@ -164,7 +165,7 @@ func (r *ConfigMapReconciler) CreateContentSourceResources(ctx goctx.Context, cl
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentlibraryproviders,verbs=get;list;create;update;delete
-// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsources,verbs=get;list;create;update;delete;deletecollection
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsources,verbs=get;list;create;update;delete
 
 func (r *ConfigMapReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := goctx.Background()
@@ -192,19 +193,36 @@ func (r *ConfigMapReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *corev1.ConfigMap) error {
 	r.Logger.Info("Reconciling VM provider ConfigMap", "name", cm.Name, "namespace", cm.Namespace)
 
-	if err := r.DeleteAllOf(ctx, &vmopv1alpha1.ContentSource{}); err != nil {
-		r.Logger.Error(err, "error in deleting the ContentSource resources")
+	// Filter out the ContentSources that should not exist
+	csList := &vmopv1alpha1.ContentSourceList{}
+	if err := r.List(ctx, csList); err != nil {
+		r.Logger.Error(err, "Error in listing ContentSources")
 		return err
 	}
 
+	// For now, since wcpsvc is the only creator of the ContentSources, we rely on the fact that name
+	// of these resources is the CL UUID.
 	clUUID := cm.Data[vsphere.ContentSourceKey]
+	for _, cs := range csList.Items {
+		contentSource := cs
+		if contentSource.Name != clUUID {
+			if err := r.Delete(ctx, &contentSource); err != nil {
+				if !apiErrors.IsNotFound(err) {
+					r.Logger.Error(err, "Error in deleting the ContentSource resource", "contentSourceName", contentSource.Name)
+					return err
+				}
+			}
+		}
+	}
+
 	if clUUID == "" {
 		r.Logger.V(4).Info("ContentSource key not found/unset in provider ConfigMap. No op reconcile",
 			"configMapNamespace", cm.Namespace, "configMapName", cm.Name)
 		return nil
 	}
 
-	if err := r.CreateContentSourceResources(ctx, clUUID); err != nil {
+	// Ensure that the ContentSource and ContentLibraryProviders exist and are up to date.
+	if err := r.CreateOrUpdateContentSourceResources(ctx, clUUID); err != nil {
 		r.Logger.Error(err, "failed to create resource from the ConfigMap")
 		return err
 	}

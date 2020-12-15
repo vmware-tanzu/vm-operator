@@ -47,6 +47,5 @@ type VirtualMachineProviderInterface interface {
 	DeleteNamespaceSessionInCache(ctx context.Context, namespace string)
 	ComputeClusterCpuMinFrequency(ctx context.Context) error
 
-	DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error)
 	ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error)
 }

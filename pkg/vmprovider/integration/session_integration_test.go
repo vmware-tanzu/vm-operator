@@ -49,24 +49,6 @@ var _ = Describe("Sessions", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	Describe("Does content library exists", func() {
-		Context("for a library that exists", func() {
-			It("returns true and no error", func() {
-				exists, err := session.DoesContentLibraryExist(context.TODO(), integration.GetContentSourceID())
-				Expect(exists).To(BeTrue())
-				Expect(err).NotTo(HaveOccurred())
-			})
-		})
-
-		Context("for a library that doesn't exist", func() {
-			It("returns false and no error", func() {
-				exists, err := session.DoesContentLibraryExist(context.TODO(), "non-existent-content-lib")
-				Expect(exists).To(BeFalse())
-				Expect(err).NotTo(HaveOccurred())
-			})
-		})
-	})
-
 	Describe("Query VM images", func() {
 
 		Context("From Inventory - VMs", func() {

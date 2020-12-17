@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/testing"
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -61,7 +61,7 @@ func (s *TestSuite) NewIntegrationTestContext() *IntegrationTestContext {
 	By("Creating a temporary namespace", func() {
 		namespace := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: uuid.NewV4().String(),
+				Name: uuid.New().String(),
 			},
 		}
 		Expect(ctx.Client.Create(s, namespace)).To(Succeed())

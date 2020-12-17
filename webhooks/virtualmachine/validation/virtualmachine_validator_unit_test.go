@@ -41,6 +41,7 @@ type unitValidatingWebhookContext struct {
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
 	vm := builder.DummyVirtualMachine()
+	vm.Name = "dummy-vm-for-webhook-validation"
 	obj, err := builder.ToUnstructured(vm)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -63,6 +64,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	}
 }
 
+// nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
 		ctx *unitValidatingWebhookContext
@@ -75,11 +77,13 @@ func unitTestsValidateCreate() {
 		invalidNetworkName         bool
 		invalidNetworkType         bool
 		multipleNetIfToSameNetwork bool
+		emptyVolumeName            bool
 		invalidVolumeName          bool
 		dupVolumeName              bool
 		invalidVolumeSource        bool
 		multipleVolumeSource       bool
 		invalidPVCName             bool
+		invalidPVCReadOnly         bool
 		invalidMetadataTransport   bool
 		invalidMetadataConfigMap   bool
 		invalidVsphereVolumeSource bool
@@ -110,8 +114,11 @@ func unitTestsValidateCreate() {
 		if args.multipleNetIfToSameNetwork {
 			ctx.vm.Spec.NetworkInterfaces[1].NetworkName = ctx.vm.Spec.NetworkInterfaces[0].NetworkName
 		}
-		if args.invalidVolumeName {
+		if args.emptyVolumeName {
 			ctx.vm.Spec.Volumes[0].Name = ""
+		}
+		if args.invalidVolumeName {
+			ctx.vm.Spec.Volumes[0].Name = "underscore_not_valid"
 		}
 		if args.dupVolumeName {
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, ctx.vm.Spec.Volumes[0])
@@ -126,6 +133,9 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidPVCName {
 			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ClaimName = ""
+		}
+		if args.invalidPVCReadOnly {
+			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ReadOnly = true
 		}
 		if args.invalidMetadataTransport {
 			ctx.vm.Spec.VmMetadata.Transport = "blah"
@@ -182,15 +192,17 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0), nil),
 		Entry("should deny connection of multiple network interfaces of a VM to the same network", createArgs{multipleNetIfToSameNetwork: true},
 			false, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, 1), nil),
-		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameNotSpecifiedFmt, 0), nil),
+		Entry("should deny empty volume name", createArgs{emptyVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameNotSpecifiedFmt, 0), nil),
+		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameNotValidObjectNameFmt, 0, ""), nil),
 		Entry("should deny duplicated volume names", createArgs{dupVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameDuplicateFmt, 1), nil),
 		Entry("should deny invalid volume source spec", createArgs{invalidVolumeSource: true}, false, fmt.Sprintf(messages.VolumeNotSpecifiedFmt, 0, 0), nil),
 		Entry("should deny multiple volume source spec", createArgs{multipleVolumeSource: true}, false, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, 0, 0), nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, 0), nil),
+		Entry("should deny invalid PVC name", createArgs{invalidPVCReadOnly: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameReadOnlyFmt, 0), nil),
 		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, 0), nil),
 		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVmVolumeProvOpts: true}, false, fmt.Sprintf(messages.EagerZeroedAndThinProvisionedNotSupported), nil),
-		Entry("should deny invalid vmmetadata transport", createArgs{invalidMetadataTransport: true}, false, messages.MetadataTransportNotSupported, nil),
-		Entry("should deny invalid vmmetadata configmap", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
+		Entry("should deny invalid vmMetadata transport", createArgs{invalidMetadataTransport: true}, false, messages.MetadataTransportNotSupported, nil),
+		Entry("should deny invalid vmMetadata configmap", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
 	)
 }
 

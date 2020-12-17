@@ -30,14 +30,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - configmaps/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ""
-  resources:
   - endpoints
   verbs:
   - create
@@ -88,6 +80,13 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - cns.vmware.com
+  resources:
+  - cnsnodevmattachments/status
+  verbs:
+  - get
+  - list
 - apiGroups:
   - netoperator.vmware.com
   resources:

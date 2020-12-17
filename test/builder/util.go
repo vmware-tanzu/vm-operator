@@ -20,7 +20,7 @@ const (
 	DummyImageName      = "dummy-image-name"
 	DummyClassName      = "dummyClassName"
 	DummyNetworkName    = "dummyNetworkName"
-	DummyVolumeName     = "dummyVolumeName"
+	DummyVolumeName     = "dummy-volume-name"
 	DummyPVCName        = "dummyPVCName"
 	DummyMetadataCMName = "dummyMetadataCMName"
 	DummyDistroVersion  = "dummyDistroVersion"

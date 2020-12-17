@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
@@ -21,6 +23,7 @@ import (
 	"github.com/pkg/errors"
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -185,42 +188,64 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 	var validationErrs []string
 
 	volumeNames := map[string]bool{}
-	for i, volume := range vm.Spec.Volumes {
-		if volume.Name != "" {
-			if volumeNames[volume.Name] {
+	for i, vol := range vm.Spec.Volumes {
+		if vol.Name != "" {
+			if volumeNames[vol.Name] {
 				validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNameDuplicateFmt, i))
 			} else {
-				volumeNames[volume.Name] = true
+				volumeNames[vol.Name] = true
 			}
 		} else {
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNameNotSpecifiedFmt, i))
 		}
-		if volume.PersistentVolumeClaim == nil && volume.VsphereVolume == nil {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNotSpecifiedFmt, i, i))
-		}
-		if volume.PersistentVolumeClaim != nil && volume.VsphereVolume != nil {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, i, i))
-		} else if volume.PersistentVolumeClaim != nil && volume.PersistentVolumeClaim.ClaimName == "" {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, i))
-		}
 
-		if volume.VsphereVolume != nil {
-			validationErrs = append(validationErrs, v.validateVsphereVolume(ctx, volume.VsphereVolume, i)...)
+		if vol.PersistentVolumeClaim == nil && vol.VsphereVolume == nil {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNotSpecifiedFmt, i, i))
+		} else if vol.PersistentVolumeClaim != nil && vol.VsphereVolume != nil {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, i, i))
+		} else {
+			if vol.PersistentVolumeClaim != nil {
+				validationErrs = append(validationErrs, v.validateVolumeWithPVC(vm, vol, i)...)
+			} else { // vol.VsphereVolume != nil
+				validationErrs = append(validationErrs, v.validateVsphereVolume(vol.VsphereVolume, i)...)
+			}
 		}
 	}
 
 	return validationErrs
 }
 
-func (v validator) validateVsphereVolume(ctx *context.WebhookRequestContext, vsphereVolume *vmopv1.VsphereVolumeSource, specVolIndex int) []string {
+func (v validator) validateVolumeWithPVC(vm *vmopv1.VirtualMachine, vol vmopv1.VirtualMachineVolume, idx int) []string {
 	var validationErrs []string
-	if vsphereVolume != nil {
-		// Validate that the desired size is a multiple of a megabyte
-		megaByte := resource.MustParse("1Mi")
-		if vsphereVolume.Capacity.StorageEphemeral().Value()%megaByte.Value() != 0 {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, specVolIndex))
+
+	// Check that the name used for the CnsNodeVmAttachment will be valid. Don't double up errors if name is missing.
+	if vol.Name != "" {
+		errs := validation.IsDNS1123Subdomain(volume.CNSAttachmentNameForVolume(vm, vol.Name))
+		if len(errs) > 0 {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNameNotValidObjectNameFmt, idx, strings.Join(errs, ",")))
 		}
 	}
+
+	pvcSource := vol.PersistentVolumeClaim
+	if pvcSource.ClaimName == "" {
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, idx))
+	}
+	if pvcSource.ReadOnly {
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimNameReadOnlyFmt, idx))
+	}
+
+	return validationErrs
+}
+
+func (v validator) validateVsphereVolume(vsphereVolume *vmopv1.VsphereVolumeSource, idx int) []string {
+	var validationErrs []string
+
+	// Validate that the desired size is a multiple of a megabyte
+	megaByte := resource.MustParse("1Mi")
+	if vsphereVolume.Capacity.StorageEphemeral().Value()%megaByte.Value() != 0 {
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, idx))
+	}
+
 	return validationErrs
 }
 

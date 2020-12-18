@@ -7,6 +7,7 @@ import (
 	goCtx "context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -86,15 +87,22 @@ func (r *ContentSourceReconciler) CreateImages(ctx goCtx.Context, images []vmopv
 		img := image
 		r.Logger.V(4).Info("Creating VirtualMachineImage", "name", img.Name)
 		if err := r.Create(ctx, &img); err != nil {
-			retErr = err
-			r.Logger.Error(err, "failed to create VirtualMachineImage", "name", img.Name)
-			continue
+
+			// Ignore VirtualMachineImage if it already exists. This can happen if we have a duplicate image name in the
+			// content library. We sort the ContentSources by the oldest to latest one, so the VirtualMachineImage from
+			// the first library is not overwritten.
+			if !apiErrors.IsAlreadyExists(err) {
+				retErr = err
+				r.Logger.Error(err, "failed to create VirtualMachineImage", "name", img.Name)
+				continue
+			}
 		}
 
 		// Update status sub resource for the VirtualMachineImage.
 		if err := r.Status().Update(ctx, &img); err != nil {
 			retErr = err
 			r.Logger.Error(err, "failed to update status sub resource for image", "name", img.Name)
+
 		}
 	}
 
@@ -138,6 +146,16 @@ func (r *ContentSourceReconciler) UpdateImages(ctx goCtx.Context, images []vmopv
 	return retErr
 }
 
+// GetContentLibraryFromOwnerRefs returns the ContentLibraryProvider name from the list of OwnerRefs.
+func GetContentLibraryNameFromOwnerRefs(ownerRefs []metav1.OwnerReference) string {
+	for _, o := range ownerRefs {
+		if o.Kind == "ContentLibraryProvider" {
+			return o.Name
+		}
+	}
+	return ""
+}
+
 // Difference two lists of VirtualMachineImages producing 3 lists: images that have been added to "right", images that
 // have been removed in "right", and images that have been updated in "right".
 func (r *ContentSourceReconciler) DiffImages(left []vmopv1alpha1.VirtualMachineImage, right []vmopv1alpha1.VirtualMachineImage) (
@@ -163,8 +181,21 @@ func (r *ContentSourceReconciler) DiffImages(left []vmopv1alpha1.VirtualMachineI
 			// Identify removed items
 			removed = append(removed, l)
 		} else {
-			beforeUpdate := l.DeepCopy()
+			// Image already exists on the API server.
+			// Two scenarios here:
+			// - Image updated on the provider in the same library.
+			// - Image with the same name uploaded in a different library.
+			// Since the OwnerRef points to the content library, use that to decide whether it is a duplicate image from another content library.
+			leftCL := GetContentLibraryNameFromOwnerRefs(l.OwnerReferences)
+			rightCL := GetContentLibraryNameFromOwnerRefs(right[i].OwnerReferences)
+			if leftCL != rightCL {
+				// Should this be an event?
+				r.Logger.Error(nil, "A VirtualMachineImage by this name has already been created from another content library",
+					"imageName", right[i].Name, "syncingFromContentLibrary", rightCL, "existsInContentLibrary", leftCL)
+				continue
+			}
 
+			beforeUpdate := l.DeepCopy()
 			// Identify updated items. We only care about OwnerReference and Spec update.
 			l.Annotations = right[i].Annotations
 			l.OwnerReferences = right[i].OwnerReferences
@@ -235,6 +266,9 @@ func (r *ContentSourceReconciler) DifferenceImages(ctx goCtx.Context) (error, []
 	if err := r.List(ctx, contentSourceList); err != nil {
 		return errors.Wrap(err, "failed to list ContentSources from control plane"), nil, nil, nil
 	}
+
+	// Sort the ContentSources by latest to oldest CreationTimestamp so the VirtualMachineImage from the oldest ContentSource takes precedence.
+	sort.Sort(SortableContentSources(contentSourceList.Items))
 
 	// Best effort to list VirtualMachineImages from all content sources.
 	var providerManagedImages []*vmopv1alpha1.VirtualMachineImage

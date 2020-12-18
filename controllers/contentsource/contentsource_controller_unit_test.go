@@ -26,6 +26,8 @@ import (
 func unitTests() {
 	Describe("Invoking VirtualMachineImage CRUD unit tests", unitTestsCRUDImage)
 	Describe("Invoking ReconcileProviderRef unit tests", reconcileProviderRef)
+	Describe("Invoking SortedContentSource unit tests", testSortedContentSources)
+	Describe("Invoking GetContentLibraryNameFromOwnerRefs unit tests", unitTestGetContentLibraryNameFromOwnerRefs)
 }
 
 func reconcileProviderRef() {
@@ -100,6 +102,28 @@ func reconcileProviderRef() {
 
 	})
 }
+
+func unitTestGetContentLibraryNameFromOwnerRefs() {
+	Context("with list of OwnerRefs", func() {
+		expectedCLName := "cl-name"
+		ownerRefs := []metav1.OwnerReference{
+			{
+				Kind: "ContentLibraryProvider",
+				Name: expectedCLName,
+			},
+			{
+				Kind: "dummy-kind",
+				Name: "dummy-name-2",
+			},
+		}
+
+		It("returns the name of ContentLibraryProvider", func() {
+			clName := contentsource.GetContentLibraryNameFromOwnerRefs(ownerRefs)
+			Expect(clName).To(Equal(expectedCLName))
+		})
+	})
+}
+
 func unitTestsCRUDImage() {
 	var (
 		ctx            *builder.UnitTestContextForController
@@ -148,6 +172,50 @@ func unitTestsCRUDImage() {
 		reconciler = nil
 		fakeVmProvider.Reset()
 		fakeVmProvider = nil
+	})
+
+	Context("SyncImages", func() {
+		Context("a VirtualMachineImage exists on the API server", func() {
+			existingImg := &v1alpha1.VirtualMachineImage{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "dummy-image",
+					Annotations: map[string]string{
+						"dummy-key": "dummy-value",
+					},
+				},
+				Spec: v1alpha1.VirtualMachineImageSpec{
+					Type: "dummy-type-1",
+				},
+			}
+
+			duplicateImg := &v1alpha1.VirtualMachineImage{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "dummy-image",
+				},
+				Spec: v1alpha1.VirtualMachineImageSpec{
+					Type: "dummy-type-2",
+				},
+			}
+			BeforeEach(func() {
+				initObjects = append(initObjects, existingImg, &cl, &cs)
+			})
+			Context("another library with a duplicate image name is added", func() {
+				It("the existing VirtualMachineImage is not overwritten", func() {
+					fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+						return []*v1alpha1.VirtualMachineImage{duplicateImg}, nil
+					}
+
+					err := reconciler.SyncImages(ctx.Context)
+					Expect(err).NotTo(HaveOccurred())
+
+					img := &v1alpha1.VirtualMachineImage{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: existingImg.Name}, img)).To(Succeed())
+					Expect(img.OwnerReferences).To(Equal(existingImg.OwnerReferences))
+					Expect(img.Spec).To(Equal(existingImg.Spec))
+					Expect(img.Annotations).To(Equal(existingImg.Annotations))
+				})
+			})
+		})
 	})
 
 	Context("DeleteImages", func() {
@@ -275,19 +343,6 @@ func unitTestsCRUDImage() {
 
 				img := images[0]
 				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: img.Name, Namespace: img.Namespace}, &img)).To(Succeed())
-			})
-		})
-
-		When("when client create fails because the image already exist", func() {
-			BeforeEach(func() {
-				initObjects = append(initObjects, &image)
-				images = append(images, image)
-			})
-
-			It("fails to create the images", func() {
-				err := reconciler.CreateImages(ctx, images)
-				Expect(err).To(HaveOccurred())
-				Expect(apiErrors.IsAlreadyExists(err)).To(BeTrue())
 			})
 		})
 	})

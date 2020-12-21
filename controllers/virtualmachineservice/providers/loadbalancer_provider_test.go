@@ -9,12 +9,11 @@ import (
 	"context"
 	"os"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/proxy/apis"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
@@ -244,7 +243,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 				It("should create one label for ServiceProxyName", func() {
 					labels, err = loadBalancerProvider.GetServiceLabels(ctx, vmService)
 					Expect(len(labels)).To(Equal(1))
-					Expect(labels[apis.LabelServiceProxyName]).To(Equal(NSXTServiceProxy))
+					Expect(labels[LabelServiceProxyName]).To(Equal(NSXTServiceProxy))
 				})
 
 			})
@@ -279,7 +278,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 
 			When("etp is not present", func() {
 				It("should remove ServiceProxyName label", func() {
-					_, exists := labels[apis.LabelServiceProxyName]
+					_, exists := labels[LabelServiceProxyName]
 					Expect(exists).To(BeTrue())
 				})
 			})
@@ -288,7 +287,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 					vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
 				})
 				It("should not remove ServiceProxyName label", func() {
-					_, exists := labels[apis.LabelServiceProxyName]
+					_, exists := labels[LabelServiceProxyName]
 					Expect(exists).To(BeFalse())
 				})
 
@@ -298,7 +297,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 					vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeCluster)
 				})
 				It("should remove ServiceProxyName label", func() {
-					_, exists := labels[apis.LabelServiceProxyName]
+					_, exists := labels[LabelServiceProxyName]
 					Expect(exists).To(BeTrue())
 				})
 

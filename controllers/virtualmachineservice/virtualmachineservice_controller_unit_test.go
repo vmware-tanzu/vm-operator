@@ -12,7 +12,6 @@ import (
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/kubernetes/pkg/proxy/apis"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -28,6 +27,8 @@ func unitTests() {
 	Describe("Invoking Reconcile", unitTestsReconcile)
 	Describe("Invoking NSXT Reconcile", nsxtLBProviderTestsReconcile)
 }
+
+const LabelServiceProxyName = "service.kubernetes.io/service-proxy-name"
 
 //nolint:dupl goconst
 func unitTestsReconcile() {
@@ -99,7 +100,7 @@ func unitTestsReconcile() {
 				if vmService.Labels == nil {
 					vmService.Labels = make(map[string]string)
 				}
-				vmService.Labels[apis.LabelServiceProxyName] = providers.NSXTServiceProxy
+				vmService.Labels[LabelServiceProxyName] = providers.NSXTServiceProxy
 
 				newService, err := reconciler.CreateOrUpdateService(ctx, vmService)
 				Expect(err).ShouldNot(HaveOccurred())
@@ -109,7 +110,7 @@ func unitTestsReconcile() {
 				Expect(newService.Spec.ExternalName).To(Equal(externalName))
 				Expect(newService.Spec.LoadBalancerIP).To(Equal(loadBalancerIP))
 				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeLocal))
-				Expect(newService.Labels[apis.LabelServiceProxyName]).To(Equal(providers.NSXTServiceProxy))
+				Expect(newService.Labels[LabelServiceProxyName]).To(Equal(providers.NSXTServiceProxy))
 				Expect(newService.Spec.LoadBalancerSourceRanges).To(Equal([]string{"1.1.1.0/24", "2.2.2.2/28"}))
 			})
 
@@ -552,7 +553,7 @@ func nsxtLBProviderTestsReconcile() {
 				if vmService.Labels == nil {
 					vmService.Labels = make(map[string]string)
 				}
-				vmService.Labels[apis.LabelServiceProxyName] = providers.NSXTServiceProxy
+				vmService.Labels[LabelServiceProxyName] = providers.NSXTServiceProxy
 
 				newService, err := reconciler.CreateOrUpdateService(ctx, vmService)
 				Expect(err).ShouldNot(HaveOccurred())
@@ -562,7 +563,7 @@ func nsxtLBProviderTestsReconcile() {
 				Expect(newService.Spec.ExternalName).To(Equal(externalName))
 				Expect(newService.Spec.LoadBalancerIP).To(Equal(loadBalancerIP))
 				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeLocal))
-				Expect(newService.Labels[apis.LabelServiceProxyName]).To(Equal(providers.NSXTServiceProxy))
+				Expect(newService.Labels[LabelServiceProxyName]).To(Equal(providers.NSXTServiceProxy))
 				Expect(newService.Spec.LoadBalancerSourceRanges).To(Equal([]string{"1.1.1.0/24", "2.2.2.2/28"}))
 			})
 
@@ -591,7 +592,7 @@ func nsxtLBProviderTestsReconcile() {
 				if service.Labels == nil {
 					service.Labels = make(map[string]string)
 				}
-				service.Labels[apis.LabelServiceProxyName] = providers.NSXTServiceProxy
+				service.Labels[LabelServiceProxyName] = providers.NSXTServiceProxy
 				service.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyTypeLocal
 				Expect(ctx.Client.Update(ctx, service)).To(Succeed())
 
@@ -609,7 +610,7 @@ func nsxtLBProviderTestsReconcile() {
 				Expect(exist).To(BeFalse())
 				_, exist = newService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]
 				Expect(exist).To(BeFalse())
-				_, exist = newService.Labels[apis.LabelServiceProxyName]
+				_, exist = newService.Labels[LabelServiceProxyName]
 				Expect(exist).To(BeFalse())
 			})
 

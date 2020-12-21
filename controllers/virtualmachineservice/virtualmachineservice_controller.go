@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	endpointsv1 "k8s.io/kubernetes/pkg/api/v1/endpoints"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -665,7 +664,7 @@ func (r *ReconcileVirtualMachineService) UpdateEndpoints(ctx goctx.Context, vmSe
 	}
 
 	// Repack subsets in canonical order so that comparison of two subsets gives consistent results.
-	subsets = endpointsv1.RepackSubsets(subsets)
+	subsets = utils.RepackSubsets(subsets)
 
 	// See if there's actually an update here.
 	currentEndpoints := &corev1.Endpoints{}
@@ -682,7 +681,7 @@ func (r *ReconcileVirtualMachineService) UpdateEndpoints(ctx goctx.Context, vmSe
 				Labels: service.Labels,
 			},
 		}
-	} else if apiequality.Semantic.DeepEqual(endpointsv1.RepackSubsets(currentEndpoints.Subsets), subsets) {
+	} else if apiequality.Semantic.DeepEqual(utils.RepackSubsets(currentEndpoints.Subsets), subsets) {
 		// Ideally, we dont have to repack both the endpoints (current endpoints and the calculated one) before comparing since after the first update
 		// we expect the endpoint subsets to always be in canonical order. However, some controller is re-ordering these endpoint subsets. We sort both
 		// sides for a consistent comparison result. PR: 2623292

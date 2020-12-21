@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	cloud.google.com/go v0.46.3 // indirect
+	github.com/davecgh/go-spew v1.1.1
 	github.com/envoyproxy/go-control-plane v0.9.4
 	github.com/go-logr/logr v0.1.0
 	github.com/go-logr/zapr v0.1.1 // indirect
@@ -35,7 +36,6 @@ require (
 	k8s.io/apimachinery v0.17.8
 	k8s.io/client-go v0.17.8
 	k8s.io/klog v1.0.0
-	k8s.io/kubernetes v1.14.10
 	k8s.io/utils v0.0.0-20200619165400-6e3d28b6ed19
 	sigs.k8s.io/controller-runtime v0.5.8
 	sigs.k8s.io/yaml v1.2.0

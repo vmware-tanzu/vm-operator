@@ -8,7 +8,6 @@ import (
 	"os"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/kubernetes/pkg/proxy/apis"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -23,6 +22,12 @@ const (
 	SimpleLoadBalancer                           = "simple-lb"
 	ClusterNameKey                               = "capw.vmware.com/cluster.name"
 	NSXTServiceProxy                             = "nsx-t"
+
+	// LabelServiceProxyName indicates that an alternative service
+	// proxy will implement this Service.
+	// Copied from kubernetes pkg/proxy/apis/well_known_labels.go to
+	// avoid k8s dependency.
+	LabelServiceProxyName = "service.kubernetes.io/service-proxy-name"
 )
 
 var LBProvider string
@@ -135,7 +140,7 @@ func (nl *nsxtLoadbalancerProvider) GetServiceLabels(ctx context.Context, vmServ
 	// When externalTrafficPolicy is set to Local, skip kube-proxy for the
 	// target Service
 	if etp := vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]; corev1.ServiceExternalTrafficPolicyType(etp) == corev1.ServiceExternalTrafficPolicyTypeLocal {
-		res[apis.LabelServiceProxyName] = NSXTServiceProxy
+		res[LabelServiceProxyName] = NSXTServiceProxy
 	}
 
 	return res, nil
@@ -149,7 +154,7 @@ func (nl *nsxtLoadbalancerProvider) GetToBeRemovedServiceLabels(ctx context.Cont
 	// When there is no externalTrafficPolicy configured or it's not Local,
 	// remove the service-proxy label
 	if etp := vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]; corev1.ServiceExternalTrafficPolicyType(etp) != corev1.ServiceExternalTrafficPolicyTypeLocal {
-		res[apis.LabelServiceProxyName] = NSXTServiceProxy
+		res[LabelServiceProxyName] = NSXTServiceProxy
 	}
 
 	return res, nil

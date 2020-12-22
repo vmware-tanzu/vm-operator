@@ -8,12 +8,9 @@ import (
 	"fmt"
 	"os"
 
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
@@ -21,7 +18,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers/simplelb"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
@@ -75,7 +71,7 @@ func GetLoadbalancerProviderByType(mgr manager.Manager, providerType string) (Lo
 			log.Error(err, "unable to get ncp clientset from config")
 			return nil, err
 		}
-		return NsxtLoadBalancerProvider(ncpClient, lib.IsT1PerNamespaceEnabled()), nil
+		return NsxtLoadBalancerProvider(ncpClient), nil
 	}
 	if providerType == SimpleLoadBalancer {
 		return simplelb.New(mgr), nil
@@ -99,27 +95,16 @@ func (noopLoadbalancerProvider) GetVMServiceAnnotations(ctx context.Context, vmS
 
 type nsxtLoadbalancerProvider struct {
 	client clientset.Interface
-	// Feature switch for T1 Per Namespace
-	isT1PerNamespaceEnabled bool
 }
 
 //NsxLoadbalancerProvider returns a nsxLoadbalancerProvider instance
-func NsxtLoadBalancerProvider(client clientset.Interface, isT1PerNamespaceEnabled bool) *nsxtLoadbalancerProvider {
+func NsxtLoadBalancerProvider(client clientset.Interface) *nsxtLoadbalancerProvider {
 	return &nsxtLoadbalancerProvider{
-		client:                  client,
-		isT1PerNamespaceEnabled: isT1PerNamespaceEnabled,
+		client: client,
 	}
 }
 
 func (nl *nsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) error {
-	// When T1PerNamespace is enabled, skip the reconciliation of NSX-T Load
-	// Balancers
-	if !nl.isT1PerNamespaceEnabled {
-		if err := nl.ensureNSXTLoadBalancer(ctx, vmService, virtualNetworkName); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -128,89 +113,11 @@ func (nl *nsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmSe
 func (nl *nsxtLoadbalancerProvider) GetVMServiceAnnotations(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error) {
 	res := make(map[string]string)
 
-	// When T1PerNamespace is disabled, add the LoadBalancer's name in the
-	// annotation
-	if !nl.isT1PerNamespaceEnabled {
-		clusterName, ok := vmService.Spec.Selector[ClusterNameKey]
-		if !ok {
-			return res, fmt.Errorf("unable to find the cluster name in the VirtualMachineService spec")
-		}
-
-		loadBalancerName := nl.getLoadbalancerName(vmService.Namespace, clusterName)
-		res[ServiceLoadBalancerTagKey] = loadBalancerName
-	}
-
 	if healthCheckNodePortString, ok := vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]; ok {
 		res[ServiceLoadBalancerHealthCheckNodePortTagKey] = healthCheckNodePortString
 	}
 
 	return res, nil
-}
-
-//Loadbalancer name formatting
-func (nl *nsxtLoadbalancerProvider) getLoadbalancerName(namespace, clusterName string) string {
-	return fmt.Sprintf("%s-%s-lb", namespace, clusterName)
-}
-
-//Create NSX-T Loadbalancer configuration
-func (nl *nsxtLoadbalancerProvider) createNSXTLoadBalancerSpec(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) *ncpv1alpha1.LoadBalancer {
-	return &ncpv1alpha1.LoadBalancer{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       LoadbalancerKind,
-			APIVersion: APIVersion,
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      nl.getLoadbalancerName(vmService.Namespace, vmService.Spec.Selector[ClusterNameKey]),
-			Namespace: vmService.GetNamespace(),
-
-			OwnerReferences: []metav1.OwnerReference{utils.MakeVMServiceOwnerRef(vmService)},
-		},
-		Spec: ncpv1alpha1.LoadBalancerSpec{
-			Size:               ncpv1alpha1.SizeSmall,
-			VirtualNetworkName: virtualNetworkName,
-		},
-	}
-}
-
-//Create or Update NSX-T Loadbalancer
-func (nl *nsxtLoadbalancerProvider) ensureNSXTLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) error {
-	clusterName, ok := vmService.Spec.Selector[ClusterNameKey]
-	if !ok {
-		return fmt.Errorf("unable to find the cluster name in the VirtualMachineService spec")
-	}
-
-	loadBalancerName := nl.getLoadbalancerName(vmService.Namespace, clusterName)
-
-	log.V(5).Info("Get or create loadbalancer", "name", loadBalancerName)
-	defer log.V(5).Info("Finished get or create Loadbalancer", "name", loadBalancerName)
-	//Get current loadbalancer
-	_, err := nl.client.VmwareV1alpha1().LoadBalancers(vmService.Namespace).Get(loadBalancerName, metav1.GetOptions{})
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			log.Error(err, "Failed to get load balancer", "name", loadBalancerName)
-			return err
-		}
-		//check if the virtual network exist
-		_, err = nl.client.VmwareV1alpha1().VirtualNetworks(vmService.Namespace).Get(virtualNetworkName, metav1.GetOptions{})
-		if err != nil {
-			if !errors.IsNotFound(err) {
-				log.Error(err, "Failed to get virtual network", "name", virtualNetworkName)
-			} else {
-				log.Error(err, "Virtual Network does not exist, can't create loadbalancer", "name", virtualNetworkName)
-			}
-			return err
-		}
-		//no current loadbalancer, create a new loadbalancer
-		//We only update Loadbalancer owner reference for now, other spec should be immutable .
-		currentLoadbalancer := nl.createNSXTLoadBalancerSpec(ctx, vmService, virtualNetworkName)
-		log.Info("Creating loadBalancer", "name", currentLoadbalancer.Name, "loadBalancer", currentLoadbalancer)
-		_, err = nl.client.VmwareV1alpha1().LoadBalancers(currentLoadbalancer.Namespace).Create(currentLoadbalancer)
-		if err != nil {
-			log.Error(err, "Create loadbalancer error", "name", virtualNetworkName)
-			return err
-		}
-	}
-	return nil
 }
 
 //Check virtual network name from vm spec

@@ -38,10 +38,6 @@ var IsVMServiceFSSEnabled = func() bool {
 	return os.Getenv(VMServiceFSS) == "true"
 }
 
-var IsT1PerNamespaceEnabled = func() bool {
-	return os.Getenv("FSS_WCP_T1_PERNAMESPACE") == "true"
-}
-
 // MaxAllowedCreateVMsOnProvider returns the percentage of reconciler threads that can be used to create VMs on the provider
 // concurrently. The default is 80.
 // TODO: Remove the env lookup once we have tuned this value from system tests.

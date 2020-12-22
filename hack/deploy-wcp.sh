@@ -17,9 +17,6 @@ FSS_WCP_VMSERVICE_VALUE=${FSS_WCP_VMSERVICE_VALUE:-false}
 # Using VDS Networking
 VSPHERE_NETWORKING_VALUE=${VSPHERE_NETWORKING_VALUE:-false}
 
-# Using T1 Router per namespace
-FSS_WCP_T1_PERNAMESPACE_VALUE=${FSS_WCP_T1_PERNAMESPACE_VALUE:-false}
-
 # Change directories to the parent directory of the one in which this
 # script is located.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -127,11 +124,6 @@ patchWcpDeploymentYaml() {
     sed -i'' -E "s,\"?<VSPHERE_NETWORKING_VALUE>\"?,\"$VSPHERE_NETWORKING_VALUE\",g" "artifacts/wcp-deployment.yaml"
     if grep -q "<VSPHERE_NETWORKING_VALUE>" artifacts/wcp-deployment.yaml; then
         echo "Failed to subst VSPHERE_NETWORKING_VALUE in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<FSS_WCP_T1_PERNAMESPACE_VALUE>\"?,\"$FSS_WCP_T1_PERNAMESPACE_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_T1_PERNAMESPACE_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst <FSS_WCP_T1_PERNAMESPACE_VALUE> in artifacts/wcp-deployment.yaml"
         exit 1
     fi
     if  [[ -n ${INSECURE_TLS:-} ]]; then

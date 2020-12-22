@@ -13,5 +13,3 @@ spec:
           value: "false"
         - name: VSPHERE_NETWORKING
           value: "false"
-        - name: FSS_WCP_T1_PERNAMESPACE
-          value: "false"

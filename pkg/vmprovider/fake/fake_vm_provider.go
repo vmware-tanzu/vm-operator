@@ -34,9 +34,10 @@ type funcs struct {
 	ClearSessionsAndClientFn        func(ctx context.Context)
 	DeleteNamespaceSessionInCacheFn func(ctx context.Context, namespace string)
 
-	DoesVirtualMachineSetResourcePolicyExistFn func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
-	DeleteVirtualMachineSetResourcePolicyFn    func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
-	ComputeClusterCpuMinFrequencyFn            func(ctx context.Context) error
+	CreateOrUpdateVirtualMachineSetResourcePolicyFn func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
+	DoesVirtualMachineSetResourcePolicyExistFn      func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
+	DeleteVirtualMachineSetResourcePolicyFn         func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
+	ComputeClusterCpuMinFrequencyFn                 func(ctx context.Context) error
 }
 
 type FakeVmProvider struct {
@@ -113,6 +114,13 @@ func (s *FakeVmProvider) GetClusterID(ctx context.Context, namespace string) (st
 }
 
 func (s *FakeVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+	s.Lock()
+	defer s.Unlock()
+	if s.CreateOrUpdateVirtualMachineSetResourcePolicyFn != nil {
+		return s.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)
+	}
+
+	s.addToResourcePolicyMap(resourcePolicy)
 	return nil
 }
 
@@ -223,6 +231,15 @@ func (s *FakeVmProvider) deleteFromVMMap(vm *v1alpha1.VirtualMachine) {
 		Name:      vm.Name,
 	}
 	delete(s.vmMap, objectKey)
+}
+
+func (s *FakeVmProvider) addToResourcePolicyMap(rp *v1alpha1.VirtualMachineSetResourcePolicy) {
+	objectKey := client.ObjectKey{
+		Namespace: rp.Namespace,
+		Name:      rp.Name,
+	}
+
+	s.resourcePolicyMap[objectKey] = rp
 }
 
 func (s *FakeVmProvider) deleteFromResourcePolicyMap(rp *v1alpha1.VirtualMachineSetResourcePolicy) {

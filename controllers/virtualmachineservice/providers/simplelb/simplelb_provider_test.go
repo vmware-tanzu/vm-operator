@@ -66,16 +66,9 @@ var _ = Describe("", func() {
 		log:          logr_testing.NullLogger{},
 	}
 
-	Context("GetNetworkName()", func() {
-		It("should not return an error", func() {
-			_, err := simpleLbProvider.GetNetworkName(nil, nil)
-			Expect(err).ToNot(HaveOccurred())
-		})
-	})
-
 	Context("EnsureLoadBalancer()", func() {
 		It("should create the LB VM", func() {
-			err := simpleLbProvider.EnsureLoadBalancer(context.TODO(), vmService, "")
+			err := simpleLbProvider.EnsureLoadBalancer(context.TODO(), vmService)
 			Expect(err).To(HaveOccurred())
 
 			Expect(err.Error()).To(Equal("LB VM IP is not ready yet"))
@@ -91,7 +84,7 @@ var _ = Describe("", func() {
 				err := client.Status().Update(context.TODO(), vm)
 				Expect(err).ToNot(HaveOccurred())
 
-				err = simpleLbProvider.EnsureLoadBalancer(context.TODO(), vmService, "")
+				err = simpleLbProvider.EnsureLoadBalancer(context.TODO(), vmService)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(controlPlane.calls).To(BeEmpty())
@@ -148,7 +141,7 @@ var _ = Describe("", func() {
 				err = client.Create(context.TODO(), eps)
 				Expect(err).ToNot(HaveOccurred())
 
-				err = simpleLbProvider.EnsureLoadBalancer(context.TODO(), vmService, "")
+				err = simpleLbProvider.EnsureLoadBalancer(context.TODO(), vmService)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(controlPlane.calls).To(HaveLen(1))

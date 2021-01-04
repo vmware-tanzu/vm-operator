@@ -445,13 +445,13 @@ func (r *ContentSourceReconciler) ReconcileDelete(ctx goCtx.Context, contentSour
 
 	logger.Info("Reconciling ContentSource deletion")
 
-	if lib.ContainsString(contentSource.ObjectMeta.Finalizers, finalizerName) {
+	if controllerutil.ContainsFinalizer(contentSource, finalizerName) {
 		if err := r.ReconcileDeleteProviderRef(ctx, contentSource); err != nil {
 			logger.Error(err, "error when reconciling the provider ref")
 			return err
 		}
 
-		contentSource.ObjectMeta.Finalizers = lib.RemoveString(contentSource.ObjectMeta.Finalizers, finalizerName)
+		controllerutil.RemoveFinalizer(contentSource, finalizerName)
 		if err := r.Update(ctx, contentSource); err != nil {
 			return err
 		}

@@ -1,17 +1,19 @@
-// +build !integration
-
 // Copyright (c) 2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachinesetresourcepolicy_test
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
+	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -28,33 +30,39 @@ const (
 )
 
 func unitTestsReconcile() {
-	const (
-		nsName             = "sample-ns"
-		controllerName     = "virtualmachinesetresourcepolicy-controller"
-		resourcePolicyName = "sample-resourcepolicy"
-	)
 	var (
-		initObjects       []runtime.Object
-		ctx               *builder.UnitTestContextForController
-		reconciler        *virtualmachinesetresourcepolicy.VirtualMachineSetResourcePolicyReconciler
+		initObjects []runtime.Object
+		ctx         *builder.UnitTestContextForController
+		reconciler  *virtualmachinesetresourcepolicy.VirtualMachineSetResourcePolicyReconciler
+
 		resourcePolicyCtx *context.VirtualMachineSetResourcePolicyContext
-		resourcePolicy    *vmoperatorv1alpha1.VirtualMachineSetResourcePolicy
+		resourcePolicy    *vmopv1alpha1.VirtualMachineSetResourcePolicy
+		vm                *vmopv1alpha1.VirtualMachine
 	)
 	BeforeEach(func() {
-		resourcePolicy = &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{
+		resourcePolicy = &vmopv1alpha1.VirtualMachineSetResourcePolicy{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      resourcePolicyName,
-				Namespace: nsName,
+				Name:      "dummy-rp",
+				Namespace: "dummy-ns",
 			},
-			Spec: vmoperatorv1alpha1.VirtualMachineSetResourcePolicySpec{},
+			Spec: vmopv1alpha1.VirtualMachineSetResourcePolicySpec{},
+		}
+		vm = &vmopv1alpha1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dummy-vm",
+				Namespace: "dummy-ns",
+			},
+			Spec: vmopv1alpha1.VirtualMachineSpec{
+				ResourcePolicyName: "dummy-rp",
+			},
 		}
 	})
+
 	JustBeforeEach(func() {
-		initObjects = []runtime.Object{resourcePolicy}
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		reconciler = &virtualmachinesetresourcepolicy.VirtualMachineSetResourcePolicyReconciler{
 			Client:     ctx.Client,
-			Logger:     ctx.Logger.WithName("controllers").WithName(controllerName),
+			Logger:     ctx.Logger,
 			VMProvider: ctx.VmProvider,
 		}
 
@@ -64,6 +72,7 @@ func unitTestsReconcile() {
 			ResourcePolicy: resourcePolicy,
 		}
 	})
+
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
@@ -71,27 +80,64 @@ func unitTestsReconcile() {
 		resourcePolicyCtx = nil
 		reconciler = nil
 	})
+
 	Context("ReconcileNormal", func() {
+		BeforeEach(func() {
+			initObjects = append(initObjects, resourcePolicy)
+		})
 		It("will have finalizer set after reconciliation", func() {
 			err := reconciler.ReconcileNormal(resourcePolicyCtx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(resourcePolicy.ObjectMeta.Finalizers)).ToNot(BeZero())
 			Expect(resourcePolicy.GetFinalizers()).To(ContainElement(finalizer))
 		})
 	})
+
 	Context("ReconcileDelete", func() {
-		It("will delete the created VM and emit corresponding event", func() {
-			// Create the resource policy to be deleted
+		BeforeEach(func() {
+			initObjects = append(initObjects, resourcePolicy)
+		})
+
+		When("One or more VMs are referencing this policy", func() {
+
+			BeforeEach(func() {
+				initObjects = append(initObjects, vm)
+			})
+
+			AfterEach(func() {
+				err := ctx.Client.Delete(ctx, vm)
+				Expect(err == nil || apiErrors.IsNotFound(err)).To(BeTrue())
+			})
+
+			It("will fail to delete the ResourcePolicy", func() {
+				err := reconciler.ReconcileNormal(resourcePolicyCtx)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = reconciler.ReconcileDelete(resourcePolicyCtx)
+				expectedError := fmt.Errorf("failing VirtualMachineSetResourcePolicy deletion since VM: '%s' is referencing it, resourcePolicyName: '%s'", vm.NamespacedName(), resourcePolicy.NamespacedName())
+				Expect(err).To(MatchError(expectedError))
+
+				By("provider should return that the policy still exists", func() {
+					fakeProvider := ctx.VmProvider.(*providerfake.FakeVmProvider)
+					rpExists, err := fakeProvider.DoesVirtualMachineSetResourcePolicyExist(resourcePolicyCtx, resourcePolicy)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(rpExists).To(BeFalse())
+				})
+			})
+		})
+
+		It("will delete the created ResourcePolicy", func() {
 			err := reconciler.ReconcileNormal(resourcePolicyCtx)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Delete the created resource policy
 			err = reconciler.ReconcileDelete(resourcePolicyCtx)
 			Expect(err).NotTo(HaveOccurred())
-			fakeProvider := ctx.VmProvider.(*providerfake.FakeVmProvider)
-			rpExists, err := fakeProvider.DoesVirtualMachineSetResourcePolicyExist(resourcePolicyCtx, resourcePolicy)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(rpExists).ToNot(BeTrue())
+
+			By("provider should return that the policy does not exist", func() {
+				fakeProvider := ctx.VmProvider.(*providerfake.FakeVmProvider)
+				rpExists, err := fakeProvider.DoesVirtualMachineSetResourcePolicyExist(resourcePolicyCtx, resourcePolicy)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rpExists).To(BeFalse())
+			})
 		})
 	})
 }

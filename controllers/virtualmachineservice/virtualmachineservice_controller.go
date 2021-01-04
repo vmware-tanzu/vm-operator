@@ -22,6 +22,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -36,7 +37,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
@@ -167,12 +167,12 @@ func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (r
 	ctx = goctx.WithValue(ctx, vimtypes.ID{}, "vmoperator-"+instance.Name+"-"+ControllerName)
 
 	if !instance.ObjectMeta.DeletionTimestamp.IsZero() {
-		if lib.ContainsString(instance.ObjectMeta.Finalizers, finalizerName) {
+		if controllerutil.ContainsFinalizer(instance, finalizerName) {
 			if err := r.deleteVmService(ctx, instance); err != nil {
 				return reconcile.Result{}, err
 			}
 
-			instance.ObjectMeta.Finalizers = lib.RemoveString(instance.ObjectMeta.Finalizers, finalizerName)
+			controllerutil.RemoveFinalizer(instance, finalizerName)
 			if err := r.Update(ctx, instance); err != nil {
 				return reconcile.Result{}, err
 			}
@@ -181,8 +181,8 @@ func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (r
 		return reconcile.Result{}, nil
 	}
 
-	if !lib.ContainsString(instance.ObjectMeta.Finalizers, finalizerName) {
-		instance.ObjectMeta.Finalizers = append(instance.ObjectMeta.Finalizers, finalizerName)
+	if !controllerutil.ContainsFinalizer(instance, finalizerName) {
+		controllerutil.AddFinalizer(instance, finalizerName)
 		if err := r.Update(ctx, instance); err != nil {
 			return reconcile.Result{}, err
 		}

@@ -31,7 +31,6 @@ import (
 
 	"github.com/go-logr/logr"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
@@ -164,8 +163,6 @@ func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (r
 		return reconcile.Result{}, err
 	}
 
-	ctx = goctx.WithValue(ctx, vimtypes.ID{}, "vmoperator-"+instance.Name+"-"+ControllerName)
-
 	if !instance.ObjectMeta.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(instance, finalizerName) {
 			if err := r.deleteVmService(ctx, instance); err != nil {
@@ -211,14 +208,8 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 	defer r.log.Info("Finished Reconcile VirtualMachineService", "name", vmService.NamespacedName())
 
 	if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
-		// Get virtual network name from vm spec
-		virtualNetworkName, err := r.getVirtualNetworkName(ctx, vmService)
-		if err != nil {
-			r.log.Error(err, "Failed to get virtual network from vm spec", "name", vmService.Name)
-			return err
-		}
 		// Get LoadBalancer to attach
-		err = r.loadbalancerProvider.EnsureLoadBalancer(ctx, vmService, virtualNetworkName)
+		err = r.loadbalancerProvider.EnsureLoadBalancer(ctx, vmService)
 		if err != nil {
 			r.log.Error(err, "Failed to create or get load balancer for vm service", "name", vmService.Name)
 			return err
@@ -331,20 +322,6 @@ func (r *ReconcileVirtualMachineService) makeEndpointAddress(vm *vmoperatorv1alp
 			Name:       vm.Name,
 			UID:        vm.UID,
 		}}
-}
-
-//Get virtual network name from vm spec
-func (r *ReconcileVirtualMachineService) getVirtualNetworkName(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (string, error) {
-	r.log.V(5).Info("Get Virtual Network Name", "vmservice", vmService.NamespacedName())
-	defer r.log.V(5).Info("Finished Get Virtual Network Name", "vmservice", vmService.NamespacedName())
-
-	vmList := &vmoperatorv1alpha1.VirtualMachineList{}
-	err := r.List(ctx, vmList, client.InNamespace(vmService.Namespace), client.MatchingLabels(vmService.Spec.Selector))
-	if err != nil {
-		return "", err
-	}
-
-	return r.loadbalancerProvider.GetNetworkName(vmList.Items, vmService)
 }
 
 // vmServiceToService converts a VM Service to k8s Service.

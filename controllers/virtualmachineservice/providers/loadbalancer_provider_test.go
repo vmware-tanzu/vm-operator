@@ -123,21 +123,9 @@ var _ = Describe("Loadbalancer Provider", func() {
 			JustBeforeEach(func() {
 				lbprovider = &noopLoadbalancerProvider{}
 			})
-			Context("test GetNetworkName", func() {
-				var (
-					networkName string
-				)
-				JustBeforeEach(func() {
-					networkName, err = lbprovider.GetNetworkName([]vmoperatorv1alpha1.VirtualMachine{}, nil)
-				})
-				It("should return empty", func() {
-					Expect(networkName).To(Equal(""))
-					Expect(err).To(BeNil())
-				})
-			})
 			Context("test EnsureLoadBalancer", func() {
 				JustBeforeEach(func() {
-					err = lbprovider.EnsureLoadBalancer(context.Background(), nil, "")
+					err = lbprovider.EnsureLoadBalancer(context.Background(), nil)
 				})
 				It("should return empty", func() {
 					Expect(err).ToNot(HaveOccurred())

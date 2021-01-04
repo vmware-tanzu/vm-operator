@@ -5,7 +5,6 @@ package providers
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -18,17 +17,12 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers/simplelb"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
 const (
-	LoadbalancerKind                             = "LoadBalancer"
-	APIVersion                                   = "vmware.com/v1alpha1"
-	ServiceLoadBalancerTagKey                    = "ncp/crd_lb"
 	ServiceLoadBalancerHealthCheckNodePortTagKey = "ncp/healthCheckNodePort"
 	NSXTLoadBalancer                             = "nsx-t-lb"
 	SimpleLoadBalancer                           = "simple-lb"
-	NoOpLoadBalancer                             = ""
 	ClusterNameKey                               = "capw.vmware.com/cluster.name"
 )
 
@@ -52,11 +46,9 @@ func init() {
 
 var log = logf.Log.WithName("loadbalancer")
 
-//LoadbalancerProvider sets up Loadbalancer for different type of Loadbalancer
+// LoadbalancerProvider sets up Loadbalancer for different type of Loadbalancer
 type LoadbalancerProvider interface {
-	GetNetworkName(virtualMachines []vmoperatorv1alpha1.VirtualMachine, vmService *vmoperatorv1alpha1.VirtualMachineService) (string, error)
-
-	EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) error
+	EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) error
 
 	// GetServiceAnnotations returns the annotations, if any, to place on a VM Service.
 	GetVMServiceAnnotations(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error)
@@ -81,11 +73,7 @@ func GetLoadbalancerProviderByType(mgr manager.Manager, providerType string) (Lo
 
 type noopLoadbalancerProvider struct{}
 
-func (noopLoadbalancerProvider) GetNetworkName([]vmoperatorv1alpha1.VirtualMachine, *vmoperatorv1alpha1.VirtualMachineService) (string, error) {
-	return "", nil
-}
-
-func (noopLoadbalancerProvider) EnsureLoadBalancer(context.Context, *vmoperatorv1alpha1.VirtualMachineService, string) error {
+func (noopLoadbalancerProvider) EnsureLoadBalancer(context.Context, *vmoperatorv1alpha1.VirtualMachineService) error {
 	return nil
 }
 
@@ -104,7 +92,7 @@ func NsxtLoadBalancerProvider(client clientset.Interface) *nsxtLoadbalancerProvi
 	}
 }
 
-func (nl *nsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, virtualNetworkName string) error {
+func (nl *nsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) error {
 	return nil
 }
 
@@ -118,40 +106,4 @@ func (nl *nsxtLoadbalancerProvider) GetVMServiceAnnotations(ctx context.Context,
 	}
 
 	return res, nil
-}
-
-//Check virtual network name from vm spec
-func (nl *nsxtLoadbalancerProvider) GetNetworkName(virtualMachines []vmoperatorv1alpha1.VirtualMachine, vmService *vmoperatorv1alpha1.VirtualMachineService) (string, error) {
-	if vmService != nil && vmService.Annotations != nil {
-		if vnet := vmService.Annotations["ncp.vmware.com/virtual-network-name"]; vnet != "" {
-			return vnet, nil
-		}
-	}
-
-	if len(virtualMachines) <= 0 {
-		return "", fmt.Errorf("no virtual machine matched selector")
-	}
-
-	networkName := ""
-	//Check if there is only one NSX-T virtual network in cluster
-	for _, vm := range virtualMachines {
-		hasNSXTNetwork := false
-		for _, networkInterface := range vm.Spec.NetworkInterfaces {
-			if networkInterface.NetworkType == vsphere.NsxtNetworkType {
-				if hasNSXTNetwork {
-					return "", fmt.Errorf("virtual machine %q can't connect to two NST-X virtual network ", vm.NamespacedName())
-				}
-				hasNSXTNetwork = true
-				if networkName == "" {
-					networkName = networkInterface.NetworkName
-				} else if networkName != networkInterface.NetworkName {
-					return "", fmt.Errorf("virtual machine %q has different virtual network with previous vms", vm.NamespacedName())
-				}
-			}
-		}
-		if !hasNSXTNetwork {
-			return "", fmt.Errorf("virtual machine %q doesn't have nsx-t virtual network", vm.NamespacedName())
-		}
-	}
-	return networkName, nil
 }

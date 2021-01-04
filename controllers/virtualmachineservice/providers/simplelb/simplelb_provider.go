@@ -41,11 +41,7 @@ func New(mgr manager.Manager) *simpleLoadBalancerProvider {
 	}
 }
 
-func (s *simpleLoadBalancerProvider) GetNetworkName(_ []vmopv1alpha1.VirtualMachine, _ *vmopv1alpha1.VirtualMachineService) (string, error) {
-	return "", nil // network name doesn't matter for this LB Provider
-}
-
-func (s *simpleLoadBalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService, _ string) error {
+func (s *simpleLoadBalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) error {
 	s.log.Info("ensure load balancer", "VMService", vmService.Name)
 	xdsNodes, err := s.getXDSNodes(ctx)
 	if err != nil {

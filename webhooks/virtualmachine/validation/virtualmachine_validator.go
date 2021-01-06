@@ -216,7 +216,8 @@ func (v validator) validateVsphereVolume(ctx *context.WebhookRequestContext, vsp
 	var validationErrs []string
 	if vsphereVolume != nil {
 		// Validate that the desired size is a multiple of a megabyte
-		if _, mbMultiple := vsphereVolume.Capacity.StorageEphemeral().AsScale(resource.Mega); !mbMultiple {
+		megaByte := resource.MustParse("1Mi")
+		if vsphereVolume.Capacity.StorageEphemeral().Value()%megaByte.Value() != 0 {
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, specVolIndex))
 		}
 	}

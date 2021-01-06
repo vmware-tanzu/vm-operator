@@ -1,23 +1,13 @@
 
 ---
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.2.9
+    controller-gen.kubebuilder.io/version: v0.4.1
   creationTimestamp: null
   name: virtualmachineclasses.vmoperator.vmware.com
 spec:
-  additionalPrinterColumns:
-  - JSONPath: .spec.hardware.cpus
-    name: CPU
-    type: string
-  - JSONPath: .spec.hardware.memory
-    name: Memory
-    type: string
-  - JSONPath: .metadata.creationTimestamp
-    name: Age
-    type: date
   group: vmoperator.vmware.com
   names:
     kind: VirtualMachineClass
@@ -27,106 +17,95 @@ spec:
     - vmclass
     singular: virtualmachineclass
   scope: Cluster
-  subresources:
-    status: {}
-  validation:
-    openAPIV3Schema:
-      description: VirtualMachineClass is the Schema for the virtualmachineclasses
-        API. A VirtualMachineClass represents the desired specification and the observed
-        status of a VirtualMachineClass instance.  A VirtualMachineClass represents
-        a policy and configuration resource which defines a set of attributes to be
-        used in the configuration of a VirtualMachine instance.  A VirtualMachine
-        resource references a VirtualMachineClass as a required input.
-      properties:
-        apiVersion:
-          description: 'APIVersion defines the versioned schema of this representation
-            of an object. Servers should convert recognized schemas to the latest
-            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-          type: string
-        kind:
-          description: 'Kind is a string value representing the REST resource this
-            object represents. Servers may infer this from the endpoint the client
-            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-          type: string
-        metadata:
-          type: object
-        spec:
-          description: VirtualMachineClassSpec defines the desired state of VirtualMachineClass
-          properties:
-            hardware:
-              description: Hardware describes the configuration of the VirtualMachineClass
-                attributes related to virtual hardware.  The configuration specified
-                in this field is used to customize the virtual hardware characteristics
-                of any VirtualMachine associated with this VirtualMachineClass.
-              properties:
-                cpus:
-                  format: int64
-                  type: integer
-                memory:
-                  anyOf:
-                  - type: integer
-                  - type: string
-                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                  x-kubernetes-int-or-string: true
-              type: object
-            policies:
-              description: Policies describes the configuration of the VirtualMachineClass
-                attributes related to virtual infrastructure policy.  The configuration
-                specified in this field is used to customize various policies related
-                to infrastructure resource consumption.
-              properties:
-                resources:
-                  description: VirtualMachineClassResources describes the virtual
-                    hardware resource reservations and limits configuration to be
-                    used by a VirtualMachineClass.
-                  properties:
-                    limits:
-                      description: VirtualMachineResourceSpec describes a virtual
-                        hardware policy specification.
-                      properties:
-                        cpu:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
-                        memory:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
-                      type: object
-                    requests:
-                      description: VirtualMachineResourceSpec describes a virtual
-                        hardware policy specification.
-                      properties:
-                        cpu:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
-                        memory:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
-                      type: object
-                  type: object
-              type: object
-          type: object
-        status:
-          description: VirtualMachineClassStatus defines the observed state of VirtualMachineClass.  VirtualMachineClasses
-            are immutable, non-dynamic resources, so this status is currently unused.
-          type: object
-      type: object
-  version: v1alpha1
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.hardware.cpus
+      name: CPU
+      type: string
+    - jsonPath: .spec.hardware.memory
+      name: Memory
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: VirtualMachineClass is the Schema for the virtualmachineclasses API. A VirtualMachineClass represents the desired specification and the observed status of a VirtualMachineClass instance.  A VirtualMachineClass represents a policy and configuration resource which defines a set of attributes to be used in the configuration of a VirtualMachine instance.  A VirtualMachine resource references a VirtualMachineClass as a required input.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: VirtualMachineClassSpec defines the desired state of VirtualMachineClass
+            properties:
+              hardware:
+                description: Hardware describes the configuration of the VirtualMachineClass attributes related to virtual hardware.  The configuration specified in this field is used to customize the virtual hardware characteristics of any VirtualMachine associated with this VirtualMachineClass.
+                properties:
+                  cpus:
+                    format: int64
+                    type: integer
+                  memory:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                type: object
+              policies:
+                description: Policies describes the configuration of the VirtualMachineClass attributes related to virtual infrastructure policy.  The configuration specified in this field is used to customize various policies related to infrastructure resource consumption.
+                properties:
+                  resources:
+                    description: VirtualMachineClassResources describes the virtual hardware resource reservations and limits configuration to be used by a VirtualMachineClass.
+                    properties:
+                      limits:
+                        description: VirtualMachineResourceSpec describes a virtual hardware policy specification.
+                        properties:
+                          cpu:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          memory:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                      requests:
+                        description: VirtualMachineResourceSpec describes a virtual hardware policy specification.
+                        properties:
+                          cpu:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          memory:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                    type: object
+                type: object
+            type: object
+          status:
+            description: VirtualMachineClassStatus defines the observed state of VirtualMachineClass.  VirtualMachineClasses are immutable, non-dynamic resources, so this status is currently unused.
+            type: object
+        type: object
     served: true
     storage: true
+    subresources:
+      status: {}
 status:
   acceptedNames:
     kind: ""

@@ -1,0 +1,6 @@
+# To upgrade CRD from v1beta1 to v1 and get working "kubectl explain",
+# we manually add this since controller-gen is NOT adding it.
+# See https://github.com/kubernetes-sigs/controller-tools/issues/476.
+- op: add
+  path: /spec/preserveUnknownFields
+  value: false

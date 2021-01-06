@@ -13,6 +13,11 @@ resources:
 - bases/vmoperator.vmware.com_contentlibraryproviders.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
+patches:
+- path: patches/crd_preserveUnknownFields.yaml
+  target:
+    kind: CustomResourceDefinition
+
 patchesStrategicMerge:
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
 # patches here are for enabling the conversion webhook for each CRD

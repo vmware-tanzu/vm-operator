@@ -12,18 +12,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
-
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/go-logr/logr"
+	"github.com/pkg/errors"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -64,6 +67,8 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
+		Watches(&source.Kind{Type: &vmopv1alpha1.VirtualMachineClassBinding{}},
+			&handler.EnqueueRequestsFromMapFunc{ToRequests: handler.ToRequestsFunc(r.virtualMachineClassBindingsToVirtualMachinesMapper)}).
 		Complete(r)
 }
 
@@ -246,6 +251,34 @@ func (r *VirtualMachineReconciler) ReconcileNormal(ctx *context.VirtualMachineCo
 	r.Prober.AddToProberManager(ctx.VM)
 
 	return nil
+}
+
+// For a given VirtualMachineClassBinding, return reconcile requests
+// for those VirtualMachines with corresponding VirtualMachinesClasses referenced
+func (r *VirtualMachineReconciler) virtualMachineClassBindingsToVirtualMachinesMapper(o handler.MapObject) []reconcile.Request {
+	classBinding := o.Object.(*vmopv1alpha1.VirtualMachineClassBinding)
+
+	// Find all vms that match this vmclassbinding
+	vmList := &vmopv1alpha1.VirtualMachineList{}
+	err := r.List(goctx.Background(), vmList, client.InNamespace(classBinding.Namespace))
+	if err != nil {
+		return nil
+	}
+
+	// Populate reconcile requests for vms matching the classbinding reference
+	var reconcileRequests []reconcile.Request
+	for _, virtualMachine := range vmList.Items {
+		vm := virtualMachine
+		if vm.Spec.ClassName == classBinding.ClassRef.Name {
+			r.Logger.V(4).Info("Generating reconcile requests for VirtualMachines due to event on VirtualMachineClassBinding",
+				"VirtualMachine", types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name},
+				"VirtualMachineClassBinding", types.NamespacedName{Namespace: classBinding.Namespace, Name: classBinding.Name})
+			reconcileRequests = append(reconcileRequests,
+				reconcile.Request{NamespacedName: types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name}})
+		}
+	}
+
+	return reconcileRequests
 }
 
 func (r *VirtualMachineReconciler) getStoragePolicyID(ctx *context.VirtualMachineContext) (string, error) {

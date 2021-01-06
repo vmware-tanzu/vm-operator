@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -21,10 +22,13 @@ import (
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+//nolint:gocyclo
 func intgTests() {
 	const (
 		storageClassName = "foo-class"
@@ -37,6 +41,7 @@ func intgTests() {
 		vmKey             types.NamespacedName
 		vmImage           *vmopv1alpha1.VirtualMachineImage
 		vmClass           *vmopv1alpha1.VirtualMachineClass
+		vmClassBinding    *vmopv1alpha1.VirtualMachineClassBinding
 		metadataConfigMap *corev1.ConfigMap
 		storageClass      *storagev1.StorageClass
 		resourceQuota     *corev1.ResourceQuota
@@ -252,6 +257,124 @@ func intgTests() {
 					}
 					return ""
 				}, 4*time.Second).Should(Equal(expected))
+			})
+		})
+
+		When("VMService FSS is Enabled", func() {
+			var oldVMServiceEnableFunc func() bool
+
+			BeforeEach(func() {
+				oldVMServiceEnableFunc = lib.IsVMServiceFSSEnabled
+				lib.IsVMServiceFSSEnabled = func() bool {
+					return true
+				}
+			})
+			AfterEach(func() {
+				lib.IsVMServiceFSSEnabled = oldVMServiceEnableFunc
+			})
+			It("Reconciles VirtualMachine after VirtualMachineClassBinding created", func() {
+				vmClassBinding = &vmopv1alpha1.VirtualMachineClassBinding{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "fake-class-binding",
+						Namespace: vm.Namespace,
+					},
+					ClassRef: vmopv1alpha1.ClassReference{
+						APIVersion: vmopv1alpha1.SchemeGroupVersion.Group,
+						Name:       vm.Spec.ClassName,
+						Kind:       reflect.TypeOf(vmClass).Elem().Name(),
+					},
+				}
+
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+				By("VirtualMachine should have finalizer added", func() {
+					waitForVirtualMachineFinalizer(ctx, vmKey)
+				})
+
+				msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s",
+					vm.Spec.ClassName, vm.Namespace)
+
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(
+						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+						vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+						vmopv1alpha1.ConditionSeverityError,
+						msg),
+				}
+
+				Eventually(func() []vmopv1alpha1.Condition {
+					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
+						return vm.Status.Conditions
+					}
+					return nil
+				}).Should(conditions.MatchConditions(expectedCondition))
+
+				By("VirtualMachineClassBinding is added to the namespace to trigger a reconcile")
+				Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
+
+				expectedCondition = vmopv1alpha1.Conditions{
+					*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
+				}
+				Eventually(func() []vmopv1alpha1.Condition {
+					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
+						return vm.Status.Conditions
+					}
+					return nil
+				}).Should(conditions.MatchConditions(expectedCondition))
+			})
+
+			It("Reconciles VirtualMachine after VirtualMachineClassBinding deleted", func() {
+				vmClassBinding = &vmopv1alpha1.VirtualMachineClassBinding{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "small-class-binding",
+						Namespace: vm.Namespace,
+					},
+					ClassRef: vmopv1alpha1.ClassReference{
+						APIVersion: vmopv1alpha1.SchemeGroupVersion.Group,
+						Name:       vm.Spec.ClassName,
+						Kind:       reflect.TypeOf(vmClass).Elem().Name(),
+					},
+				}
+
+				By("VirtualMachineClassBinding is added to the namespace")
+				Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
+
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+				By("VirtualMachine should have finalizer added", func() {
+					waitForVirtualMachineFinalizer(ctx, vmKey)
+				})
+
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
+				}
+				Eventually(func() []vmopv1alpha1.Condition {
+					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
+						return vm.Status.Conditions
+					}
+					return nil
+				}).Should(conditions.MatchConditions(expectedCondition))
+
+				By("VirtualMachineClassBinding is deleted from the namespace to trigger a reconcile")
+				Expect(ctx.Client.Delete(ctx, vmClassBinding)).To(Succeed())
+
+				msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s",
+					vm.Spec.ClassName, vm.Namespace)
+
+				expectedCondition = vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(
+						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+						vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+						vmopv1alpha1.ConditionSeverityError,
+						msg),
+				}
+
+				Eventually(func() []vmopv1alpha1.Condition {
+					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
+						return vm.Status.Conditions
+					}
+					return nil
+				}).Should(conditions.MatchConditions(expectedCondition))
 			})
 		})
 

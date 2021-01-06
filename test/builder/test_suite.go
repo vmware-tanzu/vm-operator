@@ -361,7 +361,7 @@ func (s *TestSuite) postConfigureManager() {
 	if s.isWebhookTest() {
 		By("installing the webhook(s)", func() {
 			// ASSERT that the file for validating webhook file exists.
-			validatingWebhookFile := path.Join(testutil.GetRootDirOrDie(), "config", "webhook", "manifests.yaml")
+			validatingWebhookFile := path.Join(testutil.GetRootDirOrDie(), "config", "webhook", "manifests.v1beta1.yaml")
 			Expect(validatingWebhookFile).Should(BeAnExistingFile())
 
 			// UNMARSHAL the contents of the validating webhook file into MutatingWebhookConfiguration and

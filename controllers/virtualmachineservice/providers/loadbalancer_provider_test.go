@@ -18,8 +18,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
-
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -34,8 +32,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 		err                  error
 		ctx                  context.Context
 		vmService            *vmoperatorv1alpha1.VirtualMachineService
-		loadBalancerProvider nsxtLoadbalancerProvider
-		ncpClient            clientset.Interface
+		loadBalancerProvider *nsxtLoadbalancerProvider
 	)
 
 	Context("Create Loadbalancer", func() {
@@ -109,21 +106,21 @@ var _ = Describe("Loadbalancer Provider", func() {
 			It("should successfully get a noop loadbalancer provider", func() {
 				loadbalancerProvider, err := GetLoadbalancerProviderByType(nil, "dummy")
 				Expect(err).NotTo(HaveOccurred())
-				Expect(loadbalancerProvider).To(Equal(noopLoadbalancerProvider{}))
+				Expect(loadbalancerProvider).To(Equal(NoopLoadbalancerProvider{}))
 			})
 
 			It("should successfully get nsx-t load balancer provider", func() {
-				loadbalancerProvider := NsxtLoadBalancerProvider(ncpClient)
+				loadbalancerProvider := NsxtLoadBalancerProvider()
 				Expect(loadbalancerProvider).NotTo(BeNil())
 			})
 		})
 
 		Context("ltest noop loadbalancer provider", func() {
 			var (
-				lbprovider *noopLoadbalancerProvider
+				lbprovider *NoopLoadbalancerProvider
 			)
 			JustBeforeEach(func() {
-				lbprovider = &noopLoadbalancerProvider{}
+				lbprovider = &NoopLoadbalancerProvider{}
 			})
 			Context("test EnsureLoadBalancer", func() {
 				JustBeforeEach(func() {
@@ -167,9 +164,10 @@ var _ = Describe("Loadbalancer Provider", func() {
 						ExternalName: "TEST",
 					},
 				}
-				loadBalancerProvider = nsxtLoadbalancerProvider{ncpClient}
 				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
+				loadBalancerProvider = &nsxtLoadbalancerProvider{}
 			})
+
 			It("should get health check node port in the annotation", func() {
 				vmServiceAnnotations, err = loadBalancerProvider.GetServiceAnnotations(ctx, vmService)
 				Expect(vmServiceAnnotations).ToNot(BeNil())
@@ -198,8 +196,9 @@ var _ = Describe("Loadbalancer Provider", func() {
 						ExternalName: "TEST",
 					},
 				}
-				loadBalancerProvider = nsxtLoadbalancerProvider{ncpClient}
+				loadBalancerProvider = &nsxtLoadbalancerProvider{}
 			})
+
 			It("should get health check node port in the to be removed annotation", func() {
 				vmServiceAnnotations, err = loadBalancerProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
 				Expect(vmServiceAnnotations).ToNot(BeNil())
@@ -228,8 +227,8 @@ var _ = Describe("Loadbalancer Provider", func() {
 						ExternalName: "TEST",
 					},
 				}
-				loadBalancerProvider = nsxtLoadbalancerProvider{ncpClient}
 				vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeCluster)
+				loadBalancerProvider = &nsxtLoadbalancerProvider{}
 			})
 			When("etp is Cluster", func() {
 				It("should not create any label", func() {
@@ -271,7 +270,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 						ExternalName: "TEST",
 					},
 				}
-				loadBalancerProvider = nsxtLoadbalancerProvider{ncpClient}
+				loadBalancerProvider = &nsxtLoadbalancerProvider{}
 			})
 
 			JustBeforeEach(func() {

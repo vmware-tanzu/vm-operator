@@ -1,94 +1,27 @@
-// +build integration
+// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
-/* **********************************************************
- * Copyright 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
- * **********************************************************/
-
-package virtualmachineservice
+package virtualmachineservice_test
 
 import (
-	"context"
 	"testing"
 
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
-
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/vmware-tanzu/vm-operator/test/integration"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
+	"github.com/vmware-tanzu/vm-operator/pkg/manager"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
+)
+
+var suite = builder.NewTestSuiteForController(
+	virtualmachineservice.AddToManager,
+	manager.InitializeProvidersNoopFn,
 )
 
 func TestVirtualMachineService(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecsWithDefaultAndCustomReporters(t, "VirtualMachineService Suite", []Reporter{printer.NewlineReporter{}})
+	suite.Register(t, "VirtualMachineService controller suite", intgTests, unitTests)
 }
 
-var (
-	cfg     *rest.Config
-	vcSim   *integration.VcSimInstance
-	testEnv *envtest.Environment
-)
+var _ = BeforeSuite(suite.BeforeSuite)
 
-var _ = BeforeSuite(func() {
-	testEnv, _, cfg, vcSim, _, _ = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
-})
-
-var _ = AfterSuite(func() {
-	integration.TeardownIntegrationEnv(testEnv, vcSim)
-})
-
-func createObjects(ctx context.Context, ctrlClient client.Client, runtimeObjects []runtime.Object) {
-	for _, obj := range runtimeObjects {
-		Expect(ctrlClient.Create(ctx, obj)).To(Succeed())
-	}
-}
-
-func updateObjects(ctx context.Context, ctrlClient client.Client, runtimeObjects []runtime.Object) {
-	for _, obj := range runtimeObjects {
-		Expect(ctrlClient.Update(ctx, obj)).To(Succeed())
-	}
-}
-
-func updateObjectsStatus(ctx context.Context, ctrlClient client.StatusClient, runtimeObjects []runtime.Object) {
-	for _, obj := range runtimeObjects {
-		Expect(ctrlClient.Status().Update(ctx, obj)).To(Succeed())
-	}
-}
-
-func deleteObjects(ctx context.Context, ctrlClient client.Client, runtimeObjects []runtime.Object) {
-	for _, obj := range runtimeObjects {
-		Expect(ctrlClient.Delete(ctx, obj)).To(Succeed())
-	}
-}
-
-func assertEventuallyExistsInNamespace(ctx context.Context, ctrlClient client.Client, namespace, name string, obj runtime.Object) {
-	EventuallyWithOffset(2, func() error {
-		key := client.ObjectKey{Namespace: namespace, Name: name}
-		return ctrlClient.Get(ctx, key, obj)
-	}, timeout).Should(Succeed())
-}
-
-func assertService(ctx context.Context, ctrlClient client.Client, namespace, name string) {
-	service := &corev1.Service{}
-	assertEventuallyExistsInNamespace(ctx, ctrlClient, namespace, name, service)
-}
-
-func assertServiceWithNoEndpointSubsets(ctx context.Context, ctrlClient client.Client, namespace, name string) {
-	assertService(ctx, ctrlClient, namespace, name)
-	endpoints := &corev1.Endpoints{}
-	assertEventuallyExistsInNamespace(ctx, ctrlClient, namespace, name, endpoints)
-	Expect(endpoints.Subsets).To(BeEmpty())
-}
-
-func assertServiceWithEndpointSubsets(ctx context.Context, ctrlClient client.Client, namespace, name string) []corev1.EndpointSubset {
-	assertService(ctx, ctrlClient, namespace, name)
-	endpoints := &corev1.Endpoints{}
-	assertEventuallyExistsInNamespace(ctx, ctrlClient, namespace, name, endpoints)
-	Expect(endpoints.Subsets).NotTo(BeEmpty())
-	return endpoints.Subsets
-}
+var _ = AfterSuite(suite.AfterSuite)

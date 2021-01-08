@@ -9,11 +9,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/proxy/apis"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-
-	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
-	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -46,8 +42,6 @@ func SetLBProvider() {
 func init() {
 	SetLBProvider()
 }
-
-var log = logf.Log.WithName("loadbalancer")
 
 // LoadbalancerProvider sets up Loadbalancer for different type of Loadbalancer
 type LoadbalancerProvider interface {
@@ -91,51 +85,42 @@ type LoadbalancerProvider interface {
 // Get Loadbalancer Provider By Type, currently only support nsxt provider, if provider type unknown, will return nil
 func GetLoadbalancerProviderByType(mgr manager.Manager, providerType string) (LoadbalancerProvider, error) {
 	if providerType == NSXTLoadBalancer {
-		// TODO:  () Using static ncp client for now, replace it with runtime ncp client
-		ncpClient, err := ncpclientset.NewForConfig(mgr.GetConfig())
-		if err != nil {
-			log.Error(err, "unable to get ncp clientset from config")
-			return nil, err
-		}
-		return NsxtLoadBalancerProvider(ncpClient), nil
+		return NsxtLoadBalancerProvider(), nil
 	}
 	if providerType == SimpleLoadBalancer {
 		return simplelb.New(mgr), nil
 	}
-	return noopLoadbalancerProvider{}, nil
+	return NoopLoadbalancerProvider{}, nil
 }
 
-type noopLoadbalancerProvider struct{}
+type NoopLoadbalancerProvider struct{}
 
-func (noopLoadbalancerProvider) EnsureLoadBalancer(context.Context, *vmoperatorv1alpha1.VirtualMachineService) error {
+func (NoopLoadbalancerProvider) EnsureLoadBalancer(context.Context, *vmoperatorv1alpha1.VirtualMachineService) error {
 	return nil
 }
 
-func (noopLoadbalancerProvider) GetServiceLabels(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (NoopLoadbalancerProvider) GetServiceLabels(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
-func (noopLoadbalancerProvider) GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (NoopLoadbalancerProvider) GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
-func (noopLoadbalancerProvider) GetServiceAnnotations(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (NoopLoadbalancerProvider) GetServiceAnnotations(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
-func (noopLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (NoopLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
 type nsxtLoadbalancerProvider struct {
-	client clientset.Interface
 }
 
-//NsxLoadbalancerProvider returns a nsxLoadbalancerProvider instance
-func NsxtLoadBalancerProvider(client clientset.Interface) *nsxtLoadbalancerProvider {
-	return &nsxtLoadbalancerProvider{
-		client: client,
-	}
+// NsxLoadbalancerProvider returns a nsxLoadbalancerProvider instance
+func NsxtLoadBalancerProvider() *nsxtLoadbalancerProvider {
+	return &nsxtLoadbalancerProvider{}
 }
 
 func (nl *nsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) error {

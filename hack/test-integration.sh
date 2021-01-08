@@ -56,8 +56,9 @@ CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" \
            ./controllers/infracluster \
            ./controllers/infraprovider \
            ./controllers/virtualmachine \
-           ./controllers/virtualmachineimage \
            ./controllers/virtualmachineclass \
+           ./controllers/virtualmachineimage \
+           ./controllers/virtualmachineservice \
            ./controllers/virtualmachinesetresourcepolicy \
            ./controllers/volume \
            -- -enable-integration-tests -enable-unit-tests=false

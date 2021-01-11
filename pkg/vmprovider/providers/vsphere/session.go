@@ -63,9 +63,9 @@ type Session struct {
 	useInventoryForImages bool
 	tagInfo               map[string]string
 
-	mutex                sync.Mutex
-	cpuMinMHzInCluster   uint64 // CPU Min Frequency across all Hosts in the cluster
-	guestOSDescriptorIDs map[string]bool
+	mutex              sync.Mutex
+	cpuMinMHzInCluster uint64            // CPU Min Frequency across all Hosts in the cluster
+	guestOSIdsToFamily map[string]string // map of cluster's supported GuestOS ids to its OS family
 }
 
 func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphereVmProviderConfig,
@@ -137,7 +137,7 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		}
 		s.SetCpuMinMHzInCluster(minFreq)
 
-		s.guestOSDescriptorIDs, err = GetValidGuestOSDescriptorIDs(ctx, s.cluster, s.Client.vimClient)
+		s.guestOSIdsToFamily, err = GetValidGuestOSDescriptorIDs(ctx, s.cluster, s.Client.vimClient)
 		if err != nil {
 			return errors.Wrapf(err, "failed to init guestOS descriptors for cluster")
 		}
@@ -234,7 +234,7 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID str
 		item := items[i]
 		if IsSupportedDeployType(item.Type) {
 			var ovfInfoRetriever OvfPropertyRetriever = vmOptions{}
-			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, AnnotateVmImage, ovfInfoRetriever, s.guestOSDescriptorIDs)
+			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, AnnotateVmImage, ovfInfoRetriever, s.guestOSIdsToFamily)
 			if err != nil {
 				return nil, err
 			}
@@ -1510,6 +1510,7 @@ func (s *Session) String() string {
 	}
 	sb.WriteString(fmt.Sprintf("cpuMinMHzInCluster: %v, ", s.GetCpuMinMHzInCluster()))
 	sb.WriteString(fmt.Sprintf("tagInfo: %v ", s.tagInfo))
+	sb.WriteString(fmt.Sprintf("guestOSIdsToFamily: %v, ", s.guestOSIdsToFamily))
 	sb.WriteString("}")
 	return sb.String()
 }

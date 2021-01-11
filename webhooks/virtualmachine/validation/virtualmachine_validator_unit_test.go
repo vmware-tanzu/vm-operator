@@ -103,7 +103,7 @@ func unitTestsValidateCreate() {
 			ctx.vm.Spec.ImageName = ""
 		}
 		if args.invalidGuestOSType {
-			ctx.vmImage.Status.GuestOSCustomizable = &[]bool{false}[0]
+			ctx.vmImage.Status.SupportedGuestOS = &[]bool{false}[0]
 			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
 			Expect(err).ToNot(HaveOccurred())
 		}
@@ -209,7 +209,7 @@ func unitTestsValidateCreate() {
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should deny invalid class name", createArgs{invalidClassName: true}, false, messages.ClassNotSpecified, nil),
 		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false, messages.ImageNotSpecified, nil),
-		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSCustomizationNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
+		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
 		Entry("should deny invalid network name for VDS network type", createArgs{invalidNetworkName: true}, false, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, 0), nil),
 		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0), nil),
 		Entry("should deny connection of multiple network interfaces of a VM to the same network", createArgs{multipleNetIfToSameNetwork: true},

@@ -422,11 +422,14 @@ func (vm *VirtualMachine) Customize(ctx context.Context, spec types.Customizatio
 
 	_, err = customizeTask.WaitForResult(ctx, nil)
 	if err != nil {
-		// Fetch fault messages if present
-		fault := err.(task.Error).Fault().GetMethodFault()
-		if fault != nil {
-			err = errors.Wrapf(err, "Fault messages: %v", fault.FaultMessage)
+		// Fetch fault messages for task.Error
+		if taskErr, ok := err.(task.Error); ok {
+			fault := taskErr.Fault().GetMethodFault()
+			if fault != nil {
+				err = errors.Wrapf(err, "Fault messages: %v", fault.FaultMessage)
+			}
 		}
+
 		log.Error(err, "Failed to complete customization for VM", "name", vm.Name)
 		return err
 	}

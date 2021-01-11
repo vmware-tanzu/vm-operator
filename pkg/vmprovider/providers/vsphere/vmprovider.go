@@ -58,8 +58,8 @@ const (
 
 	// TODO: Rename and move to vmoperator-api
 	// Annotation key to skip validation checks of GuestOS Type
-	VMOperatorVMGOSCustomizeCheckKey = pkg.VmOperatorKey + "/guest-os-customization-check"
-	VMOperatorVMGOSCustomizeDisable  = "disable"
+	VMOperatorVMGOSSupportCheckKey = pkg.VmOperatorKey + "/guest-os-support-check"
+	VMOperatorVMGOSSupportDisable  = "disable"
 
 	EnvContentLibApiWaitSecs     = "CONTENT_API_WAIT_SECS"
 	DefaultContentLibApiWaitSecs = 5
@@ -446,12 +446,12 @@ func GetVmwareSystemPropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]stri
 }
 
 // GetValidGuestOSDescriptorIDs fetches valid guestOS descriptor IDs for the cluster
-func GetValidGuestOSDescriptorIDs(ctx context.Context, cluster *object.ClusterComputeResource, client *vim25.Client) (map[string]bool, error) {
+func GetValidGuestOSDescriptorIDs(ctx context.Context, cluster *object.ClusterComputeResource, client *vim25.Client) (map[string]string, error) {
 	if cluster == nil {
 		return nil, fmt.Errorf("No cluster exists, can't get OS Descriptors")
 	}
 
-	log.V(4).Info("Validating if the GuestOS Type in the ovf is a valid customizable type")
+	log.V(4).Info("Fetching all customizable guestOS types for the cluster")
 	var computeResource mo.ComputeResource
 	obj := cluster.Reference()
 
@@ -472,24 +472,26 @@ func GetValidGuestOSDescriptorIDs(ctx context.Context, cluster *object.ClusterCo
 		return nil, err
 	}
 
-	guestOSDescriptorIDs := make(map[string]bool)
+	guestOSIdsToFamily := make(map[string]string)
 	for _, descriptor := range opt.Returnval.GuestOSDescriptor {
-		guestOSDescriptorIDs[descriptor.Id] = true
+		//Fetch all ids and families that have supportLevel other than unsupported
+		if descriptor.SupportLevel != "unsupported" {
+			guestOSIdsToFamily[descriptor.Id] = descriptor.Family
+		}
 	}
 
-	return guestOSDescriptorIDs, nil
+	return guestOSIdsToFamily, nil
 }
 
 // For a given library item, convert its attributes to return a VirtualMachineImage that represents a k8s-native
 // view of the item.
 func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *library.Item, imgOptions ImageOptions, ovfPropRetriever OvfPropertyRetriever,
-	gOSids map[string]bool) (*v1alpha1.VirtualMachineImage, error) {
+	gOSIdsToFamily map[string]string) (*v1alpha1.VirtualMachineImage, error) {
 
 	var (
-		ovfSystemProps        = make(map[string]string)
-		productInfo           = &v1alpha1.VirtualMachineImageProductInfo{}
-		osInfo                = &v1alpha1.VirtualMachineImageOSInfo{}
-		isGuestOSCustomizable bool
+		ovfSystemProps = make(map[string]string)
+		productInfo    = &v1alpha1.VirtualMachineImageProductInfo{}
+		osInfo         = &v1alpha1.VirtualMachineImageOSInfo{}
 	)
 
 	if item.Type == library.ItemTypeOVF {
@@ -554,11 +556,16 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 		},
 	}
 
-	// If the GuestOS Descriptors IDs were populated from the cluster
-	// Set the image's Status
-	if item.Type == library.ItemTypeOVF && len(gOSids) > 0 {
-		isGuestOSCustomizable = gOSids[osInfo.Type]
-		image.Status.GuestOSCustomizable = &isGuestOSCustomizable
+	// Set the image's Status if the GuestOS Descriptors IDs map was populated
+	if item.Type == library.ItemTypeOVF && len(gOSIdsToFamily) > 0 {
+		isSupportedGuestOS := false
+		// gOSFamily will be present for supported OSTypes and
+		// support only VirtualMachineGuestOsFamilyLinuxGuest for now
+		gOSFamily := gOSIdsToFamily[osInfo.Type]
+		if gOSFamily != "" && gOSFamily == string(vimtypes.VirtualMachineGuestOsFamilyLinuxGuest) {
+			isSupportedGuestOS = true
+		}
+		image.Status.SupportedGuestOS = &isSupportedGuestOS
 	}
 
 	return image, nil

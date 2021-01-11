@@ -21,7 +21,7 @@ const (
 	VolumeNotSpecifiedFmt                     = "one of spec.volumes[%d].persistentVolumeClaim/spec.volumes[%d].vsphereVolume must be specified"
 	VsphereVolumeSizeNotMBMultipleFmt         = "spec.volumes[%d].vsphereVolume.capacity.ephemeral-storage must be a multiple of MB"
 	EagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning."
-	GuestOSCustomizationNotSupported          = "GuestOSCustomization not supported for osType %s on image %s"
+	GuestOSNotSupported                       = "GuestOS not supported for osType %s on image %s"
 	StorageClassNotAssigned                   = "StorageClass %s is not assigned to any ResourceQuotas in namespace %s"
 	NoResourceQuota                           = "no ResourceQuotas assigned to namespace %s"
 )

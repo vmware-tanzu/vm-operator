@@ -18,8 +18,8 @@ spec:
   - JSONPath: .spec.type
     name: Format
     type: string
-  - JSONPath: .status.guestOsCustomizable
-    name: GuestOSCustomizable
+  - JSONPath: .status.supportedGuestOS
+    name: SupportedGuestOS
     priority: 1
     type: boolean
   group: vmoperator.vmware.com
@@ -105,16 +105,16 @@ spec:
         status:
           description: VirtualMachineImageStatus defines the observed state of VirtualMachineImage
           properties:
-            guestOsCustomizable:
-              description: GuestOSCustomizable indicates whether the VirtualMachineImage's
-                osType is supported for customisation on the cluster
-              type: boolean
             internalId:
               description: Deprecated
               type: string
             powerState:
               description: Deprecated
               type: string
+            supportedGuestOS:
+              description: SupportedGuestOS indicates whether the VirtualMachineImage's
+                osType is supported by the hosts in the cluster and VM Service
+              type: boolean
             uuid:
               description: Deprecated
               type: string

@@ -136,9 +136,9 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 		return []string{messages.ImageNotSpecified}
 	}
 
-	val := vm.Annotations[vsphere.VMOperatorVMGOSCustomizeCheckKey]
+	val := vm.Annotations[vsphere.VMOperatorVMGOSSupportCheckKey]
 
-	if val != vsphere.VMOperatorVMGOSCustomizeDisable {
+	if val != vsphere.VMOperatorVMGOSSupportDisable {
 		image := vmopv1.VirtualMachineImage{}
 		err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image)
 		if err != nil {
@@ -146,8 +146,8 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 			return validationErrs
 		}
 
-		if image.Status.GuestOSCustomizable != nil && !*image.Status.GuestOSCustomizable {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.GuestOSCustomizationNotSupported, image.Spec.OSInfo.Type, image.Name))
+		if image.Status.SupportedGuestOS != nil && !*image.Status.SupportedGuestOS {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.GuestOSNotSupported, image.Spec.OSInfo.Type, image.Name))
 		}
 	}
 

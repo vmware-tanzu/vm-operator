@@ -7,18 +7,18 @@ import (
 	"errors"
 	"time"
 
-	"github.com/vmware/govmomi/find"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/vmware/govmomi/ovf"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/mocks"
@@ -321,18 +321,21 @@ var _ = Describe("virtualmachine images", func() {
 		})
 	})
 
-	Context("LibItemToVirtualMachineImage and GuestOSCustomizable", func() {
+	Context("LibItemToVirtualMachineImage and SupportedGuestOS", func() {
 		var (
-			item                library.Item
-			ovfEnvelope         *ovf.Envelope
-			dummyValidOsType    string
-			dummyInvalidOsType  string
-			dummyEmptyOsType    string
-			supportedGuestOsIds map[string]bool
-			supportedFalse      = new(bool)
-			supportedTrue       = new(bool)
-			trueVar             = true
-			falseVar            = false
+			item                        library.Item
+			ovfEnvelope                 *ovf.Envelope
+			dummyValidOsType            = "dummy_valid_os_type"
+			dummyInvalidOsType          = "dummy_invalid_os_type"
+			dummyEmptyOsType            = ""
+			dummyWindowsOSType          = "dummy_win_os"
+			dummylinuxFamily            = string(types.VirtualMachineGuestOsFamilyLinuxGuest)
+			dummyWindowsFamily          = string(types.VirtualMachineGuestOsFamilyWindowsGuest)
+			supportedGuestOsIdsToFamily map[string]string
+			supportedFalse              = new(bool)
+			supportedTrue               = new(bool)
+			trueVar                     = true
+			falseVar                    = false
 		)
 
 		BeforeEach(func() {
@@ -345,10 +348,6 @@ var _ = Describe("virtualmachine images", func() {
 				CreationTime: &ts,
 			}
 
-			dummyValidOsType = "dummy_valid_os_type"
-			dummyInvalidOsType = "dummy_invalid_os_type"
-			dummyEmptyOsType = ""
-
 			ovfEnvelope = &ovf.Envelope{
 				VirtualSystem: &ovf.VirtualSystem{
 					OperatingSystem: []ovf.OperatingSystemSection{
@@ -358,9 +357,10 @@ var _ = Describe("virtualmachine images", func() {
 				},
 			}
 
-			supportedGuestOsIds = make(map[string]bool)
+			supportedGuestOsIdsToFamily = make(map[string]string)
 			// supported guestOSIds fetched from the cluster
-			supportedGuestOsIds[dummyValidOsType] = true
+			supportedGuestOsIdsToFamily[dummyValidOsType] = dummylinuxFamily
+			supportedGuestOsIdsToFamily[dummyWindowsOSType] = dummyWindowsFamily
 
 			supportedTrue = &trueVar
 			supportedFalse = &falseVar
@@ -372,14 +372,14 @@ var _ = Describe("virtualmachine images", func() {
 				Return(ovfEnvelope, nil).
 				AnyTimes()
 
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIds)
+			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIdsToFamily)
 			Expect(err).To(BeNil())
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
 
-			// GuestOSCustomizable in Status is to true
-			Expect((image.Status.GuestOSCustomizable)).Should(Equal(supportedTrue))
+			// SupportedGuestOS in Status is to true
+			Expect((image.Status.SupportedGuestOS)).Should(Equal(supportedTrue))
 
 		})
 		It("ovfEnvelope has a invalid GuestOSType", func() {
@@ -397,14 +397,14 @@ var _ = Describe("virtualmachine images", func() {
 				Return(ovfEnvelope, nil).
 				AnyTimes()
 
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIds)
+			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIdsToFamily)
 			Expect(err).To(BeNil())
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
 
-			// GuestOSCustomizable in Status is to false
-			Expect((image.Status.GuestOSCustomizable)).Should(Equal(supportedFalse))
+			// SupportedGuestOS in Status is to false
+			Expect((image.Status.SupportedGuestOS)).Should(Equal(supportedFalse))
 		})
 
 		It("ovfEnvelope has a empty string GuestOSType", func() {
@@ -422,27 +422,52 @@ var _ = Describe("virtualmachine images", func() {
 				Return(ovfEnvelope, nil).
 				AnyTimes()
 
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIds)
+			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIdsToFamily)
 			Expect(err).To(BeNil())
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
 
-			// GuestOSCustomizable in Status is to false
-			Expect((image.Status.GuestOSCustomizable)).Should(Equal(supportedFalse))
+			// SupportedGuestOS in Status is to false
+			Expect((image.Status.SupportedGuestOS)).Should(Equal(supportedFalse))
 		})
 
-		It("with vmtx type GuestOSCustomizable flag is not set", func() {
-			item.Type = "vmtx"
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, nil, supportedGuestOsIds)
+		It("ovfEnvelope has a windows GuestOSType", func() {
+			ovfEnvelope = &ovf.Envelope{
+				VirtualSystem: &ovf.VirtualSystem{
+					OperatingSystem: []ovf.OperatingSystemSection{
+						{
+							OSType: &dummyWindowsOSType,
+						}},
+				},
+			}
+
+			mockVmProviderInterface.EXPECT().
+				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(ovfEnvelope, nil).
+				AnyTimes()
+
+			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIdsToFamily)
 			Expect(err).To(BeNil())
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
 
-			// GuestOSCustomizable in Status is unset
+			// SupportedGuestOS in Status is to false
+			Expect((image.Status.SupportedGuestOS)).Should(Equal(supportedFalse))
+		})
+
+		It("with vmtx type SupportedGuestOS flag is not set", func() {
+			item.Type = "vmtx"
+			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, nil, supportedGuestOsIdsToFamily)
+			Expect(err).To(BeNil())
+			Expect(image).ToNot(BeNil())
+			Expect(image.Name).Should(Equal("fakeItem"))
+			Expect(image.Annotations).To(BeEmpty())
+
+			// SupportedGuestOS in Status is unset
 			var unset *bool = nil
-			Expect((image.Status.GuestOSCustomizable)).Should(Equal(unset))
+			Expect((image.Status.SupportedGuestOS)).Should(Equal(unset))
 		})
 	})
 

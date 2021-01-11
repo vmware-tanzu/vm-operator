@@ -73,16 +73,16 @@ func intgTestsValidateCreate() {
 		// works with validGuestOSType or invalidGuestOSType
 		if args.gOSCSkipAnnotation {
 			vm.Annotations = make(map[string]string)
-			vm.Annotations[vsphere.VMOperatorVMGOSCustomizeCheckKey] = vsphere.VMOperatorVMGOSCustomizeDisable
+			vm.Annotations[vsphere.VMOperatorVMGOSSupportCheckKey] = vsphere.VMOperatorVMGOSSupportDisable
 		}
 
 		if args.validGuestOSType {
-			ctx.vmImage.Status.GuestOSCustomizable = &[]bool{true}[0]
+			ctx.vmImage.Status.SupportedGuestOS = &[]bool{true}[0]
 			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
 			Expect(err).ToNot(HaveOccurred())
 		}
 		if args.invalidGuestOSType {
-			ctx.vmImage.Status.GuestOSCustomizable = &[]bool{false}[0]
+			ctx.vmImage.Status.SupportedGuestOS = &[]bool{false}[0]
 			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
 			Expect(err).ToNot(HaveOccurred())
 		}
@@ -131,7 +131,7 @@ func intgTestsValidateCreate() {
 		Entry("should work for image with valid osType", createArgs{validGuestOSType: true}, true, "", nil),
 		Entry("should work despite osType when VMGOSCustomizeCheckKey is disabled", createArgs{gOSCSkipAnnotation: true, invalidGuestOSType: true}, true, "", nil),
 		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false, "spec.imageName must be specified", nil),
-		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSCustomizationNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
+		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
 		Entry("should not work for invalid metadata transport", createArgs{invalidMetadataTransport: true}, false, "spec.vmmetadata.transport is not supported", nil),
 		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmmetadata.configmapname must be specified", nil),
 		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, builder.DummyStorageClassName, ""), nil),

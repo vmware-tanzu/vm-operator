@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/json"
 	clientgorecord "k8s.io/client-go/tools/record"
+	"k8s.io/kubernetes/pkg/proxy/apis"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -33,6 +34,7 @@ import (
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -369,7 +371,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("Should update the k8s Service to match with the VirtualMachineService", func() {
+			It("Should update the k8s Service to match with the VirtualMachineService when new values are added", func() {
 				svc := corev1.Service{}
 				Expect(c.Get(ctx, client.ObjectKey{Namespace: serviceNamespace, Name: serviceName}, &svc)).To(Succeed())
 
@@ -384,6 +386,10 @@ var _ = Describe("VirtualMachineService controller", func() {
 				}
 				vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
 				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
+				if vmService.Labels == nil {
+					vmService.Labels = make(map[string]string)
+				}
+				vmService.Labels[apis.LabelServiceProxyName] = providers.NSXTServiceProxy
 
 				newService, err := r.createOrUpdateService(ctx, vmService)
 				Expect(err).ShouldNot(HaveOccurred())
@@ -393,9 +399,91 @@ var _ = Describe("VirtualMachineService controller", func() {
 
 				Expect(newService.Spec.ExternalName).To(Equal(externalName))
 				Expect(newService.Spec.LoadBalancerIP).To(Equal(loadBalancerIP))
+
 				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeLocal))
 				Expect(newService.Spec.HealthCheckNodePort).To(Equal(int32(30012)))
+				Expect(newService.Labels[apis.LabelServiceProxyName]).To(Equal(providers.NSXTServiceProxy))
 				Expect(newService.Spec.LoadBalancerSourceRanges).To(Equal([]string{"1.1.1.0/24", "2.2.2.2/28"}))
+			})
+
+			It("Should update the k8s Service to match with the VirtualMachineService when LoadBalancerSourceRanges is cleared", func() {
+				service.Spec.LoadBalancerSourceRanges = []string{"1.1.1.0/24", "2.2.2.2/28"}
+				Expect(c.Update(ctx, service)).To(Succeed())
+
+				vmService.Spec.LoadBalancerSourceRanges = []string{}
+
+				newService, err := r.createOrUpdateService(ctx, vmService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				// Channel should receive an Update event
+				Expect(events).Should(Receive(ContainSubstring(OpUpdate)))
+				Expect(len(newService.Spec.LoadBalancerSourceRanges)).To(Equal(0))
+			})
+
+			It("Should update the k8s Service to match with the VirtualMachineService when externalTrafficPolicy is cleared", func() {
+				By("applying externalTrafficPolicy and healthCheckNodePort annotations")
+				if service.Annotations == nil {
+					service.Annotations = make(map[string]string)
+				}
+				service.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
+				service.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
+
+				By("applying service-proxy label")
+				if service.Labels == nil {
+					service.Labels = make(map[string]string)
+				}
+				service.Labels[apis.LabelServiceProxyName] = providers.NSXTServiceProxy
+				service.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyTypeLocal
+				service.Spec.HealthCheckNodePort = 30012
+				Expect(c.Update(ctx, service)).To(Succeed())
+
+				delete(vmService.Annotations, utils.AnnotationServiceExternalTrafficPolicyKey)
+				delete(vmService.Annotations, utils.AnnotationServiceHealthCheckNodePortKey)
+
+				newService, err := r.createOrUpdateService(ctx, vmService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				// Channel should receive an Update event
+				Expect(events).Should(Receive(ContainSubstring(OpUpdate)))
+				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeCluster))
+				Expect(newService.Spec.HealthCheckNodePort).To(Equal(int32(0)))
+				_, exist := newService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]
+				Expect(exist).To(BeFalse())
+				_, exist = newService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]
+				Expect(exist).To(BeFalse())
+				_, exist = newService.Labels[apis.LabelServiceProxyName]
+				Expect(exist).To(BeFalse())
+			})
+
+			It("Should update the k8s Service to remove the provider specific annotations regarding healthCheckNodePort", func() {
+				By("adding provider specific healthCheckNodePort annotations to the Service")
+				if vmService.Annotations == nil {
+					vmService.Annotations = make(map[string]string)
+				}
+				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
+
+				annotations, err := r.loadbalancerProvider.GetServiceAnnotations(ctx, vmService)
+				for k, v := range annotations {
+					service.Annotations[k] = v
+				}
+				Expect(c.Update(ctx, service)).To(Succeed())
+
+				By("deleting the healthCheckNodePort annotation from vm service")
+				delete(vmService.Annotations, utils.AnnotationServiceHealthCheckNodePortKey)
+
+				By("reconciling the Service")
+				newService, err := r.createOrUpdateService(ctx, vmService)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				// Channel should receive an Update event
+				Expect(events).Should(Receive(ContainSubstring(OpUpdate)))
+
+				By("ensuring the provider specific annotations are removed from the new service")
+				annotationsToBeRemoved, err := r.loadbalancerProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
+				for k := range annotationsToBeRemoved {
+					_, exist := newService.Annotations[k]
+					Expect(exist).To(BeFalse())
+				}
 			})
 
 			It("Should not clobber the nodePort while updating service", func() {
@@ -588,6 +676,23 @@ var _ = Describe("VirtualMachineService controller", func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 
+			Context("When there are new annotations added to the VMSVC", func() {
+				It("Should udpate the Service with new annotations", func() {
+					newServiceAnnotationKey := "new-dummy-service-annotation"
+					newServiceAnnotationVal := "ha"
+					if vmService.Annotations == nil {
+						vmService.Annotations = make(map[string]string)
+					}
+					vmService.Annotations[newServiceAnnotationKey] = newServiceAnnotationVal
+					newService, err := r.createOrUpdateService(ctx, vmService)
+					Expect(err).ShouldNot(HaveOccurred())
+
+					Expect(newService.Annotations).To(HaveKeyWithValue(newServiceAnnotationKey, newServiceAnnotationVal))
+
+					// Channel should receive an Update event
+					Expect(events).Should(Receive(ContainSubstring(OpUpdate)))
+				})
+			})
 			Context("When there are annotations added to the Service", func() {
 				It("Should preserve existing annotations on the Service and shouldn't update the k8s Service", func() {
 					newService, err := r.createOrUpdateService(ctx, vmService)
@@ -595,7 +700,7 @@ var _ = Describe("VirtualMachineService controller", func() {
 
 					Expect(newService.Annotations).To(HaveKeyWithValue(serviceAnnotationKey, serviceAnnotationVal))
 
-					// Channel should receive an Update event
+					// Channel should not receive an Update event
 					Expect(events).ShouldNot(Receive(ContainSubstring(OpUpdate)))
 				})
 			})

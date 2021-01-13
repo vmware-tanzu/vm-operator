@@ -9,7 +9,9 @@ import (
 	"context"
 	"os"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/kubernetes/pkg/proxy/apis"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -131,12 +133,12 @@ var _ = Describe("Loadbalancer Provider", func() {
 					Expect(err).ToNot(HaveOccurred())
 				})
 			})
-			Context("test GetVMServiceAnnotations", func() {
+			Context("test GetServiceAnnotations", func() {
 				var (
 					annotations map[string]string
 				)
 				JustBeforeEach(func() {
-					annotations, err = lbprovider.GetVMServiceAnnotations(context.Background(), nil)
+					annotations, err = lbprovider.GetServiceAnnotations(context.Background(), nil)
 				})
 				It("should return empty", func() {
 					Expect(annotations).To(BeNil())
@@ -145,7 +147,7 @@ var _ = Describe("Loadbalancer Provider", func() {
 			})
 		})
 
-		Context("testing GetVMServiceAnnotations when VMService has healthCheckNodePort defined", func() {
+		Context("testing GetServiceAnnotations when VMService has healthCheckNodePort defined", func() {
 			var (
 				vmServiceAnnotations map[string]string
 			)
@@ -169,12 +171,141 @@ var _ = Describe("Loadbalancer Provider", func() {
 				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
 			})
 			It("should get health check node port in the annotation", func() {
-				vmServiceAnnotations, err = loadBalancerProvider.GetVMServiceAnnotations(ctx, vmService)
+				vmServiceAnnotations, err = loadBalancerProvider.GetServiceAnnotations(ctx, vmService)
 				Expect(vmServiceAnnotations).ToNot(BeNil())
 				port := vmServiceAnnotations[ServiceLoadBalancerHealthCheckNodePortTagKey]
 				Expect(port).To(Equal("30012"))
 			})
 		})
+
+		Context("testing GetToBeRemovedServiceAnnotations when VMService does not have healthCheckNodePort defined", func() {
+			var (
+				vmServiceAnnotations map[string]string
+			)
+
+			BeforeEach(func() {
+				vmService = &vmoperatorv1alpha1.VirtualMachineService{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "dummy-vmservice",
+						Namespace:   dummyNamespace,
+						Annotations: make(map[string]string),
+					},
+					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+						Type:         vmoperatorv1alpha1.VirtualMachineServiceTypeClusterIP,
+						Ports:        nil,
+						Selector:     map[string]string{ClusterNameKey: "test"},
+						ClusterIP:    "TEST",
+						ExternalName: "TEST",
+					},
+				}
+				loadBalancerProvider = nsxtLoadbalancerProvider{ncpClient}
+			})
+			It("should get health check node port in the to be removed annotation", func() {
+				vmServiceAnnotations, err = loadBalancerProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
+				Expect(vmServiceAnnotations).ToNot(BeNil())
+				_, exist := vmServiceAnnotations[ServiceLoadBalancerHealthCheckNodePortTagKey]
+				Expect(exist).To(BeTrue())
+			})
+		})
+
+		Context("testing GetServiceLabels when VMService have externalTrafficPolicy annotation defined", func() {
+			var (
+				labels map[string]string
+			)
+
+			BeforeEach(func() {
+				vmService = &vmoperatorv1alpha1.VirtualMachineService{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "dummy-vmservice",
+						Namespace:   dummyNamespace,
+						Annotations: make(map[string]string),
+					},
+					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+						Type:         vmoperatorv1alpha1.VirtualMachineServiceTypeClusterIP,
+						Ports:        nil,
+						Selector:     map[string]string{ClusterNameKey: "test"},
+						ClusterIP:    "TEST",
+						ExternalName: "TEST",
+					},
+				}
+				loadBalancerProvider = nsxtLoadbalancerProvider{ncpClient}
+				vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeCluster)
+			})
+			When("etp is Cluster", func() {
+				It("should not create any label", func() {
+					labels, err = loadBalancerProvider.GetServiceLabels(ctx, vmService)
+					Expect(len(labels)).To(Equal(0))
+				})
+
+			})
+			When("etp is Local", func() {
+				BeforeEach(func() {
+					vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
+				})
+				It("should create one label for ServiceProxyName", func() {
+					labels, err = loadBalancerProvider.GetServiceLabels(ctx, vmService)
+					Expect(len(labels)).To(Equal(1))
+					Expect(labels[apis.LabelServiceProxyName]).To(Equal(NSXTServiceProxy))
+				})
+
+			})
+		})
+
+		Context("testing GetToBeRemovedServiceLabels", func() {
+			var (
+				labels map[string]string
+			)
+
+			BeforeEach(func() {
+				vmService = &vmoperatorv1alpha1.VirtualMachineService{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "dummy-vmservice",
+						Namespace:   dummyNamespace,
+						Annotations: make(map[string]string),
+					},
+					Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
+						Type:         vmoperatorv1alpha1.VirtualMachineServiceTypeClusterIP,
+						Ports:        nil,
+						Selector:     map[string]string{ClusterNameKey: "test"},
+						ClusterIP:    "TEST",
+						ExternalName: "TEST",
+					},
+				}
+				loadBalancerProvider = nsxtLoadbalancerProvider{ncpClient}
+			})
+
+			JustBeforeEach(func() {
+				labels, err = loadBalancerProvider.GetToBeRemovedServiceLabels(ctx, vmService)
+			})
+
+			When("etp is not present", func() {
+				It("should remove ServiceProxyName label", func() {
+					_, exists := labels[apis.LabelServiceProxyName]
+					Expect(exists).To(BeTrue())
+				})
+			})
+			When("etp is Local", func() {
+				BeforeEach(func() {
+					vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
+				})
+				It("should not remove ServiceProxyName label", func() {
+					_, exists := labels[apis.LabelServiceProxyName]
+					Expect(exists).To(BeFalse())
+				})
+
+			})
+			When("etp is Cluster", func() {
+				BeforeEach(func() {
+					vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeCluster)
+				})
+				It("should remove ServiceProxyName label", func() {
+					_, exists := labels[apis.LabelServiceProxyName]
+					Expect(exists).To(BeTrue())
+				})
+
+			})
+		})
+
 	})
 
 })

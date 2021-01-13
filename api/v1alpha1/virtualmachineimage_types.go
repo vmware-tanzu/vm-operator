@@ -73,9 +73,9 @@ type VirtualMachineImageStatus struct {
 	// Deprecated
 	PowerState    string `json:"powerState,omitempty"`
 
-	// GuestOSCustomizable indicates whether the VirtualMachineImage's osType is supported for
-	// customisation on the cluster
-	GuestOSCustomizable *bool  `json:"guestOsCustomizable,omitempty"`
+	// SupportedGuestOS indicates whether the VirtualMachineImage's osType is supported
+	// by the hosts in the cluster and VM Service
+	SupportedGuestOS *bool  `json:"supportedGuestOS,omitempty"`
 }
 
 // +genclient
@@ -87,7 +87,7 @@ type VirtualMachineImageStatus struct {
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
 // +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
 // +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"
-// +kubebuilder:printcolumn:name="GuestOSCustomizable",type="boolean",priority=1,JSONPath=".status.guestOsCustomizable"
+// +kubebuilder:printcolumn:name="SupportedGuestOS",type="boolean",priority=1,JSONPath=".status.supportedGuestOS"
 
 // VirtualMachineImage is the Schema for the virtualmachineimages API
 // A VirtualMachineImage represents a VirtualMachine image (e.g. VM template) that can be used as the base image

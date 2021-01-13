@@ -60,8 +60,23 @@ func (s *simpleLoadBalancerProvider) EnsureLoadBalancer(ctx context.Context, vmS
 	return s.updateLBConfig(ctx, vmService)
 }
 
+// No labels is added for simple LoadBalancer
+func (s *simpleLoadBalancerProvider) GetServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+	return nil, nil
+}
+
+// No labels needs to be removed for simple LoadBalancer
+func (s *simpleLoadBalancerProvider) GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+	return nil, nil
+}
+
 // No annotation is added for simple LoadBalancer
-func (s *simpleLoadBalancerProvider) GetVMServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (s *simpleLoadBalancerProvider) GetServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+	return nil, nil
+}
+
+// No annotation needs to be removed for simple LoadBalancer
+func (s *simpleLoadBalancerProvider) GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 

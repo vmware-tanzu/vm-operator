@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -191,15 +192,21 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 			r.log.Error(err, "Failed to create or get load balancer for vm service", "name", vmService.Name)
 			return err
 		}
-		annotations, err := r.loadbalancerProvider.GetVMServiceAnnotations(ctx, vmService)
+
+		// Get the provider specific annotations for Service and add
+		// them to the vm service as that's where Service inherits the
+		// values
+		annotations, err := r.loadbalancerProvider.GetServiceAnnotations(ctx, vmService)
 		if err != nil {
-			r.log.Error(err, "Failed to get loadbalancer annotations for vm service", "name", vmService.Name)
+			r.log.Error(err, "Failed to get loadbalancer annotations for service", "name", vmService.Name)
 			return err
 		}
-		// Initialize VM Service Annotation when it is nil
+
+		// Initialize VM Service Annotations when it is nil
 		if vmService.Annotations == nil {
 			vmService.Annotations = make(map[string]string)
 		}
+
 		for k, v := range annotations {
 			if oldValue, ok := vmService.Annotations[k]; ok {
 				r.log.V(5).Info("Replacing previous annotation value on vm service",
@@ -209,6 +216,31 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 					"newValue", v)
 			}
 			vmService.Annotations[k] = v
+		}
+
+		// Get the provider specific labels for Service and add
+		// them to the vm service as that's where Service inherits the
+		// values
+		labels, err := r.loadbalancerProvider.GetServiceLabels(ctx, vmService)
+		if err != nil {
+			r.log.Error(err, "Failed to get loadbalancer labels for service", "name", vmService.Name)
+			return err
+		}
+
+		// Initialize VM Service Labels when it is nil
+		if vmService.Labels == nil {
+			vmService.Labels = make(map[string]string)
+		}
+
+		for k, v := range labels {
+			if oldValue, ok := vmService.Labels[k]; ok {
+				r.log.V(5).Info("Replacing previous label value on vm service",
+					"vmServiceName", vmService.NamespacedName,
+					"key", k,
+					"oldValue", oldValue,
+					"newValue", v)
+			}
+			vmService.Labels[k] = v
 		}
 	}
 
@@ -331,6 +363,12 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 		},
 	}
 
+	// Setting default value so during update we could find the delta by
+	// DeepEqual
+	if svc.Spec.Type == corev1.ServiceTypeLoadBalancer || svc.Spec.Type == corev1.ServiceTypeNodePort {
+		svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyTypeCluster
+	}
+
 	// When VirtualMachineService is created with annotation
 	// labelServiceExternalTrafficPolicyKey, use its value for the
 	// Service.Spec.ExternalTrafficPolicy
@@ -345,6 +383,7 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 			r.log.V(5).Info("Unknown externalTrafficPolicy configured in VirtualMachineService label, skip it", "externalTrafficPolicy", externalTrafficPolicy)
 		}
 	}
+
 	// When VirtualMachineService is created with annotation
 	// labelServiceHealthCheckNodePortKey, use its value for the
 	// Service.Spec.HealthCheckNodePort
@@ -393,6 +432,7 @@ func addEndpointSubset(subsets []corev1.EndpointSubset, epa corev1.EndpointAddre
 }
 
 // createOrUpdateService reconciles the k8s Service corresponding to the VirtualMachineService by creating a new Service or updating an existing one. Returns the newly created or updated Service.
+// nolint:gocyclo
 func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*corev1.Service, error) {
 	// We can use vmService's namespace and name since Service and VirtualMachineService live in the same namespace.
 	serviceKey := client.ObjectKey{Name: vmService.Name, Namespace: vmService.Namespace}
@@ -437,17 +477,80 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context
 		}
 	}
 
+	// Merge annotations of the Service with the VirtualMachineService. VirtualMachineService wins in case of conflicts.
+	if newService.Annotations == nil {
+		newService.Annotations = vmService.Annotations
+	} else {
+		for k, v := range vmService.Annotations {
+			if oldValue, ok := newService.Annotations[k]; ok {
+				r.log.V(5).Info("Replacing previous annotation value on service",
+					"service", newService.Name,
+					"namespace", newService.Namespace,
+					"key", k,
+					"oldValue", oldValue,
+					"newValue", v)
+			}
+			newService.Annotations[k] = v
+		}
+	}
+
+	// Explicitly remove provider specific annotations
+	annotationsToBeRemoved, err := r.loadbalancerProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
+	if err != nil {
+		r.log.Error(err, "Failed to get to be removed loadbalancer annotations for service", "virtualmachineservice", vmService.Namespace+"/"+vmService.Name)
+		return newService, err
+	}
+	for k := range annotationsToBeRemoved {
+		r.log.V(5).Info("Removing annotation from service",
+			"service", newService.Name,
+			"namespace", newService.Namespace,
+			"key", k,
+		)
+		delete(newService.Annotations, k)
+	}
+
+	// Explicitly remove provider specific labels
+	labelsToBeRemoved, err := r.loadbalancerProvider.GetToBeRemovedServiceLabels(ctx, vmService)
+	if err != nil {
+		r.log.Error(err, "Failed to get to be removed loadbalancer labels for service", "virtualmachineservice", vmService.Namespace+"/"+vmService.Name)
+		return newService, err
+	}
+	for k := range labelsToBeRemoved {
+		r.log.V(5).Info("Removing label from service",
+			"service", newService.Name,
+			"namespace", newService.Namespace,
+			"key", k,
+		)
+		delete(newService.Labels, k)
+	}
+
+	// Explicitly remove vm service managed annotations if needed
+	for _, k := range []string{utils.AnnotationServiceExternalTrafficPolicyKey, utils.AnnotationServiceHealthCheckNodePortKey} {
+		if _, exist := svcFromVmService.Annotations[k]; !exist {
+			if v, exist := newService.Annotations[k]; exist {
+				r.log.V(5).Info("Removing annotaion from service",
+					"service", newService.Name,
+					"namespace", newService.Namespace,
+					"key", k,
+					"value", v)
+			}
+			delete(newService.Annotations, k)
+		}
+	}
+
 	newService.Spec.Type = svcFromVmService.Spec.Type
 	newService.Spec.ExternalName = svcFromVmService.Spec.ExternalName
 	newService.Spec.Ports = svcFromVmService.Spec.Ports
 	newService.Spec.LoadBalancerIP = svcFromVmService.Spec.LoadBalancerIP
-	if svcFromVmService.Spec.LoadBalancerSourceRanges != nil {
+	// Use DeepEqual to check so we avoid unnecessary updates and
+	// missing value removal
+	if !apiequality.Semantic.DeepEqual(newService.Spec.LoadBalancerSourceRanges, svcFromVmService.Spec.LoadBalancerSourceRanges) {
 		newService.Spec.LoadBalancerSourceRanges = svcFromVmService.Spec.LoadBalancerSourceRanges
 	}
-	if svcFromVmService.Spec.ExternalTrafficPolicy != "" {
+	if !apiequality.Semantic.DeepEqual(newService.Spec.ExternalTrafficPolicy, svcFromVmService.Spec.ExternalTrafficPolicy) {
 		newService.Spec.ExternalTrafficPolicy = svcFromVmService.Spec.ExternalTrafficPolicy
 	}
-	if svcFromVmService.Spec.HealthCheckNodePort != 0 {
+	if !apiequality.Semantic.DeepEqual(newService.Spec.HealthCheckNodePort, svcFromVmService.Spec.HealthCheckNodePort) {
 		newService.Spec.HealthCheckNodePort = svcFromVmService.Spec.HealthCheckNodePort
 	}
 

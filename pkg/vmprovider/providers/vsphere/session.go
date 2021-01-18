@@ -1717,23 +1717,33 @@ func (s *Session) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 			return nil, err
 		}
 
-		customizationSpec, err := s.GetCustomizationSpec(ctx, vm, resVm)
+		// Queueing a customization while another one is pending results in an error from vSphere.
+		log.V(5).Info("Checking if a pending guest customization exists for the VM", "name", vm.NamespacedName())
+		customizationPending, err := resVm.IsGuestCustomizationPending(ctx)
 		if err != nil {
+			// There was an error in checking whether the VM can be customized, should we log and customize anyway?
 			return nil, err
 		}
 
-		if customizationSpec != nil {
-			log.Info("Customizing VM",
-				"vm", k8sTypes.NamespacedName{Namespace: vm.Namespace, Name: vm.Name},
-				"customizationSpec", customizationSpec)
-			if err := resVm.Customize(ctx, *customizationSpec); err != nil {
-				// Ignore customization pending fault as this means we have already tried to customize the VM and it is
-				// pending. This can happen if the VM has failed to power-on since the last time we customized the VM. If
-				// we don't ignore this error, we will never be able to power-on the VM and the we will always fail here.
-				if !IsCustomizationPendingError(err) {
-					return nil, err
+		if !customizationPending {
+			customizationSpec, err := s.GetCustomizationSpec(ctx, vm, resVm)
+			if err != nil {
+				return nil, err
+			}
+
+			if customizationSpec != nil {
+				log.Info("Customizing VM",
+					"vm", k8sTypes.NamespacedName{Namespace: vm.Namespace, Name: vm.Name},
+					"customizationSpec", customizationSpec)
+				if err := resVm.Customize(ctx, *customizationSpec); err != nil {
+					// Ideally, the IsCustomizationPending check above should ensure that the VM does not have any pending
+					// customizations. However, since CustomizationPending fault means that this means the VM will NEVER
+					// power on, we explicitly ignore that for extra safety.
+					if !IsCustomizationPendingError(err) {
+						return nil, err
+					}
+					log.Info("Ignoring customization error due to pending guest customization", "name", vm.NamespacedName())
 				}
-				log.Info("Ignoring customization error due to pending guest customization", "name", vm.NamespacedName())
 			}
 		}
 	}

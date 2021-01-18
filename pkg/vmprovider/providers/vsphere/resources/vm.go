@@ -140,6 +140,29 @@ func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
 	return o.Guest.IpAddress, nil
 }
 
+// IsGuestCustomizationPending checks if a VM has a pending guest customization.
+func (vm *VirtualMachine) IsGuestCustomizationPending(ctx context.Context) (bool, error) {
+	var o mo.VirtualMachine
+
+	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config.extraConfig"}, &o)
+	if err != nil {
+		log.Error(err, "Error in getting the extraConfig of the VM", "name", vm.Name)
+		return false, err
+	}
+
+	for _, opt := range o.Config.ExtraConfig {
+		val := opt.GetOptionValue()
+		if val.Key == "tools.deployPkg.fileName" {
+			fileName := val.Value.(string)
+			if fileName != "" {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
 func (vm *VirtualMachine) InstanceUUID(ctx context.Context) (string, error) {
 	var o mo.VirtualMachine
 

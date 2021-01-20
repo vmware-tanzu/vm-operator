@@ -17,7 +17,6 @@ import (
 
 func intgTests() {
 	Describe("Invoking VirtualMachineImage controller tests", virtualMachineImageReconcile)
-	Describe("Invoking ConfigMap controller tests", intgTestsCM)
 }
 
 func virtualMachineImageReconcile() {

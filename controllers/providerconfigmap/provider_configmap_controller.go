@@ -1,13 +1,20 @@
 // Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package virtualmachineimage
+// Package providerconfigmap implements a controller that is used to reconcile
+// the `ContentSource` changes in the provider ConfigMap. The `ContentSource`
+// key in the provider ConfigMap represents the TKG content library associated
+// with VM operator. This controller detects any create/update ops to the TKG CL
+// associations and creates the necessary Custom Resources so VM operator can
+// discover VM images from the configured content library.
+
+package providerconfigmap
 
 import (
 	goctx "context"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -26,26 +33,23 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
 
-// AddToManager adds the ConfigMap controller and VirtualMachineImage controller to the manager.
+// This label is used to differentiate a TKG ContentSource from a VM service ContentSource.
+const (
+	TKGContentSourceLabelKey   = "ContentSourceType"
+	TKGContentSourceLabelValue = "TKGContentSource"
+	UserWorkloadNamespaceLabel = "vSphereClusterID"
+)
+
+// AddToManager adds the ConfigMap controller to the manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
-	if err := addVMImageControllerToManager(ctx, mgr); err != nil {
-		return err
-	}
+	controllerName := "provider-configmap"
 
-	return addConfigMapControllerToManager(ctx, mgr)
-}
-
-// addConfigMapControllerToManager adds the ConfigMap controller to manager.
-func addConfigMapControllerToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
-	controllerName := "virtualmachineimage-configmap"
-
-	r := NewCMReconciler(
+	r := NewReconciler(
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
@@ -71,16 +75,16 @@ func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod 
 		return err
 	}
 
-	return c.Watch(source.NewKindWithCache(&corev1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
+	return c.Watch(source.NewKindWithCache(&v1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
 		predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
 				return e.Meta.GetName() == vsphere.ProviderConfigMapName &&
-					e.Object.(*corev1.ConfigMap).Data[vsphere.ContentSourceKey] != ""
+					e.Object.(*v1.ConfigMap).Data[vsphere.ContentSourceKey] != ""
 			},
 			UpdateFunc: func(e event.UpdateEvent) bool {
 				return e.MetaOld.GetName() == vsphere.ProviderConfigMapName &&
-					e.ObjectOld.(*corev1.ConfigMap).Data[vsphere.ContentSourceKey] !=
-						e.ObjectNew.(*corev1.ConfigMap).Data[vsphere.ContentSourceKey]
+					e.ObjectOld.(*v1.ConfigMap).Data[vsphere.ContentSourceKey] !=
+						e.ObjectNew.(*v1.ConfigMap).Data[vsphere.ContentSourceKey]
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
 				return false
@@ -92,7 +96,7 @@ func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod 
 	)
 }
 
-func NewCMReconciler(
+func NewReconciler(
 	client client.Client,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
@@ -114,7 +118,7 @@ type ConfigMapReconciler struct {
 }
 
 func (r *ConfigMapReconciler) CreateOrUpdateContentSourceResources(ctx goctx.Context, clUUID string) error {
-	r.Logger.Info("Creating ContentLibraryProvider and ContentSource resource for content library", "contentLibraryUUID", clUUID)
+	r.Logger.Info("Creating ContentLibraryProvider and ContentSource for TKG content library", "contentLibraryUUID", clUUID)
 
 	clProvider := &vmopv1alpha1.ContentLibraryProvider{
 		ObjectMeta: metav1.ObjectMeta{
@@ -129,7 +133,7 @@ func (r *ConfigMapReconciler) CreateOrUpdateContentSourceResources(ctx goctx.Con
 
 		return nil
 	}); err != nil {
-		r.Logger.Error(err, "error creating the ContentLibraryProvider resource", "clProvider", clProvider)
+		r.Logger.Error(err, "error creating/updating the ContentLibraryProvider resource", "clProvider", clProvider)
 		return err
 	}
 
@@ -146,6 +150,10 @@ func (r *ConfigMapReconciler) CreateOrUpdateContentSourceResources(ctx goctx.Con
 	}
 
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, cs, func() error {
+		// Existing labels will be overwritten. Fine for now since we don't have any labels on this resource and it is immutable for developers.
+		cs.ObjectMeta.Labels = map[string]string{
+			TKGContentSourceLabelKey: TKGContentSourceLabelValue,
+		}
 		cs.Spec = vmopv1alpha1.ContentSourceSpec{
 			ProviderRef: vmopv1alpha1.ContentProviderReference{
 				APIVersion: gvk.GroupVersion().String(),
@@ -156,26 +164,75 @@ func (r *ConfigMapReconciler) CreateOrUpdateContentSourceResources(ctx goctx.Con
 
 		return nil
 	}); err != nil {
-		r.Logger.Error(err, "error creating the ContentSource resource", "contentSource", cs)
+		r.Logger.Error(err, "error creating/updating the ContentSource resource", "contentSource", cs)
 		return err
 	}
 
-	r.Logger.Info("Created ContentLibraryProvider and ContentSource resource for content library", "contentLibraryUUID", clUUID)
+	r.Logger.Info("Created ContentLibraryProvider and ContentSource for TKG content library", "contentLibraryUUID", clUUID)
+	return nil
+}
+
+// CreateContentSourceBindings creates ContentSourceBindings in all the user workload namespaces for the configured TKG ContentSource.
+func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clUUID string) error {
+	nsList := &v1.NamespaceList{}
+	// Presence of the UserWorkloadNamespaceLabel label indicates that a namespace is a user namespace (and not a reserved one). We use
+	// this filtration to create ContentSourceBindings for TKG content source in user namespaces.
+	if err := r.List(ctx, nsList, client.HasLabels{UserWorkloadNamespaceLabel}); err != nil {
+		r.Logger.Error(err, "error listing user workload namespaces")
+		return err
+	}
+
+	cs := &vmopv1alpha1.ContentSource{}
+	if err := r.Get(ctx, client.ObjectKey{Name: clUUID}, cs); err != nil {
+		return err
+	}
+
+	gvk, err := apiutil.GVKForObject(cs, r.scheme)
+	if err != nil {
+		r.Logger.Error(err, "error extracting the scheme from the ContentSource")
+		return err
+	}
+
+	for _, ns := range nsList.Items {
+		r.Logger.Info("Creating ContentSourceBinding for TKG content library in namespace", "contentLibraryUUID", clUUID, "namespace", ns.Name)
+		csBinding := &vmopv1alpha1.ContentSourceBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clUUID,
+				Namespace: ns.Name,
+			},
+		}
+
+		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, csBinding, func() error {
+			// Set OwnerRef to the ContentSource so the bindings get cleaned up when the ContentSource is deleted.
+			if err := controllerutil.SetOwnerReference(cs, csBinding, r.scheme); err != nil {
+				return err
+			}
+
+			csBinding.ContentSourceRef = vmopv1alpha1.ContentSourceReference{
+				APIVersion: gvk.GroupVersion().String(),
+				Kind:       gvk.Kind,
+				Name:       clUUID,
+			}
+
+			return nil
+		}); err != nil {
+			r.Logger.Error(err, "error creating/updating the ContentSourceBinding resource", "contentSourceBinding", csBinding, "namespace", ns.Name)
+			return err
+		}
+	}
+
 	return nil
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentlibraryproviders,verbs=get;list;create;update;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsources,verbs=get;list;create;update;delete
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsourcebindings,verbs=get;list;create;update;delete
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 
 func (r *ConfigMapReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := goctx.Background()
 
-	// If the WCP_VMService FSS is enabled, we do not use the provider ConfigMap for content discovery.
-	if lib.IsVMServiceFSSEnabled() {
-		return ctrl.Result{}, nil
-	}
-
-	cm := &corev1.ConfigMap{}
+	cm := &v1.ConfigMap{}
 	if err := r.Get(ctx, req.NamespacedName, cm); err != nil {
 		if apiErrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -190,18 +247,19 @@ func (r *ConfigMapReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
 
-func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *corev1.ConfigMap) error {
+func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *v1.ConfigMap) error {
 	r.Logger.Info("Reconciling VM provider ConfigMap", "name", cm.Name, "namespace", cm.Namespace)
 
 	// Filter out the ContentSources that should not exist
 	csList := &vmopv1alpha1.ContentSourceList{}
-	if err := r.List(ctx, csList); err != nil {
+	labels := map[string]string{TKGContentSourceLabelKey: TKGContentSourceLabelValue}
+
+	if err := r.List(ctx, csList, client.MatchingLabels(labels)); err != nil {
 		r.Logger.Error(err, "Error in listing ContentSources")
 		return err
 	}
 
-	// For now, since wcpsvc is the only creator of the ContentSources, we rely on the fact that name
-	// of these resources is the CL UUID.
+	// Assume that the ContentSource name is the content library UUID.
 	clUUID := cm.Data[vsphere.ContentSourceKey]
 	for _, cs := range csList.Items {
 		contentSource := cs
@@ -224,6 +282,12 @@ func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *corev1.Conf
 	// Ensure that the ContentSource and ContentLibraryProviders exist and are up to date.
 	if err := r.CreateOrUpdateContentSourceResources(ctx, clUUID); err != nil {
 		r.Logger.Error(err, "failed to create resource from the ConfigMap")
+		return err
+	}
+
+	// Ensure that all workload namespaces have access to the TKG ContentSource by creating ContentSourceBindings.
+	if err := r.CreateContentSourceBindings(ctx, clUUID); err != nil {
+		r.Logger.Error(err, "failed to create ContentSourceBindings in user workload namespaces")
 		return err
 	}
 

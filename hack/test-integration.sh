@@ -55,6 +55,7 @@ CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" \
            ./controllers/contentsource \
            ./controllers/infracluster \
            ./controllers/infraprovider \
+           ./controllers/providerconfigmap \
            ./controllers/virtualmachine \
            ./controllers/virtualmachineclass \
            ./controllers/virtualmachineimage \

@@ -12,6 +12,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/contentsource"
 	"github.com/vmware-tanzu/vm-operator/controllers/infracluster"
 	"github.com/vmware-tanzu/vm-operator/controllers/infraprovider"
+	"github.com/vmware-tanzu/vm-operator/controllers/providerconfigmap"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineimage"
@@ -31,6 +32,9 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	if err := infraprovider.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize InfraProvider controller")
 	}
+	if err := providerconfigmap.AddToManager(ctx, mgr); err != nil {
+		return errors.Wrap(err, "failed to initialize ProviderConfigMap controller")
+	}
 	if err := virtualmachine.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachine controller")
 	}
@@ -38,7 +42,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		return errors.Wrap(err, "failed to initialize VirtualMachineClass controller")
 	}
 	if err := virtualmachineimage.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize VirtualMachineImage controllers")
+		return errors.Wrap(err, "failed to initialize VirtualMachineImage controller")
 	}
 	if err := virtualmachineservice.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachineService controller")

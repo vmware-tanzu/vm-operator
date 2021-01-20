@@ -20,8 +20,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
-// addVMIAddVMImageControllerToManager adds this package's controller to the provided manager.
-func addVMImageControllerToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+// AddToManager adds this package's controller to the provided manager.
+func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
 		controlledType     = &vmopv1alpha1.VirtualMachineImage{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()

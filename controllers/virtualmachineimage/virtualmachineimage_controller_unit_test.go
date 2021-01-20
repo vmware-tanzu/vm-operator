@@ -18,7 +18,6 @@ import (
 
 func unitTests() {
 	Describe("Invoking VirtualMachineImage controller tests", unitTestsReconcile)
-	Describe("Invoking ConfigMap controller tests", unitTestsCM)
 }
 
 func unitTestsReconcile() {

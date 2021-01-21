@@ -6,7 +6,6 @@ package virtualmachineservice
 import (
 	goctx "context"
 	"fmt"
-	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -384,19 +383,6 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 		}
 	}
 
-	// When VirtualMachineService is created with annotation
-	// labelServiceHealthCheckNodePortKey, use its value for the
-	// Service.Spec.HealthCheckNodePort
-	if healthCheckNodePortString, ok := svc.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]; ok {
-		//nolint:gosec ignore the overflow warning
-		healthCheckNodePort, err := strconv.Atoi(healthCheckNodePortString)
-		if err != nil {
-			r.log.V(5).Info("Invalid healthCheckNodePort configured in VirtualMachineService label, skip it", "healthCheckNodePort", healthCheckNodePortString)
-		} else {
-			svc.Spec.HealthCheckNodePort = int32(healthCheckNodePort)
-		}
-	}
-
 	return svc
 }
 
@@ -549,9 +535,6 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx goctx.Context
 	}
 	if !apiequality.Semantic.DeepEqual(newService.Spec.ExternalTrafficPolicy, svcFromVmService.Spec.ExternalTrafficPolicy) {
 		newService.Spec.ExternalTrafficPolicy = svcFromVmService.Spec.ExternalTrafficPolicy
-	}
-	if !apiequality.Semantic.DeepEqual(newService.Spec.HealthCheckNodePort, svcFromVmService.Spec.HealthCheckNodePort) {
-		newService.Spec.HealthCheckNodePort = svcFromVmService.Spec.HealthCheckNodePort
 	}
 
 	// Maintain the existing mapping of ServicePort -> NodePort

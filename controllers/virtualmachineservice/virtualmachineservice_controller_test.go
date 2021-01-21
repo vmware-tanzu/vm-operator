@@ -401,7 +401,6 @@ var _ = Describe("VirtualMachineService controller", func() {
 				Expect(newService.Spec.LoadBalancerIP).To(Equal(loadBalancerIP))
 
 				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeLocal))
-				Expect(newService.Spec.HealthCheckNodePort).To(Equal(int32(30012)))
 				Expect(newService.Labels[apis.LabelServiceProxyName]).To(Equal(providers.NSXTServiceProxy))
 				Expect(newService.Spec.LoadBalancerSourceRanges).To(Equal([]string{"1.1.1.0/24", "2.2.2.2/28"}))
 			})
@@ -434,7 +433,6 @@ var _ = Describe("VirtualMachineService controller", func() {
 				}
 				service.Labels[apis.LabelServiceProxyName] = providers.NSXTServiceProxy
 				service.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyTypeLocal
-				service.Spec.HealthCheckNodePort = 30012
 				Expect(c.Update(ctx, service)).To(Succeed())
 
 				delete(vmService.Annotations, utils.AnnotationServiceExternalTrafficPolicyKey)
@@ -446,7 +444,6 @@ var _ = Describe("VirtualMachineService controller", func() {
 				// Channel should receive an Update event
 				Expect(events).Should(Receive(ContainSubstring(OpUpdate)))
 				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeCluster))
-				Expect(newService.Spec.HealthCheckNodePort).To(Equal(int32(0)))
 				_, exist := newService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]
 				Expect(exist).To(BeFalse())
 				_, exist = newService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]

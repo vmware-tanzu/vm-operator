@@ -20,6 +20,7 @@ type ClassReference struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vmclassbinding
 // +kubebuilder:printcolumn:name="VirtualMachineClass",type="string",JSONPath=".classRef.name"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // VirtualMachineClassBinding is a binding object responsible for
 // defining a VirtualMachineClass and a Namespace associated with it

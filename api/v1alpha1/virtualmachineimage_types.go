@@ -88,6 +88,7 @@ type VirtualMachineImageStatus struct {
 // +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
 // +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="SupportedGuestOS",type="boolean",priority=1,JSONPath=".status.supportedGuestOS"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // VirtualMachineImage is the Schema for the virtualmachineimages API
 // A VirtualMachineImage represents a VirtualMachine image (e.g. VM template) that can be used as the base image

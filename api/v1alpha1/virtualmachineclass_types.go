@@ -56,6 +56,9 @@ type VirtualMachineClassStatus struct {
 // +kubebuilder:resource:scope=Cluster,shortName=vmclass
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="CPU",type="string",JSONPath=".spec.hardware.cpus"
+// +kubebuilder:printcolumn:name="Memory",type="string",JSONPath=".spec.hardware.memory"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // VirtualMachineClass is the Schema for the virtualmachineclasses API.
 // A VirtualMachineClass represents the desired specification and the observed status of a VirtualMachineClass

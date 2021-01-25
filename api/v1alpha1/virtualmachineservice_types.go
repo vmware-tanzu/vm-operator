@@ -118,6 +118,8 @@ type VirtualMachineServiceStatus struct {
 // +kubebuilder:resource:shortName=vmservice
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Type",type="string",JSONPath=".spec.type"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // VirtualMachineService is the Schema for the virtualmachineservices API.
 // A VirtualMachineService represents the desired specification and the observed status of a VirtualMachineService

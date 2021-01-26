@@ -49,13 +49,13 @@ func intgTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidImageName         bool
-		imageNotFound            bool
-		validGuestOSType         bool
-		invalidGuestOSType       bool
-		gOSCSkipAnnotation       bool
-		invalidMetadataConfigMap bool
-		invalidStorageClass      bool
+		invalidImageName                bool
+		imageNotFound                   bool
+		validGuestOSType                bool
+		invalidGuestOSType              bool
+		imageSupportCheckSkipAnnotation bool
+		invalidMetadataConfigMap        bool
+		invalidStorageClass             bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -71,20 +71,20 @@ func intgTestsValidateCreate() {
 			Expect(err).NotTo(HaveOccurred())
 		}
 
-		// Setting the annotation skips GuestOSType validation
-		// works with validGuestOSType or invalidGuestOSType
-		if args.gOSCSkipAnnotation {
+		// Setting the annotation skips Image compatibility validation
+		// works with validGuestOSType or invalidGuestOSType or v1alpha1 non-compatible images
+		if args.imageSupportCheckSkipAnnotation {
 			vm.Annotations = make(map[string]string)
-			vm.Annotations[vsphere.VMOperatorVMGOSSupportCheckKey] = vsphere.VMOperatorVMGOSSupportDisable
+			vm.Annotations[vsphere.VMOperatorImageSupportedCheckKey] = vsphere.VMOperatorImageSupportedCheckDisable
 		}
 
 		if args.validGuestOSType {
-			ctx.vmImage.Status.SupportedGuestOS = &[]bool{true}[0]
+			ctx.vmImage.Status.ImageSupported = &[]bool{true}[0]
 			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
 			Expect(err).ToNot(HaveOccurred())
 		}
 		if args.invalidGuestOSType {
-			ctx.vmImage.Status.SupportedGuestOS = &[]bool{false}[0]
+			ctx.vmImage.Status.ImageSupported = &[]bool{false}[0]
 			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
 			Expect(err).ToNot(HaveOccurred())
 		}
@@ -128,9 +128,9 @@ func intgTestsValidateCreate() {
 	DescribeTable("create table", validateCreate,
 		Entry("should work", createArgs{}, true, "", nil),
 		Entry("should work for image with valid osType", createArgs{validGuestOSType: true}, true, "", nil),
-		Entry("should work despite osType when VMGOSCustomizeCheckKey is disabled", createArgs{gOSCSkipAnnotation: true, invalidGuestOSType: true}, true, "", nil),
+		Entry("should work despite osType when VMOperatorImageSupportedCheckKey is disabled", createArgs{imageSupportCheckSkipAnnotation: true, invalidGuestOSType: true}, true, "", nil),
 		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false, "spec.imageName must be specified", nil),
-		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
+		Entry("should not work for image with an invalid osType or invalid image", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.VMImageNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
 		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmMetadata.configMapName must be specified", nil),
 		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, builder.DummyStorageClassName, ""), nil),
 	)

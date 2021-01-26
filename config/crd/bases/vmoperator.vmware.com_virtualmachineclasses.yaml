@@ -8,6 +8,16 @@ metadata:
   creationTimestamp: null
   name: virtualmachineclasses.vmoperator.vmware.com
 spec:
+  additionalPrinterColumns:
+  - JSONPath: .spec.hardware.cpus
+    name: CPU
+    type: string
+  - JSONPath: .spec.hardware.memory
+    name: Memory
+    type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: Age
+    type: date
   group: vmoperator.vmware.com
   names:
     kind: VirtualMachineClass

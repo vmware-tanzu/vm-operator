@@ -8,6 +8,21 @@ metadata:
   creationTimestamp: null
   name: virtualmachines.vmoperator.vmware.com
 spec:
+  additionalPrinterColumns:
+  - JSONPath: .status.powerState
+    name: PowerState
+    type: string
+  - JSONPath: .spec.className
+    name: Class
+    priority: 1
+    type: string
+  - JSONPath: .spec.imageName
+    name: Image
+    priority: 1
+    type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: Age
+    type: date
   group: vmoperator.vmware.com
   names:
     kind: VirtualMachine

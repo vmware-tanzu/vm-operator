@@ -22,6 +22,9 @@ spec:
     name: SupportedGuestOS
     priority: 1
     type: boolean
+  - JSONPath: .metadata.creationTimestamp
+    name: Age
+    type: date
   group: vmoperator.vmware.com
   names:
     kind: VirtualMachineImage

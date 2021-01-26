@@ -16,6 +16,7 @@ type VmMetadata struct {
 
 type VmConfigArgs struct {
 	VmClass            v1alpha1.VirtualMachineClass
+	VmImage            *v1alpha1.VirtualMachineImage
 	ResourcePolicy     *v1alpha1.VirtualMachineSetResourcePolicy
 	VmMetadata         *VmMetadata
 	StorageProfileID   string

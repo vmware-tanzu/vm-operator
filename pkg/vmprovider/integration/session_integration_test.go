@@ -29,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -105,7 +106,7 @@ var _ = Describe("Sessions", func() {
 				imageName := "test-item"
 				vmName := "getvm-with-moID"
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, vmName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, vmName, imageName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs)
@@ -131,7 +132,7 @@ var _ = Describe("Sessions", func() {
 					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
 
 					imageName := "test-item"
-					vmConfigArgs := getVmConfigArgs(namespace, vmName)
+					vmConfigArgs := getVmConfigArgs(namespace, vmName, imageName)
 					vm := getVirtualMachineInstance(vmName, namespace, imageName, vmConfigArgs.VmClass.Name)
 					vm.Spec.ResourcePolicyName = resourcePolicy.Name
 					vmConfigArgs.ResourcePolicy = resourcePolicy
@@ -156,7 +157,7 @@ var _ = Describe("Sessions", func() {
 					imageName := "test-item"
 					vmName := "getvm-without-moID"
 
-					vmConfigArgs := getVmConfigArgs(testNamespace, vmName)
+					vmConfigArgs := getVmConfigArgs(testNamespace, vmName, imageName)
 					vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
@@ -181,7 +182,7 @@ var _ = Describe("Sessions", func() {
 
 			It("should not override template networks", func() {
 				imageName := "DC0_H0_VM0"
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				vm := getVirtualMachineInstance(testVMName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				resVM, err := session.GetVirtualMachine(ctx, getSimpleVirtualMachine("DC0_H0_VM0"))
@@ -223,7 +224,7 @@ var _ = Describe("Sessions", func() {
 
 			It("should override template networks", func() {
 				imageName := "DC0_H0_VM0"
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				vm := getVirtualMachineInstance(testVMName+"change-net", testNamespace, imageName, vmConfigArgs.VmClass.Name)
 				// Add two network interfaces to the VM and attach to different networks
 				vm.Spec.NetworkInterfaces = []vmopv1alpha1.VirtualMachineNetworkInterface{
@@ -317,7 +318,7 @@ var _ = Describe("Sessions", func() {
 			It("should override network from the template", func() {
 				imageName := "DC0_H0_VM0"
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				vm := getVirtualMachineInstance(testVMName+"with-default-net", testNamespace, imageName, vmConfigArgs.VmClass.Name)
 				resVM, err := session.GetVirtualMachine(ctx, getSimpleVirtualMachine("DC0_H0_VM0"))
 				Expect(err).NotTo(HaveOccurred())
@@ -351,7 +352,7 @@ var _ = Describe("Sessions", func() {
 
 			It("should not override networks specified in VM Spec ", func() {
 				imageName := "DC0_H0_VM0"
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				vm := getVirtualMachineInstance(testVMName+"change-default-net", testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				// Add two network interfaces to the VM and attach to different networks
@@ -407,7 +408,7 @@ var _ = Describe("Sessions", func() {
 				imageName := "test-item"
 				vmName := "CL_DeployedVM"
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
@@ -418,7 +419,7 @@ var _ = Describe("Sessions", func() {
 				imageName := "test-item"
 				vmName := "CL_DeployedVM-via-policy"
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				// hardwired vcsim ID for "vSAN Default Storage Policy".
 				// TODO: this test could lookup profile id by name or create a new profile
 				vmConfigArgs.StorageProfileID = "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
@@ -434,7 +435,7 @@ var _ = Describe("Sessions", func() {
 				imageName := "test-item"
 				vmName := "CL_DeployedVM-via-policy-thin-provisioned"
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				// hardwired vcsim ID for "vSAN Default Storage Policy" - this is to show we explicitly use
 				// the spec volume provisioning if the user specifies it
 				vmConfigArgs.StorageProfileID = "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
@@ -455,7 +456,7 @@ var _ = Describe("Sessions", func() {
 				imageName := "test-item"
 				vmName := "CL_DeployedVM-via-policy-eager-zeroed"
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				// hardwired vcsim ID for "vSAN Default Storage Policy" - this is to show we explicitly use
 				// the spec volume provisioning if the user specifies it
 				vmConfigArgs.StorageProfileID = "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
@@ -476,7 +477,7 @@ var _ = Describe("Sessions", func() {
 				imageName := "test-item"
 				vmName := "CL_DeployedVM-resized"
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				virtualDisks, err := clonedDeployedVM.GetVirtualDisks(context.TODO())
@@ -530,7 +531,7 @@ var _ = Describe("Sessions", func() {
 				imageName := "test-item-vmtx"
 				vmName := "CL_DeployedVMTX"
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				// Expect this attempt to fail as we've not yet created the vm-template CL item
@@ -550,7 +551,7 @@ var _ = Describe("Sessions", func() {
 				imageName := "test-item-vmtx"
 				vmName := "CL_DeployedVMTX-eager-zeroed"
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				eagerZeroed := true
@@ -585,7 +586,7 @@ var _ = Describe("Sessions", func() {
 				imageName := "test-item-vmtx"
 				vmName := "CL_DeployedVMTX-thin-provisioned"
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				thinProvisioned := true
@@ -621,7 +622,7 @@ var _ = Describe("Sessions", func() {
 				imageName := "test-item-vmtx"
 				vmName := "CL_DeployedVMTX-resized"
 
-				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName)
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
 				virtualDisks, err := clonedDeployedVMTX.GetVirtualDisks(context.TODO())
@@ -712,6 +713,7 @@ var _ = Describe("Sessions", func() {
 					imageName := "DC0_H0_VM0"
 					vmClass := getVMClassInstance(testVMName, testNamespace)
 					vm := getVirtualMachineInstance(testVMName+"-extraConfig", testNamespace, imageName, vmClass.Name)
+					vmImage := builder.DummyVirtualMachineImage(imageName)
 					vm.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
 						Transport: vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
 					}
@@ -721,9 +723,10 @@ var _ = Describe("Sessions", func() {
 					}
 					vmConfigArgs := vmprovider.VmConfigArgs{
 						VmClass:          *vmClass,
+						VmImage:          vmImage,
 						ResourcePolicy:   nil,
 						VmMetadata:       vmMetadata,
-						StorageProfileID: "foo",
+						StorageProfileID: "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
 					}
 					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).NotTo(HaveOccurred())
@@ -757,11 +760,13 @@ var _ = Describe("Sessions", func() {
 					imageName := "DC0_H0_VM0"
 					vmClass := getVMClassInstance(testVMName, testNamespace)
 					vm := getVirtualMachineInstance(testVMName+"-default-extraConfig", testNamespace, imageName, vmClass.Name)
+					vmImage := builder.DummyVirtualMachineImage(imageName)
 					vmConfigArgs := vmprovider.VmConfigArgs{
 						VmClass:          *vmClass,
+						VmImage:          vmImage,
 						ResourcePolicy:   nil,
 						VmMetadata:       nil,
-						StorageProfileID: "foo",
+						StorageProfileID: "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
 					}
 					clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).NotTo(HaveOccurred())
@@ -925,6 +930,8 @@ var _ = Describe("Sessions", func() {
 			Context("Should fail gracefully", func() {
 				var savedDatastoreAttribute string
 				var err error
+				imageName := "test-item"
+				vmImage := builder.DummyVirtualMachineImage(imageName)
 
 				vm := &vmopv1alpha1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
@@ -947,7 +954,7 @@ var _ = Describe("Sessions", func() {
 					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
-					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, "", integration.GetContentSourceID()}
+					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, vmImage, nil, nil, "", integration.GetContentSourceID()}
 					clonedVM, err :=
 						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).To(HaveOccurred())
@@ -961,7 +968,7 @@ var _ = Describe("Sessions", func() {
 					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
-					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, "", integration.GetContentSourceID()}
+					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, vmImage, nil, nil, "", integration.GetContentSourceID()}
 					clonedVM, err :=
 						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).To(HaveOccurred())
@@ -975,7 +982,7 @@ var _ = Describe("Sessions", func() {
 					session, err = vsphere.NewSessionAndConfigure(context.TODO(), c, vSphereConfig, nil, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
-					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, nil, nil, "", ""}
+					vmConfigArgs := vmprovider.VmConfigArgs{vmopv1alpha1.VirtualMachineClass{}, vmImage, nil, nil, "", ""}
 					clonedVM, err :=
 						session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
 					Expect(err).To(HaveOccurred())

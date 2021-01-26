@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere
@@ -36,6 +36,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/util"
 	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/sequence"
@@ -58,11 +59,15 @@ const (
 
 	// TODO: Rename and move to vmoperator-api
 	// Annotation key to skip validation checks of GuestOS Type
-	VMOperatorVMGOSSupportCheckKey = pkg.VmOperatorKey + "/guest-os-support-check"
-	VMOperatorVMGOSSupportDisable  = "disable"
+	VMOperatorImageSupportedCheckKey     = pkg.VmOperatorKey + "/image-supported-check"
+	VMOperatorImageSupportedCheckDisable = "disable"
 
 	EnvContentLibApiWaitSecs     = "CONTENT_API_WAIT_SECS"
 	DefaultContentLibApiWaitSecs = 5
+
+	VMOperatorV1Alpha1ExtraConfigKey = "guestinfo.vmservice.defer-cloud-init"
+	VMOperatorV1Alpha1ConfigReady    = "ready"
+	VMOperatorV1Alpha1ConfigEnabled  = "enabled"
 )
 
 //go:generate mockgen -destination=./mocks/mock_ovf_property_retriever.go -package=mocks github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere OvfPropertyRetriever
@@ -445,13 +450,28 @@ func GetVmwareSystemPropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]stri
 	return properties
 }
 
+// isOVFV1Alpha1Compatible checks the image if it has VMOperatorV1Alpha1ExtraConfigKey set to VMOperatorV1Alpha1ConfigReady
+// in the ExtraConfig
+func isOVFV1Alpha1Compatible(ovfEnvelope *ovf.Envelope) bool {
+	if ovfEnvelope.VirtualSystem != nil && ovfEnvelope.VirtualSystem.VirtualHardware != nil {
+		for _, virtualHardware := range ovfEnvelope.VirtualSystem.VirtualHardware {
+			for _, config := range virtualHardware.ExtraConfig {
+				if config.Key == VMOperatorV1Alpha1ExtraConfigKey && config.Value == VMOperatorV1Alpha1ConfigReady {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // GetValidGuestOSDescriptorIDs fetches valid guestOS descriptor IDs for the cluster
 func GetValidGuestOSDescriptorIDs(ctx context.Context, cluster *object.ClusterComputeResource, client *vim25.Client) (map[string]string, error) {
 	if cluster == nil {
 		return nil, fmt.Errorf("No cluster exists, can't get OS Descriptors")
 	}
 
-	log.V(4).Info("Fetching all customizable guestOS types for the cluster")
+	log.V(4).Info("Fetching all supported guestOS types for the cluster")
 	var computeResource mo.ComputeResource
 	obj := cluster.Reference()
 
@@ -483,15 +503,27 @@ func GetValidGuestOSDescriptorIDs(ctx context.Context, cluster *object.ClusterCo
 	return guestOSIdsToFamily, nil
 }
 
-// For a given library item, convert its attributes to return a VirtualMachineImage that represents a k8s-native
+// isATKGImage validates if a VirtualMachineImage OVF is a TKG Image type
+func isATKGImage(systemProperties map[string]string) bool {
+	tkgImageIdentifier := "vmware-system.guest.kubernetes"
+	for key := range systemProperties {
+		if strings.HasPrefix(key, tkgImageIdentifier) {
+			return true
+		}
+	}
+	return false
+}
+
+// LibItemToVirtualMachineImage converts a given library item and its attributes to return a VirtualMachineImage that represents a k8s-native
 // view of the item.
 func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *library.Item, imgOptions ImageOptions, ovfPropRetriever OvfPropertyRetriever,
 	gOSIdsToFamily map[string]string) (*v1alpha1.VirtualMachineImage, error) {
 
 	var (
-		ovfSystemProps = make(map[string]string)
-		productInfo    = &v1alpha1.VirtualMachineImageProductInfo{}
-		osInfo         = &v1alpha1.VirtualMachineImageOSInfo{}
+		ovfSystemProps  = make(map[string]string)
+		productInfo     = &v1alpha1.VirtualMachineImageProductInfo{}
+		osInfo          = &v1alpha1.VirtualMachineImageOSInfo{}
+		isOVFCompatible = false
 	)
 
 	if item.Type == library.ItemTypeOVF {
@@ -499,13 +531,13 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 		if err != nil {
 			return nil, err
 		}
-
-		if imgOptions == AnnotateVmImage {
-			systemProps := GetVmwareSystemPropertiesFromOvf(ovfEnvelope)
-			ovfSystemProps = systemProps
-		}
-
 		if ovfEnvelope.VirtualSystem != nil {
+			// Fetch the system properties when there is a VirtualSystem block in the OVF
+			systemProps := GetVmwareSystemPropertiesFromOvf(ovfEnvelope)
+			if imgOptions == AnnotateVmImage {
+				ovfSystemProps = systemProps
+
+			}
 			os := ovfEnvelope.VirtualSystem.OperatingSystem
 			product := ovfEnvelope.VirtualSystem.Product
 
@@ -530,6 +562,11 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 					osInfo.Type = *o.OSType
 				}
 			}
+
+			// Allow OVF compatibility if
+			// - The OVF contains the VMOperatorV1Alpha1ConfigKey key that denotes cloud-init being disabled at first-boot
+			// - If it is a TKG image
+			isOVFCompatible = isOVFV1Alpha1Compatible(ovfEnvelope) || isATKGImage(systemProps)
 		}
 	}
 
@@ -555,17 +592,34 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 			OSInfo:          *osInfo,
 		},
 	}
-
-	// Set the image's Status if the GuestOS Descriptors IDs map was populated
-	if item.Type == library.ItemTypeOVF && len(gOSIdsToFamily) > 0 {
-		isSupportedGuestOS := false
-		// gOSFamily will be present for supported OSTypes and
-		// support only VirtualMachineGuestOsFamilyLinuxGuest for now
-		gOSFamily := gOSIdsToFamily[osInfo.Type]
-		if gOSFamily != "" && gOSFamily == string(vimtypes.VirtualMachineGuestOsFamilyLinuxGuest) {
-			isSupportedGuestOS = true
+	if item.Type == library.ItemTypeOVF {
+		if isOVFCompatible {
+			conditions.MarkTrue(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
+		} else {
+			msg := "VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1"
+			conditions.MarkFalse(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
+				v1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason, v1alpha1.ConditionSeverityError, msg)
 		}
-		image.Status.SupportedGuestOS = &isSupportedGuestOS
+
+		isSupportedGuestOS := false
+		// Set the image's Status if the GuestOS Descriptors IDs map was populated
+		if len(gOSIdsToFamily) > 0 {
+			// gOSFamily will be present for supported OSTypes and
+			// support only VirtualMachineGuestOsFamilyLinuxGuest for now
+			gOSFamily := gOSIdsToFamily[osInfo.Type]
+			if gOSFamily != "" && gOSFamily == string(vimtypes.VirtualMachineGuestOsFamilyLinuxGuest) {
+				isSupportedGuestOS = true
+				conditions.MarkTrue(image, v1alpha1.VirtualMachineImageOSTypeSupportedCondition)
+			} else {
+				msg := fmt.Sprintf("VirtualMachineImage image type %s is not supported by VM Svc", osInfo.Type)
+				conditions.MarkFalse(image, v1alpha1.VirtualMachineImageOSTypeSupportedCondition,
+					v1alpha1.VirtualMachineImageOSTypeNotSupportedReason, v1alpha1.ConditionSeverityError, msg)
+			}
+		}
+		// Update VirtualMachineImageStatus.ImageSupported to combined compatibility of OVF compatibility and supported
+		// guest OS
+		imageSupportedState := isOVFCompatible && isSupportedGuestOS
+		image.Status.ImageSupported = &imageSupportedState
 	}
 
 	return image, nil

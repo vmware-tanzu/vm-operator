@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package messages
@@ -21,7 +21,7 @@ const (
 	VolumeNotSpecifiedFmt                     = "one of spec.volumes[%d].persistentVolumeClaim/spec.volumes[%d].vsphereVolume must be specified"
 	VsphereVolumeSizeNotMBMultipleFmt         = "spec.volumes[%d].vsphereVolume.capacity.ephemeral-storage must be a multiple of MB"
 	EagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning."
-	GuestOSNotSupported                       = "GuestOS not supported for osType %s on image %s"
+	VMImageNotSupported                       = "GuestOS not supported for osType %s on image %s or VMImage is not compatible with v1alpha1 or is not a TKG Image"
 	StorageClassNotAssigned                   = "StorageClass %s is not assigned to any ResourceQuotas in namespace %s"
 	NoResourceQuota                           = "no ResourceQuotas assigned to namespace %s"
 )

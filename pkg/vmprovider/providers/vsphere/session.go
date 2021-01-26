@@ -34,6 +34,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/cluster"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -940,7 +941,7 @@ func (s *Session) updateChangeBlockTracking(ctx context.Context, vm *v1alpha1.Vi
 func (s *Session) getCloneSpec(ctx context.Context, name string, resSrcVM *res.VirtualMachine,
 	vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
 
-	configSpec, err := s.generateConfigSpec(name, &vm.Spec, &vmConfigArgs.VmClass.Spec, vmConfigArgs.VmMetadata, nil, nil)
+	configSpec, err := s.generateConfigSpec(name, &vm.Spec, vmConfigArgs, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1252,10 +1253,13 @@ func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppP
 	return &vimTypes.VmConfigSpec{Property: outProps}
 }
 
-// generateConfigSpec generates a configSpec from the VM Spec and the VM Class
-func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec, vmClassSpec *v1alpha1.VirtualMachineClassSpec,
-	vmMetadata *vmprovider.VmMetadata, deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec,
+// generateConfigSpec generates a configSpec from the VM Spec, VmConfigArgs and virtual deviceSpec
+func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachineSpec,
+	vmConfigArgs vmprovider.VmConfigArgs, deviceSpecs []vimTypes.BaseVirtualDeviceConfigSpec,
 	vAppConfigSpec vimTypes.BaseVmConfigSpec) (*vimTypes.VirtualMachineConfigSpec, error) {
+
+	vmClassSpec := &vmConfigArgs.VmClass.Spec
+	vmMetadata := vmConfigArgs.VmMetadata
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{
 		Name:         name,
@@ -1299,10 +1303,18 @@ func (s *Session) generateConfigSpec(name string, vmSpec *v1alpha1.VirtualMachin
 		lim := memoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
 		configSpec.MemoryAllocation.Limit = &lim
 	}
-
 	mergedConfig := s.extraConfig
+
+	// Apply VMOperatorV1Alpha1ConfigKey -> VMOperatorV1Alpha1ConfigEnabled in extra config for V1Alpha1
+	// VirtualMachineImage compatibility
+	if conditions.IsTrue(vmConfigArgs.VmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) {
+		vmImageCompatibleExtraConfig := make(map[string]string)
+		vmImageCompatibleExtraConfig[VMOperatorV1Alpha1ExtraConfigKey] = VMOperatorV1Alpha1ConfigEnabled
+		mergedConfig = MergeExtraConfig(vmImageCompatibleExtraConfig, mergedConfig)
+	}
+
 	if vmMetadata != nil && vmMetadata.Data != nil && vmMetadata.Transport == v1alpha1.VirtualMachineMetadataExtraConfigTransport {
-		mergedConfig = MergeExtraConfig(vmMetadata.Data, s.extraConfig)
+		mergedConfig = MergeExtraConfig(vmMetadata.Data, mergedConfig)
 	}
 	renderedExtraConfig := ApplyVmSpec(mergedConfig, vmSpec)
 	configSpec.ExtraConfig = GetExtraConfig(renderedExtraConfig)
@@ -1702,7 +1714,7 @@ func (s *Session) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.Virtual
 			return nil, err
 		}
 
-		configSpec, err := s.generateConfigSpec(vm.Name, &vm.Spec, &vmConfigArgs.VmClass.Spec, vmConfigArgs.VmMetadata, deviceSpecs, vAppConfigSpec)
+		configSpec, err := s.generateConfigSpec(vm.Name, &vm.Spec, vmConfigArgs, deviceSpecs, vAppConfigSpec)
 		if err != nil {
 			return nil, err
 		}

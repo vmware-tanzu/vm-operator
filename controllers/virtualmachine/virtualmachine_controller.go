@@ -590,6 +590,16 @@ func (r *VirtualMachineReconciler) getResourcePolicy(ctx *context.VirtualMachine
 	return resourcePolicy, nil
 }
 
+func (r *VirtualMachineReconciler) getVMImage(ctx *context.VirtualMachineContext) (*vmopv1alpha1.VirtualMachineImage, error) {
+	vmImage := &vmopv1alpha1.VirtualMachineImage{}
+	imageName := ctx.VM.Spec.ImageName
+	if err := r.Get(ctx, client.ObjectKey{Name: imageName}, vmImage); err != nil {
+		ctx.Logger.Error(err, "Failed to get VirtualMachineImage", "imageName", imageName)
+		return nil, err
+	}
+	return vmImage, nil
+}
+
 // createOrUpdateVm calls into the VM provider to reconcile a VirtualMachine
 func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineContext) error {
 	vmClass, err := r.getVMClass(ctx)
@@ -617,12 +627,18 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 		return err
 	}
 
+	vmImage, err := r.getVMImage(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Update VirtualMachine conditions to indicate all prereqs have been met.
 	conditions.MarkTrue(ctx.VM, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
 
 	vm := ctx.VM
 	vmConfigArgs := vmprovider.VmConfigArgs{
 		VmClass:            *vmClass,
+		VmImage:            vmImage,
 		VmMetadata:         vmMetadata,
 		ResourcePolicy:     resourcePolicy,
 		StorageProfileID:   storagePolicyID,

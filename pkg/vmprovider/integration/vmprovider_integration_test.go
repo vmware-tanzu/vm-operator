@@ -20,6 +20,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -51,14 +52,16 @@ func getSimpleVirtualMachine(name string) *vmoperatorv1alpha1.VirtualMachine {
 	}
 }
 
-func getVmConfigArgs(namespace, name string) vmprovider.VmConfigArgs {
+func getVmConfigArgs(namespace, name string, imageName string) vmprovider.VmConfigArgs {
 	vmClass := getVMClassInstance(name, namespace)
+	vmImage := builder.DummyVirtualMachineImage(imageName)
 
 	return vmprovider.VmConfigArgs{
 		VmClass:            *vmClass,
+		VmImage:            vmImage,
 		ResourcePolicy:     nil,
 		VmMetadata:         &vmprovider.VmMetadata{},
-		StorageProfileID:   "foo",
+		StorageProfileID:   "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
 		ContentLibraryUUID: integration.GetContentSourceID(),
 	}
 }
@@ -110,6 +113,7 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 		It("should support controller like workflow", func() {
 			vmNamespace := integration.DefaultNamespace
 			vmName := "test-vm-vmp-invt-deploy"
+			storageProfileId := "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
 
 			vmMetadata := &vmprovider.VmMetadata{
 				Transport: vmoperatorv1alpha1.VirtualMachineMetadataOvfEnvTransport,
@@ -117,6 +121,7 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 			imageName := "DC0_H0_VM0" // Default govcsim image name
 			vmClass := getVMClassInstance(vmName, vmNamespace)
 			vm := getVirtualMachineInstance(vmName, vmNamespace, imageName, vmClass.Name)
+			vmImage := builder.DummyVirtualMachineImage(imageName)
 			Expect(vm.Status.BiosUUID).Should(BeEmpty())
 			Expect(vm.Status.InstanceUUID).Should(BeEmpty())
 
@@ -124,7 +129,7 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(exists).To(BeFalse())
 
-			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, nil, vmMetadata, "foo", ""}
+			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, vmImage, nil, vmMetadata, storageProfileId, ""}
 			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -151,6 +156,7 @@ var _ = Describe("VMProvider Tests", func() {
 		var err error
 		vmNamespace := integration.DefaultNamespace
 		vmName := "test-vm-vmp-deploy"
+		storageProfileId := "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
 
 		BeforeEach(func() {
 			err = vsphere.InstallVSphereVmProviderConfig(k8sClient, integration.DefaultNamespace,
@@ -169,6 +175,7 @@ var _ = Describe("VMProvider Tests", func() {
 			imageName := integration.IntegrationContentLibraryItemName
 			vmClass := getVMClassInstance(vmName, vmNamespace)
 			vm := getVirtualMachineInstance(vmName, vmNamespace, imageName, vmClass.Name)
+			vmImage := builder.DummyVirtualMachineImage(imageName)
 			Expect(vm.Status.BiosUUID).Should(BeEmpty())
 			Expect(vm.Status.InstanceUUID).Should(BeEmpty())
 
@@ -177,7 +184,7 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(exists).To(BeFalse())
 
 			// CreateVirtualMachine from CL
-			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, nil, vmMetadata, "foo", integration.GetContentSourceID()}
+			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, vmImage, nil, vmMetadata, storageProfileId, integration.GetContentSourceID()}
 			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -253,22 +260,25 @@ var _ = Describe("VMProvider Tests", func() {
 				},
 			}
 			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy2)).To(Succeed())
+			imageName := integration.IntegrationContentLibraryItemName
+
+			vmImage := builder.DummyVirtualMachineImage(imageName)
 
 			vmConfigArgs1 := vmprovider.VmConfigArgs{
 				VmClass:          *getVMClassInstance(sameVmName, vmNamespace1),
+				VmImage:          vmImage,
 				ResourcePolicy:   resourcePolicy1,
 				VmMetadata:       &vmprovider.VmMetadata{},
-				StorageProfileID: "foo",
+				StorageProfileID: "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
 			}
 
 			vmConfigArgs2 := vmprovider.VmConfigArgs{
 				VmClass:          *getVMClassInstance(sameVmName, vmNamespace2),
+				VmImage:          vmImage,
 				ResourcePolicy:   resourcePolicy2,
 				VmMetadata:       &vmprovider.VmMetadata{},
-				StorageProfileID: "foo",
+				StorageProfileID: "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
 			}
-
-			imageName := integration.IntegrationContentLibraryItemName
 
 			vm1 := &vmoperatorv1alpha1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{

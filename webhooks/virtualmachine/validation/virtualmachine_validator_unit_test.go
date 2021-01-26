@@ -90,6 +90,7 @@ func unitTestsValidateCreate() {
 		invalidStorageClass        bool
 		invalidResourceQuota       bool
 		validStorageClass          bool
+		imageNonCompatible         bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -101,10 +102,9 @@ func unitTestsValidateCreate() {
 		if args.invalidImageName {
 			ctx.vm.Spec.ImageName = ""
 		}
-		if args.invalidGuestOSType {
-			ctx.vmImage.Status.SupportedGuestOS = &[]bool{false}[0]
-			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
-			Expect(err).ToNot(HaveOccurred())
+		if args.invalidGuestOSType || args.imageNonCompatible {
+			ctx.vmImage.Status.ImageSupported = &[]bool{false}[0]
+			Expect(ctx.Client.Status().Update(ctx, ctx.vmImage)).ToNot(HaveOccurred())
 		}
 		if args.invalidNetworkName {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkName = ""
@@ -205,7 +205,6 @@ func unitTestsValidateCreate() {
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should deny invalid class name", createArgs{invalidClassName: true}, false, messages.ClassNotSpecified, nil),
 		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false, messages.ImageNotSpecified, nil),
-		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
 		Entry("should deny invalid network name for VDS network type", createArgs{invalidNetworkName: true}, false, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, 0), nil),
 		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0), nil),
 		Entry("should deny connection of multiple network interfaces of a VM to the same network", createArgs{multipleNetIfToSameNetwork: true},
@@ -223,6 +222,7 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid resource quota", createArgs{invalidResourceQuota: true}, false, fmt.Sprintf(messages.NoResourceQuota, ""), nil),
 		Entry("should deny invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, "invalid", ""), nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
+		Entry("should fail when OS type is invalid or image not compatible", createArgs{invalidGuestOSType: true, imageNonCompatible: true}, false, fmt.Sprintf(messages.VMImageNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
 	)
 }
 

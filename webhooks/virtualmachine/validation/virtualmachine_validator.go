@@ -171,18 +171,18 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 		return []string{messages.ImageNotSpecified}
 	}
 
-	val := vm.Annotations[vsphere.VMOperatorVMGOSSupportCheckKey]
+	val := vm.Annotations[vsphere.VMOperatorImageSupportedCheckKey]
 
-	if val != vsphere.VMOperatorVMGOSSupportDisable {
+	if val != vsphere.VMOperatorImageSupportedCheckDisable {
 		image := vmopv1.VirtualMachineImage{}
 		err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image)
 		if err != nil {
 			validationErrs = append(validationErrs, fmt.Sprintf("error validating image: %v", err))
 			return validationErrs
 		}
-
-		if image.Status.SupportedGuestOS != nil && !*image.Status.SupportedGuestOS {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.GuestOSNotSupported, image.Spec.OSInfo.Type, image.Name))
+		if image.Status.ImageSupported != nil && !*image.Status.ImageSupported {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.VMImageNotSupported, image.Spec.OSInfo.Type,
+				image.Name))
 		}
 	}
 

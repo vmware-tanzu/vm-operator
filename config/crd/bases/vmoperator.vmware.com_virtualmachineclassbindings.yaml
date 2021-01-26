@@ -12,6 +12,9 @@ spec:
   - JSONPath: .classRef.name
     name: VirtualMachineClass
     type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: Age
+    type: date
   group: vmoperator.vmware.com
   names:
     kind: VirtualMachineClassBinding

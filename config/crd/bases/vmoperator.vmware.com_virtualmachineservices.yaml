@@ -8,6 +8,13 @@ metadata:
   creationTimestamp: null
   name: virtualmachineservices.vmoperator.vmware.com
 spec:
+  additionalPrinterColumns:
+  - JSONPath: .spec.type
+    name: Type
+    type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: Age
+    type: date
   group: vmoperator.vmware.com
   names:
     kind: VirtualMachineService

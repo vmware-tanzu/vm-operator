@@ -21,9 +21,9 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1 // indirect
 	github.com/stretchr/testify v1.6.1 // indirect
-	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20210113235333-b9115235dd39
+	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20210125210036-739fd4319bc5
 	github.com/vmware/govmomi v0.23.0
-	golang.org/x/net v0.0.0-20200822124328-c89045814202
+	golang.org/x/net v0.0.0-20200822124328-c89045814202 // indirect
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect

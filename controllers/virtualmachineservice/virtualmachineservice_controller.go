@@ -6,6 +6,7 @@ package virtualmachineservice
 import (
 	goctx "context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 
@@ -43,10 +44,9 @@ const (
 
 	finalizerName = "virtualmachineservice.vmoperator.vmware.com"
 
-	OpCreate       = "CreateK8sService"
-	OpDelete       = "DeleteK8sService"
-	OpUpdate       = "UpdateK8sService"
-	ControllerName = "virtualmachineservice-controller"
+	OpCreate = "CreateK8sService"
+	OpDelete = "DeleteK8sService"
+	OpUpdate = "UpdateK8sService"
 )
 
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
@@ -58,7 +58,15 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	lbProvider, err := providers.GetLoadbalancerProviderByType(mgr, providers.LBProvider)
+	lbProviderType := os.Getenv("LB_PROVIDER")
+	if lbProviderType == "" {
+		vdsNetwork := os.Getenv("VSPHERE_NETWORKING")
+		if vdsNetwork != "true" {
+			lbProviderType = providers.NSXTLoadBalancer
+		}
+	}
+
+	lbProvider, err := providers.GetLoadbalancerProviderByType(mgr, lbProviderType)
 	if err != nil {
 		return err
 	}
@@ -71,7 +79,16 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		lbProvider,
 	)
 
-	return add(ctx, mgr, r, r)
+	return ctrl.NewControllerManagedBy(mgr).
+		For(controlledType).
+		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
+		Watches(&source.Kind{Type: &corev1.Service{}},
+			&handler.EnqueueRequestForOwner{OwnerType: &vmoperatorv1alpha1.VirtualMachineService{}}).
+		Watches(&source.Kind{Type: &corev1.Endpoints{}},
+			&handler.EnqueueRequestForOwner{OwnerType: &vmoperatorv1alpha1.VirtualMachineService{}}).
+		Watches(&source.Kind{Type: &vmoperatorv1alpha1.VirtualMachine{}},
+			&handler.EnqueueRequestsFromMapFunc{ToRequests: handler.ToRequestsFunc(r.virtualMachineToVirtualMachineServiceMapper)}).
+		Complete(r)
 }
 
 func NewReconciler(
@@ -91,45 +108,6 @@ func NewReconciler(
 	}
 }
 
-// add adds a new Controller to mgr with r as the reconcile.Reconciler
-func add(ctx *context.ControllerManagerContext, mgr manager.Manager, r reconcile.Reconciler, rvms *ReconcileVirtualMachineService) error {
-	// Create a new controller
-	c, err := controller.New(ControllerName, mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: ctx.MaxConcurrentReconciles})
-	if err != nil {
-		return err
-	}
-
-	// Watch for changes to VirtualMachineService
-	err = c.Watch(&source.Kind{Type: &vmoperatorv1alpha1.VirtualMachineService{}}, &handler.EnqueueRequestForObject{})
-	if err != nil {
-		return err
-	}
-
-	// Watch VirtualMachine resources so that VmServices can be updated in response to changes in VM IP status and VM
-	// label configuration.
-	//
-	// TODO: Ensure that we have adequate tests for these IP and label updates.
-	err = c.Watch(&source.Kind{Type: &vmoperatorv1alpha1.VirtualMachine{}},
-		&handler.EnqueueRequestsFromMapFunc{ToRequests: handler.ToRequestsFunc(rvms.virtualMachineToVirtualMachineServiceMapper)})
-	if err != nil {
-		return err
-	}
-
-	err = c.Watch(&source.Kind{Type: &corev1.Service{}},
-		&handler.EnqueueRequestForOwner{OwnerType: &vmoperatorv1alpha1.VirtualMachineService{}, IsController: false})
-	if err != nil {
-		return err
-	}
-
-	err = c.Watch(&source.Kind{Type: &corev1.Endpoints{}},
-		&handler.EnqueueRequestForOwner{OwnerType: &vmoperatorv1alpha1.VirtualMachineService{}, IsController: false})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 var _ reconcile.Reconciler = &ReconcileVirtualMachineService{}
 
 // ReconcileVirtualMachineService reconciles a VirtualMachineService object
@@ -145,8 +123,6 @@ type ReconcileVirtualMachineService struct {
 // and what is in the VirtualMachineService.Spec
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineservices,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineservices/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=vmware.com,resources=loadbalancers;loadbalancers/status,verbs=create;get;list;patch;delete;watch;update
-// +kubebuilder:rbac:groups=vmware.com,resources=virtualnetworks;virtualnetworks/status,verbs=create;get;list;patch;delete;watch;update
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch;create;update;patch;delete
 
@@ -199,13 +175,13 @@ func (r *ReconcileVirtualMachineService) ReconcileNormal(ctx goctx.Context, vmSe
 	return nil
 }
 
-func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (err error) {
+func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) error {
 	r.log.Info("Reconcile VirtualMachineService", "name", vmService.NamespacedName())
 	defer r.log.Info("Finished Reconcile VirtualMachineService", "name", vmService.NamespacedName())
 
 	if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
 		// Get LoadBalancer to attach
-		err = r.loadbalancerProvider.EnsureLoadBalancer(ctx, vmService)
+		err := r.loadbalancerProvider.EnsureLoadBalancer(ctx, vmService)
 		if err != nil {
 			r.log.Error(err, "Failed to create or get load balancer for vm service", "name", vmService.Name)
 			return err
@@ -228,7 +204,7 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 		for k, v := range annotations {
 			if oldValue, ok := vmService.Annotations[k]; ok {
 				r.log.V(5).Info("Replacing previous annotation value on vm service",
-					"vmServiceName", vmService.NamespacedName,
+					"vmServiceName", vmService.NamespacedName(),
 					"key", k,
 					"oldValue", oldValue,
 					"newValue", v)
@@ -253,7 +229,7 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 		for k, v := range labels {
 			if oldValue, ok := vmService.Labels[k]; ok {
 				r.log.V(5).Info("Replacing previous label value on vm service",
-					"vmServiceName", vmService.NamespacedName,
+					"vmServiceName", vmService.NamespacedName(),
 					"key", k,
 					"oldValue", oldValue,
 					"newValue", v)
@@ -265,7 +241,7 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 	// Reconcile k8s Service
 	newService, err := r.CreateOrUpdateService(ctx, vmService)
 	if err != nil {
-		r.log.Error(err, "Failed to update k8s Service for VirtualMachineService", "vmServiceName", vmService.NamespacedName)
+		r.log.Error(err, "Failed to update k8s Service for VirtualMachineService", "vmServiceName", vmService.NamespacedName())
 		return err
 	}
 
@@ -365,10 +341,6 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 	}
 
 	svc := &corev1.Service{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Service",
-			APIVersion: "core/v1",
-		},
 		ObjectMeta: MakeObjectMeta(vmService),
 		Spec: corev1.ServiceSpec{
 			// Don't specify selector to keep endpoints controller from interfering
@@ -381,24 +353,22 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 		},
 	}
 
-	// Setting default value so during update we could find the delta by
-	// DeepEqual
-	if svc.Spec.Type == corev1.ServiceTypeLoadBalancer || svc.Spec.Type == corev1.ServiceTypeNodePort {
+	// Setting default value so during update we could find the delta by DeepEqual
+	if svc.Spec.Type == corev1.ServiceTypeNodePort || svc.Spec.Type == corev1.ServiceTypeLoadBalancer {
 		svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyTypeCluster
 	}
 
-	// When VirtualMachineService is created with annotation
-	// labelServiceExternalTrafficPolicyKey, use its value for the
-	// Service.Spec.ExternalTrafficPolicy
+	// When VirtualMachineService is created with annotation labelServiceExternalTrafficPolicyKey, use
+	// its value for the ExternalTrafficPolicy.
+	// BMV: Why not have just added an ExternalTrafficPolicy to the VirtualMachineService?
 	if externalTrafficPolicy, ok := svc.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]; ok {
-		switch corev1.ServiceExternalTrafficPolicyType(externalTrafficPolicy) {
-		// Only two valid values are accepted
+		trafficPolicy := corev1.ServiceExternalTrafficPolicyType(externalTrafficPolicy)
+		switch trafficPolicy {
 		case corev1.ServiceExternalTrafficPolicyTypeLocal, corev1.ServiceExternalTrafficPolicyTypeCluster:
-			{
-				svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyType(externalTrafficPolicy)
-			}
+			svc.Spec.ExternalTrafficPolicy = trafficPolicy
 		default:
-			r.log.V(5).Info("Unknown externalTrafficPolicy configured in VirtualMachineService label, skip it", "externalTrafficPolicy", externalTrafficPolicy)
+			r.log.V(5).Info("Unknown externalTrafficPolicy configured in VirtualMachineService label",
+				"externalTrafficPolicy", externalTrafficPolicy)
 		}
 	}
 
@@ -436,7 +406,8 @@ func addEndpointSubset(subsets []corev1.EndpointSubset, epa corev1.EndpointAddre
 	return subsets
 }
 
-// createOrUpdateService reconciles the k8s Service corresponding to the VirtualMachineService by creating a new Service or updating an existing one. Returns the newly created or updated Service.
+// CreateOrUpdateService reconciles the k8s Service corresponding to the VirtualMachineService by creating a new
+// Service or updating an existing one. Returns the newly created or updated Service.
 // nolint:gocyclo
 func (r *ReconcileVirtualMachineService) CreateOrUpdateService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*corev1.Service, error) {
 	// We can use vmService's namespace and name since Service and VirtualMachineService live in the same namespace.
@@ -547,8 +518,7 @@ func (r *ReconcileVirtualMachineService) CreateOrUpdateService(ctx goctx.Context
 	newService.Spec.ExternalName = svcFromVmService.Spec.ExternalName
 	newService.Spec.Ports = svcFromVmService.Spec.Ports
 	newService.Spec.LoadBalancerIP = svcFromVmService.Spec.LoadBalancerIP
-	// Use DeepEqual to check so we avoid unnecessary updates and
-	// missing value removal
+	// Use DeepEqual to check so we avoid unnecessary updates and  missing value removal
 	if !apiequality.Semantic.DeepEqual(newService.Spec.LoadBalancerSourceRanges, svcFromVmService.Spec.LoadBalancerSourceRanges) {
 		newService.Spec.LoadBalancerSourceRanges = svcFromVmService.Spec.LoadBalancerSourceRanges
 	}

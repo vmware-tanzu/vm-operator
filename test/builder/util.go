@@ -66,8 +66,9 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 			GenerateName: "test-",
 		},
 		Spec: vmopv1.VirtualMachineSpec{
-			ImageName: DummyImageName,
-			ClassName: DummyClassName,
+			ImageName:  DummyImageName,
+			ClassName:  DummyClassName,
+			PowerState: vmopv1.VirtualMachinePoweredOn,
 			NetworkInterfaces: []vmopv1.VirtualMachineNetworkInterface{
 				{
 					NetworkName: DummyNetworkName,

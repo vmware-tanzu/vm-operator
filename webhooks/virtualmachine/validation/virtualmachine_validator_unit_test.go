@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation_test
@@ -238,9 +238,10 @@ func unitTestsValidateUpdate() {
 	)
 
 	type updateArgs struct {
-		changeClassName    bool
-		changeImageName    bool
-		changeStorageClass bool
+		changeClassName      bool
+		changeImageName      bool
+		changeStorageClass   bool
+		changeResourcePolicy bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -256,13 +257,17 @@ func unitTestsValidateUpdate() {
 			ctx.vm.Spec.StorageClass += updateSuffix
 		}
 
+		if args.changeResourcePolicy {
+			ctx.vm.Spec.ResourcePolicyName = updateSuffix
+		}
+
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
 
 		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(expectedAllowed))
 		if expectedReason != "" {
-			Expect(string(response.Result.Reason)).To(Equal(expectedReason))
+			Expect(string(response.Result.Reason)).To(HaveSuffix(expectedReason))
 		}
 		if expectedErr != nil {
 			Expect(response.Result.Message).To(Equal(expectedErr.Error()))
@@ -277,10 +282,12 @@ func unitTestsValidateUpdate() {
 	})
 
 	DescribeTable("update table", validateUpdate,
+		// Immutable Fields
 		Entry("should allow", updateArgs{}, true, nil, nil),
-		Entry("should deny class name change", updateArgs{changeClassName: true}, false, "updates to immutable fields are not allowed: [Spec.ClassName]", nil),
-		Entry("should deny image name change", updateArgs{changeImageName: true}, false, "updates to immutable fields are not allowed: [Spec.ImageName]", nil),
-		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, "updates to immutable fields are not allowed: [Spec.StorageClass]", nil),
+		Entry("should deny class name change", updateArgs{changeClassName: true}, false, "updates to immutable fields are not allowed: [spec.className]", nil),
+		Entry("should deny image name change", updateArgs{changeImageName: true}, false, "updates to immutable fields are not allowed: [spec.imageName]", nil),
+		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, "updates to immutable fields are not allowed: [spec.storageClass]", nil),
+		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, "updates to immutable fields are not allowed: [spec.resourcePolicyName]", nil),
 	)
 
 	When("the update is performed while object deletion", func() {

@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation
@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -93,6 +94,22 @@ func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Resp
 	return admission.Allowed("")
 }
 
+// ValidateUpdate validates if the given VirtualMachineSpec update is valid.
+// Updates to following fields are not allowed:
+//   - ImageName
+//   - ClassName
+//   - StorageClass
+//   - ResourcePolicyName
+
+// Following fields can only be updated when the VM is powered off.
+//   - Ports
+//   - VmMetaData
+//   - NetworkInterfaces
+//   - Volumes referencing a VsphereVolume
+//   - AdvancedOptions
+//     - DefaultVolumeProvisioningOptions
+
+// All other updates are allowed.
 func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
 	var validationErrs []string
 
@@ -106,7 +123,30 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	validationErrs = append(validationErrs, v.validateAllowedChanges(ctx, vm, oldVM)...)
+	// Check if an immutable field has been modified.
+	validationErrs = append(validationErrs, v.validateImmutableFields(ctx, vm, oldVM)...)
+
+	currentPowerState := oldVM.Spec.PowerState
+	desiredPowerState := vm.Spec.PowerState
+
+	// If a VM is powered off, all config changes are allowed.
+	// If a VM is requesting a power off, we can Reconfigure the VM _after_ we power it off - all changes are allowed.
+	// If a VM is requesting a power on, we can Reconfigure the VM _before_ we power it on - all changes are allowed.
+	// So, we only run these validations when the VM is powered on, and is not requesting a power state change.
+	if currentPowerState == desiredPowerState && currentPowerState == vmopv1.VirtualMachinePoweredOn {
+		invalidFields := v.validateUpdatesWhenPoweredOn(ctx, vm, oldVM)
+		if len(invalidFields) > 0 {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, invalidFields, vm.Spec.PowerState))
+		}
+	}
+
+	// Validations for allowed updates. Return validation responses here for conditional updates regardless
+	// of whether the update is allowed or not.
+	validationErrs = append(validationErrs, v.validateMetadata(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateVmVolumeProvisioningOptions(ctx, vm)...)
+
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
 
@@ -295,26 +335,97 @@ func (v validator) validateVmVolumeProvisioningOptions(ctx *context.WebhookReque
 	return validationErrs
 }
 
-// validateAllowedChanges returns true only if immutable fields have not been modified.
-// TODO BMV Exactly what is immutable?
-func (v validator) validateAllowedChanges(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) []string {
+func (v validator) validateUpdatesWhenPoweredOn(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) []string {
+	var fieldNames []string
+
+	if !equality.Semantic.DeepEqual(vm.Spec.Ports, oldVM.Spec.Ports) {
+		fieldNames = append(fieldNames, "spec.ports")
+	}
+	if !equality.Semantic.DeepEqual(vm.Spec.VmMetadata, oldVM.Spec.VmMetadata) {
+		fieldNames = append(fieldNames, "spec.vmMetadata")
+	}
+	// AKP: This would fail if the API server shuffles the Spec up before passing it to the webhook. Should this be a sorted compare? Same for Volumes.
+	if !equality.Semantic.DeepEqual(vm.Spec.NetworkInterfaces, oldVM.Spec.NetworkInterfaces) {
+		fieldNames = append(fieldNames, "spec.networkInterfaces")
+	}
+
+	if vm.Spec.AdvancedOptions != nil {
+		fieldNames = append(fieldNames, v.validateAdvancedOptionsUpdateWhenPoweredOn(ctx, vm, oldVM)...)
+	}
+
+	if vm.Spec.Volumes != nil {
+		fieldNames = append(fieldNames, v.validateVsphereVolumesUpdateWhenPoweredOn(ctx, vm, oldVM)...)
+	}
+
+	return fieldNames
+}
+
+// validateAdvancedOptionsUpdateWhenPoweredOn validates that AdvancedOptions update request is valid when the VM is powered on.
+// We do not reconcile DefaultVolumeProvisioningOptions, so ANY updates to those are denied.
+func (v validator) validateAdvancedOptionsUpdateWhenPoweredOn(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) []string {
+	var fieldNames []string
+	defaultVolumeProvisioningOptionsKey := "spec.advancedOptions.defaultVolumeProvisioningOptions"
+
+	if vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions != nil {
+		if oldVM.Spec.AdvancedOptions == nil || oldVM.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions == nil {
+			// Newly added default privisioning options.
+			fieldNames = append(fieldNames, defaultVolumeProvisioningOptionsKey)
+		} else if oldVM.Spec.AdvancedOptions != nil && oldVM.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions != nil {
+			// Updated default privisioning options.
+			if !equality.Semantic.DeepEqual(vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions, oldVM.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions) {
+				fieldNames = append(fieldNames, defaultVolumeProvisioningOptionsKey)
+			}
+		}
+	}
+
+	return fieldNames
+}
+
+// validateVsphereVolumesUpdateWhenPoweredOn validates that Volume update request is valid when the VM is powered on.
+// We do not support any modifications to vSphere volumes while the VM is powered on.
+func (v validator) validateVsphereVolumesUpdateWhenPoweredOn(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) []string {
+	volumesKey := "spec.volumes[VsphereVolume]"
+	var fieldNames []string
+
+	// Do not allow modifications to vSphere Volumes while the VM is powered on.
+	oldvSphereVolumes := make(map[string]vmopv1.VirtualMachineVolume)
+	for _, vol := range oldVM.Spec.Volumes {
+		if vol.VsphereVolume != nil {
+			oldvSphereVolumes[vol.Name] = vol
+		}
+	}
+
+	newvSphereVolumes := make(map[string]vmopv1.VirtualMachineVolume)
+	for _, vol := range vm.Spec.Volumes {
+		if vol.VsphereVolume != nil {
+			newvSphereVolumes[vol.Name] = vol
+		}
+	}
+
+	if !reflect.DeepEqual(oldvSphereVolumes, newvSphereVolumes) {
+		fieldNames = append(fieldNames, volumesKey)
+	}
+
+	return fieldNames
+}
+
+func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) []string {
 	var validationErrs, fieldNames []string
-	allowed := true
 
 	if vm.Spec.ImageName != oldVM.Spec.ImageName {
-		allowed = false
-		fieldNames = append(fieldNames, "Spec.ImageName")
+		fieldNames = append(fieldNames, "spec.imageName")
 	}
 	if vm.Spec.ClassName != oldVM.Spec.ClassName {
-		allowed = false
-		fieldNames = append(fieldNames, "Spec.ClassName")
+		fieldNames = append(fieldNames, "spec.className")
 	}
 	if vm.Spec.StorageClass != oldVM.Spec.StorageClass {
-		allowed = false
-		fieldNames = append(fieldNames, "Spec.StorageClass")
+		fieldNames = append(fieldNames, "spec.storageClass")
+	}
+	if vm.Spec.ResourcePolicyName != oldVM.Spec.ResourcePolicyName {
+		fieldNames = append(fieldNames, "spec.resourcePolicyName")
 	}
 
-	if !allowed {
+	if len(fieldNames) > 0 {
 		validationErrs = append(validationErrs, fmt.Sprintf(messages.UpdatingImmutableFieldsNotAllowed, fieldNames))
 	}
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation_test
@@ -9,6 +9,9 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
+
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -132,8 +135,8 @@ func intgTestsValidateCreate() {
 		Entry("should work despite osType when VMGOSCustomizeCheckKey is disabled", createArgs{gOSCSkipAnnotation: true, invalidGuestOSType: true}, true, "", nil),
 		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false, "spec.imageName must be specified", nil),
 		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
-		Entry("should not work for invalid metadata transport", createArgs{invalidMetadataTransport: true}, false, "spec.vmmetadata.transport is not supported", nil),
-		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmmetadata.configmapname must be specified", nil),
+		Entry("should not work for invalid metadata transport", createArgs{invalidMetadataTransport: true}, false, "spec.vmMetadata.transport is not supported", nil),
+		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmMetadata.configMapName must be specified", nil),
 		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, builder.DummyStorageClassName, ""), nil),
 	)
 }
@@ -170,7 +173,7 @@ func intgTestsValidateUpdate() {
 		})
 		It("should deny the request", func() {
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("updates to immutable fields are not allowed: [Spec.ImageName]"))
+			Expect(err.Error()).To(ContainSubstring("updates to immutable fields are not allowed: [spec.imageName]"))
 		})
 	})
 	When("update is performed with changed storageClass name", func() {
@@ -179,7 +182,112 @@ func intgTestsValidateUpdate() {
 		})
 		It("should deny the request", func() {
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("updates to immutable fields are not allowed: [Spec.StorageClass]"))
+			Expect(err.Error()).To(ContainSubstring("updates to immutable fields are not allowed: [spec.storageClass]"))
+		})
+	})
+
+	Context("VirtualMachine update while VM is powered on", func() {
+		BeforeEach(func() {
+			ctx.vm.Spec.PowerState = "poweredOn"
+		})
+
+		When("Ports are updated", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Ports = []vmopv1.VirtualMachinePort{{
+					Name: "updated-port",
+				}}
+			})
+			It("rejects the request", func() {
+				fields := []string{"spec.ports"}
+				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, fields, ctx.vm.Spec.PowerState)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedReason))
+			})
+		})
+
+		When("VmMetadata is updated", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
+					ConfigMapName: "updated-configmap",
+				}
+			})
+
+			It("rejects the request", func() {
+				fields := []string{"spec.vmMetadata"}
+				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, fields, ctx.vm.Spec.PowerState)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedReason))
+			})
+		})
+
+		When("NetworkInterfaces are updated", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{{
+					NetworkName: "updated-network",
+				}}
+			})
+
+			It("rejects the request", func() {
+				fields := []string{"spec.networkInterfaces"}
+				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, fields, ctx.vm.Spec.PowerState)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedReason))
+			})
+		})
+
+		When("Volumes are updated", func() {
+			When("a vSphere volume is added", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes,
+						vmopv1.VirtualMachineVolume{
+							Name:          "updated-vsphere-volume",
+							VsphereVolume: &vmopv1.VsphereVolumeSource{},
+						},
+					)
+				})
+
+				It("rejects the request", func() {
+					fields := []string{"spec.volumes[VsphereVolume]"}
+					expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, fields, ctx.vm.Spec.PowerState)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(expectedReason))
+				})
+			})
+
+			When("a PV is added", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes,
+						vmopv1.VirtualMachineVolume{
+							Name: "dummy-new-pv-volume",
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "dummy-new-claim-name",
+							},
+						},
+					)
+				})
+
+				It("does not reject the request", func() {
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+		})
+
+		When("AdvancedOptions VolumeProvisioningOptions are updated", func() {
+			BeforeEach(func() {
+				thinProvisioning := true
+				ctx.vm.Spec.AdvancedOptions = &vmopv1.VirtualMachineAdvancedOptions{
+					DefaultVolumeProvisioningOptions: &vmopv1.VirtualMachineVolumeProvisioningOptions{
+						ThinProvisioned: &thinProvisioning,
+					},
+				}
+			})
+
+			It("rejects the request", func() {
+				fields := []string{"spec.advancedOptions.defaultVolumeProvisioningOptions"}
+				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, fields, ctx.vm.Spec.PowerState)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedReason))
+			})
 		})
 	})
 }

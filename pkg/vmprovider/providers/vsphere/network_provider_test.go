@@ -28,8 +28,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
-	clientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
-	ncpfake "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned/fake"
 
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -116,7 +114,7 @@ var _ = Describe("NetworkProvider", func() {
 				_ = netopv1alpha1.AddToScheme(scheme)
 
 				expectedProvider := vsphere.NetOpNetworkProvider(nil, nil, nil, nil, nil)
-				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil, scheme)
+				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, scheme)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 			})
@@ -129,7 +127,7 @@ var _ = Describe("NetworkProvider", func() {
 				scheme := runtime.NewScheme()
 				_ = clientgoscheme.AddToScheme(scheme)
 				_ = netopv1alpha1.AddToScheme(scheme)
-				_, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil, scheme)
+				_, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, scheme)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("unsupported APIGroup for ProviderRef"))
 			})
@@ -140,7 +138,7 @@ var _ = Describe("NetworkProvider", func() {
 				vmNif.NetworkType = vsphere.NsxtNetworkType
 				expectedProvider := vsphere.NsxtNetworkProvider(nil, nil, nil)
 
-				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil, nil)
+				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 			})
@@ -149,14 +147,14 @@ var _ = Describe("NetworkProvider", func() {
 				vmNif.NetworkType = vsphere.VdsNetworkType
 				expectedProvider := vsphere.NetOpNetworkProvider(nil, nil, nil, nil, nil)
 
-				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil, nil)
+				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 			})
 
 			It("should find the default", func() {
 				expectedProvider := vsphere.DefaultNetworkProvider(nil)
-				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil, nil)
+				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 			})
@@ -167,7 +165,7 @@ var _ = Describe("NetworkProvider", func() {
 		It("should find NSX-T", func() {
 			expectedProvider := vsphere.NsxtNetworkProvider(nil, nil, nil)
 
-			np, err := vsphere.NetworkProviderByType("nsx-t", nil, nil, nil, nil, nil, nil)
+			np, err := vsphere.NetworkProviderByType("nsx-t", nil, nil, nil, nil, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 		})
@@ -175,7 +173,7 @@ var _ = Describe("NetworkProvider", func() {
 		It("should find VDS (NetOP)", func() {
 			expectedProvider := vsphere.NetOpNetworkProvider(nil, nil, nil, nil, nil)
 
-			np, err := vsphere.NetworkProviderByType("vsphere-distributed", nil, nil, nil, nil, nil, nil)
+			np, err := vsphere.NetworkProviderByType("vsphere-distributed", nil, nil, nil, nil, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 		})
@@ -183,7 +181,7 @@ var _ = Describe("NetworkProvider", func() {
 		It("should find the default", func() {
 			expectedProvider := vsphere.DefaultNetworkProvider(nil)
 
-			np, err := vsphere.NetworkProviderByType("", nil, nil, nil, nil, nil, nil)
+			np, err := vsphere.NetworkProviderByType("", nil, nil, nil, nil, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
 		})
@@ -525,13 +523,17 @@ var _ = Describe("NetworkProvider", func() {
 
 	Context("when using NSX-T network provider", func() {
 		var (
-			ncpClient clientset.Interface
+			k8sClient ctrlruntime.Client
 			ncpVif    *ncpv1alpha1.VirtualNetworkInterface
 		)
 
 		BeforeEach(func() {
-			ncpClient = ncpfake.NewSimpleClientset()
-			np = vsphere.NsxtNetworkProvider(ncpClient, finder, cluster)
+			scheme := runtime.NewScheme()
+			_ = clientgoscheme.AddToScheme(scheme)
+			_ = ncpv1alpha1.AddToScheme(scheme)
+
+			k8sClient = clientfake.NewFakeClientWithScheme(scheme)
+			np = vsphere.NsxtNetworkProvider(k8sClient, finder, cluster)
 
 			ncpVif = &ncpv1alpha1.VirtualNetworkInterface{
 				ObjectMeta: metav1.ObjectMeta{
@@ -555,7 +557,7 @@ var _ = Describe("NetworkProvider", func() {
 		// Creates the vnetif and other objects in the system the way we want to test them
 		// This runs after all BeforeEach()
 		JustBeforeEach(func() {
-			_, err := ncpClient.VmwareV1alpha1().VirtualNetworkInterfaces(dummyNamespace).Create(ncpVif)
+			err := k8sClient.Create(ctx, ncpVif)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -622,7 +624,7 @@ var _ = Describe("NetworkProvider", func() {
 					dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
 					dvpg.Config.BackingType = "nsx"
 
-					np := vsphere.NsxtNetworkProvider(ncpClient, finder, cluster)
+					np := vsphere.NsxtNetworkProvider(k8sClient, finder, cluster)
 
 					dev, err := np.CreateVnic(ctx, vm, vmNif)
 					Expect(err).ToNot(HaveOccurred())

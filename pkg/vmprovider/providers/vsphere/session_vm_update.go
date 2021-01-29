@@ -27,7 +27,7 @@ func (s *Session) createNetworkDevices(vmCtx VMContext) ([]vimTypes.BaseVirtualD
 	for i := range vmCtx.VM.Spec.NetworkInterfaces {
 		vif := vmCtx.VM.Spec.NetworkInterfaces[i]
 
-		np, err := GetNetworkProvider(&vif, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
+		np, err := GetNetworkProvider(&vif, s.k8sClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get network provider")
 		}

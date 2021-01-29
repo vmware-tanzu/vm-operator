@@ -189,7 +189,7 @@ func (s *Session) GetCustomizationSpec(
 		for idx := range vmCtx.VM.Spec.NetworkInterfaces {
 			nif := vmCtx.VM.Spec.NetworkInterfaces[idx]
 
-			np, err := GetNetworkProvider(&nif, s.k8sClient, s.ncpClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
+			np, err := GetNetworkProvider(&nif, s.k8sClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to get network provider")
 			}

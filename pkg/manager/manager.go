@@ -97,7 +97,7 @@ func New(opts Options) (Manager, error) {
 }
 
 func InitializeProviders(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-	ctx.VmProvider = vsphere.NewVSphereMachineProviderFromRestConfig(mgr.GetConfig(), mgr.GetClient(), mgr.GetScheme())
+	ctx.VmProvider = vsphere.NewVSphereVmProviderFromClient(mgr.GetClient(), mgr.GetScheme())
 	return nil
 }
 

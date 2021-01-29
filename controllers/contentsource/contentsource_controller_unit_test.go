@@ -165,7 +165,7 @@ func unitTestsCRUDImage() {
 		fakeVmProvider = ctx.VmProvider.(*providerfake.FakeVmProvider)
 	})
 
-	AfterEach(func() {
+	JustAfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
 		initObjects = nil
@@ -187,32 +187,67 @@ func unitTestsCRUDImage() {
 					Type: "dummy-type-1",
 				},
 			}
-
-			duplicateImg := &v1alpha1.VirtualMachineImage{
+			providerImg := &v1alpha1.VirtualMachineImage{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "dummy-image",
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "vmoperator.vmware.com/v1alpha1",
+						Kind:       "ContentLibraryProvider",
+						Name:       "dummy-cl",
+					}},
 				},
 				Spec: v1alpha1.VirtualMachineImageSpec{
 					Type: "dummy-type-2",
 				},
 			}
-			BeforeEach(func() {
-				initObjects = append(initObjects, existingImg, &cl, &cs)
-			})
+
+			providerListImageFromCLFunc := func(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+				return []*v1alpha1.VirtualMachineImage{providerImg}, nil
+			}
+
 			Context("another library with a duplicate image name is added", func() {
-				It("the existing VirtualMachineImage is not overwritten", func() {
-					fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
-						return []*v1alpha1.VirtualMachineImage{duplicateImg}, nil
-					}
 
-					err := reconciler.SyncImages(ctx.Context)
-					Expect(err).NotTo(HaveOccurred())
+				When("the existing image does not have any ContentLibraryProvider annotations", func() {
+					BeforeEach(func() {
+						initObjects = append(initObjects, existingImg, &cl, &cs)
+					})
+					It("the existing VirtualMachineImage is overwritten", func() {
+						fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = providerListImageFromCLFunc
 
-					img := &v1alpha1.VirtualMachineImage{}
-					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: existingImg.Name}, img)).To(Succeed())
-					Expect(img.OwnerReferences).To(Equal(existingImg.OwnerReferences))
-					Expect(img.Spec).To(Equal(existingImg.Spec))
-					Expect(img.Annotations).To(Equal(existingImg.Annotations))
+						err := reconciler.SyncImages(ctx.Context)
+						Expect(err).NotTo(HaveOccurred())
+
+						img := &v1alpha1.VirtualMachineImage{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: existingImg.Name}, img)).To(Succeed())
+						Expect(img.OwnerReferences).To(Equal(providerImg.OwnerReferences))
+						Expect(img.Spec).To(Equal(providerImg.Spec))
+						Expect(img.Annotations).To(Equal(providerImg.Annotations))
+					})
+				})
+
+				When("the existing image has ContentLibraryProvider annotations", func() {
+
+					BeforeEach(func() {
+						existingImg.OwnerReferences = []metav1.OwnerReference{{
+							APIVersion: "vmoperator.vmware.com/v1alpha1",
+							Kind:       "ContentLibraryProvider",
+							Name:       "dummy-cl-2",
+						}}
+						initObjects = append(initObjects, existingImg, &cl, &cs)
+					})
+
+					It("the existing VirtualMachineImage is not overwritten", func() {
+						fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = providerListImageFromCLFunc
+
+						err := reconciler.SyncImages(ctx.Context)
+						Expect(err).NotTo(HaveOccurred())
+
+						img := &v1alpha1.VirtualMachineImage{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: existingImg.Name}, img)).To(Succeed())
+						Expect(img.OwnerReferences).To(Equal(existingImg.OwnerReferences))
+						Expect(img.Spec).To(Equal(existingImg.Spec))
+						Expect(img.Annotations).To(Equal(existingImg.Annotations))
+					})
 				})
 			})
 		})

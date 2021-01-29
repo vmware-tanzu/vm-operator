@@ -32,8 +32,6 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
-	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
-
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
@@ -180,13 +178,12 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	err = cnsv1alpha1.SchemeBuilder.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	ncpClient := ncpclientset.NewForConfigOrDie(cfg)
 	k8sClient, err := GetCtrlRuntimeClient(cfg)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Register the vSphere provider
 	log.Info("setting up vSphere Provider")
-	vmProvider = vsphere.NewVSphereVmProviderFromClients(ncpClient, k8sClient, scheme.Scheme)
+	vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, scheme.Scheme)
 
 	vcSim := NewVcSimInstance()
 

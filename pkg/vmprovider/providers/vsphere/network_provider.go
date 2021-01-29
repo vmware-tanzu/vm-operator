@@ -29,7 +29,6 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
-	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 )
@@ -53,7 +52,7 @@ type NetworkProvider interface {
 }
 
 // GetNetworkProvider returns the network provider based on the vmNif providerRef and network type
-func GetNetworkProvider(vif *v1alpha1.VirtualMachineNetworkInterface, k8sClient ctrlruntime.Client, ncpClient ncpclientset.Interface,
+func GetNetworkProvider(vif *v1alpha1.VirtualMachineNetworkInterface, k8sClient ctrlruntime.Client,
 	vimClient *vim25.Client, finder *find.Finder, cluster *object.ClusterComputeResource, scheme *runtime.Scheme) (NetworkProvider, error) {
 
 	// Until we determine a way to handle NSX-t for Netop and NCP
@@ -74,17 +73,17 @@ func GetNetworkProvider(vif *v1alpha1.VirtualMachineNetworkInterface, k8sClient 
 		return NetOpNetworkProvider(k8sClient, vimClient, finder, cluster, scheme), nil
 	}
 
-	return NetworkProviderByType(vif.NetworkType, k8sClient, ncpClient, vimClient, finder, cluster, scheme)
+	return NetworkProviderByType(vif.NetworkType, k8sClient, vimClient, finder, cluster, scheme)
 }
 
 // NetworkProviderByType returns the network provider based on network type
-func NetworkProviderByType(networkType string, k8sClient ctrlruntime.Client, ncpClient ncpclientset.Interface,
-	vimClient *vim25.Client, finder *find.Finder, cluster *object.ClusterComputeResource, scheme *runtime.Scheme) (NetworkProvider, error) {
+func NetworkProviderByType(networkType string, k8sClient ctrlruntime.Client, vimClient *vim25.Client,
+	finder *find.Finder, cluster *object.ClusterComputeResource, scheme *runtime.Scheme) (NetworkProvider, error) {
 
 	// TODO Need way to determine to use NetOP for NSXT
 	switch networkType {
 	case NsxtNetworkType:
-		return NsxtNetworkProvider(ncpClient, finder, cluster), nil
+		return NsxtNetworkProvider(k8sClient, finder, cluster), nil
 	case VdsNetworkType:
 		return NetOpNetworkProvider(k8sClient, vimClient, finder, cluster, scheme), nil
 	case "":
@@ -418,15 +417,15 @@ func (np *netOpNetworkProvider) waitForNetworkInterfaceStatus(ctx context.Contex
 }
 
 type nsxtNetworkProvider struct {
-	ncpClient ncpclientset.Interface
+	k8sClient ctrlruntime.Client
 	finder    *find.Finder
 	cluster   *object.ClusterComputeResource
 }
 
 // NsxtNetworkProvider returns a nsxtNetworkProvider instance
-func NsxtNetworkProvider(client ncpclientset.Interface, finder *find.Finder, cluster *object.ClusterComputeResource) *nsxtNetworkProvider {
+func NsxtNetworkProvider(client ctrlruntime.Client, finder *find.Finder, cluster *object.ClusterComputeResource) *nsxtNetworkProvider {
 	return &nsxtNetworkProvider{
-		ncpClient: client,
+		k8sClient: client,
 		finder:    finder,
 		cluster:   cluster,
 	}
@@ -473,7 +472,7 @@ func (np *nsxtNetworkProvider) ownerMatch(vm *v1alpha1.VirtualMachine, vnetif *n
 }
 
 // createVirtualNetworkInterface creates a NCP vnetif for a given VM network interface
-func (np *nsxtNetworkProvider) createVirtualNetworkInterface(vm *v1alpha1.VirtualMachine,
+func (np *nsxtNetworkProvider) createVirtualNetworkInterface(ctx context.Context, vm *v1alpha1.VirtualMachine,
 	vmIf *v1alpha1.VirtualMachineNetworkInterface) (*ncpv1alpha1.VirtualNetworkInterface, error) {
 
 	// Create vnetif object
@@ -488,20 +487,21 @@ func (np *nsxtNetworkProvider) createVirtualNetworkInterface(vm *v1alpha1.Virtua
 	}
 	np.setVnetifOwner(vm, vnetif)
 
-	_, err := np.ncpClient.VmwareV1alpha1().VirtualNetworkInterfaces(vm.Namespace).Create(vnetif)
+	err := np.k8sClient.Create(ctx, vnetif)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return nil, err
 		}
 		// Update owner reference if vnetif already exist
-		currentVnetIf, err := np.ncpClient.VmwareV1alpha1().VirtualNetworkInterfaces(vm.Namespace).Get(vnetif.Name, metav1.GetOptions{})
+		currentVnetIf := &ncpv1alpha1.VirtualNetworkInterface{}
+		err := np.k8sClient.Get(ctx, types.NamespacedName{Namespace: vm.Namespace, Name: vnetif.Name}, currentVnetIf)
 		if err != nil {
 			return nil, err
 		}
 		if !np.ownerMatch(vm, currentVnetIf) {
 			copiedVnetif := currentVnetIf.DeepCopy()
 			np.setVnetifOwner(vm, copiedVnetif)
-			_, err = np.ncpClient.VmwareV1alpha1().VirtualNetworkInterfaces(vm.Namespace).Update(copiedVnetif)
+			err := np.k8sClient.Update(ctx, copiedVnetif)
 			if err != nil {
 				return nil, err
 			}
@@ -514,7 +514,7 @@ func (np *nsxtNetworkProvider) createVirtualNetworkInterface(vm *v1alpha1.Virtua
 
 	// Wait until the vnetif status is available
 	// TODO: Rather than synchronously block here, place a watch on the VirtualNetworkInterface
-	result, err := np.waitForVnetIfStatus(vm.Namespace, vmIf.NetworkName, vm.Name)
+	result, err := np.waitForVnetIfStatus(ctx, vm.Namespace, vmIf.NetworkName, vm.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -533,12 +533,14 @@ func (np *nsxtNetworkProvider) vnetifIsReady(vnetif *ncpv1alpha1.VirtualNetworkI
 }
 
 // waitForVnetIfStatus will poll until the vnetif object's status becomes ready
-func (np *nsxtNetworkProvider) waitForVnetIfStatus(namespace, networkName, vmName string) (*ncpv1alpha1.VirtualNetworkInterface, error) {
+func (np *nsxtNetworkProvider) waitForVnetIfStatus(ctx context.Context, namespace, networkName, vmName string) (*ncpv1alpha1.VirtualNetworkInterface, error) {
 	vnetifName := np.GenerateNsxVnetifName(networkName, vmName)
+	vnetifKey := types.NamespacedName{Namespace: namespace, Name: vnetifName}
 
 	var result *ncpv1alpha1.VirtualNetworkInterface
 	err := wait.PollImmediate(retryInterval, retryTimeout, func() (bool, error) {
-		vnetif, err := np.ncpClient.VmwareV1alpha1().VirtualNetworkInterfaces(namespace).Get(vnetifName, metav1.GetOptions{})
+		vnetif := &ncpv1alpha1.VirtualNetworkInterface{}
+		err := np.k8sClient.Get(ctx, vnetifKey, vnetif)
 		if err != nil {
 			return false, err
 		}
@@ -555,7 +557,7 @@ func (np *nsxtNetworkProvider) waitForVnetIfStatus(namespace, networkName, vmNam
 }
 
 func (np *nsxtNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (vimtypes.BaseVirtualDevice, error) {
-	vnetif, err := np.createVirtualNetworkInterface(vm, vif)
+	vnetif, err := np.createVirtualNetworkInterface(ctx, vm, vif)
 	if err != nil {
 		log.Error(err, "Failed to create vnetif for vif", "vif", vif)
 		return nil, err
@@ -587,7 +589,7 @@ func (np *nsxtNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.Virt
 }
 
 func (np *nsxtNetworkProvider) GetInterfaceGuestCustomization(vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (*vimtypes.CustomizationAdapterMapping, error) {
-	vnetif, err := np.waitForVnetIfStatus(vm.Namespace, vif.NetworkName, vm.Name)
+	vnetif, err := np.waitForVnetIfStatus(context.Background(), vm.Namespace, vif.NetworkName, vm.Name)
 	if err != nil {
 		return nil, err
 	}

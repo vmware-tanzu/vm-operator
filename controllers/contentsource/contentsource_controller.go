@@ -188,7 +188,11 @@ func (r *ContentSourceReconciler) DiffImages(left []vmopv1alpha1.VirtualMachineI
 			// Since the OwnerRef points to the content library, use that to decide whether it is a duplicate image from another content library.
 			leftCL := GetContentLibraryNameFromOwnerRefs(l.OwnerReferences)
 			rightCL := GetContentLibraryNameFromOwnerRefs(right[i].OwnerReferences)
-			if leftCL != rightCL {
+			// Images that were created before 7.0 U2 will not have the OwnerReference. We update those so the OwnerReference is added.
+			// The empty string check will only matter for non VM Service to VM Service, or non VM Service to non VMService upgrades.
+			// Thus, we do not have to worry about the scenario where there can be same images in different libraries (since we will
+			// only have one CL before VM Service).
+			if leftCL != "" && leftCL != rightCL {
 				// Should this be an event?
 				r.Logger.Error(nil, "A VirtualMachineImage by this name has already been created from another content library",
 					"imageName", right[i].Name, "syncingFromContentLibrary", rightCL, "existsInContentLibrary", leftCL)

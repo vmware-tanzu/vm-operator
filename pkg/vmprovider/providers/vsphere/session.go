@@ -11,9 +11,6 @@ import (
 	"strings"
 	"sync"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -24,10 +21,10 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-
-	ncpcs "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
@@ -39,7 +36,6 @@ var DefaultExtraConfig = map[string]string{
 
 type Session struct {
 	Client    *Client
-	ncpClient ncpcs.Interface
 	k8sClient ctrlruntime.Client
 	scheme    *runtime.Scheme
 
@@ -62,7 +58,7 @@ type Session struct {
 }
 
 func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphereVmProviderConfig,
-	ncpClient ncpcs.Interface, k8sClient ctrlruntime.Client, scheme *runtime.Scheme) (*Session, error) {
+	k8sClient ctrlruntime.Client, scheme *runtime.Scheme) (*Session, error) {
 
 	if log.V(4).Enabled() {
 		configCopy := *config
@@ -72,7 +68,6 @@ func NewSessionAndConfigure(ctx context.Context, client *Client, config *VSphere
 
 	s := &Session{
 		Client:                client,
-		ncpClient:             ncpClient,
 		k8sClient:             k8sClient,
 		scheme:                scheme,
 		storageClassRequired:  config.StorageClassRequired,

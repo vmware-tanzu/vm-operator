@@ -230,6 +230,7 @@ var _ = Describe("keepalive handler", func() {
 			})
 		})
 	})
+
 	assertRestSessionValid := func(ctx context.Context, c *rest.Client) {
 		s, err := c.Session(ctx)
 		Expect(err).NotTo(HaveOccurred())

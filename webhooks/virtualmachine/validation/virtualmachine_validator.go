@@ -172,7 +172,6 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 	}
 
 	val := vm.Annotations[vsphere.VMOperatorImageSupportedCheckKey]
-
 	if val != vsphere.VMOperatorImageSupportedCheckDisable {
 		image := vmopv1.VirtualMachineImage{}
 		err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image)
@@ -363,10 +362,10 @@ func (v validator) validateAdvancedOptionsUpdateWhenPoweredOn(ctx *context.Webho
 
 	if vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions != nil {
 		if oldVM.Spec.AdvancedOptions == nil || oldVM.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions == nil {
-			// Newly added default privisioning options.
+			// Newly added default provisioning options.
 			fieldNames = append(fieldNames, defaultVolumeProvisioningOptionsKey)
 		} else if oldVM.Spec.AdvancedOptions != nil && oldVM.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions != nil {
-			// Updated default privisioning options.
+			// Updated default provisioning options.
 			if !equality.Semantic.DeepEqual(vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions, oldVM.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions) {
 				fieldNames = append(fieldNames, defaultVolumeProvisioningOptionsKey)
 			}

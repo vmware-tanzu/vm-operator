@@ -12,7 +12,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 )
 
-//GetResourcePoolOwner - Get owner (i.e. parent cluster) of the resource pool
+// GetResourcePoolOwner - Get owner (i.e. parent cluster) of the resource pool
 func GetResourcePoolOwner(ctx context.Context, rp *object.ResourcePool) (*object.ClusterComputeResource, error) {
 	var owner mo.ResourcePool
 	err := rp.Properties(ctx, rp.Reference(), []string{"owner"}, &owner)
@@ -61,32 +61,37 @@ func ParsePlaceVmResponse(res *vimTypes.PlacementResult) *vimTypes.VirtualMachin
 	return nil
 }
 
-func computeVMPlacement(ctx context.Context, cls *object.ClusterComputeResource, vmRef *vimTypes.ManagedObjectReference,
-	spec interface{}, placementType vimTypes.PlacementSpecPlacementType) (*vimTypes.VirtualMachineRelocateSpec, error) {
+func placeVM(
+	ctx context.Context,
+	cluster *object.ClusterComputeResource,
+	placementSpec vimTypes.PlacementSpec) (*vimTypes.VirtualMachineRelocateSpec, error) {
 
-	ps := vimTypes.PlacementSpec{PlacementType: string(placementType)}
-	switch placementType {
-	case vimTypes.PlacementSpecPlacementTypeClone:
-		cloneSpec := spec.(*vimTypes.VirtualMachineCloneSpec)
-		ps.CloneSpec = cloneSpec
-		ps.RelocateSpec = &cloneSpec.Location
-		ps.CloneName = cloneSpec.Config.Name
-		ps.Vm = vmRef
-	case vimTypes.PlacementSpecPlacementTypeCreate:
-		configSpec := spec.(*vimTypes.VirtualMachineConfigSpec)
-		ps.ConfigSpec = configSpec
-	default:
-		return nil, fmt.Errorf("unsupported placement type: %s", string(placementType))
-	}
-
-	res, err := cls.PlaceVm(ctx, ps)
+	res, err := cluster.PlaceVm(ctx, placementSpec)
 	if err != nil {
 		return nil, err
 	}
+
 	rSpec := ParsePlaceVmResponse(res)
 	if rSpec == nil {
 		return nil, fmt.Errorf("no valid placement action")
 	}
 
 	return rSpec, nil
+}
+
+func cloneVMRelocateSpec(
+	ctx context.Context,
+	cluster *object.ClusterComputeResource,
+	vmRef *vimTypes.ManagedObjectReference,
+	cloneSpec *vimTypes.VirtualMachineCloneSpec) (*vimTypes.VirtualMachineRelocateSpec, error) {
+
+	placementSpec := vimTypes.PlacementSpec{
+		PlacementType: string(vimTypes.PlacementSpecPlacementTypeClone),
+		CloneSpec:     cloneSpec,
+		RelocateSpec:  &cloneSpec.Location,
+		CloneName:     cloneSpec.Config.Name,
+		Vm:            vmRef,
+	}
+
+	return placeVM(ctx, cluster, placementSpec)
 }

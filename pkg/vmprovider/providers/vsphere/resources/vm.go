@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -23,6 +24,7 @@ import (
 type VirtualMachine struct {
 	Name             string
 	vcVirtualMachine *object.VirtualMachine
+	logger           logr.Logger
 }
 
 var log = logf.Log.WithName("vmresource")
@@ -31,7 +33,8 @@ var log = logf.Log.WithName("vmresource")
 // to create the VM and set the VirtualMachine object reference.
 func NewVMForCreate(name string) *VirtualMachine {
 	return &VirtualMachine{
-		Name: name,
+		Name:   name,
+		logger: log.WithValues("name", name),
 	}
 }
 
@@ -39,41 +42,42 @@ func NewVMFromObject(objVm *object.VirtualMachine) (*VirtualMachine, error) {
 	return &VirtualMachine{
 		Name:             objVm.Name(),
 		vcVirtualMachine: objVm,
+		logger:           log.WithValues("name", objVm.Name()),
 	}, nil
 }
 
 func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, pool *object.ResourcePool, vmSpec *types.VirtualMachineConfigSpec) error {
-	log.V(5).Info("Create VM", "name", vm.Name)
+	vm.logger.V(5).Info("Create VM")
+
 	if vm.vcVirtualMachine != nil {
 		return fmt.Errorf("failed to create VM %q because the VM object is already set", vm.Name)
 	}
 
-	task, err := folder.CreateVM(ctx, *vmSpec, pool, nil)
+	createTask, err := folder.CreateVM(ctx, *vmSpec, pool, nil)
 	if err != nil {
 		return err
 	}
 
-	result, err := task.WaitForResult(ctx, nil)
+	result, err := createTask.WaitForResult(ctx, nil)
 	if err != nil {
 		return errors.Wrapf(err, "create VM %q task failed", vm.Name)
 	}
 
 	vm.vcVirtualMachine = object.NewVirtualMachine(folder.Client(), result.Result.(types.ManagedObjectReference))
-
 	return nil
 }
 
 func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, cloneSpec *types.VirtualMachineCloneSpec) (*types.ManagedObjectReference, error) {
-	log.V(5).Info("Clone VM", "name", vm.Name)
+	vm.logger.V(5).Info("Clone VM")
 
-	task, err := vm.vcVirtualMachine.Clone(ctx, folder, cloneSpec.Config.Name, *cloneSpec)
+	cloneTask, err := vm.vcVirtualMachine.Clone(ctx, folder, cloneSpec.Config.Name, *cloneSpec)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := task.WaitForResult(ctx, nil)
+	result, err := cloneTask.WaitForResult(ctx, nil)
 	if err != nil {
-		return nil, errors.Wrapf(err, "clone VM %q task failed", vm.Name)
+		return nil, errors.Wrapf(err, "clone VM task failed")
 	}
 
 	ref := result.Result.(types.ManagedObjectReference)
@@ -81,18 +85,18 @@ func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, clon
 }
 
 func (vm *VirtualMachine) Delete(ctx context.Context) error {
-	log.V(5).Info("Delete VM", "name", vm.Name)
+	vm.logger.V(5).Info("Delete VM")
 
 	if vm.vcVirtualMachine == nil {
 		return fmt.Errorf("failed to delete VM because the VM object is not set")
 	}
 
-	task, err := vm.vcVirtualMachine.Destroy(ctx)
+	destroyTask, err := vm.vcVirtualMachine.Destroy(ctx)
 	if err != nil {
 		return err
 	}
 
-	_, err = task.WaitForResult(ctx, nil)
+	_, err = destroyTask.WaitForResult(ctx, nil)
 	if err != nil {
 		return errors.Wrapf(err, "delete VM task failed")
 	}
@@ -101,16 +105,16 @@ func (vm *VirtualMachine) Delete(ctx context.Context) error {
 }
 
 func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *types.VirtualMachineConfigSpec) error {
-	log.V(5).Info("Reconfiguring VM", "name", vm.Name)
+	vm.logger.V(5).Info("Reconfiguring VM", "configSpec", configSpec)
 
-	task, err := vm.vcVirtualMachine.Reconfigure(ctx, *configSpec)
+	reconfigureTask, err := vm.vcVirtualMachine.Reconfigure(ctx, *configSpec)
 	if err != nil {
 		return err
 	}
 
-	_, err = task.WaitForResult(ctx, nil)
+	_, err = reconfigureTask.WaitForResult(ctx, nil)
 	if err != nil {
-		return errors.Wrapf(err, "reconfigure VM %q task failed", vm.Name)
+		return errors.Wrapf(err, "reconfigure VM task failed")
 	}
 
 	return nil
@@ -118,8 +122,7 @@ func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *types.Vir
 
 // IpAddress returns the IpAddress of the VM if powered on, error otherwise
 func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
-	log.V(5).Info("IpAddress", "name", vm.Name)
-	var o mo.VirtualMachine
+	vm.logger.V(5).Info("Get IpAddress")
 
 	ps, err := vm.vcVirtualMachine.PowerState(ctx)
 	if err != nil || ps == types.VirtualMachinePowerStatePoweredOff {
@@ -127,13 +130,14 @@ func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
 	}
 
 	// Just get some IP from guest
+	var o mo.VirtualMachine
 	err = vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"guest.ipAddress"}, &o)
 	if err != nil {
 		return "", err
 	}
 
 	if o.Guest == nil {
-		log.Info("VM guest info is empty", "name", vm.Name)
+		vm.logger.Info("VM GuestInfo is empty")
 		return "", &find.NotFoundError{}
 	}
 
@@ -146,14 +150,13 @@ func (vm *VirtualMachine) IsGuestCustomizationPending(ctx context.Context) (bool
 
 	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config.extraConfig"}, &o)
 	if err != nil {
-		log.Error(err, "Error in getting the extraConfig of the VM", "name", vm.Name)
+		vm.logger.Error(err, "Error getting VM config.ExtraConfig properties")
 		return false, err
 	}
 
 	for _, opt := range o.Config.ExtraConfig {
-		val := opt.GetOptionValue()
-		if val.Key == "tools.deployPkg.fileName" {
-			fileName := val.Value.(string)
+		if optValue := opt.GetOptionValue(); optValue.Key == "tools.deployPkg.fileName" {
+			fileName := optValue.Value.(string)
 			if fileName != "" {
 				return true, nil
 			}
@@ -161,6 +164,18 @@ func (vm *VirtualMachine) IsGuestCustomizationPending(ctx context.Context) (bool
 	}
 
 	return false, nil
+}
+
+func (vm *VirtualMachine) GetConfig(ctx context.Context) (*types.VirtualMachineConfigInfo, error) {
+	var o mo.VirtualMachine
+
+	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config"}, &o)
+	if err != nil {
+		vm.logger.Error(err, "Error getting VM config properties")
+		return nil, err
+	}
+
+	return o.Config, nil
 }
 
 func (vm *VirtualMachine) InstanceUUID(ctx context.Context) (string, error) {
@@ -188,19 +203,19 @@ func (vm *VirtualMachine) ResourcePool(ctx context.Context) (string, error) {
 
 func (vm *VirtualMachine) ChangeTrackingEnabled(ctx context.Context) (*bool, error) {
 	configInfo, err := vm.GetConfigInfo(ctx)
-	if configInfo == nil || err != nil {
+	if err != nil || configInfo == nil {
 		return nil, err
 	}
 	return configInfo.ChangeTrackingEnabled, nil
 }
 
 func (vm *VirtualMachine) ReferenceValue() string {
-	log.V(5).Info("ReferenceValue", "name", vm.Name)
+	vm.logger.V(5).Info("Get ReferenceValue")
 	return vm.vcVirtualMachine.Reference().Value
 }
 
 func (vm *VirtualMachine) ManagedObject(ctx context.Context) (*mo.VirtualMachine, error) {
-	log.V(5).Info("ManagedObject", "name", vm.Name)
+	vm.logger.V(5).Info("Get ManagedObject")
 	var props mo.VirtualMachine
 	if err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), nil, &props); err != nil {
 		return nil, err
@@ -209,25 +224,26 @@ func (vm *VirtualMachine) ManagedObject(ctx context.Context) (*mo.VirtualMachine
 }
 
 func (vm *VirtualMachine) ImageFields(ctx context.Context) (powerState, uuid, reference string) {
-	log.V(5).Info("ImageFields", "name", vm.Name)
+	vm.logger.V(5).Info("ImageFields")
 	ps, _ := vm.vcVirtualMachine.PowerState(ctx)
 
 	powerState = string(ps)
 	uuid = vm.vcVirtualMachine.UUID(ctx)
 	reference = vm.ReferenceValue()
-
 	return
 }
 
 // GetCreationTime returns the creation time of the VM
 func (vm *VirtualMachine) GetCreationTime(ctx context.Context) (*time.Time, error) {
-	log.V(5).Info("GetCreationTime", "name", vm.Name)
+	vm.logger.V(5).Info("GetCreationTime")
 	var o mo.VirtualMachine
 
 	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config.createDate"}, &o)
 	if err != nil {
 		return nil, err
-	} else if o.Config == nil {
+	}
+
+	if o.Config == nil {
 		return &time.Time{}, nil
 	}
 
@@ -261,7 +277,7 @@ func (vm *VirtualMachine) UniqueID(ctx context.Context) (string, error) {
 
 // GetStatus returns a VirtualMachine's Status
 func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachineStatus, error) {
-	log.V(5).Info("GetStatus", "name", vm.Name)
+	vm.logger.V(5).Info("GetStatus")
 	// TODO(bryanv) We should get all the needed fields in one call to VC.
 
 	ps, err := vm.vcVirtualMachine.PowerState(ctx)
@@ -287,7 +303,7 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 
 	ip, err := vm.IpAddress(ctx)
 	if err != nil {
-		log.Error(err, "failed to get IP address for VirtualMachine", "name", vm.Name)
+		vm.logger.Error(err, "failed to get IP address for VirtualMachine")
 		ip = ""
 	}
 
@@ -319,7 +335,7 @@ func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachi
 }
 
 func (vm *VirtualMachine) GetConfigInfo(ctx context.Context) (*types.VirtualMachineConfigInfo, error) {
-	log.V(5).Info("GetConfigInfo", "name", vm.Name)
+	vm.logger.V(5).Info("GetConfigInfo")
 	moVM, err := vm.ManagedObject(ctx)
 	if err != nil {
 		return nil, err
@@ -328,7 +344,7 @@ func (vm *VirtualMachine) GetConfigInfo(ctx context.Context) (*types.VirtualMach
 }
 
 func (vm *VirtualMachine) GetVAppVmConfigInfo(ctx context.Context) (*types.VmConfigInfo, error) {
-	log.V(5).Info("GetVAppVmConfigInfo", "name", vm.Name)
+	vm.logger.V(5).Info("GetVAppVmConfigInfo")
 	moVM, err := vm.ManagedObject(ctx)
 	if err != nil {
 		return nil, err
@@ -340,7 +356,7 @@ func (vm *VirtualMachine) GetVAppVmConfigInfo(ctx context.Context) (*types.VmCon
 }
 
 func (vm *VirtualMachine) GetOvfProperties(ctx context.Context) (map[string]string, error) {
-	log.V(5).Info("GetOvfProperties", "name", vm.Name)
+	vm.logger.V(5).Info("GetOvfProperties")
 	vAppConfig, err := vm.GetVAppVmConfigInfo(ctx)
 	if err != nil {
 		return nil, err
@@ -365,7 +381,7 @@ func (vm *VirtualMachine) GetOvfProperties(ctx context.Context) (map[string]stri
 }
 
 func (vm *VirtualMachine) IsVMPoweredOff(ctx context.Context) (bool, error) {
-	log.V(5).Info("IsVMPoweredOff", "name", vm.Name)
+	vm.logger.V(5).Info("IsVMPoweredOff")
 	ps, err := vm.vcVirtualMachine.PowerState(ctx)
 	if err != nil {
 		return false, err
@@ -374,39 +390,46 @@ func (vm *VirtualMachine) IsVMPoweredOff(ctx context.Context) (bool, error) {
 	return ps == types.VirtualMachinePowerStatePoweredOff, nil
 }
 
-func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState v1alpha1.VirtualMachinePowerState) error {
-	log.V(5).Info("SetPowerState", "name", vm.Name)
+func (vm *VirtualMachine) GetPowerState(ctx context.Context) (types.VirtualMachinePowerState, error) {
 	ps, err := vm.vcVirtualMachine.PowerState(ctx)
 	if err != nil {
-		log.Error(err, "Failed to get VM power state", "name", vm.Name)
+		return "", err
+	}
+
+	return ps, nil
+}
+
+func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState v1alpha1.VirtualMachinePowerState) error {
+	vm.logger.V(5).Info("SetPowerState", "desiredState", desiredPowerState)
+	ps, err := vm.vcVirtualMachine.PowerState(ctx)
+	if err != nil {
+		vm.logger.Error(err, "Failed to get VM power state")
 		return err
 	}
 
-	log.V(4).Info("VM power state", "name", vm.Name, "currentState", ps, "desiredState", desiredPowerState)
-
+	vm.logger.V(4).Info("VM power state", "currentState", ps, "desiredState", desiredPowerState)
 	if v1alpha1.VirtualMachinePowerState(ps) == desiredPowerState {
 		return nil
 	}
 
-	var task *object.Task
-
+	var powerTask *object.Task
 	switch desiredPowerState {
 	case v1alpha1.VirtualMachinePoweredOn:
-		task, err = vm.vcVirtualMachine.PowerOn(ctx)
+		powerTask, err = vm.vcVirtualMachine.PowerOn(ctx)
 	case v1alpha1.VirtualMachinePoweredOff:
-		task, err = vm.vcVirtualMachine.PowerOff(ctx)
+		powerTask, err = vm.vcVirtualMachine.PowerOff(ctx)
 	default:
 		err = fmt.Errorf("invalid desired power state %s", desiredPowerState)
 	}
 
 	if err != nil {
-		log.Error(err, "Failed to change VM power state", "name", vm.Name, "desiredState", desiredPowerState)
+		vm.logger.Error(err, "Failed to change VM power state", "desiredState", desiredPowerState)
 		return err
 	}
 
-	_, err = task.WaitForResult(ctx, nil)
+	_, err = powerTask.WaitForResult(ctx, nil)
 	if err != nil {
-		log.Error(err, "VM change power state task failed", "name", vm.Name)
+		vm.logger.Error(err, "VM change power state task failed")
 		return err
 	}
 
@@ -415,9 +438,10 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState v
 
 // GetVirtualDisks returns the list of VMs vmdks
 func (vm *VirtualMachine) GetVirtualDisks(ctx context.Context) (object.VirtualDeviceList, error) {
-	log.V(5).Info("GetVirtualDisks", "name", vm.Name)
+	vm.logger.V(5).Info("GetVirtualDisks")
 	deviceList, err := vm.vcVirtualMachine.Device(ctx)
 	if err != nil {
+		vm.logger.Error(err, "Failed to get devices for VM")
 		return nil, err
 	}
 
@@ -425,10 +449,10 @@ func (vm *VirtualMachine) GetVirtualDisks(ctx context.Context) (object.VirtualDe
 }
 
 func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) (object.VirtualDeviceList, error) {
-	log.V(4).Info("GetNetworkDevices", "name", vm.Name)
+	vm.logger.V(4).Info("GetNetworkDevices")
 	devices, err := vm.vcVirtualMachine.Device(ctx)
 	if err != nil {
-		log.Error(err, "Failed to get devices for VM", "name", vm.Name)
+		vm.logger.Error(err, "Failed to get devices for VM")
 		return nil, err
 	}
 
@@ -436,10 +460,11 @@ func (vm *VirtualMachine) GetNetworkDevices(ctx context.Context) (object.Virtual
 }
 
 func (vm *VirtualMachine) Customize(ctx context.Context, spec types.CustomizationSpec) error {
-	log.V(5).Info("Customize", "name", vm.Name)
+	vm.logger.V(5).Info("Customize", "spec", spec)
+
 	customizeTask, err := vm.vcVirtualMachine.Customize(ctx, spec)
 	if err != nil {
-		log.Error(err, "Failed to customize VM", "name", vm.Name)
+		vm.logger.Error(err, "Failed to customize VM")
 		return err
 	}
 
@@ -453,8 +478,9 @@ func (vm *VirtualMachine) Customize(ctx context.Context, spec types.Customizatio
 			}
 		}
 
-		log.Error(err, "Failed to complete customization for VM", "name", vm.Name)
+		vm.logger.Error(err, "Customization task failed")
 		return err
 	}
+
 	return nil
 }

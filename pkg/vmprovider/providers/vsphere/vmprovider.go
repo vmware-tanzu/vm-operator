@@ -6,6 +6,7 @@ package vsphere
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -18,7 +19,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/ovf"
-	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
@@ -34,7 +34,6 @@ import (
 
 	ncpclientset "gitlab.eng.vmware.com/guest-clusters/ncp-client/pkg/client/clientset/versioned"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/util"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -154,12 +153,18 @@ func (vs *vSphereVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx cont
 }
 
 func (vs *vSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
-	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
+	vmCtx := VMContext{
+		Context: ctx,
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
+	ses, err := vs.sessions.GetSession(vmCtx, vmCtx.VM.Namespace)
 	if err != nil {
 		return false, err
 	}
 
-	if _, err = ses.GetVirtualMachine(ctx, vm); err != nil {
+	if _, err = ses.GetVirtualMachine(vmCtx); err != nil {
 		switch err.(type) {
 		case *find.NotFoundError, *find.DefaultNotFoundError:
 			return false, nil
@@ -239,12 +244,16 @@ func AddVmImageAnnotations(annotations map[string]string, ctx context.Context, o
 	return nil
 }
 
-// Op-ID is used to trace operations in vSphere
 func (vs *vSphereVmProvider) getOpId(ctx context.Context, vm *v1alpha1.VirtualMachine, operation string) string {
+	const charset = "0123456789abcdef"
+
+	id := make([]byte, 8)
+	for i := range id {
+		id[i] = charset[rand.Intn(len(charset))]
+	}
+
 	clusterID, _ := vs.getClusterID(ctx, vm.Namespace)
-	opIDPrefix := fmt.Sprintf("vmoperator-vmctrl-%s-%s", clusterID, vm.Name)
-	opID := strings.Join([]string{opIDPrefix, operation, util.RandomString(pkg.OPIDLength)}, "-")
-	return opID
+	return strings.Join([]string{"vmoperator", clusterID, vm.Name, operation, string(id)}, "-")
 }
 
 func (vs *vSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
@@ -266,20 +275,6 @@ func (vs *vSphereVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alp
 
 	if err := vs.mergeVmStatus(ctx, vm, resVm); err != nil {
 		return err
-	}
-
-	return nil
-}
-
-func (vs *vSphereVmProvider) updatePowerState(ctx context.Context, vm *v1alpha1.VirtualMachine, resVm *res.VirtualMachine) error {
-	// Default to on.
-	powerState := v1alpha1.VirtualMachinePoweredOn
-	if vm.Spec.PowerState != "" {
-		powerState = vm.Spec.PowerState
-	}
-
-	if err := resVm.SetPowerState(ctx, powerState); err != nil {
-		return errors.Wrapf(err, "failed to set power state to %v", powerState)
 	}
 
 	return nil
@@ -316,11 +311,6 @@ func (vs *vSphereVmProvider) updateVirtualMachine(ctx context.Context, session *
 		return err
 	}
 
-	err = vs.updatePowerState(ctx, vm, resVm)
-	if err != nil {
-		return err
-	}
-
 	// We were doing Status().Update() so these were never getting applied to the VM.
 	// Some of these annotations like the OVF properties as massive so disable all of
 	// until we can figure out what we actually needed or want.
@@ -334,24 +324,28 @@ func (vs *vSphereVmProvider) updateVirtualMachine(ctx context.Context, session *
 	return nil
 }
 
-func (vs *vSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vmToDelete *v1alpha1.VirtualMachine) error {
-	vmName := vmToDelete.NamespacedName()
-	log.Info("Deleting VirtualMachine", "name", vmName)
+func (vs *vSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
+	vmCtx := VMContext{
+		Context: ctx,
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
 
-	ses, err := vs.sessions.GetSession(ctx, vmToDelete.Namespace)
+	vmCtx.Logger.Info("Deleting VirtualMachine")
+
+	ses, err := vs.sessions.GetSession(ctx, vmCtx.VM.Namespace)
 	if err != nil {
 		return err
 	}
 
-	resVm, err := ses.GetVirtualMachine(ctx, vmToDelete)
+	resVm, err := ses.GetVirtualMachine(vmCtx)
 	if err != nil {
-		return transformVmError(vmName, err)
+		return transformVmError(vmCtx.VM.NamespacedName(), err)
 	}
 
-	deleteSequence := sequence.NewVirtualMachineDeleteSequence(vmToDelete, resVm)
-	err = deleteSequence.Execute(ctx)
-	if err != nil {
-		log.Error(err, "Delete VirtualMachine sequence failed", "name", vmName)
+	deleteSequence := sequence.NewVirtualMachineDeleteSequence(vm, resVm)
+	if err := deleteSequence.Execute(ctx); err != nil {
+		vmCtx.Logger.Error(err, "Delete VirtualMachine sequence failed")
 		return err
 	}
 
@@ -702,13 +696,4 @@ func transformError(resourceType string, resource string, err error) error {
 
 func transformVmError(resource string, err error) error {
 	return transformError("VirtualMachine", resource, err)
-}
-
-func IsCustomizationPendingError(err error) bool {
-	if te, ok := err.(task.Error); ok {
-		if _, ok := te.Fault().(*vimtypes.CustomizationPending); ok {
-			return true
-		}
-	}
-	return false
 }

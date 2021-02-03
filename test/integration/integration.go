@@ -12,11 +12,12 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
-	"sync"
 
-	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	"github.com/vmware/govmomi/simulator"
+	"github.com/vmware/govmomi/vapi/library"
+	"github.com/vmware/govmomi/vapi/vcenter"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -27,12 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"github.com/vmware/govmomi/simulator"
-	"github.com/vmware/govmomi/vapi/library"
-	"github.com/vmware/govmomi/vapi/vcenter"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
@@ -63,6 +58,7 @@ const (
 var (
 	ContentSourceID string
 	log             = logf.Log.WithName("integration")
+	Log             = log
 	vmProvider      vmprovider.VirtualMachineProviderInterface
 )
 
@@ -362,41 +358,4 @@ func CloneVirtualMachineToLibraryItem(ctx context.Context, config *vsphere.VSphe
 	stdlog.Printf("Created vmtx %s in library %s", id, GetContentSourceID())
 
 	return nil
-
-}
-
-// SetupTestReconcile returns a reconcile.Reconcile implementation that delegates to inner and
-// writes the request to requests after Reconcile is finished. Additionally, it also writes any error from the
-// reconcile function.
-func SetupTestReconcile(inner reconcile.Reconciler) (reconcile.Reconciler, chan reconcile.Request, chan reconcile.Result, chan error) {
-	requests := make(chan reconcile.Request)
-	// Make errors a buffered channel so we don't block even if there are no interested receivers. This is needed for
-	// the sake of tests that don't want to make any assertions on the errors. The buffer size should be more than
-	// sufficient given the channels are setup for each test.
-	errors := make(chan error, 100)
-	results := make(chan reconcile.Result, 100)
-	fn := reconcile.Func(func(req reconcile.Request) (reconcile.Result, error) {
-		result, err := inner.Reconcile(req)
-		requests <- req
-		results <- result
-		errors <- err
-		return result, err
-	})
-	return fn, requests, results, errors
-}
-
-// StartTestManager adds recFn
-func StartTestManager(mgr manager.Manager) (chan struct{}, *sync.WaitGroup) {
-	stop := make(chan struct{})
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer GinkgoRecover()
-		defer wg.Done()
-		Expect(mgr.Start(stop)).To(Succeed())
-	}()
-	cache := mgr.GetCache()
-	result := cache.WaitForCacheSync(stop)
-	Expect(result).Should(BeTrue(), "Cache should have synced")
-	return stop, wg
 }

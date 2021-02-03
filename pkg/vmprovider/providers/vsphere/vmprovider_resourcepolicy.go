@@ -1,7 +1,7 @@
-package vsphere
-
 // Copyright (c) 2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+
+package vsphere
 
 import (
 	"context"
@@ -21,12 +21,12 @@ func (vs *vSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx contex
 		return false, err
 	}
 
-	rpExists, err := ses.DoesResourcePoolExist(ctx, resourcePolicy.Namespace, resourcePolicy.Spec.ResourcePool.Name)
+	rpExists, err := ses.DoesResourcePoolExist(ctx, resourcePolicy.Spec.ResourcePool.Name)
 	if err != nil {
 		return false, err
 	}
 
-	folderExists, err := ses.DoesFolderExist(ctx, resourcePolicy.Namespace, resourcePolicy.Spec.Folder.Name)
+	folderExists, err := ses.DoesFolderExist(ctx, resourcePolicy.Spec.Folder.Name)
 	if err != nil {
 		return false, err
 	}
@@ -46,7 +46,7 @@ func (vs *vSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx c
 		return err
 	}
 
-	rpExists, err := ses.DoesResourcePoolExist(ctx, resourcePolicy.Namespace, resourcePolicy.Spec.ResourcePool.Name)
+	rpExists, err := ses.DoesResourcePoolExist(ctx, resourcePolicy.Spec.ResourcePool.Name)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func (vs *vSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx c
 		}
 	}
 
-	folderExists, err := ses.DoesFolderExist(ctx, resourcePolicy.Namespace, resourcePolicy.Spec.Folder.Name)
+	folderExists, err := ses.DoesFolderExist(ctx, resourcePolicy.Spec.Folder.Name)
 	if err != nil {
 		return err
 	}
@@ -200,20 +200,25 @@ func (vs *vSphereVmProvider) DeleteClusterModules(ctx context.Context, resourceP
 }
 
 func (vs *vSphereVmProvider) attachTagsToVmAndAddToClusterModules(ctx context.Context, vm *v1alpha1.VirtualMachine, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+	vmCtx := VMContext{
+		Context: ctx,
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
 	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
 	if err != nil {
 		return err
 	}
-	log.V(4).Info("Attaching tags to vm", "name: ", vm.Name)
-	resVm, err := ses.GetVirtualMachine(ctx, vm)
+
+	log.V(4).Info("Attaching tags to vm", "name", vm.Name)
+	resVm, err := ses.GetVirtualMachine(vmCtx)
 	if err != nil {
 		return err
 	}
 
-	vmRef := &vimtypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
-	annotations := vm.ObjectMeta.GetAnnotations()
-
 	// We require both the clusterModule information and tag information to be able to enforce the vm-vm anti-affinity policy.
+	annotations := vm.ObjectMeta.GetAnnotations()
 	if annotations[pkg.ClusterModuleNameKey] != "" && annotations[pkg.ProviderTagsAnnotationKey] != "" {
 		// Find ClusterModule from resourcePolicy
 		var moduleUuid string
@@ -226,6 +231,10 @@ func (vs *vSphereVmProvider) attachTagsToVmAndAddToClusterModules(ctx context.Co
 			return errors.New("Unable to find the clusterModule to attach")
 		}
 
+		vmRef := &vimtypes.ManagedObjectReference{
+			Type:  "VirtualMachine",
+			Value: resVm.ReferenceValue(),
+		}
 		isMember, err := ses.IsVmMemberOfClusterModule(ctx, moduleUuid, vmRef)
 		if err != nil {
 			return err

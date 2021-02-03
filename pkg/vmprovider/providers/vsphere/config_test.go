@@ -44,9 +44,6 @@ func newConfig(namespace string, vcPNID string, vcPort string, vcCredsSecretName
 }
 
 var _ = Describe("UpdateVMFolderAndResourcePool", func() {
-	var (
-		err error
-	)
 
 	Context("when a good provider config exists and namespace has non-empty annotations", func() {
 		Specify("provider config is updated with RP and VM folder from annotations", func() {
@@ -64,6 +61,7 @@ var _ = Describe("UpdateVMFolderAndResourcePool", func() {
 			Expect(providerConfig.Folder).To(Equal(namespaceVMFolder))
 		})
 	})
+
 	Context("when a good provider config exists and namespace does not have annotations", func() {
 		Specify("should succeed with providerconfig unmodified", func() {
 			ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
@@ -79,11 +77,12 @@ var _ = Describe("UpdateVMFolderAndResourcePool", func() {
 			Expect(providerConfig.Folder).To(Equal(providerConfigFolder))
 		})
 	})
+
 	Context("namespace does not exist", func() {
 		Specify("returns error", func() {
 			client := clientfake.NewFakeClient()
 			providerConfig := &VSphereVmProviderConfig{}
-			err = UpdateProviderConfigFromNamespace(client, "test-namespace", providerConfig)
+			err := UpdateProviderConfigFromNamespace(client, "test-namespace", providerConfig)
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).To(Equal("could not get the namespace: test-namespace: namespaces \"test-namespace\" not found"))
 		})
@@ -97,7 +96,7 @@ var _ = Describe("UpdateVMFolderAndResourcePool", func() {
 			providerConfig.ResourcePool = "foo"
 			providerConfig.Folder = "bar"
 			providerConfigIn := providerConfig
-			err = UpdateProviderConfigFromNamespace(client, "namespace", &providerConfigIn)
+			err := UpdateProviderConfigFromNamespace(client, "namespace", &providerConfigIn)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(providerConfig).To(Equal(providerConfigIn))
 		})
@@ -258,7 +257,7 @@ var _ = Describe("ConfigMapToProviderConfig", func() {
 		)
 		JustBeforeEach(func() {
 			// We're not testing anything related to per-namespace ConfigMaps, just make them identical
-			//  to the base ConfigMap.
+			// to the base ConfigMap.
 			providerConfig, err = ConfigMapToProviderConfig(configMapIn, vcCreds)
 			if expectErrToOccur {
 				Expect(err).To(HaveOccurred())

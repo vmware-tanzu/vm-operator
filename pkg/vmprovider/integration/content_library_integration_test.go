@@ -32,10 +32,6 @@ var _ = Describe("content library", func() {
 	BeforeEach(func() {
 		mockController = gomock.NewController(GinkgoT())
 		mockContentProvider = mocks.NewMockContentDownloadHandler(mockController)
-
-		//zapcfg := zap.NewDevelopmentConfig()
-		//zapLog, _ := zapcfg.Build(zap.AddCallerSkip(1))
-		//logf.SetLogger(zapr.NewLogger(zapLog))
 	})
 
 	AfterEach(func() {

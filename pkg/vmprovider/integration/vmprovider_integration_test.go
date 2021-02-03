@@ -129,7 +129,12 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(exists).To(BeFalse())
 
-			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, vmImage, nil, vmMetadata, storageProfileId, ""}
+			vmConfigArgs := vmprovider.VmConfigArgs{
+				VmClass: *vmClass,
+				VmImage: vmImage,
+				VmMetadata: vmMetadata,
+				StorageProfileID: storageProfileId,
+			}
 			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -184,7 +189,13 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(exists).To(BeFalse())
 
 			// CreateVirtualMachine from CL
-			vmConfigArgs := vmprovider.VmConfigArgs{*vmClass, vmImage, nil, vmMetadata, storageProfileId, integration.GetContentSourceID()}
+			vmConfigArgs := vmprovider.VmConfigArgs{
+				VmClass:    *vmClass,
+				VmImage: vmImage,
+				VmMetadata: vmMetadata,
+				StorageProfileID: storageProfileId,
+				ContentLibraryUUID: integration.GetContentSourceID(),
+			}
 			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
 			Expect(err).NotTo(HaveOccurred())
 

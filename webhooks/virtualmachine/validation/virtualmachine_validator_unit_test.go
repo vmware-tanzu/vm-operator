@@ -84,7 +84,6 @@ func unitTestsValidateCreate() {
 		multipleVolumeSource       bool
 		invalidPVCName             bool
 		invalidPVCReadOnly         bool
-		invalidMetadataTransport   bool
 		invalidMetadataConfigMap   bool
 		invalidVsphereVolumeSource bool
 		invalidVmVolumeProvOpts    bool
@@ -139,9 +138,6 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidPVCReadOnly {
 			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ReadOnly = true
-		}
-		if args.invalidMetadataTransport {
-			ctx.vm.Spec.VmMetadata.Transport = "blah"
 		}
 		if args.invalidMetadataConfigMap {
 			ctx.vm.Spec.VmMetadata.ConfigMapName = ""
@@ -223,7 +219,6 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid PVC name", createArgs{invalidPVCReadOnly: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameReadOnlyFmt, 0), nil),
 		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, 0), nil),
 		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVmVolumeProvOpts: true}, false, fmt.Sprintf(messages.EagerZeroedAndThinProvisionedNotSupported), nil),
-		Entry("should deny invalid vmMetadata transport", createArgs{invalidMetadataTransport: true}, false, messages.MetadataTransportNotSupported, nil),
 		Entry("should deny invalid vmMetadata configmap", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
 		Entry("should deny invalid resource quota", createArgs{invalidResourceQuota: true}, false, fmt.Sprintf(messages.NoResourceQuota, ""), nil),
 		Entry("should deny invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, "invalid", ""), nil),

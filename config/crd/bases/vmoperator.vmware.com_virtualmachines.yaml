@@ -131,6 +131,9 @@ spec:
                 type: array
               powerState:
                 description: PowerState describes the desired power state of a VirtualMachine.  Valid power states are "poweredOff" and "poweredOn".
+                enum:
+                - poweredOff
+                - poweredOn
                 type: string
               readinessProbe:
                 description: ReadinessProbe describes a network probe that can be used to determine if the VirtualMachine is available and responding to the probe.
@@ -176,6 +179,9 @@ spec:
                     type: string
                   transport:
                     description: Transport describes the name of a supported VirtualMachineMetadata transport protocol.  Currently, the only supported transport protocols are "ExtraConfig" and "OvfEnv".
+                    enum:
+                    - ExtraConfig
+                    - OvfEnv
                     type: string
                 type: object
               volumes:
@@ -272,6 +278,9 @@ spec:
                 type: string
               powerState:
                 description: PowerState describes the current power state of the VirtualMachine.
+                enum:
+                - poweredOff
+                - poweredOn
                 type: string
               uniqueID:
                 description: UniqueID describes a unique identifier that is provided by the underlying infrastructure provider, such as vSphere.

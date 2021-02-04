@@ -157,11 +157,6 @@ func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmop
 		return validationErrs
 	}
 
-	if vm.Spec.VmMetadata.Transport != vmopv1.VirtualMachineMetadataExtraConfigTransport &&
-		vm.Spec.VmMetadata.Transport != vmopv1.VirtualMachineMetadataOvfEnvTransport {
-		validationErrs = append(validationErrs, messages.MetadataTransportNotSupported)
-	}
-
 	if vm.Spec.VmMetadata.ConfigMapName == "" {
 		validationErrs = append(validationErrs, messages.MetadataTransportConfigMapNotSpecified)
 	}

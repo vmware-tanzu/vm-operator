@@ -16,7 +16,6 @@ const (
 	PersistentVolumeClaimNameNotSpecifiedFmt  = "spec.volumes[%d].persistentVolumeClaim.claimName must be specified"
 	PersistentVolumeClaimNameReadOnlyFmt      = "spec.volumes[%d].persistentVolumeClaim.readOnly must be false"
 	VolumeNameDuplicateFmt                    = "spec.volumes[%d].name must be unique"
-	MetadataTransportNotSupported             = "spec.vmMetadata.transport is not supported"
 	MetadataTransportConfigMapNotSpecified    = "spec.vmMetadata.configMapName must be specified"
 	MultipleVolumeSpecifiedFmt                = "only one of spec.volumes[%d].persistentVolumeClaim/spec.volumes[%d].vsphereVolume must be specified"
 	VolumeNotSpecifiedFmt                     = "one of spec.volumes[%d].persistentVolumeClaim/spec.volumes[%d].vsphereVolume must be specified"

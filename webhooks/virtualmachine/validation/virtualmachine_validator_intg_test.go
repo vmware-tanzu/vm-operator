@@ -54,7 +54,6 @@ func intgTestsValidateCreate() {
 		validGuestOSType         bool
 		invalidGuestOSType       bool
 		gOSCSkipAnnotation       bool
-		invalidMetadataTransport bool
 		invalidMetadataConfigMap bool
 		invalidStorageClass      bool
 	}
@@ -88,9 +87,6 @@ func intgTestsValidateCreate() {
 			ctx.vmImage.Status.SupportedGuestOS = &[]bool{false}[0]
 			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
 			Expect(err).ToNot(HaveOccurred())
-		}
-		if args.invalidMetadataTransport {
-			vm.Spec.VmMetadata.Transport = "blah"
 		}
 		if args.invalidMetadataConfigMap {
 			vm.Spec.VmMetadata.ConfigMapName = ""
@@ -135,7 +131,6 @@ func intgTestsValidateCreate() {
 		Entry("should work despite osType when VMGOSCustomizeCheckKey is disabled", createArgs{gOSCSkipAnnotation: true, invalidGuestOSType: true}, true, "", nil),
 		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false, "spec.imageName must be specified", nil),
 		Entry("should not work for image with an invalid osType", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.GuestOSNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
-		Entry("should not work for invalid metadata transport", createArgs{invalidMetadataTransport: true}, false, "spec.vmMetadata.transport is not supported", nil),
 		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmMetadata.configMapName must be specified", nil),
 		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, builder.DummyStorageClassName, ""), nil),
 	)

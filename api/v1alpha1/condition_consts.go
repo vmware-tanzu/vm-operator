@@ -23,6 +23,18 @@ const (
 	// VirtualMachineClassNotFoundReason (Severity=Error) documents that the VirtualMachineClass specified in the VirtualMachineSpec
 	// is not available.
 	VirtualMachineClassNotFoundReason = "VirtualMachineClassNotFound"
+
+	// ContentSourceBindingNotFoundReason (Severity=Error) documents a missing ContentSourceBinding for the
+	// VirtualMachineImage specified in the VirtualMachineSpec.
+	ContentSourceBindingNotFoundReason = "ContentSourceBindingNotFound"
+
+	// ContentLibraryProviderNotFoundReason (Severity=Error) documents that the ContentLibraryProvider corresponding to a VirtualMachineImage
+	// is not available.
+	ContentLibraryProviderNotFoundReason = "ContentLibraryProviderNotFound"
+
+	// VirtualMachineImageNotFoundReason (Severity=Error) documents that the VirtualMachineImage specified in the VirtualMachineSpec
+	// is not available.
+	VirtualMachineImageNotFoundReason = "VirtualMachineImageNotFound"
 )
 
 // Common Condition.Reason used by VM Operator API objects.

@@ -9,13 +9,16 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-type VirtualMachinePowerState string
-
 // See govmomi.vim25.types.VirtualMachinePowerState
 const (
 	VirtualMachinePoweredOff VirtualMachinePowerState = "poweredOff"
 	VirtualMachinePoweredOn  VirtualMachinePowerState = "poweredOn"
 )
+
+// VirtualMachinePowerState represents the power state of a VirtualMachine.
+// The value values are "poweredOn", and "poweredOff".
+// +kubebuilder:validation:Enum=poweredOff;poweredOn
+type VirtualMachinePowerState string
 
 // VMStatusPhase is used to indicate the phase of a VirtualMachine's lifecycle.
 type VMStatusPhase string
@@ -89,6 +92,8 @@ type VirtualMachineNetworkInterface struct {
 }
 
 // VirtualMachineMetadataTransport is used to indicate the transport used by VirtualMachineMetadata
+// Valid values are "ExtraConfig" and "OvfEnv".
+// +kubebuilder:validation:Enum=ExtraConfig;OvfEnv
 type VirtualMachineMetadataTransport string
 
 const (

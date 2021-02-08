@@ -37,14 +37,15 @@ func intgTests() {
 	var (
 		ctx *builder.IntegrationTestContext
 
-		vm                *vmopv1alpha1.VirtualMachine
-		vmKey             types.NamespacedName
-		vmImage           *vmopv1alpha1.VirtualMachineImage
-		vmClass           *vmopv1alpha1.VirtualMachineClass
-		vmClassBinding    *vmopv1alpha1.VirtualMachineClassBinding
-		metadataConfigMap *corev1.ConfigMap
-		storageClass      *storagev1.StorageClass
-		resourceQuota     *corev1.ResourceQuota
+		vm                     *vmopv1alpha1.VirtualMachine
+		vmKey                  types.NamespacedName
+		vmImage                *vmopv1alpha1.VirtualMachineImage
+		vmClass                *vmopv1alpha1.VirtualMachineClass
+		contentsource          *vmopv1alpha1.ContentSource
+		contentLibraryProvider *vmopv1alpha1.ContentLibraryProvider
+		metadataConfigMap      *corev1.ConfigMap
+		storageClass           *storagev1.StorageClass
+		resourceQuota          *corev1.ResourceQuota
 	)
 
 	BeforeEach(func() {
@@ -70,6 +71,27 @@ func intgTests() {
 							Memory: resource.MustParse("200Mi"),
 						},
 					},
+				},
+			},
+		}
+
+		contentLibraryProvider = &vmopv1alpha1.ContentLibraryProvider{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dummy-contentlibraryprovider",
+			},
+			Spec: vmopv1alpha1.ContentLibraryProviderSpec{
+				UUID: "dummy-cl-uuid",
+			},
+		}
+
+		contentsource = &vmopv1alpha1.ContentSource{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dummy-contentsource",
+			},
+			Spec: vmopv1alpha1.ContentSourceSpec{
+				ProviderRef: vmopv1alpha1.ContentProviderReference{
+					Name: contentLibraryProvider.Name,
+					Kind: "ContentLibraryProvider",
 				},
 			},
 		}
@@ -172,9 +194,29 @@ func intgTests() {
 
 			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, vmImage)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, contentLibraryProvider)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, contentsource)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, metadataConfigMap)).To(Succeed())
+
+			// For ContentSourceBindings Condition tests, we need to add an OwnerRef to the VM image to point to the ContentLibraryProvider.
+			// The controller uses this Ref to know which content library this image is part of.
+			vmImage.OwnerReferences = []metav1.OwnerReference{{
+				Name:       contentLibraryProvider.Name,
+				Kind:       "ContentLibraryProvider",
+				APIVersion: "vmoperator.vmware.com/v1alpha1",
+				UID:        contentLibraryProvider.ObjectMeta.UID,
+			}}
+			Expect(ctx.Client.Update(ctx, vmImage)).To(Succeed())
+
+			contentLibraryProvider.OwnerReferences = []metav1.OwnerReference{{
+				Name:       contentsource.Name,
+				Kind:       "ContentSource",
+				APIVersion: "vmoperator.vmware.com/v1alpha1",
+				UID:        contentsource.ObjectMeta.UID,
+			}}
+			Expect(ctx.Client.Update(ctx, contentLibraryProvider)).To(Succeed())
 		})
 
 		AfterEach(func() {
@@ -197,6 +239,10 @@ func intgTests() {
 				err = ctx.Client.Delete(ctx, vmImage)
 				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 				err = ctx.Client.Delete(ctx, storageClass)
+				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+				err = ctx.Client.Delete(ctx, contentLibraryProvider)
+				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+				err = ctx.Client.Delete(ctx, contentsource)
 				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 			})
 		})
@@ -261,18 +307,18 @@ func intgTests() {
 		})
 
 		When("VMService FSS is Enabled", func() {
-			var oldVMServiceEnableFunc func() bool
+			var (
+				oldVMServiceEnableFunc func() bool
+				vmClassBinding         *vmopv1alpha1.VirtualMachineClassBinding
+				contentSourceBinding   *vmopv1alpha1.ContentSourceBinding
+			)
 
 			BeforeEach(func() {
 				oldVMServiceEnableFunc = lib.IsVMServiceFSSEnabled
 				lib.IsVMServiceFSSEnabled = func() bool {
 					return true
 				}
-			})
-			AfterEach(func() {
-				lib.IsVMServiceFSSEnabled = oldVMServiceEnableFunc
-			})
-			It("Reconciles VirtualMachine after VirtualMachineClassBinding created", func() {
+
 				vmClassBinding = &vmopv1alpha1.VirtualMachineClassBinding{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "fake-class-binding",
@@ -285,83 +331,28 @@ func intgTests() {
 					},
 				}
 
-				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
-
-				By("VirtualMachine should have finalizer added", func() {
-					waitForVirtualMachineFinalizer(ctx, vmKey)
-				})
-
-				msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s",
-					vm.Spec.ClassName, vm.Namespace)
-
-				expectedCondition := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(
-						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-						vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
-						vmopv1alpha1.ConditionSeverityError,
-						msg),
-				}
-
-				Eventually(func() []vmopv1alpha1.Condition {
-					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
-						return vm.Status.Conditions
-					}
-					return nil
-				}).Should(conditions.MatchConditions(expectedCondition))
-
-				By("VirtualMachineClassBinding is added to the namespace to trigger a reconcile")
-				Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
-
-				expectedCondition = vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
-				}
-				Eventually(func() []vmopv1alpha1.Condition {
-					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
-						return vm.Status.Conditions
-					}
-					return nil
-				}).Should(conditions.MatchConditions(expectedCondition))
-			})
-
-			It("Reconciles VirtualMachine after VirtualMachineClassBinding deleted", func() {
-				vmClassBinding = &vmopv1alpha1.VirtualMachineClassBinding{
+				contentSourceBinding = &vmopv1alpha1.ContentSourceBinding{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "small-class-binding",
+						Name:      "fake-contentsource-binding",
 						Namespace: vm.Namespace,
 					},
-					ClassRef: vmopv1alpha1.ClassReference{
+					ContentSourceRef: vmopv1alpha1.ContentSourceReference{
 						APIVersion: vmopv1alpha1.SchemeGroupVersion.Group,
-						Name:       vm.Spec.ClassName,
-						Kind:       reflect.TypeOf(vmClass).Elem().Name(),
+						Name:       contentsource.Name,
+						Kind:       reflect.TypeOf(contentsource).Elem().Name(),
 					},
 				}
+			})
 
-				By("VirtualMachineClassBinding is added to the namespace")
-				Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
+			AfterEach(func() {
+				lib.IsVMServiceFSSEnabled = oldVMServiceEnableFunc
+			})
 
-				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
-
-				By("VirtualMachine should have finalizer added", func() {
-					waitForVirtualMachineFinalizer(ctx, vmKey)
-				})
-
-				expectedCondition := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
-				}
-				Eventually(func() []vmopv1alpha1.Condition {
-					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
-						return vm.Status.Conditions
-					}
-					return nil
-				}).Should(conditions.MatchConditions(expectedCondition))
-
-				By("VirtualMachineClassBinding is deleted from the namespace to trigger a reconcile")
-				Expect(ctx.Client.Delete(ctx, vmClassBinding)).To(Succeed())
-
+			validateNoVMClassBindingCondition := func(vm *vmopv1alpha1.VirtualMachine) {
 				msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s",
 					vm.Spec.ClassName, vm.Namespace)
 
-				expectedCondition = vmopv1alpha1.Conditions{
+				expectedCondition := vmopv1alpha1.Conditions{
 					*conditions.FalseCondition(
 						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
 						vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
@@ -369,13 +360,123 @@ func intgTests() {
 						msg),
 				}
 
-				Eventually(func() []vmopv1alpha1.Condition {
+				EventuallyWithOffset(1, func() []vmopv1alpha1.Condition {
 					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
 						return vm.Status.Conditions
 					}
 					return nil
 				}).Should(conditions.MatchConditions(expectedCondition))
+			}
+
+			validateNoContentSourceBindingCondition := func(vm *vmopv1alpha1.VirtualMachine) {
+				msg := fmt.Sprintf("Namespace does not have access to VirtualMachineImage. imageName: %v, contentLibraryUUID: %v, namespace: %v",
+					vm.Spec.ImageName, contentLibraryProvider.Spec.UUID, vm.Namespace)
+
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(
+						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+						vmopv1alpha1.ContentSourceBindingNotFoundReason,
+						vmopv1alpha1.ConditionSeverityError,
+						msg),
+				}
+
+				EventuallyWithOffset(1, func() []vmopv1alpha1.Condition {
+					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
+						return vm.Status.Conditions
+					}
+					return nil
+				}).Should(conditions.MatchConditions(expectedCondition))
+			}
+
+			validatePreReqTrueCondition := func(vm *vmopv1alpha1.VirtualMachine) {
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
+				}
+				EventuallyWithOffset(1, func() []vmopv1alpha1.Condition {
+					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
+						return vm.Status.Conditions
+					}
+					return nil
+				}).Should(conditions.MatchConditions(expectedCondition))
+
+			}
+
+			// nolint: dupl
+			Context("VMClassBinding Conditions", func() {
+				BeforeEach(func() {
+					Expect(ctx.Client.Create(ctx, contentSourceBinding)).To(Succeed())
+				})
+				AfterEach(func() {
+					Expect(ctx.Client.Delete(ctx, contentSourceBinding)).To(Succeed())
+				})
+
+				It("Reconciles VirtualMachine after VirtualMachineClassBinding created", func() {
+					Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+					By("VirtualMachine should have finalizer added", func() {
+						waitForVirtualMachineFinalizer(ctx, vmKey)
+					})
+
+					By("validating that the VM should have the Condition Reason for missing VirtualMachineClassBindings", func() {
+						validateNoVMClassBindingCondition(vm)
+					})
+
+					By("VirtualMachineClassBinding is added to the namespace", func() {
+						Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
+					})
+
+					By("validating that the VirtualMachinePreReq condition is marked as True", func() {
+						validatePreReqTrueCondition(vm)
+					})
+
+					By("deleting the VirtualMachineClassBinding", func() {
+						Expect(ctx.Client.Delete(ctx, vmClassBinding)).To(Succeed())
+					})
+
+					By("PreReq condition should be False with VirtualMachineClassBindingNotFound reason set", func() {
+						validateNoVMClassBindingCondition(vm)
+					})
+				})
 			})
+
+			// nolint: dupl
+			Context("ContentSourceBinding Conditions", func() {
+				BeforeEach(func() {
+					Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
+				})
+				AfterEach(func() {
+					Expect(ctx.Client.Delete(ctx, vmClassBinding)).To(Succeed())
+				})
+
+				It("Reconciles VirtualMachine after VirtualMachineClassBinding created", func() {
+					Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+					By("VirtualMachine should have finalizer added", func() {
+						waitForVirtualMachineFinalizer(ctx, vmKey)
+					})
+
+					By("validating that the VM should have the Condition Reason for missing ContentSourceBindings", func() {
+						validateNoContentSourceBindingCondition(vm)
+					})
+
+					By("ContentSource is added to the namespace", func() {
+						Expect(ctx.Client.Create(ctx, contentSourceBinding)).To(Succeed())
+					})
+
+					By("validating that the VirtualMachinePreReq condition is marked as True", func() {
+						validatePreReqTrueCondition(vm)
+					})
+
+					By("deleting the ContentSourceBindings", func() {
+						Expect(ctx.Client.Delete(ctx, contentSourceBinding)).To(Succeed())
+					})
+
+					By("PreReq condition should be False with ContentSourceBindingNotFound reason set", func() {
+						validateNoContentSourceBindingCondition(vm)
+					})
+				})
+			})
+
 		})
 
 		When("Provider CreateVM returns an error", func() {

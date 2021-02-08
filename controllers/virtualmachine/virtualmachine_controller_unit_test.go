@@ -53,6 +53,8 @@ func unitTestsReconcile() {
 		fakeVmProvider   *providerfake.FakeVmProvider
 		vmCtx            *vmopContext.VirtualMachineContext
 		vm               *vmopv1alpha1.VirtualMachine
+		contentSource    *vmopv1alpha1.ContentSource
+		clProvider       *vmopv1alpha1.ContentLibraryProvider
 		vmClass          *vmopv1alpha1.VirtualMachineClass
 		vmImage          *vmopv1alpha1.VirtualMachineImage
 		vmMetaData       *corev1.ConfigMap
@@ -70,9 +72,36 @@ func unitTestsReconcile() {
 			},
 		}
 
+		contentSource = &vmopv1alpha1.ContentSource{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dummy-contentsource",
+			},
+		}
+
+		// For ContentSourceBindings Condition tests, we need to add an OwnerRef to the VM image to point to the ContentLibraryProvider.
+		// The controller uses this Ref to know which content library this image is part of.
+		clProvider = &vmopv1alpha1.ContentLibraryProvider{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dummy-contentlibraryprovider",
+				OwnerReferences: []metav1.OwnerReference{{
+					Name: contentSource.Name,
+					Kind: "ContentSource",
+					// UID:  contentSource.UID,
+				}},
+			},
+			Spec: vmopv1alpha1.ContentLibraryProviderSpec{
+				UUID: "dummy-cl-uuid",
+			},
+		}
+
 		vmImage = &vmopv1alpha1.VirtualMachineImage{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-image",
+				OwnerReferences: []metav1.OwnerReference{{
+					Name: clProvider.Name,
+					Kind: "ContentLibraryProvider",
+					// UID:  clProvider.UID,
+				}},
 			},
 		}
 
@@ -167,67 +196,44 @@ func unitTestsReconcile() {
 		fakeVmProvider = nil
 	})
 
-	Context("getCLUUID", func() {
-
-		cl := &vmopv1alpha1.ContentLibraryProvider{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "dummy-cl",
-			},
-			Spec: vmopv1alpha1.ContentLibraryProviderSpec{
-				UUID: "dummy-cl-uuid",
-			},
-		}
-
-		When("the VirtualMachine Spec's VirtualMachineImage does not exist", func() {
-			It("returns an error", func() {
-				clUUID, err := reconciler.GetCLUUID(vmCtx)
-				Expect(clUUID).To(BeEmpty())
-				Expect(err).To(HaveOccurred())
-				Expect(apiErrors.IsNotFound(err)).To(BeTrue())
-			})
-		})
-
-		When("VirtualMachineImage does not have an OwnerReference", func() {
-			BeforeEach(func() {
-				initObjects = append(initObjects, vmImage, cl)
-			})
-
-			It("returns an empty content library UUID", func() {
-				clUUID, err := reconciler.GetCLUUID(vmCtx)
-				Expect(clUUID).To(BeEmpty())
-				Expect(err).NotTo(HaveOccurred())
-			})
-		})
-
-		When("VirtualMachineImage has an OwnerReference", func() {
-			BeforeEach(func() {
-				vmImage.OwnerReferences = []metav1.OwnerReference{
-					{
-						Kind: "ContentLibraryProvider",
-						Name: "dummy-cl",
-					},
-				}
-
-				initObjects = append(initObjects, vmImage, cl)
-			})
-
-			It("returns the content library UUID from the OwnerReference", func() {
-				clUUID, err := reconciler.GetCLUUID(vmCtx)
-				Expect(clUUID).To(Equal(cl.Spec.UUID))
-				Expect(err).NotTo(HaveOccurred())
-			})
-		})
-
-	})
-
 	Context("ReconcileNormal", func() {
 		BeforeEach(func() {
-			initObjects = append(initObjects, vm, vmClass, vmImage)
+			initObjects = append(initObjects, vm, vmClass, vmImage, clProvider, contentSource)
 		})
 
 		When("the WCP_VMService FSS is enabled", func() {
 			var oldVMServiceEnableFunc func() bool
 			var vmClassBinding *vmopv1alpha1.VirtualMachineClassBinding
+			var contentSourceBinding *vmopv1alpha1.ContentSourceBinding
+
+			validateNoVMClassBindingCondition := func(vm *vmopv1alpha1.VirtualMachine) {
+				msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s",
+					vm.Spec.ClassName, vm.Namespace)
+
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(
+						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+						vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+						vmopv1alpha1.ConditionSeverityError,
+						msg),
+				}
+				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+			}
+
+			validateNoContentSourceBindingCondition := func(vm *vmopv1alpha1.VirtualMachine, clUUID string) {
+				msg := fmt.Sprintf("Namespace does not have access to VirtualMachineImage. imageName: %v, contentLibraryUUID: %v, namespace: %v",
+					vm.Spec.ImageName, clUUID, vm.Namespace)
+
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(
+						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+						vmopv1alpha1.ContentSourceBindingNotFoundReason,
+						vmopv1alpha1.ConditionSeverityError,
+						msg),
+				}
+
+				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+			}
 
 			BeforeEach(func() {
 				oldVMServiceEnableFunc = lib.IsVMServiceFSSEnabled
@@ -246,6 +252,18 @@ func unitTestsReconcile() {
 						Kind:       reflect.TypeOf(vmClass).Elem().Name(),
 					},
 				}
+
+				contentSourceBinding = &vmopv1alpha1.ContentSourceBinding{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "fake-contentsource-binding",
+						Namespace: vm.Namespace,
+					},
+					ContentSourceRef: vmopv1alpha1.ContentSourceReference{
+						APIVersion: vmopv1alpha1.SchemeGroupVersion.Group,
+						Name:       contentSource.Name,
+						Kind:       reflect.TypeOf(contentSource).Elem().Name(),
+					},
+				}
 			})
 
 			AfterEach(func() {
@@ -257,18 +275,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vm.Spec.ClassName, vm.Namespace)))
-
-					msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s",
-						vmCtx.VM.Spec.ClassName, vmCtx.VM.Namespace)
-
-					expectedCondition := vmopv1alpha1.Conditions{
-						*conditions.FalseCondition(
-							vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-							vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
-							vmopv1alpha1.ConditionSeverityError,
-							msg),
-					}
-					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+					validateNoVMClassBindingCondition(vmCtx.VM)
 				})
 			})
 
@@ -283,54 +290,22 @@ func unitTestsReconcile() {
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vm.Spec.ClassName, vm.Namespace)))
 
-					msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s",
-						vmCtx.VM.Spec.ClassName, vmCtx.VM.Namespace)
-					expectedCondition := vmopv1alpha1.Conditions{
-						*conditions.FalseCondition(
-							vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-							vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
-							vmopv1alpha1.ConditionSeverityError,
-							msg),
-					}
-					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
-				})
-			})
-
-			Context("VirtualMachineClass and VirtualMachineClassBinding exists", func() {
-				BeforeEach(func() {
-					initObjects = append(initObjects, vmClassBinding)
-				})
-
-				It("should successfully reconcile the VM, add finalizer, verify the phase and Conditions", func() {
-					err := reconciler.ReconcileNormal(vmCtx)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
-					Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Created))
-
-					expectedCondition := vmopv1alpha1.Conditions{
-						*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
-					}
-					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+					validateNoVMClassBindingCondition(vmCtx.VM)
 				})
 			})
 
 			When("A missing VirtualMachineClassBinding is added to the namespace in the subsequent reconcile", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, contentSourceBinding)
+				})
+
 				It("successfully reconciles and marks the VirtualMachinePrereqReady Condition to True", func() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vm.Spec.ClassName, vm.Namespace)))
+					bindingNotFoundError := fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vm.Spec.ClassName, vm.Namespace)
+					Expect(err).To(MatchError(bindingNotFoundError))
 
-					msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %s, namespace: %s",
-						vmCtx.VM.Spec.ClassName, vmCtx.VM.Namespace)
-
-					expectedCondition := vmopv1alpha1.Conditions{
-						*conditions.FalseCondition(
-							vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-							vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
-							vmopv1alpha1.ConditionSeverityError,
-							msg),
-					}
-					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+					validateNoVMClassBindingCondition(vmCtx.VM)
 
 					By("VirtualMachineClassBinding is added to the namespace")
 					Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
@@ -339,7 +314,90 @@ func unitTestsReconcile() {
 					err = reconciler.ReconcileNormal(vmCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					expectedCondition = vmopv1alpha1.Conditions{
+					expectedCondition := vmopv1alpha1.Conditions{
+						*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+				})
+			})
+
+			When("No ContentSourceBindings exist in the namespace", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, vmClassBinding)
+				})
+
+				It("return an error and sets VirtualMacinePreReqReady Condition to false", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).To(HaveOccurred())
+					msg := fmt.Sprintf("Namespace does not have access to VirtualMachineImage. imageName: %v, contentLibraryUUID: %v, namespace: %v",
+						vm.Spec.ImageName, clProvider.Spec.UUID, vm.Namespace)
+
+					csBindingNotFoundErr := fmt.Errorf(msg)
+					Expect(err).To(MatchError(csBindingNotFoundErr))
+
+					validateNoContentSourceBindingCondition(vmCtx.VM, clProvider.Spec.UUID)
+				})
+			})
+
+			When("ContentSourceBinding is not present for the content library corresponding to the VM iamge", func() {
+				BeforeEach(func() {
+					contentSourceBinding.ContentSourceRef.Name = "blah-blah-binding"
+					initObjects = append(initObjects, vmClassBinding, contentSourceBinding)
+				})
+
+				It("return an error and sets VirtualMacinePreReqReady Condition to false", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).To(HaveOccurred())
+					msg := fmt.Sprintf("Namespace does not have access to VirtualMachineImage. imageName: %v, contentLibraryUUID: %v, namespace: %v",
+						vm.Spec.ImageName, clProvider.Spec.UUID, vm.Namespace)
+
+					csBindingNotFoundErr := fmt.Errorf(msg)
+					Expect(err).To(MatchError(csBindingNotFoundErr))
+
+					validateNoContentSourceBindingCondition(vmCtx.VM, clProvider.Spec.UUID)
+				})
+			})
+
+			When("A missing ContentSourceBinding is added to the namespace in the subsequent reconcile", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, vmClassBinding)
+				})
+
+				It("successfully reconciles and marks the VirtualMachinePrereqReady Condition to True", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).To(HaveOccurred())
+					msg := fmt.Sprintf("Namespace does not have access to VirtualMachineImage. imageName: %v, contentLibraryUUID: %v, namespace: %v",
+						vm.Spec.ImageName, clProvider.Spec.UUID, vm.Namespace)
+
+					csBindingNotFoundErr := fmt.Errorf(msg)
+					Expect(err).To(MatchError(csBindingNotFoundErr))
+
+					validateNoContentSourceBindingCondition(vmCtx.VM, clProvider.Spec.UUID)
+
+					By("ContentSourceBinding is added to the namespace")
+					Expect(ctx.Client.Create(ctx, contentSourceBinding)).To(Succeed())
+
+					By("Reconciling again")
+					err = reconciler.ReconcileNormal(vmCtx)
+					Expect(err).NotTo(HaveOccurred())
+
+					expectedCondition := vmopv1alpha1.Conditions{
+						*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+				})
+			})
+
+			When("ContentSourceBindings and VirtualMachineClassBindings are present", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, vmClassBinding, contentSourceBinding)
+				})
+
+				It("marks the VirtualMachinePreReq Condition as True", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).NotTo(HaveOccurred())
+
+					expectedCondition := vmopv1alpha1.Conditions{
 						*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
 					}
 					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
@@ -360,6 +418,26 @@ func unitTestsReconcile() {
 					*conditions.FalseCondition(
 						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
 						vmopv1alpha1.VirtualMachineClassNotFoundReason,
+						vmopv1alpha1.ConditionSeverityError,
+						msg),
+				}
+				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+			})
+		})
+
+		Context("VirtualMachineImage specified in the VM spec does not exist", func() {
+			It("returns error and sets the VirtualMachinePrereqReady Condition to false", func() {
+				vmCtx.VM.Spec.ImageName = "non-existent-image"
+				err := reconciler.ReconcileNormal(vmCtx)
+				Expect(err).To(HaveOccurred())
+				Expect(apiErrors.IsNotFound(err)).To(BeTrue())
+
+				err = apiErrors.NewNotFound(schema.ParseGroupResource("virtualmachineimages.vmoperator.vmware.com"), vmCtx.VM.Spec.ImageName)
+				msg := fmt.Sprintf("Failed to get VirtualMachineImage %s: %s", vmCtx.VM.Spec.ImageName, err)
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(
+						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+						vmopv1alpha1.VirtualMachineImageNotFoundReason,
 						vmopv1alpha1.ConditionSeverityError,
 						msg),
 				}
@@ -588,7 +666,7 @@ func unitTestsReconcile() {
 	Context("ReconcileDelete", func() {
 
 		BeforeEach(func() {
-			initObjects = append(initObjects, vm, vmClass, vmImage)
+			initObjects = append(initObjects, vm, vmClass, vmImage, clProvider, contentSource)
 		})
 
 		JustBeforeEach(func() {

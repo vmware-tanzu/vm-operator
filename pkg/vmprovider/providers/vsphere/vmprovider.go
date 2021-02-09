@@ -435,6 +435,27 @@ func ResVmToVirtualMachineImage(ctx context.Context, resVm *res.VirtualMachine, 
 	}, nil
 }
 
+func GetUserConfigurablePropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]v1alpha1.OvfProperty {
+	properties := make(map[string]v1alpha1.OvfProperty)
+
+	if ovfEnvelope.VirtualSystem != nil {
+		for _, product := range ovfEnvelope.VirtualSystem.Product {
+			for _, prop := range product.Property {
+				// Only show user configurable properties
+				if prop.UserConfigurable != nil && *prop.UserConfigurable {
+					property := v1alpha1.OvfProperty{
+						Key:     prop.Key,
+						Type:    prop.Type,
+						Default: prop.Default,
+					}
+					properties[prop.Key] = property
+				}
+			}
+		}
+	}
+	return properties
+}
+
 func GetVmwareSystemPropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]string {
 	properties := make(map[string]string)
 
@@ -521,6 +542,7 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 
 	var (
 		ovfSystemProps  = make(map[string]string)
+		ovfProperties   = make(map[string]v1alpha1.OvfProperty)
 		productInfo     = &v1alpha1.VirtualMachineImageProductInfo{}
 		osInfo          = &v1alpha1.VirtualMachineImageOSInfo{}
 		isOVFCompatible = false
@@ -567,6 +589,9 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 			// - The OVF contains the VMOperatorV1Alpha1ConfigKey key that denotes cloud-init being disabled at first-boot
 			// - If it is a TKG image
 			isOVFCompatible = isOVFV1Alpha1Compatible(ovfEnvelope) || isATKGImage(systemProps)
+
+			// Populate ovf properties
+			ovfProperties = GetUserConfigurablePropertiesFromOvf(ovfEnvelope)
 		}
 	}
 
@@ -590,6 +615,7 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 			ImageSourceType: "Content Library",
 			ProductInfo:     *productInfo,
 			OSInfo:          *osInfo,
+			OVFEnv:          ovfProperties,
 		},
 	}
 	if item.Type == library.ItemTypeOVF {

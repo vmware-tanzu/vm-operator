@@ -617,4 +617,73 @@ var _ = Describe("virtualmachine images", func() {
 		})
 		Expect(res).To(BeNil())
 	})
+
+	Context("Expose ovfEnv properties", func() {
+		var (
+			ovfUserConfigurableTrue  = true
+			ovfUserConfigurableFalse = false
+			ovfStringType            = "string"
+			userConfigurableKey      = "dummy-key-configurable"
+			notUserConfigurableKey   = "dummy-key-not-configurable"
+			defaultValue             = "dummy-value"
+		)
+
+		It("returns a virtualmachineimage object from a content library with ovfEnv", func() {
+			ts := time.Now()
+			item := library.Item{
+				Name:         "fakeItem",
+				Type:         "ovf",
+				LibraryID:    "fakeID",
+				CreationTime: &ts,
+			}
+
+			ovfEnvelope := &ovf.Envelope{
+				VirtualSystem: &ovf.VirtualSystem{
+					Product: []ovf.ProductSection{
+						{
+							Vendor:      "vendor",
+							Product:     "product",
+							FullVersion: "fullversion",
+							Version:     "version",
+							Property: []ovf.Property{
+								{
+									Key:     versionKey,
+									Type:    ovfStringType,
+									Default: &versionVal,
+								},
+								{
+									Key:              userConfigurableKey,
+									Type:             ovfStringType,
+									Default:          &defaultValue,
+									UserConfigurable: &ovfUserConfigurableTrue,
+								},
+								{
+									Key:              notUserConfigurableKey,
+									Type:             ovfStringType,
+									Default:          &defaultValue,
+									UserConfigurable: &ovfUserConfigurableFalse,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			mockVmProviderInterface.EXPECT().
+				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(ovfEnvelope, nil).
+				AnyTimes()
+
+			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.AnnotateVmImage, mockVmProviderInterface, nil)
+			Expect(err).To(BeNil())
+			Expect(image).ToNot(BeNil())
+			Expect(image.Name).Should(Equal("fakeItem"))
+
+			Expect(len(image.Spec.OVFEnv)).Should(Equal(1))
+			Expect(image.Spec.OVFEnv).Should(HaveKey(userConfigurableKey))
+			Expect(image.Spec.OVFEnv[userConfigurableKey].Key).Should(Equal(userConfigurableKey))
+			Expect(image.Spec.OVFEnv[userConfigurableKey].Type).Should(Equal(ovfStringType))
+			Expect(image.Spec.OVFEnv[userConfigurableKey].Default).Should(Equal(&defaultValue))
+		})
+	})
 })

@@ -41,6 +41,21 @@ type VirtualMachineImageOSInfo struct {
 	Type string `json:"type,omitempty"`
 }
 
+
+// VirtualMachineImageOVFEnv describes information related to a user configurable property element
+// that is supported by VirtualMachineImage and can be customized during VirtualMachine deployment.
+type VirtualMachineImageOVFEnv struct {
+	// Key describes the key of the ovf property.
+	Key string `json:"key"`
+
+	// Type describes the type of the ovf property.
+	Type string `json:"type"`
+
+	// Default describes the default value of the ovf key.
+	// +optional
+	Default *string `json:"default,omitempty"`
+}
+
 // VirtualMachineImageSpec defines the desired state of VirtualMachineImage
 type VirtualMachineImageSpec struct {
 	// Type describes the type of the VirtualMachineImage. Currently, the only supported image is "OVF"
@@ -60,6 +75,10 @@ type VirtualMachineImageSpec struct {
 	// image.
 	// +optional
 	OSInfo VirtualMachineImageOSInfo `json:"osInfo,omitempty"`
+
+	// OVFEnv describes the user configurable customization parameters of the VirtualMachineImage.
+	// +optional
+	OVFEnv []VirtualMachineImageOVFEnv `json:"ovfEnv,omitempty"`
 }
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage

@@ -11,5 +11,7 @@ spec:
         env:
         - name: FSS_WCP_VMSERVICE
           value: "false"
+        - name: FSS_WCP_VMSERVICE_V1ALPHA2
+          value: "false"
         - name: VSPHERE_NETWORKING
           value: "false"

@@ -16,6 +16,7 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/providerconfigmap"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -90,28 +91,9 @@ func intgTestsCM() {
 		})
 
 		When("ConfigMap is created with ContentSource key", func() {
-			var (
-				workloadNs *v1.Namespace
-			)
-
 			BeforeEach(func() {
-				// Create a user workload namespace.
-				workloadNs = &v1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "user-workload-ns",
-						Labels: map[string]string{
-							providerconfigmap.UserWorkloadNamespaceLabel: "cluster-moid",
-						},
-					},
-				}
-				Expect(ctx.Client.Create(ctx, workloadNs)).To(Succeed())
-
 				cm.Data = make(map[string]string)
 				cm.Data[vsphere.ContentSourceKey] = clUUID
-			})
-
-			AfterEach(func() {
-				Expect(ctx.Client.Delete(ctx, workloadNs)).To(Succeed())
 			})
 
 			It("a ContentSource is created", func() {
@@ -121,14 +103,6 @@ func intgTestsCM() {
 
 				Eventually(func() bool {
 					return clExists(clUUID)
-				}).Should(BeTrue())
-
-				// Validate that ContentSourceBindings exist in the user workload namespace.
-				Eventually(func() bool {
-					bindingList := &vmopv1alpha1.ContentSourceBindingList{}
-					err := ctx.Client.List(ctx, bindingList, client.InNamespace(workloadNs.Name))
-					return err == nil && len(bindingList.Items) == 1 && bindingList.Items[0].ContentSourceRef.Kind == "ContentSource" &&
-						bindingList.Items[0].ContentSourceRef.Name == clUUID
 				}).Should(BeTrue())
 
 				// Validate that no ContentSources exist in the system namespace.
@@ -144,7 +118,7 @@ func intgTestsCM() {
 				cm.Data[vsphere.ContentSourceKey] = clUUID
 			})
 
-			It("ContentSource is updated to point to the new CL UUID from ConfigMap", func() {
+			It("A ContentSource is created that points to the new CL UUID from ConfigMap", func() {
 				// Wait for the initial ContentSources to be available.
 				Eventually(func() bool {
 					return csExists(clUUID, clUUID) && clExists(clUUID)
@@ -165,7 +139,93 @@ func intgTestsCM() {
 					return clExists(newCLUUID)
 				}).Should(BeTrue())
 			})
+		})
 
+		Context("VMService FSS is enabled", func() {
+			var oldVMServceFunc func() bool
+			BeforeEach(func() {
+				oldVMServceFunc = lib.IsVMServiceFSSEnabled
+				lib.IsVMServiceFSSEnabled = func() bool {
+					return true
+				}
+			})
+			AfterEach(func() {
+				lib.IsVMServiceFSSEnabled = oldVMServceFunc
+			})
+
+			When("ConfigMap is created with a ContentSource key", func() {
+				var workloadNs *v1.Namespace
+				BeforeEach(func() {
+					cm.Data = make(map[string]string)
+					cm.Data[vsphere.ContentSourceKey] = clUUID
+
+					// Create a user workload namespace.
+					workloadNs = &v1.Namespace{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "user-workload-ns-1",
+							Labels: map[string]string{
+								providerconfigmap.UserWorkloadNamespaceLabel: "cluster-moid",
+							},
+						},
+					}
+					Expect(ctx.Client.Create(ctx, workloadNs)).To(Succeed())
+				})
+
+				AfterEach(func() {
+					Expect(ctx.Client.Delete(ctx, workloadNs)).To(Succeed())
+				})
+
+				When("And a new workload is added after the initial reconciliation", func() {
+					var newWorkloadNs *v1.Namespace
+					BeforeEach(func() {
+						// Create a user workload namespace.
+						newWorkloadNs = &v1.Namespace{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "user-workload-ns-2",
+								Labels: map[string]string{
+									providerconfigmap.UserWorkloadNamespaceLabel: "cluster-moid",
+								},
+							},
+						}
+					})
+					AfterEach(func() {
+						Expect(ctx.Client.Delete(ctx, newWorkloadNs)).To(Succeed())
+					})
+
+					// Create a workload namespace, and create the provider ConfigMap with ContentSource key set. Validate that the ContentSourceBindings are created
+					// in the user namespace. Then, create a new workload namespace and ensure that a reconcile is triggered due to the Namespace watch and
+					// ContentSourceBindings have been created in the new namespace.
+					It("re-triggers the reconcile and creates bindings in the new namespace", func() {
+						// Wait for the initial reconcile
+						Eventually(func() bool {
+							return csExists(clUUID, clUUID) && clExists(clUUID)
+						}).Should(BeTrue())
+
+						Eventually(func() bool {
+							return clExists(clUUID)
+						}).Should(BeTrue())
+
+						// Validate that ContentSourceBindings exist in the existing user workload namespace.
+						Eventually(func() bool {
+							bindingList := &vmopv1alpha1.ContentSourceBindingList{}
+							err := ctx.Client.List(ctx, bindingList, client.InNamespace(workloadNs.Name))
+							return err == nil && len(bindingList.Items) == 1 && bindingList.Items[0].ContentSourceRef.Kind == "ContentSource" &&
+								bindingList.Items[0].ContentSourceRef.Name == clUUID
+						}).Should(BeTrue())
+
+						// Create a new workload
+						Expect(ctx.Client.Create(ctx, newWorkloadNs)).To(Succeed())
+
+						// Validate that ContentSourceBindings exist in the newly created user workload namespace.
+						Eventually(func() bool {
+							bindingList := &vmopv1alpha1.ContentSourceBindingList{}
+							err := ctx.Client.List(ctx, bindingList, client.InNamespace(newWorkloadNs.Name))
+							return err == nil && len(bindingList.Items) == 1 && bindingList.Items[0].ContentSourceRef.Kind == "ContentSource" &&
+								bindingList.Items[0].ContentSourceRef.Name == clUUID
+						}).Should(BeTrue())
+					})
+				})
+			})
 		})
 	})
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -48,4 +48,28 @@ const (
 
 	// DeletedReason (Severity=Info) documents a condition not in Status=True because the underlying object was deleted.
 	DeletedReason = "Deleted"
+)
+
+// Conditions related to the VirtualMachineImages
+const(
+	// VirtualMachineImageOSTypeSupportedCondition denotes that the OS type in the VirtualMachineImage object is
+	// supported by VMService. A VirtualMachineImageOsTypeSupportedCondition is marked true:
+	// - If OS Type is of Linux Family
+	// - If OS Type is supported by hosts in the cluster
+	VirtualMachineImageOSTypeSupportedCondition ConditionType = "VirtualMachineImageOSTypeSupported"
+
+	// VirtualMachineImageV1Alpha1CompatibleCondition denotes image compatibility with VMService. VMService expects
+	// VirtualMachineImage to be prepared by VMware specifically for VMService v1alpha1.
+	VirtualMachineImageV1Alpha1CompatibleCondition ConditionType = "VirtualMachineImageV1Alpha1Compatible"
+)
+
+// Condition.Reason for Conditions related to VirtualMachineImages
+const (
+	// VirtualMachineImageOSTypeNotSupportedReason (Severity=Error) documents that OS Type is VirtualMachineImage is
+	// not supported.
+	VirtualMachineImageOSTypeNotSupportedReason = "VirtualMachineImageOSTypeNotSupported"
+
+	// VirtualMachineImageV1Alpha1NotCompatibleReason (Severity=Error) documents that the VirtualMachine Image
+	// is not prepared for VMService consumption.
+	VirtualMachineImageV1Alpha1NotCompatibleReason = "VirtualMachineImageV1Alpha1NotCompatible"
 )

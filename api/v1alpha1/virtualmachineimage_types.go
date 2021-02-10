@@ -1,4 +1,4 @@
-// Copyright (c) 2018 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -92,9 +92,25 @@ type VirtualMachineImageStatus struct {
 	// Deprecated
 	PowerState    string `json:"powerState,omitempty"`
 
-	// SupportedGuestOS indicates whether the VirtualMachineImage's osType is supported
-	// by the hosts in the cluster and VM Service
-	SupportedGuestOS *bool  `json:"supportedGuestOS,omitempty"`
+	// ImageSupported indicates whether the VirtualMachineImage is supported by VMService.
+	// A VirtualMachineImage is supported by VMService if the following conditions are true:
+	// - VirtualMachineImageOSTypeSupportedCondition
+	// - VirtualMachineImageV1Alpha1CompatibleCondition
+	// +optional
+	ImageSupported *bool  `json:"imageSupported,omitempty"`
+
+	// Conditions describes the current condition information of the VirtualMachineImage object. e.g. if the OS type
+	// is supported or image is supported by VMService
+	// +optional
+	Conditions []Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+}
+
+func (vmImage *VirtualMachineImage) GetConditions() Conditions {
+	return vmImage.Status.Conditions
+}
+
+func (vmImage *VirtualMachineImage) SetConditions(conditions Conditions) {
+	vmImage.Status.Conditions = conditions
 }
 
 // +genclient
@@ -106,7 +122,7 @@ type VirtualMachineImageStatus struct {
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
 // +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
 // +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"
-// +kubebuilder:printcolumn:name="SupportedGuestOS",type="boolean",priority=1,JSONPath=".status.supportedGuestOS"
+// +kubebuilder:printcolumn:name="ImageSupported",type="boolean",priority=1,JSONPath=".status.imageSupported"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // VirtualMachineImage is the Schema for the virtualmachineimages API

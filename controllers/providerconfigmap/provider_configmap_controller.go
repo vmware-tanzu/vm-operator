@@ -27,12 +27,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -66,7 +68,60 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		return err
 	}
 
+	reqCtx := &requestMapperCtx{ctx, r.Client, r.Logger}
+
+	// Add Watches to Namespaces so we can create TKG bindings when new namespaces are created.
+	err = c.Watch(&source.Kind{Type: &v1.Namespace{}}, &handler.EnqueueRequestsFromMapFunc{ToRequests: requestMapper{reqCtx}},
+		predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return true
+			},
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				return false
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				return false
+			},
+			GenericFunc: func(e event.GenericEvent) bool {
+				return false
+			},
+		})
+	if err != nil {
+		return err
+	}
+
 	return nil
+}
+
+type requestMapper struct {
+	ctx *requestMapperCtx
+}
+
+type requestMapperCtx struct {
+	*context.ControllerManagerContext
+	client.Client
+	Logger logr.Logger
+}
+
+func (m requestMapper) Map(o handler.MapObject) []reconcile.Request {
+	if o, ok := o.Object.(*v1.Namespace); ok {
+		return namespaceToProviderConfigMap(m.ctx, o)
+	}
+
+	return nil
+}
+
+// namespaceToProviderConfigMap maps a namespace creation request to the provider ConfigMap reconcile request.
+func namespaceToProviderConfigMap(ctx *requestMapperCtx, ns *v1.Namespace) []reconcile.Request {
+	logger := ctx.Logger.WithValues("namespaceName", ns.Name)
+
+	logger.V(4).Info("Reconciling provider ConfigMap due to a namespace creation")
+	key := client.ObjectKey{Namespace: ctx.Namespace, Name: vsphere.ProviderConfigMapName}
+
+	reconcileRequests := []reconcile.Request{{NamespacedName: key}}
+
+	logger.V(4).Info("Returning provider ConfigMap reconciliation due to a namespace creation", "requests", reconcileRequests)
+	return reconcileRequests
 }
 
 func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod time.Duration, ns string) error {
@@ -78,13 +133,10 @@ func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod 
 	return c.Watch(source.NewKindWithCache(&v1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
 		predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
-				return e.Meta.GetName() == vsphere.ProviderConfigMapName &&
-					e.Object.(*v1.ConfigMap).Data[vsphere.ContentSourceKey] != ""
+				return e.Meta.GetName() == vsphere.ProviderConfigMapName
 			},
 			UpdateFunc: func(e event.UpdateEvent) bool {
-				return e.MetaOld.GetName() == vsphere.ProviderConfigMapName &&
-					e.ObjectOld.(*v1.ConfigMap).Data[vsphere.ContentSourceKey] !=
-						e.ObjectNew.(*v1.ConfigMap).Data[vsphere.ContentSourceKey]
+				return e.MetaOld.GetName() == vsphere.ProviderConfigMapName
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
 				return false
@@ -285,10 +337,12 @@ func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *v1.ConfigMa
 		return err
 	}
 
-	// Ensure that all workload namespaces have access to the TKG ContentSource by creating ContentSourceBindings.
-	if err := r.CreateContentSourceBindings(ctx, clUUID); err != nil {
-		r.Logger.Error(err, "failed to create ContentSourceBindings in user workload namespaces")
-		return err
+	if lib.IsVMServiceFSSEnabled() {
+		// Ensure that all workload namespaces have access to the TKG ContentSource by creating ContentSourceBindings.
+		if err := r.CreateContentSourceBindings(ctx, clUUID); err != nil {
+			r.Logger.Error(err, "failed to create ContentSourceBindings in user workload namespaces")
+			return err
+		}
 	}
 
 	r.Logger.Info("Finished reconciling VM provider ConfigMap", "name", cm.Name, "namespace", cm.Namespace)

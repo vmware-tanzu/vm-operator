@@ -14,6 +14,9 @@ SSHCommonArgs=("-o PubkeyAuthentication=no" "-o UserKnownHostsFile=/dev/null" "-
 # VM service FSS
 FSS_WCP_VMSERVICE_VALUE=${FSS_WCP_VMSERVICE_VALUE:-false}
 
+# VM service v1alpha2 FSS
+FSS_WCP_VMSERVICE_V1ALPHA2_VALUE=${FSS_WCP_VMSERVICE_V1ALPHA2_VALUE:-false}
+
 # Using VDS Networking
 VSPHERE_NETWORKING_VALUE=${VSPHERE_NETWORKING_VALUE:-false}
 
@@ -113,6 +116,11 @@ patchWcpDeploymentYaml() {
     sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_VALUE>\"?,\"$FSS_WCP_VMSERVICE_VALUE\",g" "artifacts/wcp-deployment.yaml"
     if grep -q "<FSS_WCP_VMSERVICE_VALUE>" artifacts/wcp-deployment.yaml; then
         echo "Failed to subst <FSS_WCP_VMSERVICE_VALUE> in artifacts/wcp-deployment.yaml"
+        exit 1
+    fi
+    sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_V1ALPHA2_VALUE>\"?,\"$FSS_WCP_VMSERVICE_V1ALPHA2_VALUE\",g" "artifacts/wcp-deployment.yaml"
+    if grep -q "<FSS_WCP_VMSERVICE_V1ALPHA2_VALUE>" artifacts/wcp-deployment.yaml; then
+        echo "Failed to subst <FSS_WCP_VMSERVICE_V1ALPHA2_VALUE> in artifacts/wcp-deployment.yaml"
         exit 1
     fi
     sed -i'' -E "s,\"?<VSPHERE_NETWORKING_VALUE>\"?,\"$VSPHERE_NETWORKING_VALUE\",g" "artifacts/wcp-deployment.yaml"

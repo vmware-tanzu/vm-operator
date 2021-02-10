@@ -42,9 +42,9 @@ type VirtualMachineImageOSInfo struct {
 }
 
 
-// VirtualMachineImageOVFEnv describes information related to a user configurable property element
-// that is supported by VirtualMachineImage and can be customized during VirtualMachine deployment.
-type VirtualMachineImageOVFEnv struct {
+// OvfProperty describes information related to a user configurable property element that is supported by
+// VirtualMachineImage and can be customized during VirtualMachine creation.
+type OvfProperty struct {
 	// Key describes the key of the ovf property.
 	Key string `json:"key"`
 
@@ -78,7 +78,7 @@ type VirtualMachineImageSpec struct {
 
 	// OVFEnv describes the user configurable customization parameters of the VirtualMachineImage.
 	// +optional
-	OVFEnv []VirtualMachineImageOVFEnv `json:"ovfEnv,omitempty"`
+	OVFEnv map[string]OvfProperty `json:"ovfEnv,omitempty"`
 }
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage

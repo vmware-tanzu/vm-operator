@@ -107,13 +107,7 @@ patchWcpDeploymentYaml() {
         sed -i'' "s,<datacenter>,$VCSA_DATACENTER,g" "artifacts/wcp-deployment.yaml"
         sed -i'' "s, Datastore: .*, Datastore: $VCSA_DATASTORE," "artifacts/wcp-deployment.yaml"
         sed -i'' "s,<worker_dns>,$VCSA_WORKER_DNS," "artifacts/wcp-deployment.yaml"
-
-        # If the WCP_VMService FSS is enabled, unset the ContentSource key in the configmap
-        if [[ ${FSS_WCP_VMSERVICE_VALUE} == "true" ]]; then
-            sed -i'' "/<content_source>/d" "artifacts/wcp-deployment.yaml"
-        else
-            sed -i'' "s,<content_source>,$VCSA_CONTENT_SOURCE,g" "artifacts/wcp-deployment.yaml"
-        fi
+        sed -i'' "s,<content_source>,$VCSA_CONTENT_SOURCE,g" "artifacts/wcp-deployment.yaml"
     fi
 
     sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_VALUE>\"?,\"$FSS_WCP_VMSERVICE_VALUE\",g" "artifacts/wcp-deployment.yaml"

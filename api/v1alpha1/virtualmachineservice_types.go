@@ -7,7 +7,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// VirtualMachineService Type string describes ingress methods for a service
+// VirtualMachineServiceType string describes ingress methods for a service
 type VirtualMachineServiceType string
 
 // These types correspond to a subset of the core Service Types
@@ -23,7 +23,7 @@ const (
 
 	// VirtualMachineServiceTypeExternalName means a service consists of only a reference to
 	// an external name that kubedns or equivalent will return as a CNAME
-	// record, with no exposing or proxying of any pods involved.
+	// record, with no exposing or proxying of any VirtualMachines involved.
 	VirtualMachineServiceTypeExternalName VirtualMachineServiceType = "ExternalName"
 )
 
@@ -34,7 +34,7 @@ type VirtualMachineServicePort struct {
 	// Name describes the name to be used to identify this VirtualMachineServicePort
 	Name string `json:"name"`
 
-	// Protocol describes the Layer 4 transport protocol for this port.  Supports "TCP", "UDP", and "SCTP".
+	// Protocol describes the Layer 4 transport protocol for this port. Supports "TCP", "UDP", and "SCTP".
 	Protocol string `json:"protocol"`
 
 	// Port describes the external port that will be exposed by the service.
@@ -44,50 +44,51 @@ type VirtualMachineServicePort struct {
 	TargetPort int32 `json:"targetPort"`
 }
 
-// LoadBalancerStatus represents the status of a Load Balancer instance.
+// LoadBalancerStatus represents the status of a load balancer.
 type LoadBalancerStatus struct {
-	// Ingress is a list containing ingress addresses for the Load Balancer.
+	// Ingress is a list containing ingress addresses for the load balancer.
 	// Traffic intended for the service should be sent to any of these ingress points.
 	// +optional
 	Ingress []LoadBalancerIngress `json:"ingress,omitempty"`
 }
 
-// LoadBalancerIngress represents the status of a Load Balancer ingress point. Traffic intended for the service should
-// be sent to network endpoints specified by the endpoints in the LoadBalancerStatus.  IP or Hostname may both be set
-// in this structure.  It is up to the consumer to determine which field should be used when accessing this
-// LoadBalancer.
+// LoadBalancerIngress represents the status of a load balancer ingress point:
+// traffic intended for the service should be sent to an ingress point.
+// IP or Hostname may both be set in this structure. It is up to the consumer to determine which
+// field should be used when accessing this LoadBalancer.
 type LoadBalancerIngress struct {
-	// IP is set for Load Balancer ingress points that are specified by an IP address.
+	// IP is set for load balancer ingress points that are specified by an IP address.
 	// +optional
 	IP string `json:"ip,omitempty"`
 
-	// Hostname is set for Load Balancer ingress points that are specified by a DNS address.
+	// Hostname is set for load balancer ingress points that are specified by a DNS address.
 	// +optional
 	Hostname string `json:"hostname,omitempty"`
 }
 
-// VirtualMachineServiceSpec defines the desired state of VirtualMachineService.  Each VirtualMachineService exposes
+// VirtualMachineServiceSpec defines the desired state of VirtualMachineService. Each VirtualMachineService exposes
 // a set of TargetPorts on a set of VirtualMachine instances as a network endpoint within or outside of the
-// Kubernetes cluster.  The VirtualMachineService is loosely coupled to the VirtualMachines that are backing it through
-// the use of a Label Selector.  In Kubernetes, a Label Selector enables matching of a resource using a set of
-// key-value pairs, aka Labels.  By using a Label Selector, the VirtualMachineService can be generically defined to apply
-// to any VirtualMachine that has the appropriate set of labels.
+// Kubernetes cluster. The VirtualMachineService is loosely coupled to the VirtualMachines that are backing it through
+// the use of a Label Selector. In Kubernetes, a Label Selector enables matching of a resource using a set of
+// key-value pairs, aka Labels. By using a Label Selector, the VirtualMachineService can be generically defined to apply
+// to any VirtualMachine in the same namespace that has the appropriate set of labels.
 type VirtualMachineServiceSpec struct {
-	// Type specifies a desired VirtualMachineServiceType for this VirtualMachineService.  The supported types
-	// are VirtualMachineServiceTypeClusterIP and VirtualMachineServiceTypeLoadBalancer.
+	// Type specifies a desired VirtualMachineServiceType for this VirtualMachineService. Supported types
+	// are ClusterIP, LoadBalancer, ExternalName.
 	Type VirtualMachineServiceType `json:"type"`
 
-	// Ports specifies a list of VirtualMachineServicePort to expose with this VirtualMachineService.  Each of these ports
+	// Ports specifies a list of VirtualMachineServicePort to expose with this VirtualMachineService. Each of these ports
 	// will be an accessible network entry point to access this service by.
-	Ports []VirtualMachineServicePort `json:"ports"`
+	Ports []VirtualMachineServicePort `json:"ports,omitempty"`
 
 	// Selector specifies a map of key-value pairs, also known as a Label Selector, that is used to match this
 	// VirtualMachineService with the set of VirtualMachines that should back this VirtualMachineService.
-	Selector map[string]string `json:"selector"`
+	// +optional
+	Selector map[string]string `json:"selector,omitempty"`
 
-	// Only applies to Service Type: LoadBalancer
+	// Only applies to VirtualMachineService Type: LoadBalancer
 	// LoadBalancer will get created with the IP specified in this field.
-	// This feature depends on whether the underlying loadbalancer provider supports specifying
+	// This feature depends on whether the underlying load balancer provider supports specifying
 	// the loadBalancerIP when a load balancer is created.
 	// This field will be ignored if the provider does not support the feature.
 	// +optional
@@ -95,20 +96,36 @@ type VirtualMachineServiceSpec struct {
 
 	// LoadBalancerSourceRanges is an array of IP addresses in the format of
 	// CIDRs, for example: 103.21.244.0/22 and 10.0.0.0/24.
-	// If specified and supported by the platform, this will restrict
+	// If specified and supported by the load balancer provider, this will restrict
 	// ingress traffic to the specified client IPs. This field will be ignored if the
-	// loadbalancer provider does not support the feature.
+	// provider does not support the feature.
 	// +optional
 	LoadBalancerSourceRanges []string `json:"loadBalancerSourceRanges,omitempty"`
 
+	// clusterIP is the IP address of the service and is usually assigned
+	// randomly by the master. If an address is specified manually and is not in
+	// use by others, it will be allocated to the service; otherwise, creation
+	// of the service will fail. This field can not be changed through updates.
+	// Valid values are "None", empty string (""), or a valid IP address. "None"
+	// can be specified for headless services when proxying is not required.
+	// Only applies to types ClusterIP and LoadBalancer.
+	// Ignored if type is ExternalName.
+	// More info: https://kubernetes.io/docs/concepts/services-networking/service/#virtual-ips-and-service-proxies
+	// +optional
 	ClusterIP    string `json:"clusterIp,omitempty"`
+
+	// externalName is the external reference that kubedns or equivalent will
+	// return as a CNAME record for this service. No proxying will be involved.
+	// Must be a valid RFC-1123 hostname (https://tools.ietf.org/html/rfc1123)
+	// and requires Type to be ExternalName.
+	// +optional
 	ExternalName string `json:"externalName,omitempty"`
 }
 
 // VirtualMachineServiceStatus defines the observed state of VirtualMachineService
 type VirtualMachineServiceStatus struct {
-	// LoadBalancer contains the current status of the Load Balancer.  The LoadBalancer status can be used to introspect
-	// the state and attributes of any LoadBalancer instances that are fulfilling the VirtualmachineService.
+	// LoadBalancer contains the current status of the load balancer,
+	// if one is present.
 	// +optional
 	LoadBalancer LoadBalancerStatus `json:"loadBalancer,omitempty"`
 }
@@ -123,7 +140,7 @@ type VirtualMachineServiceStatus struct {
 
 // VirtualMachineService is the Schema for the virtualmachineservices API.
 // A VirtualMachineService represents the desired specification and the observed status of a VirtualMachineService
-// instance.  A VirtualMachineService represents a network service, provided by one or more VirtualMachines, that is
+// instance. A VirtualMachineService represents a network service, provided by one or more VirtualMachines, that is
 // desired to be exposed to other workloads both internal and external to the cluster.
 type VirtualMachineService struct {
 	metav1.TypeMeta   `json:",inline"`

@@ -13,9 +13,8 @@ import (
 	"github.com/vmware/govmomi/simulator"
 
 	_ "github.com/vmware/govmomi/pbm/simulator"
+	_ "github.com/vmware/govmomi/vapi/cluster/simulator"
 	_ "github.com/vmware/govmomi/vapi/simulator"
-
-	_ "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/cluster/simulator"
 )
 
 type VcSimInstance struct {

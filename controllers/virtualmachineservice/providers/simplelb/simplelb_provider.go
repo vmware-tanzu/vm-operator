@@ -7,19 +7,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-
-	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 )
 
 type simpleLoadBalancerProvider struct {
@@ -100,12 +100,26 @@ func (s *simpleLoadBalancerProvider) ensureLBVM(ctx context.Context, vm *vmopv1a
 	return nil
 }
 
+func makeVMServiceOwnerRef(vmService *vmopv1alpha1.VirtualMachineService) metav1.OwnerReference {
+	virtualMachineServiceKind := reflect.TypeOf(vmopv1alpha1.VirtualMachineService{}).Name()
+	virtualMachineServiceAPIVersion := vmopv1alpha1.SchemeGroupVersion.String()
+
+	return metav1.OwnerReference{
+		UID:                vmService.UID,
+		Name:               vmService.Name,
+		Controller:         pointer.BoolPtr(false),
+		BlockOwnerDeletion: pointer.BoolPtr(true),
+		Kind:               virtualMachineServiceKind,
+		APIVersion:         virtualMachineServiceAPIVersion,
+	}
+}
+
 func loadbalancerVM(vmService *vmopv1alpha1.VirtualMachineService) *vmopv1alpha1.VirtualMachine {
 	return &vmopv1alpha1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            vmService.Name + "-lb",
 			Namespace:       vmService.Namespace,
-			OwnerReferences: []metav1.OwnerReference{utils.MakeVMServiceOwnerRef(vmService)},
+			OwnerReferences: []metav1.OwnerReference{makeVMServiceOwnerRef(vmService)},
 		},
 		Spec: vmopv1alpha1.VirtualMachineSpec{
 			ImageName:  "loadbalancer-vm",
@@ -124,7 +138,7 @@ func loadbalancerCM(vmService *vmopv1alpha1.VirtualMachineService, params lbConf
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            metadataCMName(vmService),
 			Namespace:       vmService.Namespace,
-			OwnerReferences: []metav1.OwnerReference{utils.MakeVMServiceOwnerRef(vmService)},
+			OwnerReferences: []metav1.OwnerReference{makeVMServiceOwnerRef(vmService)},
 		},
 		Data: map[string]string{
 			"guestinfo.userdata":          renderAndBase64EncodeLBCloudConfig(params),

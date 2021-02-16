@@ -1,6 +1,5 @@
-// *******************************************************************************
-// Copyright 2018 - 2019 VMware, Inc.  All rights reserved. -- VMware Confidential
-// *******************************************************************************
+// Copyright (c) 2018-2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package lib_test
 

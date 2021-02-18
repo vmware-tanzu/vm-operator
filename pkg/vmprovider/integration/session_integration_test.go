@@ -480,7 +480,11 @@ var _ = Describe("Sessions", func() {
 				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
 				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
 
-				virtualDisks, err := clonedDeployedVM.GetVirtualDisks(context.TODO())
+				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+
+				virtualDisks, err := clonedVM.GetVirtualDisks(context.TODO())
 				Expect(err).NotTo(HaveOccurred())
 				Expect(len(virtualDisks)).Should(Equal(1))
 
@@ -503,13 +507,11 @@ var _ = Describe("Sessions", func() {
 						},
 					},
 				}
-				clonedVM, err := session.CloneVirtualMachine(context.TODO(), vm, vmConfigArgs)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(clonedVM.Name).Should(Equal(vmName))
 
 				// UpdateVirtualMachine calls a Reconfigure on the cloned VM with a config spec
 				// with the updated desired size of the VM disks
-				session.UpdateVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				_, err = session.UpdateVirtualMachine(context.TODO(), vm, vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
 
 				clonedVMDisks, err := clonedVM.GetVirtualDisks(context.TODO())
 				Expect(err).NotTo(HaveOccurred())
@@ -518,13 +520,11 @@ var _ = Describe("Sessions", func() {
 				// The device type should be virtual disk
 				clonedVMDisk1, ok := clonedVMDisks[0].(*vimTypes.VirtualDisk)
 				Expect(ok).Should(BeTrue())
-
 				Expect(clonedVMDisk1.Key).Should(Equal(disk1.Key))
 
 				// Check that cloned VM disk is the desired size
 				resultingSize := resource.MustParse(fmt.Sprintf("%d", clonedVMDisk1.CapacityInBytes))
 				Expect(resultingSize.Value()).Should(Equal(desiredSize.Value()))
-
 			})
 
 			It("should clone VMTX", func() {

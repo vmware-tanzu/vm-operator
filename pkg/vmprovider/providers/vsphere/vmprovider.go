@@ -628,7 +628,7 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 		}
 
 		isSupportedGuestOS := false
-		// Set the image's Status if the GuestOS Descriptors IDs map was populated
+		// Set the isSupportedGuestOS to true if the GuestOS Descriptors IDs map was populated
 		if len(gOSIdsToFamily) > 0 {
 			// gOSFamily will be present for supported OSTypes and
 			// support only VirtualMachineGuestOsFamilyLinuxGuest for now
@@ -637,10 +637,14 @@ func LibItemToVirtualMachineImage(ctx context.Context, session *Session, item *l
 				isSupportedGuestOS = true
 				conditions.MarkTrue(image, v1alpha1.VirtualMachineImageOSTypeSupportedCondition)
 			} else {
+				isSupportedGuestOS = false
 				msg := fmt.Sprintf("VirtualMachineImage image type %s is not supported by VM Svc", osInfo.Type)
 				conditions.MarkFalse(image, v1alpha1.VirtualMachineImageOSTypeSupportedCondition,
 					v1alpha1.VirtualMachineImageOSTypeNotSupportedReason, v1alpha1.ConditionSeverityError, msg)
 			}
+		} else {
+			// bypass isSupportedGuestOS valdation as GuestOS Descriptors IDs map was not populated
+			isSupportedGuestOS = true
 		}
 		// Update VirtualMachineImageStatus.ImageSupported to combined compatibility of OVF compatibility and supported
 		// guest OS

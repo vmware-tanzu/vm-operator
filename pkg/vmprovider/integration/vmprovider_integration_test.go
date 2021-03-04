@@ -130,9 +130,9 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 			Expect(exists).To(BeFalse())
 
 			vmConfigArgs := vmprovider.VmConfigArgs{
-				VmClass: *vmClass,
-				VmImage: vmImage,
-				VmMetadata: vmMetadata,
+				VmClass:          *vmClass,
+				VmImage:          vmImage,
+				VmMetadata:       vmMetadata,
 				StorageProfileID: storageProfileId,
 			}
 			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
@@ -172,6 +172,7 @@ var _ = Describe("VMProvider Tests", func() {
 			vmProvider = vsphere.NewVSphereVmProviderFromClients(nil, k8sClient, nil)
 
 			// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
+			// BMV: Not true anymore, and we can't set this via ExtraConfig transport anyways.
 			testIP := "10.0.0.1"
 			vmMetadata := &vmprovider.VmMetadata{
 				Data:      map[string]string{"SET.guest.ipAddress": testIP},
@@ -190,10 +191,10 @@ var _ = Describe("VMProvider Tests", func() {
 
 			// CreateVirtualMachine from CL
 			vmConfigArgs := vmprovider.VmConfigArgs{
-				VmClass:    *vmClass,
-				VmImage: vmImage,
-				VmMetadata: vmMetadata,
-				StorageProfileID: storageProfileId,
+				VmClass:            *vmClass,
+				VmImage:            vmImage,
+				VmMetadata:         vmMetadata,
+				StorageProfileID:   storageProfileId,
 				ContentLibraryUUID: integration.GetContentSourceID(),
 			}
 			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
@@ -201,7 +202,7 @@ var _ = Describe("VMProvider Tests", func() {
 
 			// Update Virtual Machine to Reconfigure with VM Class config
 			err = vmProvider.UpdateVirtualMachine(context.TODO(), vm, vmConfigArgs)
-			Expect(vm.Status.VmIp).Should(Equal(testIP))
+			//Expect(vm.Status.VmIp).Should(Equal(testIP))
 			Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
 			Expect(vm.Status.BiosUUID).ShouldNot(BeEmpty())
 			Expect(vm.Status.InstanceUUID).ShouldNot(BeEmpty())

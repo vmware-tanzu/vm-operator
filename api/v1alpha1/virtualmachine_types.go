@@ -98,7 +98,7 @@ type VirtualMachineMetadataTransport string
 
 const (
 	// VirtualMachineMetadataExtraConfigTransport will set the VirtualMachineMetadata ConfigMap data as
-	// extraConfig key value fields on the VM.
+	// extraConfig key value fields on the VM. Only keys prefixed with "guestinfo." will be set.
 	VirtualMachineMetadataExtraConfigTransport VirtualMachineMetadataTransport = "ExtraConfig"
 
 	// VirtualMachineMetadataOvfEnvTransport will set the VirtualMachineMetadata ConfigMap data as

@@ -4,5 +4,8 @@
 package vsphere
 
 const (
-	VCVMAnnotation string = "Virtual Machine managed by the vSphere Virtual Machine service"
+	VCVMAnnotation = "Virtual Machine managed by the vSphere Virtual Machine service"
+
+	// Only allow guestinfo for user-supplied ExtraConfig key/values.
+	ExtraConfigGuestInfoPrefix = "guestinfo."
 )

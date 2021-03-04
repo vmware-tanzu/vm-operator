@@ -42,13 +42,13 @@ func vmContext(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) vsphere.VMC
 	return vsphere.VMContext{
 		Context: ctx,
 		Logger:  integration.Log,
-		VM: 	 vm,
+		VM:      vm,
 	}
 }
 
 var _ = Describe("Sessions", func() {
 	var (
-		ctx 	  context.Context
+		ctx       context.Context
 		session   *vsphere.Session
 		ncpClient *ncpfake.Clientset
 	)
@@ -651,7 +651,7 @@ var _ = Describe("Sessions", func() {
 
 		Context("with vm metadata and global extraConfig", func() {
 			const (
-				localKey  = "localK"
+				localKey  = "guestinfo.localK"
 				localVal  = "localV"
 				globalKey = "globalK"
 				globalVal = "globalV"
@@ -945,7 +945,7 @@ var _ = Describe("Sessions", func() {
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{
-						VmImage: vmImage,
+						VmImage:            vmImage,
 						ContentLibraryUUID: integration.GetContentSourceID(),
 					}
 					clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs)
@@ -961,7 +961,7 @@ var _ = Describe("Sessions", func() {
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{
-						VmImage: vmImage,
+						VmImage:            vmImage,
 						ContentLibraryUUID: integration.GetContentSourceID(),
 					}
 					clonedVM, err := session.CloneVirtualMachine(ctx, vm, vmConfigArgs)

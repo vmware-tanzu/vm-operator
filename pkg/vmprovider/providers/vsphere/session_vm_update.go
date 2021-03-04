@@ -221,7 +221,9 @@ func deltaConfigSpecExtraConfig(
 	}
 	if vmMetadata != nil && vmMetadata.Transport == v1alpha1.VirtualMachineMetadataExtraConfigTransport {
 		for k, v := range vmMetadata.Data {
-			extraConfig[k] = v
+			if strings.HasPrefix(k, ExtraConfigGuestInfoPrefix) {
+				extraConfig[k] = v
+			}
 		}
 	}
 	for k, v := range extraConfig {

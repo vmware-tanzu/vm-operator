@@ -82,7 +82,7 @@ func placeVM(
 func cloneVMRelocateSpec(
 	ctx context.Context,
 	cluster *object.ClusterComputeResource,
-	vmRef *vimTypes.ManagedObjectReference,
+	vmRef vimTypes.ManagedObjectReference,
 	cloneSpec *vimTypes.VirtualMachineCloneSpec) (*vimTypes.VirtualMachineRelocateSpec, error) {
 
 	placementSpec := vimTypes.PlacementSpec{
@@ -90,7 +90,7 @@ func cloneVMRelocateSpec(
 		CloneSpec:     cloneSpec,
 		RelocateSpec:  &cloneSpec.Location,
 		CloneName:     cloneSpec.Config.Name,
-		Vm:            vmRef,
+		Vm:            &vmRef,
 	}
 
 	return placeVM(ctx, cluster, placementSpec)

@@ -15,6 +15,7 @@ import (
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/vcenter"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/utils/pointer"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -271,21 +272,20 @@ func (s *Session) getStorageProvisioning(vmCtx VMContext, storageProfileID strin
 
 // createConfigSpec creates the very basic configSpec for the VM when cloning.
 func (s *Session) createConfigSpec(name string, vmClassSpec *v1alpha1.VirtualMachineClassSpec) *vimTypes.VirtualMachineConfigSpec {
-
 	configSpec := &vimTypes.VirtualMachineConfigSpec{
 		Name:       name,
 		Annotation: VCVMAnnotation,
 		NumCPUs:    int32(vmClassSpec.Hardware.Cpus),
 		MemoryMB:   memoryQuantityToMb(vmClassSpec.Hardware.Memory),
+		// Enable clients to differentiate the managed VMs from the regular VMs.
+		ManagedBy: &vimTypes.ManagedByInfo{
+			ExtensionKey: "com.vmware.vcenter.wcp",
+			Type:         "VirtualMachine",
+		},
 	}
 
-	// BMV: Should we still set these here, or just defer to the first reconfigure like we do for OVF Deploy?
-
-	// Enable clients to differentiate the managed VMs from the regular VMs.
-	configSpec.ManagedBy = &vimTypes.ManagedByInfo{
-		ExtensionKey: "com.vmware.vcenter.wcp",
-		Type:         "VirtualMachine",
-	}
+	// BMV: Does all of this need to be set here, or defer to the first reconfigure like we
+	// do for OVF Deploy? Is all this needed for like placement to make an informed decision?
 
 	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
 
@@ -320,26 +320,30 @@ func (s *Session) createCloneSpec(
 	sourceVM *res.VirtualMachine,
 	vmConfigArgs vmprovider.VmConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
 
-	configSpec := s.createConfigSpec(vmCtx.VM.Name, &vmConfigArgs.VmClass.Spec)
-
-	memory := false // No full memory clones.
 	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
-		Config: configSpec,
-		Memory: &memory,
+		Config: s.createConfigSpec(vmCtx.VM.Name, &vmConfigArgs.VmClass.Spec),
+		Memory: pointer.BoolPtr(false), // No full memory clones.
 	}
 
-	diskDeviceChanges, err := resizeSourceDiskDeviceChanges(vmCtx.VMContext, sourceVM)
+	virtualDevices, err := sourceVM.GetVirtualDevices(vmCtx)
 	if err != nil {
 		return nil, err
 	}
-	// Should this use cloneSpec.Location.DeviceChange instead since they're edits?
-	cloneSpec.Config.DeviceChange = append(cloneSpec.Config.DeviceChange, diskDeviceChanges...)
 
-	nicDeviceChanges, err := s.cloneVMNicDeviceChanges(vmCtx, sourceVM)
+	virtualDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
+	virtualNICs := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
+
+	diskDeviceChanges, err := resizeVirtualDisksDeviceChanges(vmCtx.VMContext, virtualDisks)
 	if err != nil {
 		return nil, err
 	}
-	for _, deviceChange := range nicDeviceChanges {
+
+	nicDeviceChanges, err := s.cloneVMNicDeviceChanges(vmCtx, virtualNICs)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, deviceChange := range append(diskDeviceChanges, nicDeviceChanges...) {
 		if deviceChange.GetVirtualDeviceConfigSpec().Operation == vimTypes.VirtualDeviceConfigSpecOperationEdit {
 			cloneSpec.Location.DeviceChange = append(cloneSpec.Location.DeviceChange, deviceChange)
 		} else {
@@ -361,18 +365,14 @@ func (s *Session) createCloneSpec(
 	cloneSpec.Location.Pool = vimTypes.NewReference(vmCtx.ResourcePool.Reference())
 	cloneSpec.Location.Folder = vimTypes.NewReference(vmCtx.Folder.Reference())
 
-	srcVMRef := &vimTypes.ManagedObjectReference{
-		Type:  "VirtualMachine",
-		Value: sourceVM.ReferenceValue(),
-	}
-	relocateSpec, err := cloneVMRelocateSpec(vmCtx, s.cluster, srcVMRef, cloneSpec)
+	relocateSpec, err := cloneVMRelocateSpec(vmCtx, s.cluster, sourceVM.MoRef(), cloneSpec)
 	if err != nil {
 		return nil, err
 	}
 	cloneSpec.Location.Host = relocateSpec.Host
 	cloneSpec.Location.Datastore = relocateSpec.Datastore
 
-	diskLocators, err := cloneVMDiskLocators(vmCtx, sourceVM, cloneSpec.Location.Datastore, cloneSpec.Location.Profile)
+	diskLocators, err := cloneVMDiskLocators(vmCtx, virtualDisks, cloneSpec.Location.Datastore, cloneSpec.Location.Profile)
 	if err != nil {
 		return nil, err
 	}
@@ -385,12 +385,7 @@ func (s *Session) createCloneSpec(
 // on a new VM being cloned from the source VM.
 func (s *Session) cloneVMNicDeviceChanges(
 	vmCtx VMCloneContext,
-	sourceVM *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
-
-	srcVMNetDevices, err := sourceVM.GetNetworkDevices(vmCtx)
-	if err != nil {
-		return nil, err
-	}
+	srcNICs object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
 	// To ease local and simulation testing if the VM Spec interfaces is empty, leave the
 	// existing interfaces. If a default network as been configured, change the backing for
@@ -406,8 +401,8 @@ func (s *Session) cloneVMNicDeviceChanges(
 			return nil, errors.Wrapf(err, "cannot get backing info for default network %+v", s.network.Reference())
 		}
 
-		deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcVMNetDevices))
-		for _, dev := range srcVMNetDevices {
+		deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcNICs))
+		for _, dev := range srcNICs {
 			dev.GetVirtualDevice().Backing = backingInfo
 			deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 				Device:    dev,
@@ -418,20 +413,20 @@ func (s *Session) cloneVMNicDeviceChanges(
 		return deviceChanges, nil
 	}
 
-	newNetDevices, err := s.createNetworkDevices(vmCtx.VMContext)
+	newNICs, err := s.createNetworkDevices(vmCtx.VMContext)
 	if err != nil {
 		return nil, err
 	}
 
 	// Remove all the existing interfaces, and then add the new interfaces.
-	deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcVMNetDevices)+len(newNetDevices))
-	for _, dev := range srcVMNetDevices {
+	deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcNICs)+len(newNICs))
+	for _, dev := range srcNICs {
 		deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 			Device:    dev,
 			Operation: vimTypes.VirtualDeviceConfigSpecOperationRemove,
 		})
 	}
-	for _, dev := range newNetDevices {
+	for _, dev := range newNICs {
 		deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 			Device:    dev,
 			Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
@@ -443,14 +438,9 @@ func (s *Session) cloneVMNicDeviceChanges(
 
 func cloneVMDiskLocators(
 	vmCtx VMCloneContext,
-	sourceVM *res.VirtualMachine,
+	disks object.VirtualDeviceList,
 	datastore *vimTypes.ManagedObjectReference,
 	profile []vimTypes.BaseVirtualMachineProfileSpec) ([]vimTypes.VirtualMachineRelocateSpecDiskLocator, error) {
-
-	disks, err := sourceVM.GetVirtualDisks(vmCtx)
-	if err != nil {
-		return nil, err
-	}
 
 	diskLocators := make([]vimTypes.VirtualMachineRelocateSpecDiskLocator, 0, len(disks))
 	for _, disk := range disks {
@@ -461,6 +451,7 @@ func cloneVMDiskLocators(
 			// TODO: Check if policy is encrypted and use correct DiskMoveType
 			DiskMoveType: string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveChildMostDiskBacking),
 		}
+
 		if backing, ok := disk.(*vimTypes.VirtualDisk).Backing.(*vimTypes.VirtualDiskFlatVer2BackingInfo); ok {
 			switch vmCtx.StorageProvisioning {
 			case string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin):
@@ -475,6 +466,7 @@ func cloneVMDiskLocators(
 			}
 			locator.DiskBackingInfo = backing
 		}
+
 		diskLocators = append(diskLocators, locator)
 	}
 

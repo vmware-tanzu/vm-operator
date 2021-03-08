@@ -121,7 +121,7 @@ func intgTests() {
 			})
 		})
 
-		Describe("When VirtualMachineService selector matches virtual machines with no probe", func() {
+		XDescribe("When VirtualMachineService selector matches virtual machines with no probe", func() {
 			var (
 				vm1       vmopv1alpha1.VirtualMachine
 				vm2       vmopv1alpha1.VirtualMachine

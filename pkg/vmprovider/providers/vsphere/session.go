@@ -47,6 +47,8 @@ type Session struct {
 	network      object.NetworkReference // BMV: Dead? (never set in ConfigMap)
 	datastore    *object.Datastore
 
+	networkProvider NetworkProvider
+
 	extraConfig           map[string]string
 	storageClassRequired  bool
 	useInventoryForImages bool
@@ -173,6 +175,8 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 			s.extraConfig[k] = v
 		}
 	}
+
+	s.networkProvider = NewNetworkProvider(s.k8sClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
 
 	// Initialize tagging information
 	s.tagInfo = make(map[string]string)
@@ -660,9 +664,7 @@ func ComputeCPUInfo(ctx context.Context, cluster *object.ClusterComputeResource)
 		return 0, errors.New("Must have a valid cluster reference to compute the cpu info")
 	}
 
-	obj := cluster.Reference()
-
-	err := cluster.Properties(ctx, obj, nil, &cr)
+	err := cluster.Properties(ctx, cluster.Reference(), nil, &cr)
 	if err != nil {
 		return 0, err
 	}

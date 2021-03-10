@@ -381,16 +381,41 @@ func (s *Session) createCloneSpec(
 	return cloneSpec, nil
 }
 
+func (s *Session) createNetworkDevices(vmCtx VMContext) ([]vimTypes.BaseVirtualDevice, error) {
+	// This negative device key is the traditional range used for network interfaces.
+	deviceKey := int32(-100)
+	devices := make([]vimTypes.BaseVirtualDevice, 0, len(vmCtx.VM.Spec.NetworkInterfaces))
+
+	for i := range vmCtx.VM.Spec.NetworkInterfaces {
+		vif := vmCtx.VM.Spec.NetworkInterfaces[i]
+
+		ethInfo, err := s.networkProvider.EnsureNetworkInterface(vmCtx, &vif)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create vnic '%v'", vif)
+		}
+
+		nic := ethInfo.Device.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+		nic.Key = deviceKey
+		nic.ExternalId = vif.EthernetCardType
+		devices = append(devices, ethInfo.Device)
+
+		deviceKey--
+	}
+
+	return devices, nil
+}
+
 // cloneVMNicDeviceChanges returns changes for network device changes that need to be performed
 // on a new VM being cloned from the source VM.
 func (s *Session) cloneVMNicDeviceChanges(
 	vmCtx VMCloneContext,
 	srcNICs object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
-	// To ease local and simulation testing if the VM Spec interfaces is empty, leave the
+	// To ease local and simulation testing, if the VM Spec interfaces is empty, leave the
 	// existing interfaces. If a default network as been configured, change the backing for
 	// all the existing interfaces. In non-test environments, this can cause confusion
-	// because the existing interfaces will end up on some default network.
+	// because the existing interfaces will end up on some default network so we should
+	// work to remove or better guard this.
 	if len(vmCtx.VM.Spec.NetworkInterfaces) == 0 {
 		if s.network == nil {
 			return nil, nil
@@ -412,6 +437,8 @@ func (s *Session) cloneVMNicDeviceChanges(
 
 		return deviceChanges, nil
 	}
+
+	// BMV: Is this really required for cloning, or defer to later update reconcile like OVF deploy?
 
 	newNICs, err := s.createNetworkDevices(vmCtx.VMContext)
 	if err != nil {

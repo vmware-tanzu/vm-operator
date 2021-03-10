@@ -9,7 +9,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/task"
@@ -21,36 +20,9 @@ import (
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
-func (s *Session) createNetworkDevices(vmCtx VMContext) ([]vimTypes.BaseVirtualDevice, error) {
-	// This negative device key is the traditional range used for network interfaces.
-	deviceKey := int32(-100)
-	devices := make([]vimTypes.BaseVirtualDevice, 0, len(vmCtx.VM.Spec.NetworkInterfaces))
-
-	for i := range vmCtx.VM.Spec.NetworkInterfaces {
-		vif := vmCtx.VM.Spec.NetworkInterfaces[i]
-
-		np, err := GetNetworkProvider(&vif, s.k8sClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to get network provider")
-		}
-
-		dev, err := np.CreateVnic(vmCtx, vmCtx.VM, &vif)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to create vnic '%v'", vif)
-		}
-
-		nic := dev.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-		nic.Key = deviceKey
-		devices = append(devices, dev)
-
-		deviceKey--
-	}
-
-	return devices, nil
-}
-
-func (s *Session) reconcileVMNicDeviceChanges(
+func reconcileVMNicDeviceChanges(
 	vmCtx VMUpdateContext,
+	expectedNICs object.VirtualDeviceList,
 	existingNICs object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
 	// Assume this is the special condition in cloneVMNicDeviceChanges(), instead of actually
@@ -59,15 +31,10 @@ func (s *Session) reconcileVMNicDeviceChanges(
 		return nil, nil
 	}
 
-	newNetDevices, err := s.createNetworkDevices(vmCtx.VMContext)
-	if err != nil {
-		return nil, err
-	}
-
 	var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
 
-	for _, newDev := range newNetDevices {
-		newNic := newDev.(vimTypes.BaseVirtualEthernetCard)
+	for _, expectedDev := range expectedNICs {
+		newNic := expectedDev.(vimTypes.BaseVirtualEthernetCard)
 		newNicExternalID := newNic.GetVirtualEthernetCard().ExternalId
 		newNicBacking := newNic.GetVirtualEthernetCard().Backing
 		newNicBackingType := reflect.TypeOf(newNicBacking)
@@ -79,6 +46,9 @@ func (s *Session) reconcileVMNicDeviceChanges(
 		// the MAC address. When we support something other than just vmxnet3 we should compare
 		// those types too. And we should make this truly reconcile as well by comparing the full
 		// state (support EDIT instead of only ADD/REMOVE operations).
+		//
+		// Another tack we could take is force the VM's device order to match the Spec order, but
+		// that could lead to spurious removals.
 		for idx, curDev := range existingNICs {
 			nic := curDev.(vimTypes.BaseVirtualEthernetCard)
 
@@ -104,7 +74,7 @@ func (s *Session) reconcileVMNicDeviceChanges(
 			// Cribbed from VirtualDeviceList.SelectByBackingInfo().
 			switch a := db.(type) {
 			case *vimTypes.VirtualEthernetCardNetworkBackingInfo:
-				// Used only in testing.
+				// This backing is only used in testing.
 				b := newNicBacking.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
 				backingMatch = a.DeviceName == b.DeviceName
 			case *vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo:
@@ -124,7 +94,7 @@ func (s *Session) reconcileVMNicDeviceChanges(
 		if matchingIdx == -1 {
 			// No matching backing found so add new NIC.
 			deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
-				Device:    newDev,
+				Device:    expectedDev,
 				Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
 			})
 		} else {
@@ -155,19 +125,30 @@ func isCustomizationPendingError(err error) bool {
 	return false
 }
 
-func (s *Session) customizeVM(vmCtx VMUpdateContext, resVM *res.VirtualMachine) error {
+func (s *Session) customizeVM(
+	vmCtx VMUpdateContext,
+	resVM *res.VirtualMachine,
+	nicCustomizations []vimTypes.CustomizationAdapterMapping) error {
+
 	customizationPending, err := resVM.IsGuestCustomizationPending(vmCtx)
 	if err != nil {
 		return err
 	}
 
 	if customizationPending {
-		// TODO: We should consider if we want to clear the pending customization instead
-		// since it might be stale.
+		// TODO: We should really determine if the pending customization is stale, clear it
+		// if so, and then re-customize. Otherwise, the power on could perpetual fail.
 		return nil
 	}
 
-	customizationSpec, err := s.GetCustomizationSpec(vmCtx.VMContext, resVM)
+	// TODO: Does not belong here
+	dnsServers, err := GetNameserversFromConfigMap(s.k8sClient)
+	if err != nil {
+		vmCtx.Logger.Error(err, "Unable to get DNS server list from ConfigMap")
+		// Prior code only logged.
+	}
+
+	customizationSpec, err := s.CreateCustomizationSpec(vmCtx.VMContext, resVM, dnsServers, nicCustomizations)
 	if err != nil {
 		return err
 	}
@@ -308,8 +289,7 @@ func deltaConfigSpecExtraConfig(
 	if conditions.IsTrue(vmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) &&
 		currentExtraConfig[VMOperatorV1Alpha1ExtraConfigKey] == VMOperatorV1Alpha1ConfigReady {
 		// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
-		configSpec.ExtraConfig = append(
-			configSpec.ExtraConfig,
+		configSpec.ExtraConfig = append(configSpec.ExtraConfig,
 			&vimTypes.OptionValue{Key: VMOperatorV1Alpha1ExtraConfigKey, Value: VMOperatorV1Alpha1ConfigEnabled})
 	}
 }
@@ -350,6 +330,7 @@ func deltaConfigSpecChangeBlockTracking(
 	}
 }
 
+// TODO: Fix parameter explosion.
 func deltaConfigSpec(
 	vmCtx VMContext,
 	config *vimTypes.VirtualMachineConfigInfo,
@@ -386,7 +367,12 @@ func deltaConfigSpec(
 	return configSpec
 }
 
-func (s *Session) poweredOffVMReconfigure(vmCtx VMUpdateContext, resVM *res.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+func (s *Session) prePowerOnVMReconfigure(
+	vmCtx VMUpdateContext,
+	resVM *res.VirtualMachine,
+	expectedNICs object.VirtualDeviceList,
+	vmConfigArgs vmprovider.VmConfigArgs) error {
+
 	config, err := resVM.GetConfig(vmCtx)
 	if err != nil {
 		return err
@@ -399,7 +385,7 @@ func (s *Session) poweredOffVMReconfigure(vmCtx VMUpdateContext, resVM *res.Virt
 	}
 
 	virtualDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
-	virtualNICs := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
+	existingNICs := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
 
 	configSpec := deltaConfigSpec(
 		vmCtx.VMContext,
@@ -417,7 +403,7 @@ func (s *Session) poweredOffVMReconfigure(vmCtx VMUpdateContext, resVM *res.Virt
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, diskDeviceChanges...)
 
-	nicDeviceChanges, err := s.reconcileVMNicDeviceChanges(vmCtx, virtualNICs)
+	nicDeviceChanges, err := reconcileVMNicDeviceChanges(vmCtx, expectedNICs, existingNICs)
 	if err != nil {
 		return err
 	}
@@ -425,11 +411,52 @@ func (s *Session) poweredOffVMReconfigure(vmCtx VMUpdateContext, resVM *res.Virt
 
 	defaultConfigSpec := &vimTypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
-		// TODO: Pretty-print differences
+		vmCtx.Logger.Info("Pre PowerOn Reconfigure", "configSpec", configSpec)
 		if err := resVM.Reconfigure(vmCtx, configSpec); err != nil {
-			vmCtx.Logger.Error(err, "powered off reconfigure failed")
+			vmCtx.Logger.Error(err, "pre power on reconfigure failed")
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (s *Session) ensureNetworkInterfaces(vmCtx VMUpdateContext) (NetworkInterfaceInfoList, error) {
+	// This negative device key is the traditional range used for network interfaces.
+	deviceKey := int32(-100)
+
+	var netIfList = make(NetworkInterfaceInfoList, len(vmCtx.VM.Spec.NetworkInterfaces))
+	for i := range vmCtx.VM.Spec.NetworkInterfaces {
+		vif := vmCtx.VM.Spec.NetworkInterfaces[i]
+
+		info, err := s.networkProvider.EnsureNetworkInterface(vmCtx.VMContext, &vif)
+		if err != nil {
+			return nil, err
+		}
+
+		// govmomi assigns a random device key. Fix that up here.
+		info.Device.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().Key = deviceKey
+		deviceKey--
+		netIfList[i] = *info
+	}
+
+	return netIfList, nil
+}
+
+func (s *Session) prepareVMForPowerOn(vmCtx VMUpdateContext, resVM *res.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx)
+	if err != nil {
+		return err
+	}
+
+	err = s.prePowerOnVMReconfigure(vmCtx, resVM, netIfList.GetVirtualDeviceList(), vmConfigArgs)
+	if err != nil {
+		return err
+	}
+
+	err = s.customizeVM(vmCtx, resVM, netIfList.GetInterfaceCustomizations())
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -446,7 +473,7 @@ func (s *Session) poweredOnVMReconfigure(vmCtx VMUpdateContext, resVM *res.Virtu
 
 	defaultConfigSpec := &vimTypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
-		// TODO: Pretty-print differences
+		vmCtx.Logger.Info("PoweredOn Reconfigure", "configSpec", configSpec)
 		if err := resVM.Reconfigure(vmCtx, configSpec); err != nil {
 			vmCtx.Logger.Error(err, "powered on reconfigure failed")
 			return err
@@ -497,17 +524,14 @@ func (s *Session) UpdateVirtualMachine(
 				return nil, err
 			}
 		}
+
 		// BMV: We'll likely want to reconfigure a powered off VM too, but right now
-		// we'll defer that until the pre power on.
+		// we'll defer that until the pre power on (and until more people complain
+		// that the UI appears wrong).
 
 	case v1alpha1.VirtualMachinePoweredOn:
 		if vmCtx.IsOff {
-			err := s.poweredOffVMReconfigure(vmCtx, resVM, vmConfigArgs)
-			if err != nil {
-				return nil, err
-			}
-
-			err = s.customizeVM(vmCtx, resVM)
+			err := s.prepareVMForPowerOn(vmCtx, resVM, vmConfigArgs)
 			if err != nil {
 				return nil, err
 			}

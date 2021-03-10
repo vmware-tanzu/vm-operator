@@ -26,6 +26,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
+	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -214,7 +215,7 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 	}
 
 	if len(resourceQuotas.Items) == 0 {
-		validationErrs = append(validationErrs, fmt.Sprintf("no ResourceQuotas assigned to namespace %s", namespace))
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.NoResourceQuota, namespace))
 		return validationErrs
 	}
 
@@ -236,18 +237,37 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 
 	for i, nif := range vm.Spec.NetworkInterfaces {
 		switch nif.NetworkType {
-		case vsphere.NsxtNetworkType, "":
+		case vsphere.NsxtNetworkType:
+			// Empty NetworkName is allowed to let NCP pick the namespace default.
 		case vsphere.VdsNetworkType:
 			if nif.NetworkName == "" {
 				validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, i))
 			}
+		case "":
+			// Must unfortunately allow for testing.
 		default:
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, i))
 		}
+
 		if _, ok := networkNames[nif.NetworkName]; ok {
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, i))
+		} else {
+			networkNames[nif.NetworkName] = struct{}{}
 		}
-		networkNames[nif.NetworkName] = struct{}{}
+
+		if nif.ProviderRef != nil {
+			// We only support ProviderRef with NetOP types.
+			gvk := netopv1alpha1.SchemeGroupVersion.WithKind(reflect.TypeOf(netopv1alpha1.NetworkInterface{}).Name())
+			if gvk.Group != nif.ProviderRef.APIGroup || gvk.Kind != nif.ProviderRef.Kind {
+				validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeProviderRefNotSupportedFmt, i))
+			}
+		}
+
+		switch nif.EthernetCardType {
+		case "", "pcnet32", "e1000", "e1000e", "vmxnet2", "vmxnet3":
+		default:
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeEthCardTypeNotSupportedFmt, i))
+		}
 	}
 
 	return validationErrs

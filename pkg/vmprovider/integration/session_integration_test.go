@@ -249,24 +249,6 @@ var _ = Describe("Sessions", func() {
 				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
 				_, ok = dev2.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
 				Expect(ok).Should(BeTrue())
-				custSpec, err := session.GetCustomizationSpec(vmContext(ctx, vm), clonedVM)
-				Expect(err).NotTo(HaveOccurred())
-				identity, ok := custSpec.Identity.(*vimTypes.CustomizationLinuxPrep)
-				Expect(ok).Should(BeTrue())
-				hostName, ok := identity.HostName.(*vimTypes.CustomizationFixedName)
-				Expect(ok).Should(BeTrue())
-				Expect(hostName.Name).Should(Equal(vm.Name))
-				dnsServers := custSpec.GlobalIPSettings.DnsServerList
-				Expect(len(dnsServers)).Should(Equal(2))
-				Expect(dnsServers).Should(ContainElement("8.8.8.8"))
-				Expect(dnsServers).Should(ContainElement("8.8.4.4"))
-
-				Expect(len(custSpec.NicSettingMap)).Should(Equal(2))
-				customization := custSpec.NicSettingMap[0]
-				_, ok = customization.Adapter.Ip.(*vimTypes.CustomizationDhcpIpGenerator)
-				customization = custSpec.NicSettingMap[1]
-				_, ok = customization.Adapter.Ip.(*vimTypes.CustomizationDhcpIpGenerator)
-				Expect(ok).Should(BeTrue())
 			})
 		})
 

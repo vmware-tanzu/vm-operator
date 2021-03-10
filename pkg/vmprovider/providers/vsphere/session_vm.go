@@ -129,13 +129,14 @@ func resizeVirtualDisksDeviceChanges(
 	return deviceChanges, nil
 }
 
-// GetCustomizationSpec creates the customization spec for the vm
-func (s *Session) GetCustomizationSpec(
+// CreateCustomizationSpec creates the customization spec for the vm
+func (s *Session) CreateCustomizationSpec(
 	vmCtx VMContext,
-	resVM *res.VirtualMachine) (*vimTypes.CustomizationSpec, error) {
+	resVM *res.VirtualMachine,
+	dnsServers []string,
+	nicCustomizations []vimTypes.CustomizationAdapterMapping) (*vimTypes.CustomizationSpec, error) {
 
 	customSpec := &vimTypes.CustomizationSpec{
-		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{},
 		// This spec is for Linux guest OS. Need to change if other guest OS needs to be supported.
 		Identity: &vimTypes.CustomizationLinuxPrep{
 			HostName: &vimTypes.CustomizationFixedName{
@@ -143,16 +144,10 @@ func (s *Session) GetCustomizationSpec(
 			},
 			HwClockUTC: vimTypes.NewBool(true),
 		},
+		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{
+			DnsServerList: dnsServers,
+		},
 	}
-
-	nameserverList, err := GetNameserversFromConfigMap(s.k8sClient)
-	if err != nil {
-		vmCtx.Logger.Error(err, "Cannot set customized DNS servers")
-	} else {
-		customSpec.GlobalIPSettings.DnsServerList = nameserverList
-	}
-
-	var interfaceCustomizations []vimTypes.CustomizationAdapterMapping
 
 	if len(vmCtx.VM.Spec.NetworkInterfaces) == 0 {
 		// In the corresponding code in cloneVMNicDeviceChanges(), none of the existing interfaces were removed,
@@ -164,6 +159,7 @@ func (s *Session) GetCustomizationSpec(
 			return nil, err
 		}
 
+		var interfaceCustomizations []vimTypes.CustomizationAdapterMapping
 		for _, dev := range netDevices {
 			card, ok := dev.(vimTypes.BaseVirtualEthernetCard)
 			if !ok {
@@ -177,31 +173,10 @@ func (s *Session) GetCustomizationSpec(
 				},
 			})
 		}
+		customSpec.NicSettingMap = interfaceCustomizations
 	} else {
-		// In the corresponding code in GetNicChangeSpecs(), any existing interfaces were removed, and
-		// the interfaces in NetworkInterfaces[] were added in order. There is an assumption here that
-		// net devices are in the same order, and that they are created in in PCI order for GOSC. That is
-		// not really an issue right now because we only ever one network interface. If needed, we can
-		// later sort the devices by key like WCP does, but in general NIC reconciliation is difficult
-		// with what's currently available. This code is in general pretty brittle.
-		for idx := range vmCtx.VM.Spec.NetworkInterfaces {
-			nif := vmCtx.VM.Spec.NetworkInterfaces[idx]
-
-			np, err := GetNetworkProvider(&nif, s.k8sClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to get network provider")
-			}
-
-			customization, err := np.GetInterfaceGuestCustomization(vmCtx.VM, &nif)
-			if err != nil {
-				return nil, errors.Wrapf(err, "failed to get guest customization for interface %+v", nif)
-			}
-
-			interfaceCustomizations = append(interfaceCustomizations, *customization)
-		}
+		customSpec.NicSettingMap = nicCustomizations
 	}
-
-	customSpec.NicSettingMap = interfaceCustomizations
 
 	return customSpec, nil
 }

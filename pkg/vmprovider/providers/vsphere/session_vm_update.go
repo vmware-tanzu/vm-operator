@@ -215,10 +215,7 @@ func deltaConfigSpecExtraConfig(
 	for k, v := range globalExtraConfig {
 		extraConfig[k] = v
 	}
-	// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
-	if conditions.IsTrue(vmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) {
-		extraConfig[VMOperatorV1Alpha1ExtraConfigKey] = VMOperatorV1Alpha1ConfigEnabled
-	}
+
 	if vmMetadata != nil && vmMetadata.Transport == v1alpha1.VirtualMachineMetadataExtraConfigTransport {
 		for k, v := range vmMetadata.Data {
 			if strings.HasPrefix(k, ExtraConfigGuestInfoPrefix) {
@@ -244,6 +241,14 @@ func deltaConfigSpecExtraConfig(
 		if _, exists := currentExtraConfig[k]; !exists {
 			configSpec.ExtraConfig = append(configSpec.ExtraConfig, &vimTypes.OptionValue{Key: k, Value: v})
 		}
+	}
+
+	if conditions.IsTrue(vmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) &&
+		currentExtraConfig[VMOperatorV1Alpha1ExtraConfigKey] != VMOperatorV1Alpha1ConfigEnabled {
+		// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
+		configSpec.ExtraConfig = append(
+			configSpec.ExtraConfig,
+			&vimTypes.OptionValue{Key: VMOperatorV1Alpha1ExtraConfigKey, Value: VMOperatorV1Alpha1ConfigEnabled})
 	}
 }
 

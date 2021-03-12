@@ -77,6 +77,8 @@ var _ = Describe("Delta ConfigSpec", func() {
 		Context("Updates configSpec.ExtraConfig", func() {
 			BeforeEach(func() {
 				conditions.MarkTrue(vmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
+				config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{
+					Key: VMOperatorV1Alpha1ExtraConfigKey, Value: VMOperatorV1Alpha1ConfigReady})
 				vmMetadata.Data["guestinfo.test"] = "test"
 				vmMetadata.Data["nvram"] = "this should ignored"
 				globalExtraConfig["global"] = "test"

@@ -244,7 +244,7 @@ func deltaConfigSpecExtraConfig(
 	}
 
 	if conditions.IsTrue(vmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) &&
-		currentExtraConfig[VMOperatorV1Alpha1ExtraConfigKey] != VMOperatorV1Alpha1ConfigEnabled {
+		currentExtraConfig[VMOperatorV1Alpha1ExtraConfigKey] == VMOperatorV1Alpha1ConfigReady {
 		// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
 		configSpec.ExtraConfig = append(
 			configSpec.ExtraConfig,

@@ -1,0 +1,105 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+configurations:
+- kustomizeconfig.yaml
+
+resources:
+- ../crd
+- ../manager
+- ../rbac
+- ../webhook
+- ../certmanager
+
+patchesStrategicMerge:
+- manager_auth_proxy_patch.yaml
+- manager_webhook_patch.yaml
+- manager_replicas_patch.yaml
+- manager_pod_info_patch.yaml
+- manager_tolerations_patch.yaml
+- manager_update_strategy_patch.yaml
+- manager_leader_election_id_patch.yaml
+- manager_max_concurrent_reconciles_patch.yaml
+
+vars:
+- name: LEADER_ELECTION_ID
+  objref:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: controller-manager
+  fieldref:
+    fieldpath: metadata.name
+- name: WEBHOOK_SERVICE_NAMESPACE
+  objref:
+    apiVersion: v1
+    kind: Service
+    name: webhook-service
+  fieldref:
+    fieldpath: metadata.namespace
+- name: WEBHOOK_SERVICE_NAME
+  objref:
+    apiVersion: v1
+    kind: Service
+    name: webhook-service
+  fieldref:
+    fieldpath: metadata.name
+- name: WEBHOOK_SERVICE_CONTAINER_PORT
+  objref:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: controller-manager
+  fieldref:
+    # Note that this assumes "manager" is containers[0] and the webhook port is ports[0]
+    fieldpath: spec.template.spec.containers[0].ports[0].containerPort
+- name: WEBHOOK_SERVICE_CONTAINER_PORT_STRING
+  objref:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: controller-manager
+  fieldref:
+    fieldpath: metadata.annotations["webhooks.vmoperator.vmware.com/service-container-port"]
+- name: WEBHOOK_SECRET_VOLUME_MOUNT_PATH
+  objref:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: controller-manager
+  fieldref:
+    fieldpath: metadata.annotations["webhooks.vmoperator.vmware.com/secret-volume-mount-path"]
+- name: WEBHOOK_SECRET_VOLUME_NAME
+  objref:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: controller-manager
+  fieldref:
+    fieldpath: metadata.annotations["webhooks.vmoperator.vmware.com/secret-volume-name"]
+- name: WEBHOOK_CERTIFICATE_NAMESPACE # namespace of the certificate CR
+  objref:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1alpha2
+    name: serving-cert # this name should match the one in certificate.yaml
+  fieldref:
+    fieldpath: metadata.namespace
+- name: WEBHOOK_CERTIFICATE_NAME
+  objref:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1alpha2
+    name: serving-cert # this name should match the one in certificate.yaml
+- name: WEBHOOK_SECRET_NAMESPACE
+  objref:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1alpha2
+    name: serving-cert # this name should match the one in certificate.yaml
+  fieldref:
+    fieldpath: metadata.namespace
+- name: WEBHOOK_SECRET_NAME
+  objref:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1alpha2
+    name: serving-cert # this name should match the one in certificate.yaml
+  fieldref:
+    fieldpath: spec.secretName
+

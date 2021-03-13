@@ -1,0 +1,5 @@
+This contains the types needed by VM Operator from https://gitlab.eng.vmware.com/hatchway/vsphere-csi-driver
+
+Dependencies issues in that repo - "require k8s.io/kubernetes v1.14.10" - make it hard to go mod import
+that repo so this directory contains a copy of cns.vmware.com/v1a1 CnsNodeVmAttachment until we can sort
+out the dependency issues.

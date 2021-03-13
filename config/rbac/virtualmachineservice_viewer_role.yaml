@@ -1,0 +1,20 @@
+# permissions to do viewer virtualmachineservices.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: virtualmachineservice-viewer-role
+rules:
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachineservices
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachineservices/status
+  verbs:
+  - get

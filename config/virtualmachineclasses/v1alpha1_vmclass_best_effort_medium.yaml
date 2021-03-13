@@ -1,0 +1,8 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachineClass
+metadata:
+  name: best-effort-medium
+spec:
+  hardware:
+    cpus: 2
+    memory: 8Gi

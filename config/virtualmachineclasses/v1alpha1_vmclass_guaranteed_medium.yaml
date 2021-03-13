@@ -1,0 +1,13 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachineClass
+metadata:
+  name: guaranteed-medium
+spec:
+  hardware:
+    cpus: 2
+    memory: 8Gi
+  policies:
+    resources:
+      requests:
+        cpu: 2000m
+        memory: 8Gi

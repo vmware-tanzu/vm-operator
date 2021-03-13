@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: kubeadmNode
+        operator: "Equal"
+        value: "master"
+        effect: "NoSchedule"

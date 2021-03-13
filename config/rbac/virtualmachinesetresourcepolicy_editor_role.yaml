@@ -1,0 +1,26 @@
+# permissions to do edit virtualmachinesetresourcepolicies.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: virtualmachinesetresourcepolicy-editor-role
+rules:
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachinesetresourcepolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachinesetresourcepolicies/status
+  verbs:
+  - get
+  - patch
+  - update

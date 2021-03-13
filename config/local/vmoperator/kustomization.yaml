@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Adds namespace to all resources.
+namespace: vmware-system-vmop
+
+# Value of this field is prepended to the
+# names of all resources, e.g. a deployment named
+# "wordpress" becomes "alices-wordpress".
+# Note that it should also match with the prefix (text before '-') of the namespace
+# field above.
+namePrefix: vmware-system-vmop-
+
+images:
+- name: controller:latest
+  newName: vmoperator-controller
+  newTag: latest
+
+resources:
+- ../../default
+- ../../crd/external-crds/cnsnodevmattachment-crd.yaml
+- ../../crd/external-crds/netoperator.vmware.com_networkinterfaces.yaml
+- ../../crd/external-crds/netoperator.vmware.com_vmxnet3networkinterfaces.yaml
+
+patchesStrategicMerge:
+- cpu_resources_patch.yaml
+- revision_history_limit.yaml
+- local_env_var_patch.yaml
+
+patchesJson6902:
+- path: namespace_patch.yaml
+  target:
+    version: v1
+    kind: Namespace
+    name: system

@@ -1,0 +1,9 @@
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: ContentSource
+metadata:
+  name: contentsource-sample
+spec:
+  providerref:
+    apiVersion: vmoperator.com/v1alpha1
+    kind: ContentLibraryProvider
+    name: contentlibrary-sample

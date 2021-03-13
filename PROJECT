@@ -1,0 +1,25 @@
+domain: vmware.com
+repo: github.com/vmware-tanzu/vm-operator
+resources:
+- group: vmoperator
+  kind: VirtualMachine
+  version: v1alpha1
+- group: vmoperator
+  kind: VirtualMachineClass
+  version: v1alpha1
+- group: vmoperator
+  kind: VirtualMachineSetResourcePolicy
+  version: v1alpha1
+- group: vmoperator
+  kind: VirtualMachineService
+  version: v1alpha1
+- group: vmoperator
+  kind: VirtualMachineImage
+  version: v1alpha1
+- group: vmoperator
+  kind: ContentSource
+  version: v1alpha1
+- group: vmoperator
+  kind: ContentLibraryProvider
+  version: v1alpha1
+version: "2"

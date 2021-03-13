@@ -1,0 +1,46 @@
+# This kustomization.yaml is not intended to be run by itself,
+# since it depends on service name and namespace that are out of this kustomize package.
+# It should be run by config/default
+resources:
+- bases/vmoperator.vmware.com_virtualmachines.yaml
+- bases/vmoperator.vmware.com_virtualmachineclasses.yaml
+- bases/vmoperator.vmware.com_virtualmachineclassbindings.yaml
+- bases/vmoperator.vmware.com_virtualmachinesetresourcepolicies.yaml
+- bases/vmoperator.vmware.com_virtualmachineservices.yaml
+- bases/vmoperator.vmware.com_virtualmachineimages.yaml
+- bases/vmoperator.vmware.com_contentsources.yaml
+- bases/vmoperator.vmware.com_contentsourcebindings.yaml
+- bases/vmoperator.vmware.com_contentlibraryproviders.yaml
+# +kubebuilder:scaffold:crdkustomizeresource
+
+patches:
+- path: patches/crd_preserveUnknownFields.yaml
+  target:
+    kind: CustomResourceDefinition
+
+patchesStrategicMerge:
+# [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
+# patches here are for enabling the conversion webhook for each CRD
+#- patches/webhook_in_virtualmachines.yaml
+#- patches/webhook_in_virtualmachineclasses.yaml
+#- patches/webhook_in_virtualmachinesetresourcepolicies.yaml
+#- patches/webhook_in_virtualmachineservices.yaml
+#- patches/webhook_in_virtualmachineimages.yaml
+#- patches/webhook_in_contentsources.yaml
+#- patches/webhook_in_contentlibraryproviders.yaml
+# +kubebuilder:scaffold:crdkustomizewebhookpatch
+
+# [CERTMANAGER] To enable webhook, uncomment all the sections with [CERTMANAGER] prefix.
+# patches here are for enabling the CA injection for each CRD
+#- patches/cainjection_in_virtualmachines.yaml
+#- patches/cainjection_in_virtualmachineclasses.yaml
+#- patches/cainjection_in_virtualmachinesetresourcepolicies.yaml
+#- patches/cainjection_in_virtualmachineservices.yaml
+#- patches/cainjection_in_virtualmachineimages.yaml
+#- patches/cainjection_in_contentsources.yaml
+#- patches/cainjection_in_contentlibraryproviders.yaml
+# +kubebuilder:scaffold:crdkustomizecainjectionpatch
+
+# the following config is for teaching kustomize how to do kustomization for CRDs.
+configurations:
+- kustomizeconfig.yaml

@@ -36,11 +36,8 @@ var _ = Describe("virtualmachine images", func() {
 	var mockVmProviderInterface *mocks.MockOvfPropertyRetriever
 	var mockController *gomock.Controller
 	var (
-		versionKey    = "vmware-system-version"
-		versionVal    = "1.15"
-		imgKey        = "img-foo-1"
-		imgVal        = "bar-1"
-		imgValUpdated = imgVal + "-updated"
+		versionKey = "vmware-system-version"
+		versionVal = "1.15"
 	)
 
 	BeforeEach(func() {
@@ -51,92 +48,6 @@ var _ = Describe("virtualmachine images", func() {
 	AfterEach(func() {
 		mockController.Finish()
 
-	})
-
-	Context("when adding VM annotation", func() {
-		It("should fetch annotations from OVF properties", func() {
-
-			simulator.Test(func(ctx context.Context, c *vim25.Client) {
-				svm := simulator.Map.Any("VirtualMachine").(*simulator.VirtualMachine)
-				obj := object.NewVirtualMachine(c, svm.Reference())
-
-				expectedAnnotations := map[string]string{
-					versionKey:                        versionVal,
-					imgKey:                            imgVal,
-					vsphere.VmOperatorVMImagePropsKey: "false",
-				}
-
-				resVm, err := res.NewVMFromObject(obj)
-				Expect(err).To(BeNil())
-				vmAnnotations := map[string]string{}
-				vmAnnotations[versionKey] = versionVal
-
-				imgAnnotations := map[string]string{}
-				imgAnnotations[imgKey] = imgVal
-				mockVmProviderInterface.EXPECT().
-					GetOvfInfoFromVM(context.Background(), resVm).
-					Return(imgAnnotations, nil).
-					Times(1)
-
-				// Test we fetch them the first time
-				err = vsphere.AddVmImageAnnotations(vmAnnotations, ctx, mockVmProviderInterface, resVm)
-				Expect(err).To(BeNil())
-				Expect(vmAnnotations).Should(Equal(expectedAnnotations))
-
-				By("not fetching them again if already there")
-				// Test we don't fetch them the second time
-				err = vsphere.AddVmImageAnnotations(vmAnnotations, ctx, mockVmProviderInterface, resVm)
-				Expect(err).To(BeNil())
-				Expect(vmAnnotations).Should(Equal(expectedAnnotations))
-
-				By("not fetching them again even if there are changed OVF properties on image")
-				// Test that we don't fetch if we have updated image annotations
-				imgAnnotations[imgKey] = imgValUpdated
-				mockVmProviderInterface.EXPECT().
-					GetOvfInfoFromVM(gomock.Any(), gomock.Any()).
-					Return(imgAnnotations, nil).
-					Times(0)
-
-				err = vsphere.AddVmImageAnnotations(vmAnnotations, ctx, mockVmProviderInterface, resVm)
-				Expect(err).To(BeNil())
-				Expect(vmAnnotations).Should(Equal(expectedAnnotations))
-
-				By("re-fetch image properties when we reset the cache key")
-				vmAnnotations[vsphere.VmOperatorVMImagePropsKey] = "true"
-				expectedAnnotations[imgKey] = imgValUpdated
-				mockVmProviderInterface.EXPECT().
-					GetOvfInfoFromVM(context.Background(), resVm).
-					Return(imgAnnotations, nil).
-					Times(1)
-				err = vsphere.AddVmImageAnnotations(vmAnnotations, ctx, mockVmProviderInterface, resVm)
-				Expect(err).To(BeNil())
-				Expect(vmAnnotations).Should(Equal(expectedAnnotations))
-			})
-		})
-		It("handles errors from VC", func() {
-			simulator.Test(func(ctx context.Context, c *vim25.Client) {
-				svm := simulator.Map.Any("VirtualMachine").(*simulator.VirtualMachine)
-				obj := object.NewVirtualMachine(c, svm.Reference())
-
-				expectedAnnotations := map[string]string{
-					versionKey: versionVal,
-				}
-				resVm, err := res.NewVMFromObject(obj)
-				Expect(err).To(BeNil())
-				vmAnnotations := map[string]string{}
-				vmAnnotations[versionKey] = versionVal
-
-				ovfFetchErr := errors.New("VC error foo bar is closed")
-				mockVmProviderInterface.EXPECT().
-					GetOvfInfoFromVM(context.Background(), resVm).
-					Return(map[string]string{}, ovfFetchErr).
-					Times(1)
-				err = vsphere.AddVmImageAnnotations(vmAnnotations, ctx, mockVmProviderInterface, resVm)
-				Expect(err).To(Equal(ovfFetchErr))
-				Expect(vmAnnotations).Should(Not(BeEmpty()))
-				Expect(vmAnnotations).Should(Equal(expectedAnnotations))
-			})
-		})
 	})
 
 	Context("when annotate flag is set to false", func() {

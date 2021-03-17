@@ -20,7 +20,6 @@ import (
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -187,10 +186,6 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	return nil
 }
 
-func (s *Session) ServiceContent(ctx context.Context) (vimTypes.AboutInfo, error) {
-	return s.Client.VimClient().ServiceContent.About, nil
-}
-
 func (s *Session) CreateLibrary(ctx context.Context, contentSource string) (string, error) {
 	return NewContentLibraryProvider(s).CreateLibrary(ctx, contentSource)
 }
@@ -261,28 +256,6 @@ func (s *Session) GetItemIDFromCL(ctx context.Context, cl *library.Library, item
 	}
 
 	return itemIDs[0], nil
-}
-
-func (s *Session) ListVirtualMachines(ctx context.Context, path string) ([]*res.VirtualMachine, error) {
-	var vms []*res.VirtualMachine
-
-	objVms, err := s.Finder.VirtualMachineList(ctx, path)
-	if err != nil {
-		switch err.(type) {
-		case *find.NotFoundError, *find.DefaultNotFoundError:
-			return vms, nil
-		default:
-			return nil, err
-		}
-	}
-
-	for _, objVm := range objVms {
-		if resVm, err := res.NewVMFromObject(objVm); err == nil {
-			vms = append(vms, resVm)
-		}
-	}
-
-	return vms, nil
 }
 
 // findChildEntity finds a child entity by a given name under a parent object
@@ -583,11 +556,10 @@ func (s *Session) lookupVMByMoID(ctx context.Context, moId string) (*res.Virtual
 	return res.NewVMFromObject(vm)
 }
 
-func (s *Session) invokeFsrVirtualMachine(vmCtx VMContext, resVm *res.VirtualMachine) error {
+func (s *Session) invokeFsrVirtualMachine(vmCtx VMContext, resVM *res.VirtualMachine) error {
 	vmCtx.Logger.Info("Invoking FSR on VM")
 
-	vmRef := vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
-	task, err := VirtualMachineFSR(vmCtx, vmRef, s.Client.vimClient)
+	task, err := VirtualMachineFSR(vmCtx, resVM.MoRef(), s.Client.vimClient)
 	if err != nil {
 		vmCtx.Logger.Error(err, "InvokeFSR call failed")
 		return err
@@ -814,9 +786,7 @@ func (s *Session) IsVmMemberOfClusterModule(ctx context.Context, moduleId string
 }
 
 // AttachTagToVm attaches a tag with a given name to the vm.
-func (s *Session) AttachTagToVm(ctx context.Context, tagName string, tagCatName string, resVm *res.VirtualMachine) error {
-	log.Info("Attaching tag", "tag", tagName, "vmName", resVm.Name)
-
+func (s *Session) AttachTagToVm(ctx context.Context, tagName string, tagCatName string, vmRef mo.Reference) error {
 	restClient := s.Client.RestClient()
 	manager := tags.NewManager(restClient)
 	tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
@@ -824,14 +794,11 @@ func (s *Session) AttachTagToVm(ctx context.Context, tagName string, tagCatName 
 		return err
 	}
 
-	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
 	return manager.AttachTag(ctx, tag.ID, vmRef)
 }
 
 // DetachTagFromVm detaches a tag with a given name from the vm.
-func (s *Session) DetachTagFromVm(ctx context.Context, tagName string, tagCatName string, resVm *res.VirtualMachine) error {
-	log.Info("Detaching tag", "tag", tagName, "vmName", resVm.Name)
-
+func (s *Session) DetachTagFromVm(ctx context.Context, tagName string, tagCatName string, vmRef mo.Reference) error {
 	restClient := s.Client.RestClient()
 	manager := tags.NewManager(restClient)
 	tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
@@ -839,7 +806,6 @@ func (s *Session) DetachTagFromVm(ctx context.Context, tagName string, tagCatNam
 		return err
 	}
 
-	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
 	return manager.DetachTag(ctx, tag.ID, vmRef)
 }
 

@@ -7,11 +7,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
-	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -120,93 +118,15 @@ func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *types.Vir
 	return nil
 }
 
-// IpAddress returns the IpAddress of the VM if powered on, error otherwise
-func (vm *VirtualMachine) IpAddress(ctx context.Context) (string, error) {
-	vm.logger.V(5).Info("Get IpAddress")
-
-	ps, err := vm.vcVirtualMachine.PowerState(ctx)
-	if err != nil || ps == types.VirtualMachinePowerStatePoweredOff {
-		return "", err
-	}
-
-	// Just get some IP from guest
+func (vm *VirtualMachine) GetProperties(ctx context.Context, properties []string) (*mo.VirtualMachine, error) {
 	var o mo.VirtualMachine
-	err = vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"guest.ipAddress"}, &o)
+	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), properties, &o)
 	if err != nil {
-		return "", err
-	}
-
-	if o.Guest == nil {
-		vm.logger.Info("VM GuestInfo is empty")
-		return "", &find.NotFoundError{}
-	}
-
-	return o.Guest.IpAddress, nil
-}
-
-// IsGuestCustomizationPending checks if a VM has a pending guest customization.
-func (vm *VirtualMachine) IsGuestCustomizationPending(ctx context.Context) (bool, error) {
-	var o mo.VirtualMachine
-
-	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config.extraConfig"}, &o)
-	if err != nil {
-		vm.logger.Error(err, "Error getting VM config.ExtraConfig properties")
-		return false, err
-	}
-
-	for _, opt := range o.Config.ExtraConfig {
-		if optValue := opt.GetOptionValue(); optValue.Key == "tools.deployPkg.fileName" {
-			fileName := optValue.Value.(string)
-			if fileName != "" {
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
-}
-
-func (vm *VirtualMachine) GetConfig(ctx context.Context) (*types.VirtualMachineConfigInfo, error) {
-	var o mo.VirtualMachine
-
-	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config"}, &o)
-	if err != nil {
-		vm.logger.Error(err, "Error getting VM config properties")
+		vm.logger.Error(err, "Error getting VM properties")
 		return nil, err
 	}
 
-	return o.Config, nil
-}
-
-func (vm *VirtualMachine) InstanceUUID(ctx context.Context) (string, error) {
-	var o mo.VirtualMachine
-
-	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config.instanceUuid"}, &o)
-	if err != nil {
-		return "", err
-	}
-
-	return o.Config.InstanceUuid, nil
-}
-
-func (vm *VirtualMachine) BiosUUID(ctx context.Context) (string, error) {
-	return vm.vcVirtualMachine.UUID(ctx), nil
-}
-
-func (vm *VirtualMachine) ResourcePool(ctx context.Context) (string, error) {
-	rp, err := vm.vcVirtualMachine.ResourcePool(ctx)
-	if err != nil {
-		return "", err
-	}
-	return rp.Reference().Value, nil
-}
-
-func (vm *VirtualMachine) ChangeTrackingEnabled(ctx context.Context) (*bool, error) {
-	configInfo, err := vm.GetConfigInfo(ctx)
-	if err != nil || configInfo == nil {
-		return nil, err
-	}
-	return configInfo.ChangeTrackingEnabled, nil
+	return &o, nil
 }
 
 func (vm *VirtualMachine) ReferenceValue() string {
@@ -217,42 +137,6 @@ func (vm *VirtualMachine) ReferenceValue() string {
 func (vm *VirtualMachine) MoRef() types.ManagedObjectReference {
 	vm.logger.V(5).Info("Get MoRef")
 	return vm.vcVirtualMachine.Reference()
-}
-
-func (vm *VirtualMachine) ManagedObject(ctx context.Context) (*mo.VirtualMachine, error) {
-	vm.logger.V(5).Info("Get ManagedObject")
-	var props mo.VirtualMachine
-	if err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), nil, &props); err != nil {
-		return nil, err
-	}
-	return &props, nil
-}
-
-func (vm *VirtualMachine) ImageFields(ctx context.Context) (powerState, uuid, reference string) {
-	vm.logger.V(5).Info("ImageFields")
-	ps, _ := vm.vcVirtualMachine.PowerState(ctx)
-
-	powerState = string(ps)
-	uuid = vm.vcVirtualMachine.UUID(ctx)
-	reference = vm.ReferenceValue()
-	return
-}
-
-// GetCreationTime returns the creation time of the VM
-func (vm *VirtualMachine) GetCreationTime(ctx context.Context) (*time.Time, error) {
-	vm.logger.V(5).Info("GetCreationTime")
-	var o mo.VirtualMachine
-
-	err := vm.vcVirtualMachine.Properties(ctx, vm.vcVirtualMachine.Reference(), []string{"config.createDate"}, &o)
-	if err != nil {
-		return nil, err
-	}
-
-	if o.Config == nil {
-		return &time.Time{}, nil
-	}
-
-	return o.Config.CreateDate, nil
 }
 
 func (vm *VirtualMachine) UniqueID(ctx context.Context) (string, error) {
@@ -280,98 +164,22 @@ func (vm *VirtualMachine) UniqueID(ctx context.Context) (string, error) {
 	return vm.ReferenceValue(), nil
 }
 
-// GetStatus returns a VirtualMachine's Status
-func (vm *VirtualMachine) GetStatus(ctx context.Context) (*v1alpha1.VirtualMachineStatus, error) {
-	vm.logger.V(5).Info("GetStatus")
-	// TODO(bryanv) We should get all the needed fields in one call to VC.
-
-	ps, err := vm.vcVirtualMachine.PowerState(ctx)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get PowerState for VirtualMachine: %s", vm.Name)
-	}
-
-	host, err := vm.vcVirtualMachine.HostSystem(ctx)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get VM HostSystem for VirtualMachine: %s", vm.Name)
-	}
-
-	// Use ObjectName instead of Name to fetch hostname because ... ???
-	hostname, err := host.ObjectName(ctx)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get VM hostname for VirtualMachine: %s", vm.Name)
-	}
-
-	uniqueId, err := vm.UniqueID(ctx)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to generate a unique id for VirtualMachine: %s", vm.Name)
-	}
-
-	ip, err := vm.IpAddress(ctx)
-	if err != nil {
-		vm.logger.Error(err, "failed to get IP address for VirtualMachine")
-		ip = ""
-	}
-
-	biosUUID, err := vm.BiosUUID(ctx)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get BiosUUID for VirtualMachine %s", vm.Name)
-	}
-
-	instanceUUID, err := vm.InstanceUUID(ctx)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get InstanceUUID for VirtualMachine %s", vm.Name)
-	}
-
-	cbt, err := vm.ChangeTrackingEnabled(ctx)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get ChangeTrackingEnabled for VirtualMachine %s", vm.Name)
-	}
-
-	return &v1alpha1.VirtualMachineStatus{
-		Host:                hostname,
-		Phase:               v1alpha1.Created,
-		PowerState:          v1alpha1.VirtualMachinePowerState(ps),
-		VmIp:                ip,
-		UniqueID:            uniqueId,
-		BiosUUID:            biosUUID,
-		InstanceUUID:        instanceUUID,
-		ChangeBlockTracking: cbt,
-	}, nil
-}
-
-func (vm *VirtualMachine) GetConfigInfo(ctx context.Context) (*types.VirtualMachineConfigInfo, error) {
-	vm.logger.V(5).Info("GetConfigInfo")
-	moVM, err := vm.ManagedObject(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return moVM.Config, nil
-}
-
-func (vm *VirtualMachine) GetVAppVmConfigInfo(ctx context.Context) (*types.VmConfigInfo, error) {
-	vm.logger.V(5).Info("GetVAppVmConfigInfo")
-	moVM, err := vm.ManagedObject(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if moVM.Config.VAppConfig == nil {
-		return nil, nil
-	}
-	return moVM.Config.VAppConfig.GetVmConfigInfo(), nil
-}
-
 func (vm *VirtualMachine) GetOvfProperties(ctx context.Context) (map[string]string, error) {
 	vm.logger.V(5).Info("GetOvfProperties")
-	vAppConfig, err := vm.GetVAppVmConfigInfo(ctx)
+
+	moVM, err := vm.GetProperties(ctx, []string{"config.vAppConfig"})
 	if err != nil {
 		return nil, err
+	}
+
+	if moVM.Config == nil || moVM.Config.VAppConfig == nil {
+		return nil, nil
 	}
 
 	properties := make(map[string]string)
 
-	if vAppConfig != nil {
-		props := vAppConfig.Property
-		for _, prop := range props {
+	if vAppConfig := moVM.Config.VAppConfig.GetVmConfigInfo(); vAppConfig != nil {
+		for _, prop := range vAppConfig.Property {
 			if strings.HasPrefix(prop.Id, "vmware-system") {
 				if prop.Value != "" {
 					properties[prop.Id] = prop.Value
@@ -385,39 +193,12 @@ func (vm *VirtualMachine) GetOvfProperties(ctx context.Context) (map[string]stri
 	return properties, nil
 }
 
-func (vm *VirtualMachine) IsVMPoweredOff(ctx context.Context) (bool, error) {
-	vm.logger.V(5).Info("IsVMPoweredOff")
-	ps, err := vm.vcVirtualMachine.PowerState(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	return ps == types.VirtualMachinePowerStatePoweredOff, nil
-}
-
-func (vm *VirtualMachine) GetPowerState(ctx context.Context) (types.VirtualMachinePowerState, error) {
-	ps, err := vm.vcVirtualMachine.PowerState(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	return ps, nil
-}
-
 func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState v1alpha1.VirtualMachinePowerState) error {
 	vm.logger.V(5).Info("SetPowerState", "desiredState", desiredPowerState)
-	ps, err := vm.vcVirtualMachine.PowerState(ctx)
-	if err != nil {
-		vm.logger.Error(err, "Failed to get VM power state")
-		return err
-	}
-
-	vm.logger.V(4).Info("VM power state", "currentState", ps, "desiredState", desiredPowerState)
-	if v1alpha1.VirtualMachinePowerState(ps) == desiredPowerState {
-		return nil
-	}
 
 	var powerTask *object.Task
+	var err error
+
 	switch desiredPowerState {
 	case v1alpha1.VirtualMachinePoweredOn:
 		powerTask, err = vm.vcVirtualMachine.PowerOn(ctx)
@@ -432,9 +213,15 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState v
 		return err
 	}
 
-	_, err = powerTask.WaitForResult(ctx, nil)
-	if err != nil {
-		vm.logger.Error(err, "VM change power state task failed")
+	if _, err = powerTask.WaitForResult(ctx, nil); err != nil {
+		if te, ok := err.(task.Error); ok {
+			// Ignore error if VM was already in desired state.
+			if ips, ok := te.Fault().(*types.InvalidPowerStateFault); ok && ips.ExistingState == ips.RequestedState {
+				return nil
+			}
+		}
+
+		vm.logger.Error(err, "VM change power state task failed", "state", desiredPowerState)
 		return err
 	}
 

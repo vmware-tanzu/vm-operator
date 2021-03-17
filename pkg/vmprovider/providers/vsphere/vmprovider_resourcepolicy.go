@@ -6,11 +6,8 @@ package vsphere
 import (
 	"context"
 
-	"github.com/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
@@ -196,64 +193,5 @@ func (vs *vSphereVmProvider) DeleteClusterModules(ctx context.Context, resourceP
 	if err != nil && !lib.IsNotFoundError(err) {
 		return err
 	}
-	return nil
-}
-
-func (vs *vSphereVmProvider) attachTagsToVmAndAddToClusterModules(ctx context.Context, vm *v1alpha1.VirtualMachine, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
-	vmCtx := VMContext{
-		Context: ctx,
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
-	}
-
-	ses, err := vs.sessions.GetSession(ctx, vm.Namespace)
-	if err != nil {
-		return err
-	}
-
-	log.V(4).Info("Attaching tags to vm", "name", vm.Name)
-	resVm, err := ses.GetVirtualMachine(vmCtx)
-	if err != nil {
-		return err
-	}
-
-	// We require both the clusterModule information and tag information to be able to enforce the vm-vm anti-affinity policy.
-	annotations := vm.ObjectMeta.GetAnnotations()
-	if annotations[pkg.ClusterModuleNameKey] != "" && annotations[pkg.ProviderTagsAnnotationKey] != "" {
-		// Find ClusterModule from resourcePolicy
-		var moduleUuid string
-		for _, clusterModule := range resourcePolicy.Status.ClusterModules {
-			if clusterModule.GroupName == annotations[pkg.ClusterModuleNameKey] {
-				moduleUuid = clusterModule.ModuleUuid
-			}
-		}
-		if moduleUuid == "" {
-			return errors.New("Unable to find the clusterModule to attach")
-		}
-
-		vmRef := &vimtypes.ManagedObjectReference{
-			Type:  "VirtualMachine",
-			Value: resVm.ReferenceValue(),
-		}
-		isMember, err := ses.IsVmMemberOfClusterModule(ctx, moduleUuid, vmRef)
-		if err != nil {
-			return err
-		}
-		if !isMember {
-			if err = ses.AddVmToClusterModule(ctx, moduleUuid, vmRef); err != nil {
-				return err
-			}
-		}
-
-		// Lookup the real tag name from config and attach to the VM.
-		tagName := ses.tagInfo[annotations[pkg.ProviderTagsAnnotationKey]]
-		tagCategoryName := ses.tagInfo[ProviderTagCategoryNameKey]
-
-		err = ses.AttachTagToVm(ctx, tagName, tagCategoryName, resVm)
-		if err != nil {
-			return err
-		}
-	}
-
 	return nil
 }

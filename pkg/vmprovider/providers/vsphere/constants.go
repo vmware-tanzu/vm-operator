@@ -8,4 +8,7 @@ const (
 
 	// Only allow guestinfo for user-supplied ExtraConfig key/values.
 	ExtraConfigGuestInfoPrefix = "guestinfo."
+
+	// ExtraConfig key if GOSC is pending.
+	GOSCPendingExtraConfigKey = "tools.deployPkg.fileName"
 )

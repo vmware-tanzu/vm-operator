@@ -14,8 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-
-	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
 type VMContext struct {
@@ -29,11 +27,6 @@ type VMCloneContext struct {
 	ResourcePool        *object.ResourcePool
 	Folder              *object.Folder
 	StorageProvisioning string
-}
-
-type VMUpdateContext struct {
-	VMContext
-	IsOff bool
 }
 
 func memoryQuantityToMb(q resource.Quantity) int64 {
@@ -78,7 +71,31 @@ func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppP
 	return &vimTypes.VmConfigSpec{Property: outProps}
 }
 
-func resizeVirtualDisksDeviceChanges(
+func (s *Session) DeleteVirtualMachine(vmCtx VMContext) error {
+	resVM, err := s.GetVirtualMachine(vmCtx)
+	if err != nil {
+		return transformVmError(vmCtx.VM.NamespacedName(), err)
+	}
+
+	moVM, err := resVM.GetProperties(vmCtx, []string{"summary.runtime"})
+	if err != nil {
+		return err
+	}
+
+	if moVM.Summary.Runtime.PowerState != vimTypes.VirtualMachinePowerStatePoweredOff {
+		if err := resVM.SetPowerState(vmCtx, vmopv1alpha1.VirtualMachinePoweredOff); err != nil {
+			return err
+		}
+	}
+
+	if err := resVM.Delete(vmCtx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func updateVirtualDiskDeviceChanges(
 	vmCtx VMContext,
 	virtualDisks object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
@@ -127,56 +144,4 @@ func resizeVirtualDisksDeviceChanges(
 	}
 
 	return deviceChanges, nil
-}
-
-// CreateCustomizationSpec creates the customization spec for the vm
-func (s *Session) CreateCustomizationSpec(
-	vmCtx VMContext,
-	resVM *res.VirtualMachine,
-	dnsServers []string,
-	nicCustomizations []vimTypes.CustomizationAdapterMapping) (*vimTypes.CustomizationSpec, error) {
-
-	customSpec := &vimTypes.CustomizationSpec{
-		// This spec is for Linux guest OS. Need to change if other guest OS needs to be supported.
-		Identity: &vimTypes.CustomizationLinuxPrep{
-			HostName: &vimTypes.CustomizationFixedName{
-				Name: vmCtx.VM.Name,
-			},
-			HwClockUTC: vimTypes.NewBool(true),
-		},
-		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{
-			DnsServerList: dnsServers,
-		},
-	}
-
-	if len(vmCtx.VM.Spec.NetworkInterfaces) == 0 {
-		// In the corresponding code in cloneVMNicDeviceChanges(), none of the existing interfaces were removed,
-		// so GetNetworkDevices() will give us all the original interfaces. Assume they should be
-		// configured for DHCP since that was the behavior of the prior code. The config is currently
-		// really only used in the test environments.
-		netDevices, err := resVM.GetNetworkDevices(vmCtx)
-		if err != nil {
-			return nil, err
-		}
-
-		var interfaceCustomizations []vimTypes.CustomizationAdapterMapping
-		for _, dev := range netDevices {
-			card, ok := dev.(vimTypes.BaseVirtualEthernetCard)
-			if !ok {
-				continue
-			}
-
-			interfaceCustomizations = append(interfaceCustomizations, vimTypes.CustomizationAdapterMapping{
-				MacAddress: card.GetVirtualEthernetCard().MacAddress,
-				Adapter: vimTypes.CustomizationIPSettings{
-					Ip: &vimTypes.CustomizationDhcpIpGenerator{},
-				},
-			})
-		}
-		customSpec.NicSettingMap = interfaceCustomizations
-	} else {
-		customSpec.NicSettingMap = nicCustomizations
-	}
-
-	return customSpec, nil
 }

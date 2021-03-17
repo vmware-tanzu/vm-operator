@@ -6,23 +6,26 @@
 package vsphere
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/pointer"
+
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
-var _ = Describe("Delta ConfigSpec", func() {
+var _ = Describe("Update ConfigSpec", func() {
 
 	var config *vimTypes.VirtualMachineConfigInfo
 	var configSpec *vimTypes.VirtualMachineConfigSpec
-
-	trueVar := true
-	falseVar := false
 
 	BeforeEach(func() {
 		config = &vimTypes.VirtualMachineConfigInfo{}
@@ -33,26 +36,225 @@ var _ = Describe("Delta ConfigSpec", func() {
 	// is a good way or not. Probably better to do this via UpdateVirtualMachine when we have
 	// better integration tests.
 
-	Context("ExtraConfig", func() {
+	Context("Basic Hardware", func() {
+		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
 
-		var vmImage *v1alpha1.VirtualMachineImage
-		var vmSpec v1alpha1.VirtualMachineSpec
+		BeforeEach(func() {
+			vmClassSpec = &vmopv1alpha1.VirtualMachineClassSpec{}
+		})
+
+		JustBeforeEach(func() {
+			updateHardwareConfigSpec(config, configSpec, vmClassSpec)
+		})
+
+		It("config spec is empty", func() {
+			Expect(configSpec.Annotation).ToNot(BeEmpty())
+			Expect(configSpec.ManagedBy).ToNot(BeNil())
+		})
+
+		Context("Updates Hardware", func() {
+			BeforeEach(func() {
+				vmClassSpec.Hardware.Cpus = 42
+				vmClassSpec.Hardware.Memory = resource.MustParse("2000Mi")
+			})
+
+			It("config spec is not empty", func() {
+				Expect(configSpec.NumCPUs).To(BeNumerically("==", 42))
+				Expect(configSpec.MemoryMB).To(BeNumerically("==", 2000))
+			})
+		})
+
+		Context("config already matches", func() {
+			BeforeEach(func() {
+				config.Hardware.NumCPU = 42
+				vmClassSpec.Hardware.Cpus = int64(config.Hardware.NumCPU)
+				config.Hardware.MemoryMB = 1500
+				vmClassSpec.Hardware.Memory = resource.MustParse(fmt.Sprintf("%dMi", config.Hardware.MemoryMB))
+			})
+
+			It("config spec show no changes", func() {
+				Expect(configSpec.NumCPUs).To(BeZero())
+				Expect(configSpec.MemoryMB).To(BeZero())
+			})
+		})
+	})
+
+	Context("CPU Allocation", func() {
+		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
+		var minCPUFreq uint64 = 1
+
+		BeforeEach(func() {
+			vmClassSpec = &vmopv1alpha1.VirtualMachineClassSpec{}
+		})
+
+		JustBeforeEach(func() {
+			updateConfigSpecCPUAllocation(config, configSpec, vmClassSpec, minCPUFreq)
+		})
+
+		It("config spec is empty", func() {
+			Expect(configSpec.CpuAllocation).To(BeNil())
+		})
+
+		Context("config matches class policy request", func() {
+			BeforeEach(func() {
+				r := resource.MustParse("100Mi")
+				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
+					Reservation: pointer.Int64Ptr(CpuQuantityToMhz(r, minCPUFreq)),
+				}
+				vmClassSpec.Policies.Resources.Requests.Cpu = r
+			})
+
+			It("config spec is empty", func() {
+				Expect(configSpec.CpuAllocation).To(BeNil())
+			})
+		})
+
+		Context("config matches class policy limit", func() {
+			BeforeEach(func() {
+				r := resource.MustParse("100Mi")
+				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
+					Limit: pointer.Int64Ptr(CpuQuantityToMhz(r, minCPUFreq)),
+				}
+				vmClassSpec.Policies.Resources.Limits.Cpu = r
+			})
+
+			It("config spec is empty", func() {
+				Expect(configSpec.CpuAllocation).To(BeNil())
+			})
+		})
+
+		Context("config matches is different from policy limit", func() {
+			BeforeEach(func() {
+				r := resource.MustParse("100Mi")
+				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
+					Limit: pointer.Int64Ptr(10 * CpuQuantityToMhz(r, minCPUFreq)),
+				}
+				vmClassSpec.Policies.Resources.Limits.Cpu = r
+			})
+
+			It("config spec is not empty", func() {
+				Expect(configSpec.CpuAllocation).ToNot(BeNil())
+				Expect(configSpec.CpuAllocation.Reservation).To(BeNil())
+				Expect(configSpec.CpuAllocation.Limit).ToNot(BeNil())
+				Expect(*configSpec.CpuAllocation.Limit).To(BeNumerically("==", 100*1024*1024))
+			})
+		})
+
+		Context("config matches is different from policy request", func() {
+			BeforeEach(func() {
+				r := resource.MustParse("100Mi")
+				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
+					Reservation: pointer.Int64Ptr(10 * CpuQuantityToMhz(r, minCPUFreq)),
+				}
+				vmClassSpec.Policies.Resources.Requests.Cpu = r
+			})
+
+			It("config spec is not empty", func() {
+				Expect(configSpec.CpuAllocation).ToNot(BeNil())
+				Expect(configSpec.CpuAllocation.Limit).To(BeNil())
+				Expect(configSpec.CpuAllocation.Reservation).ToNot(BeNil())
+				Expect(*configSpec.CpuAllocation.Reservation).To(BeNumerically("==", 100*1024*1024))
+			})
+		})
+	})
+
+	Context("Memory Allocation", func() {
+		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
+
+		BeforeEach(func() {
+			vmClassSpec = &vmopv1alpha1.VirtualMachineClassSpec{}
+		})
+
+		JustBeforeEach(func() {
+			updateConfigSpecMemoryAllocation(config, configSpec, vmClassSpec)
+		})
+
+		It("config spec is empty", func() {
+			Expect(configSpec.MemoryAllocation).To(BeNil())
+		})
+
+		Context("config matches class policy request", func() {
+			BeforeEach(func() {
+				r := resource.MustParse("100Mi")
+				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
+					Reservation: pointer.Int64Ptr(memoryQuantityToMb(r)),
+				}
+				vmClassSpec.Policies.Resources.Requests.Memory = r
+			})
+
+			It("config spec is empty", func() {
+				Expect(configSpec.MemoryAllocation).To(BeNil())
+			})
+		})
+
+		Context("config matches class policy limit", func() {
+			BeforeEach(func() {
+				r := resource.MustParse("100Mi")
+				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
+					Limit: pointer.Int64Ptr(memoryQuantityToMb(r)),
+				}
+				vmClassSpec.Policies.Resources.Limits.Memory = r
+			})
+
+			It("config spec is empty", func() {
+				Expect(configSpec.MemoryAllocation).To(BeNil())
+			})
+		})
+
+		Context("config matches is different from policy limit", func() {
+			BeforeEach(func() {
+				r := resource.MustParse("100Mi")
+				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
+					Limit: pointer.Int64Ptr(10 * memoryQuantityToMb(r)),
+				}
+				vmClassSpec.Policies.Resources.Limits.Memory = r
+			})
+
+			It("config spec is not empty", func() {
+				Expect(configSpec.MemoryAllocation).ToNot(BeNil())
+				Expect(configSpec.MemoryAllocation.Reservation).To(BeNil())
+				Expect(configSpec.MemoryAllocation.Limit).ToNot(BeNil())
+				Expect(*configSpec.MemoryAllocation.Limit).To(BeNumerically("==", 100))
+			})
+		})
+
+		Context("config matches is different from policy request", func() {
+			BeforeEach(func() {
+				r := resource.MustParse("100Mi")
+				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
+					Reservation: pointer.Int64Ptr(10 * memoryQuantityToMb(r)),
+				}
+				vmClassSpec.Policies.Resources.Requests.Memory = r
+			})
+
+			It("config spec is not empty", func() {
+				Expect(configSpec.MemoryAllocation).ToNot(BeNil())
+				Expect(configSpec.MemoryAllocation.Limit).To(BeNil())
+				Expect(configSpec.MemoryAllocation.Reservation).ToNot(BeNil())
+				Expect(*configSpec.MemoryAllocation.Reservation).To(BeNumerically("==", 100))
+			})
+		})
+	})
+
+	Context("ExtraConfig", func() {
+		var vmImage *vmopv1alpha1.VirtualMachineImage
+		var vmSpec vmopv1alpha1.VirtualMachineSpec
 		var vmMetadata *vmprovider.VmMetadata
 		var globalExtraConfig map[string]string
 		var ecMap map[string]string
 
 		BeforeEach(func() {
-			vmImage = &v1alpha1.VirtualMachineImage{}
-			vmSpec = v1alpha1.VirtualMachineSpec{}
+			vmImage = &vmopv1alpha1.VirtualMachineImage{}
+			vmSpec = vmopv1alpha1.VirtualMachineSpec{}
 			vmMetadata = &vmprovider.VmMetadata{
 				Data:      make(map[string]string),
-				Transport: v1alpha1.VirtualMachineMetadataExtraConfigTransport,
+				Transport: vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
 			}
 			globalExtraConfig = make(map[string]string)
 		})
 
 		JustBeforeEach(func() {
-			deltaConfigSpecExtraConfig(
+			updateConfigSpecExtraConfig(
 				config,
 				configSpec,
 				vmImage,
@@ -76,7 +278,7 @@ var _ = Describe("Delta ConfigSpec", func() {
 
 		Context("Updates configSpec.ExtraConfig", func() {
 			BeforeEach(func() {
-				conditions.MarkTrue(vmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
+				conditions.MarkTrue(vmImage, vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
 				config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{
 					Key: VMOperatorV1Alpha1ExtraConfigKey, Value: VMOperatorV1Alpha1ConfigReady})
 				vmMetadata.Data["guestinfo.test"] = "test"
@@ -112,45 +314,312 @@ var _ = Describe("Delta ConfigSpec", func() {
 		})
 	})
 
-	Context("ChangeBlockTracking", func() {
-		var vmSpec v1alpha1.VirtualMachineSpec
+	Context("VAppConfig", func() {
+		var vmMetadata *vmprovider.VmMetadata
 
 		BeforeEach(func() {
-			vmSpec = v1alpha1.VirtualMachineSpec{
-				AdvancedOptions: &v1alpha1.VirtualMachineAdvancedOptions{},
+			vmMetadata = &vmprovider.VmMetadata{
+				Data:      make(map[string]string),
+				Transport: vmopv1alpha1.VirtualMachineMetadataOvfEnvTransport,
+			}
+		})
+
+		JustBeforeEach(func() {
+			updateConfigSpecVAppConfig(
+				config,
+				configSpec,
+				vmMetadata)
+		})
+
+		Context("Empty input", func() {
+			It("No changes", func() {
+				Expect(configSpec.VAppConfig).To(BeNil())
+			})
+		})
+
+		Context("update to user configurable field", func() {
+			BeforeEach(func() {
+				vmMetadata.Data["foo"] = "bar"
+				config.VAppConfig = &vimTypes.VmConfigInfo{
+					Property: []vimTypes.VAppPropertyInfo{
+						{
+							Id:               "foo",
+							Value:            "should-change",
+							UserConfigurable: pointer.BoolPtr(true),
+						},
+					},
+				}
+			})
+
+			It("Updates configSpec.VAppConfig", func() {
+				Expect(configSpec.VAppConfig).ToNot(BeNil())
+				vmCs := configSpec.VAppConfig.GetVmConfigSpec()
+				Expect(vmCs).ToNot(BeNil())
+				Expect(vmCs.Property).To(HaveLen(1))
+				Expect(vmCs.Property[0].Info).ToNot(BeNil())
+				Expect(vmCs.Property[0].Info.Value).To(Equal("bar"))
+			})
+		})
+	})
+
+	Context("ChangeBlockTracking", func() {
+		var vmSpec vmopv1alpha1.VirtualMachineSpec
+
+		BeforeEach(func() {
+			vmSpec = vmopv1alpha1.VirtualMachineSpec{
+				AdvancedOptions: &vmopv1alpha1.VirtualMachineAdvancedOptions{},
 			}
 			config.ChangeTrackingEnabled = nil
 		})
 
 		It("cbt and status cbt unset", func() {
-			deltaConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
+			updateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
 		It("configSpec cbt set to true", func() {
-			config.ChangeTrackingEnabled = &trueVar
-			vmSpec.AdvancedOptions.ChangeBlockTracking = &falseVar
+			config.ChangeTrackingEnabled = pointer.BoolPtr(true)
+			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(false)
 
-			deltaConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
+			updateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeFalse())
 		})
 
 		It("configSpec cbt set to false", func() {
-			config.ChangeTrackingEnabled = &falseVar
-			vmSpec.AdvancedOptions.ChangeBlockTracking = &trueVar
+			config.ChangeTrackingEnabled = pointer.BoolPtr(false)
+			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(true)
 
-			deltaConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
+			updateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
 		})
 
 		It("configSpec cbt matches", func() {
-			config.ChangeTrackingEnabled = &trueVar
-			vmSpec.AdvancedOptions.ChangeBlockTracking = &trueVar
+			config.ChangeTrackingEnabled = pointer.BoolPtr(true)
+			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(true)
 
-			deltaConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
+			updateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
+		})
+	})
+
+	Context("Ethernet Card Changes", func() {
+		var expectedList object.VirtualDeviceList
+		var currentList object.VirtualDeviceList
+		var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
+		var dvpg1 *vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo
+		var dvpg2 *vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo
+		var err error
+
+		BeforeEach(func() {
+			dvpg1 = &vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+				Port: vimTypes.DistributedVirtualSwitchPortConnection{
+					PortgroupKey: "key1",
+					SwitchUuid:   "uuid1",
+				},
+			}
+
+			dvpg2 = &vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{
+				Port: vimTypes.DistributedVirtualSwitchPortConnection{
+					PortgroupKey: "key2",
+					SwitchUuid:   "uuid2",
+				},
+			}
+		})
+
+		JustBeforeEach(func() {
+			deviceChanges, err = updateEthCardDeviceChanges(expectedList, currentList)
+		})
+
+		AfterEach(func() {
+			currentList = nil
+			expectedList = nil
+		})
+
+		Context("No devices", func() {
+			It("returns empty list", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deviceChanges).To(BeEmpty())
+			})
+		})
+
+		Context("Add device", func() {
+			var card1 vimTypes.BaseVirtualDevice
+			var key1 int32 = 100
+
+			BeforeEach(func() {
+				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				card1.GetVirtualDevice().Key = key1
+				expectedList = append(expectedList, card1)
+			})
+
+			It("returns add device change", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deviceChanges).To(HaveLen(1))
+
+				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card1.GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+			})
+		})
+
+		Context("Add and remove device when backing change", func() {
+			var card1 vimTypes.BaseVirtualDevice
+			var card2 vimTypes.BaseVirtualDevice
+
+			BeforeEach(func() {
+				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				expectedList = append(expectedList, card1)
+
+				card2, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg2)
+				Expect(err).ToNot(HaveOccurred())
+				currentList = append(currentList, card2)
+			})
+
+			It("returns remove and add device changes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deviceChanges).To(HaveLen(2))
+
+				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card2.GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+
+				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card1.GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+			})
+		})
+
+		Context("Add and remove device when MAC address is different", func() {
+			var card1 vimTypes.BaseVirtualDevice
+			var key1 int32 = 100
+			var card2 vimTypes.BaseVirtualDevice
+			var key2 int32 = 200
+
+			BeforeEach(func() {
+				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				card1.GetVirtualDevice().Key = key1
+				card1.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeManual)
+				card1.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = "mac1"
+				expectedList = append(expectedList, card1)
+
+				card2, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				card2.GetVirtualDevice().Key = key2
+				card2.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeManual)
+				card2.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = "mac2"
+				currentList = append(currentList, card2)
+			})
+
+			It("returns remove and add device changes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deviceChanges).To(HaveLen(2))
+
+				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card2.GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+
+				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card1.GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+			})
+		})
+
+		Context("Add and remove device when ExternalID is different", func() {
+			var card1 vimTypes.BaseVirtualDevice
+			var key1 int32 = 100
+			var card2 vimTypes.BaseVirtualDevice
+			var key2 int32 = 200
+
+			BeforeEach(func() {
+				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				card1.GetVirtualDevice().Key = key1
+				card1.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId = "ext1"
+				expectedList = append(expectedList, card1)
+
+				card2, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				card2.GetVirtualDevice().Key = key2
+				card2.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId = "ext2"
+				currentList = append(currentList, card2)
+			})
+
+			It("returns remove and add device changes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deviceChanges).To(HaveLen(2))
+
+				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card2.GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+
+				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card1.GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+			})
+		})
+
+		Context("Keeps existing device with same backing", func() {
+			var card1 vimTypes.BaseVirtualDevice
+			var key1 int32 = 100
+			var card2 vimTypes.BaseVirtualDevice
+			var key2 int32 = 200
+
+			BeforeEach(func() {
+				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				card1.GetVirtualDevice().Key = key1
+				expectedList = append(expectedList, card1)
+
+				card2, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				card2.GetVirtualDevice().Key = key2
+				currentList = append(currentList, card2)
+			})
+
+			It("returns empty list", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deviceChanges).To(BeEmpty())
+			})
+		})
+	})
+})
+
+var _ = Describe("Customization", func() {
+
+	Context("IsPending", func() {
+		var extraConfig []vimTypes.BaseOptionValue
+		var pending bool
+
+		BeforeEach(func() {
+			extraConfig = nil
+		})
+
+		JustBeforeEach(func() {
+			pending = isCustomizationPendingExtraConfig(extraConfig)
+		})
+
+		Context("Empty ExtraConfig", func() {
+			It("not pending", func() {
+				Expect(pending).To(BeFalse())
+			})
+		})
+
+		Context("ExtraConfig with pending key", func() {
+			BeforeEach(func() {
+				extraConfig = append(extraConfig, &vimTypes.OptionValue{
+					Key:   GOSCPendingExtraConfigKey,
+					Value: "/foo/bar",
+				})
+			})
+
+			It("is pending", func() {
+				Expect(pending).To(BeTrue())
+			})
 		})
 	})
 })

@@ -141,14 +141,14 @@ func createEthernetCard(ctx context.Context, network object.NetworkReference, et
 }
 
 func configureEthernetCard(ethDev vimtypes.BaseVirtualDevice, externalID, macAddress string) {
-	nic := ethDev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+	card := ethDev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 
-	nic.ExternalId = externalID
+	card.ExternalId = externalID
 	if macAddress != "" {
-		nic.MacAddress = macAddress
-		nic.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
+		card.MacAddress = macAddress
+		card.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
 	} else {
-		nic.AddressType = string(vimtypes.VirtualEthernetCardMacTypeGenerated)
+		card.AddressType = string(vimtypes.VirtualEthernetCardMacTypeGenerated)
 	}
 }
 

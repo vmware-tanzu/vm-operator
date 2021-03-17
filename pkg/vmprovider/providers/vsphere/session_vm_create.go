@@ -4,7 +4,6 @@
 package vsphere
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -135,8 +134,7 @@ func (s *Session) cloneVMFromContentLibrary(vmCtx VMCloneContext, vmConfigArgs v
 }
 
 func (s *Session) CloneVirtualMachine(
-	ctx context.Context,
-	vm *v1alpha1.VirtualMachine,
+	vmCtx VMContext,
 	vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
 
 	if vmConfigArgs.StorageProfileID == "" {
@@ -148,12 +146,6 @@ func (s *Session) CloneVirtualMachine(
 		if s.datastore == nil {
 			return nil, fmt.Errorf("cannot clone VM when neither storage class or datastore is specified")
 		}
-	}
-
-	vmCtx := VMContext{
-		Context: ctx,
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
 	}
 
 	resourcePool, folder, err := s.getResourcePoolAndFolder(vmCtx, vmConfigArgs.ResourcePolicy)
@@ -284,9 +276,6 @@ func (s *Session) createConfigSpec(name string, vmClassSpec *v1alpha1.VirtualMac
 		},
 	}
 
-	// BMV: Does all of this need to be set here, or defer to the first reconfigure like we
-	// do for OVF Deploy? Is all this needed for like placement to make an informed decision?
-
 	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
 
 	minFreq := s.GetCpuMinMHzInCluster()
@@ -333,25 +322,23 @@ func (s *Session) createCloneSpec(
 	virtualDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
 	virtualNICs := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
 
-	diskDeviceChanges, err := resizeVirtualDisksDeviceChanges(vmCtx.VMContext, virtualDisks)
+	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx.VMContext, virtualDisks)
 	if err != nil {
 		return nil, err
 	}
 
-	nicDeviceChanges, err := s.cloneVMNicDeviceChanges(vmCtx, virtualNICs)
+	ethCardDeviceChanges, err := s.cloneEthCardDeviceChanges(vmCtx, virtualNICs)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, deviceChange := range append(diskDeviceChanges, nicDeviceChanges...) {
+	for _, deviceChange := range append(diskDeviceChanges, ethCardDeviceChanges...) {
 		if deviceChange.GetVirtualDeviceConfigSpec().Operation == vimTypes.VirtualDeviceConfigSpecOperationEdit {
 			cloneSpec.Location.DeviceChange = append(cloneSpec.Location.DeviceChange, deviceChange)
 		} else {
 			cloneSpec.Config.DeviceChange = append(cloneSpec.Config.DeviceChange, deviceChange)
 		}
 	}
-
-	// Everything past after here is kind of hard to follow, because it is hard to track what depends on what.
 
 	if vmConfigArgs.StorageProfileID != "" {
 		cloneSpec.Location.Profile = []vimTypes.BaseVirtualMachineProfileSpec{
@@ -381,35 +368,11 @@ func (s *Session) createCloneSpec(
 	return cloneSpec, nil
 }
 
-func (s *Session) createNetworkDevices(vmCtx VMContext) ([]vimTypes.BaseVirtualDevice, error) {
-	// This negative device key is the traditional range used for network interfaces.
-	deviceKey := int32(-100)
-	devices := make([]vimTypes.BaseVirtualDevice, 0, len(vmCtx.VM.Spec.NetworkInterfaces))
-
-	for i := range vmCtx.VM.Spec.NetworkInterfaces {
-		vif := vmCtx.VM.Spec.NetworkInterfaces[i]
-
-		ethInfo, err := s.networkProvider.EnsureNetworkInterface(vmCtx, &vif)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to create vnic '%v'", vif)
-		}
-
-		nic := ethInfo.Device.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-		nic.Key = deviceKey
-		nic.ExternalId = vif.EthernetCardType
-		devices = append(devices, ethInfo.Device)
-
-		deviceKey--
-	}
-
-	return devices, nil
-}
-
-// cloneVMNicDeviceChanges returns changes for network device changes that need to be performed
+// cloneEthCardDeviceChanges returns changes for network device changes that need to be performed
 // on a new VM being cloned from the source VM.
-func (s *Session) cloneVMNicDeviceChanges(
+func (s *Session) cloneEthCardDeviceChanges(
 	vmCtx VMCloneContext,
-	srcNICs object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+	srcEthCards object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
 	// To ease local and simulation testing, if the VM Spec interfaces is empty, leave the
 	// existing interfaces. If a default network as been configured, change the backing for
@@ -426,8 +389,8 @@ func (s *Session) cloneVMNicDeviceChanges(
 			return nil, errors.Wrapf(err, "cannot get backing info for default network %+v", s.network.Reference())
 		}
 
-		deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcNICs))
-		for _, dev := range srcNICs {
+		deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcEthCards))
+		for _, dev := range srcEthCards {
 			dev.GetVirtualDevice().Backing = backingInfo
 			deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 				Device:    dev,
@@ -438,22 +401,24 @@ func (s *Session) cloneVMNicDeviceChanges(
 		return deviceChanges, nil
 	}
 
-	// BMV: Is this really required for cloning, or defer to later update reconcile like OVF deploy?
+	// BMV: Is this really required for cloning, or OK to defer to later update reconcile like OVF deploy?
 
-	newNICs, err := s.createNetworkDevices(vmCtx.VMContext)
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx.VMContext)
 	if err != nil {
 		return nil, err
 	}
 
+	newEthCards := netIfList.GetVirtualDeviceList()
+
 	// Remove all the existing interfaces, and then add the new interfaces.
-	deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcNICs)+len(newNICs))
-	for _, dev := range srcNICs {
+	deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcEthCards)+len(newEthCards))
+	for _, dev := range srcEthCards {
 		deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 			Device:    dev,
 			Operation: vimTypes.VirtualDeviceConfigSpecOperationRemove,
 		})
 	}
-	for _, dev := range newNICs {
+	for _, dev := range newEthCards {
 		deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 			Device:    dev,
 			Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,

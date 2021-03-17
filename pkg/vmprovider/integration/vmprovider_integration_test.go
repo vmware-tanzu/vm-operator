@@ -148,6 +148,20 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(exists).To(BeTrue())
 
+			vm.Spec.PowerState = vmoperatorv1alpha1.VirtualMachinePoweredOn
+			err = vmProvider.UpdateVirtualMachine(context.TODO(), vm, vmConfigArgs)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vm.Status.PowerState).To(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
+			Expect(vm.Status.Host).ToNot(BeEmpty())
+			Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+			Expect(vm.Status.BiosUUID).ToNot(BeEmpty())
+			Expect(vm.Status.InstanceUUID).ToNot(BeEmpty())
+
+			vm.Spec.PowerState = vmoperatorv1alpha1.VirtualMachinePoweredOff
+			err = vmProvider.UpdateVirtualMachine(context.TODO(), vm, vmConfigArgs)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vm.Status.PowerState).To(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOff))
+
 			err = vmProvider.DeleteVirtualMachine(ctx, vm)
 			Expect(err).ToNot(HaveOccurred())
 		})

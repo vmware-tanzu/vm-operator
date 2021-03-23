@@ -9,11 +9,6 @@ SHELL := /usr/bin/env bash
 # Active module mode, as we use go modules to manage dependencies
 export GO111MODULE := on
 
-# For more information please see https://golang.org/doc/go1.13#modules.
-export GOPROXY ?= https://build-artifactory.eng.vmware.com/gocenter.io/
-export GOSUMDB ?= off
-export GOPRIVATE := gitlab.eng.vmware.com
-
 # Directories.
 BIN_DIR := bin
 
@@ -39,7 +34,6 @@ KUBEBUILDER       := $(BIN_DIR)/kubebuilder
 KUBECTL           := $(BIN_DIR)/kubectl
 ETCD              := $(BIN_DIR)/etcd
 MOCKGEN           := $(BIN_DIR)/mockgen
-KIND              := $(BIN_DIR)/kind
 
 ## --------------------------------------
 ## Help
@@ -111,13 +105,6 @@ $(KUBECTL):
 mockgen: $(MOCKGEN) ## Install mockgen
 $(MOCKGEN): go.mod
 	go build -tags=tools -o $@ github.com/golang/mock/mockgen
-
-.PHONY: $(KIND)
-kind: $(KIND) ## Install kind
-$(KIND):
-	@mkdir -p $(@D)
-	curl -sL https://github.com/kubernetes-sigs/kind/releases/download/v$(KIND_VERSION)/kind-$(HOST_OS)-$(HOST_ARCH) -o $(@) && \
-	chmod a+x $(@)
 
 ## --------------------------------------
 ## Generate

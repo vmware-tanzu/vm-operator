@@ -7,10 +7,10 @@ package mocks
 import (
 	context "context"
 	gomock "github.com/golang/mock/gomock"
-	vsphere "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
-	resources "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	ovf "github.com/vmware/govmomi/ovf"
 	library "github.com/vmware/govmomi/vapi/library"
+	vsphere "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	resources "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	reflect "reflect"
 )
 

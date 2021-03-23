@@ -7,6 +7,8 @@ SHELL := /usr/bin/env bash
 # Detect the Go version for now to be able to run gce2e before GCM-2071 is resolved
 GO_VERSION := $(shell go version)
 
+GITHUB_PATH := github.com/vmware-tanzu/vm-operator
+
 # Active module mode, as we use go modules to manage dependencies
 export GO111MODULE := on
 
@@ -103,6 +105,40 @@ $(MANAGER): go.mod prereqs generate
 
 .PHONY: manager
 manager: prereqs generate lint-go manager-only ## Build manager binary
+
+## --------------------------------------
+## Docker Build Workflow
+## --------------------------------------
+
+# The necessary tools are built into the container at /tools/bin
+# They need to be copied into the tools dir becasue this is bind-mounted into the container
+# This will overwrite any locally built tools in the bin dir
+IMAGE_TOOLS_BIN := /tools/bin
+COPY_TOOLS_CMD := cp -rf $(IMAGE_TOOLS_BIN) $(TOOLS_DIR)
+
+DOCKER_BUILD_IMAGE_NAME := vmop-build:latest
+DOCKERFILE_NAME := Dockerfile.build
+
+.PHONY: docker-image
+docker-image: ## Builds a Docker image that includes the tools and modules necessary for building the manager
+	rm -fr $(TOOLS_BIN_DIR)
+	docker build -f $(DOCKERFILE_NAME) --build-arg TOOLS_BIN=$(IMAGE_TOOLS_BIN) -t $(DOCKER_BUILD_IMAGE_NAME) .
+
+.PHONY: manager-docker
+manager-docker: ## Build manager binary using a Docker build image
+	docker run --rm -v $$(pwd):/go/src/$(GITHUB_PATH) -w /go/src/$(GITHUB_PATH) $(DOCKER_BUILD_IMAGE_NAME) /bin/sh -c "$(COPY_TOOLS_CMD) && make manager"
+
+.PHONY: test-docker
+test-docker: ## Unit test manager binary using a Docker build image
+	docker run --rm -v $$(pwd):/go/src/$(GITHUB_PATH) -w /go/src/$(GITHUB_PATH) $(DOCKER_BUILD_IMAGE_NAME) /bin/sh -c "$(COPY_TOOLS_CMD) && make test"
+
+.PHONY: test-integration-docker
+test-integration-docker: ## Integration test manager binary using a Docker build image
+	docker run --rm -v $$(pwd):/go/src/$(GITHUB_PATH) -w /go/src/$(GITHUB_PATH) $(DOCKER_BUILD_IMAGE_NAME) /bin/sh -c "$(COPY_TOOLS_CMD) && make test-integration"
+
+.PHONY: clean-docker
+clean-docker: ## Clean up the Docker image from the local image cache
+	docker image rm $(DOCKER_BUILD_IMAGE_NAME)
 
 ## --------------------------------------
 ## Tooling Binaries
@@ -220,7 +256,7 @@ kustomize-local: kustomize-x ## Kustomize for local cluster
 ## --------------------------------------
 
 .PHONY: clean
-clean:
+clean: 
 	rm -rf bin *.out $(ARTIFACTS_DIR)
 
 .PHONY: verify

@@ -17,21 +17,11 @@ The API for VM Operator is in a separate project [here](https://github.com/vmwar
 Having demonstrated its value in vSphere with Tanzu, we are committed to making VM Operator available as its own service
 so that it can be used in conjunction with other Kubernetes services that need to manage VMs.
 
-## Contributing
+## Getting Started
 
 If you are passionate about VMs in Kubernetes, are interested in learning about our roadmap or have
 ideas about the project, we'd love to hear from you!
 
-More information [here](CONTRIBUTING.md)
-
-## Getting Started
-
 Please see our [Quick Start Guide](docs/quick-start-guide.md) for details on building and testing the project
 
-## Maintainers
 
-Current list of project maintainers [here](MAINTAINERS.md)
-
-## License
-
-VM Operator API is licensed under the [Apache License, version 2.0](LICENSE.txt)

@@ -78,15 +78,13 @@ func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppP
 	return &vimTypes.VmConfigSpec{Property: outProps}
 }
 
-func resizeSourceDiskDeviceChanges(vmCtx VMContext, sourceVM *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
-	virtualDisks, err := sourceVM.GetVirtualDisks(vmCtx)
-	if err != nil {
-		return nil, err
-	}
+func resizeVirtualDisksDeviceChanges(
+	vmCtx VMContext,
+	virtualDisks object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
 	// XXX (dramdass): Right now, we only resize disks that exist in the VM template. The disks
-	// are keyed by deviceKey and the desired specified size must be larger than the original
-	// size. The number of disks is expected to be O(1) so we the nested loop is ok here.
+	// are keyed by deviceKey and the desired new size must be larger than the original size.
+	// The number of disks is expected to be O(1) so we the nested loop is ok here.
 	var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
 	for _, volume := range vmCtx.VM.Spec.Volumes {
 		if volume.VsphereVolume == nil || volume.VsphereVolume.DeviceKey == nil {

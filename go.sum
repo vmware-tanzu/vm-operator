@@ -395,8 +395,6 @@ github.com/vmware/govmomi v0.24.1-0.20210210035757-ed60338583b0/go.mod h1:Y+Wq4l
 github.com/vmware/vmw-guestinfo v0.0.0-20170707015358-25eff159a728/go.mod h1:x9oS4Wk2s2u4tS29nEaDLdzvuHdB19CvSGJjPgkZJNk=
 github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2/go.mod h1:UETIi67q53MR2AWcXfiuqkDkRtnGDLqkBTpCHuJHxtU=
 github.com/xordataexchange/crypt v0.0.3-0.20170626215501-b2862e3d0a77/go.mod h1:aYKd//L2LvnjZzWKhF00oedf4jCCReLcmhLdhm1A27Q=
-gitlab.eng.vmware.com/guest-clusters/ncp-client v0.0.0-20200211203746-4585e5817d26 h1:OWh+hwRAax9WkyWMocYSePfheBeAxkD+4zuGzCgc3tU=
-gitlab.eng.vmware.com/guest-clusters/ncp-client v0.0.0-20200211203746-4585e5817d26/go.mod h1:RhgJ4yneuXlZFGqMqQQwnsHc/1kuxEMsvnlf7Odu0rc=
 go.etcd.io/bbolt v1.3.3/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
 go.etcd.io/etcd v0.0.0-20191023171146-3cf2f69b5738/go.mod h1:dnLIgRNXwCJa5e+c6mIZCrds/GIG4ncV9HhK5PX7jPg=
 go.mongodb.org/mongo-driver v1.0.3/go.mod h1:u7ryQJ+DOzQmeO7zB6MHyr8jkEQvC8vH7qLUO4lqsUM=

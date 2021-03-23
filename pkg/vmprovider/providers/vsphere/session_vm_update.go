@@ -5,11 +5,13 @@ package vsphere
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"text/template"
 
 	"github.com/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/task"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
@@ -47,16 +49,14 @@ func (s *Session) createNetworkDevices(vmCtx VMContext) ([]vimTypes.BaseVirtualD
 	return devices, nil
 }
 
-func (s *Session) reconcileVMNicDeviceChanges(vmCtx VMUpdateContext, resVM *res.VirtualMachine) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+func (s *Session) reconcileVMNicDeviceChanges(
+	vmCtx VMUpdateContext,
+	existingNICs object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+
 	// Assume this is the special condition in cloneVMNicDeviceChanges(), instead of actually
 	// wanting to remove all the interfaces. This is a hack that we should address later.
 	if len(vmCtx.VM.Spec.NetworkInterfaces) == 0 {
 		return nil, nil
-	}
-
-	netDevices, err := resVM.GetNetworkDevices(vmCtx)
-	if err != nil {
-		return nil, err
 	}
 
 	newNetDevices, err := s.createNetworkDevices(vmCtx.VMContext)
@@ -64,24 +64,86 @@ func (s *Session) reconcileVMNicDeviceChanges(vmCtx VMUpdateContext, resVM *res.
 		return nil, err
 	}
 
-	// TODO: Compare the actual network backings.
+	var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
 
-	// Remove all the existing interfaces, and then add the new interfaces.
-	deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(netDevices)+len(newNetDevices))
-	for _, dev := range netDevices {
-		deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
+	for _, newDev := range newNetDevices {
+		newNic := newDev.(vimTypes.BaseVirtualEthernetCard)
+		newNicExternalID := newNic.GetVirtualEthernetCard().ExternalId
+		newNicBacking := newNic.GetVirtualEthernetCard().Backing
+		newNicBackingType := reflect.TypeOf(newNicBacking)
+
+		var matchingIdx = -1
+
+		// Try to match the expected NIC with an existing NIC but this isn't that great. We mostly
+		// depend on the backing but we can improve that later on. When not generated, we could use
+		// the MAC address. When we support something other than just vmxnet3 we should compare
+		// those types too. And we should make this truly reconcile as well by comparing the full
+		// state (support EDIT instead of only ADD/REMOVE operations).
+		for idx, curDev := range existingNICs {
+			nic := curDev.(vimTypes.BaseVirtualEthernetCard)
+
+			// Note only NCP sets the ExternalID.
+			if newNicExternalID != "" {
+				if nic.GetVirtualEthernetCard().ExternalId == newNicExternalID {
+					// Assume everything else matches, but we should improve this later on.
+					matchingIdx = idx
+					break
+				}
+			}
+
+			// This assumes we don't have multiple NICs in the same backing network. This is kind of, sort
+			// of enforced by the webhook, but we lack a guaranteed way to match up the NICs.
+
+			db := nic.GetVirtualEthernetCard().Backing
+			if db == nil || reflect.TypeOf(db) != newNicBackingType {
+				continue
+			}
+
+			var backingMatch bool
+
+			// Cribbed from VirtualDeviceList.SelectByBackingInfo().
+			switch a := db.(type) {
+			case *vimTypes.VirtualEthernetCardNetworkBackingInfo:
+				// Used only in testing.
+				b := newNicBacking.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
+				backingMatch = a.DeviceName == b.DeviceName
+			case *vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo:
+				b := newNicBacking.(*vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+				backingMatch = a.Port.SwitchUuid == b.Port.SwitchUuid && a.Port.PortgroupKey == b.Port.PortgroupKey
+			case *vimTypes.VirtualEthernetCardOpaqueNetworkBackingInfo:
+				b := newNicBacking.(*vimTypes.VirtualEthernetCardOpaqueNetworkBackingInfo)
+				backingMatch = a.OpaqueNetworkId == b.OpaqueNetworkId
+			}
+
+			if backingMatch {
+				matchingIdx = idx
+				break
+			}
+		}
+
+		if matchingIdx == -1 {
+			// No matching backing found so add new NIC.
+			deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
+				Device:    newDev,
+				Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+			})
+		} else {
+			// Matching backing found so keep this NIC (don't remove it below).
+			existingNICs = append(existingNICs[:matchingIdx], existingNICs[matchingIdx+1:]...)
+		}
+	}
+
+	// Remove any unmatched existing interfaces.
+	var removeDeviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
+	for _, dev := range existingNICs {
+		removeDeviceChanges = append(removeDeviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 			Device:    dev,
 			Operation: vimTypes.VirtualDeviceConfigSpecOperationRemove,
 		})
 	}
-	for _, dev := range newNetDevices {
-		deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
-			Device:    dev,
-			Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-		})
-	}
 
-	return deviceChanges, nil
+	// Process any removes first.
+	return append(removeDeviceChanges, deviceChanges...), nil
 }
 
 func isCustomizationPendingError(err error) bool {
@@ -275,8 +337,7 @@ func deltaConfigSpecVAppConfig(
 func deltaConfigSpecChangeBlockTracking(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec *vimTypes.VirtualMachineConfigSpec,
-	vmSpec v1alpha1.VirtualMachineSpec,
-) {
+	vmSpec v1alpha1.VirtualMachineSpec) {
 
 	if vmSpec.AdvancedOptions == nil || vmSpec.AdvancedOptions.ChangeBlockTracking == nil {
 		// Treat this as we preserve whatever the current CBT status is. I think we'd need
@@ -331,6 +392,15 @@ func (s *Session) poweredOffVMReconfigure(vmCtx VMUpdateContext, resVM *res.Virt
 		return err
 	}
 
+	// TODO: VirtualDeviceList(config.Hardware.Device) instead
+	virtualDevices, err := resVM.GetVirtualDevices(vmCtx)
+	if err != nil {
+		return err
+	}
+
+	virtualDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
+	virtualNICs := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
+
 	configSpec := deltaConfigSpec(
 		vmCtx.VMContext,
 		config,
@@ -341,13 +411,13 @@ func (s *Session) poweredOffVMReconfigure(vmCtx VMUpdateContext, resVM *res.Virt
 		s.GetCpuMinMHzInCluster(),
 	)
 
-	diskDeviceChanges, err := resizeSourceDiskDeviceChanges(vmCtx.VMContext, resVM)
+	diskDeviceChanges, err := resizeVirtualDisksDeviceChanges(vmCtx.VMContext, virtualDisks)
 	if err != nil {
 		return err
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, diskDeviceChanges...)
 
-	nicDeviceChanges, err := s.reconcileVMNicDeviceChanges(vmCtx, resVM)
+	nicDeviceChanges, err := s.reconcileVMNicDeviceChanges(vmCtx, virtualNICs)
 	if err != nil {
 		return err
 	}

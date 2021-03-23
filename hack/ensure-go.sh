@@ -35,6 +35,3 @@ verify_go_version
 # Explicitly opt into go modules.
 export GO111MODULE=on
 
-# TODO(akutz) Cannot use GOPROXY until VMware sets up its own mirror that
-#             is aware of gitlab.eng.vmware.com.
-export GOPROXY=""

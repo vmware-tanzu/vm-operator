@@ -32,6 +32,30 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 )
 
+// IPFamily represents the IP Family (IPv4 or IPv6). This type is used
+// to express the family of an IP expressed by a type (i.e. service.Spec.IPFamily)
+// NOTE: Copied from k8s.io/api/core/v1" because VM Operator is using old version
+type IPFamily string
+
+const (
+	// IPv4Protocol indicates that this IP is IPv4 protocol
+	IPv4Protocol IPFamily = "IPv4"
+	// IPv6Protocol indicates that this IP is IPv6 protocol
+	IPv6Protocol IPFamily = "IPv6"
+)
+
+// IPConfig represents an IP configuration.
+type IPConfig struct {
+	// IP setting.
+	IP string
+	// IPFamily specifies the IP family (IPv4 vs IPv6) the IP belongs to.
+	IPFamily IPFamily
+	// Gateway setting.
+	Gateway string
+	// SubnetMask setting.
+	SubnetMask string
+}
+
 const (
 	NsxtNetworkType = "nsx-t"
 	VdsNetworkType  = "vsphere-distributed"
@@ -42,8 +66,9 @@ const (
 )
 
 type NetworkInterfaceInfo struct {
-	Device        vimtypes.BaseVirtualDevice
-	Customization *vimtypes.CustomizationAdapterMapping
+	Device          vimtypes.BaseVirtualDevice
+	Customization   *vimtypes.CustomizationAdapterMapping
+	IPConfiguration IPConfig
 }
 
 type NetworkInterfaceInfoList []NetworkInterfaceInfo
@@ -62,6 +87,14 @@ func (l NetworkInterfaceInfoList) GetInterfaceCustomizations() []vimtypes.Custom
 		mappings = append(mappings, *info.Customization)
 	}
 	return mappings
+}
+
+func (l NetworkInterfaceInfoList) GetIPConfigs() []IPConfig {
+	var ipConfigs []IPConfig
+	for _, info := range l {
+		ipConfigs = append(ipConfigs, info.IPConfiguration)
+	}
+	return ipConfigs
 }
 
 // NetworkProvider sets up network for different type of network
@@ -183,6 +216,7 @@ func (np *namedNetworkProvider) EnsureNetworkInterface(
 				Ip: &vimtypes.CustomizationDhcpIpGenerator{},
 			},
 		},
+		IPConfiguration: IPConfig{},
 	}, nil
 }
 
@@ -394,9 +428,24 @@ func (np *netOpNetworkProvider) EnsureNetworkInterface(
 	}
 
 	return &NetworkInterfaceInfo{
-		Device:        ethDev,
-		Customization: np.goscCustomization(netIf),
+		Device:          ethDev,
+		Customization:   np.goscCustomization(netIf),
+		IPConfiguration: np.getIPConfig(netIf),
 	}, nil
+}
+
+func (np *netOpNetworkProvider) getIPConfig(netIf *netopv1alpha1.NetworkInterface) IPConfig {
+	var ipConfig IPConfig
+	if len(netIf.Status.IPConfigs) > 0 {
+		ipConfig = IPConfig{
+			IP:         netIf.Status.IPConfigs[0].IP,
+			Gateway:    netIf.Status.IPConfigs[0].Gateway,
+			SubnetMask: netIf.Status.IPConfigs[0].SubnetMask,
+			IPFamily:   IPFamily(netIf.Status.IPConfigs[0].IPFamily),
+		}
+	}
+
+	return ipConfig
 }
 
 type nsxtNetworkProvider struct {
@@ -557,9 +606,23 @@ func (np *nsxtNetworkProvider) EnsureNetworkInterface(
 	}
 
 	return &NetworkInterfaceInfo{
-		Device:        ethDev,
-		Customization: np.goscCustomization(vnetIf),
+		Device:          ethDev,
+		Customization:   np.goscCustomization(vnetIf),
+		IPConfiguration: np.getIPConfig(vnetIf),
 	}, nil
+}
+
+func (np *nsxtNetworkProvider) getIPConfig(vnetIf *ncpv1alpha1.VirtualNetworkInterface) IPConfig {
+	var ipConfig IPConfig
+	if len(vnetIf.Status.IPAddresses) > 0 {
+		ipAddr := vnetIf.Status.IPAddresses[0]
+		ipConfig.IP = ipAddr.IP
+		ipConfig.Gateway = ipAddr.Gateway
+		ipConfig.SubnetMask = ipAddr.SubnetMask
+		ipConfig.IPFamily = IPv4Protocol
+	}
+
+	return ipConfig
 }
 
 // matchOpaqueNetwork takes the network ID, returns whether the opaque network matches the networkID

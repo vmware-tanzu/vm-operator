@@ -4,6 +4,7 @@
 package vsphere
 
 import (
+	"bytes"
 	"fmt"
 	"reflect"
 	"strings"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
@@ -498,6 +500,43 @@ func (s *Session) fakeUpClonedNetIfList(
 	return netIfList
 }
 
+// TemplateData is used to specify templating values
+// for guest customization data. Users will be able
+// to specify fields from this struct as values
+// for customization. E.g.: {{ (index .NetworkInterfaces 0).Gateway }}.
+type TemplateData struct {
+	NetworkInterfaces []IPConfig
+	NameServers       []string
+}
+
+func updateVmConfigArgsTemplates(vmCtx VMContext, updateArgs vmUpdateArgs) {
+	templateData := TemplateData{}
+	templateData.NetworkInterfaces = updateArgs.NetIfList.GetIPConfigs()
+	templateData.NameServers = updateArgs.DNSServers
+
+	renderTemplate := func(name, templateStr string) string {
+		templ, err := template.New(name).Parse(templateStr)
+		if err != nil {
+			vmCtx.Logger.Error(err, "failed to parse template", "templateStr", templateStr)
+			return templateStr
+		}
+		var doc bytes.Buffer
+		err = templ.Execute(&doc, &templateData)
+		if err != nil {
+			vmCtx.Logger.Error(err, "failed to execute template", "templateStr", templateStr)
+			return templateStr
+		}
+		return doc.String()
+	}
+
+	if updateArgs.VmMetadata != nil {
+		data := updateArgs.VmMetadata.Data
+		for key, val := range data {
+			data[key] = renderTemplate(key, val)
+		}
+	}
+}
+
 type vmUpdateArgs struct {
 	vmprovider.VmConfigArgs
 	NetIfList  NetworkInterfaceInfoList
@@ -532,6 +571,12 @@ func (s *Session) prepareVMForPowerOn(
 		VmConfigArgs: vmConfigArgs,
 		NetIfList:    netIfList,
 		DNSServers:   dnsServers,
+	}
+
+	if lib.IsVMServiceV1Alpha2FSSEnabled() {
+		// For templating errors, only logged the error instead of failing completely.
+		// Maybe emit a warning event to VM?
+		updateVmConfigArgsTemplates(vmCtx, updateArgs)
 	}
 
 	err = s.prePowerOnVMReconfigure(vmCtx, resVM, config, updateArgs)

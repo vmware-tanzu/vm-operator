@@ -6,6 +6,7 @@
 package vsphere
 
 import (
+	"context"
 	"fmt"
 
 	. "github.com/onsi/ginkgo"
@@ -14,6 +15,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -620,6 +622,75 @@ var _ = Describe("Customization", func() {
 			It("is pending", func() {
 				Expect(pending).To(BeTrue())
 			})
+		})
+	})
+})
+
+var _ = Describe("Template", func() {
+	Context("update VmConfigArgs", func() {
+		var (
+			updateArgs vmUpdateArgs
+
+			ip         = "192.168.1.37"
+			subnetMask = "255.255.255.0"
+			gateway    = "192.168.1.1"
+			nameserver = "8.8.8.8"
+		)
+
+		vm := &vmopv1alpha1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dummy-vm",
+				Namespace: "dummy-ns",
+			},
+		}
+		vmCtx := VMContext{
+			Context: context.Background(),
+			Logger:  log.WithValues("vmName", vm.NamespacedName()),
+			VM:      vm,
+		}
+
+		BeforeEach(func() {
+			updateArgs.DNSServers = []string{nameserver}
+			updateArgs.NetIfList = []NetworkInterfaceInfo{
+				{
+					IPConfiguration: IPConfig{
+						IP:         ip,
+						SubnetMask: subnetMask,
+						Gateway:    gateway,
+					},
+				},
+			}
+			updateArgs.VmMetadata = &vmprovider.VmMetadata{
+				Data: make(map[string]string),
+			}
+		})
+
+		It("should resolve them correctly while specifying valid templates", func() {
+			updateArgs.VmMetadata.Data["ip"] = "{{ (index .NetworkInterfaces 0).IP }}"
+			updateArgs.VmMetadata.Data["subMask"] = "{{ (index .NetworkInterfaces 0).SubnetMask }}"
+			updateArgs.VmMetadata.Data["gateway"] = "{{ (index .NetworkInterfaces 0).Gateway }}"
+			updateArgs.VmMetadata.Data["nameserver"] = "{{ (index .NameServers 0) }}"
+
+			updateVmConfigArgsTemplates(vmCtx, updateArgs)
+
+			Expect(updateArgs.VmMetadata.Data["ip"]).To(Equal(ip))
+			Expect(updateArgs.VmMetadata.Data["subMask"]).To(Equal(subnetMask))
+			Expect(updateArgs.VmMetadata.Data["gateway"]).To(Equal(gateway))
+			Expect(updateArgs.VmMetadata.Data["nameserver"]).To(Equal(nameserver))
+		})
+
+		It("should use the original text if resolving template failed", func() {
+			updateArgs.VmMetadata.Data["ip"] = "{{ (index .NetworkInterfaces 100).IP }}"
+			updateArgs.VmMetadata.Data["subMask"] = "{{ invalidTemplate }}"
+			updateArgs.VmMetadata.Data["gateway"] = "{{ (index .NetworkInterfaces ).Gateway }}"
+			updateArgs.VmMetadata.Data["nameserver"] = "{{ (index .NameServers 0) }}"
+
+			updateVmConfigArgsTemplates(vmCtx, updateArgs)
+
+			Expect(updateArgs.VmMetadata.Data["ip"]).To(Equal("{{ (index .NetworkInterfaces 100).IP }}"))
+			Expect(updateArgs.VmMetadata.Data["subMask"]).To(Equal("{{ invalidTemplate }}"))
+			Expect(updateArgs.VmMetadata.Data["gateway"]).To(Equal("{{ (index .NetworkInterfaces ).Gateway }}"))
+			Expect(updateArgs.VmMetadata.Data["nameserver"]).To(Equal(nameserver))
 		})
 	})
 })

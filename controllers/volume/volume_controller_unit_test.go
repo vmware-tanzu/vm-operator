@@ -237,6 +237,43 @@ func unitTestsReconcile() {
 			})
 		})
 
+		When("VM Spec.Volumes has CNS volume with a SOAP error", func() {
+			awfulErrMsg := `failed to attach cns volume: \"88854b48-2b1c-43f8-8889-de4b5ca2cab5\" to node vm: \"VirtualMachine:vm-42
+[VirtualCenterHost: vc.vmware.com, UUID: 42080725-d6b0-c045-b24e-29c4dadca6f2, Datacenter: Datacenter
+[Datacenter: Datacenter:datacenter, VirtualCenterHost: vc.vmware.com]]\".
+fault: \"(*types.LocalizedMethodFault)(0xc003d9b9a0)({\\n DynamicData: (types.DynamicData)
+{\\n },\\n Fault: (*types.ResourceInUse)(0xc002e69080)({\\n VimFault: (types.VimFault)
+{\\n MethodFault: (types.MethodFault) {\\n FaultCause: (*types.LocalizedMethodFault)(\u003cnil\u003e),\\n
+FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (string) \\\"\\\",\\n Name:
+(string) (len=6) \\\"volume\\\"\\n }),\\n LocalizedMessage: (string) (len=32)
+\\\"The resource 'volume' is in use.\\\"\\n})\\n\". opId: \"67d69c68\""
+`
+
+			BeforeEach(func() {
+				vmVol = *vmVolumeWithPVC1
+				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+
+				attachment = cnsAttachmentForVMVolume(vm, vmVol)
+				attachment.Status.Attached = true
+				attachment.Status.AttachmentMetadata = map[string]string{
+					volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
+				}
+				attachment.Status.Error = awfulErrMsg
+				initObjects = append(initObjects, attachment)
+			})
+
+			It("returns success", func() {
+				err := reconciler.ReconcileNormal(volCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Expected VM Status.Volumes with sanitized error", func() {
+					Expect(vm.Status.Volumes).To(HaveLen(1))
+					attachment.Status.Error = "failed to attach cns volume"
+					assertVmVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+				})
+			})
+		})
+
 		When("VM has orphaned CNS volume in Status.Volumes", func() {
 			BeforeEach(func() {
 				vmVol = *vmVolumeWithPVC1

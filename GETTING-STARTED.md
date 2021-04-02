@@ -20,12 +20,9 @@ kubectl get VirtualMachines --all
 
 ## Step 2: Build and Test the sample code
 
-There are examples using different clients. The generated client, that's created by the root makefile and the controller-runtime client that doesn't use generated client libraries.
-
 ```bash
 cd hack/samples
 make all
-bin/list-gen
 bin/list-ctrl
 ```
 

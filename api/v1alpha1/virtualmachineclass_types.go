@@ -50,8 +50,6 @@ type VirtualMachineClassSpec struct {
 type VirtualMachineClassStatus struct {
 }
 
-// +genclient
-// +genclient:nonNamespaced
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,shortName=vmclass
 // +kubebuilder:storageversion

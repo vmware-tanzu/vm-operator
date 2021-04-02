@@ -16,11 +16,10 @@ HOST_OS=$(shell go env GOOS)
 HOST_ARCH=$(shell go env GOARCH)
 
 # Binaries.
-LIST_GEN  := $(BIN_DIR)/list-gen
 LIST_CTRL  := $(BIN_DIR)/list-ctrl
 
 .PHONY: all
-all: prereqs list-gen list-ctrl ## Build all the samples
+all: prereqs list-ctrl ## Build all the samples
 
 prereqs:
 	cd ../../; $(MAKE) generate-manifests
@@ -36,12 +35,6 @@ help: ## Display this help
 ##@ Binaries
 ## --------------------------------------
 
-.PHONY: $(LIST_GEN)
-list-gen: prereqs $(LIST_GEN) ## Build list samnple with generated client
-$(LIST_GEN): go.mod
-	cd ../../; $(MAKE) generate-client
-	go build -o $@ github.com/vmware-tanzu/vm-operator-api/hack/samples/generated
-
 .PHONY: $(LIST_CTRL)
 list-ctrl: prereqs $(LIST_CTRL) ## Build list sample with controller client
 $(LIST_CTRL): go.mod
@@ -56,5 +49,5 @@ clean: ## Run all the clean targets
 	$(MAKE) clean-bin
 
 .PHONY: clean-bin
-clean-bin: ## Remove all generated binaries
+clean-bin: ## Remove all binaries
 	rm -rf bin

@@ -336,7 +336,6 @@ func (vm *VirtualMachine) SetConditions(conditions Conditions) {
 	vm.Status.Conditions = conditions
 }
 
-// +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vm
 // +kubebuilder:storageversion

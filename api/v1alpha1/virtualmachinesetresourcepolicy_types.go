@@ -53,7 +53,6 @@ type ClusterModuleStatus struct {
 	ModuleUuid string `json:"moduleUUID"`
 }
 
-// +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status

@@ -41,7 +41,6 @@ type VirtualMachineImageOSInfo struct {
 	Type string `json:"type,omitempty"`
 }
 
-
 // OvfProperty describes information related to a user configurable property element that is supported by
 // VirtualMachineImage and can be customized during VirtualMachine creation.
 type OvfProperty struct {
@@ -84,20 +83,20 @@ type VirtualMachineImageSpec struct {
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage
 type VirtualMachineImageStatus struct {
 	// Deprecated
-	Uuid          string `json:"uuid,omitempty"`
+	Uuid string `json:"uuid,omitempty"`
 
 	// Deprecated
-	InternalId    string `json:"internalId"`
+	InternalId string `json:"internalId"`
 
 	// Deprecated
-	PowerState    string `json:"powerState,omitempty"`
+	PowerState string `json:"powerState,omitempty"`
 
 	// ImageSupported indicates whether the VirtualMachineImage is supported by VMService.
 	// A VirtualMachineImage is supported by VMService if the following conditions are true:
 	// - VirtualMachineImageOSTypeSupportedCondition
 	// - VirtualMachineImageV1Alpha1CompatibleCondition
 	// +optional
-	ImageSupported *bool  `json:"imageSupported,omitempty"`
+	ImageSupported *bool `json:"imageSupported,omitempty"`
 
 	// Conditions describes the current condition information of the VirtualMachineImage object. e.g. if the OS type
 	// is supported or image is supported by VMService
@@ -113,8 +112,6 @@ func (vmImage *VirtualMachineImage) SetConditions(conditions Conditions) {
 	vmImage.Status.Conditions = conditions
 }
 
-// +genclient
-// +genclient:nonNamespaced
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,shortName=vmimage
 // +kubebuilder:storageversion

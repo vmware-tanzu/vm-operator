@@ -112,7 +112,7 @@ type VirtualMachineServiceSpec struct {
 	// Ignored if type is ExternalName.
 	// More info: https://kubernetes.io/docs/concepts/services-networking/service/#virtual-ips-and-service-proxies
 	// +optional
-	ClusterIP    string `json:"clusterIp,omitempty"`
+	ClusterIP string `json:"clusterIp,omitempty"`
 
 	// externalName is the external reference that kubedns or equivalent will
 	// return as a CNAME record for this service. No proxying will be involved.
@@ -130,7 +130,6 @@ type VirtualMachineServiceStatus struct {
 	LoadBalancer LoadBalancerStatus `json:"loadBalancer,omitempty"`
 }
 
-// +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName=vmservice
 // +kubebuilder:storageversion

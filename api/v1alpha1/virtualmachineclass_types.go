@@ -8,10 +8,33 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// VGPUDevice contains the configuration corresponding to a vGPU device.
+type VGPUDevice struct {
+	ProfileName string `json:"profileName"`
+}
+
+// DynamicDirectPathIODevice contains the configuration corresponding to a Dynamic DirectPath I/O device.
+type DynamicDirectPathIODevice struct {
+	VendorID    int    `json:"vendorID"`
+	DeviceID    int    `json:"deviceID"`
+	// +optional
+	CustomLabel string `json:"customLabel,omitempty"`
+}
+
+// VirtualDevices contains information about the virtual devices associated with a VirtualMachineClass.
+type VirtualDevices struct {
+	// +optional
+	VGPUDevices                []VGPUDevice                `json:"vgpuDevices,omitempty" patchStrategy:"merge" patchMergeKey:"profileName"`
+	// +optional
+	DynamicDirectPathIODevices []DynamicDirectPathIODevice `json:"dynamicDirectPathIODevices,omitempty"`
+}
+
 // VirtualMachineClassHardware describes a virtual hardware resource specification.
 type VirtualMachineClassHardware struct {
-	Cpus   int64             `json:"cpus,omitempty"`
-	Memory resource.Quantity `json:"memory,omitempty"`
+	Cpus    int64             `json:"cpus,omitempty"`
+	Memory  resource.Quantity `json:"memory,omitempty"`
+	// +optional
+	Devices VirtualDevices    `json:"devices,omitempty"`
 }
 
 // VirtualMachineResourceSpec describes a virtual hardware policy specification.

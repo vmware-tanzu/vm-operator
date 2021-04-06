@@ -537,6 +537,34 @@ func updateVmConfigArgsTemplates(vmCtx VMContext, updateArgs vmUpdateArgs) {
 	}
 }
 
+func (s *Session) ensureCNSVolumes(vmCtx VMContext) error {
+	// If VM spec has a PVC, check if the volume is attached before powering on
+	for _, volume := range vmCtx.VM.Spec.Volumes {
+		if volume.PersistentVolumeClaim == nil {
+			// Don't process VsphereVolumes here. Note that we don't have Volume status
+			// for Vsphere volumes.
+			continue
+		}
+
+		found := false
+		for _, volumeStatus := range vmCtx.VM.Status.Volumes {
+			if volumeStatus.Name == volume.Name {
+				found = true
+				if !volumeStatus.Attached {
+					return fmt.Errorf("Persistent volume: %s not attached to VM", volume.Name)
+				}
+				break
+			}
+		}
+
+		if !found {
+			return fmt.Errorf("Status update pending for persistent volume: %s on VM", volume.Name)
+		}
+	}
+
+	return nil
+}
+
 type vmUpdateArgs struct {
 	vmprovider.VmConfigArgs
 	NetIfList  NetworkInterfaceInfoList
@@ -585,6 +613,11 @@ func (s *Session) prepareVMForPowerOn(
 	}
 
 	err = s.customizeVM(vmCtx, resVM, config, updateArgs)
+	if err != nil {
+		return err
+	}
+
+	err = s.ensureCNSVolumes(vmCtx)
 	if err != nil {
 		return err
 	}
@@ -737,6 +770,9 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	isOff := moVM.Runtime.PowerState == vimTypes.VirtualMachinePowerStatePoweredOff
+
+	// Update VMStatus with BiosUUID to unblock volume controller
+	vmCtx.VM.Status.BiosUUID = moVM.Config.Uuid
 
 	switch vmCtx.VM.Spec.PowerState {
 	case v1alpha1.VirtualMachinePoweredOff:

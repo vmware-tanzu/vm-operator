@@ -46,8 +46,8 @@ func vmContext(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) vsphere.VMC
 
 var _ = Describe("Sessions", func() {
 	var (
-		ctx       context.Context
-		session   *vsphere.Session
+		ctx     context.Context
+		session *vsphere.Session
 	)
 
 	BeforeEach(func() {
@@ -647,6 +647,103 @@ var _ = Describe("Sessions", func() {
 				// Check that cloned VM disk is the desired size
 				resultingSize := resource.MustParse(fmt.Sprintf("%d", clonedVMDisk1.CapacityInBytes))
 				Expect(resultingSize.Value()).Should(Equal(desiredSize.Value()))
+			})
+
+			It("should power on vm with attached cns volume", func() {
+				imageName := "test-item"
+				vmName := "CL_PowerON_DeployedVM_Attached_PVC"
+				cnsVolumeName := "cns-volume-1"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				vm.Spec.Volumes = []vmopv1alpha1.VirtualMachineVolume{
+					{
+						Name: cnsVolumeName,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "pvc-volume-1",
+						},
+					},
+				}
+
+				clonedVM, err := session.CloneVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+
+				vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+				vm.Status.Volumes = []vmopv1alpha1.VirtualMachineVolumeStatus{
+					{
+						Name:     cnsVolumeName,
+						Attached: true,
+					},
+				}
+				Expect(session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)).To(Succeed())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vm.Status.PowerState).To(Equal(vmopv1alpha1.VirtualMachinePoweredOn))
+			})
+
+			It("should not power on vm when specified persistent volume is not attached", func() {
+				imageName := "test-item"
+				vmName := "CL_PowerON_DeployedVM_PVC_notAttached"
+				cnsVolumeName := "cns-volume-1"
+				dummyError := "dummy error"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				vm.Spec.Volumes = []vmopv1alpha1.VirtualMachineVolume{
+					{
+						Name: cnsVolumeName,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "pvc-volume-1",
+						},
+					},
+				}
+
+				clonedVM, err := session.CloneVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+
+				vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+				vm.Status.Volumes = []vmopv1alpha1.VirtualMachineVolumeStatus{
+					{
+						Name:     cnsVolumeName,
+						Attached: false,
+						Error:    dummyError,
+					},
+				}
+				err = session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("Persistent volume: %s not attached to VM", cnsVolumeName)))
+				Expect(vm.Status.PowerState).ToNot(Equal(vmopv1alpha1.VirtualMachinePoweredOn))
+			})
+
+			It("should not power on vm when specified persistent volume's status update is pending", func() {
+				imageName := "test-item"
+				vmName := "CL_PowerON_DeployedVM_PVC_Update_Pending"
+				cnsVolumeName := "cns-volume-1"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				vm.Spec.Volumes = []vmopv1alpha1.VirtualMachineVolume{
+					{
+						Name: cnsVolumeName,
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "pvc-volume-1",
+						},
+					},
+				}
+
+				clonedVM, err := session.CloneVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+
+				vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+				err = session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("Status update pending for persistent volume: %s on VM", cnsVolumeName)))
+				Expect(vm.Status.PowerState).ToNot(Equal(vmopv1alpha1.VirtualMachinePoweredOn))
 			})
 		})
 	})

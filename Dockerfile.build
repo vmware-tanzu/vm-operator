@@ -1,0 +1,15 @@
+FROM golang:1.15 as intermediate
+
+COPY . /go/src/github.com/vm-operator
+WORKDIR /go/src/github.com/vm-operator/ 
+
+RUN make tools
+RUN make modules
+
+FROM golang:1.15
+
+ARG TOOLS_BIN
+
+COPY --from=intermediate /go/src/github.com/vm-operator/hack/tools/bin $TOOLS_BIN
+COPY --from=intermediate /go/pkg/mod /go/pkg/mod
+

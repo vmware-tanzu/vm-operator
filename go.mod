@@ -1,6 +1,6 @@
 module github.com/vmware-tanzu/vm-operator
 
-go 1.15
+go 1.16
 
 require (
 	cloud.google.com/go v0.46.3 // indirect
@@ -10,7 +10,7 @@ require (
 	github.com/go-logr/zapr v0.1.1 // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
-	github.com/golang/mock v1.3.1
+	github.com/golang/mock v1.5.0
 	github.com/google/go-cmp v0.4.1
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/google/uuid v1.1.1

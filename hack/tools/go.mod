@@ -1,6 +1,6 @@
 module github.com/vmware-tanzu/vm-operator/hack/tools
 
-go 1.15
+go 1.16
 
 require (
 	github.com/emicklei/go-restful v2.9.6+incompatible // indirect

@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: wcp-privileged-psp
+rules:
+- apiGroups:
+  - policy
+  resourceNames:
+  - wcp-privileged-psp
+  resources:
+  - podsecuritypolicies
+  verbs:
+  - use

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vsphere.provider.config.vmoperator.vmware.com
+  namespace: vmware-system-vmop
+data:
+  VcPNID: <vc_pnid>
+  VcCredsSecretName: wcp-vmop-sa-vc-auth
+  Datacenter: <datacenter>
+  Cluster: <cluster>
+  StorageClassRequired: "true"
+  ContentSource: <content_source>
+  UseInventoryAsContentSource: "false"
+  CAFilePath: "/etc/vmware/wcp/tls/vmca.pem"
+  InsecureSkipTLSVerify: "false"

@@ -1,0 +1,35 @@
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: KUBERNETES_SERVICE_HOST
+    value: "127.0.0.1"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: KUBERNETES_SERVICE_PORT
+    value: "6443"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_VMSERVICE
+    value: "<FSS_WCP_VMSERVICE_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_VMSERVICE_V1ALPHA2
+    value: "<FSS_WCP_VMSERVICE_V1ALPHA2_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: VSPHERE_NETWORKING
+    value: "<VSPHERE_NETWORKING_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_THUNDERPCIDEVICES
+    value: "<FSS_THUNDERPCIDEVICES_VALUE>"

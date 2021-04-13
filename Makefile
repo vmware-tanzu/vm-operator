@@ -51,6 +51,7 @@ FULL_COV_FILE = merged-cover.out
 # Generated YAML output locations
 ARTIFACTS_DIR := artifacts
 LOCAL_YAML = $(ARTIFACTS_DIR)/local-deployment.yaml
+WCP_YAML = $(ARTIFACTS_DIR)/wcp-deployment.yaml
 DEFAULT_VMCLASSES_YAML = $(ARTIFACTS_DIR)/default-vmclasses.yaml
 
 BUILDINFO_LDFLAGS = "-extldflags -static -w -s "
@@ -101,7 +102,7 @@ coverage-full: test test-integration | $(GOCOVMERGE) ## Show combined code cover
 .PHONY: manager-only
 manager-only: $(MANAGER) ## Build manager binary only
 $(MANAGER): go.mod prereqs generate
-	go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) .
+	GOOS=linux GOARCH=amd64 go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) .
 
 .PHONY: manager
 manager: prereqs generate lint-go manager-only ## Build manager binary
@@ -250,6 +251,37 @@ kustomize-x: prereqs generate-manifests | $(KUSTOMIZE)
 kustomize-local: CONFIG_TYPE=local
 kustomize-local: YAML_OUT=$(LOCAL_YAML)
 kustomize-local: kustomize-x ## Kustomize for local cluster
+
+.PHONY: kustomize-wcp
+kustomize-wcp: CONFIG_TYPE=wcp
+kustomize-wcp: YAML_OUT=$(WCP_YAML)
+kustomize-wcp: kustomize-x ## Kustomize for WCP cluster
+
+.PHONY: kustomize-wcp-no-configmap
+kustomize-wcp-no-configmap: CONFIG_TYPE=wcp-no-configmap
+kustomize-wcp-no-configmap: YAML_OUT=$(WCP_YAML)
+kustomize-wcp-no-configmap: kustomize-x ## Kustomize for WCP cluster without ConfigMap changes
+
+## --------------------------------------
+## Development - wcp
+## --------------------------------------
+
+.PHONY: deploy-wcp-base
+deploy-wcp-base: prereqs manager  ## Deploy controller in a WCP testbed
+	SKIP_YAML=${SKIP_YAML} hack/deploy-wcp.sh
+
+.PHONY: deploy-wcp
+deploy-wcp: kustomize-wcp  ## Deploy controller in a WCP testbed
+deploy-wcp: deploy-wcp-base
+
+.PHONY: deploy-wcp-no-yaml
+deploy-wcp-no-yaml: SKIP_YAML=all  ## Deploy new container in WCP testbed but don't touch the YAML
+deploy-wcp-no-yaml: deploy-wcp-base
+
+.PHONY: deploy-wcp-no-configmap-yaml
+deploy-wcp-no-configmap-yaml: SKIP_YAML=configmap  ## Deploy new container in WCP testbed but don't touch the ConfigMap YAML
+deploy-wcp-no-configmap-yaml: kustomize-wcp-no-configmap
+deploy-wcp-no-configmap-yaml: deploy-wcp-base
 
 ## --------------------------------------
 ## Clean and verify

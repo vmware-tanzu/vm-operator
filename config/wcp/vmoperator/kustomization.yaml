@@ -1,0 +1,56 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Adds namespace to all resources.
+#
+# Please note that WCP treats vmware-system-* namespaces as reserved.
+# Please do not modify the namespace or prefix without consulting with
+# other members of the project. Thank you.
+namespace: vmware-system-vmop
+namePrefix: vmware-system-vmop-
+
+images:
+- name: controller:latest
+  newName: vmware/vmoperator-controller
+  newTag: 0.0.1
+
+resources:
+- ../../default
+- privileged_psp_role.yaml
+- privileged_psp_role_binding.yaml
+
+patchesStrategicMerge:
+- manager_image_patch.yaml
+- manager_certs_volume_patch.yaml
+- manager_network_patch.yaml
+- manager_anti_affinity_patch.yaml
+- service_metrics_port_patch.yaml
+- cpu_resources_patch.yaml
+
+patchesJson6902:
+- path: manager_metrics_port_patch.yaml
+  target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: controller-manager
+    namespace: system
+- path: proxy_metrics_port_patch.yaml
+  target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: controller-manager
+    namespace: system
+- path: manager_env_var_patch.yaml
+  target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: controller-manager
+    namespace: system
+- path: namespace_patch.yaml
+  target:
+    version: v1
+    kind: Namespace
+    name: system

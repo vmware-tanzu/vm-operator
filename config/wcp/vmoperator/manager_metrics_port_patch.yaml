@@ -1,0 +1,6 @@
+- op: replace
+  path: /spec/template/spec/containers/0/args/0
+  value: --metrics-addr=127.0.0.1:8083
+- op: replace
+  path: /spec/template/spec/containers/1/args/1
+  value: --upstream=http://127.0.0.1:8083

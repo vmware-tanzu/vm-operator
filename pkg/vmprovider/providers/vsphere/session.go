@@ -14,6 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/cluster"
 	"github.com/vmware/govmomi/vapi/library"
@@ -46,7 +47,8 @@ type Session struct {
 	network      object.NetworkReference // BMV: Dead? (never set in ConfigMap)
 	datastore    *object.Datastore
 
-	networkProvider NetworkProvider
+	networkProvider    NetworkProvider
+	contentLibProvider ContentLibraryProvider
 
 	extraConfig           map[string]string
 	storageClassRequired  bool
@@ -176,6 +178,7 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	}
 
 	s.networkProvider = NewNetworkProvider(s.k8sClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
+	s.contentLibProvider = NewContentLibraryProvider(s.Client.RestClient())
 
 	// Initialize tagging information
 	s.tagInfo = make(map[string]string)
@@ -186,22 +189,12 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	return nil
 }
 
-func (s *Session) CreateLibrary(ctx context.Context, contentSource string) (string, error) {
-	return NewContentLibraryProvider(s).CreateLibrary(ctx, contentSource)
-}
-
-func (s *Session) DeleteContentLibrary(ctx context.Context, libID string) error {
-	libManager := library.NewManager(s.Client.RestClient())
-	lib, err := libManager.GetLibraryByID(ctx, libID)
-	if err != nil {
-		return err
-	}
-
-	return libManager.DeleteLibrary(ctx, lib)
+func (s *Session) CreateLibrary(ctx context.Context, name, datastoreID string) (string, error) {
+	return s.contentLibProvider.CreateLibrary(ctx, name, datastoreID)
 }
 
 func (s *Session) CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error {
-	return NewContentLibraryProvider(s).CreateLibraryItem(ctx, libraryItem, path)
+	return s.contentLibProvider.CreateLibraryItem(ctx, libraryItem, path)
 }
 
 func IsSupportedDeployType(t string) bool {
@@ -218,44 +211,33 @@ func IsSupportedDeployType(t string) bool {
 func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID string) ([]*v1alpha1.VirtualMachineImage, error) {
 	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary", "contentLibraryUUID", clUUID)
 
-	items, err := library.NewManager(s.Client.RestClient()).GetLibraryItems(ctx, clUUID)
+	items, err := s.contentLibProvider.GetLibraryItems(ctx, clUUID)
 	if err != nil {
 		return nil, err
 	}
 
 	var images []*v1alpha1.VirtualMachineImage
 	for i := range items {
+		var ovfEnvelope *ovf.Envelope
 		item := items[i]
-		if IsSupportedDeployType(item.Type) {
-			var ovfInfoRetriever OvfPropertyRetriever = vmOptions{}
-			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, AnnotateVmImage, ovfInfoRetriever, s.guestOSIdsToFamily)
-			if err != nil {
+
+		switch item.Type {
+		case library.ItemTypeOVF:
+			if ovfEnvelope, err = s.contentLibProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, &item); err != nil {
 				return nil, err
 			}
-			images = append(images, virtualMachineImage)
+		case library.ItemTypeVMTX:
+			// Do not try to populate VMTX types, but resVm.GetOvfProperties() should return an
+			// OvfEnvelope.
+		default:
+			// Not a supported type. Keep this in sync with cloneVMFromContentLibrary().
+			continue
 		}
+
+		images = append(images, LibItemToVirtualMachineImage(&item, ovfEnvelope, s.guestOSIdsToFamily))
 	}
 
 	return images, nil
-}
-
-func (s *Session) GetItemIDFromCL(ctx context.Context, cl *library.Library, itemName string) (string, error) {
-	restClient := s.Client.RestClient()
-
-	itemIDs, err := library.NewManager(restClient).FindLibraryItems(ctx, library.FindItem{LibraryID: cl.ID, Name: itemName})
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to find image: %s", itemName)
-	}
-
-	if len(itemIDs) == 0 {
-		return "", errors.Errorf("no library item named: %s", itemName)
-	}
-
-	if len(itemIDs) != 1 {
-		return "", errors.Errorf("multiple library items named: %s", itemName)
-	}
-
-	return itemIDs[0], nil
 }
 
 // findChildEntity finds a child entity by a given name under a parent object

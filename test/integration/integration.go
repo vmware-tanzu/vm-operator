@@ -274,13 +274,20 @@ func CreateLibraryItem(ctx context.Context, session *vsphere.Session, name, kind
 	return session.CreateLibraryItem(ctx, libraryItem, imagePath)
 }
 
-// SetupContentLibrary creates ContentSource and CotentLibraryProvider resources for the vSphere content library.
+// SetupContentLibrary creates ContentSource and ContentLibraryProvider resources for the vSphere content library.
 func SetupContentLibrary(client client.Client, session *vsphere.Session) error {
 	stdlog.Printf("Setting up ContentLibraryPrvider and ContentSource for integration tests")
-
 	ctx := context.Background()
 
-	libID, err := session.CreateLibrary(ctx, ContentSourceName)
+	var datastoreID string
+	for _, dc := range simulator.Map.All("Datastore") {
+		if dc.Entity().Name == "LocalDS_0" {
+			datastoreID = dc.Reference().Value
+			break
+		}
+	}
+
+	libID, err := session.CreateLibrary(ctx, ContentSourceName, datastoreID)
 	if err != nil {
 		return err
 	}

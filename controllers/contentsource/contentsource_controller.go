@@ -87,7 +87,6 @@ func (r *ContentSourceReconciler) CreateImages(ctx goCtx.Context, images []vmopv
 		img := image
 		r.Logger.V(4).Info("Creating VirtualMachineImage", "name", img.Name)
 		if err := r.Create(ctx, &img); err != nil {
-
 			// Ignore VirtualMachineImage if it already exists. This can happen if we have a duplicate image name in the
 			// content library. We sort the ContentSources by the oldest to latest one, so the VirtualMachineImage from
 			// the first library is not overwritten.
@@ -102,7 +101,6 @@ func (r *ContentSourceReconciler) CreateImages(ctx goCtx.Context, images []vmopv
 		if err := r.Status().Update(ctx, &img); err != nil {
 			retErr = err
 			r.Logger.Error(err, "failed to update status sub resource for image", "name", img.Name)
-
 		}
 	}
 
@@ -225,6 +223,7 @@ func (r *ContentSourceReconciler) DiffImages(left []vmopv1alpha1.VirtualMachineI
 // GetContentProviderManagedImages fetches the VM images from a given content provider. Also sets the owner ref in the images.
 func (r *ContentSourceReconciler) GetImagesFromContentProvider(ctx goCtx.Context,
 	contentSource vmopv1alpha1.ContentSource) ([]*vmopv1alpha1.VirtualMachineImage, error) {
+
 	providerRef := contentSource.Spec.ProviderRef
 
 	// Currently, the only supported content provider is content library, so we assume that the providerRef is of ContentLibraryProvider kind.
@@ -327,21 +326,10 @@ func (r *ContentSourceReconciler) SyncImages(ctx goCtx.Context) error {
 	}
 
 	if createErr != nil || updateErr != nil || deleteErr != nil {
-		return fmt.Errorf("Error in syncing VirtualMachineImage resources between provider and API server")
+		return fmt.Errorf("error syncing VirtualMachineImage resources between provider and API server")
 	}
 
 	return nil
-}
-
-// GetContentProvider fetches the ContentLibraryProvider object from the API server.
-func GetContentProvider(ctx goCtx.Context, c client.Client, ref vmopv1alpha1.ContentProviderReference) (*vmopv1alpha1.ContentLibraryProvider, error) {
-	contentLibrary := &vmopv1alpha1.ContentLibraryProvider{}
-	if err := c.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: ref.Namespace}, contentLibrary); err != nil {
-		return nil, errors.Wrapf(err, "failed to retrieve object from API server. kind: %v, namespace: %v, name: %v",
-			ref.Kind, ref.Namespace, ref.Name)
-	}
-
-	return contentLibrary, nil
 }
 
 // ReconcileProviderRef reconciles a ContentSource's provider reference. Verifies that the content provider pointed by
@@ -364,12 +352,11 @@ func (r *ContentSourceReconciler) ReconcileProviderRef(ctx goCtx.Context, conten
 
 	contentLibrary := &vmopv1alpha1.ContentLibraryProvider{}
 	if err := r.Get(ctx, client.ObjectKey{Name: providerRef.Name, Namespace: providerRef.Namespace}, contentLibrary); err != nil {
-		logger.Error(err, "failed to get ContentLibraryProvider resource", "providerRefName", providerRef.Name, "providerNamespace", providerRef.Namespace, "providerRefKind", providerRef.Kind)
+		logger.Error(err, "failed to get ContentLibraryProvider resource", "providerRef", providerRef)
 		return err
 	}
 
 	logger = logger.WithValues("contentLibraryName", contentLibrary.Name, "contentLibraryUUID", contentLibrary.Spec.UUID)
-
 	logger.V(4).Info("ContentLibraryProvider backing the ContentSource found")
 
 	beforeObj := contentLibrary.DeepCopy()

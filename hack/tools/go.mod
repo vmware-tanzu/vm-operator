@@ -4,7 +4,6 @@ go 1.16
 
 require (
 	github.com/emicklei/go-restful v2.9.6+incompatible // indirect
-	github.com/golang/mock v1.3.1
 	github.com/golangci/golangci-lint v1.23.8
 	github.com/googleapis/gnostic v0.3.0 // indirect
 	github.com/jstemmer/go-junit-report v0.0.0-20190106144839-af01ea7f8024

@@ -33,7 +33,6 @@ KUBE_APISERVER    := $(BIN_DIR)/kube-apiserver
 KUBEBUILDER       := $(BIN_DIR)/kubebuilder
 KUBECTL           := $(BIN_DIR)/kubectl
 ETCD              := $(BIN_DIR)/etcd
-MOCKGEN           := $(BIN_DIR)/mockgen
 
 ## --------------------------------------
 ## Help
@@ -100,11 +99,6 @@ $(ETCD) $(KUBE_APISERVER) $(KUBEBUILDER):
 $(KUBECTL):
 	curl -sL https://storage.googleapis.com/kubernetes-release/release/v$(KUBECTL_VERSION)/bin/$(HOST_OS)/$(HOST_ARCH)/kubectl -o $(@) && \
 	chmod a+x $(@)
-
-.PHONY: $(MOCKGEN)
-mockgen: $(MOCKGEN) ## Install mockgen
-$(MOCKGEN): go.mod
-	go build -tags=tools -o $@ github.com/golang/mock/mockgen
 
 ## --------------------------------------
 ## Generate

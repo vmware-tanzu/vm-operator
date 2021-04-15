@@ -35,7 +35,6 @@ KUBE_APISERVER     := $(TOOLS_BIN_DIR)/kube-apiserver
 KUBEBUILDER        := $(TOOLS_BIN_DIR)/kubebuilder
 KUBECTL            := $(TOOLS_BIN_DIR)/kubectl
 ETCD               := $(TOOLS_BIN_DIR)/etcd
-MOCKGEN            := $(TOOLS_BIN_DIR)/mockgen
 
 # Allow overriding manifest generation destination directory
 MANIFEST_ROOT ?= config
@@ -147,7 +146,7 @@ clean-docker: ## Clean up the Docker image from the local image cache
 TOOLING_BINARIES := $(CONTROLLER_GEN) $(CLIENT_GEN) $(GOLANGCI_LINT) $(KUSTOMIZE) \
                     $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) \
                     $(ETCD) $(GINKGO) $(GO_JUNIT_REPORT) \
-                    $(GOCOVMERGE) $(GOCOVER_COBERTURA) $(MOCKGEN)
+                    $(GOCOVMERGE) $(GOCOVER_COBERTURA)
 tools: $(TOOLING_BINARIES) ## Build tooling binaries
 .PHONY: $(TOOLING_BINARIES)
 $(TOOLING_BINARIES):

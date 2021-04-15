@@ -106,19 +106,7 @@ func (s *Session) cloneVMFromInventory(vmCtx VMCloneContext, vmConfigArgs vmprov
 }
 
 func (s *Session) cloneVMFromContentLibrary(vmCtx VMCloneContext, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
-	libManager := library.NewManager(s.Client.RestClient())
-
-	contentLibrary, err := libManager.GetLibraryByID(vmCtx, vmConfigArgs.ContentLibraryUUID)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get Content Library for UUID %s", vmConfigArgs.ContentLibraryUUID)
-	}
-
-	itemID, err := s.GetItemIDFromCL(vmCtx, contentLibrary, vmCtx.VM.Spec.ImageName)
-	if err != nil {
-		return nil, err
-	}
-
-	item, err := libManager.GetLibraryItem(vmCtx, itemID)
+	item, err := s.contentLibProvider.GetLibraryItem(vmCtx, vmConfigArgs.ContentLibraryUUID, vmCtx.VM.Spec.ImageName)
 	if err != nil {
 		return nil, err
 	}

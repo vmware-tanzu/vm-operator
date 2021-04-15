@@ -2,19 +2,20 @@
 
 // Copyright (c) 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+
 package vsphere_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
+
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
@@ -27,50 +28,19 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/mocks"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
-var _ = Describe("virtualmachine images", func() {
+var _ = Describe("VirtualMachineImages", func() {
 
-	var mockVmProviderInterface *mocks.MockOvfPropertyRetriever
-	var mockController *gomock.Controller
 	var (
 		versionKey = "vmware-system-version"
 		versionVal = "1.15"
 	)
 
-	BeforeEach(func() {
-		mockController = gomock.NewController(GinkgoT())
-		mockVmProviderInterface = mocks.NewMockOvfPropertyRetriever(mockController)
-	})
-
-	AfterEach(func() {
-		mockController.Finish()
-
-	})
-
-	Context("when annotate flag is set to false", func() {
-
-		It("returns a virtualmachineimage object from an inventory VM without annotations", func() {
-			simulator.Test(func(ctx context.Context, c *vim25.Client) {
-				svm := simulator.Map.Any("VirtualMachine").(*simulator.VirtualMachine)
-				obj := object.NewVirtualMachine(c, svm.Reference())
-
-				resVm, err := res.NewVMFromObject(obj)
-				Expect(err).To(BeNil())
-
-				image, err := vsphere.ResVmToVirtualMachineImage(context.TODO(), resVm, vsphere.DoNotAnnotateVmImage, nil)
-				Expect(err).To(BeNil())
-				Expect(image).ToNot(BeNil())
-				Expect(image.Name).Should(Equal(obj.Name()))
-				Expect(image.Annotations).To(BeEmpty())
-			})
-		})
-
-		It("returns a virtualmachineimage object from a content library without annotations but with ovf info", func() {
+	Context("when ovf info is present", func() {
+		It("returns a VirtualMachineImage object from a content library with annotations and ovf info", func() {
 			ts := time.Now()
-
 			item := library.Item{
 				Name:         "fakeItem",
 				Type:         "ovf",
@@ -84,114 +54,54 @@ var _ = Describe("virtualmachine images", func() {
 						{
 							Vendor:      "vendor",
 							Product:     "product",
-							FullVersion: "fullversion",
 							Version:     "version",
-							Property: []ovf.Property{{
-								Key:     versionKey,
-								Default: &versionVal,
-							},
+							FullVersion: "fullVersion",
+							Property: []ovf.Property{
+								{
+									Key:     versionKey,
+									Default: &versionVal,
+								},
 							},
 						}},
 				},
 			}
 
-			mockVmProviderInterface.EXPECT().
-				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(ovfEnvelope, nil).
-				AnyTimes()
-
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, nil)
-			Expect(err).To(BeNil())
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, nil)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
-			Expect(image.Annotations).To(BeEmpty())
+			Expect(image.Annotations).To(HaveLen(1))
+			Expect(image.Annotations).Should(HaveKeyWithValue("vmware-system-version", "1.15"))
+			Expect(image.CreationTimestamp).To(BeEquivalentTo(metav1.NewTime(ts)))
 
 			Expect(image.Spec.ProductInfo.Vendor).Should(Equal("vendor"))
 			Expect(image.Spec.ProductInfo.Product).Should(Equal("product"))
-			Expect(image.Spec.ProductInfo.FullVersion).Should(Equal("fullversion"))
 			Expect(image.Spec.ProductInfo.Version).Should(Equal("version"))
+			Expect(image.Spec.ProductInfo.FullVersion).Should(Equal("fullVersion"))
 		})
-	})
 
-	Context("when annotate flag is set to true", func() {
+		It("returns a VirtualMachineImage object from an inventory VM with annotations", func() {
+			simulator.Test(func(ctx context.Context, c *vim25.Client) {
+				svm := simulator.Map.Any("VirtualMachine").(*simulator.VirtualMachine)
+				obj := object.NewVirtualMachine(c, svm.Reference())
 
-		Context("when ovf info is present", func() {
-			It("returns a virtualmachineimage object from a content library with annotations and ovf info", func() {
-				ts := time.Now()
-				item := library.Item{
-					Name:         "fakeItem",
-					Type:         "ovf",
-					LibraryID:    "fakeID",
-					CreationTime: &ts,
-				}
-
-				ovfEnvelope := &ovf.Envelope{
-					VirtualSystem: &ovf.VirtualSystem{
-						Product: []ovf.ProductSection{
-							{
-								Vendor:      "vendor",
-								Product:     "product",
-								FullVersion: "fullversion",
-								Version:     "version",
-								Property: []ovf.Property{{
-									Key:     versionKey,
-									Default: &versionVal,
-								},
-								},
-							}},
-					},
-				}
-
-				mockVmProviderInterface.EXPECT().
-					GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(ovfEnvelope, nil).
-					AnyTimes()
-
-				image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.AnnotateVmImage, mockVmProviderInterface, nil)
+				resVm, err := res.NewVMFromObject(obj)
 				Expect(err).To(BeNil())
+
+				// TODO: Need to convert this VM to a vApp (and back).
+				annotations := map[string]string{}
+				annotations[versionKey] = versionVal
+
+				image, err := vsphere.ResVmToVirtualMachineImage(context.TODO(), resVm)
+				Expect(err).ToNot(HaveOccurred())
 				Expect(image).ToNot(BeNil())
-				Expect(image.Name).Should(Equal("fakeItem"))
-				Expect(image.Annotations).NotTo(BeEmpty())
-				Expect(len(image.Annotations)).To(BeEquivalentTo(1))
-				Expect(image.Annotations).Should(HaveKey("vmware-system-version"))
-				Expect(image.Annotations["vmware-system-version"]).Should(Equal("1.15"))
-				Expect(image.CreationTimestamp).To(BeEquivalentTo(v1.NewTime(ts)))
-
-				Expect(image.Spec.ProductInfo.Vendor).Should(Equal("vendor"))
-				Expect(image.Spec.ProductInfo.Product).Should(Equal("product"))
-				Expect(image.Spec.ProductInfo.FullVersion).Should(Equal("fullversion"))
-				Expect(image.Spec.ProductInfo.Version).Should(Equal("version"))
-			})
-
-			It("returns a virtualmachineimage object from an inventory VM with annotations", func() {
-				simulator.Test(func(ctx context.Context, c *vim25.Client) {
-					svm := simulator.Map.Any("VirtualMachine").(*simulator.VirtualMachine)
-					obj := object.NewVirtualMachine(c, svm.Reference())
-
-					resVm, err := res.NewVMFromObject(obj)
-					Expect(err).To(BeNil())
-
-					annotations := map[string]string{}
-					annotations[versionKey] = versionVal
-					mockVmProviderInterface.EXPECT().
-						GetOvfInfoFromVM(gomock.Any(), gomock.Any()).
-						Return(annotations, nil).
-						AnyTimes()
-
-					image, err := vsphere.ResVmToVirtualMachineImage(context.TODO(), resVm, vsphere.AnnotateVmImage, mockVmProviderInterface)
-					Expect(err).To(BeNil())
-					Expect(image).ToNot(BeNil())
-					Expect(image.Name).Should(Equal(obj.Name()))
-					Expect(image.Annotations).ToNot(BeEmpty())
-					Expect(len(image.Annotations)).To(BeEquivalentTo(1))
-					Expect(image.Annotations).To(HaveKey(versionKey))
-					Expect(image.Annotations[versionKey]).To(Equal(versionVal))
-				})
+				Expect(image.Name).Should(Equal(obj.Name()))
+				//Expect(image.Annotations).ToNot(BeEmpty())
+				//Expect(image.Annotations).To(HaveKeyWithValue(versionKey, versionVal))
 			})
 		})
 
 		Context("when ovf info is absent", func() {
-			It("returns a virtualmachineimage object from a content library with annotations and no ovf info", func() {
+			It("returns a VirtualMachineImage object from a content library with annotations and no ovf info", func() {
 				ts := time.Now()
 				item := library.Item{
 					Name:         "fakeItem",
@@ -202,39 +112,13 @@ var _ = Describe("virtualmachine images", func() {
 
 				ovfEnvelope := &ovf.Envelope{}
 
-				mockVmProviderInterface.EXPECT().
-					GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(ovfEnvelope, nil).
-					AnyTimes()
-
-				image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.AnnotateVmImage, mockVmProviderInterface, nil)
-				Expect(err).To(BeNil())
+				image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, nil)
 				Expect(image).ToNot(BeNil())
 				Expect(image.Name).Should(Equal("fakeItem"))
 				Expect(image.Annotations).To(BeEmpty())
-				Expect(image.CreationTimestamp).To(BeEquivalentTo(v1.NewTime(ts)))
-
-				Expect(image.Spec.ProductInfo).ShouldNot(BeNil())
+				Expect(image.CreationTimestamp).To(BeEquivalentTo(metav1.NewTime(ts)))
 				Expect(image.Spec.ProductInfo.Version).Should(BeEmpty())
 			})
-		})
-	})
-
-	Context("when annotate flag is set to true and error occurs in fetching ovf properties", func() {
-		It("returns an err", func() {
-			item := library.Item{
-				Name:      "fakeItem",
-				Type:      "ovf",
-				LibraryID: "fakeID",
-			}
-			mockVmProviderInterface.EXPECT().
-				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(nil, errors.New("error occurred when downloading library content")).
-				AnyTimes()
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.AnnotateVmImage, mockVmProviderInterface, nil)
-			Expect(err).NotTo(BeNil())
-			Expect(image).To(BeNil())
-			Expect(err).Should(MatchError("error occurred when downloading library content"))
 		})
 	})
 
@@ -245,13 +129,11 @@ var _ = Describe("virtualmachine images", func() {
 			dummyValidOsType            = "dummy_valid_os_type"
 			dummyEmptyOsType            = ""
 			dummyWindowsOSType          = "dummy_win_os"
-			dummylinuxFamily            = string(types.VirtualMachineGuestOsFamilyLinuxGuest)
+			dummyLinuxFamily            = string(types.VirtualMachineGuestOsFamilyLinuxGuest)
 			dummyWindowsFamily          = string(types.VirtualMachineGuestOsFamilyWindowsGuest)
 			supportedGuestOsIdsToFamily map[string]string
 			supportedFalse              = new(bool)
 			supportedTrue               = new(bool)
-			trueVar                     = true
-			falseVar                    = false
 			notCompatibleMsg            = "VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1"
 		)
 
@@ -270,32 +152,28 @@ var _ = Describe("virtualmachine images", func() {
 					OperatingSystem: []ovf.OperatingSystemSection{
 						{
 							OSType: &dummyValidOsType,
-						}},
+						},
+					},
 				},
 			}
 
 			supportedGuestOsIdsToFamily = make(map[string]string)
 			// supported guestOSIds fetched from the cluster
-			supportedGuestOsIdsToFamily[dummyValidOsType] = dummylinuxFamily
+			supportedGuestOsIdsToFamily[dummyValidOsType] = dummyLinuxFamily
 			supportedGuestOsIdsToFamily[dummyWindowsOSType] = dummyWindowsFamily
 
-			supportedTrue = &trueVar
-			supportedFalse = &falseVar
+			supportedTrue = pointer.BoolPtr(true)
+			supportedFalse = pointer.BoolPtr(false)
 		})
 
 		It("ovfEnvelope has a valid GuestOSType and OVF is not a TKG Image and is not v1alpha1 compatible", func() {
-			mockVmProviderInterface.EXPECT().
-				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(ovfEnvelope, nil).
-				AnyTimes()
-
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIdsToFamily)
-			Expect(err).To(BeNil())
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
 
-			// ImageSupported in Status is to false as OS type is windows, OVF is not a TKG image and does not contain VMOperatorV1Alpha1ExtraConfigKey in extraConfig
+			// ImageSupported in Status is to false as OS type is windows, OVF is not a TKG image and does not
+			// contain VMOperatorV1Alpha1ExtraConfigKey in extraConfig
 			Expect(image.Status.ImageSupported).Should(Equal(supportedFalse))
 			expectedCondition := vmopv1alpha1.Conditions{
 				*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
@@ -305,7 +183,6 @@ var _ = Describe("virtualmachine images", func() {
 				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition),
 			}
 			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
-
 		})
 
 		It("ovfEnvelope has a empty string GuestOSType and OVF is not TKG image and is not v1alpha1 compatible", func() {
@@ -318,20 +195,13 @@ var _ = Describe("virtualmachine images", func() {
 				},
 			}
 
-			mockVmProviderInterface.EXPECT().
-				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(ovfEnvelope, nil).
-				AnyTimes()
-
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIdsToFamily)
-			Expect(err).To(BeNil())
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
 
 			// ImageSupported in Status is to false as OS type is windows, OVF is not a TKG image and does not contain VMOperatorV1Alpha1ExtraConfigKey in extraConfig
 			Expect(image.Status.ImageSupported).Should(Equal(supportedFalse))
-			msg := fmt.Sprintf("VirtualMachineImage image type %s is not supported by VM Svc", "")
 			expectedCondition := vmopv1alpha1.Conditions{
 				*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
 					vmopv1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
@@ -340,7 +210,7 @@ var _ = Describe("virtualmachine images", func() {
 				*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition,
 					vmopv1alpha1.VirtualMachineImageOSTypeNotSupportedReason,
 					vmopv1alpha1.ConditionSeverityError,
-					msg),
+					fmt.Sprintf("VirtualMachineImage image type %s is not supported by VMService", "")),
 			}
 			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
 		})
@@ -356,20 +226,14 @@ var _ = Describe("virtualmachine images", func() {
 				},
 			}
 
-			mockVmProviderInterface.EXPECT().
-				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(ovfEnvelope, nil).
-				AnyTimes()
-
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIdsToFamily)
-			Expect(err).To(BeNil())
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
 
-			// ImageSupported in Status is to false as OS type is windows, OVF is not a TKG image and does not contain VMOperatorV1Alpha1ExtraConfigKey in extraConfig
+			// ImageSupported in Status is to false as OS type is windows, OVF is not a TKG image and does
+			// not contain VMOperatorV1Alpha1ExtraConfigKey in extraConfig
 			Expect(image.Status.ImageSupported).Should(Equal(supportedFalse))
-			msg := fmt.Sprintf("VirtualMachineImage image type %s is not supported by VM Svc", dummyWindowsOSType)
 			expectedCondition := vmopv1alpha1.Conditions{
 				*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
 					vmopv1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
@@ -378,15 +242,14 @@ var _ = Describe("virtualmachine images", func() {
 				*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition,
 					vmopv1alpha1.VirtualMachineImageOSTypeNotSupportedReason,
 					vmopv1alpha1.ConditionSeverityError,
-					msg),
+					fmt.Sprintf("VirtualMachineImage image type %s is not supported by VMService", dummyWindowsOSType)),
 			}
 			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
 		})
 
-		It("with vmtx type ImageSupported flag is not set", func() {
+		It("with vmtx type", func() {
 			item.Type = "vmtx"
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, nil, supportedGuestOsIdsToFamily)
-			Expect(err).To(BeNil())
+			image := vsphere.LibItemToVirtualMachineImage(&item, nil, supportedGuestOsIdsToFamily)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(BeEmpty())
@@ -398,7 +261,7 @@ var _ = Describe("virtualmachine images", func() {
 
 		It("ImageSupported should be set to true when it is a TKG image and valid OS Type is set and OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig", func() {
 			tkgKey := "vmware-system.guest.kubernetes.distribution.image.version"
-			tkgValue := "somerandomvalue"
+
 			ovfEnvelope = &ovf.Envelope{
 				VirtualSystem: &ovf.VirtualSystem{
 					OperatingSystem: []ovf.OperatingSystemSection{
@@ -410,7 +273,7 @@ var _ = Describe("virtualmachine images", func() {
 							Property: []ovf.Property{
 								{
 									Key:     tkgKey,
-									Default: &tkgValue,
+									Default: pointer.StringPtr("someRandom"),
 								},
 							},
 						},
@@ -418,24 +281,18 @@ var _ = Describe("virtualmachine images", func() {
 				},
 			}
 
-			mockVmProviderInterface.EXPECT().
-				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(ovfEnvelope, nil).
-				AnyTimes()
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
+			Expect(image).ToNot(BeNil())
 
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIdsToFamily)
-			Expect(err).To(BeNil())
 			Expect(image.Status.ImageSupported).Should(Equal(supportedTrue))
 			expectedCondition := vmopv1alpha1.Conditions{
-				*conditions.TrueCondition(
-					vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
+				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
 				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition),
 			}
 			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
 		})
 
 		It("ImageSupported should be set to false when OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig and is not a TKG image and has a valid OS type set", func() {
-			someRandomValue := "someRandom"
 			ovfEnvelope = &ovf.Envelope{
 				VirtualSystem: &ovf.VirtualSystem{
 					OperatingSystem: []ovf.OperatingSystemSection{
@@ -447,8 +304,8 @@ var _ = Describe("virtualmachine images", func() {
 						{
 							Property: []ovf.Property{
 								{
-									Key:     "somekey",
-									Default: &someRandomValue,
+									Key:     "someKey",
+									Default: pointer.StringPtr("someRandom"),
 								},
 							},
 						},
@@ -456,13 +313,8 @@ var _ = Describe("virtualmachine images", func() {
 				},
 			}
 
-			mockVmProviderInterface.EXPECT().
-				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(ovfEnvelope, nil).
-				AnyTimes()
-
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIdsToFamily)
-			Expect(err).To(BeNil())
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
+			Expect(image).ToNot(BeNil())
 			Expect(image.Status.ImageSupported).Should(Equal(supportedFalse))
 
 			expectedCondition := vmopv1alpha1.Conditions{
@@ -473,11 +325,9 @@ var _ = Describe("virtualmachine images", func() {
 				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition),
 			}
 			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
-
 		})
 
 		It("ImageSupported should be set to true when OVF Envelope has vsphere.VMOperatorV1Alpha1ExtraConfigKey set to vsphere.VMOperatorV1Alpha1ConfigReady in extraConfig and has a valid OS type set", func() {
-			//magicKeyValue := "v1alpha1"
 			ovfEnvelope = &ovf.Envelope{
 				VirtualSystem: &ovf.VirtualSystem{
 					OperatingSystem: []ovf.OperatingSystemSection{
@@ -498,21 +348,14 @@ var _ = Describe("virtualmachine images", func() {
 				},
 			}
 
-			mockVmProviderInterface.EXPECT().
-				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(ovfEnvelope, nil).
-				AnyTimes()
-
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.DoNotAnnotateVmImage, mockVmProviderInterface, supportedGuestOsIdsToFamily)
-			Expect(err).To(BeNil())
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
+			Expect(image).ToNot(BeNil())
 			Expect(image.Status.ImageSupported).Should(Equal(supportedTrue))
 			expectedCondition := vmopv1alpha1.Conditions{
-				*conditions.TrueCondition(
-					vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
+				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
 				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition),
 			}
 			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
-
 		})
 	})
 
@@ -539,7 +382,7 @@ var _ = Describe("virtualmachine images", func() {
 			defaultValue             = "dummy-value"
 		)
 
-		It("returns a virtualmachineimage object from a content library with ovfEnv", func() {
+		It("returns a VirtualMachineImage object from a content library with ovfEnv", func() {
 			ts := time.Now()
 			item := library.Item{
 				Name:         "fakeItem",
@@ -580,17 +423,11 @@ var _ = Describe("virtualmachine images", func() {
 				},
 			}
 
-			mockVmProviderInterface.EXPECT().
-				GetOvfInfoFromLibraryItem(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(ovfEnvelope, nil).
-				AnyTimes()
-
-			image, err := vsphere.LibItemToVirtualMachineImage(context.TODO(), nil, &item, vsphere.AnnotateVmImage, mockVmProviderInterface, nil)
-			Expect(err).To(BeNil())
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, nil)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 
-			Expect(len(image.Spec.OVFEnv)).Should(Equal(1))
+			Expect(image.Spec.OVFEnv).Should(HaveLen(1))
 			Expect(image.Spec.OVFEnv).Should(HaveKey(userConfigurableKey))
 			Expect(image.Spec.OVFEnv[userConfigurableKey].Key).Should(Equal(userConfigurableKey))
 			Expect(image.Spec.OVFEnv[userConfigurableKey].Type).Should(Equal(ovfStringType))

@@ -196,6 +196,88 @@ func updateEthCardDeviceChanges(
 	return append(removeDeviceChanges, deviceChanges...), nil
 }
 
+func createPCIPassThroughDevice(deviceKey int32, backingInfo vimTypes.BaseVirtualDeviceBackingInfo) vimTypes.BaseVirtualDevice {
+	vgpuDevice := &vimTypes.VirtualPCIPassthrough{
+		VirtualDevice: vimTypes.VirtualDevice{
+			Key:     deviceKey,
+			Backing: backingInfo,
+		},
+	}
+	return vgpuDevice
+}
+
+func createPCIDevices(pciDevices v1alpha1.VirtualDevices) []vimTypes.BaseVirtualDevice {
+
+	var expectedPciDevices []vimTypes.BaseVirtualDevice
+
+	// Processing vGPUs only. Later, processing for GPUs in passThrough mode will be added.
+	// A negative device range is used for pciDevices here.
+	deviceKey := int32(-200)
+	for _, vGPU := range pciDevices.VGPUDevices {
+		backingInfo := &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
+			Vgpu: vGPU.ProfileName,
+		}
+		vGPUDevice := createPCIPassThroughDevice(deviceKey, backingInfo)
+		expectedPciDevices = append(expectedPciDevices, vGPUDevice)
+		deviceKey--
+	}
+	return expectedPciDevices
+}
+
+// updatePCIDevices returns devices changes for PCI devices attached to a VM. There are 2 types of PCI devices processed
+// here and in case of cloning a VM, devices listed in VMClass are considered as source of truth.
+func updatePCIDeviceChanges(expectedPciDevices object.VirtualDeviceList,
+	currentPciDevices object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+
+	var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
+	for _, expectedDev := range expectedPciDevices {
+		expectedPci := expectedDev.(*vimTypes.VirtualPCIPassthrough)
+		expectedBacking := expectedPci.Backing
+		expectedBackingType := reflect.TypeOf(expectedBacking)
+
+		var matchingIdx = -1
+		for idx, curDev := range currentPciDevices {
+			curBacking := curDev.GetVirtualDevice().Backing
+			if curBacking == nil || reflect.TypeOf(curBacking) != expectedBackingType {
+				continue
+			}
+
+			var backingMatch bool
+			switch a := curBacking.(type) {
+			case *vimTypes.VirtualPCIPassthroughVmiopBackingInfo:
+				b := expectedBacking.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
+				backingMatch = a.Vgpu == b.Vgpu
+			}
+
+			if backingMatch {
+				matchingIdx = idx
+				break
+			}
+		}
+
+		if matchingIdx == -1 {
+			deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
+				Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+				Device:    expectedPci,
+			})
+		} else {
+			// There could be multiple vgpus with same backinginfo. Remove current device if matching found.
+			currentPciDevices = append(currentPciDevices[:matchingIdx], currentPciDevices[matchingIdx+1:]...)
+		}
+	}
+	// Remove any unmatched existing devices.
+	var removeDeviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
+	for _, dev := range currentPciDevices {
+		removeDeviceChanges = append(removeDeviceChanges, &vimTypes.VirtualDeviceConfigSpec{
+			Device:    dev,
+			Operation: vimTypes.VirtualDeviceConfigSpecOperationRemove,
+		})
+	}
+
+	// Process any removes first.
+	return append(removeDeviceChanges, deviceChanges...), nil
+}
+
 func updateConfigSpecCPUAllocation(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec *vimTypes.VirtualMachineConfigSpec,
@@ -416,6 +498,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 	virtualDevices := object.VirtualDeviceList(config.Hardware.Device)
 	currentDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
 	currentEthCards := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
+	currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
 
 	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx, currentDisks)
 	if err != nil {
@@ -429,6 +512,13 @@ func (s *Session) prePowerOnVMConfigSpec(
 		return nil, err
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
+
+	expectedPciDevices := createPCIDevices(updateArgs.VmClass.Spec.Hardware.Devices)
+	pciDeviceChanges, err := updatePCIDeviceChanges(expectedPciDevices, currentPciDevices)
+	if err != nil {
+		return nil, err
+	}
+	configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
 
 	return configSpec, nil
 }

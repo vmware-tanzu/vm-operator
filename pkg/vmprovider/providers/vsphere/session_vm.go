@@ -95,6 +95,20 @@ func (s *Session) DeleteVirtualMachine(vmCtx VMContext) error {
 	return nil
 }
 
+func (s *Session) GetVirtualMachineGuestHeartbeat(vmCtx VMContext) (vmopv1alpha1.GuestHeartbeatStatus, error) {
+	resVM, err := s.GetVirtualMachine(vmCtx)
+	if err != nil {
+		return "", transformVmError(vmCtx.VM.NamespacedName(), err)
+	}
+
+	moVM, err := resVM.GetProperties(vmCtx, []string{"guestHeartbeatStatus"})
+	if err != nil {
+		return "", err
+	}
+
+	return vmopv1alpha1.GuestHeartbeatStatus(moVM.GuestHeartbeatStatus), nil
+}
+
 func updateVirtualDiskDeviceChanges(
 	vmCtx VMContext,
 	virtualDisks object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {

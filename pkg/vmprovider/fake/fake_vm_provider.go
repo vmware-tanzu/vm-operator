@@ -22,10 +22,11 @@ import (
 // expected to evolve as more tests get added in the future.
 
 type funcs struct {
-	DoesVirtualMachineExistFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
-	CreateVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
-	UpdateVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
-	DeleteVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
+	DoesVirtualMachineExistFn         func(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
+	CreateVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
+	UpdateVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
+	DeleteVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
+	GetVirtualMachineGuestHeartbeatFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 
 	ListVirtualMachineImagesFromContentLibraryFn func(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error)
 	DoesContentLibraryExistFn                    func(ctx context.Context, cl *v1alpha1.ContentLibraryProvider) (bool, error)
@@ -101,6 +102,15 @@ func (s *FakeVmProvider) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.
 	}
 	s.deleteFromVMMap(vm)
 	return nil
+}
+
+func (s *FakeVmProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error) {
+	s.Lock()
+	defer s.Unlock()
+	if s.GetVirtualMachineGuestHeartbeatFn != nil {
+		return s.GetVirtualMachineGuestHeartbeatFn(ctx, vm)
+	}
+	return "", nil
 }
 
 func (s *FakeVmProvider) Initialize(stop <-chan struct{}) {}

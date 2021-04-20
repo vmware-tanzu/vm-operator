@@ -23,6 +23,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
 	vmoprecord "github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
 const (
@@ -63,11 +64,11 @@ type manager struct {
 }
 
 // NewManger initializes a prober manager.
-func NewManger(client client.Client, record vmoprecord.Recorder) Manager {
+func NewManger(client client.Client, record vmoprecord.Recorder, vmProvider vmprovider.VirtualMachineProviderInterface) Manager {
 	probeManager := &manager{
 		client:               client,
 		readinessQueue:       workqueue.NewNamedDelayingQueue(readinessProbeQueueName),
-		prober:               probe.NewProber(),
+		prober:               probe.NewProber(vmProvider),
 		log:                  ctrl.Log.WithName(proberManagerName),
 		recorder:             record,
 		vmReadinessProbeList: make(map[string]*vmoperatorv1alpha1.Probe),
@@ -75,12 +76,12 @@ func NewManger(client client.Client, record vmoprecord.Recorder) Manager {
 	return probeManager
 }
 
-// AddToVirtualMachineController adds the probe manager to the vm controller.
-func AddToVirtualMachineController(mgr ctrlmgr.Manager) (Manager, error) {
+// AddToManager adds the probe manager controller manager.
+func AddToManager(mgr ctrlmgr.Manager, vmProvider vmprovider.VirtualMachineProviderInterface) (Manager, error) {
 	probeRecorder := vmoprecord.New(mgr.GetEventRecorderFor(proberManagerName))
-	m := NewManger(mgr.GetClient(), probeRecorder)
 
 	// Add the probe manager explicitly as runnable in order to receive a Start() event.
+	m := NewManger(mgr.GetClient(), probeRecorder, vmProvider)
 	err := mgr.Add(m)
 	if err != nil {
 		return nil, err
@@ -90,7 +91,9 @@ func AddToVirtualMachineController(mgr ctrlmgr.Manager) (Manager, error) {
 
 // AddToProberManager adds a VM to the prober manager.
 func (m *manager) AddToProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
-	m.log.V(4).Info("Add to prober manager", "vm", vm.NamespacedName())
+	vmName := vm.NamespacedName()
+	m.log.V(4).Info("Add to prober manager", "vm", vmName)
+
 	m.readinessMutex.Lock()
 	defer m.readinessMutex.Unlock()
 
@@ -98,25 +101,26 @@ func (m *manager) AddToProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
 		// if the VM is not in the list, or its readiness probe spec has been updated, immediately add it to the queue
 		// otherwise, ignore it.
 		newProbe := vm.Spec.ReadinessProbe
-		if oldProbe, ok := m.vmReadinessProbeList[vm.NamespacedName()]; ok && reflect.DeepEqual(oldProbe, newProbe) {
-			m.log.V(4).Info("VM is already in the readiness probe list and its probe spec is not updated, skip it", "vm", vm.NamespacedName())
+		if oldProbe, ok := m.vmReadinessProbeList[vmName]; ok && reflect.DeepEqual(oldProbe, newProbe) {
+			m.log.V(4).Info("VM is already in the readiness probe list and its probe spec is not updated, skip it", "vm", vmName)
 			return
 		}
 
 		m.readinessQueue.Add(client.ObjectKey{Name: vm.Name, Namespace: vm.Namespace})
-		m.vmReadinessProbeList[vm.NamespacedName()] = newProbe
+		m.vmReadinessProbeList[vmName] = newProbe
 	} else {
-		delete(m.vmReadinessProbeList, vm.NamespacedName())
+		delete(m.vmReadinessProbeList, vmName)
 	}
 }
 
 // RemoveFromProberManager removes a VM from the prober manager.
 func (m *manager) RemoveFromProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
-	m.log.V(4).Info("Remove from prober manager", "vm", vm.NamespacedName())
+	vmName := vm.NamespacedName()
+	m.log.V(4).Info("Remove from prober manager", "vm", vmName)
+
 	m.readinessMutex.Lock()
 	defer m.readinessMutex.Unlock()
-
-	delete(m.vmReadinessProbeList, vm.NamespacedName())
+	delete(m.vmReadinessProbeList, vmName)
 }
 
 // Start starts the probe manager

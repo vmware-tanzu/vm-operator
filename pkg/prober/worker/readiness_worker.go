@@ -104,7 +104,7 @@ func (w *readinessWorker) ProcessProbeResult(ctx *context.ProbeContext, res prob
 func (w *readinessWorker) DoProbe(ctx *context.ProbeContext) error {
 	res, err := w.runProbe(ctx)
 	if err != nil {
-		ctx.Logger.Error(err, "readiness probe fails")
+		ctx.Logger.Error(err, "readiness probe fails", "result", res)
 	}
 	return w.ProcessProbeResult(ctx, res, err)
 }
@@ -113,6 +113,9 @@ func (w *readinessWorker) DoProbe(ctx *context.ProbeContext) error {
 func (w *readinessWorker) getProbe(probeSpec *vmopv1alpha1.Probe) probe.Probe {
 	if probeSpec.TCPSocket != nil {
 		return w.prober.TCPProbe
+	}
+	if probeSpec.GuestHeartbeat != nil {
+		return w.prober.GuestHeartbeat
 	}
 
 	return nil

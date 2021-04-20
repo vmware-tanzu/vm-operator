@@ -589,6 +589,110 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 	})
+
+	Context("PCI Device Changes", func() {
+		var currentList, expectedList object.VirtualDeviceList
+		var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
+		var err error
+		var backingInfo1, backingInfo2 *vimTypes.VirtualPCIPassthroughVmiopBackingInfo
+		var deviceKey1, deviceKey2 int32
+		var vGPUDevice1, vGPUDevice2 vimTypes.BaseVirtualDevice
+
+		BeforeEach(func() {
+			backingInfo1 = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop1"}
+			backingInfo2 = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop2"}
+			deviceKey1 = int32(-200)
+			deviceKey2 = int32(-201)
+			vGPUDevice1 = createPCIPassThroughDevice(deviceKey1, backingInfo1)
+			vGPUDevice2 = createPCIPassThroughDevice(deviceKey2, backingInfo2)
+		})
+
+		JustBeforeEach(func() {
+			deviceChanges, err = updatePCIDeviceChanges(expectedList, currentList)
+		})
+
+		AfterEach(func() {
+			currentList = nil
+			expectedList = nil
+		})
+
+		Context("No devices", func() {
+			It("returns empty list", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deviceChanges).To(BeEmpty())
+			})
+		})
+
+		Context("Adding vGPU devices with different backing info", func() {
+			BeforeEach(func() {
+				expectedList = append(expectedList, vGPUDevice1)
+				expectedList = append(expectedList, vGPUDevice2)
+			})
+
+			It("Should return add device changes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(deviceChanges)).To(Equal(len(expectedList)))
+
+				for idx, dev := range deviceChanges {
+					configSpec := dev.GetVirtualDeviceConfigSpec()
+					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[idx].GetVirtualDevice().Key))
+					Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+				}
+			})
+		})
+
+		Context("Adding vGPU devices with same backing info", func() {
+			BeforeEach(func() {
+				expectedList = append(expectedList, vGPUDevice1)
+				// Creating a vGPUDevice with same backingInfo1 but different deviceKey.
+				vGPUDevice2 = createPCIPassThroughDevice(deviceKey2, backingInfo1)
+				expectedList = append(expectedList, vGPUDevice2)
+			})
+
+			It("Should return add device changes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(deviceChanges)).To(Equal(len(expectedList)))
+
+				for idx, dev := range deviceChanges {
+					configSpec := dev.GetVirtualDeviceConfigSpec()
+					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[idx].GetVirtualDevice().Key))
+					Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+				}
+			})
+		})
+
+		Context("When the expected and current list of pciDevices have different vGPU Devices", func() {
+			BeforeEach(func() {
+				currentList = append(currentList, vGPUDevice1)
+				expectedList = append(expectedList, vGPUDevice2)
+			})
+
+			It("Should return add and remove device changes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(deviceChanges)).To(Equal(2))
+
+				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[0].GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+
+				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[0].GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+			})
+		})
+
+		Context("When the expected and current list of pciDevices have same vGPU Devices", func() {
+			BeforeEach(func() {
+				currentList = append(currentList, vGPUDevice1)
+				expectedList = append(expectedList, vGPUDevice1)
+			})
+
+			It("returns empty list", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deviceChanges).To(BeEmpty())
+			})
+		})
+	})
 })
 
 var _ = Describe("Customization", func() {

@@ -367,6 +367,26 @@ var _ = Describe("Sessions", func() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 
+			It("should return guest heartbeat", func() {
+				imageName := "test-item"
+				vmName := "CL_Tools_PowerON_DeployedVM"
+
+				vmConfigArgs := getVmConfigArgs(testNamespace, testVMName, imageName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VmClass.Name)
+
+				clonedVM, err := session.CloneVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+
+				vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+				Expect(session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)).To(Succeed())
+
+				// Just testing for property query: field not set in vcsim.
+				heartbeat, err := session.GetVirtualMachineGuestHeartbeat(vmContext(ctx, vm))
+				Expect(err).ToNot(HaveOccurred())
+				Expect(heartbeat).To(BeEmpty())
+			})
+
 			It("should clone VM with storage policy disk provisioning", func() {
 				imageName := "test-item"
 				vmName := "CL_DeployedVM-via-policy"

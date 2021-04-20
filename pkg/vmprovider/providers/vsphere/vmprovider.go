@@ -224,6 +224,26 @@ func (vs *vSphereVmProvider) DeleteVirtualMachine(ctx context.Context, vm *v1alp
 	return nil
 }
 
+func (vs *vSphereVmProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error) {
+	vmCtx := VMContext{
+		Context: context.WithValue(ctx, vimtypes.ID{}, vs.getOpId(ctx, vm, "heartbeat")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
+	ses, err := vs.sessions.GetSession(ctx, vmCtx.VM.Namespace)
+	if err != nil {
+		return "", err
+	}
+
+	status, err := ses.GetVirtualMachineGuestHeartbeat(vmCtx)
+	if err != nil {
+		return "", err
+	}
+
+	return status, nil
+}
+
 func (vs *vSphereVmProvider) ComputeClusterCpuMinFrequency(ctx context.Context) error {
 
 	if err := vs.sessions.ComputeClusterCpuMinFrequency(ctx); err != nil {

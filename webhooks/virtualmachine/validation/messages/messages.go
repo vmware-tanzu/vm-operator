@@ -9,6 +9,8 @@ const (
 	ImageNotSpecified                      = "spec.imageName must be specified"
 	ClassNotSpecified                      = "spec.className must be specified"
 	MetadataTransportConfigMapNotSpecified = "spec.vmMetadata.configMapName must be specified"
+	ReadinessProbeNoActions                = "spec.readinessProbe must specify an action"
+	ReadinessProbeOnlyOneAction            = "spec.readinessProbe only one action can be specified"
 
 	NetworkNameNotSpecifiedFmt               = "spec.networkInterfaces[%d].networkName must be specified"
 	NetworkTypeNotSupportedFmt               = "spec.networkInterfaces[%d].networkType is not supported"
@@ -24,7 +26,7 @@ const (
 	MultipleVolumeSpecifiedFmt                = "only one of spec.volumes[%d].persistentVolumeClaim/spec.volumes[%d].vsphereVolume must be specified"
 	VolumeNotSpecifiedFmt                     = "one of spec.volumes[%d].persistentVolumeClaim/spec.volumes[%d].vsphereVolume must be specified"
 	VsphereVolumeSizeNotMBMultipleFmt         = "spec.volumes[%d].vsphereVolume.capacity.ephemeral-storage must be a multiple of MB"
-	EagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning."
+	EagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning"
 
 	VMImageNotSupported     = "GuestOS not supported for osType %s on image %s or VMImage is not compatible with v1alpha1 or is not a TKG Image"
 	StorageClassNotAssigned = "StorageClass %s is not assigned to any ResourceQuotas in namespace %s"

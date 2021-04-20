@@ -138,6 +138,17 @@ spec:
               readinessProbe:
                 description: ReadinessProbe describes a network probe that can be used to determine if the VirtualMachine is available and responding to the probe.
                 properties:
+                  guestHeartbeat:
+                    description: GuestHeartbeat specifies an action involving the guest heartbeat status.
+                    properties:
+                      thresholdStatus:
+                        default: green
+                        description: ThresholdStatus is the value that the guest heartbeat status must be at or above to be considered successful.
+                        enum:
+                        - yellow
+                        - green
+                        type: string
+                    type: object
                   periodSeconds:
                     description: PeriodSeconds specifics how often (in seconds) to perform the probe. Defaults to 10 seconds. Minimum value is 1.
                     format: int32
@@ -217,7 +228,7 @@ spec:
                           description: A description of the virtual volume's resources and capacity
                           type: object
                         deviceKey:
-                          description: Device key of vSphere disk.  Empty deviceKey means it should be created in vSphere.
+                          description: Device key of vSphere disk.
                           type: integer
                       type: object
                   required:

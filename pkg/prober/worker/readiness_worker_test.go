@@ -5,6 +5,7 @@ package worker
 
 import (
 	goctx "context"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
@@ -35,10 +36,11 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 		vmKey client.ObjectKey
 		ctx   *context.ProbeContext
 
-		fakeClient   client.Client
-		fakeRecorder record.Recorder
-		fakeEvents   chan string
-		fakeProbe    *fakeprobe.FakeProbe
+		fakeClient         client.Client
+		fakeRecorder       record.Recorder
+		fakeEvents         chan string
+		fakeTCPProbe       *fakeprobe.FakeProbe
+		fakeHeartbeatProbe *fakeprobe.FakeProbe
 	)
 
 	BeforeEach(func() {
@@ -60,9 +62,12 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 		fakeEvents = eventRecorder.Events
 
 		queue := workqueue.NewNamedDelayingQueue("test")
-		prober := probe.NewProber()
-		fakeProbe = fakeprobe.NewFakeProbe().(*fakeprobe.FakeProbe)
-		prober.TCPProbe = fakeProbe
+		fakeTCPProbe = fakeprobe.NewFakeProbe().(*fakeprobe.FakeProbe)
+		fakeHeartbeatProbe = fakeprobe.NewFakeProbe().(*fakeprobe.FakeProbe)
+		prober := &probe.Prober{
+			TCPProbe:       fakeTCPProbe,
+			GuestHeartbeat: fakeHeartbeatProbe,
+		}
 		testWorker = NewReadinessWorker(queue, prober, fakeClient, fakeRecorder)
 	})
 
@@ -90,7 +95,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 
 		When("new ReadyCondition is in a transition", func() {
 			It("Should update ReadyCondition when probe succeeds", func() {
-				fakeProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
+				fakeTCPProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
 					return probe.Success, nil
 				}
 
@@ -108,7 +113,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 			})
 
 			It("Should update ReadyCondition when probe fails", func() {
-				fakeProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
+				fakeTCPProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
 					return probe.Failure, nil
 				}
 
@@ -133,7 +138,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 					Expect(fakeClient.Get(ctx, vmKey, vm)).Should(Succeed())
 					oldStatus = vm.Status
 
-					fakeProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
+					fakeTCPProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
 						return probe.Success, nil
 					}
 
@@ -146,6 +151,31 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 					})
 				})
 			})
+		})
+	})
+
+	Context("Guest heartbeat Probe", func() {
+
+		BeforeEach(func() {
+			vm.Spec.ReadinessProbe = getVirtualMachineHeartbeatProbe()
+			Expect(fakeClient.Create(goctx.Background(), vm)).Should(Succeed())
+			Expect(fakeClient.Get(goctx.Background(), vmKey, vm)).Should(Succeed())
+			var err error
+			ctx, err = testWorker.CreateProbeContext(vm)
+			Expect(err).ShouldNot(HaveOccurred())
+		})
+
+		// Just need to test for probe selection.
+		It("Should update ReadyCondition when probe fails", func() {
+			fakeHeartbeatProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
+				return probe.Failure, fmt.Errorf("heartbeat error")
+			}
+
+			Expect(testWorker.DoProbe(ctx)).Should(Succeed())
+			Expect(fakeClient.Get(ctx, vmKey, vm)).Should(Succeed())
+			condition := conditions.Get(vm, vmopv1alpha1.ReadyCondition)
+			Expect(condition).ToNot(BeNil())
+			Expect(condition.Message).To(ContainSubstring("heartbeat error"))
 		})
 	})
 })
@@ -161,5 +191,12 @@ func getVirtualMachineReadinessTCPProbe(port int) *vmopv1alpha1.Probe {
 			Port: intstr.FromInt(port),
 		},
 		PeriodSeconds: 1,
+	}
+}
+
+func getVirtualMachineHeartbeatProbe() *vmopv1alpha1.Probe {
+	return &vmopv1alpha1.Probe{
+		GuestHeartbeat: &vmopv1alpha1.GuestHeartbeatAction{},
+		PeriodSeconds:  1,
 	}
 }

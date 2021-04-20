@@ -49,7 +49,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	proberManager, err := prober.AddToVirtualMachineController(mgr)
+	proberManager, err := prober.AddToManager(mgr, ctx.VmProvider)
 	if err != nil {
 		return err
 	}

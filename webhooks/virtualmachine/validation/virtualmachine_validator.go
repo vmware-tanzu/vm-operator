@@ -87,6 +87,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVmVolumeProvisioningOptions(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateReadinessProbe(ctx, vm)...)
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
@@ -147,6 +148,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVmVolumeProvisioningOptions(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateReadinessProbe(ctx, vm)...)
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
@@ -346,6 +348,23 @@ func (v validator) validateVmVolumeProvisioningOptions(ctx *context.WebhookReque
 			validationErrs = append(validationErrs, messages.EagerZeroedAndThinProvisionedNotSupported)
 		}
 	}
+	return validationErrs
+}
+
+func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
+	probe := vm.Spec.ReadinessProbe
+	if probe == nil {
+		return nil
+	}
+
+	var validationErrs []string
+
+	if probe.TCPSocket == nil && probe.GuestHeartbeat == nil {
+		validationErrs = append(validationErrs, messages.ReadinessProbeNoActions)
+	} else if probe.TCPSocket != nil && probe.GuestHeartbeat != nil {
+		validationErrs = append(validationErrs, messages.ReadinessProbeOnlyOneAction)
+	}
+
 	return validationErrs
 }
 

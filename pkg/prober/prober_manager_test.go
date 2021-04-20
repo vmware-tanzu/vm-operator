@@ -8,14 +8,14 @@ import (
 	"fmt"
 	"testing"
 
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	clientgorecord "k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -24,6 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -70,7 +71,8 @@ var _ = Describe("VirtualMachine probes", func() {
 		fakeClient, _ = builder.NewFakeClient(initObjects...)
 		eventRecorder := clientgorecord.NewFakeRecorder(1024)
 		fakeRecorder = record.New(eventRecorder)
-		testManagerIf := NewManger(fakeClient, fakeRecorder)
+		fakeVmProvider := &fake.FakeVmProvider{}
+		testManagerIf := NewManger(fakeClient, fakeRecorder, fakeVmProvider)
 		testManager = testManagerIf.(*manager)
 		fakeWorkerIf = fakeworker.NewFakeWorker(testManager.readinessQueue)
 		fakeWorker = fakeWorkerIf.(*fakeworker.FakeWorker)

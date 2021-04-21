@@ -48,6 +48,9 @@ const (
 	VMOperatorImageSupportedCheckKey     = pkg.VmOperatorKey + "/image-supported-check"
 	VMOperatorImageSupportedCheckDisable = "disable"
 
+	VSphereCustomizationBypassKey     = pkg.VmOperatorKey + "/vsphere-customization"
+	VSphereCustomizationBypassDisable = "disable"
+
 	EnvContentLibApiWaitSecs     = "CONTENT_API_WAIT_SECS"
 	DefaultContentLibApiWaitSecs = 5
 

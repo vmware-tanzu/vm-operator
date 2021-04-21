@@ -51,6 +51,11 @@ func (s *Session) customizeVM(
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs vmUpdateArgs) error {
 
+	if val := vmCtx.VM.Annotations[VSphereCustomizationBypassKey]; val == VSphereCustomizationBypassDisable {
+		vmCtx.Logger.Info("Skipping vsphere customization because of vsphere-customization bypass annotation")
+		return nil
+	}
+
 	if isCustomizationPendingExtraConfig(config.ExtraConfig) {
 		vmCtx.Logger.Info("Skipping customization because it is already pending")
 		// TODO: We should really determine if the pending customization is stale, clear it

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -707,6 +708,23 @@ func (s *Session) attachTagsAndModules(
 	return nil
 }
 
+func ipCIDRNotation(ipAddress string, prefix int32) string {
+	return ipAddress + "/" + strconv.Itoa(int(prefix))
+}
+
+func nicInfoToNetworkIfStatus(nicInfo vimTypes.GuestNicInfo) v1alpha1.NetworkInterfaceStatus {
+	var IpAddresses []string
+	for _, ipAddress := range nicInfo.IpConfig.IpAddress {
+		IpAddresses = append(IpAddresses, ipCIDRNotation(ipAddress.IpAddress, ipAddress.PrefixLength))
+	}
+
+	return v1alpha1.NetworkInterfaceStatus{
+		Connected:   nicInfo.Connected,
+		MacAddress:  nicInfo.MacAddress,
+		IpAddresses: IpAddresses,
+	}
+}
+
 func (s *Session) updateVMStatus(
 	vmCtx VMContext,
 	resVM *res.VirtualMachine) error {
@@ -743,8 +761,14 @@ func (s *Session) updateVMStatus(
 
 	if guest := moVM.Guest; guest != nil {
 		vm.Status.VmIp = guest.IpAddress
+		var networkIfStatuses []v1alpha1.NetworkInterfaceStatus
+		for _, nicInfo := range guest.Net {
+			networkIfStatuses = append(networkIfStatuses, nicInfoToNetworkIfStatus(nicInfo))
+		}
+		vm.Status.NetworkInterfaces = networkIfStatuses
 	} else {
 		vm.Status.VmIp = ""
+		vm.Status.NetworkInterfaces = nil
 	}
 
 	if config := moVM.Config; config != nil {

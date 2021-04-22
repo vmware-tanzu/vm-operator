@@ -390,8 +390,8 @@ github.com/tmc/grpc-websocket-proxy v0.0.0-20170815181823-89b8d40f7ca8/go.mod h1
 github.com/ugorji/go/codec v0.0.0-20181204163529-d75b2dcb6bc8/go.mod h1:VFNgLljTbGfSG7qAOspJ7OScBnGdDN/yBr0sguwnwf0=
 github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijbERA=
 github.com/vektah/gqlparser v1.1.2/go.mod h1:1ycwN7Ij5njmMkPPAOaRFY4rET2Enx7IkVv3vaXspKw=
-github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20210210221150-c78fe9873b22 h1:8y+FPvzfNRYqwFwcgU3HXH6QNlhOz43vV3fb3tawY3s=
-github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20210210221150-c78fe9873b22/go.mod h1:mubK0QMyaA2TbeAmGsu2GVfiqDFppNUAUqoMPoKFgzM=
+github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20210426211911-07235bfb40b0 h1:c3/lSiRE2mkDGG14JlX03ExVkgZguicqjCsJ50Ao4fI=
+github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20210426211911-07235bfb40b0/go.mod h1:mubK0QMyaA2TbeAmGsu2GVfiqDFppNUAUqoMPoKFgzM=
 github.com/vmware/govmomi v0.24.1-0.20210210035757-ed60338583b0 h1:pV5tmtOx0iZXhs1qP4di1lAKWoKz+ysR7oLf7u19scM=
 github.com/vmware/govmomi v0.24.1-0.20210210035757-ed60338583b0/go.mod h1:Y+Wq4lst78L85Ge/F8+ORXIWiKYqaro1vhAulACy9Lc=
 github.com/vmware/vmw-guestinfo v0.0.0-20170707015358-25eff159a728/go.mod h1:x9oS4Wk2s2u4tS29nEaDLdzvuHdB19CvSGJjPgkZJNk=

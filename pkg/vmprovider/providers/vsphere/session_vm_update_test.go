@@ -694,3 +694,36 @@ var _ = Describe("Template", func() {
 		})
 	})
 })
+
+var _ = Describe("Network Interfaces VM Status", func() {
+	Context("nicInfoToNetworkIfStatus", func() {
+		dummyMacAddress := "00:50:56:8c:7b:34"
+		dummyIpAddress1 := vimTypes.NetIpConfigInfoIpAddress{
+			IpAddress:    "192.168.128.5",
+			PrefixLength: 16,
+		}
+		dummyIpAddress2 := vimTypes.NetIpConfigInfoIpAddress{
+			IpAddress:    "fe80::250:56ff:fe8c:7b34",
+			PrefixLength: 64,
+		}
+		dummyIpConfig := &vimTypes.NetIpConfigInfo{
+			IpAddress: []vimTypes.NetIpConfigInfoIpAddress{
+				dummyIpAddress1,
+				dummyIpAddress2,
+			},
+		}
+		guestNicInfo := vimTypes.GuestNicInfo{
+			Connected:  true,
+			MacAddress: dummyMacAddress,
+			IpConfig:   dummyIpConfig,
+		}
+
+		It("returns populated NetworkInterfaceStatus", func() {
+			networkIfStatus := nicInfoToNetworkIfStatus(guestNicInfo)
+			Expect(networkIfStatus.MacAddress).To(Equal(dummyMacAddress))
+			Expect(networkIfStatus.Connected).To(BeTrue())
+			Expect(networkIfStatus.IpAddresses[0]).To(Equal("192.168.128.5/16"))
+			Expect(networkIfStatus.IpAddresses[1]).To(Equal("fe80::250:56ff:fe8c:7b34/64"))
+		})
+	})
+})

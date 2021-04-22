@@ -273,6 +273,26 @@ spec:
               instanceUUID:
                 description: InstanceUUID describes the unique instance UUID provided by the underlying infrastructure provider, such as vSphere.
                 type: string
+              networkInterfaces:
+                description: NetworkInterfaces describes a list of current status information for each network interface that is desired to be attached to the VirtualMachine.
+                items:
+                  description: NetworkInterfaceStatus defines the observed state of network interfaces attached to the VirtualMachine as seen by the Guest OS and VMware tools
+                  properties:
+                    connected:
+                      description: Connected represents whether the network interface is connected or not.
+                      type: boolean
+                    ipAddresses:
+                      description: IpAddresses represents zero, one or more IP addresses assigned to the network interface in CIDR notation. For eg, "192.0.2.1/16".
+                      items:
+                        type: string
+                      type: array
+                    macAddress:
+                      description: MAC address of the network adapter
+                      type: string
+                  required:
+                  - connected
+                  type: object
+                type: array
               phase:
                 description: Phase describes the current phase information of the VirtualMachine.
                 type: string
@@ -286,7 +306,7 @@ spec:
                 description: UniqueID describes a unique identifier that is provided by the underlying infrastructure provider, such as vSphere.
                 type: string
               vmIp:
-                description: VmIp describes the IP address of the VirtualMachine.  Currently, a VirtualMachine only supports a single network interface and interface address.
+                description: VmIp describes the Primary IP address assigned to the guest operating system, if known. Multiple IPs can be available for the VirtualMachine. Refer to networkInterfaces in the VirtualMachine status for additional IPs
                 type: string
               volumes:
                 description: Volumes describes a list of current status information for each Volume that is desired to be attached to the VirtualMachine.

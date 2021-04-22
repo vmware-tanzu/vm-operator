@@ -50,6 +50,35 @@ spec:
                   cpus:
                     format: int64
                     type: integer
+                  devices:
+                    description: VirtualDevices contains information about the virtual devices associated with a VirtualMachineClass.
+                    properties:
+                      dynamicDirectPathIODevices:
+                        items:
+                          description: DynamicDirectPathIODevice contains the configuration corresponding to a Dynamic DirectPath I/O device.
+                          properties:
+                            customLabel:
+                              type: string
+                            deviceID:
+                              type: integer
+                            vendorID:
+                              type: integer
+                          required:
+                          - deviceID
+                          - vendorID
+                          type: object
+                        type: array
+                      vgpuDevices:
+                        items:
+                          description: VGPUDevice contains the configuration corresponding to a vGPU device.
+                          properties:
+                            profileName:
+                              type: string
+                          required:
+                          - profileName
+                          type: object
+                        type: array
+                    type: object
                   memory:
                     anyOf:
                     - type: integer

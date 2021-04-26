@@ -281,6 +281,20 @@ type VirtualMachineVolumeStatus struct {
 	Error string `json:"error"`
 }
 
+// NetworkInterfaceStatus defines the observed state of network interfaces attached to the VirtualMachine
+// as seen by the Guest OS and VMware tools
+type NetworkInterfaceStatus struct {
+	// Connected represents whether the network interface is connected or not.
+	Connected bool `json:"connected"`
+
+	// MAC address of the network adapter
+	MacAddress string `json:"macAddress,omitempty"`
+
+	// IpAddresses represents zero, one or more IP addresses assigned to the network interface in CIDR notation.
+	// For eg, "192.0.2.1/16".
+	IpAddresses []string `json:"ipAddresses,omitempty"`
+}
+
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.
 type VirtualMachineStatus struct {
 	// Host describes the hostname or IP address of the infrastructure host that the VirtualMachine is executing on.
@@ -299,8 +313,9 @@ type VirtualMachineStatus struct {
 	// +optional
 	Conditions []Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
-	// VmIp describes the IP address of the VirtualMachine.  Currently, a VirtualMachine only supports a single
-	// network interface and interface address.
+	// VmIp describes the Primary IP address assigned to the guest operating system, if known.
+	// Multiple IPs can be available for the VirtualMachine. Refer to networkInterfaces in the VirtualMachine
+	// status for additional IPs
 	// +optional
 	VmIp string `json:"vmIp,omitempty"`
 
@@ -326,6 +341,11 @@ type VirtualMachineStatus struct {
 	// ChangeBlockTracking describes the CBT enablement status on the VirtualMachine.
 	// +optional
 	ChangeBlockTracking *bool `json:"changeBlockTracking,omitempty"`
+
+	// NetworkInterfaces describes a list of current status information for each network interface that is desired to
+	// be attached to the VirtualMachine.
+	// +optional
+	NetworkInterfaces []NetworkInterfaceStatus `json:"networkInterfaces,omitempty"`
 }
 
 func (vm *VirtualMachine) GetConditions() Conditions {

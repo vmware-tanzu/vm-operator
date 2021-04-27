@@ -2,6 +2,7 @@
 
 #### Useful links
 - [Quick Start](docs/quick-start-guide.md)
+- [vSphere documentation](https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-tanzu/GUID-152BE7D2-E227-4DAA-B527-557B564D9718.html)
 
 ## What is VM Operator?
 
@@ -24,4 +25,7 @@ ideas about the project, we'd love to hear from you!
 
 Please see our [Quick Start Guide](docs/quick-start-guide.md) for details on building and testing the project
 
-
+## Community
+- Find us on Slack at [#ug-vmware](https://kubernetes.slack.com/messages/ug-vmware)
+- Regular working group [meetings](https://docs.google.com/document/d/1B2oUAuNbYc8nXjRrN353Pt-mDPtwyLrBO3cok7BfV4s/edit?usp=sharing)
+- Reach out directly via VMware liaison [Nikitha](https://twitter.com/lafemmenikitha)

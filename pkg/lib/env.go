@@ -10,9 +10,11 @@ import (
 )
 
 const (
+	TrueString                    = "true"
 	VmopNamespaceEnv              = "POD_NAMESPACE"
 	VMServiceFSS                  = "FSS_WCP_VMSERVICE"
 	VMServiceV1Alpha2FSS          = "FSS_WCP_VMSERVICE_V1ALPHA2"
+	ThunderPciDevicesFSS          = "FSS_THUNDERPCIDEVICES"
 	MaxCreateVMsOnProviderEnv     = "MAX_CREATE_VMS_ON_PROVIDER"
 	DefaultMaxCreateVMsOnProvider = 80
 )
@@ -36,11 +38,15 @@ func GetVmOpNamespaceFromEnv() (string, error) {
 }
 
 var IsVMServiceFSSEnabled = func() bool {
-	return os.Getenv(VMServiceFSS) == "true"
+	return os.Getenv(VMServiceFSS) == TrueString
 }
 
 var IsVMServiceV1Alpha2FSSEnabled = func() bool {
-	return os.Getenv(VMServiceV1Alpha2FSS) == "true"
+	return os.Getenv(VMServiceV1Alpha2FSS) == TrueString
+}
+
+var IsThunderPciDevicesFSSEnabled = func() bool {
+	return os.Getenv(ThunderPciDevicesFSS) == TrueString
 }
 
 // MaxAllowedCreateVMsOnProvider returns the percentage of reconciler threads that can be used to create VMs on the provider

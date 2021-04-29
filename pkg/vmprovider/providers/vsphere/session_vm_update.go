@@ -197,28 +197,41 @@ func updateEthCardDeviceChanges(
 }
 
 func createPCIPassThroughDevice(deviceKey int32, backingInfo vimTypes.BaseVirtualDeviceBackingInfo) vimTypes.BaseVirtualDevice {
-	vgpuDevice := &vimTypes.VirtualPCIPassthrough{
+	device := &vimTypes.VirtualPCIPassthrough{
 		VirtualDevice: vimTypes.VirtualDevice{
 			Key:     deviceKey,
 			Backing: backingInfo,
 		},
 	}
-	return vgpuDevice
+	return device
 }
 
 func createPCIDevices(pciDevices v1alpha1.VirtualDevices) []vimTypes.BaseVirtualDevice {
 
 	var expectedPciDevices []vimTypes.BaseVirtualDevice
 
-	// Processing vGPUs only. Later, processing for GPUs in passThrough mode will be added.
 	// A negative device range is used for pciDevices here.
 	deviceKey := int32(-200)
+
 	for _, vGPU := range pciDevices.VGPUDevices {
 		backingInfo := &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
 			Vgpu: vGPU.ProfileName,
 		}
 		vGPUDevice := createPCIPassThroughDevice(deviceKey, backingInfo)
 		expectedPciDevices = append(expectedPciDevices, vGPUDevice)
+		deviceKey--
+	}
+
+	for _, dynamicDirectPath := range pciDevices.DynamicDirectPathIODevices {
+		allowedDev := vimTypes.VirtualPCIPassthroughAllowedDevice{
+			VendorId: int32(dynamicDirectPath.VendorID),
+			DeviceId: int32(dynamicDirectPath.DeviceID),
+		}
+		backingInfo := &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+			AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{allowedDev},
+		}
+		dynamicDirectPathDevice := createPCIPassThroughDevice(deviceKey, backingInfo)
+		expectedPciDevices = append(expectedPciDevices, dynamicDirectPathDevice)
 		deviceKey--
 	}
 	return expectedPciDevices
@@ -247,6 +260,17 @@ func updatePCIDeviceChanges(expectedPciDevices object.VirtualDeviceList,
 			case *vimTypes.VirtualPCIPassthroughVmiopBackingInfo:
 				b := expectedBacking.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
 				backingMatch = a.Vgpu == b.Vgpu
+
+			case *vimTypes.VirtualPCIPassthroughDynamicBackingInfo:
+				currAllowedDevs := a.AllowedDevice
+				b := expectedBacking.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
+				// b.AllowedDevice has only one element because createPCIDevices() adds only one device based on the
+				// devices listed in vmclass.spec.hardware.devices.dynamicDirectPathIODevices.
+				expectedAllowedDev := b.AllowedDevice[0]
+				for i := 0; i < len(currAllowedDevs) && !backingMatch; i++ {
+					backingMatch = expectedAllowedDev.DeviceId == currAllowedDevs[i].DeviceId &&
+						expectedAllowedDev.VendorId == currAllowedDevs[i].VendorId
+				}
 			}
 
 			if backingMatch {
@@ -498,7 +522,6 @@ func (s *Session) prePowerOnVMConfigSpec(
 	virtualDevices := object.VirtualDeviceList(config.Hardware.Device)
 	currentDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
 	currentEthCards := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
-	currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
 
 	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx, currentDisks)
 	if err != nil {
@@ -513,12 +536,16 @@ func (s *Session) prePowerOnVMConfigSpec(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
-	expectedPciDevices := createPCIDevices(updateArgs.VmClass.Spec.Hardware.Devices)
-	pciDeviceChanges, err := updatePCIDeviceChanges(expectedPciDevices, currentPciDevices)
-	if err != nil {
-		return nil, err
+	// With FSS_THUNDERPCIDEVICES = true, we allow a VM to get attached to PCI devices.
+	if lib.IsThunderPciDevicesFSSEnabled() {
+		currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
+		expectedPciDevices := createPCIDevices(updateArgs.VmClass.Spec.Hardware.Devices)
+		pciDeviceChanges, err := updatePCIDeviceChanges(expectedPciDevices, currentPciDevices)
+		if err != nil {
+			return nil, err
+		}
+		configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
 	}
-	configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
 
 	return configSpec, nil
 }

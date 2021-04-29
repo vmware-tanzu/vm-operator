@@ -21,6 +21,7 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
@@ -594,17 +595,46 @@ var _ = Describe("Update ConfigSpec", func() {
 		var currentList, expectedList object.VirtualDeviceList
 		var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
 		var err error
+		// Variables related to vGPU devices.
 		var backingInfo1, backingInfo2 *vimTypes.VirtualPCIPassthroughVmiopBackingInfo
 		var deviceKey1, deviceKey2 int32
 		var vGPUDevice1, vGPUDevice2 vimTypes.BaseVirtualDevice
+		// Variables related to dynamicDirectPathIO devices.
+		var allowedDev1, allowedDev2 vimTypes.VirtualPCIPassthroughAllowedDevice
+		var backingInfo3, backingInfo4 *vimTypes.VirtualPCIPassthroughDynamicBackingInfo
+		var deviceKey3, deviceKey4 int32
+		var dynamicDirectPathIODev1, dynamicDirectPathIODev2 vimTypes.BaseVirtualDevice
 
 		BeforeEach(func() {
+			lib.IsVMServiceFSSEnabled = func() bool {
+				return true
+			}
+
 			backingInfo1 = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop1"}
 			backingInfo2 = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop2"}
 			deviceKey1 = int32(-200)
 			deviceKey2 = int32(-201)
 			vGPUDevice1 = createPCIPassThroughDevice(deviceKey1, backingInfo1)
 			vGPUDevice2 = createPCIPassThroughDevice(deviceKey2, backingInfo2)
+
+			allowedDev1 = vimTypes.VirtualPCIPassthroughAllowedDevice{
+				VendorId: 1000,
+				DeviceId: 100,
+			}
+			allowedDev2 = vimTypes.VirtualPCIPassthroughAllowedDevice{
+				VendorId: 2000,
+				DeviceId: 200,
+			}
+			backingInfo3 = &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+				AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{allowedDev1},
+			}
+			backingInfo4 = &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+				AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{allowedDev2},
+			}
+			deviceKey3 = int32(-202)
+			deviceKey4 = int32(-203)
+			dynamicDirectPathIODev1 = createPCIPassThroughDevice(deviceKey3, backingInfo3)
+			dynamicDirectPathIODev2 = createPCIPassThroughDevice(deviceKey4, backingInfo4)
 		})
 
 		JustBeforeEach(func() {
@@ -623,10 +653,12 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
-		Context("Adding vGPU devices with different backing info", func() {
+		Context("Adding vGPU and dynamicDirectPathIO devices with different backing info", func() {
 			BeforeEach(func() {
 				expectedList = append(expectedList, vGPUDevice1)
 				expectedList = append(expectedList, vGPUDevice2)
+				expectedList = append(expectedList, dynamicDirectPathIODev1)
+				expectedList = append(expectedList, dynamicDirectPathIODev2)
 			})
 
 			It("Should return add device changes", func() {
@@ -641,12 +673,16 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
-		Context("Adding vGPU devices with same backing info", func() {
+		Context("Adding vGPU and dynamicDirectPathIO devices with same backing info", func() {
 			BeforeEach(func() {
 				expectedList = append(expectedList, vGPUDevice1)
 				// Creating a vGPUDevice with same backingInfo1 but different deviceKey.
 				vGPUDevice2 = createPCIPassThroughDevice(deviceKey2, backingInfo1)
 				expectedList = append(expectedList, vGPUDevice2)
+				expectedList = append(expectedList, dynamicDirectPathIODev1)
+				// Creating a dynamicDirectPathIO device with same backingInfo3 but different deviceKey.
+				dynamicDirectPathIODev2 = createPCIPassThroughDevice(deviceKey4, backingInfo3)
+				expectedList = append(expectedList, dynamicDirectPathIODev2)
 			})
 
 			It("Should return add device changes", func() {
@@ -661,30 +697,38 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
-		Context("When the expected and current list of pciDevices have different vGPU Devices", func() {
+		Context("When the expected and current list of pciDevices have different Devices", func() {
 			BeforeEach(func() {
 				currentList = append(currentList, vGPUDevice1)
 				expectedList = append(expectedList, vGPUDevice2)
+				currentList = append(currentList, dynamicDirectPathIODev1)
+				expectedList = append(expectedList, dynamicDirectPathIODev2)
 			})
 
 			It("Should return add and remove device changes", func() {
 				Expect(err).ToNot(HaveOccurred())
-				Expect(len(deviceChanges)).To(Equal(2))
+				Expect(len(deviceChanges)).To(Equal(4))
 
-				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
-				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[0].GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+				for i := 0; i < 2; i++ {
+					configSpec := deviceChanges[i].GetVirtualDeviceConfigSpec()
+					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[i].GetVirtualDevice().Key))
+					Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+				}
 
-				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
-				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[0].GetVirtualDevice().Key))
-				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+				for i := 2; i < 4; i++ {
+					configSpec := deviceChanges[i].GetVirtualDeviceConfigSpec()
+					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[i-2].GetVirtualDevice().Key))
+					Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+				}
 			})
 		})
 
-		Context("When the expected and current list of pciDevices have same vGPU Devices", func() {
+		Context("When the expected and current list of pciDevices have same Devices", func() {
 			BeforeEach(func() {
 				currentList = append(currentList, vGPUDevice1)
 				expectedList = append(expectedList, vGPUDevice1)
+				currentList = append(currentList, dynamicDirectPathIODev1)
+				expectedList = append(expectedList, dynamicDirectPathIODev1)
 			})
 
 			It("returns empty list", func() {

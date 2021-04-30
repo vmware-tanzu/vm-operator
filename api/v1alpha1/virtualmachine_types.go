@@ -147,7 +147,7 @@ type VsphereVolumeSource struct {
 	// +optional
 	Capacity corev1.ResourceList `json:"capacity,omitempty"`
 
-	// Device key of vSphere disk.  Empty deviceKey means it should be created in vSphere.
+	// Device key of vSphere disk.
 	// +optional
 	DeviceKey *int `json:"deviceKey,omitempty"`
 }

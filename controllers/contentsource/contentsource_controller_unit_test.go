@@ -6,7 +6,6 @@ package contentsource_test
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -41,26 +40,28 @@ func reconcileProviderRef() {
 		cl v1alpha1.ContentLibraryProvider
 	)
 
-	cl = v1alpha1.ContentLibraryProvider{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "dummy-cl",
-		},
-		Spec: v1alpha1.ContentLibraryProviderSpec{
-			UUID: "dummy-cl-uuid",
-		},
-	}
-	cs = v1alpha1.ContentSource{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "dummy-cs",
-		},
-		Spec: v1alpha1.ContentSourceSpec{
-			ProviderRef: v1alpha1.ContentProviderReference{
-				Name:      cl.Name,
-				Namespace: cl.Namespace,
-				Kind:      "ContentLibraryProvider",
+	BeforeEach(func() {
+		cl = v1alpha1.ContentLibraryProvider{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dummy-cl",
 			},
-		},
-	}
+			Spec: v1alpha1.ContentLibraryProviderSpec{
+				UUID: "dummy-cl-uuid",
+			},
+		}
+
+		cs = v1alpha1.ContentSource{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dummy-cs",
+			},
+			Spec: v1alpha1.ContentSourceSpec{
+				ProviderRef: v1alpha1.ContentProviderReference{
+					Name: cl.Name,
+					Kind: "ContentLibraryProvider",
+				},
+			},
+		}
+	})
 
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
@@ -99,7 +100,6 @@ func reconcileProviderRef() {
 				Expect(clAfterReconcile.OwnerReferences[0].Name).To(Equal(cs.Name))
 			})
 		})
-
 	})
 }
 
@@ -135,24 +135,25 @@ func unitTestsCRUDImage() {
 		cl v1alpha1.ContentLibraryProvider
 	)
 
-	cl = v1alpha1.ContentLibraryProvider{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "dummy-cl",
-			Namespace: "dummy-ns",
-		},
-	}
-	cs = v1alpha1.ContentSource{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "dummy-cs",
-			Namespace: "dummy-ns",
-		},
-		Spec: v1alpha1.ContentSourceSpec{
-			ProviderRef: v1alpha1.ContentProviderReference{
-				Name:      cl.Name,
-				Namespace: cl.Namespace,
+	BeforeEach(func() {
+		cl = v1alpha1.ContentLibraryProvider{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dummy-cl",
 			},
-		},
-	}
+		}
+
+		cs = v1alpha1.ContentSource{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dummy-cs",
+			},
+			Spec: v1alpha1.ContentSourceSpec{
+				ProviderRef: v1alpha1.ContentProviderReference{
+					Name:      cl.Name,
+					Namespace: cl.Namespace,
+				},
+			},
+		}
+	})
 
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
@@ -175,33 +176,38 @@ func unitTestsCRUDImage() {
 	})
 
 	Context("SyncImages", func() {
-		Context("a VirtualMachineImage exists on the API server", func() {
-			existingImg := &v1alpha1.VirtualMachineImage{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "dummy-image",
-					Annotations: map[string]string{
-						"dummy-key": "dummy-value",
-					},
-				},
-				Spec: v1alpha1.VirtualMachineImageSpec{
-					Type: "dummy-type-1",
-				},
-			}
-			providerImg := &v1alpha1.VirtualMachineImage{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "dummy-image",
-					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "vmoperator.vmware.com/v1alpha1",
-						Kind:       "ContentLibraryProvider",
-						Name:       "dummy-cl",
-					}},
-				},
-				Spec: v1alpha1.VirtualMachineImageSpec{
-					Type: "dummy-type-2",
-				},
-			}
+		Context("VirtualMachineImage already exists", func() {
+			var existingImg, providerImg *v1alpha1.VirtualMachineImage
 
-			providerListImageFromCLFunc := func(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+			BeforeEach(func() {
+				existingImg = &v1alpha1.VirtualMachineImage{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "dummy-image",
+						Annotations: map[string]string{
+							"dummy-key": "dummy-value",
+						},
+					},
+					Spec: v1alpha1.VirtualMachineImageSpec{
+						Type: "dummy-type-1",
+					},
+				}
+
+				providerImg = &v1alpha1.VirtualMachineImage{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: existingImg.Name,
+						OwnerReferences: []metav1.OwnerReference{{
+							APIVersion: "vmoperator.vmware.com/v1alpha1",
+							Kind:       "ContentLibraryProvider",
+							Name:       "dummy-cl",
+						}},
+					},
+					Spec: v1alpha1.VirtualMachineImageSpec{
+						Type: "dummy-type-2",
+					},
+				}
+			})
+
+			providerListImageFromCLFunc := func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 				return []*v1alpha1.VirtualMachineImage{providerImg}, nil
 			}
 
@@ -211,6 +217,7 @@ func unitTestsCRUDImage() {
 					BeforeEach(func() {
 						initObjects = append(initObjects, existingImg, &cl, &cs)
 					})
+
 					It("the existing VirtualMachineImage is overwritten", func() {
 						fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = providerListImageFromCLFunc
 
@@ -225,7 +232,7 @@ func unitTestsCRUDImage() {
 					})
 				})
 
-				When("the existing image has ContentLibraryProvider annotations", func() {
+				When("the existing image has an ContentLibraryProvider OwnerRef", func() {
 
 					BeforeEach(func() {
 						existingImg.OwnerReferences = []metav1.OwnerReference{{
@@ -250,6 +257,28 @@ func unitTestsCRUDImage() {
 					})
 				})
 			})
+
+			When("the existing image has a valid ContentLibraryProvider OwnerRef", func() {
+
+				BeforeEach(func() {
+					initObjects = append(initObjects, providerImg, &cl, &cs)
+				})
+
+				It("calls provider with the current image in map", func() {
+					var called bool
+					fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context, _ v1alpha1.ContentLibraryProvider,
+						currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+
+						called = true
+						Expect(currentCLImages).To(HaveKey(providerImg.Name))
+						return []*v1alpha1.VirtualMachineImage{providerImg}, nil
+					}
+
+					err := reconciler.SyncImages(ctx.Context)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(called).To(BeTrue())
+				})
+			})
 		})
 	})
 
@@ -259,12 +288,13 @@ func unitTestsCRUDImage() {
 			image  v1alpha1.VirtualMachineImage
 		)
 
-		image = v1alpha1.VirtualMachineImage{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-vm-image",
-				Namespace: "dummy-ns",
-			},
-		}
+		BeforeEach(func() {
+			image = v1alpha1.VirtualMachineImage{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "dummy-vm-image",
+				},
+			}
+		})
 
 		When("no images are specified", func() {
 			It("does not throw an error", func() {
@@ -303,12 +333,13 @@ func unitTestsCRUDImage() {
 			image  v1alpha1.VirtualMachineImage
 		)
 
-		image = v1alpha1.VirtualMachineImage{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-vm-image",
-				Namespace: "dummy-ns",
-			},
-		}
+		BeforeEach(func() {
+			image = v1alpha1.VirtualMachineImage{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "dummy-vm-image",
+				},
+			}
+		})
 
 		When("no images are specified", func() {
 			It("does not throw an error", func() {
@@ -346,7 +377,7 @@ func unitTestsCRUDImage() {
 			})
 
 			It("fails to update the images", func() {
-				images[0].Name = "invalid_name" // invalid namespace, to fail the Update op.
+				images[0].Name = "invalid_name" // invalid name, to fail the Update op.
 
 				err := reconciler.UpdateImages(ctx, images)
 				Expect(err).To(HaveOccurred())
@@ -360,12 +391,13 @@ func unitTestsCRUDImage() {
 			image  v1alpha1.VirtualMachineImage
 		)
 
-		image = v1alpha1.VirtualMachineImage{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-vm-image",
-				Namespace: "dummy-ns",
-			},
-		}
+		BeforeEach(func() {
+			image = v1alpha1.VirtualMachineImage{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "dummy-vm-image",
+				},
+			}
+		})
 
 		When("non-empty list of images is specified", func() {
 			BeforeEach(func() {
@@ -377,7 +409,7 @@ func unitTestsCRUDImage() {
 				Expect(err).NotTo(HaveOccurred())
 
 				img := images[0]
-				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: img.Name, Namespace: img.Namespace}, &img)).To(Succeed())
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: img.Name}, &img)).To(Succeed())
 			})
 		})
 	})
@@ -601,18 +633,10 @@ func unitTestsCRUDImage() {
 	})
 
 	Context("GetImagesFromContentProvider", func() {
-		var (
-			cs v1alpha1.ContentSource
-			cl v1alpha1.ContentLibraryProvider
-		)
-
-		BeforeEach(func() {
-
-		})
 
 		Context("when the ContentLibraryProvider resource doesnt exist", func() {
 			It("returns error", func() {
-				images, err := reconciler.GetImagesFromContentProvider(ctx.Context, cs)
+				images, err := reconciler.GetImagesFromContentProvider(ctx.Context, cs, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(apiErrors.IsNotFound(err)).To(BeTrue())
 				Expect(images).To(BeNil())
@@ -625,12 +649,13 @@ func unitTestsCRUDImage() {
 			})
 
 			It("provider returns error when listing images", func() {
-				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, _ v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, _ v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 					return nil, fmt.Errorf("error listing images from provider")
 				}
 
-				images, err := reconciler.GetImagesFromContentProvider(ctx.Context, cs)
+				images, err := reconciler.GetImagesFromContentProvider(ctx.Context, cs, nil)
 				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("error listing images from provider"))
 				Expect(images).To(BeNil())
 			})
 		})
@@ -644,29 +669,69 @@ func unitTestsCRUDImage() {
 				images = []*v1alpha1.VirtualMachineImage{
 					{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "dummy-image-1",
-							Namespace: "dummy-ns",
+							Name: "dummy-image-1",
 						},
 					},
 					{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "dummy-image-2",
-							Namespace: "dummy-ns",
+							Name: "dummy-image-2",
 						},
 					},
 				}
 			})
 
 			It("provider successfully lists images", func() {
-				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, _ v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, _ v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 					return images, nil
 				}
 
-				clImages, err := reconciler.GetImagesFromContentProvider(ctx.Context, cs)
+				clImages, err := reconciler.GetImagesFromContentProvider(ctx.Context, cs, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clImages).Should(HaveLen(2))
 				Expect(clImages).Should(Equal(images))
+			})
+		})
 
+		When("the current image has ContentLibraryProvider ownerRef", func() {
+			var existingImg v1alpha1.VirtualMachineImage
+
+			BeforeEach(func() {
+				existingImg = v1alpha1.VirtualMachineImage{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "dummy-image",
+						Annotations: map[string]string{
+							"dummy-key": "dummy-value",
+						},
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: "vmoperator.vmware.com/v1alpha1",
+								Kind:       "ContentLibraryProvider",
+								Name:       cl.Name,
+							},
+						},
+					},
+					Spec: v1alpha1.VirtualMachineImageSpec{
+						Type: "dummy-type-1",
+					},
+				}
+
+				initObjects = append(initObjects, &cl, &cs)
+			})
+
+			It("calls list with the current image in map", func() {
+				var called bool
+				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context, _ v1alpha1.ContentLibraryProvider,
+					currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+
+					called = true
+					Expect(currentCLImages).To(HaveKey(existingImg.Name))
+					return []*v1alpha1.VirtualMachineImage{&existingImg}, nil
+				}
+
+				clImages, err := reconciler.GetImagesFromContentProvider(ctx.Context, cs, []v1alpha1.VirtualMachineImage{existingImg})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clImages).Should(HaveLen(1))
+				Expect(called).To(BeTrue())
 			})
 		})
 	})
@@ -718,7 +783,7 @@ func unitTestsCRUDImage() {
 			})
 
 			It("Should remove the image from APIServer and add image from provider", func() {
-				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 					return []*v1alpha1.VirtualMachineImage{img2}, nil
 				}
 
@@ -743,9 +808,8 @@ func unitTestsCRUDImage() {
 			})
 
 			It("returns the list of VirtualMachineImages from the valid CL", func() {
-				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
-					// Simulate non-existent content library on vSphere.
-					return nil, fmt.Errorf(http.StatusText(http.StatusNotFound))
+				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+					return nil, nil
 				}
 				err, added, removed, updated := reconciler.DifferenceImages(ctx)
 				Expect(err).NotTo(HaveOccurred())

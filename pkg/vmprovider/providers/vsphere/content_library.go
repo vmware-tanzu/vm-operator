@@ -20,6 +20,8 @@ import (
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 type ContentLibraryProvider interface {
@@ -36,6 +38,12 @@ type contentLibraryProvider struct {
 	libMgr        *library.Manager
 	retryInterval time.Duration
 }
+
+const (
+	// BMV: Investigate if setting this to 1 actually reduces the integration test time.
+	EnvContentLibApiWaitSecs     = "CONTENT_API_WAIT_SECS"
+	DefaultContentLibApiWaitSecs = 5
+)
 
 func NewContentLibraryProvider(restClient *rest.Client) ContentLibraryProvider {
 	waitSeconds, err := strconv.Atoi(os.Getenv(EnvContentLibApiWaitSecs))
@@ -54,7 +62,16 @@ func NewContentLibraryProviderWithWaitSec(restClient *rest.Client, waitSeconds i
 }
 
 func (cs *contentLibraryProvider) GetLibraryItems(ctx context.Context, libraryUUID string) ([]library.Item, error) {
-	return cs.libMgr.GetLibraryItems(ctx, libraryUUID)
+	items, err := cs.libMgr.GetLibraryItems(ctx, libraryUUID)
+	if err != nil {
+		if lib.IsNotFoundError(err) {
+			log.Error(err, "cannot list items from content library that does not exist", "libraryUUID", libraryUUID)
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return items, nil
 }
 
 func (cs *contentLibraryProvider) GetLibraryItem(ctx context.Context, libraryUUID, itemName string) (*library.Item, error) {

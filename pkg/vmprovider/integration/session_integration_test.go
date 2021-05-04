@@ -79,11 +79,30 @@ var _ = Describe("Sessions", func() {
 		Context("From Content Library", func() {
 
 			It("should list VirtualMachineImages from CL", func() {
-				images, err := session.ListVirtualMachineImagesFromCL(ctx, integration.ContentSourceID)
+				images, err := session.ListVirtualMachineImagesFromCL(ctx, integration.ContentSourceID, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).ShouldNot(BeEmpty())
 				Expect(images[0].ObjectMeta.Name).Should(Equal(integration.IntegrationContentLibraryItemName))
 				Expect(images[0].Spec.Type).Should(Equal("ovf"))
+			})
+
+			It("should return cached VirtualMachineImage from CL", func() {
+				images, err := session.ListVirtualMachineImagesFromCL(ctx, integration.ContentSourceID, nil)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(images).ShouldNot(BeEmpty())
+
+				vmImage := *images[0]
+				vmImage.Spec.Type = "dummy-type-to-test-cache"
+
+				currentCLImages := map[string]vmopv1alpha1.VirtualMachineImage{
+					vmImage.Name: vmImage,
+				}
+
+				images, err = session.ListVirtualMachineImagesFromCL(ctx, integration.ContentSourceID, currentCLImages)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(images).ShouldNot(BeEmpty())
+				Expect(images[0].ObjectMeta.Name).Should(Equal(integration.IntegrationContentLibraryItemName))
+				Expect(images[0].Spec.Type).Should(Equal(vmImage.Spec.Type))
 			})
 		})
 	})

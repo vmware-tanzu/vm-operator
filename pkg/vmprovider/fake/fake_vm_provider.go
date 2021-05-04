@@ -28,7 +28,7 @@ type funcs struct {
 	DeleteVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeatFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 
-	ListVirtualMachineImagesFromContentLibraryFn func(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error)
+	ListVirtualMachineImagesFromContentLibraryFn func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error)
 	DoesContentLibraryExistFn                    func(ctx context.Context, cl *v1alpha1.ContentLibraryProvider) (bool, error)
 
 	UpdateVcPNIDFn                  func(ctx context.Context, vcPNID, vcPort string) error
@@ -207,12 +207,12 @@ func (s *FakeVmProvider) DoesContentLibraryExist(ctx context.Context, contentLib
 	return true, nil
 }
 
-func (s *FakeVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+func (s *FakeVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 	s.Lock()
 	defer s.Unlock()
 
 	if s.ListVirtualMachineImagesFromContentLibraryFn != nil {
-		return s.ListVirtualMachineImagesFromContentLibraryFn(ctx, cl)
+		return s.ListVirtualMachineImagesFromContentLibraryFn(ctx, cl, currentCLImages)
 	}
 
 	// No-op for now.

@@ -38,6 +38,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
@@ -181,9 +182,12 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	k8sClient, err := GetCtrlRuntimeClient(cfg)
 	Expect(err).NotTo(HaveOccurred())
 
+	// Set up fake event recorder
+	recorder, _ := builder.NewFakeRecorder()
+
 	// Register the vSphere provider
 	log.Info("setting up vSphere Provider")
-	vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, scheme.Scheme)
+	vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, scheme.Scheme, recorder)
 
 	vcSim := NewVcSimInstance()
 

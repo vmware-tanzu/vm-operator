@@ -156,11 +156,13 @@ func (s *Session) CloneVirtualMachine(
 	// The ContentLibraryUUID can be empty when we want to clone from inventory VMs. This is
 	// not a supported workflow but we have tests that use this.
 	if vmConfigArgs.ContentLibraryUUID != "" {
-		return s.cloneVMFromContentLibrary(vmCloneCtx, vmConfigArgs)
+		resVM, err := s.cloneVMFromContentLibrary(vmCloneCtx, vmConfigArgs)
+		return resVM, err
 	}
 
 	if s.useInventoryForImages {
-		return s.cloneVMFromInventory(vmCloneCtx, vmConfigArgs)
+		resVM, err := s.cloneVMFromInventory(vmCloneCtx, vmConfigArgs)
+		return resVM, err
 	}
 
 	return nil, fmt.Errorf("no Content Library specified and inventory disallowed")

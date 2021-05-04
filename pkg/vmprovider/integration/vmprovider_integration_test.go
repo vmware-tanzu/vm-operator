@@ -18,6 +18,7 @@ import (
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -169,6 +170,13 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 })
 
 var _ = Describe("VMProvider Tests", func() {
+	var (
+		recorder record.Recorder
+	)
+
+	BeforeEach(func() {
+		recorder, _ = builder.NewFakeRecorder()
+	})
 
 	Context("When using Content Library", func() {
 		var vmProvider vmprovider.VirtualMachineProviderInterface
@@ -183,7 +191,7 @@ var _ = Describe("VMProvider Tests", func() {
 				integration.SecretName)
 			Expect(err).NotTo(HaveOccurred())
 
-			vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, nil)
+			vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, nil, recorder)
 
 			// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
 			// BMV: Not true anymore, and we can't set this via ExtraConfig transport anyways.
@@ -344,7 +352,7 @@ var _ = Describe("VMProvider Tests", func() {
 
 	Context("Compute CPU Min Frequency in the Cluster", func() {
 		It("reconfigure and power on without errors", func() {
-			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil)
+			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil, recorder)
 			err := vmProvider.ComputeClusterCpuMinFrequency(context.TODO())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(session.GetCpuMinMHzInCluster()).Should(BeNumerically(">", 0))
@@ -353,7 +361,7 @@ var _ = Describe("VMProvider Tests", func() {
 
 	Context("Update PNID", func() {
 		It("update pnid when the same pnid is supplied", func() {
-			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil)
+			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil, recorder)
 			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(k8sClient, "")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -368,7 +376,7 @@ var _ = Describe("VMProvider Tests", func() {
 		// to use a unique vcsim env per Describe() context. This VM Provider code is also executed
 		// and tested in the infra controller test so disable it here.
 		XIt("update pnid when a different pnid is supplied", func() {
-			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil)
+			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil, recorder)
 			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(k8sClient, "")
 			Expect(err).NotTo(HaveOccurred())
 

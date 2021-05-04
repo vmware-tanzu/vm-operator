@@ -29,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
@@ -40,12 +41,15 @@ const (
 var log = logf.Log.WithName(VsphereVmProviderName)
 
 type vSphereVmProvider struct {
-	sessions SessionManager
+	sessions      SessionManager
+	eventRecorder record.Recorder
 }
 
-func NewVSphereVmProviderFromClient(client ctrlruntime.Client, scheme *runtime.Scheme) vmprovider.VirtualMachineProviderInterface {
+func NewVSphereVmProviderFromClient(client ctrlruntime.Client, scheme *runtime.Scheme,
+	recorder record.Recorder) vmprovider.VirtualMachineProviderInterface {
 	vmProvider := &vSphereVmProvider{
-		sessions: NewSessionManager(client, scheme),
+		sessions:      NewSessionManager(client, scheme),
+		eventRecorder: recorder,
 	}
 
 	return vmProvider

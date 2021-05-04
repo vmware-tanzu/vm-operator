@@ -717,7 +717,6 @@ var _ = Describe("Sessions", func() {
 					},
 				}
 				Expect(session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)).To(Succeed())
-				Expect(err).ToNot(HaveOccurred())
 				Expect(vm.Status.PowerState).To(Equal(vmopv1alpha1.VirtualMachinePoweredOn))
 			})
 

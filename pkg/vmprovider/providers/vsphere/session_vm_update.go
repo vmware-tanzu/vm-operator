@@ -657,12 +657,14 @@ func updateVmConfigArgsTemplates(vmCtx VMContext, updateArgs vmUpdateArgs) {
 		templ, err := template.New(name).Parse(templateStr)
 		if err != nil {
 			vmCtx.Logger.Error(err, "failed to parse template", "templateStr", templateStr)
+			// TODO: emit related events
 			return templateStr
 		}
 		var doc bytes.Buffer
 		err = templ.Execute(&doc, &templateData)
 		if err != nil {
 			vmCtx.Logger.Error(err, "failed to execute template", "templateStr", templateStr)
+			// TODO: emit related events
 			return templateStr
 		}
 		return doc.String()

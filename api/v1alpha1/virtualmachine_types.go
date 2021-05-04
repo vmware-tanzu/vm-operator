@@ -153,11 +153,15 @@ type VsphereVolumeSource struct {
 }
 
 // Probe describes a health check to be performed against a VirtualMachine to determine whether it is
-// alive or ready to receive traffic.
+// alive or ready to receive traffic. Only one probe action can be specified.
 type Probe struct {
 	// TCPSocket specifies an action involving a TCP port.
 	// +optional
 	TCPSocket *TCPSocketAction `json:"tcpSocket,omitempty"`
+
+	// GuestHeartbeat specifies an action involving the guest heartbeat status.
+	// +optional
+	GuestHeartbeat *GuestHeartbeatAction `json:"guestHeartbeat,omitempty"`
 
 	// TimeoutSeconds specifies a number of seconds after which the probe times out.
 	// Defaults to 10 seconds. Minimum value is 1.
@@ -183,6 +187,31 @@ type TCPSocketAction struct {
 	// Host is an optional host name to connect to.  Host defaults to the VirtualMachine IP.
 	// +optional
 	Host string `json:"host,omitempty"`
+}
+
+// The guest heartbeat status.
+type GuestHeartbeatStatus string
+
+// See govmomi.vim25.types.ManagedEntityStatus
+const (
+	// VMware Tools are not installed or not running.
+	GrayHeartbeatStatus GuestHeartbeatStatus = "gray"
+	// No heartbeat. Guest operating system may have stopped responding.
+	RedHeartbeatStatus GuestHeartbeatStatus = "red"
+	// Intermittent heartbeat. May be due to guest load.
+	YellowHeartbeatStatus GuestHeartbeatStatus = "yellow"
+	// Guest operating system is responding normally.
+	GreenHeartbeatStatus GuestHeartbeatStatus = "green"
+)
+
+// GuestHeartbeatAction describes an action based on the guest heartbeat.
+type GuestHeartbeatAction struct {
+	// ThresholdStatus is the value that the guest heartbeat status must be at or above to be
+	// considered successful.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default=green
+	// +kubebuilder:validation:Enum=yellow;green
+	ThresholdStatus GuestHeartbeatStatus `json:"thresholdStatus,omitempty"`
 }
 
 // VirtualMachineSpec defines the desired state of a VirtualMachine

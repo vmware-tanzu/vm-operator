@@ -208,7 +208,9 @@ func IsSupportedDeployType(t string) bool {
 }
 
 // Lists all the VirtualMachineImages from a CL by a given UUID.
-func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID string) ([]*v1alpha1.VirtualMachineImage, error) {
+func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID string,
+	currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+
 	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary", "contentLibraryUUID", clUUID)
 
 	items, err := s.contentLibProvider.GetLibraryItems(ctx, clUUID)
@@ -220,6 +222,18 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID str
 	for i := range items {
 		var ovfEnvelope *ovf.Envelope
 		item := items[i]
+
+		if curImage, ok := currentCLImages[item.Name]; ok {
+			// If there is already an VMImage for this item, and it is the same - as determined by _just_ the
+			// annotation - reuse the existing VMImage. This is to avoid repeated CL fetch tasks that would
+			// otherwise be created, spamming the UI. It would be nice if CL provided an external API that
+			// allowed us to silently fetch the OVF.
+			annotations := curImage.GetAnnotations()
+			if ver := annotations[VMImageCLVersionAnnotation]; ver == libItemVersionAnnotation(&item) {
+				images = append(images, &curImage)
+				continue
+			}
+		}
 
 		switch item.Type {
 		case library.ItemTypeOVF:

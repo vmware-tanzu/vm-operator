@@ -28,7 +28,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -36,25 +35,6 @@ import (
 
 const (
 	VsphereVmProviderName = "vsphere"
-
-	// Annotation Key for vSphere MoRef
-	//VmOperatorVCInstanceUUIDKey = pkg.VmOperatorKey + "/vc-instance-uuid"
-	//VmOperatorResourcePoolKey   = pkg.VmOperatorKey + "/resource-pool"
-
-	// TODO: Rename and move to vmoperator-api
-	// Annotation key to skip validation checks of GuestOS Type
-	VMOperatorImageSupportedCheckKey     = pkg.VmOperatorKey + "/image-supported-check"
-	VMOperatorImageSupportedCheckDisable = "disable"
-
-	VSphereCustomizationBypassKey     = pkg.VmOperatorKey + "/vsphere-customization"
-	VSphereCustomizationBypassDisable = "disable"
-
-	EnvContentLibApiWaitSecs     = "CONTENT_API_WAIT_SECS"
-	DefaultContentLibApiWaitSecs = 5
-
-	VMOperatorV1Alpha1ExtraConfigKey = "guestinfo.vmservice.defer-cloud-init"
-	VMOperatorV1Alpha1ConfigReady    = "ready"
-	VMOperatorV1Alpha1ConfigEnabled  = "enabled"
 )
 
 var log = logf.Log.WithName(VsphereVmProviderName)
@@ -98,7 +78,11 @@ func (vs *vSphereVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, 
 }
 
 // ListVirtualMachineImagesFromContentLibrary lists VM images from a ContentLibrary
-func (vs *vSphereVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx context.Context, contentLibrary v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error) {
+func (vs *vSphereVmProvider) ListVirtualMachineImagesFromContentLibrary(
+	ctx context.Context,
+	contentLibrary v1alpha1.ContentLibraryProvider,
+	currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+
 	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary", "name", contentLibrary.Name, "UUID", contentLibrary.Spec.UUID)
 
 	ses, err := vs.sessions.GetSession(ctx, "")
@@ -106,7 +90,7 @@ func (vs *vSphereVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx cont
 		return nil, err
 	}
 
-	return ses.ListVirtualMachineImagesFromCL(ctx, contentLibrary.Spec.UUID)
+	return ses.ListVirtualMachineImagesFromCL(ctx, contentLibrary.Spec.UUID, currentCLImages)
 }
 
 func (vs *vSphereVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
@@ -391,6 +375,11 @@ func isATKGImage(systemProperties map[string]string) bool {
 	return false
 }
 
+// libItemVersionAnnotation returns the version annotation value for the item
+func libItemVersionAnnotation(item *library.Item) string {
+	return fmt.Sprintf("%s:%s", item.ID, item.Version)
+}
+
 // LibItemToVirtualMachineImage converts a given library item and its attributes to return a
 // VirtualMachineImage that represents a k8s-native view of the item.
 func LibItemToVirtualMachineImage(
@@ -407,6 +396,9 @@ func LibItemToVirtualMachineImage(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              item.Name,
 			CreationTimestamp: ts,
+			Annotations: map[string]string{
+				VMImageCLVersionAnnotation: libItemVersionAnnotation(item),
+			},
 		},
 		Spec: v1alpha1.VirtualMachineImageSpec{
 			Type:            item.Type,
@@ -445,7 +437,9 @@ func LibItemToVirtualMachineImage(
 
 			ovfSystemProps := GetVmwareSystemPropertiesFromOvf(ovfEnvelope)
 
-			image.Annotations = ovfSystemProps
+			for k, v := range ovfSystemProps {
+				image.Annotations[k] = v
+			}
 			image.Spec.ProductInfo = productInfo
 			image.Spec.OSInfo = osInfo
 			image.Spec.OVFEnv = GetUserConfigurablePropertiesFromOvf(ovfEnvelope)

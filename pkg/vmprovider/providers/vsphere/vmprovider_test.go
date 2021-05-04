@@ -69,7 +69,8 @@ var _ = Describe("VirtualMachineImages", func() {
 			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, nil)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
-			Expect(image.Annotations).To(HaveLen(1))
+			Expect(image.Annotations).To(HaveLen(2))
+			Expect(image.Annotations).To(HaveKey(vsphere.VMImageCLVersionAnnotation))
 			Expect(image.Annotations).Should(HaveKeyWithValue("vmware-system-version", "1.15"))
 			Expect(image.CreationTimestamp).To(BeEquivalentTo(metav1.NewTime(ts)))
 
@@ -115,7 +116,7 @@ var _ = Describe("VirtualMachineImages", func() {
 				image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, nil)
 				Expect(image).ToNot(BeNil())
 				Expect(image.Name).Should(Equal("fakeItem"))
-				Expect(image.Annotations).To(BeEmpty())
+				Expect(image.Annotations).To(HaveKey(vsphere.VMImageCLVersionAnnotation))
 				Expect(image.CreationTimestamp).To(BeEquivalentTo(metav1.NewTime(ts)))
 				Expect(image.Spec.ProductInfo.Version).Should(BeEmpty())
 			})
@@ -170,7 +171,6 @@ var _ = Describe("VirtualMachineImages", func() {
 			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
-			Expect(image.Annotations).To(BeEmpty())
 
 			// ImageSupported in Status is to false as OS type is windows, OVF is not a TKG image and does not
 			// contain VMOperatorV1Alpha1ExtraConfigKey in extraConfig
@@ -198,7 +198,6 @@ var _ = Describe("VirtualMachineImages", func() {
 			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
-			Expect(image.Annotations).To(BeEmpty())
 
 			// ImageSupported in Status is to false as OS type is windows, OVF is not a TKG image and does not contain VMOperatorV1Alpha1ExtraConfigKey in extraConfig
 			Expect(image.Status.ImageSupported).Should(Equal(supportedFalse))
@@ -229,7 +228,6 @@ var _ = Describe("VirtualMachineImages", func() {
 			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
-			Expect(image.Annotations).To(BeEmpty())
 
 			// ImageSupported in Status is to false as OS type is windows, OVF is not a TKG image and does
 			// not contain VMOperatorV1Alpha1ExtraConfigKey in extraConfig
@@ -252,7 +250,7 @@ var _ = Describe("VirtualMachineImages", func() {
 			image := vsphere.LibItemToVirtualMachineImage(&item, nil, supportedGuestOsIdsToFamily)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
-			Expect(image.Annotations).To(BeEmpty())
+			Expect(image.Annotations).To(HaveKey(vsphere.VMImageCLVersionAnnotation))
 
 			// ImageSupported in Status is unset as the image type is not OVF type
 			Expect(image.Status.ImageSupported).Should(BeNil())

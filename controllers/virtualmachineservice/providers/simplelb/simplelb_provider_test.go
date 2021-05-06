@@ -98,11 +98,10 @@ var _ = Describe("", func() {
 
 		When("Service and Endpoints have been created for VMService", func() {
 			const (
-				epResVersion = "123"
-				port         = 6443
-				portName     = "apiserver"
-				ip1          = "10.11.12.13"
-				ip2          = "21.22.23.24"
+				port     = 6443
+				portName = "apiserver"
+				ip1      = "10.11.12.13"
+				ip2      = "21.22.23.24"
 			)
 			svc := &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -123,9 +122,8 @@ var _ = Describe("", func() {
 			}
 			eps := &corev1.Endpoints{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace:       testNs,
-					Name:            testSvc,
-					ResourceVersion: epResVersion,
+					Namespace: testNs,
+					Name:      testSvc,
 				},
 				Subsets: []corev1.EndpointSubset{{
 					Addresses: []corev1.EndpointAddress{{IP: ip1}, {IP: ip2}},

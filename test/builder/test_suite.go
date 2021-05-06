@@ -24,6 +24,8 @@ import (
 	"github.com/pkg/errors"
 
 	admissionregv1 "k8s.io/api/admissionregistration/v1beta1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
@@ -432,6 +434,15 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 
 		s.integrationTestClient, err = client.New(s.manager.GetConfig(), client.Options{Scheme: s.manager.GetScheme()})
 		Expect(err).NotTo(HaveOccurred())
+
+		By("create pod namespace", func() {
+			namespace := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: s.manager.GetContext().Namespace,
+				},
+			}
+			Expect(s.integrationTestClient.Create(s, namespace)).To(Succeed())
+		})
 
 		By("starting the manager", func() {
 			s.startManager()

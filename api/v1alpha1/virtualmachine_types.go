@@ -392,6 +392,7 @@ func (vm *VirtualMachine) SetConditions(conditions Conditions) {
 // +kubebuilder:printcolumn:name="PowerState",type="string",JSONPath=".status.powerState"
 // +kubebuilder:printcolumn:name="Class",type="string",priority=1,JSONPath=".spec.className"
 // +kubebuilder:printcolumn:name="Image",type="string",priority=1,JSONPath=".spec.imageName"
+// +kubebuilder:printcolumn:name="Primary-IP",type="string",priority=1,JSONPath=".status.vmIp"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // VirtualMachine is the Schema for the virtualmachines API.

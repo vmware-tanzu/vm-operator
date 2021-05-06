@@ -87,6 +87,9 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 			vm.Spec.ReadinessProbe = getVirtualMachineReadinessTCPProbe(10001)
 			Expect(fakeClient.Create(goctx.Background(), vm)).Should(Succeed())
 			Expect(fakeClient.Get(goctx.Background(), vmKey, vm)).Should(Succeed())
+		})
+
+		JustBeforeEach(func() {
 			var err error
 			ctx, err = testWorker.CreateProbeContext(vm)
 			Expect(err).ShouldNot(HaveOccurred())
@@ -131,12 +134,16 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 			})
 
 			When("new ReadyCondition isn't in a transition", func() {
-				It("Shouldn't update the Condition in status", func() {
+
+				BeforeEach(func() {
 					vmReadyCondition := conditions.TrueCondition(vmopv1alpha1.ReadyCondition)
 					vm.Status.Conditions = append(vm.Status.Conditions, *vmReadyCondition)
 					Expect(fakeClient.Status().Update(ctx, vm)).To(Succeed())
 					Expect(fakeClient.Get(ctx, vmKey, vm)).Should(Succeed())
 					oldStatus = vm.Status
+				})
+
+				It("Shouldn't update the Condition in status", func() {
 
 					fakeTCPProbe.ProbeFn = func(ctx *context.ProbeContext) (probe.Result, error) {
 						return probe.Success, nil

@@ -241,10 +241,10 @@ var _ = Describe("VMProvider Tests", func() {
 			vmNamespace1 := vmNamespace + "-1"
 			vmNamespace2 := vmNamespace + "-2"
 
-			_, err := clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: vmNamespace1}})
+			_, err := clientSet.CoreV1().Namespaces().Create(ctx, &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: vmNamespace1}}, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			_, err = clientSet.CoreV1().Namespaces().Create(&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: vmNamespace2}})
+			_, err = clientSet.CoreV1().Namespaces().Create(ctx, &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: vmNamespace2}}, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			folder1, err := createFolder(vmNamespace1)

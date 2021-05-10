@@ -7,7 +7,6 @@ package vsphere_test
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -16,13 +15,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/types"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -66,7 +63,7 @@ var _ = Describe("VirtualMachineImages", func() {
 				},
 			}
 
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, nil)
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(HaveLen(2))
@@ -113,7 +110,7 @@ var _ = Describe("VirtualMachineImages", func() {
 
 				ovfEnvelope := &ovf.Envelope{}
 
-				image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, nil)
+				image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 				Expect(image).ToNot(BeNil())
 				Expect(image.Name).Should(Equal("fakeItem"))
 				Expect(image.Annotations).To(HaveKey(vsphere.VMImageCLVersionAnnotation))
@@ -125,17 +122,12 @@ var _ = Describe("VirtualMachineImages", func() {
 
 	Context("LibItemToVirtualMachineImage, ImageCompatibility and SupportedGuestOS", func() {
 		var (
-			item                        library.Item
-			ovfEnvelope                 *ovf.Envelope
-			dummyValidOsType            = "dummy_valid_os_type"
-			dummyEmptyOsType            = ""
-			dummyWindowsOSType          = "dummy_win_os"
-			dummyLinuxFamily            = string(types.VirtualMachineGuestOsFamilyLinuxGuest)
-			dummyWindowsFamily          = string(types.VirtualMachineGuestOsFamilyWindowsGuest)
-			supportedGuestOsIdsToFamily map[string]string
-			supportedFalse              = new(bool)
-			supportedTrue               = new(bool)
-			notCompatibleMsg            = "VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1"
+			item             library.Item
+			ovfEnvelope      *ovf.Envelope
+			dummyValidOsType = "dummy_valid_os_type"
+			supportedFalse   = new(bool)
+			supportedTrue    = new(bool)
+			notCompatibleMsg = "VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1"
 		)
 
 		BeforeEach(func() {
@@ -158,96 +150,13 @@ var _ = Describe("VirtualMachineImages", func() {
 				},
 			}
 
-			supportedGuestOsIdsToFamily = make(map[string]string)
-			// supported guestOSIds fetched from the cluster
-			supportedGuestOsIdsToFamily[dummyValidOsType] = dummyLinuxFamily
-			supportedGuestOsIdsToFamily[dummyWindowsOSType] = dummyWindowsFamily
-
 			supportedTrue = pointer.BoolPtr(true)
 			supportedFalse = pointer.BoolPtr(false)
 		})
 
-		It("ovfEnvelope has a valid GuestOSType and OVF is not a TKG Image and is not v1alpha1 compatible", func() {
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
-			Expect(image).ToNot(BeNil())
-			Expect(image.Name).Should(Equal("fakeItem"))
-
-			// ImageSupported in Status is to false as OS type is windows, OVF is not a TKG image and does not
-			// contain VMOperatorV1Alpha1ExtraConfigKey in extraConfig
-			Expect(image.Status.ImageSupported).Should(Equal(supportedFalse))
-			expectedCondition := vmopv1alpha1.Conditions{
-				*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
-					vmopv1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
-					vmopv1alpha1.ConditionSeverityError,
-					notCompatibleMsg),
-				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition),
-			}
-			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
-		})
-
-		It("ovfEnvelope has a empty string GuestOSType and OVF is not TKG image and is not v1alpha1 compatible", func() {
-			ovfEnvelope = &ovf.Envelope{
-				VirtualSystem: &ovf.VirtualSystem{
-					OperatingSystem: []ovf.OperatingSystemSection{
-						{
-							OSType: &dummyEmptyOsType,
-						}},
-				},
-			}
-
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
-			Expect(image).ToNot(BeNil())
-			Expect(image.Name).Should(Equal("fakeItem"))
-
-			// ImageSupported in Status is to false as OS type is windows, OVF is not a TKG image and does not contain VMOperatorV1Alpha1ExtraConfigKey in extraConfig
-			Expect(image.Status.ImageSupported).Should(Equal(supportedFalse))
-			expectedCondition := vmopv1alpha1.Conditions{
-				*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
-					vmopv1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
-					vmopv1alpha1.ConditionSeverityError,
-					notCompatibleMsg),
-				*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition,
-					vmopv1alpha1.VirtualMachineImageOSTypeNotSupportedReason,
-					vmopv1alpha1.ConditionSeverityError,
-					fmt.Sprintf("VirtualMachineImage image type %s is not supported by VMService", "")),
-			}
-			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
-		})
-
-		It("ovfEnvelope has an invalid windows GuestOSType and OVF is not TKG image type and is not v1alpha1 compatible", func() {
-			ovfEnvelope = &ovf.Envelope{
-				VirtualSystem: &ovf.VirtualSystem{
-					OperatingSystem: []ovf.OperatingSystemSection{
-						{
-							OSType: &dummyWindowsOSType,
-						},
-					},
-				},
-			}
-
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
-			Expect(image).ToNot(BeNil())
-			Expect(image.Name).Should(Equal("fakeItem"))
-
-			// ImageSupported in Status is to false as OS type is windows, OVF is not a TKG image and does
-			// not contain VMOperatorV1Alpha1ExtraConfigKey in extraConfig
-			Expect(image.Status.ImageSupported).Should(Equal(supportedFalse))
-			expectedCondition := vmopv1alpha1.Conditions{
-				*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
-					vmopv1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
-					vmopv1alpha1.ConditionSeverityError,
-					notCompatibleMsg),
-				*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition,
-					vmopv1alpha1.VirtualMachineImageOSTypeNotSupportedReason,
-					vmopv1alpha1.ConditionSeverityError,
-					fmt.Sprintf("VirtualMachineImage image type %s is not supported by VMService", dummyWindowsOSType)),
-			}
-			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
-		})
-
 		It("with vmtx type", func() {
 			item.Type = "vmtx"
-			image := vsphere.LibItemToVirtualMachineImage(&item, nil, supportedGuestOsIdsToFamily)
+			image := vsphere.LibItemToVirtualMachineImage(&item, nil)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(HaveKey(vsphere.VMImageCLVersionAnnotation))
@@ -279,13 +188,12 @@ var _ = Describe("VirtualMachineImages", func() {
 				},
 			}
 
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
 
 			Expect(image.Status.ImageSupported).Should(Equal(supportedTrue))
 			expectedCondition := vmopv1alpha1.Conditions{
 				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
-				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition),
 			}
 			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
 		})
@@ -293,11 +201,6 @@ var _ = Describe("VirtualMachineImages", func() {
 		It("ImageSupported should be set to false when OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig and is not a TKG image and has a valid OS type set", func() {
 			ovfEnvelope = &ovf.Envelope{
 				VirtualSystem: &ovf.VirtualSystem{
-					OperatingSystem: []ovf.OperatingSystemSection{
-						{
-							OSType: &dummyValidOsType,
-						},
-					},
 					Product: []ovf.ProductSection{
 						{
 							Property: []ovf.Property{
@@ -311,7 +214,7 @@ var _ = Describe("VirtualMachineImages", func() {
 				},
 			}
 
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Status.ImageSupported).Should(Equal(supportedFalse))
 
@@ -320,7 +223,6 @@ var _ = Describe("VirtualMachineImages", func() {
 					vmopv1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
 					vmopv1alpha1.ConditionSeverityError,
 					notCompatibleMsg),
-				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition),
 			}
 			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
 		})
@@ -328,11 +230,6 @@ var _ = Describe("VirtualMachineImages", func() {
 		It("ImageSupported should be set to true when OVF Envelope has vsphere.VMOperatorV1Alpha1ExtraConfigKey set to vsphere.VMOperatorV1Alpha1ConfigReady in extraConfig and has a valid OS type set", func() {
 			ovfEnvelope = &ovf.Envelope{
 				VirtualSystem: &ovf.VirtualSystem{
-					OperatingSystem: []ovf.OperatingSystemSection{
-						{
-							OSType: &dummyValidOsType,
-						},
-					},
 					VirtualHardware: []ovf.VirtualHardwareSection{
 						{
 							ExtraConfig: []ovf.Config{
@@ -346,28 +243,14 @@ var _ = Describe("VirtualMachineImages", func() {
 				},
 			}
 
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, supportedGuestOsIdsToFamily)
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Status.ImageSupported).Should(Equal(supportedTrue))
 			expectedCondition := vmopv1alpha1.Conditions{
 				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
-				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageOSTypeSupportedCondition),
 			}
 			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
 		})
-	})
-
-	It("GetValidGuestOSDescriptorIDs from cluster", func() {
-		res := simulator.VPX().Run(func(ctx context.Context, c *vim25.Client) error {
-			finder := find.NewFinder(c)
-			cluster, err := finder.DefaultClusterComputeResource(ctx)
-			Expect(err).ToNot(HaveOccurred())
-			ids, err := vsphere.GetValidGuestOSDescriptorIDs(ctx, cluster, c)
-			Expect(err).To(BeNil())
-			Expect(ids).ToNot(BeNil())
-			return nil
-		})
-		Expect(res).To(BeNil())
 	})
 
 	Context("Expose ovfEnv properties", func() {
@@ -421,7 +304,7 @@ var _ = Describe("VirtualMachineImages", func() {
 				},
 			}
 
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope, nil)
+			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 
@@ -430,6 +313,28 @@ var _ = Describe("VirtualMachineImages", func() {
 			Expect(image.Spec.OVFEnv[userConfigurableKey].Key).Should(Equal(userConfigurableKey))
 			Expect(image.Spec.OVFEnv[userConfigurableKey].Type).Should(Equal(ovfStringType))
 			Expect(image.Spec.OVFEnv[userConfigurableKey].Default).Should(Equal(&defaultValue))
+		})
+	})
+
+	Context("ParseVirtualHardwareVersion", func() {
+		var vmxHwVersionString *string
+
+		It("empty hardware string", func() {
+			vmxHwVersionString = pointer.StringPtr("")
+			Expect(vsphere.ParseVirtualHardwareVersion(vmxHwVersionString)).Should(Equal(int32(0)))
+		})
+
+		It("invalid hardware string", func() {
+			vmxHwVersionString = pointer.StringPtr("blah")
+			vsphere.ParseVirtualHardwareVersion(vmxHwVersionString)
+			Expect(vsphere.ParseVirtualHardwareVersion(vmxHwVersionString)).Should(Equal(int32(0)))
+		})
+
+		It("valid hardware version string eg. vmx-15", func() {
+			vmxHwVersionString = pointer.StringPtr("vmx-15")
+			vsphere.ParseVirtualHardwareVersion(vmxHwVersionString)
+			Expect(vsphere.ParseVirtualHardwareVersion(vmxHwVersionString)).Should(Equal(int32(15)))
+
 		})
 	})
 })

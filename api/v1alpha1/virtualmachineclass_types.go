@@ -80,8 +80,8 @@ type VirtualMachineClassStatus struct {
 // +kubebuilder:printcolumn:name="CPU",type="string",JSONPath=".spec.hardware.cpus"
 // +kubebuilder:printcolumn:name="Memory",type="string",JSONPath=".spec.hardware.memory"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:printcolumn:name="VGPUDevices",type="string",priority=1,JSONPath=".spec.hardware.devices.vgpuDevices"
-// +kubebuilder:printcolumn:name="PassthroughDevices",type="string",priority=1,JSONPath=".spec.hardware.devices.dynamicDirectPathIODevices"
+// +kubebuilder:printcolumn:name="VGPUDevicesProfileNames",type="string",priority=1,JSONPath=".spec.hardware.devices.vgpuDevices[*].profileName"
+// +kubebuilder:printcolumn:name="PassthroughDeviceIDs",type="string",priority=1,JSONPath=".spec.hardware.devices.dynamicDirectPathIODevices[*].deviceID"
 
 // VirtualMachineClass is the Schema for the virtualmachineclasses API.
 // A VirtualMachineClass represents the desired specification and the observed status of a VirtualMachineClass

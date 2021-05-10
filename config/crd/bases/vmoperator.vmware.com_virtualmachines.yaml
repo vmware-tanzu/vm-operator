@@ -30,6 +30,10 @@ spec:
       name: Image
       priority: 1
       type: string
+    - jsonPath: .status.vmIp
+      name: Primary-IP
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

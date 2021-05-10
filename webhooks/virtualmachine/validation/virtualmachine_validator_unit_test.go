@@ -46,6 +46,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	Expect(err).ToNot(HaveOccurred())
 
 	vmImage := builder.DummyVirtualMachineImage(vm.Spec.ImageName)
+	vmImage1 := builder.DummyVirtualMachineImage(vm.Spec.ImageName + updateSuffix)
 
 	var oldVM *vmopv1.VirtualMachine
 	var oldObj *unstructured.Unstructured
@@ -57,7 +58,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	}
 
 	return &unitValidatingWebhookContext{
-		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, vmImage),
+		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, vmImage, vmImage1),
 		vm:                                  vm,
 		oldVM:                               oldVM,
 		vmImage:                             vmImage,
@@ -72,7 +73,6 @@ func unitTestsValidateCreate() {
 
 	type createArgs struct {
 		invalidImageName           bool
-		invalidGuestOSType         bool
 		invalidClassName           bool
 		invalidNetworkName         bool
 		invalidNetworkType         bool
@@ -85,6 +85,7 @@ func unitTestsValidateCreate() {
 		multipleVolumeSource       bool
 		invalidPVCName             bool
 		invalidPVCReadOnly         bool
+		invalidPVCHwVersion        bool
 		invalidMetadataConfigMap   bool
 		invalidVsphereVolumeSource bool
 		invalidVmVolumeProvOpts    bool
@@ -105,7 +106,7 @@ func unitTestsValidateCreate() {
 		if args.invalidImageName {
 			ctx.vm.Spec.ImageName = ""
 		}
-		if args.invalidGuestOSType || args.imageNonCompatible {
+		if args.imageNonCompatible {
 			ctx.vmImage.Status.ImageSupported = &[]bool{false}[0]
 			Expect(ctx.Client.Status().Update(ctx, ctx.vmImage)).ToNot(HaveOccurred())
 		}
@@ -144,6 +145,10 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidPVCReadOnly {
 			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ReadOnly = true
+		}
+		if args.invalidPVCHwVersion {
+			ctx.vmImage.Spec.HardwareVersion = 12
+			Expect(ctx.Client.Update(ctx, ctx.vmImage)).ToNot(HaveOccurred())
 		}
 		if args.invalidMetadataConfigMap {
 			ctx.vm.Spec.VmMetadata.ConfigMapName = ""
@@ -234,13 +239,14 @@ func unitTestsValidateCreate() {
 		Entry("should deny multiple volume source spec", createArgs{multipleVolumeSource: true}, false, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, 0, 0), nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, 0), nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCReadOnly: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameReadOnlyFmt, 0), nil),
+		Entry("should deny invalid PVC hardware verion", createArgs{invalidPVCHwVersion: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupported, builder.DummyImageName, 12, 13), nil),
 		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, 0), nil),
 		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVmVolumeProvOpts: true}, false, fmt.Sprintf(messages.EagerZeroedAndThinProvisionedNotSupported), nil),
 		Entry("should deny invalid vmMetadata configmap", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
 		Entry("should deny invalid resource quota", createArgs{invalidResourceQuota: true}, false, fmt.Sprintf(messages.NoResourceQuota, ""), nil),
 		Entry("should deny invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, "invalid", ""), nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
-		Entry("should fail when OS type is invalid or image not compatible", createArgs{invalidGuestOSType: true, imageNonCompatible: true}, false, fmt.Sprintf(messages.VMImageNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
+		Entry("should fail when image is not compatible", createArgs{imageNonCompatible: true}, false, fmt.Sprintf(messages.VirtualMachineImageNotSupported), nil),
 	)
 }
 

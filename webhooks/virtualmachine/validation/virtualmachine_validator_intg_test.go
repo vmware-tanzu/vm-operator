@@ -50,9 +50,8 @@ func intgTestsValidateCreate() {
 
 	type createArgs struct {
 		invalidImageName                bool
+		imageNonCompatible              bool
 		imageNotFound                   bool
-		validGuestOSType                bool
-		invalidGuestOSType              bool
 		imageSupportCheckSkipAnnotation bool
 		invalidMetadataConfigMap        bool
 		invalidStorageClass             bool
@@ -78,12 +77,7 @@ func intgTestsValidateCreate() {
 			vm.Annotations[vsphere.VMOperatorImageSupportedCheckKey] = vsphere.VMOperatorImageSupportedCheckDisable
 		}
 
-		if args.validGuestOSType {
-			ctx.vmImage.Status.ImageSupported = &[]bool{true}[0]
-			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
-			Expect(err).ToNot(HaveOccurred())
-		}
-		if args.invalidGuestOSType {
+		if args.imageNonCompatible {
 			ctx.vmImage.Status.ImageSupported = &[]bool{false}[0]
 			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
 			Expect(err).ToNot(HaveOccurred())
@@ -127,10 +121,9 @@ func intgTestsValidateCreate() {
 
 	DescribeTable("create table", validateCreate,
 		Entry("should work", createArgs{}, true, "", nil),
-		Entry("should work for image with valid osType", createArgs{validGuestOSType: true}, true, "", nil),
-		Entry("should work despite osType when VMOperatorImageSupportedCheckKey is disabled", createArgs{imageSupportCheckSkipAnnotation: true, invalidGuestOSType: true}, true, "", nil),
+		Entry("should work despite incompatible image when VMOperatorImageSupportedCheckKey is disabled", createArgs{imageSupportCheckSkipAnnotation: true, imageNonCompatible: true}, true, "", nil),
 		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false, "spec.imageName must be specified", nil),
-		Entry("should not work for image with an invalid osType or invalid image", createArgs{invalidGuestOSType: true}, false, fmt.Sprintf(messages.VMImageNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
+		Entry("should not work for image which is v1alpha1 incompatible or a non-tkg image", createArgs{imageNonCompatible: true}, false, fmt.Sprintf(messages.VirtualMachineImageNotSupported), nil),
 		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmMetadata.configMapName must be specified", nil),
 		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, builder.DummyStorageClassName, ""), nil),
 	)

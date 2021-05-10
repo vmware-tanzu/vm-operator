@@ -47,4 +47,7 @@ const (
 	PCIPassthruMMIOExtraConfigKey     = "pciPassthru.use64bitMMIO"    // nolint:gosec
 	PCIPassthruMMIOSizeExtraConfigKey = "pciPassthru.64bitMMIOSizeGB" // nolint:gosec
 	PCIPassthruMMIOSizeDefault        = "512"
+
+	// Minimum supported virtual hardware version for persistent volumes
+	MinSupportedHWVersionForPVC = 13
 )

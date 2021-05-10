@@ -4,6 +4,7 @@
 package vsphere
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -13,6 +14,9 @@ import (
 	pbmTypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/vcenter"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/methods"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/utils/pointer"
 
@@ -56,7 +60,103 @@ func (s *Session) deployOvf(vmCtx VMCloneContext, itemID string, storageProfileI
 	return res.NewVMFromObject(ref.(*object.VirtualMachine))
 }
 
+// getClusterVMConfigOptions fetches the virtualmachine config options from the cluster specifically
+// 1. valid guestOS descriptor IDs for the cluster
+// 2. default cluster hardware version
+func getClusterVMConfigOptions(
+	ctx context.Context,
+	cluster *object.ClusterComputeResource,
+	client *vim25.Client) (map[string]string, int32, error) {
+	if cluster == nil {
+		return nil, 0, fmt.Errorf("no cluster exists, can't get cluster properties")
+	}
+
+	log.V(4).Info("Fetching supported guestOS types and default hardware version for the cluster")
+	var computeResource mo.ComputeResource
+	if err := cluster.Properties(ctx, cluster.Reference(), []string{"environmentBrowser"}, &computeResource); err != nil {
+		log.Error(err, "Failed to get environment browser for the cluster")
+		return nil, 0, err
+	}
+
+	req := vimTypes.QueryConfigOptionEx{
+		This: *computeResource.EnvironmentBrowser,
+		Spec: &vimTypes.EnvironmentBrowserConfigOptionQuerySpec{},
+	}
+
+	opt, err := methods.QueryConfigOptionEx(ctx, client.RoundTripper, &req)
+	if err != nil {
+		log.Error(err, "Failed to query config options for cluster properties")
+		return nil, 0, err
+	}
+
+	guestOSIdsToFamily := make(map[string]string)
+	var clusterHwVersion int32
+	if opt.Returnval != nil {
+		for _, descriptor := range opt.Returnval.GuestOSDescriptor {
+			// Fetch all ids and families that have supportLevel other than unsupported
+			if descriptor.SupportLevel != "unsupported" {
+				guestOSIdsToFamily[descriptor.Id] = descriptor.Family
+			}
+		}
+		// fetch cluster's default hardware version
+		clusterHwVersion = opt.Returnval.HardwareOptions.HwVersion
+	}
+
+	return guestOSIdsToFamily, clusterHwVersion, nil
+}
+
+// checkVMConfigOptions validates
+// 1. VMService supported osTypes
+// 2. Incompatible cluster hardware versions
+func checkVMConfigOptions(
+	vmCtx VMCloneContext,
+	vmConfigArgs vmprovider.VmConfigArgs,
+	clusterHwVersion int32,
+	guestOSIdsToFamily map[string]string) error {
+
+	val := vmCtx.VM.Annotations[VMOperatorImageSupportedCheckKey]
+	if val != VMOperatorImageSupportedCheckDisable && len(guestOSIdsToFamily) > 0 {
+		osType := vmConfigArgs.VmImage.Spec.OSInfo.Type
+		// osFamily will be present for supported OSTypes and support only VirtualMachineGuestOsFamilyLinuxGuest for now
+		if osFamily := guestOSIdsToFamily[osType]; osFamily != string(vimTypes.VirtualMachineGuestOsFamilyLinuxGuest) {
+			return fmt.Errorf("image osType '%s' is not supported by VMService", osType)
+		}
+	}
+
+	hwVersion := vmConfigArgs.VmImage.Spec.HardwareVersion
+	if hwVersion != 0 && clusterHwVersion != 0 && hwVersion > clusterHwVersion {
+		return fmt.Errorf("image has a hardware version '%d' higher than "+
+			"cluster's default hardware version '%d'", hwVersion, clusterHwVersion)
+	}
+
+	return nil
+}
+
+func deployVMFromCLPreCheck(
+	vmCtx VMCloneContext,
+	vmConfigArgs vmprovider.VmConfigArgs,
+	cluster *object.ClusterComputeResource,
+	client *vim25.Client) error {
+
+	guestOSIdsToFamily, clusterHwVersion, err := getClusterVMConfigOptions(vmCtx.Context, cluster, client)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to get guestOS descriptors and hardware options from cluster")
+	}
+
+	if err := checkVMConfigOptions(vmCtx, vmConfigArgs, clusterHwVersion, guestOSIdsToFamily); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *Session) deployVMFromCL(vmCtx VMCloneContext, vmConfigArgs vmprovider.VmConfigArgs, item *library.Item) (*res.VirtualMachine, error) {
+	vmCtx.Logger.Info("Performing preChecks before deploying library item", "itemName", item.Name, "itemType", item.Type)
+
+	if err := deployVMFromCLPreCheck(vmCtx, vmConfigArgs, s.cluster, s.Client.vimClient); err != nil {
+		return nil, errors.Wrapf(err, "deploy VM preCheck failed for image %q", vmCtx.VM.Spec.ImageName)
+	}
+
 	vmCtx.Logger.Info("Deploying Content Library item", "itemName", item.Name,
 		"itemType", item.Type, "imageName", vmCtx.VM.Spec.ImageName,
 		"resourcePolicyName", vmCtx.VM.Spec.ResourcePolicyName, "storageProfileID", vmConfigArgs.StorageProfileID)

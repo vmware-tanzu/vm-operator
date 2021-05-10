@@ -177,14 +177,12 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 	val := vm.Annotations[vsphere.VMOperatorImageSupportedCheckKey]
 	if val != vsphere.VMOperatorImageSupportedCheckDisable {
 		image := vmopv1.VirtualMachineImage{}
-		err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image)
-		if err != nil {
+		if err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image); err != nil {
 			validationErrs = append(validationErrs, fmt.Sprintf("error validating image: %v", err))
 			return validationErrs
 		}
 		if image.Status.ImageSupported != nil && !*image.Status.ImageSupported {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.VMImageNotSupported, image.Spec.OSInfo.Type,
-				image.Name))
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.VirtualMachineImageNotSupported))
 		}
 	}
 
@@ -296,7 +294,7 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, i, i))
 		} else {
 			if vol.PersistentVolumeClaim != nil {
-				validationErrs = append(validationErrs, v.validateVolumeWithPVC(vm, vol, i)...)
+				validationErrs = append(validationErrs, v.validateVolumeWithPVC(ctx, vm, vol, i)...)
 			} else { // vol.VsphereVolume != nil
 				validationErrs = append(validationErrs, v.validateVsphereVolume(vol.VsphereVolume, i)...)
 			}
@@ -306,8 +304,20 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 	return validationErrs
 }
 
-func (v validator) validateVolumeWithPVC(vm *vmopv1.VirtualMachine, vol vmopv1.VirtualMachineVolume, idx int) []string {
+func (v validator) validateVolumeWithPVC(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine, vol vmopv1.VirtualMachineVolume, idx int) []string {
 	var validationErrs []string
+
+	image := vmopv1.VirtualMachineImage{}
+	err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image)
+	if err != nil {
+		validationErrs = append(validationErrs, fmt.Sprintf("error validating image for PVC: %v", err))
+	}
+
+	// Check that the VirtualMachineImage's hardware version is at least the minimum supported virtual hardware version
+	if image.Spec.HardwareVersion != 0 && image.Spec.HardwareVersion < vsphere.MinSupportedHWVersionForPVC {
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupported,
+			image.Name, image.Spec.HardwareVersion, vsphere.MinSupportedHWVersionForPVC))
+	}
 
 	// Check that the name used for the CnsNodeVmAttachment will be valid. Don't double up errors if name is missing.
 	if vol.Name != "" {

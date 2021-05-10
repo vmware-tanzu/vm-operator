@@ -25,7 +25,7 @@ const (
 	DummyPVCName           = "dummyPVCName"
 	DummyMetadataCMName    = "dummyMetadataCMName"
 	DummyDistroVersion     = "dummyDistroVersion"
-	DummyOSType            = "dummy-osType"
+	DummyOSType            = "centosGuest"
 	DummyStorageClassName  = "dummy-storage-class"
 	DummyResourceQuotaName = "dummy-resource-quota"
 )

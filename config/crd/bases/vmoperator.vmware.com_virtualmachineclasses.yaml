@@ -28,6 +28,14 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
+    - jsonPath: .spec.hardware.devices.vgpuDevices[*].profileName
+      name: VGPUDevicesProfileNames
+      priority: 1
+      type: string
+    - jsonPath: .spec.hardware.devices.dynamicDirectPathIODevices[*].deviceID
+      name: PassthroughDeviceIDs
+      priority: 1
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:

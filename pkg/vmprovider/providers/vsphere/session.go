@@ -54,7 +54,6 @@ type Session struct {
 	storageClassRequired  bool
 	useInventoryForImages bool
 	tagInfo               map[string]string
-	guestOSIdsToFamily    map[string]string // map of cluster's supported GuestOS ids to its OS family
 
 	mutex              sync.Mutex
 	cpuMinMHzInCluster uint64 // CPU Min Frequency across all Hosts in the cluster
@@ -127,11 +126,6 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 			return errors.Wrapf(err, "failed to init minimum CPU frequency")
 		}
 		s.SetCpuMinMHzInCluster(minFreq)
-
-		s.guestOSIdsToFamily, err = GetValidGuestOSDescriptorIDs(ctx, s.cluster, s.Client.vimClient)
-		if err != nil {
-			return errors.Wrapf(err, "failed to init guestOS descriptors for cluster")
-		}
 	}
 
 	// On WCP, the Folder is extracted from an annotation on the namespace.
@@ -248,7 +242,7 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID str
 			continue
 		}
 
-		images = append(images, LibItemToVirtualMachineImage(&item, ovfEnvelope, s.guestOSIdsToFamily))
+		images = append(images, LibItemToVirtualMachineImage(&item, ovfEnvelope))
 	}
 
 	return images, nil
@@ -683,7 +677,6 @@ func (s *Session) String() string {
 	}
 	sb.WriteString(fmt.Sprintf("cpuMinMHzInCluster: %v, ", s.GetCpuMinMHzInCluster()))
 	sb.WriteString(fmt.Sprintf("tagInfo: %v ", s.tagInfo))
-	sb.WriteString(fmt.Sprintf("guestOSIdsToFamily: %v, ", s.guestOSIdsToFamily))
 	sb.WriteString("}")
 	return sb.String()
 }

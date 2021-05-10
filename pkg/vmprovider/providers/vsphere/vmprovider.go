@@ -7,15 +7,13 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/vmware/govmomi/find"
-	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/vapi/library"
-	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/methods"
-	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -332,42 +330,6 @@ func isOVFV1Alpha1Compatible(ovfEnvelope *ovf.Envelope) bool {
 	return false
 }
 
-// GetValidGuestOSDescriptorIDs fetches valid guestOS descriptor IDs for the cluster
-func GetValidGuestOSDescriptorIDs(ctx context.Context, cluster *object.ClusterComputeResource, client *vim25.Client) (map[string]string, error) {
-	if cluster == nil {
-		return nil, fmt.Errorf("no cluster exists, can't get OS Descriptors")
-	}
-
-	log.V(4).Info("Fetching all supported guestOS types for the cluster")
-	var computeResource mo.ComputeResource
-	err := cluster.Properties(ctx, cluster.Reference(), []string{"environmentBrowser"}, &computeResource)
-	if err != nil {
-		log.Error(err, "Failed to get cluster properties")
-		return nil, err
-	}
-
-	req := vimtypes.QueryConfigOptionEx{
-		This: *computeResource.EnvironmentBrowser,
-		Spec: &vimtypes.EnvironmentBrowserConfigOptionQuerySpec{},
-	}
-
-	opt, err := methods.QueryConfigOptionEx(ctx, client.RoundTripper, &req)
-	if err != nil {
-		log.Error(err, "Failed to query config options for valid GuestOS types")
-		return nil, err
-	}
-
-	guestOSIdsToFamily := make(map[string]string)
-	for _, descriptor := range opt.Returnval.GuestOSDescriptor {
-		// Fetch all ids and families that have supportLevel other than unsupported
-		if descriptor.SupportLevel != "unsupported" {
-			guestOSIdsToFamily[descriptor.Id] = descriptor.Family
-		}
-	}
-
-	return guestOSIdsToFamily, nil
-}
-
 // isATKGImage validates if a VirtualMachineImage OVF is a TKG Image type
 func isATKGImage(systemProperties map[string]string) bool {
 	const tkgImageIdentifier = "vmware-system.guest.kubernetes"
@@ -384,12 +346,34 @@ func libItemVersionAnnotation(item *library.Item) string {
 	return fmt.Sprintf("%s:%s", item.ID, item.Version)
 }
 
+// ParseVirtualHardwareVersion parses the virtual hardware version
+// For eg. "vmx-15" returns 15.
+func ParseVirtualHardwareVersion(vmxVersion *string) int32 {
+	patternStr := `vmx-(\d+)`
+	re, err := regexp.Compile(patternStr)
+	if err != nil {
+		return 0
+	}
+	// obj matches the full string and the submatch (\d+)
+	// and return a []string with values
+	obj := re.FindStringSubmatch(*vmxVersion)
+	if len(obj) != 2 {
+		return 0
+	}
+
+	version, err := strconv.ParseInt(obj[1], 10, 32)
+	if err != nil {
+		return 0
+	}
+
+	return int32(version)
+}
+
 // LibItemToVirtualMachineImage converts a given library item and its attributes to return a
 // VirtualMachineImage that represents a k8s-native view of the item.
 func LibItemToVirtualMachineImage(
 	item *library.Item,
-	ovfEnvelope *ovf.Envelope,
-	gOSIdsToFamily map[string]string) *v1alpha1.VirtualMachineImage {
+	ovfEnvelope *ovf.Envelope) *v1alpha1.VirtualMachineImage {
 
 	var ts metav1.Time
 	if item.CreationTime != nil {
@@ -439,6 +423,15 @@ func LibItemToVirtualMachineImage(
 				}
 			}
 
+			// Use hardware section info from the VM image, if one exists.
+			var hwVersion int32
+			if virtualHwSection := ovfEnvelope.VirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
+				hw := virtualHwSection[0]
+				if hw.System != nil && hw.System.VirtualSystemType != nil {
+					hwVersion = ParseVirtualHardwareVersion(hw.System.VirtualSystemType)
+				}
+			}
+
 			ovfSystemProps := GetVmwareSystemPropertiesFromOvf(ovfEnvelope)
 
 			for k, v := range ovfSystemProps {
@@ -447,6 +440,7 @@ func LibItemToVirtualMachineImage(
 			image.Spec.ProductInfo = productInfo
 			image.Spec.OSInfo = osInfo
 			image.Spec.OVFEnv = GetUserConfigurablePropertiesFromOvf(ovfEnvelope)
+			image.Spec.HardwareVersion = hwVersion
 
 			// Allow OVF compatibility if
 			// - The OVF contains the VMOperatorV1Alpha1ConfigKey key that denotes cloud-init being disabled at first-boot
@@ -460,29 +454,9 @@ func LibItemToVirtualMachineImage(
 			}
 		}
 
-		isSupportedGuestOS := false
-		// Set the isSupportedGuestOS to true if the GuestOS Descriptors IDs map was populated
-		if len(gOSIdsToFamily) > 0 {
-			osType := image.Spec.OSInfo.Type
-
-			// osFamily will be present for supported OSTypes and support only VirtualMachineGuestOsFamilyLinuxGuest for now
-			if osFamily := gOSIdsToFamily[osType]; osFamily == string(vimtypes.VirtualMachineGuestOsFamilyLinuxGuest) {
-				isSupportedGuestOS = true
-				conditions.MarkTrue(image, v1alpha1.VirtualMachineImageOSTypeSupportedCondition)
-			} else {
-				// BMV: This message is weird if OSType wasn't populated above.
-				msg := fmt.Sprintf("VirtualMachineImage image type %s is not supported by VMService", osType)
-				conditions.MarkFalse(image, v1alpha1.VirtualMachineImageOSTypeSupportedCondition,
-					v1alpha1.VirtualMachineImageOSTypeNotSupportedReason, v1alpha1.ConditionSeverityError, msg)
-			}
-		} else {
-			// Bypass isSupportedGuestOS validation as GuestOS Descriptors IDs map was not populated
-			isSupportedGuestOS = true
-		}
-
-		// Set Status.ImageSupported to combined compatibility of OVF compatibility and supported guest OS.
-		image.Status.ImageSupported = pointer.BoolPtr(isSupportedGuestOS &&
-			conditions.IsTrue(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition))
+		// Set Status.ImageSupported to combined compatibility of OVF compatibility.
+		image.Status.ImageSupported = pointer.BoolPtr(conditions.IsTrue(image,
+			v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition))
 	}
 
 	return image

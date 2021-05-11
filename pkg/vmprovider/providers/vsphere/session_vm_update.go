@@ -369,6 +369,7 @@ func updateConfigSpecExtraConfig(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec *vimTypes.VirtualMachineConfigSpec,
 	vmImage *v1alpha1.VirtualMachineImage,
+	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	vmSpec v1alpha1.VirtualMachineSpec,
 	vmMetadata *vmprovider.VmMetadata,
 	globalExtraConfig map[string]string) {
@@ -396,6 +397,12 @@ func updateConfigSpecExtraConfig(
 			if strings.HasPrefix(k, ExtraConfigGuestInfoPrefix) {
 				extraConfig[k] = v
 			}
+		}
+	}
+
+	if lib.IsThunderPciDevicesFSSEnabled() {
+		if immobileDevicePresent(vmClassSpec) {
+			extraConfig[MMPowerOffVMExtraConfigKey] = "TRUE"
 		}
 	}
 
@@ -497,7 +504,7 @@ func updateConfigSpec(
 	updateHardwareConfigSpec(config, configSpec, &vmClassSpec)
 	updateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, minCPUFreq)
 	updateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
-	updateConfigSpecExtraConfig(config, configSpec, vmImage, vmCtx.VM.Spec, vmMetadata, globalExtraConfig)
+	updateConfigSpecExtraConfig(config, configSpec, vmImage, &vmClassSpec, vmCtx.VM.Spec, vmMetadata, globalExtraConfig)
 	updateConfigSpecVAppConfig(config, configSpec, vmMetadata)
 	updateConfigSpecChangeBlockTracking(config, configSpec, vmCtx.VM.Spec)
 
@@ -969,4 +976,10 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	return nil
+}
+
+func immobileDevicePresent(spec *v1alpha1.VirtualMachineClassSpec) bool {
+	virtualDevices := spec.Hardware.Devices
+	return len(virtualDevices.VGPUDevices) > 0 ||
+		len(virtualDevices.DynamicDirectPathIODevices) > 0
 }

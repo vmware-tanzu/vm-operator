@@ -241,6 +241,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 	Context("ExtraConfig", func() {
 		var vmImage *vmopv1alpha1.VirtualMachineImage
+		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
 		var vmSpec vmopv1alpha1.VirtualMachineSpec
 		var vmMetadata *vmprovider.VmMetadata
 		var globalExtraConfig map[string]string
@@ -248,6 +249,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		BeforeEach(func() {
 			vmImage = &vmopv1alpha1.VirtualMachineImage{}
+			vmClassSpec = &vmopv1alpha1.VirtualMachineClassSpec{}
 			vmSpec = vmopv1alpha1.VirtualMachineSpec{}
 			vmMetadata = &vmprovider.VmMetadata{
 				Data:      make(map[string]string),
@@ -261,6 +263,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				config,
 				configSpec,
 				vmImage,
+				vmClassSpec,
 				vmSpec,
 				vmMetadata,
 				globalExtraConfig)
@@ -313,6 +316,40 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			It("No changes", func() {
 				Expect(ecMap).To(BeEmpty())
+			})
+		})
+
+		Context("when ThunderPciDevicesFSS is enabled", func() {
+			var oldThunderPciDevicesFSSEnableFunc func() bool
+			BeforeEach(func() {
+				oldThunderPciDevicesFSSEnableFunc = lib.IsThunderPciDevicesFSSEnabled
+				lib.IsThunderPciDevicesFSSEnabled = func() bool {
+					return true
+				}
+			})
+			AfterEach(func() {
+				lib.IsThunderPciDevicesFSSEnabled = oldThunderPciDevicesFSSEnableFunc
+			})
+
+			Context("when virtual devices are not present", func() {
+
+				It("No Changes", func() {
+					Expect(ecMap).To(BeEmpty())
+				})
+			})
+
+			Context("when virtual devices are available", func() {
+				BeforeEach(func() {
+					vmClassSpec.Hardware.Devices = vmopv1alpha1.VirtualDevices{VGPUDevices: []vmopv1alpha1.VGPUDevice{
+						{
+							ProfileName: "test-vgpu-profile",
+						},
+					}}
+				})
+
+				It("property should be added", func() {
+					Expect(ecMap).To(HaveKeyWithValue(MMPowerOffVMExtraConfigKey, "TRUE"))
+				})
 			})
 		})
 	})

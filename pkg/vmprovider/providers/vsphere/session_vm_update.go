@@ -370,7 +370,7 @@ func updateConfigSpecExtraConfig(
 	configSpec *vimTypes.VirtualMachineConfigSpec,
 	vmImage *v1alpha1.VirtualMachineImage,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
-	vmSpec v1alpha1.VirtualMachineSpec,
+	vm *v1alpha1.VirtualMachine,
 	vmMetadata *vmprovider.VmMetadata,
 	globalExtraConfig map[string]string) {
 
@@ -381,7 +381,7 @@ func updateConfigSpecExtraConfig(
 			return text
 		}
 		b := strings.Builder{}
-		if err := t.Execute(&b, vmSpec); err != nil {
+		if err := t.Execute(&b, vm.Spec); err != nil {
 			return text
 		}
 		return b.String()
@@ -402,7 +402,16 @@ func updateConfigSpecExtraConfig(
 
 	if lib.IsThunderPciDevicesFSSEnabled() {
 		if immobileDevicePresent(vmClassSpec) {
-			extraConfig[MMPowerOffVMExtraConfigKey] = "TRUE"
+			extraConfig[MMPowerOffVMExtraConfigKey] = ExtraConfigTrue
+
+			mmioSize := vm.Annotations[PCIPassthruMMIOOverrideAnnotation]
+			if mmioSize == "" {
+				mmioSize = PCIPassthruMMIOSizeDefault
+			}
+			if mmioSize != "0" {
+				extraConfig[PCIPassthruMMIOExtraConfigKey] = ExtraConfigTrue
+				extraConfig[PCIPassthruMMIOSizeExtraConfigKey] = mmioSize
+			}
 		}
 	}
 
@@ -504,7 +513,7 @@ func updateConfigSpec(
 	updateHardwareConfigSpec(config, configSpec, &vmClassSpec)
 	updateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, minCPUFreq)
 	updateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
-	updateConfigSpecExtraConfig(config, configSpec, vmImage, &vmClassSpec, vmCtx.VM.Spec, vmMetadata, globalExtraConfig)
+	updateConfigSpecExtraConfig(config, configSpec, vmImage, &vmClassSpec, vmCtx.VM, vmMetadata, globalExtraConfig)
 	updateConfigSpecVAppConfig(config, configSpec, vmMetadata)
 	updateConfigSpecChangeBlockTracking(config, configSpec, vmCtx.VM.Spec)
 

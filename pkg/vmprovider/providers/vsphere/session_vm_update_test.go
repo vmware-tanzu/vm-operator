@@ -242,7 +242,7 @@ var _ = Describe("Update ConfigSpec", func() {
 	Context("ExtraConfig", func() {
 		var vmImage *vmopv1alpha1.VirtualMachineImage
 		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
-		var vmSpec vmopv1alpha1.VirtualMachineSpec
+		var vm *vmopv1alpha1.VirtualMachine
 		var vmMetadata *vmprovider.VmMetadata
 		var globalExtraConfig map[string]string
 		var ecMap map[string]string
@@ -250,7 +250,11 @@ var _ = Describe("Update ConfigSpec", func() {
 		BeforeEach(func() {
 			vmImage = &vmopv1alpha1.VirtualMachineImage{}
 			vmClassSpec = &vmopv1alpha1.VirtualMachineClassSpec{}
-			vmSpec = vmopv1alpha1.VirtualMachineSpec{}
+			vm = &vmopv1alpha1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: make(map[string]string),
+				},
+			}
 			vmMetadata = &vmprovider.VmMetadata{
 				Data:      make(map[string]string),
 				Transport: vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
@@ -264,7 +268,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				configSpec,
 				vmImage,
 				vmClassSpec,
-				vmSpec,
+				vm,
 				vmMetadata,
 				globalExtraConfig)
 
@@ -332,7 +336,6 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 
 			Context("when virtual devices are not present", func() {
-
 				It("No Changes", func() {
 					Expect(ecMap).To(BeEmpty())
 				})
@@ -347,8 +350,24 @@ var _ = Describe("Update ConfigSpec", func() {
 					}}
 				})
 
-				It("property should be added", func() {
-					Expect(ecMap).To(HaveKeyWithValue(MMPowerOffVMExtraConfigKey, "TRUE"))
+				It("mm poweroff extraconfig should be added", func() {
+					Expect(ecMap).To(HaveKeyWithValue(MMPowerOffVMExtraConfigKey, ExtraConfigTrue))
+				})
+
+				It("pci passthru mmio extraconfig should be added", func() {
+					Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOExtraConfigKey, ExtraConfigTrue))
+					Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOSizeExtraConfigKey, PCIPassthruMMIOSizeDefault))
+				})
+
+				Context("when pci passthru mmio override annotation is set", func() {
+					BeforeEach(func() {
+						vm.Annotations[PCIPassthruMMIOOverrideAnnotation] = "12345"
+					})
+
+					It("pci passthru mmio extraconfig should be set to override annotation value", func() {
+						Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOExtraConfigKey, ExtraConfigTrue))
+						Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOSizeExtraConfigKey, "12345"))
+					})
 				})
 			})
 		})

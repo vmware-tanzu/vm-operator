@@ -679,6 +679,52 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 	})
 
+	Context("Create vSphere PCI device", func() {
+		var vgpuDevices = []vmopv1alpha1.VGPUDevice{
+			{
+				ProfileName: "SampleProfile",
+			},
+		}
+		var ddpioDevices = []vmopv1alpha1.DynamicDirectPathIODevice{
+			{
+				VendorID:    42,
+				DeviceID:    43,
+				CustomLabel: "SampleLabel",
+			},
+		}
+		var pciDevices vmopv1alpha1.VirtualDevices
+		Context("For vGPU device", func() {
+			BeforeEach(func() {
+				pciDevices = vmopv1alpha1.VirtualDevices{
+					VGPUDevices: vgpuDevices,
+				}
+			})
+			It("should create vSphere device with VmiopBackingInfo", func() {
+				vSphereDevices := createPCIDevices(pciDevices)
+				Expect(len(vSphereDevices)).To(Equal(1))
+				virtualDevice := vSphereDevices[0].GetVirtualDevice()
+				backing := virtualDevice.Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
+				Expect(backing.Vgpu).To(Equal(pciDevices.VGPUDevices[0].ProfileName))
+			})
+		})
+		Context("For Dynamic DirectPath I/O device", func() {
+			BeforeEach(func() {
+				pciDevices = vmopv1alpha1.VirtualDevices{
+					DynamicDirectPathIODevices: ddpioDevices,
+				}
+			})
+			It("should create vSphere device with DynamicBackingInfo", func() {
+				vSphereDevices := createPCIDevices(pciDevices)
+				Expect(len(vSphereDevices)).To(Equal(1))
+				virtualDevice := vSphereDevices[0].GetVirtualDevice()
+				backing := virtualDevice.Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
+				Expect(backing.AllowedDevice[0].DeviceId).To(Equal(int32(pciDevices.DynamicDirectPathIODevices[0].DeviceID)))
+				Expect(backing.AllowedDevice[0].VendorId).To(Equal(int32(pciDevices.DynamicDirectPathIODevices[0].VendorID)))
+				Expect(backing.CustomLabel).To(Equal(pciDevices.DynamicDirectPathIODevices[0].CustomLabel))
+			})
+		})
+	})
+
 	Context("PCI Device Changes", func() {
 		var currentList, expectedList object.VirtualDeviceList
 		var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
@@ -715,9 +761,11 @@ var _ = Describe("Update ConfigSpec", func() {
 			}
 			backingInfo3 = &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
 				AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{allowedDev1},
+				CustomLabel:   "sampleLabel3",
 			}
 			backingInfo4 = &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
 				AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{allowedDev2},
+				CustomLabel:   "sampleLabel4",
 			}
 			deviceKey3 = int32(-202)
 			deviceKey4 = int32(-203)
@@ -782,6 +830,32 @@ var _ = Describe("Update ConfigSpec", func() {
 					Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[idx].GetVirtualDevice().Key))
 					Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
 				}
+			})
+		})
+
+		Context("When the expected and current lists have DDPIO devices with different custom labels", func() {
+			BeforeEach(func() {
+				expectedList = []vimTypes.BaseVirtualDevice{dynamicDirectPathIODev1}
+				// Creating a dynamicDirectPathIO device with same backing info except for the custom label.
+				backingInfoDiffCustomLabel := &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+					AllowedDevice: backingInfo3.AllowedDevice,
+					CustomLabel:   "DifferentLabel",
+				}
+				dynamicDirectPathIODev2 = createPCIPassThroughDevice(deviceKey4, backingInfoDiffCustomLabel)
+				currentList = []vimTypes.BaseVirtualDevice{dynamicDirectPathIODev2}
+			})
+
+			It("should return add and remove device changes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(deviceChanges)).To(Equal(2))
+
+				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(currentList[0].GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+
+				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(expectedList[0].GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
 			})
 		})
 

@@ -13,7 +13,7 @@ const (
 	ReadinessProbeOnlyOneAction            = "spec.readinessProbe only one action can be specified"
 
 	NetworkNameNotSpecifiedFmt               = "spec.networkInterfaces[%d].networkName must be specified"
-	NetworkTypeNotSupportedFmt               = "spec.networkInterfaces[%d].networkType is not supported"
+	NetworkTypeNotSupportedFmt               = "spec.networkInterfaces[%d].networkType is not supported. supported network types: %s and %s"
 	NetworkTypeProviderRefNotSupportedFmt    = "spec.networkInterfaces[%d].providerRef is not supported"
 	NetworkTypeEthCardTypeNotSupportedFmt    = "spec.networkInterfaces[%d].ethernetCardType is not supported"
 	MultipleNetworkInterfacesNotSupportedFmt = "Multiple network interfaces cannot be connected to the same network. Duplicate NetworkName: spec.networkInterfaces[%d].networkName"

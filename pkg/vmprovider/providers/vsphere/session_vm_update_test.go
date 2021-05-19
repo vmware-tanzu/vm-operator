@@ -341,11 +341,43 @@ var _ = Describe("Update ConfigSpec", func() {
 				})
 			})
 
-			Context("when virtual devices are available", func() {
+			Context("when vgpu device is available", func() {
 				BeforeEach(func() {
 					vmClassSpec.Hardware.Devices = vmopv1alpha1.VirtualDevices{VGPUDevices: []vmopv1alpha1.VGPUDevice{
 						{
 							ProfileName: "test-vgpu-profile",
+						},
+					}}
+				})
+
+				It("mm poweroff extraconfig should not be added", func() {
+					Expect(ecMap).NotTo(HaveKey(MMPowerOffVMExtraConfigKey))
+				})
+
+				It("pci passthru mmio extraconfig should be added", func() {
+					Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOExtraConfigKey, ExtraConfigTrue))
+					Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOSizeExtraConfigKey, PCIPassthruMMIOSizeDefault))
+				})
+
+				Context("when pci passthru mmio override annotation is set", func() {
+					BeforeEach(func() {
+						vm.Annotations[PCIPassthruMMIOOverrideAnnotation] = "12345"
+					})
+
+					It("pci passthru mmio extraconfig should be set to override annotation value", func() {
+						Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOExtraConfigKey, ExtraConfigTrue))
+						Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOSizeExtraConfigKey, "12345"))
+					})
+				})
+			})
+
+			Context("when ddpio device is available", func() {
+				BeforeEach(func() {
+					vmClassSpec.Hardware.Devices = vmopv1alpha1.VirtualDevices{DynamicDirectPathIODevices: []vmopv1alpha1.DynamicDirectPathIODevice{
+						{
+							VendorID:    123,
+							DeviceID:    24,
+							CustomLabel: "",
 						},
 					}}
 				})

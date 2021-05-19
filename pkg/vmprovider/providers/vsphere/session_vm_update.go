@@ -401,17 +401,14 @@ func updateConfigSpecExtraConfig(
 	}
 
 	if lib.IsThunderPciDevicesFSSEnabled() {
-		if immobileDevicePresent(vmClassSpec) {
-			extraConfig[MMPowerOffVMExtraConfigKey] = ExtraConfigTrue
+		virtualDevices := vmClassSpec.Hardware.Devices
 
-			mmioSize := vm.Annotations[PCIPassthruMMIOOverrideAnnotation]
-			if mmioSize == "" {
-				mmioSize = PCIPassthruMMIOSizeDefault
-			}
-			if mmioSize != "0" {
-				extraConfig[PCIPassthruMMIOExtraConfigKey] = ExtraConfigTrue
-				extraConfig[PCIPassthruMMIOSizeExtraConfigKey] = mmioSize
-			}
+		if len(virtualDevices.DynamicDirectPathIODevices) > 0 {
+			extraConfig[MMPowerOffVMExtraConfigKey] = ExtraConfigTrue
+		}
+
+		if len(virtualDevices.VGPUDevices) > 0 || len(virtualDevices.DynamicDirectPathIODevices) > 0 {
+			setMMIOExtraConfig(vm, extraConfig)
 		}
 	}
 
@@ -436,6 +433,17 @@ func updateConfigSpecExtraConfig(
 		// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
 		configSpec.ExtraConfig = append(configSpec.ExtraConfig,
 			&vimTypes.OptionValue{Key: VMOperatorV1Alpha1ExtraConfigKey, Value: VMOperatorV1Alpha1ConfigEnabled})
+	}
+}
+
+func setMMIOExtraConfig(vm *v1alpha1.VirtualMachine, extraConfig map[string]string) {
+	mmioSize := vm.Annotations[PCIPassthruMMIOOverrideAnnotation]
+	if mmioSize == "" {
+		mmioSize = PCIPassthruMMIOSizeDefault
+	}
+	if mmioSize != "0" {
+		extraConfig[PCIPassthruMMIOExtraConfigKey] = ExtraConfigTrue
+		extraConfig[PCIPassthruMMIOSizeExtraConfigKey] = mmioSize
 	}
 }
 
@@ -987,10 +995,4 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	return nil
-}
-
-func immobileDevicePresent(spec *v1alpha1.VirtualMachineClassSpec) bool {
-	virtualDevices := spec.Hardware.Devices
-	return len(virtualDevices.VGPUDevices) > 0 ||
-		len(virtualDevices.DynamicDirectPathIODevices) > 0
 }

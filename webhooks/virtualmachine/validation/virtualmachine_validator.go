@@ -248,7 +248,7 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 		case "":
 			// Must unfortunately allow for testing.
 		default:
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, i))
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, i, vsphere.NsxtNetworkType, vsphere.VdsNetworkType))
 		}
 
 		if _, ok := networkNames[nif.NetworkName]; ok {

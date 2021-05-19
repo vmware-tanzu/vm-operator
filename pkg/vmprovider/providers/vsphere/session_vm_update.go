@@ -229,6 +229,7 @@ func createPCIDevices(pciDevices v1alpha1.VirtualDevices) []vimTypes.BaseVirtual
 		}
 		backingInfo := &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
 			AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{allowedDev},
+			CustomLabel:   dynamicDirectPath.CustomLabel,
 		}
 		dynamicDirectPathDevice := createPCIPassThroughDevice(deviceKey, backingInfo)
 		expectedPciDevices = append(expectedPciDevices, dynamicDirectPathDevice)
@@ -237,7 +238,7 @@ func createPCIDevices(pciDevices v1alpha1.VirtualDevices) []vimTypes.BaseVirtual
 	return expectedPciDevices
 }
 
-// updatePCIDevices returns devices changes for PCI devices attached to a VM. There are 2 types of PCI devices processed
+// updatePCIDeviceChanges returns devices changes for PCI devices attached to a VM. There are 2 types of PCI devices processed
 // here and in case of cloning a VM, devices listed in VMClass are considered as source of truth.
 func updatePCIDeviceChanges(expectedPciDevices object.VirtualDeviceList,
 	currentPciDevices object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
@@ -264,12 +265,14 @@ func updatePCIDeviceChanges(expectedPciDevices object.VirtualDeviceList,
 			case *vimTypes.VirtualPCIPassthroughDynamicBackingInfo:
 				currAllowedDevs := a.AllowedDevice
 				b := expectedBacking.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
-				// b.AllowedDevice has only one element because createPCIDevices() adds only one device based on the
-				// devices listed in vmclass.spec.hardware.devices.dynamicDirectPathIODevices.
-				expectedAllowedDev := b.AllowedDevice[0]
-				for i := 0; i < len(currAllowedDevs) && !backingMatch; i++ {
-					backingMatch = expectedAllowedDev.DeviceId == currAllowedDevs[i].DeviceId &&
-						expectedAllowedDev.VendorId == currAllowedDevs[i].VendorId
+				if a.CustomLabel == b.CustomLabel {
+					// b.AllowedDevice has only one element because createPCIDevices() adds only one device based on the
+					// devices listed in vmclass.spec.hardware.devices.dynamicDirectPathIODevices.
+					expectedAllowedDev := b.AllowedDevice[0]
+					for i := 0; i < len(currAllowedDevs) && !backingMatch; i++ {
+						backingMatch = expectedAllowedDev.DeviceId == currAllowedDevs[i].DeviceId &&
+							expectedAllowedDev.VendorId == currAllowedDevs[i].VendorId
+					}
 				}
 			}
 

@@ -50,4 +50,7 @@ const (
 
 	// Minimum supported virtual hardware version for persistent volumes
 	MinSupportedHWVersionForPVC = 13
+
+	// Firmware Override
+	FirmwareOverrideAnnotation = pkg.VmOperatorKey + "/firmware"
 )

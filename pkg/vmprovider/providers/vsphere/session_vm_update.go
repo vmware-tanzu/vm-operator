@@ -509,6 +509,18 @@ func updateHardwareConfigSpec(
 	}
 }
 
+func updateConfigSpecFirmware(
+	config *vimTypes.VirtualMachineConfigInfo,
+	configSpec *vimTypes.VirtualMachineConfigSpec,
+	vm *v1alpha1.VirtualMachine) {
+
+	if val, ok := vm.Annotations[FirmwareOverrideAnnotation]; ok {
+		if (val == "efi" || val == "bios") && config.Firmware != val {
+			configSpec.Firmware = val
+		}
+	}
+}
+
 // TODO: Fix parameter explosion.
 func updateConfigSpec(
 	vmCtx VMContext,
@@ -527,6 +539,7 @@ func updateConfigSpec(
 	updateConfigSpecExtraConfig(config, configSpec, vmImage, &vmClassSpec, vmCtx.VM, vmMetadata, globalExtraConfig)
 	updateConfigSpecVAppConfig(config, configSpec, vmMetadata)
 	updateConfigSpecChangeBlockTracking(config, configSpec, vmCtx.VM.Spec)
+	updateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 
 	return configSpec
 }

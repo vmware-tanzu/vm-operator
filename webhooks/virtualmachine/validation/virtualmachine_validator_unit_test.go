@@ -223,7 +223,7 @@ func unitTestsValidateCreate() {
 		Entry("should fail when Readiness probe has multiple actions", createArgs{invalidReadinessProbe: true}, false, fmt.Sprintf(messages.ReadinessProbeOnlyOneAction), nil),
 		Entry("should fail when Readiness probe has no actions", createArgs{invalidReadinessNoProbe: true}, false, fmt.Sprintf(messages.ReadinessProbeNoActions), nil),
 		Entry("should deny invalid network name for VDS network type", createArgs{invalidNetworkName: true}, false, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, 0), nil),
-		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0), nil),
+		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0, vsphere.NsxtNetworkType, vsphere.VdsNetworkType), nil),
 		Entry("should deny invalid network card type", createArgs{invalidNetworkCardType: true}, false, fmt.Sprintf(messages.NetworkTypeEthCardTypeNotSupportedFmt, 0), nil),
 		Entry("should deny connection of multiple network interfaces of a VM to the same network", createArgs{multipleNetIfToSameNetwork: true},
 			false, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, 1), nil),

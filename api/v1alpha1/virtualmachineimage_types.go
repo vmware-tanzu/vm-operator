@@ -78,6 +78,10 @@ type VirtualMachineImageSpec struct {
 	// OVFEnv describes the user configurable customization parameters of the VirtualMachineImage.
 	// +optional
 	OVFEnv map[string]OvfProperty `json:"ovfEnv,omitempty"`
+
+	// HardwareVersion describes the virtual hardware version of the image
+	// +optional
+	HardwareVersion int32 `json:"hwVersion,omitempty"`
 }
 
 // VirtualMachineImageStatus defines the observed state of VirtualMachineImage
@@ -93,7 +97,6 @@ type VirtualMachineImageStatus struct {
 
 	// ImageSupported indicates whether the VirtualMachineImage is supported by VMService.
 	// A VirtualMachineImage is supported by VMService if the following conditions are true:
-	// - VirtualMachineImageOSTypeSupportedCondition
 	// - VirtualMachineImageV1Alpha1CompatibleCondition
 	// +optional
 	ImageSupported *bool `json:"imageSupported,omitempty"`

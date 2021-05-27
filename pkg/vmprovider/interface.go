@@ -36,6 +36,7 @@ type VirtualMachineProviderInterface interface {
 	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VmConfigArgs) error
 	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VmConfigArgs) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
+	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 
 	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
 	// Used by VirtualMachine controller to determine if entities of ResourcePolicy exist on the infrastructure provider
@@ -48,5 +49,6 @@ type VirtualMachineProviderInterface interface {
 	DeleteNamespaceSessionInCache(ctx context.Context, namespace string)
 	ComputeClusterCpuMinFrequency(ctx context.Context) error
 
-	ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider) ([]*v1alpha1.VirtualMachineImage, error)
+	ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider,
+		currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error)
 }

@@ -392,6 +392,19 @@ func CNSAttachmentNameForVolume(vm *vmopv1alpha1.VirtualMachine, volumeName stri
 	return vm.Name + "-" + volumeName
 }
 
+// The CSI controller sometimes puts the serialized SOAP error into the CnsNodeVmAttachment
+// error field, which contains things like OpIds and pointers that change on every failed
+// reconcile attempt. Using this error as-is causes VM object churn, so try to avoid that
+// here. The full error message is always available in the CnsNodeVmAttachment.
+func sanitizeCNSErrorMessage(msg string) string {
+	if strings.Contains(msg, "opId:") {
+		idx := strings.Index(msg, ":")
+		return msg[:idx]
+	}
+
+	return msg
+}
+
 func attachmentToVolumeStatus(
 	volumeName string,
 	attachment cnsv1alpha1.CnsNodeVmAttachment) vmopv1alpha1.VirtualMachineVolumeStatus {
@@ -400,6 +413,6 @@ func attachmentToVolumeStatus(
 		Name:     volumeName, // Name of the volume as in the Spec
 		Attached: attachment.Status.Attached,
 		DiskUuid: attachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID],
-		Error:    attachment.Status.Error, // TODO Sanitize string: VMSVC-357
+		Error:    sanitizeCNSErrorMessage(attachment.Status.Error),
 	}
 }

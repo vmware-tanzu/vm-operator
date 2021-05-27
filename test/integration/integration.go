@@ -38,6 +38,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
@@ -181,9 +182,12 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	k8sClient, err := GetCtrlRuntimeClient(cfg)
 	Expect(err).NotTo(HaveOccurred())
 
+	// Set up fake event recorder
+	recorder, _ := builder.NewFakeRecorder()
+
 	// Register the vSphere provider
 	log.Info("setting up vSphere Provider")
-	vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, scheme.Scheme)
+	vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, scheme.Scheme, recorder)
 
 	vcSim := NewVcSimInstance()
 
@@ -274,13 +278,20 @@ func CreateLibraryItem(ctx context.Context, session *vsphere.Session, name, kind
 	return session.CreateLibraryItem(ctx, libraryItem, imagePath)
 }
 
-// SetupContentLibrary creates ContentSource and CotentLibraryProvider resources for the vSphere content library.
+// SetupContentLibrary creates ContentSource and ContentLibraryProvider resources for the vSphere content library.
 func SetupContentLibrary(client client.Client, session *vsphere.Session) error {
 	stdlog.Printf("Setting up ContentLibraryPrvider and ContentSource for integration tests")
-
 	ctx := context.Background()
 
-	libID, err := session.CreateLibrary(ctx, ContentSourceName)
+	var datastoreID string
+	for _, dc := range simulator.Map.All("Datastore") {
+		if dc.Entity().Name == "LocalDS_0" {
+			datastoreID = dc.Reference().Value
+			break
+		}
+	}
+
+	libID, err := session.CreateLibrary(ctx, ContentSourceName, datastoreID)
 	if err != nil {
 		return err
 	}

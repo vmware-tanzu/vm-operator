@@ -464,8 +464,7 @@ func unitTestsReconcile() {
 			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Created))
 		})
 
-		When("number of reconcilers creating VirtualMachines on the provider are more than the configured threshold", func() {
-
+		When("number of reconciler workers creating VirtualMachines on the provider are more than the configured threshold", func() {
 			var isCalled int32
 
 			It("does not call into the provider to create the new VM", func() {
@@ -474,7 +473,7 @@ func unitTestsReconcile() {
 					return nil
 				}
 
-				// Simulate a recociler that does not have any threads available to update the status of existing VMs.
+				// Simulate a reconciler that does not have any threads available to update the status of existing VMs.
 				reconciler.NumVMsBeingCreatedOnProvider = 1
 				reconciler.MaxConcurrentCreateVMsOnProvider = 0
 

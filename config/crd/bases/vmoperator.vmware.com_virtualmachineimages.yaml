@@ -51,6 +51,10 @@ spec:
           spec:
             description: VirtualMachineImageSpec defines the desired state of VirtualMachineImage
             properties:
+              hwVersion:
+                description: HardwareVersion describes the virtual hardware version of the image
+                format: int32
+                type: integer
               imageSourceType:
                 description: ImageSourceType describes the type of content source of the VirtualMachineImage.  The only Content Source supported currently is the vSphere Content Library.
                 type: string
@@ -138,7 +142,7 @@ spec:
                   type: object
                 type: array
               imageSupported:
-                description: 'ImageSupported indicates whether the VirtualMachineImage is supported by VMService. A VirtualMachineImage is supported by VMService if the following conditions are true: - VirtualMachineImageOSTypeSupportedCondition - VirtualMachineImageV1Alpha1CompatibleCondition'
+                description: 'ImageSupported indicates whether the VirtualMachineImage is supported by VMService. A VirtualMachineImage is supported by VMService if the following conditions are true: - VirtualMachineImageV1Alpha1CompatibleCondition'
                 type: boolean
               internalId:
                 description: Deprecated

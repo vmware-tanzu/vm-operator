@@ -14,13 +14,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/cluster"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -30,8 +30,8 @@ import (
 )
 
 var DefaultExtraConfig = map[string]string{
-	"disk.enableUUID":                    "TRUE",
-	"vmware.tools.gosc.ignoretoolscheck": "TRUE",
+	EnableDiskUUIDExtraConfigKey:       ExtraConfigTrue,
+	GOSCIgnoreToolsCheckExtraConfigKey: ExtraConfigTrue,
 }
 
 type Session struct {
@@ -47,11 +47,13 @@ type Session struct {
 	network      object.NetworkReference // BMV: Dead? (never set in ConfigMap)
 	datastore    *object.Datastore
 
+	networkProvider    NetworkProvider
+	contentLibProvider ContentLibraryProvider
+
 	extraConfig           map[string]string
 	storageClassRequired  bool
 	useInventoryForImages bool
 	tagInfo               map[string]string
-	guestOSIdsToFamily    map[string]string // map of cluster's supported GuestOS ids to its OS family
 
 	mutex              sync.Mutex
 	cpuMinMHzInCluster uint64 // CPU Min Frequency across all Hosts in the cluster
@@ -124,11 +126,6 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 			return errors.Wrapf(err, "failed to init minimum CPU frequency")
 		}
 		s.SetCpuMinMHzInCluster(minFreq)
-
-		s.guestOSIdsToFamily, err = GetValidGuestOSDescriptorIDs(ctx, s.cluster, s.Client.vimClient)
-		if err != nil {
-			return errors.Wrapf(err, "failed to init guestOS descriptors for cluster")
-		}
 	}
 
 	// On WCP, the Folder is extracted from an annotation on the namespace.
@@ -174,6 +171,9 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 		}
 	}
 
+	s.networkProvider = NewNetworkProvider(s.k8sClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
+	s.contentLibProvider = NewContentLibraryProvider(s.Client.RestClient())
+
 	// Initialize tagging information
 	s.tagInfo = make(map[string]string)
 	s.tagInfo[CtrlVmVmAntiAffinityTagKey] = config.CtrlVmVmAntiAffinityTag
@@ -183,26 +183,12 @@ func (s *Session) initSession(ctx context.Context, config *VSphereVmProviderConf
 	return nil
 }
 
-func (s *Session) ServiceContent(ctx context.Context) (vimTypes.AboutInfo, error) {
-	return s.Client.VimClient().ServiceContent.About, nil
-}
-
-func (s *Session) CreateLibrary(ctx context.Context, contentSource string) (string, error) {
-	return NewContentLibraryProvider(s).CreateLibrary(ctx, contentSource)
-}
-
-func (s *Session) DeleteContentLibrary(ctx context.Context, libID string) error {
-	libManager := library.NewManager(s.Client.RestClient())
-	lib, err := libManager.GetLibraryByID(ctx, libID)
-	if err != nil {
-		return err
-	}
-
-	return libManager.DeleteLibrary(ctx, lib)
+func (s *Session) CreateLibrary(ctx context.Context, name, datastoreID string) (string, error) {
+	return s.contentLibProvider.CreateLibrary(ctx, name, datastoreID)
 }
 
 func (s *Session) CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error {
-	return NewContentLibraryProvider(s).CreateLibraryItem(ctx, libraryItem, path)
+	return s.contentLibProvider.CreateLibraryItem(ctx, libraryItem, path)
 }
 
 func IsSupportedDeployType(t string) bool {
@@ -216,69 +202,50 @@ func IsSupportedDeployType(t string) bool {
 }
 
 // Lists all the VirtualMachineImages from a CL by a given UUID.
-func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID string) ([]*v1alpha1.VirtualMachineImage, error) {
+func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID string,
+	currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+
 	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary", "contentLibraryUUID", clUUID)
 
-	items, err := library.NewManager(s.Client.RestClient()).GetLibraryItems(ctx, clUUID)
+	items, err := s.contentLibProvider.GetLibraryItems(ctx, clUUID)
 	if err != nil {
 		return nil, err
 	}
 
 	var images []*v1alpha1.VirtualMachineImage
 	for i := range items {
+		var ovfEnvelope *ovf.Envelope
 		item := items[i]
-		if IsSupportedDeployType(item.Type) {
-			var ovfInfoRetriever OvfPropertyRetriever = vmOptions{}
-			virtualMachineImage, err := LibItemToVirtualMachineImage(ctx, s, &item, AnnotateVmImage, ovfInfoRetriever, s.guestOSIdsToFamily)
-			if err != nil {
+
+		if curImage, ok := currentCLImages[item.Name]; ok {
+			// If there is already an VMImage for this item, and it is the same - as determined by _just_ the
+			// annotation - reuse the existing VMImage. This is to avoid repeated CL fetch tasks that would
+			// otherwise be created, spamming the UI. It would be nice if CL provided an external API that
+			// allowed us to silently fetch the OVF.
+			annotations := curImage.GetAnnotations()
+			if ver := annotations[VMImageCLVersionAnnotation]; ver == libItemVersionAnnotation(&item) {
+				images = append(images, &curImage)
+				continue
+			}
+		}
+
+		switch item.Type {
+		case library.ItemTypeOVF:
+			if ovfEnvelope, err = s.contentLibProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, &item); err != nil {
 				return nil, err
 			}
-			images = append(images, virtualMachineImage)
+		case library.ItemTypeVMTX:
+			// Do not try to populate VMTX types, but resVm.GetOvfProperties() should return an
+			// OvfEnvelope.
+		default:
+			// Not a supported type. Keep this in sync with cloneVMFromContentLibrary().
+			continue
 		}
+
+		images = append(images, LibItemToVirtualMachineImage(&item, ovfEnvelope))
 	}
 
 	return images, nil
-}
-
-func (s *Session) GetItemIDFromCL(ctx context.Context, cl *library.Library, itemName string) (string, error) {
-	restClient := s.Client.RestClient()
-
-	itemIDs, err := library.NewManager(restClient).FindLibraryItems(ctx, library.FindItem{LibraryID: cl.ID, Name: itemName})
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to find image: %s", itemName)
-	}
-
-	if len(itemIDs) == 0 {
-		return "", errors.Errorf("no library item named: %s", itemName)
-	}
-
-	if len(itemIDs) != 1 {
-		return "", errors.Errorf("multiple library items named: %s", itemName)
-	}
-
-	return itemIDs[0], nil
-}
-
-func (s *Session) ListVirtualMachines(ctx context.Context, path string) ([]*res.VirtualMachine, error) {
-	var vms []*res.VirtualMachine
-
-	objVms, err := s.Finder.VirtualMachineList(ctx, path)
-	if err != nil {
-		switch err.(type) {
-		case *find.NotFoundError, *find.DefaultNotFoundError:
-			return vms, nil
-		default:
-			return nil, err
-		}
-	}
-
-	for _, objVm := range objVms {
-		if resVm, err := res.NewVMFromObject(objVm); err == nil {
-			vms = append(vms, resVm)
-		}
-	}
-
-	return vms, nil
 }
 
 // findChildEntity finds a child entity by a given name under a parent object
@@ -580,11 +547,10 @@ func (s *Session) lookupVMByMoID(ctx context.Context, moId string) (*res.Virtual
 	return res.NewVMFromObject(vm)
 }
 
-func (s *Session) invokeFsrVirtualMachine(vmCtx VMContext, resVm *res.VirtualMachine) error {
+func (s *Session) invokeFsrVirtualMachine(vmCtx VMContext, resVM *res.VirtualMachine) error {
 	vmCtx.Logger.Info("Invoking FSR on VM")
 
-	vmRef := vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
-	task, err := VirtualMachineFSR(vmCtx, vmRef, s.Client.vimClient)
+	task, err := VirtualMachineFSR(vmCtx, resVM.MoRef(), s.Client.vimClient)
 	if err != nil {
 		vmCtx.Logger.Error(err, "InvokeFSR call failed")
 		return err
@@ -661,9 +627,7 @@ func ComputeCPUInfo(ctx context.Context, cluster *object.ClusterComputeResource)
 		return 0, errors.New("Must have a valid cluster reference to compute the cpu info")
 	}
 
-	obj := cluster.Reference()
-
-	err := cluster.Properties(ctx, obj, nil, &cr)
+	err := cluster.Properties(ctx, cluster.Reference(), nil, &cr)
 	if err != nil {
 		return 0, err
 	}
@@ -714,7 +678,6 @@ func (s *Session) String() string {
 	}
 	sb.WriteString(fmt.Sprintf("cpuMinMHzInCluster: %v, ", s.GetCpuMinMHzInCluster()))
 	sb.WriteString(fmt.Sprintf("tagInfo: %v ", s.tagInfo))
-	sb.WriteString(fmt.Sprintf("guestOSIdsToFamily: %v, ", s.guestOSIdsToFamily))
 	sb.WriteString("}")
 	return sb.String()
 }
@@ -813,9 +776,7 @@ func (s *Session) IsVmMemberOfClusterModule(ctx context.Context, moduleId string
 }
 
 // AttachTagToVm attaches a tag with a given name to the vm.
-func (s *Session) AttachTagToVm(ctx context.Context, tagName string, tagCatName string, resVm *res.VirtualMachine) error {
-	log.Info("Attaching tag", "tag", tagName, "vmName", resVm.Name)
-
+func (s *Session) AttachTagToVm(ctx context.Context, tagName string, tagCatName string, vmRef mo.Reference) error {
 	restClient := s.Client.RestClient()
 	manager := tags.NewManager(restClient)
 	tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
@@ -823,14 +784,11 @@ func (s *Session) AttachTagToVm(ctx context.Context, tagName string, tagCatName 
 		return err
 	}
 
-	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
 	return manager.AttachTag(ctx, tag.ID, vmRef)
 }
 
 // DetachTagFromVm detaches a tag with a given name from the vm.
-func (s *Session) DetachTagFromVm(ctx context.Context, tagName string, tagCatName string, resVm *res.VirtualMachine) error {
-	log.Info("Detaching tag", "tag", tagName, "vmName", resVm.Name)
-
+func (s *Session) DetachTagFromVm(ctx context.Context, tagName string, tagCatName string, vmRef mo.Reference) error {
 	restClient := s.Client.RestClient()
 	manager := tags.NewManager(restClient)
 	tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
@@ -838,7 +796,6 @@ func (s *Session) DetachTagFromVm(ctx context.Context, tagName string, tagCatNam
 		return err
 	}
 
-	vmRef := &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()}
 	return manager.DetachTag(ctx, tag.ID, vmRef)
 }
 

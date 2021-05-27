@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v2"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,52 +71,6 @@ const (
 	// Keys in the NetworkConfigMapName
 	NameserversKey = "nameservers"
 )
-
-const (
-	WcpClusterConfigFileName     = "wcp-cluster-config.yaml"
-	WcpClusterConfigMapNamespace = "kube-system"
-	WcpClusterConfigMapName      = "wcp-cluster-config"
-	VmOpSecretName               = "wcp-vmop-sa-vc-auth" // nolint:gosec
-)
-
-type WcpClusterConfig struct {
-	VcPNID string `yaml:"vc_pnid"`
-	VcPort string `yaml:"vc_port"`
-}
-
-// BuildNewWcpClusterConfig builds and returns Config object from given config file.
-func BuildNewWcpClusterConfig(wcpClusterCfgData map[string]string) (*WcpClusterConfig, error) {
-	cfgData, ok := wcpClusterCfgData[WcpClusterConfigFileName]
-	if !ok {
-		return nil, errors.Errorf("Key %s not found", WcpClusterConfigFileName)
-	}
-
-	wcpClusterConfig := &WcpClusterConfig{}
-	err := yaml.Unmarshal([]byte(cfgData), wcpClusterConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	return wcpClusterConfig, nil
-}
-
-func BuildNewWcpClusterConfigMap(wcpClusterConfig *WcpClusterConfig) (v1.ConfigMap, error) {
-	bytes, err := yaml.Marshal(wcpClusterConfig)
-	if err != nil {
-		return v1.ConfigMap{}, nil
-	}
-
-	dataMap := make(map[string]string)
-	dataMap[WcpClusterConfigFileName] = string(bytes)
-
-	return v1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      WcpClusterConfigMapName,
-			Namespace: WcpClusterConfigMapNamespace,
-		},
-		Data: dataMap,
-	}, nil
-}
 
 func ConfigMapToProviderConfig(configMap *v1.ConfigMap, vcCreds *VSphereVmProviderCredentials) (*VSphereVmProviderConfig, error) {
 	dataMap := make(map[string]string)

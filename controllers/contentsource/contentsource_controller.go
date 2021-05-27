@@ -25,7 +25,6 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
@@ -87,7 +86,6 @@ func (r *ContentSourceReconciler) CreateImages(ctx goCtx.Context, images []vmopv
 		img := image
 		r.Logger.V(4).Info("Creating VirtualMachineImage", "name", img.Name)
 		if err := r.Create(ctx, &img); err != nil {
-
 			// Ignore VirtualMachineImage if it already exists. This can happen if we have a duplicate image name in the
 			// content library. We sort the ContentSources by the oldest to latest one, so the VirtualMachineImage from
 			// the first library is not overwritten.
@@ -102,7 +100,6 @@ func (r *ContentSourceReconciler) CreateImages(ctx goCtx.Context, images []vmopv
 		if err := r.Status().Update(ctx, &img); err != nil {
 			retErr = err
 			r.Logger.Error(err, "failed to update status sub resource for image", "name", img.Name)
-
 		}
 	}
 
@@ -222,31 +219,46 @@ func (r *ContentSourceReconciler) DiffImages(left []vmopv1alpha1.VirtualMachineI
 	return added, removed, updated
 }
 
-// GetContentProviderManagedImages fetches the VM images from a given content provider. Also sets the owner ref in the images.
-func (r *ContentSourceReconciler) GetImagesFromContentProvider(ctx goCtx.Context,
-	contentSource vmopv1alpha1.ContentSource) ([]*vmopv1alpha1.VirtualMachineImage, error) {
+// GetImagesFromContentProvider fetches the VM images from a given content provider. Also sets the owner ref in the images.
+func (r *ContentSourceReconciler) GetImagesFromContentProvider(
+	ctx goCtx.Context,
+	contentSource vmopv1alpha1.ContentSource,
+	existingImages []vmopv1alpha1.VirtualMachineImage) ([]*vmopv1alpha1.VirtualMachineImage, error) {
+
 	providerRef := contentSource.Spec.ProviderRef
 
-	// Currently, the only supported content provider is content library, so we assume that the providerRef is of ContentLibraryProvider kind.
+	// Currently, the only supported content provider is content library, so we assume that the providerRef
+	// is of ContentLibraryProvider kind.
 	clProvider := vmopv1alpha1.ContentLibraryProvider{}
 	if err := r.Get(ctx, client.ObjectKey{Name: providerRef.Name, Namespace: providerRef.Namespace}, &clProvider); err != nil {
 		return nil, err
 	}
-	r.Logger.V(4).Info("listing images from content library", "clProviderName", clProvider.Name, "clProviderUUID", clProvider.Spec.UUID)
 
-	images, err := r.VmProvider.ListVirtualMachineImagesFromContentLibrary(ctx, clProvider)
+	clOwnerRef := metav1.OwnerReference{
+		APIVersion: clProvider.APIVersion,
+		Kind:       clProvider.Kind,
+		Name:       clProvider.Name,
+		UID:        clProvider.UID,
+	}
+
+	logger := r.Logger.WithValues("clProviderName", clProvider.Name, "clProviderUUID", clProvider.Spec.UUID)
+	logger.V(4).Info("listing images from content library")
+
+	currentCLImages := map[string]vmopv1alpha1.VirtualMachineImage{}
+	for _, image := range existingImages {
+		if owners := image.GetOwnerReferences(); len(owners) != 0 && owners[0] == clOwnerRef {
+			currentCLImages[image.Name] = image
+		}
+	}
+
+	images, err := r.VmProvider.ListVirtualMachineImagesFromContentLibrary(ctx, clProvider, currentCLImages)
 	if err != nil {
-		r.Logger.Error(err, "error listing images from provider", "contentLibraryUUID", clProvider.Spec.UUID)
+		logger.Error(err, "error listing images from provider")
 		return nil, err
 	}
 
 	for _, img := range images {
-		img.OwnerReferences = []metav1.OwnerReference{{
-			APIVersion: clProvider.APIVersion,
-			Kind:       clProvider.Kind,
-			Name:       clProvider.Name,
-			UID:        clProvider.UID,
-		}}
+		img.OwnerReferences = []metav1.OwnerReference{clOwnerRef}
 	}
 
 	return images, nil
@@ -277,12 +289,8 @@ func (r *ContentSourceReconciler) DifferenceImages(ctx goCtx.Context) (error, []
 	// Best effort to list VirtualMachineImages from all content sources.
 	var providerManagedImages []*vmopv1alpha1.VirtualMachineImage
 	for _, contentSource := range contentSourceList.Items {
-		images, err := r.GetImagesFromContentProvider(ctx, contentSource)
+		images, err := r.GetImagesFromContentProvider(ctx, contentSource, k8sManagedImages)
 		if err != nil {
-			if lib.IsNotFoundError(err) {
-				r.Logger.Error(err, "content library not found on provider", "contentSourceName", contentSource.Name)
-				continue
-			}
 			r.Logger.Error(err, "Error listing VirtualMachineImages from the content provider", "contentSourceName", contentSource.Name)
 			return err, nil, nil, nil
 		}
@@ -327,21 +335,10 @@ func (r *ContentSourceReconciler) SyncImages(ctx goCtx.Context) error {
 	}
 
 	if createErr != nil || updateErr != nil || deleteErr != nil {
-		return fmt.Errorf("Error in syncing VirtualMachineImage resources between provider and API server")
+		return fmt.Errorf("error syncing VirtualMachineImage resources between provider and API server")
 	}
 
 	return nil
-}
-
-// GetContentProvider fetches the ContentLibraryProvider object from the API server.
-func GetContentProvider(ctx goCtx.Context, c client.Client, ref vmopv1alpha1.ContentProviderReference) (*vmopv1alpha1.ContentLibraryProvider, error) {
-	contentLibrary := &vmopv1alpha1.ContentLibraryProvider{}
-	if err := c.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: ref.Namespace}, contentLibrary); err != nil {
-		return nil, errors.Wrapf(err, "failed to retrieve object from API server. kind: %v, namespace: %v, name: %v",
-			ref.Kind, ref.Namespace, ref.Name)
-	}
-
-	return contentLibrary, nil
 }
 
 // ReconcileProviderRef reconciles a ContentSource's provider reference. Verifies that the content provider pointed by
@@ -364,18 +361,17 @@ func (r *ContentSourceReconciler) ReconcileProviderRef(ctx goCtx.Context, conten
 
 	contentLibrary := &vmopv1alpha1.ContentLibraryProvider{}
 	if err := r.Get(ctx, client.ObjectKey{Name: providerRef.Name, Namespace: providerRef.Namespace}, contentLibrary); err != nil {
-		logger.Error(err, "failed to get ContentLibraryProvider resource", "providerRefName", providerRef.Name, "providerNamespace", providerRef.Namespace, "providerRefKind", providerRef.Kind)
+		logger.Error(err, "failed to get ContentLibraryProvider resource", "providerRef", providerRef)
 		return err
 	}
 
 	logger = logger.WithValues("contentLibraryName", contentLibrary.Name, "contentLibraryUUID", contentLibrary.Spec.UUID)
-
 	logger.V(4).Info("ContentLibraryProvider backing the ContentSource found")
 
 	beforeObj := contentLibrary.DeepCopy()
 
 	isController := true
-	// Set an ownerref to the ContentSource
+	// Set an ownerRef to the ContentSource
 	ownerRef := metav1.OwnerReference{
 		APIVersion: contentSource.APIVersion,
 		Kind:       contentSource.Kind,

@@ -14,6 +14,9 @@ import (
 	pbmTypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/vcenter"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/methods"
+	"github.com/vmware/govmomi/vim25/mo"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/utils/pointer"
 
@@ -57,7 +60,103 @@ func (s *Session) deployOvf(vmCtx VMCloneContext, itemID string, storageProfileI
 	return res.NewVMFromObject(ref.(*object.VirtualMachine))
 }
 
+// getClusterVMConfigOptions fetches the virtualmachine config options from the cluster specifically
+// 1. valid guestOS descriptor IDs for the cluster
+// 2. default cluster hardware version
+func getClusterVMConfigOptions(
+	ctx context.Context,
+	cluster *object.ClusterComputeResource,
+	client *vim25.Client) (map[string]string, int32, error) {
+	if cluster == nil {
+		return nil, 0, fmt.Errorf("no cluster exists, can't get cluster properties")
+	}
+
+	log.V(4).Info("Fetching supported guestOS types and default hardware version for the cluster")
+	var computeResource mo.ComputeResource
+	if err := cluster.Properties(ctx, cluster.Reference(), []string{"environmentBrowser"}, &computeResource); err != nil {
+		log.Error(err, "Failed to get environment browser for the cluster")
+		return nil, 0, err
+	}
+
+	req := vimTypes.QueryConfigOptionEx{
+		This: *computeResource.EnvironmentBrowser,
+		Spec: &vimTypes.EnvironmentBrowserConfigOptionQuerySpec{},
+	}
+
+	opt, err := methods.QueryConfigOptionEx(ctx, client.RoundTripper, &req)
+	if err != nil {
+		log.Error(err, "Failed to query config options for cluster properties")
+		return nil, 0, err
+	}
+
+	guestOSIdsToFamily := make(map[string]string)
+	var clusterHwVersion int32
+	if opt.Returnval != nil {
+		for _, descriptor := range opt.Returnval.GuestOSDescriptor {
+			// Fetch all ids and families that have supportLevel other than unsupported
+			if descriptor.SupportLevel != "unsupported" {
+				guestOSIdsToFamily[descriptor.Id] = descriptor.Family
+			}
+		}
+		// fetch cluster's default hardware version
+		clusterHwVersion = opt.Returnval.HardwareOptions.HwVersion
+	}
+
+	return guestOSIdsToFamily, clusterHwVersion, nil
+}
+
+// checkVMConfigOptions validates
+// 1. VMService supported osTypes
+// 2. Incompatible cluster hardware versions
+func checkVMConfigOptions(
+	vmCtx VMCloneContext,
+	vmConfigArgs vmprovider.VmConfigArgs,
+	clusterHwVersion int32,
+	guestOSIdsToFamily map[string]string) error {
+
+	val := vmCtx.VM.Annotations[VMOperatorImageSupportedCheckKey]
+	if val != VMOperatorImageSupportedCheckDisable && len(guestOSIdsToFamily) > 0 {
+		osType := vmConfigArgs.VmImage.Spec.OSInfo.Type
+		// osFamily will be present for supported OSTypes and support only VirtualMachineGuestOsFamilyLinuxGuest for now
+		if osFamily := guestOSIdsToFamily[osType]; osFamily != string(vimTypes.VirtualMachineGuestOsFamilyLinuxGuest) {
+			return fmt.Errorf("image osType '%s' is not supported by VMService", osType)
+		}
+	}
+
+	hwVersion := vmConfigArgs.VmImage.Spec.HardwareVersion
+	if hwVersion != 0 && clusterHwVersion != 0 && hwVersion > clusterHwVersion {
+		return fmt.Errorf("image has a hardware version '%d' higher than "+
+			"cluster's default hardware version '%d'", hwVersion, clusterHwVersion)
+	}
+
+	return nil
+}
+
+func deployVMFromCLPreCheck(
+	vmCtx VMCloneContext,
+	vmConfigArgs vmprovider.VmConfigArgs,
+	cluster *object.ClusterComputeResource,
+	client *vim25.Client) error {
+
+	guestOSIdsToFamily, clusterHwVersion, err := getClusterVMConfigOptions(vmCtx.Context, cluster, client)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to get guestOS descriptors and hardware options from cluster")
+	}
+
+	if err := checkVMConfigOptions(vmCtx, vmConfigArgs, clusterHwVersion, guestOSIdsToFamily); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *Session) deployVMFromCL(vmCtx VMCloneContext, vmConfigArgs vmprovider.VmConfigArgs, item *library.Item) (*res.VirtualMachine, error) {
+	vmCtx.Logger.Info("Performing preChecks before deploying library item", "itemName", item.Name, "itemType", item.Type)
+
+	if err := deployVMFromCLPreCheck(vmCtx, vmConfigArgs, s.cluster, s.Client.vimClient); err != nil {
+		return nil, errors.Wrapf(err, "deploy VM preCheck failed for image %q", vmCtx.VM.Spec.ImageName)
+	}
+
 	vmCtx.Logger.Info("Deploying Content Library item", "itemName", item.Name,
 		"itemType", item.Type, "imageName", vmCtx.VM.Spec.ImageName,
 		"resourcePolicyName", vmCtx.VM.Spec.ResourcePolicyName, "storageProfileID", vmConfigArgs.StorageProfileID)
@@ -107,19 +206,7 @@ func (s *Session) cloneVMFromInventory(vmCtx VMCloneContext, vmConfigArgs vmprov
 }
 
 func (s *Session) cloneVMFromContentLibrary(vmCtx VMCloneContext, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
-	libManager := library.NewManager(s.Client.RestClient())
-
-	contentLibrary, err := libManager.GetLibraryByID(vmCtx, vmConfigArgs.ContentLibraryUUID)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get Content Library for UUID %s", vmConfigArgs.ContentLibraryUUID)
-	}
-
-	itemID, err := s.GetItemIDFromCL(vmCtx, contentLibrary, vmCtx.VM.Spec.ImageName)
-	if err != nil {
-		return nil, err
-	}
-
-	item, err := libManager.GetLibraryItem(vmCtx, itemID)
+	item, err := s.contentLibProvider.GetLibraryItem(vmCtx, vmConfigArgs.ContentLibraryUUID, vmCtx.VM.Spec.ImageName)
 	if err != nil {
 		return nil, err
 	}
@@ -135,8 +222,7 @@ func (s *Session) cloneVMFromContentLibrary(vmCtx VMCloneContext, vmConfigArgs v
 }
 
 func (s *Session) CloneVirtualMachine(
-	ctx context.Context,
-	vm *v1alpha1.VirtualMachine,
+	vmCtx VMContext,
 	vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
 
 	if vmConfigArgs.StorageProfileID == "" {
@@ -148,12 +234,6 @@ func (s *Session) CloneVirtualMachine(
 		if s.datastore == nil {
 			return nil, fmt.Errorf("cannot clone VM when neither storage class or datastore is specified")
 		}
-	}
-
-	vmCtx := VMContext{
-		Context: ctx,
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
 	}
 
 	resourcePool, folder, err := s.getResourcePoolAndFolder(vmCtx, vmConfigArgs.ResourcePolicy)
@@ -176,11 +256,13 @@ func (s *Session) CloneVirtualMachine(
 	// The ContentLibraryUUID can be empty when we want to clone from inventory VMs. This is
 	// not a supported workflow but we have tests that use this.
 	if vmConfigArgs.ContentLibraryUUID != "" {
-		return s.cloneVMFromContentLibrary(vmCloneCtx, vmConfigArgs)
+		resVM, err := s.cloneVMFromContentLibrary(vmCloneCtx, vmConfigArgs)
+		return resVM, err
 	}
 
 	if s.useInventoryForImages {
-		return s.cloneVMFromInventory(vmCloneCtx, vmConfigArgs)
+		resVM, err := s.cloneVMFromInventory(vmCloneCtx, vmConfigArgs)
+		return resVM, err
 	}
 
 	return nil, fmt.Errorf("no Content Library specified and inventory disallowed")
@@ -284,9 +366,6 @@ func (s *Session) createConfigSpec(name string, vmClassSpec *v1alpha1.VirtualMac
 		},
 	}
 
-	// BMV: Does all of this need to be set here, or defer to the first reconfigure like we
-	// do for OVF Deploy? Is all this needed for like placement to make an informed decision?
-
 	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
 
 	minFreq := s.GetCpuMinMHzInCluster()
@@ -333,25 +412,23 @@ func (s *Session) createCloneSpec(
 	virtualDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
 	virtualNICs := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
 
-	diskDeviceChanges, err := resizeVirtualDisksDeviceChanges(vmCtx.VMContext, virtualDisks)
+	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx.VMContext, virtualDisks)
 	if err != nil {
 		return nil, err
 	}
 
-	nicDeviceChanges, err := s.cloneVMNicDeviceChanges(vmCtx, virtualNICs)
+	ethCardDeviceChanges, err := s.cloneEthCardDeviceChanges(vmCtx, virtualNICs)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, deviceChange := range append(diskDeviceChanges, nicDeviceChanges...) {
+	for _, deviceChange := range append(diskDeviceChanges, ethCardDeviceChanges...) {
 		if deviceChange.GetVirtualDeviceConfigSpec().Operation == vimTypes.VirtualDeviceConfigSpecOperationEdit {
 			cloneSpec.Location.DeviceChange = append(cloneSpec.Location.DeviceChange, deviceChange)
 		} else {
 			cloneSpec.Config.DeviceChange = append(cloneSpec.Config.DeviceChange, deviceChange)
 		}
 	}
-
-	// Everything past after here is kind of hard to follow, because it is hard to track what depends on what.
 
 	if vmConfigArgs.StorageProfileID != "" {
 		cloneSpec.Location.Profile = []vimTypes.BaseVirtualMachineProfileSpec{
@@ -381,16 +458,17 @@ func (s *Session) createCloneSpec(
 	return cloneSpec, nil
 }
 
-// cloneVMNicDeviceChanges returns changes for network device changes that need to be performed
+// cloneEthCardDeviceChanges returns changes for network device changes that need to be performed
 // on a new VM being cloned from the source VM.
-func (s *Session) cloneVMNicDeviceChanges(
+func (s *Session) cloneEthCardDeviceChanges(
 	vmCtx VMCloneContext,
-	srcNICs object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+	srcEthCards object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
-	// To ease local and simulation testing if the VM Spec interfaces is empty, leave the
+	// To ease local and simulation testing, if the VM Spec interfaces is empty, leave the
 	// existing interfaces. If a default network as been configured, change the backing for
 	// all the existing interfaces. In non-test environments, this can cause confusion
-	// because the existing interfaces will end up on some default network.
+	// because the existing interfaces will end up on some default network so we should
+	// work to remove or better guard this.
 	if len(vmCtx.VM.Spec.NetworkInterfaces) == 0 {
 		if s.network == nil {
 			return nil, nil
@@ -401,8 +479,8 @@ func (s *Session) cloneVMNicDeviceChanges(
 			return nil, errors.Wrapf(err, "cannot get backing info for default network %+v", s.network.Reference())
 		}
 
-		deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcNICs))
-		for _, dev := range srcNICs {
+		deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcEthCards))
+		for _, dev := range srcEthCards {
 			dev.GetVirtualDevice().Backing = backingInfo
 			deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 				Device:    dev,
@@ -413,20 +491,24 @@ func (s *Session) cloneVMNicDeviceChanges(
 		return deviceChanges, nil
 	}
 
-	newNICs, err := s.createNetworkDevices(vmCtx.VMContext)
+	// BMV: Is this really required for cloning, or OK to defer to later update reconcile like OVF deploy?
+
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx.VMContext)
 	if err != nil {
 		return nil, err
 	}
 
+	newEthCards := netIfList.GetVirtualDeviceList()
+
 	// Remove all the existing interfaces, and then add the new interfaces.
-	deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcNICs)+len(newNICs))
-	for _, dev := range srcNICs {
+	deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcEthCards)+len(newEthCards))
+	for _, dev := range srcEthCards {
 		deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 			Device:    dev,
 			Operation: vimTypes.VirtualDeviceConfigSpecOperationRemove,
 		})
 	}
-	for _, dev := range newNICs {
+	for _, dev := range newEthCards {
 		deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 			Device:    dev,
 			Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,

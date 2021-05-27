@@ -49,7 +49,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	proberManager, err := prober.AddToVirtualMachineController(mgr)
+	proberManager, err := prober.AddToManager(mgr, ctx.VmProvider)
 	if err != nil {
 		return err
 	}
@@ -63,15 +63,21 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		proberManager,
 	)
 
-	reqCtx := &requestMapperCtx{ctx, r.Client, r.Logger}
+	reqMapper := requestMapper{
+		ctx: &requestMapperCtx{
+			ControllerManagerContext: ctx,
+			Client:                   r.Client,
+			Logger:                   r.Logger,
+		},
+	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
 		Watches(&source.Kind{Type: &vmopv1alpha1.VirtualMachineClassBinding{}},
-			&handler.EnqueueRequestsFromMapFunc{ToRequests: requestMapper{reqCtx}}).
+			&handler.EnqueueRequestsFromMapFunc{ToRequests: reqMapper}).
 		Watches(&source.Kind{Type: &vmopv1alpha1.ContentSourceBinding{}},
-			&handler.EnqueueRequestsFromMapFunc{ToRequests: requestMapper{reqCtx}}).
+			&handler.EnqueueRequestsFromMapFunc{ToRequests: reqMapper}).
 		Complete(r)
 }
 
@@ -124,14 +130,14 @@ func allVMsUsingContentSourceBinding(ctx *requestMapperCtx, binding *vmopv1alpha
 		logger.Error(err, "Failed to get ContentLibraryProvider for VM reconciliation due to ContentSourceBinding watch")
 		return nil
 	}
-	imagesToReconcile := make(map[string]bool)
+
+	imagesToReconcile := make(map[string]struct{})
 	for _, img := range imageList.Items {
 		for _, ownerRef := range img.OwnerReferences {
 			if ownerRef.Kind == "ContentLibraryProvider" && ownerRef.UID == clProviderFromBinding.UID {
-				imagesToReconcile[img.Name] = true
+				imagesToReconcile[img.Name] = struct{}{}
 			}
 		}
-
 	}
 
 	// Filter VMs that reference the images from the content source.
@@ -162,8 +168,7 @@ func allVMsUsingVirtualMachineClassBinding(ctx *requestMapperCtx, classBinding *
 
 	// Find all vms that match this vmclassbinding
 	vmList := &vmopv1alpha1.VirtualMachineList{}
-	err := ctx.Client.List(ctx, vmList, client.InNamespace(classBinding.Namespace))
-	if err != nil {
+	if err := ctx.Client.List(ctx, vmList, client.InNamespace(classBinding.Namespace)); err != nil {
 		logger.Error(err, "Failed to list VirtualMachines for reconciliation due to VirtualMachineClassBinding watch")
 		return nil
 	}
@@ -198,8 +203,8 @@ func NewReconciler(
 		Logger:                           logger,
 		Recorder:                         recorder,
 		VmProvider:                       vmProvider,
-		MaxConcurrentCreateVMsOnProvider: maxConcurrentCreateVMsOnProvider,
 		Prober:                           prober,
+		MaxConcurrentCreateVMsOnProvider: maxConcurrentCreateVMsOnProvider,
 	}
 }
 
@@ -210,12 +215,10 @@ type VirtualMachineReconciler struct {
 	Recorder   record.Recorder
 	VmProvider vmprovider.VirtualMachineProviderInterface
 	Prober     prober.Manager
-	// To manipulate the number of VMs being created on provider.
-	mutex sync.Mutex
-	// Number of VMs being created on the provider.
-	NumVMsBeingCreatedOnProvider int
-	// Max number of concurrent VM create operations allowed on the provider.
-	// TODO: Remove once we have a tuned number from scale testing.
+
+	// Hack to limit concurrent create operations because they block and can take a long time.
+	mutex                            sync.Mutex
+	NumVMsBeingCreatedOnProvider     int
 	MaxConcurrentCreateVMsOnProvider int
 }
 
@@ -236,10 +239,7 @@ func (r *VirtualMachineReconciler) Reconcile(req ctrl.Request) (_ ctrl.Result, r
 
 	vm := &vmopv1alpha1.VirtualMachine{}
 	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
-		if apiErrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, err
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	vmCtx := &context.VirtualMachineContext{
@@ -372,8 +372,7 @@ func (r *VirtualMachineReconciler) getStoragePolicyID(ctx *context.VirtualMachin
 	}
 
 	sc := &storagev1.StorageClass{}
-	err := r.Get(ctx, client.ObjectKey{Name: scName}, sc)
-	if err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
 		ctx.Logger.Error(err, "Failed to get StorageClass", "storageClass", scName)
 		return "", err
 	}
@@ -413,14 +412,14 @@ func (r *VirtualMachineReconciler) getContentSourceFromCLProvider(ctx *context.V
 	return nil, fmt.Errorf("ContentLibraryProvider does not have an OwnerReference to the ContentSource. clProviderName: %v", clProvider.Name)
 }
 
-// getContentLibraryUUID fetches the content library UUID from the provided VM image.
+// getImageAndContentLibraryUUID fetches the VMImage content library UUID from the VM's image.
 // This is done by checking the OwnerReference of the VirtualMachineImage resource. As a side effect, with VM service FSS,
 // we also check if the VM's namespace has access to the VirtualMachineImage specified in the Spec. This is done by checking
 // if a ContentSourceBinding existing in the namespace that points to the ContentSource corresponding to the specified image.
-func (r *VirtualMachineReconciler) getContentLibraryUUID(ctx *context.VirtualMachineContext) (string, error) {
-	vmImage := &vmopv1alpha1.VirtualMachineImage{}
+func (r *VirtualMachineReconciler) getImageAndContentLibraryUUID(ctx *context.VirtualMachineContext) (*vmopv1alpha1.VirtualMachineImage, string, error) {
 	imageName := ctx.VM.Spec.ImageName
 
+	vmImage := &vmopv1alpha1.VirtualMachineImage{}
 	if err := r.Get(ctx, client.ObjectKey{Name: imageName}, vmImage); err != nil {
 		msg := fmt.Sprintf("Failed to get VirtualMachineImage %s: %s", ctx.VM.Spec.ImageName, err)
 		conditions.MarkFalse(ctx.VM,
@@ -430,12 +429,12 @@ func (r *VirtualMachineReconciler) getContentLibraryUUID(ctx *context.VirtualMac
 			msg)
 
 		ctx.Logger.Error(err, "Failed to get VirtualMachineImage", "imageName", imageName)
-		return "", err
+		return nil, "", err
 	}
 
 	clProvider, err := r.getContentLibraryProviderFromImage(ctx, vmImage)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
 	clUUID := clProvider.Spec.UUID
@@ -444,7 +443,7 @@ func (r *VirtualMachineReconciler) getContentLibraryUUID(ctx *context.VirtualMac
 	if lib.IsVMServiceFSSEnabled() {
 		contentSource, err := r.getContentSourceFromCLProvider(ctx, clProvider)
 		if err != nil {
-			return "", err
+			return nil, "", err
 		}
 
 		csBindingList := &vmopv1alpha1.ContentSourceBindingList{}
@@ -455,10 +454,8 @@ func (r *VirtualMachineReconciler) getContentLibraryUUID(ctx *context.VirtualMac
 				vmopv1alpha1.ContentSourceBindingNotFoundReason,
 				vmopv1alpha1.ConditionSeverityError,
 				msg)
-
 			ctx.Logger.Error(err, msg)
-
-			return "", errors.Wrap(err, msg)
+			return nil, "", errors.Wrap(err, msg)
 		}
 
 		// Filter the bindings for the specified VM Image.
@@ -478,14 +475,12 @@ func (r *VirtualMachineReconciler) getContentLibraryUUID(ctx *context.VirtualMac
 				vmopv1alpha1.ContentSourceBindingNotFoundReason,
 				vmopv1alpha1.ConditionSeverityError,
 				msg)
-
 			ctx.Logger.Error(nil, msg)
-
-			return "", fmt.Errorf(msg)
+			return nil, "", fmt.Errorf(msg)
 		}
 	}
 
-	return clUUID, nil
+	return vmImage, clUUID, nil
 }
 
 // getVMClass checks if a VM class specified by a VM spec is valid. When the VMServiceFSSEnabled is enabled,
@@ -501,7 +496,6 @@ func (r *VirtualMachineReconciler) getVMClass(ctx *context.VirtualMachineContext
 			vmopv1alpha1.VirtualMachineClassNotFoundReason,
 			vmopv1alpha1.ConditionSeverityError,
 			msg)
-
 		ctx.Logger.Error(err, "Failed to get VirtualMachineClass", "className", className)
 		return nil, err
 	}
@@ -590,16 +584,6 @@ func (r *VirtualMachineReconciler) getResourcePolicy(ctx *context.VirtualMachine
 	return resourcePolicy, nil
 }
 
-func (r *VirtualMachineReconciler) getVMImage(ctx *context.VirtualMachineContext) (*vmopv1alpha1.VirtualMachineImage, error) {
-	vmImage := &vmopv1alpha1.VirtualMachineImage{}
-	imageName := ctx.VM.Spec.ImageName
-	if err := r.Get(ctx, client.ObjectKey{Name: imageName}, vmImage); err != nil {
-		ctx.Logger.Error(err, "Failed to get VirtualMachineImage", "imageName", imageName)
-		return nil, err
-	}
-	return vmImage, nil
-}
-
 // createOrUpdateVm calls into the VM provider to reconcile a VirtualMachine
 func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineContext) error {
 	vmClass, err := r.getVMClass(ctx)
@@ -607,7 +591,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 		return err
 	}
 
-	clUUID, err := r.getContentLibraryUUID(ctx)
+	vmImage, clUUID, err := r.getImageAndContentLibraryUUID(ctx)
 	if err != nil {
 		return err
 	}
@@ -623,11 +607,6 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 	}
 
 	storagePolicyID, err := r.getStoragePolicyID(ctx)
-	if err != nil {
-		return err
-	}
-
-	vmImage, err := r.getVMImage(ctx)
 	if err != nil {
 		return err
 	}
@@ -684,9 +663,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 		}
 	}
 
-	// At this point, the VirtualMachine is either created, or it already existed. Call into the provider for update.
 	vm.Status.Phase = vmopv1alpha1.Created
-	//pkg.AddAnnotations(&vm.ObjectMeta) // BMV: Not actually saved.
 
 	err = r.VmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {

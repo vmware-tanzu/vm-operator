@@ -368,8 +368,10 @@ func getVmService(name, namespace string) *vmopv1alpha1.VirtualMachineService {
 
 	return &vmopv1alpha1.VirtualMachineService{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      name,
+			Namespace:   namespace,
+			Name:        name,
+			Annotations: map[string]string{},
+			Labels:      map[string]string{},
 		},
 		Spec: vmopv1alpha1.VirtualMachineServiceSpec{
 			Type:     vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer,

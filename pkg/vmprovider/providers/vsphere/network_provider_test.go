@@ -2,6 +2,7 @@
 
 // Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+
 package vsphere_test
 
 import (
@@ -14,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -31,6 +33,7 @@ import (
 
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
 var _ = Describe("NetworkProvider", func() {
@@ -49,39 +52,40 @@ var _ = Describe("NetworkProvider", func() {
 	)
 
 	var (
-		c      *govmomi.Client
-		finder *find.Finder
+		ctx       context.Context
+		name      string
+		namespace string
 
+		c       *govmomi.Client
+		finder  *find.Finder
 		cluster *object.ClusterComputeResource
 		network object.NetworkReference
 
-		ctx   context.Context
 		vmNif *v1alpha1.VirtualMachineNetworkInterface
 		vm    *v1alpha1.VirtualMachine
+		vmCtx vsphere.VMContext
 
 		np vsphere.NetworkProvider
-
-		name      string
-		namespace string
 	)
 
 	BeforeEach(func() {
+		var err error
 		ctx = context.TODO()
-		c, _ = govmomi.NewClient(ctx, server.URL, true)
-		finder = find.NewFinder(c.Client)
+		name = dummyObjectName
+		namespace = dummyNamespace
 
+		c, err = govmomi.NewClient(ctx, server.URL, true)
+		Expect(err).ToNot(HaveOccurred())
+		finder = find.NewFinder(c.Client)
 		dc, err := finder.DefaultDatacenter(ctx)
-		Expect(err).To(BeNil())
+		Expect(err).ToNot(HaveOccurred())
 		finder.SetDatacenter(dc)
 
 		cluster, err = finder.DefaultClusterComputeResource(ctx)
-		Expect(err).To(BeNil())
+		Expect(err).ToNot(HaveOccurred())
 
 		network, err = finder.Network(ctx, vcsimNetworkName)
-		Expect(err).To(BeNil())
-
-		name = dummyObjectName
-		namespace = dummyNamespace
+		Expect(err).ToNot(HaveOccurred())
 
 		vmNif = &v1alpha1.VirtualMachineNetworkInterface{
 			NetworkName: vcsimNetworkName,
@@ -98,140 +102,52 @@ var _ = Describe("NetworkProvider", func() {
 				},
 			},
 		}
+
+		vmCtx = vsphere.VMContext{
+			Context: ctx,
+			Logger:  integration.Log,
+			VM:      vm,
+		}
 	})
 
-	Context("when getting the Network Provider", func() {
-		Context("with ProviderRef set", func() {
-			It("should return NetOp Provider", func() {
-				vmNif.ProviderRef = &v1alpha1.NetworkInterfaceProviderReference{
-					APIGroup:   "netoperator.vmware.com",
-					APIVersion: "v1alpha1",
-					Kind:       "NetworkInterface",
-					Name:       dummyNetIfName,
-				}
-				scheme := runtime.NewScheme()
-				_ = clientgoscheme.AddToScheme(scheme)
-				_ = netopv1alpha1.AddToScheme(scheme)
-
-				expectedProvider := vsphere.NetOpNetworkProvider(nil, nil, nil, nil, nil)
-				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, scheme)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
-			})
-
-			It("should return error with unsupported group", func() {
-				vmNif.ProviderRef = &v1alpha1.NetworkInterfaceProviderReference{
-					APIGroup: "unsupported-group",
-					Name:     dummyNetIfName,
-				}
-				scheme := runtime.NewScheme()
-				_ = clientgoscheme.AddToScheme(scheme)
-				_ = netopv1alpha1.AddToScheme(scheme)
-				_, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, scheme)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("unsupported APIGroup for ProviderRef"))
-			})
-		})
-
-		Context("with NetworkType when ProviderRef unset", func() {
-			It("should find NSX-T", func() {
-				vmNif.NetworkType = vsphere.NsxtNetworkType
-				expectedProvider := vsphere.NsxtNetworkProvider(nil, nil, nil)
-
-				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
-			})
-
-			It("should find VDS (NetOP)", func() {
-				vmNif.NetworkType = vsphere.VdsNetworkType
-				expectedProvider := vsphere.NetOpNetworkProvider(nil, nil, nil, nil, nil)
-
-				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
-			})
-
-			It("should find the default", func() {
-				expectedProvider := vsphere.DefaultNetworkProvider(nil)
-				np, err := vsphere.GetNetworkProvider(vmNif, nil, nil, nil, nil, nil)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(np).To(BeAssignableToTypeOf(expectedProvider))
-			})
-		})
-	})
-
-	Context("when getting the network by type", func() {
-		It("should find NSX-T", func() {
-			expectedProvider := vsphere.NsxtNetworkProvider(nil, nil, nil)
-
-			np, err := vsphere.NetworkProviderByType("nsx-t", nil, nil, nil, nil, nil)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
-		})
-
-		It("should find VDS (NetOP)", func() {
-			expectedProvider := vsphere.NetOpNetworkProvider(nil, nil, nil, nil, nil)
-
-			np, err := vsphere.NetworkProviderByType("vsphere-distributed", nil, nil, nil, nil, nil)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
-		})
-
-		It("should find the default", func() {
-			expectedProvider := vsphere.DefaultNetworkProvider(nil)
-
-			np, err := vsphere.NetworkProviderByType("", nil, nil, nil, nil, nil)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(np).To(BeAssignableToTypeOf(expectedProvider))
-		})
-	})
-
-	Context("when using default network provider", func() {
+	Context("Named Network Provider", func() {
 		BeforeEach(func() {
-			np = vsphere.DefaultNetworkProvider(finder)
+			np = vsphere.NewNetworkProvider(nil, nil, finder, nil, nil)
 		})
 
-		Context("when creating vnic", func() {
-			It("create vnic should succeed", func() {
-				dev, err := np.CreateVnic(ctx, vm, vmNif)
+		Context("ensure interface", func() {
+
+			It("create expected virtual device", func() {
+				info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 				Expect(err).ToNot(HaveOccurred())
+				Expect(info).NotTo(BeNil())
 
-				Expect(dev).NotTo(BeNil())
-				vDev := dev.GetVirtualDevice()
-				Expect(vDev).ToNot(BeNil())
-				backing := vDev.Backing
+				Expect(info.Device).NotTo(BeNil())
+				backing := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard().Backing
 				Expect(backing).NotTo(BeNil())
-
 				backingInfo, ok := backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 				Expect(ok).To(BeTrue())
 				Expect(backingInfo.Port.PortgroupKey).To(Equal(network.Reference().Value))
 			})
 
-			It("Return expected interface customization", func() {
-				_, err := np.CreateVnic(ctx, vm, vmNif)
+			It("create expected interface customization", func() {
+				info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 				Expect(err).ToNot(HaveOccurred())
-
-				cust, err := np.GetInterfaceGuestCustomization(vm, vmNif)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(cust.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
+				Expect(info.Customization).ToNot(BeNil())
+				Expect(info.Customization.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
 			})
 
 			It("should return an error if network does not exist", func() {
-				_, err := np.CreateVnic(ctx, vm, &v1alpha1.VirtualMachineNetworkInterface{
+				_, err := np.EnsureNetworkInterface(vmCtx, &v1alpha1.VirtualMachineNetworkInterface{
 					NetworkName: doesNotExist,
 				})
+				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(fmt.Sprintf("unable to find network \"%s\": network '%s' not found", doesNotExist, doesNotExist)))
-			})
-
-			It("should ignore if vm is nil", func() {
-				_, err := np.CreateVnic(ctx, nil, vmNif)
-				Expect(err).ToNot(HaveOccurred())
 			})
 		})
 	})
 
-	Context("when using NetOP network provider", func() {
+	Context("NetOP Network Provider", func() {
 		var (
 			k8sClient ctrlruntime.Client
 			netIf     *netopv1alpha1.NetworkInterface
@@ -274,13 +190,31 @@ var _ = Describe("NetworkProvider", func() {
 		JustBeforeEach(func() {
 			scheme := runtime.NewScheme()
 			_ = clientgoscheme.AddToScheme(scheme)
+			_ = v1alpha1.AddToScheme(scheme)
 			_ = netopv1alpha1.AddToScheme(scheme)
 
 			k8sClient = clientfake.NewFakeClientWithScheme(scheme, netIf)
-			np = vsphere.NetOpNetworkProvider(k8sClient, c.Client, finder, cluster, scheme)
+			np = vsphere.NewNetworkProvider(k8sClient, c.Client, finder, cluster, scheme)
 		})
 
-		Context("when creating vnic", func() {
+		Context("ensure interface", func() {
+
+			// Long test due to poll timeout.
+			It("create netop network interface object", func() {
+				Expect(k8sClient.Delete(ctx, netIf)).To(Succeed())
+
+				_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(wait.ErrWaitTimeout))
+
+				instance := &netopv1alpha1.NetworkInterface{}
+				err = k8sClient.Get(ctx, ctrlruntime.ObjectKey{Name: netIf.Name, Namespace: netIf.Namespace}, instance)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(instance.Spec.NetworkName).To(Equal(vcsimNetworkName))
+
+				Expect(instance.OwnerReferences).To(HaveLen(1))
+				Expect(instance.OwnerReferences[0].Name).To(Equal(vm.Name))
+			})
 
 			Context("when interface has no provider status defined", func() {
 				BeforeEach(func() {
@@ -288,9 +222,9 @@ var _ = Describe("NetworkProvider", func() {
 				})
 
 				It("should return an error", func() {
-					_, err := np.CreateVnic(ctx, vm, vmNif)
+					_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 					Expect(err).NotTo(BeNil())
-					Expect(err.Error()).To(ContainSubstring("failed to get NetworkID for netIf"))
+					Expect(err.Error()).To(ContainSubstring("unable to get ethernet card backing info for network DistributedVirtualPortgroup::"))
 				})
 			})
 
@@ -300,7 +234,7 @@ var _ = Describe("NetworkProvider", func() {
 				})
 
 				It("should return an error", func() {
-					_, err := np.CreateVnic(ctx, vm, vmNif)
+					_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 					Expect(err).To(MatchError("timed out waiting for the condition"))
 				})
 			})
@@ -311,18 +245,19 @@ var _ = Describe("NetworkProvider", func() {
 				})
 
 				It("should return an error", func() {
-					_, err := np.CreateVnic(ctx, vm, vmNif)
+					_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("unable to get ethernet card backing info for network DistributedVirtualPortgroup:" + doesNotExist))
 				})
 			})
 
 			It("should succeed", func() {
-				dev, err := np.CreateVnic(ctx, vm, vmNif)
+				info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(dev).NotTo(BeNil())
+				Expect(info).NotTo(BeNil())
 
-				nic := dev.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+				Expect(info.Device).ToNot(BeNil())
+				nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 				Expect(nic).NotTo(BeNil())
 				Expect(nic.ExternalId).To(Equal(interfaceId))
 				Expect(nic.MacAddress).To(Equal(macAddress))
@@ -340,11 +275,12 @@ var _ = Describe("NetworkProvider", func() {
 				})
 
 				It("should succeed with generated mac", func() {
-					dev, err := np.CreateVnic(ctx, vm, vmNif)
+					info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(dev).NotTo(BeNil())
+					Expect(info).NotTo(BeNil())
 
-					nic := dev.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+					Expect(info.Device).ToNot(BeNil())
+					nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 					Expect(nic).NotTo(BeNil())
 					Expect(nic.ExternalId).To(Equal(interfaceId))
 					Expect(nic.MacAddress).To(BeEmpty())
@@ -365,11 +301,12 @@ var _ = Describe("NetworkProvider", func() {
 				})
 
 				It("should succeed", func() {
-					dev, err := np.CreateVnic(ctx, vm, vmNif)
+					info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(dev).NotTo(BeNil())
+					Expect(info).NotTo(BeNil())
 
-					nic := dev.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+					Expect(info.Device).ToNot(BeNil())
+					nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 					Expect(nic).NotTo(BeNil())
 					Expect(nic.ExternalId).To(Equal(interfaceId))
 					Expect(nic.MacAddress).To(Equal(macAddress))
@@ -388,9 +325,9 @@ var _ = Describe("NetworkProvider", func() {
 					})
 
 					It("should return an error", func() {
-						_, err := np.CreateVnic(ctx, vm, vmNif)
+						_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("cannot get NetworkInterface"))
+						Expect(err.Error()).To(ContainSubstring("networkinterfaces.netoperator.vmware.com \"does-not-exist\" not found"))
 					})
 				})
 
@@ -403,20 +340,27 @@ var _ = Describe("NetworkProvider", func() {
 					})
 
 					It("should return an error", func() {
-						_, err := np.CreateVnic(ctx, vm, vmNif)
+						_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 						Expect(err).To(HaveOccurred())
 						Expect(err.Error()).To(ContainSubstring("unsupported NetworkInterface ProviderRef"))
 					})
 				})
 			})
 
-			Context("with NSX-T NetworkType", func() {
-
+			Context("with NSX-T NetworkType in ProviderRef", func() {
 				BeforeEach(func() {
 					vmNif.NetworkType = vsphere.NsxtNetworkType
-					vm.Spec.NetworkInterfaces[0] = *vmNif
+					netIf.Name = dummyNetIfName
 					netIf.Status.NetworkID = dummyNsxSwitchId
 					netIf.Status.IPConfigs = nil
+
+					vmNif.ProviderRef = &v1alpha1.NetworkInterfaceProviderReference{
+						APIGroup:   "netoperator.vmware.com",
+						APIVersion: "v1alpha1",
+						Kind:       "NetworkInterface",
+						Name:       dummyNetIfName,
+					}
+					vm.Spec.NetworkInterfaces[0] = *vmNif
 				})
 
 				Context("should succeed", func() {
@@ -427,6 +371,7 @@ var _ = Describe("NetworkProvider", func() {
 						Expect(err).ToNot(HaveOccurred())
 						scheme := runtime.NewScheme()
 						_ = clientgoscheme.AddToScheme(scheme)
+						_ = v1alpha1.AddToScheme(scheme)
 						_ = netopv1alpha1.AddToScheme(scheme)
 
 						net, err := finder.Network(ctx, "DC0_DVPG0")
@@ -435,13 +380,13 @@ var _ = Describe("NetworkProvider", func() {
 						dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
 						dvpg.Config.BackingType = "nsx"
 
-						np = vsphere.NetOpNetworkProvider(k8sClient, c, finder, cluster, scheme)
+						np = vsphere.NewNetworkProvider(k8sClient, c, finder, cluster, scheme)
 
-						dev, err := np.CreateVnic(ctx, vm, vmNif)
+						info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(dev).NotTo(BeNil())
+						Expect(info).NotTo(BeNil())
 
-						nic := dev.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+						nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 						Expect(nic).NotTo(BeNil())
 						Expect(nic.ExternalId).To(Equal(interfaceId))
 						Expect(nic.MacAddress).To(Equal(macAddress))
@@ -452,9 +397,9 @@ var _ = Describe("NetworkProvider", func() {
 						res := simulator.VPX().Run(func(ctx context.Context, c *vim25.Client) error {
 							createInterface(ctx, c)
 
-							cust, err := np.GetInterfaceGuestCustomization(vm, vmNif)
+							info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 							Expect(err).ToNot(HaveOccurred())
-							Expect(cust.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
+							Expect(info.Customization.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
 
 							return nil
 						})
@@ -469,9 +414,9 @@ var _ = Describe("NetworkProvider", func() {
 					BeforeEach(func() { netIf.Status.IPConfigs = nil })
 
 					It("dhcp customization", func() {
-						cust, err := np.GetInterfaceGuestCustomization(vm, vmNif)
+						info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(cust.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
+						Expect(info.Customization.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
 					})
 				})
 
@@ -488,10 +433,10 @@ var _ = Describe("NetworkProvider", func() {
 					})
 
 					It("fixed ipv4 customization", func() {
-						cust, err := np.GetInterfaceGuestCustomization(vm, vmNif)
+						info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(cust.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationFixedIp{}))
-						fixedIp := cust.Adapter.Ip.(*types.CustomizationFixedIp)
+						Expect(info.Customization.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationFixedIp{}))
+						fixedIp := info.Customization.Adapter.Ip.(*types.CustomizationFixedIp)
 						Expect(fixedIp.IpAddress).To(Equal(ip))
 					})
 				})
@@ -509,11 +454,11 @@ var _ = Describe("NetworkProvider", func() {
 					})
 
 					It("fixed ipv6 customization", func() {
-						cust, err := np.GetInterfaceGuestCustomization(vm, vmNif)
+						info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(cust.Adapter.IpV6Spec).To(BeAssignableToTypeOf(&types.CustomizationIPSettingsIpV6AddressSpec{}))
-						Expect(len(cust.Adapter.IpV6Spec.Ip)).To(Equal(1))
-						fixedIp := cust.Adapter.IpV6Spec.Ip[0].(*types.CustomizationFixedIpV6)
+						Expect(info.Customization.Adapter.IpV6Spec).To(BeAssignableToTypeOf(&types.CustomizationIPSettingsIpV6AddressSpec{}))
+						Expect(info.Customization.Adapter.IpV6Spec.Ip).To(HaveLen(1))
+						fixedIp := info.Customization.Adapter.IpV6Spec.Ip[0].(*types.CustomizationFixedIpV6)
 						Expect(fixedIp.IpAddress).To(Equal(ip))
 					})
 				})
@@ -521,19 +466,16 @@ var _ = Describe("NetworkProvider", func() {
 		})
 	})
 
-	Context("when using NSX-T network provider", func() {
+	Context("NSX-T Network Provider", func() {
 		var (
 			k8sClient ctrlruntime.Client
 			ncpVif    *ncpv1alpha1.VirtualNetworkInterface
+			scheme    *runtime.Scheme
 		)
 
 		BeforeEach(func() {
-			scheme := runtime.NewScheme()
-			_ = clientgoscheme.AddToScheme(scheme)
-			_ = ncpv1alpha1.AddToScheme(scheme)
-
-			k8sClient = clientfake.NewFakeClientWithScheme(scheme)
-			np = vsphere.NsxtNetworkProvider(k8sClient, finder, cluster)
+			vmNif.NetworkType = vsphere.NsxtNetworkType
+			vm.Spec.NetworkInterfaces[0].NetworkType = vsphere.NsxtNetworkType
 
 			ncpVif = &ncpv1alpha1.VirtualNetworkInterface{
 				ObjectMeta: metav1.ObjectMeta{
@@ -554,14 +496,34 @@ var _ = Describe("NetworkProvider", func() {
 			}
 		})
 
-		// Creates the vnetif and other objects in the system the way we want to test them
-		// This runs after all BeforeEach()
 		JustBeforeEach(func() {
-			err := k8sClient.Create(ctx, ncpVif)
-			Expect(err).NotTo(HaveOccurred())
+			scheme = runtime.NewScheme()
+			_ = clientgoscheme.AddToScheme(scheme)
+			_ = v1alpha1.AddToScheme(scheme)
+			_ = ncpv1alpha1.AddToScheme(scheme)
+
+			k8sClient = clientfake.NewFakeClientWithScheme(scheme, ncpVif)
+			np = vsphere.NewNetworkProvider(k8sClient, c.Client, finder, cluster, scheme)
 		})
 
-		Context("when creating vnic", func() {
+		Context("ensure interface", func() {
+
+			// Long test due to poll timeout.
+			It("create ncp virtual network interface object", func() {
+				Expect(k8sClient.Delete(ctx, ncpVif)).To(Succeed())
+
+				_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(wait.ErrWaitTimeout))
+
+				instance := &ncpv1alpha1.VirtualNetworkInterface{}
+				err = k8sClient.Get(ctx, ctrlruntime.ObjectKey{Name: ncpVif.Name, Namespace: ncpVif.Namespace}, instance)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(instance.Spec.VirtualNetwork).To(Equal(vcsimNetworkName))
+
+				Expect(instance.OwnerReferences).To(HaveLen(1))
+				Expect(instance.OwnerReferences[0].Name).To(Equal(vm.Name))
+			})
 
 			Context("when interface has no provider status defined", func() {
 				BeforeEach(func() {
@@ -571,9 +533,9 @@ var _ = Describe("NetworkProvider", func() {
 				})
 
 				It("should return an error", func() {
-					_, err := np.CreateVnic(ctx, vm, vmNif)
+					_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 					Expect(err).NotTo(BeNil())
-					Expect(err.Error()).To(ContainSubstring("failed to get for nsx-t opaque network ID for vnetif '"))
+					Expect(err.Error()).To(ContainSubstring("failed to get for nsx-t opaque network ID for vnetIf '"))
 				})
 			})
 
@@ -583,9 +545,9 @@ var _ = Describe("NetworkProvider", func() {
 				})
 
 				It("should return an error", func() {
-					_, err := np.CreateVnic(ctx, vm, vmNif)
+					_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 					Expect(err).NotTo(BeNil())
-					Expect(err.Error()).To(ContainSubstring("failed to get for nsx-t opaque network ID for vnetif '"))
+					Expect(err.Error()).To(ContainSubstring("failed to get for nsx-t opaque network ID for vnetIf '"))
 				})
 			})
 
@@ -595,7 +557,7 @@ var _ = Describe("NetworkProvider", func() {
 				})
 
 				It("should return an error", func() {
-					_, err := np.CreateVnic(ctx, vm, vmNif)
+					_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 					Expect(err).To(MatchError("timed out waiting for the condition"))
 				})
 			})
@@ -606,7 +568,7 @@ var _ = Describe("NetworkProvider", func() {
 				})
 
 				It("should return an error", func() {
-					_, err := np.CreateVnic(ctx, vm, vmNif)
+					_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 					Expect(err).To(MatchError(fmt.Sprintf("opaque network with ID '%s' not found", doesNotExist)))
 				})
 			})
@@ -624,13 +586,13 @@ var _ = Describe("NetworkProvider", func() {
 					dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
 					dvpg.Config.BackingType = "nsx"
 
-					np := vsphere.NsxtNetworkProvider(k8sClient, finder, cluster)
+					np = vsphere.NewNetworkProvider(k8sClient, c, finder, cluster, scheme)
 
-					dev, err := np.CreateVnic(ctx, vm, vmNif)
+					info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(dev).NotTo(BeNil())
+					Expect(info).NotTo(BeNil())
 
-					nic := dev.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+					nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 					Expect(nic).NotTo(BeNil())
 					Expect(nic.ExternalId).To(Equal(interfaceId))
 					Expect(nic.MacAddress).To(Equal(macAddress))
@@ -641,9 +603,9 @@ var _ = Describe("NetworkProvider", func() {
 					res := simulator.VPX().Run(func(ctx context.Context, c *vim25.Client) error {
 						createInterface(ctx, c)
 
-						cust, err := np.GetInterfaceGuestCustomization(vm, vmNif)
+						info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(cust.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
+						Expect(info.Customization.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
 
 						return nil
 					})
@@ -665,35 +627,15 @@ var _ = Describe("NetworkProvider", func() {
 						res := simulator.VPX().Run(func(ctx context.Context, c *vim25.Client) error {
 							createInterface(ctx, c)
 
-							cust, err := np.GetInterfaceGuestCustomization(vm, vmNif)
+							info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 							Expect(err).ToNot(HaveOccurred())
-							fixedIp := cust.Adapter.Ip.(*types.CustomizationFixedIp)
+							fixedIp := info.Customization.Adapter.Ip.(*types.CustomizationFixedIp)
 							Expect(fixedIp.IpAddress).To(Equal(ip))
 							return nil
 						})
 						Expect(res).To(BeNil())
 					})
 				})
-			})
-
-			It("should update owner reference if already exist", func() {
-				otherVmWithDifferentUid := &v1alpha1.VirtualMachine{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      name,
-						Namespace: namespace,
-						UID:       "another-uid",
-					},
-					Spec: v1alpha1.VirtualMachineSpec{
-						NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
-							*vmNif,
-						},
-					},
-				}
-				// TODO: we can't test the owner reference is correct
-				// But this test exercises the path that there is an existing network interface owned by a different VM
-				// and this interface should be updated with the new VM.
-				_, err := np.CreateVnic(ctx, otherVmWithDifferentUid, vmNif)
-				Expect(err).ToNot(HaveOccurred())
 			})
 		})
 	})

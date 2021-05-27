@@ -30,6 +30,10 @@ spec:
       name: Image
       priority: 1
       type: string
+    - jsonPath: .status.vmIp
+      name: Primary-IP
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -138,6 +142,17 @@ spec:
               readinessProbe:
                 description: ReadinessProbe describes a network probe that can be used to determine if the VirtualMachine is available and responding to the probe.
                 properties:
+                  guestHeartbeat:
+                    description: GuestHeartbeat specifies an action involving the guest heartbeat status.
+                    properties:
+                      thresholdStatus:
+                        default: green
+                        description: ThresholdStatus is the value that the guest heartbeat status must be at or above to be considered successful.
+                        enum:
+                        - yellow
+                        - green
+                        type: string
+                    type: object
                   periodSeconds:
                     description: PeriodSeconds specifics how often (in seconds) to perform the probe. Defaults to 10 seconds. Minimum value is 1.
                     format: int32
@@ -217,7 +232,7 @@ spec:
                           description: A description of the virtual volume's resources and capacity
                           type: object
                         deviceKey:
-                          description: Device key of vSphere disk.  Empty deviceKey means it should be created in vSphere.
+                          description: Device key of vSphere disk.
                           type: integer
                       type: object
                   required:
@@ -273,6 +288,26 @@ spec:
               instanceUUID:
                 description: InstanceUUID describes the unique instance UUID provided by the underlying infrastructure provider, such as vSphere.
                 type: string
+              networkInterfaces:
+                description: NetworkInterfaces describes a list of current status information for each network interface that is desired to be attached to the VirtualMachine.
+                items:
+                  description: NetworkInterfaceStatus defines the observed state of network interfaces attached to the VirtualMachine as seen by the Guest OS and VMware tools
+                  properties:
+                    connected:
+                      description: Connected represents whether the network interface is connected or not.
+                      type: boolean
+                    ipAddresses:
+                      description: IpAddresses represents zero, one or more IP addresses assigned to the network interface in CIDR notation. For eg, "192.0.2.1/16".
+                      items:
+                        type: string
+                      type: array
+                    macAddress:
+                      description: MAC address of the network adapter
+                      type: string
+                  required:
+                  - connected
+                  type: object
+                type: array
               phase:
                 description: Phase describes the current phase information of the VirtualMachine.
                 type: string
@@ -286,7 +321,7 @@ spec:
                 description: UniqueID describes a unique identifier that is provided by the underlying infrastructure provider, such as vSphere.
                 type: string
               vmIp:
-                description: VmIp describes the IP address of the VirtualMachine.  Currently, a VirtualMachine only supports a single network interface and interface address.
+                description: VmIp describes the Primary IP address assigned to the guest operating system, if known. Multiple IPs can be available for the VirtualMachine. Refer to networkInterfaces in the VirtualMachine status for additional IPs
                 type: string
               volumes:
                 description: Volumes describes a list of current status information for each Volume that is desired to be attached to the VirtualMachine.

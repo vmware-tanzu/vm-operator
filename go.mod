@@ -1,4 +1,4 @@
-go 1.15
+go 1.16
 
 require (
 	cloud.google.com/go v0.46.3 // indirect
@@ -8,7 +8,6 @@ require (
 	github.com/go-logr/zapr v0.1.1 // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
-	github.com/golang/mock v1.3.1
 	github.com/google/go-cmp v0.4.1
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/google/uuid v1.1.1
@@ -20,7 +19,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1 // indirect
 	github.com/stretchr/testify v1.6.1 // indirect
-	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20210210221150-c78fe9873b22
+	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20210521195029-967f4561aa5a
 	github.com/vmware/govmomi v0.24.1-0.20210210035757-ed60338583b0
 	golang.org/x/net v0.0.0-20200822124328-c89045814202 // indirect
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect

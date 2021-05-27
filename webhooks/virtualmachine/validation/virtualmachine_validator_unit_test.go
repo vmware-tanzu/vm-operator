@@ -46,6 +46,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	Expect(err).ToNot(HaveOccurred())
 
 	vmImage := builder.DummyVirtualMachineImage(vm.Spec.ImageName)
+	vmImage1 := builder.DummyVirtualMachineImage(vm.Spec.ImageName + updateSuffix)
 
 	var oldVM *vmopv1.VirtualMachine
 	var oldObj *unstructured.Unstructured
@@ -57,7 +58,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	}
 
 	return &unitValidatingWebhookContext{
-		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, vmImage),
+		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, vmImage, vmImage1),
 		vm:                                  vm,
 		oldVM:                               oldVM,
 		vmImage:                             vmImage,
@@ -72,10 +73,10 @@ func unitTestsValidateCreate() {
 
 	type createArgs struct {
 		invalidImageName           bool
-		invalidGuestOSType         bool
 		invalidClassName           bool
 		invalidNetworkName         bool
 		invalidNetworkType         bool
+		invalidNetworkCardType     bool
 		multipleNetIfToSameNetwork bool
 		emptyVolumeName            bool
 		invalidVolumeName          bool
@@ -84,6 +85,7 @@ func unitTestsValidateCreate() {
 		multipleVolumeSource       bool
 		invalidPVCName             bool
 		invalidPVCReadOnly         bool
+		invalidPVCHwVersion        bool
 		invalidMetadataConfigMap   bool
 		invalidVsphereVolumeSource bool
 		invalidVmVolumeProvOpts    bool
@@ -91,6 +93,8 @@ func unitTestsValidateCreate() {
 		invalidResourceQuota       bool
 		validStorageClass          bool
 		imageNonCompatible         bool
+		invalidReadinessNoProbe    bool
+		invalidReadinessProbe      bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -102,7 +106,7 @@ func unitTestsValidateCreate() {
 		if args.invalidImageName {
 			ctx.vm.Spec.ImageName = ""
 		}
-		if args.invalidGuestOSType || args.imageNonCompatible {
+		if args.imageNonCompatible {
 			ctx.vmImage.Status.ImageSupported = &[]bool{false}[0]
 			Expect(ctx.Client.Status().Update(ctx, ctx.vmImage)).ToNot(HaveOccurred())
 		}
@@ -112,6 +116,9 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidNetworkType {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkType = "bogusNetworkType"
+		}
+		if args.invalidNetworkCardType {
+			ctx.vm.Spec.NetworkInterfaces[0].EthernetCardType = "bogusCardType"
 		}
 		if args.multipleNetIfToSameNetwork {
 			ctx.vm.Spec.NetworkInterfaces[1].NetworkName = ctx.vm.Spec.NetworkInterfaces[0].NetworkName
@@ -138,6 +145,10 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidPVCReadOnly {
 			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ReadOnly = true
+		}
+		if args.invalidPVCHwVersion {
+			ctx.vmImage.Spec.HardwareVersion = 12
+			Expect(ctx.Client.Update(ctx, ctx.vmImage)).ToNot(HaveOccurred())
 		}
 		if args.invalidMetadataConfigMap {
 			ctx.vm.Spec.VmMetadata.ConfigMapName = ""
@@ -180,6 +191,15 @@ func unitTestsValidateCreate() {
 			resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
 			Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
 		}
+		if args.invalidReadinessNoProbe {
+			ctx.vm.Spec.ReadinessProbe = &vmopv1.Probe{}
+		}
+		if args.invalidReadinessProbe {
+			ctx.vm.Spec.ReadinessProbe = &vmopv1.Probe{
+				TCPSocket:      &vmopv1.TCPSocketAction{},
+				GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
+			}
+		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
@@ -205,8 +225,11 @@ func unitTestsValidateCreate() {
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should deny invalid class name", createArgs{invalidClassName: true}, false, messages.ClassNotSpecified, nil),
 		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false, messages.ImageNotSpecified, nil),
+		Entry("should fail when Readiness probe has multiple actions", createArgs{invalidReadinessProbe: true}, false, fmt.Sprintf(messages.ReadinessProbeOnlyOneAction), nil),
+		Entry("should fail when Readiness probe has no actions", createArgs{invalidReadinessNoProbe: true}, false, fmt.Sprintf(messages.ReadinessProbeNoActions), nil),
 		Entry("should deny invalid network name for VDS network type", createArgs{invalidNetworkName: true}, false, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, 0), nil),
-		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0), nil),
+		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0, vsphere.NsxtNetworkType, vsphere.VdsNetworkType), nil),
+		Entry("should deny invalid network card type", createArgs{invalidNetworkCardType: true}, false, fmt.Sprintf(messages.NetworkTypeEthCardTypeNotSupportedFmt, 0), nil),
 		Entry("should deny connection of multiple network interfaces of a VM to the same network", createArgs{multipleNetIfToSameNetwork: true},
 			false, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, 1), nil),
 		Entry("should deny empty volume name", createArgs{emptyVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameNotSpecifiedFmt, 0), nil),
@@ -216,13 +239,14 @@ func unitTestsValidateCreate() {
 		Entry("should deny multiple volume source spec", createArgs{multipleVolumeSource: true}, false, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, 0, 0), nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, 0), nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCReadOnly: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameReadOnlyFmt, 0), nil),
+		Entry("should deny invalid PVC hardware verion", createArgs{invalidPVCHwVersion: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupported, builder.DummyImageName, 12, 13), nil),
 		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, 0), nil),
 		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVmVolumeProvOpts: true}, false, fmt.Sprintf(messages.EagerZeroedAndThinProvisionedNotSupported), nil),
 		Entry("should deny invalid vmMetadata configmap", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
 		Entry("should deny invalid resource quota", createArgs{invalidResourceQuota: true}, false, fmt.Sprintf(messages.NoResourceQuota, ""), nil),
 		Entry("should deny invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, "invalid", ""), nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
-		Entry("should fail when OS type is invalid or image not compatible", createArgs{invalidGuestOSType: true, imageNonCompatible: true}, false, fmt.Sprintf(messages.VMImageNotSupported, builder.DummyOSType, builder.DummyImageName), nil),
+		Entry("should fail when image is not compatible", createArgs{imageNonCompatible: true}, false, fmt.Sprintf(messages.VirtualMachineImageNotSupported), nil),
 	)
 }
 

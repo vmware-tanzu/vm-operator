@@ -6,9 +6,11 @@ package virtualmachineservice
 import (
 	goctx "context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -26,8 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/go-logr/logr"
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
@@ -43,22 +44,29 @@ const (
 
 	finalizerName = "virtualmachineservice.vmoperator.vmware.com"
 
-	OpCreate       = "CreateK8sService"
-	OpDelete       = "DeleteK8sService"
-	OpUpdate       = "UpdateK8sService"
-	ControllerName = "virtualmachineservice-controller"
+	OpCreate = "CreateK8sService"
+	OpDelete = "DeleteK8sService"
+	OpUpdate = "UpdateK8sService"
 )
 
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &vmoperatorv1alpha1.VirtualMachineService{}
+		controlledType     = &vmopv1alpha1.VirtualMachineService{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	lbProvider, err := providers.GetLoadbalancerProviderByType(mgr, providers.LBProvider)
+	lbProviderType := os.Getenv("LB_PROVIDER")
+	if lbProviderType == "" {
+		vdsNetwork := os.Getenv("VSPHERE_NETWORKING")
+		if vdsNetwork != "true" {
+			lbProviderType = providers.NSXTLoadBalancer
+		}
+	}
+
+	lbProvider, err := providers.GetLoadbalancerProviderByType(mgr, lbProviderType)
 	if err != nil {
 		return err
 	}
@@ -71,7 +79,16 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		lbProvider,
 	)
 
-	return add(ctx, mgr, r, r)
+	return ctrl.NewControllerManagedBy(mgr).
+		For(controlledType).
+		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
+		Watches(&source.Kind{Type: &corev1.Service{}},
+			&handler.EnqueueRequestForOwner{OwnerType: &vmopv1alpha1.VirtualMachineService{}}).
+		Watches(&source.Kind{Type: &corev1.Endpoints{}},
+			&handler.EnqueueRequestForOwner{OwnerType: &vmopv1alpha1.VirtualMachineService{}}).
+		Watches(&source.Kind{Type: &vmopv1alpha1.VirtualMachine{}},
+			&handler.EnqueueRequestsFromMapFunc{ToRequests: handler.ToRequestsFunc(r.virtualMachineToVirtualMachineServiceMapper)}).
+		Complete(r)
 }
 
 func NewReconciler(
@@ -91,45 +108,6 @@ func NewReconciler(
 	}
 }
 
-// add adds a new Controller to mgr with r as the reconcile.Reconciler
-func add(ctx *context.ControllerManagerContext, mgr manager.Manager, r reconcile.Reconciler, rvms *ReconcileVirtualMachineService) error {
-	// Create a new controller
-	c, err := controller.New(ControllerName, mgr, controller.Options{Reconciler: r, MaxConcurrentReconciles: ctx.MaxConcurrentReconciles})
-	if err != nil {
-		return err
-	}
-
-	// Watch for changes to VirtualMachineService
-	err = c.Watch(&source.Kind{Type: &vmoperatorv1alpha1.VirtualMachineService{}}, &handler.EnqueueRequestForObject{})
-	if err != nil {
-		return err
-	}
-
-	// Watch VirtualMachine resources so that VmServices can be updated in response to changes in VM IP status and VM
-	// label configuration.
-	//
-	// TODO: Ensure that we have adequate tests for these IP and label updates.
-	err = c.Watch(&source.Kind{Type: &vmoperatorv1alpha1.VirtualMachine{}},
-		&handler.EnqueueRequestsFromMapFunc{ToRequests: handler.ToRequestsFunc(rvms.virtualMachineToVirtualMachineServiceMapper)})
-	if err != nil {
-		return err
-	}
-
-	err = c.Watch(&source.Kind{Type: &corev1.Service{}},
-		&handler.EnqueueRequestForOwner{OwnerType: &vmoperatorv1alpha1.VirtualMachineService{}, IsController: false})
-	if err != nil {
-		return err
-	}
-
-	err = c.Watch(&source.Kind{Type: &corev1.Endpoints{}},
-		&handler.EnqueueRequestForOwner{OwnerType: &vmoperatorv1alpha1.VirtualMachineService{}, IsController: false})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 var _ reconcile.Reconciler = &ReconcileVirtualMachineService{}
 
 // ReconcileVirtualMachineService reconciles a VirtualMachineService object
@@ -145,37 +123,37 @@ type ReconcileVirtualMachineService struct {
 // and what is in the VirtualMachineService.Spec
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineservices,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineservices/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=vmware.com,resources=loadbalancers;loadbalancers/status,verbs=create;get;list;patch;delete;watch;update
-// +kubebuilder:rbac:groups=vmware.com,resources=virtualnetworks;virtualnetworks/status,verbs=create;get;list;patch;delete;watch;update
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	ctx := goctx.Background()
 
-	instance := &vmoperatorv1alpha1.VirtualMachineService{}
-	err := r.Get(ctx, request.NamespacedName, instance)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return reconcile.Result{}, nil
-		}
-		return reconcile.Result{}, err
+	vmService := &vmopv1alpha1.VirtualMachineService{}
+	if err := r.Get(ctx, request.NamespacedName, vmService); err != nil {
+		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !instance.DeletionTimestamp.IsZero() {
-		return reconcile.Result{}, r.ReconcileDelete(ctx, instance)
+	vmServiceCtx := &context.VirtualMachineServiceContext{
+		Context:   ctx,
+		Logger:    ctrl.Log.WithName("VirtualMachineService").WithValues("name", vmService.NamespacedName()),
+		VMService: vmService,
 	}
 
-	return reconcile.Result{}, r.ReconcileNormal(ctx, instance)
+	if !vmService.DeletionTimestamp.IsZero() {
+		return reconcile.Result{}, r.ReconcileDelete(vmServiceCtx)
+	}
+
+	return reconcile.Result{}, r.ReconcileNormal(vmServiceCtx)
 }
 
-func (r *ReconcileVirtualMachineService) ReconcileDelete(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) error {
-	if controllerutil.ContainsFinalizer(vmService, finalizerName) {
-		r.log.Info("Delete VirtualMachineService", "service", vmService)
-		r.recorder.EmitEvent(vmService, OpDelete, nil, false)
+func (r *ReconcileVirtualMachineService) ReconcileDelete(ctx *context.VirtualMachineServiceContext) error {
+	if controllerutil.ContainsFinalizer(ctx.VMService, finalizerName) {
+		ctx.Logger.Info("Delete VirtualMachineService")
+		r.recorder.EmitEvent(ctx.VMService, OpDelete, nil, false)
 
-		controllerutil.RemoveFinalizer(vmService, finalizerName)
-		if err := r.Update(ctx, vmService); err != nil {
+		controllerutil.RemoveFinalizer(ctx.VMService, finalizerName)
+		if err := r.Update(ctx, ctx.VMService); err != nil {
 			return err
 		}
 	}
@@ -183,55 +161,52 @@ func (r *ReconcileVirtualMachineService) ReconcileDelete(ctx goctx.Context, vmSe
 	return nil
 }
 
-func (r *ReconcileVirtualMachineService) ReconcileNormal(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) error {
-	if !controllerutil.ContainsFinalizer(vmService, finalizerName) {
-		controllerutil.AddFinalizer(vmService, finalizerName)
-		if err := r.Update(ctx, vmService); err != nil {
+func (r *ReconcileVirtualMachineService) ReconcileNormal(ctx *context.VirtualMachineServiceContext) error {
+	if !controllerutil.ContainsFinalizer(ctx.VMService, finalizerName) {
+		controllerutil.AddFinalizer(ctx.VMService, finalizerName)
+		if err := r.Update(ctx, ctx.VMService); err != nil {
 			return err
 		}
 	}
 
-	if err := r.reconcileVmService(ctx, vmService); err != nil {
-		r.log.Error(err, "Failed to reconcile VirtualMachineService", "service", vmService)
+	if err := r.reconcileVmService(ctx); err != nil {
+		ctx.Logger.Error(err, "Failed to reconcile VirtualMachineService")
 		return err
 	}
 
 	return nil
 }
 
-func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (err error) {
-	r.log.Info("Reconcile VirtualMachineService", "name", vmService.NamespacedName())
-	defer r.log.Info("Finished Reconcile VirtualMachineService", "name", vmService.NamespacedName())
+func (r *ReconcileVirtualMachineService) reconcileVmService(ctx *context.VirtualMachineServiceContext) error {
+	ctx.Logger.Info("Reconcile VirtualMachineService")
+	defer ctx.Logger.Info("Finished Reconcile VirtualMachineService")
 
-	if vmService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
+	vmService := ctx.VMService
+
+	if vmService.Spec.Type == vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer {
 		// Get LoadBalancer to attach
-		err = r.loadbalancerProvider.EnsureLoadBalancer(ctx, vmService)
+		err := r.loadbalancerProvider.EnsureLoadBalancer(ctx, vmService)
 		if err != nil {
-			r.log.Error(err, "Failed to create or get load balancer for vm service", "name", vmService.Name)
+			ctx.Logger.Error(err, "Failed to create or get load balancer for VM Service")
 			return err
 		}
 
-		// Get the provider specific annotations for Service and add
-		// them to the vm service as that's where Service inherits the
-		// values
-		annotations, err := r.loadbalancerProvider.GetServiceAnnotations(ctx, vmService)
+		// Get the provider specific annotations for service and add them to the VMService as
+		// that's where Service inherits the values.
+		annotations, err := r.loadbalancerProvider.GetServiceAnnotations(ctx, ctx.VMService)
 		if err != nil {
-			r.log.Error(err, "Failed to get loadbalancer annotations for service", "name", vmService.Name)
+			ctx.Logger.Error(err, "Failed to get loadbalancer annotations for service")
 			return err
 		}
 
-		// Initialize VM Service Annotations when it is nil
 		if vmService.Annotations == nil {
 			vmService.Annotations = make(map[string]string)
 		}
 
 		for k, v := range annotations {
 			if oldValue, ok := vmService.Annotations[k]; ok {
-				r.log.V(5).Info("Replacing previous annotation value on vm service",
-					"vmServiceName", vmService.NamespacedName,
-					"key", k,
-					"oldValue", oldValue,
-					"newValue", v)
+				ctx.Logger.V(5).Info("Replacing previous annotation value on VM Service",
+					"key", k, "oldValue", oldValue, "newValue", v)
 			}
 			vmService.Annotations[k] = v
 		}
@@ -239,47 +214,43 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 		// Get the provider specific labels for Service and add
 		// them to the vm service as that's where Service inherits the
 		// values
-		labels, err := r.loadbalancerProvider.GetServiceLabels(ctx, vmService)
+		labels, err := r.loadbalancerProvider.GetServiceLabels(ctx, ctx.VMService)
 		if err != nil {
-			r.log.Error(err, "Failed to get loadbalancer labels for service", "name", vmService.Name)
+			ctx.Logger.Error(err, "Failed to get loadbalancer labels for service")
 			return err
 		}
 
-		// Initialize VM Service Labels when it is nil
 		if vmService.Labels == nil {
 			vmService.Labels = make(map[string]string)
 		}
 
 		for k, v := range labels {
 			if oldValue, ok := vmService.Labels[k]; ok {
-				r.log.V(5).Info("Replacing previous label value on vm service",
-					"vmServiceName", vmService.NamespacedName,
-					"key", k,
-					"oldValue", oldValue,
-					"newValue", v)
+				ctx.Logger.V(5).Info("Replacing previous label value on VM Service",
+					"key", k, "oldValue", oldValue, "newValue", v)
 			}
 			vmService.Labels[k] = v
 		}
 	}
 
 	// Reconcile k8s Service
-	newService, err := r.CreateOrUpdateService(ctx, vmService)
+	newService, err := r.CreateOrUpdateService(ctx)
 	if err != nil {
-		r.log.Error(err, "Failed to update k8s Service for VirtualMachineService", "vmServiceName", vmService.NamespacedName)
+		ctx.Logger.Error(err, "Failed to update k8s Service for VirtualMachineService")
 		return err
 	}
 
 	// Update VirtualMachineService endpoints
-	err = r.UpdateEndpoints(ctx, vmService, newService)
+	err = r.UpdateEndpoints(ctx, newService)
 	if err != nil {
-		r.log.Error(err, "Failed to update VirtualMachineService endpoints", "name", vmService.NamespacedName())
+		ctx.Logger.Error(err, "Failed to update VirtualMachineService endpoints")
 		return err
 	}
 
 	// Update VirtualMachineService resource
-	err = r.UpdateVmService(ctx, vmService, newService)
+	err = r.UpdateVmService(ctx, newService)
 	if err != nil {
-		r.log.Error(err, "Failed to update VirtualMachineService Status", "name", vmService.NamespacedName())
+		ctx.Logger.Error(err, "Failed to update VirtualMachineService Status")
 		return err
 	}
 
@@ -291,17 +262,18 @@ func (r *ReconcileVirtualMachineService) reconcileVmService(ctx goctx.Context, v
 func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMapper(o handler.MapObject) []reconcile.Request {
 	var reconcileRequests []reconcile.Request
 
-	vm := o.Object.(*vmoperatorv1alpha1.VirtualMachine)
+	vm := o.Object.(*vmopv1alpha1.VirtualMachine)
 	// Find all vm services that match this vm
 	vmServiceList, err := r.getVirtualMachineServicesSelectingVirtualMachine(goctx.Background(), vm)
 	if err != nil {
 		return reconcileRequests
 	}
 
+	logger := r.log.WithValues("VirtualMachine", types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name})
+
 	for _, vmService := range vmServiceList {
-		r.log.V(4).Info("Generating reconcile request for vmService due to event on VMs",
-			"VirtualMachineService", types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name},
-			"VirtualMachine", types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name})
+		logger.V(4).Info("Generating reconcile request for vmService due to event on VMs",
+			"VirtualMachineService", types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name})
 		reconcileRequests = append(reconcileRequests,
 			reconcile.Request{NamespacedName: types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name}})
 	}
@@ -310,7 +282,7 @@ func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMa
 }
 
 // MakeObjectMeta returns an ObjectMeta struct with values filled in from input VirtualMachineService. Also sets the VM operator annotations.
-func MakeObjectMeta(vmService *vmoperatorv1alpha1.VirtualMachineService) metav1.ObjectMeta {
+func MakeObjectMeta(vmService *vmopv1alpha1.VirtualMachineService) metav1.ObjectMeta {
 	om := metav1.ObjectMeta{
 		Namespace:   vmService.Namespace,
 		Name:        vmService.Name,
@@ -332,14 +304,14 @@ func MakeObjectMeta(vmService *vmoperatorv1alpha1.VirtualMachineService) metav1.
 	return om
 }
 
-func (r *ReconcileVirtualMachineService) makeEndpoints(vmService *vmoperatorv1alpha1.VirtualMachineService, currentEndpoints *corev1.Endpoints, subsets []corev1.EndpointSubset) *corev1.Endpoints {
+func (r *ReconcileVirtualMachineService) makeEndpoints(vmService *vmopv1alpha1.VirtualMachineService, currentEndpoints *corev1.Endpoints, subsets []corev1.EndpointSubset) *corev1.Endpoints {
 	newEndpoints := currentEndpoints.DeepCopy()
-	newEndpoints.ObjectMeta = MakeObjectMeta(vmService)
+	newEndpoints.ObjectMeta = MakeObjectMeta(vmService) // BMV: Prb doesn't make sense to copy Labels and Annotations here.
 	newEndpoints.Subsets = subsets
 	return newEndpoints
 }
 
-func (r *ReconcileVirtualMachineService) makeEndpointAddress(vm *vmoperatorv1alpha1.VirtualMachine) *corev1.EndpointAddress {
+func (r *ReconcileVirtualMachineService) makeEndpointAddress(vm *vmopv1alpha1.VirtualMachine) *corev1.EndpointAddress {
 	return &corev1.EndpointAddress{
 		IP: vm.Status.VmIp,
 		TargetRef: &corev1.ObjectReference{
@@ -352,7 +324,9 @@ func (r *ReconcileVirtualMachineService) makeEndpointAddress(vm *vmoperatorv1alp
 }
 
 // vmServiceToService converts a VM Service to k8s Service.
-func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperatorv1alpha1.VirtualMachineService) *corev1.Service {
+func (r *ReconcileVirtualMachineService) vmServiceToService(ctx *context.VirtualMachineServiceContext) *corev1.Service {
+	vmService := ctx.VMService
+
 	servicePorts := make([]corev1.ServicePort, 0, len(vmService.Spec.Ports))
 	for _, vmPort := range vmService.Spec.Ports {
 		sport := corev1.ServicePort{
@@ -365,10 +339,6 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 	}
 
 	svc := &corev1.Service{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Service",
-			APIVersion: "core/v1",
-		},
 		ObjectMeta: MakeObjectMeta(vmService),
 		Spec: corev1.ServiceSpec{
 			// Don't specify selector to keep endpoints controller from interfering
@@ -381,31 +351,29 @@ func (r *ReconcileVirtualMachineService) vmServiceToService(vmService *vmoperato
 		},
 	}
 
-	// Setting default value so during update we could find the delta by
-	// DeepEqual
-	if svc.Spec.Type == corev1.ServiceTypeLoadBalancer || svc.Spec.Type == corev1.ServiceTypeNodePort {
+	// Setting default value so during update we could find the delta by DeepEqual
+	if svc.Spec.Type == corev1.ServiceTypeNodePort || svc.Spec.Type == corev1.ServiceTypeLoadBalancer {
 		svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyTypeCluster
 	}
 
-	// When VirtualMachineService is created with annotation
-	// labelServiceExternalTrafficPolicyKey, use its value for the
-	// Service.Spec.ExternalTrafficPolicy
+	// When VirtualMachineService is created with annotation labelServiceExternalTrafficPolicyKey, use
+	// its value for the ExternalTrafficPolicy.
+	// BMV: Why not have just added an ExternalTrafficPolicy to the VirtualMachineService?
 	if externalTrafficPolicy, ok := svc.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]; ok {
-		switch corev1.ServiceExternalTrafficPolicyType(externalTrafficPolicy) {
-		// Only two valid values are accepted
+		trafficPolicy := corev1.ServiceExternalTrafficPolicyType(externalTrafficPolicy)
+		switch trafficPolicy {
 		case corev1.ServiceExternalTrafficPolicyTypeLocal, corev1.ServiceExternalTrafficPolicyTypeCluster:
-			{
-				svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyType(externalTrafficPolicy)
-			}
+			svc.Spec.ExternalTrafficPolicy = trafficPolicy
 		default:
-			r.log.V(5).Info("Unknown externalTrafficPolicy configured in VirtualMachineService label, skip it", "externalTrafficPolicy", externalTrafficPolicy)
+			ctx.Logger.V(5).Info("Unknown externalTrafficPolicy configured in VirtualMachineService label",
+				"externalTrafficPolicy", externalTrafficPolicy)
 		}
 	}
 
 	return svc
 }
 
-func findPort(vm *vmoperatorv1alpha1.VirtualMachine, portName intstr.IntOrString, portProto corev1.Protocol) (int, error) {
+func findPort(vm *vmopv1alpha1.VirtualMachine, portName intstr.IntOrString, portProto corev1.Protocol) (int, error) {
 	switch portName.Type {
 	case intstr.String:
 		name := portName.StrVal
@@ -436,33 +404,34 @@ func addEndpointSubset(subsets []corev1.EndpointSubset, epa corev1.EndpointAddre
 	return subsets
 }
 
-// createOrUpdateService reconciles the k8s Service corresponding to the VirtualMachineService by creating a new Service or updating an existing one. Returns the newly created or updated Service.
+// CreateOrUpdateService reconciles the k8s Service corresponding to the VirtualMachineService by creating a new
+// Service or updating an existing one. Returns the newly created or updated Service.
 // nolint:gocyclo
-func (r *ReconcileVirtualMachineService) CreateOrUpdateService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*corev1.Service, error) {
+func (r *ReconcileVirtualMachineService) CreateOrUpdateService(ctx *context.VirtualMachineServiceContext) (*corev1.Service, error) {
+	vmService := ctx.VMService
 	// We can use vmService's namespace and name since Service and VirtualMachineService live in the same namespace.
 	serviceKey := client.ObjectKey{Name: vmService.Name, Namespace: vmService.Namespace}
 
-	r.log.V(5).Info("Reconciling k8s service", "serviceName", serviceKey)
-	defer r.log.V(5).Info("Finished reconciling k8s Service", "serviceName", serviceKey)
+	ctx.Logger.V(5).Info("Reconciling k8s service")
+	defer ctx.Logger.V(5).Info("Finished reconciling k8s Service")
 
 	// Find the current Service.
 	currentService := &corev1.Service{}
-	err := r.Get(ctx, serviceKey, currentService)
-	if err != nil {
+	if err := r.Get(ctx, serviceKey, currentService); err != nil {
 		if !errors.IsNotFound(err) {
-			r.log.Error(err, "Failed to get Service", "name", serviceKey)
+			ctx.Logger.Error(err, "Failed to get Service")
 			return nil, err
 		}
 
 		// Service does not exist, we will create it.
-		r.log.V(5).Info("Service not found. Will attempt to create it", "name", serviceKey)
-		currentService = r.vmServiceToService(vmService)
+		ctx.Logger.V(5).Info("Service not found. Will attempt to create it")
+		currentService = r.vmServiceToService(ctx)
 	}
 
 	// Determine if VirtualMachineService needs any update by comparing current k8s to newService synthesized from
 	// VirtualMachineService
 	newService := currentService.DeepCopy()
-	svcFromVmService := r.vmServiceToService(vmService)
+	svcFromVmService := r.vmServiceToService(ctx)
 
 	// Merge labels of the Service with the VirtualMachineService. VirtualMachineService wins in case of conflicts.
 	// We can't just clobber the labels since other operators (Net Operator) might rely on them.
@@ -471,12 +440,8 @@ func (r *ReconcileVirtualMachineService) CreateOrUpdateService(ctx goctx.Context
 	} else {
 		for k, v := range vmService.Labels {
 			if oldValue, ok := newService.Labels[k]; ok {
-				r.log.V(5).Info("Replacing previous label value on service",
-					"service", newService.Name,
-					"namespace", newService.Namespace,
-					"key", k,
-					"oldValue", oldValue,
-					"newValue", v)
+				ctx.Logger.V(5).Info("Replacing previous label value on service",
+					"key", k, "oldValue", oldValue, "newValue", v)
 			}
 			newService.Labels[k] = v
 		}
@@ -488,44 +453,32 @@ func (r *ReconcileVirtualMachineService) CreateOrUpdateService(ctx goctx.Context
 	} else {
 		for k, v := range vmService.Annotations {
 			if oldValue, ok := newService.Annotations[k]; ok {
-				r.log.V(5).Info("Replacing previous annotation value on service",
-					"service", newService.Name,
-					"namespace", newService.Namespace,
-					"key", k,
-					"oldValue", oldValue,
-					"newValue", v)
+				ctx.Logger.V(5).Info("Replacing previous annotation value on service",
+					"key", k, "oldValue", oldValue, "newValue", v)
 			}
 			newService.Annotations[k] = v
 		}
 	}
 
 	// Explicitly remove provider specific annotations
-	annotationsToBeRemoved, err := r.loadbalancerProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
+	annotationsToBeRemoved, err := r.loadbalancerProvider.GetToBeRemovedServiceAnnotations(ctx, ctx.VMService)
 	if err != nil {
-		r.log.Error(err, "Failed to get to be removed loadbalancer annotations for service", "virtualmachineservice", vmService.Namespace+"/"+vmService.Name)
-		return newService, err
+		ctx.Logger.Error(err, "Failed to get to be removed loadbalancer annotations for service")
+		return nil, err
 	}
 	for k := range annotationsToBeRemoved {
-		r.log.V(5).Info("Removing annotation from service",
-			"service", newService.Name,
-			"namespace", newService.Namespace,
-			"key", k,
-		)
+		ctx.Logger.V(5).Info("Removing annotation from service", "key", k)
 		delete(newService.Annotations, k)
 	}
 
 	// Explicitly remove provider specific labels
-	labelsToBeRemoved, err := r.loadbalancerProvider.GetToBeRemovedServiceLabels(ctx, vmService)
+	labelsToBeRemoved, err := r.loadbalancerProvider.GetToBeRemovedServiceLabels(ctx, ctx.VMService)
 	if err != nil {
-		r.log.Error(err, "Failed to get to be removed loadbalancer labels for service", "virtualmachineservice", vmService.Namespace+"/"+vmService.Name)
-		return newService, err
+		ctx.Logger.Error(err, "Failed to get to be removed loadbalancer labels for service")
+		return nil, err
 	}
 	for k := range labelsToBeRemoved {
-		r.log.V(5).Info("Removing label from service",
-			"service", newService.Name,
-			"namespace", newService.Namespace,
-			"key", k,
-		)
+		ctx.Logger.V(5).Info("Removing label from service", "key", k)
 		delete(newService.Labels, k)
 	}
 
@@ -533,11 +486,7 @@ func (r *ReconcileVirtualMachineService) CreateOrUpdateService(ctx goctx.Context
 	for _, k := range []string{utils.AnnotationServiceExternalTrafficPolicyKey, utils.AnnotationServiceHealthCheckNodePortKey} {
 		if _, exist := svcFromVmService.Annotations[k]; !exist {
 			if v, exist := newService.Annotations[k]; exist {
-				r.log.V(5).Info("Removing annotation from service",
-					"service", newService.Name,
-					"namespace", newService.Namespace,
-					"key", k,
-					"value", v)
+				ctx.Logger.V(5).Info("Removing annotation from service", "key", k, "value", v)
 			}
 			delete(newService.Annotations, k)
 		}
@@ -547,13 +496,9 @@ func (r *ReconcileVirtualMachineService) CreateOrUpdateService(ctx goctx.Context
 	newService.Spec.ExternalName = svcFromVmService.Spec.ExternalName
 	newService.Spec.Ports = svcFromVmService.Spec.Ports
 	newService.Spec.LoadBalancerIP = svcFromVmService.Spec.LoadBalancerIP
-	// Use DeepEqual to check so we avoid unnecessary updates and
-	// missing value removal
+	newService.Spec.ExternalTrafficPolicy = svcFromVmService.Spec.ExternalTrafficPolicy
 	if !apiequality.Semantic.DeepEqual(newService.Spec.LoadBalancerSourceRanges, svcFromVmService.Spec.LoadBalancerSourceRanges) {
 		newService.Spec.LoadBalancerSourceRanges = svcFromVmService.Spec.LoadBalancerSourceRanges
-	}
-	if !apiequality.Semantic.DeepEqual(newService.Spec.ExternalTrafficPolicy, svcFromVmService.Spec.ExternalTrafficPolicy) {
-		newService.Spec.ExternalTrafficPolicy = svcFromVmService.Spec.ExternalTrafficPolicy
 	}
 
 	// Maintain the existing mapping of ServicePort -> NodePort
@@ -567,34 +512,33 @@ func (r *ReconcileVirtualMachineService) CreateOrUpdateService(ctx goctx.Context
 	// Create or update or don't update Service.
 	createService := len(currentService.ResourceVersion) == 0
 	if createService {
-		r.log.Info("Creating k8s Service", "name", serviceKey, "service", newService)
+		ctx.Logger.Info("Creating k8s Service", "service", newService)
 		err = r.Create(ctx, newService)
-		r.recorder.EmitEvent(vmService, OpCreate, err, false)
+		r.recorder.EmitEvent(ctx.VMService, OpCreate, err, false)
 	} else if !apiequality.Semantic.DeepEqual(currentService, newService) {
-		r.log.Info("Updating k8s Service", "name", serviceKey, "service", newService)
+		ctx.Logger.Info("Updating k8s Service", "service", newService)
 		err = r.Update(ctx, newService)
-		r.recorder.EmitEvent(vmService, OpUpdate, err, false)
+		r.recorder.EmitEvent(ctx.VMService, OpUpdate, err, false)
 	} else {
-		r.log.V(5).Info("No need to update current K8s Service. Skipping Update",
-			"vmServiceName", vmService.NamespacedName(), "currentService", currentService, "vmService", vmService)
+		ctx.Logger.V(5).Info("No need to update current K8s Service. Skipping Update",
+			"currentService", currentService, "vmService", ctx.VMService)
 	}
 
 	return newService, err
 }
 
-func (r *ReconcileVirtualMachineService) GetVirtualMachinesSelectedByVmService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService) (*vmoperatorv1alpha1.VirtualMachineList, error) {
-	vmList := &vmoperatorv1alpha1.VirtualMachineList{}
+func (r *ReconcileVirtualMachineService) GetVirtualMachinesSelectedByVmService(ctx goctx.Context, vmService *vmopv1alpha1.VirtualMachineService) (*vmopv1alpha1.VirtualMachineList, error) {
+	vmList := &vmopv1alpha1.VirtualMachineList{}
 	err := r.List(ctx, vmList, client.InNamespace(vmService.Namespace), client.MatchingLabels(vmService.Spec.Selector))
 	return vmList, err
 }
 
 // getVMsReferencedByServiceEndpoints gets all VMs that are referenced by service endpoints
 // returns a map, key is the VM uid and value is a boolean value indicating whether this VM is included in the endpoint subsets.
-func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(ctx goctx.Context, service *corev1.Service) (map[types.UID]bool, error) {
+func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(ctx *context.VirtualMachineServiceContext, service *corev1.Service) (map[types.UID]bool, error) {
 	currentEndpoints := &corev1.Endpoints{}
-
 	if err := r.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, currentEndpoints); err != nil {
-		r.log.Error(err, "Failed to get endpoints.", "name", service.Name, "namespace", service.Namespace)
+		ctx.Logger.Error(err, "Failed to get Endpoints")
 		return map[types.UID]bool{}, err
 	}
 
@@ -612,10 +556,10 @@ func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(ctx 
 }
 
 // TODO: This mapping function has the potential to be a performance and scaling issue.  Consider this as a candidate for profiling
-func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtualMachine(ctx goctx.Context, lookupVm *vmoperatorv1alpha1.VirtualMachine) ([]*vmoperatorv1alpha1.VirtualMachineService, error) {
-	var matchingVmServices []*vmoperatorv1alpha1.VirtualMachineService
+func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtualMachine(ctx goctx.Context, lookupVm *vmopv1alpha1.VirtualMachine) ([]*vmopv1alpha1.VirtualMachineService, error) {
+	var matchingVmServices []*vmopv1alpha1.VirtualMachineService
 
-	matchFunc := func(vmService *vmoperatorv1alpha1.VirtualMachineService) error {
+	matchFunc := func(vmService *vmopv1alpha1.VirtualMachineService) error {
 		vmList, err := r.GetVirtualMachinesSelectedByVmService(ctx, vmService)
 		if err != nil {
 			return err
@@ -635,7 +579,7 @@ func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtu
 		return nil
 	}
 
-	vmServiceList := &vmoperatorv1alpha1.VirtualMachineServiceList{}
+	vmServiceList := &vmopv1alpha1.VirtualMachineServiceList{}
 	err := r.List(ctx, vmServiceList, client.InNamespace(lookupVm.Namespace))
 	if err != nil {
 		return nil, err
@@ -653,12 +597,11 @@ func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtu
 }
 
 // UpdateEndpoints updates the service endpoints for VirtualMachineService. This is done by running the readiness probe against all the VMs and adding the successful VMs to the endpoint.
-func (r *ReconcileVirtualMachineService) UpdateEndpoints(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, service *corev1.Service) error {
-	logger := r.log.WithValues("vmServiceName", vmService.NamespacedName())
-	logger.V(5).Info("Updating VirtualMachineService endpoints")
-	defer logger.V(5).Info("Finished updating VirtualMachineService endpoints")
+func (r *ReconcileVirtualMachineService) UpdateEndpoints(ctx *context.VirtualMachineServiceContext, service *corev1.Service) error {
+	ctx.Logger.V(5).Info("Updating VirtualMachineService endpoints")
+	defer ctx.Logger.V(5).Info("Finished updating VirtualMachineService endpoints")
 
-	subsets, err := r.generateSubsetsForService(ctx, service, vmService, logger)
+	subsets, err := r.generateSubsetsForService(ctx, service)
 	if err != nil {
 		return err
 	}
@@ -671,7 +614,7 @@ func (r *ReconcileVirtualMachineService) UpdateEndpoints(ctx goctx.Context, vmSe
 	err = r.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, currentEndpoints)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			logger.Error(err, "Failed to list endpoints")
+			ctx.Logger.Error(err, "Failed to list endpoints")
 			return err
 		}
 
@@ -686,41 +629,33 @@ func (r *ReconcileVirtualMachineService) UpdateEndpoints(ctx goctx.Context, vmSe
 		// we expect the endpoint subsets to always be in canonical order. However, some controller is re-ordering these endpoint subsets. We sort both
 		// sides for a consistent comparison result. PR: 2623292
 
-		logger.V(5).Info("No change, no need to update endpoints", "endpoints", currentEndpoints)
+		ctx.Logger.V(5).Info("No change, no need to update endpoints", "endpoints", currentEndpoints)
 		return nil
 	}
 
-	newEndpoints := r.makeEndpoints(vmService, currentEndpoints, subsets)
+	newEndpoints := r.makeEndpoints(ctx.VMService, currentEndpoints, subsets)
 
 	createEndpoints := len(currentEndpoints.ResourceVersion) == 0
 
-	logger.V(5).Info("EndpointSubsets have diverged. Will trigger Endpoint Create or Update", "currentEndpoints", currentEndpoints, "newEndpoints", newEndpoints, "isCreate", createEndpoints)
+	ctx.Logger.V(5).Info("EndpointSubsets have diverged. Will trigger Endpoint Create or Update",
+		"currentEndpoints", currentEndpoints, "newEndpoints", newEndpoints, "isCreate", createEndpoints)
 
 	if createEndpoints {
-		logger.Info("Creating service endpoints", "endpoints", newEndpoints)
+		ctx.Logger.Info("Creating service endpoints", "endpoints", newEndpoints)
 		err = r.Create(ctx, newEndpoints)
 	} else {
-		logger.Info("Updating service endpoints", "endpoints", newEndpoints)
+		ctx.Logger.Info("Updating service endpoints", "endpoints", newEndpoints)
 		err = r.Update(ctx, newEndpoints)
 	}
 
-	if err != nil {
-		if createEndpoints && errors.IsForbidden(err) {
-			// A request is forbidden primarily for two reasons:
-			// 1. namespace is terminating, endpoint creation is not allowed by default.
-			// 2. policy is mis-configured, in which case no service would function anywhere.
-			// Given the frequency of 1, we logger at a lower level.
-			logger.V(5).Info("Forbidden from creating endpoints", "error", err.Error())
-		}
-		return err
-	}
-	return nil
+	return err
 }
 
 // generateSubsetsForService generates endpoint subsets for a given service.
-func (r *ReconcileVirtualMachineService) generateSubsetsForService(ctx goctx.Context, service *corev1.Service,
-	vmService *vmoperatorv1alpha1.VirtualMachineService, logger logr.Logger) ([]corev1.EndpointSubset, error) {
-	vmList, err := r.GetVirtualMachinesSelectedByVmService(ctx, vmService)
+func (r *ReconcileVirtualMachineService) generateSubsetsForService(
+	ctx *context.VirtualMachineServiceContext, service *corev1.Service) ([]corev1.EndpointSubset, error) {
+
+	vmList, err := r.GetVirtualMachinesSelectedByVmService(ctx, ctx.VMService)
 	if err != nil {
 		return []corev1.EndpointSubset{}, err
 	}
@@ -731,8 +666,9 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(ctx goctx.Con
 
 	for i := range vmList.Items {
 		vm := vmList.Items[i]
-		logger := logger.WithValues("virtualmachine", vm.NamespacedName())
+		logger := ctx.Logger.WithValues("virtualMachine", vm.NamespacedName())
 		logger.V(5).Info("Resolving ports for VirtualMachine")
+
 		// Skip VM's marked for deletions
 		if !vm.DeletionTimestamp.IsZero() {
 			logger.Info("Skipping VM marked for deletion")
@@ -756,7 +692,7 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(ctx goctx.Con
 		// If this VM isn't in the old endpoint subsets, we skip it.
 		// Otherwise, we consider this VM as ready and add it to the subset.
 		if vm.Spec.ReadinessProbe != nil {
-			if condition := conditions.Get(&vm, vmoperatorv1alpha1.ReadyCondition); condition == nil {
+			if condition := conditions.Get(&vm, vmopv1alpha1.ReadyCondition); condition == nil {
 				// Ready condition type is missing in VM status
 				// Don't update endpoint subsets for this VM
 				if !vmInSubsetsMapSet {
@@ -801,18 +737,18 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(ctx goctx.Con
 }
 
 // UpdateVmServiceStatus updates the VirtualMachineService status, syncs external IP for loadbalancer type of service. Also ensures that VirtualMachineService contains the VM operator annotations.
-func (r *ReconcileVirtualMachineService) UpdateVmService(ctx goctx.Context, vmService *vmoperatorv1alpha1.VirtualMachineService, newService *corev1.Service) error {
-	r.log.V(5).Info("Updating VirtualMachineService Status", "name", vmService.NamespacedName())
-	defer r.log.V(5).Info("Finished updating VirtualMachineService Status", "name", vmService.NamespacedName())
+func (r *ReconcileVirtualMachineService) UpdateVmService(ctx *context.VirtualMachineServiceContext, newService *corev1.Service) error {
+	ctx.Logger.V(5).Info("Updating VirtualMachineService Status")
+	defer ctx.Logger.V(5).Info("Finished updating VirtualMachineService Status")
 
-	newVMService := vmService.DeepCopy()
+	newVMService := ctx.VMService.DeepCopy()
 
 	// Update the load balancer's external IP.
-	if newVMService.Spec.Type == vmoperatorv1alpha1.VirtualMachineServiceTypeLoadBalancer {
+	if newVMService.Spec.Type == vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer {
 		//copy service ingress array to vm service ingress array
-		newVMService.Status.LoadBalancer.Ingress = make([]vmoperatorv1alpha1.LoadBalancerIngress, len(newService.Status.LoadBalancer.Ingress))
+		newVMService.Status.LoadBalancer.Ingress = make([]vmopv1alpha1.LoadBalancerIngress, len(newService.Status.LoadBalancer.Ingress))
 		for idx, ingress := range newService.Status.LoadBalancer.Ingress {
-			vmIngress := vmoperatorv1alpha1.LoadBalancerIngress{
+			vmIngress := vmopv1alpha1.LoadBalancerIngress{
 				IP:       ingress.IP,
 				Hostname: ingress.Hostname,
 			}
@@ -821,10 +757,10 @@ func (r *ReconcileVirtualMachineService) UpdateVmService(ctx goctx.Context, vmSe
 	}
 
 	// We need to compare Status subresource separately since updating the object will not update the subresource itself.
-	if !apiequality.Semantic.DeepEqual(vmService.Status, newVMService.Status) {
-		r.log.V(5).Info("Updating the vmService status", "vmService", newVMService)
+	if !apiequality.Semantic.DeepEqual(ctx.VMService.Status, newVMService.Status) {
+		ctx.Logger.V(5).Info("Updating the vmService status", "vmService", newVMService)
 		if err := r.Status().Update(ctx, newVMService); err != nil {
-			r.log.Error(err, "Error in updating the vmService status", "vmService", newVMService)
+			ctx.Logger.Error(err, "Error updating VirtualMachineService status")
 			return err
 		}
 	}
@@ -832,10 +768,10 @@ func (r *ReconcileVirtualMachineService) UpdateVmService(ctx goctx.Context, vmSe
 	pkg.AddAnnotations(&newVMService.ObjectMeta)
 
 	// Update the resource to reflect the Annotations.
-	if !apiequality.Semantic.DeepEqual(vmService.ObjectMeta, newVMService.ObjectMeta) {
-		r.log.V(5).Info("Updating the vmService resource", "vmService", newVMService)
+	if !apiequality.Semantic.DeepEqual(ctx.VMService.ObjectMeta, newVMService.ObjectMeta) {
+		ctx.Logger.V(5).Info("Updating the vmService resource", "vmService", newVMService)
 		if err := r.Update(ctx, newVMService); err != nil {
-			r.log.Error(err, "Error in updating vmService resource", "vmService", newVMService)
+			ctx.Logger.Error(err, "Error updating VirtualMachineService", "vmService", newVMService)
 			return err
 		}
 	}

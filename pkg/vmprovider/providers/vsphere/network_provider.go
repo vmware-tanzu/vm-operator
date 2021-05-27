@@ -11,27 +11,50 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/pkg/errors"
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 )
+
+// IPFamily represents the IP Family (IPv4 or IPv6). This type is used
+// to express the family of an IP expressed by a type (i.e. service.Spec.IPFamily)
+// NOTE: Copied from k8s.io/api/core/v1" because VM Operator is using old version
+type IPFamily string
+
+const (
+	// IPv4Protocol indicates that this IP is IPv4 protocol
+	IPv4Protocol IPFamily = "IPv4"
+	// IPv6Protocol indicates that this IP is IPv6 protocol
+	IPv6Protocol IPFamily = "IPv6"
+)
+
+// IPConfig represents an IP configuration.
+type IPConfig struct {
+	// IP setting.
+	IP string
+	// IPFamily specifies the IP family (IPv4 vs IPv6) the IP belongs to.
+	IPFamily IPFamily
+	// Gateway setting.
+	Gateway string
+	// SubnetMask setting.
+	SubnetMask string
+}
 
 const (
 	NsxtNetworkType = "nsx-t"
@@ -42,74 +65,101 @@ const (
 	retryTimeout            = 15 * time.Second
 )
 
-// NetworkProvider sets up network for different type of network
-type NetworkProvider interface {
-	// CreateVnic creates the VirtualEthernetCard for the network interface
-	CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (vimtypes.BaseVirtualDevice, error)
-
-	// GetInterfaceGuestCustomization returns the CustomizationAdapterMapping for the network interface
-	GetInterfaceGuestCustomization(vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (*vimtypes.CustomizationAdapterMapping, error)
+type NetworkInterfaceInfo struct {
+	Device          vimtypes.BaseVirtualDevice
+	Customization   *vimtypes.CustomizationAdapterMapping
+	IPConfiguration IPConfig
 }
 
-// GetNetworkProvider returns the network provider based on the vmNif providerRef and network type
-func GetNetworkProvider(vif *v1alpha1.VirtualMachineNetworkInterface, k8sClient ctrlruntime.Client,
-	vimClient *vim25.Client, finder *find.Finder, cluster *object.ClusterComputeResource, scheme *runtime.Scheme) (NetworkProvider, error) {
+type NetworkInterfaceInfoList []NetworkInterfaceInfo
 
-	// Until we determine a way to handle NSX-t for Netop and NCP
-	// Workaround: if a valid NetOp Type is provided use NetOpNetworkProvider
-	if vif.ProviderRef != nil {
-		netOpNetworkIf := &netopv1alpha1.NetworkInterface{}
+func (l NetworkInterfaceInfoList) GetVirtualDeviceList() object.VirtualDeviceList {
+	var devList object.VirtualDeviceList
+	for _, info := range l {
+		devList = append(devList, info.Device.(vimtypes.BaseVirtualDevice))
+	}
+	return devList
+}
 
-		gvk, err := apiutil.GVKForObject(netOpNetworkIf, scheme)
+func (l NetworkInterfaceInfoList) GetInterfaceCustomizations() []vimtypes.CustomizationAdapterMapping {
+	var mappings []vimtypes.CustomizationAdapterMapping
+	for _, info := range l {
+		mappings = append(mappings, *info.Customization)
+	}
+	return mappings
+}
+
+func (l NetworkInterfaceInfoList) GetIPConfigs() []IPConfig {
+	var ipConfigs []IPConfig
+	for _, info := range l {
+		ipConfigs = append(ipConfigs, info.IPConfiguration)
+	}
+	return ipConfigs
+}
+
+// NetworkProvider sets up network for different type of network
+type NetworkProvider interface {
+	// EnsureNetworkInterface returns the NetworkInterfaceInfo for the vif.
+	EnsureNetworkInterface(vmCtx VMContext, vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*NetworkInterfaceInfo, error)
+}
+
+type networkProvider struct {
+	nsxt  NetworkProvider
+	netOp NetworkProvider
+	named NetworkProvider
+
+	scheme *runtime.Scheme
+}
+
+func NewNetworkProvider(
+	k8sClient ctrlruntime.Client,
+	vimClient *vim25.Client,
+	finder *find.Finder,
+	cluster *object.ClusterComputeResource,
+	scheme *runtime.Scheme) NetworkProvider {
+
+	return &networkProvider{
+		nsxt:   newNsxtNetworkProvider(k8sClient, finder, cluster, scheme),
+		netOp:  newNetOpNetworkProvider(k8sClient, vimClient, finder, cluster, scheme),
+		named:  newNamedNetworkProvider(finder),
+		scheme: scheme,
+	}
+}
+
+func (np *networkProvider) EnsureNetworkInterface(vmCtx VMContext, vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*NetworkInterfaceInfo, error) {
+	if providerRef := vif.ProviderRef; providerRef != nil {
+		// ProviderRef is only supported for NetOP types.
+		gvk, err := apiutil.GVKForObject(&netopv1alpha1.NetworkInterface{}, np.scheme)
 		if err != nil {
 			return nil, errors.Wrapf(err, "cannot get GroupVersionKind for NetworkInterface object")
 		}
 
-		if gvk.Group != vif.ProviderRef.APIGroup {
-			err := fmt.Errorf("unsupported APIGroup for ProviderRef: %+v Supported: %+v", vif.ProviderRef.APIGroup, gvk.Group)
+		if gvk.Group != providerRef.APIGroup || gvk.Version != providerRef.APIVersion || gvk.Kind != providerRef.Kind {
+			err := fmt.Errorf("unsupported NetworkInterface ProviderRef: %+v Supported: %+v", providerRef, gvk)
 			return nil, err
 		}
 
-		return NetOpNetworkProvider(k8sClient, vimClient, finder, cluster, scheme), nil
+		return np.netOp.EnsureNetworkInterface(vmCtx, vif)
 	}
 
-	return NetworkProviderByType(vif.NetworkType, k8sClient, vimClient, finder, cluster, scheme)
-}
-
-// NetworkProviderByType returns the network provider based on network type
-func NetworkProviderByType(networkType string, k8sClient ctrlruntime.Client, vimClient *vim25.Client,
-	finder *find.Finder, cluster *object.ClusterComputeResource, scheme *runtime.Scheme) (NetworkProvider, error) {
-
-	// TODO VMSVC-295: Need way to determine to use NetOP for NSXT
-	switch networkType {
+	switch vif.NetworkType {
 	case NsxtNetworkType:
-		return NsxtNetworkProvider(k8sClient, finder, cluster), nil
+		return np.nsxt.EnsureNetworkInterface(vmCtx, vif)
 	case VdsNetworkType:
-		return NetOpNetworkProvider(k8sClient, vimClient, finder, cluster, scheme), nil
+		return np.netOp.EnsureNetworkInterface(vmCtx, vif)
 	case "":
-		return DefaultNetworkProvider(finder), nil
+		return np.named.EnsureNetworkInterface(vmCtx, vif)
+	default:
+		return nil, fmt.Errorf("failed to create network provider for network type %q", vif.NetworkType)
 	}
-	return nil, fmt.Errorf("failed to create network provider for network type '%s'", networkType)
 }
 
-func getEthCardType(vif *v1alpha1.VirtualMachineNetworkInterface) string {
-	if vif.EthernetCardType != "" {
-		return vif.EthernetCardType
+// createEthernetCard creates an ethernet card with the network reference backing
+func createEthernetCard(ctx context.Context, network object.NetworkReference, ethCardType string) (vimtypes.BaseVirtualDevice, error) {
+	if ethCardType == "" {
+		ethCardType = defaultEthernetCardType
 	}
-	return defaultEthernetCardType
-}
 
-// createVnicOnNamedNetwork creates vnic on named network
-func createVnicOnNamedNetwork(ctx context.Context, networkName, ethCardType string, finder *find.Finder) (vimtypes.BaseVirtualDevice, error) {
-	networkRef, err := finder.Network(ctx, networkName)
-	if err != nil {
-		return nil, errors.Wrapf(err, "unable to find network %q", networkName)
-	}
-	return createCommonVnic(ctx, networkRef, ethCardType)
-}
-
-// createCommonVnic creates an ethernet card on a given the network reference
-func createCommonVnic(ctx context.Context, network object.NetworkReference, ethCardType string) (vimtypes.BaseVirtualDevice, error) {
 	backing, err := network.EthernetCardBackingInfo(ctx)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to get ethernet card backing info for network %v", network.Reference())
@@ -123,33 +173,63 @@ func createCommonVnic(ctx context.Context, network object.NetworkReference, ethC
 	return dev, nil
 }
 
-// DefaultNetworkProvider returns a defaultNetworkProvider instance
-func DefaultNetworkProvider(finder *find.Finder) *defaultNetworkProvider {
-	return &defaultNetworkProvider{
+func configureEthernetCard(ethDev vimtypes.BaseVirtualDevice, externalID, macAddress string) {
+	card := ethDev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+
+	card.ExternalId = externalID
+	if macAddress != "" {
+		card.MacAddress = macAddress
+		card.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
+	} else {
+		card.AddressType = string(vimtypes.VirtualEthernetCardMacTypeGenerated)
+	}
+}
+
+func newNamedNetworkProvider(finder *find.Finder) *namedNetworkProvider {
+	return &namedNetworkProvider{
 		finder: finder,
 	}
 }
 
-type defaultNetworkProvider struct {
+type namedNetworkProvider struct {
 	finder *find.Finder
 }
 
-func (np *defaultNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (vimtypes.BaseVirtualDevice, error) {
-	return createVnicOnNamedNetwork(ctx, vif.NetworkName, getEthCardType(vif), np.finder)
-}
+func (np *namedNetworkProvider) EnsureNetworkInterface(
+	vmCtx VMContext,
+	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*NetworkInterfaceInfo, error) {
 
-func (np *defaultNetworkProvider) GetInterfaceGuestCustomization(vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (*vimtypes.CustomizationAdapterMapping, error) {
-	return &vimtypes.CustomizationAdapterMapping{
-		Adapter: vimtypes.CustomizationIPSettings{
-			Ip: &vimtypes.CustomizationDhcpIpGenerator{},
+	networkRef, err := np.finder.Network(vmCtx, vif.NetworkName)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to find network %q", vif.NetworkName)
+	}
+
+	ethDev, err := createEthernetCard(vmCtx, networkRef, vif.EthernetCardType)
+	if err != nil {
+		return nil, err
+	}
+
+	return &NetworkInterfaceInfo{
+		Device: ethDev,
+		Customization: &vimtypes.CustomizationAdapterMapping{
+			Adapter: vimtypes.CustomizationIPSettings{
+				Ip: &vimtypes.CustomizationDhcpIpGenerator{},
+			},
 		},
+		IPConfiguration: IPConfig{},
 	}, nil
 }
 
 // +kubebuilder:rbac:groups=netoperator.vmware.com,resources=networkinterfaces;vmxnet3networkinterfaces,verbs=get;list;watch;create;update;patch;delete
 
-// NetOpNetworkProvider returns a netOpNetworkProvider instance
-func NetOpNetworkProvider(k8sClient ctrlruntime.Client, vimClient *vim25.Client, finder *find.Finder, cluster *object.ClusterComputeResource, scheme *runtime.Scheme) *netOpNetworkProvider {
+// newNetOpNetworkProvider returns a netOpNetworkProvider instance
+func newNetOpNetworkProvider(
+	k8sClient ctrlruntime.Client,
+	vimClient *vim25.Client,
+	finder *find.Finder,
+	cluster *object.ClusterComputeResource,
+	scheme *runtime.Scheme) *netOpNetworkProvider {
+
 	return &netOpNetworkProvider{
 		k8sClient: k8sClient,
 		scheme:    scheme,
@@ -167,100 +247,48 @@ type netOpNetworkProvider struct {
 	cluster   *object.ClusterComputeResource
 }
 
-func netOpEthCardType(_ string) netopv1alpha1.NetworkInterfaceType {
-	// Only type available.
-	return netopv1alpha1.NetworkInterfaceTypeVMXNet3
-}
-
-func (np *netOpNetworkProvider) generateNetIfName(networkName, vmName string) string {
-	// BMV: This is similar to what NSX does but isn't really right: we can only have one
-	// interface per network. Although if we had multiple interfaces per network, we really
-	// don't have a way to identify each NIC so true reconciliation is broken. We might
-	// later be able to use the ExternalId to correctly associate interfaces.
+// BMV: This is similar to what NSX does but isn't really right: we can only have one
+// interface per network. Although if we had multiple interfaces per network, we really
+// don't have a way to identify each NIC so true reconciliation is broken.
+func (np *netOpNetworkProvider) networkInterfaceName(networkName, vmName string) string {
 	return fmt.Sprintf("%s-%s", networkName, vmName)
 }
 
-// createNetworkInterface creates a netop NetworkInterface for a given VM network interface
-func (np *netOpNetworkProvider) createNetworkInterface(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmIf *v1alpha1.VirtualMachineNetworkInterface) (*netopv1alpha1.NetworkInterface, error) {
-	var netIf *netopv1alpha1.NetworkInterface
-	var err error
+// createNetworkInterface creates a NetOP NetworkInterface for the VM network interface
+func (np *netOpNetworkProvider) createNetworkInterface(
+	vmCtx VMContext,
+	vmIf *vmopv1alpha1.VirtualMachineNetworkInterface) (*netopv1alpha1.NetworkInterface, error) {
 
-	// Create NetIf when ProviderRef is unset
 	if vmIf.ProviderRef == nil {
-		networkName := vmIf.NetworkName
-		netIf = &netopv1alpha1.NetworkInterface{
+		// Create or Update our NetworkInterface CR when ProviderRef is unset.
+		netIf := &netopv1alpha1.NetworkInterface{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      np.generateNetIfName(networkName, vm.Name),
-				Namespace: vm.Namespace,
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						Name:       vm.Name,
-						APIVersion: vm.APIVersion,
-						Kind:       vm.Kind,
-						UID:        vm.UID,
-					},
-				},
-			},
-			Spec: netopv1alpha1.NetworkInterfaceSpec{
-				NetworkName: networkName,
-				Type:        netOpEthCardType(vmIf.EthernetCardType),
+				Name:      np.networkInterfaceName(vmIf.NetworkName, vmCtx.VM.Name),
+				Namespace: vmCtx.VM.Namespace,
 			},
 		}
 
-		err := np.k8sClient.Create(ctx, netIf)
+		// The only type defined by NetOP (but it doesn't care).
+		cardType := netopv1alpha1.NetworkInterfaceTypeVMXNet3
+
+		_, err := controllerutil.CreateOrUpdate(vmCtx, np.k8sClient, netIf, func() error {
+			if err := controllerutil.SetOwnerReference(vmCtx.VM, netIf, np.scheme); err != nil {
+				return err
+			}
+
+			netIf.Spec = netopv1alpha1.NetworkInterfaceSpec{
+				NetworkName: vmIf.NetworkName,
+				Type:        cardType,
+			}
+			return nil
+		})
+
 		if err != nil {
-			if !k8serrors.IsAlreadyExists(err) {
-				return nil, err
-			}
-
-			instance := &netopv1alpha1.NetworkInterface{}
-			err := np.k8sClient.Get(ctx, types.NamespacedName{Name: netIf.Name, Namespace: netIf.Namespace}, instance)
-			if err != nil {
-				return nil, err
-			}
-
-			instance.SetOwnerReferences([]metav1.OwnerReference{
-				{
-					Name:       vm.Name,
-					APIVersion: vm.APIVersion,
-					Kind:       vm.Kind,
-					UID:        vm.UID,
-				},
-			})
-
-			if err := np.k8sClient.Update(ctx, instance); err != nil {
-				return nil, err
-			}
+			return nil, err
 		}
 	}
 
-	netIf, err = np.waitForNetworkInterfaceStatus(ctx, vm, vmIf)
-	if err != nil {
-		return nil, err
-	}
-	return netIf, nil
-}
-
-func (np *netOpNetworkProvider) getNetOpNetIf(ctx context.Context, providerRef *v1alpha1.NetworkInterfaceProviderReference, vmNamespace string) (*netopv1alpha1.NetworkInterface, error) {
-	netOpNetworkIf := &netopv1alpha1.NetworkInterface{}
-
-	gvk, err := apiutil.GVKForObject(netOpNetworkIf, np.scheme)
-	if err != nil {
-		return nil, errors.Wrapf(err, "cannot get GroupVersionKind for NetworkInterface object")
-	}
-
-	if gvk.Group != providerRef.APIGroup || gvk.Version != providerRef.APIVersion || gvk.Kind != providerRef.Kind {
-		err := fmt.Errorf("unsupported NetworkInterface ProviderRef: %+v Supported: %+v", providerRef, gvk)
-		return nil, err
-	}
-
-	key := types.NamespacedName{Name: providerRef.Name, Namespace: vmNamespace}
-	if err := np.k8sClient.Get(ctx, key, netOpNetworkIf); err != nil {
-		return nil, errors.Wrapf(err, "cannot get NetworkInterface %s from ProviderRef", key)
-	}
-
-	return netOpNetworkIf, nil
+	return np.waitForReadyNetworkInterface(vmCtx, vmIf)
 }
 
 func (np *netOpNetworkProvider) networkForPortGroupId(portGroupId string) (object.NetworkReference, error) {
@@ -283,54 +311,63 @@ func (np *netOpNetworkProvider) getNetworkRef(ctx context.Context, networkType, 
 	}
 }
 
-func (np *netOpNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vif *v1alpha1.VirtualMachineNetworkInterface) (vimtypes.BaseVirtualDevice, error) {
+func (np *netOpNetworkProvider) createEthernetCard(
+	vmCtx VMContext,
+	vif *vmopv1alpha1.VirtualMachineNetworkInterface,
+	netIf *netopv1alpha1.NetworkInterface) (vimtypes.BaseVirtualDevice, error) {
 
-	netIf, err := np.createNetworkInterface(ctx, vm, vif)
+	networkRef, err := np.getNetworkRef(vmCtx, vif.NetworkType, netIf.Status.NetworkID)
 	if err != nil {
 		return nil, err
 	}
 
-	if netIf.Status.NetworkID == "" {
-		err = fmt.Errorf("failed to get NetworkID for netIf '%+v'", netIf)
-		log.Error(err, "Failed to get NetworkID for netIf")
-		return nil, err
-	}
-
-	networkRef, err := np.getNetworkRef(ctx, vif.NetworkType, netIf.Status.NetworkID)
+	ethDev, err := createEthernetCard(vmCtx, networkRef, vif.EthernetCardType)
 	if err != nil {
 		return nil, err
 	}
 
-	dev, err := createCommonVnic(ctx, networkRef, getEthCardType(vif))
-	if err != nil {
-		return nil, err
-	}
+	configureEthernetCard(ethDev, netIf.Status.ExternalID, netIf.Status.MacAddress)
 
-	nic := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-	nic.ExternalId = netIf.Status.ExternalID
-	if mac := netIf.Status.MacAddress; mac != "" {
-		nic.MacAddress = mac
-		nic.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
-	} else {
-		nic.AddressType = string(vimtypes.VirtualEthernetCardMacTypeGenerated)
-	}
-	// TODO
-	// nic.WakeOnLanEnabled =
-	// nic.UptCompatibilityEnabled =
-
-	return dev, nil
+	return ethDev, nil
 }
 
-func (np *netOpNetworkProvider) GetInterfaceGuestCustomization(vm *v1alpha1.VirtualMachine,
-	vmIf *v1alpha1.VirtualMachineNetworkInterface) (*vimtypes.CustomizationAdapterMapping, error) {
+func (np *netOpNetworkProvider) waitForReadyNetworkInterface(
+	vmCtx VMContext,
+	vmIf *vmopv1alpha1.VirtualMachineNetworkInterface) (*netopv1alpha1.NetworkInterface, error) {
 
-	netIf, err := np.waitForNetworkInterfaceStatus(context.Background(), vm, vmIf)
-	if err != nil {
-		return nil, err
+	var name string
+	if vmIf.ProviderRef != nil {
+		name = vmIf.ProviderRef.Name
+	} else {
+		name = np.networkInterfaceName(vmIf.NetworkName, vmCtx.VM.Name)
 	}
 
+	var netIf *netopv1alpha1.NetworkInterface
+	netIfKey := types.NamespacedName{Namespace: vmCtx.VM.Namespace, Name: name}
+
+	// TODO: Watch() this type instead.
+	err := wait.PollImmediate(retryInterval, retryTimeout, func() (bool, error) {
+		instance := &netopv1alpha1.NetworkInterface{}
+		if err := np.k8sClient.Get(vmCtx, netIfKey, instance); err != nil {
+			return false, err
+		}
+
+		for _, cond := range instance.Status.Conditions {
+			if cond.Type == netopv1alpha1.NetworkInterfaceReady && cond.Status == corev1.ConditionTrue {
+				netIf = instance
+				return true, nil
+			}
+		}
+
+		return false, nil
+	})
+
+	return netIf, err
+}
+
+func (np *netOpNetworkProvider) goscCustomization(netIf *netopv1alpha1.NetworkInterface) *vimtypes.CustomizationAdapterMapping {
 	var adapter *vimtypes.CustomizationIPSettings
+
 	if len(netIf.Status.IPConfigs) == 0 {
 		adapter = &vimtypes.CustomizationIPSettings{
 			Ip: &vimtypes.CustomizationDhcpIpGenerator{},
@@ -365,74 +402,76 @@ func (np *netOpNetworkProvider) GetInterfaceGuestCustomization(vm *v1alpha1.Virt
 		}
 	}
 
-	// Note that not all NetworkTypes populate the MacAddress.
+	// Note that NetOP VDS doesn't current specify the MacAddress (we have VC generate it), so we
+	// rely on the customization order matching the sorted bus order that GOSC does. This is quite
+	// brittle, and something we're going to need to revisit. Assuming Reconfigure() generates the
+	// MacAddress, we could later fix up the MacAddress, but interface matching is not straight
+	// forward either (see reconcileVMNicDeviceChanges()).
 	return &vimtypes.CustomizationAdapterMapping{
 		MacAddress: netIf.Status.MacAddress,
 		Adapter:    *adapter,
+	}
+}
+
+func (np *netOpNetworkProvider) EnsureNetworkInterface(
+	vmCtx VMContext,
+	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*NetworkInterfaceInfo, error) {
+
+	netIf, err := np.createNetworkInterface(vmCtx, vif)
+	if err != nil {
+		return nil, err
+	}
+
+	ethDev, err := np.createEthernetCard(vmCtx, vif, netIf)
+	if err != nil {
+		return nil, err
+	}
+
+	return &NetworkInterfaceInfo{
+		Device:          ethDev,
+		Customization:   np.goscCustomization(netIf),
+		IPConfiguration: np.getIPConfig(netIf),
 	}, nil
 }
 
-func (np *netOpNetworkProvider) netIfIsReady(netIf *netopv1alpha1.NetworkInterface) bool {
-	for _, cond := range netIf.Status.Conditions {
-		if cond.Type == netopv1alpha1.NetworkInterfaceReady {
-			return cond.Status == corev1.ConditionTrue
+func (np *netOpNetworkProvider) getIPConfig(netIf *netopv1alpha1.NetworkInterface) IPConfig {
+	var ipConfig IPConfig
+	if len(netIf.Status.IPConfigs) > 0 {
+		ipConfig = IPConfig{
+			IP:         netIf.Status.IPConfigs[0].IP,
+			Gateway:    netIf.Status.IPConfigs[0].Gateway,
+			SubnetMask: netIf.Status.IPConfigs[0].SubnetMask,
+			IPFamily:   IPFamily(netIf.Status.IPConfigs[0].IPFamily),
 		}
 	}
-	return false
-}
 
-func (np *netOpNetworkProvider) waitForNetworkInterfaceStatus(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmIf *v1alpha1.VirtualMachineNetworkInterface) (*netopv1alpha1.NetworkInterface, error) {
-
-	netIfName := np.generateNetIfName(vmIf.NetworkName, vm.Name)
-
-	// Handling user created networkInterfaces out of the box
-	if vmIf.ProviderRef != nil {
-		netIf, err := np.getNetOpNetIf(ctx, vmIf.ProviderRef, vm.Namespace)
-		if err != nil {
-			return nil, err
-		}
-		netIfName = netIf.Name
-	}
-
-	netIfKey := types.NamespacedName{Namespace: vm.Namespace, Name: netIfName}
-
-	var netIf *netopv1alpha1.NetworkInterface
-	err := wait.PollImmediate(retryInterval, retryTimeout, func() (bool, error) {
-		instance := &netopv1alpha1.NetworkInterface{}
-		err := np.k8sClient.Get(ctx, netIfKey, instance)
-		if err != nil {
-			return false, err
-		}
-
-		if !np.netIfIsReady(instance) {
-			return false, nil
-		}
-
-		netIf = instance
-		return true, nil
-	})
-
-	return netIf, err
+	return ipConfig
 }
 
 type nsxtNetworkProvider struct {
 	k8sClient ctrlruntime.Client
 	finder    *find.Finder
 	cluster   *object.ClusterComputeResource
+	scheme    *runtime.Scheme
 }
 
-// NsxtNetworkProvider returns a nsxtNetworkProvider instance
-func NsxtNetworkProvider(client ctrlruntime.Client, finder *find.Finder, cluster *object.ClusterComputeResource) *nsxtNetworkProvider {
+// newNsxtNetworkProvider returns a nsxtNetworkProvider instance
+func newNsxtNetworkProvider(
+	client ctrlruntime.Client,
+	finder *find.Finder,
+	cluster *object.ClusterComputeResource,
+	scheme *runtime.Scheme) *nsxtNetworkProvider {
+
 	return &nsxtNetworkProvider{
 		k8sClient: client,
 		finder:    finder,
 		cluster:   cluster,
+		scheme:    scheme,
 	}
 }
 
-// GenerateNsxVnetifName generates the vnetif name for the VM
-func (np *nsxtNetworkProvider) GenerateNsxVnetifName(networkName, vmName string) string {
+// virtualNetworkInterfaceName returns the VirtualNetworkInterface name for the VM
+func (np *nsxtNetworkProvider) virtualNetworkInterfaceName(networkName, vmName string) string {
 	vnetifName := fmt.Sprintf("%s-lsp", vmName)
 	if networkName != "" {
 		vnetifName = fmt.Sprintf("%s-%s", networkName, vnetifName)
@@ -440,167 +479,104 @@ func (np *nsxtNetworkProvider) GenerateNsxVnetifName(networkName, vmName string)
 	return vnetifName
 }
 
-// setVnetifOwner sets owner reference for vnetif object
-func (np *nsxtNetworkProvider) setVnetifOwner(vm *v1alpha1.VirtualMachine, vnetif *ncpv1alpha1.VirtualNetworkInterface) {
-	owner := []metav1.OwnerReference{
-		{
-			Name:       vm.Name,
-			APIVersion: vm.APIVersion,
-			Kind:       vm.Kind,
-			UID:        vm.UID,
-		},
-	}
-	vnetif.SetOwnerReferences(owner)
-}
+// createVirtualNetworkInterface creates a NCP VirtualNetworkInterface for a given VM network interface
+func (np *nsxtNetworkProvider) createVirtualNetworkInterface(
+	vmCtx VMContext,
+	vmIf *vmopv1alpha1.VirtualMachineNetworkInterface) (*ncpv1alpha1.VirtualNetworkInterface, error) {
 
-// ownerMatch checks the owner reference for the vnetif object
-// owner of VirtualMachine type should be object vm
-func (np *nsxtNetworkProvider) ownerMatch(vm *v1alpha1.VirtualMachine, vnetif *ncpv1alpha1.VirtualNetworkInterface) bool {
-	match := false
-	for _, owner := range vnetif.GetOwnerReferences() {
-		if owner.Kind != vm.Kind {
-			continue
-		}
-		// TODO: shouldn't we check that owner.UID/vm.UID are not empty?
-		if owner.UID != vm.UID {
-			return false
-		} else {
-			match = true
-		}
-	}
-	return match
-}
-
-// createVirtualNetworkInterface creates a NCP vnetif for a given VM network interface
-func (np *nsxtNetworkProvider) createVirtualNetworkInterface(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmIf *v1alpha1.VirtualMachineNetworkInterface) (*ncpv1alpha1.VirtualNetworkInterface, error) {
-
-	// Create vnetif object
-	vnetif := &ncpv1alpha1.VirtualNetworkInterface{
+	vnetIf := &ncpv1alpha1.VirtualNetworkInterface{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      np.GenerateNsxVnetifName(vmIf.NetworkName, vm.Name),
-			Namespace: vm.Namespace,
-		},
-		Spec: ncpv1alpha1.VirtualNetworkInterfaceSpec{
-			VirtualNetwork: vmIf.NetworkName,
+			Name:      np.virtualNetworkInterfaceName(vmIf.NetworkName, vmCtx.VM.Name),
+			Namespace: vmCtx.VM.Namespace,
 		},
 	}
-	np.setVnetifOwner(vm, vnetif)
 
-	err := np.k8sClient.Create(ctx, vnetif)
-	if err != nil {
-		if !k8serrors.IsAlreadyExists(err) {
-			return nil, err
+	result, err := controllerutil.CreateOrUpdate(vmCtx, np.k8sClient, vnetIf, func() error {
+		if err := controllerutil.SetOwnerReference(vmCtx.VM, vnetIf, np.scheme); err != nil {
+			return err
 		}
-		// Update owner reference if vnetif already exist
-		currentVnetIf := &ncpv1alpha1.VirtualNetworkInterface{}
-		err := np.k8sClient.Get(ctx, types.NamespacedName{Namespace: vm.Namespace, Name: vnetif.Name}, currentVnetIf)
-		if err != nil {
-			return nil, err
-		}
-		if !np.ownerMatch(vm, currentVnetIf) {
-			copiedVnetif := currentVnetIf.DeepCopy()
-			np.setVnetifOwner(vm, copiedVnetif)
-			err := np.k8sClient.Update(ctx, copiedVnetif)
-			if err != nil {
-				return nil, err
-			}
-		}
-	} else {
-		log.Info("Successfully created a VirtualNetworkInterface",
-			"VirtualMachine", vm.NamespacedName(),
-			"VirtualNetworkInterface", types.NamespacedName{Namespace: vm.Namespace, Name: vnetif.Name})
-	}
 
-	// Wait until the vnetif status is available
-	// TODO: Rather than synchronously block here, place a watch on the VirtualNetworkInterface
-	result, err := np.waitForVnetIfStatus(ctx, vm.Namespace, vmIf.NetworkName, vm.Name)
+		vnetIf.Spec.VirtualNetwork = vmIf.NetworkName
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-	return result, nil
-}
 
-// vnetifIsReady checks the readiness of vnetif object
-func (np *nsxtNetworkProvider) vnetifIsReady(vnetif *ncpv1alpha1.VirtualNetworkInterface) bool {
-	for _, condition := range vnetif.Status.Conditions {
-		if !strings.Contains(condition.Type, "Ready") {
-			continue
-		}
-		return strings.Contains(condition.Status, "True")
+	if result == controllerutil.OperationResultCreated {
+		vmCtx.Logger.Info("Successfully created VirtualNetworkInterface",
+			"name", types.NamespacedName{Namespace: vnetIf.Namespace, Name: vnetIf.Name})
 	}
-	return false
+
+	return np.waitForReadyVirtualNetworkInterface(vmCtx, vmIf)
 }
 
-// waitForVnetIfStatus will poll until the vnetif object's status becomes ready
-func (np *nsxtNetworkProvider) waitForVnetIfStatus(ctx context.Context, namespace, networkName, vmName string) (*ncpv1alpha1.VirtualNetworkInterface, error) {
-	vnetifName := np.GenerateNsxVnetifName(networkName, vmName)
-	vnetifKey := types.NamespacedName{Namespace: namespace, Name: vnetifName}
+func (np *nsxtNetworkProvider) createEthernetCard(
+	vmCtx VMContext,
+	vif *vmopv1alpha1.VirtualMachineNetworkInterface,
+	vnetIf *ncpv1alpha1.VirtualNetworkInterface) (vimtypes.BaseVirtualDevice, error) {
 
-	var result *ncpv1alpha1.VirtualNetworkInterface
+	if vnetIf.Status.ProviderStatus == nil || vnetIf.Status.ProviderStatus.NsxLogicalSwitchID == "" {
+		err := fmt.Errorf("failed to get for nsx-t opaque network ID for vnetIf '%+v'", vnetIf)
+		vmCtx.Logger.Error(err, "Ready VirtualNetworkInterface did not have expected Status.ProviderStatus")
+		return nil, err
+	}
+
+	networkRef, err := searchNsxtNetworkReference(vmCtx, np.finder, np.cluster, vnetIf.Status.ProviderStatus.NsxLogicalSwitchID)
+	if err != nil {
+		vmCtx.Logger.Error(err, "Failed to search for nsx-t network associated with vnetIf", "vnetIf", vnetIf)
+		return nil, err
+	}
+
+	ethDev, err := createEthernetCard(vmCtx, networkRef, vif.EthernetCardType)
+	if err != nil {
+		return nil, err
+	}
+
+	configureEthernetCard(ethDev, vnetIf.Status.InterfaceID, vnetIf.Status.MacAddress)
+
+	return ethDev, nil
+}
+
+func (np *nsxtNetworkProvider) waitForReadyVirtualNetworkInterface(
+	vmCtx VMContext,
+	vmIf *vmopv1alpha1.VirtualMachineNetworkInterface) (*ncpv1alpha1.VirtualNetworkInterface, error) {
+
+	vnetIfName := np.virtualNetworkInterfaceName(vmIf.NetworkName, vmCtx.VM.Name)
+
+	var vnetIf *ncpv1alpha1.VirtualNetworkInterface
+	vnetIfKey := types.NamespacedName{Namespace: vmCtx.VM.Namespace, Name: vnetIfName}
+
+	// TODO: Watch() this type instead.
 	err := wait.PollImmediate(retryInterval, retryTimeout, func() (bool, error) {
-		vnetif := &ncpv1alpha1.VirtualNetworkInterface{}
-		err := np.k8sClient.Get(ctx, vnetifKey, vnetif)
-		if err != nil {
+		instance := &ncpv1alpha1.VirtualNetworkInterface{}
+		if err := np.k8sClient.Get(vmCtx, vnetIfKey, instance); err != nil {
 			return false, err
 		}
 
-		if !np.vnetifIsReady(vnetif) {
-			return false, nil
+		for _, condition := range instance.Status.Conditions {
+			if strings.Contains(condition.Type, "Ready") && strings.Contains(condition.Status, "True") {
+				vnetIf = instance
+				return true, nil
+			}
 		}
 
-		result = vnetif
-		return true, nil
+		return false, nil
 	})
 
-	return result, err
+	return vnetIf, err
 }
 
-func (np *nsxtNetworkProvider) CreateVnic(ctx context.Context, vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (vimtypes.BaseVirtualDevice, error) {
-	vnetif, err := np.createVirtualNetworkInterface(ctx, vm, vif)
-	if err != nil {
-		log.Error(err, "Failed to create vnetif for vif", "vif", vif)
-		return nil, err
-	}
-	if vnetif.Status.ProviderStatus == nil || vnetif.Status.ProviderStatus.NsxLogicalSwitchID == "" {
-		err = fmt.Errorf("failed to get for nsx-t opaque network ID for vnetif '%+v'", vnetif)
-		log.Error(err, "Failed to get for nsx-t opaque network ID for vnetif")
-		return nil, err
-	}
-
-	networkRef, err := searchNsxtNetworkReference(ctx, np.finder, np.cluster, vnetif.Status.ProviderStatus.NsxLogicalSwitchID)
-	if err != nil {
-		log.Error(err, "Failed to search for nsx-t network associated with vnetif", "vnetif", vnetif)
-		return nil, err
-	}
-
-	// config vnic
-	dev, err := createCommonVnic(ctx, networkRef, getEthCardType(vif))
-	if err != nil {
-		return nil, err
-	}
-
-	nic := dev.(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-	nic.ExternalId = vnetif.Status.InterfaceID
-	nic.MacAddress = vnetif.Status.MacAddress
-	nic.AddressType = string(vimtypes.VirtualEthernetCardMacTypeManual)
-
-	return dev, nil
-}
-
-func (np *nsxtNetworkProvider) GetInterfaceGuestCustomization(vm *v1alpha1.VirtualMachine, vif *v1alpha1.VirtualMachineNetworkInterface) (*vimtypes.CustomizationAdapterMapping, error) {
-	vnetif, err := np.waitForVnetIfStatus(context.Background(), vm.Namespace, vif.NetworkName, vm.Name)
-	if err != nil {
-		return nil, err
-	}
-
+func (np *nsxtNetworkProvider) goscCustomization(vnetIf *ncpv1alpha1.VirtualNetworkInterface) *vimtypes.CustomizationAdapterMapping {
 	var adapter *vimtypes.CustomizationIPSettings
-	if len(vnetif.Status.IPAddresses) == 0 {
+
+	if len(vnetIf.Status.IPAddresses) == 0 {
 		adapter = &vimtypes.CustomizationIPSettings{
 			Ip: &vimtypes.CustomizationDhcpIpGenerator{},
 		}
 	} else {
-		ipAddr := vnetif.Status.IPAddresses[0]
+		ipAddr := vnetIf.Status.IPAddresses[0]
 		adapter = &vimtypes.CustomizationIPSettings{
 			Ip:         &vimtypes.CustomizationFixedIp{IpAddress: ipAddr.IP},
 			SubnetMask: ipAddr.SubnetMask,
@@ -609,9 +585,44 @@ func (np *nsxtNetworkProvider) GetInterfaceGuestCustomization(vm *v1alpha1.Virtu
 	}
 
 	return &vimtypes.CustomizationAdapterMapping{
-		MacAddress: vnetif.Status.MacAddress,
+		MacAddress: vnetIf.Status.MacAddress,
 		Adapter:    *adapter,
+	}
+}
+
+func (np *nsxtNetworkProvider) EnsureNetworkInterface(
+	vmCtx VMContext,
+	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*NetworkInterfaceInfo, error) {
+
+	vnetIf, err := np.createVirtualNetworkInterface(vmCtx, vif)
+	if err != nil {
+		vmCtx.Logger.Error(err, "Failed to create vnetIf for vif", "vif", vif)
+		return nil, err
+	}
+
+	ethDev, err := np.createEthernetCard(vmCtx, vif, vnetIf)
+	if err != nil {
+		return nil, err
+	}
+
+	return &NetworkInterfaceInfo{
+		Device:          ethDev,
+		Customization:   np.goscCustomization(vnetIf),
+		IPConfiguration: np.getIPConfig(vnetIf),
 	}, nil
+}
+
+func (np *nsxtNetworkProvider) getIPConfig(vnetIf *ncpv1alpha1.VirtualNetworkInterface) IPConfig {
+	var ipConfig IPConfig
+	if len(vnetIf.Status.IPAddresses) > 0 {
+		ipAddr := vnetIf.Status.IPAddresses[0]
+		ipConfig.IP = ipAddr.IP
+		ipConfig.Gateway = ipAddr.Gateway
+		ipConfig.SubnetMask = ipAddr.SubnetMask
+		ipConfig.IPFamily = IPv4Protocol
+	}
+
+	return ipConfig
 }
 
 // matchOpaqueNetwork takes the network ID, returns whether the opaque network matches the networkID
@@ -630,35 +641,20 @@ func matchOpaqueNetwork(ctx context.Context, network object.NetworkReference, ne
 	return summary.OpaqueNetworkId == networkID
 }
 
-// Get Host MoIDs for a cluster
-func getClusterHostMoIDs(ctx context.Context, cluster *object.ClusterComputeResource) ([]vimtypes.ManagedObjectReference, error) {
-	var computeResource mo.ComputeResource
-	obj := cluster.Reference()
-
-	// Get the list of ESX host moRef objects for this cluster
-	err := cluster.Properties(ctx, obj, nil, &computeResource)
-	if err != nil {
-		log.Error(err, "Failed to get cluster properties")
-		return nil, err
-	}
-	return computeResource.Host, nil
-}
-
 // matchDistributedPortGroup takes the network ID, returns whether the distributed port group matches the networkID
-func matchDistributedPortGroup(ctx context.Context, cluster *object.ClusterComputeResource, network object.NetworkReference, networkID string) bool {
+func matchDistributedPortGroup(
+	ctx context.Context,
+	network object.NetworkReference,
+	networkID string,
+	hostMoIDs []vimtypes.ManagedObjectReference) bool {
+
 	obj, ok := network.(*object.DistributedVirtualPortgroup)
 	if !ok {
 		return false
 	}
 
-	hostMoIDs, err := getClusterHostMoIDs(ctx, cluster)
-	if err != nil {
-		log.Error(err, "Unable to get the list of hosts for cluster")
-		return false
-	}
-
 	var configInfo []vimtypes.ObjectContent
-	err = obj.Properties(ctx, obj.Reference(), []string{"config.logicalSwitchUuid", "host"}, &configInfo)
+	err := obj.Properties(ctx, obj.Reference(), []string{"config.logicalSwitchUuid", "host"}, &configInfo)
 	if err != nil {
 		return false
 	}
@@ -714,8 +710,16 @@ func searchNsxtNetworkReference(ctx context.Context, finder *find.Finder, cluste
 	if err != nil {
 		return nil, err
 	}
+
+	// Get the list of ESX host moRef objects for this cluster
+	// TODO: ps: []string{"host"} instead of nil?
+	var computeResource mo.ComputeResource
+	if err := cluster.Properties(ctx, cluster.Reference(), nil, &computeResource); err != nil {
+		return nil, err
+	}
+
 	for _, network := range networks {
-		if matchDistributedPortGroup(ctx, cluster, network, networkID) {
+		if matchDistributedPortGroup(ctx, network, networkID, computeResource.Host) {
 			return network, nil
 		}
 		if matchOpaqueNetwork(ctx, network, networkID) {

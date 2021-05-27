@@ -26,6 +26,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
+	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -86,6 +87,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVmVolumeProvisioningOptions(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateReadinessProbe(ctx, vm)...)
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
@@ -146,6 +148,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVmVolumeProvisioningOptions(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateReadinessProbe(ctx, vm)...)
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
@@ -174,14 +177,12 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 	val := vm.Annotations[vsphere.VMOperatorImageSupportedCheckKey]
 	if val != vsphere.VMOperatorImageSupportedCheckDisable {
 		image := vmopv1.VirtualMachineImage{}
-		err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image)
-		if err != nil {
+		if err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image); err != nil {
 			validationErrs = append(validationErrs, fmt.Sprintf("error validating image: %v", err))
 			return validationErrs
 		}
 		if image.Status.ImageSupported != nil && !*image.Status.ImageSupported {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.VMImageNotSupported, image.Spec.OSInfo.Type,
-				image.Name))
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.VirtualMachineImageNotSupported))
 		}
 	}
 
@@ -214,7 +215,7 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 	}
 
 	if len(resourceQuotas.Items) == 0 {
-		validationErrs = append(validationErrs, fmt.Sprintf("no ResourceQuotas assigned to namespace %s", namespace))
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.NoResourceQuota, namespace))
 		return validationErrs
 	}
 
@@ -236,18 +237,37 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 
 	for i, nif := range vm.Spec.NetworkInterfaces {
 		switch nif.NetworkType {
-		case vsphere.NsxtNetworkType, "":
+		case vsphere.NsxtNetworkType:
+			// Empty NetworkName is allowed to let NCP pick the namespace default.
 		case vsphere.VdsNetworkType:
 			if nif.NetworkName == "" {
 				validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, i))
 			}
+		case "":
+			// Must unfortunately allow for testing.
 		default:
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, i))
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, i, vsphere.NsxtNetworkType, vsphere.VdsNetworkType))
 		}
+
 		if _, ok := networkNames[nif.NetworkName]; ok {
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, i))
+		} else {
+			networkNames[nif.NetworkName] = struct{}{}
 		}
-		networkNames[nif.NetworkName] = struct{}{}
+
+		if nif.ProviderRef != nil {
+			// We only support ProviderRef with NetOP types.
+			gvk := netopv1alpha1.SchemeGroupVersion.WithKind(reflect.TypeOf(netopv1alpha1.NetworkInterface{}).Name())
+			if gvk.Group != nif.ProviderRef.APIGroup || gvk.Kind != nif.ProviderRef.Kind {
+				validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeProviderRefNotSupportedFmt, i))
+			}
+		}
+
+		switch nif.EthernetCardType {
+		case "", "pcnet32", "e1000", "e1000e", "vmxnet2", "vmxnet3":
+		default:
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeEthCardTypeNotSupportedFmt, i))
+		}
 	}
 
 	return validationErrs
@@ -274,7 +294,7 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, i, i))
 		} else {
 			if vol.PersistentVolumeClaim != nil {
-				validationErrs = append(validationErrs, v.validateVolumeWithPVC(vm, vol, i)...)
+				validationErrs = append(validationErrs, v.validateVolumeWithPVC(ctx, vm, vol, i)...)
 			} else { // vol.VsphereVolume != nil
 				validationErrs = append(validationErrs, v.validateVsphereVolume(vol.VsphereVolume, i)...)
 			}
@@ -284,8 +304,20 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 	return validationErrs
 }
 
-func (v validator) validateVolumeWithPVC(vm *vmopv1.VirtualMachine, vol vmopv1.VirtualMachineVolume, idx int) []string {
+func (v validator) validateVolumeWithPVC(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine, vol vmopv1.VirtualMachineVolume, idx int) []string {
 	var validationErrs []string
+
+	image := vmopv1.VirtualMachineImage{}
+	err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image)
+	if err != nil {
+		validationErrs = append(validationErrs, fmt.Sprintf("error validating image for PVC: %v", err))
+	}
+
+	// Check that the VirtualMachineImage's hardware version is at least the minimum supported virtual hardware version
+	if image.Spec.HardwareVersion != 0 && image.Spec.HardwareVersion < vsphere.MinSupportedHWVersionForPVC {
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupported,
+			image.Name, image.Spec.HardwareVersion, vsphere.MinSupportedHWVersionForPVC))
+	}
 
 	// Check that the name used for the CnsNodeVmAttachment will be valid. Don't double up errors if name is missing.
 	if vol.Name != "" {
@@ -326,6 +358,23 @@ func (v validator) validateVmVolumeProvisioningOptions(ctx *context.WebhookReque
 			validationErrs = append(validationErrs, messages.EagerZeroedAndThinProvisionedNotSupported)
 		}
 	}
+	return validationErrs
+}
+
+func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
+	probe := vm.Spec.ReadinessProbe
+	if probe == nil {
+		return nil
+	}
+
+	var validationErrs []string
+
+	if probe.TCPSocket == nil && probe.GuestHeartbeat == nil {
+		validationErrs = append(validationErrs, messages.ReadinessProbeNoActions)
+	} else if probe.TCPSocket != nil && probe.GuestHeartbeat != nil {
+		validationErrs = append(validationErrs, messages.ReadinessProbeOnlyOneAction)
+	}
+
 	return validationErrs
 }
 

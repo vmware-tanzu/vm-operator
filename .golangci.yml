@@ -1,4 +1,6 @@
 # This file contains the rules for golangci-lint
+# It's a "copy" of https://opengrok.eng.vmware.com/source/xref/main.perforce.1666/bora/vpx/wcp/wcpsvc/src/server/.gometalinter.json
+# with additional linters.
 
 # options for analysis running
 run:
@@ -18,6 +20,10 @@ linters-settings:
   gocyclo:
     # minimal code complexity to report
     min-complexity: 18
+  goimports:
+    # put imports beginning with prefix after 3rd-party packages;
+    # it's a comma-separated list of prefixes
+    local-prefixes: gitlab.eng.vmware.com/core-build
 
 # linters to enable in addition to the default linters
 linters:

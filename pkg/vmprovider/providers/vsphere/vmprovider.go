@@ -341,11 +341,6 @@ func isATKGImage(systemProperties map[string]string) bool {
 	return false
 }
 
-// libItemVersionAnnotation returns the version annotation value for the item
-func libItemVersionAnnotation(item *library.Item) string {
-	return fmt.Sprintf("%s:%s", item.ID, item.Version)
-}
-
 // ParseVirtualHardwareVersion parses the virtual hardware version
 // For eg. "vmx-15" returns 15.
 func ParseVirtualHardwareVersion(vmxVersion *string) int32 {
@@ -369,6 +364,11 @@ func ParseVirtualHardwareVersion(vmxVersion *string) int32 {
 	return int32(version)
 }
 
+// libItemVersionAnnotation returns the version annotation value for the item
+func libItemVersionAnnotation(item *library.Item) string {
+	return fmt.Sprintf("%s:%s:%d", item.ID, item.Version, VMImageCLVersionAnnotationVersion)
+}
+
 // LibItemToVirtualMachineImage converts a given library item and its attributes to return a
 // VirtualMachineImage that represents a k8s-native view of the item.
 func LibItemToVirtualMachineImage(
@@ -380,6 +380,10 @@ func LibItemToVirtualMachineImage(
 		ts = metav1.NewTime(*item.CreationTime)
 	}
 
+	// NOTE: Whenever a Spec/Status field, label, annotation, etc is added or removed, the or the logic
+	// is changed as to what is set, the VMImageCLVersionAnnotationVersion very, very likely needs to be
+	// incremented so that the VMImageCLVersionAnnotation annotations changes so the updated is actually
+	// updated. This is a hack to reduce repeated ContentLibrary tasks.
 	image := &v1alpha1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              item.Name,

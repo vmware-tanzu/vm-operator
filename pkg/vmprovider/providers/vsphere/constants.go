@@ -41,6 +41,8 @@ const (
 
 	// VirtualMachineImage annotation to cache the last fetched version.
 	VMImageCLVersionAnnotation = pkg.VmOperatorKey + "/content-library-version"
+	// Version of the VMImageCLVersionAnnotation for the VirtualMachineImage.
+	VMImageCLVersionAnnotationVersion = 1
 
 	// 64bitMMIO for Passthrough Devices
 	PCIPassthruMMIOOverrideAnnotation = pkg.VmOperatorKey + "/pci-passthru-64bit-mmio-size"

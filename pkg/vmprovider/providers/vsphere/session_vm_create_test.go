@@ -29,10 +29,9 @@ var _ = Describe("deploy VM", func() {
 				finder := find.NewFinder(c)
 				cluster, err := finder.DefaultClusterComputeResource(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				ids, hwVersion, err := getClusterVMConfigOptions(ctx, cluster, c)
+				ids, err := getClusterVMConfigOptions(ctx, cluster, c)
 				Expect(err).To(BeNil())
 				Expect(ids).ToNot(BeNil())
-				Expect(hwVersion).ToNot(BeNil())
 				return nil
 			})
 			Expect(res).To(BeNil())
@@ -44,7 +43,6 @@ var _ = Describe("deploy VM", func() {
 			vmCtx              VMCloneContext
 			vmConfig           vmprovider.VmConfigArgs
 			vmImage            *vmopv1alpha1.VirtualMachineImage
-			clusterHwVersion   int32
 			guestOSIdsToFamily map[string]string
 			dummyValidOsType   = "dummy_valid_os_type"
 			dummyEmptyOsType   = ""
@@ -76,12 +74,12 @@ var _ = Describe("deploy VM", func() {
 		})
 		It("passes when osType is Linux", func() {
 			vmConfig.VmImage = vmImage
-			Expect(checkVMConfigOptions(vmCtx, vmConfig, clusterHwVersion, guestOSIdsToFamily)).To(Succeed())
+			Expect(checkVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)).To(Succeed())
 		})
 		It("fails when osType is not Linux", func() {
 			vmImage.Spec.OSInfo.Type = dummyWindowsOSType
 			vmConfig.VmImage = vmImage
-			err := checkVMConfigOptions(vmCtx, vmConfig, clusterHwVersion, guestOSIdsToFamily)
+			err := checkVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)
 			Expect(err).To(HaveOccurred())
 			Expect(err).To(MatchError(fmt.Sprintf("image osType '%s' is not "+
 				"supported by VMService", dummyWindowsOSType)))
@@ -89,7 +87,7 @@ var _ = Describe("deploy VM", func() {
 		It("fails when osType is empty", func() {
 			vmImage.Spec.OSInfo.Type = dummyEmptyOsType
 			vmConfig.VmImage = vmImage
-			err := checkVMConfigOptions(vmCtx, vmConfig, clusterHwVersion, guestOSIdsToFamily)
+			err := checkVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)
 			Expect(err).To(HaveOccurred())
 			Expect(err).To(MatchError(fmt.Sprintf("image osType '%s' is not "+
 				"supported by VMService", dummyEmptyOsType)))
@@ -99,21 +97,7 @@ var _ = Describe("deploy VM", func() {
 			vmConfig.VmImage = vmImage
 			vmCtx.VM.Annotations = make(map[string]string)
 			vmCtx.VM.Annotations[VMOperatorImageSupportedCheckKey] = VMOperatorImageSupportedCheckDisable
-			Expect(checkVMConfigOptions(vmCtx, vmConfig, clusterHwVersion, guestOSIdsToFamily)).To(Succeed())
-		})
-		It("fails when hardware version for thc cluster is lower than the image", func() {
-			vmImage.Spec.HardwareVersion = 12
-			vmConfig.VmImage = vmImage
-			err := checkVMConfigOptions(vmCtx, vmConfig, 10, guestOSIdsToFamily)
-			Expect(err).To(HaveOccurred())
-			Expect(err).To(MatchError(fmt.Sprintf("image has a hardware version '%d' higher than "+
-				"cluster's default hardware version '%d'", 12, 10)))
-		})
-
-		It("passes when hardware version for thc cluster higher than the image", func() {
-			vmImage.Spec.HardwareVersion = 12
-			vmConfig.VmImage = vmImage
-			Expect(checkVMConfigOptions(vmCtx, vmConfig, 14, guestOSIdsToFamily)).To(Succeed())
+			Expect(checkVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)).To(Succeed())
 		})
 	})
 })

@@ -62,20 +62,19 @@ func (s *Session) deployOvf(vmCtx VMCloneContext, itemID string, storageProfileI
 
 // getClusterVMConfigOptions fetches the virtualmachine config options from the cluster specifically
 // 1. valid guestOS descriptor IDs for the cluster
-// 2. default cluster hardware version
 func getClusterVMConfigOptions(
 	ctx context.Context,
 	cluster *object.ClusterComputeResource,
-	client *vim25.Client) (map[string]string, int32, error) {
+	client *vim25.Client) (map[string]string, error) {
 	if cluster == nil {
-		return nil, 0, fmt.Errorf("no cluster exists, can't get cluster properties")
+		return nil, fmt.Errorf("no cluster exists, can't get cluster properties")
 	}
 
 	log.V(4).Info("Fetching supported guestOS types and default hardware version for the cluster")
 	var computeResource mo.ComputeResource
 	if err := cluster.Properties(ctx, cluster.Reference(), []string{"environmentBrowser"}, &computeResource); err != nil {
 		log.Error(err, "Failed to get environment browser for the cluster")
-		return nil, 0, err
+		return nil, err
 	}
 
 	req := vimTypes.QueryConfigOptionEx{
@@ -86,11 +85,10 @@ func getClusterVMConfigOptions(
 	opt, err := methods.QueryConfigOptionEx(ctx, client.RoundTripper, &req)
 	if err != nil {
 		log.Error(err, "Failed to query config options for cluster properties")
-		return nil, 0, err
+		return nil, err
 	}
 
 	guestOSIdsToFamily := make(map[string]string)
-	var clusterHwVersion int32
 	if opt.Returnval != nil {
 		for _, descriptor := range opt.Returnval.GuestOSDescriptor {
 			// Fetch all ids and families that have supportLevel other than unsupported
@@ -98,20 +96,15 @@ func getClusterVMConfigOptions(
 				guestOSIdsToFamily[descriptor.Id] = descriptor.Family
 			}
 		}
-		// fetch cluster's default hardware version
-		clusterHwVersion = opt.Returnval.HardwareOptions.HwVersion
 	}
 
-	return guestOSIdsToFamily, clusterHwVersion, nil
+	return guestOSIdsToFamily, nil
 }
 
-// checkVMConfigOptions validates
-// 1. VMService supported osTypes
-// 2. Incompatible cluster hardware versions
+// checkVMConfigOptions validates that the specified VM Image has a supported OS type.
 func checkVMConfigOptions(
 	vmCtx VMCloneContext,
 	vmConfigArgs vmprovider.VmConfigArgs,
-	clusterHwVersion int32,
 	guestOSIdsToFamily map[string]string) error {
 
 	val := vmCtx.VM.Annotations[VMOperatorImageSupportedCheckKey]
@@ -123,12 +116,6 @@ func checkVMConfigOptions(
 		}
 	}
 
-	hwVersion := vmConfigArgs.VmImage.Spec.HardwareVersion
-	if hwVersion != 0 && clusterHwVersion != 0 && hwVersion > clusterHwVersion {
-		return fmt.Errorf("image has a hardware version '%d' higher than "+
-			"cluster's default hardware version '%d'", hwVersion, clusterHwVersion)
-	}
-
 	return nil
 }
 
@@ -138,12 +125,12 @@ func deployVMFromCLPreCheck(
 	cluster *object.ClusterComputeResource,
 	client *vim25.Client) error {
 
-	guestOSIdsToFamily, clusterHwVersion, err := getClusterVMConfigOptions(vmCtx.Context, cluster, client)
+	guestOSIdsToFamily, err := getClusterVMConfigOptions(vmCtx.Context, cluster, client)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to get guestOS descriptors and hardware options from cluster")
 	}
 
-	if err := checkVMConfigOptions(vmCtx, vmConfigArgs, clusterHwVersion, guestOSIdsToFamily); err != nil {
+	if err := checkVMConfigOptions(vmCtx, vmConfigArgs, guestOSIdsToFamily); err != nil {
 		return err
 	}
 

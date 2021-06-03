@@ -4,7 +4,7 @@ SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
 # For more information please see https://golang.org/doc/go1.13#modules.
-# Detect the Go version for now to be able to run gce2e before is resolved
+# Detect the Go version for now to be able to run gce2e.
 GO_VERSION := $(shell go version)
 
 GITHUB_PATH := github.com/vmware-tanzu/vm-operator

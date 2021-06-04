@@ -29,14 +29,17 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
 
 const (
-	webHookName                    = "default"
-	storageResourceQuotaStrPattern = ".storageclass.storage.k8s.io/"
+	webHookName                          = "default"
+	storageResourceQuotaStrPattern       = ".storageclass.storage.k8s.io/"
+	isRestrictedNetworkKey               = "isRestrictedNetwork"
+	allowedRestrictedNetworkTCPProbePort = 6443
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha1,name=default.validating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1beta1,webhookVersions=v1beta1
@@ -138,7 +141,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	if currentPowerState == desiredPowerState && currentPowerState == vmopv1.VirtualMachinePoweredOn {
 		invalidFields := v.validateUpdatesWhenPoweredOn(ctx, vm, oldVM)
 		if len(invalidFields) > 0 {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, invalidFields, vm.Spec.PowerState))
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, invalidFields, vm.Spec.PowerState))
 		}
 	}
 
@@ -215,7 +218,7 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 	}
 
 	if len(resourceQuotas.Items) == 0 {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.NoResourceQuota, namespace))
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.NoResourceQuotaFmt, namespace))
 		return validationErrs
 	}
 
@@ -315,7 +318,7 @@ func (v validator) validateVolumeWithPVC(ctx *context.WebhookRequestContext, vm 
 
 	// Check that the VirtualMachineImage's hardware version is at least the minimum supported virtual hardware version
 	if image.Spec.HardwareVersion != 0 && image.Spec.HardwareVersion < vsphere.MinSupportedHWVersionForPVC {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupported,
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupportedFmt,
 			image.Name, image.Spec.HardwareVersion, vsphere.MinSupportedHWVersionForPVC))
 	}
 
@@ -375,6 +378,15 @@ func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm
 		validationErrs = append(validationErrs, messages.ReadinessProbeOnlyOneAction)
 	}
 
+	// Validate the TCP probe if set and environment is a restricted network environment between CP VMs and Workload VMs e.g. VMC
+	if probe.TCPSocket != nil {
+		isRestrictedEnv, err := v.isNetworkRestrictedForReadinessProbe(ctx)
+		if err != nil {
+			validationErrs = append(validationErrs, err.Error())
+		} else if isRestrictedEnv && probe.TCPSocket.Port.IntValue() != allowedRestrictedNetworkTCPProbePort {
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.ReadinessProbePortNotSupportedFmt, allowedRestrictedNetworkTCPProbePort))
+		}
+	}
 	return validationErrs
 }
 
@@ -469,7 +481,7 @@ func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, v
 	}
 
 	if len(fieldNames) > 0 {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.UpdatingImmutableFieldsNotAllowed, fieldNames))
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.UpdatingImmutableFieldsNotAllowedFmt, fieldNames))
 	}
 
 	return validationErrs
@@ -482,4 +494,19 @@ func (v validator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virtual
 		return nil, err
 	}
 	return vm, nil
+}
+
+func (v validator) isNetworkRestrictedForReadinessProbe(ctx *context.WebhookRequestContext) (bool, error) {
+	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
+	if err != nil {
+		return false, fmt.Errorf("error fetching VMOpNamespace while validating TCP readiness probe port: %v", err)
+	}
+	configMap := &v1.ConfigMap{}
+	configMapKey := types.NamespacedName{Name: vsphere.ProviderConfigMapName, Namespace: vmopNamespace}
+	err = v.client.Get(ctx, configMapKey, configMap)
+	if err != nil {
+		return false, fmt.Errorf("error fetching config map: %s while validating TCP readiness probe port: %v", vsphere.ProviderConfigMapName, err)
+	}
+	restrictedNetworkEnv := configMap.Data[isRestrictedNetworkKey]
+	return restrictedNetworkEnv == "true", nil
 }

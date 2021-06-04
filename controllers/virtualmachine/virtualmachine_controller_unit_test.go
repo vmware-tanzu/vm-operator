@@ -271,7 +271,7 @@ func unitTestsReconcile() {
 			})
 
 			Context("No VirtualMachineClassBindings exist in namespace", func() {
-				It("return an error and sets VirtualMacinePreReqReady Condition to false", func() {
+				It("return an error and sets VirtualMachinePreReqReady Condition to false", func() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).To(HaveOccurred())
 					Expect(err).To(MatchError(fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vm.Spec.ClassName, vm.Namespace)))
@@ -326,7 +326,7 @@ func unitTestsReconcile() {
 					initObjects = append(initObjects, vmClassBinding)
 				})
 
-				It("return an error and sets VirtualMacinePreReqReady Condition to false", func() {
+				It("return an error and sets VirtualMachinePreReqReady Condition to false", func() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).To(HaveOccurred())
 					msg := fmt.Sprintf("Namespace does not have access to VirtualMachineImage. imageName: %v, contentLibraryUUID: %v, namespace: %v",
@@ -345,7 +345,7 @@ func unitTestsReconcile() {
 					initObjects = append(initObjects, vmClassBinding, contentSourceBinding)
 				})
 
-				It("return an error and sets VirtualMacinePreReqReady Condition to false", func() {
+				It("return an error and sets VirtualMachinePreReqReady Condition to false", func() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).To(HaveOccurred())
 					msg := fmt.Sprintf("Namespace does not have access to VirtualMachineImage. imageName: %v, contentLibraryUUID: %v, namespace: %v",

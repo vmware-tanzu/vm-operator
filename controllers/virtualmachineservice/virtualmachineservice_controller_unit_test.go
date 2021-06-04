@@ -13,6 +13,7 @@ import (
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -20,8 +21,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
-	"github.com/vmware-tanzu/vm-operator/pkg"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -32,17 +33,76 @@ func unitTests() {
 
 const LabelServiceProxyName = "service.kubernetes.io/service-proxy-name"
 
-//nolint:dupl goconst
+//nolint:dupl
 func unitTestsReconcile() {
 
 	var (
 		initObjects []runtime.Object
 		ctx         *builder.UnitTestContextForController
 
-		reconciler *virtualmachineservice.ReconcileVirtualMachineService
+		reconciler   *virtualmachineservice.ReconcileVirtualMachineService
+		vmServiceCtx *vmopContext.VirtualMachineServiceContext
+
+		vmService      *vmopv1alpha1.VirtualMachineService
+		vmServicePort1 vmopv1alpha1.VirtualMachineServicePort
+		vmServicePort2 vmopv1alpha1.VirtualMachineServicePort
+		lbSourceRanges []string
+		objKey         client.ObjectKey
+	)
+
+	const (
+		externalName   = "my-external-name"
+		clusterIP      = "192.168.100.42"
+		loadBalancerIP = "1.1.1.42"
+
+		annotationName1  = "my-annotation-1"
+		annotationValue1 = "bar1"
+		annotationName2  = "my-annotation-2"
+		annotationValue2 = "bar2"
+		labelName1       = "my-label-1"
+		labelValue1      = "bar3"
+		labelName2       = "my-label-2"
+		labelValue2      = "bar4"
 	)
 
 	BeforeEach(func() {
+		vmService = &vmopv1alpha1.VirtualMachineService{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "dummy-vm-service",
+				Namespace:   "dummy-ns",
+				Labels:      map[string]string{},
+				Annotations: map[string]string{},
+			},
+			Spec: vmopv1alpha1.VirtualMachineServiceSpec{
+				Type:                     vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer,
+				Selector:                 map[string]string{},
+				ExternalName:             externalName,
+				ClusterIP:                clusterIP,
+				LoadBalancerIP:           loadBalancerIP,
+				LoadBalancerSourceRanges: lbSourceRanges,
+			},
+		}
+
+		vmServicePort1 = vmopv1alpha1.VirtualMachineServicePort{
+			Name:       "port1",
+			Protocol:   "TCP",
+			Port:       42,
+			TargetPort: 142,
+		}
+
+		vmServicePort2 = vmopv1alpha1.VirtualMachineServicePort{
+			Name:       "port2",
+			Protocol:   "UDP",
+			Port:       1042,
+			TargetPort: 1142,
+		}
+
+		lbSourceRanges = []string{"1.1.1.0/24", "2.2.0.0/16"}
+
+		objKey = client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name}
+	})
+
+	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		reconciler = virtualmachineservice.NewReconciler(
 			ctx.Client,
@@ -51,421 +111,571 @@ func unitTestsReconcile() {
 			ctx.Recorder,
 			providers.NoopLoadbalancerProvider{},
 		)
+
+		vmServiceCtx = &vmopContext.VirtualMachineServiceContext{
+			Context:   ctx,
+			Logger:    ctx.Logger.WithName(vmService.Name),
+			VMService: vmService,
+		}
 	})
 
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
 		initObjects = nil
+		vmServiceCtx = nil
+		reconciler = nil
 	})
 
-	Describe("Reconcile VirtualMachineService", func() {
-
-		Describe("Create Or Update k8s Service", func() {
-			var (
-				vmServiceName string
-				vmService     *vmopv1alpha1.VirtualMachineService
-				vmServiceCtx  *context.VirtualMachineServiceContext
-				serviceKey    client.ObjectKey
-			)
-
+	Context("ReconcileNormal", func() {
+		When("object does not have finalizer set", func() {
 			BeforeEach(func() {
-				vmServiceName = "dummy-service"
-				vmService = getVmService(vmServiceName, ctx.Namespace)
-				vmServiceCtx = &context.VirtualMachineServiceContext{
-					Context:   ctx,
-					Logger:    ctx.Logger,
-					VMService: vmService,
-				}
-
-				service := getService(vmService.Name, vmService.Namespace)
-				Expect(ctx.Client.Create(ctx, service)).To(Succeed())
-
-				serviceKey = client.ObjectKey{Namespace: service.Namespace, Name: service.Name}
+				vmService.Finalizers = nil
 			})
 
-			It("Should update the k8s Service to match with the VirtualMachineService", func() {
-				service := &corev1.Service{}
-				Expect(ctx.Client.Get(ctx, serviceKey, service)).To(Succeed())
-
-				// Modify the VirtualMachineService, corresponding Service should also be modified.
-				externalName := "someExternalName"
-				vmService.Spec.ExternalName = externalName
-				loadBalancerIP := "1.1.1.1"
-				vmService.Spec.LoadBalancerIP = loadBalancerIP
-				vmService.Spec.LoadBalancerSourceRanges = []string{"1.1.1.0/24", "2.2.2.2/28"}
-				vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
-				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
-				vmService.Labels[LabelServiceProxyName] = providers.NSXTServiceProxy
-
-				newService, err := reconciler.CreateOrUpdateService(vmServiceCtx)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
-
-				Expect(newService.Spec.ExternalName).To(Equal(externalName))
-				Expect(newService.Spec.LoadBalancerIP).To(Equal(loadBalancerIP))
-				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeLocal))
-				Expect(newService.Labels[LabelServiceProxyName]).To(Equal(providers.NSXTServiceProxy)) // TODO: Don't fake NSX-T here
-				Expect(newService.Spec.LoadBalancerSourceRanges).To(Equal([]string{"1.1.1.0/24", "2.2.2.2/28"}))
-			})
-
-			It("Should not clobber the nodePort while updating service", func() {
-				service := &corev1.Service{}
-				Expect(ctx.Client.Get(ctx, serviceKey, service)).To(Succeed())
-
-				nodePortPreUpdate := service.Spec.Ports[0].NodePort
-
-				// Modify the VirtualMachineService to trigger an update in backing k8s service.
-				externalName := "someExternalName"
-				vmService.Spec.ExternalName = externalName
-
-				newService, err := reconciler.CreateOrUpdateService(vmServiceCtx)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
-				Expect(newService.Spec.Ports[0].NodePort).To(Equal(nodePortPreUpdate))
-			})
-
-			It("Should not update the k8s Service if there is no update", func() {
-				service := &corev1.Service{}
-				Expect(ctx.Client.Get(ctx, serviceKey, service)).To(Succeed())
-
-				_, err := reconciler.CreateOrUpdateService(vmServiceCtx)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				// Channel should not receive an Update event
-				Expect(ctx.Events).ShouldNot(Receive(ContainSubstring(virtualmachineservice.OpUpdate)))
-
-				Eventually(func() bool {
-					newService := &corev1.Service{}
-					err = ctx.Client.Get(ctx, serviceKey, newService)
-					return err == nil && apiEquality.Semantic.DeepEqual(service, newService)
-				})
-			})
-
-			It("Should not update the k8s Service with change in VirtualMachine's selector", func() {
-				service := &corev1.Service{}
-				Expect(ctx.Client.Get(ctx, serviceKey, service)).To(Succeed())
-
-				// Modify the VirtualMachineService's selector
-				selector := map[string]string{"bar": "foo"}
-				vmService.Spec.Selector = selector
-
-				_, err := reconciler.CreateOrUpdateService(vmServiceCtx)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				// Channel should not receive an Update event
-				Expect(ctx.Events).ShouldNot(Receive(ContainSubstring(virtualmachineservice.OpUpdate)))
-
-				Eventually(func() bool {
-					newService := &corev1.Service{}
-					err = ctx.Client.Get(ctx, serviceKey, newService)
-					return err == nil && apiEquality.Semantic.DeepEqual(service, newService)
-				})
+			It("will set finalizer", func() {
+				err := reconciler.ReconcileNormal(vmServiceCtx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(vmServiceCtx.VMService.GetFinalizers()).To(ContainElement(finalizerName))
 			})
 		})
 
-		Describe("When VirtualMachineService selector matches virtual machines", func() {
-			var (
-				vm1       vmopv1alpha1.VirtualMachine
-				vm2       vmopv1alpha1.VirtualMachine
-				vmService vmopv1alpha1.VirtualMachineService
-			)
-
-			BeforeEach(func() {
-				labels := map[string]string{"vm-match-selector": "true"}
-				vm1 = getTestVirtualMachineWithLabels(ctx.Namespace, "dummy-vm-match-selector-1", labels)
-				Expect(ctx.Client.Create(ctx, &vm1)).To(Succeed())
-				vm2 = getTestVirtualMachine(ctx.Namespace, "dummy-vm-match-selector-2")
-				Expect(ctx.Client.Create(ctx, &vm2)).To(Succeed())
-				vmService = getTestVMServiceWithSelector(ctx.Namespace, "dummy-vm-service-match-selector", labels)
-				Expect(ctx.Client.Create(ctx, &vmService)).To(Succeed())
-			})
-
-			It("Should use VirtualMachineService selector instead of Service selector", func() {
-				vmList, err := reconciler.GetVirtualMachinesSelectedByVmService(ctx, &vmService)
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(vmList.Items).To(HaveLen(1))
-				Expect(vmList.Items[0].Name).To(Equal(vm1.Name))
-			})
+		It("will have finalizer set upon successful reconciliation", func() {
+			err := reconciler.ReconcileNormal(vmServiceCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(vmServiceCtx.VMService.GetFinalizers()).To(ContainElement(finalizerName))
 		})
 
-		Describe("When Service has labels", func() {
-			var (
-				svcLabelKey   string
-				svcLabelValue string
-				serviceName   string
-				service       *corev1.Service
-				vmService     *vmopv1alpha1.VirtualMachineService
-				vmServiceCtx  *context.VirtualMachineServiceContext
-			)
+		Context("Creates expected Service", func() {
+			var service *corev1.Service
 
 			BeforeEach(func() {
-				serviceName = "dummy-label-service"
-				service = getService(serviceName, ctx.Namespace)
-				svcLabelKey = "a.run.tanzu.vmware.com.label.for.lbapi"
-				svcLabelValue = "a.label.value"
-				service.Labels = map[string]string{svcLabelKey: svcLabelValue}
-				Expect(ctx.Client.Create(ctx, service)).To(Succeed())
-
-				vmService = getVmService(serviceName, ctx.Namespace)
-				Expect(ctx.Client.Create(ctx, vmService)).To(Succeed())
-
-				vmServiceCtx = &context.VirtualMachineServiceContext{
-					Context:   ctx,
-					Logger:    ctx.Logger,
-					VMService: vmService,
-				}
+				service = &corev1.Service{}
 			})
 
-			Context("When there are existing labels on the Service, but none on the VMService", func() {
-				It("Should preserve existing labels on the Service and shouldn't update the k8s Service", func() {
-					newService, err := reconciler.CreateOrUpdateService(vmServiceCtx)
-					Expect(err).ShouldNot(HaveOccurred())
-
-					Expect(newService.Labels).To(HaveLen(1))
-					Expect(newService.Labels).To(HaveKeyWithValue(svcLabelKey, svcLabelValue))
-
-					// Channel shouldn't receive an Update event
-					Expect(ctx.Events).ShouldNot(Receive(ContainSubstring(virtualmachineservice.OpUpdate)))
-				})
-			})
-
-			Context("when both the VirtualMachineService and the Service have non-intersecting labels", func() {
-				It("Should have union of labels from Service and VirtualMachineService and should update the k8s Service", func() {
-					// Set label on VirtualMachineService that is non-conflicting with the Service.
-					labelKey := "non-intersecting-label-key"
-					labelValue := "label-value"
-					vmService.Labels = map[string]string{labelKey: labelValue}
-
-					newService, err := reconciler.CreateOrUpdateService(vmServiceCtx)
-					Expect(err).ShouldNot(HaveOccurred())
-
-					Expect(newService.Labels).To(HaveLen(2))
-					Expect(newService.Labels).To(HaveKeyWithValue(svcLabelKey, svcLabelValue))
-					Expect(newService.Labels).To(HaveKeyWithValue(labelKey, labelValue))
-
-					// Channel should receive an Update event
-					expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
-				})
-			})
-
-			Context("when both the VirtualMachineService and the Service have conflicting labels", func() {
-				It("Should have union of labels from Service and VirtualMachineService, with VirtualMachineService "+
-					"winning the conflict and should update the k8s Service", func() {
-					// Set label on VirtualMachineService that is non-conflicting with the Service.
-					vmService.Labels = make(map[string]string)
-					labelValue := "label-value"
-					vmService.Labels[svcLabelKey] = labelValue
-
-					newService, err := reconciler.CreateOrUpdateService(vmServiceCtx)
-					Expect(err).ShouldNot(HaveOccurred())
-
-					Expect(newService.Labels).To(HaveLen(1))
-					Expect(newService.Labels).To(HaveKeyWithValue(svcLabelKey, labelValue))
-
-					// Channel should receive an Update event
-					expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
-				})
-			})
-		})
-
-		Describe("When Service has new annotations", func() {
-			var (
-				serviceName          string
-				serviceAnnotationKey string
-				serviceAnnotationVal string
-				vmService            *vmopv1alpha1.VirtualMachineService
-				vmServiceCtx         *context.VirtualMachineServiceContext
-			)
-
-			BeforeEach(func() {
-				serviceName = "dummy-service"
-				service := getService(serviceName, ctx.Namespace)
-
-				annotations := service.GetAnnotations()
-				if annotations == nil {
-					annotations = make(map[string]string)
-				}
-				serviceAnnotationKey = "dummy-service-annotation"
-				serviceAnnotationVal = "blah"
-				annotations[serviceAnnotationKey] = serviceAnnotationVal
-				service.SetAnnotations(annotations)
-
-				Expect(ctx.Client.Create(ctx, service)).To(Succeed())
-
-				vmService = getVmService(serviceName, ctx.Namespace)
-				Expect(ctx.Client.Create(ctx, vmService)).To(Succeed())
-
-				vmServiceCtx = &context.VirtualMachineServiceContext{
-					Context:   ctx,
-					Logger:    ctx.Logger,
-					VMService: vmService,
-				}
-			})
-
-			Context("When there are new annotations added to the VMSVC", func() {
-				It("Should update the Service with new annotations", func() {
-					newServiceAnnotationKey := "new-dummy-service-annotation"
-					newServiceAnnotationVal := "ha"
-					if vmService.Annotations == nil {
-						vmService.Annotations = make(map[string]string)
-					}
-					vmService.Annotations[newServiceAnnotationKey] = newServiceAnnotationVal
-					newService, err := reconciler.CreateOrUpdateService(vmServiceCtx)
-					Expect(err).ShouldNot(HaveOccurred())
-
-					Expect(newService.Annotations).To(HaveKeyWithValue(newServiceAnnotationKey, newServiceAnnotationVal))
-					expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
-				})
-			})
-
-			Context("When there are annotations added to the Service", func() {
-				It("Should preserve existing annotations on the Service and shouldn't update the k8s Service", func() {
-					newService, err := reconciler.CreateOrUpdateService(vmServiceCtx)
-					Expect(err).ShouldNot(HaveOccurred())
-
-					Expect(newService.Annotations).To(HaveKeyWithValue(serviceAnnotationKey, serviceAnnotationVal))
-					Expect(ctx.Events).ShouldNot(Receive(ContainSubstring(virtualmachineservice.OpUpdate)))
-				})
-			})
-		})
-
-		Describe("UpdateVmStatus", func() {
-
-			It("Should add VirtualMachineService Status and Annotations if they dont exist", func() {
-				vmServiceName := "service-add-status-annotations"
-				vmService := getVmService(vmServiceName, ctx.Namespace)
-				Expect(ctx.Client.Create(ctx, vmService)).To(Succeed())
-
-				vmServiceCtx := &context.VirtualMachineServiceContext{
-					Context:   ctx,
-					Logger:    ctx.Logger,
-					VMService: vmService,
-				}
-
-				service := &corev1.Service{}
-				Expect(reconciler.UpdateVmService(vmServiceCtx, service)).To(Succeed())
-
-				// Eventually, the VM service should be updated with the LB Ingress IPs and annotations.
-				Eventually(func() bool {
-					vmSvc := &vmopv1alpha1.VirtualMachineService{}
-					vmSvcKey := client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name}
-					Expect(ctx.Client.Get(ctx, vmSvcKey, vmSvc)).To(Succeed())
-
-					vmSvcLBIngress := vmSvc.Status.LoadBalancer.Ingress
-					svcLBIngress := service.Status.LoadBalancer.Ingress
-					if len(svcLBIngress) != len(vmSvcLBIngress) {
-						return false
-					}
-
-					for idx, ingress := range vmSvcLBIngress {
-						if ingress.IP != svcLBIngress[idx].IP || ingress.Hostname != svcLBIngress[idx].Hostname {
-							return false
-						}
-					}
-
-					// Ensure that correct annotations are set.
-					if val, ok := vmSvc.GetAnnotations()[pkg.VmOperatorVersionKey]; !ok || val != "v1" {
-						return false
-					}
-
-					return true
-				}).Should(BeTrue())
-			})
-		})
-
-		Describe("When Updating endpoints", func() {
-			var (
-				serviceName  string
-				service      *corev1.Service
-				vmService    *vmopv1alpha1.VirtualMachineService
-				vmServiceCtx *context.VirtualMachineServiceContext
-			)
-
-			BeforeEach(func() {
-				serviceName = "dummy-endpoints-service"
-				service = getService(serviceName, ctx.Namespace)
-
-				vmService = getVmService(serviceName, ctx.Namespace)
-				vmServiceCtx = &context.VirtualMachineServiceContext{
-					Context:   ctx,
-					Logger:    ctx.Logger,
-					VMService: vmService,
-				}
-
-				err := ctx.Client.Create(ctx, service)
-				Expect(err).ShouldNot(HaveOccurred())
-			})
-
-			AfterEach(func() {
-				err := ctx.Client.Delete(ctx, service)
-				Expect(err).NotTo(HaveOccurred())
-			})
-
-			It("should update endpoints when it is not the same with existing endpoints", func() {
-				// We need the VMService because the endpoints use the its UID as a OwnerReference
-				Expect(ctx.Client.Create(ctx, vmService)).To(Succeed())
-
-				currentEndpoints := &corev1.Endpoints{}
-
-				// Dummy Service with updated fields.
-				port := getServicePort("foo", "TCP", 44, 8080, 30007)
-				changedService := &corev1.Service{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: ctx.Namespace,
-						Name:      serviceName,
-						Labels:    map[string]string{"foo": "bar"},
-					},
-					Spec: corev1.ServiceSpec{
-						Type:  corev1.ServiceTypeClusterIP,
-						Ports: []corev1.ServicePort{port},
-					},
-				}
-
-				err := reconciler.UpdateEndpoints(vmServiceCtx, changedService)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				// Wait for the Endpoint to be created.
-				newEndpoints := &corev1.Endpoints{}
-				Eventually(func() error {
-					return ctx.Client.Get(ctx, client.ObjectKey{Name: serviceName, Namespace: ctx.Namespace}, newEndpoints)
-				}).Should(Succeed())
-
-				Expect(currentEndpoints).NotTo(Equal(newEndpoints))
-			})
-
-			It("should not update endpoints when it is the same with existing endpoints", func() {
-				endpoints := &corev1.Endpoints{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: ctx.Namespace,
-						Name:      serviceName,
-					},
-				}
-				err := ctx.Client.Create(ctx, endpoints)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				currentEndpoints := &corev1.Endpoints{}
-				err = ctx.Client.Get(ctx, client.ObjectKey{Name: service.Name, Namespace: service.Namespace}, currentEndpoints)
+			JustBeforeEach(func() {
+				err := reconciler.ReconcileNormal(vmServiceCtx)
 				Expect(err).NotTo(HaveOccurred())
 
-				err = reconciler.UpdateEndpoints(vmServiceCtx, service)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				newEndpoints := &corev1.Endpoints{}
-				Eventually(func() error {
-					return ctx.Client.Get(ctx, client.ObjectKey{Name: service.Name, Namespace: service.Namespace}, newEndpoints)
-				}).Should(Succeed())
-
-				Expect(currentEndpoints).To(Equal(newEndpoints))
+				Expect(ctx.Events).Should(Receive(ContainSubstring(virtualmachineservice.OpCreate)))
+				Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
 			})
+
+			It("With Expected OwnerReference", func() {
+				ownerRefs := service.GetOwnerReferences()
+				Expect(ownerRefs).To(HaveLen(1))
+				ownerRef := ownerRefs[0]
+				Expect(ownerRef.Name).To(Equal(vmService.Name))
+				Expect(ownerRef.Controller).To(Equal(pointer.BoolPtr(true)))
+			})
+
+			It("With Expected Spec", func() {
+				Expect(service.Spec.Type).To(Equal(corev1.ServiceTypeLoadBalancer))
+				Expect(service.Spec.ExternalName).To(Equal(externalName))
+				Expect(service.Spec.ClusterIP).To(Equal(clusterIP))
+				Expect(service.Spec.LoadBalancerIP).To(Equal(loadBalancerIP))
+				Expect(service.Spec.LoadBalancerSourceRanges).To(HaveLen(2))
+				Expect(service.Spec.LoadBalancerSourceRanges).To(ContainElements(lbSourceRanges))
+			})
+
+			Context("With Expected Spec.Ports", func() {
+				BeforeEach(func() {
+					vmService.Spec.Ports = []vmopv1alpha1.VirtualMachineServicePort{
+						vmServicePort1,
+						vmServicePort2,
+					}
+				})
+
+				It("Service ports", func() {
+					ports := service.Spec.Ports
+					Expect(ports).To(HaveLen(2))
+
+					port := ports[0]
+					Expect(port.Name).To(Equal(vmServicePort1.Name))
+					Expect(port.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
+					Expect(port.Port).To(Equal(vmServicePort1.Port))
+					Expect(port.TargetPort.IntValue()).To(Equal(int(vmServicePort1.TargetPort)))
+
+					port = ports[1]
+					Expect(port.Name).To(Equal(vmServicePort2.Name))
+					Expect(port.Protocol).To(BeEquivalentTo(vmServicePort2.Protocol))
+					Expect(port.Port).To(Equal(vmServicePort2.Port))
+					Expect(port.TargetPort.IntValue()).To(Equal(int(vmServicePort2.TargetPort)))
+				})
+			})
+
+			Context("Inherits Annotations and Labels", func() {
+				BeforeEach(func() {
+					vmService.Annotations[annotationName1] = annotationValue1
+					vmService.Labels[labelName1] = labelValue1
+				})
+
+				It("Expected Labels and Annotations", func() {
+					Expect(service.Annotations).To(HaveKeyWithValue(annotationName1, annotationValue1))
+					Expect(service.Labels).To(HaveKeyWithValue(labelName1, labelValue1))
+				})
+
+				// TODO: These don't belong here. Sort out when the Provider interface is improved.
+				Context("NCP specific Labels and Annotations", func() {
+					BeforeEach(func() {
+						vmService.Labels[LabelServiceProxyName] = providers.NSXTServiceProxy
+					})
+
+					It("Expected labels", func() {
+						Expect(service.Labels[LabelServiceProxyName]).To(Equal(providers.NSXTServiceProxy))
+					})
+				})
+			})
+
+			// TODO: NCP Specific. Sort out when the Provider interface is improved.
+			Context("ExternalTrafficPolicy Annotations", func() {
+				BeforeEach(func() {
+					vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
+					vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "99"
+				})
+
+				It("Expected values", func() {
+					Expect(service.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeLocal))
+					Expect(service.Annotations).To(HaveKeyWithValue(utils.AnnotationServiceHealthCheckNodePortKey, "99"))
+				})
+			})
+		})
+
+		Context("Service Exists", func() {
+			var service *corev1.Service
+
+			BeforeEach(func() {
+				service = &corev1.Service{}
+
+				vmService.Annotations[annotationName1] = annotationValue1
+				vmService.Labels[labelName1] = labelValue1
+			})
+
+			JustBeforeEach(func() {
+				err := reconciler.ReconcileNormal(vmServiceCtx)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(ctx.Events).Should(Receive(ContainSubstring(virtualmachineservice.OpCreate)))
+				Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+			})
+
+			It("No Update if VirtualMachineService didn't change", func() {
+				err := reconciler.ReconcileNormal(vmServiceCtx)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(ctx.Events).ShouldNot(Receive(ContainSubstring(virtualmachineservice.OpUpdate)))
+
+				service2 := &corev1.Service{}
+				Expect(ctx.Client.Get(ctx, objKey, service2)).To(Succeed())
+				Expect(apiEquality.Semantic.DeepEqual(service, service2)).To(BeTrue())
+			})
+
+			Context("VirtualMachineService Spec is updated", func() {
+
+				It("Service Spec is updated accordingly", func() {
+					vmService.Spec.ExternalName = "new-external-name"
+					vmService.Spec.LoadBalancerIP = "new-lb-ip"
+					vmService.Spec.LoadBalancerSourceRanges = []string{"range42"}
+
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(ctx.Events).Should(Receive(ContainSubstring(virtualmachineservice.OpUpdate)))
+					Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+
+					Expect(service.Spec.ExternalName).To(Equal("new-external-name"))
+					Expect(service.Spec.LoadBalancerIP).To(Equal("new-lb-ip"))
+					Expect(service.Spec.LoadBalancerSourceRanges).To(HaveLen(1))
+					Expect(service.Spec.LoadBalancerSourceRanges).To(ContainElements("range42"))
+				})
+
+				It("Spec Annotations and Labels are updated", func() {
+					vmService.Annotations[annotationName1] = "new-bar1"
+					vmService.Annotations[annotationName2] = "new-bar2"
+					vmService.Labels[labelName1] = "new-bar3"
+					vmService.Labels[labelName2] = "new-bar4"
+
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(ctx.Events).Should(Receive(ContainSubstring(virtualmachineservice.OpUpdate)))
+					Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+
+					Expect(service.Annotations).To(HaveLen(2))
+					Expect(service.Annotations).To(HaveKeyWithValue(annotationName1, "new-bar1"))
+					Expect(service.Annotations).To(HaveKeyWithValue(annotationName2, "new-bar2"))
+					Expect(service.Labels).To(HaveLen(2))
+					Expect(service.Labels).To(HaveKeyWithValue(labelName1, "new-bar3"))
+					Expect(service.Labels).To(HaveKeyWithValue(labelName2, "new-bar4"))
+				})
+
+				It("VirtualMachineService Annotations and Labels takes precedence", func() {
+					Expect(service.Annotations).To(HaveLen(1))
+					service.Annotations[annotationName2] = "should-be-changed"
+					Expect(service.Labels).To(HaveLen(1))
+					service.Labels[labelName2] = "should-be-changed"
+					Expect(ctx.Client.Update(ctx, service)).To(Succeed())
+
+					newValue := "vmsvc-should-win"
+					vmService.Annotations[annotationName2] = newValue
+					vmService.Labels[labelName2] = newValue
+
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(ctx.Events).Should(Receive(ContainSubstring(virtualmachineservice.OpUpdate)))
+					Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+
+					Expect(service.Annotations).To(HaveKeyWithValue(annotationName2, newValue))
+					Expect(service.Labels).To(HaveKeyWithValue(labelName2, newValue))
+				})
+			})
+
+			Context("Preserves Service Annotations and Labels set elsewhere", func() {
+				// NetOp can set additional annotations and labels that we shouldn't delete.
+
+				It("Keeps Labels and Annotations", func() {
+					Expect(service.Annotations).To(HaveLen(1))
+					service.Annotations["netop-annotation"] = "bar42"
+					Expect(service.Labels).To(HaveLen(1))
+					service.Labels["netop-label"] = "bar43"
+					Expect(ctx.Client.Update(ctx, service)).To(Succeed())
+
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ctx.Events).ShouldNot(Receive(ContainSubstring(virtualmachineservice.OpUpdate)))
+
+					Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+					Expect(service.Annotations).To(HaveLen(2))
+					Expect(service.Annotations).To(HaveKeyWithValue("netop-annotation", "bar42"))
+					Expect(service.Labels).To(HaveLen(2))
+					Expect(service.Labels).To(HaveKeyWithValue("netop-label", "bar43"))
+				})
+			})
+
+			Context("Preserves existing NodePort", func() {
+				BeforeEach(func() {
+					vmService.Spec.Ports = []vmopv1alpha1.VirtualMachineServicePort{
+						vmServicePort1,
+					}
+				})
+
+				It("Keeps NodePort", func() {
+					Expect(service.Spec.Ports).To(HaveLen(1))
+					service.Spec.Ports[0].NodePort = 10000
+					Expect(ctx.Client.Update(ctx, service)).To(Succeed())
+
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ctx.Events).ShouldNot(Receive(ContainSubstring(virtualmachineservice.OpUpdate)))
+
+					Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+					ports := service.Spec.Ports
+					Expect(ports).To(HaveLen(1))
+
+					port := ports[0]
+					Expect(port.Name).To(Equal(vmServicePort1.Name))
+					Expect(port.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
+					Expect(port.Port).To(Equal(vmServicePort1.Port))
+					Expect(port.TargetPort.IntValue()).To(Equal(int(vmServicePort1.TargetPort)))
+					Expect(port.NodePort).To(BeNumerically("==", 10000))
+				})
+			})
+
+			Context("VirtualMachineService Status Ingress", func() {
+				It("Sets empty Ingress", func() {
+					Expect(vmService.Status.LoadBalancer.Ingress).To(BeEmpty())
+				})
+
+				It("Sets Ingress from Service Status", func() {
+					service.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{
+						{
+							IP: "ip1",
+						},
+						{
+							Hostname: "hostname1",
+						},
+					}
+					Expect(ctx.Client.Update(ctx, service)).To(Succeed())
+
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					ingress := vmService.Status.LoadBalancer.Ingress
+					Expect(ingress).To(HaveLen(2))
+					Expect(ingress[0].IP).To(Equal("ip1"))
+					Expect(ingress[0].Hostname).To(BeEmpty())
+					Expect(ingress[1].IP).To(BeEmpty())
+					Expect(ingress[1].Hostname).To(Equal("hostname1"))
+				})
+			})
+		})
+
+		Context("Creates expected Endpoints", func() {
+			var endpoints *corev1.Endpoints
+			var labelSelector map[string]string
+			var vm1, vm2, vm3 *vmopv1alpha1.VirtualMachine
+
+			BeforeEach(func() {
+				endpoints = &corev1.Endpoints{}
+				labelSelector = map[string]string{"my-app": "dummy-label"}
+
+				vmService.Annotations[annotationName1] = "bar1"
+				vmService.Labels[labelName1] = "bar2"
+				vmService.Spec.Selector = labelSelector
+				vmService.Spec.Ports = []vmopv1alpha1.VirtualMachineServicePort{
+					vmServicePort1,
+				}
+
+				vm1 = &vmopv1alpha1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "dummy-vm1",
+						Namespace: vmService.Namespace,
+						Labels:    labelSelector,
+					},
+					Status: vmopv1alpha1.VirtualMachineStatus{
+						VmIp: "1.1.1.1",
+					},
+				}
+
+				vm2 = &vmopv1alpha1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "dummy-vm2",
+						Namespace: vmService.Namespace,
+						Labels:    labelSelector,
+					},
+					Status: vmopv1alpha1.VirtualMachineStatus{
+						VmIp: "2.2.2.2",
+					},
+				}
+
+				vm3 = &vmopv1alpha1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "dummy-vm3",
+						Namespace: vmService.Namespace,
+						Labels:    map[string]string{},
+					},
+					Status: vmopv1alpha1.VirtualMachineStatus{
+						VmIp: "3.3.3.3",
+					},
+				}
+			})
+
+			JustBeforeEach(func() {
+				err := reconciler.ReconcileNormal(vmServiceCtx)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(ctx.Events).Should(Receive(ContainSubstring(virtualmachineservice.OpCreate)))
+				Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+			})
+
+			It("With Expected OwnerReference", func() {
+				ownerRefs := endpoints.GetOwnerReferences()
+				Expect(ownerRefs).To(HaveLen(1))
+				ownerRef := ownerRefs[0]
+				Expect(ownerRef.Name).To(Equal(vmService.Name))
+				Expect(ownerRef.Controller).To(Equal(pointer.BoolPtr(true)))
+			})
+
+			It("With Expected Annotations and Labels", func() {
+				Expect(endpoints.Annotations).To(HaveKeyWithValue(annotationName1, "bar1"))
+				Expect(endpoints.Labels).To(HaveKeyWithValue(labelName1, "bar2"))
+			})
+
+			It("Empty Subsets when no VM matches", func() {
+				Expect(endpoints.Subsets).To(BeEmpty())
+			})
+
+			Context("When one VM matches label selector", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, vm1, vm3)
+				})
+
+				It("With Expected Subset", func() {
+					subsets := endpoints.Subsets
+					Expect(subsets).To(HaveLen(1))
+
+					subset := subsets[0]
+
+					Expect(subset.Ports).To(HaveLen(1))
+					ssPort := subset.Ports[0]
+					Expect(ssPort.Name).To(Equal(vmServicePort1.Name))
+					Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
+					Expect(ssPort.Port).To(Equal(vmServicePort1.TargetPort))
+
+					Expect(subset.Addresses).To(HaveLen(1))
+					ssAddr := subset.Addresses[0]
+					Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
+					Expect(ssAddr.TargetRef).ToNot(BeNil())
+					Expect(ssAddr.TargetRef.Name).To(Equal(vm1.Name))
+					Expect(ssAddr.TargetRef.Namespace).To(Equal(vm1.Namespace))
+
+					// NOTE: We do not assign this yet.
+					Expect(subset.NotReadyAddresses).To(BeEmpty())
+				})
+
+				Context("When VM does not have IP", func() {
+					BeforeEach(func() {
+						vm1.Status.VmIp = ""
+					})
+
+					It("Is not included in Subsets", func() {
+						Expect(endpoints.Subsets).To(BeEmpty())
+					})
+				})
+			})
+
+			Context("When multiple VMs match label selector", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, vm1, vm2, vm3)
+				})
+
+				It("With Expected Subsets", func() {
+					subsets := endpoints.Subsets
+					Expect(subsets).To(HaveLen(2))
+
+					for _, subset := range subsets {
+						Expect(subset.Ports).To(HaveLen(1))
+						ssPort := subset.Ports[0]
+						Expect(ssPort.Name).To(Equal(vmServicePort1.Name))
+						Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
+						Expect(ssPort.Port).To(Equal(vmServicePort1.TargetPort))
+					}
+
+					// NOTE: Hardcode our subset sorting order of VM1, VM2.
+					subset := subsets[0]
+
+					Expect(subset.Addresses).To(HaveLen(1))
+					ssAddr := subset.Addresses[0]
+					Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
+					Expect(ssAddr.TargetRef).ToNot(BeNil())
+					Expect(ssAddr.TargetRef.Name).To(Equal(vm1.Name))
+
+					subset = subsets[1]
+
+					Expect(subset.Addresses).To(HaveLen(1))
+					ssAddr = subset.Addresses[0]
+					Expect(ssAddr.IP).To(Equal(vm2.Status.VmIp))
+					Expect(ssAddr.TargetRef).ToNot(BeNil())
+					Expect(ssAddr.TargetRef.Name).To(Equal(vm2.Name))
+
+					// NOTE: We do not assign this yet.
+					Expect(subset.NotReadyAddresses).To(BeEmpty())
+				})
+			})
+
+			Context("When VM has Readiness Probe", func() {
+
+				BeforeEach(func() {
+					vm1.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
+					vm2.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
+					vm3.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
+
+					initObjects = append(initObjects, vm1, vm2, vm3)
+				})
+
+				It("VMs without Ready Condition are not included in Subsets", func() {
+					Expect(endpoints.Subsets).To(BeEmpty())
+				})
+
+				Context("Unready VMs are not included in Subset", func() {
+					BeforeEach(func() {
+						conditions.MarkFalse(vm1, vmopv1alpha1.ReadyCondition, "reason", vmopv1alpha1.ConditionSeverityError, "")
+					})
+
+					It("Subsets is Empty", func() {
+						Expect(endpoints.Subsets).To(BeEmpty())
+					})
+				})
+
+				Context("Ready VM is included in Subset", func() {
+					BeforeEach(func() {
+						conditions.MarkTrue(vm1, vmopv1alpha1.ReadyCondition)
+					})
+
+					It("Ready VM is included in Subsets", func() {
+						subsets := endpoints.Subsets
+						Expect(subsets).To(HaveLen(1))
+
+						subset := subsets[0]
+
+						Expect(subset.Ports).To(HaveLen(1))
+						ssPort := subset.Ports[0]
+						Expect(ssPort.Name).To(Equal(vmServicePort1.Name))
+						Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
+						Expect(ssPort.Port).To(Equal(vmServicePort1.TargetPort))
+
+						Expect(subset.Addresses).To(HaveLen(1))
+						ssAddr := subset.Addresses[0]
+						Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
+						Expect(ssAddr.TargetRef).ToNot(BeNil())
+						Expect(ssAddr.TargetRef.Name).To(Equal(vm1.Name))
+						Expect(ssAddr.TargetRef.Namespace).To(Equal(vm1.Namespace))
+
+						// NOTE: We do not assign this yet.
+						Expect(subset.NotReadyAddresses).To(BeEmpty())
+					})
+				})
+			})
+
+			Context("Preserve VMs in Endpoints that have Probe but hasn't run yet", func() {
+
+				BeforeEach(func() {
+					vm1.UID = "abc"
+					vm1.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
+					vm2.UID = "xyz"
+					vm2.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
+					// Initial setup so that the first Reconcile will add the VM.
+					conditions.MarkTrue(vm1, vmopv1alpha1.ReadyCondition)
+					initObjects = append(initObjects, vm1, vm2)
+				})
+
+				It("VM is kept in Endpoints", func() {
+					subsets := endpoints.Subsets
+					Expect(subsets).To(HaveLen(1))
+					subset := subsets[0]
+					Expect(subset.Addresses).To(HaveLen(1))
+					ssAddr := subset.Addresses[0]
+					Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
+
+					// Remove Ready condition but keep the ReadinessProbe. This simulates the probe not
+					// being run yet.
+					vm1.Status.Conditions = nil
+					Expect(ctx.Client.Status().Update(ctx, vm1)).To(Succeed())
+
+					err := reconciler.ReconcileNormal(vmServiceCtx)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+
+					// VM1 should still be present in the Endpoints.
+					subsets = endpoints.Subsets
+					Expect(subsets).To(HaveLen(1))
+					subset = subsets[0]
+					Expect(subset.Addresses).To(HaveLen(1))
+					ssAddr = subset.Addresses[0]
+					Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
+				})
+			})
+		})
+	})
+
+	Context("ReconcileDelete", func() {
+		BeforeEach(func() {
+			vmService.Finalizers = []string{finalizerName}
+		})
+
+		It("will clear finalizer", func() {
+			err := reconciler.ReconcileDelete(vmServiceCtx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vmServiceCtx.VMService.GetFinalizers()).ToNot(ContainElement(finalizerName))
 		})
 	})
 }
 
-// This duplicates too much of the unitTestsReconcile() but hard to combine. Need to fix
-// the LBProvider interface changes made in b56b10e. These tests kind of stink.
+// This duplicates some of the above tests just to test bits of the NSX-T LB provider.
+// We should really instead refactor the provider interface so we don't have logic for
+// it in multiples places and can test it just in the existing provider tests. These
+// tests as-is need some improvement.
 //nolint:dupl goconst
 func nsxtLBProviderTestsReconcile() {
 
@@ -473,11 +683,53 @@ func nsxtLBProviderTestsReconcile() {
 		initObjects []runtime.Object
 		ctx         *builder.UnitTestContextForController
 
-		lbProvider providers.LoadbalancerProvider
-		reconciler *virtualmachineservice.ReconcileVirtualMachineService
+		lbProvider   providers.LoadbalancerProvider
+		reconciler   *virtualmachineservice.ReconcileVirtualMachineService
+		vmServiceCtx *vmopContext.VirtualMachineServiceContext
+
+		vmServicePort1 vmopv1alpha1.VirtualMachineServicePort
+		vmService      *vmopv1alpha1.VirtualMachineService
+		objKey         client.ObjectKey
+
+		lbSourceRanges = []string{"1.1.1.0/24", "2.2.0.0/16"}
+	)
+
+	const (
+		externalName   = "my-external-name"
+		clusterIP      = "192.168.100.42"
+		loadBalancerIP = "1.1.1.42"
 	)
 
 	BeforeEach(func() {
+		vmServicePort1 = vmopv1alpha1.VirtualMachineServicePort{
+			Name:       "port1",
+			Protocol:   "TCP",
+			Port:       42,
+			TargetPort: 142,
+		}
+
+		vmService = &vmopv1alpha1.VirtualMachineService{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "dummy-vm-service",
+				Namespace:   "dummy-ns",
+				Labels:      map[string]string{},
+				Annotations: map[string]string{},
+			},
+			Spec: vmopv1alpha1.VirtualMachineServiceSpec{
+				Type:                     vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer,
+				Selector:                 map[string]string{},
+				ExternalName:             externalName,
+				ClusterIP:                clusterIP,
+				LoadBalancerIP:           loadBalancerIP,
+				LoadBalancerSourceRanges: lbSourceRanges,
+				Ports:                    []vmopv1alpha1.VirtualMachineServicePort{vmServicePort1},
+			},
+		}
+
+		objKey = client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name}
+	})
+
+	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		lbProvider = providers.NsxtLoadBalancerProvider()
 		reconciler = virtualmachineservice.NewReconciler(
@@ -487,104 +739,91 @@ func nsxtLBProviderTestsReconcile() {
 			ctx.Recorder,
 			lbProvider,
 		)
+
+		vmServiceCtx = &vmopContext.VirtualMachineServiceContext{
+			Context:   ctx,
+			Logger:    ctx.Logger.WithName(vmService.Name),
+			VMService: vmService,
+		}
 	})
 
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
 		initObjects = nil
+		vmServiceCtx = nil
+		reconciler = nil
 	})
 
-	Describe("Reconcile k8s Service", func() {
+	Describe("ReconcileNormal", func() {
+		var service *corev1.Service
 
-		var (
-			serviceName   string
-			service       *corev1.Service
-			vmServiceName string
-			vmService     *vmopv1alpha1.VirtualMachineService
-			vmServiceCtx  *context.VirtualMachineServiceContext
-		)
+		BeforeEach(func() {
+			service = &corev1.Service{}
+		})
 
 		Describe("Create Or Update k8s Service", func() {
-			BeforeEach(func() {
-				vmServiceName = "nsxt-dummy-service"
-				vmService = getVmService(vmServiceName, ctx.Namespace)
 
-				vmServiceCtx = &context.VirtualMachineServiceContext{
-					Context:   ctx,
-					Logger:    ctx.Logger,
-					VMService: vmService,
-				}
-
-				serviceName = vmServiceName
-				service = getService(serviceName, ctx.Namespace)
-
-				err := ctx.Client.Create(ctx, service)
-				Expect(err).ShouldNot(HaveOccurred())
-			})
-
-			AfterEach(func() {
-				err := ctx.Client.Delete(ctx, service)
+			JustBeforeEach(func() {
+				err := reconciler.ReconcileNormal(vmServiceCtx)
 				Expect(err).NotTo(HaveOccurred())
+
+				Expect(ctx.Events).Should(Receive(ContainSubstring(virtualmachineservice.OpCreate)))
+				Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
 			})
 
 			It("Should update the k8s Service to match with the VirtualMachineService", func() {
-				svc := corev1.Service{}
-				Expect(ctx.Client.Get(ctx, client.ObjectKey{Namespace: ctx.Namespace, Name: serviceName}, &svc)).To(Succeed())
-
 				// Modify the VirtualMachineService, corresponding Service should also be modified.
-				externalName := "someExternalName"
-				vmService.Spec.ExternalName = externalName
-				loadBalancerIP := "1.1.1.1"
-				vmService.Spec.LoadBalancerIP = loadBalancerIP
+				newExternalName := "someExternalName"
+				newLoadBalancerIP := "1.1.1.1"
+
+				vmService.Spec.ExternalName = newExternalName
+				vmService.Spec.LoadBalancerIP = newLoadBalancerIP
 				vmService.Spec.LoadBalancerSourceRanges = []string{"1.1.1.0/24", "2.2.2.2/28"}
-				if vmService.Annotations == nil {
-					vmService.Annotations = make(map[string]string)
-				}
 				vmService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
 				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
-				if vmService.Labels == nil {
-					vmService.Labels = make(map[string]string)
-				}
 				vmService.Labels[LabelServiceProxyName] = providers.NSXTServiceProxy
 
-				newService, err := reconciler.CreateOrUpdateService(vmServiceCtx)
+				err := reconciler.ReconcileNormal(vmServiceCtx)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
 
-				Expect(newService.Spec.ExternalName).To(Equal(externalName))
-				Expect(newService.Spec.LoadBalancerIP).To(Equal(loadBalancerIP))
+				newService := &corev1.Service{}
+				Expect(ctx.Client.Get(ctx, objKey, newService)).To(Succeed())
+
+				Expect(newService.Spec.ExternalName).To(Equal(newExternalName))
+				Expect(newService.Spec.LoadBalancerIP).To(Equal(newLoadBalancerIP))
 				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeLocal))
 				Expect(newService.Labels[LabelServiceProxyName]).To(Equal(providers.NSXTServiceProxy))
 				Expect(newService.Spec.LoadBalancerSourceRanges).To(Equal([]string{"1.1.1.0/24", "2.2.2.2/28"}))
 			})
 
 			It("Should update the k8s Service to match with the VirtualMachineService when LoadBalancerSourceRanges is cleared", func() {
-				service.Spec.LoadBalancerSourceRanges = []string{"1.1.1.0/24", "2.2.2.2/28"}
-				Expect(ctx.Client.Update(ctx, service)).To(Succeed())
-
 				vmService.Spec.LoadBalancerSourceRanges = []string{}
 
-				newService, err := reconciler.CreateOrUpdateService(vmServiceCtx)
+				err := reconciler.ReconcileNormal(vmServiceCtx)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
-				Expect(newService.Spec.LoadBalancerSourceRanges).To(HaveLen(0))
+
+				newService := &corev1.Service{}
+				Expect(ctx.Client.Get(ctx, objKey, newService)).To(Succeed())
+				Expect(newService.Spec.LoadBalancerSourceRanges).To(BeEmpty())
 			})
 
 			It("Should update the k8s Service to match with the VirtualMachineService when externalTrafficPolicy is cleared", func() {
-				By("applying externalTrafficPolicy and healthCheckNodePort annotations")
 				if service.Annotations == nil {
 					service.Annotations = make(map[string]string)
 				}
-				service.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
-				service.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
-
-				By("applying service-proxy label")
 				if service.Labels == nil {
 					service.Labels = make(map[string]string)
 				}
+
+				By("applying externalTrafficPolicy and healthCheckNodePort annotations")
+				service.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey] = string(corev1.ServiceExternalTrafficPolicyTypeLocal)
+				service.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
+				By("applying service-proxy label")
 				service.Labels[LabelServiceProxyName] = providers.NSXTServiceProxy
 				service.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyTypeLocal
 				Expect(ctx.Client.Update(ctx, service)).To(Succeed())
@@ -592,46 +831,42 @@ func nsxtLBProviderTestsReconcile() {
 				delete(vmService.Annotations, utils.AnnotationServiceExternalTrafficPolicyKey)
 				delete(vmService.Annotations, utils.AnnotationServiceHealthCheckNodePortKey)
 
-				newService, err := reconciler.CreateOrUpdateService(vmServiceCtx)
+				err := reconciler.ReconcileNormal(vmServiceCtx)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				// Channel should receive an Update event
-				Expect(ctx.Events).Should(Receive(ContainSubstring(virtualmachineservice.OpUpdate)))
+				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
 
+				newService := &corev1.Service{}
+				Expect(ctx.Client.Get(ctx, objKey, newService)).To(Succeed())
 				Expect(newService.Spec.ExternalTrafficPolicy).To(Equal(corev1.ServiceExternalTrafficPolicyTypeCluster))
-				_, exist := newService.Annotations[utils.AnnotationServiceExternalTrafficPolicyKey]
-				Expect(exist).To(BeFalse())
-				_, exist = newService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]
-				Expect(exist).To(BeFalse())
-				_, exist = newService.Labels[LabelServiceProxyName]
-				Expect(exist).To(BeFalse())
+				Expect(newService.Annotations).ToNot(HaveKey(utils.AnnotationServiceExternalTrafficPolicyKey))
+				Expect(newService.Annotations).ToNot(HaveKey(utils.AnnotationServiceHealthCheckNodePortKey))
+				Expect(newService.Labels).ToNot(HaveKey(LabelServiceProxyName))
 			})
 
 			It("Should update the k8s Service to remove the provider specific annotations regarding healthCheckNodePort", func() {
-				By("adding provider specific healthCheckNodePort annotations to the Service")
-				if vmService.Annotations == nil {
-					vmService.Annotations = make(map[string]string)
+				if service.Annotations == nil {
+					service.Annotations = make(map[string]string)
 				}
-				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
 
+				vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey] = "30012"
 				annotations, err := lbProvider.GetServiceAnnotations(ctx, vmService)
+				Expect(err).ToNot(HaveOccurred())
 				for k, v := range annotations {
 					service.Annotations[k] = v
 				}
 				Expect(ctx.Client.Update(ctx, service)).To(Succeed())
 
-				By("deleting the healthCheckNodePort annotation from vm service")
-				delete(vmService.Annotations, utils.AnnotationServiceHealthCheckNodePortKey)
-
-				By("reconciling the Service")
-				newService, err := reconciler.CreateOrUpdateService(vmServiceCtx)
+				err = reconciler.ReconcileNormal(vmServiceCtx)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				// Channel should receive an Update event
 				expectEvent(ctx, ContainSubstring(virtualmachineservice.OpUpdate))
 
+				newService := &corev1.Service{}
+				Expect(ctx.Client.Get(ctx, objKey, newService)).To(Succeed())
 				By("ensuring the provider specific annotations are removed from the new service")
 				annotationsToBeRemoved, err := lbProvider.GetToBeRemovedServiceAnnotations(ctx, vmService)
+				Expect(err).ToNot(HaveOccurred())
 				for k := range annotationsToBeRemoved {
 					_, exist := newService.Annotations[k]
 					Expect(exist).To(BeFalse())

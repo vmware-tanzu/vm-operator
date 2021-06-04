@@ -67,7 +67,7 @@ func intgTestsValidateCreate() {
 
 	DescribeTable("create table", validateCreate,
 		Entry("should work", true, "", nil),
-		Entry("should not work for invalid", false, "spec.type must be specified", nil),
+		Entry("should not work for invalid", false, "spec.type: Required value", nil),
 	)
 }
 

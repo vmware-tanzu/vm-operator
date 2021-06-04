@@ -5,6 +5,7 @@ package validation_test
 
 import (
 	"fmt"
+	"os"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -15,10 +16,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
@@ -65,6 +68,30 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	}
 }
 
+func setConfigMap(isRestrictedEnv bool) *corev1.ConfigMap {
+	configMapIn := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vsphere.ProviderConfigMapName,
+			Namespace: "namespace",
+		},
+		Data: make(map[string]string),
+	}
+	if isRestrictedEnv {
+		configMapIn.Data["isRestrictedNetwork"] = "true"
+	}
+	return configMapIn
+}
+
+func setReadinessProbe(validPortProbe bool) *vmopv1.Probe {
+	portValue := 6443
+	if !validPortProbe {
+		portValue = 443
+	}
+	return &vmopv1.Probe{
+		TCPSocket: &vmopv1.TCPSocketAction{Port: intstr.FromInt(portValue)},
+	}
+}
+
 // nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
@@ -72,29 +99,32 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidImageName           bool
-		invalidClassName           bool
-		invalidNetworkName         bool
-		invalidNetworkType         bool
-		invalidNetworkCardType     bool
-		multipleNetIfToSameNetwork bool
-		emptyVolumeName            bool
-		invalidVolumeName          bool
-		dupVolumeName              bool
-		invalidVolumeSource        bool
-		multipleVolumeSource       bool
-		invalidPVCName             bool
-		invalidPVCReadOnly         bool
-		invalidPVCHwVersion        bool
-		invalidMetadataConfigMap   bool
-		invalidVsphereVolumeSource bool
-		invalidVmVolumeProvOpts    bool
-		invalidStorageClass        bool
-		invalidResourceQuota       bool
-		validStorageClass          bool
-		imageNonCompatible         bool
-		invalidReadinessNoProbe    bool
-		invalidReadinessProbe      bool
+		invalidImageName                  bool
+		invalidClassName                  bool
+		invalidNetworkName                bool
+		invalidNetworkType                bool
+		invalidNetworkCardType            bool
+		multipleNetIfToSameNetwork        bool
+		emptyVolumeName                   bool
+		invalidVolumeName                 bool
+		dupVolumeName                     bool
+		invalidVolumeSource               bool
+		multipleVolumeSource              bool
+		invalidPVCName                    bool
+		invalidPVCReadOnly                bool
+		invalidPVCHwVersion               bool
+		invalidMetadataConfigMap          bool
+		invalidVsphereVolumeSource        bool
+		invalidVmVolumeProvOpts           bool
+		invalidStorageClass               bool
+		invalidResourceQuota              bool
+		validStorageClass                 bool
+		imageNonCompatible                bool
+		invalidReadinessNoProbe           bool
+		invalidReadinessProbe             bool
+		isRestrictedNetworkEnv            bool
+		isRestrictedNetworkValidProbePort bool
+		isNonRestrictedNetworkEnv         bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -179,11 +209,11 @@ func unitTestsValidateCreate() {
 			resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
 			Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
 		}
-		// StorageClass specifies but no ResourceQuotas
+		// StorageClass specified but no ResourceQuotas
 		if args.invalidResourceQuota {
 			ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
 		}
-		// StorageClass specifies and is assigned to ResourceQuota
+		// StorageClass specified and is assigned to ResourceQuota
 		if args.validStorageClass {
 			ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
 			storageClass := builder.DummyStorageClass()
@@ -199,6 +229,11 @@ func unitTestsValidateCreate() {
 				TCPSocket:      &vmopv1.TCPSocketAction{},
 				GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
 			}
+		}
+		if args.isRestrictedNetworkEnv || args.isNonRestrictedNetworkEnv {
+			configMapIn := setConfigMap(args.isRestrictedNetworkEnv)
+			ctx.vm.Spec.ReadinessProbe = setReadinessProbe(args.isRestrictedNetworkValidProbePort)
+			Expect(ctx.Client.Create(ctx, configMapIn)).To(Succeed())
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
@@ -216,9 +251,11 @@ func unitTestsValidateCreate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
+		Expect(os.Setenv(lib.VmopNamespaceEnv, "namespace")).To(Succeed())
 	})
 	AfterEach(func() {
 		ctx = nil
+		Expect(os.Unsetenv(lib.VmopNamespaceEnv)).To(Succeed())
 	})
 
 	DescribeTable("create table", validateCreate,
@@ -239,14 +276,17 @@ func unitTestsValidateCreate() {
 		Entry("should deny multiple volume source spec", createArgs{multipleVolumeSource: true}, false, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, 0, 0), nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, 0), nil),
 		Entry("should deny invalid PVC name", createArgs{invalidPVCReadOnly: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameReadOnlyFmt, 0), nil),
-		Entry("should deny invalid PVC hardware verion", createArgs{invalidPVCHwVersion: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupported, builder.DummyImageName, 12, 13), nil),
+		Entry("should deny invalid PVC hardware verion", createArgs{invalidPVCHwVersion: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupportedFmt, builder.DummyImageName, 12, 13), nil),
 		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, 0), nil),
 		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVmVolumeProvOpts: true}, false, fmt.Sprintf(messages.EagerZeroedAndThinProvisionedNotSupported), nil),
 		Entry("should deny invalid vmMetadata configmap", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
-		Entry("should deny invalid resource quota", createArgs{invalidResourceQuota: true}, false, fmt.Sprintf(messages.NoResourceQuota, ""), nil),
-		Entry("should deny invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, "invalid", ""), nil),
+		Entry("should deny invalid resource quota", createArgs{invalidResourceQuota: true}, false, fmt.Sprintf(messages.NoResourceQuotaFmt, ""), nil),
+		Entry("should deny invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssignedFmt, "invalid", ""), nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
 		Entry("should fail when image is not compatible", createArgs{imageNonCompatible: true}, false, fmt.Sprintf(messages.VirtualMachineImageNotSupported), nil),
+		Entry("should fail when restricted network env is set in provider config map and TCP port in readiness probe is not 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, false, fmt.Sprintf(messages.ReadinessProbePortNotSupportedFmt, 6443), nil),
+		Entry("should allow when restricted network env is set in provider config map and TCP port in readiness probe is 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: true}, true, nil, nil),
+		Entry("should allow when restricted network env is not set in provider config map and TCP port in readiness probe is not 6443", createArgs{isNonRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, true, nil, nil),
 	)
 }
 

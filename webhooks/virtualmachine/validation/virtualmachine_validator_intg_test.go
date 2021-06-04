@@ -125,7 +125,7 @@ func intgTestsValidateCreate() {
 		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false, "spec.imageName must be specified", nil),
 		Entry("should not work for image which is v1alpha1 incompatible or a non-tkg image", createArgs{imageNonCompatible: true}, false, fmt.Sprintf(messages.VirtualMachineImageNotSupported), nil),
 		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmMetadata.configMapName must be specified", nil),
-		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssigned, builder.DummyStorageClassName, ""), nil),
+		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssignedFmt, builder.DummyStorageClassName, ""), nil),
 	)
 }
 
@@ -187,7 +187,7 @@ func intgTestsValidateUpdate() {
 			})
 			It("rejects the request", func() {
 				fields := []string{"spec.ports"}
-				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, fields, ctx.vm.Spec.PowerState)
+				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, fields, ctx.vm.Spec.PowerState)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -202,7 +202,7 @@ func intgTestsValidateUpdate() {
 
 			It("rejects the request", func() {
 				fields := []string{"spec.vmMetadata"}
-				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, fields, ctx.vm.Spec.PowerState)
+				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, fields, ctx.vm.Spec.PowerState)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -217,7 +217,7 @@ func intgTestsValidateUpdate() {
 
 			It("rejects the request", func() {
 				fields := []string{"spec.networkInterfaces"}
-				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, fields, ctx.vm.Spec.PowerState)
+				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, fields, ctx.vm.Spec.PowerState)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -236,7 +236,7 @@ func intgTestsValidateUpdate() {
 
 				It("rejects the request", func() {
 					fields := []string{"spec.volumes[VsphereVolume]"}
-					expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, fields, ctx.vm.Spec.PowerState)
+					expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, fields, ctx.vm.Spec.PowerState)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(expectedReason))
 				})
@@ -272,7 +272,7 @@ func intgTestsValidateUpdate() {
 
 			It("rejects the request", func() {
 				fields := []string{"spec.advancedOptions.defaultVolumeProvisioningOptions"}
-				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerState, fields, ctx.vm.Spec.PowerState)
+				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, fields, ctx.vm.Spec.PowerState)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})

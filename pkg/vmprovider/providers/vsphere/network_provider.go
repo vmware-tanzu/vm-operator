@@ -571,12 +571,13 @@ func (np *nsxtNetworkProvider) waitForReadyVirtualNetworkInterface(
 func (np *nsxtNetworkProvider) goscCustomization(vnetIf *ncpv1alpha1.VirtualNetworkInterface) *vimtypes.CustomizationAdapterMapping {
 	var adapter *vimtypes.CustomizationIPSettings
 
-	if len(vnetIf.Status.IPAddresses) == 0 {
+	addrs := vnetIf.Status.IPAddresses
+	if len(addrs) == 0 || (len(addrs) == 1 && addrs[0].IP == "") {
 		adapter = &vimtypes.CustomizationIPSettings{
 			Ip: &vimtypes.CustomizationDhcpIpGenerator{},
 		}
 	} else {
-		ipAddr := vnetIf.Status.IPAddresses[0]
+		ipAddr := addrs[0]
 		adapter = &vimtypes.CustomizationIPSettings{
 			Ip:         &vimtypes.CustomizationFixedIp{IpAddress: ipAddr.IP},
 			SubnetMask: ipAddr.SubnetMask,

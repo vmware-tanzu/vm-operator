@@ -612,6 +612,30 @@ var _ = Describe("NetworkProvider", func() {
 					Expect(res).To(BeNil())
 				})
 
+				Context("with empty IP configuration and gatewayIP supports DHCP", func() {
+					gatewayIP := "192.168.100.00"
+					BeforeEach(func() {
+						ncpVif.Status.IPAddresses = []ncpv1alpha1.VirtualNetworkInterfaceIP{
+							{
+								IP:      "",
+								Gateway: gatewayIP,
+							},
+						}
+					})
+					It("should work", func() {
+						res := simulator.VPX().Run(func(ctx context.Context, c *vim25.Client) error {
+							createInterface(ctx, c)
+
+							info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(info.Customization.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
+
+							return nil
+						})
+						Expect(res).To(BeNil())
+					})
+				})
+
 				Context("with provider IP configuration", func() {
 					ip := "192.168.100.10"
 

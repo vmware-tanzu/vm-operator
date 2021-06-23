@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -47,8 +48,12 @@ func (s *simpleLoadBalancerProvider) EnsureLoadBalancer(ctx context.Context, vmS
 	if err != nil {
 		return err
 	}
+	vmImageName, err := s.GetVirtualMachineImageName(ctx)
+	if err != nil {
+		return err
+	}
 	lbParams := getLBConfigParams(vmService, xdsNodes)
-	vm := loadbalancerVM(vmService)
+	vm := loadbalancerVM(vmService, vmImageName)
 	cm := loadbalancerCM(vmService, lbParams)
 	if err := s.ensureLBVM(ctx, vm, cm); err != nil {
 		return err
@@ -58,6 +63,23 @@ func (s *simpleLoadBalancerProvider) EnsureLoadBalancer(ctx context.Context, vmS
 	}
 
 	return s.updateLBConfig(ctx, vmService)
+}
+
+// GetVirtualMachineImageName returns the image name for loadbalancer-vm image in the cluster.
+// Since we use generateName for VirtualMachineImage resources, we cannot directly use 'loadbalancer-vm'.
+func (s *simpleLoadBalancerProvider) GetVirtualMachineImageName(ctx context.Context) (string, error) {
+	imageList := &vmopv1alpha1.VirtualMachineImageList{}
+	if err := s.client.List(ctx, imageList); err != nil {
+		s.log.Error(err, "failed to list VirtualMachineImages from control plane")
+		return "", err
+	}
+
+	for _, img := range imageList.Items {
+		if strings.Contains(img.Name, "loadbalancer-vm") {
+			return img.Name, nil
+		}
+	}
+	return "", errors.New("no virtual machine image for loadbalancer-vm")
 }
 
 // No labels is added for simple LoadBalancer
@@ -114,7 +136,7 @@ func makeVMServiceOwnerRef(vmService *vmopv1alpha1.VirtualMachineService) metav1
 	}
 }
 
-func loadbalancerVM(vmService *vmopv1alpha1.VirtualMachineService) *vmopv1alpha1.VirtualMachine {
+func loadbalancerVM(vmService *vmopv1alpha1.VirtualMachineService, vmImageName string) *vmopv1alpha1.VirtualMachine {
 	return &vmopv1alpha1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            vmService.Name + "-lb",
@@ -122,7 +144,7 @@ func loadbalancerVM(vmService *vmopv1alpha1.VirtualMachineService) *vmopv1alpha1
 			OwnerReferences: []metav1.OwnerReference{makeVMServiceOwnerRef(vmService)},
 		},
 		Spec: vmopv1alpha1.VirtualMachineSpec{
-			ImageName:  "loadbalancer-vm",
+			ImageName:  vmImageName,
 			ClassName:  "best-effort-xsmall",
 			PowerState: "poweredOn",
 			VmMetadata: &vmopv1alpha1.VirtualMachineMetadata{

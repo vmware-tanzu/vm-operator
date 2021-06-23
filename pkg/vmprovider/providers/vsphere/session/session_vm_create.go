@@ -196,7 +196,7 @@ func (s *Session) cloneVMFromInventory(vmCtx context.VMCloneContext, vmConfigArg
 }
 
 func (s *Session) cloneVMFromContentLibrary(vmCtx context.VMCloneContext, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
-	item, err := s.Client.ContentLibClient().GetLibraryItem(vmCtx, vmConfigArgs.ContentLibraryUUID, vmCtx.VM.Spec.ImageName)
+	item, err := s.Client.ContentLibClient().GetLibraryItem(vmCtx, vmConfigArgs.ContentLibraryUUID, vmConfigArgs.VmImage.Status.ImageName)
 	if err != nil {
 		return nil, err
 	}

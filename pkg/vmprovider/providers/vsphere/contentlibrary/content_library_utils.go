@@ -43,7 +43,7 @@ func LibItemToVirtualMachineImage(
 	// updated. This is a hack to reduce repeated ContentLibrary tasks.
 	image := &v1alpha1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:              item.Name,
+			GenerateName:      item.Name + "-",
 			CreationTimestamp: ts,
 			Annotations: map[string]string{
 				constants.VMImageCLVersionAnnotation: libItemVersionAnnotation(item),
@@ -52,10 +52,12 @@ func LibItemToVirtualMachineImage(
 		Spec: v1alpha1.VirtualMachineImageSpec{
 			Type:            item.Type,
 			ImageSourceType: "Content Library",
+			ImageID:         item.ID,
 		},
 		Status: v1alpha1.VirtualMachineImageStatus{
 			Uuid:       item.ID,
 			InternalId: item.Name,
+			ImageName:  item.Name,
 		},
 	}
 

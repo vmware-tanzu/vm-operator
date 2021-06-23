@@ -66,6 +66,20 @@ var _ = Describe("", func() {
 		controlPlane: controlPlane,
 		log:          logr.DiscardLogger{},
 	}
+	vmImage := &vmopv1alpha1.VirtualMachineImage{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "loadbalancer-vm-",
+		},
+	}
+
+	BeforeEach(func() {
+		// ensure vm image exists.
+		imageList := &vmopv1alpha1.VirtualMachineImageList{}
+		Expect(client.List(context.TODO(), imageList)).To(Succeed())
+		if len(imageList.Items) == 0 {
+			Expect(client.Create(context.TODO(), vmImage)).To(Succeed())
+		}
+	})
 
 	Context("EnsureLoadBalancer()", func() {
 		It("should create the LB VM", func() {

@@ -166,6 +166,7 @@ func DummyVirtualMachineImage(imageName string) *vmopv1.VirtualMachineImage {
 		},
 		Status: vmopv1.VirtualMachineImageStatus{
 			InternalId: DummyImageName,
+			ImageName:  imageName,
 		},
 	}
 }

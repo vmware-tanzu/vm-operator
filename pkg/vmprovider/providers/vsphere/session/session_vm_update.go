@@ -450,7 +450,7 @@ func UpdateConfigSpecExtraConfig(
 			return text
 		}
 		b := strings.Builder{}
-		if err := t.Execute(&b, vm.Spec); err != nil {
+		if err := t.Execute(&b, vmImage.Status); err != nil {
 			return text
 		}
 		return b.String()

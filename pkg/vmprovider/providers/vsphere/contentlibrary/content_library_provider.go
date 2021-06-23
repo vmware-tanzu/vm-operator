@@ -257,7 +257,7 @@ func (cs *provider) VirtualMachineImageResourcesForLibrary(
 		var ovfEnvelope *ovf.Envelope
 		item := items[i]
 
-		if curImage, ok := currentCLImages[item.Name]; ok {
+		if curImage, ok := currentCLImages[item.ID]; ok {
 			// If there is already an VMImage for this item, and it is the same - as determined by _just_ the
 			// annotation - reuse the existing VMImage. This is to avoid repeated CL fetch tasks that would
 			// otherwise be created, spamming the UI. It would be nice if CL provided an external API that

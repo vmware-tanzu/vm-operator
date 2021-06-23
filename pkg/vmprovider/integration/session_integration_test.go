@@ -85,8 +85,9 @@ var _ = Describe("Sessions", func() {
 				images, err := c.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).ShouldNot(BeEmpty())
-				Expect(images[0].ObjectMeta.Name).Should(Equal(integration.IntegrationContentLibraryItemName))
+				Expect(images[0].ObjectMeta.GenerateName).Should(ContainSubstring(integration.IntegrationContentLibraryItemName))
 				Expect(images[0].Spec.Type).Should(Equal("ovf"))
+				Expect(images[0].Status.ImageName).Should(Equal(integration.IntegrationContentLibraryItemName))
 			})
 
 			It("should return cached VirtualMachineImage from CL", func() {
@@ -98,13 +99,13 @@ var _ = Describe("Sessions", func() {
 				vmImage.Spec.Type = "dummy-type-to-test-cache"
 
 				currentCLImages := map[string]vmopv1alpha1.VirtualMachineImage{
-					vmImage.Name: vmImage,
+					vmImage.Spec.ImageID: vmImage,
 				}
 
 				images, err = c.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, currentCLImages)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).ShouldNot(BeEmpty())
-				Expect(images[0].ObjectMeta.Name).Should(Equal(integration.IntegrationContentLibraryItemName))
+				Expect(images[0].ObjectMeta.GenerateName).Should(ContainSubstring(integration.IntegrationContentLibraryItemName))
 				Expect(images[0].Spec.Type).Should(Equal(vmImage.Spec.Type))
 			})
 		})

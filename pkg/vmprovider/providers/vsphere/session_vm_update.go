@@ -405,12 +405,9 @@ func updateConfigSpecExtraConfig(
 
 	if lib.IsThunderPciDevicesFSSEnabled() {
 		virtualDevices := vmClassSpec.Hardware.Devices
-
-		if len(virtualDevices.DynamicDirectPathIODevices) > 0 {
-			extraConfig[MMPowerOffVMExtraConfigKey] = ExtraConfigTrue
-		}
-
 		if len(virtualDevices.VGPUDevices) > 0 || len(virtualDevices.DynamicDirectPathIODevices) > 0 {
+			// Add "maintenance.vm.evacuation.poweroff" extraConfig key when GPU devices are present in the VMClass Spec.
+			extraConfig[MMPowerOffVMExtraConfigKey] = ExtraConfigTrue
 			setMMIOExtraConfig(vm, extraConfig)
 		}
 	}

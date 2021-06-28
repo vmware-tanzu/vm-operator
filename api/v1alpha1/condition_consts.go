@@ -35,6 +35,24 @@ const (
 	// VirtualMachineImageNotFoundReason (Severity=Error) documents that the VirtualMachineImage specified in the VirtualMachineSpec
 	// is not available.
 	VirtualMachineImageNotFoundReason = "VirtualMachineImageNotFound"
+
+	// VSphereVMCustomizationCondition exposes the status of vSphere VM Customization from within the guest OS, when available.
+	VSphereVMCustomizationCondition ConditionType = "VSphereVMCustomization"
+
+	// VSphereVMCustomizationIdleReason (Severity=Info) documents that vSphere VM Customizations were not applied for the VirtualMachine.
+	VSphereVMCustomizationIdleReason = "VSphereVMCustomizationIdle"
+
+	// VSphereVMCustomizationPendingReason (Severity=Info) documents that vSphere VM Customization is still pending within the guest OS.
+	VSphereVMCustomizationPendingReason = "VSphereVMCustomizationPending"
+
+	// VSphereVMCustomizationRunningReason (Severity=Info) documents that the vSphere VM Customization is now running on the guest OS.
+	VSphereVMCustomizationRunningReason = "VSphereVMCustomizationRunning"
+
+	// VSphereVMCustomizationSucceededReason (Severity=Info) documents that the vSphere VM Customization succeeded within the guest OS.
+	VSphereVMCustomizationSucceededReason = "VSphereVMCustomizationSucceeded"
+
+	// VSphereVMCustomizationFailedReason (Severity=Error) documents that the vSphere VM Customization failed within the guest OS.
+	VSphereVMCustomizationFailedReason = "VSphereVMCustomizationFailed"
 )
 
 // Common Condition.Reason used by VM Operator API objects.
@@ -51,7 +69,7 @@ const (
 )
 
 // Conditions related to the VirtualMachineImages
-const(
+const (
 	// Deprecated
 	// VirtualMachineImageOSTypeSupportedCondition denotes that the OS type in the VirtualMachineImage object is
 	// supported by VMService. A VirtualMachineImageOsTypeSupportedCondition is marked true:

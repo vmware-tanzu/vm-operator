@@ -12,19 +12,19 @@ const (
 	ExtraConfigUnset           = ""
 	ExtraConfigGuestInfoPrefix = "guestinfo."
 
-	// Annotation placed on the VM
+	// VCVMAnnotation Annotation placed on the VM
 	VCVMAnnotation = "Virtual Machine managed by the vSphere Virtual Machine service"
 
+	// VMOperatorImageSupportedCheckKey Annotation key to skip validation checks of GuestOS Type
 	// TODO: Rename and move to vmoperator-api
-	// Annotation key to skip validation checks of GuestOS Type
 	VMOperatorImageSupportedCheckKey     = pkg.VmOperatorKey + "/image-supported-check"
 	VMOperatorImageSupportedCheckDisable = "disable"
 
-	// Annotation to skip applying VMware Tools Guest Customization.
+	// VSphereCustomizationBypassKey Annotation to skip applying VMware Tools Guest Customization.
 	VSphereCustomizationBypassKey     = pkg.VmOperatorKey + "/vsphere-customization"
 	VSphereCustomizationBypassDisable = "disable"
 
-	// Special ExtraConfig key for v1alpha1 images.
+	// VMOperatorV1Alpha1ExtraConfigKey Special ExtraConfig key for v1alpha1 images.
 	VMOperatorV1Alpha1ExtraConfigKey = "guestinfo.vmservice.defer-cloud-init"
 	VMOperatorV1Alpha1ConfigReady    = "ready"
 	VMOperatorV1Alpha1ConfigEnabled  = "enabled"
@@ -33,13 +33,14 @@ const (
 	GOSCPendingExtraConfigKey          = "tools.deployPkg.fileName"
 	GOSCIgnoreToolsCheckExtraConfigKey = "vmware.tools.gosc.ignoretoolscheck"
 
-	// Enable UUID ExtraConfig key
+	// EnableDiskUUIDExtraConfigKey Enable UUID ExtraConfig key
 	EnableDiskUUIDExtraConfigKey = "disk.enableUUID"
 
-	// ExtraConfig key to mark vm for DRS to power off the vm as part of its maintenance cycle
+	// MMPowerOffVMExtraConfigKey ExtraConfig key to enable DRS to powerOff VMs when underlying host enters into
+	// maintenance mode. This is to ensure the maintenance mode workflow is consistent for VMs with vGPU/DDPIO devices.
 	MMPowerOffVMExtraConfigKey = "maintenance.vm.evacuation.poweroff"
 
-	// VirtualMachineImage annotation to cache the last fetched version.
+	// VMImageCLVersionAnnotation VirtualMachineImage annotation to cache the last fetched version.
 	VMImageCLVersionAnnotation = pkg.VmOperatorKey + "/content-library-version"
 	// Version of the VMImageCLVersionAnnotation for the VirtualMachineImage.
 	VMImageCLVersionAnnotationVersion = 1

@@ -341,7 +341,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				})
 			})
 
-			Context("when vgpu device is available", func() {
+			Context("when vGPU device is available", func() {
 				BeforeEach(func() {
 					vmClassSpec.Hardware.Devices = vmopv1alpha1.VirtualDevices{VGPUDevices: []vmopv1alpha1.VGPUDevice{
 						{
@@ -350,28 +350,28 @@ var _ = Describe("Update ConfigSpec", func() {
 					}}
 				})
 
-				It("mm poweroff extraconfig should not be added", func() {
-					Expect(ecMap).NotTo(HaveKey(MMPowerOffVMExtraConfigKey))
+				It("maintenance mode powerOff extraConfig should be added", func() {
+					Expect(ecMap).To(HaveKeyWithValue(MMPowerOffVMExtraConfigKey, ExtraConfigTrue))
 				})
 
-				It("pci passthru mmio extraconfig should be added", func() {
+				It("PCI passthru MMIO extraConfig should be added", func() {
 					Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOExtraConfigKey, ExtraConfigTrue))
 					Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOSizeExtraConfigKey, PCIPassthruMMIOSizeDefault))
 				})
 
-				Context("when pci passthru mmio override annotation is set", func() {
+				Context("when PCI passthru MMIO override annotation is set", func() {
 					BeforeEach(func() {
 						vm.Annotations[PCIPassthruMMIOOverrideAnnotation] = "12345"
 					})
 
-					It("pci passthru mmio extraconfig should be set to override annotation value", func() {
+					It("PCI passthru MMIO extraConfig should be set to override annotation value", func() {
 						Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOExtraConfigKey, ExtraConfigTrue))
 						Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOSizeExtraConfigKey, "12345"))
 					})
 				})
 			})
 
-			Context("when ddpio device is available", func() {
+			Context("when DDPIO device is available", func() {
 				BeforeEach(func() {
 					vmClassSpec.Hardware.Devices = vmopv1alpha1.VirtualDevices{DynamicDirectPathIODevices: []vmopv1alpha1.DynamicDirectPathIODevice{
 						{
@@ -382,21 +382,21 @@ var _ = Describe("Update ConfigSpec", func() {
 					}}
 				})
 
-				It("mm poweroff extraconfig should be added", func() {
+				It("maintenance mode powerOff extraConfig should be added", func() {
 					Expect(ecMap).To(HaveKeyWithValue(MMPowerOffVMExtraConfigKey, ExtraConfigTrue))
 				})
 
-				It("pci passthru mmio extraconfig should be added", func() {
+				It("PCI passthru MMIO extraConfig should be added", func() {
 					Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOExtraConfigKey, ExtraConfigTrue))
 					Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOSizeExtraConfigKey, PCIPassthruMMIOSizeDefault))
 				})
 
-				Context("when pci passthru mmio override annotation is set", func() {
+				Context("when PCI passthru MMIO override annotation is set", func() {
 					BeforeEach(func() {
 						vm.Annotations[PCIPassthruMMIOOverrideAnnotation] = "12345"
 					})
 
-					It("pci passthru mmio extraconfig should be set to override annotation value", func() {
+					It("PCI passthru MMIO extraConfig should be set to override annotation value", func() {
 						Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOExtraConfigKey, ExtraConfigTrue))
 						Expect(ecMap).To(HaveKeyWithValue(PCIPassthruMMIOSizeExtraConfigKey, "12345"))
 					})

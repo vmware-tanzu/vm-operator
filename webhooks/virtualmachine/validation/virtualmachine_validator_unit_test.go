@@ -77,7 +77,7 @@ func setConfigMap(isRestrictedEnv bool) *corev1.ConfigMap {
 		Data: make(map[string]string),
 	}
 	if isRestrictedEnv {
-		configMapIn.Data["isRestrictedNetwork"] = "true"
+		configMapIn.Data["IsRestrictedNetwork"] = "true"
 	}
 	return configMapIn
 }

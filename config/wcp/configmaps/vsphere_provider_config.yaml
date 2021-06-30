@@ -4,6 +4,7 @@ metadata:
   name: vsphere.provider.config.vmoperator.vmware.com
   namespace: vmware-system-vmop
 data:
+  # Keys below should match the ones used in support/install/kube-offline-configure-kubeadm.sh in CSP
   VcPNID: <vc_pnid>
   VcCredsSecretName: wcp-vmop-sa-vc-auth
   Datacenter: <datacenter>
@@ -13,3 +14,4 @@ data:
   UseInventoryAsContentSource: "false"
   CAFilePath: "/etc/vmware/wcp/tls/vmca.pem"
   InsecureSkipTLSVerify: "false"
+  IsRestrictedNetwork: <is_restricted_network>

@@ -38,7 +38,7 @@ import (
 const (
 	webHookName                          = "default"
 	storageResourceQuotaStrPattern       = ".storageclass.storage.k8s.io/"
-	isRestrictedNetworkKey               = "isRestrictedNetwork"
+	isRestrictedNetworkKey               = "IsRestrictedNetwork"
 	allowedRestrictedNetworkTCPProbePort = 6443
 )
 

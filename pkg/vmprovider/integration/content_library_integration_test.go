@@ -6,12 +6,15 @@
 package integration
 
 import (
-	"context"
+	"io/ioutil"
+	"os"
+	"strings"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/vapi/library"
+	"github.com/vmware/govmomi/vapi/rest"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
@@ -21,7 +24,6 @@ var _ = Describe("Content Library", func() {
 
 	Context("when items are present in library", func() {
 		It("lists the ovf and downloads the ovf", func() {
-			ctx := context.Background()
 			restClient := session.Client.RestClient()
 
 			mgr := library.NewManager(restClient)
@@ -53,7 +55,6 @@ var _ = Describe("Content Library", func() {
 
 	Context("when invalid item id is passed", func() {
 		It("returns an error creating a download session", func() {
-			ctx := context.Background()
 			restClient := session.Client.RestClient()
 
 			item := &library.Item{
@@ -67,6 +68,55 @@ var _ = Describe("Content Library", func() {
 			_, err := testProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, item)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("404 Not Found"))
+		})
+	})
+})
+
+var _ = Describe("RetrieveOvfEAnvelopeFromLibraryItems", func() {
+	When("called with an OVF that is invalid", func() {
+		var (
+			ovf         *os.File
+			restClient  *rest.Client
+			mgr         *library.Manager
+			libItem     *library.Item
+			libItemName string
+		)
+
+		BeforeEach(func() {
+			// Upload an invalid OVF (0B in size) to the integration test CL
+			ovf, err = ioutil.TempFile(os.TempDir(), "fake-*.ovf")
+			Expect(err).NotTo(HaveOccurred())
+			ovfInfo, err := ovf.Stat()
+			Expect(err).NotTo(HaveOccurred())
+
+			restClient = session.Client.RestClient()
+
+			mgr = library.NewManager(restClient)
+			libItemName = strings.Split(ovfInfo.Name(), ".ovf")[0]
+
+			err = integration.CreateLibraryItem(ctx, session, libItemName, "ovf", integration.GetContentSourceID(), ovf.Name())
+			Expect(err).NotTo(HaveOccurred())
+
+		})
+
+		AfterEach(func() {
+			// Clean up the invalid library item from the CL
+			Expect(session.DeleteLibraryItem(ctx, libItem)).To(Succeed())
+			Expect(os.Remove(ovf.Name())).To(Succeed())
+		})
+
+		It("does not return error", func() {
+			itemIDs, err := mgr.FindLibraryItems(ctx, library.FindItem{LibraryID: integration.GetContentSourceID(), Name: libItemName})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(itemIDs).Should(HaveLen(1))
+
+			libItem, err = mgr.GetLibraryItem(ctx, itemIDs[0])
+			Expect(err).ToNot(HaveOccurred())
+
+			testProvider := vsphere.NewContentLibraryProviderWithWaitSec(restClient, 1)
+			ovfEnvelope, err := testProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ovfEnvelope).To(BeNil())
 		})
 	})
 })

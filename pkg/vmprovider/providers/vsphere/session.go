@@ -191,6 +191,11 @@ func (s *Session) CreateLibraryItem(ctx context.Context, libraryItem library.Ite
 	return s.contentLibProvider.CreateLibraryItem(ctx, libraryItem, path)
 }
 
+// DeleteLibraryItem deletes an item from a library. Only used in tests.
+func (s *Session) DeleteLibraryItem(ctx context.Context, libraryItem *library.Item) error {
+	return s.contentLibProvider.DeleteLibraryItem(ctx, libraryItem)
+}
+
 func IsSupportedDeployType(t string) bool {
 	switch t {
 	case library.ItemTypeVMTX, library.ItemTypeOVF:
@@ -232,7 +237,12 @@ func (s *Session) ListVirtualMachineImagesFromCL(ctx context.Context, clUUID str
 		switch item.Type {
 		case library.ItemTypeOVF:
 			if ovfEnvelope, err = s.contentLibProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, &item); err != nil {
+				log.Error(err, "error extracting the OVF envelope from the library item", "itemName", item.Name)
 				return nil, err
+			}
+			if ovfEnvelope == nil {
+				log.Error(err, "no valid OVF envelope found, skipping library item", "itemName", item.Name)
+				continue
 			}
 		case library.ItemTypeVMTX:
 			// Do not try to populate VMTX types, but resVm.GetOvfProperties() should return an

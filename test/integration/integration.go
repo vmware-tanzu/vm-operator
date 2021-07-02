@@ -265,17 +265,14 @@ func TeardownVcSimEnv(vcSim *VcSimInstance) {
 	}
 }
 
-func CreateLibraryItem(ctx context.Context, session *vsphere.Session, name, kind, libraryId string) error {
-	ovf := "ttylinux-pc_i486-16.1.ovf"
-	imagePath := path.Join(testutil.GetRootDirOrDie(), "images", ovf)
-
+func CreateLibraryItem(ctx context.Context, session *vsphere.Session, name, kind, libraryId, ovfPath string) error {
 	libraryItem := library.Item{
 		Name:      name,
 		Type:      kind,
 		LibraryID: libraryId,
 	}
 
-	return session.CreateLibraryItem(ctx, libraryItem, imagePath)
+	return session.CreateLibraryItem(ctx, libraryItem, ovfPath)
 }
 
 // SetupContentLibrary creates ContentSource and ContentLibraryProvider resources for the vSphere content library.
@@ -296,7 +293,9 @@ func SetupContentLibrary(client client.Client, session *vsphere.Session) error {
 		return err
 	}
 
-	if err := CreateLibraryItem(ctx, session, IntegrationContentLibraryItemName, "ovf", libID); err != nil {
+	ovfName := "ttylinux-pc_i486-16.1.ovf"
+	imagePath := path.Join(testutil.GetRootDirOrDie(), "images", ovfName)
+	if err := CreateLibraryItem(ctx, session, IntegrationContentLibraryItemName, "ovf", libID, imagePath); err != nil {
 		return err
 	}
 

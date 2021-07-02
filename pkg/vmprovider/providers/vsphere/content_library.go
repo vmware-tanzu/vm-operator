@@ -32,6 +32,7 @@ type ContentLibraryProvider interface {
 	// TODO: Testing only. Remove these from this file.
 	CreateLibrary(ctx context.Context, contentSource, datastoreID string) (string, error)
 	CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error
+	DeleteLibraryItem(ctx context.Context, libraryItem *library.Item) error
 }
 
 type contentLibraryProvider struct {
@@ -128,7 +129,13 @@ func (cs *contentLibraryProvider) RetrieveOvfEnvelopeFromLibraryItem(ctx context
 	logger.V(4).Info("downloaded library item")
 	defer downloadedFileContent.Close()
 
-	return ovf.Unmarshal(downloadedFileContent)
+	envelope, err := ovf.Unmarshal(downloadedFileContent)
+	if err != nil {
+		logger.Error(err, "error parsing the OVF envelope")
+		return nil, nil
+	}
+
+	return envelope, nil
 }
 
 // Only used in testing.
@@ -153,6 +160,11 @@ func (cs *contentLibraryProvider) CreateLibrary(ctx context.Context, name, datas
 	}
 
 	return libID, nil
+}
+
+// Only used in testing.
+func (cs *contentLibraryProvider) DeleteLibraryItem(ctx context.Context, libraryItem *library.Item) error {
+	return cs.libMgr.DeleteLibraryItem(ctx, libraryItem)
 }
 
 // Only used in testing.

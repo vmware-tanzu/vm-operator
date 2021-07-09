@@ -35,24 +35,26 @@ const (
 	// VirtualMachineImageNotFoundReason (Severity=Error) documents that the VirtualMachineImage specified in the VirtualMachineSpec
 	// is not available.
 	VirtualMachineImageNotFoundReason = "VirtualMachineImageNotFound"
+)
 
-	// VSphereVMCustomizationCondition exposes the status of vSphere VM Customization from within the guest OS, when available.
-	VSphereVMCustomizationCondition ConditionType = "VSphereVMCustomization"
+const (
+	// GuestCustomizationCondition exposes the status of guest customization from within the guest OS, when available.
+	GuestCustomizationCondition ConditionType = "GuestCustomization"
 
-	// VSphereVMCustomizationIdleReason (Severity=Info) documents that vSphere VM Customizations were not applied for the VirtualMachine.
-	VSphereVMCustomizationIdleReason = "VSphereVMCustomizationIdle"
+	// GuestCustomizationIdleReason (Severity=Info) documents that guest customizations were not applied for the VirtualMachine.
+	GuestCustomizationIdleReason = "GuestCustomizationIdle"
 
-	// VSphereVMCustomizationPendingReason (Severity=Info) documents that vSphere VM Customization is still pending within the guest OS.
-	VSphereVMCustomizationPendingReason = "VSphereVMCustomizationPending"
+	// GuestCustomizationPendingReason (Severity=Info) documents that guest customization is still pending within the guest OS.
+	GuestCustomizationPendingReason = "GuestCustomizationPending"
 
-	// VSphereVMCustomizationRunningReason (Severity=Info) documents that the vSphere VM Customization is now running on the guest OS.
-	VSphereVMCustomizationRunningReason = "VSphereVMCustomizationRunning"
+	// GuestCustomizationRunningReason (Severity=Info) documents that the guest customization is now running on the guest OS.
+	GuestCustomizationRunningReason = "GuestCustomizationRunning"
 
-	// VSphereVMCustomizationSucceededReason (Severity=Info) documents that the vSphere VM Customization succeeded within the guest OS.
-	VSphereVMCustomizationSucceededReason = "VSphereVMCustomizationSucceeded"
+	// GuestCustomizationSucceededReason (Severity=Info) documents that the guest customization succeeded within the guest OS.
+	GuestCustomizationSucceededReason = "GuestCustomizationSucceeded"
 
-	// VSphereVMCustomizationFailedReason (Severity=Error) documents that the vSphere VM Customization failed within the guest OS.
-	VSphereVMCustomizationFailedReason = "VSphereVMCustomizationFailed"
+	// GuestCustomizationFailedReason (Severity=Error) documents that the guest customization failed within the guest OS.
+	GuestCustomizationFailedReason = "GuestCustomizationFailed"
 )
 
 // Common Condition.Reason used by VM Operator API objects.

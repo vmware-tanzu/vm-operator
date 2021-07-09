@@ -24,7 +24,7 @@ func GetProviderCredentials(client ctrlruntime.Client, namespace string, secretN
 	secret := &v1.Secret{}
 	secretKey := types.NamespacedName{Namespace: namespace, Name: secretName}
 	if err := client.Get(context.Background(), secretKey, secret); err != nil {
-		return nil, errors.Wrapf(err, "cannot find secret %s", secretKey)
+		return nil, errors.Wrapf(err, "cannot find secret for provider credentials: %s", secretKey)
 	}
 
 	var credentials VSphereVmProviderCredentials

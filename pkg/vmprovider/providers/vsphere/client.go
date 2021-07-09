@@ -62,7 +62,7 @@ func RestKeepAliveHandlerFn(c *rest.Client, userInfo *url.Userinfo) func() error
 			// session is Unauthorized.
 			log.Info("Re-authenticating REST client")
 			if err = c.Login(ctx, userInfo); err != nil {
-				log.Error(err, "Invalid login in keep alive handler", "url", c.URL())
+				log.Error(err, "Invalid login in keepalive handler", "url", c.URL())
 				return err
 			}
 		} else if err != nil {

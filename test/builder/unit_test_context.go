@@ -8,22 +8,12 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	clientgorecord "k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-
-	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
-
-	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
-	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/context/fake"
-	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
 // UnitTestContext is used for general purpose unit testing.
@@ -35,7 +25,7 @@ type UnitTestContext struct {
 
 // NewUnitTestContext returns a new UnitTestContext
 func NewUnitTestContext(initObjects ...runtime.Object) *UnitTestContext {
-	fakeClient, scheme := NewFakeClient(initObjects...)
+	fakeClient, scheme := NewFakeClientAndScheme(initObjects...)
 	return &UnitTestContext{
 		Context: goctx.Background(),
 		Client:  fakeClient,
@@ -82,7 +72,7 @@ type UnitTestContextForValidatingWebhook struct {
 // NewUnitTestContextForController returns a new UnitTestContextForController
 // for unit testing controllers.
 func NewUnitTestContextForController(initObjects []runtime.Object) *UnitTestContextForController {
-	fakeClient, scheme := NewFakeClient(initObjects...)
+	fakeClient, scheme := NewFakeClientAndScheme(initObjects...)
 	fakeControllerManagerContext := fake.NewControllerManagerContext(scheme)
 	recorder, events := NewFakeRecorder()
 	fakeControllerManagerContext.Recorder = recorder
@@ -107,7 +97,7 @@ func NewUnitTestContextForValidatingWebhook(
 	obj, oldObj *unstructured.Unstructured,
 	initObjects ...runtime.Object) *UnitTestContextForValidatingWebhook {
 
-	fakeClient, scheme := NewFakeClient(initObjects...)
+	fakeClient, scheme := NewFakeClientAndScheme(initObjects...)
 	fakeManagerContext := fake.NewControllerManagerContext(scheme)
 	fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
@@ -127,6 +117,9 @@ type UnitTestContextForMutatingWebhook struct {
 	// and is used for unit testing.
 	context.WebhookRequestContext
 
+	// Client is the k8s client to access resources.
+	Client client.Client
+
 	// Key may be used to lookup Ctx.Cluster with Ctx.Client.Get.
 	Key client.ObjectKey
 
@@ -136,37 +129,19 @@ type UnitTestContextForMutatingWebhook struct {
 
 // NewUnitTestContextForMutatingWebhook returns a new UnitTestContextForMutatingWebhook for unit testing mutating webhooks.
 func NewUnitTestContextForMutatingWebhook(
-	mutator builder.Mutator,
+	mutatorFn builder.MutatorFunc,
 	obj *unstructured.Unstructured) *UnitTestContextForMutatingWebhook {
 
-	_, scheme := NewFakeClient()
+	fakeClient, scheme := NewFakeClientAndScheme(DummyAvailabilityZone())
 	fakeManagerContext := fake.NewControllerManagerContext(scheme)
 	fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
 	ctx := &UnitTestContextForMutatingWebhook{
 		WebhookRequestContext: *(fake.NewWebhookRequestContext(fakeWebhookContext, obj, nil)),
+		Client:                fakeClient,
 		Key:                   client.ObjectKey{Namespace: obj.GetNamespace(), Name: obj.GetName()},
-		Mutator:               mutator,
+		Mutator:               mutatorFn(fakeClient),
 	}
 
 	return ctx
-}
-
-func NewFakeClient(initObjects ...runtime.Object) (client.Client, *runtime.Scheme) {
-	scheme := runtime.NewScheme()
-	_ = clientgoscheme.AddToScheme(scheme)
-	_ = vmopv1.AddToScheme(scheme)
-	_ = ncpv1alpha1.AddToScheme(scheme)
-	_ = cnsv1alpha1.AddToScheme(scheme)
-	_ = netopv1alpha1.AddToScheme(scheme)
-
-	fakeClient := clientfake.NewFakeClientWithScheme(scheme, initObjects...)
-
-	return fakeClient, scheme
-}
-
-func NewFakeRecorder() (record.Recorder, chan string) {
-	fakeEventRecorder := clientgorecord.NewFakeRecorder(1024)
-	recorder := record.New(fakeEventRecorder)
-	return recorder, fakeEventRecorder.Events
 }

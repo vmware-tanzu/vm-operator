@@ -21,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
@@ -186,7 +187,7 @@ var _ = Describe("VMProvider Tests", func() {
 		storageProfileId := "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
 
 		BeforeEach(func() {
-			err = vsphere.InstallVSphereVmProviderConfig(k8sClient, integration.DefaultNamespace,
+			err = config.InstallVSphereVmProviderConfig(k8sClient, integration.DefaultNamespace,
 				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port),
 				integration.SecretName)
 			Expect(err).NotTo(HaveOccurred())
@@ -353,7 +354,10 @@ var _ = Describe("VMProvider Tests", func() {
 	Context("Compute CPU Min Frequency in the Cluster", func() {
 		It("reconfigure and power on without errors", func() {
 			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil, recorder)
-			err := vmProvider.ComputeClusterCpuMinFrequency(context.TODO())
+			vmClient, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(ctx)
+			Expect(vmClient).ToNot(BeNil())
+			Expect(err).NotTo(HaveOccurred())
+			err = vmProvider.ComputeClusterCpuMinFrequency(context.TODO())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(session.GetCpuMinMHzInCluster()).Should(BeNumerically(">", 0))
 		})
@@ -362,11 +366,14 @@ var _ = Describe("VMProvider Tests", func() {
 	Context("Update PNID", func() {
 		It("update pnid when the same pnid is supplied", func() {
 			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil, recorder)
-			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(k8sClient, "")
+			vmClient, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(ctx)
+			Expect(vmClient).ToNot(BeNil())
+			Expect(err).NotTo(HaveOccurred())
+			providerConfig, err := config.GetProviderConfigFromConfigMap(ctx, k8sClient, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Same PNID
-			err = vmProvider.UpdateVcPNID(context.TODO(), providerConfig.VcPNID, vsphere.DefaultVCPort)
+			err = vmProvider.UpdateVcPNID(context.TODO(), providerConfig.VcPNID, config.DefaultVCPort)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -377,14 +384,14 @@ var _ = Describe("VMProvider Tests", func() {
 		// and tested in the infra controller test so disable it here.
 		XIt("update pnid when a different pnid is supplied", func() {
 			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil, recorder)
-			providerConfig, err := vsphere.GetProviderConfigFromConfigMap(k8sClient, "")
+			providerConfig, err := config.GetProviderConfigFromConfigMap(ctx, k8sClient, "", "")
 			Expect(err).NotTo(HaveOccurred())
 
 			// Different PNID
 			pnid := providerConfig.VcPNID + "-01"
-			err = vmProvider.UpdateVcPNID(context.TODO(), pnid, vsphere.DefaultVCPort)
+			err = vmProvider.UpdateVcPNID(context.TODO(), pnid, config.DefaultVCPort)
 			Expect(err).NotTo(HaveOccurred())
-			providerConfig, _ = vsphere.GetProviderConfigFromConfigMap(k8sClient, "")
+			providerConfig, _ = config.GetProviderConfigFromConfigMap(ctx, k8sClient, "", "")
 			Expect(providerConfig.VcPNID).Should(Equal(pnid))
 		})
 	})

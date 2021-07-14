@@ -25,6 +25,8 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
@@ -63,11 +65,11 @@ var _ = Describe("VirtualMachineImages", func() {
 				},
 			}
 
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
+			image := contentlibrary.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(HaveLen(2))
-			Expect(image.Annotations).To(HaveKey(vsphere.VMImageCLVersionAnnotation))
+			Expect(image.Annotations).To(HaveKey(constants.VMImageCLVersionAnnotation))
 			Expect(image.Annotations).Should(HaveKeyWithValue("vmware-system-version", "1.15"))
 			Expect(image.CreationTimestamp).To(BeEquivalentTo(metav1.NewTime(ts)))
 
@@ -110,10 +112,10 @@ var _ = Describe("VirtualMachineImages", func() {
 
 				ovfEnvelope := &ovf.Envelope{}
 
-				image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
+				image := contentlibrary.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 				Expect(image).ToNot(BeNil())
 				Expect(image.Name).Should(Equal("fakeItem"))
-				Expect(image.Annotations).To(HaveKey(vsphere.VMImageCLVersionAnnotation))
+				Expect(image.Annotations).To(HaveKey(constants.VMImageCLVersionAnnotation))
 				Expect(image.CreationTimestamp).To(BeEquivalentTo(metav1.NewTime(ts)))
 				Expect(image.Spec.ProductInfo.Version).Should(BeEmpty())
 			})
@@ -156,10 +158,10 @@ var _ = Describe("VirtualMachineImages", func() {
 
 		It("with vmtx type", func() {
 			item.Type = "vmtx"
-			image := vsphere.LibItemToVirtualMachineImage(&item, nil)
+			image := contentlibrary.LibItemToVirtualMachineImage(&item, nil)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
-			Expect(image.Annotations).To(HaveKey(vsphere.VMImageCLVersionAnnotation))
+			Expect(image.Annotations).To(HaveKey(constants.VMImageCLVersionAnnotation))
 
 			// ImageSupported in Status is unset as the image type is not OVF type
 			Expect(image.Status.ImageSupported).Should(BeNil())
@@ -188,7 +190,7 @@ var _ = Describe("VirtualMachineImages", func() {
 				},
 			}
 
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
+			image := contentlibrary.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
 
 			Expect(image.Status.ImageSupported).Should(Equal(supportedTrue))
@@ -214,7 +216,7 @@ var _ = Describe("VirtualMachineImages", func() {
 				},
 			}
 
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
+			image := contentlibrary.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Status.ImageSupported).Should(Equal(supportedFalse))
 
@@ -234,8 +236,8 @@ var _ = Describe("VirtualMachineImages", func() {
 						{
 							ExtraConfig: []ovf.Config{
 								{
-									Key:   vsphere.VMOperatorV1Alpha1ExtraConfigKey,
-									Value: vsphere.VMOperatorV1Alpha1ConfigReady,
+									Key:   constants.VMOperatorV1Alpha1ExtraConfigKey,
+									Value: constants.VMOperatorV1Alpha1ConfigReady,
 								},
 							},
 						},
@@ -243,7 +245,7 @@ var _ = Describe("VirtualMachineImages", func() {
 				},
 			}
 
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
+			image := contentlibrary.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Status.ImageSupported).Should(Equal(supportedTrue))
 			expectedCondition := vmopv1alpha1.Conditions{
@@ -304,7 +306,7 @@ var _ = Describe("VirtualMachineImages", func() {
 				},
 			}
 
-			image := vsphere.LibItemToVirtualMachineImage(&item, ovfEnvelope)
+			image := contentlibrary.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 
@@ -321,19 +323,19 @@ var _ = Describe("VirtualMachineImages", func() {
 
 		It("empty hardware string", func() {
 			vmxHwVersionString = pointer.StringPtr("")
-			Expect(vsphere.ParseVirtualHardwareVersion(vmxHwVersionString)).Should(Equal(int32(0)))
+			Expect(contentlibrary.ParseVirtualHardwareVersion(vmxHwVersionString)).Should(Equal(int32(0)))
 		})
 
 		It("invalid hardware string", func() {
 			vmxHwVersionString = pointer.StringPtr("blah")
-			vsphere.ParseVirtualHardwareVersion(vmxHwVersionString)
-			Expect(vsphere.ParseVirtualHardwareVersion(vmxHwVersionString)).Should(Equal(int32(0)))
+			contentlibrary.ParseVirtualHardwareVersion(vmxHwVersionString)
+			Expect(contentlibrary.ParseVirtualHardwareVersion(vmxHwVersionString)).Should(Equal(int32(0)))
 		})
 
 		It("valid hardware version string eg. vmx-15", func() {
 			vmxHwVersionString = pointer.StringPtr("vmx-15")
-			vsphere.ParseVirtualHardwareVersion(vmxHwVersionString)
-			Expect(vsphere.ParseVirtualHardwareVersion(vmxHwVersionString)).Should(Equal(int32(15)))
+			contentlibrary.ParseVirtualHardwareVersion(vmxHwVersionString)
+			Expect(contentlibrary.ParseVirtualHardwareVersion(vmxHwVersionString)).Should(Equal(int32(15)))
 
 		})
 	})

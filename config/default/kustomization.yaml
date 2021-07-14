@@ -10,6 +10,7 @@ resources:
 - ../rbac
 - ../webhook
 - ../certmanager
+- ../crd/external-crds/topology.tanzu.vmware.com_availabilityzones.yaml
 
 patchesStrategicMerge:
 - manager_auth_proxy_patch.yaml

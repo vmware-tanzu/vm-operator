@@ -80,7 +80,7 @@ type TestSuite struct {
 	webhookName string
 	certDir     string
 	validatorFn builder.ValidatorFunc
-	mutator     builder.Mutator
+	mutatorFn   builder.MutatorFunc
 	pki         pkiToolchain
 	webhookYaml []byte
 }
@@ -158,7 +158,7 @@ func NewTestSuiteForValidatingWebhook(
 // package.
 func NewTestSuiteForMutatingWebhook(
 	addToManagerFn pkgmgr.AddToManagerFunc,
-	newMutatorFn func() builder.Mutator,
+	newMutatorFn builder.MutatorFunc,
 	webhookName string) *TestSuite {
 
 	return newTestSuiteForWebhook(addToManagerFn, nil, newMutatorFn, webhookName)
@@ -167,7 +167,7 @@ func NewTestSuiteForMutatingWebhook(
 func newTestSuiteForWebhook(
 	addToManagerFn pkgmgr.AddToManagerFunc,
 	newValidatorFn builder.ValidatorFunc,
-	newMutatorFn func() builder.Mutator,
+	newMutatorFn builder.MutatorFunc,
 	webhookName string) *TestSuite {
 
 	testSuite := &TestSuite{
@@ -182,7 +182,7 @@ func newTestSuiteForWebhook(
 		testSuite.validatorFn = newValidatorFn
 	}
 	if newMutatorFn != nil {
-		testSuite.mutator = newMutatorFn()
+		testSuite.mutatorFn = newMutatorFn
 	}
 
 	// Create a temp directory for the certs needed for testing webhooks.
@@ -283,7 +283,7 @@ func (s *TestSuite) NewUnitTestContextForValidatingWebhook(
 // Returns nil if unit testing is disabled.
 func (s *TestSuite) NewUnitTestContextForMutatingWebhook(obj *unstructured.Unstructured) *UnitTestContextForMutatingWebhook {
 	if s.flags.UnitTestsEnabled {
-		ctx := NewUnitTestContextForMutatingWebhook(s.mutator, obj)
+		ctx := NewUnitTestContextForMutatingWebhook(s.mutatorFn, obj)
 		return ctx
 	}
 	return nil
@@ -371,7 +371,7 @@ func (s *TestSuite) postConfigureManager() {
 			mutatingWebhookConfig, validatingWebhookConfig := parseWebhookConfig(validatingWebhookFile)
 
 			// MARSHAL the webhook config back to YAML.
-			if s.mutator != nil {
+			if s.mutatorFn != nil {
 				By("installing the mutating webhook(s)")
 				s.webhookYaml = updateMutatingWebhookConfig(mutatingWebhookConfig, s.webhookName, s.manager.GetWebhookServer().Host, s.manager.GetWebhookServer().Port, s.pki.publicKeyPEM)
 			} else {
@@ -442,6 +442,10 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 				},
 			}
 			Expect(s.integrationTestClient.Create(s, namespace)).To(Succeed())
+		})
+
+		By("create availability zone", func() {
+			Expect(s.integrationTestClient.Create(s, DummyAvailabilityZone())).To(Succeed())
 		})
 
 		By("starting the manager", func() {

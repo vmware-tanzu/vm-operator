@@ -9,7 +9,8 @@ set -o nounset
 set -o pipefail
 set -x
 
-function join_packages { local IFS=","; echo "$*"; }
+function join_packages_for_cover { local IFS=","; echo "$*"; }
+function join_packages_for_tests { local IFS=" "; echo "$*"; }
 
 # Change directories to the parent directory of the one in which this
 # script is located.
@@ -22,12 +23,32 @@ ENVIRONMENT_COVERAGE_FILE="$(pwd)/env.cover.out"
 # shellcheck disable=SC1091
 source hack/ensure-go.sh
 
-packages=(
+COVER_PKGS=(
   "./controllers/..."
   "./pkg/..."
   "./webhooks/..."
 )
-COV_OPTS=$(join_packages "${packages[@]}")
+COV_OPTS=$(join_packages_for_cover "${COVER_PKGS[@]}")
+
+# Packages tested with the old test framework.
+TEST_PKGS=(
+  "./pkg/..."
+)
+
+# Packages tested with the new test framework.
+NEW_TEST_PKGS=(
+  "./controllers/contentsource"
+  "./controllers/infracluster"
+  "./controllers/infraprovider"
+  "./controllers/providerconfigmap"
+  "./controllers/virtualmachine"
+  "./controllers/virtualmachineclass"
+  "./controllers/virtualmachineimage"
+  "./controllers/virtualmachineservice"
+  "./controllers/virtualmachinesetresourcepolicy"
+  "./controllers/volume"
+  "./webhooks/..."
+)
 
 INT_GOFLAGS=()
 ENV_GOFLAGS=()
@@ -40,23 +61,19 @@ fi
 
 # Run the package integration tests.
 # go test: -race requires cgo
-CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${INT_GOFLAGS[@]}" -tags=integration ./pkg/...
+# shellcheck disable=SC2046
+CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${INT_GOFLAGS[@]}" \
+  -tags=integration \
+  $(join_packages_for_tests "${TEST_PKGS[@]}")
 
 # Run integration tests with new framework
 # go test: -race requires cgo
+# shellcheck disable=SC2046
 CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" \
-           ./controllers/contentsource \
-           ./controllers/infracluster \
-           ./controllers/infraprovider \
-           ./controllers/providerconfigmap \
-           ./controllers/virtualmachine \
-           ./controllers/virtualmachineclass \
-           ./controllers/virtualmachineimage \
-           ./controllers/virtualmachineservice \
-           ./controllers/virtualmachinesetresourcepolicy \
-           ./controllers/volume \
-	   ./webhooks/... \
-           -- -enable-integration-tests -enable-unit-tests=false
+           $(join_packages_for_tests "${NEW_TEST_PKGS[@]}") \
+           -- \
+           -enable-integration-tests \
+           -enable-unit-tests=false
 
 # Merge the coverage files.
 if [[ -n ${COVERAGE_FILE} ]]; then

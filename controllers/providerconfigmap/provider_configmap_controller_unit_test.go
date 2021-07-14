@@ -15,7 +15,7 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/providerconfigmap"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -62,7 +62,7 @@ func unitTestsCM() {
 
 		Context("CreateOrUpdateContentSourceResources", func() {
 			BeforeEach(func() {
-				cm.Data[vsphere.ContentSourceKey] = clUUID
+				cm.Data[config.ContentSourceKey] = clUUID
 				initObjects = append(initObjects, cm)
 			})
 
@@ -99,7 +99,7 @@ func unitTestsCM() {
 				workloadNS *v1.Namespace
 			)
 			BeforeEach(func() {
-				cm.Data[vsphere.ContentSourceKey] = clUUID
+				cm.Data[config.ContentSourceKey] = clUUID
 
 				workloadNS = &v1.Namespace{
 					ObjectMeta: metav1.ObjectMeta{

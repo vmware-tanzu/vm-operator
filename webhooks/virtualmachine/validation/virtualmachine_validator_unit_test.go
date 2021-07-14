@@ -22,7 +22,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
@@ -50,6 +52,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 
 	vmImage := builder.DummyVirtualMachineImage(vm.Spec.ImageName)
 	vmImage1 := builder.DummyVirtualMachineImage(vm.Spec.ImageName + updateSuffix)
+	zone := builder.DummyAvailabilityZone()
 
 	var oldVM *vmopv1.VirtualMachine
 	var oldObj *unstructured.Unstructured
@@ -61,7 +64,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	}
 
 	return &unitValidatingWebhookContext{
-		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, vmImage, vmImage1),
+		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, vmImage, vmImage1, zone),
 		vm:                                  vm,
 		oldVM:                               oldVM,
 		vmImage:                             vmImage,
@@ -71,7 +74,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 func setConfigMap(isRestrictedEnv bool) *corev1.ConfigMap {
 	configMapIn := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      vsphere.ProviderConfigMapName,
+			Name:      config.ProviderConfigMapName,
 			Namespace: "namespace",
 		},
 		Data: make(map[string]string),
@@ -125,6 +128,10 @@ func unitTestsValidateCreate() {
 		isRestrictedNetworkEnv            bool
 		isRestrictedNetworkValidProbePort bool
 		isNonRestrictedNetworkEnv         bool
+		isNoAvailabilityZones             bool
+		isWCPFaultDomainsFSSEnabled       bool
+		isInvalidAvailabilityZone         bool
+		isEmptyAvailabilityZone           bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -142,7 +149,7 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidNetworkName {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkName = ""
-			ctx.vm.Spec.NetworkInterfaces[0].NetworkType = vsphere.VdsNetworkType
+			ctx.vm.Spec.NetworkInterfaces[0].NetworkType = network.VdsNetworkType
 		}
 		if args.invalidNetworkType {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkType = "bogusNetworkType"
@@ -236,6 +243,31 @@ func unitTestsValidateCreate() {
 			Expect(ctx.Client.Create(ctx, configMapIn)).To(Succeed())
 		}
 
+		// Please note this prevents the unit tests from running safely in
+		// parallel.
+		if args.isWCPFaultDomainsFSSEnabled {
+			os.Setenv(lib.WcpFaultDomainsFSS, lib.TrueString)
+		} else {
+			os.Setenv(lib.WcpFaultDomainsFSS, "")
+		}
+
+		if args.isNoAvailabilityZones {
+			// Delete the dummy AZ.
+			Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
+		}
+
+		if args.isEmptyAvailabilityZone {
+			delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+		} else if args.isInvalidAvailabilityZone {
+			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
+		} else {
+			zoneName := builder.DummyAvailabilityZoneName
+			if !lib.IsWcpFaultDomainsFSSEnabled() {
+				zoneName = topology.DefaultAvailabilityZoneName
+			}
+			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+		}
+
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -265,7 +297,7 @@ func unitTestsValidateCreate() {
 		Entry("should fail when Readiness probe has multiple actions", createArgs{invalidReadinessProbe: true}, false, fmt.Sprintf(messages.ReadinessProbeOnlyOneAction), nil),
 		Entry("should fail when Readiness probe has no actions", createArgs{invalidReadinessNoProbe: true}, false, fmt.Sprintf(messages.ReadinessProbeNoActions), nil),
 		Entry("should deny invalid network name for VDS network type", createArgs{invalidNetworkName: true}, false, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, 0), nil),
-		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0, vsphere.NsxtNetworkType, vsphere.VdsNetworkType), nil),
+		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0, network.NsxtNetworkType, network.VdsNetworkType), nil),
 		Entry("should deny invalid network card type", createArgs{invalidNetworkCardType: true}, false, fmt.Sprintf(messages.NetworkTypeEthCardTypeNotSupportedFmt, 0), nil),
 		Entry("should deny connection of multiple network interfaces of a VM to the same network", createArgs{multipleNetIfToSameNetwork: true},
 			false, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, 1), nil),
@@ -287,6 +319,21 @@ func unitTestsValidateCreate() {
 		Entry("should fail when restricted network env is set in provider config map and TCP port in readiness probe is not 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, false, fmt.Sprintf(messages.ReadinessProbePortNotSupportedFmt, 6443), nil),
 		Entry("should allow when restricted network env is set in provider config map and TCP port in readiness probe is 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: true}, true, nil, nil),
 		Entry("should allow when restricted network env is not set in provider config map and TCP port in readiness probe is not 6443", createArgs{isNonRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, true, nil, nil),
+
+		Entry("should allow when VM specifies no availability zone, there are availability zones, and WCP FaultDomains FSS is disabled", createArgs{isEmptyAvailabilityZone: true}, true, nil, nil),
+		Entry("should allow when VM specifies no availability zone, there are no availability zones, and WCP FaultDomains FSS is disabled", createArgs{isEmptyAvailabilityZone: true, isNoAvailabilityZones: true}, true, nil, nil),
+		Entry("should allow when VM specifies no availability zone, there are availability zones, and WCP FaultDomains FSS is enabled", createArgs{isEmptyAvailabilityZone: true, isWCPFaultDomainsFSSEnabled: true}, true, nil, nil),
+		Entry("should allow when VM specifies no availability zone, there are no availability zones, and WCP FaultDomains FSS is enabled", createArgs{isEmptyAvailabilityZone: true, isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, true, nil, nil),
+
+		Entry("should allow when VM specifies valid availability zone, there are availability zones, and WCP FaultDomains FSS is enabled", createArgs{isWCPFaultDomainsFSSEnabled: true}, true, nil, nil),
+		Entry("should allow when VM specifies valid availability zone, there are no availability zones, and WCP FaultDomains FSS is disabled", createArgs{isNoAvailabilityZones: true}, true, nil, nil),
+
+		Entry("should deny when VM specifies invalid availability zone, there are availability zones, and WCP FaultDomains FSS is disabled", createArgs{isInvalidAvailabilityZone: true}, false, nil, nil),
+		Entry("should deny when VM specifies invalid availability zone, there are availability zones, and WCP FaultDomains FSS is enabled", createArgs{isInvalidAvailabilityZone: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
+		Entry("should deny when VM specifies invalid availability zone, there are no availability zones, and WCP FaultDomains FSS is disabled", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true}, false, nil, nil),
+		Entry("should deny when VM specifies invalid availability zone, there are no availability zones, and WCP FaultDomains FSS is enabled", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
+
+		Entry("should deny when there are no availability zones and WCP FaultDomains FSS is enabled", createArgs{isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
 	)
 }
 
@@ -301,6 +348,7 @@ func unitTestsValidateUpdate() {
 		changeImageName      bool
 		changeStorageClass   bool
 		changeResourcePolicy bool
+		changeZoneName       bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -315,9 +363,11 @@ func unitTestsValidateUpdate() {
 		if args.changeStorageClass {
 			ctx.vm.Spec.StorageClass += updateSuffix
 		}
-
 		if args.changeResourcePolicy {
 			ctx.vm.Spec.ResourcePolicyName = updateSuffix
+		}
+		if args.changeZoneName {
+			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] += updateSuffix
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
@@ -347,6 +397,7 @@ func unitTestsValidateUpdate() {
 		Entry("should deny image name change", updateArgs{changeImageName: true}, false, "updates to immutable fields are not allowed: [spec.imageName]", nil),
 		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, "updates to immutable fields are not allowed: [spec.storageClass]", nil),
 		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, "updates to immutable fields are not allowed: [spec.resourcePolicyName]", nil),
+		Entry("should deny zone name change", updateArgs{changeZoneName: true}, false, "updates to immutable fields are not allowed: [metadata.labels."+topology.KubernetesTopologyZoneLabelKey+"]", nil),
 	)
 
 	When("the update is performed while object deletion", func() {

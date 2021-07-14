@@ -56,7 +56,7 @@ var _ = Describe("VirtualMachine readiness probes", func() {
 
 		vmKey = client.ObjectKey{Name: vm.Name, Namespace: vm.Namespace}
 
-		fakeClient, _ = builder.NewFakeClient()
+		fakeClient = builder.NewFakeClient()
 		eventRecorder := clientgorecord.NewFakeRecorder(1024)
 		fakeRecorder = record.New(eventRecorder)
 		fakeEvents = eventRecorder.Events

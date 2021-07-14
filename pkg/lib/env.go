@@ -11,7 +11,9 @@ import (
 
 const (
 	trueString                    = "true"
+	TrueString                    = trueString
 	VmopNamespaceEnv              = "POD_NAMESPACE"
+	WcpFaultDomainsFSS            = "FSS_WCP_FAULTDOMAINS"
 	VMServiceFSS                  = "FSS_WCP_VMSERVICE"
 	VMServiceV1Alpha2FSS          = "FSS_WCP_VMSERVICE_V1ALPHA2"
 	ThunderPciDevicesFSS          = "FSS_THUNDERPCIDEVICES"
@@ -35,6 +37,10 @@ func GetVmOpNamespaceFromEnv() (string, error) {
 		return "", fmt.Errorf("VM Operator namespace envvar %s is not set", VmopNamespaceEnv)
 	}
 	return vmopNamespace, nil
+}
+
+var IsWcpFaultDomainsFSSEnabled = func() bool {
+	return os.Getenv(WcpFaultDomainsFSS) == trueString
 }
 
 var IsVMServiceFSSEnabled = func() bool {

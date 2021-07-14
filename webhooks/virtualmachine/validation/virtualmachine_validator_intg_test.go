@@ -14,7 +14,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
@@ -74,7 +74,7 @@ func intgTestsValidateCreate() {
 		// works with validGuestOSType or invalidGuestOSType or v1alpha1 non-compatible images
 		if args.imageSupportCheckSkipAnnotation {
 			vm.Annotations = make(map[string]string)
-			vm.Annotations[vsphere.VMOperatorImageSupportedCheckKey] = vsphere.VMOperatorImageSupportedCheckDisable
+			vm.Annotations[constants.VMOperatorImageSupportedCheckKey] = constants.VMOperatorImageSupportedCheckDisable
 		}
 
 		if args.imageNonCompatible {

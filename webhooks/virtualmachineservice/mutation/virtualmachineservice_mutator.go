@@ -9,6 +9,7 @@ import (
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -31,7 +32,7 @@ const (
 
 // AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-	hook, err := builder.NewMutatingWebhook(ctx, mgr, webHookName, NewMutator())
+	hook, err := builder.NewMutatingWebhook(ctx, mgr, webHookName, NewMutator(nil))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create mutation webhook")
 	}
@@ -41,7 +42,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) er
 }
 
 // NewMutator returns the package's Mutator.
-func NewMutator() builder.Mutator {
+func NewMutator(_ client.Client) builder.Mutator {
 	return mutator{
 		converter: runtime.DefaultUnstructuredConverter,
 	}

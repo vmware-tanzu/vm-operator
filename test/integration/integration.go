@@ -32,19 +32,26 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	vmopclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/credentials"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
 type VSphereVmProviderTestConfig struct {
 	VcCredsSecretName string
-	*vsphere.VSphereVmProviderConfig
+	*config.VSphereVmProviderConfig
 }
 
 const (
@@ -69,7 +76,7 @@ func GetContentSourceID() string {
 	return ContentSourceID
 }
 
-func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphereVmProviderConfig {
+func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *config.VSphereVmProviderConfig {
 	var dcMoId, rpMoId, folderMoId string
 	for _, dc := range simulator.Map.All("Datacenter") {
 		if dc.Entity().Name == "DC0" {
@@ -90,7 +97,7 @@ func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphe
 		}
 	}
 
-	return &vsphere.VSphereVmProviderConfig{
+	return &config.VSphereVmProviderConfig{
 		VcPNID:                      vcAddress,
 		VcPort:                      strconv.Itoa(vcPort),
 		VcCreds:                     NewIntegrationVmOperatorCredentials(),
@@ -103,9 +110,9 @@ func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *vsphere.VSphe
 	}
 }
 
-func NewIntegrationVmOperatorCredentials() *vsphere.VSphereVmProviderCredentials {
+func NewIntegrationVmOperatorCredentials() *credentials.VSphereVmProviderCredentials {
 	// User and password can be anything for vcSim
-	return &vsphere.VSphereVmProviderCredentials{
+	return &credentials.VSphereVmProviderCredentials{
 		Username: "Administrator@vsphere.local",
 		Password: "Admin!23",
 	}
@@ -145,6 +152,7 @@ func GetCtrlRuntimeClient(config *rest.Config) (client.Client, error) {
 	_ = vmopv1alpha1.AddToScheme(s)
 	_ = ncpv1alpha1.AddToScheme(s)
 	_ = netopv1alpha1.AddToScheme(s)
+	_ = topologyv1.AddToScheme(s)
 	_ = cnsv1alpha1.SchemeBuilder.AddToScheme(s)
 	controllerClient, err := client.New(config, client.Options{
 		Scheme: s,
@@ -152,7 +160,8 @@ func GetCtrlRuntimeClient(config *rest.Config) (client.Client, error) {
 	return controllerClient, err
 }
 
-func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VSphereVmProviderConfig, *rest.Config, *VcSimInstance, *vsphere.Session, vmprovider.VirtualMachineProviderInterface) {
+func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSphereVmProviderConfig, *rest.Config, *VcSimInstance, *vmopclient.Client, vmprovider.VirtualMachineProviderInterface) {
+
 	Expect(len(namespaces) > 0).To(BeTrue())
 	enableDebugLogging()
 	rootDir, err := testutil.GetRootDir()
@@ -178,6 +187,8 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	Expect(err).NotTo(HaveOccurred())
 	err = cnsv1alpha1.SchemeBuilder.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+	err = topologyv1.SchemeBuilder.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 
 	k8sClient, err := GetCtrlRuntimeClient(cfg)
 	Expect(err).NotTo(HaveOccurred())
@@ -195,13 +206,28 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *vsphere.VS
 	vSphereConfig := NewIntegrationVmOperatorConfig(address, port)
 	Expect(vSphereConfig).ToNot(BeNil())
 
-	session, err := SetupVcSimEnv(vSphereConfig, k8sClient, vcSim, namespaces)
+	vmopClient, err := SetupVcSimEnv(vSphereConfig, k8sClient, vcSim, namespaces)
 	Expect(err).NotTo(HaveOccurred())
 
-	err = os.Setenv(vsphere.EnvContentLibApiWaitSecs, "1")
+	err = os.Setenv(contentlibrary.EnvContentLibApiWaitSecs, "1")
 	Expect(err).NotTo(HaveOccurred())
 
-	return testEnv, vSphereConfig, cfg, vcSim, session, vmProvider
+	// Create a default AZ with the namespaces in it.
+	az := &topologyv1.AvailabilityZone{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "availabilityzone",
+		},
+		Spec: topologyv1.AvailabilityZoneSpec{
+			ClusterComputeResourceMoId: simulator.Map.All("ClusterComputeResource")[0].Reference().Value,
+			Namespaces:                 map[string]topologyv1.NamespaceInfo{},
+		},
+	}
+	for _, ns := range namespaces {
+		az.Spec.Namespaces[ns] = topologyv1.NamespaceInfo{}
+	}
+	Expect(k8sClient.Create(context.Background(), az)).To(Succeed())
+
+	return testEnv, vSphereConfig, cfg, vcSim, vmopClient, vmProvider
 }
 
 func TeardownIntegrationEnv(testEnv *envtest.Environment, vcSim *VcSimInstance) {
@@ -214,7 +240,11 @@ func TeardownIntegrationEnv(testEnv *envtest.Environment, vcSim *VcSimInstance) 
 	}
 }
 
-func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, client client.Client, vcSim *VcSimInstance, namespaces []string) (*vsphere.Session, error) {
+func SetupVcSimEnv(
+	vSphereConfig *config.VSphereVmProviderConfig,
+	client client.Client,
+	vcSim *VcSimInstance,
+	namespaces []string) (*vmopclient.Client, error) {
 
 	// Support for bootstrapping VM operator resource requirements in Kubernetes.
 	// Generate a fake vsphere provider config that is suitable for the integration test environment.
@@ -231,24 +261,24 @@ func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, client client
 	// Generate a fake vsphere provider config that is suitable for the integration test environment.
 	// Post the resultant config map to the API Master for consumption by the VM operator
 	klog.Infof("Installing a bootstrap config map for use in integration tests.")
-	err = vsphere.InstallVSphereVmProviderConfig(client, DefaultNamespace, vSphereConfig, SecretName)
+	err = config.InstallVSphereVmProviderConfig(client, DefaultNamespace, vSphereConfig, SecretName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install vm operator config: %v", err)
 	}
 
 	// Setup content library once.  The first namespace is sufficient to use
-	session, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetSession(context.TODO(), namespaces[0])
+	vmopClient, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(context.TODO())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get session: %v", err)
+		return nil, fmt.Errorf("failed to get vm provider client: %v", err)
 	}
 
-	if err := SetupContentLibrary(client, session); err != nil {
+	if err := SetupContentLibrary(client, vmopClient); err != nil {
 		return nil, fmt.Errorf("failed to setup the VC Simulator: %v", err)
 	}
 
 	// Configure each requested namespace to use CL as the content source
 	for _, ns := range namespaces {
-		err = vsphere.InstallVSphereVmProviderConfig(client,
+		err = config.InstallVSphereVmProviderConfig(client,
 			ns,
 			NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port),
 			SecretName,
@@ -256,7 +286,7 @@ func SetupVcSimEnv(vSphereConfig *vsphere.VSphereVmProviderConfig, client client
 		Expect(err).NotTo(HaveOccurred())
 	}
 
-	return session, nil
+	return vmopClient, nil
 }
 
 func TeardownVcSimEnv(vcSim *VcSimInstance) {
@@ -265,18 +295,17 @@ func TeardownVcSimEnv(vcSim *VcSimInstance) {
 	}
 }
 
-func CreateLibraryItem(ctx context.Context, session *vsphere.Session, name, kind, libraryId, ovfPath string) error {
+func CreateLibraryItem(ctx context.Context, vmopClient *vmopclient.Client, name, kind, libraryId, ovfPath string) error {
 	libraryItem := library.Item{
 		Name:      name,
 		Type:      kind,
 		LibraryID: libraryId,
 	}
-
-	return session.CreateLibraryItem(ctx, libraryItem, ovfPath)
+	return vmopClient.ContentLibClient().CreateLibraryItem(ctx, libraryItem, ovfPath)
 }
 
 // SetupContentLibrary creates ContentSource and ContentLibraryProvider resources for the vSphere content library.
-func SetupContentLibrary(client client.Client, session *vsphere.Session) error {
+func SetupContentLibrary(client client.Client, vmopClient *vmopclient.Client) error {
 	stdlog.Printf("Setting up ContentLibraryPrvider and ContentSource for integration tests")
 	ctx := context.Background()
 
@@ -288,14 +317,23 @@ func SetupContentLibrary(client client.Client, session *vsphere.Session) error {
 		}
 	}
 
-	libID, err := session.CreateLibrary(ctx, ContentSourceName, datastoreID)
+	libID, err := vmopClient.ContentLibClient().CreateLibrary(ctx, ContentSourceName, datastoreID)
 	if err != nil {
 		return err
 	}
 
-	ovfName := "ttylinux-pc_i486-16.1.ovf"
-	imagePath := path.Join(testutil.GetRootDirOrDie(), "images", ovfName)
-	if err := CreateLibraryItem(ctx, session, IntegrationContentLibraryItemName, "ovf", libID, imagePath); err != nil {
+	if err := CreateLibraryItem(
+		ctx,
+		vmopClient,
+		IntegrationContentLibraryItemName,
+		"ovf",
+		libID,
+		path.Join(
+			testutil.GetRootDirOrDie(),
+			"images",
+			"ttylinux-pc_i486-16.1.ovf",
+		)); err != nil {
+
 		return err
 	}
 
@@ -335,7 +373,7 @@ func SetupContentLibrary(client client.Client, session *vsphere.Session) error {
 	return nil
 }
 
-func CloneVirtualMachineToLibraryItem(ctx context.Context, config *vsphere.VSphereVmProviderConfig, s *vsphere.Session, src, name string) error {
+func CloneVirtualMachineToLibraryItem(ctx context.Context, cfg *config.VSphereVmProviderConfig, s *session.Session, src, name string) error {
 	vm, err := s.Finder.VirtualMachine(ctx, src)
 	if err != nil {
 		return err
@@ -353,7 +391,7 @@ func CloneVirtualMachineToLibraryItem(ctx context.Context, config *vsphere.VSphe
 		Library:  GetContentSourceID(),
 		SourceVM: vm.Reference().Value,
 		Placement: &vcenter.Placement{
-			Folder:       config.Folder,
+			Folder:       cfg.Folder,
 			ResourcePool: pool.Reference().Value,
 		},
 	}

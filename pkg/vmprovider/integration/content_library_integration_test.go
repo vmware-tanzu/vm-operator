@@ -14,9 +14,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/vapi/library"
-	"github.com/vmware/govmomi/vapi/rest"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -24,7 +23,7 @@ var _ = Describe("Content Library", func() {
 
 	Context("when items are present in library", func() {
 		It("lists the ovf and downloads the ovf", func() {
-			restClient := session.Client.RestClient()
+			restClient := c.RestClient()
 
 			mgr := library.NewManager(restClient)
 			libraries, err := mgr.ListLibraries(ctx)
@@ -45,7 +44,7 @@ var _ = Describe("Content Library", func() {
 			libItem, err := mgr.GetLibraryItem(ctx, itemIDs[0])
 			Expect(err).ToNot(HaveOccurred())
 
-			testProvider := vsphere.NewContentLibraryProviderWithWaitSec(restClient, 1)
+			testProvider := contentlibrary.NewProviderWithWaitSec(restClient, 1)
 
 			ovfEnvelope, err := testProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem)
 			Expect(err).ToNot(HaveOccurred())
@@ -55,7 +54,7 @@ var _ = Describe("Content Library", func() {
 
 	Context("when invalid item id is passed", func() {
 		It("returns an error creating a download session", func() {
-			restClient := session.Client.RestClient()
+			restClient := vmClient.RestClient()
 
 			item := &library.Item{
 				Name:      "fakeItem",
@@ -63,7 +62,7 @@ var _ = Describe("Content Library", func() {
 				LibraryID: "fakeID",
 			}
 
-			testProvider := vsphere.NewContentLibraryProviderWithWaitSec(restClient, 1)
+			testProvider := contentlibrary.NewProviderWithWaitSec(restClient, 1)
 
 			_, err := testProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, item)
 			Expect(err).To(HaveOccurred())
@@ -76,32 +75,29 @@ var _ = Describe("RetrieveOvfEAnvelopeFromLibraryItems", func() {
 	When("called with an OVF that is invalid", func() {
 		var (
 			ovf         *os.File
-			restClient  *rest.Client
 			mgr         *library.Manager
 			libItem     *library.Item
 			libItemName string
 		)
 
 		BeforeEach(func() {
+			mgr = library.NewManager(vmClient.RestClient())
+
 			// Upload an invalid OVF (0B in size) to the integration test CL
 			ovf, err = ioutil.TempFile(os.TempDir(), "fake-*.ovf")
 			Expect(err).NotTo(HaveOccurred())
 			ovfInfo, err := ovf.Stat()
 			Expect(err).NotTo(HaveOccurred())
 
-			restClient = session.Client.RestClient()
-
-			mgr = library.NewManager(restClient)
 			libItemName = strings.Split(ovfInfo.Name(), ".ovf")[0]
-
-			err = integration.CreateLibraryItem(ctx, session, libItemName, "ovf", integration.GetContentSourceID(), ovf.Name())
+			err = integration.CreateLibraryItem(ctx, vmClient, libItemName, "ovf", integration.GetContentSourceID(), ovf.Name())
 			Expect(err).NotTo(HaveOccurred())
 
 		})
 
 		AfterEach(func() {
 			// Clean up the invalid library item from the CL
-			Expect(session.DeleteLibraryItem(ctx, libItem)).To(Succeed())
+			Expect(vmClient.ContentLibClient().DeleteLibraryItem(ctx, libItem)).To(Succeed())
 			Expect(os.Remove(ovf.Name())).To(Succeed())
 		})
 
@@ -113,7 +109,7 @@ var _ = Describe("RetrieveOvfEAnvelopeFromLibraryItems", func() {
 			libItem, err = mgr.GetLibraryItem(ctx, itemIDs[0])
 			Expect(err).ToNot(HaveOccurred())
 
-			testProvider := vsphere.NewContentLibraryProviderWithWaitSec(restClient, 1)
+			testProvider := contentlibrary.NewProviderWithWaitSec(vmClient.RestClient(), 1)
 			ovfEnvelope, err := testProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(ovfEnvelope).To(BeNil())

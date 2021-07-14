@@ -14,6 +14,7 @@ import (
 	"github.com/pkg/errors"
 	admissionv1 "k8s.io/api/admission/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -42,6 +43,8 @@ type Mutator interface {
 	// Mutate will try modify invalid value.
 	Mutate(*context.WebhookRequestContext) admission.Response
 }
+
+type MutatorFunc func(client client.Client) Mutator
 
 // NewMutatingWebhook returns a new admissions webhook for mutating requests.
 func NewMutatingWebhook(

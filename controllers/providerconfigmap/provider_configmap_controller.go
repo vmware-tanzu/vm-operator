@@ -37,7 +37,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 )
 
 // This label is used to differentiate a TKG ContentSource from a VM service ContentSource.
@@ -116,7 +116,7 @@ func namespaceToProviderConfigMap(ctx *requestMapperCtx, ns *v1.Namespace) []rec
 	logger := ctx.Logger.WithValues("namespaceName", ns.Name)
 
 	logger.V(4).Info("Reconciling provider ConfigMap due to a namespace creation")
-	key := client.ObjectKey{Namespace: ctx.Namespace, Name: vsphere.ProviderConfigMapName}
+	key := client.ObjectKey{Namespace: ctx.Namespace, Name: config.ProviderConfigMapName}
 
 	reconcileRequests := []reconcile.Request{{NamespacedName: key}}
 
@@ -133,10 +133,10 @@ func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod 
 	return c.Watch(source.NewKindWithCache(&v1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
 		predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
-				return e.Meta.GetName() == vsphere.ProviderConfigMapName
+				return e.Meta.GetName() == config.ProviderConfigMapName
 			},
 			UpdateFunc: func(e event.UpdateEvent) bool {
-				return e.MetaOld.GetName() == vsphere.ProviderConfigMapName
+				return e.MetaOld.GetName() == config.ProviderConfigMapName
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
 				return false
@@ -312,7 +312,7 @@ func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *v1.ConfigMa
 	}
 
 	// Assume that the ContentSource name is the content library UUID.
-	clUUID := cm.Data[vsphere.ContentSourceKey]
+	clUUID := cm.Data[config.ContentSourceKey]
 	for _, cs := range csList.Items {
 		contentSource := cs
 		if contentSource.Name != clUUID {

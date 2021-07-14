@@ -117,6 +117,22 @@ rules:
   - list
   - watch
 - apiGroups:
+  - topology.tanzu.vmware.com
+  resources:
+  - availabilityzones
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - topology.tanzu.vmware.com
+  resources:
+  - availabilityzones/status
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - vmoperator.vmware.com
   resources:
   - contentlibraryproviders

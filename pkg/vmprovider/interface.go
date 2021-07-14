@@ -46,7 +46,7 @@ type VirtualMachineProviderInterface interface {
 	// "Infra" related
 	UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error
 	ClearSessionsAndClient(ctx context.Context)
-	DeleteNamespaceSessionInCache(ctx context.Context, namespace string)
+	DeleteNamespaceSessionInCache(ctx context.Context, namespace string) error
 	ComputeClusterCpuMinFrequency(ctx context.Context) error
 
 	ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider,

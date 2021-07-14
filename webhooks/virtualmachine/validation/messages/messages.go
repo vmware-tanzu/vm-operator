@@ -9,6 +9,7 @@ const (
 	ImageNotSpecified                       = "spec.imageName must be specified"
 	ClassNotSpecified                       = "spec.className must be specified"
 	MetadataTransportConfigMapNotSpecified  = "spec.vmMetadata.configMapName must be specified"
+	MetadataInvalidAvailabilityZone         = "label topology.kubernetes.io/zone specified invalid zone: %s"
 	ReadinessProbeNoActions                 = "spec.readinessProbe must specify an action"
 	ReadinessProbeOnlyOneAction             = "spec.readinessProbe only one action can be specified"
 	ReadinessProbePortNotSupportedFmt       = "spec.readinessProbe.TCPSocket.Port must be %d for this environment"

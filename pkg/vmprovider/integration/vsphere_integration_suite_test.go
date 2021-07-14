@@ -20,6 +20,9 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	vmopclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	vmopsession "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
@@ -27,15 +30,16 @@ var (
 	restConfig    *rest.Config
 	vcSim         *integration.VcSimInstance
 	testEnv       *envtest.Environment
-	vSphereConfig *vsphere.VSphereVmProviderConfig
-	session       *vsphere.Session
+	vSphereConfig *config.VSphereVmProviderConfig
+	vmClient      *vmopclient.Client
 	vmProvider    vmprovider.VirtualMachineProviderInterface
 	clientSet     *kubernetes.Clientset
 	k8sClient     client.Client
+	session       *vmopsession.Session
 
 	err error
 	ctx context.Context
-	c   *vsphere.Client
+	c   *vmopclient.Client
 )
 
 func TestVSphereIntegrationProvider(t *testing.T) {
@@ -44,7 +48,7 @@ func TestVSphereIntegrationProvider(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	testEnv, vSphereConfig, restConfig, vcSim, session, vmProvider = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
+	testEnv, vSphereConfig, restConfig, vcSim, vmClient, vmProvider = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
 	clientSet = kubernetes.NewForConfigOrDie(restConfig)
 
 	k8sClient, err = integration.GetCtrlRuntimeClient(restConfig)
@@ -52,8 +56,13 @@ var _ = BeforeSuite(func() {
 
 	ctx = context.Background()
 
-	c, err = vsphere.NewClient(ctx, vSphereConfig)
+	c, err = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(ctx)
+	Expect(c).ToNot(BeNil())
 	Expect(err).NotTo(HaveOccurred())
+
+	session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, k8sClient, nil)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(session).ToNot(BeNil())
 })
 
 var _ = AfterSuite(func() {

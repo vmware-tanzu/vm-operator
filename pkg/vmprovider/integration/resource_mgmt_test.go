@@ -19,7 +19,7 @@ import (
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
 
-	Vs "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/pool"
 )
 
 type fakeRoundTripper struct {
@@ -114,14 +114,14 @@ var _ = Describe("GetResourcePoolOwner", func() {
 		})
 		Context("when vim client is valid", func() {
 			Specify("Resource pool has cluster parent", func() {
-				cls, err := Vs.GetResourcePoolOwner(tsd.ctx, tsd.rpGood)
+				cls, err := pool.GetResourcePoolOwner(tsd.ctx, tsd.rpGood)
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(cls).NotTo(BeNil())
 				Expect(cls.Reference().Type).To(Equal("ClusterComputeResource"))
 				Expect(cls.Reference().Value).To(Equal(tsd.cls.Reference().Value))
 			})
 			Specify("Resource pool does not have cluster parent", func() {
-				cls, err := Vs.GetResourcePoolOwner(tsd.ctx, tsd.rpBad)
+				cls, err := pool.GetResourcePoolOwner(tsd.ctx, tsd.rpBad)
 				Expect(err).Should(HaveOccurred())
 				Expect(cls).To(BeNil())
 			})
@@ -132,7 +132,7 @@ var _ = Describe("GetResourcePoolOwner", func() {
 			var rtp soap.RoundTripper = &fakeRoundTripper{err: fmt.Errorf("Fake error\n")}
 			ref := types.ManagedObjectReference{}
 			rp := object.NewResourcePool(&vim25.Client{RoundTripper: rtp}, ref)
-			cls, err := Vs.GetResourcePoolOwner(context.TODO(), rp)
+			cls, err := pool.GetResourcePoolOwner(context.TODO(), rp)
 			Expect(err).Should(HaveOccurred())
 			Expect(cls).To(BeNil())
 		})
@@ -185,31 +185,31 @@ var _ = Describe("CheckPlacementRelocateSpec", func() {
 	Context("when relocation spec is valid", func() {
 		Specify("Relocation spec is valid", func() {
 			spec := createRelocateSpec()
-			isValid := Vs.CheckPlacementRelocateSpec(spec)
+			isValid := pool.CheckPlacementRelocateSpec(spec)
 			Expect(isValid).To(BeTrue())
 		})
 	})
 	Context("when relocation spec is not valid", func() {
 		Specify("Relocation spec is nil", func() {
-			isValid := Vs.CheckPlacementRelocateSpec(nil)
+			isValid := pool.CheckPlacementRelocateSpec(nil)
 			Expect(isValid).To(BeFalse())
 		})
 		Specify("Host is nil", func() {
 			spec := createRelocateSpec()
 			spec.Host = nil
-			isValid := Vs.CheckPlacementRelocateSpec(spec)
+			isValid := pool.CheckPlacementRelocateSpec(spec)
 			Expect(isValid).To(BeFalse())
 		})
 		Specify("Pool is nil", func() {
 			spec := createRelocateSpec()
 			spec.Pool = nil
-			isValid := Vs.CheckPlacementRelocateSpec(spec)
+			isValid := pool.CheckPlacementRelocateSpec(spec)
 			Expect(isValid).To(BeFalse())
 		})
 		Specify("Datastore is nil", func() {
 			spec := createRelocateSpec()
 			spec.Datastore = nil
-			isValid := Vs.CheckPlacementRelocateSpec(spec)
+			isValid := pool.CheckPlacementRelocateSpec(spec)
 			Expect(isValid).To(BeFalse())
 		})
 	})
@@ -226,7 +226,7 @@ var _ = Describe("ParsePlaceVmResponse", func() {
 			res.Recommendations = append(res.Recommendations, rec)
 			rec, spec := createValidRecommendation()
 			res.Recommendations = append(res.Recommendations, rec)
-			rSpec := Vs.ParsePlaceVmResponse(&res)
+			rSpec := pool.ParsePlaceVmResponse(&res)
 			Expect(rSpec).NotTo(BeNil())
 			Expect(rSpec.Host).To(BeEquivalentTo(spec.Host))
 			Expect(rSpec.Pool).To(BeEquivalentTo(spec.Pool))
@@ -236,7 +236,7 @@ var _ = Describe("ParsePlaceVmResponse", func() {
 	Context("when response is not valid", func() {
 		Specify("PlaceVm Response without recommendations", func() {
 			res := types.PlacementResult{}
-			rSpec := Vs.ParsePlaceVmResponse(&res)
+			rSpec := pool.ParsePlaceVmResponse(&res)
 			Expect(rSpec).To(BeNil())
 		})
 	})
@@ -248,7 +248,7 @@ var _ = Describe("ParsePlaceVmResponse", func() {
 			rec, _ := createValidRecommendation()
 			rec.Reason = string(types.RecommendationReasonCodePowerOnVm)
 			res.Recommendations = append(res.Recommendations, rec)
-			rSpec := Vs.ParsePlaceVmResponse(&res)
+			rSpec := pool.ParsePlaceVmResponse(&res)
 			Expect(rSpec).To(BeNil())
 		})
 	})

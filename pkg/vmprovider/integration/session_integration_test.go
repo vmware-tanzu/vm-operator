@@ -6,7 +6,7 @@
 package integration
 
 import (
-	"context"
+	goctx "context"
 	"fmt"
 	"os"
 
@@ -25,8 +25,10 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
+	vmopsession "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
@@ -36,8 +38,8 @@ var (
 	testVMName    = "test-vm"
 )
 
-func vmContext(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) vsphere.VMContext {
-	return vsphere.VMContext{
+func vmContext(ctx goctx.Context, vm *vmopv1alpha1.VirtualMachine) context.VMContext {
+	return context.VMContext{
 		Context: ctx,
 		Logger:  integration.Log,
 		VM:      vm,
@@ -46,13 +48,13 @@ func vmContext(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) vsphere.VMC
 
 var _ = Describe("Sessions", func() {
 	var (
-		ctx     context.Context
-		session *vsphere.Session
+		ctx     goctx.Context
+		session *vmopsession.Session
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
-		session, err = vsphere.NewSessionAndConfigure(ctx, c, vSphereConfig, k8sClient, nil)
+		ctx = goctx.Background()
+		session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, k8sClient, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(session).ToNot(BeNil())
 	})
@@ -79,7 +81,7 @@ var _ = Describe("Sessions", func() {
 		Context("From Content Library", func() {
 
 			It("should list VirtualMachineImages from CL", func() {
-				images, err := session.ListVirtualMachineImagesFromCL(ctx, integration.ContentSourceID, nil)
+				images, err := c.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).ShouldNot(BeEmpty())
 				Expect(images[0].ObjectMeta.Name).Should(Equal(integration.IntegrationContentLibraryItemName))
@@ -87,7 +89,7 @@ var _ = Describe("Sessions", func() {
 			})
 
 			It("should return cached VirtualMachineImage from CL", func() {
-				images, err := session.ListVirtualMachineImagesFromCL(ctx, integration.ContentSourceID, nil)
+				images, err := c.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).ShouldNot(BeEmpty())
 
@@ -98,7 +100,7 @@ var _ = Describe("Sessions", func() {
 					vmImage.Name: vmImage,
 				}
 
-				images, err = session.ListVirtualMachineImagesFromCL(ctx, integration.ContentSourceID, currentCLImages)
+				images, err = c.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, currentCLImages)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).ShouldNot(BeEmpty())
 				Expect(images[0].ObjectMeta.Name).Should(Equal(integration.IntegrationContentLibraryItemName))
@@ -216,7 +218,7 @@ var _ = Describe("Sessions", func() {
 		Context("by specifying networks in VM Spec", func() {
 
 			BeforeEach(func() {
-				err := vsphere.InstallNetworkConfigMap(k8sClient, "8.8.8.8 8.8.4.4")
+				err := config.InstallNetworkConfigMap(k8sClient, "8.8.8.8 8.8.4.4")
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -267,7 +269,7 @@ var _ = Describe("Sessions", func() {
 				vSphereConfig.Network = "VM Network"
 
 				// Setup new session based on the default network
-				session, err = vsphere.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
+				session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -503,7 +505,7 @@ var _ = Describe("Sessions", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clonedVM.Name).Should(Equal(vmName))
 
-				virtualDisks, err := clonedVM.GetVirtualDisks(context.TODO())
+				virtualDisks, err := clonedVM.GetVirtualDisks(goctx.TODO())
 				Expect(err).NotTo(HaveOccurred())
 				Expect(virtualDisks).Should(HaveLen(1))
 
@@ -796,14 +798,14 @@ var _ = Describe("Sessions", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 		It("Should fail", func() {
-			session, err = vsphere.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
+			session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
 			Expect(err.Error()).To(MatchRegexp("Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable"))
 		})
 	})
 
 	Describe("Clone VM with global metadata", func() {
 		JustBeforeEach(func() {
-			session, err = vsphere.NewSessionAndConfigure(ctx, c, vSphereConfig, k8sClient, nil)
+			session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, k8sClient, nil)
 		})
 
 		Context("with vm metadata and global extraConfig", func() {
@@ -852,7 +854,7 @@ var _ = Describe("Sessions", func() {
 
 					keysFound := map[string]bool{localKey: false, globalKey: false}
 					// Add all the default keys
-					for k := range vsphere.DefaultExtraConfig {
+					for k := range vmopsession.DefaultExtraConfig {
 						keysFound[k] = false
 					}
 
@@ -865,7 +867,7 @@ var _ = Describe("Sessions", func() {
 							Expect(option.GetOptionValue().Value).Should(Equal(localVal))
 						} else if key == globalKey {
 							Expect(option.GetOptionValue().Value).Should(Equal(globalVal))
-						} else if defaultVal, ok := vsphere.DefaultExtraConfig[key]; ok {
+						} else if defaultVal, ok := vmopsession.DefaultExtraConfig[key]; ok {
 							Expect(option.GetOptionValue().Value).Should(Equal(defaultVal))
 						}
 					}
@@ -895,7 +897,7 @@ var _ = Describe("Sessions", func() {
 
 					keysFound := map[string]bool{}
 					// Add all the default keys
-					for k := range vsphere.DefaultExtraConfig {
+					for k := range vmopsession.DefaultExtraConfig {
 						keysFound[k] = false
 					}
 					mo, err := clonedVM.GetProperties(ctx, nil)
@@ -903,7 +905,7 @@ var _ = Describe("Sessions", func() {
 					for _, option := range mo.Config.ExtraConfig {
 						key := option.GetOptionValue().Key
 						keysFound[key] = true
-						if defaultVal, ok := vsphere.DefaultExtraConfig[key]; ok {
+						if defaultVal, ok := vmopsession.DefaultExtraConfig[key]; ok {
 							Expect(option.GetOptionValue().Value).Should(Equal(defaultVal))
 						}
 					}
@@ -1098,7 +1100,7 @@ var _ = Describe("Sessions", func() {
 				It("with existing content source, empty datastore and empty profile id", func() {
 					vSphereConfig.Datastore = ""
 
-					session, err = vsphere.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
+					session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{
@@ -1113,7 +1115,7 @@ var _ = Describe("Sessions", func() {
 
 				It("with existing content source but mandatory profile id is not set", func() {
 					vSphereConfig.StorageClassRequired = true
-					session, err = vsphere.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
+					session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{
@@ -1128,7 +1130,7 @@ var _ = Describe("Sessions", func() {
 
 				It("without content source and missing mandatory profile ID", func() {
 					vSphereConfig.StorageClassRequired = true
-					session, err = vsphere.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
+					session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{

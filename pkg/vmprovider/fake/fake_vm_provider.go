@@ -188,13 +188,15 @@ func (s *FakeVmProvider) ClearSessionsAndClient(ctx context.Context) {
 	}
 }
 
-func (s *FakeVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, namespace string) {
+func (s *FakeVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, namespace string) error {
 	s.Lock()
 	defer s.Unlock()
 
 	if s.DeleteNamespaceSessionInCacheFn != nil {
 		s.DeleteNamespaceSessionInCacheFn(ctx, namespace)
 	}
+
+	return nil
 }
 
 func (s *FakeVmProvider) DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error) {

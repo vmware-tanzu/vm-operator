@@ -68,7 +68,7 @@ var _ = Describe("VirtualMachine probes", func() {
 	})
 
 	JustBeforeEach(func() {
-		fakeClient, _ = builder.NewFakeClient(initObjects...)
+		fakeClient = builder.NewFakeClient(initObjects...)
 		eventRecorder := clientgorecord.NewFakeRecorder(1024)
 		fakeRecorder = record.New(eventRecorder)
 		fakeVmProvider := &fake.FakeVmProvider{}

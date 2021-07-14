@@ -15,8 +15,9 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
@@ -44,6 +45,7 @@ func New(opts Options) (Manager, error) {
 	_ = ncpv1alpha1.AddToScheme(opts.Scheme)
 	_ = cnsv1alpha1.AddToScheme(opts.Scheme)
 	_ = netopv1alpha1.AddToScheme(opts.Scheme)
+	_ = topologyv1.AddToScheme(opts.Scheme)
 	// +kubebuilder:scaffold:scheme
 
 	// Build the controller manager.

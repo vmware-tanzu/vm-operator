@@ -13,6 +13,7 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/task"
+	"github.com/vmware/govmomi/vim25/types"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
@@ -881,6 +882,36 @@ func nicInfoToNetworkIfStatus(nicInfo vimTypes.GuestNicInfo) v1alpha1.NetworkInt
 	}
 }
 
+func markCustomizationInfoCondition(vm *v1alpha1.VirtualMachine, guestInfo *types.GuestInfo) {
+	if guestInfo == nil || guestInfo.CustomizationInfo == nil {
+		conditions.MarkUnknown(vm, v1alpha1.GuestCustomizationCondition, "", "")
+		return
+	}
+
+	switch guestInfo.CustomizationInfo.CustomizationStatus {
+	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE), "":
+		conditions.MarkTrue(vm, v1alpha1.GuestCustomizationCondition)
+	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING):
+		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, v1alpha1.GuestCustomizationPendingReason, v1alpha1.ConditionSeverityInfo, "")
+	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING):
+		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, v1alpha1.GuestCustomizationRunningReason, v1alpha1.ConditionSeverityInfo, "")
+	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED):
+		conditions.MarkTrue(vm, v1alpha1.GuestCustomizationCondition)
+	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_FAILED):
+		errorMsg := guestInfo.CustomizationInfo.ErrorMsg
+		if errorMsg == "" {
+			errorMsg = "vSphere VM Customization failed due to an unknown error."
+		}
+		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, v1alpha1.GuestCustomizationFailedReason, v1alpha1.ConditionSeverityError, errorMsg)
+	default:
+		errorMsg := guestInfo.CustomizationInfo.ErrorMsg
+		if errorMsg == "" {
+			errorMsg = "Unexpected VM Customization status"
+		}
+		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, "", v1alpha1.ConditionSeverityError, errorMsg)
+	}
+}
+
 func (s *Session) updateVMStatus(
 	vmCtx VMContext,
 	resVM *res.VirtualMachine) error {
@@ -915,10 +946,12 @@ func (s *Session) updateVMStatus(
 		vm.Status.Host = ""
 	}
 
-	if guest := moVM.Guest; guest != nil {
-		vm.Status.VmIp = guest.IpAddress
+	guestInfo := moVM.Guest
+
+	if guestInfo != nil {
+		vm.Status.VmIp = guestInfo.IpAddress
 		var networkIfStatuses []v1alpha1.NetworkInterfaceStatus
-		for _, nicInfo := range guest.Net {
+		for _, nicInfo := range guestInfo.Net {
 			networkIfStatuses = append(networkIfStatuses, nicInfoToNetworkIfStatus(nicInfo))
 		}
 		vm.Status.NetworkInterfaces = networkIfStatuses
@@ -926,6 +959,8 @@ func (s *Session) updateVMStatus(
 		vm.Status.VmIp = ""
 		vm.Status.NetworkInterfaces = nil
 	}
+
+	markCustomizationInfoCondition(vm, guestInfo)
 
 	if config := moVM.Config; config != nil {
 		vm.Status.ChangeBlockTracking = config.ChangeTrackingEnabled

@@ -30,7 +30,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
@@ -84,6 +87,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	}
 
 	validationErrs = append(validationErrs, v.validateMetadata(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateAvailabilityZone(ctx, vm, nil)...)
 	validationErrs = append(validationErrs, v.validateImage(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateClass(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateStorageClass(ctx, vm)...)
@@ -148,6 +152,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	// Validations for allowed updates. Return validation responses here for conditional updates regardless
 	// of whether the update is allowed or not.
 	validationErrs = append(validationErrs, v.validateMetadata(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
 	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVmVolumeProvisioningOptions(ctx, vm)...)
@@ -177,8 +182,8 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 		return []string{messages.ImageNotSpecified}
 	}
 
-	val := vm.Annotations[vsphere.VMOperatorImageSupportedCheckKey]
-	if val != vsphere.VMOperatorImageSupportedCheckDisable {
+	val := vm.Annotations[constants.VMOperatorImageSupportedCheckKey]
+	if val != constants.VMOperatorImageSupportedCheckDisable {
 		image := vmopv1.VirtualMachineImage{}
 		if err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image); err != nil {
 			validationErrs = append(validationErrs, fmt.Sprintf("error validating image: %v", err))
@@ -240,16 +245,16 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 
 	for i, nif := range vm.Spec.NetworkInterfaces {
 		switch nif.NetworkType {
-		case vsphere.NsxtNetworkType:
+		case network.NsxtNetworkType:
 			// Empty NetworkName is allowed to let NCP pick the namespace default.
-		case vsphere.VdsNetworkType:
+		case network.VdsNetworkType:
 			if nif.NetworkName == "" {
 				validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, i))
 			}
 		case "":
 			// Must unfortunately allow for testing.
 		default:
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, i, vsphere.NsxtNetworkType, vsphere.VdsNetworkType))
+			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, i, network.NsxtNetworkType, network.VdsNetworkType))
 		}
 
 		if _, ok := networkNames[nif.NetworkName]; ok {
@@ -317,9 +322,9 @@ func (v validator) validateVolumeWithPVC(ctx *context.WebhookRequestContext, vm 
 	}
 
 	// Check that the VirtualMachineImage's hardware version is at least the minimum supported virtual hardware version
-	if image.Spec.HardwareVersion != 0 && image.Spec.HardwareVersion < vsphere.MinSupportedHWVersionForPVC {
+	if image.Spec.HardwareVersion != 0 && image.Spec.HardwareVersion < constants.MinSupportedHWVersionForPVC {
 		validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupportedFmt,
-			image.Name, image.Spec.HardwareVersion, vsphere.MinSupportedHWVersionForPVC))
+			image.Name, image.Spec.HardwareVersion, constants.MinSupportedHWVersionForPVC))
 	}
 
 	// Check that the name used for the CnsNodeVmAttachment will be valid. Don't double up errors if name is missing.
@@ -487,6 +492,34 @@ func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, v
 	return validationErrs
 }
 
+func (v validator) validateAvailabilityZone(
+	ctx *context.WebhookRequestContext,
+	vm, oldVM *vmopv1.VirtualMachine) []string {
+
+	// If there is an oldVM in play then make sure the field is immutable.
+	if oldVM != nil {
+		if vm.Labels[topology.KubernetesTopologyZoneLabelKey] != oldVM.Labels[topology.KubernetesTopologyZoneLabelKey] {
+			return []string{
+				fmt.Sprintf(
+					messages.UpdatingImmutableFieldsNotAllowedFmt,
+					[]string{"metadata.labels." + topology.KubernetesTopologyZoneLabelKey}),
+			}
+		}
+	}
+
+	// Validate the name of the provided availability zone.
+	if zone := vm.Labels[topology.KubernetesTopologyZoneLabelKey]; zone != "" {
+		if _, err := topology.GetAvailabilityZone(
+			ctx.Context, v.client, zone); err != nil {
+			return []string{
+				fmt.Sprintf(messages.MetadataInvalidAvailabilityZone, zone),
+			}
+		}
+	}
+
+	return nil
+}
+
 // vmFromUnstructured returns the VirtualMachine from the unstructured object.
 func (v validator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.VirtualMachine, error) {
 	vm := &vmopv1.VirtualMachine{}
@@ -502,10 +535,10 @@ func (v validator) isNetworkRestrictedForReadinessProbe(ctx *context.WebhookRequ
 		return false, fmt.Errorf("error fetching VMOpNamespace while validating TCP readiness probe port: %v", err)
 	}
 	configMap := &v1.ConfigMap{}
-	configMapKey := types.NamespacedName{Name: vsphere.ProviderConfigMapName, Namespace: vmopNamespace}
+	configMapKey := types.NamespacedName{Name: config.ProviderConfigMapName, Namespace: vmopNamespace}
 	err = v.client.Get(ctx, configMapKey, configMap)
 	if err != nil {
-		return false, fmt.Errorf("error fetching config map: %s while validating TCP readiness probe port: %v", vsphere.ProviderConfigMapName, err)
+		return false, fmt.Errorf("error fetching config map: %s while validating TCP readiness probe port: %v", config.ProviderConfigMapName, err)
 	}
 	restrictedNetworkEnv := configMap.Data[isRestrictedNetworkKey]
 	return restrictedNetworkEnv == "true", nil

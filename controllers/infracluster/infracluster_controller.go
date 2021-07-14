@@ -219,7 +219,7 @@ func (r *InfraClusterReconciler) reconcileNamespace(ctx goctx.Context, req ctrl.
 			return err
 		}
 
-		r.vmProvider.DeleteNamespaceSessionInCache(ctx, req.NamespacedName.Name)
+		return r.vmProvider.DeleteNamespaceSessionInCache(ctx, req.NamespacedName.Name)
 	}
 
 	return nil

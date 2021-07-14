@@ -58,7 +58,7 @@ var _ = Describe("", func() {
 	}
 	vmKey := types.NamespacedName{Namespace: testNs, Name: testSvc + "-lb"}
 	vm := &vmopv1alpha1.VirtualMachine{}
-	client, _ := builder.NewFakeClient(vmService)
+	client := builder.NewFakeClient(vmService)
 	controlPlane := &fakeControlPlane{}
 	simpleLbProvider := simpleLoadBalancerProvider{
 		client:       client,

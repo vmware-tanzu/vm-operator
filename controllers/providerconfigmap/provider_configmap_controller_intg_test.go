@@ -17,7 +17,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/providerconfigmap"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -37,7 +37,7 @@ func intgTestsCM() {
 		ctx = suite.NewIntegrationTestContext()
 		cm = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      vsphere.ProviderConfigMapName,
+				Name:      config.ProviderConfigMapName,
 				Namespace: ctx.PodNamespace,
 			},
 		}
@@ -93,7 +93,7 @@ func intgTestsCM() {
 		When("ConfigMap is created with ContentSource key", func() {
 			BeforeEach(func() {
 				cm.Data = make(map[string]string)
-				cm.Data[vsphere.ContentSourceKey] = clUUID
+				cm.Data[config.ContentSourceKey] = clUUID
 			})
 
 			It("a ContentSource is created", func() {
@@ -115,7 +115,7 @@ func intgTestsCM() {
 		When("ConfigMap's ContentSource key is updated", func() {
 			BeforeEach(func() {
 				cm.Data = make(map[string]string)
-				cm.Data[vsphere.ContentSourceKey] = clUUID
+				cm.Data[config.ContentSourceKey] = clUUID
 			})
 
 			It("A ContentSource is created that points to the new CL UUID from ConfigMap", func() {
@@ -125,7 +125,7 @@ func intgTestsCM() {
 				}).Should(BeTrue())
 
 				newCLUUID := "new-cl"
-				cm.Data[vsphere.ContentSourceKey] = newCLUUID
+				cm.Data[config.ContentSourceKey] = newCLUUID
 				Expect(ctx.Client.Update(ctx, cm)).NotTo(HaveOccurred())
 
 				Eventually(func() bool {
@@ -157,7 +157,7 @@ func intgTestsCM() {
 				var workloadNs *v1.Namespace
 				BeforeEach(func() {
 					cm.Data = make(map[string]string)
-					cm.Data[vsphere.ContentSourceKey] = clUUID
+					cm.Data[config.ContentSourceKey] = clUUID
 
 					// Create a user workload namespace.
 					workloadNs = &v1.Namespace{

@@ -13,21 +13,24 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+
 	"github.com/google/uuid"
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
 const (
-	DummyImageName         = "dummy-image-name"
-	DummyClassName         = "dummyClassName"
-	DummyNetworkName       = "dummyNetworkName"
-	DummyVolumeName        = "dummy-volume-name"
-	DummyPVCName           = "dummyPVCName"
-	DummyMetadataCMName    = "dummyMetadataCMName"
-	DummyDistroVersion     = "dummyDistroVersion"
-	DummyOSType            = "centosGuest"
-	DummyStorageClassName  = "dummy-storage-class"
-	DummyResourceQuotaName = "dummy-resource-quota"
+	DummyImageName            = "dummy-image-name"
+	DummyClassName            = "dummyClassName"
+	DummyNetworkName          = "dummyNetworkName"
+	DummyVolumeName           = "dummy-volume-name"
+	DummyPVCName              = "dummyPVCName"
+	DummyMetadataCMName       = "dummyMetadataCMName"
+	DummyDistroVersion        = "dummyDistroVersion"
+	DummyOSType               = "centosGuest"
+	DummyStorageClassName     = "dummy-storage-class"
+	DummyResourceQuotaName    = "dummy-resource-quota"
+	DummyAvailabilityZoneName = "dummy-availability-zone"
 )
 
 var (
@@ -64,6 +67,7 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "test-",
+			Labels:       map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSpec{
 			ImageName:  DummyImageName,
@@ -188,6 +192,18 @@ func DummyResourceQuota(namespace, rlName string) *corev1.ResourceQuota {
 			Hard: corev1.ResourceList{
 				corev1.ResourceName(rlName): resource.MustParse("1"),
 			},
+		},
+	}
+}
+
+func DummyAvailabilityZone() *topologyv1.AvailabilityZone {
+	return &topologyv1.AvailabilityZone{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: DummyAvailabilityZoneName,
+		},
+		Spec: topologyv1.AvailabilityZoneSpec{
+			ClusterComputeResourceMoId: "cluster",
+			Namespaces:                 map[string]topologyv1.NamespaceInfo{},
 		},
 	}
 }

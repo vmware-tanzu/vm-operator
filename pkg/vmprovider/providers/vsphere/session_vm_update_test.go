@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/types"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1071,6 +1072,117 @@ var _ = Describe("Network Interfaces VM Status", func() {
 			Expect(networkIfStatus.Connected).To(BeTrue())
 			Expect(networkIfStatus.IpAddresses[0]).To(Equal("192.168.128.5/16"))
 			Expect(networkIfStatus.IpAddresses[1]).To(Equal("fe80::250:56ff:fe8c:7b34/64"))
+		})
+	})
+})
+
+var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
+	Context("markCustomizationInfoCondition", func() {
+		var (
+			vm        *vmopv1alpha1.VirtualMachine
+			guestInfo *types.GuestInfo
+		)
+
+		BeforeEach(func() {
+			vm = &vmopv1alpha1.VirtualMachine{}
+			guestInfo = &types.GuestInfo{
+				CustomizationInfo: &types.GuestInfoCustomizationInfo{},
+			}
+		})
+
+		JustBeforeEach(func() {
+			markCustomizationInfoCondition(vm, guestInfo)
+		})
+
+		Context("guestInfo unset", func() {
+			BeforeEach(func() {
+				guestInfo = nil
+			})
+			It("sets condition unknown", func() {
+				expectedConditions := vmopv1alpha1.Conditions{
+					*conditions.UnknownCondition(vmopv1alpha1.GuestCustomizationCondition, "", ""),
+				}
+				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+			})
+		})
+		Context("customizationInfo unset", func() {
+			BeforeEach(func() {
+				guestInfo.CustomizationInfo = nil
+			})
+			It("sets condition unknown", func() {
+				expectedConditions := vmopv1alpha1.Conditions{
+					*conditions.UnknownCondition(vmopv1alpha1.GuestCustomizationCondition, "", ""),
+				}
+				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+			})
+		})
+		Context("customizationInfo idle", func() {
+			BeforeEach(func() {
+				guestInfo.CustomizationInfo.CustomizationStatus = string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE)
+			})
+			It("sets condition true", func() {
+				expectedConditions := vmopv1alpha1.Conditions{
+					*conditions.TrueCondition(vmopv1alpha1.GuestCustomizationCondition),
+				}
+				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+			})
+		})
+		Context("customizationInfo pending", func() {
+			BeforeEach(func() {
+				guestInfo.CustomizationInfo.CustomizationStatus = string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING)
+			})
+			It("sets condition false", func() {
+				expectedConditions := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, vmopv1alpha1.GuestCustomizationPendingReason, vmopv1alpha1.ConditionSeverityInfo, ""),
+				}
+				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+			})
+		})
+		Context("customizationInfo running", func() {
+			BeforeEach(func() {
+				guestInfo.CustomizationInfo.CustomizationStatus = string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING)
+			})
+			It("sets condition false", func() {
+				expectedConditions := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, vmopv1alpha1.GuestCustomizationRunningReason, vmopv1alpha1.ConditionSeverityInfo, ""),
+				}
+				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+			})
+		})
+		Context("customizationInfo succeeded", func() {
+			BeforeEach(func() {
+				guestInfo.CustomizationInfo.CustomizationStatus = string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED)
+			})
+			It("sets condition true", func() {
+				expectedConditions := vmopv1alpha1.Conditions{
+					*conditions.TrueCondition(vmopv1alpha1.GuestCustomizationCondition),
+				}
+				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+			})
+		})
+		Context("customizationInfo failed", func() {
+			BeforeEach(func() {
+				guestInfo.CustomizationInfo.CustomizationStatus = string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_FAILED)
+				guestInfo.CustomizationInfo.ErrorMsg = "some error message"
+			})
+			It("sets condition false", func() {
+				expectedConditions := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, vmopv1alpha1.GuestCustomizationFailedReason, vmopv1alpha1.ConditionSeverityError, guestInfo.CustomizationInfo.ErrorMsg),
+				}
+				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+			})
+		})
+		Context("customizationInfo invalid", func() {
+			BeforeEach(func() {
+				guestInfo.CustomizationInfo.CustomizationStatus = "asdf"
+				guestInfo.CustomizationInfo.ErrorMsg = "some error message"
+			})
+			It("sets condition false", func() {
+				expectedConditions := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, "", vmopv1alpha1.ConditionSeverityError, guestInfo.CustomizationInfo.ErrorMsg),
+				}
+				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+			})
 		})
 	})
 })

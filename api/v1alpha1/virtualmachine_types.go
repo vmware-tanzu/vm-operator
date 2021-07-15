@@ -92,8 +92,8 @@ type VirtualMachineNetworkInterface struct {
 }
 
 // VirtualMachineMetadataTransport is used to indicate the transport used by VirtualMachineMetadata
-// Valid values are "ExtraConfig" and "OvfEnv".
-// +kubebuilder:validation:Enum=ExtraConfig;OvfEnv
+// Valid values are "ExtraConfig", "OvfEnv" and "CloudInit".
+// +kubebuilder:validation:Enum=ExtraConfig;OvfEnv;CloudInit
 type VirtualMachineMetadataTransport string
 
 const (
@@ -106,6 +106,16 @@ const (
 	// marked userConfigurable and already present in either OVF Properties of a VirtualMachineImage
 	// or as vApp properties on an existing VM or VMTX will be set, all others will be ignored.
 	VirtualMachineMetadataOvfEnvTransport VirtualMachineMetadataTransport = "OvfEnv"
+
+	// VirtualMachineMetadataCloudInitTransport indicates the data in
+	// the ConfigMap resource specified by VirtualMachineMetadata.ConfigMapName
+	// in the "user-data" key is cloud-init userdata.
+	//
+	// Please note that, despite the name, VirtualMachineMetadata has no
+	// relationship to cloud-init instance metadata.
+	//
+	// For more information, please refer to cloud-init's official documentation.
+	VirtualMachineMetadataCloudInitTransport VirtualMachineMetadataTransport = "CloudInit"
 )
 
 // VirtualMachineMetadata defines any metadata that should be passed to the VirtualMachine instance.  A typical use

@@ -12,34 +12,28 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
-	vmopclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
+	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
-	vmopsession "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
+	vcsession "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
 var (
-	restConfig    *rest.Config
 	vcSim         *integration.VcSimInstance
 	testEnv       *envtest.Environment
 	vSphereConfig *config.VSphereVmProviderConfig
-	vmClient      *vmopclient.Client
+	vcClient      *vcclient.Client
 	vmProvider    vmprovider.VirtualMachineProviderInterface
-	clientSet     *kubernetes.Clientset
 	k8sClient     client.Client
-	session       *vmopsession.Session
+	session       *vcsession.Session
 
 	err error
 	ctx context.Context
-	c   *vmopclient.Client
 )
 
 func TestVSphereIntegrationProvider(t *testing.T) {
@@ -48,19 +42,11 @@ func TestVSphereIntegrationProvider(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	testEnv, vSphereConfig, restConfig, vcSim, vmClient, vmProvider = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
-	clientSet = kubernetes.NewForConfigOrDie(restConfig)
-
-	k8sClient, err = integration.GetCtrlRuntimeClient(restConfig)
-	Expect(err).NotTo(HaveOccurred())
-
 	ctx = context.Background()
 
-	c, err = vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(ctx)
-	Expect(c).ToNot(BeNil())
-	Expect(err).NotTo(HaveOccurred())
+	testEnv, vSphereConfig, k8sClient, vcSim, vcClient, vmProvider = integration.SetupIntegrationEnv([]string{integration.DefaultNamespace})
 
-	session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, k8sClient, nil)
+	session, err = vcsession.NewSessionAndConfigure(ctx, vcClient, vSphereConfig, k8sClient)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(session).ToNot(BeNil())
 })

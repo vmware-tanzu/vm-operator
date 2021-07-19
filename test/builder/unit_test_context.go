@@ -25,11 +25,11 @@ type UnitTestContext struct {
 
 // NewUnitTestContext returns a new UnitTestContext
 func NewUnitTestContext(initObjects ...client.Object) *UnitTestContext {
-	fakeClient, scheme := NewFakeClientAndScheme(initObjects...)
+	fakeClient := NewFakeClient(initObjects...)
 	return &UnitTestContext{
 		Context: goctx.Background(),
 		Client:  fakeClient,
-		Scheme:  scheme,
+		Scheme:  fakeClient.Scheme(),
 	}
 }
 
@@ -72,8 +72,8 @@ type UnitTestContextForValidatingWebhook struct {
 // NewUnitTestContextForController returns a new UnitTestContextForController
 // for unit testing controllers.
 func NewUnitTestContextForController(initObjects []client.Object) *UnitTestContextForController {
-	fakeClient, scheme := NewFakeClientAndScheme(initObjects...)
-	fakeControllerManagerContext := fake.NewControllerManagerContext(scheme)
+	fakeClient := NewFakeClient(initObjects...)
+	fakeControllerManagerContext := fake.NewControllerManagerContext(fakeClient.Scheme())
 	recorder, events := NewFakeRecorder()
 	fakeControllerManagerContext.Recorder = recorder
 	ctx := &UnitTestContextForController{
@@ -97,8 +97,8 @@ func NewUnitTestContextForValidatingWebhook(
 	obj, oldObj *unstructured.Unstructured,
 	initObjects ...client.Object) *UnitTestContextForValidatingWebhook {
 
-	fakeClient, scheme := NewFakeClientAndScheme(initObjects...)
-	fakeManagerContext := fake.NewControllerManagerContext(scheme)
+	fakeClient := NewFakeClient(initObjects...)
+	fakeManagerContext := fake.NewControllerManagerContext(fakeClient.Scheme())
 	fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
 	ctx := &UnitTestContextForValidatingWebhook{
@@ -132,8 +132,8 @@ func NewUnitTestContextForMutatingWebhook(
 	mutatorFn builder.MutatorFunc,
 	obj *unstructured.Unstructured) *UnitTestContextForMutatingWebhook {
 
-	fakeClient, scheme := NewFakeClientAndScheme(DummyAvailabilityZone())
-	fakeManagerContext := fake.NewControllerManagerContext(scheme)
+	fakeClient := NewFakeClient(DummyAvailabilityZone())
+	fakeManagerContext := fake.NewControllerManagerContext(fakeClient.Scheme())
 	fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
 	ctx := &UnitTestContextForMutatingWebhook{

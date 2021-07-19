@@ -15,12 +15,10 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vapi/cluster"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -46,7 +44,6 @@ var DefaultExtraConfig = map[string]string{
 type Session struct {
 	Client    *client.Client
 	k8sClient ctrlruntime.Client
-	scheme    *runtime.Scheme
 
 	Finder       *find.Finder
 	datacenter   *object.Datacenter
@@ -71,8 +68,7 @@ func NewSessionAndConfigure(
 	ctx goctx.Context,
 	client *client.Client,
 	config *config.VSphereVmProviderConfig,
-	k8sClient ctrlruntime.Client,
-	scheme *runtime.Scheme) (*Session, error) {
+	k8sClient ctrlruntime.Client) (*Session, error) {
 
 	if log.V(4).Enabled() {
 		configCopy := *config
@@ -83,7 +79,6 @@ func NewSessionAndConfigure(
 	s := &Session{
 		Client:                client,
 		k8sClient:             k8sClient,
-		scheme:                scheme,
 		storageClassRequired:  config.StorageClassRequired,
 		useInventoryForImages: config.UseInventoryAsContentSource,
 	}
@@ -190,7 +185,7 @@ func (s *Session) initSession(
 		}
 	}
 
-	s.networkProvider = network.NewProvider(s.k8sClient, s.Client.VimClient(), s.Finder, s.cluster, s.scheme)
+	s.networkProvider = network.NewProvider(s.k8sClient, s.Client.VimClient(), s.Finder, s.cluster)
 
 	// Initialize tagging information
 	s.tagInfo = make(map[string]string)
@@ -298,9 +293,7 @@ func (s *Session) CreateResourcePool(ctx goctx.Context, rpSpec *v1alpha1.Resourc
 	log.Info("Creating ResourcePool with session", "name", rpSpec.Name)
 
 	// CreateResourcePool is invoked during a ResourcePolicy reconciliation to create a ResourcePool for a set of
-	// VirtualMachines. The new RP is created under the RP corresponding to the session.
-	// For a Supervisor Cluster deployment, the session's RP is the supervisor cluster namespace's RP.
-	// For IAAS deployments, the session's RP correspond to RP in provider ConfigMap.
+	// VirtualMachines. This RP is created as a child of RP of the session's RP.
 	resourcePool, err := s.resourcePool.Create(ctx, rpSpec.Name, types.DefaultResourceConfigSpec())
 	if err != nil {
 		return "", err
@@ -377,9 +370,7 @@ func (s *Session) CreateFolder(ctx goctx.Context, folderSpec *v1alpha1.FolderSpe
 	log.Info("Creating a new Folder", "name", folderSpec.Name)
 
 	// CreateFolder is invoked during a ResourcePolicy reconciliation to create a Folder for a set of VirtualMachines.
-	// The new Folder is created under the Folder corresponding to the session.
-	// For a Supervisor Cluster deployment, the session's Folder is the supervisor cluster namespace's Folder.
-	// For IAAS deployments, the session's Folder corresponds to Folder in provider ConfigMap.
+	// The new Folder is created as a child of the Folder corresponding to the session.
 	folder, err := s.folder.CreateFolder(ctx, folderSpec.Name)
 	if err != nil {
 		return "", err
@@ -655,99 +646,6 @@ func (s *Session) String() string {
 	sb.WriteString(fmt.Sprintf("tagInfo: %v ", s.tagInfo))
 	sb.WriteString("}")
 	return sb.String()
-}
-
-// CreateClusterModule creates a clusterModule in vc and returns its id.
-func (s *Session) CreateClusterModule(ctx goctx.Context) (string, error) {
-	log.Info("Creating clusterModule")
-
-	restClient := s.Client.RestClient()
-	moduleId, err := cluster.NewManager(restClient).CreateModule(ctx, s.cluster)
-	if err != nil {
-		return "", err
-	}
-
-	log.Info("Created clusterModule", "moduleId", moduleId)
-	return moduleId, nil
-}
-
-// DeleteClusterModule deletes a clusterModule in vc.
-func (s *Session) DeleteClusterModule(ctx goctx.Context, moduleId string) error {
-	log.Info("Deleting clusterModule", "moduleId", moduleId)
-
-	restClient := s.Client.RestClient()
-	if err := cluster.NewManager(restClient).DeleteModule(ctx, moduleId); err != nil {
-		return err
-	}
-
-	log.Info("Deleted clusterModule", "moduleId", moduleId)
-	return nil
-}
-
-// DoesClusterModuleExist checks whether the module with the given spec/uuid exit in vc.
-func (s *Session) DoesClusterModuleExist(ctx goctx.Context, moduleUuid string) (bool, error) {
-	log.V(4).Info("Checking clusterModule", "moduleId", moduleUuid)
-
-	if moduleUuid == "" {
-		return false, nil
-	}
-
-	restClient := s.Client.RestClient()
-	modules, err := cluster.NewManager(restClient).ListModules(ctx)
-	if err != nil {
-		return false, err
-	}
-	for _, mod := range modules {
-		if mod.Module == moduleUuid {
-			return true, nil
-		}
-	}
-
-	log.V(4).Info("ClusterModule doesn't exist", "moduleId", moduleUuid)
-	return false, nil
-}
-
-// AddVmToClusterModule associates a VM with a clusterModule.
-func (s *Session) AddVmToClusterModule(ctx goctx.Context, moduleId string, vmRef mo.Reference) error {
-	log.Info("Adding vm to clusterModule", "moduleId", moduleId, "vmId", vmRef)
-
-	restClient := s.Client.RestClient()
-	if _, err := cluster.NewManager(restClient).AddModuleMembers(ctx, moduleId, vmRef); err != nil {
-		return err
-	}
-
-	log.Info("Added vm to clusterModule", "moduleId", moduleId, "vmId", vmRef)
-	return nil
-}
-
-// RemoveVmFromClusterModule removes a VM from a clusterModule.
-func (s *Session) RemoveVmFromClusterModule(ctx goctx.Context, moduleId string, vmRef mo.Reference) error {
-	log.Info("Removing vm from clusterModule", "moduleId", moduleId, "vmId", vmRef)
-
-	restClient := s.Client.RestClient()
-	if _, err := cluster.NewManager(restClient).RemoveModuleMembers(ctx, moduleId, vmRef); err != nil {
-		return err
-	}
-
-	log.Info("Removed vm from clusterModule", "moduleId", moduleId, "vmId", vmRef)
-	return nil
-}
-
-// IsVmMemberOfClusterModule checks whether a given VM is a member of ClusterModule in VC.
-func (s *Session) IsVmMemberOfClusterModule(ctx goctx.Context, moduleId string, vmRef mo.Reference) (bool, error) {
-	restClient := s.Client.RestClient()
-	moduleMembers, err := cluster.NewManager(restClient).ListModuleMembers(ctx, moduleId)
-	if err != nil {
-		return false, err
-	}
-
-	for _, member := range moduleMembers {
-		if member.Value == vmRef.Reference().Value {
-			return true, nil
-		}
-	}
-
-	return false, nil
 }
 
 // AttachTagToVm attaches a tag with a given name to the vm.

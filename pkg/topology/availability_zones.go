@@ -141,8 +141,7 @@ func GetDefaultAvailabilityZone(
 		return availabilityZone, err
 	}
 
-	// Collect all of the DevOps namespaces into the AvailabilityZone's
-	// Namespaces map.
+	// Collect all the DevOps namespaces into the AvailabilityZone's Namespaces map.
 	for _, ns := range namespaceList.Items {
 		poolMoId := ns.Annotations[NamespaceRPAnnotationKey]
 		folderMoId := ns.Annotations[NamespaceFolderAnnotationKey]

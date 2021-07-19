@@ -156,14 +156,13 @@ func NewProvider(
 	k8sClient ctrlruntime.Client,
 	vimClient *vim25.Client,
 	finder *find.Finder,
-	cluster *object.ClusterComputeResource,
-	scheme *runtime.Scheme) Provider {
+	cluster *object.ClusterComputeResource) Provider {
 
 	return &networkProvider{
-		nsxt:   newNsxtNetworkProvider(k8sClient, finder, cluster, scheme),
-		netOp:  newNetOpNetworkProvider(k8sClient, vimClient, finder, cluster, scheme),
+		nsxt:   newNsxtNetworkProvider(k8sClient, finder, cluster),
+		netOp:  newNetOpNetworkProvider(k8sClient, vimClient, finder, cluster),
 		named:  newNamedNetworkProvider(finder),
-		scheme: scheme,
+		scheme: k8sClient.Scheme(),
 	}
 }
 
@@ -269,12 +268,11 @@ func newNetOpNetworkProvider(
 	k8sClient ctrlruntime.Client,
 	vimClient *vim25.Client,
 	finder *find.Finder,
-	cluster *object.ClusterComputeResource,
-	scheme *runtime.Scheme) *netOpNetworkProvider {
+	cluster *object.ClusterComputeResource) *netOpNetworkProvider {
 
 	return &netOpNetworkProvider{
 		k8sClient: k8sClient,
-		scheme:    scheme,
+		scheme:    k8sClient.Scheme(),
 		vimClient: vimClient,
 		finder:    finder,
 		cluster:   cluster,
@@ -520,14 +518,13 @@ type nsxtNetworkProvider struct {
 func newNsxtNetworkProvider(
 	client ctrlruntime.Client,
 	finder *find.Finder,
-	cluster *object.ClusterComputeResource,
-	scheme *runtime.Scheme) *nsxtNetworkProvider {
+	cluster *object.ClusterComputeResource) *nsxtNetworkProvider {
 
 	return &nsxtNetworkProvider{
 		k8sClient: client,
 		finder:    finder,
 		cluster:   cluster,
-		scheme:    scheme,
+		scheme:    client.Scheme(),
 	}
 }
 

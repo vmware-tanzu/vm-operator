@@ -186,6 +186,7 @@ func readerFromUrl(ctx context.Context, c *rest.Client, url *url.URL) (io.ReadCl
 	p := soap.DefaultDownload
 	readerStream, _, err := c.Download(ctx, url, &p)
 	if err != nil {
+		// Log message used by VMC LINT. Refer to before making changes
 		log.Error(err, "Error occurred when downloading file", "url", url)
 		return nil, err
 	}

@@ -526,6 +526,7 @@ func (np *nsxtNetworkProvider) createEthernetCard(
 
 	networkRef, err := searchNsxtNetworkReference(vmCtx, np.finder, np.cluster, vnetIf.Status.ProviderStatus.NsxLogicalSwitchID)
 	if err != nil {
+		// Log message used by VMC LINT. Refer to before making changes
 		vmCtx.Logger.Error(err, "Failed to search for nsx-t network associated with vnetIf", "vnetIf", vnetIf)
 		return nil, err
 	}

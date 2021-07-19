@@ -24,6 +24,7 @@ func GetProviderCredentials(client ctrlruntime.Client, namespace string, secretN
 	secret := &v1.Secret{}
 	secretKey := types.NamespacedName{Namespace: namespace, Name: secretName}
 	if err := client.Get(context.Background(), secretKey, secret); err != nil {
+		// Log message used by VMC LINT. Refer to before making changes
 		return nil, errors.Wrapf(err, "cannot find secret for provider credentials: %s", secretKey)
 	}
 

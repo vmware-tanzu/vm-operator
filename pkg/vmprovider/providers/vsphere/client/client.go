@@ -91,6 +91,7 @@ func newRestClient(ctx context.Context, vimClient *vim25.Client, config *config.
 
 	// Initial login. This will also start the keepalive.
 	if err := restClient.Login(ctx, userInfo); err != nil {
+		// Log message used by VMC LINT. Refer to before making changes
 		return nil, errors.Wrapf(err, "login failed for url: %v", vimClient.URL())
 	}
 
@@ -126,6 +127,7 @@ func newVimClient(ctx context.Context, config *config.VSphereVmProviderConfig) (
 
 	// Initial login. This will also start the keepalive.
 	if err = sm.Login(ctx, userInfo); err != nil {
+		// Log message used by VMC LINT. Refer to before making changes
 		return nil, nil, errors.Wrapf(err, "login failed for url: %v", soapURL)
 	}
 

@@ -5,6 +5,4 @@ package messages
 
 const (
 	UpdatingImmutableFieldsNotAllowed = "updates to immutable fields are not allowed"
-	InvalidMemoryRequest              = "memory reservation must not be larger than the memory limit"
-	InvalidCPURequest                 = "CPU reservation must not be larger than the CPU limit"
 )

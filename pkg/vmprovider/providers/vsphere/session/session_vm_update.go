@@ -11,7 +11,6 @@ import (
 	"strings"
 	"text/template"
 
-	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"gopkg.in/yaml.v2"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
@@ -19,6 +18,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/task"
+	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -147,7 +147,7 @@ func (s *Session) customizeVM(
 
 	vmCtx.Logger.Info("Customizing VM", "customizationSpec", *customizationSpec)
 	if err := resVM.Customize(vmCtx, *customizationSpec); err != nil {
-		// isCustomizationPendingExtraConfig() above is suppose to prevent this error, but
+		// isCustomizationPendingExtraConfig() above is supposed to prevent this error, but
 		// handle it explicitly here just in case so VM reconciliation can proceed.
 		if !isCustomizationPendingError(err) {
 			return err
@@ -779,14 +779,14 @@ func (s *Session) ensureCNSVolumes(vmCtx context.VMContext) error {
 			if volumeStatus.Name == volume.Name {
 				found = true
 				if !volumeStatus.Attached {
-					return fmt.Errorf("Persistent volume: %s not attached to VM", volume.Name)
+					return fmt.Errorf("persistent volume: %s not attached to VM", volume.Name)
 				}
 				break
 			}
 		}
 
 		if !found {
-			return fmt.Errorf("Status update pending for persistent volume: %s on VM", volume.Name)
+			return fmt.Errorf("status update pending for persistent volume: %s on VM", volume.Name)
 		}
 	}
 
@@ -899,31 +899,27 @@ func (s *Session) attachTagsAndModules(
 	// Find ClusterModule UUID from the ResourcePolicy.
 	var moduleUuid string
 	for _, clusterModule := range resourcePolicy.Status.ClusterModules {
+		// TODO Needs to compare cluster
 		if clusterModule.GroupName == clusterModuleName {
 			moduleUuid = clusterModule.ModuleUuid
 			break
 		}
 	}
 	if moduleUuid == "" {
-		return fmt.Errorf("ClusterModule %s to not found", clusterModuleName)
+		return fmt.Errorf("ClusterModule %s not found", clusterModuleName)
 	}
 
 	vmRef := resVM.MoRef()
 
-	isMember, err := s.IsVmMemberOfClusterModule(vmCtx, moduleUuid, vmRef)
+	err := s.Client.ClusterModuleClient().AddMoRefToModule(vmCtx, moduleUuid, vmRef)
 	if err != nil {
 		return err
-	}
-	if !isMember {
-		if err := s.AddVmToClusterModule(vmCtx, moduleUuid, vmRef); err != nil {
-			return err
-		}
 	}
 
 	// Lookup the real tag name from config and attach to the VM.
 	tagName := s.tagInfo[providerTagsName]
 	if tagName == "" {
-		return fmt.Errorf("Empty tagName, TagInfo %s to not found", providerTagsName)
+		return fmt.Errorf("empty tagName, TagInfo %s not found", providerTagsName)
 	}
 	tagCategoryName := s.tagInfo[config.ProviderTagCategoryNameKey]
 	if err := s.AttachTagToVm(vmCtx, tagName, tagCategoryName, vmRef); err != nil {
@@ -1055,10 +1051,6 @@ func (s *Session) updateVMStatus(
 	} else {
 		vm.Status.ChangeBlockTracking = nil
 	}
-
-	// TODO: Figure out what ones we actually need here. Some are already in the Status.
-	// 	 	 Some like the OVF properties are massive and don't make much sense on the VM.
-	// AddProviderAnnotations(s, &vmCtx.VM.ObjectMeta, resVM)
 
 	return k8serrors.NewAggregate(errs)
 }

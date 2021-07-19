@@ -20,7 +20,6 @@ import (
 	"github.com/vmware/govmomi/vapi/vcenter"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
@@ -154,15 +153,12 @@ func GetCtrlRuntimeClient(config *rest.Config) (client.Client, error) {
 	_ = netopv1alpha1.AddToScheme(s)
 	_ = topologyv1.AddToScheme(s)
 	_ = cnsv1alpha1.SchemeBuilder.AddToScheme(s)
-	controllerClient, err := client.New(config, client.Options{
-		Scheme: s,
-	})
-	return controllerClient, err
+	return client.New(config, client.Options{Scheme: s})
 }
 
-func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSphereVmProviderConfig, *rest.Config, *VcSimInstance, *vmopclient.Client, vmprovider.VirtualMachineProviderInterface) {
+func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSphereVmProviderConfig, client.Client, *VcSimInstance, *vmopclient.Client, vmprovider.VirtualMachineProviderInterface) {
+	Expect(namespaces).ToNot(BeEmpty())
 
-	Expect(len(namespaces) > 0).To(BeTrue())
 	enableDebugLogging()
 	rootDir, err := testutil.GetRootDir()
 	Expect(err).ToNot(HaveOccurred())
@@ -178,17 +174,6 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSp
 	Expect(err).NotTo(HaveOccurred())
 
 	stdlog.Print("setting up the integration test env...")
-	// BMV: We should not use the global Scheme here. Need to plumb this down to the controller Manager.
-	err = vmopv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = ncpv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = netopv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = cnsv1alpha1.SchemeBuilder.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = topologyv1.SchemeBuilder.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
 
 	k8sClient, err := GetCtrlRuntimeClient(cfg)
 	Expect(err).NotTo(HaveOccurred())
@@ -198,7 +183,7 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSp
 
 	// Register the vSphere provider
 	log.Info("setting up vSphere Provider")
-	vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, scheme.Scheme, recorder)
+	vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, recorder)
 
 	vcSim := NewVcSimInstance()
 
@@ -227,7 +212,7 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSp
 	}
 	Expect(k8sClient.Create(context.Background(), az)).To(Succeed())
 
-	return testEnv, vSphereConfig, cfg, vcSim, vmopClient, vmProvider
+	return testEnv, vSphereConfig, k8sClient, vcSim, vmopClient, vmProvider
 }
 
 func TeardownIntegrationEnv(testEnv *envtest.Environment, vcSim *VcSimInstance) {

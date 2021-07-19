@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -76,7 +77,7 @@ func unitTestsValidateCreate() {
 			ctx.vmRP.Spec.ResourcePool.Limits.Cpu = resource.MustParse("1Gi")
 		}
 		if args.invalidMemoryRequest {
-			ctx.vmRP.Spec.ResourcePool.Reservations.Memory = resource.MustParse("2Gi")
+			ctx.vmRP.Spec.ResourcePool.Reservations.Memory = resource.MustParse("4Gi")
 			ctx.vmRP.Spec.ResourcePool.Limits.Memory = resource.MustParse("1Gi")
 		}
 
@@ -104,8 +105,8 @@ func unitTestsValidateCreate() {
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should allow no cpu limit", createArgs{noCpuLimit: true}, true, nil, nil),
 		Entry("should allow no memory limit", createArgs{noMemoryLimit: true}, true, nil, nil),
-		Entry("should deny invalid cpu reservation", createArgs{invalidCpuRequest: true}, false, "CPU reservation must not be larger than the CPU limit", nil),
-		Entry("should deny invalid memory reservation", createArgs{invalidMemoryRequest: true}, false, "memory reservation must not be larger than the memory limit", nil),
+		Entry("should deny invalid cpu reservation", createArgs{invalidCpuRequest: true}, false, "spec.resourcepool.reservations.cpu: Invalid value: \"2Gi\": reservation value cannot exceed the limit value", nil),
+		Entry("should deny invalid memory reservation", createArgs{invalidMemoryRequest: true}, false, "spec.resourcepool.reservations.memory: Invalid value: \"4Gi\": reservation value cannot exceed the limit value", nil),
 	)
 }
 

@@ -4,32 +4,30 @@
 package session
 
 import (
-	"context"
+	goctx "context"
 	"sync"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
+	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 )
 
 type Manager struct {
 	sync.Mutex
 
-	client    *client.Client
+	client    *vcclient.Client
 	k8sClient ctrlruntime.Client
-	scheme    *runtime.Scheme
 	sessions  map[string]*Session
 }
 
-func NewManager(k8sClient ctrlruntime.Client, scheme *runtime.Scheme) Manager {
+func NewManager(k8sClient ctrlruntime.Client) Manager {
 	return Manager{
 		k8sClient: k8sClient,
-		scheme:    scheme,
 		sessions:  map[string]*Session{},
 	}
 }
@@ -40,14 +38,14 @@ func (sm *Manager) KubeClient() ctrlruntime.Client {
 	return sm.k8sClient
 }
 
-func (sm *Manager) ClearSessionsAndClient(ctx context.Context) {
+func (sm *Manager) ClearSessionsAndClient(ctx goctx.Context) {
 	sm.Lock()
 	defer sm.Unlock()
 	sm.clearSessionsAndClient(ctx)
 }
 
 func (sm *Manager) DeleteSession(
-	ctx context.Context,
+	ctx goctx.Context,
 	namespace string) error {
 
 	// Get all of the availability zones in order to delete the cached session
@@ -67,7 +65,7 @@ func (sm *Manager) DeleteSession(
 	return nil
 }
 
-func (sm *Manager) GetClient(ctx context.Context) (*client.Client, error) {
+func (sm *Manager) GetClient(ctx goctx.Context) (*vcclient.Client, error) {
 	sm.Lock()
 	defer sm.Unlock()
 
@@ -80,8 +78,8 @@ func (sm *Manager) GetClient(ctx context.Context) (*client.Client, error) {
 }
 
 func (sm *Manager) WithClient(
-	ctx context.Context,
-	fn func(context.Context, *client.Client) error) error {
+	ctx goctx.Context,
+	fn func(goctx.Context, *vcclient.Client) error) error {
 
 	client, err := sm.GetClient(ctx)
 	if err != nil {
@@ -91,7 +89,7 @@ func (sm *Manager) WithClient(
 }
 
 func (sm *Manager) GetSession(
-	ctx context.Context,
+	ctx goctx.Context,
 	zone, namespace string) (*Session, error) {
 
 	sm.Lock()
@@ -111,25 +109,29 @@ func (sm *Manager) GetSession(
 	return newSession, nil
 }
 
-func (sm *Manager) ComputeClusterCpuMinFrequency(ctx context.Context) error {
+func (sm *Manager) GetSessionForVM(vmCtx context.VMContext) (*Session, error) {
+	return sm.GetSession(
+		vmCtx,
+		vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey],
+		vmCtx.VM.Namespace)
+}
 
-	// Get all of the availability zones in order to calculate the minimum
+func (sm *Manager) ComputeClusterCpuMinFrequency(ctx goctx.Context) error {
+	// Get all the availability zones in order to calculate the minimum
 	// CPU frequencies for each of the zones' vSphere clusters.
 	availabilityZones, err := topology.GetAvailabilityZones(ctx, sm.k8sClient)
 	if err != nil {
 		return err
 	}
 
-	// minFrequencies is a map of minimum frequencies for each cluster.
-	minFrequencies := map[string]uint64{}
-
 	client, err := sm.GetClient(ctx)
 	if err != nil {
 		return err
 	}
 
+	// minFrequencies is a map of minimum frequencies for each cluster.
+	minFrequencies := map[string]uint64{}
 	for _, az := range availabilityZones {
-
 		// Get the minimum frequency for this cluster.
 		ccr := object.NewClusterComputeResource(
 			client.VimClient(),
@@ -159,8 +161,8 @@ func (sm *Manager) ComputeClusterCpuMinFrequency(ctx context.Context) error {
 	return nil
 }
 
-func (sm *Manager) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error {
-	cfg, err := config.GetProviderConfigFromConfigMap(ctx, sm.k8sClient, "", "")
+func (sm *Manager) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {
+	cfg, err := vcconfig.GetProviderConfigFromConfigMap(ctx, sm.k8sClient, "", "")
 	if err != nil {
 		return err
 	}
@@ -169,7 +171,7 @@ func (sm *Manager) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) erro
 		return nil
 	}
 
-	if err = config.PatchVcURLInConfigMap(sm.k8sClient, vcPNID, vcPort); err != nil {
+	if err = vcconfig.PatchVcURLInConfigMap(sm.k8sClient, vcPNID, vcPort); err != nil {
 		return err
 	}
 
@@ -182,14 +184,14 @@ func (sm *Manager) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) erro
 }
 
 func (sm *Manager) getClient(
-	ctx context.Context,
-	config *config.VSphereVmProviderConfig) (*client.Client, error) {
+	ctx goctx.Context,
+	config *vcconfig.VSphereVmProviderConfig) (*vcclient.Client, error) {
 
 	if sm.client != nil {
 		return sm.client, nil
 	}
 
-	client, err := client.NewClient(ctx, config)
+	client, err := vcclient.NewClient(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -199,15 +201,15 @@ func (sm *Manager) getClient(
 }
 
 func (sm *Manager) getConfig(
-	ctx context.Context,
-	zone, namespace string) (*config.VSphereVmProviderConfig, error) {
+	ctx goctx.Context,
+	zone, namespace string) (*vcconfig.VSphereVmProviderConfig, error) {
 
-	return config.GetProviderConfigFromConfigMap(
+	return vcconfig.GetProviderConfigFromConfigMap(
 		ctx, sm.k8sClient, zone, namespace)
 }
 
 func (sm *Manager) createSession(
-	ctx context.Context,
+	ctx goctx.Context,
 	zone, namespace string) (*Session, error) {
 
 	config, err := sm.getConfig(ctx, zone, namespace)
@@ -225,8 +227,7 @@ func (sm *Manager) createSession(
 		return nil, err
 	}
 
-	ses, err := NewSessionAndConfigure(
-		ctx, client, config, sm.k8sClient, sm.scheme)
+	ses, err := NewSessionAndConfigure(ctx, client, config, sm.k8sClient)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +235,7 @@ func (sm *Manager) createSession(
 	return ses, nil
 }
 
-func (sm *Manager) clearSessionsAndClient(ctx context.Context) {
+func (sm *Manager) clearSessionsAndClient(ctx goctx.Context) {
 	for k := range sm.sessions {
 		delete(sm.sessions, k)
 	}

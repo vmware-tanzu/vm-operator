@@ -12,7 +12,6 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -23,7 +22,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
+	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 )
@@ -39,13 +38,14 @@ type vSphereVmProvider struct {
 	eventRecorder record.Recorder
 }
 
-func NewVSphereVmProviderFromClient(client ctrlruntime.Client, scheme *runtime.Scheme,
+func NewVSphereVmProviderFromClient(
+	client ctrlruntime.Client,
 	recorder record.Recorder) vmprovider.VirtualMachineProviderInterface {
-	vmProvider := &vSphereVmProvider{
-		sessions:      session.NewManager(client, scheme),
+
+	return &vSphereVmProvider{
+		sessions:      session.NewManager(client),
 		eventRecorder: recorder,
 	}
-	return vmProvider
 }
 
 // VSphereVmProviderGetSessionHack is an interface that exposes helpful
@@ -57,7 +57,7 @@ func NewVSphereVmProviderFromClient(client ctrlruntime.Client, scheme *runtime.S
 //
 // ONLY USED IN TESTS.
 type VSphereVmProviderGetSessionHack interface {
-	GetClient(ctx goctx.Context) (*client.Client, error)
+	GetClient(ctx goctx.Context) (*vcclient.Client, error)
 }
 
 func (vs *vSphereVmProvider) Name() string {
@@ -67,7 +67,7 @@ func (vs *vSphereVmProvider) Name() string {
 func (vs *vSphereVmProvider) Initialize(stop <-chan struct{}) {
 }
 
-func (vs *vSphereVmProvider) GetClient(ctx goctx.Context) (*client.Client, error) {
+func (vs *vSphereVmProvider) GetClient(ctx goctx.Context) (*vcclient.Client, error) {
 	return vs.sessions.GetClient(ctx)
 }
 
@@ -107,11 +107,7 @@ func (vs *vSphereVmProvider) DoesVirtualMachineExist(ctx goctx.Context, vm *v1al
 		VM:      vm,
 	}
 
-	ses, err := vs.sessions.GetSession(
-		vmCtx,
-		vm.Labels[topology.KubernetesTopologyZoneLabelKey],
-		vm.Namespace)
-
+	ses, err := vs.sessions.GetSessionForVM(vmCtx)
 	if err != nil {
 		return false, err
 	}
@@ -133,9 +129,7 @@ func (vs *vSphereVmProvider) getOpId(ctx goctx.Context, vm *v1alpha1.VirtualMach
 
 	// TODO: Is this actually useful? Avoid looking up the session multiple times.
 	var clusterID string
-	if ses, err := vs.sessions.GetSession(
-		ctx, vm.Labels[topology.KubernetesTopologyZoneLabelKey], vm.Namespace); err == nil {
-
+	if ses, err := vs.sessions.GetSession(ctx, vm.Labels[topology.KubernetesTopologyZoneLabelKey], vm.Namespace); err == nil {
 		clusterID = ses.Cluster().Reference().Value
 	}
 
@@ -156,10 +150,7 @@ func (vs *vSphereVmProvider) CreateVirtualMachine(ctx goctx.Context, vm *v1alpha
 
 	vmCtx.Logger.Info("Creating VirtualMachine")
 
-	ses, err := vs.sessions.GetSession(
-		vmCtx,
-		vm.Labels[topology.KubernetesTopologyZoneLabelKey],
-		vm.Namespace)
+	ses, err := vs.sessions.GetSessionForVM(vmCtx)
 	if err != nil {
 		return err
 	}
@@ -188,10 +179,7 @@ func (vs *vSphereVmProvider) UpdateVirtualMachine(ctx goctx.Context, vm *v1alpha
 
 	vmCtx.Logger.V(4).Info("Updating VirtualMachine")
 
-	ses, err := vs.sessions.GetSession(
-		vmCtx,
-		vm.Labels[topology.KubernetesTopologyZoneLabelKey],
-		vm.Namespace)
+	ses, err := vs.sessions.GetSessionForVM(vmCtx)
 	if err != nil {
 		return err
 	}
@@ -213,10 +201,7 @@ func (vs *vSphereVmProvider) DeleteVirtualMachine(ctx goctx.Context, vm *v1alpha
 
 	vmCtx.Logger.Info("Deleting VirtualMachine")
 
-	ses, err := vs.sessions.GetSession(
-		ctx,
-		vm.Labels[topology.KubernetesTopologyZoneLabelKey],
-		vmCtx.VM.Namespace)
+	ses, err := vs.sessions.GetSessionForVM(vmCtx)
 	if err != nil {
 		return err
 	}
@@ -237,10 +222,7 @@ func (vs *vSphereVmProvider) GetVirtualMachineGuestHeartbeat(ctx goctx.Context, 
 		VM:      vm,
 	}
 
-	ses, err := vs.sessions.GetSession(
-		ctx,
-		vm.Labels[topology.KubernetesTopologyZoneLabelKey],
-		vmCtx.VM.Namespace)
+	ses, err := vs.sessions.GetSessionForVM(vmCtx)
 	if err != nil {
 		return "", err
 	}

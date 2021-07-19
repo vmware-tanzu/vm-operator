@@ -34,8 +34,8 @@ func intgTestsCM() {
 		cm     *corev1.ConfigMap
 		clUUID = "dummy-cl"
 
-		// represents the VM Service FSS. This should be manupulated atomiocally to avoid races where
-		// the controller is trying to read this _while_ the tests are updaing it.
+		// represents the VM Service FSS. This should be manipulated atomically to avoid races where
+		// the controller is trying to read this _while_ the tests are updating it.
 		vmServiceFSS uint32
 	)
 
@@ -159,6 +159,7 @@ func intgTestsCM() {
 				oldVMServiceFSSState = vmServiceFSS
 				atomic.StoreUint32(&vmServiceFSS, 1)
 			})
+
 			AfterEach(func() {
 				atomic.StoreUint32(&vmServiceFSS, oldVMServiceFSSState)
 			})

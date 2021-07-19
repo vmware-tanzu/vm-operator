@@ -5,16 +5,26 @@ package vsphere
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/types"
+	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 )
 
 // DoesVirtualMachineSetResourcePolicyExist checks if the entities of a VirtualMachineSetResourcePolicy exist on vSphere
-func (vs *vSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+func (vs *vSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(
+	ctx context.Context,
+	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+
+	client, err := vs.GetClient(ctx)
+	if err != nil {
+		return false, err
+	}
 
 	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.sessions.KubeClient())
 	if err != nil {
@@ -37,12 +47,14 @@ func (vs *vSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx contex
 			return false, err
 		}
 
-		modulesExist, err := vs.DoClusterModulesExist(ctx, resourcePolicy)
+		modulesExist, err := vs.doClusterModulesExist(ctx, client.ClusterModuleClient(), ses.Cluster(), resourcePolicy)
 		if err != nil {
 			return false, err
 		}
 
 		if !rpExists || !folderExists || !modulesExist {
+			log.V(4).Info("Resource policy does not exist",
+				"az", az.Name, "resourcePool", rpExists, "folder", folderExists, "modules", modulesExist)
 			return false, nil
 		}
 	}
@@ -51,7 +63,15 @@ func (vs *vSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx contex
 }
 
 // CreateOrUpdateVirtualMachineSetResourcePolicy creates if a VirtualMachineSetResourcePolicy doesn't exist, updates otherwise.
-func (vs *vSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+func (vs *vSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
+	ctx context.Context,
+	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+
+	client, err := vs.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+
 	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.sessions.KubeClient())
 	if err != nil {
 		return err
@@ -89,15 +109,9 @@ func (vs *vSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx c
 			}
 		}
 
-		moduleExists, err := vs.DoClusterModulesExist(ctx, resourcePolicy)
+		err = vs.createClusterModules(ctx, client.ClusterModuleClient(), ses.Cluster(), resourcePolicy)
 		if err != nil {
 			return err
-		}
-
-		if !moduleExists {
-			if err = vs.CreateClusterModules(ctx, resourcePolicy); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -105,7 +119,10 @@ func (vs *vSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx c
 }
 
 // DeleteVirtualMachineSetResourcePolicy deletes the VirtualMachineSetPolicy.
-func (vs *vSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+func (vs *vSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(
+	ctx context.Context,
+	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+
 	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.sessions.KubeClient())
 	if err != nil {
 		return err
@@ -124,125 +141,135 @@ func (vs *vSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.C
 		if err = ses.DeleteFolder(ctx, resourcePolicy.Spec.Folder.Name); err != nil {
 			return err
 		}
+	}
 
-		if err = vs.DeleteClusterModules(ctx, resourcePolicy); err != nil {
-			return err
-		}
-
+	if err = vs.deleteClusterModules(ctx, resourcePolicy); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-// A helper function to check whether a given clusterModule has been created, and exists in VC.
-func isClusterModulePresent(ctx context.Context, session *session.Session, moduleSpec v1alpha1.ClusterModuleSpec, moduleStatuses []v1alpha1.ClusterModuleStatus) (bool, error) {
-	for _, module := range moduleStatuses {
-		if module.GroupName == moduleSpec.GroupName {
-			// If we find a match then we need to see whether the corresponding object exists in VC.
-			moduleExists, err := session.DoesClusterModuleExist(ctx, module.ModuleUuid)
-			if err != nil {
-				return false, err
-			}
-			return moduleExists, nil
+func findClusterModuleUUID(
+	groupName string,
+	clusterRef types.ManagedObjectReference,
+	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (int, string) {
+
+	// TODO: Needs to compare cluster too once added to Status (and when not default AZ)
+	for i, modStatus := range resourcePolicy.Status.ClusterModules {
+		if modStatus.GroupName == groupName {
+			return i, modStatus.ModuleUuid
 		}
 	}
-	return false, nil
+
+	return -1, ""
 }
 
-// DoClusterModulesExist checks whether all the ClusterModules for the given VirtualMachineSetResourcePolicy has been
-// created and exist in VC.
-func (vs *vSphereVmProvider) DoClusterModulesExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
-	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.sessions.KubeClient())
-	if err != nil {
-		return false, err
+// doClusterModulesExist checks whether all the ClusterModules for the given VirtualMachineSetResourcePolicy
+// have been created and exist in VC for the Session's Cluster.
+func (vs *vSphereVmProvider) doClusterModulesExist(
+	ctx context.Context,
+	clusterModProvider clustermodules.Provider,
+	cluster *object.ClusterComputeResource,
+	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+
+	if cluster == nil {
+		return false, fmt.Errorf("cluster does not exist")
 	}
 
-	for _, az := range availabilityZones {
-		ses, err := vs.sessions.GetSession(ctx, az.Name, resourcePolicy.Namespace)
-		if err != nil {
+	clusterRef := cluster.Reference()
+
+	for _, moduleSpec := range resourcePolicy.Spec.ClusterModules {
+		_, moduleID := findClusterModuleUUID(moduleSpec.GroupName, clusterRef, resourcePolicy)
+		if moduleID == "" {
+			return false, nil
+		}
+
+		exists, err := clusterModProvider.DoesModuleExist(ctx, moduleID, clusterRef)
+		if !exists || err != nil {
 			return false, err
 		}
-		for _, moduleSpec := range resourcePolicy.Spec.ClusterModules {
-			exists, err := isClusterModulePresent(ctx, ses, moduleSpec, resourcePolicy.Status.ClusterModules)
-			if err != nil {
-				return false, err
-			}
-			if !exists {
-				return false, nil
-			}
-		}
 	}
+
 	return true, nil
 }
 
-// A helper function which adds or updates the status of a clusterModule to a given values. If the module with the
-// same group name exists, its UUID is updated. Otherwise new ClusterModuleStatus is appended.
-func updateOrAddClusterModuleStatus(new v1alpha1.ClusterModuleStatus, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) {
-	for idx := range resourcePolicy.Status.ClusterModules {
-		if resourcePolicy.Status.ClusterModules[idx].GroupName == new.GroupName {
-			resourcePolicy.Status.ClusterModules[idx].ModuleUuid = new.ModuleUuid
-			return
+// createClusterModules creates all the ClusterModules that has not created yet for a
+// given VirtualMachineSetResourcePolicy in VC.
+func (vs *vSphereVmProvider) createClusterModules(
+	ctx context.Context,
+	clusterModProvider clustermodules.Provider,
+	cluster *object.ClusterComputeResource,
+	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+
+	if cluster == nil {
+		return fmt.Errorf("cluster does not exist")
+	}
+
+	clusterRef := cluster.Reference()
+
+	// There is no way to give a name when creating a VC cluster module, so we have to
+	// resort to using the status as the source of truth. This can result in orphaned
+	// modules if, for instance, we fail to update the resource policy k8s object.
+	for _, moduleSpec := range resourcePolicy.Spec.ClusterModules {
+		idx, moduleID := findClusterModuleUUID(moduleSpec.GroupName, clusterRef, resourcePolicy)
+
+		if moduleID != "" {
+			// Verify this cluster module exists on VC.
+			exists, err := clusterModProvider.DoesModuleExist(ctx, moduleID, clusterRef)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				// Status entry is stale. Create below.
+				moduleID = ""
+			}
+		}
+
+		if moduleID == "" {
+			var err error
+			moduleID, err = clusterModProvider.CreateModule(ctx, clusterRef)
+			if err != nil {
+				return err
+			}
+		}
+
+		if idx >= 0 {
+			resourcePolicy.Status.ClusterModules[idx].ModuleUuid = moduleID
+		} else {
+			status := v1alpha1.ClusterModuleStatus{
+				GroupName:  moduleSpec.GroupName,
+				ModuleUuid: moduleID,
+				/* TODO: Cluster: ... */
+			}
+			resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules, status)
 		}
 	}
-	resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules, new)
+
+	return nil
 }
 
-// CreateClusterModules creates all the ClusterModules that has not created yet for a given VirtualMachineSetResourcePolicy in VC.
-func (vs *vSphereVmProvider) CreateClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
-	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.sessions.KubeClient())
+// deleteClusterModules deletes all the ClusterModules associated with a given VirtualMachineSetResourcePolicy in VC.
+func (vs *vSphereVmProvider) deleteClusterModules(
+	ctx context.Context,
+	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+
+	client, err := vs.GetClient(ctx)
 	if err != nil {
 		return err
 	}
 
-	for _, az := range availabilityZones {
-		ses, err := vs.sessions.GetSession(ctx, az.Name, resourcePolicy.Namespace)
+	var errModStatus []v1alpha1.ClusterModuleStatus
+	var errs []error
+
+	for _, moduleStatus := range resourcePolicy.Status.ClusterModules {
+		err := client.ClusterModuleClient().DeleteModule(ctx, moduleStatus.ModuleUuid)
 		if err != nil {
-			return err
-		}
-
-		for _, moduleSpec := range resourcePolicy.Spec.ClusterModules {
-			exists, err := isClusterModulePresent(ctx, ses, moduleSpec, resourcePolicy.Status.ClusterModules)
-			if err != nil {
-				return err
-			}
-			if exists {
-				continue
-			}
-			id, err := ses.CreateClusterModule(ctx)
-			if err != nil {
-				return err
-			}
-			updateOrAddClusterModuleStatus(v1alpha1.ClusterModuleStatus{GroupName: moduleSpec.GroupName, ModuleUuid: id}, resourcePolicy)
+			errModStatus = append(errModStatus, moduleStatus)
+			errs = append(errs, err)
 		}
 	}
-	return nil
-}
 
-// DeleteClusterModules deletes all the ClusterModules associated with a given VirtualMachineSetResourcePolicy in VC.
-func (vs *vSphereVmProvider) DeleteClusterModules(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
-	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.sessions.KubeClient())
-	if err != nil {
-		return err
-	}
-
-	for _, az := range availabilityZones {
-		ses, err := vs.sessions.GetSession(ctx, az.Name, resourcePolicy.Namespace)
-		if err != nil {
-			return err
-		}
-		i := 0
-		for _, moduleStatus := range resourcePolicy.Status.ClusterModules {
-			err = ses.DeleteClusterModule(ctx, moduleStatus.ModuleUuid)
-			// If the clusterModule has already been deleted, we can ignore the error and proceed.
-			if err != nil && !lib.IsNotFoundError(err) {
-				break
-			}
-			i++
-		}
-		resourcePolicy.Status.ClusterModules = resourcePolicy.Status.ClusterModules[i:]
-		if err != nil && !lib.IsNotFoundError(err) {
-			return err
-		}
-	}
-	return nil
+	resourcePolicy.Status.ClusterModules = errModStatus
+	return k8serrors.NewAggregate(errs)
 }

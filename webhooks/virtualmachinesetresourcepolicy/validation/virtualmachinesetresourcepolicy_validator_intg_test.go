@@ -69,7 +69,7 @@ func intgTestsValidateCreate() {
 
 	DescribeTable("create table", validateCreate,
 		Entry("should work", true, "", nil),
-		Entry("should not work for invalid", false, "memory reservation must not be larger than the memory limit", nil),
+		Entry("should not work for invalid", false, "spec.resourcepool.reservations.memory: Invalid value: \"2Gi\": reservation value cannot exceed the limit value", nil),
 	)
 }
 

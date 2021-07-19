@@ -6,9 +6,8 @@ package client
 import (
 	"context"
 	"net"
-	"time"
-
 	"net/url"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/session"
@@ -20,6 +19,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
 )
@@ -30,6 +30,7 @@ type Client struct {
 	vimClient        *vim25.Client
 	restClient       *rest.Client
 	contentLibClient contentlibrary.Provider
+	clusterModClient clustermodules.Provider
 	sessionManager   *session.Manager
 }
 
@@ -150,6 +151,7 @@ func NewClient(ctx context.Context, config *config.VSphereVmProviderConfig) (*Cl
 		vimClient:        vimClient,
 		restClient:       restClient,
 		contentLibClient: contentlibrary.NewProvider(restClient),
+		clusterModClient: clustermodules.NewProvider(restClient),
 		sessionManager:   sm,
 	}, nil
 }
@@ -184,6 +186,10 @@ func (c *Client) RestClient() *rest.Client {
 
 func (c *Client) ContentLibClient() contentlibrary.Provider {
 	return c.contentLibClient
+}
+
+func (c *Client) ClusterModuleClient() clustermodules.Provider {
+	return c.clusterModClient
 }
 
 func (c *Client) Logout(ctx context.Context) {

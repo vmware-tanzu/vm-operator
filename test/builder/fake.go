@@ -24,11 +24,6 @@ func NewFakeClient(objs ...client.Object) client.Client {
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
 }
 
-func NewFakeClientAndScheme(objs ...client.Object) (client.Client, *runtime.Scheme) {
-	scheme := NewScheme()
-	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build(), scheme
-}
-
 func NewFakeRecorder() (record.Recorder, chan string) {
 	fakeEventRecorder := clientgorecord.NewFakeRecorder(1024)
 	recorder := record.New(fakeEventRecorder)

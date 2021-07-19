@@ -276,8 +276,8 @@ var _ = Describe("NewClient", func() {
 	Context("When called with valid config", func() {
 		Specify("returns a valid client and no error", func() {
 			client, err := NewClient(ctx, testConfig(server.URL.Hostname(), server.URL.Port(), "some-username", "some-password"))
-			Expect(err).To(Not(HaveOccurred()))
-			Expect(client).To(Not(BeNil()))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(client).ToNot(BeNil())
 		})
 	})
 

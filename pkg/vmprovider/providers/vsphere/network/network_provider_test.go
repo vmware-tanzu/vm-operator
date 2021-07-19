@@ -79,7 +79,7 @@ var _ = Describe("NetworkProvider", func() {
 		dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
 		dvpg.Config.BackingType = "nsx"
 
-		np = network.NewProvider(k8sClient, c, finder, cluster, scheme)
+		np = network.NewProvider(k8sClient, c, finder, cluster)
 
 		info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 		Expect(err).ToNot(HaveOccurred())
@@ -136,7 +136,8 @@ var _ = Describe("NetworkProvider", func() {
 
 	Context("Named Network Provider", func() {
 		BeforeEach(func() {
-			np = network.NewProvider(nil, nil, finder, nil, nil)
+			k8sClient := builder.NewFakeClient()
+			np = network.NewProvider(k8sClient, nil, finder, nil)
 		})
 
 		Context("ensure interface", func() {
@@ -213,8 +214,8 @@ var _ = Describe("NetworkProvider", func() {
 		})
 
 		JustBeforeEach(func() {
-			k8sClient, scheme = builder.NewFakeClientAndScheme(netIf)
-			np = network.NewProvider(k8sClient, c.Client, finder, cluster, scheme)
+			k8sClient = builder.NewFakeClient(netIf)
+			np = network.NewProvider(k8sClient, c.Client, finder, cluster)
 		})
 
 		Context("ensure interface", func() {
@@ -530,8 +531,8 @@ var _ = Describe("NetworkProvider", func() {
 		})
 
 		JustBeforeEach(func() {
-			k8sClient, scheme = builder.NewFakeClientAndScheme(ncpVif)
-			np = network.NewProvider(k8sClient, c.Client, finder, cluster, scheme)
+			k8sClient = builder.NewFakeClient(ncpVif)
+			np = network.NewProvider(k8sClient, c.Client, finder, cluster)
 		})
 
 		Context("ensure interface", func() {

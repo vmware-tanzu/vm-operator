@@ -48,8 +48,8 @@ func intgTests() {
 		storageClass           *storagev1.StorageClass
 		resourceQuota          *corev1.ResourceQuota
 
-		// represents the VM Service FSS. This should be manupulated atomiocally to avoid races where
-		// the controller is trying to read this _while_ the tests are updaing it.
+		// represents the VM Service FSS. This should be manipulated atomically to avoid races where
+		// the controller is trying to read this _while_ the tests are updating it.
 		vmServiceFSS uint32
 	)
 

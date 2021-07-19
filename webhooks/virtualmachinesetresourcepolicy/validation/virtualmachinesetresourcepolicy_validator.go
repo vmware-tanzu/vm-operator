@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"reflect"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/pkg/errors"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -61,16 +61,19 @@ func (v validator) For() schema.GroupVersionKind {
 }
 
 func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
-	var validationErrs []string
-
 	vmRP, err := v.vmRPFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	validationErrs = append(validationErrs, v.validateMetadata(ctx, vmRP)...)
-	validationErrs = append(validationErrs, v.validateMemory(ctx, vmRP)...)
-	validationErrs = append(validationErrs, v.validateCPU(ctx, vmRP)...)
+	var fieldErrs field.ErrorList
+	fieldErrs = append(fieldErrs, v.validateMetadata(ctx, vmRP)...)
+	fieldErrs = append(fieldErrs, v.validateSpec(ctx, vmRP)...)
+
+	var validationErrs []string
+	for _, fieldErr := range fieldErrs {
+		validationErrs = append(validationErrs, fieldErr.Error())
+	}
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
@@ -96,41 +99,59 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
 
-func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vmRP *vmopv1.VirtualMachineSetResourcePolicy) []string {
-	var validationErrs []string
-	return validationErrs
+func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vmRP *vmopv1.VirtualMachineSetResourcePolicy) field.ErrorList {
+	var fieldErrs field.ErrorList
+	return fieldErrs
 }
 
-func (v validator) validateMemory(ctx *context.WebhookRequestContext, vmRP *vmopv1.VirtualMachineSetResourcePolicy) []string {
-	var validationErrs []string
+func (v validator) validateSpec(ctx *context.WebhookRequestContext, vmRP *vmopv1.VirtualMachineSetResourcePolicy) field.ErrorList {
+	var fieldErrs field.ErrorList
+	specPath := field.NewPath("spec")
 
-	reservation, limits := vmRP.Spec.ResourcePool.Reservations, vmRP.Spec.ResourcePool.Limits
-	if !isReservationLimitValid(reservation.Memory, limits.Memory) {
-		validationErrs = append(validationErrs, messages.InvalidMemoryRequest)
-	}
+	fieldErrs = append(fieldErrs, v.validateResourcePool(ctx, specPath.Child("resourcepool"), vmRP.Spec.ResourcePool)...)
+	fieldErrs = append(fieldErrs, v.validateFolder(ctx, specPath.Child("folder"), vmRP.Spec.Folder)...)
+	fieldErrs = append(fieldErrs, v.validateClusterModules(ctx, specPath.Child("clustermodules"), vmRP.Spec.ClusterModules)...)
 
-	// TODO: Validate reservation and limit against hardware configuration of all the VMs in the resource pool
-
-	return validationErrs
+	return fieldErrs
 }
 
-func (v validator) validateCPU(ctx *context.WebhookRequestContext, vmRP *vmopv1.VirtualMachineSetResourcePolicy) []string {
-	var validationErrs []string
+func (v validator) validateResourcePool(ctx *context.WebhookRequestContext, fldPath *field.Path, rp vmopv1.ResourcePoolSpec) field.ErrorList {
+	var fieldErrs field.ErrorList
 
-	reservation, limits := vmRP.Spec.ResourcePool.Reservations, vmRP.Spec.ResourcePool.Limits
-	if !isReservationLimitValid(reservation.Cpu, limits.Cpu) {
-		validationErrs = append(validationErrs, messages.InvalidCPURequest)
+	reservation, limits := rp.Reservations, rp.Limits
+	reservationsPath := fldPath.Child("reservations")
+
+	fieldErrs = append(fieldErrs, validateReservationAndLimit(reservationsPath.Child("cpu"), reservation.Cpu, limits.Cpu)...)
+	fieldErrs = append(fieldErrs, validateReservationAndLimit(reservationsPath.Child("memory"), reservation.Memory, limits.Memory)...)
+
+	return fieldErrs
+}
+
+func (v validator) validateFolder(ctx *context.WebhookRequestContext, specPath *field.Path, folder vmopv1.FolderSpec) field.ErrorList {
+	var fieldErrs field.ErrorList
+	return fieldErrs
+}
+
+func (v validator) validateClusterModules(ctx *context.WebhookRequestContext, fldPath *field.Path, clusterModules []vmopv1.ClusterModuleSpec) field.ErrorList {
+	var fieldErrs field.ErrorList
+
+	groupNames := map[string]struct{}{}
+	for i, module := range clusterModules {
+		if _, ok := groupNames[module.GroupName]; ok {
+			fieldErrs = append(fieldErrs, field.Duplicate(fldPath.Index(i).Child("groupname"), module.GroupName))
+			continue
+		}
+		groupNames[module.GroupName] = struct{}{}
 	}
 
-	// TODO: Validate reservation and limit against hardware configuration of all the VMs in the resource pool
-
-	return validationErrs
+	return fieldErrs
 }
 
 // validateAllowedChanges returns true only if immutable fields have not been modified.
 func (v validator) validateAllowedChanges(ctx *context.WebhookRequestContext, vmRP, oldVMRP *vmopv1.VirtualMachineSetResourcePolicy) []string {
 	var validationErrs []string
 
+	// TODO: Make this error more granular.
 	if !apiEquality.Semantic.DeepEqual(vmRP.Spec, oldVMRP.Spec) {
 		validationErrs = append(validationErrs, messages.UpdatingImmutableFieldsNotAllowed)
 	}
@@ -147,6 +168,12 @@ func (v validator) vmRPFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virtu
 	return vmRP, nil
 }
 
-func isReservationLimitValid(reservation, limit resource.Quantity) bool {
-	return reservation.IsZero() || limit.IsZero() || reservation.Value() <= limit.Value()
+func validateReservationAndLimit(reservationPath *field.Path, reservation, limit resource.Quantity) field.ErrorList {
+	if reservation.IsZero() || limit.IsZero() || reservation.Value() <= limit.Value() {
+		return nil
+	}
+
+	return field.ErrorList{
+		field.Invalid(reservationPath, reservation.String(), "reservation value cannot exceed the limit value"),
+	}
 }

@@ -18,7 +18,7 @@ var _ = AfterSuite(func() {
 	// TBD
 })
 
-func TestClient(t *testing.T) {
+func TestTopology(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Topology Suite")
 }

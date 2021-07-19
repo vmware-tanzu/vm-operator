@@ -213,7 +213,6 @@ type VirtualMachineReconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsourcebindings,verbs=get;list;watch
 
 func (r *VirtualMachineReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-
 	vm := &vmopv1alpha1.VirtualMachine{}
 	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -549,6 +548,7 @@ func (r *VirtualMachineReconciler) getResourcePolicy(ctx *context.VirtualMachine
 
 	// Make sure that the corresponding entities (RP and Folder) are created on the infra provider before
 	// reconciling the VM. Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy.
+	// TODO: This really only needs to check the VM's AZ, not all AZs.
 	rpReady, err := r.VmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
 	if err != nil {
 		ctx.Logger.Error(err, "Failed to check if VirtualMachineSetResourcePolicy exists")

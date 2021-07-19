@@ -20,33 +20,37 @@ import (
 )
 
 var _ = Describe("Content Library", func() {
+	var (
+		libMgr    *library.Manager
+		libraryID string
+		clClient  contentlibrary.Provider
+	)
+
+	BeforeEach(func() {
+		libMgr = library.NewManager(vcClient.RestClient())
+
+		libraries, err := libMgr.ListLibraries(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(libraries).ToNot(BeEmpty())
+		libraryID = libraries[0]
+
+		clClient = vcClient.ContentLibClient()
+	})
 
 	Context("when items are present in library", func() {
-		It("lists the ovf and downloads the ovf", func() {
-			restClient := c.RestClient()
 
-			mgr := library.NewManager(restClient)
-			libraries, err := mgr.ListLibraries(ctx)
+		It("lists items", func() {
+			items, err := clClient.GetLibraryItems(ctx, libraryID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(libraries).ToNot(BeEmpty())
+			Expect(items).ToNot(BeEmpty())
+		})
 
-			libID := libraries[0]
-			item := library.Item{
-				Name:      integration.IntegrationContentLibraryItemName,
-				Type:      "ovf",
-				LibraryID: libID,
-			}
-
-			itemIDs, err := mgr.FindLibraryItems(ctx, library.FindItem{LibraryID: libID, Name: item.Name})
+		It("gets and downloads the ovf", func() {
+			libItem, err := clClient.GetLibraryItem(ctx, libraryID, integration.IntegrationContentLibraryItemName)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(itemIDs).Should(HaveLen(1))
+			Expect(libItem).ToNot(BeNil())
 
-			libItem, err := mgr.GetLibraryItem(ctx, itemIDs[0])
-			Expect(err).ToNot(HaveOccurred())
-
-			testProvider := contentlibrary.NewProviderWithWaitSec(restClient, 1)
-
-			ovfEnvelope, err := testProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem)
+			ovfEnvelope, err := vcClient.ContentLibClient().RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(ovfEnvelope).ToNot(BeNil())
 		})
@@ -54,63 +58,58 @@ var _ = Describe("Content Library", func() {
 
 	Context("when invalid item id is passed", func() {
 		It("returns an error creating a download session", func() {
-			restClient := vmClient.RestClient()
-
 			item := &library.Item{
 				Name:      "fakeItem",
 				Type:      "ovf",
 				LibraryID: "fakeID",
 			}
 
-			testProvider := contentlibrary.NewProviderWithWaitSec(restClient, 1)
-
-			_, err := testProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, item)
+			ovf, err := clClient.RetrieveOvfEnvelopeFromLibraryItem(ctx, item)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("404 Not Found"))
+			Expect(ovf).To(BeNil())
 		})
 	})
-})
 
-var _ = Describe("RetrieveOvfEAnvelopeFromLibraryItems", func() {
-	When("called with an OVF that is invalid", func() {
+	Context("called with an OVF that is invalid", func() {
 		var (
 			ovf         *os.File
-			mgr         *library.Manager
 			libItem     *library.Item
 			libItemName string
 		)
 
 		BeforeEach(func() {
-			mgr = library.NewManager(vmClient.RestClient())
-
 			// Upload an invalid OVF (0B in size) to the integration test CL
-			ovf, err = ioutil.TempFile(os.TempDir(), "fake-*.ovf")
+			ovf, err = ioutil.TempFile("", "fake-*.ovf")
 			Expect(err).NotTo(HaveOccurred())
 			ovfInfo, err := ovf.Stat()
 			Expect(err).NotTo(HaveOccurred())
 
 			libItemName = strings.Split(ovfInfo.Name(), ".ovf")[0]
-			err = integration.CreateLibraryItem(ctx, vmClient, libItemName, "ovf", integration.GetContentSourceID(), ovf.Name())
-			Expect(err).NotTo(HaveOccurred())
+			libItem = &library.Item{
+				Name:      libItemName,
+				Type:      "ovf",
+				LibraryID: libraryID,
+			}
 
+			err = clClient.CreateLibraryItem(ctx, *libItem, ovf.Name())
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		AfterEach(func() {
 			// Clean up the invalid library item from the CL
-			Expect(vmClient.ContentLibClient().DeleteLibraryItem(ctx, libItem)).To(Succeed())
+			Expect(clClient.DeleteLibraryItem(ctx, libItem)).To(Succeed())
 			Expect(os.Remove(ovf.Name())).To(Succeed())
 		})
 
 		It("does not return error", func() {
-			itemIDs, err := mgr.FindLibraryItems(ctx, library.FindItem{LibraryID: integration.GetContentSourceID(), Name: libItemName})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(itemIDs).Should(HaveLen(1))
+			var err error
 
-			libItem, err = mgr.GetLibraryItem(ctx, itemIDs[0])
+			libItem, err = clClient.GetLibraryItem(ctx, libraryID, libItemName)
 			Expect(err).ToNot(HaveOccurred())
+			Expect(libItem).ToNot(BeNil())
 
-			testProvider := contentlibrary.NewProviderWithWaitSec(vmClient.RestClient(), 1)
-			ovfEnvelope, err := testProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem)
+			ovfEnvelope, err := clClient.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(ovfEnvelope).To(BeNil())
 		})

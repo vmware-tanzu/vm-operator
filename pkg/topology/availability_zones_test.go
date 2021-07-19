@@ -6,7 +6,6 @@ package topology_test
 import (
 	"context"
 	"fmt"
-	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -34,11 +33,13 @@ var _ = Describe("Availability Zones", func() {
 		wcpFaultDomainsFssEnabled bool
 		numberOfAvailabilityZones int
 		numberOfNamespaces        int
+		oldFaultDomainsFunc       func() bool
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		client = builder.NewFakeClient()
+		oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
 	})
 
 	AfterEach(func() {
@@ -47,13 +48,12 @@ var _ = Describe("Availability Zones", func() {
 		wcpFaultDomainsFssEnabled = false
 		numberOfAvailabilityZones = 0
 		numberOfNamespaces = 0
+		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
 	})
 
 	JustBeforeEach(func() {
-		if wcpFaultDomainsFssEnabled {
-			os.Setenv(lib.WcpFaultDomainsFSS, lib.TrueString)
-		} else {
-			os.Setenv(lib.WcpFaultDomainsFSS, "")
+		lib.IsWcpFaultDomainsFSSEnabled = func() bool {
+			return wcpFaultDomainsFssEnabled
 		}
 
 		for i := 0; i < numberOfAvailabilityZones; i++ {
@@ -84,27 +84,27 @@ var _ = Describe("Availability Zones", func() {
 
 	assertDefaultZoneNamespaces := func(zone topologyv1.AvailabilityZone, name string) {
 		nsName := ctrlclient.ObjectKey{Name: name}
-		Expect(zone.Spec.Namespaces).To(HaveKey(nsName.Name))
-		Expect(client.Get(ctx, nsName, &corev1.Namespace{})).To(Succeed())
-		Expect(zone.Spec.Namespaces[nsName.Name].PoolMoId).To(Equal(poolMoId))
-		Expect(zone.Spec.Namespaces[nsName.Name].FolderMoId).To(Equal(folderMoId))
+		ExpectWithOffset(2, zone.Spec.Namespaces).To(HaveKey(nsName.Name))
+		ExpectWithOffset(2, client.Get(ctx, nsName, &corev1.Namespace{})).To(Succeed())
+		ExpectWithOffset(2, zone.Spec.Namespaces[nsName.Name].PoolMoId).To(Equal(poolMoId))
+		ExpectWithOffset(2, zone.Spec.Namespaces[nsName.Name].FolderMoId).To(Equal(folderMoId))
 	}
 
 	assertGetAvailabilityZonesDefaultZone := func() {
 		zones, err := topology.GetAvailabilityZones(ctx, client)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(zones).To(HaveLen(1))
-		Expect(zones[0].Name).To(Equal(topology.DefaultAvailabilityZoneName))
-		Expect(zones[0].Spec.Namespaces).To(HaveLen(numberOfNamespaces))
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		ExpectWithOffset(1, zones).To(HaveLen(1))
+		ExpectWithOffset(1, zones[0].Name).To(Equal(topology.DefaultAvailabilityZoneName))
+		ExpectWithOffset(1, zones[0].Spec.Namespaces).To(HaveLen(numberOfNamespaces))
 		for i := 0; i < numberOfNamespaces; i++ {
 			assertDefaultZoneNamespaces(zones[0], fmt.Sprintf("ns-%d", i))
 		}
 	}
 	assertGetAvailabilityZoneDefaultZone := func() {
 		zone, err := topology.GetAvailabilityZone(ctx, client, topology.DefaultAvailabilityZoneName)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(zone.Name).To(Equal(topology.DefaultAvailabilityZoneName))
-		Expect(zone.Spec.Namespaces).To(HaveLen(numberOfNamespaces))
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		ExpectWithOffset(1, zone.Name).To(Equal(topology.DefaultAvailabilityZoneName))
+		ExpectWithOffset(1, zone.Spec.Namespaces).To(HaveLen(numberOfNamespaces))
 		for i := 0; i < numberOfNamespaces; i++ {
 			assertDefaultZoneNamespaces(zone, fmt.Sprintf("ns-%d", i))
 		}
@@ -112,34 +112,34 @@ var _ = Describe("Availability Zones", func() {
 
 	assertGetAvailabilityZonesSuccess := func() {
 		zones, err := topology.GetAvailabilityZones(ctx, client)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(zones).To(HaveLen(numberOfAvailabilityZones))
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
+		ExpectWithOffset(1, zones).To(HaveLen(numberOfAvailabilityZones))
 	}
 	assertGetAvailabilityZoneSuccess := func() {
 		for i := 0; i < numberOfAvailabilityZones; i++ {
 			_, err := topology.GetAvailabilityZone(ctx, client, fmt.Sprintf("az-%d", i))
-			Expect(err).ToNot(HaveOccurred())
+			ExpectWithOffset(1, err).ToNot(HaveOccurred())
 		}
 	}
 
 	assertGetAvailabilityZonesErrNoAvailabilityZones := func() {
 		_, err := topology.GetAvailabilityZones(ctx, client)
-		Expect(err).To(MatchError(topology.ErrNoAvailabilityZones))
+		ExpectWithOffset(1, err).To(MatchError(topology.ErrNoAvailabilityZones))
 	}
 	assertGetAvailabilityZoneValidNamesErrNotFound := func() {
 		for i := 0; i < numberOfAvailabilityZones; i++ {
 			_, err := topology.GetAvailabilityZone(ctx, client, fmt.Sprintf("az-%d", i))
-			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
 		}
 	}
 	assertGetAvailabilityZoneInvalidNameErrNotFound := func() {
 		_, err := topology.GetAvailabilityZone(ctx, client, "invalid")
-		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
 
 	}
 	assertGetAvailabilityZoneEmptyNameErrNotFound := func() {
 		_, err := topology.GetAvailabilityZone(ctx, client, "")
-		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
 	}
 
 	When("Two AvailabilityZone resources exist", func() {

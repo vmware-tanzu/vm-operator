@@ -37,8 +37,8 @@ var _ = Describe("Update ConfigSpec", func() {
 	var config *vimTypes.VirtualMachineConfigInfo
 	var configSpec *vimTypes.VirtualMachineConfigSpec
 
-	// represents the VM Service FSS. This should be manupulated atomiocally to avoid races where
-	// the controller is trying to read this _while_ the tests are updaing it.
+	// represents the VM Service FSS. This should be manipulated atomically to avoid races where
+	// the controller is trying to read this _while_ the tests are updating it.
 	var vmServiceFSS uint32
 
 	BeforeEach(func() {

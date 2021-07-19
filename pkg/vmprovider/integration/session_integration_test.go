@@ -10,12 +10,12 @@ import (
 	"fmt"
 	"os"
 
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/simulator"
@@ -55,7 +55,7 @@ var _ = Describe("Sessions", func() {
 
 	BeforeEach(func() {
 		ctx = goctx.Background()
-		session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, k8sClient, nil)
+		session, err = vmopsession.NewSessionAndConfigure(ctx, vcClient, vSphereConfig, k8sClient)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(session).ToNot(BeNil())
 	})
@@ -82,7 +82,7 @@ var _ = Describe("Sessions", func() {
 		Context("From Content Library", func() {
 
 			It("should list VirtualMachineImages from CL", func() {
-				images, err := c.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, nil)
+				images, err := vcClient.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).ShouldNot(BeEmpty())
 				Expect(images[0].ObjectMeta.GenerateName).Should(ContainSubstring(integration.IntegrationContentLibraryItemName))
@@ -91,7 +91,7 @@ var _ = Describe("Sessions", func() {
 			})
 
 			It("should return cached VirtualMachineImage from CL", func() {
-				images, err := c.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, nil)
+				images, err := vcClient.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).ShouldNot(BeEmpty())
 
@@ -102,7 +102,7 @@ var _ = Describe("Sessions", func() {
 					vmImage.Spec.ImageID: vmImage,
 				}
 
-				images, err = c.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, currentCLImages)
+				images, err = vcClient.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, currentCLImages)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(images).ShouldNot(BeEmpty())
 				Expect(images[0].ObjectMeta.GenerateName).Should(ContainSubstring(integration.IntegrationContentLibraryItemName))
@@ -256,6 +256,7 @@ var _ = Describe("Sessions", func() {
 
 				// The interface type should be e1000
 				dev2, ok := netDevices[1].(*vimTypes.VirtualE1000)
+				Expect(ok).To(BeTrue())
 				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
 				_, ok = dev2.Backing.(*vimTypes.VirtualEthernetCardNetworkBackingInfo)
 				Expect(ok).Should(BeTrue())
@@ -271,7 +272,7 @@ var _ = Describe("Sessions", func() {
 				vSphereConfig.Network = "VM Network"
 
 				// Setup new session based on the default network
-				session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
+				session, err = vmopsession.NewSessionAndConfigure(ctx, vcClient, vSphereConfig, k8sClient)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -332,6 +333,7 @@ var _ = Describe("Sessions", func() {
 
 				// The interface type should be e1000
 				dev2, ok := netDevices[1].(*vimTypes.VirtualE1000)
+				Expect(ok).To(BeTrue())
 				// TODO: enhance the test to verify the moref of the network matches the name of the network in spec.
 				_, ok = dev2.Backing.(*vimTypes.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 				Expect(ok).Should(BeTrue())
@@ -756,7 +758,7 @@ var _ = Describe("Sessions", func() {
 				}
 				err = session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("Persistent volume: %s not attached to VM", cnsVolumeName)))
+				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("persistent volume: %s not attached to VM", cnsVolumeName)))
 				Expect(vm.Status.PowerState).ToNot(Equal(vmopv1alpha1.VirtualMachinePoweredOn))
 			})
 
@@ -784,7 +786,7 @@ var _ = Describe("Sessions", func() {
 				vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
 				err = session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("Status update pending for persistent volume: %s on VM", cnsVolumeName)))
+				Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("status update pending for persistent volume: %s on VM", cnsVolumeName)))
 				Expect(vm.Status.PowerState).ToNot(Equal(vmopv1alpha1.VirtualMachinePoweredOn))
 			})
 		})
@@ -800,14 +802,14 @@ var _ = Describe("Sessions", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 		It("Should fail", func() {
-			session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
+			session, err = vmopsession.NewSessionAndConfigure(ctx, vcClient, vSphereConfig, k8sClient)
 			Expect(err.Error()).To(MatchRegexp("Unable to parse value of 'JSON_EXTRA_CONFIG' environment variable"))
 		})
 	})
 
 	Describe("Clone VM with global metadata", func() {
 		JustBeforeEach(func() {
-			session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, k8sClient, nil)
+			session, err = vmopsession.NewSessionAndConfigure(ctx, vcClient, vSphereConfig, k8sClient)
 		})
 
 		Context("with vm metadata and global extraConfig", func() {
@@ -929,7 +931,7 @@ var _ = Describe("Sessions", func() {
 				}
 				rpMoId, err := session.CreateResourcePool(ctx, rpSpec)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(rpMoId).To(Not(BeEmpty()))
+				Expect(rpMoId).ToNot(BeEmpty())
 			})
 
 			AfterEach(func() {
@@ -1102,7 +1104,7 @@ var _ = Describe("Sessions", func() {
 				It("with existing content source, empty datastore and empty profile id", func() {
 					vSphereConfig.Datastore = ""
 
-					session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
+					session, err = vmopsession.NewSessionAndConfigure(ctx, vcClient, vSphereConfig, k8sClient)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{
@@ -1117,7 +1119,7 @@ var _ = Describe("Sessions", func() {
 
 				It("with existing content source but mandatory profile id is not set", func() {
 					vSphereConfig.StorageClassRequired = true
-					session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
+					session, err = vmopsession.NewSessionAndConfigure(ctx, vcClient, vSphereConfig, k8sClient)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{
@@ -1132,7 +1134,7 @@ var _ = Describe("Sessions", func() {
 
 				It("without content source and missing mandatory profile ID", func() {
 					vSphereConfig.StorageClassRequired = true
-					session, err = vmopsession.NewSessionAndConfigure(ctx, c, vSphereConfig, nil, nil)
+					session, err = vmopsession.NewSessionAndConfigure(ctx, vcClient, vSphereConfig, k8sClient)
 					Expect(err).NotTo(HaveOccurred())
 
 					vmConfigArgs := vmprovider.VmConfigArgs{
@@ -1148,83 +1150,15 @@ var _ = Describe("Sessions", func() {
 		})
 	})
 
-	Describe("Cluster Module", func() {
-		var moduleGroup string
-		var moduleSpec *vmopv1alpha1.ClusterModuleSpec
-		var moduleStatus *vmopv1alpha1.ClusterModuleStatus
-		var resVm *resources.VirtualMachine
-
-		BeforeEach(func() {
-			moduleGroup = "controller-group"
-			moduleSpec = &vmopv1alpha1.ClusterModuleSpec{
-				GroupName: moduleGroup,
-			}
-
-			moduleId, err := session.CreateClusterModule(ctx)
-			moduleStatus = &vmopv1alpha1.ClusterModuleStatus{
-				GroupName:  moduleSpec.GroupName,
-				ModuleUuid: moduleId,
-			}
-			Expect(err).NotTo(HaveOccurred())
-			Expect(moduleId).ToNot(BeEmpty())
-
-			resVm, err = session.GetVirtualMachine(vmContext(ctx, getSimpleVirtualMachine("DC0_C0_RP0_VM0")))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resVm).NotTo(BeNil())
-		})
-
-		AfterEach(func() {
-			Expect(session.DeleteClusterModule(ctx, moduleStatus.ModuleUuid)).To(Succeed())
-		})
-
-		Context("Create a ClusterModule, verify it exists and delete it", func() {
-			It("Verifies if a ClusterModule exists", func() {
-				exists, err := session.DoesClusterModuleExist(ctx, moduleStatus.ModuleUuid)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(exists).To(BeTrue())
-			})
-		})
-
-		Context("Delete a ClusterModule that doesn't exist", func() {
-			It("should fail", func() {
-				err = session.DeleteClusterModule(ctx, "nonexistent-clusterModule")
-				Expect(err).To(HaveOccurred())
-			})
-		})
-
-		Context("ClusterModule-VM association", func() {
-			It("check membership doesn't exist", func() {
-				isMember, err := session.IsVmMemberOfClusterModule(ctx, moduleStatus.ModuleUuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
-				Expect(err).NotTo(HaveOccurred())
-				Expect(isMember).To(BeFalse())
-			})
-
-			It("Associate a VM with a clusterModule, check the membership and remove it", func() {
-				By("Associate VM")
-				err = session.AddVmToClusterModule(ctx, moduleStatus.ModuleUuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Verify membership")
-				isMember, err := session.IsVmMemberOfClusterModule(ctx, moduleStatus.ModuleUuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
-				Expect(err).NotTo(HaveOccurred())
-				Expect(isMember).To(BeTrue())
-
-				By("Remove the association")
-				err = session.RemoveVmFromClusterModule(ctx, moduleStatus.ModuleUuid, &vimTypes.ManagedObjectReference{Type: "VirtualMachine", Value: resVm.ReferenceValue()})
-				Expect(err).NotTo(HaveOccurred())
-			})
-		})
-	})
-
 	Describe("vSphere Tags", func() {
-		var resVm *resources.VirtualMachine
+		var resVM *resources.VirtualMachine
 		tagCatName := "tag-category-name"
 		tagName := "tag-name"
 
 		BeforeEach(func() {
-			resVm, err = session.GetVirtualMachine(vmContext(ctx, getSimpleVirtualMachine("DC0_H0_VM0")))
+			resVM, err = session.GetVirtualMachine(vmContext(ctx, getSimpleVirtualMachine("DC0_H0_VM0")))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(resVm).NotTo(BeNil())
+			Expect(resVM).NotTo(BeNil())
 
 			manager := tags.NewManager(session.Client.RestClient())
 
@@ -1251,10 +1185,10 @@ var _ = Describe("Sessions", func() {
 
 		Context("Attach a tag to a VM", func() {
 			It("Attach/Detach", func() {
-				err = session.AttachTagToVm(ctx, tagName, tagCatName, resVm.MoRef())
+				err = session.AttachTagToVm(ctx, tagName, tagCatName, resVM.MoRef())
 				Expect(err).NotTo(HaveOccurred())
 
-				err = session.DetachTagFromVm(ctx, tagName, tagCatName, resVm.MoRef())
+				err = session.DetachTagFromVm(ctx, tagName, tagCatName, resVM.MoRef())
 				Expect(err).NotTo(HaveOccurred())
 			})
 		})
@@ -1282,25 +1216,25 @@ var _ = Describe("Sessions", func() {
 			}
 		})
 
-		Context("With non-exist clusterModule", func(){
+		Context("With non-exist clusterModule", func() {
 			It("Should fail", func() {
 				vm.Annotations[pkg.ClusterModuleNameKey] = badClusterModuleName
 				vm.Annotations[pkg.ProviderTagsAnnotationKey] = badProviderTagsName
 				err = session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
-				
+
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(fmt.Sprintf("ClusterModule %s to not found", badClusterModuleName)))
+				Expect(err).To(MatchError(fmt.Sprintf("ClusterModule %s not found", badClusterModuleName)))
 			})
 		})
 
-		Context("With empty tagName", func(){
+		Context("With empty tagName", func() {
 			It("Should fail", func() {
 				vm.Annotations[pkg.ClusterModuleNameKey] = "ControlPlane"
 				vm.Annotations[pkg.ProviderTagsAnnotationKey] = badProviderTagsName
 				err = session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
-				
+
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(fmt.Sprintf("Empty tagName, TagInfo %s to not found", badProviderTagsName)))
+				Expect(err).To(MatchError(fmt.Sprintf("empty tagName, TagInfo %s not found", badProviderTagsName)))
 			})
 		})
 	})

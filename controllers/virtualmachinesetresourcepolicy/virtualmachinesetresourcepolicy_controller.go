@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
-	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -67,8 +66,8 @@ type VirtualMachineSetResourcePolicyReconciler struct {
 // ReconcileNormal reconciles a VirtualMachineSetResourcePolicy.
 func (r *VirtualMachineSetResourcePolicyReconciler) ReconcileNormal(ctx *context.VirtualMachineSetResourcePolicyContext) error {
 	if !controllerutil.ContainsFinalizer(ctx.ResourcePolicy, finalizerName) {
-		// Return here so the VirtualMachineSetResourcePolicy can be patched immediately. This ensures that the resource policies are cleaned up
-		// properly when they are deleted.
+		// Return here so the VirtualMachineSetResourcePolicy can be patched immediately. This ensures that
+		// the resource policies are cleaned up properly when they are deleted.
 		controllerutil.AddFinalizer(ctx.ResourcePolicy, finalizerName)
 		return nil
 	}
@@ -139,10 +138,7 @@ func (r *VirtualMachineSetResourcePolicyReconciler) ReconcileDelete(ctx *context
 func (r *VirtualMachineSetResourcePolicyReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	rp := &vmopv1alpha1.VirtualMachineSetResourcePolicy{}
 	if err := r.Get(ctx, req.NamespacedName, rp); err != nil {
-		if apiErrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, err
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	rpCtx := &context.VirtualMachineSetResourcePolicyContext{

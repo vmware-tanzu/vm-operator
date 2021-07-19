@@ -213,6 +213,7 @@ func GetProviderConfigFromConfigMap(
 	configMapKey := types.NamespacedName{Name: ProviderConfigMapName, Namespace: vmopNamespace}
 	err = client.Get(ctx, configMapKey, configMap)
 	if err != nil {
+		// Log message used by VMC LINT. Refer to before making changes
 		return nil, errors.Wrapf(err, "error retrieving the provider ConfigMap %s", configMapKey)
 	}
 

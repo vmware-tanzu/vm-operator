@@ -142,6 +142,7 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 
 			// Update Virtual Machine to Reconfigure with VM Class config
 			err = vmProvider.UpdateVirtualMachine(context.TODO(), vm, vmConfigArgs)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
 			Expect(vm.Status.BiosUUID).ShouldNot(BeEmpty())
 			Expect(vm.Status.InstanceUUID).ShouldNot(BeEmpty())
@@ -192,7 +193,7 @@ var _ = Describe("VMProvider Tests", func() {
 				integration.SecretName)
 			Expect(err).NotTo(HaveOccurred())
 
-			vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, nil, recorder)
+			vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, recorder)
 
 			// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
 			// BMV: Not true anymore, and we can't set this via ExtraConfig transport anyways.
@@ -225,6 +226,7 @@ var _ = Describe("VMProvider Tests", func() {
 
 			// Update Virtual Machine to Reconfigure with VM Class config
 			err = vmProvider.UpdateVirtualMachine(context.TODO(), vm, vmConfigArgs)
+			Expect(err).NotTo(HaveOccurred())
 			//Expect(vm.Status.VmIp).Should(Equal(testIP))
 			Expect(vm.Status.PowerState).Should(Equal(vmoperatorv1alpha1.VirtualMachinePoweredOn))
 			Expect(vm.Status.BiosUUID).ShouldNot(BeEmpty())
@@ -242,10 +244,10 @@ var _ = Describe("VMProvider Tests", func() {
 			vmNamespace1 := vmNamespace + "-1"
 			vmNamespace2 := vmNamespace + "-2"
 
-			_, err := clientSet.CoreV1().Namespaces().Create(ctx, &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: vmNamespace1}}, metav1.CreateOptions{})
+			err := k8sClient.Create(ctx, &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: vmNamespace1}})
 			Expect(err).NotTo(HaveOccurred())
 
-			_, err = clientSet.CoreV1().Namespaces().Create(ctx, &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: vmNamespace2}}, metav1.CreateOptions{})
+			err = k8sClient.Create(ctx, &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: vmNamespace2}})
 			Expect(err).NotTo(HaveOccurred())
 
 			folder1, err := createFolder(vmNamespace1)
@@ -353,9 +355,9 @@ var _ = Describe("VMProvider Tests", func() {
 
 	Context("Compute CPU Min Frequency in the Cluster", func() {
 		It("reconfigure and power on without errors", func() {
-			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil, recorder)
-			vmClient, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(ctx)
-			Expect(vmClient).ToNot(BeNil())
+			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, recorder)
+			vcClient, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(ctx)
+			Expect(vcClient).ToNot(BeNil())
 			Expect(err).NotTo(HaveOccurred())
 			err = vmProvider.ComputeClusterCpuMinFrequency(context.TODO())
 			Expect(err).NotTo(HaveOccurred())
@@ -365,9 +367,9 @@ var _ = Describe("VMProvider Tests", func() {
 
 	Context("Update PNID", func() {
 		It("update pnid when the same pnid is supplied", func() {
-			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil, recorder)
-			vmClient, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(ctx)
-			Expect(vmClient).ToNot(BeNil())
+			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, recorder)
+			vcClient, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(ctx)
+			Expect(vcClient).ToNot(BeNil())
 			Expect(err).NotTo(HaveOccurred())
 			providerConfig, err := config.GetProviderConfigFromConfigMap(ctx, k8sClient, "", "")
 			Expect(err).NotTo(HaveOccurred())
@@ -383,7 +385,7 @@ var _ = Describe("VMProvider Tests", func() {
 		// to use a unique vcsim env per Describe() context. This VM Provider code is also executed
 		// and tested in the infra controller test so disable it here.
 		XIt("update pnid when a different pnid is supplied", func() {
-			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, nil, recorder)
+			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, recorder)
 			providerConfig, err := config.GetProviderConfigFromConfigMap(ctx, k8sClient, "", "")
 			Expect(err).NotTo(HaveOccurred())
 

@@ -5,7 +5,6 @@ package mutation_test
 
 import (
 	"fmt"
-	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
@@ -42,7 +41,8 @@ func newUnitTestContextForMutatingWebhook() *unitMutationWebhookContext {
 
 func unitTestsMutating() {
 	var (
-		ctx *unitMutationWebhookContext
+		ctx                 *unitMutationWebhookContext
+		oldFaultDomainsFunc func() bool
 	)
 
 	type mutateArgs struct {
@@ -54,20 +54,20 @@ func unitTestsMutating() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForMutatingWebhook()
+		oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
 	})
+
 	AfterEach(func() {
 		ctx = nil
+		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
 	})
 
 	mutate := func(args mutateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		var err error
 
-		// Please note this prevents the unit tests from running safely in
-		// parallel.
-		if args.isWCPFaultDomainsFSSEnabled {
-			os.Setenv(lib.WcpFaultDomainsFSS, lib.TrueString)
-		} else {
-			os.Setenv(lib.WcpFaultDomainsFSS, "")
+		// Please note this prevents the unit tests from running safely in parallel.
+		lib.IsWcpFaultDomainsFSSEnabled = func() bool {
+			return args.isWCPFaultDomainsFSSEnabled
 		}
 
 		if args.isNoAvailabilityZones {
@@ -126,9 +126,12 @@ func unitTestsMutating() {
 		var (
 			numberOfAvailabilityZones   int
 			isWCPFaultDomainsFSSEnabled bool
+			oldFaultDomainsFunc         func() bool
 		)
 
 		BeforeEach(func() {
+			oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
+
 			// Delete all AZs.
 			Expect(
 				ctx.Client.Delete(
@@ -141,15 +144,14 @@ func unitTestsMutating() {
 		AfterEach(func() {
 			numberOfAvailabilityZones = 0
 			isWCPFaultDomainsFSSEnabled = false
+			lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
 		})
 
 		JustBeforeEach(func() {
 			// Please note this prevents the unit tests from running safely in
 			// parallel.
-			if isWCPFaultDomainsFSSEnabled {
-				os.Setenv(lib.WcpFaultDomainsFSS, lib.TrueString)
-			} else {
-				os.Setenv(lib.WcpFaultDomainsFSS, "")
+			lib.IsWcpFaultDomainsFSSEnabled = func() bool {
+				return isWCPFaultDomainsFSSEnabled
 			}
 
 			// Create the dummy AZs.

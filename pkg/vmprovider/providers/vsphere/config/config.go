@@ -267,7 +267,7 @@ func UpdateProviderConfigFromZoneAndNamespace(
 	providerConfig *VSphereVmProviderConfig) error {
 
 	ns := &v1.Namespace{}
-	if err := client.Get(context.Background(), types.NamespacedName{Name: namespace}, ns); err != nil {
+	if err := client.Get(ctx, types.NamespacedName{Name: namespace}, ns); err != nil {
 		return errors.Wrapf(err, "could not get the namespace: %s", namespace)
 	}
 

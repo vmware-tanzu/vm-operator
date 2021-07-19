@@ -166,7 +166,9 @@ func GetVMImageName(img vmopv1alpha1.VirtualMachineImage) string {
 // Difference two lists of VirtualMachineImages producing 3 lists: images that have been added to "right", images that
 // have been removed in "right", and images that have been updated in "right".
 // DiffImages only differences VirtualMachineImages that belong to the content library with name clUUID.
-func (r *ContentSourceReconciler) DiffImages(clUUID string, k8sImages []vmopv1alpha1.VirtualMachineImage,
+func (r *ContentSourceReconciler) DiffImages(
+	clUUID string,
+	k8sImages []vmopv1alpha1.VirtualMachineImage,
 	providerImages []vmopv1alpha1.VirtualMachineImage) (
 	added []vmopv1alpha1.VirtualMachineImage,
 	removed []vmopv1alpha1.VirtualMachineImage,

@@ -98,7 +98,8 @@ func setReadinessProbe(validPortProbe bool) *vmopv1.Probe {
 // nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
-		ctx *unitValidatingWebhookContext
+		ctx                 *unitValidatingWebhookContext
+		oldFaultDomainsFunc func() bool
 	)
 
 	type createArgs struct {
@@ -249,10 +250,8 @@ func unitTestsValidateCreate() {
 
 		// Please note this prevents the unit tests from running safely in
 		// parallel.
-		if args.isWCPFaultDomainsFSSEnabled {
-			os.Setenv(lib.WcpFaultDomainsFSS, lib.TrueString)
-		} else {
-			os.Setenv(lib.WcpFaultDomainsFSS, "")
+		lib.IsWcpFaultDomainsFSSEnabled = func() bool {
+			return args.isWCPFaultDomainsFSSEnabled
 		}
 
 		if args.isNoAvailabilityZones {
@@ -287,10 +286,12 @@ func unitTestsValidateCreate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
+		oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
 		Expect(os.Setenv(lib.VmopNamespaceEnv, "namespace")).To(Succeed())
 	})
 	AfterEach(func() {
 		ctx = nil
+		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
 		Expect(os.Unsetenv(lib.VmopNamespaceEnv)).To(Succeed())
 	})
 

@@ -40,7 +40,7 @@ var _ = AfterSuite(func() {
 		tlsTestModel, tlsServer)
 })
 
-func TestClient(t *testing.T) {
+func TestSession(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "vSphere Provider Session Suite")
 }

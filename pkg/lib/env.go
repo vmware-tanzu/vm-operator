@@ -11,7 +11,6 @@ import (
 
 const (
 	trueString                    = "true"
-	TrueString                    = trueString
 	VmopNamespaceEnv              = "POD_NAMESPACE"
 	WcpFaultDomainsFSS            = "FSS_WCP_FAULTDOMAINS"
 	VMServiceFSS                  = "FSS_WCP_VMSERVICE"

@@ -24,6 +24,7 @@ import (
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
@@ -1254,6 +1255,51 @@ var _ = Describe("Sessions", func() {
 
 				err = session.DetachTagFromVm(ctx, tagName, tagCatName, resVm.MoRef())
 				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+	})
+
+	Describe("Attach tags and modules to a VM", func() {
+		namespace := integration.DefaultNamespace
+		vmName := "getvm-with-rp-and-without-moid"
+		imageName := "test-item"
+		var vm *vmopv1alpha1.VirtualMachine
+		var vmConfigArgs vmprovider.VmConfigArgs
+		badClusterModuleName := "badClusterModuleName"
+		badProviderTagsName := "badProviderTagsName"
+
+		BeforeEach(func() {
+			resourcePolicy := getVirtualMachineSetResourcePolicy(vmName, namespace)
+			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+			vmConfigArgs = getVmConfigArgs(namespace, vmName, imageName)
+			vmConfigArgs.ResourcePolicy = resourcePolicy
+			vm = getVirtualMachineInstance(vmName, namespace, imageName, vmConfigArgs.VmClass.Name)
+			vm.Spec.ResourcePolicyName = resourcePolicy.Name
+
+			if vm.Annotations == nil {
+				vm.Annotations = make(map[string]string)
+			}
+		})
+
+		Context("With non-exist clusterModule", func(){
+			It("Should fail", func() {
+				vm.Annotations[pkg.ClusterModuleNameKey] = badClusterModuleName
+				vm.Annotations[pkg.ProviderTagsAnnotationKey] = badProviderTagsName
+				err = session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
+				
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(fmt.Sprintf("ClusterModule %s to not found", badClusterModuleName)))
+			})
+		})
+
+		Context("With empty tagName", func(){
+			It("Should fail", func() {
+				vm.Annotations[pkg.ClusterModuleNameKey] = "ControlPlane"
+				vm.Annotations[pkg.ProviderTagsAnnotationKey] = badProviderTagsName
+				err = session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
+				
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(fmt.Sprintf("Empty tagName, TagInfo %s to not found", badProviderTagsName)))
 			})
 		})
 	})

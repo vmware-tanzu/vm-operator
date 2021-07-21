@@ -861,6 +861,9 @@ func (s *Session) attachTagsAndModules(
 
 	// Lookup the real tag name from config and attach to the VM.
 	tagName := s.tagInfo[providerTagsName]
+	if tagName == "" {
+		return fmt.Errorf("Empty tagName, TagInfo %s to not found", providerTagsName)
+	}
 	tagCategoryName := s.tagInfo[config.ProviderTagCategoryNameKey]
 	if err := s.AttachTagToVm(vmCtx, tagName, tagCategoryName, vmRef); err != nil {
 		return err

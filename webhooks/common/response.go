@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package common
@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	admissionv1beta1 "k8s.io/api/admission/v1beta1"
+	admissionv1 "k8s.io/api/admission/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -67,7 +67,7 @@ func BuildValidationResponse(
 	if len(validationErrs) > 0 {
 		reason := strings.Join(validationErrs, ", ")
 		return admission.Response{
-			AdmissionResponse: admissionv1beta1.AdmissionResponse{
+			AdmissionResponse: admissionv1.AdmissionResponse{
 				Allowed: false,
 				Result: &metav1.Status{
 					Reason: metav1.StatusReason(reason),

@@ -1,10 +1,10 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package contentsource
 
 import (
-	goCtx "context"
+	goctx "context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -80,7 +80,7 @@ type ContentSourceReconciler struct {
 }
 
 // Best effort attempt to create a set of VirtualMachineImages resources on the API server.
-func (r *ContentSourceReconciler) CreateImages(ctx goCtx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
+func (r *ContentSourceReconciler) CreateImages(ctx goctx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
 	var retErr error
 	for _, image := range images {
 		img := image
@@ -107,7 +107,7 @@ func (r *ContentSourceReconciler) CreateImages(ctx goCtx.Context, images []vmopv
 }
 
 // Best effort attempt to delete a set of VirtualMachineImages resources from the API server.
-func (r *ContentSourceReconciler) DeleteImages(ctx goCtx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
+func (r *ContentSourceReconciler) DeleteImages(ctx goctx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
 	var retErr error
 	for _, image := range images {
 		img := image
@@ -122,7 +122,7 @@ func (r *ContentSourceReconciler) DeleteImages(ctx goCtx.Context, images []vmopv
 }
 
 // Best effort attempt to update a set of VirtualMachineImages resources on the API server.
-func (r *ContentSourceReconciler) UpdateImages(ctx goCtx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
+func (r *ContentSourceReconciler) UpdateImages(ctx goctx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
 	var retErr error
 	for _, image := range images {
 		img := image
@@ -221,7 +221,7 @@ func (r *ContentSourceReconciler) DiffImages(left []vmopv1alpha1.VirtualMachineI
 
 // GetImagesFromContentProvider fetches the VM images from a given content provider. Also sets the owner ref in the images.
 func (r *ContentSourceReconciler) GetImagesFromContentProvider(
-	ctx goCtx.Context,
+	ctx goctx.Context,
 	contentSource vmopv1alpha1.ContentSource,
 	existingImages []vmopv1alpha1.VirtualMachineImage) ([]*vmopv1alpha1.VirtualMachineImage, error) {
 
@@ -264,7 +264,7 @@ func (r *ContentSourceReconciler) GetImagesFromContentProvider(
 	return images, nil
 }
 
-func (r *ContentSourceReconciler) DifferenceImages(ctx goCtx.Context) (error, []vmopv1alpha1.VirtualMachineImage, []vmopv1alpha1.VirtualMachineImage, []vmopv1alpha1.VirtualMachineImage) {
+func (r *ContentSourceReconciler) DifferenceImages(ctx goctx.Context) (error, []vmopv1alpha1.VirtualMachineImage, []vmopv1alpha1.VirtualMachineImage, []vmopv1alpha1.VirtualMachineImage) {
 	r.Logger.V(4).Info("Differencing images")
 
 	// List the existing images from both the vm provider backend and the Kubernetes control plane (etcd).
@@ -311,7 +311,7 @@ func (r *ContentSourceReconciler) DifferenceImages(ctx goCtx.Context) (error, []
 }
 
 // SyncImages syncs images from all the content sources installed.
-func (r *ContentSourceReconciler) SyncImages(ctx goCtx.Context) error {
+func (r *ContentSourceReconciler) SyncImages(ctx goctx.Context) error {
 	err, added, removed, updated := r.DifferenceImages(ctx)
 	if err != nil {
 		r.Logger.Error(err, "failed to difference images")
@@ -343,7 +343,7 @@ func (r *ContentSourceReconciler) SyncImages(ctx goCtx.Context) error {
 
 // ReconcileProviderRef reconciles a ContentSource's provider reference. Verifies that the content provider pointed by
 // the provider ref exists on the infrastructure.
-func (r *ContentSourceReconciler) ReconcileProviderRef(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+func (r *ContentSourceReconciler) ReconcileProviderRef(ctx goctx.Context, contentSource *vmopv1alpha1.ContentSource) error {
 	logger := r.Logger.WithValues("contentSourceName", contentSource.Name)
 
 	logger.Info("Reconciling content provider reference")
@@ -393,7 +393,7 @@ func (r *ContentSourceReconciler) ReconcileProviderRef(ctx goCtx.Context, conten
 }
 
 // ReconcileDeleteProviderRef reconciles a delete for a provider reference. Currently, no op.
-func (r *ContentSourceReconciler) ReconcileDeleteProviderRef(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+func (r *ContentSourceReconciler) ReconcileDeleteProviderRef(ctx goctx.Context, contentSource *vmopv1alpha1.ContentSource) error {
 	logger := r.Logger.WithValues("contentSourceName", contentSource.Name)
 
 	providerRef := contentSource.Spec.ProviderRef
@@ -407,7 +407,7 @@ func (r *ContentSourceReconciler) ReconcileDeleteProviderRef(ctx goCtx.Context, 
 }
 
 // ReconcileNormal reconciles a content source. Calls into the provider to reconcile the content provider.
-func (r *ContentSourceReconciler) ReconcileNormal(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+func (r *ContentSourceReconciler) ReconcileNormal(ctx goctx.Context, contentSource *vmopv1alpha1.ContentSource) error {
 	logger := r.Logger.WithValues("name", contentSource.Name)
 
 	logger.Info("Reconciling ContentSource CreateOrUpdate")
@@ -436,7 +436,7 @@ func (r *ContentSourceReconciler) ReconcileNormal(ctx goCtx.Context, contentSour
 }
 
 // ReconcileDelete reconciles a content source delete. We use a finalizer here to clean up any state if needed.
-func (r *ContentSourceReconciler) ReconcileDelete(ctx goCtx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+func (r *ContentSourceReconciler) ReconcileDelete(ctx goctx.Context, contentSource *vmopv1alpha1.ContentSource) error {
 	logger := r.Logger.WithValues("name", contentSource.Name)
 
 	defer func() {
@@ -466,10 +466,9 @@ func (r *ContentSourceReconciler) ReconcileDelete(ctx goCtx.Context, contentSour
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentlibraryproviders/status,verbs=get
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsourcebindings,verbs=get;list;watch
 
-func (r *ContentSourceReconciler) Reconcile(request ctrl.Request) (ctrl.Result, error) {
+func (r *ContentSourceReconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (ctrl.Result, error) {
 	r.Logger.Info("Received reconcile request", "name", request.Name)
 
-	ctx := goCtx.Background()
 	instance := &vmopv1alpha1.ContentSource{}
 	if err := r.Get(ctx, request.NamespacedName, instance); err != nil {
 		if apiErrors.IsNotFound(err) {

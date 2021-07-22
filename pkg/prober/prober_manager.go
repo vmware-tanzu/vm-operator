@@ -124,7 +124,7 @@ func (m *manager) RemoveFromProberManager(vm *vmoperatorv1alpha1.VirtualMachine)
 }
 
 // Start starts the probe manager
-func (m *manager) Start(stopChan <-chan struct{}) error {
+func (m *manager) Start(ctx goctx.Context) error {
 	m.log.Info("Start VirtualMachine Probe Manager")
 	defer m.log.Info("Stop VirtualMachine Probe Manager")
 
@@ -135,7 +135,8 @@ func (m *manager) Start(stopChan <-chan struct{}) error {
 		m.worker(readinessWorker)
 	}
 
-	<-stopChan
+	<-ctx.Done()
+
 	m.readinessQueue.ShutDown()
 	m.workersWG.Wait()
 	return nil

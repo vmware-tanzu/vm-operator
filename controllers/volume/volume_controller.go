@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package volume
@@ -109,9 +109,7 @@ type VolumeReconciler struct {
 // Longer term, this should be folded back into the VirtualMachine controller, but exists as
 // a separate controller to ensure volume attachments are processed promptly, since the VM
 // controller can block for a long time, consuming all of the workers.
-func (r *VolumeReconciler) Reconcile(request ctrl.Request) (_ ctrl.Result, reterr error) {
-	ctx := goctx.Background()
-
+func (r *VolumeReconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.Result, reterr error) {
 	vm := &vmopv1alpha1.VirtualMachine{}
 	if err := r.Get(ctx, request.NamespacedName, vm); err != nil {
 		if apiErrors.IsNotFound(err) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineclass
@@ -66,9 +66,7 @@ type VirtualMachineClassReconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses/status,verbs=get;update;patch
 
-func (r *VirtualMachineClassReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := goctx.Background()
-
+func (r *VirtualMachineClassReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
 	vmClass := &vmopv1alpha1.VirtualMachineClass{}
 	err := r.Get(ctx, req.NamespacedName, vmClass)
 	if err != nil {

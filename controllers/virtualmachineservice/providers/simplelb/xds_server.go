@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package simplelb
@@ -34,10 +34,7 @@ func NewXdsServer(mgr manager.Manager, logger logr.Logger) *xdsServer {
 	return x
 }
 
-func (x *xdsServer) Start(stop <-chan struct{}) error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+func (x *xdsServer) Start(ctx context.Context) error {
 	server := xds.NewServer(ctx, x.snapshotCache, nil)
 	grpcServer := grpc.NewServer()
 
@@ -49,11 +46,10 @@ func (x *xdsServer) Start(stop <-chan struct{}) error {
 	envoy_api_v2.RegisterEndpointDiscoveryServiceServer(grpcServer, server)
 
 	go func() {
-		for range stop {
-		}
-		cancel()
+		<-ctx.Done()
 		grpcServer.Stop()
 	}()
+
 	return grpcServer.Serve(lis)
 }
 

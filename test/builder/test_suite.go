@@ -1,4 +1,4 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder
@@ -23,11 +23,10 @@ import (
 
 	"github.com/pkg/errors"
 
-	admissionregv1 "k8s.io/api/admissionregistration/v1beta1"
+	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	"k8s.io/klog/klogr"
@@ -67,12 +66,16 @@ type TestSuite struct {
 	config                *rest.Config
 	integrationTestClient client.Client
 
+	// Cancel function that will be called to close the Done channel of the
+	// Context, which will then stop the manager.
+	cancelFuncMutex sync.Mutex
+	cancelFunc      context.CancelFunc
+
 	// Controller specific fields
 	addToManagerFn      pkgmgr.AddToManagerFunc
 	initProvidersFn     pkgmgr.InitializeProvidersFunc
 	integrationTest     bool
 	manager             pkgmgr.Manager
-	managerDone         chan struct{}
 	managerRunning      bool
 	managerRunningMutex sync.Mutex
 
@@ -254,7 +257,7 @@ func (s *TestSuite) Register(t *testing.T, name string, runIntegrationTestsFn, r
 // suite's reconciler.
 //
 // Returns nil if unit testing is disabled.
-func (s *TestSuite) NewUnitTestContextForController(initObjects ...runtime.Object) *UnitTestContextForController {
+func (s *TestSuite) NewUnitTestContextForController(initObjects ...client.Object) *UnitTestContextForController {
 	if s.flags.UnitTestsEnabled {
 		ctx := NewUnitTestContextForController(initObjects)
 		return ctx
@@ -268,7 +271,7 @@ func (s *TestSuite) NewUnitTestContextForController(initObjects ...runtime.Objec
 // Returns nil if unit testing is disabled.
 func (s *TestSuite) NewUnitTestContextForValidatingWebhook(
 	obj, oldObj *unstructured.Unstructured,
-	initObjects ...runtime.Object) *UnitTestContextForValidatingWebhook {
+	initObjects ...client.Object) *UnitTestContextForValidatingWebhook {
 
 	if s.flags.UnitTestsEnabled {
 		ctx := NewUnitTestContextForValidatingWebhook(s.validatorFn, obj, oldObj, initObjects...)
@@ -307,7 +310,6 @@ func (s *TestSuite) AfterSuite() {
 func (s *TestSuite) createManager() {
 	var err error
 
-	s.managerDone = make(chan struct{})
 	s.manager, err = pkgmgr.New(pkgmgr.Options{
 		KubeConfig:          s.config,
 		MetricsAddr:         "0",
@@ -350,7 +352,12 @@ func (s *TestSuite) startManager() {
 		defer GinkgoRecover()
 
 		s.setManagerRunning(true)
-		Expect(s.manager.Start(s.managerDone)).ToNot(HaveOccurred())
+		ctx, cancel := context.WithCancel(s.Context)
+		s.cancelFuncMutex.Lock()
+		s.cancelFunc = cancel
+		s.cancelFuncMutex.Unlock()
+		Expect(s.manager.Start(ctx)).ToNot(HaveOccurred())
+
 		s.setManagerRunning(false)
 	}()
 }
@@ -363,7 +370,7 @@ func (s *TestSuite) postConfigureManager() {
 	if s.isWebhookTest() {
 		By("installing the webhook(s)", func() {
 			// ASSERT that the file for validating webhook file exists.
-			validatingWebhookFile := path.Join(testutil.GetRootDirOrDie(), "config", "webhook", "manifests.v1beta1.yaml")
+			validatingWebhookFile := path.Join(testutil.GetRootDirOrDie(), "config", "webhook", "manifests.yaml")
 			Expect(validatingWebhookFile).Should(BeAnExistingFile())
 
 			// UNMARSHAL the contents of the validating webhook file into MutatingWebhookConfiguration and
@@ -461,7 +468,9 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 func (s *TestSuite) afterSuiteForIntegrationTesting() {
 	if s.integrationTest {
 		By("tearing down the manager", func() {
-			close(s.managerDone)
+			s.cancelFuncMutex.Lock()
+			s.cancelFunc()
+			s.cancelFuncMutex.Unlock()
 			Eventually(s.getManagerRunning).Should(BeFalse())
 
 			if s.webhookYaml != nil {

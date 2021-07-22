@@ -34,7 +34,10 @@ linters:
     - gocyclo
     - gofmt
     - goimports
-    - interfacer
+    # - interfacer: This is not used in cluster-api or controller-runtime.
+    # It complains in some of the pkg/patch methods to use runtime.Object
+    # instead of client.Object. Ignore for now since that code is taken as-is
+    # from upstream cluster-api.
     - misspell
     - nakedret
     - scopelint

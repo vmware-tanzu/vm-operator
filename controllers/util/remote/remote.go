@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package remote
@@ -88,15 +88,8 @@ func ExistsYAML(ctx context.Context, c client.Client, data []byte) error {
 // A nil error is returned if all objects exist.
 func ExistsYAMLWithNamespace(ctx context.Context, c client.Client, data []byte, namespace string) error {
 	return ForEachObjectInYAML(ctx, c, data, namespace, func(ctx context.Context, c client.Client, obj *unstructured.Unstructured) error {
-		key, err := client.ObjectKeyFromObject(obj)
-		if err != nil {
-			return errors.Wrapf(
-				err,
-				"failed to get object key for %s %s/%s",
-				obj.GroupVersionKind(),
-				obj.GetNamespace(),
-				obj.GetName())
-		}
+		key := client.ObjectKeyFromObject(obj)
+
 		if err := c.Get(ctx, key, obj); err != nil {
 			return errors.Wrapf(
 				err,
@@ -126,15 +119,8 @@ func DoesNotExistYAML(ctx context.Context, c client.Client, data []byte) (bool, 
 func DoesNotExistYAMLWithNamespace(ctx context.Context, c client.Client, data []byte, namespace string) (bool, error) {
 	found := true
 	err := ForEachObjectInYAML(ctx, c, data, namespace, func(ctx context.Context, c client.Client, obj *unstructured.Unstructured) error {
-		key, err := client.ObjectKeyFromObject(obj)
-		if err != nil {
-			return errors.Wrapf(
-				err,
-				"failed to get object key for %s %s/%s",
-				obj.GroupVersionKind(),
-				obj.GetNamespace(),
-				obj.GetName())
-		}
+		key := client.ObjectKeyFromObject(obj)
+
 		if err := c.Get(ctx, key, obj); err != nil {
 			found = false
 			if !apierrors.IsNotFound(err) {

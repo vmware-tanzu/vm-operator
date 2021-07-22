@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine_test
@@ -19,8 +19,8 @@ import (
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -46,7 +46,7 @@ func unitTestsReconcile() {
 	)
 
 	var (
-		initObjects []runtime.Object
+		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 
 		reconciler       *virtualmachine.VirtualMachineReconciler
@@ -521,7 +521,7 @@ func unitTestsReconcile() {
 
 		When("VM Class does not exist", func() {
 			BeforeEach(func() {
-				initObjects = []runtime.Object{vm}
+				initObjects = []client.Object{vm}
 			})
 
 			It("return an error", func() {

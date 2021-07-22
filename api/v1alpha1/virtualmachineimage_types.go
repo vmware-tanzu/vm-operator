@@ -65,6 +65,12 @@ type VirtualMachineImageSpec struct {
 	// +optional
 	ImageSourceType string `json:"imageSourceType,omitempty"`
 
+	// ImageID is a unique identifier exposed by the provider of this VirtualMachineImage.
+	ImageID string `json:"imageID"`
+
+	// ProviderRef is a reference to a content provider object that describes a provider.
+	ProviderRef ContentProviderReference `json:"providerRef"`
+
 	// ProductInfo describes the attributes of the VirtualMachineImage relating to the product contained in the
 	// image.
 	// +optional
@@ -95,6 +101,10 @@ type VirtualMachineImageStatus struct {
 	// Deprecated
 	PowerState string `json:"powerState,omitempty"`
 
+	// ImageName describes the display name of this VirtualMachineImage.
+	// +optional
+	ImageName string `json:"imageName,omitempty"`
+
 	// ImageSupported indicates whether the VirtualMachineImage is supported by VMService.
 	// A VirtualMachineImage is supported by VMService if the following conditions are true:
 	// - VirtualMachineImageV1Alpha1CompatibleCondition
@@ -119,6 +129,7 @@ func (vmImage *VirtualMachineImage) SetConditions(conditions Conditions) {
 // +kubebuilder:resource:scope=Cluster,shortName=vmimage
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="ContentSourceName",type="string",JSONPath=".spec.providerRef.name"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
 // +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
 // +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"

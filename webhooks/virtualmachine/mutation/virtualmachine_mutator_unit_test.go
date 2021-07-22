@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-	admissionv1 "k8s.io/api/admission/v1beta1"
+	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"

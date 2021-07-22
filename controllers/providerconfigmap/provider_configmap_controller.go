@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 // Package providerconfigmap implements a controller that is used to reconcile
@@ -68,24 +68,25 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		return err
 	}
 
-	reqCtx := &requestMapperCtx{ctx, r.Client, r.Logger}
-
+	nsPrct := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
 	// Add Watches to Namespaces so we can create TKG bindings when new namespaces are created.
-	err = c.Watch(&source.Kind{Type: &v1.Namespace{}}, &handler.EnqueueRequestsFromMapFunc{ToRequests: requestMapper{reqCtx}},
-		predicate.Funcs{
-			CreateFunc: func(e event.CreateEvent) bool {
-				return true
-			},
-			UpdateFunc: func(e event.UpdateEvent) bool {
-				return false
-			},
-			DeleteFunc: func(e event.DeleteEvent) bool {
-				return false
-			},
-			GenericFunc: func(e event.GenericEvent) bool {
-				return false
-			},
-		})
+	err = c.Watch(
+		&source.Kind{Type: &v1.Namespace{}},
+		handler.EnqueueRequestsFromMapFunc(nsToProviderCMMapperFn(ctx)),
+		nsPrct)
 	if err != nil {
 		return err
 	}
@@ -93,35 +94,20 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	return nil
 }
 
-type requestMapper struct {
-	ctx *requestMapperCtx
-}
+// nsToProviderCMMapperFn returns a mapper function that can be used to queue reconcile request
+// for the provider ConfigMap in response to an event on the Namespace.
+func nsToProviderCMMapperFn(ctx *context.ControllerManagerContext) func(o client.Object) []reconcile.Request {
+	return func(o client.Object) []reconcile.Request {
+		logger := ctx.Logger.WithValues("namespaceName", o.GetName())
 
-type requestMapperCtx struct {
-	*context.ControllerManagerContext
-	client.Client
-	Logger logr.Logger
-}
+		logger.V(4).Info("Reconciling provider ConfigMap due to a namespace creation")
+		key := client.ObjectKey{Namespace: ctx.Namespace, Name: config.ProviderConfigMapName}
 
-func (m requestMapper) Map(o handler.MapObject) []reconcile.Request {
-	if o, ok := o.Object.(*v1.Namespace); ok {
-		return namespaceToProviderConfigMap(m.ctx, o)
+		reconcileRequests := []reconcile.Request{{NamespacedName: key}}
+
+		logger.V(4).Info("Returning provider ConfigMap reconciliation due to a namespace creation", "requests", reconcileRequests)
+		return reconcileRequests
 	}
-
-	return nil
-}
-
-// namespaceToProviderConfigMap maps a namespace creation request to the provider ConfigMap reconcile request.
-func namespaceToProviderConfigMap(ctx *requestMapperCtx, ns *v1.Namespace) []reconcile.Request {
-	logger := ctx.Logger.WithValues("namespaceName", ns.Name)
-
-	logger.V(4).Info("Reconciling provider ConfigMap due to a namespace creation")
-	key := client.ObjectKey{Namespace: ctx.Namespace, Name: config.ProviderConfigMapName}
-
-	reconcileRequests := []reconcile.Request{{NamespacedName: key}}
-
-	logger.V(4).Info("Returning provider ConfigMap reconciliation due to a namespace creation", "requests", reconcileRequests)
-	return reconcileRequests
 }
 
 func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod time.Duration, ns string) error {
@@ -133,10 +119,10 @@ func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod 
 	return c.Watch(source.NewKindWithCache(&v1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
 		predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
-				return e.Meta.GetName() == config.ProviderConfigMapName
+				return e.Object.GetName() == config.ProviderConfigMapName
 			},
 			UpdateFunc: func(e event.UpdateEvent) bool {
-				return e.MetaOld.GetName() == config.ProviderConfigMapName
+				return e.ObjectOld.GetName() == config.ProviderConfigMapName
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
 				return false
@@ -281,8 +267,7 @@ func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clU
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsourcebindings,verbs=get;list;create;update;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 
-func (r *ConfigMapReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := goctx.Background()
+func (r *ConfigMapReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
 
 	cm := &v1.ConfigMap{}
 	if err := r.Get(ctx, req.NamespacedName, cm); err != nil {

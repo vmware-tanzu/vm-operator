@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package infraprovider
@@ -75,9 +75,8 @@ type InfraProviderReconciler struct {
 
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 
-func (r *InfraProviderReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
+func (r *InfraProviderReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Logger.Info("Received reconcile request", "namespace", req.Namespace, "name", req.Name)
-	ctx := goctx.Background()
 
 	// Update the minimum CPU frequency. This frequency is used to populate the resource allocation
 	// fields in the ConfigSpec for cloning the VM.

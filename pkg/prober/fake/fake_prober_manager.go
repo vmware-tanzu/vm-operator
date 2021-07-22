@@ -1,9 +1,10 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package fake
 
 import (
+	"context"
 	"sync"
 
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -27,8 +28,9 @@ func NewFakeProberManager() prober.Manager {
 	return &FakeProberManager{}
 }
 
-func (m *FakeProberManager) Start(stopChan <-chan struct{}) error {
-	<-stopChan
+func (m *FakeProberManager) Start(ctx context.Context) error {
+	<-ctx.Done()
+
 	return nil
 }
 

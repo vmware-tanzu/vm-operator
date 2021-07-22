@@ -1,4 +1,4 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package infracluster
@@ -95,10 +95,10 @@ func addCredSecretWatch(mgr manager.Manager, c controller.Controller, syncPeriod
 	return c.Watch(source.NewKindWithCache(&corev1.Secret{}, nsCache), &handler.EnqueueRequestForObject{},
 		predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
-				return e.Meta.GetName() == VcCredsSecretName
+				return e.Object.GetName() == VcCredsSecretName
 			},
 			UpdateFunc: func(e event.UpdateEvent) bool {
-				return e.MetaOld.GetName() == VcCredsSecretName
+				return e.ObjectOld.GetName() == VcCredsSecretName
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
 				return false
@@ -120,10 +120,10 @@ func addWcpClusterCMWatch(mgr manager.Manager, c controller.Controller, syncPeri
 	return c.Watch(source.NewKindWithCache(&corev1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
 		predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
-				return e.Meta.GetName() == WcpClusterConfigMapName
+				return e.Object.GetName() == WcpClusterConfigMapName
 			},
 			UpdateFunc: func(e event.UpdateEvent) bool {
-				return e.MetaOld.GetName() == WcpClusterConfigMapName
+				return e.ObjectOld.GetName() == WcpClusterConfigMapName
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool {
 				return false
@@ -162,9 +162,7 @@ type InfraClusterReconciler struct {
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
-func (r *InfraClusterReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := goctx.Background()
-
+func (r *InfraClusterReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
 	// This is totally wrong and we should break this controller apart so we're not
 	// watching different types.
 

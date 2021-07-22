@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineimage
@@ -57,9 +57,7 @@ type VirtualMachineImageReconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages/status,verbs=get;update;patch
 
-func (r *VirtualMachineImageReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := goctx.Background()
-
+func (r *VirtualMachineImageReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
 	vmImage := &vmopv1alpha1.VirtualMachineImage{}
 	err := r.Get(ctx, req.NamespacedName, vmImage)
 	if err != nil {

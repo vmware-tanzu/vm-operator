@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package contentsource_test
@@ -13,7 +13,6 @@ import (
 
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -34,7 +33,7 @@ func reconcileProviderRef() {
 		ctx            *builder.UnitTestContextForController
 		reconciler     *contentsource.ContentSourceReconciler
 		fakeVmProvider *providerfake.FakeVmProvider
-		initObjects    []runtime.Object
+		initObjects    []client.Object
 
 		cs v1alpha1.ContentSource
 		cl v1alpha1.ContentLibraryProvider
@@ -86,7 +85,7 @@ func reconcileProviderRef() {
 	Context("ReconcileProviderRef", func() {
 		Context("with a ContentLibraryProvider pointing to a vSphere content library", func() {
 			BeforeEach(func() {
-				initObjects = []runtime.Object{&cs, &cl}
+				initObjects = []client.Object{&cs, &cl}
 			})
 
 			It("updates the ContentLibraryProvider to add the OwnerRef", func() {
@@ -129,7 +128,7 @@ func unitTestsCRUDImage() {
 		ctx            *builder.UnitTestContextForController
 		reconciler     *contentsource.ContentSourceReconciler
 		fakeVmProvider *providerfake.FakeVmProvider
-		initObjects    []runtime.Object
+		initObjects    []client.Object
 
 		cs v1alpha1.ContentSource
 		cl v1alpha1.ContentLibraryProvider

@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation
@@ -29,7 +29,7 @@ const (
 	webHookName = "default"
 )
 
-// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachineclass,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachineclasses,versions=v1alpha1,name=default.validating.virtualmachineclass.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1beta1,webhookVersions=v1beta1
+// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachineclass,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachineclasses,versions=v1alpha1,name=default.validating.virtualmachineclass.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses,verbs=get;list
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses/status,verbs=get
 

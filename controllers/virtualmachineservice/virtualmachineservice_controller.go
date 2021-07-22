@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineservice
@@ -83,7 +83,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		Watches(&source.Kind{Type: &corev1.Endpoints{}},
 			&handler.EnqueueRequestForOwner{OwnerType: &vmopv1alpha1.VirtualMachineService{}}).
 		Watches(&source.Kind{Type: &vmopv1alpha1.VirtualMachine{}},
-			&handler.EnqueueRequestsFromMapFunc{ToRequests: handler.ToRequestsFunc(r.virtualMachineToVirtualMachineServiceMapper)}).
+			handler.EnqueueRequestsFromMapFunc(r.virtualMachineToVirtualMachineServiceMapper())).
 		Complete(r)
 }
 
@@ -121,9 +121,7 @@ type ReconcileVirtualMachineService struct {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch;create;update;patch;delete
 
-func (r *ReconcileVirtualMachineService) Reconcile(request reconcile.Request) (_ reconcile.Result, reterr error) {
-	ctx := goctx.Background()
-
+func (r *ReconcileVirtualMachineService) Reconcile(ctx goctx.Context, request reconcile.Request) (_ reconcile.Result, reterr error) {
 	vmService := &vmopv1alpha1.VirtualMachineService{}
 	if err := r.Get(ctx, request.NamespacedName, vmService); err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
@@ -258,29 +256,31 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *context.Virtual
 	return nil
 }
 
-// For the VM, determine which VirtualMachineServices currently select that VM via label selector and return a
-// set of reconcile requests for those selecting services.
+// virtualMachineToVirtualMachineServiceMapper returns a mapper function that returns reconcile requests for
+// VirtualMachineServices that select a given VM via label selectors.
 // TODO: The VM's labels could have been changed so this should also return VirtualMachineServices that the
-// 	     VM is currently an Endpoint for, because otherwise the VM won't be removed in a timely manner.
-func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMapper(o handler.MapObject) []reconcile.Request {
-	vm := o.Object.(*vmopv1alpha1.VirtualMachine)
+// VM is currently an Endpoint for, because otherwise the VM won't be removed in a timely manner.
+func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMapper() func(o client.Object) []reconcile.Request {
+	return func(o client.Object) []reconcile.Request {
+		vm := o.(*vmopv1alpha1.VirtualMachine)
 
-	// Find all VMServices that match this VM.
-	vmServiceList, err := r.getVirtualMachineServicesSelectingVirtualMachine(goctx.Background(), vm)
-	if err != nil {
-		return nil
+		// Find all VMServices that match this VM.
+		vmServiceList, err := r.getVirtualMachineServicesSelectingVirtualMachine(goctx.Background(), vm)
+		if err != nil {
+			return nil
+		}
+
+		logger := r.log.WithValues("VirtualMachine", types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name})
+
+		var reconcileRequests []reconcile.Request
+		for _, vmService := range vmServiceList {
+			key := types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name}
+			logger.V(4).Info("Generating reconcile request for VM Service due to event on VMs", "VirtualMachineService", key)
+			reconcileRequests = append(reconcileRequests, reconcile.Request{NamespacedName: key})
+		}
+
+		return reconcileRequests
 	}
-
-	logger := r.log.WithValues("VirtualMachine", types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name})
-
-	var reconcileRequests []reconcile.Request
-	for _, vmService := range vmServiceList {
-		key := types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name}
-		logger.V(4).Info("Generating reconcile request for VM Service due to event on VMs", "VirtualMachineService", key)
-		reconcileRequests = append(reconcileRequests, reconcile.Request{NamespacedName: key})
-	}
-
-	return reconcileRequests
 }
 
 // Set labels and annotations on the Service from the VirtualMachineService. Some loadbalancer providers (currently

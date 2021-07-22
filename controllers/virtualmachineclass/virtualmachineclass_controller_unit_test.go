@@ -1,4 +1,4 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineclass_test
@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -24,7 +24,7 @@ func unitTests() {
 func unitTestsReconcile() {
 
 	var (
-		initObjects []runtime.Object
+		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 
 		reconciler *virtualmachineclass.VirtualMachineClassReconciler

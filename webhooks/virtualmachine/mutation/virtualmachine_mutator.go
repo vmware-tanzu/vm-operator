@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package mutation
@@ -30,7 +30,7 @@ const (
 	webHookName = "default"
 )
 
-// +kubebuilder:webhook:path=/default-mutate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=true,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,verbs=create;update,versions=v1alpha1,name=default.mutating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1beta1,webhookVersions=v1beta1,webhookVersions=v1beta1
+// +kubebuilder:webhook:path=/default-mutate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=true,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,verbs=create;update,versions=v1alpha1,name=default.mutating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachine,verbs=get;list
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachine/status,verbs=get
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=availabilityzones,verbs=get;list;watch

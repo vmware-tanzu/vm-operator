@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package prober
@@ -12,7 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	clientgorecord "k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,7 +29,7 @@ import (
 
 var _ = Describe("VirtualMachine probes", func() {
 	var (
-		initObjects []runtime.Object
+		initObjects []client.Object
 		ctx         goctx.Context
 
 		testManager   *manager

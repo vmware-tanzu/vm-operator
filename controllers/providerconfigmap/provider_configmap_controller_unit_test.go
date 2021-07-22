@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package providerconfigmap_test
@@ -9,7 +9,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -26,7 +25,7 @@ func unitTests() {
 func unitTestsCM() {
 	Context("Create ContentSource for a content library", func() {
 		var (
-			initObjects []runtime.Object
+			initObjects []client.Object
 			ctx         *builder.UnitTestContextForController
 
 			reconciler *providerconfigmap.ConfigMapReconciler

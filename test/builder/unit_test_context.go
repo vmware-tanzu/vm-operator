@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder
@@ -24,7 +24,7 @@ type UnitTestContext struct {
 }
 
 // NewUnitTestContext returns a new UnitTestContext
-func NewUnitTestContext(initObjects ...runtime.Object) *UnitTestContext {
+func NewUnitTestContext(initObjects ...client.Object) *UnitTestContext {
 	fakeClient, scheme := NewFakeClientAndScheme(initObjects...)
 	return &UnitTestContext{
 		Context: goctx.Background(),
@@ -71,7 +71,7 @@ type UnitTestContextForValidatingWebhook struct {
 
 // NewUnitTestContextForController returns a new UnitTestContextForController
 // for unit testing controllers.
-func NewUnitTestContextForController(initObjects []runtime.Object) *UnitTestContextForController {
+func NewUnitTestContextForController(initObjects []client.Object) *UnitTestContextForController {
 	fakeClient, scheme := NewFakeClientAndScheme(initObjects...)
 	fakeControllerManagerContext := fake.NewControllerManagerContext(scheme)
 	recorder, events := NewFakeRecorder()
@@ -95,7 +95,7 @@ func (ctx *UnitTestContextForController) AfterEach() {
 func NewUnitTestContextForValidatingWebhook(
 	validatorFn builder.ValidatorFunc,
 	obj, oldObj *unstructured.Unstructured,
-	initObjects ...runtime.Object) *UnitTestContextForValidatingWebhook {
+	initObjects ...client.Object) *UnitTestContextForValidatingWebhook {
 
 	fakeClient, scheme := NewFakeClientAndScheme(initObjects...)
 	fakeManagerContext := fake.NewControllerManagerContext(scheme)

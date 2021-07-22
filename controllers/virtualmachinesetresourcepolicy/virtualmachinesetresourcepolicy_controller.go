@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachinesetresourcepolicy
@@ -136,9 +136,7 @@ func (r *VirtualMachineSetResourcePolicyReconciler) ReconcileDelete(ctx *context
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicies/status,verbs=get;update;patch
 
-func (r *VirtualMachineSetResourcePolicyReconciler) Reconcile(req ctrl.Request) (_ ctrl.Result, reterr error) {
-	ctx := goctx.Background()
-
+func (r *VirtualMachineSetResourcePolicyReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	rp := &vmopv1alpha1.VirtualMachineSetResourcePolicy{}
 	if err := r.Get(ctx, req.NamespacedName, rp); err != nil {
 		if apiErrors.IsNotFound(err) {

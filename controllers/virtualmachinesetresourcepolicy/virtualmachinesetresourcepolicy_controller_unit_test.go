@@ -1,4 +1,4 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachinesetresourcepolicy_test
@@ -11,7 +11,7 @@ import (
 
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -31,7 +31,7 @@ const (
 
 func unitTestsReconcile() {
 	var (
-		initObjects []runtime.Object
+		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 		reconciler  *virtualmachinesetresourcepolicy.VirtualMachineSetResourcePolicyReconciler
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachineservice_test
@@ -12,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -37,7 +36,7 @@ const LabelServiceProxyName = "service.kubernetes.io/service-proxy-name"
 func unitTestsReconcile() {
 
 	var (
-		initObjects []runtime.Object
+		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 
 		reconciler   *virtualmachineservice.ReconcileVirtualMachineService
@@ -676,11 +675,11 @@ func unitTestsReconcile() {
 // We should really instead refactor the provider interface so we don't have logic for
 // it in multiples places and can test it just in the existing provider tests. These
 // tests as-is need some improvement.
-//nolint:dupl goconst
+//nolint:dupl,goconst
 func nsxtLBProviderTestsReconcile() {
 
 	var (
-		initObjects []runtime.Object
+		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 
 		lbProvider   providers.LoadbalancerProvider

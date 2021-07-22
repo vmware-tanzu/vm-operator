@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/pkg/errors"
-	admissionv1 "k8s.io/api/admission/v1beta1"
+	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"

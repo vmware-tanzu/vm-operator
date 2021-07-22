@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine
@@ -63,127 +63,105 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		proberManager,
 	)
 
-	reqMapper := requestMapper{
-		ctx: &requestMapperCtx{
-			ControllerManagerContext: ctx,
-			Client:                   r.Client,
-			Logger:                   r.Logger,
-		},
-	}
-
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
 		Watches(&source.Kind{Type: &vmopv1alpha1.VirtualMachineClassBinding{}},
-			&handler.EnqueueRequestsFromMapFunc{ToRequests: reqMapper}).
+			handler.EnqueueRequestsFromMapFunc(classBindingToVMMapperFn(ctx, r.Client))).
 		Watches(&source.Kind{Type: &vmopv1alpha1.ContentSourceBinding{}},
-			&handler.EnqueueRequestsFromMapFunc{ToRequests: reqMapper}).
+			handler.EnqueueRequestsFromMapFunc(csBindingToVMMapperFn(ctx, r.Client))).
 		Complete(r)
 }
 
-type requestMapper struct {
-	ctx *requestMapperCtx
-}
+// csBindingToVMMapperFn returns a mapper function that can be used to queue reconcile request
+// for the VirtualMachines in response to an event on the ContentSourceBinding resource.
+func csBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Reader) func(o client.Object) []reconcile.Request {
+	return func(o client.Object) []reconcile.Request {
+		binding := o.(*vmopv1alpha1.ContentSourceBinding)
+		logger := ctx.Logger.WithValues("name", binding.Name, "namespace", binding.Namespace)
 
-type requestMapperCtx struct {
-	*context.ControllerManagerContext
-	client.Client
-	Logger logr.Logger
-}
+		logger.V(4).Info("Reconciling all VMs using images from a ContentSource because of a ContentSourceBinding watch")
 
-func (m requestMapper) Map(o handler.MapObject) []reconcile.Request {
-	if csBinding, ok := o.Object.(*vmopv1alpha1.ContentSourceBinding); ok {
-		return allVMsUsingContentSourceBinding(m.ctx, csBinding)
-	}
+		contentSource := &vmopv1alpha1.ContentSource{}
+		if err := c.Get(ctx, client.ObjectKey{Name: binding.ContentSourceRef.Name}, contentSource); err != nil {
+			logger.Error(err, "Failed to get ContentSource for VM reconciliation due to ContentSourceBinding watch")
+			return nil
+		}
 
-	if vmClassBinding, ok := o.Object.(*vmopv1alpha1.VirtualMachineClassBinding); ok {
-		return allVMsUsingVirtualMachineClassBinding(m.ctx, vmClassBinding)
-	}
+		providerRef := contentSource.Spec.ProviderRef
+		// Assume that only supported type is ContentLibraryProvider.
+		clProviderFromBinding := vmopv1alpha1.ContentLibraryProvider{}
+		if err := c.Get(ctx, client.ObjectKey{Name: providerRef.Name}, &clProviderFromBinding); err != nil {
+			logger.Error(err, "Failed to get ContentLibraryProvider for VM reconciliation due to ContentSourceBinding watch")
+			return nil
+		}
 
-	return nil
-}
+		// Filter images that have an OwnerReference to this ContentLibraryProvider.
+		imageList := &vmopv1alpha1.VirtualMachineImageList{}
+		if err := c.List(ctx, imageList); err != nil {
+			logger.Error(err, "Failed to get ContentLibraryProvider for VM reconciliation due to ContentSourceBinding watch")
+			return nil
+		}
 
-// allVMsUsingContentSourceBinding is a function that maps a ContentSourceBinding to a list of reconcile request
-// for all the VirtualMachines using VirtualMachineImages from the content source pointed by the ContentSourceBinding.
-// Assume that only supported type is ContentLibraryProvider.
-func allVMsUsingContentSourceBinding(ctx *requestMapperCtx, binding *vmopv1alpha1.ContentSourceBinding) []reconcile.Request {
-	logger := ctx.Logger.WithValues("name", binding.Name, "namespace", binding.Namespace)
-
-	logger.V(4).Info("Reconciling all VMs using images from a ContentSource because of a ContentSourceBinding watch")
-
-	contentSource := &vmopv1alpha1.ContentSource{}
-	if err := ctx.Client.Get(ctx, client.ObjectKey{Name: binding.ContentSourceRef.Name}, contentSource); err != nil {
-		logger.Error(err, "Failed to get ContentSource for VM reconciliation due to ContentSourceBinding watch")
-		return nil
-	}
-
-	providerRef := contentSource.Spec.ProviderRef
-	clProviderFromBinding := vmopv1alpha1.ContentLibraryProvider{}
-	if err := ctx.Client.Get(ctx, client.ObjectKey{Name: providerRef.Name}, &clProviderFromBinding); err != nil {
-		logger.Error(err, "Failed to get ContentLibraryProvider for VM reconciliation due to ContentSourceBinding watch")
-		return nil
-	}
-
-	// Filter images that have an OwnerReference to this ContentLibraryProvider.
-	imageList := &vmopv1alpha1.VirtualMachineImageList{}
-	if err := ctx.Client.List(ctx, imageList); err != nil {
-		logger.Error(err, "Failed to get ContentLibraryProvider for VM reconciliation due to ContentSourceBinding watch")
-		return nil
-	}
-
-	imagesToReconcile := make(map[string]struct{})
-	for _, img := range imageList.Items {
-		for _, ownerRef := range img.OwnerReferences {
-			if ownerRef.Kind == "ContentLibraryProvider" && ownerRef.UID == clProviderFromBinding.UID {
-				imagesToReconcile[img.Name] = struct{}{}
+		imagesToReconcile := make(map[string]struct{})
+		for _, img := range imageList.Items {
+			for _, ownerRef := range img.OwnerReferences {
+				if ownerRef.Kind == "ContentLibraryProvider" && ownerRef.UID == clProviderFromBinding.UID {
+					imagesToReconcile[img.Name] = struct{}{}
+				}
 			}
 		}
-	}
 
-	// Filter VMs that reference the images from the content source.
-	vmList := &vmopv1alpha1.VirtualMachineList{}
-	if err := ctx.Client.List(ctx, vmList, client.InNamespace(binding.Namespace)); err != nil {
-		logger.Error(err, "Failed to list VirtualMachines for reconciliation due to ContentSourceBinding watch")
-		return nil
-	}
-
-	var reconcileRequests []reconcile.Request
-	for _, vm := range vmList.Items {
-		if _, ok := imagesToReconcile[vm.Spec.ImageName]; ok {
-			key := client.ObjectKey{Namespace: vm.Namespace, Name: vm.Name}
-			reconcileRequests = append(reconcileRequests, reconcile.Request{NamespacedName: key})
+		// Filter VMs that reference the images from the content source.
+		vmList := &vmopv1alpha1.VirtualMachineList{}
+		if err := c.List(ctx, vmList, client.InNamespace(binding.Namespace)); err != nil {
+			logger.Error(err, "Failed to list VirtualMachines for reconciliation due to ContentSourceBinding watch")
+			return nil
 		}
-	}
 
-	logger.V(4).Info("Returning VM reconcile requests due to ContentSourceBinding watch", "requests", reconcileRequests)
-	return reconcileRequests
+		var reconcileRequests []reconcile.Request
+		for _, vm := range vmList.Items {
+			if _, ok := imagesToReconcile[vm.Spec.ImageName]; ok {
+				key := client.ObjectKey{Namespace: vm.Namespace, Name: vm.Name}
+				reconcileRequests = append(reconcileRequests, reconcile.Request{NamespacedName: key})
+			}
+		}
+
+		logger.V(4).Info("Returning VM reconcile requests due to ContentSourceBinding watch", "requests", reconcileRequests)
+		return reconcileRequests
+	}
 }
 
-// For a given VirtualMachineClassBinding, return reconcile requests
-// for those VirtualMachines with corresponding VirtualMachinesClasses referenced
-func allVMsUsingVirtualMachineClassBinding(ctx *requestMapperCtx, classBinding *vmopv1alpha1.VirtualMachineClassBinding) []reconcile.Request {
-	logger := ctx.Logger.WithValues("name", classBinding.Name, "namespace", classBinding.Namespace)
+// classBindingToVMMapperFn returns a mapper function that can be used to queue reconcile request
+// for the VirtualMachines in response to an event on the VirtualMachineClassBinding resource.
+func classBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(o client.Object) []reconcile.Request {
+	// For a given VirtualMachineClassBinding, return reconcile requests
+	// for those VirtualMachines with corresponding VirtualMachinesClasses referenced
+	return func(o client.Object) []reconcile.Request {
+		classBinding := o.(*vmopv1alpha1.VirtualMachineClassBinding)
+		logger := ctx.Logger.WithValues("name", classBinding.Name, "namespace", classBinding.Namespace)
 
-	logger.V(4).Info("Reconciling all VMs referencing a VM class because of a VirtualMachineClassBinding watch")
+		logger.V(4).Info("Reconciling all VMs referencing a VM class because of a VirtualMachineClassBinding watch")
 
-	// Find all vms that match this vmclassbinding
-	vmList := &vmopv1alpha1.VirtualMachineList{}
-	if err := ctx.Client.List(ctx, vmList, client.InNamespace(classBinding.Namespace)); err != nil {
-		logger.Error(err, "Failed to list VirtualMachines for reconciliation due to VirtualMachineClassBinding watch")
-		return nil
-	}
-
-	// Populate reconcile requests for vms matching the classbinding reference
-	var reconcileRequests []reconcile.Request
-	for _, vm := range vmList.Items {
-		if vm.Spec.ClassName == classBinding.ClassRef.Name {
-			key := client.ObjectKey{Namespace: vm.Namespace, Name: vm.Name}
-			reconcileRequests = append(reconcileRequests, reconcile.Request{NamespacedName: key})
+		// Find all vms that match this vmclassbinding
+		vmList := &vmopv1alpha1.VirtualMachineList{}
+		if err := c.List(ctx, vmList, client.InNamespace(classBinding.Namespace)); err != nil {
+			logger.Error(err, "Failed to list VirtualMachines for reconciliation due to VirtualMachineClassBinding watch")
+			return nil
 		}
-	}
 
-	logger.V(4).Info("Returning VM reconcile requests due to VirtualMachineClassBinding watch", "requests", reconcileRequests)
-	return reconcileRequests
+		// Populate reconcile requests for vms matching the classbinding reference
+		var reconcileRequests []reconcile.Request
+		for _, vm := range vmList.Items {
+			if vm.Spec.ClassName == classBinding.ClassRef.Name {
+				key := client.ObjectKey{Namespace: vm.Namespace, Name: vm.Name}
+				reconcileRequests = append(reconcileRequests, reconcile.Request{NamespacedName: key})
+			}
+		}
+
+		logger.V(4).Info("Returning VM reconcile requests due to VirtualMachineClassBinding watch", "requests", reconcileRequests)
+		return reconcileRequests
+	}
 }
 
 func NewReconciler(
@@ -234,8 +212,7 @@ type VirtualMachineReconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentlibraryproviders,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsourcebindings,verbs=get;list;watch
 
-func (r *VirtualMachineReconciler) Reconcile(req ctrl.Request) (_ ctrl.Result, reterr error) {
-	ctx := goctx.Background()
+func (r *VirtualMachineReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 
 	vm := &vmopv1alpha1.VirtualMachine{}
 	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {

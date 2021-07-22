@@ -19,14 +19,14 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
 
-func NewFakeClient(objs ...runtime.Object) client.Client {
+func NewFakeClient(objs ...client.Object) client.Client {
 	scheme := NewScheme()
-	return fake.NewFakeClientWithScheme(scheme, objs...)
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
 }
 
-func NewFakeClientAndScheme(objs ...runtime.Object) (client.Client, *runtime.Scheme) {
+func NewFakeClientAndScheme(objs ...client.Object) (client.Client, *runtime.Scheme) {
 	scheme := NewScheme()
-	return fake.NewFakeClientWithScheme(scheme, objs...), scheme
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build(), scheme
 }
 
 func NewFakeRecorder() (record.Recorder, chan string) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package manager
@@ -8,7 +8,9 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
+	v1 "k8s.io/api/core/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	// Load the GCP authentication plug-in.
@@ -48,6 +50,11 @@ func New(opts Options) (Manager, error) {
 	_ = topologyv1.AddToScheme(opts.Scheme)
 	// +kubebuilder:scaffold:scheme
 
+	// controller-runtime Client creates an Informer for each resource that we watch.
+	// This can cause VM operator pod to be OOM killed. To avoid that, we by-pass
+	// the cache for ConfigMaps and Secrets so they are looked up from API sever directly.
+	cacheDisabledObjects := []client.Object{&v1.ConfigMap{}, &v1.Secret{}}
+
 	// Build the controller manager.
 	mgr, err := ctrlmgr.New(opts.KubeConfig, ctrlmgr.Options{
 		Scheme:                  opts.Scheme,
@@ -60,7 +67,7 @@ func New(opts Options) (Manager, error) {
 		NewCache:                opts.NewCache,
 		CertDir:                 opts.WebhookSecretVolumeMountPath,
 		Port:                    opts.WebhookServiceContainerPort,
-		NewClient:               NewSelectiveCacheClient,
+		ClientDisableCacheFor:   cacheDisabledObjects,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create manager")

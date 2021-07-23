@@ -980,6 +980,25 @@ func MarkCustomizationInfoCondition(vm *v1alpha1.VirtualMachine, guestInfo *vimT
 	}
 }
 
+func MarkVMToolsRunningStatusCondition(vm *v1alpha1.VirtualMachine, guestInfo *vimTypes.GuestInfo) {
+	if guestInfo == nil || guestInfo.ToolsRunningStatus == "" {
+		conditions.MarkUnknown(vm, v1alpha1.VirtualMachineToolsCondition, "", "")
+		return
+	}
+
+	switch guestInfo.ToolsRunningStatus {
+	case string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsNotRunning):
+		msg := "VMware Tools is not running"
+		conditions.MarkFalse(vm, v1alpha1.VirtualMachineToolsCondition, v1alpha1.VirtualMachineToolsNotRunningReason,
+			v1alpha1.ConditionSeverityError, msg)
+	case string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsRunning), string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsExecutingScripts):
+		conditions.MarkTrue(vm, v1alpha1.VirtualMachineToolsCondition)
+	default:
+		msg := "Unexpected VMware Tools running status"
+		conditions.MarkUnknown(vm, v1alpha1.VirtualMachineToolsCondition, "", msg)
+	}
+}
+
 func (s *Session) updateVMStatus(
 	vmCtx context.VMContext,
 	resVM *res.VirtualMachine) error {
@@ -1029,6 +1048,7 @@ func (s *Session) updateVMStatus(
 	}
 
 	MarkCustomizationInfoCondition(vm, guestInfo)
+	MarkVMToolsRunningStatusCondition(vm, guestInfo)
 
 	if config := moVM.Config; config != nil {
 		vm.Status.ChangeBlockTracking = config.ChangeTrackingEnabled

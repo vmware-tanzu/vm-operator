@@ -412,6 +412,22 @@ var _ = Describe("Sessions", func() {
 				Expect(heartbeat).To(BeEmpty())
 			})
 
+			It("should update VM status at all times", func() {
+				vmName := "test-vm-status"
+				imageName := "test-item"
+				vmConfigArgs := getVmConfigArgs(testNamespace, vmName, imageName)
+				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VMClass.Name)
+				clonedVM, err := session.CloneVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+
+				vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+
+				// Validate vm status update for the success case
+				Expect(session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)).To(Succeed())
+				Expect(vm.Status.PowerState).Should(Equal(vmopv1alpha1.VirtualMachinePoweredOn))
+			})
+
 			It("should clone VM with storage policy disk provisioning", func() {
 				imageName := "test-item"
 				vmName := "CL_DeployedVM-via-policy"

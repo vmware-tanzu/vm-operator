@@ -49,12 +49,13 @@ func intgTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidImageName                bool
-		imageNonCompatible              bool
-		imageNotFound                   bool
-		imageSupportCheckSkipAnnotation bool
-		invalidMetadataConfigMap        bool
-		invalidStorageClass             bool
+		invalidImageName                     bool
+		imageNonCompatible                   bool
+		imageNonCompatibleCloudInitTransport bool
+		imageNotFound                        bool
+		imageSupportCheckSkipAnnotation      bool
+		invalidMetadataConfigMap             bool
+		invalidStorageClass                  bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -81,6 +82,11 @@ func intgTestsValidateCreate() {
 			ctx.vmImage.Status.ImageSupported = &[]bool{false}[0]
 			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
 			Expect(err).ToNot(HaveOccurred())
+		}
+		// Setting the VirtualMachineMetaData Transport to VirtualMachineMetadataCloudInitTransport
+		// works with validGuestOSType or invalidGuestOSType or v1alpha1 non-compatible images
+		if args.imageNonCompatibleCloudInitTransport {
+			vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataCloudInitTransport
 		}
 		if args.invalidMetadataConfigMap {
 			vm.Spec.VmMetadata.ConfigMapName = ""
@@ -122,6 +128,7 @@ func intgTestsValidateCreate() {
 	DescribeTable("create table", validateCreate,
 		Entry("should work", createArgs{}, true, "", nil),
 		Entry("should work despite incompatible image when VMOperatorImageSupportedCheckKey is disabled", createArgs{imageSupportCheckSkipAnnotation: true, imageNonCompatible: true}, true, "", nil),
+		Entry("should work despite incompatible image when VirtualMachineMetadataTransport is CloudInit", createArgs{imageNonCompatibleCloudInitTransport: true}, true, "", nil),
 		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false, "spec.imageName must be specified", nil),
 		Entry("should not work for image which is v1alpha1 incompatible or a non-tkg image", createArgs{imageNonCompatible: true}, false, fmt.Sprintf(messages.VirtualMachineImageNotSupported), nil),
 		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmMetadata.configMapName must be specified", nil),

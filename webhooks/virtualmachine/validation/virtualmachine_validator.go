@@ -182,16 +182,23 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 		return []string{messages.ImageNotSpecified}
 	}
 
-	val := vm.Annotations[constants.VMOperatorImageSupportedCheckKey]
-	if val != constants.VMOperatorImageSupportedCheckDisable {
-		image := vmopv1.VirtualMachineImage{}
-		if err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image); err != nil {
-			validationErrs = append(validationErrs, fmt.Sprintf("error validating image: %v", err))
-			return validationErrs
-		}
-		if image.Status.ImageSupported != nil && !*image.Status.ImageSupported {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.VirtualMachineImageNotSupported))
-		}
+	vmoperatorImageSupportedCheck := vm.Annotations[constants.VMOperatorImageSupportedCheckKey]
+	virtualMachineMetadataTransport := vm.Spec.VmMetadata.Transport
+
+	if vmoperatorImageSupportedCheck == constants.VMOperatorImageSupportedCheckDisable {
+		return validationErrs
+	}
+	if virtualMachineMetadataTransport == vmopv1.VirtualMachineMetadataCloudInitTransport {
+		return validationErrs
+	}
+
+	image := vmopv1.VirtualMachineImage{}
+	if err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image); err != nil {
+		validationErrs = append(validationErrs, fmt.Sprintf("error validating image: %v", err))
+		return validationErrs
+	}
+	if image.Status.ImageSupported != nil && !*image.Status.ImageSupported {
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.VirtualMachineImageNotSupported))
 	}
 
 	return validationErrs

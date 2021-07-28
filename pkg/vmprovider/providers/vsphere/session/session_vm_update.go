@@ -694,7 +694,7 @@ func (s *Session) attachTagsAndModules(
 
 func (s *Session) UpdateVirtualMachine(
 	vmCtx context.VMContext,
-	vmConfigArgs vmprovider.VMConfigArgs) error {
+	vmConfigArgs vmprovider.VMConfigArgs) (err error) {
 
 	resVM, err := s.GetVirtualMachine(vmCtx)
 	if err != nil {
@@ -706,10 +706,17 @@ func (s *Session) UpdateVirtualMachine(
 		return err
 	}
 
-	isOff := moVM.Runtime.PowerState == vimTypes.VirtualMachinePowerStatePoweredOff
+	defer func() {
+		updateErr := s.updateVMStatus(vmCtx, resVM)
+		if updateErr != nil {
+			vmCtx.Logger.Error(updateErr, "Updating VM status failed")
+			if err == nil {
+				err = updateErr
+			}
+		}
+	}()
 
-	// Update VMStatus with BiosUUID to unblock volume controller
-	vmCtx.VM.Status.BiosUUID = moVM.Config.Uuid
+	isOff := moVM.Runtime.PowerState == vimTypes.VirtualMachinePowerStatePoweredOff
 
 	switch vmCtx.VM.Spec.PowerState {
 	case v1alpha1.VirtualMachinePoweredOff:
@@ -748,10 +755,6 @@ func (s *Session) UpdateVirtualMachine(
 				return err
 			}
 		}
-	}
-
-	if err := s.updateVMStatus(vmCtx, resVM); err != nil {
-		return err
 	}
 
 	// TODO: Find a better place for this?

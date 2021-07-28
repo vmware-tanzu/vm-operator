@@ -102,36 +102,37 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidImageName                  bool
-		invalidClassName                  bool
-		invalidNetworkName                bool
-		invalidNetworkType                bool
-		invalidNetworkCardType            bool
-		multipleNetIfToSameNetwork        bool
-		emptyVolumeName                   bool
-		invalidVolumeName                 bool
-		dupVolumeName                     bool
-		invalidVolumeSource               bool
-		multipleVolumeSource              bool
-		invalidPVCName                    bool
-		invalidPVCReadOnly                bool
-		invalidPVCHwVersion               bool
-		invalidMetadataConfigMap          bool
-		invalidVsphereVolumeSource        bool
-		invalidVmVolumeProvOpts           bool
-		invalidStorageClass               bool
-		invalidResourceQuota              bool
-		validStorageClass                 bool
-		imageNonCompatible                bool
-		invalidReadinessNoProbe           bool
-		invalidReadinessProbe             bool
-		isRestrictedNetworkEnv            bool
-		isRestrictedNetworkValidProbePort bool
-		isNonRestrictedNetworkEnv         bool
-		isNoAvailabilityZones             bool
-		isWCPFaultDomainsFSSEnabled       bool
-		isInvalidAvailabilityZone         bool
-		isEmptyAvailabilityZone           bool
+		invalidImageName                     bool
+		invalidClassName                     bool
+		invalidNetworkName                   bool
+		invalidNetworkType                   bool
+		invalidNetworkCardType               bool
+		multipleNetIfToSameNetwork           bool
+		emptyVolumeName                      bool
+		invalidVolumeName                    bool
+		dupVolumeName                        bool
+		invalidVolumeSource                  bool
+		multipleVolumeSource                 bool
+		invalidPVCName                       bool
+		invalidPVCReadOnly                   bool
+		invalidPVCHwVersion                  bool
+		invalidMetadataConfigMap             bool
+		invalidVsphereVolumeSource           bool
+		invalidVmVolumeProvOpts              bool
+		invalidStorageClass                  bool
+		invalidResourceQuota                 bool
+		validStorageClass                    bool
+		imageNonCompatible                   bool
+		imageNonCompatibleCloudInitTransport bool
+		invalidReadinessNoProbe              bool
+		invalidReadinessProbe                bool
+		isRestrictedNetworkEnv               bool
+		isRestrictedNetworkValidProbePort    bool
+		isNonRestrictedNetworkEnv            bool
+		isNoAvailabilityZones                bool
+		isWCPFaultDomainsFSSEnabled          bool
+		isInvalidAvailabilityZone            bool
+		isEmptyAvailabilityZone              bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -146,6 +147,9 @@ func unitTestsValidateCreate() {
 		if args.imageNonCompatible {
 			ctx.vmImage.Status.ImageSupported = &[]bool{false}[0]
 			Expect(ctx.Client.Status().Update(ctx, ctx.vmImage)).ToNot(HaveOccurred())
+		}
+		if args.imageNonCompatibleCloudInitTransport {
+			ctx.vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataCloudInitTransport
 		}
 		if args.invalidNetworkName {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkName = ""
@@ -316,6 +320,7 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssignedFmt, "invalid", ""), nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
 		Entry("should fail when image is not compatible", createArgs{imageNonCompatible: true}, false, fmt.Sprintf(messages.VirtualMachineImageNotSupported), nil),
+		Entry("should allow when image is not compatible and VirtualMachineMetadataTransport is CloudInit", createArgs{imageNonCompatibleCloudInitTransport: true}, true, nil, nil),
 		Entry("should fail when restricted network env is set in provider config map and TCP port in readiness probe is not 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, false, fmt.Sprintf(messages.ReadinessProbePortNotSupportedFmt, 6443), nil),
 		Entry("should allow when restricted network env is set in provider config map and TCP port in readiness probe is 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: true}, true, nil, nil),
 		Entry("should allow when restricted network env is not set in provider config map and TCP port in readiness probe is not 6443", createArgs{isNonRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, true, nil, nil),

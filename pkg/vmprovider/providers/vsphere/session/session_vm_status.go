@@ -22,15 +22,17 @@ func ipCIDRNotation(ipAddress string, prefix int32) string {
 }
 
 func NicInfoToNetworkIfStatus(nicInfo vimTypes.GuestNicInfo) v1alpha1.NetworkInterfaceStatus {
-	IPAddresses := make([]string, 0, len(nicInfo.IpConfig.IpAddress))
-	for _, ipAddress := range nicInfo.IpConfig.IpAddress {
-		IPAddresses = append(IPAddresses, ipCIDRNotation(ipAddress.IpAddress, ipAddress.PrefixLength))
+	var ipAddresses []string
+	if nicInfo.IpConfig != nil {
+		ipAddresses = make([]string, 0, len(nicInfo.IpConfig.IpAddress))
+		for _, ipAddress := range nicInfo.IpConfig.IpAddress {
+			ipAddresses = append(ipAddresses, ipCIDRNotation(ipAddress.IpAddress, ipAddress.PrefixLength))
+		}
 	}
-
 	return v1alpha1.NetworkInterfaceStatus{
 		Connected:   nicInfo.Connected,
 		MacAddress:  nicInfo.MacAddress,
-		IpAddresses: IPAddresses,
+		IpAddresses: ipAddresses,
 	}
 }
 

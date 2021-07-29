@@ -57,6 +57,17 @@ const (
 	GuestCustomizationFailedReason = "GuestCustomizationFailed"
 )
 
+const (
+	// VirtualMachineToolsCondition exposes the status of VMware Tools running in the guest OS, when available
+	VirtualMachineToolsCondition ConditionType = "VirtualMachineTools"
+
+	// VirtualMachineToolsNotRunningReason (Severity=Error) documents that VMware Tools is not running
+	VirtualMachineToolsNotRunningReason = "VirtualMachineToolsNotRunning"
+
+	// VirtualMachineToolsRunningReason (Severity=Info) documents that VMware Tools is running
+	VirtualMachineToolsRunningReason = "VirtualMachineToolsRunning"
+)
+
 // Common Condition.Reason used by VM Operator API objects.
 const (
 	// DeletingReason (Severity=Info) documents a condition not in Status=True because the underlying object it is currently being deleted.

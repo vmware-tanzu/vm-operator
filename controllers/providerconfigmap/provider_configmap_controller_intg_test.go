@@ -4,6 +4,8 @@
 package providerconfigmap_test
 
 import (
+	"sync/atomic"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -31,9 +33,18 @@ func intgTestsCM() {
 
 		cm     *corev1.ConfigMap
 		clUUID = "dummy-cl"
+
+		// represents the VM Service FSS. This should be manupulated atomiocally to avoid races where
+		// the controller is trying to read this _while_ the tests are updaing it.
+		vmServiceFSS uint32
 	)
 
 	BeforeEach(func() {
+		// Modify the helper function to return the custom value of the FSS
+		lib.IsVMServiceFSSEnabled = func() bool {
+			return atomic.LoadUint32(&vmServiceFSS) != 0
+		}
+
 		ctx = suite.NewIntegrationTestContext()
 		cm = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -142,15 +153,14 @@ func intgTestsCM() {
 		})
 
 		Context("VMService FSS is enabled", func() {
-			var oldVMServceFunc func() bool
+			var oldVMServiceFSSState uint32
+
 			BeforeEach(func() {
-				oldVMServceFunc = lib.IsVMServiceFSSEnabled
-				lib.IsVMServiceFSSEnabled = func() bool {
-					return true
-				}
+				oldVMServiceFSSState = vmServiceFSS
+				atomic.StoreUint32(&vmServiceFSS, 1)
 			})
 			AfterEach(func() {
-				lib.IsVMServiceFSSEnabled = oldVMServceFunc
+				atomic.StoreUint32(&vmServiceFSS, oldVMServiceFSSState)
 			})
 
 			When("ConfigMap is created with a ContentSource key", func() {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -46,9 +47,18 @@ func intgTests() {
 		metadataConfigMap      *corev1.ConfigMap
 		storageClass           *storagev1.StorageClass
 		resourceQuota          *corev1.ResourceQuota
+
+		// represents the VM Service FSS. This should be manupulated atomiocally to avoid races where
+		// the controller is trying to read this _while_ the tests are updaing it.
+		vmServiceFSS uint32
 	)
 
 	BeforeEach(func() {
+		// Modify the helper function to return the custom value of the FSS
+		lib.IsVMServiceFSSEnabled = func() bool {
+			return atomic.LoadUint32(&vmServiceFSS) != 0
+		}
+
 		ctx = suite.NewIntegrationTestContext()
 
 		vmClass = &vmopv1alpha1.VirtualMachineClass{
@@ -308,16 +318,14 @@ func intgTests() {
 
 		When("VMService FSS is Enabled", func() {
 			var (
-				oldVMServiceEnableFunc func() bool
-				vmClassBinding         *vmopv1alpha1.VirtualMachineClassBinding
-				contentSourceBinding   *vmopv1alpha1.ContentSourceBinding
+				oldVMServiceFSSState uint32
+				vmClassBinding       *vmopv1alpha1.VirtualMachineClassBinding
+				contentSourceBinding *vmopv1alpha1.ContentSourceBinding
 			)
 
 			BeforeEach(func() {
-				oldVMServiceEnableFunc = lib.IsVMServiceFSSEnabled
-				lib.IsVMServiceFSSEnabled = func() bool {
-					return true
-				}
+				oldVMServiceFSSState = vmServiceFSS
+				atomic.StoreUint32(&vmServiceFSS, 1)
 
 				vmClassBinding = &vmopv1alpha1.VirtualMachineClassBinding{
 					ObjectMeta: metav1.ObjectMeta{
@@ -345,7 +353,7 @@ func intgTests() {
 			})
 
 			AfterEach(func() {
-				lib.IsVMServiceFSSEnabled = oldVMServiceEnableFunc
+				atomic.StoreUint32(&vmServiceFSS, oldVMServiceFSSState)
 			})
 
 			validateNoVMClassBindingCondition := func(vm *vmopv1alpha1.VirtualMachine) {

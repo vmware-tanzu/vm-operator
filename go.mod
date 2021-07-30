@@ -9,12 +9,13 @@ require (
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/google/go-cmp v0.5.2
 	github.com/google/uuid v1.2.0
+	github.com/kr/pretty v0.2.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/onsi/ginkgo v1.14.1
 	github.com/onsi/gomega v1.10.2
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.6.1 // indirect
-	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20210709183605-f91bdbcb84e1
+	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20210729193442-29f3169f67b5
 	github.com/vmware/govmomi v0.26.0
 	golang.org/x/net v0.0.0-20200822124328-c89045814202 // indirect
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect

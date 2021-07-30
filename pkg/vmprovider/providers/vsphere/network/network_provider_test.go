@@ -68,6 +68,30 @@ var _ = Describe("NetworkProvider", func() {
 		np network.Provider
 	)
 
+	createInterface := func(ctx goctx.Context, c *vim25.Client, k8sClient ctrlruntime.Client, scheme *runtime.Scheme) {
+		finder := find.NewFinder(c)
+		cluster, err := finder.DefaultClusterComputeResource(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		net, err := finder.Network(ctx, "DC0_DVPG0")
+		Expect(err).ToNot(HaveOccurred())
+		dvpg := simulator.Map.Get(net.Reference()).(*simulator.DistributedVirtualPortgroup)
+		dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
+		dvpg.Config.BackingType = "nsx"
+
+		np = network.NewProvider(k8sClient, c, finder, cluster, scheme)
+
+		info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(info).NotTo(BeNil())
+
+		nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+		Expect(nic).NotTo(BeNil())
+		Expect(nic.ExternalId).To(Equal(interfaceId))
+		Expect(nic.MacAddress).To(Equal(macAddress))
+		Expect(nic.AddressType).To(Equal(string(types.VirtualEthernetCardMacTypeManual)))
+	}
+
 	BeforeEach(func() {
 		var err error
 		ctx = goctx.TODO()
@@ -361,33 +385,9 @@ var _ = Describe("NetworkProvider", func() {
 
 				Context("should succeed", func() {
 
-					createInterface := func(ctx goctx.Context, c *vim25.Client) {
-						finder := find.NewFinder(c)
-						cluster, err := finder.DefaultClusterComputeResource(ctx)
-						Expect(err).ToNot(HaveOccurred())
-
-						net, err := finder.Network(ctx, "DC0_DVPG0")
-						Expect(err).ToNot(HaveOccurred())
-						dvpg := simulator.Map.Get(net.Reference()).(*simulator.DistributedVirtualPortgroup)
-						dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
-						dvpg.Config.BackingType = "nsx"
-
-						np = network.NewProvider(k8sClient, c, finder, cluster, scheme)
-
-						info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(info).NotTo(BeNil())
-
-						nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-						Expect(nic).NotTo(BeNil())
-						Expect(nic.ExternalId).To(Equal(interfaceId))
-						Expect(nic.MacAddress).To(Equal(macAddress))
-						Expect(nic.AddressType).To(Equal(string(types.VirtualEthernetCardMacTypeManual)))
-					}
-
 					It("with no provider IP configuration", func() {
 						res := simulator.VPX().Run(func(ctx goctx.Context, c *vim25.Client) error {
-							createInterface(ctx, c)
+							createInterface(ctx, c, k8sClient, scheme)
 
 							info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 							Expect(err).ToNot(HaveOccurred())
@@ -452,6 +452,47 @@ var _ = Describe("NetworkProvider", func() {
 						Expect(info.Customization.Adapter.IpV6Spec.Ip).To(HaveLen(1))
 						fixedIp := info.Customization.Adapter.IpV6Spec.Ip[0].(*types.CustomizationFixedIpV6)
 						Expect(fixedIp.IpAddress).To(Equal(ip))
+					})
+				})
+			})
+
+			Context("expected Netplan Ethernets", func() {
+
+				Context("no IPConfigs", func() {
+					BeforeEach(func() { netIf.Status.IPConfigs = nil })
+
+					It("dhcp should be True", func() {
+						info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(info.NetplanEthernet.Dhcp4).To(BeTrue())
+					})
+				})
+
+				Context("IPv4 IPConfigs", func() {
+					ip := "192.168.1.37"
+					mask := "255.255.255.0"
+					gateway := "192.168.1.1"
+					expectedCidrNotation := "192.168.1.37/24"
+
+					BeforeEach(func() {
+						netIf.Status.IPConfigs = []netopv1alpha1.IPConfig{
+							{
+								IP:         ip,
+								IPFamily:   netopv1alpha1.IPv4Protocol,
+								Gateway:    gateway,
+								SubnetMask: mask,
+							},
+						}
+					})
+
+					It("NetplanEthernet with ipv4 customization", func() {
+						info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(info.NetplanEthernet.Dhcp4).To(BeFalse())
+						Expect(info.NetplanEthernet.Match.MacAddress).To(Equal(netIf.Status.MacAddress))
+						Expect(info.NetplanEthernet.Gateway4).ToNot(BeEmpty())
+						Expect(info.NetplanEthernet.Gateway4).To(Equal(netIf.Status.IPConfigs[0].Gateway))
+						Expect(info.NetplanEthernet.Addresses[0]).To(Equal(expectedCidrNotation))
 					})
 				})
 			})
@@ -562,37 +603,14 @@ var _ = Describe("NetworkProvider", func() {
 
 			Context("should succeed", func() {
 
-				createInterface := func(ctx goctx.Context, c *vim25.Client) {
-					finder := find.NewFinder(c)
-					cluster, err := finder.DefaultClusterComputeResource(ctx)
-					Expect(err).ToNot(HaveOccurred())
-
-					net, err := finder.Network(ctx, "DC0_DVPG0")
-					Expect(err).ToNot(HaveOccurred())
-					dvpg := simulator.Map.Get(net.Reference()).(*simulator.DistributedVirtualPortgroup)
-					dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
-					dvpg.Config.BackingType = "nsx"
-
-					np = network.NewProvider(k8sClient, c, finder, cluster, scheme)
-
-					info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(info).NotTo(BeNil())
-
-					nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
-					Expect(nic).NotTo(BeNil())
-					Expect(nic.ExternalId).To(Equal(interfaceId))
-					Expect(nic.MacAddress).To(Equal(macAddress))
-					Expect(nic.AddressType).To(Equal(string(types.VirtualEthernetCardMacTypeManual)))
-				}
-
 				It("with no provider IP configuration", func() {
 					res := simulator.VPX().Run(func(ctx goctx.Context, c *vim25.Client) error {
-						createInterface(ctx, c)
+						createInterface(ctx, c, k8sClient, scheme)
 
 						info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(info.Customization.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
+						Expect(info.NetplanEthernet.Dhcp4).To(BeTrue())
 
 						return nil
 					})
@@ -611,11 +629,12 @@ var _ = Describe("NetworkProvider", func() {
 					})
 					It("should work", func() {
 						res := simulator.VPX().Run(func(ctx goctx.Context, c *vim25.Client) error {
-							createInterface(ctx, c)
+							createInterface(ctx, c, k8sClient, scheme)
 
 							info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 							Expect(err).ToNot(HaveOccurred())
 							Expect(info.Customization.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
+							Expect(info.NetplanEthernet.Dhcp4).To(BeTrue())
 
 							return nil
 						})
@@ -625,23 +644,33 @@ var _ = Describe("NetworkProvider", func() {
 
 				Context("with provider IP configuration", func() {
 					ip := "192.168.100.10"
+					mask := "255.255.255.0"
+					gateway := "192.168.1.1"
+					expectedCidrNotation := "192.168.100.10/24"
 
 					BeforeEach(func() {
 						ncpVif.Status.IPAddresses = []ncpv1alpha1.VirtualNetworkInterfaceIP{
 							{
-								IP: ip,
+								IP:         ip,
+								SubnetMask: mask,
+								Gateway:    gateway,
 							},
 						}
 					})
 
 					It("should work", func() {
 						res := simulator.VPX().Run(func(ctx goctx.Context, c *vim25.Client) error {
-							createInterface(ctx, c)
+							createInterface(ctx, c, k8sClient, scheme)
 
 							info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 							Expect(err).ToNot(HaveOccurred())
 							fixedIp := info.Customization.Adapter.Ip.(*types.CustomizationFixedIp)
 							Expect(fixedIp.IpAddress).To(Equal(ip))
+							Expect(info.NetplanEthernet.Dhcp4).To(BeFalse())
+							Expect(info.NetplanEthernet.Match.MacAddress).To(Equal(ncpVif.Status.MacAddress))
+							Expect(info.NetplanEthernet.Gateway4).ToNot(BeEmpty())
+							Expect(info.NetplanEthernet.Gateway4).To(Equal(ncpVif.Status.IPAddresses[0].Gateway))
+							Expect(info.NetplanEthernet.Addresses[0]).To(Equal(expectedCidrNotation))
 							return nil
 						})
 						Expect(res).To(BeNil())

@@ -9,25 +9,25 @@ import (
 	goctx "context"
 	"fmt"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
+	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/types"
+	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 )
@@ -975,6 +975,154 @@ var _ = Describe("Customization", func() {
 
 			It("is pending", func() {
 				Expect(pending).To(BeTrue())
+			})
+		})
+	})
+
+	Context("getLinuxCustomizationSpec", func() {
+		var (
+			updateArgs session.VmUpdateArgs
+			macaddress = "01-23-45-67-89-AB-CD-EF"
+			nameserver = "8.8.8.8"
+			vmName     = "dummy-vm"
+		)
+
+		customizationAdaptorMapping := &vimTypes.CustomizationAdapterMapping{
+			MacAddress: macaddress,
+		}
+
+		BeforeEach(func() {
+			updateArgs.DNSServers = []string{nameserver}
+			updateArgs.NetIfList = []network.NetworkInterfaceInfo{
+				{
+					Customization: customizationAdaptorMapping,
+				},
+			}
+		})
+
+		It("should return linux customization spec", func() {
+			spec := session.GetLinuxCustomizationSpec(vmName, updateArgs)
+			Expect(spec.GlobalIPSettings.DnsServerList).To(Equal(updateArgs.DNSServers))
+			Expect(spec.NicSettingMap).To(Equal([]vimTypes.CustomizationAdapterMapping{*customizationAdaptorMapping}))
+			linuxSpec := spec.Identity.(*vimTypes.CustomizationLinuxPrep)
+			hostName := linuxSpec.HostName.(*vimTypes.CustomizationFixedName).Name
+			Expect(hostName).To(Equal(vmName))
+		})
+	})
+
+	Context("getCloudInitPrepCustomizationSpec", func() {
+		var (
+			currentEthCards  object.VirtualDeviceList
+			updateArgs       session.VmUpdateArgs
+			expectedMetadata session.CloudInitMetadata
+			userdata         = "dummy-cloudInit-userdata"
+			addrs            = []string{"192.168.1.37"}
+			gateway          = "192.168.1.1"
+			nameserver       = "8.8.8.8"
+			macaddress       = "01-23-45-67-89-AB-CD-EF"
+			vmName           = "dummy-vm"
+		)
+
+		BeforeEach(func() {
+			netPlanEth := network.NetplanEthernet{
+				Dhcp4:       false,
+				Addresses:   addrs,
+				Gateway4:    gateway,
+				Nameservers: network.NetplanEthernetNameserver{},
+			}
+
+			updateArgs.DNSServers = []string{nameserver}
+			updateArgs.NetIfList = []network.NetworkInterfaceInfo{
+				{
+					NetplanEthernet: netPlanEth,
+				},
+			}
+			updateArgs.VmMetadata = &vmprovider.VmMetadata{
+				Data: map[string]string{
+					"user-data": userdata,
+				},
+			}
+
+			expectedNetPlanEth := netPlanEth
+
+			// Irrespective of the networkType, macAddress should be assigned.
+			expectedNetPlanEth.Match.MacAddress = macaddress
+
+			// metadata.Network.Ethernets is a map and GetNetplanEthernets() set key as "nic" + (index in NetIfList)
+			// In this case, len(updateArgs.NetIfList) = 1. Hence, key = nic0
+			ethName := "nic0"
+
+			// Update nameserver settings in accordance to the expected value.
+			// getCloudInitPrepCustomizationSpec() injects nameserver settings for each ethernet
+			// as updateArgs.DNSServers.
+			expectedNetPlanEth.Nameservers.Addresses = updateArgs.DNSServers
+			expectedMetadata = session.CloudInitMetadata{
+				InstanceId:    vmName,
+				Hostname:      vmName,
+				LocalHostname: vmName,
+				Network: session.Netplan{
+					Version: constants.NetPlanVersion,
+					Ethernets: map[string]network.NetplanEthernet{
+						ethName: expectedNetPlanEth,
+					},
+				},
+			}
+		})
+
+		AfterEach(func() {
+			currentEthCards = nil
+		})
+
+		Context("NetOp - when MacAddress is not assigned to NetworkInterface", func() {
+			BeforeEach(func() {
+				ethCard, err := object.EthernetCardTypes().CreateEthernetCard("vmxnet3", nil)
+				Expect(err).ToNot(HaveOccurred())
+				ethCard.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeGenerated)
+				ethCard.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = macaddress
+				currentEthCards = append(currentEthCards, ethCard)
+
+				// There is only one element in NetIfList.
+				updateArgs.NetIfList[0].Device = ethCard
+			})
+
+			It("should return cloudinitPrep customization spec", func() {
+				spec, err := session.GetCloudInitPrepCustomizationSpec(vmName, currentEthCards, updateArgs)
+				Expect(err).ToNot(HaveOccurred())
+				cloudinitPrepSpec := spec.Identity.(*internal.CustomizationCloudinitPrep)
+				Expect(cloudinitPrepSpec.Userdata).To(Equal(userdata))
+				metadataBytes := []byte(cloudinitPrepSpec.Metadata)
+				metadata := session.CloudInitMetadata{}
+				err = yaml.Unmarshal(metadataBytes, &metadata)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(metadata).To(Equal(expectedMetadata))
+			})
+		})
+
+		Context("NCP - when MacAddress is assigned to NetworkInterface", func() {
+			BeforeEach(func() {
+				ethCard, err := object.EthernetCardTypes().CreateEthernetCard("vmxnet3", nil)
+				Expect(err).ToNot(HaveOccurred())
+				ethCard.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeManual)
+				ethCard.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = macaddress
+				currentEthCards = append(currentEthCards, ethCard)
+
+				// There is only one element in NetIfList.
+				updateArgs.NetIfList[0].Device = ethCard
+				updateArgs.NetIfList[0].NetplanEthernet.Match = network.NetplanEthernetMatch{
+					MacAddress: macaddress,
+				}
+			})
+
+			It("should return cloudinitPrep customization spec", func() {
+				spec, err := session.GetCloudInitPrepCustomizationSpec(vmName, currentEthCards, updateArgs)
+				Expect(err).ToNot(HaveOccurred())
+				cloudinitPrepSpec := spec.Identity.(*internal.CustomizationCloudinitPrep)
+				Expect(cloudinitPrepSpec.Userdata).To(Equal(userdata))
+				metadataBytes := []byte(cloudinitPrepSpec.Metadata)
+				metadata := session.CloudInitMetadata{}
+				err = yaml.Unmarshal(metadataBytes, &metadata)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(metadata).To(Equal(expectedMetadata))
 			})
 		})
 	})

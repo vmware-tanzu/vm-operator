@@ -19,6 +19,9 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .spec.providerRef.name
+      name: ContentSourceName
+      type: string
     - jsonPath: .spec.productInfo.version
       name: Version
       type: string
@@ -55,6 +58,9 @@ spec:
                 description: HardwareVersion describes the virtual hardware version of the image
                 format: int32
                 type: integer
+              imageID:
+                description: ImageID is a unique identifier exposed by the provider of this VirtualMachineImage.
+                type: string
               imageSourceType:
                 description: ImageSourceType describes the type of content source of the VirtualMachineImage.  The only Content Source supported currently is the vSphere Content Library.
                 type: string
@@ -103,10 +109,31 @@ spec:
                     description: Version typically describes a short-form version of the image.
                     type: string
                 type: object
+              providerRef:
+                description: ProviderRef is a reference to a content provider object that describes a provider.
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  kind:
+                    description: Kind is the type of resource being referenced.
+                    type: string
+                  name:
+                    description: Name is the name of resource being referenced.
+                    type: string
+                  namespace:
+                    description: Namespace of the resource being referenced. If empty, cluster scoped resource is assumed.
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
               type:
                 description: Type describes the type of the VirtualMachineImage. Currently, the only supported image is "OVF"
                 type: string
             required:
+            - imageID
+            - providerRef
             - type
             type: object
           status:
@@ -141,6 +168,9 @@ spec:
                   - type
                   type: object
                 type: array
+              imageName:
+                description: ImageName describes the display name of this VirtualMachineImage.
+                type: string
               imageSupported:
                 description: 'ImageSupported indicates whether the VirtualMachineImage is supported by VMService. A VirtualMachineImage is supported by VMService if the following conditions are true: - VirtualMachineImageV1Alpha1CompatibleCondition'
                 type: boolean

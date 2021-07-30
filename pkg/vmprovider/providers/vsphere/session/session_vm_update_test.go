@@ -8,6 +8,7 @@ package session_test
 import (
 	goctx "context"
 	"fmt"
+	"sync/atomic"
 
 	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -36,6 +37,10 @@ var _ = Describe("Update ConfigSpec", func() {
 
 	var config *vimTypes.VirtualMachineConfigInfo
 	var configSpec *vimTypes.VirtualMachineConfigSpec
+
+	// represents the VM Service FSS. This should be manupulated atomiocally to avoid races where
+	// the controller is trying to read this _while_ the tests are updaing it.
+	var vmServiceFSS uint32
 
 	BeforeEach(func() {
 		config = &vimTypes.VirtualMachineConfigInfo{}
@@ -770,23 +775,28 @@ var _ = Describe("Update ConfigSpec", func() {
 	})
 
 	Context("PCI Device Changes", func() {
-		var currentList, expectedList object.VirtualDeviceList
-		var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
-		var err error
-		// Variables related to vGPU devices.
-		var backingInfo1, backingInfo2 *vimTypes.VirtualPCIPassthroughVmiopBackingInfo
-		var deviceKey1, deviceKey2 int32
-		var vGPUDevice1, vGPUDevice2 vimTypes.BaseVirtualDevice
-		// Variables related to dynamicDirectPathIO devices.
-		var allowedDev1, allowedDev2 vimTypes.VirtualPCIPassthroughAllowedDevice
-		var backingInfo3, backingInfo4 *vimTypes.VirtualPCIPassthroughDynamicBackingInfo
-		var deviceKey3, deviceKey4 int32
-		var dynamicDirectPathIODev1, dynamicDirectPathIODev2 vimTypes.BaseVirtualDevice
+		var (
+			currentList, expectedList object.VirtualDeviceList
+			deviceChanges             []vimTypes.BaseVirtualDeviceConfigSpec
+			err                       error
+
+			// Variables related to vGPU devices.
+			backingInfo1, backingInfo2 *vimTypes.VirtualPCIPassthroughVmiopBackingInfo
+			deviceKey1, deviceKey2     int32
+			vGPUDevice1, vGPUDevice2   vimTypes.BaseVirtualDevice
+
+			// Variables related to dynamicDirectPathIO devices.
+			allowedDev1, allowedDev2                         vimTypes.VirtualPCIPassthroughAllowedDevice
+			backingInfo3, backingInfo4                       *vimTypes.VirtualPCIPassthroughDynamicBackingInfo
+			deviceKey3, deviceKey4                           int32
+			dynamicDirectPathIODev1, dynamicDirectPathIODev2 vimTypes.BaseVirtualDevice
+
+			oldVMServiceFSSState uint32
+		)
 
 		BeforeEach(func() {
-			lib.IsVMServiceFSSEnabled = func() bool {
-				return true
-			}
+			oldVMServiceFSSState = vmServiceFSS
+			atomic.StoreUint32(&vmServiceFSS, 1)
 
 			backingInfo1 = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop1"}
 			backingInfo2 = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop2"}
@@ -824,6 +834,8 @@ var _ = Describe("Update ConfigSpec", func() {
 		AfterEach(func() {
 			currentList = nil
 			expectedList = nil
+
+			atomic.StoreUint32(&vmServiceFSS, oldVMServiceFSSState)
 		})
 
 		Context("No devices", func() {

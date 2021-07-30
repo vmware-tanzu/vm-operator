@@ -197,6 +197,7 @@ spec:
                     enum:
                     - ExtraConfig
                     - OvfEnv
+                    - CloudInit
                     type: string
                 type: object
               volumes:

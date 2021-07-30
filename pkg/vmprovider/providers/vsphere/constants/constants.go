@@ -40,6 +40,10 @@ const (
 	// maintenance mode. This is to ensure the maintenance mode workflow is consistent for VMs with vGPU/DDPIO devices.
 	MMPowerOffVMExtraConfigKey = "maintenance.vm.evacuation.poweroff"
 
+	// NetPlanVersion points to the version used for Network config.
+	// For more information, please see https://cloudinit.readthedocs.io/en/latest/topics/network-config-format-v2.html
+	NetPlanVersion = 2
+
 	// VMImageCLVersionAnnotation VirtualMachineImage annotation to cache the last fetched version.
 	VMImageCLVersionAnnotation = pkg.VmOperatorKey + "/content-library-version"
 	// Version of the VMImageCLVersionAnnotation for the VirtualMachineImage.

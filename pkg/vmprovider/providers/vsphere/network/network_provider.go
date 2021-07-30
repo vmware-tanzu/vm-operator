@@ -70,6 +70,7 @@ type NetworkInterfaceInfo struct {
 	Device          vimtypes.BaseVirtualDevice
 	Customization   *vimtypes.CustomizationAdapterMapping
 	IPConfiguration IPConfig
+	NetplanEthernet NetplanEthernet
 }
 
 type NetworkInterfaceInfoList []NetworkInterfaceInfo
@@ -80,6 +81,45 @@ func (l NetworkInterfaceInfoList) GetVirtualDeviceList() object.VirtualDeviceLis
 		devList = append(devList, info.Device.(vimtypes.BaseVirtualDevice))
 	}
 	return devList
+}
+
+type NetplanEthernetNameserver struct {
+	Addresses []string `yaml:"addresses,omitempty"`
+}
+type NetplanEthernetMatch struct {
+	MacAddress string `yaml:"macaddress,omitempty"`
+}
+type NetplanEthernet struct {
+	Match       NetplanEthernetMatch      `yaml:"match,omitempty"`
+	Dhcp4       bool                      `yaml:"dhcp4,omitempty"`
+	Addresses   []string                  `yaml:"addresses,omitempty"`
+	Gateway4    string                    `yaml:"gateway4,omitempty"`
+	Nameservers NetplanEthernetNameserver `yaml:"nameservers,omitempty"`
+}
+
+func (l NetworkInterfaceInfoList) GetNetplanEthernets(currentEthCards object.VirtualDeviceList, dnsServers []string) (map[string]NetplanEthernet, error) {
+	ethernets := make(map[string]NetplanEthernet)
+
+	for index, info := range l {
+		netplanEthernet := info.NetplanEthernet
+
+		if netplanEthernet.Match.MacAddress == "" && len(currentEthCards) == 1 {
+			curNic := currentEthCards[0].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+			// This assumes we don't have multiple NICs in the same backing network. This is kind of, sort
+			// of enforced by the webhook, but we lack a guaranteed way to match up the NICs.
+
+			// NetOp (VDS) never assigns MacAddress to the NetworkInterface status, therefore
+			// netplanEthernet.Match.MacAddress will be empty.
+			// At this point, it is assumed that VirtuaLMachine.Config.Hardware.Device has MacAddress generated.
+			netplanEthernet.Match.MacAddress = curNic.GetVirtualEthernetCard().MacAddress
+		}
+
+		// Inject nameserver settings for each ethernet.
+		netplanEthernet.Nameservers.Addresses = dnsServers
+		name := fmt.Sprintf("nic%d", index)
+		ethernets[name] = netplanEthernet
+	}
+	return ethernets, nil
 }
 
 func (l NetworkInterfaceInfoList) GetInterfaceCustomizations() []vimtypes.CustomizationAdapterMapping {
@@ -218,6 +258,7 @@ func (np *namedNetworkProvider) EnsureNetworkInterface(
 			},
 		},
 		IPConfiguration: IPConfig{},
+		NetplanEthernet: NetplanEthernet{},
 	}, nil
 }
 
@@ -432,6 +473,7 @@ func (np *netOpNetworkProvider) EnsureNetworkInterface(
 		Device:          ethDev,
 		Customization:   np.goscCustomization(netIf),
 		IPConfiguration: np.getIPConfig(netIf),
+		NetplanEthernet: np.getNetplanEthernet(netIf),
 	}, nil
 }
 
@@ -447,6 +489,24 @@ func (np *netOpNetworkProvider) getIPConfig(netIf *netopv1alpha1.NetworkInterfac
 	}
 
 	return ipConfig
+}
+
+func (np *netOpNetworkProvider) getNetplanEthernet(netIf *netopv1alpha1.NetworkInterface) NetplanEthernet {
+	eth := NetplanEthernet{
+		Match: NetplanEthernetMatch{
+			MacAddress: netIf.Status.MacAddress,
+		},
+	}
+
+	if len(netIf.Status.IPConfigs) == 0 {
+		eth.Dhcp4 = true
+	} else {
+		ipAddr := netIf.Status.IPConfigs[0]
+		eth.Addresses = []string{toCidrNotation(ipAddr.IP, ipAddr.SubnetMask)}
+		eth.Gateway4 = ipAddr.Gateway
+	}
+
+	return eth
 }
 
 type nsxtNetworkProvider struct {
@@ -612,6 +672,7 @@ func (np *nsxtNetworkProvider) EnsureNetworkInterface(
 		Device:          ethDev,
 		Customization:   np.goscCustomization(vnetIf),
 		IPConfiguration: np.getIPConfig(vnetIf),
+		NetplanEthernet: np.getNetplanEthernet(vnetIf),
 	}, nil
 }
 
@@ -626,6 +687,25 @@ func (np *nsxtNetworkProvider) getIPConfig(vnetIf *ncpv1alpha1.VirtualNetworkInt
 	}
 
 	return ipConfig
+}
+
+func (np *nsxtNetworkProvider) getNetplanEthernet(vnetIf *ncpv1alpha1.VirtualNetworkInterface) NetplanEthernet {
+	eth := NetplanEthernet{
+		Match: NetplanEthernetMatch{
+			MacAddress: vnetIf.Status.MacAddress,
+		},
+	}
+
+	addrs := vnetIf.Status.IPAddresses
+	if len(addrs) == 0 || (len(addrs) == 1 && addrs[0].IP == "") {
+		eth.Dhcp4 = true
+	} else {
+		ipAddr := addrs[0]
+		eth.Addresses = []string{toCidrNotation(ipAddr.IP, ipAddr.SubnetMask)}
+		eth.Gateway4 = ipAddr.Gateway
+	}
+
+	return eth
 }
 
 // matchOpaqueNetwork takes the network ID, returns whether the opaque network matches the networkID
@@ -730,4 +810,14 @@ func searchNsxtNetworkReference(ctx goctx.Context, finder *find.Finder, cluster 
 		}
 	}
 	return nil, fmt.Errorf("opaque network with ID '%s' not found", networkID)
+}
+
+// toCidrNotation takes ip and mask as ip addresses and returns a cidr notation.
+// It Assumes ipv4.
+func toCidrNotation(ip string, mask string) string {
+	IPNet := net.IPNet{
+		IP:   net.ParseIP(ip).To4(),
+		Mask: net.IPMask(net.ParseIP(mask).To4()),
+	}
+	return IPNet.String()
 }

@@ -11,14 +11,14 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/task"
-	"github.com/vmware/govmomi/vim25/types"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
+	"gopkg.in/yaml.v2"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/task"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -27,6 +27,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
@@ -51,6 +52,64 @@ func isCustomizationPendingError(err error) bool {
 	return false
 }
 
+func GetLinuxCustomizationSpec(vmName string, updateArgs VmUpdateArgs) *vimTypes.CustomizationSpec {
+	return &vimTypes.CustomizationSpec{
+		Identity: &vimTypes.CustomizationLinuxPrep{
+			HostName: &vimTypes.CustomizationFixedName{
+				Name: vmName,
+			},
+			HwClockUTC: vimTypes.NewBool(true),
+		},
+		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{
+			DnsServerList: updateArgs.DNSServers,
+		},
+		NicSettingMap: updateArgs.NetIfList.GetInterfaceCustomizations(),
+	}
+}
+
+type Netplan struct {
+	Version   int                                `yaml:"version,omitempty"`
+	Ethernets map[string]network.NetplanEthernet `yaml:"ethernets,omitempty"`
+}
+
+// CloudInitMetadata is used to set metadata field in
+// CloudInitPrep customization spec.
+type CloudInitMetadata struct {
+	InstanceId    string  `yaml:"instance-id,omitempty"`
+	LocalHostname string  `yaml:"local-hostname,omitempty"`
+	Hostname      string  `yaml:"hostname,omitempty"`
+	Network       Netplan `yaml:"network,omitempty"`
+}
+
+func GetCloudInitPrepCustomizationSpec(vmName string, currentEthCards object.VirtualDeviceList, updateArgs VmUpdateArgs) (*vimTypes.CustomizationSpec, error) {
+	netplanEthernets, err := updateArgs.NetIfList.GetNetplanEthernets(currentEthCards, updateArgs.DNSServers)
+	if err != nil {
+		return nil, fmt.Errorf("error getting netplanEthernets %v", err)
+	}
+
+	metadataObj := &CloudInitMetadata{
+		InstanceId:    vmName,
+		LocalHostname: vmName,
+		Hostname:      vmName,
+		Network: Netplan{
+			Version:   constants.NetPlanVersion,
+			Ethernets: netplanEthernets,
+		},
+	}
+
+	metadataBytes, err := yaml.Marshal(metadataObj)
+	if err != nil {
+		return nil, fmt.Errorf("yaml marshalling of CloudinitPrep metadata failed %v", err)
+	}
+
+	return &vimTypes.CustomizationSpec{
+		Identity: &internal.CustomizationCloudinitPrep{
+			Metadata: string(metadataBytes),
+			Userdata: updateArgs.VmMetadata.Data["user-data"],
+		},
+	}, nil
+}
+
 func (s *Session) customizeVM(
 	vmCtx context.VMContext,
 	resVM *res.VirtualMachine,
@@ -70,22 +129,24 @@ func (s *Session) customizeVM(
 		return nil
 	}
 
-	customizationSpec := vimTypes.CustomizationSpec{
+	var customizationSpec *vimTypes.CustomizationSpec
+	if updateArgs.VmMetadata != nil && updateArgs.VmMetadata.Transport == v1alpha1.VirtualMachineMetadataCloudInitTransport {
+		currentEthCards, err := resVM.GetNetworkDevices(vmCtx)
+		if err != nil {
+			return err
+		}
+
+		customizationSpec, err = GetCloudInitPrepCustomizationSpec(vmCtx.VM.Name, currentEthCards, updateArgs)
+		if err != nil {
+			return err
+		}
+	} else {
 		// TODO: Don't assume Linux; support Windows.
-		Identity: &vimTypes.CustomizationLinuxPrep{
-			HostName: &vimTypes.CustomizationFixedName{
-				Name: vmCtx.VM.Name,
-			},
-			HwClockUTC: vimTypes.NewBool(true),
-		},
-		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{
-			DnsServerList: updateArgs.DNSServers,
-		},
-		NicSettingMap: updateArgs.NetIfList.GetInterfaceCustomizations(),
+		customizationSpec = GetLinuxCustomizationSpec(vmCtx.VM.Name, updateArgs)
 	}
 
-	vmCtx.Logger.Info("Customizing VM", "customizationSpec", customizationSpec)
-	if err := resVM.Customize(vmCtx, customizationSpec); err != nil {
+	vmCtx.Logger.Info("Customizing VM", "customizationSpec", *customizationSpec)
+	if err := resVM.Customize(vmCtx, *customizationSpec); err != nil {
 		// isCustomizationPendingExtraConfig() above is suppose to prevent this error, but
 		// handle it explicitly here just in case so VM reconciliation can proceed.
 		if !isCustomizationPendingError(err) {
@@ -889,22 +950,22 @@ func NicInfoToNetworkIfStatus(nicInfo vimTypes.GuestNicInfo) v1alpha1.NetworkInt
 	}
 }
 
-func MarkCustomizationInfoCondition(vm *v1alpha1.VirtualMachine, guestInfo *types.GuestInfo) {
+func MarkCustomizationInfoCondition(vm *v1alpha1.VirtualMachine, guestInfo *vimTypes.GuestInfo) {
 	if guestInfo == nil || guestInfo.CustomizationInfo == nil {
 		conditions.MarkUnknown(vm, v1alpha1.GuestCustomizationCondition, "", "")
 		return
 	}
 
 	switch guestInfo.CustomizationInfo.CustomizationStatus {
-	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE), "":
+	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE), "":
 		conditions.MarkTrue(vm, v1alpha1.GuestCustomizationCondition)
-	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING):
+	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING):
 		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, v1alpha1.GuestCustomizationPendingReason, v1alpha1.ConditionSeverityInfo, "")
-	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING):
+	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING):
 		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, v1alpha1.GuestCustomizationRunningReason, v1alpha1.ConditionSeverityInfo, "")
-	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED):
+	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED):
 		conditions.MarkTrue(vm, v1alpha1.GuestCustomizationCondition)
-	case string(types.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_FAILED):
+	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_FAILED):
 		errorMsg := guestInfo.CustomizationInfo.ErrorMsg
 		if errorMsg == "" {
 			errorMsg = "vSphere VM Customization failed due to an unknown error."

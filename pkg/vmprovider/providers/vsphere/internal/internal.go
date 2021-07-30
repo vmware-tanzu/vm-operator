@@ -49,3 +49,10 @@ func VirtualMachineFSR(ctx context.Context, vm types.ManagedObjectReference, cli
 	}
 	return object.NewTask(client, res.Returnval), nil
 }
+
+type CustomizationCloudinitPrep struct {
+	types.CustomizationIdentitySettings
+
+	Metadata string `xml:"metadata"`
+	Userdata string `xml:"userdata,omitempty"`
+}

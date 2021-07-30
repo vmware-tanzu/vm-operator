@@ -63,9 +63,18 @@ func unitTestsReconcile() {
 		resourceQuota    *corev1.ResourceQuota
 
 		fakeProbeManager *proberfake.FakeProberManager
+
+		// represents the VM Service FSS. This should be manupulated atomiocally to avoid races where
+		// the controller is trying to read this _while_ the tests are updaing it.
+		vmServiceFSS uint32
 	)
 
 	BeforeEach(func() {
+		// Modify the helper function to return the custom value of the FSS
+		lib.IsVMServiceFSSEnabled = func() bool {
+			return atomic.LoadUint32(&vmServiceFSS) != 0
+		}
+
 		vmClass = &vmopv1alpha1.VirtualMachineClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-vmclass",
@@ -202,7 +211,8 @@ func unitTestsReconcile() {
 		})
 
 		When("the WCP_VMService FSS is enabled", func() {
-			var oldVMServiceEnableFunc func() bool
+			var oldVMServiceFSSState uint32
+
 			var vmClassBinding *vmopv1alpha1.VirtualMachineClassBinding
 			var contentSourceBinding *vmopv1alpha1.ContentSourceBinding
 
@@ -236,10 +246,8 @@ func unitTestsReconcile() {
 			}
 
 			BeforeEach(func() {
-				oldVMServiceEnableFunc = lib.IsVMServiceFSSEnabled
-				lib.IsVMServiceFSSEnabled = func() bool {
-					return true
-				}
+				oldVMServiceFSSState = vmServiceFSS
+				atomic.StoreUint32(&vmServiceFSS, 1)
 
 				vmClassBinding = &vmopv1alpha1.VirtualMachineClassBinding{
 					ObjectMeta: metav1.ObjectMeta{
@@ -267,7 +275,7 @@ func unitTestsReconcile() {
 			})
 
 			AfterEach(func() {
-				lib.IsVMServiceFSSEnabled = oldVMServiceEnableFunc
+				atomic.StoreUint32(&vmServiceFSS, oldVMServiceFSSState)
 			})
 
 			Context("No VirtualMachineClassBindings exist in namespace", func() {

@@ -4,6 +4,8 @@
 package validation_test
 
 import (
+	"sync/atomic"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
@@ -114,6 +116,10 @@ func unitTestsValidateUpdate() {
 	var (
 		ctx      *unitValidatingWebhookContext
 		response admission.Response
+
+		// represents the VM Service FSS. This should be manupulated atomiocally to avoid races where
+		// the controller is trying to read this _while_ the tests are updaing it.
+		vmServiceFSS uint32
 	)
 
 	type updateArgs struct {
@@ -155,6 +161,11 @@ func unitTestsValidateUpdate() {
 	}
 
 	BeforeEach(func() {
+		// Modify the helper function to return the custom value of the FSS
+		lib.IsVMServiceFSSEnabled = func() bool {
+			return atomic.LoadUint32(&vmServiceFSS) != 0
+		}
+
 		ctx = newUnitTestContextForValidatingWebhook(true)
 	})
 	AfterEach(func() {
@@ -162,17 +173,14 @@ func unitTestsValidateUpdate() {
 	})
 
 	Context("WCP_VMService FSS is set", func() {
-		var oldVMServiceFSS func() bool
+		var oldVMServiceFSSState uint32
 
 		BeforeEach(func() {
-			oldVMServiceFSS = lib.IsVMServiceFSSEnabled
-
-			lib.IsVMServiceFSSEnabled = func() bool {
-				return true
-			}
+			oldVMServiceFSSState = vmServiceFSS
+			atomic.StoreUint32(&vmServiceFSS, 1)
 		})
 		AfterEach(func() {
-			lib.IsVMServiceFSSEnabled = oldVMServiceFSS
+			atomic.StoreUint32(&vmServiceFSS, oldVMServiceFSSState)
 		})
 
 		DescribeTable("update table with VMService FSS", validateUpdate,

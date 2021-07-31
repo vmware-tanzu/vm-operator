@@ -195,26 +195,18 @@ func newTestSuiteForWebhook(
 	}
 	testSuite.certDir = certDir
 
-	testSuite.init(
-		getCrdPaths(),
-		"--cert-dir="+certDir)
+	testSuite.init(getCrdPaths())
 
 	return testSuite
 }
 
-func (s *TestSuite) init(crdPaths []string, additionalAPIServerFlags ...string) {
+func (s *TestSuite) init(crdPaths []string) {
 	// Initialize the test flags.
 	s.flags = flags
 
 	if s.flags.IntegrationTestsEnabled {
-		apiServerFlags := append([]string{"--allow-privileged=true"}, envtest.DefaultKubeAPIServerFlags...)
-		if len(additionalAPIServerFlags) > 0 {
-			apiServerFlags = append(apiServerFlags, additionalAPIServerFlags...)
-		}
-
 		s.envTest = envtest.Environment{
-			CRDDirectoryPaths:  crdPaths,
-			KubeAPIServerFlags: apiServerFlags,
+			CRDDirectoryPaths: crdPaths,
 		}
 	}
 }

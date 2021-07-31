@@ -124,7 +124,7 @@ func unitTestsValidateCreate() {
 
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
-		Entry("should deny invalid name", createArgs{invalidDNSName: true}, false, "metadata.name: Invalid value: \"MyVMService\": a DNS-1123 label must consist of lower case alphanumeric", nil),
+		Entry("should deny invalid name", createArgs{invalidDNSName: true}, false, "metadata.name: Invalid value: \"MyVMService\": a lowercase RFC 1123 label must consist of lower case alphanumeric character", nil),
 		Entry("should deny no type", createArgs{emptyType: true}, false, "spec.type: Required value", nil),
 		Entry("should deny invalid type", createArgs{invalidType: true}, false, "spec.type: Unsupported value: \"InvalidLB\":", nil),
 		Entry("should deny invalid ports", createArgs{invalidPorts: true}, false, "spec.ports: Required value", nil),
@@ -132,7 +132,7 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid ClusterIP", createArgs{invalidClusterIP: true}, false, "spec.clusterIP: Invalid value: \"100.1000.1.1\": must be a valid IP address", nil),
 		Entry("should deny invalid LoadBalancerIP", createArgs{invalidLoadBalancerIP: true}, false, "spec.loadBalancerIP: Invalid value: \"500.1.1.1\": must be a valid IP address", nil),
 		Entry("should deny invalid LoadBalancerSourceRanges", createArgs{invalidLBSourceRanges: true}, false, "spec.loadBalancerSourceRanges: Invalid value: \"[10.1.1.1/42]", nil),
-		Entry("should deny invalid ExternalName", createArgs{invalidExternalName: true}, false, "spec.externalName: Invalid value: \"InValid!\": a DNS-1123 subdomain", nil),
+		Entry("should deny invalid ExternalName", createArgs{invalidExternalName: true}, false, "spec.externalName: Invalid value: \"InValid!\": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters", nil),
 	)
 
 	validatePortCreate := func(expectedReason string, ports []vmopv1.VirtualMachineServicePort) {

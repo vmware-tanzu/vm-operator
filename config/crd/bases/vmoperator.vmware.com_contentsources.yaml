@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.4.1
+    controller-gen.kubebuilder.io/version: v0.6.2
   creationTimestamp: null
   name: contentsources.vmoperator.vmware.com
 spec:
@@ -19,13 +19,19 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ContentSource is the Schema for the contentsources API. A ContentSource represents the desired specification and the observed status of a ContentSource instance.
+        description: ContentSource is the Schema for the contentsources API. A ContentSource
+          represents the desired specification and the observed status of a ContentSource
+          instance.
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
             type: string
           metadata:
             type: object
@@ -33,7 +39,8 @@ spec:
             description: ContentSourceSpec defines the desired state of ContentSource
             properties:
               providerRef:
-                description: ProviderRef is a reference to a content provider object that describes a provider.
+                description: ProviderRef is a reference to a content provider object
+                  that describes a provider.
                 properties:
                   apiVersion:
                     description: API version of the referent.
@@ -45,7 +52,8 @@ spec:
                     description: Name is the name of resource being referenced.
                     type: string
                   namespace:
-                    description: Namespace of the resource being referenced. If empty, cluster scoped resource is assumed.
+                    description: Namespace of the resource being referenced. If empty,
+                      cluster scoped resource is assumed.
                     type: string
                 required:
                 - kind

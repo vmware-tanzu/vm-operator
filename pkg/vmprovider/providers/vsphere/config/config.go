@@ -363,7 +363,7 @@ func PatchVcURLInConfigMap(client ctrlruntime.Client, vcPNID, vcPort string) err
 		return err
 	}
 
-	origConfigMap := configMap.DeepCopyObject()
+	origConfigMap := configMap.DeepCopyObject().(ctrlruntime.Object)
 	configMap.Data[vcPNIDKey] = vcPNID
 	configMap.Data[vcPortKey] = vcPort
 

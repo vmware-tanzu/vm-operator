@@ -5,9 +5,10 @@ package simplelb
 
 import (
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
-	logr_testing "github.com/go-logr/logr/testing"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -26,7 +27,7 @@ var _ = Describe("xdsServer", func() {
 
 	x := &xdsServer{
 		snapshotCache: cache.NewSnapshotCache(false, cache.IDHash{}, nil),
-		log:           logr_testing.NullLogger{},
+		log:           logr.DiscardLogger{},
 	}
 
 	svc := &corev1.Service{

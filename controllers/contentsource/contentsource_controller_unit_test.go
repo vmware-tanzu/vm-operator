@@ -355,6 +355,7 @@ func unitTestsCRUDImage() {
 
 			It("successfully updates the images", func() {
 				// Modify the VirtualMachineImage spec
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(&image), &images[0])).To(Succeed())
 				images[0].Spec.Type = "updated-dummy-type"
 				imgBeforeUpdate := images[0]
 

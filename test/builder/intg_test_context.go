@@ -10,7 +10,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
-	"github.com/go-logr/logr/testing"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,7 +27,7 @@ type IntegrationTestContext struct {
 }
 
 func (*IntegrationTestContext) GetLogger() logr.Logger {
-	return testing.NullLogger{}
+	return logr.DiscardLogger{}
 }
 
 // AfterEach should be invoked by ginkgo.AfterEach to destroy the test namespace

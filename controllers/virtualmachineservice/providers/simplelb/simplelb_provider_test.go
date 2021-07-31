@@ -6,9 +6,10 @@ package simplelb
 import (
 	"context"
 
-	logr_testing "github.com/go-logr/logr/testing"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -63,7 +64,7 @@ var _ = Describe("", func() {
 	simpleLbProvider := simpleLoadBalancerProvider{
 		client:       client,
 		controlPlane: controlPlane,
-		log:          logr_testing.NullLogger{},
+		log:          logr.DiscardLogger{},
 	}
 
 	Context("EnsureLoadBalancer()", func() {

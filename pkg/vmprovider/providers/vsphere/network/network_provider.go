@@ -391,7 +391,7 @@ func (np *netOpNetworkProvider) waitForReadyNetworkInterface(
 	err := wait.PollImmediate(retryInterval, retryTimeout, func() (bool, error) {
 		instance := &netopv1alpha1.NetworkInterface{}
 		if err := np.k8sClient.Get(vmCtx, netIfKey, instance); err != nil {
-			return false, err
+			return false, ctrlruntime.IgnoreNotFound(err)
 		}
 
 		for _, cond := range instance.Status.Conditions {
@@ -614,7 +614,7 @@ func (np *nsxtNetworkProvider) waitForReadyVirtualNetworkInterface(
 	err := wait.PollImmediate(retryInterval, retryTimeout, func() (bool, error) {
 		instance := &ncpv1alpha1.VirtualNetworkInterface{}
 		if err := np.k8sClient.Get(vmCtx, vnetIfKey, instance); err != nil {
-			return false, err
+			return false, ctrlruntime.IgnoreNotFound(err)
 		}
 
 		for _, condition := range instance.Status.Conditions {

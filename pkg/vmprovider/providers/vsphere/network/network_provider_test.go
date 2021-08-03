@@ -347,7 +347,7 @@ var _ = Describe("NetworkProvider", func() {
 					It("should return an error", func() {
 						_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("networkinterfaces.netoperator.vmware.com \"does-not-exist\" not found"))
+						Expect(err.Error()).To(ContainSubstring("timed out waiting for the condition"))
 					})
 				})
 

@@ -30,6 +30,7 @@ import (
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 )
 
@@ -83,11 +84,10 @@ func (l InterfaceInfoList) GetVirtualDeviceList() object.VirtualDeviceList {
 	return devList
 }
 
-type NetplanEthernetNameserver struct {
-	Addresses []string `yaml:"addresses,omitempty"`
-}
-type NetplanEthernetMatch struct {
-	MacAddress string `yaml:"macaddress,omitempty"`
+// Netplan representation described in https://via.vmw.com/cloud-init-netplan
+type Netplan struct {
+	Version   int                        `yaml:"version,omitempty"`
+	Ethernets map[string]NetplanEthernet `yaml:"ethernets,omitempty"`
 }
 type NetplanEthernet struct {
 	Match       NetplanEthernetMatch      `yaml:"match,omitempty"`
@@ -96,8 +96,14 @@ type NetplanEthernet struct {
 	Gateway4    string                    `yaml:"gateway4,omitempty"`
 	Nameservers NetplanEthernetNameserver `yaml:"nameservers,omitempty"`
 }
+type NetplanEthernetMatch struct {
+	MacAddress string `yaml:"macaddress,omitempty"`
+}
+type NetplanEthernetNameserver struct {
+	Addresses []string `yaml:"addresses,omitempty"`
+}
 
-func (l InterfaceInfoList) GetNetplanEthernets(currentEthCards object.VirtualDeviceList, dnsServers []string) (map[string]NetplanEthernet, error) {
+func (l InterfaceInfoList) GetNetplan(currentEthCards object.VirtualDeviceList, dnsServers []string) Netplan {
 	ethernets := make(map[string]NetplanEthernet)
 
 	for index, info := range l {
@@ -119,7 +125,11 @@ func (l InterfaceInfoList) GetNetplanEthernets(currentEthCards object.VirtualDev
 		name := fmt.Sprintf("nic%d", index)
 		ethernets[name] = netplanEthernet
 	}
-	return ethernets, nil
+
+	return Netplan{
+		Version:   constants.NetPlanVersion,
+		Ethernets: ethernets,
+	}
 }
 
 func (l InterfaceInfoList) GetInterfaceCustomizations() []vimtypes.CustomizationAdapterMapping {

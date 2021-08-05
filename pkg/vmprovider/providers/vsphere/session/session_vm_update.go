@@ -4,159 +4,27 @@
 package session
 
 import (
-	"bytes"
 	"fmt"
 	"reflect"
-	"strconv"
 	"strings"
 	"text/template"
 
-	"gopkg.in/yaml.v2"
+	vimTypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
-	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/task"
-	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
-
-func IsCustomizationPendingExtraConfig(extraConfig []vimTypes.BaseOptionValue) bool {
-	for _, opt := range extraConfig {
-		if optValue := opt.GetOptionValue(); optValue != nil {
-			if optValue.Key == constants.GOSCPendingExtraConfigKey {
-				return optValue.Value.(string) != ""
-			}
-		}
-	}
-	return false
-}
-
-func isCustomizationPendingError(err error) bool {
-	if te, ok := err.(task.Error); ok {
-		if _, ok := te.Fault().(*vimTypes.CustomizationPending); ok {
-			return true
-		}
-	}
-	return false
-}
-
-func GetLinuxCustomizationSpec(vmName string, updateArgs VMUpdateArgs) *vimTypes.CustomizationSpec {
-	return &vimTypes.CustomizationSpec{
-		Identity: &vimTypes.CustomizationLinuxPrep{
-			HostName: &vimTypes.CustomizationFixedName{
-				Name: vmName,
-			},
-			HwClockUTC: vimTypes.NewBool(true),
-		},
-		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{
-			DnsServerList: updateArgs.DNSServers,
-		},
-		NicSettingMap: updateArgs.NetIfList.GetInterfaceCustomizations(),
-	}
-}
-
-type Netplan struct {
-	Version   int                                `yaml:"version,omitempty"`
-	Ethernets map[string]network.NetplanEthernet `yaml:"ethernets,omitempty"`
-}
-
-// CloudInitMetadata is used to set metadata field in
-// CloudInitPrep customization spec.
-type CloudInitMetadata struct {
-	InstanceID    string  `yaml:"instance-id,omitempty"`
-	LocalHostname string  `yaml:"local-hostname,omitempty"`
-	Hostname      string  `yaml:"hostname,omitempty"`
-	Network       Netplan `yaml:"network,omitempty"`
-}
-
-func GetCloudInitPrepCustomizationSpec(vmName string, currentEthCards object.VirtualDeviceList, updateArgs VMUpdateArgs) (*vimTypes.CustomizationSpec, error) {
-	netplanEthernets, err := updateArgs.NetIfList.GetNetplanEthernets(currentEthCards, updateArgs.DNSServers)
-	if err != nil {
-		return nil, fmt.Errorf("error getting netplanEthernets %v", err)
-	}
-
-	metadataObj := &CloudInitMetadata{
-		InstanceID:    vmName,
-		LocalHostname: vmName,
-		Hostname:      vmName,
-		Network: Netplan{
-			Version:   constants.NetPlanVersion,
-			Ethernets: netplanEthernets,
-		},
-	}
-
-	metadataBytes, err := yaml.Marshal(metadataObj)
-	if err != nil {
-		return nil, fmt.Errorf("yaml marshalling of CloudinitPrep metadata failed %v", err)
-	}
-
-	return &vimTypes.CustomizationSpec{
-		Identity: &internal.CustomizationCloudinitPrep{
-			Metadata: string(metadataBytes),
-			Userdata: updateArgs.VMMetadata.Data["user-data"],
-		},
-	}, nil
-}
-
-func (s *Session) customizeVM(
-	vmCtx context.VMContext,
-	resVM *res.VirtualMachine,
-	config *vimTypes.VirtualMachineConfigInfo,
-	updateArgs VMUpdateArgs) error {
-
-	if val := vmCtx.VM.Annotations[constants.VSphereCustomizationBypassKey]; val == constants.VSphereCustomizationBypassDisable {
-		vmCtx.Logger.Info("Skipping vsphere customization because of vsphere-customization bypass annotation")
-		return nil
-	}
-
-	if IsCustomizationPendingExtraConfig(config.ExtraConfig) {
-		vmCtx.Logger.Info("Skipping customization because it is already pending")
-		// TODO: We should really determine if the pending customization is stale, clear it
-		// if so, and then re-customize. Otherwise, the Customize call could perpetually fail
-		// preventing power on.
-		return nil
-	}
-
-	var customizationSpec *vimTypes.CustomizationSpec
-	if updateArgs.VMMetadata != nil && updateArgs.VMMetadata.Transport == v1alpha1.VirtualMachineMetadataCloudInitTransport {
-		currentEthCards, err := resVM.GetNetworkDevices(vmCtx)
-		if err != nil {
-			return err
-		}
-
-		customizationSpec, err = GetCloudInitPrepCustomizationSpec(vmCtx.VM.Name, currentEthCards, updateArgs)
-		if err != nil {
-			return err
-		}
-	} else {
-		// TODO: Don't assume Linux; support Windows.
-		customizationSpec = GetLinuxCustomizationSpec(vmCtx.VM.Name, updateArgs)
-	}
-
-	vmCtx.Logger.Info("Customizing VM", "customizationSpec", *customizationSpec)
-	if err := resVM.Customize(vmCtx, *customizationSpec); err != nil {
-		// isCustomizationPendingExtraConfig() above is supposed to prevent this error, but
-		// handle it explicitly here just in case so VM reconciliation can proceed.
-		if !isCustomizationPendingError(err) {
-			return err
-		}
-	}
-
-	return nil
-}
 
 func ethCardMatch(newEthCard, curEthCard *vimTypes.VirtualEthernetCard) bool {
 	if newEthCard.AddressType == string(vimTypes.VirtualEthernetCardMacTypeManual) {
@@ -440,7 +308,6 @@ func UpdateConfigSpecExtraConfig(
 	vmImage *v1alpha1.VirtualMachineImage,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	vm *v1alpha1.VirtualMachine,
-	vmMetadata *vmprovider.VMMetadata,
 	globalExtraConfig map[string]string) {
 
 	// The only use of this is for the global JSON_EXTRA_CONFIG to set the image name.
@@ -461,14 +328,6 @@ func UpdateConfigSpecExtraConfig(
 		extraConfig[k] = renderTemplateFn(k, v)
 	}
 
-	if vmMetadata != nil && vmMetadata.Transport == v1alpha1.VirtualMachineMetadataExtraConfigTransport {
-		for k, v := range vmMetadata.Data {
-			if strings.HasPrefix(k, constants.ExtraConfigGuestInfoPrefix) {
-				extraConfig[k] = v
-			}
-		}
-	}
-
 	virtualDevices := vmClassSpec.Hardware.Devices
 	if len(virtualDevices.VGPUDevices) > 0 || len(virtualDevices.DynamicDirectPathIODevices) > 0 {
 		// Add "maintenance.vm.evacuation.poweroff" extraConfig key when GPU devices are present in the VMClass Spec.
@@ -476,27 +335,15 @@ func UpdateConfigSpecExtraConfig(
 		setMMIOExtraConfig(vm, extraConfig)
 	}
 
-	currentExtraConfig := make(map[string]string)
-	for _, opt := range config.ExtraConfig {
-		if optValue := opt.GetOptionValue(); optValue != nil {
-			// BMV: Is this cast to string always safe?
-			currentExtraConfig[optValue.Key] = optValue.Value.(string)
-		}
-	}
+	configSpec.ExtraConfig = MergeExtraConfig(config.ExtraConfig, extraConfig)
 
-	for k, v := range extraConfig {
-		// Only add the key/value to the ExtraConfig if the key is not present, to let to the value be
-		// changed by the VM. The existing usage of ExtraConfig is hard to fit in the reconciliation model.
-		if _, exists := currentExtraConfig[k]; !exists {
-			configSpec.ExtraConfig = append(configSpec.ExtraConfig, &vimTypes.OptionValue{Key: k, Value: v})
+	if conditions.IsTrue(vmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) {
+		ecMap := ExtraConfigToMap(config.ExtraConfig)
+		if ecMap[constants.VMOperatorV1Alpha1ExtraConfigKey] == constants.VMOperatorV1Alpha1ConfigReady {
+			// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
+			configSpec.ExtraConfig = append(configSpec.ExtraConfig,
+				&vimTypes.OptionValue{Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigEnabled})
 		}
-	}
-
-	if conditions.IsTrue(vmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) &&
-		currentExtraConfig[constants.VMOperatorV1Alpha1ExtraConfigKey] == constants.VMOperatorV1Alpha1ConfigReady {
-		// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
-		configSpec.ExtraConfig = append(configSpec.ExtraConfig,
-			&vimTypes.OptionValue{Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigEnabled})
 	}
 }
 
@@ -508,26 +355,6 @@ func setMMIOExtraConfig(vm *v1alpha1.VirtualMachine, extraConfig map[string]stri
 	if mmioSize != "0" {
 		extraConfig[constants.PCIPassthruMMIOExtraConfigKey] = constants.ExtraConfigTrue
 		extraConfig[constants.PCIPassthruMMIOSizeExtraConfigKey] = mmioSize
-	}
-}
-
-func UpdateConfigSpecVAppConfig(
-	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec *vimTypes.VirtualMachineConfigSpec,
-	vmMetadata *vmprovider.VMMetadata) {
-
-	if config.VAppConfig == nil || vmMetadata == nil || vmMetadata.Transport != v1alpha1.VirtualMachineMetadataOvfEnvTransport {
-		return
-	}
-
-	vAppConfigInfo := config.VAppConfig.GetVmConfigInfo()
-	if vAppConfigInfo == nil {
-		return
-	}
-
-	vmConfigSpec := GetMergedvAppConfigSpec(vmMetadata.Data, vAppConfigInfo.Property)
-	if vmConfigSpec != nil {
-		configSpec.VAppConfig = vmConfigSpec
 	}
 }
 
@@ -586,19 +413,18 @@ func UpdateConfigSpecFirmware(
 func updateConfigSpec(
 	vmCtx context.VMContext,
 	config *vimTypes.VirtualMachineConfigInfo,
-	vmImage *v1alpha1.VirtualMachineImage,
-	vmClassSpec v1alpha1.VirtualMachineClassSpec,
-	vmMetadata *vmprovider.VMMetadata,
+	updateArgs VMUpdateArgs,
 	globalExtraConfig map[string]string,
 	minCPUFreq uint64) *vimTypes.VirtualMachineConfigSpec {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
+	vmImage := updateArgs.VMImage
+	vmClassSpec := updateArgs.VMClass.Spec
 
 	UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
 	UpdateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, minCPUFreq)
 	UpdateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
-	UpdateConfigSpecExtraConfig(config, configSpec, vmImage, &vmClassSpec, vmCtx.VM, vmMetadata, globalExtraConfig)
-	UpdateConfigSpecVAppConfig(config, configSpec, vmMetadata)
+	UpdateConfigSpecExtraConfig(config, configSpec, vmImage, &vmClassSpec, vmCtx.VM, globalExtraConfig)
 	UpdateConfigSpecChangeBlockTracking(config, configSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 
@@ -613,9 +439,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 	configSpec := updateConfigSpec(
 		vmCtx,
 		config,
-		updateArgs.VMImage,
-		updateArgs.VMClass.Spec,
-		updateArgs.VMMetadata,
+		updateArgs,
 		s.extraConfig,
 		s.GetCPUMinMHzInCluster(),
 	)
@@ -721,45 +545,6 @@ func (s *Session) fakeUpClonedNetIfList(
 	return netIfList
 }
 
-// TemplateData is used to specify templating values
-// for guest customization data. Users will be able
-// to specify fields from this struct as values
-// for customization. E.g.: {{ (index .NetworkInterfaces 0).Gateway }}.
-type TemplateData struct {
-	NetworkInterfaces []network.IPConfig
-	NameServers       []string
-}
-
-func UpdateVMConfigArgsTemplates(vmCtx context.VMContext, updateArgs VMUpdateArgs) {
-	templateData := TemplateData{}
-	templateData.NetworkInterfaces = updateArgs.NetIfList.GetIPConfigs()
-	templateData.NameServers = updateArgs.DNSServers
-
-	renderTemplate := func(name, templateStr string) string {
-		templ, err := template.New(name).Parse(templateStr)
-		if err != nil {
-			vmCtx.Logger.Error(err, "failed to parse template", "templateStr", templateStr)
-			// TODO: emit related events
-			return templateStr
-		}
-		var doc bytes.Buffer
-		err = templ.Execute(&doc, &templateData)
-		if err != nil {
-			vmCtx.Logger.Error(err, "failed to execute template", "templateStr", templateStr)
-			// TODO: emit related events
-			return templateStr
-		}
-		return doc.String()
-	}
-
-	if updateArgs.VMMetadata != nil {
-		data := updateArgs.VMMetadata.Data
-		for key, val := range data {
-			data[key] = renderTemplate(key, val)
-		}
-	}
-}
-
 func (s *Session) ensureCNSVolumes(vmCtx context.VMContext) error {
 	// If VM spec has a PVC, check if the volume is attached before powering on
 	for _, volume := range vmCtx.VM.Spec.Volumes {
@@ -824,18 +609,12 @@ func (s *Session) prepareVMForPowerOn(
 		DNSServers:   dnsServers,
 	}
 
-	if lib.IsVMServiceV1Alpha2FSSEnabled() {
-		// For templating errors, only logged the error instead of failing completely.
-		// Maybe emit a warning event to VM?
-		UpdateVMConfigArgsTemplates(vmCtx, updateArgs)
-	}
-
 	err = s.prePowerOnVMReconfigure(vmCtx, resVM, cfg, updateArgs)
 	if err != nil {
 		return err
 	}
 
-	err = s.customizeVM(vmCtx, resVM, cfg, updateArgs)
+	err = s.customize(vmCtx, resVM, cfg, updateArgs)
 	if err != nil {
 		return err
 	}
@@ -911,132 +690,6 @@ func (s *Session) attachTagsAndModules(
 	}
 	tagCategoryName := s.tagInfo[config.ProviderTagCategoryNameKey]
 	return s.AttachTagToVM(vmCtx, tagName, tagCategoryName, vmRef)
-}
-
-func ipCIDRNotation(ipAddress string, prefix int32) string {
-	return ipAddress + "/" + strconv.Itoa(int(prefix))
-}
-
-func NicInfoToNetworkIfStatus(nicInfo vimTypes.GuestNicInfo) v1alpha1.NetworkInterfaceStatus {
-	IPAddresses := make([]string, 0, len(nicInfo.IpConfig.IpAddress))
-	for _, ipAddress := range nicInfo.IpConfig.IpAddress {
-		IPAddresses = append(IPAddresses, ipCIDRNotation(ipAddress.IpAddress, ipAddress.PrefixLength))
-	}
-
-	return v1alpha1.NetworkInterfaceStatus{
-		Connected:   nicInfo.Connected,
-		MacAddress:  nicInfo.MacAddress,
-		IpAddresses: IPAddresses,
-	}
-}
-
-func MarkCustomizationInfoCondition(vm *v1alpha1.VirtualMachine, guestInfo *vimTypes.GuestInfo) {
-	if guestInfo == nil || guestInfo.CustomizationInfo == nil {
-		conditions.MarkUnknown(vm, v1alpha1.GuestCustomizationCondition, "", "")
-		return
-	}
-
-	switch guestInfo.CustomizationInfo.CustomizationStatus {
-	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE), "":
-		conditions.MarkTrue(vm, v1alpha1.GuestCustomizationCondition)
-	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING):
-		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, v1alpha1.GuestCustomizationPendingReason, v1alpha1.ConditionSeverityInfo, "")
-	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING):
-		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, v1alpha1.GuestCustomizationRunningReason, v1alpha1.ConditionSeverityInfo, "")
-	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED):
-		conditions.MarkTrue(vm, v1alpha1.GuestCustomizationCondition)
-	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_FAILED):
-		errorMsg := guestInfo.CustomizationInfo.ErrorMsg
-		if errorMsg == "" {
-			errorMsg = "vSphere VM Customization failed due to an unknown error."
-		}
-		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, v1alpha1.GuestCustomizationFailedReason, v1alpha1.ConditionSeverityError, errorMsg)
-	default:
-		errorMsg := guestInfo.CustomizationInfo.ErrorMsg
-		if errorMsg == "" {
-			errorMsg = "Unexpected VM Customization status"
-		}
-		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, "", v1alpha1.ConditionSeverityError, errorMsg)
-	}
-}
-
-func MarkVMToolsRunningStatusCondition(vm *v1alpha1.VirtualMachine, guestInfo *vimTypes.GuestInfo) {
-	if guestInfo == nil || guestInfo.ToolsRunningStatus == "" {
-		conditions.MarkUnknown(vm, v1alpha1.VirtualMachineToolsCondition, "", "")
-		return
-	}
-
-	switch guestInfo.ToolsRunningStatus {
-	case string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsNotRunning):
-		msg := "VMware Tools is not running"
-		conditions.MarkFalse(vm, v1alpha1.VirtualMachineToolsCondition, v1alpha1.VirtualMachineToolsNotRunningReason,
-			v1alpha1.ConditionSeverityError, msg)
-	case string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsRunning), string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsExecutingScripts):
-		conditions.MarkTrue(vm, v1alpha1.VirtualMachineToolsCondition)
-	default:
-		msg := "Unexpected VMware Tools running status"
-		conditions.MarkUnknown(vm, v1alpha1.VirtualMachineToolsCondition, "", msg)
-	}
-}
-
-func (s *Session) updateVMStatus(
-	vmCtx context.VMContext,
-	resVM *res.VirtualMachine) error {
-
-	// TODO: We could be smarter about not re-fetching the config: if we didn't do a
-	// reconfigure or power change, the prior config is still entirely valid.
-	moVM, err := resVM.GetProperties(vmCtx, []string{"config.changeTrackingEnabled", "guest", "summary"})
-	if err != nil {
-		// Leave the current Status unchanged.
-		return err
-	}
-
-	var errs []error
-	vm := vmCtx.VM
-	summary := moVM.Summary
-
-	vm.Status.Phase = v1alpha1.Created
-	vm.Status.PowerState = v1alpha1.VirtualMachinePowerState(summary.Runtime.PowerState)
-	vm.Status.UniqueID = resVM.MoRef().Value
-	vm.Status.BiosUUID = summary.Config.Uuid
-	vm.Status.InstanceUUID = summary.Config.InstanceUuid
-
-	if host := summary.Runtime.Host; host != nil {
-		hostSystem := object.NewHostSystem(s.Client.VimClient(), *host)
-		if hostName, err := hostSystem.ObjectName(vmCtx); err != nil {
-			// Leave existing vm.Status.Host value.
-			errs = append(errs, err)
-		} else {
-			vm.Status.Host = hostName
-		}
-	} else {
-		vm.Status.Host = ""
-	}
-
-	guestInfo := moVM.Guest
-
-	if guestInfo != nil {
-		vm.Status.VmIp = guestInfo.IpAddress
-		var networkIfStatuses []v1alpha1.NetworkInterfaceStatus
-		for _, nicInfo := range guestInfo.Net {
-			networkIfStatuses = append(networkIfStatuses, NicInfoToNetworkIfStatus(nicInfo))
-		}
-		vm.Status.NetworkInterfaces = networkIfStatuses
-	} else {
-		vm.Status.VmIp = ""
-		vm.Status.NetworkInterfaces = nil
-	}
-
-	MarkCustomizationInfoCondition(vm, guestInfo)
-	MarkVMToolsRunningStatusCondition(vm, guestInfo)
-
-	if config := moVM.Config; config != nil {
-		vm.Status.ChangeBlockTracking = config.ChangeTrackingEnabled
-	} else {
-		vm.Status.ChangeBlockTracking = nil
-	}
-
-	return k8serrors.NewAggregate(errs)
 }
 
 func (s *Session) UpdateVirtualMachine(

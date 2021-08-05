@@ -183,12 +183,12 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 	}
 
 	vmoperatorImageSupportedCheck := vm.Annotations[constants.VMOperatorImageSupportedCheckKey]
-	virtualMachineMetadataTransport := vm.Spec.VmMetadata.Transport
 
 	if vmoperatorImageSupportedCheck == constants.VMOperatorImageSupportedCheckDisable {
 		return validationErrs
 	}
-	if virtualMachineMetadataTransport == vmopv1.VirtualMachineMetadataCloudInitTransport {
+
+	if vm.Spec.VmMetadata != nil && vm.Spec.VmMetadata.Transport == vmopv1.VirtualMachineMetadataCloudInitTransport {
 		return validationErrs
 	}
 

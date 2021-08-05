@@ -513,23 +513,22 @@ func (r *Reconciler) getVMClass(ctx *context.VirtualMachineContext) (*vmopv1alph
 	return vmClass, nil
 }
 
-func (r *Reconciler) getVMMetadata(ctx *context.VirtualMachineContext) (*vmprovider.VMMetadata, error) {
+func (r *Reconciler) getVMMetadata(ctx *context.VirtualMachineContext) (vmprovider.VMMetadata, error) {
 	inMetadata := ctx.VM.Spec.VmMetadata
+	outMetadata := vmprovider.VMMetadata{}
+
 	if inMetadata == nil {
-		return nil, nil
+		return outMetadata, nil
 	}
 
 	vmMetadataConfigMap := &corev1.ConfigMap{}
 	err := r.Get(ctx, client.ObjectKey{Name: inMetadata.ConfigMapName, Namespace: ctx.VM.Namespace}, vmMetadataConfigMap)
 	if err != nil {
-		return nil, err
+		return outMetadata, err
 	}
 
-	outMetadata := &vmprovider.VMMetadata{
-		Transport: inMetadata.Transport,
-		Data:      vmMetadataConfigMap.Data,
-	}
-
+	outMetadata.Transport = inMetadata.Transport
+	outMetadata.Data = vmMetadataConfigMap.Data
 	return outMetadata, nil
 }
 

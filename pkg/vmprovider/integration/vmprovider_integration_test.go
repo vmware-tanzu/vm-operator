@@ -62,7 +62,6 @@ func getVmConfigArgs(namespace, name string, imageName string) vmprovider.VMConf
 		VMClass:            *vmClass,
 		VMImage:            vmImage,
 		ResourcePolicy:     nil,
-		VMMetadata:         &vmprovider.VMMetadata{},
 		StorageProfileID:   "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
 		ContentLibraryUUID: integration.GetContentSourceID(),
 	}
@@ -117,7 +116,7 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 			vmName := "test-vm-vmp-invt-deploy"
 			storageProfileId := "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
 
-			vmMetadata := &vmprovider.VMMetadata{
+			vmMetadata := vmprovider.VMMetadata{
 				Transport: vmoperatorv1alpha1.VirtualMachineMetadataOvfEnvTransport,
 			}
 			imageName := "DC0_H0_VM0" // Default govcsim image name
@@ -198,7 +197,7 @@ var _ = Describe("VMProvider Tests", func() {
 			// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
 			// BMV: Not true anymore, and we can't set this via ExtraConfig transport anyways.
 			testIP := "10.0.0.1"
-			vmMetadata := &vmprovider.VMMetadata{
+			vmMetadata := vmprovider.VMMetadata{
 				Data:      map[string]string{"SET.guest.ipAddress": testIP},
 				Transport: vmoperatorv1alpha1.VirtualMachineMetadataExtraConfigTransport,
 			}
@@ -305,7 +304,6 @@ var _ = Describe("VMProvider Tests", func() {
 				VMClass:          *getVMClassInstance(sameVmName, vmNamespace1),
 				VMImage:          vmImage,
 				ResourcePolicy:   resourcePolicy1,
-				VMMetadata:       &vmprovider.VMMetadata{},
 				StorageProfileID: "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
 			}
 
@@ -313,7 +311,6 @@ var _ = Describe("VMProvider Tests", func() {
 				VMClass:          *getVMClassInstance(sameVmName, vmNamespace2),
 				VMImage:          vmImage,
 				ResourcePolicy:   resourcePolicy2,
-				VMMetadata:       &vmprovider.VMMetadata{},
 				StorageProfileID: "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
 			}
 

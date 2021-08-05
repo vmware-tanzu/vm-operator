@@ -18,7 +18,7 @@ type VMConfigArgs struct {
 	VMClass            v1alpha1.VirtualMachineClass
 	VMImage            *v1alpha1.VirtualMachineImage
 	ResourcePolicy     *v1alpha1.VirtualMachineSetResourcePolicy
-	VMMetadata         *VMMetadata
+	VMMetadata         VMMetadata
 	StorageProfileID   string
 	ContentLibraryUUID string
 }

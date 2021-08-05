@@ -48,8 +48,6 @@ const (
 	// VMImageCLVersionAnnotationVersion is the version of the VMImageCLVersionAnnotation for the VirtualMachineImage.
 	VMImageCLVersionAnnotationVersion = 1
 
-	// 64bitMMIO for Passthrough Devices.
-
 	PCIPassthruMMIOOverrideAnnotation = pkg.VMOperatorKey + "/pci-passthru-64bit-mmio-size"
 	PCIPassthruMMIOExtraConfigKey     = "pciPassthru.use64bitMMIO"    // nolint:gosec
 	PCIPassthruMMIOSizeExtraConfigKey = "pciPassthru.64bitMMIOSizeGB" // nolint:gosec
@@ -60,4 +58,13 @@ const (
 
 	// FirmwareOverrideAnnotation is the annotation key used for firmware override.
 	FirmwareOverrideAnnotation = pkg.VMOperatorKey + "/firmware"
+
+	CloudInitTypeAnnotation         = pkg.VMOperatorKey + "/cloudinit-type"
+	CloudInitTypeValueCloudInitPrep = "cloudinitprep"
+	CloudInitTypeValueGuestInfo     = "guestinfo"
+
+	CloudInitGuestInfoMetadata         = "guestinfo.metadata"
+	CloudInitGuestInfoMetadataEncoding = "guestinfo.metadata.encoding"
+	CloudInitGuestInfoUserdata         = "guestinfo.userdata"
+	CloudInitGuestInfoUserdataEncoding = "guestinfo.userdata.encoding"
 )

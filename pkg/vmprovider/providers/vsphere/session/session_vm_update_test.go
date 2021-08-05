@@ -6,15 +6,12 @@
 package session_test
 
 import (
-	goctx "context"
 	"fmt"
 	"sync/atomic"
 
-	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -23,11 +20,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 )
 
@@ -253,7 +246,6 @@ var _ = Describe("Update ConfigSpec", func() {
 		var vmImage *vmopv1alpha1.VirtualMachineImage
 		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
 		var vm *vmopv1alpha1.VirtualMachine
-		var vmMetadata *vmprovider.VMMetadata
 		var globalExtraConfig map[string]string
 		var ecMap map[string]string
 
@@ -265,10 +257,6 @@ var _ = Describe("Update ConfigSpec", func() {
 					Annotations: make(map[string]string),
 				},
 			}
-			vmMetadata = &vmprovider.VMMetadata{
-				Data:      make(map[string]string),
-				Transport: vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
-			}
 			globalExtraConfig = make(map[string]string)
 		})
 
@@ -279,7 +267,6 @@ var _ = Describe("Update ConfigSpec", func() {
 				vmImage,
 				vmClassSpec,
 				vm,
-				vmMetadata,
 				globalExtraConfig)
 
 			ecMap = make(map[string]string)
@@ -301,22 +288,17 @@ var _ = Describe("Update ConfigSpec", func() {
 				conditions.MarkTrue(vmImage, vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
 				config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{
 					Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigReady})
-				vmMetadata.Data["guestinfo.test"] = "test"
-				vmMetadata.Data["nvram"] = "this should ignored"
+				globalExtraConfig["guestinfo.test"] = "test"
 				globalExtraConfig["global"] = "test"
 			})
 
 			It("Expected configSpec.ExtraConfig", func() {
-				By("VM Metadata", func() {
-					Expect(ecMap).To(HaveKeyWithValue("guestinfo.test", "test"))
-					Expect(ecMap).ToNot(HaveKey("nvram"))
-				})
-
 				By("VM Image compatible", func() {
 					Expect(ecMap).To(HaveKeyWithValue("guestinfo.vmservice.defer-cloud-init", "enabled"))
 				})
 
 				By("Global map", func() {
+					Expect(ecMap).To(HaveKeyWithValue("guestinfo.test", "test"))
 					Expect(ecMap).To(HaveKeyWithValue("global", "test"))
 				})
 			})
@@ -325,7 +307,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		Context("ExtraConfig value already exists", func() {
 			BeforeEach(func() {
 				config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{Key: "foo", Value: "bar"})
-				vmMetadata.Data["foo"] = "bar"
+				globalExtraConfig["foo"] = "bar"
 			})
 
 			It("No changes", func() {
@@ -401,54 +383,6 @@ var _ = Describe("Update ConfigSpec", func() {
 						Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOSizeExtraConfigKey, "12345"))
 					})
 				})
-			})
-		})
-	})
-
-	Context("VAppConfig", func() {
-		var vmMetadata *vmprovider.VMMetadata
-
-		BeforeEach(func() {
-			vmMetadata = &vmprovider.VMMetadata{
-				Data:      make(map[string]string),
-				Transport: vmopv1alpha1.VirtualMachineMetadataOvfEnvTransport,
-			}
-		})
-
-		JustBeforeEach(func() {
-			session.UpdateConfigSpecVAppConfig(
-				config,
-				configSpec,
-				vmMetadata)
-		})
-
-		Context("Empty input", func() {
-			It("No changes", func() {
-				Expect(configSpec.VAppConfig).To(BeNil())
-			})
-		})
-
-		Context("update to user configurable field", func() {
-			BeforeEach(func() {
-				vmMetadata.Data["foo"] = "bar"
-				config.VAppConfig = &vimTypes.VmConfigInfo{
-					Property: []vimTypes.VAppPropertyInfo{
-						{
-							Id:               "foo",
-							Value:            "should-change",
-							UserConfigurable: pointer.BoolPtr(true),
-						},
-					},
-				}
-			})
-
-			It("Updates configSpec.VAppConfig", func() {
-				Expect(configSpec.VAppConfig).ToNot(BeNil())
-				vmCs := configSpec.VAppConfig.GetVmConfigSpec()
-				Expect(vmCs).ToNot(BeNil())
-				Expect(vmCs.Property).To(HaveLen(1))
-				Expect(vmCs.Property[0].Info).ToNot(BeNil())
-				Expect(vmCs.Property[0].Info.Value).To(Equal("bar"))
 			})
 		})
 	})
@@ -940,486 +874,6 @@ var _ = Describe("Update ConfigSpec", func() {
 			It("returns empty list", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(deviceChanges).To(BeEmpty())
-			})
-		})
-	})
-})
-
-var _ = Describe("Customization", func() {
-
-	Context("IsPending", func() {
-		var extraConfig []vimTypes.BaseOptionValue
-		var pending bool
-
-		BeforeEach(func() {
-			extraConfig = nil
-		})
-
-		JustBeforeEach(func() {
-			pending = session.IsCustomizationPendingExtraConfig(extraConfig)
-		})
-
-		Context("Empty ExtraConfig", func() {
-			It("not pending", func() {
-				Expect(pending).To(BeFalse())
-			})
-		})
-
-		Context("ExtraConfig with pending key", func() {
-			BeforeEach(func() {
-				extraConfig = append(extraConfig, &vimTypes.OptionValue{
-					Key:   constants.GOSCPendingExtraConfigKey,
-					Value: "/foo/bar",
-				})
-			})
-
-			It("is pending", func() {
-				Expect(pending).To(BeTrue())
-			})
-		})
-	})
-
-	Context("getLinuxCustomizationSpec", func() {
-		var (
-			updateArgs session.VMUpdateArgs
-			macaddress = "01-23-45-67-89-AB-CD-EF"
-			nameserver = "8.8.8.8"
-			vmName     = "dummy-vm"
-		)
-
-		customizationAdaptorMapping := &vimTypes.CustomizationAdapterMapping{
-			MacAddress: macaddress,
-		}
-
-		BeforeEach(func() {
-			updateArgs.DNSServers = []string{nameserver}
-			updateArgs.NetIfList = []network.InterfaceInfo{
-				{
-					Customization: customizationAdaptorMapping,
-				},
-			}
-		})
-
-		It("should return linux customization spec", func() {
-			spec := session.GetLinuxCustomizationSpec(vmName, updateArgs)
-			Expect(spec.GlobalIPSettings.DnsServerList).To(Equal(updateArgs.DNSServers))
-			Expect(spec.NicSettingMap).To(Equal([]vimTypes.CustomizationAdapterMapping{*customizationAdaptorMapping}))
-			linuxSpec := spec.Identity.(*vimTypes.CustomizationLinuxPrep)
-			hostName := linuxSpec.HostName.(*vimTypes.CustomizationFixedName).Name
-			Expect(hostName).To(Equal(vmName))
-		})
-	})
-
-	Context("getCloudInitPrepCustomizationSpec", func() {
-		var (
-			currentEthCards  object.VirtualDeviceList
-			updateArgs       session.VMUpdateArgs
-			expectedMetadata session.CloudInitMetadata
-			userdata         = "dummy-cloudInit-userdata"
-			addrs            = []string{"192.168.1.37"}
-			gateway          = "192.168.1.1"
-			nameserver       = "8.8.8.8"
-			macaddress       = "01-23-45-67-89-AB-CD-EF"
-			vmName           = "dummy-vm"
-		)
-
-		BeforeEach(func() {
-			netPlanEth := network.NetplanEthernet{
-				Dhcp4:       false,
-				Addresses:   addrs,
-				Gateway4:    gateway,
-				Nameservers: network.NetplanEthernetNameserver{},
-			}
-
-			updateArgs.DNSServers = []string{nameserver}
-			updateArgs.NetIfList = []network.InterfaceInfo{
-				{
-					NetplanEthernet: netPlanEth,
-				},
-			}
-			updateArgs.VMMetadata = &vmprovider.VMMetadata{
-				Data: map[string]string{
-					"user-data": userdata,
-				},
-			}
-
-			expectedNetPlanEth := netPlanEth
-
-			// Irrespective of the networkType, macAddress should be assigned.
-			expectedNetPlanEth.Match.MacAddress = macaddress
-
-			// metadata.Network.Ethernets is a map and GetNetplanEthernets() set key as "nic" + (index in NetIfList)
-			// In this case, len(updateArgs.NetIfList) = 1. Hence, key = nic0
-			ethName := "nic0"
-
-			// Update nameserver settings in accordance to the expected value.
-			// getCloudInitPrepCustomizationSpec() injects nameserver settings for each ethernet
-			// as updateArgs.DNSServers.
-			expectedNetPlanEth.Nameservers.Addresses = updateArgs.DNSServers
-			expectedMetadata = session.CloudInitMetadata{
-				InstanceID:    vmName,
-				Hostname:      vmName,
-				LocalHostname: vmName,
-				Network: session.Netplan{
-					Version: constants.NetPlanVersion,
-					Ethernets: map[string]network.NetplanEthernet{
-						ethName: expectedNetPlanEth,
-					},
-				},
-			}
-		})
-
-		AfterEach(func() {
-			currentEthCards = nil
-		})
-
-		Context("NetOp - when MacAddress is not assigned to NetworkInterface", func() {
-			BeforeEach(func() {
-				ethCard, err := object.EthernetCardTypes().CreateEthernetCard("vmxnet3", nil)
-				Expect(err).ToNot(HaveOccurred())
-				ethCard.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeGenerated)
-				ethCard.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = macaddress
-				currentEthCards = append(currentEthCards, ethCard)
-
-				// There is only one element in NetIfList.
-				updateArgs.NetIfList[0].Device = ethCard
-			})
-
-			It("should return cloudinitPrep customization spec", func() {
-				spec, err := session.GetCloudInitPrepCustomizationSpec(vmName, currentEthCards, updateArgs)
-				Expect(err).ToNot(HaveOccurred())
-				cloudinitPrepSpec := spec.Identity.(*internal.CustomizationCloudinitPrep)
-				Expect(cloudinitPrepSpec.Userdata).To(Equal(userdata))
-				metadataBytes := []byte(cloudinitPrepSpec.Metadata)
-				metadata := session.CloudInitMetadata{}
-				err = yaml.Unmarshal(metadataBytes, &metadata)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(metadata).To(Equal(expectedMetadata))
-			})
-		})
-
-		Context("NCP - when MacAddress is assigned to NetworkInterface", func() {
-			BeforeEach(func() {
-				ethCard, err := object.EthernetCardTypes().CreateEthernetCard("vmxnet3", nil)
-				Expect(err).ToNot(HaveOccurred())
-				ethCard.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeManual)
-				ethCard.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = macaddress
-				currentEthCards = append(currentEthCards, ethCard)
-
-				// There is only one element in NetIfList.
-				updateArgs.NetIfList[0].Device = ethCard
-				updateArgs.NetIfList[0].NetplanEthernet.Match = network.NetplanEthernetMatch{
-					MacAddress: macaddress,
-				}
-			})
-
-			It("should return cloudinitPrep customization spec", func() {
-				spec, err := session.GetCloudInitPrepCustomizationSpec(vmName, currentEthCards, updateArgs)
-				Expect(err).ToNot(HaveOccurred())
-				cloudinitPrepSpec := spec.Identity.(*internal.CustomizationCloudinitPrep)
-				Expect(cloudinitPrepSpec.Userdata).To(Equal(userdata))
-				metadataBytes := []byte(cloudinitPrepSpec.Metadata)
-				metadata := session.CloudInitMetadata{}
-				err = yaml.Unmarshal(metadataBytes, &metadata)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(metadata).To(Equal(expectedMetadata))
-			})
-		})
-	})
-})
-
-var _ = Describe("Template", func() {
-	Context("update VmConfigArgs", func() {
-		var (
-			updateArgs session.VMUpdateArgs
-
-			ip         = "192.168.1.37"
-			subnetMask = "255.255.255.0"
-			gateway    = "192.168.1.1"
-			nameserver = "8.8.8.8"
-		)
-
-		vm := &vmopv1alpha1.VirtualMachine{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-vm",
-				Namespace: "dummy-ns",
-			},
-		}
-		vmCtx := context.VMContext{
-			Context: goctx.Background(),
-			Logger:  logf.Log.WithValues("vmName", vm.NamespacedName()),
-			VM:      vm,
-		}
-
-		BeforeEach(func() {
-			updateArgs.DNSServers = []string{nameserver}
-			updateArgs.NetIfList = []network.InterfaceInfo{
-				{
-					IPConfiguration: network.IPConfig{
-						IP:         ip,
-						SubnetMask: subnetMask,
-						Gateway:    gateway,
-					},
-				},
-			}
-			updateArgs.VMMetadata = &vmprovider.VMMetadata{
-				Data: make(map[string]string),
-			}
-		})
-
-		It("should resolve them correctly while specifying valid templates", func() {
-			updateArgs.VMMetadata.Data["ip"] = "{{ (index .NetworkInterfaces 0).IP }}"
-			updateArgs.VMMetadata.Data["subMask"] = "{{ (index .NetworkInterfaces 0).SubnetMask }}"
-			updateArgs.VMMetadata.Data["gateway"] = "{{ (index .NetworkInterfaces 0).Gateway }}"
-			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .NameServers 0) }}"
-
-			session.UpdateVMConfigArgsTemplates(vmCtx, updateArgs)
-
-			Expect(updateArgs.VMMetadata.Data["ip"]).To(Equal(ip))
-			Expect(updateArgs.VMMetadata.Data["subMask"]).To(Equal(subnetMask))
-			Expect(updateArgs.VMMetadata.Data["gateway"]).To(Equal(gateway))
-			Expect(updateArgs.VMMetadata.Data["nameserver"]).To(Equal(nameserver))
-		})
-
-		It("should use the original text if resolving template failed", func() {
-			updateArgs.VMMetadata.Data["ip"] = "{{ (index .NetworkInterfaces 100).IP }}"
-			updateArgs.VMMetadata.Data["subMask"] = "{{ invalidTemplate }}"
-			updateArgs.VMMetadata.Data["gateway"] = "{{ (index .NetworkInterfaces ).Gateway }}"
-			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .NameServers 0) }}"
-
-			session.UpdateVMConfigArgsTemplates(vmCtx, updateArgs)
-
-			Expect(updateArgs.VMMetadata.Data["ip"]).To(Equal("{{ (index .NetworkInterfaces 100).IP }}"))
-			Expect(updateArgs.VMMetadata.Data["subMask"]).To(Equal("{{ invalidTemplate }}"))
-			Expect(updateArgs.VMMetadata.Data["gateway"]).To(Equal("{{ (index .NetworkInterfaces ).Gateway }}"))
-			Expect(updateArgs.VMMetadata.Data["nameserver"]).To(Equal(nameserver))
-		})
-	})
-})
-
-var _ = Describe("Network Interfaces VM Status", func() {
-	Context("nicInfoToNetworkIfStatus", func() {
-		dummyMacAddress := "00:50:56:8c:7b:34"
-		dummyIPAddress1 := vimTypes.NetIpConfigInfoIpAddress{
-			IpAddress:    "192.168.128.5",
-			PrefixLength: 16,
-		}
-		dummyIPAddress2 := vimTypes.NetIpConfigInfoIpAddress{
-			IpAddress:    "fe80::250:56ff:fe8c:7b34",
-			PrefixLength: 64,
-		}
-		dummyIPConfig := &vimTypes.NetIpConfigInfo{
-			IpAddress: []vimTypes.NetIpConfigInfoIpAddress{
-				dummyIPAddress1,
-				dummyIPAddress2,
-			},
-		}
-		guestNicInfo := vimTypes.GuestNicInfo{
-			Connected:  true,
-			MacAddress: dummyMacAddress,
-			IpConfig:   dummyIPConfig,
-		}
-
-		It("returns populated NetworkInterfaceStatus", func() {
-			networkIfStatus := session.NicInfoToNetworkIfStatus(guestNicInfo)
-			Expect(networkIfStatus.MacAddress).To(Equal(dummyMacAddress))
-			Expect(networkIfStatus.Connected).To(BeTrue())
-			Expect(networkIfStatus.IpAddresses[0]).To(Equal("192.168.128.5/16"))
-			Expect(networkIfStatus.IpAddresses[1]).To(Equal("fe80::250:56ff:fe8c:7b34/64"))
-		})
-	})
-})
-
-var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
-	Context("markCustomizationInfoCondition", func() {
-		var (
-			vm        *vmopv1alpha1.VirtualMachine
-			guestInfo *vimTypes.GuestInfo
-		)
-
-		BeforeEach(func() {
-			vm = &vmopv1alpha1.VirtualMachine{}
-			guestInfo = &vimTypes.GuestInfo{
-				CustomizationInfo: &vimTypes.GuestInfoCustomizationInfo{},
-			}
-		})
-
-		JustBeforeEach(func() {
-			session.MarkCustomizationInfoCondition(vm, guestInfo)
-		})
-
-		Context("guestInfo unset", func() {
-			BeforeEach(func() {
-				guestInfo = nil
-			})
-			It("sets condition unknown", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.UnknownCondition(vmopv1alpha1.GuestCustomizationCondition, "", ""),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("customizationInfo unset", func() {
-			BeforeEach(func() {
-				guestInfo.CustomizationInfo = nil
-			})
-			It("sets condition unknown", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.UnknownCondition(vmopv1alpha1.GuestCustomizationCondition, "", ""),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("customizationInfo idle", func() {
-			BeforeEach(func() {
-				guestInfo.CustomizationInfo.CustomizationStatus = string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE)
-			})
-			It("sets condition true", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.GuestCustomizationCondition),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("customizationInfo pending", func() {
-			BeforeEach(func() {
-				guestInfo.CustomizationInfo.CustomizationStatus = string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING)
-			})
-			It("sets condition false", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, vmopv1alpha1.GuestCustomizationPendingReason, vmopv1alpha1.ConditionSeverityInfo, ""),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("customizationInfo running", func() {
-			BeforeEach(func() {
-				guestInfo.CustomizationInfo.CustomizationStatus = string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING)
-			})
-			It("sets condition false", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, vmopv1alpha1.GuestCustomizationRunningReason, vmopv1alpha1.ConditionSeverityInfo, ""),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("customizationInfo succeeded", func() {
-			BeforeEach(func() {
-				guestInfo.CustomizationInfo.CustomizationStatus = string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED)
-			})
-			It("sets condition true", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.GuestCustomizationCondition),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("customizationInfo failed", func() {
-			BeforeEach(func() {
-				guestInfo.CustomizationInfo.CustomizationStatus = string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_FAILED)
-				guestInfo.CustomizationInfo.ErrorMsg = "some error message"
-			})
-			It("sets condition false", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, vmopv1alpha1.GuestCustomizationFailedReason, vmopv1alpha1.ConditionSeverityError, guestInfo.CustomizationInfo.ErrorMsg),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("customizationInfo invalid", func() {
-			BeforeEach(func() {
-				guestInfo.CustomizationInfo.CustomizationStatus = "asdf"
-				guestInfo.CustomizationInfo.ErrorMsg = "some error message"
-			})
-			It("sets condition false", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, "", vmopv1alpha1.ConditionSeverityError, guestInfo.CustomizationInfo.ErrorMsg),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-	})
-})
-
-var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
-	Context("markVMToolsRunningStatusCondition", func() {
-		var (
-			vm        *vmopv1alpha1.VirtualMachine
-			guestInfo *vimTypes.GuestInfo
-		)
-
-		BeforeEach(func() {
-			vm = &vmopv1alpha1.VirtualMachine{}
-			guestInfo = &vimTypes.GuestInfo{
-				ToolsRunningStatus: "",
-			}
-		})
-
-		JustBeforeEach(func() {
-			session.MarkVMToolsRunningStatusCondition(vm, guestInfo)
-		})
-
-		Context("guestInfo is nil", func() {
-			BeforeEach(func() {
-				guestInfo = nil
-			})
-			It("sets condition unknown", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.UnknownCondition(vmopv1alpha1.VirtualMachineToolsCondition, "", ""),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("ToolsRunningStatus is empty", func() {
-			It("sets condition unknown", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.UnknownCondition(vmopv1alpha1.VirtualMachineToolsCondition, "", ""),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("vmtools is not running", func() {
-			BeforeEach(func() {
-				guestInfo.ToolsRunningStatus = string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsNotRunning)
-			})
-			It("sets condition to false", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.VirtualMachineToolsCondition, vmopv1alpha1.VirtualMachineToolsNotRunningReason, vmopv1alpha1.ConditionSeverityError, "VMware Tools is not running"),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("vmtools is running", func() {
-			BeforeEach(func() {
-				guestInfo.ToolsRunningStatus = string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsRunning)
-			})
-			It("sets condition true", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.VirtualMachineToolsCondition),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("vmtools is starting", func() {
-			BeforeEach(func() {
-				guestInfo.ToolsRunningStatus = string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsExecutingScripts)
-			})
-			It("sets condition true", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.VirtualMachineToolsCondition),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
-			})
-		})
-		Context("Unexpected vmtools running status", func() {
-			BeforeEach(func() {
-				guestInfo.ToolsRunningStatus = "blah"
-			})
-			It("sets condition unknown", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.UnknownCondition(vmopv1alpha1.VirtualMachineToolsCondition, "", "Unexpected VMware Tools running status"),
-				}
-				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
 		})
 	})

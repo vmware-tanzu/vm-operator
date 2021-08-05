@@ -839,7 +839,7 @@ var _ = Describe("Sessions", func() {
 					vm.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
 						Transport: vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
 					}
-					vmMetadata := &vmprovider.VMMetadata{
+					vmMetadata := vmprovider.VMMetadata{
 						Data:      map[string]string{localKey: localVal},
 						Transport: vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
 					}

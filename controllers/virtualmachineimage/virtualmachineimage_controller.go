@@ -40,16 +40,15 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 func NewReconciler(
 	client client.Client,
-	logger logr.Logger) *VirtualMachineImageReconciler {
-
-	return &VirtualMachineImageReconciler{
+	logger logr.Logger) *Reconciler {
+	return &Reconciler{
 		Client: client,
 		Logger: logger,
 	}
 }
 
-// VirtualMachineImageReconciler reconciles a VirtualMachineClass object
-type VirtualMachineImageReconciler struct {
+// Reconciler reconciles a VirtualMachineClass object.
+type Reconciler struct {
 	client.Client
 	Logger logr.Logger
 }
@@ -57,7 +56,7 @@ type VirtualMachineImageReconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages/status,verbs=get;update;patch
 
-func (r *VirtualMachineImageReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
 	vmImage := &vmopv1alpha1.VirtualMachineImage{}
 	err := r.Get(ctx, req.NamespacedName, vmImage)
 	if err != nil {
@@ -74,7 +73,7 @@ func (r *VirtualMachineImageReconciler) Reconcile(ctx goctx.Context, req ctrl.Re
 	return ctrl.Result{}, nil
 }
 
-func (r *VirtualMachineImageReconciler) ReconcileNormal(ctx goctx.Context) error {
+func (r *Reconciler) ReconcileNormal(ctx goctx.Context) error {
 	// NoOp
 	return nil
 }

@@ -25,7 +25,7 @@ var _ = Describe("xdsServer", func() {
 		ip2          = "21.22.23.24"
 	)
 
-	x := &xdsServer{
+	x := &XdsServer{
 		snapshotCache: cache.NewSnapshotCache(false, cache.IDHash{}, nil),
 		log:           logr.DiscardLogger{},
 	}

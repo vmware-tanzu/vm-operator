@@ -32,9 +32,7 @@ func unitTests() {
 
 const LabelServiceProxyName = "service.kubernetes.io/service-proxy-name"
 
-//nolint:dupl
 func unitTestsReconcile() {
-
 	var (
 		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
@@ -269,7 +267,6 @@ func unitTestsReconcile() {
 			})
 
 			Context("VirtualMachineService Spec is updated", func() {
-
 				It("Service Spec is updated accordingly", func() {
 					vmService.Spec.ExternalName = "new-external-name"
 					vmService.Spec.LoadBalancerIP = "new-lb-ip"
@@ -563,7 +560,6 @@ func unitTestsReconcile() {
 			})
 
 			Context("When VM has Readiness Probe", func() {
-
 				BeforeEach(func() {
 					vm1.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
 					vm2.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
@@ -617,7 +613,6 @@ func unitTestsReconcile() {
 			})
 
 			Context("Preserve VMs in Endpoints that have Probe but hasn't run yet", func() {
-
 				BeforeEach(func() {
 					vm1.UID = "abc"
 					vm1.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
@@ -675,9 +670,7 @@ func unitTestsReconcile() {
 // We should really instead refactor the provider interface so we don't have logic for
 // it in multiples places and can test it just in the existing provider tests. These
 // tests as-is need some improvement.
-//nolint:dupl,goconst
 func nsxtLBProviderTestsReconcile() {
-
 	var (
 		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
@@ -762,7 +755,6 @@ func nsxtLBProviderTestsReconcile() {
 		})
 
 		Describe("Create Or Update k8s Service", func() {
-
 			JustBeforeEach(func() {
 				err := reconciler.ReconcileNormal(vmServiceCtx)
 				Expect(err).NotTo(HaveOccurred())

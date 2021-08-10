@@ -105,7 +105,7 @@ func NewReconciler(
 
 var _ reconcile.Reconciler = &ReconcileVirtualMachineService{}
 
-// ReconcileVirtualMachineService reconciles a VirtualMachineService object
+// ReconcileVirtualMachineService reconciles a VirtualMachineService object.
 type ReconcileVirtualMachineService struct {
 	client.Client
 	log                  logr.Logger
@@ -247,7 +247,7 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *context.Virtual
 		return err
 	}
 
-	err = r.updateVmService(ctx, service)
+	err = r.updateVMService(ctx, service)
 	if err != nil {
 		ctx.Logger.Error(err, "Failed to update VirtualMachineService Status")
 		return err
@@ -288,7 +288,6 @@ func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMa
 func (r *ReconcileVirtualMachineService) setServiceAnnotationsAndLabels(
 	ctx *context.VirtualMachineServiceContext,
 	service *corev1.Service) error {
-
 	vmService := ctx.VMService
 
 	// TODO: Clean the provider interfaces here. This is way too verbose.
@@ -447,20 +446,18 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *context.Virt
 	return service, nil
 }
 
-func (r *ReconcileVirtualMachineService) getVirtualMachinesSelectedByVmService(
+func (r *ReconcileVirtualMachineService) getVirtualMachinesSelectedByVMService(
 	ctx goctx.Context,
 	vmService *vmopv1alpha1.VirtualMachineService) (*vmopv1alpha1.VirtualMachineList, error) {
-
 	vmList := &vmopv1alpha1.VirtualMachineList{}
 	err := r.List(ctx, vmList, client.InNamespace(vmService.Namespace), client.MatchingLabels(vmService.Spec.Selector))
 	return vmList, err
 }
 
-// getVMsReferencedByServiceEndpoints gets all VMs that are referenced by service endpoints
+// getVMsReferencedByServiceEndpoints gets all VMs that are referenced by service endpoints.
 func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(
 	ctx *context.VirtualMachineServiceContext,
 	service *corev1.Service) map[types.UID]struct{} {
-
 	endpoints := &corev1.Endpoints{}
 	if err := r.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, endpoints); err != nil {
 		ctx.Logger.Error(err, "Failed to get Endpoints")
@@ -482,19 +479,18 @@ func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(
 // Consider this as a candidate for profiling. SPOILER: It already is an issue.
 func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtualMachine(
 	ctx goctx.Context,
-	lookupVm *vmopv1alpha1.VirtualMachine) ([]*vmopv1alpha1.VirtualMachineService, error) {
-
-	var matchingVmServices []*vmopv1alpha1.VirtualMachineService
+	lookupVM *vmopv1alpha1.VirtualMachine) ([]*vmopv1alpha1.VirtualMachineService, error) {
+	var matchingVMServices []*vmopv1alpha1.VirtualMachineService
 
 	matchFunc := func(vmService *vmopv1alpha1.VirtualMachineService) error {
-		vmList, err := r.getVirtualMachinesSelectedByVmService(ctx, vmService)
+		vmList, err := r.getVirtualMachinesSelectedByVMService(ctx, vmService)
 		if err != nil {
 			return err
 		}
 
 		for _, vm := range vmList.Items {
-			if vm.Name == lookupVm.Name && vm.Namespace == lookupVm.Namespace {
-				matchingVmServices = append(matchingVmServices, vmService)
+			if vm.Name == lookupVM.Name && vm.Namespace == lookupVM.Namespace {
+				matchingVMServices = append(matchingVMServices, vmService)
 				// Only one match is needed to add vmService, so return now.
 				return nil
 			}
@@ -504,7 +500,7 @@ func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtu
 	}
 
 	vmServiceList := &vmopv1alpha1.VirtualMachineServiceList{}
-	err := r.List(ctx, vmServiceList, client.InNamespace(lookupVm.Namespace))
+	err := r.List(ctx, vmServiceList, client.InNamespace(lookupVM.Namespace))
 	if err != nil {
 		return nil, err
 	}
@@ -517,7 +513,7 @@ func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtu
 		}
 	}
 
-	return matchingVmServices, nil
+	return matchingVMServices, nil
 }
 
 // createOrUpdateEndpoints updates the Endpoints for VirtualMachineService.
@@ -600,8 +596,7 @@ func findVMPortNum(vm *vmopv1alpha1.VirtualMachine, port intstr.IntOrString, por
 // generateSubsetsForService generates Endpoints subsets for a given Service.
 func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 	ctx *context.VirtualMachineServiceContext, service *corev1.Service) ([]corev1.EndpointSubset, error) {
-
-	vmList, err := r.getVirtualMachinesSelectedByVmService(ctx, ctx.VMService)
+	vmList, err := r.getVirtualMachinesSelectedByVMService(ctx, ctx.VMService)
 	if err != nil {
 		return nil, err
 	}
@@ -689,8 +684,8 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 	return subsets, nil
 }
 
-// updateVmService syncs the VirtualMachineService Status from the Service status.
-func (r *ReconcileVirtualMachineService) updateVmService(ctx *context.VirtualMachineServiceContext, service *corev1.Service) error {
+// updateVMService syncs the VirtualMachineService Status from the Service status.
+func (r *ReconcileVirtualMachineService) updateVMService(ctx *context.VirtualMachineServiceContext, service *corev1.Service) error {
 	vmService := ctx.VMService
 
 	if vmService.Spec.Type == vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer {

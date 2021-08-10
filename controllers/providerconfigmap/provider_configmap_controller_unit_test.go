@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -29,11 +29,11 @@ func unitTestsCM() {
 			ctx         *builder.UnitTestContextForController
 
 			reconciler *providerconfigmap.ConfigMapReconciler
-			cm         *v1.ConfigMap
+			cm         *corev1.ConfigMap
 			clUUID     string
 		)
 
-		cm = &v1.ConfigMap{
+		cm = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-cs",
 				Namespace: "dummy-ns",
@@ -95,12 +95,12 @@ func unitTestsCM() {
 
 		Context("CreateContentSourceBindings", func() {
 			var (
-				workloadNS *v1.Namespace
+				workloadNS *corev1.Namespace
 			)
 			BeforeEach(func() {
 				cm.Data[config.ContentSourceKey] = clUUID
 
-				workloadNS = &v1.Namespace{
+				workloadNS = &corev1.Namespace{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-ns",
 						Labels: map[string]string{

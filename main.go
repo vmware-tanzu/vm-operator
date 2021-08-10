@@ -52,9 +52,9 @@ var (
 )
 
 const (
-	// serverKeyName is the name of the server private key
+	// serverKeyName is the name of the server private key.
 	serverKeyName = "tls.key"
-	// serverCertName is the name of the serving certificate
+	// serverCertName is the name of the serving certificate.
 	serverCertName = "tls.crt"
 )
 
@@ -249,10 +249,8 @@ func main() {
 		if err := controllers.AddToManager(ctx, mgr); err != nil {
 			return err
 		}
-		if err := webhooks.AddToManager(ctx, mgr); err != nil {
-			return err
-		}
-		return nil
+
+		return webhooks.AddToManager(ctx, mgr)
 	}
 
 	setupLog.Info("creating controller manager")

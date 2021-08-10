@@ -11,8 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	// Ignore nolint of stylecheck, since this is mostly a test helper for gomega asserts.
-	//nolint: stylecheck
 	. "github.com/onsi/gomega"
 )
 

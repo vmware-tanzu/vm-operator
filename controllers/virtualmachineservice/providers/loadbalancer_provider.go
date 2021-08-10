@@ -27,7 +27,7 @@ const (
 	LabelServiceProxyName = "service.kubernetes.io/service-proxy-name"
 )
 
-// LoadbalancerProvider sets up Loadbalancer for different type of Loadbalancer
+// LoadbalancerProvider sets up Loadbalancer for different type of Loadbalancer.
 type LoadbalancerProvider interface {
 	EnsureLoadBalancer(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) error
 
@@ -101,7 +101,7 @@ func (NoopLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context.Con
 type NsxtLoadbalancerProvider struct {
 }
 
-// NsxLoadbalancerProvider returns a nsxLoadbalancerProvider instance
+// NsxtLoadBalancerProvider returns a nsxLoadbalancerProvider instance.
 func NsxtLoadBalancerProvider() *NsxtLoadbalancerProvider {
 	return &NsxtLoadbalancerProvider{}
 }
@@ -111,7 +111,7 @@ func (nl *NsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmSe
 }
 
 // GetServiceLabels provides the intended NSX-T specific labels on Service. The
-// responsibility is left to the caller to actually set them
+// responsibility is left to the caller to actually set them.
 func (nl *NsxtLoadbalancerProvider) GetServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
 	res := make(map[string]string)
 
@@ -125,7 +125,7 @@ func (nl *NsxtLoadbalancerProvider) GetServiceLabels(ctx context.Context, vmServ
 }
 
 // GetToBeRemovedServiceLabels provides the to be removed NSX-T specific labels on
-// Service. The responsibility is left to the caller to actually clear them
+// Service. The responsibility is left to the caller to actually clear them.
 func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
 	res := make(map[string]string)
 
@@ -139,7 +139,7 @@ func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceLabels(ctx context.Cont
 }
 
 // GetServiceAnnotations provides the intended NSX-T specific annotations on
-// Service. The responsibility is left to the caller to actually set them
+// Service. The responsibility is left to the caller to actually set them.
 func (nl *NsxtLoadbalancerProvider) GetServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
 	res := make(map[string]string)
 
@@ -151,7 +151,7 @@ func (nl *NsxtLoadbalancerProvider) GetServiceAnnotations(ctx context.Context, v
 }
 
 // GetToBeRemovedServiceAnnotations provides the to be removed NSX-T specific annotations on
-// Service. The responsibility is left to the caller to actually clear them
+// Service. The responsibility is left to the caller to actually clear them.
 func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
 	res := make(map[string]string)
 

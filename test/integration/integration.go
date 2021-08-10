@@ -48,7 +48,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
-type VSphereVmProviderTestConfig struct {
+type VSphereVMProviderTestConfig struct {
 	VcCredsSecretName string
 	*config.VSphereVmProviderConfig
 }
@@ -75,23 +75,23 @@ func GetContentSourceID() string {
 	return ContentSourceID
 }
 
-func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *config.VSphereVmProviderConfig {
-	var dcMoId, rpMoId, folderMoId string
+func NewIntegrationVMOperatorConfig(vcAddress string, vcPort int) *config.VSphereVmProviderConfig {
+	var dcMoID, rpMoID, folderMoID string
 	for _, dc := range simulator.Map.All("Datacenter") {
 		if dc.Entity().Name == "DC0" {
-			dcMoId = dc.Reference().Value
+			dcMoID = dc.Reference().Value
 			break
 		}
 	}
 	for _, cl := range simulator.Map.All("ClusterComputeResource") {
 		if cl.Entity().Name == "DC0_C0" {
-			rpMoId = cl.(*simulator.ClusterComputeResource).ResourcePool.Reference().Value
+			rpMoID = cl.(*simulator.ClusterComputeResource).ResourcePool.Reference().Value
 			break
 		}
 	}
 	for _, folder := range simulator.Map.All("Folder") {
 		if folder.Entity().Name == "vm" {
-			folderMoId = folder.Reference().Value
+			folderMoID = folder.Reference().Value
 			break
 		}
 	}
@@ -99,17 +99,17 @@ func NewIntegrationVmOperatorConfig(vcAddress string, vcPort int) *config.VSpher
 	return &config.VSphereVmProviderConfig{
 		VcPNID:                      vcAddress,
 		VcPort:                      strconv.Itoa(vcPort),
-		VcCreds:                     NewIntegrationVmOperatorCredentials(),
-		Datacenter:                  dcMoId,
-		ResourcePool:                rpMoId,
+		VcCreds:                     NewIntegrationVMOperatorCredentials(),
+		Datacenter:                  dcMoID,
+		ResourcePool:                rpMoID,
 		Datastore:                   "/DC0/datastore/LocalDS_0",
-		Folder:                      folderMoId,
+		Folder:                      folderMoID,
 		UseInventoryAsContentSource: true,
 		InsecureSkipTLSVerify:       true,
 	}
 }
 
-func NewIntegrationVmOperatorCredentials() *credentials.VSphereVmProviderCredentials {
+func NewIntegrationVMOperatorCredentials() *credentials.VSphereVmProviderCredentials {
 	// User and password can be anything for vcSim
 	return &credentials.VSphereVmProviderCredentials{
 		Username: "Administrator@vsphere.local",
@@ -188,7 +188,7 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSp
 	vcSim := NewVcSimInstance()
 
 	address, port := vcSim.Start()
-	vSphereConfig := NewIntegrationVmOperatorConfig(address, port)
+	vSphereConfig := NewIntegrationVMOperatorConfig(address, port)
 	Expect(vSphereConfig).ToNot(BeNil())
 
 	vmopClient, err := SetupVcSimEnv(vSphereConfig, k8sClient, vcSim, namespaces)
@@ -265,7 +265,7 @@ func SetupVcSimEnv(
 	for _, ns := range namespaces {
 		err = config.InstallVSphereVmProviderConfig(client,
 			ns,
-			NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port),
+			NewIntegrationVMOperatorConfig(vcSim.IP, vcSim.Port),
 			SecretName,
 		)
 		Expect(err).NotTo(HaveOccurred())
@@ -280,11 +280,11 @@ func TeardownVcSimEnv(vcSim *VcSimInstance) {
 	}
 }
 
-func CreateLibraryItem(ctx context.Context, vmopClient *vmopclient.Client, name, kind, libraryId, ovfPath string) error {
+func CreateLibraryItem(ctx context.Context, vmopClient *vmopclient.Client, name, kind, libraryID, ovfPath string) error {
 	libraryItem := library.Item{
 		Name:      name,
 		Type:      kind,
-		LibraryID: libraryId,
+		LibraryID: libraryID,
 	}
 	return vmopClient.ContentLibClient().CreateLibraryItem(ctx, libraryItem, ovfPath)
 }
@@ -351,11 +351,7 @@ func SetupContentLibrary(client client.Client, vmopClient *vmopclient.Client) er
 		return err
 	}
 
-	if err := client.Create(ctx, cs); err != nil {
-		return err
-	}
-
-	return nil
+	return client.Create(ctx, cs)
 }
 
 func CloneVirtualMachineToLibraryItem(ctx context.Context, cfg *config.VSphereVmProviderConfig, s *session.Session, src, name string) error {

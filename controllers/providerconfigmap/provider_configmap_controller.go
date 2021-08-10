@@ -7,14 +7,13 @@
 // with VM operator. This controller detects any create/update ops to the TKG CL
 // associations and creates the necessary Custom Resources so VM operator can
 // discover VM images from the configured content library.
-
 package providerconfigmap
 
 import (
 	goctx "context"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -84,7 +83,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	}
 	// Add Watches to Namespaces so we can create TKG bindings when new namespaces are created.
 	err = c.Watch(
-		&source.Kind{Type: &v1.Namespace{}},
+		&source.Kind{Type: &corev1.Namespace{}},
 		handler.EnqueueRequestsFromMapFunc(nsToProviderCMMapperFn(ctx)),
 		nsPrct)
 	if err != nil {
@@ -116,7 +115,7 @@ func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod 
 		return err
 	}
 
-	return c.Watch(source.NewKindWithCache(&v1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
+	return c.Watch(source.NewKindWithCache(&corev1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
 		predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
 				return e.Object.GetName() == config.ProviderConfigMapName
@@ -139,7 +138,6 @@ func NewReconciler(
 	scheme *runtime.Scheme,
 	logger logr.Logger,
 	vmProvider vmprovider.VirtualMachineProviderInterface) *ConfigMapReconciler {
-
 	return &ConfigMapReconciler{
 		Client:     client,
 		scheme:     scheme,
@@ -212,7 +210,7 @@ func (r *ConfigMapReconciler) CreateOrUpdateContentSourceResources(ctx goctx.Con
 
 // CreateContentSourceBindings creates ContentSourceBindings in all the user workload namespaces for the configured TKG ContentSource.
 func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clUUID string) error {
-	nsList := &v1.NamespaceList{}
+	nsList := &corev1.NamespaceList{}
 	// Presence of the UserWorkloadNamespaceLabel label indicates that a namespace is a user namespace (and not a reserved one). We use
 	// this filtration to create ContentSourceBindings for TKG content source in user namespaces.
 	if err := r.List(ctx, nsList, client.HasLabels{UserWorkloadNamespaceLabel}); err != nil {
@@ -268,8 +266,7 @@ func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clU
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 
 func (r *ConfigMapReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
-
-	cm := &v1.ConfigMap{}
+	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, req.NamespacedName, cm); err != nil {
 		if apiErrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -284,7 +281,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, nil
 }
 
-func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *v1.ConfigMap) error {
+func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *corev1.ConfigMap) error {
 	r.Logger.Info("Reconciling VM provider ConfigMap", "name", cm.Name, "namespace", cm.Namespace)
 
 	// Filter out the ContentSources that should not exist

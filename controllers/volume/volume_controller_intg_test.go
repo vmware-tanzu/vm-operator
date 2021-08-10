@@ -22,7 +22,6 @@ import (
 )
 
 func intgTests() {
-
 	var (
 		ctx *builder.IntegrationTestContext
 
@@ -82,7 +81,7 @@ func intgTests() {
 		return vm
 	}
 
-	getCnsNodeVmAttachment := func(vm *vmopv1alpha1.VirtualMachine, vmVol vmopv1alpha1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVmAttachment {
+	getCnsNodeVMAttachment := func(vm *vmopv1alpha1.VirtualMachine, vmVol vmopv1alpha1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVmAttachment {
 		objectKey := client.ObjectKey{Name: volume.CNSAttachmentNameForVolume(vm, vmVol.Name), Namespace: vm.Namespace}
 		attachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 		if err := ctx.Client.Get(ctx, objectKey, attachment); err == nil {
@@ -92,7 +91,6 @@ func intgTests() {
 	}
 
 	Context("Reconcile", func() {
-
 		BeforeEach(func() {
 		})
 
@@ -125,7 +123,7 @@ func intgTests() {
 			By("CnsNodeVmAttachment should be created for volume", func() {
 				var attachment *cnsv1alpha1.CnsNodeVmAttachment
 				Eventually(func() *cnsv1alpha1.CnsNodeVmAttachment {
-					attachment = getCnsNodeVmAttachment(vm, vmVolume1)
+					attachment = getCnsNodeVMAttachment(vm, vmVolume1)
 					return attachment
 				}).ShouldNot(BeNil())
 
@@ -151,7 +149,7 @@ func intgTests() {
 			errMsg := "dummy error message"
 
 			By("Simulate CNS attachment", func() {
-				attachment := getCnsNodeVmAttachment(vm, vmVolume1)
+				attachment := getCnsNodeVMAttachment(vm, vmVolume1)
 				Expect(attachment).ToNot(BeNil())
 				attachment.Status.Attached = true
 				attachment.Status.Error = errMsg
@@ -194,7 +192,7 @@ func intgTests() {
 			By("CnsNodeVmAttachment should be created for volume1", func() {
 				var attachment *cnsv1alpha1.CnsNodeVmAttachment
 				Eventually(func() *cnsv1alpha1.CnsNodeVmAttachment {
-					attachment = getCnsNodeVmAttachment(vm, vmVolume1)
+					attachment = getCnsNodeVMAttachment(vm, vmVolume1)
 					return attachment
 				}).ShouldNot(BeNil())
 
@@ -209,7 +207,7 @@ func intgTests() {
 			By("CnsNodeVmAttachment should be created for volume2", func() {
 				var attachment *cnsv1alpha1.CnsNodeVmAttachment
 				Eventually(func() *cnsv1alpha1.CnsNodeVmAttachment {
-					attachment = getCnsNodeVmAttachment(vm, vmVolume2)
+					attachment = getCnsNodeVMAttachment(vm, vmVolume2)
 					return attachment
 				}).ShouldNot(BeNil())
 
@@ -236,7 +234,7 @@ func intgTests() {
 			})
 
 			By("Simulate CNS attachment for volume1", func() {
-				attachment := getCnsNodeVmAttachment(vm, vmVolume1)
+				attachment := getCnsNodeVMAttachment(vm, vmVolume1)
 				Expect(attachment).ToNot(BeNil())
 				attachment.Status.Attached = true
 				attachment.Status.AttachmentMetadata = map[string]string{
@@ -246,7 +244,7 @@ func intgTests() {
 			})
 
 			By("Simulate CNS attachment for volume2", func() {
-				attachment := getCnsNodeVmAttachment(vm, vmVolume2)
+				attachment := getCnsNodeVMAttachment(vm, vmVolume2)
 				Expect(attachment).ToNot(BeNil())
 				attachment.Status.Attached = true
 				attachment.Status.AttachmentMetadata = map[string]string{
@@ -274,7 +272,7 @@ func intgTests() {
 
 			By("CnsNodeVmAttachment for volume1 should marked for deletion", func() {
 				Eventually(func() bool {
-					attachment := getCnsNodeVmAttachment(vm, vmVolume1)
+					attachment := getCnsNodeVMAttachment(vm, vmVolume1)
 					if attachment != nil {
 						return !attachment.DeletionTimestamp.IsZero()
 					}

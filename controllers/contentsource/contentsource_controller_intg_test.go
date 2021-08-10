@@ -58,7 +58,7 @@ func intgTests() {
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-		intgFakeVmProvider.Reset()
+		intgFakeVMProvider.Reset()
 	})
 
 	getContentSource := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1alpha1.ContentSource {
@@ -90,7 +90,7 @@ func intgTests() {
 
 	waitForCLProviderOwnerReference := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName, ownerRef metav1.OwnerReference) {
 		Eventually(func() []metav1.OwnerReference {
-			if cl := getContentLibraryProvider(ctx, clKey); cl != nil {
+			if cl := getContentLibraryProvider(ctx, objKey); cl != nil {
 				return cl.OwnerReferences
 			}
 			return []metav1.OwnerReference{}
@@ -98,7 +98,6 @@ func intgTests() {
 	}
 
 	Context("Reconcile ContentSource", func() {
-
 		When("ContentSource and ContentLibraryProvider exists", func() {
 			BeforeEach(func() {
 				Expect(ctx.Client.Create(ctx, &cl)).To(Succeed())
@@ -134,5 +133,4 @@ func intgTests() {
 			})
 		})
 	})
-
 }

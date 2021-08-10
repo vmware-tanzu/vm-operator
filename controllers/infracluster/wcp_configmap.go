@@ -12,9 +12,14 @@ import (
 )
 
 const (
+	// WcpClusterConfigMapNamespace is the namespace of the wcp-cluster-config ConfigMap.
 	WcpClusterConfigMapNamespace = "kube-system"
-	WcpClusterConfigMapName      = "wcp-cluster-config"
-	WcpClusterConfigFileName     = "wcp-cluster-config.yaml"
+
+	// WcpClusterConfigMapName is the name of the wcp-cluster-config ConfigMap.
+	WcpClusterConfigMapName = "wcp-cluster-config"
+
+	// WcpClusterConfigFileName is the name of the key specified in the wcp-cluster-config ConfigMap containing the cluster config.
+	WcpClusterConfigFileName = "wcp-cluster-config.yaml"
 )
 
 type WcpClusterConfig struct {

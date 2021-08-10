@@ -485,7 +485,7 @@ func parseWebhookConfig(path string) (
 	const separator = "\n---\n"
 
 	// READ the validating webhook file.
-	yamlIn, err := ioutil.ReadFile(path)
+	yamlIn, err := ioutil.ReadFile(filepath.Clean(path))
 	Expect(err).ShouldNot(HaveOccurred())
 	Expect(yamlIn).ShouldNot(BeEmpty())
 

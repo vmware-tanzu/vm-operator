@@ -81,9 +81,8 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	scheme *runtime.Scheme) *VolumeReconciler {
-
-	return &VolumeReconciler{
+	scheme *runtime.Scheme) *Reconciler {
+	return &Reconciler{
 		Client:   client,
 		logger:   logger,
 		recorder: recorder,
@@ -91,9 +90,9 @@ func NewReconciler(
 	}
 }
 
-var _ reconcile.Reconciler = &VolumeReconciler{}
+var _ reconcile.Reconciler = &Reconciler{}
 
-type VolumeReconciler struct {
+type Reconciler struct {
 	client.Client
 	logger   logr.Logger
 	recorder record.Recorder
@@ -109,7 +108,7 @@ type VolumeReconciler struct {
 // Longer term, this should be folded back into the VirtualMachine controller, but exists as
 // a separate controller to ensure volume attachments are processed promptly, since the VM
 // controller can block for a long time, consuming all of the workers.
-func (r *VolumeReconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.Result, reterr error) {
+func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.Result, reterr error) {
 	vm := &vmopv1alpha1.VirtualMachine{}
 	if err := r.Get(ctx, request.NamespacedName, vm); err != nil {
 		if apiErrors.IsNotFound(err) {
@@ -144,7 +143,7 @@ func (r *VolumeReconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_
 	return ctrl.Result{}, r.ReconcileNormal(volCtx)
 }
 
-func (r *VolumeReconciler) ReconcileDelete(_ *context.VolumeContext) error {
+func (r *Reconciler) ReconcileDelete(_ *context.VolumeContext) error {
 	// Do nothing here since we depend on the Garbage Collector to do the deletion of the
 	// dependent CNSNodeVMAttachment objects when their owning VM is deleted.
 	// We require the Volume provider to handle the situation where the VM is deleted before
@@ -152,7 +151,7 @@ func (r *VolumeReconciler) ReconcileDelete(_ *context.VolumeContext) error {
 	return nil
 }
 
-func (r *VolumeReconciler) ReconcileNormal(ctx *context.VolumeContext) error {
+func (r *Reconciler) ReconcileNormal(ctx *context.VolumeContext) error {
 	ctx.Logger.Info("Reconciling VirtualMachine for processing volumes")
 	defer func() {
 		ctx.Logger.Info("Finished Reconciling VirtualMachine for processing volumes")
@@ -191,7 +190,7 @@ func (r *VolumeReconciler) ReconcileNormal(ctx *context.VolumeContext) error {
 }
 
 // Return the existing CnsNodeVmAttachments that are for this VM.
-func (r *VolumeReconciler) getAttachmentsForVM(ctx *context.VolumeContext) (map[string]cnsv1alpha1.CnsNodeVmAttachment, error) {
+func (r *Reconciler) getAttachmentsForVM(ctx *context.VolumeContext) (map[string]cnsv1alpha1.CnsNodeVmAttachment, error) {
 	// We need to filter the attachments for the ones for this VM. There are a few ways we can do this:
 	//  - Look at the OwnerRefs for this VM. Note that we'd need to compare by the UUID, not the name,
 	//    to handle the situation we the VM is deleted and recreated before the GC deletes any prior
@@ -218,11 +217,10 @@ func (r *VolumeReconciler) getAttachmentsForVM(ctx *context.VolumeContext) (map[
 	return attachments, nil
 }
 
-func (r *VolumeReconciler) processAttachments(
+func (r *Reconciler) processAttachments(
 	ctx *context.VolumeContext,
 	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment,
 	orphanedAttachments []cnsv1alpha1.CnsNodeVmAttachment) error {
-
 	var volumeStatus []vmopv1alpha1.VirtualMachineVolumeStatus
 	var createErrs []error
 
@@ -272,11 +270,10 @@ func (r *VolumeReconciler) processAttachments(
 	return k8serrors.NewAggregate(createErrs)
 }
 
-func (r *VolumeReconciler) createCNSAttachment(
+func (r *Reconciler) createCNSAttachment(
 	ctx *context.VolumeContext,
 	attachmentName string,
 	volume vmopv1alpha1.VirtualMachineVolume) error {
-
 	attachment := &cnsv1alpha1.CnsNodeVmAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      attachmentName,
@@ -308,10 +305,9 @@ func (r *VolumeReconciler) createCNSAttachment(
 
 // This is a hack to preserve the prior behavior of including detach(ing) volumes that were
 // removed from the Spec in the Status until they are actually deleted.
-func (r *VolumeReconciler) preserveOrphanedAttachmentStatus(
+func (r *Reconciler) preserveOrphanedAttachmentStatus(
 	ctx *context.VolumeContext,
 	orphanedAttachments []cnsv1alpha1.CnsNodeVmAttachment) []vmopv1alpha1.VirtualMachineVolumeStatus {
-
 	uuidAttachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(orphanedAttachments))
 	for _, attachment := range orphanedAttachments {
 		if uuid := attachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID]; uuid != "" {
@@ -333,10 +329,9 @@ func (r *VolumeReconciler) preserveOrphanedAttachmentStatus(
 	return volumeStatus
 }
 
-func (r *VolumeReconciler) attachmentsToDelete(
+func (r *Reconciler) attachmentsToDelete(
 	ctx *context.VolumeContext,
 	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment) []cnsv1alpha1.CnsNodeVmAttachment {
-
 	expectedAttachments := make(map[string]bool, len(ctx.VM.Spec.Volumes))
 	for _, volume := range ctx.VM.Spec.Volumes {
 		// Only process CNS volumes here.
@@ -358,7 +353,7 @@ func (r *VolumeReconciler) attachmentsToDelete(
 	return attachmentsToDelete
 }
 
-func (r *VolumeReconciler) deleteOrphanedAttachments(ctx *context.VolumeContext, attachments []cnsv1alpha1.CnsNodeVmAttachment) error {
+func (r *Reconciler) deleteOrphanedAttachments(ctx *context.VolumeContext, attachments []cnsv1alpha1.CnsNodeVmAttachment) error {
 	var errs []error
 
 	for i := range attachments {
@@ -379,7 +374,7 @@ func (r *VolumeReconciler) deleteOrphanedAttachments(ctx *context.VolumeContext,
 	return k8serrors.NewAggregate(errs)
 }
 
-// Return the name of the CnsNodeVmAttachment based on the VM and Volume name.
+// CNSAttachmentNameForVolume returns the name of the CnsNodeVmAttachment based on the VM and Volume name.
 // This matches the naming used in previous code but there are situations where
 // we may get a collision between VMs and Volume names. I'm not sure if there is
 // an absolute way to avoid that: the same situation can happen with the claimName.
@@ -406,7 +401,6 @@ func sanitizeCNSErrorMessage(msg string) string {
 func attachmentToVolumeStatus(
 	volumeName string,
 	attachment cnsv1alpha1.CnsNodeVmAttachment) vmopv1alpha1.VirtualMachineVolumeStatus {
-
 	return vmopv1alpha1.VirtualMachineVolumeStatus{
 		Name:     volumeName, // Name of the volume as in the Spec
 		Attached: attachment.Status.Attached,

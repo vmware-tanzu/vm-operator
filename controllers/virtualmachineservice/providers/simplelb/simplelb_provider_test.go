@@ -61,7 +61,7 @@ var _ = Describe("", func() {
 	vm := &vmopv1alpha1.VirtualMachine{}
 	client := builder.NewFakeClient(vmService)
 	controlPlane := &fakeControlPlane{}
-	simpleLbProvider := simpleLoadBalancerProvider{
+	simpleLbProvider := Provider{
 		client:       client,
 		controlPlane: controlPlane,
 		log:          logr.DiscardLogger{},

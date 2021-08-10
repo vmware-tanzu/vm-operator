@@ -20,13 +20,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
-type xdsServer struct {
+type XdsServer struct {
 	snapshotCache cache.SnapshotCache
 	log           logr.Logger
 }
 
-func NewXdsServer(mgr manager.Manager, logger logr.Logger) *xdsServer {
-	x := &xdsServer{
+func NewXdsServer(mgr manager.Manager, logger logr.Logger) *XdsServer {
+	x := &XdsServer{
 		snapshotCache: cache.NewSnapshotCache(false, cache.IDHash{}, nil),
 		log:           logger,
 	}
@@ -34,7 +34,7 @@ func NewXdsServer(mgr manager.Manager, logger logr.Logger) *xdsServer {
 	return x
 }
 
-func (x *xdsServer) Start(ctx context.Context) error {
+func (x *XdsServer) Start(ctx context.Context) error {
 	server := xds.NewServer(ctx, x.snapshotCache, nil)
 	grpcServer := grpc.NewServer()
 
@@ -53,7 +53,7 @@ func (x *xdsServer) Start(ctx context.Context) error {
 	return grpcServer.Serve(lis)
 }
 
-func (x *xdsServer) UpdateEndpoints(svc *corev1.Service, eps *corev1.Endpoints) error {
+func (x *XdsServer) UpdateEndpoints(svc *corev1.Service, eps *corev1.Endpoints) error {
 	clusters := make([]cache.Resource, len(svc.Spec.Ports))
 	endpoints := make([]cache.Resource, len(svc.Spec.Ports))
 	for i, svcPort := range svc.Spec.Ports {

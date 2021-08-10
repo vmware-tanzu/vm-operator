@@ -19,7 +19,6 @@ import (
 )
 
 func intgTests() {
-
 	var (
 		ctx *builder.IntegrationTestContext
 	)
@@ -31,7 +30,7 @@ func intgTests() {
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-		intgFakeVmProvider.Reset()
+		intgFakeVMProvider.Reset()
 	})
 
 	Context("VcCredsSecret", func() {
@@ -55,11 +54,11 @@ func intgTests() {
 			var called int32
 
 			BeforeEach(func() {
-				intgFakeVmProvider.Lock()
-				intgFakeVmProvider.ClearSessionsAndClientFn = func(_ context.Context) {
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.ClearSessionsAndClientFn = func(_ context.Context) {
 					atomic.AddInt32(&called, 1)
 				}
-				intgFakeVmProvider.Unlock()
+				intgFakeVMProvider.Unlock()
 
 				Expect(ctx.Client.Create(ctx, secret)).To(Succeed())
 			})
@@ -98,13 +97,13 @@ func intgTests() {
 			var savedPnid, savedPort string
 
 			BeforeEach(func() {
-				intgFakeVmProvider.Lock()
-				intgFakeVmProvider.UpdateVcPNIDFn = func(_ context.Context, pnid, port string) error {
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.UpdateVcPNIDFn = func(_ context.Context, pnid, port string) error {
 					savedPnid = pnid
 					savedPort = port
 					return nil
 				}
-				intgFakeVmProvider.Unlock()
+				intgFakeVMProvider.Unlock()
 				Expect(ctx.Client.Create(ctx, configMap)).To(Succeed())
 			})
 
@@ -118,8 +117,8 @@ func intgTests() {
 				Expect(ctx.Client.Update(ctx, configMap)).To(Succeed())
 
 				Eventually(func() string {
-					intgFakeVmProvider.Lock()
-					defer intgFakeVmProvider.Unlock()
+					intgFakeVMProvider.Lock()
+					defer intgFakeVMProvider.Unlock()
 					return savedPnid + "::" + savedPort
 				}).Should(Equal("new-pnid::new-port"))
 			})
@@ -149,19 +148,19 @@ func intgTests() {
 			var savedNamespace string
 
 			BeforeEach(func() {
-				intgFakeVmProvider.Lock()
-				intgFakeVmProvider.DeleteNamespaceSessionInCacheFn = func(_ context.Context, namespace string) {
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.DeleteNamespaceSessionInCacheFn = func(_ context.Context, namespace string) {
 					savedNamespace = namespace
 				}
-				intgFakeVmProvider.Unlock()
+				intgFakeVMProvider.Unlock()
 			})
 
 			It("Clears namespace session", func() {
 				Expect(ctx.Client.Delete(ctx, namespace)).To(Succeed())
 
 				Eventually(func() string {
-					intgFakeVmProvider.Lock()
-					defer intgFakeVmProvider.Unlock()
+					intgFakeVMProvider.Lock()
+					defer intgFakeVMProvider.Unlock()
 					return savedNamespace
 				}).Should(Equal(namespace.Name))
 			})

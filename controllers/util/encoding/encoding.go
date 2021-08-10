@@ -18,7 +18,6 @@ import (
 // DecodeYAML unmarshals a YAML document or multidoc YAML as unstructured
 // objects, placing each decoded object into a channel.
 func DecodeYAML(data []byte) (<-chan *unstructured.Unstructured, <-chan error) {
-
 	var (
 		chanErr        = make(chan error)
 		chanObj        = make(chan *unstructured.Unstructured)

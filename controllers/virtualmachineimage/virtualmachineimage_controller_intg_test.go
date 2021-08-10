@@ -41,7 +41,6 @@ func virtualMachineImageReconcile() {
 	})
 
 	Context("Reconcile", func() {
-
 		BeforeEach(func() {
 			Expect(ctx.Client.Create(ctx, vmImage)).To(Succeed())
 		})

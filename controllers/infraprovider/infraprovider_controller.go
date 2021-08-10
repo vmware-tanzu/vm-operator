@@ -8,8 +8,8 @@ import (
 	"reflect"
 
 	"github.com/go-logr/logr"
-	v1 "k8s.io/api/core/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -23,7 +23,7 @@ import (
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &v1.Node{}
+		controlledType     = &corev1.Node{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 	)
 
@@ -58,29 +58,28 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
-	vmProvider vmprovider.VirtualMachineProviderInterface) *InfraProviderReconciler {
-
-	return &InfraProviderReconciler{
+	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
+	return &Reconciler{
 		Client:     client,
 		Logger:     logger,
-		VmProvider: vmProvider,
+		VMProvider: vmProvider,
 	}
 }
 
-type InfraProviderReconciler struct {
+type Reconciler struct {
 	client.Client
 	Logger     logr.Logger
-	VmProvider vmprovider.VirtualMachineProviderInterface
+	VMProvider vmprovider.VirtualMachineProviderInterface
 }
 
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 
-func (r *InfraProviderReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Logger.Info("Received reconcile request", "namespace", req.Namespace, "name", req.Name)
 
 	// Update the minimum CPU frequency. This frequency is used to populate the resource allocation
 	// fields in the ConfigSpec for cloning the VM.
-	if err := r.VmProvider.ComputeClusterCpuMinFrequency(ctx); err != nil {
+	if err := r.VMProvider.ComputeClusterCpuMinFrequency(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
 

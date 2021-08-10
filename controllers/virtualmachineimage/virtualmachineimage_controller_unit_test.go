@@ -25,7 +25,7 @@ func unitTestsReconcile() {
 		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 
-		reconciler *virtualmachineimage.VirtualMachineImageReconciler
+		reconciler *virtualmachineimage.Reconciler
 		vmImage    *vmopv1alpha1.VirtualMachineImage
 	)
 
@@ -35,7 +35,6 @@ func unitTestsReconcile() {
 				Name: "dummy-vmclass",
 			},
 		}
-
 	})
 
 	JustBeforeEach(func() {
@@ -47,7 +46,6 @@ func unitTestsReconcile() {
 	})
 
 	Context("ReconcileNormal", func() {
-
 		BeforeEach(func() {
 			initObjects = append(initObjects, vmImage)
 		})

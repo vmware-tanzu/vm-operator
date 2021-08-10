@@ -189,7 +189,7 @@ var _ = Describe("VMProvider Tests", func() {
 
 		BeforeEach(func() {
 			err = config.InstallVSphereVmProviderConfig(k8sClient, integration.DefaultNamespace,
-				integration.NewIntegrationVmOperatorConfig(vcSim.IP, vcSim.Port),
+				integration.NewIntegrationVMOperatorConfig(vcSim.IP, vcSim.Port),
 				integration.SecretName)
 			Expect(err).NotTo(HaveOccurred())
 

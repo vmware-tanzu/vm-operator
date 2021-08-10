@@ -10,7 +10,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -60,7 +59,6 @@ func intgTestsCM() {
 	})
 
 	Context("Reconcile", func() {
-
 		clExists := func(clName string) bool {
 			clList := &vmopv1alpha1.ContentLibraryProviderList{}
 			Expect(ctx.Client.List(ctx, clList)).To(Succeed())
@@ -165,13 +163,13 @@ func intgTestsCM() {
 			})
 
 			When("ConfigMap is created with a ContentSource key", func() {
-				var workloadNs *v1.Namespace
+				var workloadNs *corev1.Namespace
 				BeforeEach(func() {
 					cm.Data = make(map[string]string)
 					cm.Data[config.ContentSourceKey] = clUUID
 
 					// Create a user workload namespace.
-					workloadNs = &v1.Namespace{
+					workloadNs = &corev1.Namespace{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "user-workload-ns-1",
 							Labels: map[string]string{
@@ -187,10 +185,10 @@ func intgTestsCM() {
 				})
 
 				When("And a new workload is added after the initial reconciliation", func() {
-					var newWorkloadNs *v1.Namespace
+					var newWorkloadNs *corev1.Namespace
 					BeforeEach(func() {
 						// Create a user workload namespace.
-						newWorkloadNs = &v1.Namespace{
+						newWorkloadNs = &corev1.Namespace{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "user-workload-ns-2",
 								Labels: map[string]string{

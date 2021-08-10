@@ -29,11 +29,11 @@ func (matcher *wrapsErrorMatcher) Match(actual interface{}) (success bool, err e
 	var expectedErrorString string
 	// Allow the user to pass in either an error or a string.
 	// Fail early if neither was passed in.
-	switch matcher.expected.(type) {
+	switch val := matcher.expected.(type) {
 	case string:
-		expectedErrorString = matcher.expected.(string)
+		expectedErrorString = val
 	case error:
-		expectedErrorString = matcher.expected.(error).Error()
+		expectedErrorString = val.Error()
 	default:
 		return false, fmt.Errorf("WrapError expects an error to match against. Got: %+v", reflect.TypeOf(matcher.expected))
 	}

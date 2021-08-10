@@ -11,9 +11,7 @@ import (
 )
 
 func unitTestsWcpConfig() {
-
 	Describe("ParseWcpClusterConfig", func() {
-
 		var (
 			err    error
 			config *infracluster.WcpClusterConfig
@@ -36,7 +34,6 @@ func unitTestsWcpConfig() {
 		})
 
 		Context("invalid data", func() {
-
 			BeforeEach(func() {
 				data = map[string]string{
 					infracluster.WcpClusterConfigFileName: "not-valid-yaml",

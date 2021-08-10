@@ -22,7 +22,6 @@ const (
 )
 
 func intgTests() {
-
 	var (
 		ctx *builder.IntegrationTestContext
 
@@ -68,7 +67,6 @@ func intgTests() {
 	})
 
 	Context("Reconcile", func() {
-
 		Context("Reconciles after VirtualMachineService creation", func() {
 			BeforeEach(func() {
 				vmServiceName = "test-vm-service"
@@ -268,7 +266,6 @@ func intgTests() {
 					readyVM.Status.VmIp = vmIP1
 					conditions.MarkTrue(readyVM, vmopv1alpha1.ReadyCondition)
 					Expect(ctx.Client.Status().Update(ctx, readyVM))
-
 				})
 
 				vmService := &vmopv1alpha1.VirtualMachineService{

@@ -29,7 +29,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-//nolint:gocyclo
 func intgTests() {
 	const (
 		storageClassName = "foo-class"
@@ -169,7 +168,7 @@ func intgTests() {
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-		intgFakeVmProvider.Reset()
+		intgFakeVMProvider.Reset()
 	})
 
 	getVirtualMachine := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1alpha1.VirtualMachine {
@@ -194,13 +193,13 @@ func intgTests() {
 		dummyInstanceUUID := "instanceUUID1234"
 
 		BeforeEach(func() {
-			intgFakeVmProvider.Lock()
-			intgFakeVmProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, _ vmprovider.VmConfigArgs) error {
+			intgFakeVMProvider.Lock()
+			intgFakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, _ vmprovider.VmConfigArgs) error {
 				vm.Status.BiosUUID = dummyBiosUUID
 				vm.Status.InstanceUUID = dummyInstanceUUID
 				return nil
 			}
-			intgFakeVmProvider.Unlock()
+			intgFakeVMProvider.Unlock()
 
 			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, vmImage)).To(Succeed())
@@ -266,7 +265,7 @@ func intgTests() {
 
 			By("VirtualMachine should exist in Fake Provider", func() {
 				Eventually(func() bool {
-					exists, err := intgFakeVmProvider.DoesVirtualMachineExist(ctx, vm)
+					exists, err := intgFakeVMProvider.DoesVirtualMachineExist(ctx, vm)
 					if err != nil {
 						return false
 					}
@@ -396,17 +395,16 @@ func intgTests() {
 				}).Should(conditions.MatchConditions(expectedCondition))
 			}
 
-			validatePreReqTrueCondition := func(vm *vmopv1alpha1.VirtualMachine) {
+			validatePreReqTrueCondition := func(objKey types.NamespacedName) {
 				expectedCondition := vmopv1alpha1.Conditions{
 					*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
 				}
 				EventuallyWithOffset(1, func() []vmopv1alpha1.Condition {
-					if vm := getVirtualMachine(ctx, vmKey); vm != nil {
+					if vm := getVirtualMachine(ctx, objKey); vm != nil {
 						return vm.Status.Conditions
 					}
 					return nil
 				}).Should(conditions.MatchConditions(expectedCondition))
-
 			}
 
 			// nolint: dupl
@@ -434,7 +432,7 @@ func intgTests() {
 					})
 
 					By("validating that the VirtualMachinePreReq condition is marked as True", func() {
-						validatePreReqTrueCondition(vm)
+						validatePreReqTrueCondition(vmKey)
 					})
 
 					By("deleting the VirtualMachineClassBinding", func() {
@@ -472,7 +470,7 @@ func intgTests() {
 					})
 
 					By("validating that the VirtualMachinePreReq condition is marked as True", func() {
-						validatePreReqTrueCondition(vm)
+						validatePreReqTrueCondition(vmKey)
 					})
 
 					By("deleting the ContentSourceBindings", func() {
@@ -484,18 +482,17 @@ func intgTests() {
 					})
 				})
 			})
-
 		})
 
 		When("Provider CreateVM returns an error", func() {
 			errMsg := "create error"
 
 			BeforeEach(func() {
-				intgFakeVmProvider.Lock()
-				intgFakeVmProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
 					return errors.New(errMsg)
 				}
-				intgFakeVmProvider.Unlock()
+				intgFakeVMProvider.Unlock()
 			})
 
 			It("VirtualMachine is in Creating Phase", func() {
@@ -515,7 +512,6 @@ func intgTests() {
 		})
 
 		It("Reconciles after VirtualMachine deletion", func() {
-			//vm.Finalizers = append(vm.Finalizers, "test-finalizer")
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 			// Wait for initial reconcile.
 			waitForVirtualMachineFinalizer(ctx, vmKey)
@@ -539,7 +535,7 @@ func intgTests() {
 			*/
 
 			By("VirtualMachine should not exist in Fake Provider", func() {
-				exists, err := intgFakeVmProvider.DoesVirtualMachineExist(ctx, vm)
+				exists, err := intgFakeVMProvider.DoesVirtualMachineExist(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(exists).To(BeFalse())
 			})
@@ -549,11 +545,11 @@ func intgTests() {
 			errMsg := "delete error"
 
 			BeforeEach(func() {
-				intgFakeVmProvider.Lock()
-				intgFakeVmProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
+				intgFakeVMProvider.Lock()
+				intgFakeVMProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
 					return errors.New(errMsg)
 				}
-				intgFakeVmProvider.Unlock()
+				intgFakeVMProvider.Unlock()
 			})
 
 			It("VirtualMachine is in Deleting Phase", func() {

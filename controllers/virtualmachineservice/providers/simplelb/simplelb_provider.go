@@ -23,7 +23,7 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
-type simpleLoadBalancerProvider struct {
+type Provider struct {
 	client       client.Client
 	controlPlane loadbalancerControlPlane
 	log          logr.Logger
@@ -33,16 +33,16 @@ type loadbalancerControlPlane interface {
 	UpdateEndpoints(*corev1.Service, *corev1.Endpoints) error
 }
 
-func New(mgr manager.Manager) *simpleLoadBalancerProvider {
+func New(mgr manager.Manager) *Provider {
 	log := ctrl.Log.WithName("controllers").WithName("simple-lb")
-	return &simpleLoadBalancerProvider{
+	return &Provider{
 		client:       mgr.GetClient(),
 		controlPlane: NewXdsServer(mgr, log),
 		log:          log,
 	}
 }
 
-func (s *simpleLoadBalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) error {
+func (s *Provider) EnsureLoadBalancer(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) error {
 	s.log.Info("ensure load balancer", "VMService", vmService.Name)
 	xdsNodes, err := s.getXDSNodes(ctx)
 	if err != nil {
@@ -67,7 +67,7 @@ func (s *simpleLoadBalancerProvider) EnsureLoadBalancer(ctx context.Context, vmS
 
 // GetVirtualMachineImageName returns the image name for loadbalancer-vm image in the cluster.
 // Since we use generateName for VirtualMachineImage resources, we cannot directly use 'loadbalancer-vm'.
-func (s *simpleLoadBalancerProvider) GetVirtualMachineImageName(ctx context.Context) (string, error) {
+func (s *Provider) GetVirtualMachineImageName(ctx context.Context) (string, error) {
 	imageList := &vmopv1alpha1.VirtualMachineImageList{}
 	if err := s.client.List(ctx, imageList); err != nil {
 		s.log.Error(err, "failed to list VirtualMachineImages from control plane")
@@ -82,27 +82,23 @@ func (s *simpleLoadBalancerProvider) GetVirtualMachineImageName(ctx context.Cont
 	return "", errors.New("no virtual machine image for loadbalancer-vm")
 }
 
-// No labels is added for simple LoadBalancer
-func (s *simpleLoadBalancerProvider) GetServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (s *Provider) GetServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
-// No labels needs to be removed for simple LoadBalancer
-func (s *simpleLoadBalancerProvider) GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (s *Provider) GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
-// No annotation is added for simple LoadBalancer
-func (s *simpleLoadBalancerProvider) GetServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (s *Provider) GetServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
-// No annotation needs to be removed for simple LoadBalancer
-func (s *simpleLoadBalancerProvider) GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (s *Provider) GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
-func (s *simpleLoadBalancerProvider) ensureLBVM(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, cm *corev1.ConfigMap) error {
+func (s *Provider) ensureLBVM(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, cm *corev1.ConfigMap) error {
 	if err := s.client.Get(ctx, types.NamespacedName{Namespace: cm.Namespace, Name: cm.Name}, cm); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return err
@@ -173,7 +169,7 @@ func metadataCMName(vmService *vmopv1alpha1.VirtualMachineService) string {
 	return vmService.Name + "-lb" + "-cloud-init"
 }
 
-func (s *simpleLoadBalancerProvider) ensureLBIP(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService, vm *vmopv1alpha1.VirtualMachine) error {
+func (s *Provider) ensureLBIP(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService, vm *vmopv1alpha1.VirtualMachine) error {
 	if len(vmService.Status.LoadBalancer.Ingress) == 0 || vmService.Status.LoadBalancer.Ingress[0].IP == "" {
 		if vm.Status.VmIp == "" {
 			return errors.New("LB VM IP is not ready yet")
@@ -188,7 +184,7 @@ func (s *simpleLoadBalancerProvider) ensureLBIP(ctx context.Context, vmService *
 	return nil
 }
 
-func (s *simpleLoadBalancerProvider) updateLBConfig(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) error {
+func (s *Provider) updateLBConfig(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) error {
 	service := &corev1.Service{}
 	endpoints := &corev1.Endpoints{}
 	if err := s.client.Get(ctx, types.NamespacedName{
@@ -212,7 +208,7 @@ func (s *simpleLoadBalancerProvider) updateLBConfig(ctx context.Context, vmServi
 	return s.controlPlane.UpdateEndpoints(service, endpoints)
 }
 
-func (s *simpleLoadBalancerProvider) getXDSNodes(ctx context.Context) ([]corev1.Node, error) {
+func (s *Provider) getXDSNodes(ctx context.Context) ([]corev1.Node, error) {
 	nodeList := &corev1.NodeList{}
 	if err := s.client.List(ctx, nodeList); err != nil {
 		return nil, err

@@ -25,7 +25,6 @@ func unitTests() {
 }
 
 func unitTestsReconcile() {
-
 	const (
 		dummyBiosUUID = "dummy-bios-uuid"
 		dummyDiskUUID = "111-222-333-disk-uuid"
@@ -35,7 +34,7 @@ func unitTestsReconcile() {
 		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 
-		reconciler *volume.VolumeReconciler
+		reconciler *volume.Reconciler
 		volCtx     *volContext.VolumeContext
 		vm         *vmopv1alpha1.VirtualMachine
 
@@ -47,7 +46,6 @@ func unitTestsReconcile() {
 	)
 
 	BeforeEach(func() {
-
 		vmVolumeWithVsphere = &vmopv1alpha1.VirtualMachineVolume{
 			Name:          "vsphere-volume",
 			VsphereVolume: &vmopv1alpha1.VsphereVolumeSource{},
@@ -106,18 +104,21 @@ func unitTestsReconcile() {
 	getCNSAttachmentForVolumeName := func(vm *vmopv1alpha1.VirtualMachine, volumeName string) *cnsv1alpha1.CnsNodeVmAttachment {
 		objectKey := client.ObjectKey{Name: volume.CNSAttachmentNameForVolume(vm, volumeName), Namespace: vm.Namespace}
 		attachment := &cnsv1alpha1.CnsNodeVmAttachment{}
-		if err := ctx.Client.Get(ctx, objectKey, attachment); err == nil {
+
+		err := ctx.Client.Get(ctx, objectKey, attachment)
+		if err == nil {
 			return attachment
-		} else if errors.IsNotFound(err) {
-			return nil
-		} else {
-			ExpectWithOffset(1, err).ToNot(HaveOccurred())
 		}
+
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
 		return nil
 	}
 
 	Context("ReconcileNormal", func() {
-
 		When("VM does not have BiosUUID", func() {
 			BeforeEach(func() {
 				vmVol = *vmVolumeWithPVC1
@@ -167,7 +168,7 @@ func unitTestsReconcile() {
 
 				By("Ignores the CnsNodeVmAttachment for other VM", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
-					assertVmVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
 				})
 			})
 		})
@@ -199,12 +200,12 @@ func unitTestsReconcile() {
 				By("Created expected CnsNodeVmAttachment", func() {
 					attachment = getCNSAttachmentForVolumeName(vm, vmVol.Name)
 					Expect(attachment).ToNot(BeNil())
-					assertAttachmentSpecFromVmVol(vm, vmVol, attachment)
+					assertAttachmentSpecFromVMVol(vm, vmVol, attachment)
 				})
 
 				By("Expected VM Status.Volumes", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
-					assertVmVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
 				})
 			})
 		})
@@ -231,7 +232,7 @@ func unitTestsReconcile() {
 
 				By("Expected VM Status.Volumes", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
-					assertVmVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
 				})
 			})
 		})
@@ -268,7 +269,7 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 				By("Expected VM Status.Volumes with sanitized error", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
 					attachment.Status.Error = "failed to attach cns volume"
-					assertVmVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
 				})
 			})
 		})
@@ -297,7 +298,7 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 
 				By("Orphaned CNS volume preserved in Status.Volumes", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
-					assertVmVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
 				})
 			})
 		})
@@ -321,16 +322,16 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 
 					attachment1 := getCNSAttachmentForVolumeName(vm, vmVol1.Name)
 					Expect(attachment1).ToNot(BeNil())
-					assertAttachmentSpecFromVmVol(vm, vmVol1, attachment1)
+					assertAttachmentSpecFromVMVol(vm, vmVol1, attachment1)
 
 					attachment2 := getCNSAttachmentForVolumeName(vm, vmVol2.Name)
 					Expect(attachment2).ToNot(BeNil())
-					assertAttachmentSpecFromVmVol(vm, vmVol2, attachment2)
+					assertAttachmentSpecFromVMVol(vm, vmVol2, attachment2)
 
 					By("VM Status.Volumes are stable-sorted by Spec.Volumes order", func() {
 						Expect(vm.Status.Volumes).To(HaveLen(2))
-						assertVmVolStatusFromAttachment(vmVol1, attachment1, vm.Status.Volumes[0])
-						assertVmVolStatusFromAttachment(vmVol2, attachment2, vm.Status.Volumes[1])
+						assertVMVolStatusFromAttachment(vmVol1, attachment1, vm.Status.Volumes[0])
+						assertVMVolStatusFromAttachment(vmVol2, attachment2, vm.Status.Volumes[1])
 					})
 				})
 			})
@@ -361,16 +362,16 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 
 					attachment1 := getCNSAttachmentForVolumeName(vm, vmVol1.Name)
 					Expect(attachment1).ToNot(BeNil())
-					assertAttachmentSpecFromVmVol(vm, vmVol1, attachment1)
+					assertAttachmentSpecFromVMVol(vm, vmVol1, attachment1)
 
 					attachment2 := getCNSAttachmentForVolumeName(vm, vmVol2.Name)
 					Expect(attachment2).ToNot(BeNil())
-					assertAttachmentSpecFromVmVol(vm, vmVol2, attachment2)
+					assertAttachmentSpecFromVMVol(vm, vmVol2, attachment2)
 
 					By("VM Status.Volumes are sorted by DiskUUID", func() {
 						Expect(vm.Status.Volumes).To(HaveLen(2))
-						assertVmVolStatusFromAttachment(vmVol2, attachment2, vm.Status.Volumes[0])
-						assertVmVolStatusFromAttachment(vmVol1, attachment1, vm.Status.Volumes[1])
+						assertVMVolStatusFromAttachment(vmVol2, attachment2, vm.Status.Volumes[0])
+						assertVMVolStatusFromAttachment(vmVol1, attachment1, vm.Status.Volumes[1])
 					})
 				})
 			})
@@ -395,7 +396,6 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 func cnsAttachmentForVMVolume(
 	vm *vmopv1alpha1.VirtualMachine,
 	vmVol vmopv1alpha1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVmAttachment {
-
 	t := true
 	return &cnsv1alpha1.CnsNodeVmAttachment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -419,11 +419,10 @@ func cnsAttachmentForVMVolume(
 	}
 }
 
-func assertAttachmentSpecFromVmVol(
+func assertAttachmentSpecFromVMVol(
 	vm *vmopv1alpha1.VirtualMachine,
 	vmVol vmopv1alpha1.VirtualMachineVolume,
 	attachment *cnsv1alpha1.CnsNodeVmAttachment) {
-
 	ExpectWithOffset(1, attachment.Spec.NodeUUID).To(Equal(vm.Status.BiosUUID))
 	ExpectWithOffset(1, attachment.Spec.VolumeName).To(Equal(vmVol.PersistentVolumeClaim.ClaimName))
 
@@ -435,16 +434,14 @@ func assertAttachmentSpecFromVmVol(
 	ExpectWithOffset(1, *ownerRef.Controller).To(BeTrue())
 }
 
-func assertVmVolStatusFromAttachment(
+func assertVMVolStatusFromAttachment(
 	vmVol vmopv1alpha1.VirtualMachineVolume,
 	attachment *cnsv1alpha1.CnsNodeVmAttachment,
 	vmVolStatus vmopv1alpha1.VirtualMachineVolumeStatus) {
-
 	diskUUID := attachment.Status.AttachmentMetadata[volume.AttributeFirstClassDiskUUID]
 
 	ExpectWithOffset(1, vmVolStatus.Name).To(Equal(vmVol.Name))
 	ExpectWithOffset(1, vmVolStatus.Attached).To(Equal(attachment.Status.Attached))
 	ExpectWithOffset(1, vmVolStatus.DiskUuid).To(Equal(diskUUID))
 	ExpectWithOffset(1, vmVolStatus.Error).To(Equal(attachment.Status.Error))
-
 }

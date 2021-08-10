@@ -32,8 +32,8 @@ func unitTests() {
 func reconcileProviderRef() {
 	var (
 		ctx            *builder.UnitTestContextForController
-		reconciler     *contentsource.ContentSourceReconciler
-		fakeVmProvider *providerfake.FakeVmProvider
+		reconciler     *contentsource.Reconciler
+		fakeVMProvider *providerfake.FakeVmProvider
 		initObjects    []client.Object
 
 		cs v1alpha1.ContentSource
@@ -71,7 +71,7 @@ func reconcileProviderRef() {
 			ctx.Recorder,
 			ctx.VmProvider,
 		)
-		fakeVmProvider = ctx.VmProvider.(*providerfake.FakeVmProvider)
+		fakeVMProvider = ctx.VmProvider.(*providerfake.FakeVmProvider)
 	})
 
 	AfterEach(func() {
@@ -79,8 +79,8 @@ func reconcileProviderRef() {
 		ctx = nil
 		initObjects = nil
 		reconciler = nil
-		fakeVmProvider.Reset()
-		fakeVmProvider = nil
+		fakeVMProvider.Reset()
+		fakeVMProvider = nil
 	})
 
 	Context("ReconcileProviderRef", func() {
@@ -127,8 +127,8 @@ func unitTestGetContentLibraryNameFromOwnerRefs() {
 func unitTestsCRUDImage() {
 	var (
 		ctx            *builder.UnitTestContextForController
-		reconciler     *contentsource.ContentSourceReconciler
-		fakeVmProvider *providerfake.FakeVmProvider
+		reconciler     *contentsource.Reconciler
+		fakeVMProvider *providerfake.FakeVmProvider
 		initObjects    []client.Object
 
 		cs v1alpha1.ContentSource
@@ -163,7 +163,7 @@ func unitTestsCRUDImage() {
 			ctx.Recorder,
 			ctx.VmProvider,
 		)
-		fakeVmProvider = ctx.VmProvider.(*providerfake.FakeVmProvider)
+		fakeVMProvider = ctx.VmProvider.(*providerfake.FakeVmProvider)
 	})
 
 	JustAfterEach(func() {
@@ -171,8 +171,8 @@ func unitTestsCRUDImage() {
 		ctx = nil
 		initObjects = nil
 		reconciler = nil
-		fakeVmProvider.Reset()
-		fakeVmProvider = nil
+		fakeVMProvider.Reset()
+		fakeVMProvider = nil
 	})
 
 	Context("SyncImages", func() {
@@ -215,7 +215,6 @@ func unitTestsCRUDImage() {
 			})
 
 			Context("another library with a duplicate image name is added", func() {
-
 				BeforeEach(func() {
 					existingImg.OwnerReferences = []metav1.OwnerReference{{
 						APIVersion: "vmoperator.vmware.com/v1alpha1",
@@ -231,7 +230,7 @@ func unitTestsCRUDImage() {
 				})
 
 				It("a new VirtualMachineImage should be created", func() {
-					fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+					fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 						return []*v1alpha1.VirtualMachineImage{providerImg}, nil
 					}
 
@@ -257,7 +256,8 @@ func unitTestsCRUDImage() {
 				})
 			})
 
-			providerListImageFromCLFunc := func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+			//nolint: unparam
+			providerListImageFromCLFunc := func(_ context.Context, _ v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 				return []*v1alpha1.VirtualMachineImage{providerImg}, nil
 			}
 
@@ -267,7 +267,7 @@ func unitTestsCRUDImage() {
 				})
 
 				It("the existing VirtualMachineImage is overwritten", func() {
-					fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = providerListImageFromCLFunc
+					fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = providerListImageFromCLFunc
 
 					err := reconciler.SyncImages(ctx.Context, &cs)
 					Expect(err).NotTo(HaveOccurred())
@@ -284,7 +284,6 @@ func unitTestsCRUDImage() {
 			})
 
 			When("the existing image doesn't have Image ID and ProviderRef in Spec", func() {
-
 				BeforeEach(func() {
 					existingImg.OwnerReferences = []metav1.OwnerReference{{
 						APIVersion: "vmoperator.vmware.com/v1alpha1",
@@ -295,7 +294,7 @@ func unitTestsCRUDImage() {
 				})
 
 				It("the existing VirtualMachineImage is overwritten", func() {
-					fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = providerListImageFromCLFunc
+					fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = providerListImageFromCLFunc
 
 					err := reconciler.SyncImages(ctx.Context, &cs)
 					Expect(err).NotTo(HaveOccurred())
@@ -312,16 +311,14 @@ func unitTestsCRUDImage() {
 			})
 
 			When("the existing image has a valid ContentLibraryProvider OwnerRef, providerRef and ImageID", func() {
-
 				BeforeEach(func() {
 					initObjects = append(initObjects, providerImg, &cl, &cs)
 				})
 
 				It("calls provider with the current image in map", func() {
 					var called bool
-					fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context, _ v1alpha1.ContentLibraryProvider,
+					fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context, _ v1alpha1.ContentLibraryProvider,
 						currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
-
 						called = true
 						Expect(currentCLImages).To(HaveKey(providerImg.Spec.ImageID))
 						return []*v1alpha1.VirtualMachineImage{providerImg}, nil
@@ -619,7 +616,6 @@ func unitTestsCRUDImage() {
 					Expect(updated[0].OwnerReferences).To(Equal(ownerRef))
 				})
 			})
-
 		})
 
 		Context("when left and right are non-empty and unique", func() {
@@ -709,7 +705,6 @@ func unitTestsCRUDImage() {
 	})
 
 	Context("GetImagesFromContentProvider", func() {
-
 		Context("when the ContentLibraryProvider resource doesnt exist", func() {
 			It("returns error", func() {
 				images, err := reconciler.GetImagesFromContentProvider(ctx.Context, cs, nil)
@@ -725,7 +720,7 @@ func unitTestsCRUDImage() {
 			})
 
 			It("provider returns error when listing images", func() {
-				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, _ v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+				fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, _ v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 					return nil, fmt.Errorf("error listing images from provider")
 				}
 
@@ -757,7 +752,7 @@ func unitTestsCRUDImage() {
 			})
 
 			It("provider successfully lists images", func() {
-				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, _ v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+				fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, _ v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 					return images, nil
 				}
 
@@ -797,9 +792,8 @@ func unitTestsCRUDImage() {
 
 			It("calls list with the current image in map", func() {
 				var called bool
-				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context, _ v1alpha1.ContentLibraryProvider,
+				fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context, _ v1alpha1.ContentLibraryProvider,
 					currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
-
 					called = true
 					Expect(currentCLImages).To(HaveKey(existingImg.Spec.ImageID))
 					return []*v1alpha1.VirtualMachineImage{&existingImg}, nil
@@ -814,9 +808,8 @@ func unitTestsCRUDImage() {
 			It("the current image map is empty if existing vm images don't have spec.ImageID set", func() {
 				existingImg.Spec.ImageID = ""
 				var called bool
-				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context, _ v1alpha1.ContentLibraryProvider,
+				fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context, _ v1alpha1.ContentLibraryProvider,
 					currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
-
 					called = true
 					Expect(len(currentCLImages)).To(Equal(0))
 					return []*v1alpha1.VirtualMachineImage{&existingImg}, nil
@@ -831,7 +824,6 @@ func unitTestsCRUDImage() {
 	})
 
 	Context("DifferenceImages", func() {
-
 		var (
 			img1 *v1alpha1.VirtualMachineImage
 			img2 *v1alpha1.VirtualMachineImage
@@ -866,11 +858,11 @@ func unitTestsCRUDImage() {
 			})
 
 			It("Should remove the image from APIServer and add image from provider", func() {
-				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+				fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 					return []*v1alpha1.VirtualMachineImage{img2}, nil
 				}
 
-				err, added, removed, updated := reconciler.DifferenceImages(ctx, &cs)
+				added, removed, updated, err := reconciler.DifferenceImages(ctx, &cs)
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(added).NotTo(BeEmpty())
@@ -891,10 +883,10 @@ func unitTestsCRUDImage() {
 			})
 
 			It("returns the list of VirtualMachineImages from the valid CL", func() {
-				fakeVmProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+				fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 					return nil, nil
 				}
-				err, added, removed, updated := reconciler.DifferenceImages(ctx, &cs)
+				added, removed, updated, err := reconciler.DifferenceImages(ctx, &cs)
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(added).To(BeNil())

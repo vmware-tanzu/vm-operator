@@ -17,7 +17,6 @@ import (
 )
 
 func intgTests() {
-
 	var (
 		ctx     *builder.IntegrationTestContext
 		vmClass *vmopv1alpha1.VirtualMachineClass
@@ -56,7 +55,6 @@ func intgTests() {
 	})
 
 	Context("Reconcile", func() {
-
 		BeforeEach(func() {
 			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 		})

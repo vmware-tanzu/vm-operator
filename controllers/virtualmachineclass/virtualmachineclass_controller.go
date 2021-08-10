@@ -47,17 +47,16 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
-	recorder record.Recorder) *VirtualMachineClassReconciler {
-
-	return &VirtualMachineClassReconciler{
+	recorder record.Recorder) *Reconciler {
+	return &Reconciler{
 		Client:   client,
 		Logger:   logger,
 		Recorder: recorder,
 	}
 }
 
-// VirtualMachineClassReconciler reconciles a VirtualMachineClass object
-type VirtualMachineClassReconciler struct {
+// Reconciler reconciles a VirtualMachineClass object.
+type Reconciler struct {
 	client.Client
 	Logger   logr.Logger
 	Recorder record.Recorder
@@ -66,7 +65,7 @@ type VirtualMachineClassReconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses/status,verbs=get;update;patch
 
-func (r *VirtualMachineClassReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
 	vmClass := &vmopv1alpha1.VirtualMachineClass{}
 	err := r.Get(ctx, req.NamespacedName, vmClass)
 	if err != nil {
@@ -90,7 +89,7 @@ func (r *VirtualMachineClassReconciler) Reconcile(ctx goctx.Context, req ctrl.Re
 	return ctrl.Result{}, nil
 }
 
-func (r *VirtualMachineClassReconciler) ReconcileNormal(_ *context.VirtualMachineClassContext) error {
+func (r *Reconciler) ReconcileNormal(_ *context.VirtualMachineClassContext) error {
 	// NoOp.
 	return nil
 }

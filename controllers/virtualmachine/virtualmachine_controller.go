@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -170,28 +170,27 @@ func NewReconciler(
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider vmprovider.VirtualMachineProviderInterface,
-	prober prober.Manager) *VirtualMachineReconciler {
-
+	prober prober.Manager) *Reconciler {
 	// Limit the maximum number of VirtualMachine creates by the provider. Calculated as MAX_CREATE_VMS_ON_PROVIDER
 	// (default 80) percent of the total number of reconciler threads.
 	maxConcurrentCreateVMsOnProvider := int(math.Ceil((float64(numReconcilers) * float64(lib.MaxConcurrentCreateVMsOnProvider())) / float64(100)))
 
-	return &VirtualMachineReconciler{
+	return &Reconciler{
 		Client:                           client,
 		Logger:                           logger,
 		Recorder:                         recorder,
-		VmProvider:                       vmProvider,
+		VMProvider:                       vmProvider,
 		Prober:                           prober,
 		MaxConcurrentCreateVMsOnProvider: maxConcurrentCreateVMsOnProvider,
 	}
 }
 
-// VirtualMachineReconciler reconciles a VirtualMachine object
-type VirtualMachineReconciler struct {
+// Reconciler reconciles a VirtualMachine object.
+type Reconciler struct {
 	client.Client
 	Logger     logr.Logger
 	Recorder   record.Recorder
-	VmProvider vmprovider.VirtualMachineProviderInterface
+	VMProvider vmprovider.VirtualMachineProviderInterface
 	Prober     prober.Manager
 
 	// Hack to limit concurrent create operations because they block and can take a long time.
@@ -212,7 +211,7 @@ type VirtualMachineReconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentlibraryproviders,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsourcebindings,verbs=get;list;watch
 
-func (r *VirtualMachineReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	vm := &vmopv1alpha1.VirtualMachine{}
 	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -271,12 +270,12 @@ func requeueDelay(ctx *context.VirtualMachineContext) time.Duration {
 	return 0
 }
 
-func (r *VirtualMachineReconciler) deleteVm(ctx *context.VirtualMachineContext) (err error) {
+func (r *Reconciler) deleteVM(ctx *context.VirtualMachineContext) (err error) {
 	defer func() {
 		r.Recorder.EmitEvent(ctx.VM, "Delete", err, false)
 	}()
 
-	err = r.VmProvider.DeleteVirtualMachine(ctx, ctx.VM)
+	err = r.VMProvider.DeleteVirtualMachine(ctx, ctx.VM)
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
 			ctx.Logger.Info("To be deleted VirtualMachine was not found")
@@ -290,7 +289,7 @@ func (r *VirtualMachineReconciler) deleteVm(ctx *context.VirtualMachineContext) 
 	return nil
 }
 
-func (r *VirtualMachineReconciler) ReconcileDelete(ctx *context.VirtualMachineContext) error {
+func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineContext) error {
 	vm := ctx.VM
 
 	ctx.Logger.Info("Reconciling VirtualMachine Deletion")
@@ -301,7 +300,7 @@ func (r *VirtualMachineReconciler) ReconcileDelete(ctx *context.VirtualMachineCo
 	if controllerutil.ContainsFinalizer(vm, finalizerName) {
 		vm.Status.Phase = vmopv1alpha1.Deleting
 
-		if err := r.deleteVm(ctx); err != nil {
+		if err := r.deleteVM(ctx); err != nil {
 			return err
 		}
 
@@ -315,8 +314,8 @@ func (r *VirtualMachineReconciler) ReconcileDelete(ctx *context.VirtualMachineCo
 	return nil
 }
 
-// Process a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
-func (r *VirtualMachineReconciler) ReconcileNormal(ctx *context.VirtualMachineContext) error {
+// ReconcileNormal processes a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
+func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) error {
 	if !controllerutil.ContainsFinalizer(ctx.VM, finalizerName) {
 		// The finalizer must be present before proceeding in order to ensure that the VM will
 		// be cleaned up. Return immediately after here to let the patcher helper update the
@@ -330,7 +329,7 @@ func (r *VirtualMachineReconciler) ReconcileNormal(ctx *context.VirtualMachineCo
 		ctx.Logger.Info("Finished Reconciling VirtualMachine")
 	}()
 
-	if err := r.createOrUpdateVm(ctx); err != nil {
+	if err := r.createOrUpdateVM(ctx); err != nil {
 		ctx.Logger.Error(err, "Failed to reconcile VirtualMachine")
 		return err
 	}
@@ -341,7 +340,7 @@ func (r *VirtualMachineReconciler) ReconcileNormal(ctx *context.VirtualMachineCo
 	return nil
 }
 
-func (r *VirtualMachineReconciler) getStoragePolicyID(ctx *context.VirtualMachineContext) (string, error) {
+func (r *Reconciler) getStoragePolicyID(ctx *context.VirtualMachineContext) (string, error) {
 	scName := ctx.VM.Spec.StorageClass
 	if scName == "" {
 		return "", nil
@@ -356,7 +355,7 @@ func (r *VirtualMachineReconciler) getStoragePolicyID(ctx *context.VirtualMachin
 	return sc.Parameters["storagePolicyID"], nil
 }
 
-func (r *VirtualMachineReconciler) getContentLibraryProviderFromImage(ctx *context.VirtualMachineContext, image *vmopv1alpha1.VirtualMachineImage) (*vmopv1alpha1.ContentLibraryProvider, error) {
+func (r *Reconciler) getContentLibraryProviderFromImage(ctx *context.VirtualMachineContext, image *vmopv1alpha1.VirtualMachineImage) (*vmopv1alpha1.ContentLibraryProvider, error) {
 	for _, ownerRef := range image.OwnerReferences {
 		if ownerRef.Kind == "ContentLibraryProvider" {
 			clProvider := &vmopv1alpha1.ContentLibraryProvider{}
@@ -372,7 +371,7 @@ func (r *VirtualMachineReconciler) getContentLibraryProviderFromImage(ctx *conte
 	return nil, fmt.Errorf("VirtualMachineImage does not have an OwnerReference to the ContentLibraryProvider. imageName: %v", image.Name)
 }
 
-func (r *VirtualMachineReconciler) getContentSourceFromCLProvider(ctx *context.VirtualMachineContext, clProvider *vmopv1alpha1.ContentLibraryProvider) (*vmopv1alpha1.ContentSource, error) {
+func (r *Reconciler) getContentSourceFromCLProvider(ctx *context.VirtualMachineContext, clProvider *vmopv1alpha1.ContentLibraryProvider) (*vmopv1alpha1.ContentSource, error) {
 	for _, ownerRef := range clProvider.OwnerReferences {
 		if ownerRef.Kind == "ContentSource" {
 			cs := &vmopv1alpha1.ContentSource{}
@@ -392,7 +391,7 @@ func (r *VirtualMachineReconciler) getContentSourceFromCLProvider(ctx *context.V
 // This is done by checking the OwnerReference of the VirtualMachineImage resource. As a side effect, with VM service FSS,
 // we also check if the VM's namespace has access to the VirtualMachineImage specified in the Spec. This is done by checking
 // if a ContentSourceBinding existing in the namespace that points to the ContentSource corresponding to the specified image.
-func (r *VirtualMachineReconciler) getImageAndContentLibraryUUID(ctx *context.VirtualMachineContext) (*vmopv1alpha1.VirtualMachineImage, string, error) {
+func (r *Reconciler) getImageAndContentLibraryUUID(ctx *context.VirtualMachineContext) (*vmopv1alpha1.VirtualMachineImage, string, error) {
 	imageName := ctx.VM.Spec.ImageName
 
 	vmImage := &vmopv1alpha1.VirtualMachineImage{}
@@ -461,7 +460,7 @@ func (r *VirtualMachineReconciler) getImageAndContentLibraryUUID(ctx *context.Vi
 
 // getVMClass checks if a VM class specified by a VM spec is valid. When the VMServiceFSSEnabled is enabled,
 // a valid VM Class binding for the class in the VM's namespace must exist.
-func (r *VirtualMachineReconciler) getVMClass(ctx *context.VirtualMachineContext) (*vmopv1alpha1.VirtualMachineClass, error) {
+func (r *Reconciler) getVMClass(ctx *context.VirtualMachineContext) (*vmopv1alpha1.VirtualMachineClass, error) {
 	className := ctx.VM.Spec.ClassName
 
 	vmClass := &vmopv1alpha1.VirtualMachineClass{}
@@ -513,13 +512,13 @@ func (r *VirtualMachineReconciler) getVMClass(ctx *context.VirtualMachineContext
 	return vmClass, nil
 }
 
-func (r *VirtualMachineReconciler) getVMMetadata(ctx *context.VirtualMachineContext) (*vmprovider.VmMetadata, error) {
+func (r *Reconciler) getVMMetadata(ctx *context.VirtualMachineContext) (*vmprovider.VmMetadata, error) {
 	inMetadata := ctx.VM.Spec.VmMetadata
 	if inMetadata == nil {
 		return nil, nil
 	}
 
-	vmMetadataConfigMap := &v1.ConfigMap{}
+	vmMetadataConfigMap := &corev1.ConfigMap{}
 	err := r.Get(ctx, client.ObjectKey{Name: inMetadata.ConfigMapName, Namespace: ctx.VM.Namespace}, vmMetadataConfigMap)
 	if err != nil {
 		return nil, err
@@ -533,7 +532,7 @@ func (r *VirtualMachineReconciler) getVMMetadata(ctx *context.VirtualMachineCont
 	return outMetadata, nil
 }
 
-func (r *VirtualMachineReconciler) getResourcePolicy(ctx *context.VirtualMachineContext) (*vmopv1alpha1.VirtualMachineSetResourcePolicy, error) {
+func (r *Reconciler) getResourcePolicy(ctx *context.VirtualMachineContext) (*vmopv1alpha1.VirtualMachineSetResourcePolicy, error) {
 	rpName := ctx.VM.Spec.ResourcePolicyName
 	if rpName == "" {
 		return nil, nil
@@ -548,8 +547,7 @@ func (r *VirtualMachineReconciler) getResourcePolicy(ctx *context.VirtualMachine
 
 	// Make sure that the corresponding entities (RP and Folder) are created on the infra provider before
 	// reconciling the VM. Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy.
-	// TODO: This really only needs to check the VM's AZ, not all AZs.
-	rpReady, err := r.VmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
+	rpReady, err := r.VMProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
 	if err != nil {
 		ctx.Logger.Error(err, "Failed to check if VirtualMachineSetResourcePolicy exists")
 		return nil, err
@@ -561,8 +559,8 @@ func (r *VirtualMachineReconciler) getResourcePolicy(ctx *context.VirtualMachine
 	return resourcePolicy, nil
 }
 
-// createOrUpdateVm calls into the VM provider to reconcile a VirtualMachine
-func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineContext) error {
+// createOrUpdateVM calls into the VM provider to reconcile a VirtualMachine.
+func (r *Reconciler) createOrUpdateVM(ctx *context.VirtualMachineContext) error {
 	vmClass, err := r.getVMClass(ctx)
 	if err != nil {
 		return err
@@ -601,7 +599,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 		ContentLibraryUUID: clUUID,
 	}
 
-	exists, err := r.VmProvider.DoesVirtualMachineExist(ctx, vm)
+	exists, err := r.VMProvider.DoesVirtualMachineExist(ctx, vm)
 	if err != nil {
 		ctx.Logger.Error(err, "Failed to check if VirtualMachine exists from provider")
 		return err
@@ -623,16 +621,16 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 			return nil
 		}
 
-		r.NumVMsBeingCreatedOnProvider += 1
+		r.NumVMsBeingCreatedOnProvider++
 		r.mutex.Unlock()
 
 		defer func() {
 			r.mutex.Lock()
-			r.NumVMsBeingCreatedOnProvider -= 1
+			r.NumVMsBeingCreatedOnProvider--
 			r.mutex.Unlock()
 		}()
 
-		err = r.VmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
+		err = r.VMProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 		if err != nil {
 			ctx.Logger.Error(err, "Provider failed to create VirtualMachine")
 			r.Recorder.EmitEvent(vm, "Create", err, false)
@@ -642,7 +640,7 @@ func (r *VirtualMachineReconciler) createOrUpdateVm(ctx *context.VirtualMachineC
 
 	vm.Status.Phase = vmopv1alpha1.Created
 
-	err = r.VmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
+	err = r.VMProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
 	if err != nil {
 		ctx.Logger.Error(err, "Provider failed to update VirtualMachine")
 		r.Recorder.EmitEvent(vm, "Update", err, false)

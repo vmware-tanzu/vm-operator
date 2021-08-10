@@ -29,6 +29,7 @@ import (
 )
 
 const (
+	// VcCredsSecretName is the credential secret that stores the VM operator service provider user credentials.
 	VcCredsSecretName = "wcp-vmop-sa-vc-auth" // nolint:gosec
 )
 
@@ -141,9 +142,8 @@ func NewReconciler(
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmOpNamespace string,
-	vmProvider vmprovider.VirtualMachineProviderInterface) *InfraClusterReconciler {
-
-	return &InfraClusterReconciler{
+	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
+	return &Reconciler{
 		Client:        client,
 		Logger:        logger,
 		Recorder:      recorder,
@@ -152,7 +152,7 @@ func NewReconciler(
 	}
 }
 
-type InfraClusterReconciler struct {
+type Reconciler struct {
 	client.Client
 	Logger        logr.Logger
 	Recorder      record.Recorder
@@ -162,12 +162,13 @@ type InfraClusterReconciler struct {
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
-func (r *InfraClusterReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
 	// This is totally wrong and we should break this controller apart so we're not
 	// watching different types.
 
 	if req.Name == VcCredsSecretName && req.Namespace == r.vmOpNamespace {
-		return ctrl.Result{}, r.reconcileVcCreds(ctx, req)
+		r.reconcileVcCreds(ctx, req)
+		return ctrl.Result{}, nil
 	}
 
 	if req.Name == WcpClusterConfigMapName && req.Namespace == WcpClusterConfigMapNamespace {
@@ -182,13 +183,12 @@ func (r *InfraClusterReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
-func (r *InfraClusterReconciler) reconcileVcCreds(ctx goctx.Context, req ctrl.Request) error {
+func (r *Reconciler) reconcileVcCreds(ctx goctx.Context, req ctrl.Request) {
 	r.Logger.Info("Reconciling updated VM Operator credentials", "secret", req.NamespacedName)
 	r.vmProvider.ClearSessionsAndClient(ctx)
-	return nil
 }
 
-func (r *InfraClusterReconciler) reconcileWcpClusterConfig(ctx goctx.Context, req ctrl.Request) error {
+func (r *Reconciler) reconcileWcpClusterConfig(ctx goctx.Context, req ctrl.Request) error {
 	r.Logger.V(4).Info("Reconciling WCP Cluster Config", "configMap", req.NamespacedName)
 
 	cm := &corev1.ConfigMap{}
@@ -201,6 +201,7 @@ func (r *InfraClusterReconciler) reconcileWcpClusterConfig(ctx goctx.Context, re
 
 	clusterConfig, err := ParseWcpClusterConfig(cm.Data)
 	if err != nil {
+		r.Logger.Error(err, "error in parsing the WCP cluster config")
 		// No point of retrying until the object is updated.
 		return nil
 	}
@@ -208,7 +209,7 @@ func (r *InfraClusterReconciler) reconcileWcpClusterConfig(ctx goctx.Context, re
 	return r.vmProvider.UpdateVcPNID(ctx, clusterConfig.VcPNID, clusterConfig.VcPort)
 }
 
-func (r *InfraClusterReconciler) reconcileNamespace(ctx goctx.Context, req ctrl.Request) error {
+func (r *Reconciler) reconcileNamespace(ctx goctx.Context, req ctrl.Request) error {
 	r.Logger.V(1).Info("Reconciling namespace", "namespace", req.NamespacedName.Name)
 
 	ns := &corev1.Namespace{}

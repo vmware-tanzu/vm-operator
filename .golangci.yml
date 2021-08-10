@@ -1,47 +1,85 @@
-# This file contains the rules for golangci-lint
-# It's a "copy" of 
-# with additional linters.
-
-# options for analysis running
 run:
-  # timeout for analysis, e.g. 30s, 5m, default is 1m
   deadline: 5m
-
-  # which dirs to skip: they won't be analyzed;
-  # can use regexp here: generated.*, regexp is applied on full path;
-  # default value is empty list, but next dirs are always skipped independently
-  # from this option's value:
-  #   	vendor$, third_party$, testdata$, examples$, Godeps$, builtin$
   skip-files:
    - ".*generated.*\\.go"
+   - pkg/
+   - webhooks/
+   - external/
+   - controllers/virtualmachineservice/utils/
 
 # override defaults
 linters-settings:
-  gocyclo:
-    # minimal code complexity to report
-    min-complexity: 18
+  # gocyclo:
+  #   min-complexity: 18
   goimports:
     # put imports beginning with prefix after 3rd-party packages;
     # it's a comma-separated list of prefixes
     local-prefixes: github.com/vmware-tanzu
+  importas:
+    no-unaliased: true
+    alias:
+      # Kubernetes
+      - pkg: k8s.io/api/core/v1
+        alias: corev1
 
-# linters to enable in addition to the default linters
 linters:
+  disable-all: true
   enable:
-    - dupl
-    - gosec
-    - goconst
-    - gocyclo
-    - gofmt
-    - goimports
-    # - interfacer: This is not used in cluster-api or controller-runtime.
-    # It complains in some of the pkg/patch methods to use runtime.Object
-    # instead of client.Object. Ignore for now since that code is taken as-is
-    # from upstream cluster-api.
-    - misspell
-    - nakedret
-    - scopelint
-    #- stylecheck (too much existing code fails)
-    - unconvert
-    - unused
-  disable-all: false
+  - asciicheck
+  - bodyclose
+  - deadcode
+  - depguard
+  - dogsled
+  - errcheck
+  - exportloopref
+  - goconst
+  - gocritic
+  - gocyclo
+  - godot
+  - gofmt
+  - goimports
+  - goprintffuncname
+  - gosec
+  - gosimple
+  - govet
+  - ifshort
+  - importas
+  - ineffassign
+  - misspell
+  - nakedret
+  - nilerr
+  - nolintlint
+  - prealloc
+  - revive
+  - rowserrcheck
+  - staticcheck
+  - structcheck
+  - stylecheck
+  - typecheck
+  - unconvert
+  - unparam
+  - varcheck
+  - whitespace  
+
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0
+  # Disable the default golangci exclusions so no issues are skipped. This will help reviewers to focus on
+  # reviewing the most relevant changes in the PRs and avoid nitpicking.
+  exclude-use-default: false
+  exclude:
+  # TODO: Remove the following exclusions over time once we have fixed those.
+  - "ST1000: at least one file in a package should have a package comment"
+  # List of regexps of issue texts to exclude, empty list by default.
+  exclude-rules:
+  - linters:
+    - revive
+    text: ".*should have comment.* or be unexported"
+  - linters:
+    - whitespace
+    - godot
+    path: test/
+  # Dot imports for gomega or ginkgo are allowed
+  # within test files.
+  - path: test/
+    text: should not use dot imports

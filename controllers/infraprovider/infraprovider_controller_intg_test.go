@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -18,16 +18,15 @@ import (
 )
 
 func intgTests() {
-
 	var (
 		ctx  *builder.IntegrationTestContext
-		node *v1.Node
+		node *corev1.Node
 	)
 
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
 
-		node = &v1.Node{
+		node = &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-node",
 			},
@@ -37,19 +36,19 @@ func intgTests() {
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-		intgFakeVmProvider.Reset()
+		intgFakeVMProvider.Reset()
 	})
 
 	Context("Reconcile", func() {
 		var isCalled int32
 
 		BeforeEach(func() {
-			intgFakeVmProvider.Lock()
-			intgFakeVmProvider.ComputeClusterCpuMinFrequencyFn = func(ctx context.Context) error {
+			intgFakeVMProvider.Lock()
+			intgFakeVMProvider.ComputeClusterCpuMinFrequencyFn = func(ctx context.Context) error {
 				atomic.AddInt32(&isCalled, 1)
 				return nil
 			}
-			intgFakeVmProvider.Unlock()
+			intgFakeVMProvider.Unlock()
 
 			Expect(ctx.Client.Create(ctx, node)).To(Succeed())
 		})

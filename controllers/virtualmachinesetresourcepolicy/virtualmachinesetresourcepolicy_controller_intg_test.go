@@ -18,7 +18,6 @@ import (
 )
 
 func intgTests() {
-
 	var (
 		ctx *builder.IntegrationTestContext
 
@@ -43,7 +42,7 @@ func intgTests() {
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-		intgFakeVmProvider.Reset()
+		intgFakeVMProvider.Reset()
 	})
 
 	getResourcePolicy := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1alpha1.VirtualMachineSetResourcePolicy {
@@ -64,7 +63,6 @@ func intgTests() {
 	}
 
 	Context("Reconcile", func() {
-
 		It("Reconciles after VirtualMachineSetResourcePolicy creation", func() {
 			Expect(ctx.Client.Create(ctx, resourcePolicy)).To(Succeed())
 
@@ -74,7 +72,7 @@ func intgTests() {
 
 			By("Provider should be able to find the Resource Policy", func() {
 				Eventually(func() bool {
-					exists, err := intgFakeVmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
+					exists, err := intgFakeVMProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
 					if err != nil {
 						return false
 					}
@@ -86,7 +84,6 @@ func intgTests() {
 				err := ctx.Client.Delete(ctx, resourcePolicy)
 				Expect(err == nil || apiErrors.IsNotFound(err)).To(BeTrue())
 			})
-
 		})
 	})
 }

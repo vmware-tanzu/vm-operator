@@ -33,7 +33,7 @@ func unitTestsReconcile() {
 	var (
 		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
-		reconciler  *virtualmachinesetresourcepolicy.VirtualMachineSetResourcePolicyReconciler
+		reconciler  *virtualmachinesetresourcepolicy.Reconciler
 
 		resourcePolicyCtx *context.VirtualMachineSetResourcePolicyContext
 		resourcePolicy    *vmopv1alpha1.VirtualMachineSetResourcePolicy
@@ -60,7 +60,7 @@ func unitTestsReconcile() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
-		reconciler = &virtualmachinesetresourcepolicy.VirtualMachineSetResourcePolicyReconciler{
+		reconciler = &virtualmachinesetresourcepolicy.Reconciler{
 			Client:     ctx.Client,
 			Logger:     ctx.Logger,
 			VMProvider: ctx.VmProvider,
@@ -98,7 +98,6 @@ func unitTestsReconcile() {
 		})
 
 		When("One or more VMs are referencing this policy", func() {
-
 			BeforeEach(func() {
 				initObjects = append(initObjects, vm)
 			})

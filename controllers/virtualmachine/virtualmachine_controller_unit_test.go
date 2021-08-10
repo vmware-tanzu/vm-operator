@@ -49,8 +49,8 @@ func unitTestsReconcile() {
 		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 
-		reconciler       *virtualmachine.VirtualMachineReconciler
-		fakeVmProvider   *providerfake.FakeVmProvider
+		reconciler       *virtualmachine.Reconciler
+		fakeVMProvider   *providerfake.FakeVmProvider
 		vmCtx            *vmopContext.VirtualMachineContext
 		vm               *vmopv1alpha1.VirtualMachine
 		contentSource    *vmopv1alpha1.ContentSource
@@ -186,7 +186,7 @@ func unitTestsReconcile() {
 			ctx.VmProvider,
 			fakeProbeManagerIf,
 		)
-		fakeVmProvider = ctx.VmProvider.(*providerfake.FakeVmProvider)
+		fakeVMProvider = ctx.VmProvider.(*providerfake.FakeVmProvider)
 		fakeProbeManager = fakeProbeManagerIf.(*proberfake.FakeProberManager)
 
 		vmCtx = &vmopContext.VirtualMachineContext{
@@ -202,7 +202,7 @@ func unitTestsReconcile() {
 		initObjects = nil
 		vmCtx = nil
 		reconciler = nil
-		fakeVmProvider = nil
+		fakeVMProvider = nil
 	})
 
 	Context("ReconcileNormal", func() {
@@ -476,7 +476,7 @@ func unitTestsReconcile() {
 			var isCalled int32
 
 			It("does not call into the provider to create the new VM", func() {
-				intgFakeVmProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+				intgFakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
 					atomic.AddInt32(&isCalled, 1)
 					return nil
 				}
@@ -493,7 +493,7 @@ func unitTestsReconcile() {
 
 		It("will return error when provider fails to create VM", func() {
 			// Simulate an error during VM create
-			fakeVmProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+			fakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
 				return errors.New(providerError)
 			}
 
@@ -506,7 +506,7 @@ func unitTestsReconcile() {
 
 		It("will return error when provider fails to update VM", func() {
 			// Simulate an error after the VM is created.
-			fakeVmProvider.UpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+			fakeVMProvider.UpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
 				return errors.New(providerError)
 			}
 
@@ -594,7 +594,7 @@ func unitTestsReconcile() {
 				When("VM ResourcePolicy exists check returns error", func() {
 					errMsg := "exists error"
 					JustBeforeEach(func() {
-						fakeVmProvider.DoesVirtualMachineSetResourcePolicyExistFn = func(ctx context.Context, rp *vmopv1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+						fakeVMProvider.DoesVirtualMachineSetResourcePolicyExistFn = func(ctx context.Context, rp *vmopv1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 							return false, errors.New(errMsg)
 						}
 					})
@@ -608,7 +608,7 @@ func unitTestsReconcile() {
 
 				When("VM ResourcePolicy is ready", func() {
 					JustBeforeEach(func() {
-						fakeVmProvider.DoesVirtualMachineSetResourcePolicyExistFn = func(ctx context.Context, rp *vmopv1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+						fakeVMProvider.DoesVirtualMachineSetResourcePolicyExistFn = func(ctx context.Context, rp *vmopv1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 							return true, nil
 						}
 					})
@@ -651,7 +651,7 @@ func unitTestsReconcile() {
 
 		It("Should not call add to Prober Manager if ReconcileNormal fails", func() {
 			// Simulate an error during VM create
-			fakeVmProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+			fakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
 				return errors.New(providerError)
 			}
 
@@ -671,7 +671,6 @@ func unitTestsReconcile() {
 	})
 
 	Context("ReconcileDelete", func() {
-
 		BeforeEach(func() {
 			initObjects = append(initObjects, vm, vmClass, vmImage, clProvider, contentSource)
 		})
@@ -687,7 +686,7 @@ func unitTestsReconcile() {
 			err := reconciler.ReconcileDelete(vmCtx)
 			Expect(err).NotTo(HaveOccurred())
 
-			vmExists, err := fakeVmProvider.DoesVirtualMachineExist(vmCtx, vmCtx.VM)
+			vmExists, err := fakeVMProvider.DoesVirtualMachineExist(vmCtx, vmCtx.VM)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(vmExists).To(BeFalse())
 
@@ -697,13 +696,13 @@ func unitTestsReconcile() {
 
 		It("will emit corresponding event during delete failure", func() {
 			// Simulate delete failure
-			fakeVmProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
+			fakeVMProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
 				return errors.New(providerError)
 			}
 			err := reconciler.ReconcileDelete(vmCtx)
 			Expect(err).To(HaveOccurred())
 
-			vmExists, err := fakeVmProvider.DoesVirtualMachineExist(vmCtx, vmCtx.VM)
+			vmExists, err := fakeVMProvider.DoesVirtualMachineExist(vmCtx, vmCtx.VM)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(vmExists).To(BeTrue())
 
@@ -713,7 +712,7 @@ func unitTestsReconcile() {
 
 		It("Should not remove from Prober Manager if ReconcileDelete fails", func() {
 			// Simulate delete failure
-			fakeVmProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
+			fakeVMProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
 				return errors.New(providerError)
 			}
 

@@ -38,7 +38,7 @@ func GetRootDirOrDie() string {
 
 // FindModuleDir returns the on-disk directory for the provided Go module.
 func FindModuleDir(module string) string {
-	cmd := exec.Command("go", "mod", "download", "-json", module)
+	cmd := exec.Command("go", "mod", "download", "-json", module) // nolint: gosec // ignore lint errors about launching a subprocess with a variable
 	out, err := cmd.Output()
 	if err != nil {
 		klog.Fatalf("Failed to run go mod to find module %q directory", module)

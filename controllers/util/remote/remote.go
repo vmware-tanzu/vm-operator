@@ -156,7 +156,6 @@ func ForEachObjectInYAML(
 	data []byte,
 	namespace string,
 	actionFn ForEachObjectInYAMLActionFunc) error {
-
 	chanObj, chanErr := encoding.DecodeYAML(data)
 	for {
 		select {

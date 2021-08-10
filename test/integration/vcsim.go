@@ -12,6 +12,7 @@ import (
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/simulator"
 
+	// Blank import to make govmomi client aware of these bindings.
 	_ "github.com/vmware/govmomi/pbm/simulator"
 	_ "github.com/vmware/govmomi/vapi/cluster/simulator"
 	_ "github.com/vmware/govmomi/vapi/simulator"
@@ -26,8 +27,7 @@ type VcSimInstance struct {
 
 func NewVcSimInstance() *VcSimInstance {
 	vpx := simulator.VPX()
-	err := vpx.Create()
-	if err != nil {
+	if err := vpx.Create(); err != nil {
 		vpx.Remove()
 		log.Error(err, "Fail to create vc simulator")
 		os.Exit(255)

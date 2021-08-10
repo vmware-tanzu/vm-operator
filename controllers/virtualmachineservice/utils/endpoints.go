@@ -78,11 +78,9 @@ func RepackSubsets(subsets []v1.EndpointSubset) []v1.EndpointSubset {
 		keyToAddrReadyMap[key] = addrs
 		if port.Port > 0 { // avoid sentinels
 			addrReadyMapKeyToPorts[key] = append(addrReadyMapKeyToPorts[key], port)
-		} else {
-			if _, found := addrReadyMapKeyToPorts[key]; !found {
-				// Force it to be present in the map
-				addrReadyMapKeyToPorts[key] = nil
-			}
+		} else if _, found := addrReadyMapKeyToPorts[key]; !found {
+			// Force it to be present in the map
+			addrReadyMapKeyToPorts[key] = nil
 		}
 	}
 
@@ -190,7 +188,7 @@ func (sl addrsReady) Less(i, j int) bool {
 	return lessAddrReady(sl[i], sl[j])
 }
 
-// LessEndpointAddress compares IP addresses lexicographically and returns true if first argument is lesser than second
+// LessEndpointAddress compares IP addresses lexicographically and returns true if first argument is lesser than second.
 func LessEndpointAddress(a, b *v1.EndpointAddress) bool {
 	ipComparison := bytes.Compare([]byte(a.IP), []byte(b.IP))
 	if ipComparison != 0 {

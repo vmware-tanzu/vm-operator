@@ -213,12 +213,15 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState v
 		return err
 	}
 
-	if _, err = powerTask.WaitForResult(ctx, nil); err != nil {
+	if taskInfo, err := powerTask.WaitForResult(ctx, nil); err != nil {
 		if te, ok := err.(task.Error); ok {
 			// Ignore error if VM was already in desired state.
 			if ips, ok := te.Fault().(*types.InvalidPowerStateFault); ok && ips.ExistingState == ips.RequestedState {
 				return nil
 			}
+		}
+		if taskInfo != nil {
+			err = errors.Wrapf(err, "%s failed", taskInfo.Name)
 		}
 
 		vm.logger.Error(err, "VM change power state task failed", "state", desiredPowerState)
@@ -282,8 +285,7 @@ func (vm *VirtualMachine) Customize(ctx context.Context, spec types.Customizatio
 			}
 		}
 
-		vm.logger.Error(err, "Customization task failed")
-		return err
+		return errors.Wrap(err, "Customization task failed")
 	}
 
 	return nil

@@ -84,10 +84,16 @@ func (r *Reconciler) CreateImages(ctx goctx.Context, images []vmopv1alpha1.Virtu
 		img := image
 		r.Logger.V(4).Info("Creating VirtualMachineImage", "name", img.Name)
 		if err := r.Create(ctx, &img); err != nil {
-			// Ignore VirtualMachineImage if it already exists. This can happen if we have a duplicate image name in the
-			// content library. We sort the ContentSources by the oldest to latest one, so the VirtualMachineImage from
-			// the first library is not overwritten.
-			if !apiErrors.IsAlreadyExists(err) {
+			if apiErrors.IsAlreadyExists(err) {
+				r.Logger.V(4).Info("VirtualMachineImage already exists, generating a new name",
+					"name", img.Name, "ContentProvider name", img.Spec.ProviderRef.Name)
+				// If this image already exists, it happens when there's a vm image with duplicate name from a different
+				// content source. Then we use GenerateName and try to create it again.
+				img.Name = ""
+				img.GenerateName = img.Status.ImageName + "-"
+				err = r.Create(ctx, &img)
+			}
+			if err != nil {
 				retErr = err
 				r.Logger.Error(err, "failed to create VirtualMachineImage", "name", img.Name)
 				continue
@@ -141,14 +147,23 @@ func (r *Reconciler) UpdateImages(ctx goctx.Context, images []vmopv1alpha1.Virtu
 	return retErr
 }
 
-// GetContentLibraryNameFromOwnerRefs returns the ContentLibraryProvider name from the list of OwnerRefs.
-func GetContentLibraryNameFromOwnerRefs(ownerRefs []metav1.OwnerReference) string {
-	for _, o := range ownerRefs {
+// IsImageOwnedByContentLibrary checks whether a VirtualMachineImage is owned by a content library with given UUID.
+func IsImageOwnedByContentLibrary(img vmopv1alpha1.VirtualMachineImage, clUUID string) bool {
+	// If an image has empty OwnerRefs, then this image is created before VM Service.
+	// This case only happens during upgrade from Non-VM service to Non-VM service, or
+	// Non-VM service to VM service.
+	// In this case, we only have one content library before VM Service,
+	// so it's safe to think this image is owned by the given content library.
+	emptyCLOwnerRef := true
+	for _, o := range img.OwnerReferences {
 		if o.Kind == "ContentLibraryProvider" {
-			return o.Name
+			emptyCLOwnerRef = false
+			if o.Name == clUUID {
+				return true
+			}
 		}
 	}
-	return ""
+	return emptyCLOwnerRef
 }
 
 // GetVMImageName returns the display name of the image defined in the template.
@@ -163,8 +178,8 @@ func GetVMImageName(img vmopv1alpha1.VirtualMachineImage) string {
 }
 
 // DiffImages difference two lists of VirtualMachineImages producing 3 lists: images that have been added
-// to "right", images that have been removed in "right", and images that have been updated in "right".
-// DiffImages only differences VirtualMachineImages that belong to the content library with name clUUID.
+// to "providerImages", images that have been removed in "providerImages", and images that have been updated in "providerImages".
+// It only differences VirtualMachineImages that belong to the content library with name clUUID.
 func (r *Reconciler) DiffImages(
 	clUUID string,
 	k8sImages []vmopv1alpha1.VirtualMachineImage,
@@ -172,8 +187,14 @@ func (r *Reconciler) DiffImages(
 	added []vmopv1alpha1.VirtualMachineImage,
 	removed []vmopv1alpha1.VirtualMachineImage,
 	updated []vmopv1alpha1.VirtualMachineImage) {
-	k8sImagesMap := make(map[string]int, len(k8sImages))
+	// k8sImagesInCLMap describes k8s images that are in the cluster and belong to the content library with UUID clUUID.
+	// providerImagesMap describes images returned by the content library provider whose UUID is clUUID.
+	k8sImagesInCLMap := make(map[string]struct{}, len(k8sImages))
 	providerImagesMap := make(map[string]int, len(providerImages))
+
+	for i, item := range providerImages {
+		providerImagesMap[item.Status.ImageName] = i
+	}
 
 	// TODO: Use imageID as the key in the map.
 	// In order to support duplicate vm image names in the cluster, we change the name format of an image.
@@ -182,30 +203,15 @@ func (r *Reconciler) DiffImages(
 	// It makes more sense to use image ID to identify an image. However, for those images created before
 	// duplicate name is supported, .spec.imageID is empty and .status.uuid is deprecated,
 	// there are no easy ways to get the image ID. Use image name instead as the key for now.
-	for i, item := range k8sImages {
-		cl := GetContentLibraryNameFromOwnerRefs(item.OwnerReferences)
-		// This empty string check is to handle the images created before VM Service that do not have an OwnerRef.
-		if cl != "" && cl != clUUID {
-			continue
-		}
-		imageName := GetVMImageName(item)
-		k8sImagesMap[imageName] = i
-	}
-
-	for i, item := range providerImages {
-		providerImagesMap[item.Status.ImageName] = i
-	}
-
 	// Difference
 	for _, image := range k8sImages {
-		cl := GetContentLibraryNameFromOwnerRefs(image.OwnerReferences)
-		// This empty string check is to handle the images created before VM Service that do not have an OwnerRef.
-		if cl != "" && cl != clUUID {
-			// if a VM image doesn't belong to this content source, then skip it.
+		// Only process the VirtualMachineImage resources that are owned by the content source.
+		if !IsImageOwnedByContentLibrary(image, clUUID) {
 			continue
 		}
-
 		name := GetVMImageName(image)
+		k8sImagesInCLMap[name] = struct{}{}
+
 		i, ok := providerImagesMap[name]
 		if !ok {
 			// Identify removed items
@@ -213,7 +219,7 @@ func (r *Reconciler) DiffImages(
 		} else {
 			// Image already exists on the API server.
 			beforeUpdate := image.DeepCopy()
-			// Identify updated items. We only care about OwnerReference and Spec update.
+			// Identify updated items.
 			image.Annotations = providerImages[i].Annotations
 			image.OwnerReferences = providerImages[i].OwnerReferences
 			image.Spec = providerImages[i].Spec
@@ -227,8 +233,8 @@ func (r *Reconciler) DiffImages(
 
 	// Identify added items
 	for _, i := range providerImages {
-		rightName := GetVMImageName(i)
-		if _, ok := k8sImagesMap[rightName]; !ok {
+		providerImageName := i.Status.ImageName
+		if _, ok := k8sImagesInCLMap[providerImageName]; !ok {
 			added = append(added, i)
 		}
 	}
@@ -240,7 +246,7 @@ func (r *Reconciler) DiffImages(
 func (r *Reconciler) GetImagesFromContentProvider(
 	ctx goctx.Context,
 	contentSource vmopv1alpha1.ContentSource,
-	existingImages []vmopv1alpha1.VirtualMachineImage) ([]*vmopv1alpha1.VirtualMachineImage, error) {
+	existingImages []vmopv1alpha1.VirtualMachineImage) ([]vmopv1alpha1.VirtualMachineImage, error) {
 	providerRef := contentSource.Spec.ProviderRef
 
 	// Currently, the only supported content provider is content library, so we assume that the providerRef
@@ -268,7 +274,9 @@ func (r *Reconciler) GetImagesFromContentProvider(
 			// We need to update all existing VirtualMachineImage objects.
 			continue
 		}
-		if owners := image.GetOwnerReferences(); len(owners) != 0 && owners[0] == clOwnerRef {
+		// For a vm image missing clOwnerRef, it doesn't matter that IsImageOwnedByContentLibrary returns true.
+		// It always has empty imageID, so that it won't reach this line.
+		if IsImageOwnedByContentLibrary(image, clProvider.Name) {
 			currentCLImages[imageID] = image
 		}
 	}
@@ -279,12 +287,14 @@ func (r *Reconciler) GetImagesFromContentProvider(
 		return nil, err
 	}
 
+	convertedImages := make([]vmopv1alpha1.VirtualMachineImage, 0)
 	for _, img := range images {
 		img.OwnerReferences = []metav1.OwnerReference{clOwnerRef}
 		img.Spec.ProviderRef = providerRef
+		convertedImages = append(convertedImages, *img)
 	}
 
-	return images, nil
+	return convertedImages, nil
 }
 
 func (r *Reconciler) DifferenceImages(ctx goctx.Context,
@@ -308,19 +318,14 @@ func (r *Reconciler) DifferenceImages(ctx goctx.Context,
 		return nil, nil, nil, err
 	}
 
-	convertedImages := make([]vmopv1alpha1.VirtualMachineImage, 0)
-	for _, img := range providerManagedImages {
-		convertedImages = append(convertedImages, *img)
-	}
-
 	// Difference the kubernetes images with the provider images
-	added, removed, updated := r.DiffImages(contentSource.Spec.ProviderRef.Name, k8sManagedImages, convertedImages)
+	added, removed, updated := r.DiffImages(contentSource.Spec.ProviderRef.Name, k8sManagedImages, providerManagedImages)
 	r.Logger.V(4).Info("Differenced", "added", added, "removed", removed, "updated", updated)
 
 	return added, removed, updated, nil
 }
 
-// SyncImages syncs images from all the content sources installed.
+// SyncImages syncs images from the given content sources.
 func (r *Reconciler) SyncImages(ctx goctx.Context, contentSource *vmopv1alpha1.ContentSource) error {
 	added, removed, updated, err := r.DifferenceImages(ctx, contentSource)
 	if err != nil {
@@ -329,6 +334,13 @@ func (r *Reconciler) SyncImages(ctx goctx.Context, contentSource *vmopv1alpha1.C
 	}
 
 	// Best effort to sync VirtualMachineImage resources between provider and API server.
+	// DeleteImages should be called before CreateImages, in case that removed list and added list have duplicate
+	// vm images.
+	deleteErr := r.DeleteImages(ctx, removed)
+	if deleteErr != nil {
+		r.Logger.Error(deleteErr, "failed to delete VirtualMachineImages")
+	}
+
 	createErr := r.CreateImages(ctx, added)
 	if createErr != nil {
 		r.Logger.Error(createErr, "failed to create VirtualMachineImages")
@@ -337,11 +349,6 @@ func (r *Reconciler) SyncImages(ctx goctx.Context, contentSource *vmopv1alpha1.C
 	updateErr := r.UpdateImages(ctx, updated)
 	if updateErr != nil {
 		r.Logger.Error(updateErr, "failed to update VirtualMachineImages")
-	}
-
-	deleteErr := r.DeleteImages(ctx, removed)
-	if deleteErr != nil {
-		r.Logger.Error(deleteErr, "failed to delete VirtualMachineImages")
 	}
 
 	if createErr != nil || updateErr != nil || deleteErr != nil {

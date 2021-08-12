@@ -67,7 +67,7 @@ var _ = Describe("VirtualMachineImages", func() {
 
 			image := contentlibrary.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
-			Expect(image.GenerateName).Should(ContainSubstring("fakeItem"))
+			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(HaveLen(2))
 			Expect(image.Annotations).To(HaveKey(constants.VMImageCLVersionAnnotation))
 			Expect(image.Annotations).Should(HaveKeyWithValue("vmware-system-version", "1.15"))
@@ -114,7 +114,7 @@ var _ = Describe("VirtualMachineImages", func() {
 
 				image := contentlibrary.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 				Expect(image).ToNot(BeNil())
-				Expect(image.GenerateName).Should(ContainSubstring("fakeItem"))
+				Expect(image.Name).Should(Equal("fakeItem"))
 				Expect(image.Annotations).To(HaveKey(constants.VMImageCLVersionAnnotation))
 				Expect(image.CreationTimestamp).To(BeEquivalentTo(metav1.NewTime(ts)))
 				Expect(image.Spec.ProductInfo.Version).Should(BeEmpty())
@@ -160,7 +160,7 @@ var _ = Describe("VirtualMachineImages", func() {
 			item.Type = "vmtx"
 			image := contentlibrary.LibItemToVirtualMachineImage(&item, nil)
 			Expect(image).ToNot(BeNil())
-			Expect(image.GenerateName).Should(ContainSubstring("fakeItem"))
+			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(HaveKey(constants.VMImageCLVersionAnnotation))
 
 			// ImageSupported in Status is unset as the image type is not OVF type
@@ -308,7 +308,7 @@ var _ = Describe("VirtualMachineImages", func() {
 
 			image := contentlibrary.LibItemToVirtualMachineImage(&item, ovfEnvelope)
 			Expect(image).ToNot(BeNil())
-			Expect(image.GenerateName).Should(ContainSubstring("fakeItem"))
+			Expect(image.Name).Should(Equal("fakeItem"))
 
 			Expect(image.Spec.OVFEnv).Should(HaveLen(1))
 			Expect(image.Spec.OVFEnv).Should(HaveKey(userConfigurableKey))

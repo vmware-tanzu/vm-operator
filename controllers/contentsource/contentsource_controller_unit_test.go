@@ -25,8 +25,7 @@ import (
 func unitTests() {
 	Describe("Invoking VirtualMachineImage CRUD unit tests", unitTestsCRUDImage)
 	Describe("Invoking ReconcileProviderRef unit tests", reconcileProviderRef)
-	Describe("Invoking SortedContentSource unit tests", testSortedContentSources)
-	Describe("Invoking GetContentLibraryNameFromOwnerRefs unit tests", unitTestGetContentLibraryNameFromOwnerRefs)
+	Describe("Invoking IsImageOwnedByContentLibrary unit tests", unitTestIsImageOwnedByContentLibrary)
 }
 
 func reconcileProviderRef() {
@@ -103,23 +102,53 @@ func reconcileProviderRef() {
 	})
 }
 
-func unitTestGetContentLibraryNameFromOwnerRefs() {
-	Context("with list of OwnerRefs", func() {
-		expectedCLName := "cl-name"
-		ownerRefs := []metav1.OwnerReference{
-			{
-				Kind: "ContentLibraryProvider",
-				Name: expectedCLName,
-			},
-			{
-				Kind: "dummy-kind",
-				Name: "dummy-name-2",
-			},
-		}
+func unitTestIsImageOwnedByContentLibrary() {
+	expectedCLName := "cl-name"
+	ownerRefs := []metav1.OwnerReference{
+		{
+			Kind: "ContentLibraryProvider",
+			Name: expectedCLName,
+		},
+		{
+			Kind: "dummy-kind",
+			Name: "dummy-name-2",
+		},
+	}
+	img := v1alpha1.VirtualMachineImage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "dummy-image",
+			OwnerReferences: ownerRefs,
+		},
+	}
 
-		It("returns the name of ContentLibraryProvider", func() {
-			clName := contentsource.GetContentLibraryNameFromOwnerRefs(ownerRefs)
-			Expect(clName).To(Equal(expectedCLName))
+	Context("with list of OwnerRefs", func() {
+		BeforeEach(func() {
+			img.OwnerReferences = ownerRefs
+		})
+
+		AfterEach(func() {
+			img.OwnerReferences = []metav1.OwnerReference{}
+		})
+
+		It("Image is owned by the content library", func() {
+			Expect(contentsource.IsImageOwnedByContentLibrary(img, expectedCLName)).To(BeTrue())
+		})
+
+		It("Image is not owned by the content library", func() {
+			img.OwnerReferences[0].Name = "dummy-cl"
+			Expect(contentsource.IsImageOwnedByContentLibrary(img, expectedCLName)).To(BeFalse())
+		})
+	})
+
+	Context("With empty ContentLibraryProvider OwnerRefs", func() {
+		It("Image is owned by the content library", func() {
+			img.OwnerReferences = []metav1.OwnerReference{
+				{
+					Kind: "dummy-kind",
+					Name: "dummy-name-2",
+				},
+			}
+			Expect(contentsource.IsImageOwnedByContentLibrary(img, "dummy-name")).To(BeTrue())
 		})
 	})
 }
@@ -194,25 +223,22 @@ func unitTestsCRUDImage() {
 
 				providerImg = &v1alpha1.VirtualMachineImage{
 					ObjectMeta: metav1.ObjectMeta{
-						GenerateName: "dummy-image-",
-						OwnerReferences: []metav1.OwnerReference{{
-							APIVersion: "vmoperator.vmware.com/v1alpha1",
-							Kind:       "ContentLibraryProvider",
-							Name:       "dummy-cl",
-						}},
+						Name: "dummy-image",
 					},
 					Spec: v1alpha1.VirtualMachineImageSpec{
 						Type:    "dummy-type-2",
 						ImageID: "dummy-id-2",
-						ProviderRef: v1alpha1.ContentProviderReference{
-							Name: "dummy-cl",
-						},
 					},
 					Status: v1alpha1.VirtualMachineImageStatus{
 						ImageName: "dummy-image",
 					},
 				}
 			})
+
+			//nolint: unparam
+			providerListImageFromCLFunc := func(_ context.Context, _ v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+				return []*v1alpha1.VirtualMachineImage{providerImg}, nil
+			}
 
 			Context("another library with a duplicate image name is added", func() {
 				BeforeEach(func() {
@@ -230,36 +256,53 @@ func unitTestsCRUDImage() {
 				})
 
 				It("a new VirtualMachineImage should be created", func() {
-					fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
-						return []*v1alpha1.VirtualMachineImage{providerImg}, nil
-					}
+					fakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = providerListImageFromCLFunc
 
 					err := reconciler.SyncImages(ctx.Context, &cs)
 					Expect(err).NotTo(HaveOccurred())
+
+					providerConvertedImg := &v1alpha1.VirtualMachineImage{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "dummy-image",
+							OwnerReferences: []metav1.OwnerReference{{
+								APIVersion: "vmoperator.vmware.com/v1alpha1",
+								Kind:       "ContentLibraryProvider",
+								Name:       "dummy-cl",
+							}},
+						},
+						Spec: v1alpha1.VirtualMachineImageSpec{
+							Type:    "dummy-type-2",
+							ImageID: "dummy-id-2",
+							ProviderRef: v1alpha1.ContentProviderReference{
+								Name: "dummy-cl",
+							},
+						},
+						Status: v1alpha1.VirtualMachineImageStatus{
+							ImageName: "dummy-image",
+						},
+					}
 
 					imgList := &v1alpha1.VirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, imgList)).To(Succeed())
 					Expect(len(imgList.Items)).To(Equal(2))
 					if reflect.DeepEqual(imgList.Items[0].OwnerReferences, existingImg.OwnerReferences) {
-						Expect(imgList.Items[0].Spec).To(Equal(existingImg.Spec))
-						Expect(imgList.Items[0].Annotations).To(Equal(existingImg.Annotations))
-						Expect(imgList.Items[1].OwnerReferences).To(Equal(providerImg.OwnerReferences))
-						Expect(imgList.Items[1].Spec).To(Equal(providerImg.Spec))
-						Expect(imgList.Items[1].Annotations).To(Equal(providerImg.Annotations))
+						// Existing image should still have the expected non-generated name.
+						Expect(imgList.Items[0]).To(Equal(*existingImg))
+						Expect(imgList.Items[1].Name).To(ContainSubstring(providerConvertedImg.Name + "-"))
+						Expect(imgList.Items[1].OwnerReferences).To(Equal(providerConvertedImg.OwnerReferences))
+						Expect(imgList.Items[1].Spec).To(Equal(providerConvertedImg.Spec))
+						Expect(imgList.Items[1].Status).To(Equal(providerConvertedImg.Status))
+						Expect(imgList.Items[1].Annotations).To(Equal(providerConvertedImg.Annotations))
 					} else {
-						Expect(imgList.Items[1].Spec).To(Equal(existingImg.Spec))
-						Expect(imgList.Items[1].Annotations).To(Equal(existingImg.Annotations))
-						Expect(imgList.Items[0].OwnerReferences).To(Equal(providerImg.OwnerReferences))
-						Expect(imgList.Items[0].Spec).To(Equal(providerImg.Spec))
-						Expect(imgList.Items[0].Annotations).To(Equal(providerImg.Annotations))
+						Expect(imgList.Items[1]).To(Equal(*existingImg))
+						Expect(imgList.Items[0].Name).To(ContainSubstring(providerConvertedImg.Name + "-"))
+						Expect(imgList.Items[0].OwnerReferences).To(Equal(providerConvertedImg.OwnerReferences))
+						Expect(imgList.Items[0].Spec).To(Equal(providerConvertedImg.Spec))
+						Expect(imgList.Items[0].Status).To(Equal(providerConvertedImg.Status))
+						Expect(imgList.Items[0].Annotations).To(Equal(providerConvertedImg.Annotations))
 					}
 				})
 			})
-
-			//nolint: unparam
-			providerListImageFromCLFunc := func(_ context.Context, _ v1alpha1.ContentLibraryProvider, _ map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
-				return []*v1alpha1.VirtualMachineImage{providerImg}, nil
-			}
 
 			When("the existing image does not have any ContentLibraryProvider OwnerRef", func() {
 				BeforeEach(func() {
@@ -277,6 +320,8 @@ func unitTestsCRUDImage() {
 					Expect(len(imgList.Items)).To(Equal(1))
 
 					vmImage := imgList.Items[0]
+					// Existing image should still have the expected non-generated name.
+					Expect(vmImage.Name).To(Equal(providerImg.Name))
 					Expect(vmImage.Spec).To(Equal(providerImg.Spec))
 					Expect(vmImage.Annotations).To(Equal(providerImg.Annotations))
 					Expect(vmImage.OwnerReferences).To(Equal(providerImg.OwnerReferences))
@@ -304,6 +349,8 @@ func unitTestsCRUDImage() {
 					Expect(len(imgList.Items)).To(Equal(1))
 
 					vmImage := imgList.Items[0]
+					// Existing image should still have the expected non-generated name.
+					Expect(vmImage.Name).To(Equal(providerImg.Name))
 					Expect(vmImage.Spec).To(Equal(providerImg.Spec))
 					Expect(vmImage.Annotations).To(Equal(providerImg.Annotations))
 					Expect(vmImage.OwnerReferences).To(Equal(providerImg.OwnerReferences))
@@ -447,11 +494,15 @@ func unitTestsCRUDImage() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "dummy-vm-image",
 				},
+				Status: v1alpha1.VirtualMachineImageStatus{
+					ImageName: "dummy-vm-image",
+				},
 			}
 		})
 
 		When("non-empty list of images is specified", func() {
 			BeforeEach(func() {
+				images = []v1alpha1.VirtualMachineImage{}
 				images = append(images, image)
 			})
 
@@ -461,35 +512,61 @@ func unitTestsCRUDImage() {
 
 				img := images[0]
 				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: img.Name}, &img)).To(Succeed())
+				Expect(reconciler.DeleteImages(ctx, images)).To(Succeed())
+			})
+		})
+
+		When("two images with the same name are specified", func() {
+			BeforeEach(func() {
+				images = []v1alpha1.VirtualMachineImage{}
+				images = append(images, image)
+				images = append(images, image)
+			})
+
+			It("successfully creates the images with different names", func() {
+				err := reconciler.CreateImages(ctx, images)
+				Expect(err).NotTo(HaveOccurred())
+
+				imgs := v1alpha1.VirtualMachineImageList{}
+				Expect(ctx.Client.List(ctx, &imgs)).To(Succeed())
+				Expect(len(imgs.Items)).Should(Equal(2))
+				if imgs.Items[0].Name == image.Name {
+					Expect(imgs.Items[1].Name).Should(ContainSubstring(image.Name + "-"))
+					images[1].Name = imgs.Items[1].Name
+				} else {
+					Expect(imgs.Items[0].Name).Should(ContainSubstring(image.Name + "-"))
+				}
+
+				Expect(reconciler.DeleteImages(ctx, images)).To(Succeed())
 			})
 		})
 	})
 
 	Context("DiffImages: Difference VirtualMachineImage resources", func() {
-		Context("when left and right is empty", func() {
-			var left []v1alpha1.VirtualMachineImage
-			var right []v1alpha1.VirtualMachineImage
+		Context("when k8s image list and provider image list is empty", func() {
+			var k8sImages []v1alpha1.VirtualMachineImage
+			var providerImages []v1alpha1.VirtualMachineImage
 
 			It("return empty sets", func() {
-				added, removed, updated := reconciler.DiffImages(cl.Name, left, right)
+				added, removed, updated := reconciler.DiffImages(cl.Name, k8sImages, providerImages)
 				Expect(added).To(BeEmpty())
 				Expect(removed).To(BeEmpty())
 				Expect(updated).To(BeEmpty())
 			})
 		})
 
-		Context("when left is empty and right is non-empty", func() {
-			var left []v1alpha1.VirtualMachineImage
-			var right []v1alpha1.VirtualMachineImage
+		Context("when k8s image list is empty and provider image list is non-empty", func() {
+			var k8sImages []v1alpha1.VirtualMachineImage
+			var providerImages []v1alpha1.VirtualMachineImage
 			var image v1alpha1.VirtualMachineImage
 
 			BeforeEach(func() {
 				image = v1alpha1.VirtualMachineImage{}
-				right = append(right, image)
+				providerImages = append(providerImages, image)
 			})
 
 			It("return a non-empty added set", func() {
-				added, removed, updated := reconciler.DiffImages(cl.Name, left, right)
+				added, removed, updated := reconciler.DiffImages(cl.Name, k8sImages, providerImages)
 				Expect(added).ToNot(BeEmpty())
 				Expect(added).To(HaveLen(1))
 				Expect(removed).To(BeEmpty())
@@ -497,18 +574,18 @@ func unitTestsCRUDImage() {
 			})
 		})
 
-		Context("when left is non-empty and right is empty", func() {
-			var left []v1alpha1.VirtualMachineImage
-			var right []v1alpha1.VirtualMachineImage
+		Context("when k8s image list is non-empty and provider image list is empty", func() {
+			var k8sImages []v1alpha1.VirtualMachineImage
+			var providerImages []v1alpha1.VirtualMachineImage
 			var image v1alpha1.VirtualMachineImage
 
 			BeforeEach(func() {
 				image = v1alpha1.VirtualMachineImage{}
-				left = append(left, image)
+				k8sImages = append(k8sImages, image)
 			})
 
 			It("return a non-empty removed set", func() {
-				added, removed, updated := reconciler.DiffImages(cl.Name, left, right)
+				added, removed, updated := reconciler.DiffImages(cl.Name, k8sImages, providerImages)
 				Expect(added).To(BeEmpty())
 				Expect(removed).ToNot(BeEmpty())
 				Expect(removed).To(HaveLen(1))
@@ -516,41 +593,41 @@ func unitTestsCRUDImage() {
 			})
 		})
 
-		Context("when left and right are not empty", func() {
-			var left []v1alpha1.VirtualMachineImage
-			var right []v1alpha1.VirtualMachineImage
-			var imageL v1alpha1.VirtualMachineImage
-			var imageR v1alpha1.VirtualMachineImage
+		Context("when k8s image list and provider image list are not empty", func() {
+			var k8sImages []v1alpha1.VirtualMachineImage
+			var providerImages []v1alpha1.VirtualMachineImage
+			var imageK8s v1alpha1.VirtualMachineImage
+			var imageProvider v1alpha1.VirtualMachineImage
 
 			BeforeEach(func() {
-				imageL = v1alpha1.VirtualMachineImage{}
-				imageR = v1alpha1.VirtualMachineImage{}
-				left = []v1alpha1.VirtualMachineImage{}
-				right = []v1alpha1.VirtualMachineImage{}
+				imageK8s = v1alpha1.VirtualMachineImage{}
+				imageProvider = v1alpha1.VirtualMachineImage{}
+				k8sImages = []v1alpha1.VirtualMachineImage{}
+				providerImages = []v1alpha1.VirtualMachineImage{}
 			})
 
 			JustBeforeEach(func() {
-				left = append(left, imageL)
-				right = append(right, imageR)
+				k8sImages = append(k8sImages, imageK8s)
+				providerImages = append(providerImages, imageProvider)
 			})
 
-			Context("when left and right have a different Spec", func() {
+			Context("when k8s and provider lists have a different Spec", func() {
 				BeforeEach(func() {
-					imageL = v1alpha1.VirtualMachineImage{
+					imageK8s = v1alpha1.VirtualMachineImage{
 						Spec: v1alpha1.VirtualMachineImageSpec{
-							Type: "left-type",
+							Type: "k8s-type",
 						},
 					}
 
-					imageR = v1alpha1.VirtualMachineImage{
+					imageProvider = v1alpha1.VirtualMachineImage{
 						Spec: v1alpha1.VirtualMachineImageSpec{
-							Type: "right-type",
+							Type: "provider-type",
 						},
 					}
 				})
 
 				It("should return a non-empty updated spec", func() {
-					added, removed, updated := reconciler.DiffImages(cl.Name, left, right)
+					added, removed, updated := reconciler.DiffImages(cl.Name, k8sImages, providerImages)
 					Expect(added).To(BeEmpty())
 					Expect(removed).To(BeEmpty())
 					Expect(updated).ToNot(BeEmpty())
@@ -558,32 +635,32 @@ func unitTestsCRUDImage() {
 				})
 			})
 
-			Context("when left and right have same Spec", func() {
+			Context("when k8s and provider lists have same Spec", func() {
 				It("should return an empty updated spec", func() {
-					added, removed, updated := reconciler.DiffImages(cl.Name, left, right)
+					added, removed, updated := reconciler.DiffImages(cl.Name, k8sImages, providerImages)
 					Expect(added).To(BeEmpty())
 					Expect(removed).To(BeEmpty())
 					Expect(updated).To(BeEmpty())
 				})
 			})
 
-			When("left and right have different Annotations", func() {
+			When("k8s and provider lists have different Annotations", func() {
 				var annotations = map[string]string{
 					"key": "value",
 				}
 
 				BeforeEach(func() {
-					imageL = v1alpha1.VirtualMachineImage{}
+					imageK8s = v1alpha1.VirtualMachineImage{}
 
-					imageR = v1alpha1.VirtualMachineImage{
+					imageProvider = v1alpha1.VirtualMachineImage{
 						ObjectMeta: metav1.ObjectMeta{
 							Annotations: annotations,
 						},
 					}
 				})
 
-				It("should return left with annotation set", func() {
-					added, removed, updated := reconciler.DiffImages(cl.Name, left, right)
+				It("should return k8s image list with annotation set", func() {
+					added, removed, updated := reconciler.DiffImages(cl.Name, k8sImages, providerImages)
 					Expect(added).To(BeEmpty())
 					Expect(removed).To(BeEmpty())
 					Expect(updated).ToNot(BeEmpty())
@@ -592,23 +669,23 @@ func unitTestsCRUDImage() {
 				})
 			})
 
-			When("left and right have different OwnerReference", func() {
+			When("k8s and provider lists have different OwnerReference", func() {
 				var ownerRef = []metav1.OwnerReference{{
 					Name: "dummy-name",
 				}}
 
 				BeforeEach(func() {
-					imageL = v1alpha1.VirtualMachineImage{}
+					imageK8s = v1alpha1.VirtualMachineImage{}
 
-					imageR = v1alpha1.VirtualMachineImage{
+					imageProvider = v1alpha1.VirtualMachineImage{
 						ObjectMeta: metav1.ObjectMeta{
 							OwnerReferences: ownerRef,
 						},
 					}
 				})
 
-				It("should return left with annotation set", func() {
-					added, removed, updated := reconciler.DiffImages(cl.Name, left, right)
+				It("should return k8s image list with annotation set", func() {
+					added, removed, updated := reconciler.DiffImages(cl.Name, k8sImages, providerImages)
 					Expect(added).To(BeEmpty())
 					Expect(removed).To(BeEmpty())
 					Expect(updated).ToNot(BeEmpty())
@@ -618,47 +695,73 @@ func unitTestsCRUDImage() {
 			})
 		})
 
-		Context("when left and right are non-empty and unique", func() {
-			var left []v1alpha1.VirtualMachineImage
-			var right []v1alpha1.VirtualMachineImage
-			var imageLeft v1alpha1.VirtualMachineImage
-			var imageRight v1alpha1.VirtualMachineImage
+		Context("when k8s image list and provider image list are non-empty and unique", func() {
+			var k8sImages []v1alpha1.VirtualMachineImage
+			var providerImages []v1alpha1.VirtualMachineImage
+			var imageK8s v1alpha1.VirtualMachineImage
+			var imageProvider v1alpha1.VirtualMachineImage
 
 			BeforeEach(func() {
-				imageLeft = v1alpha1.VirtualMachineImage{
+				k8sImages = []v1alpha1.VirtualMachineImage{}
+				providerImages = []v1alpha1.VirtualMachineImage{}
+				imageK8s = v1alpha1.VirtualMachineImage{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "left",
+						Name: "k8s",
 					},
 				}
-				imageRight = v1alpha1.VirtualMachineImage{
+				imageProvider = v1alpha1.VirtualMachineImage{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "right",
+						Name: "provider",
 					},
 				}
-				left = append(left, imageLeft)
-				right = append(right, imageRight)
+				k8sImages = append(k8sImages, imageK8s)
+				providerImages = append(providerImages, imageProvider)
 			})
 
 			It("return a non-empty added and removed set", func() {
-				added, removed, updated := reconciler.DiffImages(cl.Name, left, right)
+				added, removed, updated := reconciler.DiffImages(cl.Name, k8sImages, providerImages)
 				Expect(added).ToNot(BeEmpty())
 				Expect(added).To(HaveLen(1))
 				Expect(removed).ToNot(BeEmpty())
 				Expect(removed).To(HaveLen(1))
 				Expect(updated).To(BeEmpty())
 			})
+
+			When("k8s image list contains items from another CL", func() {
+				BeforeEach(func() {
+					k8sImages[0].OwnerReferences = []metav1.OwnerReference{{
+						APIVersion: "vmoperator.vmware.com/v1alpha1",
+						Kind:       "ContentLibraryProvider",
+						Name:       "another-dummy-cl",
+					}}
+					providerImages[0].OwnerReferences = []metav1.OwnerReference{{
+						APIVersion: "vmoperator.vmware.com/v1alpha1",
+						Kind:       "ContentLibraryProvider",
+						Name:       "dummy-cl",
+					}}
+				})
+
+				It("return a non-empty added set with a single entry and an empty removed set", func() {
+					added, removed, updated := reconciler.DiffImages(cl.Name, k8sImages, providerImages)
+					Expect(added).ToNot(BeEmpty())
+					Expect(added).To(HaveLen(1))
+					Expect(added).To(ContainElement(providerImages[0]))
+					Expect(removed).To(BeEmpty())
+					Expect(updated).To(BeEmpty())
+				})
+			})
 		})
 
-		Context("when left and right are non-empty and have a non-complete intersection", func() {
-			var left []v1alpha1.VirtualMachineImage
-			var right []v1alpha1.VirtualMachineImage
-			var imageLeft v1alpha1.VirtualMachineImage
-			var imageRight v1alpha1.VirtualMachineImage
+		Context("when k8s image list and provider image list are non-empty and have a non-complete intersection", func() {
+			var k8sImages []v1alpha1.VirtualMachineImage
+			var providerImages []v1alpha1.VirtualMachineImage
+			var imageK8s v1alpha1.VirtualMachineImage
+			var imageProvider v1alpha1.VirtualMachineImage
 
 			BeforeEach(func() {
-				imageLeft = v1alpha1.VirtualMachineImage{
+				imageK8s = v1alpha1.VirtualMachineImage{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "left",
+						Name: "k8s",
 						OwnerReferences: []metav1.OwnerReference{{
 							APIVersion: "vmoperator.vmware.com/v1alpha1",
 							Kind:       "ContentLibraryProvider",
@@ -666,15 +769,15 @@ func unitTestsCRUDImage() {
 						}},
 					},
 					Spec: v1alpha1.VirtualMachineImageSpec{
-						ImageID: "left-id",
+						ImageID: "k8s-id",
 					},
 					Status: v1alpha1.VirtualMachineImageStatus{
-						ImageName: "left",
+						ImageName: "k8s",
 					},
 				}
-				imageRight = v1alpha1.VirtualMachineImage{
+				imageProvider = v1alpha1.VirtualMachineImage{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "right",
+						Name: "provider",
 						OwnerReferences: []metav1.OwnerReference{{
 							APIVersion: "vmoperator.vmware.com/v1alpha1",
 							Kind:       "ContentLibraryProvider",
@@ -682,22 +785,22 @@ func unitTestsCRUDImage() {
 						}},
 					},
 					Spec: v1alpha1.VirtualMachineImageSpec{
-						ImageID: "right-id",
+						ImageID: "provider-id",
 					},
 					Status: v1alpha1.VirtualMachineImageStatus{
-						ImageName: "right",
+						ImageName: "provider",
 					},
 				}
-				left = append(left, imageLeft)
-				right = append(right, imageLeft)
-				right = append(right, imageRight)
+				k8sImages = append(k8sImages, imageK8s)
+				providerImages = append(providerImages, imageK8s)
+				providerImages = append(providerImages, imageProvider)
 			})
 
 			It("return a non-empty added set with a single entry", func() {
-				added, removed, updated := reconciler.DiffImages(cl.Name, left, right)
+				added, removed, updated := reconciler.DiffImages(cl.Name, k8sImages, providerImages)
 				Expect(added).ToNot(BeEmpty())
 				Expect(added).To(HaveLen(1))
-				Expect(added).To(ContainElement(imageRight))
+				Expect(added).To(ContainElement(imageProvider))
 				Expect(removed).To(BeEmpty())
 				Expect(updated).To(BeEmpty())
 			})
@@ -759,7 +862,8 @@ func unitTestsCRUDImage() {
 				clImages, err := reconciler.GetImagesFromContentProvider(ctx.Context, cs, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clImages).Should(HaveLen(2))
-				Expect(clImages).Should(Equal(images))
+				Expect(clImages[0]).Should(Equal(*images[0]))
+				Expect(clImages[1]).Should(Equal(*images[1]))
 			})
 		})
 

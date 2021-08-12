@@ -43,7 +43,7 @@ func LibItemToVirtualMachineImage(
 	// updated. This is a hack to reduce repeated ContentLibrary tasks.
 	image := &v1alpha1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName:      item.Name + "-",
+			Name:              item.Name,
 			CreationTimestamp: ts,
 			Annotations: map[string]string{
 				constants.VMImageCLVersionAnnotation: libItemVersionAnnotation(item),

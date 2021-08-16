@@ -21,6 +21,28 @@ type DynamicDirectPathIODevice struct {
 	CustomLabel string `json:"customLabel,omitempty"`
 }
 
+// InstanceStorage provides information used to configure instance
+// storage volumes for a VirtualMachine.
+type InstanceStorage struct {
+	// StorageClass refers to the name of a StorageClass resource used to
+	// provide the storage for the configured instance storage volumes.
+	// The value of this field has no relationship to or bearing on the field
+	// virtualMachine.spec.storageClass. Please note the referred StorageClass
+	// must be available in the same namespace as the VirtualMachineClass that
+	// uses it for configuring instance storage.
+	StorageClass string `json:"storageClass,omitempty"`
+
+	// Volumes describes the number and size of instance storage volumes
+	// created for a VirtualMachine that uses this VirtualMachineClass.
+	Volumes []InstanceStorageVolume `json:"volumes"`
+}
+
+// InstanceStorageVolume contains information required to create an
+// instance storage volume on a VirtualMachine.
+type InstanceStorageVolume struct {
+	Size resource.Quantity `json:"size"`
+}
+
 // VirtualDevices contains information about the virtual devices associated with a VirtualMachineClass.
 type VirtualDevices struct {
 	// +optional
@@ -35,6 +57,8 @@ type VirtualMachineClassHardware struct {
 	Memory  resource.Quantity `json:"memory,omitempty"`
 	// +optional
 	Devices VirtualDevices    `json:"devices,omitempty"`
+	// +optional
+	InstanceStorage InstanceStorage `json:"instanceStorage,omitempty"`
 }
 
 // VirtualMachineResourceSpec describes a virtual hardware policy specification.

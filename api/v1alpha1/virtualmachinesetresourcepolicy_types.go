@@ -49,8 +49,9 @@ type VirtualMachineSetResourcePolicyStatus struct {
 }
 
 type ClusterModuleStatus struct {
-	GroupName  string `json:"groupname"`
-	ModuleUuid string `json:"moduleUUID"`
+	GroupName   string `json:"groupname"`
+	ModuleUuid  string `json:"moduleUUID"`
+	ClusterMoID string `json:"clusterMoID"`
 }
 
 // +kubebuilder:object:root=true

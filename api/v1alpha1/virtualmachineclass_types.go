@@ -32,9 +32,9 @@ type InstanceStorage struct {
 	// uses it for configuring instance storage.
 	StorageClass string `json:"storageClass,omitempty"`
 
-	// Volumes describes the number and size of instance storage volumes
-	// created for a VirtualMachine that uses this VirtualMachineClass.
-	Volumes []InstanceStorageVolume `json:"volumes"`
+	// Volumes describes instance storage volumes created for a VirtualMachine
+	// instance that use this VirtualMachineClass.
+	Volumes []InstanceStorageVolume `json:"volumes,omitempty"`
 }
 
 // InstanceStorageVolume contains information required to create an

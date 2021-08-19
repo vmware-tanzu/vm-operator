@@ -359,7 +359,7 @@ var _ = Describe("VMProvider Tests", func() {
 			vcClient, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(ctx)
 			Expect(vcClient).ToNot(BeNil())
 			Expect(err).NotTo(HaveOccurred())
-			err = vmProvider.ComputeClusterCpuMinFrequency(context.TODO())
+			err = vmProvider.ComputeClusterCpuMinFrequency(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(session.GetCpuMinMHzInCluster()).Should(BeNumerically(">", 0))
 		})

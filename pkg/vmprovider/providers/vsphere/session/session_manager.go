@@ -11,6 +11,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -124,6 +125,27 @@ func (sm *Manager) ComputeClusterCpuMinFrequency(ctx goctx.Context) error {
 		return err
 	}
 
+	if !lib.IsWcpFaultDomainsFSSEnabled() {
+		// Hack to fix up the default AZ to add the cluster MoID. Since in this setup,
+		// all sessions share a single cluster, we can use any session.
+		var clusterMoID string
+		sm.Lock()
+		for _, session := range sm.sessions {
+			clusterMoID = session.Cluster().Reference().Value
+			break
+		}
+		sm.Unlock()
+
+		if clusterMoID == "" {
+			return nil
+		}
+
+		// Only expect 1 AZ in this case.
+		for i := range availabilityZones {
+			availabilityZones[i].Spec.ClusterComputeResourceMoId = clusterMoID
+		}
+	}
+
 	client, err := sm.GetClient(ctx)
 	if err != nil {
 		return err
@@ -153,7 +175,7 @@ func (sm *Manager) ComputeClusterCpuMinFrequency(ctx goctx.Context) error {
 	// Iterate over each session, setting its minimum frequency to the
 	// value for its cluster.
 	for _, session := range sm.sessions {
-		if minFreq, ok := minFrequencies[session.cluster.Reference().Value]; ok {
+		if minFreq, ok := minFrequencies[session.Cluster().Reference().Value]; ok {
 			session.SetCpuMinMHzInCluster(minFreq)
 		}
 	}

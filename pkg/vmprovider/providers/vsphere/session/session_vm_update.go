@@ -24,6 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
@@ -897,21 +898,14 @@ func (s *Session) attachTagsAndModules(
 	}
 
 	// Find ClusterModule UUID from the ResourcePolicy.
-	var moduleUuid string
-	for _, clusterModule := range resourcePolicy.Status.ClusterModules {
-		// TODO Needs to compare cluster
-		if clusterModule.GroupName == clusterModuleName {
-			moduleUuid = clusterModule.ModuleUuid
-			break
-		}
-	}
-	if moduleUuid == "" {
+	_, moduleUUID := clustermodules.FindClusterModuleUUID(clusterModuleName, s.Cluster().Reference(), resourcePolicy)
+	if moduleUUID == "" {
 		return fmt.Errorf("ClusterModule %s not found", clusterModuleName)
 	}
 
 	vmRef := resVM.MoRef()
 
-	err := s.Client.ClusterModuleClient().AddMoRefToModule(vmCtx, moduleUuid, vmRef)
+	err := s.Client.ClusterModuleClient().AddMoRefToModule(vmCtx, moduleUUID, vmRef)
 	if err != nil {
 		return err
 	}

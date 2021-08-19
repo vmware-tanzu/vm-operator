@@ -9,7 +9,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
@@ -150,21 +149,6 @@ func (vs *vSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(
 	return nil
 }
 
-func findClusterModuleUUID(
-	groupName string,
-	clusterRef types.ManagedObjectReference,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (int, string) {
-
-	// TODO: Needs to compare cluster too once added to Status (and when not default AZ)
-	for i, modStatus := range resourcePolicy.Status.ClusterModules {
-		if modStatus.GroupName == groupName {
-			return i, modStatus.ModuleUuid
-		}
-	}
-
-	return -1, ""
-}
-
 // doClusterModulesExist checks whether all the ClusterModules for the given VirtualMachineSetResourcePolicy
 // have been created and exist in VC for the Session's Cluster.
 func (vs *vSphereVmProvider) doClusterModulesExist(
@@ -180,7 +164,7 @@ func (vs *vSphereVmProvider) doClusterModulesExist(
 	clusterRef := cluster.Reference()
 
 	for _, moduleSpec := range resourcePolicy.Spec.ClusterModules {
-		_, moduleID := findClusterModuleUUID(moduleSpec.GroupName, clusterRef, resourcePolicy)
+		_, moduleID := clustermodules.FindClusterModuleUUID(moduleSpec.GroupName, clusterRef, resourcePolicy)
 		if moduleID == "" {
 			return false, nil
 		}
@@ -212,10 +196,10 @@ func (vs *vSphereVmProvider) createClusterModules(
 	// resort to using the status as the source of truth. This can result in orphaned
 	// modules if, for instance, we fail to update the resource policy k8s object.
 	for _, moduleSpec := range resourcePolicy.Spec.ClusterModules {
-		idx, moduleID := findClusterModuleUUID(moduleSpec.GroupName, clusterRef, resourcePolicy)
+		idx, moduleID := clustermodules.FindClusterModuleUUID(moduleSpec.GroupName, clusterRef, resourcePolicy)
 
 		if moduleID != "" {
-			// Verify this cluster module exists on VC.
+			// Verify this cluster module exists on VC for this cluster.
 			exists, err := clusterModProvider.DoesModuleExist(ctx, moduleID, clusterRef)
 			if err != nil {
 				return err
@@ -236,11 +220,12 @@ func (vs *vSphereVmProvider) createClusterModules(
 
 		if idx >= 0 {
 			resourcePolicy.Status.ClusterModules[idx].ModuleUuid = moduleID
+			resourcePolicy.Status.ClusterModules[idx].ClusterMoID = clusterRef.Value
 		} else {
 			status := v1alpha1.ClusterModuleStatus{
-				GroupName:  moduleSpec.GroupName,
-				ModuleUuid: moduleID,
-				/* TODO: Cluster: ... */
+				GroupName:   moduleSpec.GroupName,
+				ModuleUuid:  moduleID,
+				ClusterMoID: clusterRef.Value,
 			}
 			resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules, status)
 		}

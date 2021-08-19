@@ -102,6 +102,37 @@ spec:
                           type: object
                         type: array
                     type: object
+                  instanceStorage:
+                    description: InstanceStorage provides information used to configure
+                      instance storage volumes for a VirtualMachine.
+                    properties:
+                      storageClass:
+                        description: StorageClass refers to the name of a StorageClass
+                          resource used to provide the storage for the configured
+                          instance storage volumes. The value of this field has no
+                          relationship to or bearing on the field virtualMachine.spec.storageClass.
+                          Please note the referred StorageClass must be available
+                          in the same namespace as the VirtualMachineClass that uses
+                          it for configuring instance storage.
+                        type: string
+                      volumes:
+                        description: Volumes describes instance storage volumes created
+                          for a VirtualMachine instance that use this VirtualMachineClass.
+                        items:
+                          description: InstanceStorageVolume contains information
+                            required to create an instance storage volume on a VirtualMachine.
+                          properties:
+                            size:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                          required:
+                          - size
+                          type: object
+                        type: array
+                    type: object
                   memory:
                     anyOf:
                     - type: integer

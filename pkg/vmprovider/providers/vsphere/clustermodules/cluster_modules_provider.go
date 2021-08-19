@@ -70,8 +70,7 @@ func (cm *provider) DoesModuleExist(ctx context.Context, moduleID string, cluste
 	}
 
 	for _, mod := range modules {
-		// TODO: Need to compare mod.Cluster too
-		if mod.Module == moduleID {
+		if mod.Cluster == clusterRef.Value && mod.Module == moduleID {
 			return true, nil
 		}
 	}
@@ -87,8 +86,7 @@ func (cm *provider) IsMoRefModuleMember(ctx context.Context, moduleID string, mo
 	}
 
 	for _, member := range moduleMembers {
-		// BMV: Shouldn't we also compare member.Type?
-		if member.Value == moRef.Reference().Value {
+		if member.Reference() == moRef.Reference() {
 			return true, nil
 		}
 	}

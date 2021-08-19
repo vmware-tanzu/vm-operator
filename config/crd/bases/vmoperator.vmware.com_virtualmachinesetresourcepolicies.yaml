@@ -110,11 +110,14 @@ spec:
               clustermodules:
                 items:
                   properties:
+                    clusterMoID:
+                      type: string
                     groupname:
                       type: string
                     moduleUUID:
                       type: string
                   required:
+                  - clusterMoID
                   - groupname
                   - moduleUUID
                   type: object

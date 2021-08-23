@@ -32,6 +32,6 @@ const (
 	EagerZeroedAndThinProvisionedNotSupported           = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning"
 
 	VirtualMachineImageNotSupported = "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image"
-	StorageClassNotAssignedFmt      = "StorageClass %s is not assigned to any ResourceQuotas in namespace %s"
-	NoResourceQuotaFmt              = "no ResourceQuotas assigned to namespace %s"
+	StorageClassNotAssignedFmt      = "spec.storageClass: Invalid. Storage policy %s is not associated with the namespace %s"
+	StorageClassNotFoundFmt         = "spec.storageClass: NotFound. Storage policy %s is not associated with the namespace %s"
 )

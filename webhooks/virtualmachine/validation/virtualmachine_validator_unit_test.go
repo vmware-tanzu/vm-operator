@@ -121,7 +121,7 @@ func unitTestsValidateCreate() {
 		invalidVsphereVolumeSource           bool
 		invalidVmVolumeProvOpts              bool
 		invalidStorageClass                  bool
-		invalidResourceQuota                 bool
+		notfoundStorageClass                 bool
 		validStorageClass                    bool
 		imageNonCompatible                   bool
 		imageNonCompatibleCloudInitTransport bool
@@ -216,13 +216,12 @@ func unitTestsValidateCreate() {
 		}
 		// StorageClass specifies but not assigned to ResourceQuota
 		if args.invalidStorageClass {
-			ctx.vm.Spec.StorageClass = "invalid"
-			rlName := builder.DummyStorageClassName + ".storageclass.storage.k8s.io/persistentvolumeclaims"
-			resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
-			Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
+			storageClass := builder.DummyStorageClass()
+			ctx.vm.Spec.StorageClass = storageClass.Name
+			Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
 		}
 		// StorageClass specified but no ResourceQuotas
-		if args.invalidResourceQuota {
+		if args.notfoundStorageClass {
 			ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
 		}
 		// StorageClass specified and is assigned to ResourceQuota
@@ -232,6 +231,7 @@ func unitTestsValidateCreate() {
 			rlName := storageClass.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
 			resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
 			Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
 		}
 		if args.invalidReadinessNoProbe {
 			ctx.vm.Spec.ReadinessProbe = &vmopv1.Probe{}
@@ -317,8 +317,8 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, 0), nil),
 		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVmVolumeProvOpts: true}, false, fmt.Sprintf(messages.EagerZeroedAndThinProvisionedNotSupported), nil),
 		Entry("should deny invalid vmMetadata configmap", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
-		Entry("should deny invalid resource quota", createArgs{invalidResourceQuota: true}, false, fmt.Sprintf(messages.NoResourceQuotaFmt, ""), nil),
-		Entry("should deny invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssignedFmt, "invalid", ""), nil),
+		Entry("should deny a storage class that does not exist", createArgs{notfoundStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotFoundFmt, builder.DummyStorageClassName, ""), nil),
+		Entry("should deny a storage class that is not associated with the namespace", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssignedFmt, builder.DummyStorageClassName, ""), nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
 		Entry("should fail when image is not compatible", createArgs{imageNonCompatible: true}, false, fmt.Sprintf(messages.VirtualMachineImageNotSupported), nil),
 		Entry("should allow when image is not compatible and VirtualMachineMetadataTransport is CloudInit", createArgs{imageNonCompatibleCloudInitTransport: true}, true, nil, nil),

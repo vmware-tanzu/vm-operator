@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -223,14 +224,15 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 	scName := vm.Spec.StorageClass
 	namespace := vm.Namespace
 
-	resourceQuotas := &v1.ResourceQuotaList{}
-	if err := v.client.List(ctx, resourceQuotas, client.InNamespace(namespace)); err != nil {
-		validationErrs = append(validationErrs, fmt.Sprintf("error validating storageClass: %v", err))
+	sc := &storagev1.StorageClass{}
+	if err := v.client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
+		validationErrs = append(validationErrs, fmt.Sprintf(messages.StorageClassNotFoundFmt, scName, namespace))
 		return validationErrs
 	}
 
-	if len(resourceQuotas.Items) == 0 {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.NoResourceQuotaFmt, namespace))
+	resourceQuotas := &v1.ResourceQuotaList{}
+	if err := v.client.List(ctx, resourceQuotas, client.InNamespace(namespace)); err != nil {
+		validationErrs = append(validationErrs, fmt.Sprintf("error validating storageClass: %v", err))
 		return validationErrs
 	}
 
@@ -242,7 +244,7 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 			}
 		}
 	}
-	validationErrs = append(validationErrs, fmt.Sprintf("StorageClass %s is not assigned to any ResourceQuotas in namespace %s", scName, namespace))
+	validationErrs = append(validationErrs, fmt.Sprintf(messages.StorageClassNotAssignedFmt, scName, namespace))
 	return validationErrs
 }
 

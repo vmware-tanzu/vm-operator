@@ -24,7 +24,7 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
-// Patch defines a list of operations to change a list of conditions into another
+// Patch defines a list of operations to change a list of conditions into another.
 type Patch []PatchOperation
 
 // PatchOperation define an operation that changes a single condition.
@@ -99,8 +99,6 @@ type ApplyOption func(*applyOptions)
 
 // WithOwnedConditions allows to define condition types owned by the controller.
 // In case of conflicts for the owned conditions, the patch helper will always use the value provided by the controller.
-//
-// DEPRECATED: Use WithForceOverwrite.
 func WithOwnedConditions(t ...vmopv1alpha1.ConditionType) ApplyOption {
 	return func(c *applyOptions) {
 		c.ownedConditions = t
@@ -116,7 +114,6 @@ func WithForceOverwrite(v bool) ApplyOption {
 
 // Apply executes a three-way merge of a list of Patch.
 // When merge conflicts are detected (latest deviated from before in an incompatible way), an error is returned.
-//nolint:gocyclo
 func (p Patch) Apply(latest Setter, options ...ApplyOption) error {
 	if len(p) == 0 {
 		return nil

@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	poolMoId   = "pool-moid"
-	folderMoId = "folder-moid"
+	poolMoID   = "pool-moid"
+	folderMoID = "folder-moid"
 )
 
 var _ = Describe("Availability Zones", func() {
@@ -73,8 +73,8 @@ var _ = Describe("Availability Zones", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: fmt.Sprintf("ns-%d", i),
 					Annotations: map[string]string{
-						topology.NamespaceFolderAnnotationKey: folderMoId,
-						topology.NamespaceRPAnnotationKey:     poolMoId,
+						topology.NamespaceFolderAnnotationKey: folderMoID,
+						topology.NamespaceRPAnnotationKey:     poolMoID,
 					},
 				},
 			}
@@ -86,8 +86,8 @@ var _ = Describe("Availability Zones", func() {
 		nsName := ctrlclient.ObjectKey{Name: name}
 		ExpectWithOffset(2, zone.Spec.Namespaces).To(HaveKey(nsName.Name))
 		ExpectWithOffset(2, client.Get(ctx, nsName, &corev1.Namespace{})).To(Succeed())
-		ExpectWithOffset(2, zone.Spec.Namespaces[nsName.Name].PoolMoId).To(Equal(poolMoId))
-		ExpectWithOffset(2, zone.Spec.Namespaces[nsName.Name].FolderMoId).To(Equal(folderMoId))
+		ExpectWithOffset(2, zone.Spec.Namespaces[nsName.Name].PoolMoId).To(Equal(poolMoID))
+		ExpectWithOffset(2, zone.Spec.Namespaces[nsName.Name].FolderMoId).To(Equal(folderMoID))
 	}
 
 	assertGetAvailabilityZonesDefaultZone := func() {

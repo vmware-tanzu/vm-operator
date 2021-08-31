@@ -4,15 +4,15 @@
 package pkg
 
 const (
-	// Base FQDN for the vmoperator
-	VmOperatorKey string = "vmoperator.vmware.com"
+	// VMOperatorKey is the base FQDN for VM operator.
+	VMOperatorKey string = "vmoperator.vmware.com"
 
-	// Annotation Key for VM provider
-	VmOperatorVmProviderKey string = "vmoperator.vmware.com/vmprovider"
+	// VMOperatorVMProviderKey is the annotation Key for VM provider.
+	VMOperatorVMProviderKey string = "vmoperator.vmware.com/vmprovider"
 
-	// Annotation key for tag information at vmoperator
+	// ProviderTagsAnnotationKey is the annotation key for tag information at VM operator.
 	ProviderTagsAnnotationKey string = "vsphere-tag"
 
-	// Annotation key for clusterModule group name information at vmoperator
+	// ClusterModuleNameKey is the annotation key for clusterModule group name information at VM operator.
 	ClusterModuleNameKey string = "vsphere-cluster-module-group"
 )

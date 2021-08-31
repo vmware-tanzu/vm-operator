@@ -48,7 +48,6 @@ func unitTestsMutating() {
 	type mutateArgs struct {
 		isNoAvailabilityZones       bool
 		isWCPFaultDomainsFSSEnabled bool
-		isInvalidAvailabilityZone   bool
 		isEmptyAvailabilityZone     bool
 	}
 
@@ -77,8 +76,6 @@ func unitTestsMutating() {
 
 		if args.isEmptyAvailabilityZone {
 			delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
-		} else if args.isInvalidAvailabilityZone {
-			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
 		} else {
 			zoneName := builder.DummyAvailabilityZoneName
 			if !lib.IsWcpFaultDomainsFSSEnabled() {
@@ -122,7 +119,6 @@ func unitTestsMutating() {
 	)
 
 	Describe("Default placement strategy", func() {
-
 		var (
 			numberOfAvailabilityZones   int
 			isWCPFaultDomainsFSSEnabled bool
@@ -163,7 +159,6 @@ func unitTestsMutating() {
 		})
 
 		mutate := func(expectedZoneName string) {
-
 			// Convert the VM to unstructured data as required by the webhook
 			// context.
 			var err error
@@ -205,11 +200,9 @@ func unitTestsMutating() {
 				})
 				Context("Submit five VirtualMachines sans label "+
 					topology.KubernetesTopologyZoneLabelKey, func() {
-
 					It("Should add label "+
 						topology.KubernetesTopologyZoneLabelKey+
 						" to each VM, with each VM in the same zone", func() {
-
 						mutate("az-0")
 						mutate("az-0")
 						mutate("az-0")
@@ -224,11 +217,9 @@ func unitTestsMutating() {
 				})
 				Context("Submit five VirtualMachines sans label "+
 					topology.KubernetesTopologyZoneLabelKey, func() {
-
 					It("Should add label "+
 						topology.KubernetesTopologyZoneLabelKey+
 						" to each VM, with each VM in a different zone", func() {
-
 						// Starts at az-1 because the previous test incremented
 						// the index.
 						mutate("az-1")

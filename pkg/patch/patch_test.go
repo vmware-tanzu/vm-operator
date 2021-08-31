@@ -37,9 +37,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-//nolint:gocyclo
 func intgTests() {
-
 	var (
 		ctx *builder.IntegrationTestContext
 	)
@@ -54,7 +52,6 @@ func intgTests() {
 	})
 
 	Describe("Patch Helper", func() {
-
 		It("Should patch an unstructured object", func() {
 			obj := &unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -98,12 +95,6 @@ func intgTests() {
 
 				By("Patching the unstructured object")
 				Expect(patcher.Patch(ctx, obj)).To(Succeed())
-
-				// Does not apply to our VM object
-				//By("Validating that the status has been preserved")
-				//ready, err := external.IsReady(obj)
-				//Expect(err).ToNot(HaveOccurred())
-				//Expect(ready).To(BeTrue())
 
 				By("Validating the object has been updated")
 				Eventually(func() bool {
@@ -419,7 +410,6 @@ func intgTests() {
 						return cmp.Equal(readyBefore, readyAfter)
 					}, timeout).Should(BeTrue())
 				})
-
 			})
 		})
 

@@ -17,7 +17,7 @@ type funcs struct {
 	RemoveFromProberManagerFn func(vm *vmoperatorv1alpha1.VirtualMachine)
 }
 
-type FakeProberManager struct {
+type ProberManager struct {
 	funcs
 	sync.Mutex
 	IsAddToProberManagerCalled      bool
@@ -25,16 +25,16 @@ type FakeProberManager struct {
 }
 
 func NewFakeProberManager() prober.Manager {
-	return &FakeProberManager{}
+	return &ProberManager{}
 }
 
-func (m *FakeProberManager) Start(ctx context.Context) error {
+func (m *ProberManager) Start(ctx context.Context) error {
 	<-ctx.Done()
 
 	return nil
 }
 
-func (m *FakeProberManager) AddToProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
+func (m *ProberManager) AddToProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -44,7 +44,7 @@ func (m *FakeProberManager) AddToProberManager(vm *vmoperatorv1alpha1.VirtualMac
 	}
 }
 
-func (m *FakeProberManager) RemoveFromProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
+func (m *ProberManager) RemoveFromProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
 	m.Lock()
 	defer m.Unlock()
 

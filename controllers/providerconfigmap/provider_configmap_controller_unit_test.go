@@ -48,7 +48,7 @@ func unitTestsCM() {
 				ctx.Client,
 				ctx.Scheme,
 				ctx.Logger,
-				ctx.VmProvider,
+				ctx.VMProvider,
 			)
 		})
 

@@ -302,9 +302,6 @@ func unitTestsValidateDelete() {
 
 	When("the delete is performed", func() {
 		JustBeforeEach(func() {
-			// BMV: Is this set at this point for Delete?
-			//t := metav1.Now()
-			//ctx.WebhookRequestContext.Obj.SetDeletionTimestamp(&t)
 			response = ctx.ValidateDelete(&ctx.WebhookRequestContext)
 		})
 

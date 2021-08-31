@@ -58,7 +58,6 @@ func NewValidatingWebhook(
 	mgr ctrlmgr.Manager,
 	webhookName string,
 	validator Validator) (*ValidatingWebhook, error) {
-
 	if webhookName == "" {
 		return nil, errors.New("webhookName arg is empty")
 	}
@@ -159,7 +158,6 @@ func (h *validatingWebhookHandler) Handle(_ goctx.Context, req admission.Request
 }
 
 func (h *validatingWebhookHandler) HandleValidate(req admission.Request, ctx *context.WebhookRequestContext) admission.Response {
-
 	switch req.Operation {
 	case admissionv1.Create:
 		return h.ValidateCreate(ctx)
@@ -179,6 +177,6 @@ func (h *validatingWebhookHandler) HandleValidate(req admission.Request, ctx *co
 
 func generateValidateName(webhookName string, gvk schema.GroupVersionKind) string {
 	return fmt.Sprintf("%s-validate-", webhookName) +
-		strings.Replace(gvk.Group, ".", "-", -1) + "-" +
+		strings.ReplaceAll(gvk.Group, ".", "-") + "-" +
 		gvk.Version + "-" + strings.ToLower(gvk.Kind)
 }

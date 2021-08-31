@@ -17,11 +17,11 @@ const (
 
 	// VMOperatorImageSupportedCheckKey Annotation key to skip validation checks of GuestOS Type
 	// TODO: Rename and move to vmoperator-api
-	VMOperatorImageSupportedCheckKey     = pkg.VmOperatorKey + "/image-supported-check"
+	VMOperatorImageSupportedCheckKey     = pkg.VMOperatorKey + "/image-supported-check"
 	VMOperatorImageSupportedCheckDisable = "disable"
 
 	// VSphereCustomizationBypassKey Annotation to skip applying VMware Tools Guest Customization.
-	VSphereCustomizationBypassKey     = pkg.VmOperatorKey + "/vsphere-customization"
+	VSphereCustomizationBypassKey     = pkg.VMOperatorKey + "/vsphere-customization"
 	VSphereCustomizationBypassDisable = "disable"
 
 	// VMOperatorV1Alpha1ExtraConfigKey Special ExtraConfig key for v1alpha1 images.
@@ -45,12 +45,12 @@ const (
 	NetPlanVersion = 2
 
 	// VMImageCLVersionAnnotation VirtualMachineImage annotation to cache the last fetched version.
-	VMImageCLVersionAnnotation = pkg.VmOperatorKey + "/content-library-version"
+	VMImageCLVersionAnnotation = pkg.VMOperatorKey + "/content-library-version"
 	// Version of the VMImageCLVersionAnnotation for the VirtualMachineImage.
 	VMImageCLVersionAnnotationVersion = 1
 
 	// 64bitMMIO for Passthrough Devices
-	PCIPassthruMMIOOverrideAnnotation = pkg.VmOperatorKey + "/pci-passthru-64bit-mmio-size"
+	PCIPassthruMMIOOverrideAnnotation = pkg.VMOperatorKey + "/pci-passthru-64bit-mmio-size"
 	PCIPassthruMMIOExtraConfigKey     = "pciPassthru.use64bitMMIO"    // nolint:gosec
 	PCIPassthruMMIOSizeExtraConfigKey = "pciPassthru.64bitMMIOSizeGB" // nolint:gosec
 	PCIPassthruMMIOSizeDefault        = "512"
@@ -59,5 +59,5 @@ const (
 	MinSupportedHWVersionForPVC = 13
 
 	// Firmware Override
-	FirmwareOverrideAnnotation = pkg.VmOperatorKey + "/firmware"
+	FirmwareOverrideAnnotation = pkg.VMOperatorKey + "/firmware"
 )

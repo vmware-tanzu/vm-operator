@@ -169,7 +169,7 @@ func configMapToProviderCredentials(
 }
 
 func GetNameserversFromConfigMap(client ctrlruntime.Client) ([]string, error) {
-	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
+	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +204,7 @@ func GetProviderConfigFromConfigMap(
 	client ctrlruntime.Client,
 	zone, namespace string) (*VSphereVmProviderConfig, error) {
 
-	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
+	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +352,7 @@ func InstallVSphereVmProviderConfig(client ctrlruntime.Client, namespace string,
 // PatchVcURLInConfigMap updates the ConfigMap with the new vSphere PNID and Port.
 // BMV: This doesn't really have to be a Patch.
 func PatchVcURLInConfigMap(client ctrlruntime.Client, vcPNID, vcPort string) error {
-	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
+	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
 	if err != nil {
 		return err
 	}
@@ -379,7 +379,7 @@ func PatchVcURLInConfigMap(client ctrlruntime.Client, vcPNID, vcPort string) err
 // Install the Network Config Map for the VM operator in the API master
 // Used only in testing.
 func InstallNetworkConfigMap(client ctrlruntime.Client, nameservers string) error {
-	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
+	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
 	if err != nil {
 		return err
 	}

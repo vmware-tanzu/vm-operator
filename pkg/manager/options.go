@@ -129,7 +129,6 @@ type Options struct {
 	AddToManager AddToManagerFunc
 }
 
-// nolint:gocyclo
 func (o *Options) defaults() {
 	if o.Logger == nil {
 		o.Logger = ctrllog.Log

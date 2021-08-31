@@ -149,7 +149,7 @@ func intgTestsValidateUpdate() {
 		Expect(err).ToNot(HaveOccurred())
 		err = ctx.Client.Status().Update(ctx, ctx.vmImage)
 		Expect(err).ToNot(HaveOccurred())
-		//Create the VM
+		// Create the VM
 		err = ctx.Client.Create(ctx, ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
 	})

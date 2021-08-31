@@ -237,7 +237,7 @@ func SetupVcSimEnv(
 	log.Info("Installing a bootstrap config map for use in integration tests.")
 
 	// Configure the environment with the location of the vmop config.
-	err := lib.SetVmOpNamespaceEnv(DefaultNamespace)
+	err := lib.SetVMOpNamespaceEnv(DefaultNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install vm operator config: %v", err)
 	}

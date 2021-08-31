@@ -46,7 +46,7 @@ type Helper struct {
 	isConditionsSetter bool
 }
 
-// NewHelper returns an initialized Helper
+// NewHelper returns an initialized Helper.
 func NewHelper(obj client.Object, crClient client.Client) (*Helper, error) {
 	// Return early if the object is nil.
 	// If you're wondering why we need reflection to do this check, see https://golang.org/doc/faq#nil_error.

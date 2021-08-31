@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -94,7 +94,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	validationErrs = append(validationErrs, v.validateStorageClass(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateVmVolumeProvisioningOptions(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateReadinessProbe(ctx, vm)...)
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
@@ -143,7 +143,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	// If a VM is requesting a power off, we can Reconfigure the VM _after_ we power it off - all changes are allowed.
 	// If a VM is requesting a power on, we can Reconfigure the VM _before_ we power it on - all changes are allowed.
 	// So, we only run these validations when the VM is powered on, and is not requesting a power state change.
-	if currentPowerState == desiredPowerState && currentPowerState == vmopv1.VirtualMachinePoweredOn {
+	if currentPowerState == vmopv1.VirtualMachinePoweredOn && desiredPowerState == vmopv1.VirtualMachinePoweredOn {
 		invalidFields := v.validateUpdatesWhenPoweredOn(ctx, vm, oldVM)
 		if len(invalidFields) > 0 {
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, invalidFields, vm.Spec.PowerState))
@@ -156,7 +156,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	validationErrs = append(validationErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
 	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateVmVolumeProvisioningOptions(ctx, vm)...)
+	validationErrs = append(validationErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
 	validationErrs = append(validationErrs, v.validateReadinessProbe(ctx, vm)...)
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
@@ -230,7 +230,7 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 		return validationErrs
 	}
 
-	resourceQuotas := &v1.ResourceQuotaList{}
+	resourceQuotas := &corev1.ResourceQuotaList{}
 	if err := v.client.List(ctx, resourceQuotas, client.InNamespace(namespace)); err != nil {
 		validationErrs = append(validationErrs, fmt.Sprintf("error validating storageClass: %v", err))
 		return validationErrs
@@ -307,14 +307,18 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 
 		if vol.PersistentVolumeClaim == nil && vol.VsphereVolume == nil {
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNotSpecifiedFmt, i, i))
-		} else if vol.PersistentVolumeClaim != nil && vol.VsphereVolume != nil {
+			continue
+		}
+
+		if vol.PersistentVolumeClaim != nil && vol.VsphereVolume != nil {
 			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, i, i))
-		} else {
-			if vol.PersistentVolumeClaim != nil {
-				validationErrs = append(validationErrs, v.validateVolumeWithPVC(ctx, vm, vol, i)...)
-			} else { // vol.VsphereVolume != nil
-				validationErrs = append(validationErrs, v.validateVsphereVolume(vol.VsphereVolume, i)...)
-			}
+			continue
+		}
+
+		if vol.PersistentVolumeClaim != nil {
+			validationErrs = append(validationErrs, v.validateVolumeWithPVC(ctx, vm, vol, i)...)
+		} else { // vol.VsphereVolume != nil
+			validationErrs = append(validationErrs, v.validateVsphereVolume(vol.VsphereVolume, i)...)
 		}
 	}
 
@@ -367,7 +371,7 @@ func (v validator) validateVsphereVolume(vsphereVolume *vmopv1.VsphereVolumeSour
 	return validationErrs
 }
 
-func (v validator) validateVmVolumeProvisioningOptions(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
+func (v validator) validateVMVolumeProvisioningOptions(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
 	var validationErrs []string
 	if vm.Spec.AdvancedOptions != nil && vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions != nil {
 		provOpts := vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions
@@ -504,7 +508,6 @@ func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, v
 func (v validator) validateAvailabilityZone(
 	ctx *context.WebhookRequestContext,
 	vm, oldVM *vmopv1.VirtualMachine) []string {
-
 	// If there is an oldVM in play then make sure the field is immutable.
 	if oldVM != nil {
 		if vm.Labels[topology.KubernetesTopologyZoneLabelKey] != oldVM.Labels[topology.KubernetesTopologyZoneLabelKey] {
@@ -539,11 +542,11 @@ func (v validator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virtual
 }
 
 func (v validator) isNetworkRestrictedForReadinessProbe(ctx *context.WebhookRequestContext) (bool, error) {
-	vmopNamespace, err := lib.GetVmOpNamespaceFromEnv()
+	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
 	if err != nil {
 		return false, fmt.Errorf("error fetching VMOpNamespace while validating TCP readiness probe port: %v", err)
 	}
-	configMap := &v1.ConfigMap{}
+	configMap := &corev1.ConfigMap{}
 	configMapKey := types.NamespacedName{Name: config.ProviderConfigMapName, Namespace: vmopNamespace}
 	err = v.client.Get(ctx, configMapKey, configMap)
 	if err != nil {

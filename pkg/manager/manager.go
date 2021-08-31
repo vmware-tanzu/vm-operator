@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
@@ -38,7 +38,6 @@ type Manager interface {
 
 // New returns a new VM Operator controller manager.
 func New(opts Options) (Manager, error) {
-
 	// Ensure the default options are set.
 	opts.defaults()
 
@@ -53,7 +52,7 @@ func New(opts Options) (Manager, error) {
 	// controller-runtime Client creates an Informer for each resource that we watch.
 	// This can cause VM operator pod to be OOM killed. To avoid that, we by-pass
 	// the cache for ConfigMaps and Secrets so they are looked up from API sever directly.
-	cacheDisabledObjects := []client.Object{&v1.ConfigMap{}, &v1.Secret{}}
+	cacheDisabledObjects := []client.Object{&corev1.ConfigMap{}, &corev1.Secret{}}
 
 	// Build the controller manager.
 	mgr, err := ctrlmgr.New(opts.KubeConfig, ctrlmgr.Options{
@@ -108,7 +107,7 @@ func New(opts Options) (Manager, error) {
 func InitializeProviders(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	vmProviderName := fmt.Sprintf("%s/%s/vmProvider", ctx.Namespace, ctx.Name)
 	recorder := record.New(mgr.GetEventRecorderFor(vmProviderName))
-	ctx.VmProvider = vsphere.NewVSphereVmProviderFromClient(mgr.GetClient(), recorder)
+	ctx.VMProvider = vsphere.NewVSphereVmProviderFromClient(mgr.GetClient(), recorder)
 	return nil
 }
 

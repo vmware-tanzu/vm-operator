@@ -30,7 +30,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	r := NewReconciler(
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
-		ctx.VmProvider,
+		ctx.VMProvider,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).

@@ -54,7 +54,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
-		ctx.VmProvider,
+		ctx.VMProvider,
 	)
 
 	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})

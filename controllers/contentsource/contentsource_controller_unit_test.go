@@ -68,9 +68,9 @@ func reconcileProviderRef() {
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
-			ctx.VmProvider,
+			ctx.VMProvider,
 		)
-		fakeVMProvider = ctx.VmProvider.(*providerfake.FakeVmProvider)
+		fakeVMProvider = ctx.VMProvider.(*providerfake.FakeVmProvider)
 	})
 
 	AfterEach(func() {
@@ -190,9 +190,9 @@ func unitTestsCRUDImage() {
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
-			ctx.VmProvider,
+			ctx.VMProvider,
 		)
-		fakeVMProvider = ctx.VmProvider.(*providerfake.FakeVmProvider)
+		fakeVMProvider = ctx.VMProvider.(*providerfake.FakeVmProvider)
 	})
 
 	JustAfterEach(func() {

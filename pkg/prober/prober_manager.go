@@ -82,10 +82,10 @@ func AddToManager(mgr ctrlmgr.Manager, vmProvider vmprovider.VirtualMachineProvi
 
 	// Add the probe manager explicitly as runnable in order to receive a Start() event.
 	m := NewManger(mgr.GetClient(), probeRecorder, vmProvider)
-	err := mgr.Add(m)
-	if err != nil {
+	if err := mgr.Add(m); err != nil {
 		return nil, err
 	}
+
 	return m, nil
 }
 
@@ -123,7 +123,7 @@ func (m *manager) RemoveFromProberManager(vm *vmoperatorv1alpha1.VirtualMachine)
 	delete(m.vmReadinessProbeList, vmName)
 }
 
-// Start starts the probe manager
+// Start starts the probe manager.
 func (m *manager) Start(ctx goctx.Context) error {
 	m.log.Info("Start VirtualMachine Probe Manager")
 	defer m.log.Info("Stop VirtualMachine Probe Manager")

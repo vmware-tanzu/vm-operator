@@ -93,7 +93,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateMetadata(ctx, vmService)...)
 	fieldErrs = append(fieldErrs, v.validateSpec(ctx, vmService)...)
 
-	var validationErrs []string
+	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}
@@ -120,7 +120,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateAllowedChanges(ctx, vmService, oldVMService)...)
 	fieldErrs = append(fieldErrs, v.validateSpec(ctx, vmService)...)
 
-	var validationErrs []string
+	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}

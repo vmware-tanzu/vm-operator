@@ -62,7 +62,7 @@ func unitTestsReconcile() {
 		storageClass     *storagev1.StorageClass
 		resourceQuota    *corev1.ResourceQuota
 
-		fakeProbeManager *proberfake.FakeProberManager
+		fakeProbeManager *proberfake.ProberManager
 
 		// represents the VM Service FSS. This should be manupulated atomiocally to avoid races where
 		// the controller is trying to read this _while_ the tests are updaing it.
@@ -183,11 +183,11 @@ func unitTestsReconcile() {
 			ctx.MaxConcurrentReconciles,
 			ctx.Logger,
 			ctx.Recorder,
-			ctx.VmProvider,
+			ctx.VMProvider,
 			fakeProbeManagerIf,
 		)
-		fakeVMProvider = ctx.VmProvider.(*providerfake.FakeVmProvider)
-		fakeProbeManager = fakeProbeManagerIf.(*proberfake.FakeProberManager)
+		fakeVMProvider = ctx.VMProvider.(*providerfake.FakeVmProvider)
+		fakeProbeManager = fakeProbeManagerIf.(*proberfake.ProberManager)
 
 		vmCtx = &vmopContext.VirtualMachineContext{
 			Context: ctx,

@@ -76,7 +76,7 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 	original := vm
 	modified := original.DeepCopy()
 
-	mutatedAZ, err := m.mutateAvailabilityZone(ctx.Context, original, modified)
+	mutatedAZ, err := m.mutateAvailabilityZone(ctx.Context, modified)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
@@ -113,9 +113,7 @@ func (m mutator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.VirtualMa
 }
 
 func (m mutator) mutateAvailabilityZone(
-	ctx goctx.Context,
-	vmOld, vmNew *vmopv1.VirtualMachine) (bool, error) {
-
+	ctx goctx.Context, vmNew *vmopv1.VirtualMachine) (bool, error) {
 	// Do not overwrite the topology key if one exists. It does not matter if
 	// the zone is invalid -- that is checked in the validating webhook.
 	if vmNew.Labels[topology.KubernetesTopologyZoneLabelKey] != "" {

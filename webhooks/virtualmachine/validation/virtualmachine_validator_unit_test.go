@@ -119,7 +119,7 @@ func unitTestsValidateCreate() {
 		invalidPVCHwVersion                  bool
 		invalidMetadataConfigMap             bool
 		invalidVsphereVolumeSource           bool
-		invalidVmVolumeProvOpts              bool
+		invalidVMVolumeProvOpts              bool
 		invalidStorageClass                  bool
 		notfoundStorageClass                 bool
 		validStorageClass                    bool
@@ -205,7 +205,7 @@ func unitTestsValidateCreate() {
 				},
 			}
 		}
-		if args.invalidVmVolumeProvOpts {
+		if args.invalidVMVolumeProvOpts {
 			setProvOpts := true
 			ctx.vm.Spec.AdvancedOptions = &vmopv1.VirtualMachineAdvancedOptions{
 				DefaultVolumeProvisioningOptions: &vmopv1.VirtualMachineVolumeProvisioningOptions{
@@ -259,6 +259,7 @@ func unitTestsValidateCreate() {
 			Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
 		}
 
+		// nolint:gocritic // Ignore linter complaint about converting to switch case since the following is more readable.
 		if args.isEmptyAvailabilityZone {
 			delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
 		} else if args.isInvalidAvailabilityZone {
@@ -315,7 +316,7 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid PVC name", createArgs{invalidPVCReadOnly: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameReadOnlyFmt, 0), nil),
 		Entry("should deny invalid PVC hardware verion", createArgs{invalidPVCHwVersion: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupportedFmt, builder.DummyImageName, 12, 13), nil),
 		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, 0), nil),
-		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVmVolumeProvOpts: true}, false, fmt.Sprintf(messages.EagerZeroedAndThinProvisionedNotSupported), nil),
+		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVMVolumeProvOpts: true}, false, fmt.Sprintf(messages.EagerZeroedAndThinProvisionedNotSupported), nil),
 		Entry("should deny invalid vmMetadata configmap", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
 		Entry("should deny a storage class that does not exist", createArgs{notfoundStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotFoundFmt, builder.DummyStorageClassName, ""), nil),
 		Entry("should deny a storage class that is not associated with the namespace", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssignedFmt, builder.DummyStorageClassName, ""), nil),
@@ -435,9 +436,6 @@ func unitTestsValidateDelete() {
 
 	When("the delete is performed", func() {
 		JustBeforeEach(func() {
-			// BMV: Is this set at this point for Delete?
-			//t := metav1.Now()
-			//ctx.WebhookRequestContext.Obj.SetDeletionTimestamp(&t)
 			response = ctx.ValidateDelete(&ctx.WebhookRequestContext)
 		})
 

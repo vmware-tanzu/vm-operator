@@ -52,7 +52,6 @@ func NewMutatingWebhook(
 	mgr ctrlmgr.Manager,
 	webhookName string,
 	mutator Mutator) (*MutatingWebhook, error) {
-
 	if webhookName == "" {
 		return nil, errors.New("webhookName arg is empty")
 	}
@@ -124,6 +123,6 @@ func (h *mutatingWebhookHandler) Handle(_ goctx.Context, req admission.Request) 
 
 func generateMutateName(webhookName string, gvk schema.GroupVersionKind) string {
 	return fmt.Sprintf("%s-mutate-", webhookName) +
-		strings.Replace(gvk.Group, ".", "-", -1) + "-" +
+		strings.ReplaceAll(gvk.Group, ".", "-") + "-" +
 		gvk.Version + "-" + strings.ToLower(gvk.Kind)
 }

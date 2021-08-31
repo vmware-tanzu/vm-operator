@@ -14,13 +14,13 @@ import (
 var _ = Describe("MaxAllowedConcurrentVMsOnProvider", func() {
 	Context("when the MAX_CREATE_VMS_ON_PROVIDER env is set", func() {
 		AfterEach(func() {
-			os.Unsetenv(MaxCreateVMsOnProviderEnv)
+			Expect(os.Unsetenv(MaxCreateVMsOnProviderEnv)).To(Succeed())
 		})
 
 		Context("with a valid env value", func() {
 			It("returns the value from the env", func() {
 				expectedVal := 50
-				os.Setenv(MaxCreateVMsOnProviderEnv, strconv.Itoa(expectedVal))
+				Expect(os.Setenv(MaxCreateVMsOnProviderEnv, strconv.Itoa(expectedVal))).To(Succeed())
 
 				Expect(MaxConcurrentCreateVMsOnProvider()).To(Equal(expectedVal))
 			})
@@ -29,7 +29,7 @@ var _ = Describe("MaxAllowedConcurrentVMsOnProvider", func() {
 		Context("with an invalid env value", func() {
 			It("returns the default value", func() {
 				invalidVal := "-42x"
-				os.Setenv(MaxCreateVMsOnProviderEnv, invalidVal)
+				Expect(os.Setenv(MaxCreateVMsOnProviderEnv, invalidVal)).To(Succeed())
 
 				Expect(MaxConcurrentCreateVMsOnProvider()).To(Equal(DefaultMaxCreateVMsOnProvider))
 			})

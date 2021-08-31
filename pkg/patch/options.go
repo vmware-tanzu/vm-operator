@@ -38,8 +38,6 @@ type HelperOptions struct {
 
 	// OwnedConditions defines condition types owned by the controller.
 	// In case of conflicts for the owned conditions, the patch helper will always use the value provided by the controller.
-	//
-	// DEPRECATED: Use ForceOverwriteConditions.
 	OwnedConditions []vmopv1alpha1.ConditionType
 }
 
@@ -63,8 +61,6 @@ func (w WithStatusObservedGeneration) ApplyToHelper(in *HelperOptions) {
 
 // WithOwnedConditions allows to define condition types owned by the controller.
 // In case of conflicts for the owned conditions, the patch helper will always use the value provided by the controller.
-//
-// DEPRECATED: Use WithForceOverwriteConditions.
 type WithOwnedConditions struct {
 	Conditions []vmopv1alpha1.ConditionType
 }

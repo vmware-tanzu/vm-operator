@@ -95,8 +95,6 @@ func intgTestsValidateUpdate() {
 		})
 		It("should deny the request", func() {
 			Expect(err).ToNot(HaveOccurred())
-			//Expect(err).To(HaveOccurred())
-			//Expect(err.Error()).To(ContainSubstring("updates to immutable fields are not allowed"))
 		})
 	})
 }

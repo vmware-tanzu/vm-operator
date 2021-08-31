@@ -20,8 +20,8 @@ const (
 	DefaultMaxCreateVMsOnProvider = 80
 )
 
-// SetVmOpNamespaceEnv sets the VM Operator pod's namespace in the environment
-func SetVmOpNamespaceEnv(namespace string) error {
+// SetVMOpNamespaceEnv sets the VM Operator pod's namespace in the environment.
+func SetVMOpNamespaceEnv(namespace string) error {
 	err := os.Setenv(VmopNamespaceEnv, namespace)
 	if err != nil {
 		return fmt.Errorf("failed to set env var: %v", err)
@@ -29,8 +29,8 @@ func SetVmOpNamespaceEnv(namespace string) error {
 	return nil
 }
 
-// GetVmOpNamespaceFromEnv resolves the VM Operator pod's namespace from the environment
-func GetVmOpNamespaceFromEnv() (string, error) {
+// GetVMOpNamespaceFromEnv resolves the VM Operator pod's namespace from the environment.
+func GetVMOpNamespaceFromEnv() (string, error) {
 	vmopNamespace, vmopNamespaceExists := os.LookupEnv(VmopNamespaceEnv)
 	if !vmopNamespaceExists {
 		return "", fmt.Errorf("VM Operator namespace envvar %s is not set", VmopNamespaceEnv)
@@ -54,7 +54,7 @@ var IsThunderPciDevicesFSSEnabled = func() bool {
 	return os.Getenv(ThunderPciDevicesFSS) == trueString
 }
 
-// MaxAllowedCreateVMsOnProvider returns the percentage of reconciler threads that can be used to create VMs on the provider
+// MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler threads that can be used to create VMs on the provider
 // concurrently. The default is 80.
 // TODO: Remove the env lookup once we have tuned this value from system tests.
 var MaxConcurrentCreateVMsOnProvider = func() int {

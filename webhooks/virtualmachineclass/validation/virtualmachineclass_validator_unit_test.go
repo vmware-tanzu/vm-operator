@@ -59,16 +59,16 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidCpuRequest    bool
+		invalidCPURequest    bool
 		invalidMemoryRequest bool
-		noCpuLimit           bool
+		noCPULimit           bool
 		noMemoryLimit        bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		var err error
 
-		if args.invalidCpuRequest {
+		if args.invalidCPURequest {
 			ctx.vmClass.Spec.Policies.Resources.Requests.Cpu = resource.MustParse("2Gi")
 			ctx.vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("1Gi")
 		}
@@ -76,7 +76,7 @@ func unitTestsValidateCreate() {
 			ctx.vmClass.Spec.Policies.Resources.Requests.Memory = resource.MustParse("2Gi")
 			ctx.vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("1Gi")
 		}
-		if args.noCpuLimit {
+		if args.noCPULimit {
 			ctx.vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("0")
 		}
 		if args.noMemoryLimit {
@@ -105,9 +105,9 @@ func unitTestsValidateCreate() {
 
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
-		Entry("should allow no cpu limit", createArgs{noCpuLimit: true}, true, nil, nil),
+		Entry("should allow no cpu limit", createArgs{noCPULimit: true}, true, nil, nil),
 		Entry("should allow no memory limit", createArgs{noMemoryLimit: true}, true, nil, nil),
-		Entry("should deny invalid cpu request", createArgs{invalidCpuRequest: true}, false, "CPU request must not be larger than the CPU limit", nil),
+		Entry("should deny invalid cpu request", createArgs{invalidCPURequest: true}, false, "CPU request must not be larger than the CPU limit", nil),
 		Entry("should deny invalid memory request", createArgs{invalidMemoryRequest: true}, false, "memory request must not be larger than the memory limit", nil),
 	)
 }
@@ -123,22 +123,22 @@ func unitTestsValidateUpdate() {
 	)
 
 	type updateArgs struct {
-		changeHwCpu    bool
+		changeHwCPU    bool
 		changeHwMemory bool
-		changeCpu      bool
+		changeCPU      bool
 		changeMemory   bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		var err error
 
-		if args.changeHwCpu {
+		if args.changeHwCPU {
 			ctx.vmClass.Spec.Hardware.Cpus = 64
 		}
 		if args.changeHwMemory {
 			ctx.vmClass.Spec.Hardware.Memory = resource.MustParse("5Gi")
 		}
-		if args.changeCpu {
+		if args.changeCPU {
 			ctx.vmClass.Spec.Policies.Resources.Requests.Cpu = resource.MustParse("5Gi")
 			ctx.vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("10Gi")
 		}
@@ -185,18 +185,18 @@ func unitTestsValidateUpdate() {
 
 		DescribeTable("update table with VMService FSS", validateUpdate,
 			Entry("should allow", updateArgs{}, true, nil, nil),
-			Entry("should allow hw cpu change", updateArgs{changeHwCpu: true}, true, nil, nil),
+			Entry("should allow hw cpu change", updateArgs{changeHwCPU: true}, true, nil, nil),
 			Entry("should allow hw memory change", updateArgs{changeHwMemory: true}, true, nil, nil),
-			Entry("should allow policy cpu change", updateArgs{changeCpu: true}, true, nil, nil),
+			Entry("should allow policy cpu change", updateArgs{changeCPU: true}, true, nil, nil),
 			Entry("should allow policy memory change", updateArgs{changeMemory: true}, true, nil, nil),
 		)
 	})
 
 	DescribeTable("update table", validateUpdate,
 		Entry("should allow", updateArgs{}, true, nil, nil),
-		Entry("should deny hw cpu change", updateArgs{changeHwCpu: true}, false, "updates to immutable fields are not allowed", nil),
+		Entry("should deny hw cpu change", updateArgs{changeHwCPU: true}, false, "updates to immutable fields are not allowed", nil),
 		Entry("should deny hw memory change", updateArgs{changeHwMemory: true}, false, "updates to immutable fields are not allowed", nil),
-		Entry("should deny policy cpu change", updateArgs{changeCpu: true}, false, "updates to immutable fields are not allowed", nil),
+		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, false, "updates to immutable fields are not allowed", nil),
 		Entry("should deny policy memory change", updateArgs{changeMemory: true}, false, "updates to immutable fields are not allowed", nil),
 	)
 
@@ -229,9 +229,6 @@ func unitTestsValidateDelete() {
 
 	When("the delete is performed", func() {
 		JustBeforeEach(func() {
-			// BMV: Is this set at this point for Delete?
-			//t := metav1.Now()
-			//ctx.WebhookRequestContext.Obj.SetDeletionTimestamp(&t)
 			response = ctx.ValidateDelete(&ctx.WebhookRequestContext)
 		})
 

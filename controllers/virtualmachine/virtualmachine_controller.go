@@ -49,7 +49,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	proberManager, err := prober.AddToManager(mgr, ctx.VmProvider)
+	proberManager, err := prober.AddToManager(mgr, ctx.VMProvider)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		ctx.MaxConcurrentReconciles,
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
-		ctx.VmProvider,
+		ctx.VMProvider,
 		proberManager,
 	)
 

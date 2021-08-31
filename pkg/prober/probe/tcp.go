@@ -20,8 +20,8 @@ import (
 // tcpProber implements the Probe interface.
 type tcpProber struct{}
 
-// NewTcpProber creates a new tcp prober which implements the Probe interface to execute tcp probes.
-func NewTcpProber() Probe {
+// NewTCPProber creates a new tcp prober which implements the Probe interface to execute tcp probes.
+func NewTCPProber() Probe {
 	return &tcpProber{}
 }
 
@@ -81,8 +81,6 @@ func checkConnection(proto, host, port string, timeout time.Duration) error {
 	if err != nil {
 		return err
 	}
-	if err := conn.Close(); err != nil {
-		return err
-	}
-	return nil
+
+	return conn.Close()
 }

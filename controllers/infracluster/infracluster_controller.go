@@ -46,7 +46,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		ctrl.Log.WithName("controllers").WithName(controllerName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		ctx.Namespace, // Aka lib.GetVmOpNamespaceFromEnv()
-		ctx.VmProvider,
+		ctx.VMProvider,
 	)
 
 	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})

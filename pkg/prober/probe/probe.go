@@ -15,11 +15,11 @@ import (
 type Result int
 
 const (
-	// Failure is encoded as -1 (type Result)
+	// Failure is encoded as -1 (type Result).
 	Failure Result = iota - 1
-	// Unknown is encoded as 0 (type Result)
+	// Unknown is encoded as 0 (type Result).
 	Unknown
-	// Success is encoded as 1 (type Result)
+	// Success is encoded as 1 (type Result).
 	Success
 
 	defaultConnectTimeout = 10 * time.Second
@@ -44,7 +44,7 @@ type Prober struct {
 // NewProber creates a new Prober.
 func NewProber(vmProviderProber vmProviderProber) *Prober {
 	return &Prober{
-		TCPProbe:       NewTcpProber(),
+		TCPProbe:       NewTCPProber(),
 		GuestHeartbeat: NewGuestHeartbeatProber(vmProviderProber),
 	}
 }

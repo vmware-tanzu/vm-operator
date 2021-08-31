@@ -2,8 +2,7 @@ run:
   deadline: 5m
   skip-files:
    - ".*generated.*\\.go"
-   - pkg/
-   - webhooks/
+   - pkg/vmprovider/
    - external/
    - controllers/virtualmachineservice/utils/
 
@@ -59,7 +58,6 @@ linters:
   - unconvert
   - unparam
   - varcheck
-  - whitespace  
 
 issues:
   max-same-issues: 0
@@ -83,3 +81,7 @@ issues:
   # within test files.
   - path: test/
     text: should not use dot imports
+  # All of our webhooks follow the pattern of passing the webhook context which contains fields like the Client.
+  # Ignore the linter warnings for now.
+  - path: webhooks/
+    text: ".* `ctx` is unused"

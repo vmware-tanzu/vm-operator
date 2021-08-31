@@ -49,7 +49,6 @@ var (
 func GetAvailabilityZones(
 	ctx context.Context,
 	client ctrlclient.Client) ([]topologyv1.AvailabilityZone, error) {
-
 	availabilityZoneList := &topologyv1.AvailabilityZoneList{}
 	if err := client.List(ctx, availabilityZoneList); err != nil {
 		return nil, err
@@ -85,13 +84,11 @@ func GetAvailabilityZone(
 	ctx context.Context,
 	client ctrlclient.Client,
 	availabilityZoneName string) (topologyv1.AvailabilityZone, error) {
-
 	var availabilityZone topologyv1.AvailabilityZone
 	if err := client.Get(
 		ctx,
 		ctrlclient.ObjectKey{Name: availabilityZoneName},
 		&availabilityZone); err != nil {
-
 		// If the AZ was not found, the WCP FaultDomains FSS is not
 		// enabled, and the requested AZ matches the name of the default
 		// AZ, then return the default AZ.
@@ -117,7 +114,6 @@ func GetAvailabilityZone(
 func GetDefaultAvailabilityZone(
 	ctx context.Context,
 	client ctrlclient.Client) (topologyv1.AvailabilityZone, error) {
-
 	// Please note the default AZ has no ClusterComputeResourceMoId, and this
 	// is okay, because the Session.init call will grab the Cluster's MoId from
 	// the resource pool.
@@ -143,12 +139,12 @@ func GetDefaultAvailabilityZone(
 
 	// Collect all the DevOps namespaces into the AvailabilityZone's Namespaces map.
 	for _, ns := range namespaceList.Items {
-		poolMoId := ns.Annotations[NamespaceRPAnnotationKey]
-		folderMoId := ns.Annotations[NamespaceFolderAnnotationKey]
-		if poolMoId != "" && folderMoId != "" {
+		poolMoID := ns.Annotations[NamespaceRPAnnotationKey]
+		folderMoID := ns.Annotations[NamespaceFolderAnnotationKey]
+		if poolMoID != "" && folderMoID != "" {
 			availabilityZone.Spec.Namespaces[ns.Name] = topologyv1.NamespaceInfo{
-				PoolMoId:   poolMoId,
-				FolderMoId: folderMoId,
+				PoolMoId:   poolMoID,
+				FolderMoId: folderMoID,
 			}
 		}
 	}

@@ -57,22 +57,22 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		noCpuLimit           bool
+		noCPULimit           bool
 		noMemoryLimit        bool
-		invalidCpuRequest    bool
+		invalidCPURequest    bool
 		invalidMemoryRequest bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		var err error
 
-		if args.noCpuLimit {
+		if args.noCPULimit {
 			ctx.vmRP.Spec.ResourcePool.Limits.Cpu = resource.MustParse("0")
 		}
 		if args.noMemoryLimit {
 			ctx.vmRP.Spec.ResourcePool.Limits.Memory = resource.MustParse("0")
 		}
-		if args.invalidCpuRequest {
+		if args.invalidCPURequest {
 			ctx.vmRP.Spec.ResourcePool.Reservations.Cpu = resource.MustParse("2Gi")
 			ctx.vmRP.Spec.ResourcePool.Limits.Cpu = resource.MustParse("1Gi")
 		}
@@ -103,9 +103,9 @@ func unitTestsValidateCreate() {
 
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
-		Entry("should allow no cpu limit", createArgs{noCpuLimit: true}, true, nil, nil),
+		Entry("should allow no cpu limit", createArgs{noCPULimit: true}, true, nil, nil),
 		Entry("should allow no memory limit", createArgs{noMemoryLimit: true}, true, nil, nil),
-		Entry("should deny invalid cpu reservation", createArgs{invalidCpuRequest: true}, false, "spec.resourcepool.reservations.cpu: Invalid value: \"2Gi\": reservation value cannot exceed the limit value", nil),
+		Entry("should deny invalid cpu reservation", createArgs{invalidCPURequest: true}, false, "spec.resourcepool.reservations.cpu: Invalid value: \"2Gi\": reservation value cannot exceed the limit value", nil),
 		Entry("should deny invalid memory reservation", createArgs{invalidMemoryRequest: true}, false, "spec.resourcepool.reservations.memory: Invalid value: \"4Gi\": reservation value cannot exceed the limit value", nil),
 	)
 }
@@ -117,14 +117,14 @@ func unitTestsValidateUpdate() {
 	)
 
 	type updateArgs struct {
-		changeCpu    bool
+		changeCPU    bool
 		changeMemory bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		var err error
 
-		if args.changeCpu {
+		if args.changeCPU {
 			ctx.vmRP.Spec.ResourcePool.Reservations.Cpu = resource.MustParse("5Gi")
 			ctx.vmRP.Spec.ResourcePool.Limits.Cpu = resource.MustParse("10Gi")
 		}
@@ -155,7 +155,7 @@ func unitTestsValidateUpdate() {
 
 	DescribeTable("update table", validateUpdate,
 		Entry("should allow", updateArgs{}, true, nil, nil),
-		Entry("should deny policy cpu change", updateArgs{changeCpu: true}, false, "updates to immutable fields are not allowed", nil),
+		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, false, "updates to immutable fields are not allowed", nil),
 		Entry("should deny policy memory change", updateArgs{changeMemory: true}, false, "updates to immutable fields are not allowed", nil),
 	)
 
@@ -188,9 +188,6 @@ func unitTestsValidateDelete() {
 
 	When("the delete is performed", func() {
 		JustBeforeEach(func() {
-			// BMV: Is this set at this point for Delete?
-			//t := metav1.Now()
-			//ctx.WebhookRequestContext.Obj.SetDeletionTimestamp(&t)
 			response = ctx.ValidateDelete(&ctx.WebhookRequestContext)
 		})
 

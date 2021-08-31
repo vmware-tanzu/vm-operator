@@ -70,7 +70,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateMetadata(ctx, vmRP)...)
 	fieldErrs = append(fieldErrs, v.validateSpec(ctx, vmRP)...)
 
-	var validationErrs []string
+	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}

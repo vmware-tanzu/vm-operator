@@ -25,7 +25,7 @@ import (
 var _ = Describe("TCP probe", func() {
 	var (
 		vm           *vmopv1alpha1.VirtualMachine
-		testTcpProbe Probe
+		testTCPProbe Probe
 
 		testServer *httptest.Server
 		testHost   string
@@ -44,7 +44,7 @@ var _ = Describe("TCP probe", func() {
 		}
 
 		testServer, testHost, testPort = setupTestServer()
-		testTcpProbe = NewTcpProber()
+		testTCPProbe = NewTCPProber()
 	})
 
 	AfterEach(func() {
@@ -59,7 +59,7 @@ var _ = Describe("TCP probe", func() {
 			Logger:    ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
 		}
 
-		res, err := testTcpProbe.Probe(probeCtx)
+		res, err := testTCPProbe.Probe(probeCtx)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(res).To(Equal(Success))
 	})
@@ -73,7 +73,7 @@ var _ = Describe("TCP probe", func() {
 			Logger:    ctrl.Log.WithName("Probe").WithValues("name", vm.NamespacedName()),
 		}
 
-		res, err := testTcpProbe.Probe(probeCtx)
+		res, err := testTCPProbe.Probe(probeCtx)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(res).To(Equal(Success))
 	})
@@ -85,7 +85,7 @@ var _ = Describe("TCP probe", func() {
 			ProbeSpec: vm.Spec.ReadinessProbe,
 		}
 
-		res, err := testTcpProbe.Probe(probeCtx)
+		res, err := testTCPProbe.Probe(probeCtx)
 		Expect(err).Should(HaveOccurred())
 		Expect(res).To(Equal(Failure))
 	})

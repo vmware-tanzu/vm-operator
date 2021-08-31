@@ -22,7 +22,6 @@ func BuildValidationResponse(
 	validationErrs []string,
 	err error,
 	additionalValidationErrors ...string) (response admission.Response) {
-
 	// Log the response on the way out.
 	defer func() {
 		if response.Allowed {

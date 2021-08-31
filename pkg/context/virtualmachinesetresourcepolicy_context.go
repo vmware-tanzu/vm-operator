@@ -11,7 +11,7 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
-// VirtualMachineContext is the context used for VirtualMachineControllers.
+// VirtualMachineSetResourcePolicyContext is the context used for VirtualMachineControllers.
 type VirtualMachineSetResourcePolicyContext struct {
 	context.Context
 	Logger         logr.Logger

@@ -21,7 +21,7 @@ var intgFakeVMProvider = providerfake.NewFakeVmProvider()
 var suite = builder.NewTestSuiteForController(
 	virtualmachine.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
-		ctx.VmProvider = intgFakeVMProvider
+		ctx.VMProvider = intgFakeVMProvider
 		return nil
 	},
 )

@@ -36,7 +36,7 @@ type funcs struct {
 	DeleteNamespaceSessionInCacheFn func(ctx context.Context, namespace string)
 
 	CreateOrUpdateVirtualMachineSetResourcePolicyFn func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
-	DoesVirtualMachineSetResourcePolicyExistFn      func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
+	IsVirtualMachineSetResourcePolicyReadyFn        func(ctx context.Context, azName string, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicyFn         func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
 	ComputeClusterCPUMinFrequencyFn                 func(ctx context.Context) error
 }
@@ -126,19 +126,21 @@ func (s *VMProvider) GetClusterID(ctx context.Context, namespace string) (string
 func (s *VMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	s.Lock()
 	defer s.Unlock()
-	if s.CreateOrUpdateVirtualMachineSetResourcePolicyFn != nil {
-		return s.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)
-	}
 
+	if s.CreateOrUpdateVirtualMachineSetResourcePolicyFn != nil {
+		return s.CreateOrUpdateVirtualMachineSetResourcePolicyFn(ctx, resourcePolicy)
+	}
 	s.addToResourcePolicyMap(resourcePolicy)
+
 	return nil
 }
 
-func (s *VMProvider) DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+func (s *VMProvider) IsVirtualMachineSetResourcePolicyReady(ctx context.Context, azName string, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 	s.Lock()
 	defer s.Unlock()
-	if s.DoesVirtualMachineSetResourcePolicyExistFn != nil {
-		return s.DoesVirtualMachineSetResourcePolicyExistFn(ctx, resourcePolicy)
+
+	if s.IsVirtualMachineSetResourcePolicyReadyFn != nil {
+		return s.IsVirtualMachineSetResourcePolicyReadyFn(ctx, azName, resourcePolicy)
 	}
 	objectKey := client.ObjectKey{
 		Namespace: resourcePolicy.Namespace,
@@ -152,6 +154,7 @@ func (s *VMProvider) DoesVirtualMachineSetResourcePolicyExist(ctx context.Contex
 func (s *VMProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	s.Lock()
 	defer s.Unlock()
+
 	if s.DeleteVirtualMachineSetResourcePolicyFn != nil {
 		return s.DeleteVirtualMachineSetResourcePolicyFn(ctx, resourcePolicy)
 	}

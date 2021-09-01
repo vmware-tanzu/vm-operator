@@ -17,7 +17,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -39,6 +38,7 @@ func unitTestsReconcile() {
 		resourcePolicy    *vmopv1alpha1.VirtualMachineSetResourcePolicy
 		vm                *vmopv1alpha1.VirtualMachine
 	)
+
 	BeforeEach(func() {
 		resourcePolicy = &vmopv1alpha1.VirtualMachineSetResourcePolicy{
 			ObjectMeta: metav1.ObjectMeta{
@@ -85,6 +85,7 @@ func unitTestsReconcile() {
 		BeforeEach(func() {
 			initObjects = append(initObjects, resourcePolicy)
 		})
+
 		It("will have finalizer set after reconciliation", func() {
 			err := reconciler.ReconcileNormal(resourcePolicyCtx)
 			Expect(err).NotTo(HaveOccurred())
@@ -115,11 +116,8 @@ func unitTestsReconcile() {
 				expectedError := fmt.Errorf("failing VirtualMachineSetResourcePolicy deletion since VM: '%s' is referencing it, resourcePolicyName: '%s'", vm.NamespacedName(), resourcePolicy.NamespacedName())
 				Expect(err).To(MatchError(expectedError))
 
-				By("provider should return that the policy still exists", func() {
-					fakeProvider := ctx.VMProvider.(*providerfake.VMProvider)
-					rpExists, err := fakeProvider.DoesVirtualMachineSetResourcePolicyExist(resourcePolicyCtx, resourcePolicy)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(rpExists).To(BeFalse())
+				By("will still have finalizer", func() {
+					Expect(resourcePolicyCtx.ResourcePolicy.GetFinalizers()).To(ContainElement(finalizer))
 				})
 			})
 		})
@@ -131,11 +129,8 @@ func unitTestsReconcile() {
 			err = reconciler.ReconcileDelete(resourcePolicyCtx)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("provider should return that the policy does not exist", func() {
-				fakeProvider := ctx.VMProvider.(*providerfake.VMProvider)
-				rpExists, err := fakeProvider.DoesVirtualMachineSetResourcePolicyExist(resourcePolicyCtx, resourcePolicy)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(rpExists).To(BeFalse())
+			By("will not have finalizer", func() {
+				Expect(resourcePolicyCtx.ResourcePolicy.GetFinalizers()).To(BeEmpty())
 			})
 		})
 	})

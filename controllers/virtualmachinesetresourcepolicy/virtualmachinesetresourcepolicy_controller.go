@@ -114,18 +114,17 @@ func (r *Reconciler) deleteResourcePolicy(ctx *context.VirtualMachineSetResource
 }
 
 func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineSetResourcePolicyContext) error {
-	resourcePolicy := ctx.ResourcePolicy
 	ctx.Logger.Info("Reconciling VirtualMachineSetResourcePolicy Deletion")
 	defer func() {
 		ctx.Logger.Info("Finished Reconciling VirtualMachineSetResourcePolicy Deletion")
 	}()
 
-	if controllerutil.ContainsFinalizer(resourcePolicy, finalizerName) {
+	if controllerutil.ContainsFinalizer(ctx.ResourcePolicy, finalizerName) {
 		if err := r.deleteResourcePolicy(ctx); err != nil {
 			return err
 		}
 
-		controllerutil.RemoveFinalizer(resourcePolicy, finalizerName)
+		controllerutil.RemoveFinalizer(ctx.ResourcePolicy, finalizerName)
 	}
 
 	return nil

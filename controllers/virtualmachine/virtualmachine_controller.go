@@ -34,6 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
@@ -99,7 +100,7 @@ func csBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Reade
 		// Filter images that have an OwnerReference to this ContentLibraryProvider.
 		imageList := &vmopv1alpha1.VirtualMachineImageList{}
 		if err := c.List(ctx, imageList); err != nil {
-			logger.Error(err, "Failed to get ContentLibraryProvider for VM reconciliation due to ContentSourceBinding watch")
+			logger.Error(err, "Failed to list VirtualMachineImages for VM reconciliation due to ContentSourceBinding watch")
 			return nil
 		}
 
@@ -547,7 +548,7 @@ func (r *Reconciler) getResourcePolicy(ctx *context.VirtualMachineContext) (*vmo
 
 	// Make sure that the corresponding entities (RP and Folder) are created on the infra provider before
 	// reconciling the VM. Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy.
-	rpReady, err := r.VMProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
+	rpReady, err := r.VMProvider.IsVirtualMachineSetResourcePolicyReady(ctx, ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey], resourcePolicy)
 	if err != nil {
 		ctx.Logger.Error(err, "Failed to check if VirtualMachineSetResourcePolicy exists")
 		return nil, err

@@ -11,13 +11,15 @@ import (
 	"github.com/vmware/govmomi/object"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 )
 
-// DoesVirtualMachineSetResourcePolicyExist checks if the entities of a VirtualMachineSetResourcePolicy exist on vSphere.
-func (vs *vSphereVMProvider) DoesVirtualMachineSetResourcePolicyExist(
+// IsVirtualMachineSetResourcePolicyReady checks if the VirtualMachineSetResourcePolicy for the AZ is ready.
+func (vs *vSphereVMProvider) IsVirtualMachineSetResourcePolicyReady(
 	ctx context.Context,
+	availabilityZoneName string,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 
 	client, err := vs.GetClient(ctx)
@@ -25,37 +27,42 @@ func (vs *vSphereVMProvider) DoesVirtualMachineSetResourcePolicyExist(
 		return false, err
 	}
 
-	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.sessions.KubeClient())
+	// If the FSS is not enabled and no zone was specified then assume the default zone.
+	if !lib.IsWcpFaultDomainsFSSEnabled() {
+		if availabilityZoneName == "" {
+			availabilityZoneName = topology.DefaultAvailabilityZoneName
+		}
+	}
+
+	az, err := topology.GetAvailabilityZone(ctx, vs.sessions.KubeClient(), availabilityZoneName)
 	if err != nil {
 		return false, err
 	}
 
-	for _, az := range availabilityZones {
-		ses, err := vs.sessions.GetSession(ctx, az.Name, resourcePolicy.Namespace)
-		if err != nil {
-			return false, err
-		}
+	ses, err := vs.sessions.GetSession(ctx, az.Name, resourcePolicy.Namespace)
+	if err != nil {
+		return false, err
+	}
 
-		rpExists, err := ses.DoesResourcePoolExist(ctx, resourcePolicy.Spec.ResourcePool.Name)
-		if err != nil {
-			return false, err
-		}
+	rpExists, err := ses.DoesResourcePoolExist(ctx, resourcePolicy.Spec.ResourcePool.Name)
+	if err != nil {
+		return false, err
+	}
 
-		folderExists, err := ses.DoesFolderExist(ctx, resourcePolicy.Spec.Folder.Name)
-		if err != nil {
-			return false, err
-		}
+	folderExists, err := ses.DoesFolderExist(ctx, resourcePolicy.Spec.Folder.Name)
+	if err != nil {
+		return false, err
+	}
 
-		modulesExist, err := vs.doClusterModulesExist(ctx, client.ClusterModuleClient(), ses.Cluster(), resourcePolicy)
-		if err != nil {
-			return false, err
-		}
+	modulesExist, err := vs.doClusterModulesExist(ctx, client.ClusterModuleClient(), ses.Cluster(), resourcePolicy)
+	if err != nil {
+		return false, err
+	}
 
-		if !rpExists || !folderExists || !modulesExist {
-			log.V(4).Info("Resource policy does not exist",
-				"az", az.Name, "resourcePool", rpExists, "folder", folderExists, "modules", modulesExist)
-			return false, nil
-		}
+	if !rpExists || !folderExists || !modulesExist {
+		log.V(4).Info("Resource policy is not ready",
+			"az", az.Name, "resourcePool", rpExists, "folder", folderExists, "modules", modulesExist)
+		return false, nil
 	}
 
 	return true, nil

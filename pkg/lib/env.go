@@ -15,7 +15,6 @@ const (
 	WcpFaultDomainsFSS            = "FSS_WCP_FAULTDOMAINS"
 	VMServiceFSS                  = "FSS_WCP_VMSERVICE"
 	VMServiceV1Alpha2FSS          = "FSS_WCP_VMSERVICE_V1ALPHA2"
-	ThunderPciDevicesFSS          = "FSS_THUNDERPCIDEVICES"
 	MaxCreateVMsOnProviderEnv     = "MAX_CREATE_VMS_ON_PROVIDER"
 	DefaultMaxCreateVMsOnProvider = 80
 )
@@ -48,10 +47,6 @@ var IsVMServiceFSSEnabled = func() bool {
 
 var IsVMServiceV1Alpha2FSSEnabled = func() bool {
 	return os.Getenv(VMServiceV1Alpha2FSS) == trueString
-}
-
-var IsThunderPciDevicesFSSEnabled = func() bool {
-	return os.Getenv(ThunderPciDevicesFSS) == trueString
 }
 
 // MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler threads that can be used to create VMs on the provider

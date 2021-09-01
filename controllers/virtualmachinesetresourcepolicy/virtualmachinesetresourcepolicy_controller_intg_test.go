@@ -4,12 +4,12 @@
 package virtualmachinesetresourcepolicy_test
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -45,7 +45,7 @@ func intgTests() {
 		intgFakeVMProvider.Reset()
 	})
 
-	getResourcePolicy := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1alpha1.VirtualMachineSetResourcePolicy {
+	getResourcePolicy := func(ctx *builder.IntegrationTestContext, objKey client.ObjectKey) *vmopv1alpha1.VirtualMachineSetResourcePolicy {
 		rp := &vmopv1alpha1.VirtualMachineSetResourcePolicy{}
 		if err := ctx.Client.Get(ctx, objKey, rp); err != nil {
 			return nil
@@ -53,7 +53,7 @@ func intgTests() {
 		return rp
 	}
 
-	waitForResourcePolicyFinalizer := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) {
+	waitForResourcePolicyFinalizer := func(ctx *builder.IntegrationTestContext, objKey client.ObjectKey) {
 		Eventually(func() []string {
 			if rp := getResourcePolicy(ctx, objKey); rp != nil {
 				return rp.GetFinalizers()
@@ -63,26 +63,40 @@ func intgTests() {
 	}
 
 	Context("Reconcile", func() {
+		var called bool
+
+		BeforeEach(func() {
+			intgFakeVMProvider.Lock()
+			intgFakeVMProvider.CreateOrUpdateVirtualMachineSetResourcePolicyFn = func(_ context.Context, _ *vmopv1alpha1.VirtualMachineSetResourcePolicy) error {
+				called = true
+				return nil
+			}
+			intgFakeVMProvider.Unlock()
+		})
+
 		It("Reconciles after VirtualMachineSetResourcePolicy creation", func() {
 			Expect(ctx.Client.Create(ctx, resourcePolicy)).To(Succeed())
 
-			By("VirtualMachineSetResourcePolicy should have a finalizer added", func() {
+			By("VirtualMachineSetResourcePolicy should have finalizer added", func() {
 				waitForResourcePolicyFinalizer(ctx, resourcePolicyKey)
 			})
 
-			By("Provider should be able to find the Resource Policy", func() {
-				Eventually(func() bool {
-					exists, err := intgFakeVMProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
-					if err != nil {
-						return false
-					}
-					return exists
-				}).Should(BeTrue())
+			By("Create policy should be called", func() {
+				Eventually(called).Should(BeTrue())
 			})
 
-			By("Deleting the ResourcePolicy", func() {
+			By("Deleting the VirtualMachineSetResourcePolicy", func() {
 				err := ctx.Client.Delete(ctx, resourcePolicy)
-				Expect(err == nil || apiErrors.IsNotFound(err)).To(BeTrue())
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			By("VirtualMachineSetResourcePolicy should have finalizer removed", func() {
+				Eventually(func() []string {
+					if rp := getResourcePolicy(ctx, resourcePolicyKey); rp != nil {
+						return rp.GetFinalizers()
+					}
+					return nil
+				}).ShouldNot(ContainElement(finalizer))
 			})
 		})
 	})

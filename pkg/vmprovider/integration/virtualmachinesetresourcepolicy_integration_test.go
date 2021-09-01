@@ -84,7 +84,7 @@ var _ = Describe("vSphere VM resource policy tests", func() {
 			})
 
 			It("successfully able to find the resource policy", func() {
-				exists, err := vmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, resourcePolicy)
+				exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, "availabilityzone", resourcePolicy)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(exists).To(BeTrue())
 			})
@@ -93,7 +93,7 @@ var _ = Describe("vSphere VM resource policy tests", func() {
 		Context("for an absent resource policy", func() {
 			It("should fail to find the resource policy without any errors", func() {
 				failResPolicy := getVirtualMachineSetResourcePolicy("test-policy", testPolicyNamespace)
-				exists, err := vmProvider.DoesVirtualMachineSetResourcePolicyExist(ctx, failResPolicy)
+				exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, "availabilityzone", failResPolicy)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(exists).To(BeFalse())
 			})

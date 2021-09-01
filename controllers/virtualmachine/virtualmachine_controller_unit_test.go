@@ -594,7 +594,7 @@ func unitTestsReconcile() {
 				When("VM ResourcePolicy exists check returns error", func() {
 					errMsg := "exists error"
 					JustBeforeEach(func() {
-						fakeVMProvider.DoesVirtualMachineSetResourcePolicyExistFn = func(ctx context.Context, rp *vmopv1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+						fakeVMProvider.IsVirtualMachineSetResourcePolicyReadyFn = func(ctx context.Context, azName string, rp *vmopv1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 							return false, errors.New(errMsg)
 						}
 					})
@@ -608,7 +608,7 @@ func unitTestsReconcile() {
 
 				When("VM ResourcePolicy is ready", func() {
 					JustBeforeEach(func() {
-						fakeVMProvider.DoesVirtualMachineSetResourcePolicyExistFn = func(ctx context.Context, rp *vmopv1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+						fakeVMProvider.IsVirtualMachineSetResourcePolicyReadyFn = func(ctx context.Context, azName string, rp *vmopv1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 							return true, nil
 						}
 					})

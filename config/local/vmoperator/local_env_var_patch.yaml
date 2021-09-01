@@ -15,5 +15,3 @@ spec:
           value: "false"
         - name: VSPHERE_NETWORKING
           value: "false"
-        - name: FSS_THUNDERPCIDEVICES
-          value: "false"

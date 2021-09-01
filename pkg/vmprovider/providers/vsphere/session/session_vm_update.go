@@ -469,13 +469,11 @@ func UpdateConfigSpecExtraConfig(
 		}
 	}
 
-	if lib.IsThunderPciDevicesFSSEnabled() {
-		virtualDevices := vmClassSpec.Hardware.Devices
-		if len(virtualDevices.VGPUDevices) > 0 || len(virtualDevices.DynamicDirectPathIODevices) > 0 {
-			// Add "maintenance.vm.evacuation.poweroff" extraConfig key when GPU devices are present in the VMClass Spec.
-			extraConfig[constants.MMPowerOffVMExtraConfigKey] = constants.ExtraConfigTrue
-			setMMIOExtraConfig(vm, extraConfig)
-		}
+	virtualDevices := vmClassSpec.Hardware.Devices
+	if len(virtualDevices.VGPUDevices) > 0 || len(virtualDevices.DynamicDirectPathIODevices) > 0 {
+		// Add "maintenance.vm.evacuation.poweroff" extraConfig key when GPU devices are present in the VMClass Spec.
+		extraConfig[constants.MMPowerOffVMExtraConfigKey] = constants.ExtraConfigTrue
+		setMMIOExtraConfig(vm, extraConfig)
 	}
 
 	currentExtraConfig := make(map[string]string)
@@ -639,16 +637,13 @@ func (s *Session) prePowerOnVMConfigSpec(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
-	// With FSS_THUNDERPCIDEVICES = true, we allow a VM to get attached to PCI devices.
-	if lib.IsThunderPciDevicesFSSEnabled() {
-		currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
-		expectedPciDevices := CreatePCIDevices(updateArgs.VMClass.Spec.Hardware.Devices)
-		pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPciDevices, currentPciDevices)
-		if err != nil {
-			return nil, err
-		}
-		configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
+	currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
+	expectedPciDevices := CreatePCIDevices(updateArgs.VMClass.Spec.Hardware.Devices)
+	pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPciDevices, currentPciDevices)
+	if err != nil {
+		return nil, err
 	}
+	configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
 
 	return configSpec, nil
 }

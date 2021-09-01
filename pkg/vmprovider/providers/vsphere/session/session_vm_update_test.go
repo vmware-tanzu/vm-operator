@@ -23,7 +23,6 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
@@ -334,17 +333,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
-		Context("when ThunderPciDevicesFSS is enabled", func() {
-			var oldThunderPciDevicesFSSEnableFunc func() bool
-			BeforeEach(func() {
-				oldThunderPciDevicesFSSEnableFunc = lib.IsThunderPciDevicesFSSEnabled
-				lib.IsThunderPciDevicesFSSEnabled = func() bool {
-					return true
-				}
-			})
-			AfterEach(func() {
-				lib.IsThunderPciDevicesFSSEnabled = oldThunderPciDevicesFSSEnableFunc
-			})
+		Context("ThunderPciDevices related test", func() {
 
 			Context("when virtual devices are not present", func() {
 				It("No Changes", func() {

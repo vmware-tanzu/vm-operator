@@ -63,6 +63,20 @@ func DummyVirtualMachineClass() *vmopv1.VirtualMachineClass {
 	}
 }
 
+func DummyInstanceStorage() vmopv1.InstanceStorage {
+	return vmopv1.InstanceStorage{
+		StorageClass: DummyStorageClassName,
+		Volumes: []vmopv1.InstanceStorageVolume{
+			{
+				Size: resource.MustParse("256Gi"),
+			},
+			{
+				Size: resource.MustParse("512Gi"),
+			},
+		},
+	}
+}
+
 func DummyVirtualMachine() *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{

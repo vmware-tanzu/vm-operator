@@ -7,9 +7,9 @@ package session_test
 
 import (
 	"fmt"
-	"strings"
 	"sync/atomic"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
@@ -21,7 +21,6 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/instancevm"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 )
@@ -327,8 +326,18 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			Context("When InstanceStorage is configured on VM", func() {
 				BeforeEach(func() {
-					vm.Annotations[instancevm.PVCsAnnotationKey] = strings.Join([]string{
-						"testPVCName1", "testPvcName2"}, instancevm.PVCsAnnotationValueSeparator)
+					vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1alpha1.VirtualMachineVolume{
+						Name: "pvc-volume-1",
+						PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "pvc-volume-1",
+							},
+							InstanceVolumeClaim: &vmopv1alpha1.InstanceVolumeClaimVolumeSource{
+								StorageClass: "dummyStorageClass",
+								Size:         resource.MustParse("256Gi"),
+							},
+						},
+					})
 				})
 
 				It("maintenance mode powerOff extraConfig should be added", func() {

@@ -39,3 +39,9 @@
   value:
     name: FSS_WCP_FAULTDOMAINS
     value: "false"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_INSTANCE_STORAGE
+    value: "<FSS_WCP_INSTANCE_STORAGE_VALUE>"

@@ -26,7 +26,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+	instancestoragetestutil "github.com/vmware-tanzu/vm-operator/test/instancestorage"
 )
 
 func intgTests() {
@@ -57,6 +59,9 @@ func intgTests() {
 		lib.IsVMServiceFSSEnabled = func() bool {
 			return atomic.LoadUint32(&vmServiceFSS) != 0
 		}
+		lib.IsInstanceStorageFSSEnabled = func() bool {
+			return true
+		}
 
 		ctx = suite.NewIntegrationTestContext()
 
@@ -66,8 +71,9 @@ func intgTests() {
 			},
 			Spec: vmopv1alpha1.VirtualMachineClassSpec{
 				Hardware: vmopv1alpha1.VirtualMachineClassHardware{
-					Cpus:   4,
-					Memory: resource.MustParse("1Mi"),
+					Cpus:            4,
+					Memory:          resource.MustParse("1Mi"),
+					InstanceStorage: builder.DummyInstanceStorage(),
 				},
 				Policies: vmopv1alpha1.VirtualMachineClassPolicies{
 					Resources: vmopv1alpha1.VirtualMachineClassResources{
@@ -188,6 +194,23 @@ func intgTests() {
 		}).Should(ContainElement(finalizer), "waiting for VirtualMachine finalizer")
 	}
 
+	waitForVirtualMachineInstanceStorage := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) {
+		Eventually(func() bool {
+			if vm := getVirtualMachine(ctx, objKey); vm != nil {
+				if instancestoragetestutil.InstanceVolumeEqComparator(vm, vmClass.Spec.Hardware.InstanceStorage) {
+					return true
+				}
+			}
+			return false
+		}).Should(BeTrue(), "waiting for VirtualMachine instance storage volumes to be added")
+		Eventually(func() map[string]string {
+			if vm := getVirtualMachine(ctx, objKey); vm != nil {
+				return vm.GetLabels()
+			}
+			return nil
+		}).Should(HaveKey(constants.InstanceStorageVMLabelKey), "waiting for VirtualMachine instance storage label to be added")
+	}
+
 	Context("Reconcile", func() {
 		dummyBiosUUID := "biosUUID42"
 		dummyInstanceUUID := "instanceUUID1234"
@@ -261,6 +284,10 @@ func intgTests() {
 
 			By("VirtualMachine should have finalizer added", func() {
 				waitForVirtualMachineFinalizer(ctx, vmKey)
+			})
+
+			By("VirtualMachine should have instance storage configured", func() {
+				waitForVirtualMachineInstanceStorage(ctx, vmKey)
 			})
 
 			By("VirtualMachine should exist in Fake Provider", func() {

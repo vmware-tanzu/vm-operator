@@ -67,4 +67,9 @@ const (
 	CloudInitGuestInfoMetadataEncoding = "guestinfo.metadata.encoding"
 	CloudInitGuestInfoUserdata         = "guestinfo.userdata"
 	CloudInitGuestInfoUserdataEncoding = "guestinfo.userdata.encoding"
+
+	// InstanceStoragePVCNamePrefix prefix of auto-generated PVC names.
+	InstanceStoragePVCNamePrefix = "instance-pvc-"
+	// InstanceStorageVMLabelKey identifies VMs with instance storage.
+	InstanceStorageVMLabelKey = "vmoperator.vmware.com/instance-vm"
 )

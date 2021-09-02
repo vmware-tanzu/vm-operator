@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -36,6 +38,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 )
 
 const finalizerName = "virtualmachine.vmoperator.vmware.com"
@@ -566,6 +570,11 @@ func (r *Reconciler) createOrUpdateVM(ctx *context.VirtualMachineContext) error 
 		return err
 	}
 
+	// Update VM spec with instance storage
+	if err := r.reconcileInstanceStorageSpec(ctx, vmClass); err != nil {
+		return err
+	}
+
 	vmImage, clUUID, err := r.getImageAndContentLibraryUUID(ctx)
 	if err != nil {
 		return err
@@ -647,5 +656,86 @@ func (r *Reconciler) createOrUpdateVM(ctx *context.VirtualMachineContext) error 
 		return err
 	}
 
+	return nil
+}
+
+// reconcileInstanceStorageSpec checks if VM class is configured with instance volumes and adds instance storage data in VM spec accordingly.
+func (r *Reconciler) reconcileInstanceStorageSpec(
+	ctx *context.VirtualMachineContext,
+	vmClass *vmopv1alpha1.VirtualMachineClass) error {
+	if !lib.IsInstanceStorageFSSEnabled() {
+		return nil
+	}
+
+	if ctx.VM.Status.Phase == vmopv1alpha1.Created {
+		ctx.Logger.V(5).WithValues(
+			"reason",
+			"VM created",
+		).Info("Skipping instance volume patch")
+		return nil
+	}
+
+	if instancestorage.IsConfigured(ctx.VM) {
+		ctx.Logger.V(5).WithValues(
+			"reason",
+			"VM spec already updated",
+		).Info("Skipping instance volume patch")
+		return nil
+	}
+
+	instanceStorage := vmClass.Spec.Hardware.InstanceStorage
+
+	if len(instanceStorage.Volumes) == 0 {
+		ctx.Logger.V(5).WithValues(
+			"reason", "VMClass is not configured with instance storage",
+			"VMClass", vmClass.Name,
+		).Info("Skipping instance volume patch")
+		return nil
+	}
+
+	return r.addInstanceStorageSpec(ctx, instanceStorage)
+}
+
+// addInstanceStorageSpec modifies VM spec with instance volume data.
+func (r *Reconciler) addInstanceStorageSpec(
+	ctx *context.VirtualMachineContext,
+	instanceStorage vmopv1alpha1.InstanceStorage) error {
+	pvcs := []vmopv1alpha1.VirtualMachineVolume{}
+
+	for _, isv := range instanceStorage.Volumes {
+		uuid, err := uuid.NewUUID()
+		if err != nil {
+			return err
+		}
+		pvcName := constants.InstanceStoragePVCNamePrefix + uuid.String()
+		vmv := vmopv1alpha1.VirtualMachineVolume{
+			Name: pvcName,
+			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: pvcName,
+					ReadOnly:  false,
+				},
+				InstanceVolumeClaim: &vmopv1alpha1.InstanceVolumeClaimVolumeSource{
+					StorageClass: instanceStorage.StorageClass,
+					Size:         isv.Size,
+				},
+			},
+		}
+		pvcs = append(pvcs, vmv)
+	}
+
+	vm := ctx.VM
+	// Append PVCs to existing virtual machine volume spec
+	vm.Spec.Volumes = append(vm.Spec.Volumes, pvcs...)
+
+	if vm.Labels == nil {
+		vm.Labels = map[string]string{}
+	}
+	vm.Labels[constants.InstanceStorageVMLabelKey] = strconv.FormatBool(true)
+
+	ctx.Logger.V(5).WithValues(
+		"VM Label", vm.GetLabels(),
+		"VM Spec", vm.Spec,
+	).Info("Updated VM Spec and Label")
 	return nil
 }

@@ -15,6 +15,7 @@ const (
 	WcpFaultDomainsFSS            = "FSS_WCP_FAULTDOMAINS"
 	VMServiceFSS                  = "FSS_WCP_VMSERVICE"
 	VMServiceV1Alpha2FSS          = "FSS_WCP_VMSERVICE_V1ALPHA2"
+	InstanceStorageFSS            = "FSS_WCP_INSTANCE_STORAGE"
 	MaxCreateVMsOnProviderEnv     = "MAX_CREATE_VMS_ON_PROVIDER"
 	DefaultMaxCreateVMsOnProvider = 80
 )
@@ -47,6 +48,10 @@ var IsVMServiceFSSEnabled = func() bool {
 
 var IsVMServiceV1Alpha2FSSEnabled = func() bool {
 	return os.Getenv(VMServiceV1Alpha2FSS) == trueString
+}
+
+var IsInstanceStorageFSSEnabled = func() bool {
+	return os.Getenv(InstanceStorageFSS) == trueString
 }
 
 // MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler threads that can be used to create VMs on the provider

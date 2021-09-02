@@ -19,3 +19,5 @@ spec:
           value: "false"
         - name: FSS_WCP_FAULTDOMAINS
           value: "false"
+        - name: FSS_WCP_INSTANCE_STORAGE
+          value: "false"

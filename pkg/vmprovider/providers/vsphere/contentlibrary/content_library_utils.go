@@ -91,7 +91,7 @@ func LibItemToVirtualMachineImage(
 			if virtualHwSection := ovfEnvelope.VirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
 				hw := virtualHwSection[0]
 				if hw.System != nil && hw.System.VirtualSystemType != nil {
-					hwVersion = ParseVirtualHardwareVersion(hw.System.VirtualSystemType)
+					hwVersion = ParseVirtualHardwareVersion(*hw.System.VirtualSystemType)
 				}
 			}
 
@@ -127,7 +127,7 @@ func LibItemToVirtualMachineImage(
 
 // ParseVirtualHardwareVersion parses the virtual hardware version
 // For eg. "vmx-15" returns 15.
-func ParseVirtualHardwareVersion(vmxVersion *string) int32 {
+func ParseVirtualHardwareVersion(vmxVersion string) int32 {
 	patternStr := `vmx-(\d+)`
 	re, err := regexp.Compile(patternStr)
 	if err != nil {
@@ -135,7 +135,7 @@ func ParseVirtualHardwareVersion(vmxVersion *string) int32 {
 	}
 	// obj matches the full string and the submatch (\d+)
 	// and return a []string with values
-	obj := re.FindStringSubmatch(*vmxVersion)
+	obj := re.FindStringSubmatch(vmxVersion)
 	if len(obj) != 2 {
 		return 0
 	}

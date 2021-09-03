@@ -1,4 +1,4 @@
-FROM golang:1.15 as intermediate
+FROM golang:1.16.6 as intermediate
 
 COPY . /go/src/github.com/vm-operator
 WORKDIR /go/src/github.com/vm-operator/ 
@@ -6,7 +6,7 @@ WORKDIR /go/src/github.com/vm-operator/
 RUN make tools
 RUN make modules
 
-FROM golang:1.15
+FROM golang:1.16.6
 
 ARG TOOLS_BIN
 

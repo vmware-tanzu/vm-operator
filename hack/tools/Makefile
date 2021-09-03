@@ -16,6 +16,7 @@ BIN_DIR := bin
 KUBEBUILDER_VERSION=2.3.1
 KUBECTL_VERSION=1.15.3
 KIND_VERSION=0.7.0
+GOLANGCI_LINT_VERSION=v1.40.0
 
 HOST_OS=$(shell go env GOOS)
 HOST_ARCH=$(shell go env GOARCH)
@@ -33,6 +34,7 @@ KUBE_APISERVER    := $(BIN_DIR)/kube-apiserver
 KUBEBUILDER       := $(BIN_DIR)/kubebuilder
 KUBECTL           := $(BIN_DIR)/kubectl
 ETCD              := $(BIN_DIR)/etcd
+KIND              := $(BIN_DIR)/kind
 
 ## --------------------------------------
 ## Help
@@ -58,13 +60,12 @@ $(CLIENT_GEN): go.mod
 .PHONY: $(GOLANGCI_LINT)
 golangci-lint: $(GOLANGCI_LINT) ## Install golangci-lint
 $(GOLANGCI_LINT):
-	[ -f $(BIN_DIR)/golangci-lint ] || curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(BIN_DIR) v1.27.0
-#	go build -tags=tools -o $@ github.com/golangci/golangci-lint/cmd/golangci-lint
+	[ -f $(BIN_DIR)/golangci-lint ] || curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(BIN_DIR) $(GOLANGCI_LINT_VERSION)
 
 .PHONY: $(KUSTOMIZE)
 kustomize: $(KUSTOMIZE) ## Install kustomize
-$(KUSTOMIZE): go.mod
-	go build -tags=tools -o $@ sigs.k8s.io/kustomize/kustomize/v3
+$(KUSTOMIZE):
+	../ensure-kustomize.sh
 
 .PHONY: $(GO_JUNIT_REPORT)
 go-junit-report: $(GO_JUNIT_REPORT) ## Install go-junit-report
@@ -93,11 +94,18 @@ kubectl: $(KUBECTL) ## Install kubectl
 $(ETCD) $(KUBE_APISERVER) $(KUBEBUILDER):
 	@mkdir -p $(@D)
 	TEMP_DL_DIR=$$(mktemp -d) && echo $${TEMP_DL_DIR} && \
-	curl -sL https://go.kubebuilder.io/dl/$(KUBEBUILDER_VERSION)/$(HOST_OS)/$(HOST_ARCH) | \
+	curl -sL https://github.com/kubernetes-sigs/kubebuilder/releases/download/v$(KUBEBUILDER_VERSION)/kubebuilder_$(KUBEBUILDER_VERSION)_$(HOST_OS)_$(HOST_ARCH).tar.gz | \
 	tar -xz -C "$${TEMP_DL_DIR}" --exclude=kubectl && \
 	mv "$${TEMP_DL_DIR}/"*/bin/* $(@D)
 $(KUBECTL):
 	curl -sL https://storage.googleapis.com/kubernetes-release/release/v$(KUBECTL_VERSION)/bin/$(HOST_OS)/$(HOST_ARCH)/kubectl -o $(@) && \
+	chmod a+x $(@)
+
+.PHONY: $(KIND)
+kind: $(KIND) ## Install kind
+$(KIND):
+	@mkdir -p $(@D)
+	curl -sL https://github.com/kubernetes-sigs/kind/releases/download/v$(KIND_VERSION)/kind-$(HOST_OS)-$(HOST_ARCH) -o $(@) && \
 	chmod a+x $(@)
 
 ## --------------------------------------

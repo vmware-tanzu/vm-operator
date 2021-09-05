@@ -50,7 +50,7 @@ import (
 
 type VSphereVMProviderTestConfig struct {
 	VcCredsSecretName string
-	*config.VSphereVmProviderConfig
+	*config.VSphereVMProviderConfig
 }
 
 const (
@@ -75,7 +75,7 @@ func GetContentSourceID() string {
 	return ContentSourceID
 }
 
-func NewIntegrationVMOperatorConfig(vcAddress string, vcPort int) *config.VSphereVmProviderConfig {
+func NewIntegrationVMOperatorConfig(vcAddress string, vcPort int) *config.VSphereVMProviderConfig {
 	var dcMoID, rpMoID, folderMoID string
 	for _, dc := range simulator.Map.All("Datacenter") {
 		if dc.Entity().Name == "DC0" {
@@ -96,7 +96,7 @@ func NewIntegrationVMOperatorConfig(vcAddress string, vcPort int) *config.VSpher
 		}
 	}
 
-	return &config.VSphereVmProviderConfig{
+	return &config.VSphereVMProviderConfig{
 		VcPNID:                      vcAddress,
 		VcPort:                      strconv.Itoa(vcPort),
 		VcCreds:                     NewIntegrationVMOperatorCredentials(),
@@ -109,9 +109,9 @@ func NewIntegrationVMOperatorConfig(vcAddress string, vcPort int) *config.VSpher
 	}
 }
 
-func NewIntegrationVMOperatorCredentials() *credentials.VSphereVmProviderCredentials {
+func NewIntegrationVMOperatorCredentials() *credentials.VSphereVMProviderCredentials {
 	// User and password can be anything for vcSim
-	return &credentials.VSphereVmProviderCredentials{
+	return &credentials.VSphereVMProviderCredentials{
 		Username: "Administrator@vsphere.local",
 		Password: "Admin!23",
 	}
@@ -156,7 +156,7 @@ func GetCtrlRuntimeClient(config *rest.Config) (client.Client, error) {
 	return client.New(config, client.Options{Scheme: s})
 }
 
-func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSphereVmProviderConfig, client.Client, *VcSimInstance, *vmopclient.Client, vmprovider.VirtualMachineProviderInterface) {
+func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSphereVMProviderConfig, client.Client, *VcSimInstance, *vmopclient.Client, vmprovider.VirtualMachineProviderInterface) {
 	Expect(namespaces).ToNot(BeEmpty())
 
 	enableDebugLogging()
@@ -183,7 +183,7 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSp
 
 	// Register the vSphere provider
 	log.Info("setting up vSphere Provider")
-	vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, recorder)
+	vmProvider = vsphere.NewVSphereVMProviderFromClient(k8sClient, recorder)
 
 	vcSim := NewVcSimInstance()
 
@@ -194,7 +194,7 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSp
 	vmopClient, err := SetupVcSimEnv(vSphereConfig, k8sClient, vcSim, namespaces)
 	Expect(err).NotTo(HaveOccurred())
 
-	err = os.Setenv(contentlibrary.EnvContentLibApiWaitSecs, "1")
+	err = os.Setenv(contentlibrary.EnvContentLibAPIWaitSecs, "1")
 	Expect(err).NotTo(HaveOccurred())
 
 	// Create a default AZ with the namespaces in it.
@@ -226,7 +226,7 @@ func TeardownIntegrationEnv(testEnv *envtest.Environment, vcSim *VcSimInstance) 
 }
 
 func SetupVcSimEnv(
-	vSphereConfig *config.VSphereVmProviderConfig,
+	vSphereConfig *config.VSphereVMProviderConfig,
 	client client.Client,
 	vcSim *VcSimInstance,
 	namespaces []string) (*vmopclient.Client, error) {
@@ -246,13 +246,13 @@ func SetupVcSimEnv(
 	// Generate a fake vsphere provider config that is suitable for the integration test environment.
 	// Post the resultant config map to the API Master for consumption by the VM operator
 	klog.Infof("Installing a bootstrap config map for use in integration tests.")
-	err = config.InstallVSphereVmProviderConfig(client, DefaultNamespace, vSphereConfig, SecretName)
+	err = config.InstallVSphereVMProviderConfig(client, DefaultNamespace, vSphereConfig, SecretName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install vm operator config: %v", err)
 	}
 
 	// Setup content library once.  The first namespace is sufficient to use
-	vmopClient, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(context.TODO())
+	vmopClient, err := vmProvider.(vsphere.VSphereVMProviderGetSessionHack).GetClient(context.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vm provider client: %v", err)
 	}
@@ -263,7 +263,7 @@ func SetupVcSimEnv(
 
 	// Configure each requested namespace to use CL as the content source
 	for _, ns := range namespaces {
-		err = config.InstallVSphereVmProviderConfig(client,
+		err = config.InstallVSphereVMProviderConfig(client,
 			ns,
 			NewIntegrationVMOperatorConfig(vcSim.IP, vcSim.Port),
 			SecretName,
@@ -354,7 +354,7 @@ func SetupContentLibrary(client client.Client, vmopClient *vmopclient.Client) er
 	return client.Create(ctx, cs)
 }
 
-func CloneVirtualMachineToLibraryItem(ctx context.Context, cfg *config.VSphereVmProviderConfig, s *session.Session, src, name string) error {
+func CloneVirtualMachineToLibraryItem(ctx context.Context, cfg *config.VSphereVMProviderConfig, s *session.Session, src, name string) error {
 	vm, err := s.Finder.VirtualMachine(ctx, src)
 	if err != nil {
 		return err

@@ -44,7 +44,7 @@ var _ = Describe("deploy VM", func() {
 	Context("preCheck", func() {
 		var (
 			vmCtx              context.VMCloneContext
-			vmConfig           vmprovider.VmConfigArgs
+			vmConfig           vmprovider.VMConfigArgs
 			vmImage            *vmopv1alpha1.VirtualMachineImage
 			guestOSIdsToFamily map[string]string
 			dummyValidOsType   = "dummy_valid_os_type"
@@ -76,12 +76,12 @@ var _ = Describe("deploy VM", func() {
 			guestOSIdsToFamily[dummyWindowsOSType] = dummyWindowsFamily
 		})
 		It("passes when osType is Linux", func() {
-			vmConfig.VmImage = vmImage
+			vmConfig.VMImage = vmImage
 			Expect(session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)).To(Succeed())
 		})
 		It("fails when osType is not Linux", func() {
 			vmImage.Spec.OSInfo.Type = dummyWindowsOSType
-			vmConfig.VmImage = vmImage
+			vmConfig.VMImage = vmImage
 			err := session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)
 			Expect(err).To(HaveOccurred())
 			Expect(err).To(MatchError(fmt.Sprintf("image osType '%s' is not "+
@@ -89,7 +89,7 @@ var _ = Describe("deploy VM", func() {
 		})
 		It("fails when osType is empty", func() {
 			vmImage.Spec.OSInfo.Type = dummyEmptyOsType
-			vmConfig.VmImage = vmImage
+			vmConfig.VMImage = vmImage
 			err := session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)
 			Expect(err).To(HaveOccurred())
 			Expect(err).To(MatchError(fmt.Sprintf("image osType '%s' is not "+
@@ -97,7 +97,7 @@ var _ = Describe("deploy VM", func() {
 		})
 		It("passes when osType is invalid and VMOperatorImageSupportedCheckKey==disable annotation is set", func() {
 			vmImage.Spec.OSInfo.Type = dummyWindowsOSType
-			vmConfig.VmImage = vmImage
+			vmConfig.VMImage = vmImage
 			vmCtx.VM.Annotations = make(map[string]string)
 			vmCtx.VM.Annotations[constants.VMOperatorImageSupportedCheckKey] = constants.VMOperatorImageSupportedCheckDisable
 			Expect(session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)).To(Succeed())

@@ -15,7 +15,7 @@ import (
 
 var log = logf.Log.WithName("vsphere").WithName("pool")
 
-// GetResourcePoolOwner - Get owner (i.e. parent cluster) of the resource pool
+// GetResourcePoolOwner - Get owner (i.e. parent cluster) of the resource pool.
 func GetResourcePoolOwner(ctx context.Context, rp *object.ResourcePool) (*object.ClusterComputeResource, error) {
 	var owner mo.ResourcePool
 	err := rp.Properties(ctx, rp.Reference(), []string{"owner"}, &owner)
@@ -49,7 +49,7 @@ func CheckPlacementRelocateSpec(spec *vimTypes.VirtualMachineRelocateSpec) bool 
 	return true
 }
 
-func ParsePlaceVmResponse(res *vimTypes.PlacementResult) *vimTypes.VirtualMachineRelocateSpec {
+func ParsePlaceVMResponse(res *vimTypes.PlacementResult) *vimTypes.VirtualMachineRelocateSpec {
 	for _, r := range res.Recommendations {
 		if r.Reason == string(vimTypes.RecommendationReasonCodeXvmotionPlacement) {
 			for _, a := range r.Action {
@@ -74,7 +74,7 @@ func placeVM(
 		return nil, err
 	}
 
-	rSpec := ParsePlaceVmResponse(res)
+	rSpec := ParsePlaceVMResponse(res)
 	if rSpec == nil {
 		return nil, fmt.Errorf("no valid placement action")
 	}

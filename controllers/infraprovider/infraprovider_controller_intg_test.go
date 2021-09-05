@@ -44,7 +44,7 @@ func intgTests() {
 
 		BeforeEach(func() {
 			intgFakeVMProvider.Lock()
-			intgFakeVMProvider.ComputeClusterCpuMinFrequencyFn = func(ctx context.Context) error {
+			intgFakeVMProvider.ComputeClusterCPUMinFrequencyFn = func(ctx context.Context) error {
 				atomic.AddInt32(&isCalled, 1)
 				return nil
 			}

@@ -116,7 +116,7 @@ func unitTestsReconcile() {
 				Expect(err).To(MatchError(expectedError))
 
 				By("provider should return that the policy still exists", func() {
-					fakeProvider := ctx.VMProvider.(*providerfake.FakeVmProvider)
+					fakeProvider := ctx.VMProvider.(*providerfake.VMProvider)
 					rpExists, err := fakeProvider.DoesVirtualMachineSetResourcePolicyExist(resourcePolicyCtx, resourcePolicy)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(rpExists).To(BeFalse())
@@ -132,7 +132,7 @@ func unitTestsReconcile() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("provider should return that the policy does not exist", func() {
-				fakeProvider := ctx.VMProvider.(*providerfake.FakeVmProvider)
+				fakeProvider := ctx.VMProvider.(*providerfake.VMProvider)
 				rpExists, err := fakeProvider.DoesVirtualMachineSetResourcePolicyExist(resourcePolicyCtx, resourcePolicy)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(rpExists).To(BeFalse())

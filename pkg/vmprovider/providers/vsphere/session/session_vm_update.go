@@ -53,7 +53,7 @@ func isCustomizationPendingError(err error) bool {
 	return false
 }
 
-func GetLinuxCustomizationSpec(vmName string, updateArgs VmUpdateArgs) *vimTypes.CustomizationSpec {
+func GetLinuxCustomizationSpec(vmName string, updateArgs VMUpdateArgs) *vimTypes.CustomizationSpec {
 	return &vimTypes.CustomizationSpec{
 		Identity: &vimTypes.CustomizationLinuxPrep{
 			HostName: &vimTypes.CustomizationFixedName{
@@ -76,20 +76,20 @@ type Netplan struct {
 // CloudInitMetadata is used to set metadata field in
 // CloudInitPrep customization spec.
 type CloudInitMetadata struct {
-	InstanceId    string  `yaml:"instance-id,omitempty"`
+	InstanceID    string  `yaml:"instance-id,omitempty"`
 	LocalHostname string  `yaml:"local-hostname,omitempty"`
 	Hostname      string  `yaml:"hostname,omitempty"`
 	Network       Netplan `yaml:"network,omitempty"`
 }
 
-func GetCloudInitPrepCustomizationSpec(vmName string, currentEthCards object.VirtualDeviceList, updateArgs VmUpdateArgs) (*vimTypes.CustomizationSpec, error) {
+func GetCloudInitPrepCustomizationSpec(vmName string, currentEthCards object.VirtualDeviceList, updateArgs VMUpdateArgs) (*vimTypes.CustomizationSpec, error) {
 	netplanEthernets, err := updateArgs.NetIfList.GetNetplanEthernets(currentEthCards, updateArgs.DNSServers)
 	if err != nil {
 		return nil, fmt.Errorf("error getting netplanEthernets %v", err)
 	}
 
 	metadataObj := &CloudInitMetadata{
-		InstanceId:    vmName,
+		InstanceID:    vmName,
 		LocalHostname: vmName,
 		Hostname:      vmName,
 		Network: Netplan{
@@ -106,7 +106,7 @@ func GetCloudInitPrepCustomizationSpec(vmName string, currentEthCards object.Vir
 	return &vimTypes.CustomizationSpec{
 		Identity: &internal.CustomizationCloudinitPrep{
 			Metadata: string(metadataBytes),
-			Userdata: updateArgs.VmMetadata.Data["user-data"],
+			Userdata: updateArgs.VMMetadata.Data["user-data"],
 		},
 	}, nil
 }
@@ -115,7 +115,7 @@ func (s *Session) customizeVM(
 	vmCtx context.VMContext,
 	resVM *res.VirtualMachine,
 	config *vimTypes.VirtualMachineConfigInfo,
-	updateArgs VmUpdateArgs) error {
+	updateArgs VMUpdateArgs) error {
 
 	if val := vmCtx.VM.Annotations[constants.VSphereCustomizationBypassKey]; val == constants.VSphereCustomizationBypassDisable {
 		vmCtx.Logger.Info("Skipping vsphere customization because of vsphere-customization bypass annotation")
@@ -131,7 +131,7 @@ func (s *Session) customizeVM(
 	}
 
 	var customizationSpec *vimTypes.CustomizationSpec
-	if updateArgs.VmMetadata != nil && updateArgs.VmMetadata.Transport == v1alpha1.VirtualMachineMetadataCloudInitTransport {
+	if updateArgs.VMMetadata != nil && updateArgs.VMMetadata.Transport == v1alpha1.VirtualMachineMetadataCloudInitTransport {
 		currentEthCards, err := resVM.GetNetworkDevices(vmCtx)
 		if err != nil {
 			return err
@@ -251,7 +251,7 @@ func UpdateEthCardDeviceChanges(
 	}
 
 	// Remove any unmatched existing interfaces.
-	var removeDeviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
+	removeDeviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(currentEthCards))
 	for _, dev := range currentEthCards {
 		removeDeviceChanges = append(removeDeviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 			Device:    dev,
@@ -274,8 +274,7 @@ func CreatePCIPassThroughDevice(deviceKey int32, backingInfo vimTypes.BaseVirtua
 }
 
 func CreatePCIDevices(pciDevices v1alpha1.VirtualDevices) []vimTypes.BaseVirtualDevice {
-
-	var expectedPciDevices []vimTypes.BaseVirtualDevice
+	expectedPciDevices := make([]vimTypes.BaseVirtualDevice, 0, len(pciDevices.VGPUDevices))
 
 	// A negative device range is used for pciDevices here.
 	deviceKey := int32(-200)
@@ -360,7 +359,7 @@ func UpdatePCIDeviceChanges(expectedPciDevices object.VirtualDeviceList,
 		}
 	}
 	// Remove any unmatched existing devices.
-	var removeDeviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
+	removeDeviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(currentPciDevices))
 	for _, dev := range currentPciDevices {
 		removeDeviceChanges = append(removeDeviceChanges, &vimTypes.VirtualDeviceConfigSpec{
 			Device:    dev,
@@ -383,14 +382,14 @@ func UpdateConfigSpecCPUAllocation(
 	var cpuLimit *int64
 
 	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
-		rsv := CpuQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minCPUFeq)
+		rsv := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minCPUFeq)
 		if cpuAllocation == nil || cpuAllocation.Reservation == nil || *cpuAllocation.Reservation != rsv {
 			cpuReservation = &rsv
 		}
 	}
 
 	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
-		lim := CpuQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minCPUFeq)
+		lim := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minCPUFeq)
 		if cpuAllocation == nil || cpuAllocation.Limit == nil || *cpuAllocation.Limit != lim {
 			cpuLimit = &lim
 		}
@@ -441,7 +440,7 @@ func UpdateConfigSpecExtraConfig(
 	vmImage *v1alpha1.VirtualMachineImage,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	vm *v1alpha1.VirtualMachine,
-	vmMetadata *vmprovider.VmMetadata,
+	vmMetadata *vmprovider.VMMetadata,
 	globalExtraConfig map[string]string) {
 
 	// The only use of this is for the global JSON_EXTRA_CONFIG to set the image name.
@@ -517,7 +516,7 @@ func setMMIOExtraConfig(vm *v1alpha1.VirtualMachine, extraConfig map[string]stri
 func UpdateConfigSpecVAppConfig(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec *vimTypes.VirtualMachineConfigSpec,
-	vmMetadata *vmprovider.VmMetadata) {
+	vmMetadata *vmprovider.VMMetadata) {
 
 	if config.VAppConfig == nil || vmMetadata == nil || vmMetadata.Transport != v1alpha1.VirtualMachineMetadataOvfEnvTransport {
 		return
@@ -591,7 +590,7 @@ func updateConfigSpec(
 	config *vimTypes.VirtualMachineConfigInfo,
 	vmImage *v1alpha1.VirtualMachineImage,
 	vmClassSpec v1alpha1.VirtualMachineClassSpec,
-	vmMetadata *vmprovider.VmMetadata,
+	vmMetadata *vmprovider.VMMetadata,
 	globalExtraConfig map[string]string,
 	minCPUFreq uint64) *vimTypes.VirtualMachineConfigSpec {
 
@@ -611,16 +610,16 @@ func updateConfigSpec(
 func (s *Session) prePowerOnVMConfigSpec(
 	vmCtx context.VMContext,
 	config *vimTypes.VirtualMachineConfigInfo,
-	updateArgs VmUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, error) {
+	updateArgs VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, error) {
 
 	configSpec := updateConfigSpec(
 		vmCtx,
 		config,
-		updateArgs.VmImage,
-		updateArgs.VmClass.Spec,
-		updateArgs.VmMetadata,
+		updateArgs.VMImage,
+		updateArgs.VMClass.Spec,
+		updateArgs.VMMetadata,
 		s.extraConfig,
-		s.GetCpuMinMHzInCluster(),
+		s.GetCPUMinMHzInCluster(),
 	)
 
 	virtualDevices := object.VirtualDeviceList(config.Hardware.Device)
@@ -643,7 +642,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 	// With FSS_THUNDERPCIDEVICES = true, we allow a VM to get attached to PCI devices.
 	if lib.IsThunderPciDevicesFSSEnabled() {
 		currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
-		expectedPciDevices := CreatePCIDevices(updateArgs.VmClass.Spec.Hardware.Devices)
+		expectedPciDevices := CreatePCIDevices(updateArgs.VMClass.Spec.Hardware.Devices)
 		pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPciDevices, currentPciDevices)
 		if err != nil {
 			return nil, err
@@ -658,7 +657,7 @@ func (s *Session) prePowerOnVMReconfigure(
 	vmCtx context.VMContext,
 	resVM *res.VirtualMachine,
 	config *vimTypes.VirtualMachineConfigInfo,
-	updateArgs VmUpdateArgs) error {
+	updateArgs VMUpdateArgs) error {
 
 	configSpec, err := s.prePowerOnVMConfigSpec(vmCtx, config, updateArgs)
 	if err != nil {
@@ -677,11 +676,11 @@ func (s *Session) prePowerOnVMReconfigure(
 	return nil
 }
 
-func (s *Session) ensureNetworkInterfaces(vmCtx context.VMContext) (network.NetworkInterfaceInfoList, error) {
+func (s *Session) ensureNetworkInterfaces(vmCtx context.VMContext) (network.InterfaceInfoList, error) {
 	// This negative device key is the traditional range used for network interfaces.
 	deviceKey := int32(-100)
 
-	var netIfList = make(network.NetworkInterfaceInfoList, len(vmCtx.VM.Spec.NetworkInterfaces))
+	var netIfList = make(network.InterfaceInfoList, len(vmCtx.VM.Spec.NetworkInterfaces))
 	for i := range vmCtx.VM.Spec.NetworkInterfaces {
 		vif := vmCtx.VM.Spec.NetworkInterfaces[i]
 
@@ -702,9 +701,9 @@ func (s *Session) ensureNetworkInterfaces(vmCtx context.VMContext) (network.Netw
 
 func (s *Session) fakeUpClonedNetIfList(
 	_ context.VMContext,
-	config *vimTypes.VirtualMachineConfigInfo) network.NetworkInterfaceInfoList {
+	config *vimTypes.VirtualMachineConfigInfo) network.InterfaceInfoList {
 
-	var netIfList []network.NetworkInterfaceInfo
+	netIfList := make([]network.InterfaceInfo, 0)
 	currentEthCards := object.VirtualDeviceList(config.Hardware.Device).SelectByType((*vimTypes.VirtualEthernetCard)(nil))
 
 	for _, dev := range currentEthCards {
@@ -713,7 +712,7 @@ func (s *Session) fakeUpClonedNetIfList(
 			continue
 		}
 
-		netIfList = append(netIfList, network.NetworkInterfaceInfo{
+		netIfList = append(netIfList, network.InterfaceInfo{
 			Device: dev,
 			Customization: &vimTypes.CustomizationAdapterMapping{
 				MacAddress: card.GetVirtualEthernetCard().MacAddress,
@@ -736,7 +735,7 @@ type TemplateData struct {
 	NameServers       []string
 }
 
-func UpdateVmConfigArgsTemplates(vmCtx context.VMContext, updateArgs VmUpdateArgs) {
+func UpdateVMConfigArgsTemplates(vmCtx context.VMContext, updateArgs VMUpdateArgs) {
 	templateData := TemplateData{}
 	templateData.NetworkInterfaces = updateArgs.NetIfList.GetIPConfigs()
 	templateData.NameServers = updateArgs.DNSServers
@@ -758,8 +757,8 @@ func UpdateVmConfigArgsTemplates(vmCtx context.VMContext, updateArgs VmUpdateArg
 		return doc.String()
 	}
 
-	if updateArgs.VmMetadata != nil {
-		data := updateArgs.VmMetadata.Data
+	if updateArgs.VMMetadata != nil {
+		data := updateArgs.VMMetadata.Data
 		for key, val := range data {
 			data[key] = renderTemplate(key, val)
 		}
@@ -794,9 +793,9 @@ func (s *Session) ensureCNSVolumes(vmCtx context.VMContext) error {
 	return nil
 }
 
-type VmUpdateArgs struct {
-	vmprovider.VmConfigArgs
-	NetIfList  network.NetworkInterfaceInfoList
+type VMUpdateArgs struct {
+	vmprovider.VMConfigArgs
+	NetIfList  network.InterfaceInfoList
 	DNSServers []string
 }
 
@@ -804,7 +803,7 @@ func (s *Session) prepareVMForPowerOn(
 	vmCtx context.VMContext,
 	resVM *res.VirtualMachine,
 	cfg *vimTypes.VirtualMachineConfigInfo,
-	vmConfigArgs vmprovider.VmConfigArgs) error {
+	vmConfigArgs vmprovider.VMConfigArgs) error {
 
 	netIfList, err := s.ensureNetworkInterfaces(vmCtx)
 	if err != nil {
@@ -824,8 +823,8 @@ func (s *Session) prepareVMForPowerOn(
 		// Prior code only logged?!?
 	}
 
-	updateArgs := VmUpdateArgs{
-		VmConfigArgs: vmConfigArgs,
+	updateArgs := VMUpdateArgs{
+		VMConfigArgs: vmConfigArgs,
 		NetIfList:    netIfList,
 		DNSServers:   dnsServers,
 	}
@@ -833,7 +832,7 @@ func (s *Session) prepareVMForPowerOn(
 	if lib.IsVMServiceV1Alpha2FSSEnabled() {
 		// For templating errors, only logged the error instead of failing completely.
 		// Maybe emit a warning event to VM?
-		UpdateVmConfigArgsTemplates(vmCtx, updateArgs)
+		UpdateVMConfigArgsTemplates(vmCtx, updateArgs)
 	}
 
 	err = s.prePowerOnVMReconfigure(vmCtx, resVM, cfg, updateArgs)
@@ -916,11 +915,7 @@ func (s *Session) attachTagsAndModules(
 		return fmt.Errorf("empty tagName, TagInfo %s not found", providerTagsName)
 	}
 	tagCategoryName := s.tagInfo[config.ProviderTagCategoryNameKey]
-	if err := s.AttachTagToVm(vmCtx, tagName, tagCategoryName, vmRef); err != nil {
-		return err
-	}
-
-	return nil
+	return s.AttachTagToVM(vmCtx, tagName, tagCategoryName, vmRef)
 }
 
 func ipCIDRNotation(ipAddress string, prefix int32) string {
@@ -928,15 +923,15 @@ func ipCIDRNotation(ipAddress string, prefix int32) string {
 }
 
 func NicInfoToNetworkIfStatus(nicInfo vimTypes.GuestNicInfo) v1alpha1.NetworkInterfaceStatus {
-	var IpAddresses []string
+	IPAddresses := make([]string, 0, len(nicInfo.IpConfig.IpAddress))
 	for _, ipAddress := range nicInfo.IpConfig.IpAddress {
-		IpAddresses = append(IpAddresses, ipCIDRNotation(ipAddress.IpAddress, ipAddress.PrefixLength))
+		IPAddresses = append(IPAddresses, ipCIDRNotation(ipAddress.IpAddress, ipAddress.PrefixLength))
 	}
 
 	return v1alpha1.NetworkInterfaceStatus{
 		Connected:   nicInfo.Connected,
 		MacAddress:  nicInfo.MacAddress,
-		IpAddresses: IpAddresses,
+		IpAddresses: IPAddresses,
 	}
 }
 
@@ -1051,7 +1046,7 @@ func (s *Session) updateVMStatus(
 
 func (s *Session) UpdateVirtualMachine(
 	vmCtx context.VMContext,
-	vmConfigArgs vmprovider.VmConfigArgs) error {
+	vmConfigArgs vmprovider.VMConfigArgs) error {
 
 	resVM, err := s.GetVirtualMachine(vmCtx)
 	if err != nil {
@@ -1112,9 +1107,5 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	// TODO: Find a better place for this?
-	if err := s.attachTagsAndModules(vmCtx, resVM, vmConfigArgs.ResourcePolicy); err != nil {
-		return err
-	}
-
-	return nil
+	return s.attachTagsAndModules(vmCtx, resVM, vmConfigArgs.ResourcePolicy)
 }

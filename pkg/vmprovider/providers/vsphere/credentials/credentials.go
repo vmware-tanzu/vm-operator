@@ -6,29 +6,30 @@ package credentials
 import (
 	"context"
 
-	"github.com/pkg/errors"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/pkg/errors"
 )
 
-// VSphereVmProviderCredentials wraps the data needed to login to vCenter.
-type VSphereVmProviderCredentials struct {
+// VSphereVMProviderCredentials wraps the data needed to login to vCenter.
+type VSphereVMProviderCredentials struct {
 	Username string
 	Password string
 }
 
-func GetProviderCredentials(client ctrlruntime.Client, namespace string, secretName string) (*VSphereVmProviderCredentials, error) {
-	secret := &v1.Secret{}
+func GetProviderCredentials(client ctrlruntime.Client, namespace string, secretName string) (*VSphereVMProviderCredentials, error) {
+	secret := &corev1.Secret{}
 	secretKey := types.NamespacedName{Namespace: namespace, Name: secretName}
 	if err := client.Get(context.Background(), secretKey, secret); err != nil {
 		// Log message used by VMC LINT. Refer to before making changes
 		return nil, errors.Wrapf(err, "cannot find secret for provider credentials: %s", secretKey)
 	}
 
-	var credentials VSphereVmProviderCredentials
+	var credentials VSphereVMProviderCredentials
 	credentials.Username = string(secret.Data["username"])
 	credentials.Password = string(secret.Data["password"])
 
@@ -39,8 +40,8 @@ func GetProviderCredentials(client ctrlruntime.Client, namespace string, secretN
 	return &credentials, nil
 }
 
-func ProviderCredentialsToSecret(namespace string, credentials *VSphereVmProviderCredentials, vcCredsSecretName string) *v1.Secret {
-	return &v1.Secret{
+func ProviderCredentialsToSecret(namespace string, credentials *VSphereVMProviderCredentials, vcCredsSecretName string) *corev1.Secret {
+	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vcCredsSecretName,
 			Namespace: namespace,
@@ -52,7 +53,7 @@ func ProviderCredentialsToSecret(namespace string, credentials *VSphereVmProvide
 	}
 }
 
-func InstallVSphereVmProviderSecret(client ctrlruntime.Client, namespace string, credentials *VSphereVmProviderCredentials, vcCredsSecretName string) error {
+func InstallVSphereVMProviderSecret(client ctrlruntime.Client, namespace string, credentials *VSphereVMProviderCredentials, vcCredsSecretName string) error {
 	secret := ProviderCredentialsToSecret(namespace, credentials, vcCredsSecretName)
 
 	if err := client.Create(context.Background(), secret); err != nil {

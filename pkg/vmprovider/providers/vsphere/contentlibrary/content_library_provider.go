@@ -47,9 +47,8 @@ type provider struct {
 }
 
 const (
-	// BMV: Investigate if setting this to 1 actually reduces the integration test time.
-	EnvContentLibApiWaitSecs     = "CONTENT_API_WAIT_SECS"
-	DefaultContentLibApiWaitSecs = 5
+	EnvContentLibAPIWaitSecs     = "CONTENT_API_WAIT_SECS" // BMV: Investigate if setting this to 1 actually reduces the integration test time.
+	DefaultContentLibAPIWaitSecs = 5
 )
 
 func IsSupportedDeployType(t string) bool {
@@ -63,9 +62,9 @@ func IsSupportedDeployType(t string) bool {
 }
 
 func NewProvider(restClient *rest.Client) Provider {
-	waitSeconds, err := strconv.Atoi(os.Getenv(EnvContentLibApiWaitSecs))
+	waitSeconds, err := strconv.Atoi(os.Getenv(EnvContentLibAPIWaitSecs))
 	if err != nil || waitSeconds < 1 {
-		waitSeconds = DefaultContentLibApiWaitSecs
+		waitSeconds = DefaultContentLibAPIWaitSecs
 	}
 
 	return NewProviderWithWaitSec(restClient, waitSeconds)
@@ -136,14 +135,16 @@ func (cs *provider) RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item
 		return nil, err
 	}
 
-	downloadedFileContent, err := readerFromUrl(ctx, cs.libMgr.Client, fileURL)
+	downloadedFileContent, err := readerFromURL(ctx, cs.libMgr.Client, fileURL)
 	if err != nil {
 		logger.Error(err, "error downloading file from library item")
 		return nil, err
 	}
 
 	logger.V(4).Info("downloaded library item")
-	defer downloadedFileContent.Close()
+	defer func() {
+		_ = downloadedFileContent.Close()
+	}()
 
 	envelope, err := ovf.Unmarshal(downloadedFileContent)
 	if err != nil {
@@ -199,11 +200,13 @@ func (cs *provider) CreateLibraryItem(ctx context.Context, libraryItem library.I
 
 	// Update Library item with library file "ovf"
 	uploadFunc := func(c *rest.Client, path string) error {
-		f, err := os.Open(path)
+		f, err := os.Open(filepath.Clean(path))
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() {
+			_ = f.Close()
+		}()
 
 		fi, err := f.Stat()
 		if err != nil {
@@ -252,7 +255,7 @@ func (cs *provider) VirtualMachineImageResourcesForLibrary(
 		return nil, err
 	}
 
-	var images []*v1alpha1.VirtualMachineImage
+	images := make([]*v1alpha1.VirtualMachineImage, 0, len(items))
 	for i := range items {
 		var ovfEnvelope *ovf.Envelope
 		item := items[i]
@@ -296,7 +299,7 @@ func (cs *provider) VirtualMachineImageResourcesForLibrary(
 // generateDownloadURLForLibraryItem downloads the file from content library in 3 steps:
 // 1. list the available files and downloads only the ovf files based on filename suffix
 // 2. prepare the download session and fetch the url to be used for download
-// 3. download the file
+// 3. download the file.
 func (cs *provider) generateDownloadURLForLibraryItem(
 	ctx context.Context,
 	logger logr.Logger,

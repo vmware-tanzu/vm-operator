@@ -9,21 +9,21 @@ import (
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
-type VmMetadata struct {
+type VMMetadata struct {
 	Data      map[string]string
 	Transport v1alpha1.VirtualMachineMetadataTransport
 }
 
-type VmConfigArgs struct {
-	VmClass            v1alpha1.VirtualMachineClass
-	VmImage            *v1alpha1.VirtualMachineImage
+type VMConfigArgs struct {
+	VMClass            v1alpha1.VirtualMachineClass
+	VMImage            *v1alpha1.VirtualMachineImage
 	ResourcePolicy     *v1alpha1.VirtualMachineSetResourcePolicy
-	VmMetadata         *VmMetadata
+	VMMetadata         *VMMetadata
 	StorageProfileID   string
 	ContentLibraryUUID string
 }
 
-// VirtualMachineProviderInterface is a plugable interface for VM Providers
+// VirtualMachineProviderInterface is a plugable interface for VM Providers.
 type VirtualMachineProviderInterface interface {
 	Name() string
 
@@ -33,8 +33,8 @@ type VirtualMachineProviderInterface interface {
 	Initialize(stop <-chan struct{})
 
 	DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
-	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VmConfigArgs) error
-	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VmConfigArgs) error
+	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) error
+	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 
@@ -47,7 +47,7 @@ type VirtualMachineProviderInterface interface {
 	UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error
 	ClearSessionsAndClient(ctx context.Context)
 	DeleteNamespaceSessionInCache(ctx context.Context, namespace string) error
-	ComputeClusterCpuMinFrequency(ctx context.Context) error
+	ComputeClusterCPUMinFrequency(ctx context.Context) error
 
 	ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error)

@@ -54,15 +54,15 @@ func getSimpleVirtualMachine(name string) *vmoperatorv1alpha1.VirtualMachine {
 	}
 }
 
-func getVmConfigArgs(namespace, name string, imageName string) vmprovider.VmConfigArgs {
+func getVmConfigArgs(namespace, name string, imageName string) vmprovider.VMConfigArgs {
 	vmClass := getVMClassInstance(name, namespace)
 	vmImage := builder.DummyVirtualMachineImage(imageName)
 
-	return vmprovider.VmConfigArgs{
-		VmClass:            *vmClass,
-		VmImage:            vmImage,
+	return vmprovider.VMConfigArgs{
+		VMClass:            *vmClass,
+		VMImage:            vmImage,
 		ResourcePolicy:     nil,
-		VmMetadata:         &vmprovider.VmMetadata{},
+		VMMetadata:         &vmprovider.VMMetadata{},
 		StorageProfileID:   "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
 		ContentLibraryUUID: integration.GetContentSourceID(),
 	}
@@ -117,7 +117,7 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 			vmName := "test-vm-vmp-invt-deploy"
 			storageProfileId := "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
 
-			vmMetadata := &vmprovider.VmMetadata{
+			vmMetadata := &vmprovider.VMMetadata{
 				Transport: vmoperatorv1alpha1.VirtualMachineMetadataOvfEnvTransport,
 			}
 			imageName := "DC0_H0_VM0" // Default govcsim image name
@@ -131,10 +131,10 @@ var _ = Describe("VMProvider Inventory Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(exists).To(BeFalse())
 
-			vmConfigArgs := vmprovider.VmConfigArgs{
-				VmClass:          *vmClass,
-				VmImage:          vmImage,
-				VmMetadata:       vmMetadata,
+			vmConfigArgs := vmprovider.VMConfigArgs{
+				VMClass:          *vmClass,
+				VMImage:          vmImage,
+				VMMetadata:       vmMetadata,
 				StorageProfileID: storageProfileId,
 			}
 			err = vmProvider.CreateVirtualMachine(context.TODO(), vm, vmConfigArgs)
@@ -188,17 +188,17 @@ var _ = Describe("VMProvider Tests", func() {
 		storageProfileId := "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
 
 		BeforeEach(func() {
-			err = config.InstallVSphereVmProviderConfig(k8sClient, integration.DefaultNamespace,
+			err = config.InstallVSphereVMProviderConfig(k8sClient, integration.DefaultNamespace,
 				integration.NewIntegrationVMOperatorConfig(vcSim.IP, vcSim.Port),
 				integration.SecretName)
 			Expect(err).NotTo(HaveOccurred())
 
-			vmProvider = vsphere.NewVSphereVmProviderFromClient(k8sClient, recorder)
+			vmProvider = vsphere.NewVSphereVMProviderFromClient(k8sClient, recorder)
 
 			// Instruction to vcsim to give the VM an IP address, otherwise CreateVirtualMachine fails
 			// BMV: Not true anymore, and we can't set this via ExtraConfig transport anyways.
 			testIP := "10.0.0.1"
-			vmMetadata := &vmprovider.VmMetadata{
+			vmMetadata := &vmprovider.VMMetadata{
 				Data:      map[string]string{"SET.guest.ipAddress": testIP},
 				Transport: vmoperatorv1alpha1.VirtualMachineMetadataExtraConfigTransport,
 			}
@@ -214,10 +214,10 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(exists).To(BeFalse())
 
 			// CreateVirtualMachine from CL
-			vmConfigArgs := vmprovider.VmConfigArgs{
-				VmClass:            *vmClass,
-				VmImage:            vmImage,
-				VmMetadata:         vmMetadata,
+			vmConfigArgs := vmprovider.VMConfigArgs{
+				VMClass:            *vmClass,
+				VMImage:            vmImage,
+				VMMetadata:         vmMetadata,
 				StorageProfileID:   storageProfileId,
 				ContentLibraryUUID: integration.GetContentSourceID(),
 			}
@@ -301,19 +301,19 @@ var _ = Describe("VMProvider Tests", func() {
 
 			vmImage := builder.DummyVirtualMachineImage(imageName)
 
-			vmConfigArgs1 := vmprovider.VmConfigArgs{
-				VmClass:          *getVMClassInstance(sameVmName, vmNamespace1),
-				VmImage:          vmImage,
+			vmConfigArgs1 := vmprovider.VMConfigArgs{
+				VMClass:          *getVMClassInstance(sameVmName, vmNamespace1),
+				VMImage:          vmImage,
 				ResourcePolicy:   resourcePolicy1,
-				VmMetadata:       &vmprovider.VmMetadata{},
+				VMMetadata:       &vmprovider.VMMetadata{},
 				StorageProfileID: "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
 			}
 
-			vmConfigArgs2 := vmprovider.VmConfigArgs{
-				VmClass:          *getVMClassInstance(sameVmName, vmNamespace2),
-				VmImage:          vmImage,
+			vmConfigArgs2 := vmprovider.VMConfigArgs{
+				VMClass:          *getVMClassInstance(sameVmName, vmNamespace2),
+				VMImage:          vmImage,
 				ResourcePolicy:   resourcePolicy2,
-				VmMetadata:       &vmprovider.VmMetadata{},
+				VMMetadata:       &vmprovider.VMMetadata{},
 				StorageProfileID: "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
 			}
 
@@ -324,7 +324,7 @@ var _ = Describe("VMProvider Tests", func() {
 				},
 				Spec: vmoperatorv1alpha1.VirtualMachineSpec{
 					ImageName:          imageName,
-					ClassName:          vmConfigArgs1.VmClass.Name,
+					ClassName:          vmConfigArgs1.VMClass.Name,
 					PowerState:         vmoperatorv1alpha1.VirtualMachinePoweredOn,
 					Ports:              []vmoperatorv1alpha1.VirtualMachinePort{},
 					ResourcePolicyName: resourcePolicy1.Name,
@@ -342,7 +342,7 @@ var _ = Describe("VMProvider Tests", func() {
 				},
 				Spec: vmoperatorv1alpha1.VirtualMachineSpec{
 					ImageName:          imageName,
-					ClassName:          vmConfigArgs2.VmClass.Name,
+					ClassName:          vmConfigArgs2.VMClass.Name,
 					PowerState:         vmoperatorv1alpha1.VirtualMachinePoweredOn,
 					Ports:              []vmoperatorv1alpha1.VirtualMachinePort{},
 					ResourcePolicyName: resourcePolicy2.Name,
@@ -355,20 +355,20 @@ var _ = Describe("VMProvider Tests", func() {
 
 	Context("Compute CPU Min Frequency in the Cluster", func() {
 		It("reconfigure and power on without errors", func() {
-			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, recorder)
-			vcClient, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(ctx)
+			vmProvider := vsphere.NewVSphereVMProviderFromClient(k8sClient, recorder)
+			vcClient, err := vmProvider.(vsphere.VSphereVMProviderGetSessionHack).GetClient(ctx)
 			Expect(vcClient).ToNot(BeNil())
 			Expect(err).NotTo(HaveOccurred())
-			err = vmProvider.ComputeClusterCpuMinFrequency(ctx)
+			err = vmProvider.ComputeClusterCPUMinFrequency(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(session.GetCpuMinMHzInCluster()).Should(BeNumerically(">", 0))
+			Expect(session.GetCPUMinMHzInCluster()).Should(BeNumerically(">", 0))
 		})
 	})
 
 	Context("Update PNID", func() {
 		It("update pnid when the same pnid is supplied", func() {
-			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, recorder)
-			vcClient, err := vmProvider.(vsphere.VSphereVmProviderGetSessionHack).GetClient(ctx)
+			vmProvider := vsphere.NewVSphereVMProviderFromClient(k8sClient, recorder)
+			vcClient, err := vmProvider.(vsphere.VSphereVMProviderGetSessionHack).GetClient(ctx)
 			Expect(vcClient).ToNot(BeNil())
 			Expect(err).NotTo(HaveOccurred())
 			providerConfig, err := config.GetProviderConfigFromConfigMap(ctx, k8sClient, "", "")
@@ -385,7 +385,7 @@ var _ = Describe("VMProvider Tests", func() {
 		// to use a unique vcsim env per Describe() context. This VM Provider code is also executed
 		// and tested in the infra controller test so disable it here.
 		XIt("update pnid when a different pnid is supplied", func() {
-			vmProvider := vsphere.NewVSphereVmProviderFromClient(k8sClient, recorder)
+			vmProvider := vsphere.NewVSphereVMProviderFromClient(k8sClient, recorder)
 			providerConfig, err := config.GetProviderConfigFromConfigMap(ctx, k8sClient, "", "")
 			Expect(err).NotTo(HaveOccurred())
 

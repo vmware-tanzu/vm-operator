@@ -5,7 +5,8 @@ package vsphere
 
 import (
 	goctx "context"
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"strings"
 
 	"github.com/vmware/govmomi/find"
@@ -28,27 +29,27 @@ import (
 )
 
 const (
-	VsphereVmProviderName = "vsphere"
+	VsphereVMProviderName = "vsphere"
 )
 
-var log = logf.Log.WithName(VsphereVmProviderName)
+var log = logf.Log.WithName(VsphereVMProviderName)
 
-type vSphereVmProvider struct {
+type vSphereVMProvider struct {
 	sessions      session.Manager
 	eventRecorder record.Recorder
 }
 
-func NewVSphereVmProviderFromClient(
+func NewVSphereVMProviderFromClient(
 	client ctrlruntime.Client,
 	recorder record.Recorder) vmprovider.VirtualMachineProviderInterface {
 
-	return &vSphereVmProvider{
+	return &vSphereVMProvider{
 		sessions:      session.NewManager(client),
 		eventRecorder: recorder,
 	}
 }
 
-// VSphereVmProviderGetSessionHack is an interface that exposes helpful
+// VSphereVMProviderGetSessionHack is an interface that exposes helpful
 // functions to access certain resources without polluting the vm provider
 // interface.
 //
@@ -56,22 +57,23 @@ func NewVSphereVmProviderFromClient(
 // library.
 //
 // ONLY USED IN TESTS.
-type VSphereVmProviderGetSessionHack interface {
+//nolint: revive // Ignore the warning about stuttering since this is only used in tests.
+type VSphereVMProviderGetSessionHack interface {
 	GetClient(ctx goctx.Context) (*vcclient.Client, error)
 }
 
-func (vs *vSphereVmProvider) Name() string {
-	return VsphereVmProviderName
+func (vs *vSphereVMProvider) Name() string {
+	return VsphereVMProviderName
 }
 
-func (vs *vSphereVmProvider) Initialize(stop <-chan struct{}) {
+func (vs *vSphereVMProvider) Initialize(stop <-chan struct{}) {
 }
 
-func (vs *vSphereVmProvider) GetClient(ctx goctx.Context) (*vcclient.Client, error) {
+func (vs *vSphereVMProvider) GetClient(ctx goctx.Context) (*vcclient.Client, error) {
 	return vs.sessions.GetClient(ctx)
 }
 
-func (vs *vSphereVmProvider) DeleteNamespaceSessionInCache(
+func (vs *vSphereVMProvider) DeleteNamespaceSessionInCache(
 	ctx goctx.Context,
 	namespace string) error {
 
@@ -79,8 +81,8 @@ func (vs *vSphereVmProvider) DeleteNamespaceSessionInCache(
 	return vs.sessions.DeleteSession(ctx, namespace)
 }
 
-// ListVirtualMachineImagesFromContentLibrary lists VM images from a ContentLibrary
-func (vs *vSphereVmProvider) ListVirtualMachineImagesFromContentLibrary(
+// ListVirtualMachineImagesFromContentLibrary lists VM images from a ContentLibrary.
+func (vs *vSphereVMProvider) ListVirtualMachineImagesFromContentLibrary(
 	ctx goctx.Context,
 	contentLibrary v1alpha1.ContentLibraryProvider,
 	currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
@@ -100,7 +102,7 @@ func (vs *vSphereVmProvider) ListVirtualMachineImagesFromContentLibrary(
 		currentCLImages)
 }
 
-func (vs *vSphereVmProvider) DoesVirtualMachineExist(ctx goctx.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
+func (vs *vSphereVMProvider) DoesVirtualMachineExist(ctx goctx.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
 	vmCtx := context.VMContext{
 		Context: ctx,
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
@@ -124,7 +126,7 @@ func (vs *vSphereVmProvider) DoesVirtualMachineExist(ctx goctx.Context, vm *v1al
 	return true, nil
 }
 
-func (vs *vSphereVmProvider) getOpId(ctx goctx.Context, vm *v1alpha1.VirtualMachine, operation string) string {
+func (vs *vSphereVMProvider) getOpID(ctx goctx.Context, vm *v1alpha1.VirtualMachine, operation string) string {
 	const charset = "0123456789abcdef"
 
 	// TODO: Is this actually useful? Avoid looking up the session multiple times.
@@ -135,15 +137,17 @@ func (vs *vSphereVmProvider) getOpId(ctx goctx.Context, vm *v1alpha1.VirtualMach
 
 	id := make([]byte, 8)
 	for i := range id {
-		id[i] = charset[rand.Intn(len(charset))]
+		randOpID, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+
+		id[i] = charset[int(randOpID.Int64())]
 	}
 
 	return strings.Join([]string{"vmoperator", clusterID, vm.Name, operation, string(id)}, "-")
 }
 
-func (vs *vSphereVmProvider) CreateVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+func (vs *vSphereVMProvider) CreateVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 	vmCtx := context.VMContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpId(ctx, vm, "create")),
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "create")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -169,10 +173,10 @@ func (vs *vSphereVmProvider) CreateVirtualMachine(ctx goctx.Context, vm *v1alpha
 	return nil
 }
 
-// UpdateVirtualMachine updates the VM status, power state, phase etc
-func (vs *vSphereVmProvider) UpdateVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+// UpdateVirtualMachine updates the VM status, power state, phase etc.
+func (vs *vSphereVMProvider) UpdateVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 	vmCtx := context.VMContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpId(ctx, vm, "update")),
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "update")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -192,9 +196,9 @@ func (vs *vSphereVmProvider) UpdateVirtualMachine(ctx goctx.Context, vm *v1alpha
 	return nil
 }
 
-func (vs *vSphereVmProvider) DeleteVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine) error {
+func (vs *vSphereVMProvider) DeleteVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine) error {
 	vmCtx := context.VMContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpId(ctx, vm, "delete")),
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "delete")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -215,9 +219,9 @@ func (vs *vSphereVmProvider) DeleteVirtualMachine(ctx goctx.Context, vm *v1alpha
 	return nil
 }
 
-func (vs *vSphereVmProvider) GetVirtualMachineGuestHeartbeat(ctx goctx.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error) {
+func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(ctx goctx.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error) {
 	vmCtx := context.VMContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpId(ctx, vm, "heartbeat")),
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "heartbeat")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -235,22 +239,19 @@ func (vs *vSphereVmProvider) GetVirtualMachineGuestHeartbeat(ctx goctx.Context, 
 	return status, nil
 }
 
-func (vs *vSphereVmProvider) ComputeClusterCpuMinFrequency(ctx goctx.Context) error {
-	if err := vs.sessions.ComputeClusterCpuMinFrequency(ctx); err != nil {
-		return err
-	}
-	return nil
+func (vs *vSphereVMProvider) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
+	return vs.sessions.ComputeClusterCPUMinFrequency(ctx)
 }
 
-func (vs *vSphereVmProvider) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {
+func (vs *vSphereVMProvider) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {
 	return vs.sessions.UpdateVcPNID(ctx, vcPNID, vcPort)
 }
 
-func (vs *vSphereVmProvider) ClearSessionsAndClient(ctx goctx.Context) {
+func (vs *vSphereVMProvider) ClearSessionsAndClient(ctx goctx.Context) {
 	vs.sessions.ClearSessionsAndClient(ctx)
 }
 
-func ResVmToVirtualMachineImage(ctx goctx.Context, resVM *res.VirtualMachine) (*v1alpha1.VirtualMachineImage, error) {
+func ResVMToVirtualMachineImage(ctx goctx.Context, resVM *res.VirtualMachine) (*v1alpha1.VirtualMachineImage, error) {
 	ovfProperties, err := resVM.GetOvfProperties(ctx)
 	if err != nil {
 		return nil, err

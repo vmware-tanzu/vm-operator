@@ -117,7 +117,7 @@ func (sm *Manager) GetSessionForVM(vmCtx context.VMContext) (*Session, error) {
 		vmCtx.VM.Namespace)
 }
 
-func (sm *Manager) ComputeClusterCpuMinFrequency(ctx goctx.Context) error {
+func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 	// Get all the availability zones in order to calculate the minimum
 	// CPU frequencies for each of the zones' vSphere clusters.
 	availabilityZones, err := topology.GetAvailabilityZones(ctx, sm.k8sClient)
@@ -176,7 +176,7 @@ func (sm *Manager) ComputeClusterCpuMinFrequency(ctx goctx.Context) error {
 	// value for its cluster.
 	for _, session := range sm.sessions {
 		if minFreq, ok := minFrequencies[session.Cluster().Reference().Value]; ok {
-			session.SetCpuMinMHzInCluster(minFreq)
+			session.SetCPUMinMHzInCluster(minFreq)
 		}
 	}
 
@@ -207,7 +207,7 @@ func (sm *Manager) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error 
 
 func (sm *Manager) getClient(
 	ctx goctx.Context,
-	config *vcconfig.VSphereVmProviderConfig) (*vcclient.Client, error) {
+	config *vcconfig.VSphereVMProviderConfig) (*vcclient.Client, error) {
 
 	if sm.client != nil {
 		return sm.client, nil
@@ -224,7 +224,7 @@ func (sm *Manager) getClient(
 
 func (sm *Manager) getConfig(
 	ctx goctx.Context,
-	zone, namespace string) (*vcconfig.VSphereVmProviderConfig, error) {
+	zone, namespace string) (*vcconfig.VSphereVMProviderConfig, error) {
 
 	return vcconfig.GetProviderConfigFromConfigMap(
 		ctx, sm.k8sClient, zone, namespace)

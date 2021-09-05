@@ -9,14 +9,14 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 
 	. "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/credentials"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func newSecret(name string, ns string, user string, pass string) (*v1.Secret, *VSphereVmProviderCredentials) {
-	creds := &VSphereVmProviderCredentials{
+func newSecret(name string, ns string, user string, pass string) (*corev1.Secret, *VSphereVMProviderCredentials) {
+	creds := &VSphereVMProviderCredentials{
 		Username: user,
 		Password: pass,
 	}

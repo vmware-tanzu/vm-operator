@@ -113,7 +113,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Reservation: pointer.Int64Ptr(session.CpuQuantityToMhz(r, minCPUFreq)),
+					Reservation: pointer.Int64Ptr(session.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Cpu = r
 			})
@@ -127,7 +127,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Limit: pointer.Int64Ptr(session.CpuQuantityToMhz(r, minCPUFreq)),
+					Limit: pointer.Int64Ptr(session.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Cpu = r
 			})
@@ -141,7 +141,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Limit: pointer.Int64Ptr(10 * session.CpuQuantityToMhz(r, minCPUFreq)),
+					Limit: pointer.Int64Ptr(10 * session.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Cpu = r
 			})
@@ -158,7 +158,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Reservation: pointer.Int64Ptr(10 * session.CpuQuantityToMhz(r, minCPUFreq)),
+					Reservation: pointer.Int64Ptr(10 * session.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Cpu = r
 			})
@@ -254,7 +254,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		var vmImage *vmopv1alpha1.VirtualMachineImage
 		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
 		var vm *vmopv1alpha1.VirtualMachine
-		var vmMetadata *vmprovider.VmMetadata
+		var vmMetadata *vmprovider.VMMetadata
 		var globalExtraConfig map[string]string
 		var ecMap map[string]string
 
@@ -266,7 +266,7 @@ var _ = Describe("Update ConfigSpec", func() {
 					Annotations: make(map[string]string),
 				},
 			}
-			vmMetadata = &vmprovider.VmMetadata{
+			vmMetadata = &vmprovider.VMMetadata{
 				Data:      make(map[string]string),
 				Transport: vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
 			}
@@ -417,10 +417,10 @@ var _ = Describe("Update ConfigSpec", func() {
 	})
 
 	Context("VAppConfig", func() {
-		var vmMetadata *vmprovider.VmMetadata
+		var vmMetadata *vmprovider.VMMetadata
 
 		BeforeEach(func() {
-			vmMetadata = &vmprovider.VmMetadata{
+			vmMetadata = &vmprovider.VMMetadata{
 				Data:      make(map[string]string),
 				Transport: vmopv1alpha1.VirtualMachineMetadataOvfEnvTransport,
 			}
@@ -992,7 +992,7 @@ var _ = Describe("Customization", func() {
 
 	Context("getLinuxCustomizationSpec", func() {
 		var (
-			updateArgs session.VmUpdateArgs
+			updateArgs session.VMUpdateArgs
 			macaddress = "01-23-45-67-89-AB-CD-EF"
 			nameserver = "8.8.8.8"
 			vmName     = "dummy-vm"
@@ -1004,7 +1004,7 @@ var _ = Describe("Customization", func() {
 
 		BeforeEach(func() {
 			updateArgs.DNSServers = []string{nameserver}
-			updateArgs.NetIfList = []network.NetworkInterfaceInfo{
+			updateArgs.NetIfList = []network.InterfaceInfo{
 				{
 					Customization: customizationAdaptorMapping,
 				},
@@ -1024,7 +1024,7 @@ var _ = Describe("Customization", func() {
 	Context("getCloudInitPrepCustomizationSpec", func() {
 		var (
 			currentEthCards  object.VirtualDeviceList
-			updateArgs       session.VmUpdateArgs
+			updateArgs       session.VMUpdateArgs
 			expectedMetadata session.CloudInitMetadata
 			userdata         = "dummy-cloudInit-userdata"
 			addrs            = []string{"192.168.1.37"}
@@ -1043,12 +1043,12 @@ var _ = Describe("Customization", func() {
 			}
 
 			updateArgs.DNSServers = []string{nameserver}
-			updateArgs.NetIfList = []network.NetworkInterfaceInfo{
+			updateArgs.NetIfList = []network.InterfaceInfo{
 				{
 					NetplanEthernet: netPlanEth,
 				},
 			}
-			updateArgs.VmMetadata = &vmprovider.VmMetadata{
+			updateArgs.VMMetadata = &vmprovider.VMMetadata{
 				Data: map[string]string{
 					"user-data": userdata,
 				},
@@ -1068,7 +1068,7 @@ var _ = Describe("Customization", func() {
 			// as updateArgs.DNSServers.
 			expectedNetPlanEth.Nameservers.Addresses = updateArgs.DNSServers
 			expectedMetadata = session.CloudInitMetadata{
-				InstanceId:    vmName,
+				InstanceID:    vmName,
 				Hostname:      vmName,
 				LocalHostname: vmName,
 				Network: session.Netplan{
@@ -1142,7 +1142,7 @@ var _ = Describe("Customization", func() {
 var _ = Describe("Template", func() {
 	Context("update VmConfigArgs", func() {
 		var (
-			updateArgs session.VmUpdateArgs
+			updateArgs session.VMUpdateArgs
 
 			ip         = "192.168.1.37"
 			subnetMask = "255.255.255.0"
@@ -1164,7 +1164,7 @@ var _ = Describe("Template", func() {
 
 		BeforeEach(func() {
 			updateArgs.DNSServers = []string{nameserver}
-			updateArgs.NetIfList = []network.NetworkInterfaceInfo{
+			updateArgs.NetIfList = []network.InterfaceInfo{
 				{
 					IPConfiguration: network.IPConfig{
 						IP:         ip,
@@ -1173,37 +1173,37 @@ var _ = Describe("Template", func() {
 					},
 				},
 			}
-			updateArgs.VmMetadata = &vmprovider.VmMetadata{
+			updateArgs.VMMetadata = &vmprovider.VMMetadata{
 				Data: make(map[string]string),
 			}
 		})
 
 		It("should resolve them correctly while specifying valid templates", func() {
-			updateArgs.VmMetadata.Data["ip"] = "{{ (index .NetworkInterfaces 0).IP }}"
-			updateArgs.VmMetadata.Data["subMask"] = "{{ (index .NetworkInterfaces 0).SubnetMask }}"
-			updateArgs.VmMetadata.Data["gateway"] = "{{ (index .NetworkInterfaces 0).Gateway }}"
-			updateArgs.VmMetadata.Data["nameserver"] = "{{ (index .NameServers 0) }}"
+			updateArgs.VMMetadata.Data["ip"] = "{{ (index .NetworkInterfaces 0).IP }}"
+			updateArgs.VMMetadata.Data["subMask"] = "{{ (index .NetworkInterfaces 0).SubnetMask }}"
+			updateArgs.VMMetadata.Data["gateway"] = "{{ (index .NetworkInterfaces 0).Gateway }}"
+			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .NameServers 0) }}"
 
-			session.UpdateVmConfigArgsTemplates(vmCtx, updateArgs)
+			session.UpdateVMConfigArgsTemplates(vmCtx, updateArgs)
 
-			Expect(updateArgs.VmMetadata.Data["ip"]).To(Equal(ip))
-			Expect(updateArgs.VmMetadata.Data["subMask"]).To(Equal(subnetMask))
-			Expect(updateArgs.VmMetadata.Data["gateway"]).To(Equal(gateway))
-			Expect(updateArgs.VmMetadata.Data["nameserver"]).To(Equal(nameserver))
+			Expect(updateArgs.VMMetadata.Data["ip"]).To(Equal(ip))
+			Expect(updateArgs.VMMetadata.Data["subMask"]).To(Equal(subnetMask))
+			Expect(updateArgs.VMMetadata.Data["gateway"]).To(Equal(gateway))
+			Expect(updateArgs.VMMetadata.Data["nameserver"]).To(Equal(nameserver))
 		})
 
 		It("should use the original text if resolving template failed", func() {
-			updateArgs.VmMetadata.Data["ip"] = "{{ (index .NetworkInterfaces 100).IP }}"
-			updateArgs.VmMetadata.Data["subMask"] = "{{ invalidTemplate }}"
-			updateArgs.VmMetadata.Data["gateway"] = "{{ (index .NetworkInterfaces ).Gateway }}"
-			updateArgs.VmMetadata.Data["nameserver"] = "{{ (index .NameServers 0) }}"
+			updateArgs.VMMetadata.Data["ip"] = "{{ (index .NetworkInterfaces 100).IP }}"
+			updateArgs.VMMetadata.Data["subMask"] = "{{ invalidTemplate }}"
+			updateArgs.VMMetadata.Data["gateway"] = "{{ (index .NetworkInterfaces ).Gateway }}"
+			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .NameServers 0) }}"
 
-			session.UpdateVmConfigArgsTemplates(vmCtx, updateArgs)
+			session.UpdateVMConfigArgsTemplates(vmCtx, updateArgs)
 
-			Expect(updateArgs.VmMetadata.Data["ip"]).To(Equal("{{ (index .NetworkInterfaces 100).IP }}"))
-			Expect(updateArgs.VmMetadata.Data["subMask"]).To(Equal("{{ invalidTemplate }}"))
-			Expect(updateArgs.VmMetadata.Data["gateway"]).To(Equal("{{ (index .NetworkInterfaces ).Gateway }}"))
-			Expect(updateArgs.VmMetadata.Data["nameserver"]).To(Equal(nameserver))
+			Expect(updateArgs.VMMetadata.Data["ip"]).To(Equal("{{ (index .NetworkInterfaces 100).IP }}"))
+			Expect(updateArgs.VMMetadata.Data["subMask"]).To(Equal("{{ invalidTemplate }}"))
+			Expect(updateArgs.VMMetadata.Data["gateway"]).To(Equal("{{ (index .NetworkInterfaces ).Gateway }}"))
+			Expect(updateArgs.VMMetadata.Data["nameserver"]).To(Equal(nameserver))
 		})
 	})
 })
@@ -1211,24 +1211,24 @@ var _ = Describe("Template", func() {
 var _ = Describe("Network Interfaces VM Status", func() {
 	Context("nicInfoToNetworkIfStatus", func() {
 		dummyMacAddress := "00:50:56:8c:7b:34"
-		dummyIpAddress1 := vimTypes.NetIpConfigInfoIpAddress{
+		dummyIPAddress1 := vimTypes.NetIpConfigInfoIpAddress{
 			IpAddress:    "192.168.128.5",
 			PrefixLength: 16,
 		}
-		dummyIpAddress2 := vimTypes.NetIpConfigInfoIpAddress{
+		dummyIPAddress2 := vimTypes.NetIpConfigInfoIpAddress{
 			IpAddress:    "fe80::250:56ff:fe8c:7b34",
 			PrefixLength: 64,
 		}
-		dummyIpConfig := &vimTypes.NetIpConfigInfo{
+		dummyIPConfig := &vimTypes.NetIpConfigInfo{
 			IpAddress: []vimTypes.NetIpConfigInfoIpAddress{
-				dummyIpAddress1,
-				dummyIpAddress2,
+				dummyIPAddress1,
+				dummyIPAddress2,
 			},
 		}
 		guestNicInfo := vimTypes.GuestNicInfo{
 			Connected:  true,
 			MacAddress: dummyMacAddress,
-			IpConfig:   dummyIpConfig,
+			IpConfig:   dummyIPConfig,
 		}
 
 		It("returns populated NetworkInterfaceStatus", func() {

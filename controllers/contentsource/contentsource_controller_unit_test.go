@@ -32,7 +32,7 @@ func reconcileProviderRef() {
 	var (
 		ctx            *builder.UnitTestContextForController
 		reconciler     *contentsource.Reconciler
-		fakeVMProvider *providerfake.FakeVmProvider
+		fakeVMProvider *providerfake.VMProvider
 		initObjects    []client.Object
 
 		cs v1alpha1.ContentSource
@@ -70,7 +70,7 @@ func reconcileProviderRef() {
 			ctx.Recorder,
 			ctx.VMProvider,
 		)
-		fakeVMProvider = ctx.VMProvider.(*providerfake.FakeVmProvider)
+		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 	})
 
 	AfterEach(func() {
@@ -157,7 +157,7 @@ func unitTestsCRUDImage() {
 	var (
 		ctx            *builder.UnitTestContextForController
 		reconciler     *contentsource.Reconciler
-		fakeVMProvider *providerfake.FakeVmProvider
+		fakeVMProvider *providerfake.VMProvider
 		initObjects    []client.Object
 
 		cs v1alpha1.ContentSource
@@ -192,7 +192,7 @@ func unitTestsCRUDImage() {
 			ctx.Recorder,
 			ctx.VMProvider,
 		)
-		fakeVMProvider = ctx.VMProvider.(*providerfake.FakeVmProvider)
+		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 	})
 
 	JustAfterEach(func() {

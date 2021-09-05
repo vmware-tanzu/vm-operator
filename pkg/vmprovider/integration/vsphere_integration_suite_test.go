@@ -26,7 +26,7 @@ import (
 var (
 	vcSim         *integration.VcSimInstance
 	testEnv       *envtest.Environment
-	vSphereConfig *config.VSphereVmProviderConfig
+	vSphereConfig *config.VSphereVMProviderConfig
 	vcClient      *vcclient.Client
 	vmProvider    vmprovider.VirtualMachineProviderInterface
 	k8sClient     client.Client

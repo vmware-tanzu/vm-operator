@@ -59,7 +59,7 @@ func SoapKeepAliveHandlerFn(sc *soap.Client, sm *session.Manager, userInfo *url.
 	}
 }
 
-// RestKeepaliveHandlerFn returns a keepalive handler function suitable for use with the REST handler.
+// RestKeepAliveHandlerFn returns a keepalive handler function suitable for use with the REST handler.
 // Similar to the SOAP handler, we customize the handler here so we can re-login the client in case the
 // REST session expires due to connectivity issues.
 func RestKeepAliveHandlerFn(c *rest.Client, userInfo *url.Userinfo) func() error {
@@ -81,7 +81,7 @@ func RestKeepAliveHandlerFn(c *rest.Client, userInfo *url.Userinfo) func() error
 }
 
 // newRestClient creates a rest client which is configured to use a custom keepalive handler function.
-func newRestClient(ctx context.Context, vimClient *vim25.Client, config *config.VSphereVmProviderConfig) (*rest.Client, error) {
+func newRestClient(ctx context.Context, vimClient *vim25.Client, config *config.VSphereVMProviderConfig) (*rest.Client, error) {
 	log.Info("Creating new REST Client", "VcPNID", config.VcPNID, "VcPort", config.VcPort)
 	restClient := rest.NewClient(vimClient)
 
@@ -100,7 +100,7 @@ func newRestClient(ctx context.Context, vimClient *vim25.Client, config *config.
 }
 
 // newVimClient creates a new vim25 client which is configured to use a custom keepalive handler function.
-func newVimClient(ctx context.Context, config *config.VSphereVmProviderConfig) (*vim25.Client, *session.Manager, error) {
+func newVimClient(ctx context.Context, config *config.VSphereVMProviderConfig) (*vim25.Client, *session.Manager, error) {
 	log.Info("Creating new vim Client", "VcPNID", config.VcPNID, "VcPort", config.VcPort)
 	soapURL, err := soap.ParseURL(net.JoinHostPort(config.VcPNID, config.VcPort))
 	if err != nil {
@@ -136,7 +136,7 @@ func newVimClient(ctx context.Context, config *config.VSphereVmProviderConfig) (
 }
 
 // NewClient creates a new Client. As a side effect, it creates a vim25 client and a REST client.
-func NewClient(ctx context.Context, config *config.VSphereVmProviderConfig) (*Client, error) {
+func NewClient(ctx context.Context, config *config.VSphereVMProviderConfig) (*Client, error) {
 	vimClient, sm, err := newVimClient(ctx, config)
 	if err != nil {
 		return nil, err
@@ -158,21 +158,23 @@ func NewClient(ctx context.Context, config *config.VSphereVmProviderConfig) (*Cl
 
 func isNotAuthenticatedError(err error) bool {
 	if soap.IsSoapFault(err) {
-		switch soap.ToSoapFault(err).VimFault().(type) {
-		case types.NotAuthenticated:
+		vimFault := soap.ToSoapFault(err).VimFault()
+		if _, ok := vimFault.(types.NotAuthenticated); ok {
 			return true
 		}
 	}
+
 	return false
 }
 
 func isInvalidLogin(err error) bool {
 	if soap.IsSoapFault(err) {
-		switch soap.ToSoapFault(err).VimFault().(type) {
-		case types.InvalidLogin:
+		vimFault := soap.ToSoapFault(err).VimFault()
+		if _, ok := vimFault.(types.InvalidLogin); ok {
 			return true
 		}
 	}
+
 	return false
 }
 

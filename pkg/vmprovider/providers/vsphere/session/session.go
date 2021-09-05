@@ -67,7 +67,7 @@ type Session struct {
 func NewSessionAndConfigure(
 	ctx goctx.Context,
 	client *client.Client,
-	config *config.VSphereVmProviderConfig,
+	config *config.VSphereVMProviderConfig,
 	k8sClient ctrlruntime.Client) (*Session, error) {
 
 	if log.V(4).Enabled() {
@@ -95,10 +95,9 @@ func (s *Session) Cluster() *object.ClusterComputeResource {
 	return s.cluster
 }
 
-//nolint:gocyclo
 func (s *Session) initSession(
 	ctx goctx.Context,
-	cfg *config.VSphereVmProviderConfig) error {
+	cfg *config.VSphereVMProviderConfig) error {
 
 	s.Finder = find.NewFinder(s.Client.VimClient(), false)
 
@@ -139,7 +138,7 @@ func (s *Session) initSession(
 		if err != nil {
 			return errors.Wrapf(err, "failed to init minimum CPU frequency")
 		}
-		s.SetCpuMinMHzInCluster(minFreq)
+		s.SetCPUMinMHzInCluster(minFreq)
 	}
 
 	// On WCP, the Folder is extracted from an annotation on the namespace.
@@ -189,8 +188,8 @@ func (s *Session) initSession(
 
 	// Initialize tagging information
 	s.tagInfo = make(map[string]string)
-	s.tagInfo[config.CtrlVmVmAntiAffinityTagKey] = cfg.CtrlVmVmAntiAffinityTag
-	s.tagInfo[config.WorkerVmVmAntiAffinityTagKey] = cfg.WorkerVmVmAntiAffinityTag
+	s.tagInfo[config.CtrlVMVMAntiAffinityTagKey] = cfg.CtrlVMVMAntiAffinityTag
+	s.tagInfo[config.WorkerVMVMAntiAffinityTagKey] = cfg.WorkerVMVMAntiAffinityTag
 	s.tagInfo[config.ProviderTagCategoryNameKey] = cfg.TagCategoryName
 
 	return nil
@@ -219,7 +218,7 @@ func IsSupportedDeployType(t string) bool {
 	}
 }
 
-// findChildEntity finds a child entity by a given name under a parent object
+// findChildEntity finds a child entity by a given name under a parent object.
 func (s *Session) findChildEntity(ctx goctx.Context, parent object.Reference, childName string) (object.Reference, error) {
 	si := object.NewSearchIndex(s.Client.VimClient())
 	ref, err := si.FindChild(ctx, parent, childName)
@@ -267,7 +266,7 @@ func (s *Session) ChildFolder(ctx goctx.Context, folderName string) (*object.Fol
 
 	f, ok := folder.(*object.Folder)
 	if !ok {
-		return nil, fmt.Errorf("Folder %q is not expected Folder type but a %T", folderName, folder)
+		return nil, fmt.Errorf("folder %q is not expected Folder type but a %T", folderName, folder)
 	}
 	return f, nil
 }
@@ -501,8 +500,8 @@ func (s *Session) GetVirtualMachine(vmCtx context.VMContext) (*res.VirtualMachin
 	return res.NewVMFromObject(vm)
 }
 
-func (s *Session) lookupVMByMoID(ctx goctx.Context, moId string) (*res.VirtualMachine, error) {
-	ref, err := s.Finder.ObjectReference(ctx, types.ManagedObjectReference{Type: "VirtualMachine", Value: moId})
+func (s *Session) lookupVMByMoID(ctx goctx.Context, moID string) (*res.VirtualMachine, error) {
+	ref, err := s.Finder.ObjectReference(ctx, types.ManagedObjectReference{Type: "VirtualMachine", Value: moID})
 	if err != nil {
 		return nil, err
 	}
@@ -530,7 +529,7 @@ func (s *Session) invokeFsrVirtualMachine(vmCtx context.VMContext, resVM *res.Vi
 	return nil
 }
 
-// GetClusterByMoID returns resource pool for a given a moref
+// GetClusterByMoID returns resource pool for a given a moref.
 func (s *Session) GetClusterByMoID(ctx goctx.Context, moID string) (*object.ClusterComputeResource, error) {
 	ref := types.ManagedObjectReference{Type: "ClusterComputeResource", Value: moID}
 	o, err := s.Finder.ObjectReference(ctx, ref)
@@ -540,7 +539,7 @@ func (s *Session) GetClusterByMoID(ctx goctx.Context, moID string) (*object.Clus
 	return o.(*object.ClusterComputeResource), nil
 }
 
-// GetResourcePoolByMoID returns resource pool for a given a moref
+// GetResourcePoolByMoID returns resource pool for a given a moref.
 func (s *Session) GetResourcePoolByMoID(ctx goctx.Context, moID string) (*object.ResourcePool, error) {
 	ref := types.ManagedObjectReference{Type: "ResourcePool", Value: moID}
 	o, err := s.Finder.ObjectReference(ctx, ref)
@@ -550,7 +549,7 @@ func (s *Session) GetResourcePoolByMoID(ctx goctx.Context, moID string) (*object
 	return o.(*object.ResourcePool), nil
 }
 
-// GetFolderByMoID returns a folder for a given moref
+// GetFolderByMoID returns a folder for a given moref.
 func (s *Session) GetFolderByMoID(ctx goctx.Context, moID string) (*object.Folder, error) {
 	ref := types.ManagedObjectReference{Type: "Folder", Value: moID}
 	o, err := s.Finder.ObjectReference(ctx, ref)
@@ -560,13 +559,13 @@ func (s *Session) GetFolderByMoID(ctx goctx.Context, moID string) (*object.Folde
 	return o.(*object.Folder), nil
 }
 
-func (s *Session) GetCpuMinMHzInCluster() uint64 {
+func (s *Session) GetCPUMinMHzInCluster() uint64 {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	return s.cpuMinMHzInCluster
 }
 
-func (s *Session) SetCpuMinMHzInCluster(minFreq uint64) {
+func (s *Session) SetCPUMinMHzInCluster(minFreq uint64) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -583,7 +582,7 @@ func (s *Session) computeCPUInfo(ctx goctx.Context) (uint64, error) {
 
 // ComputeCPUInfo computes the minimum frequency across all the hosts in the cluster. This is needed to convert the CPU
 // requirements specified in cores to MHz. vSphere core is assumed to be equivalent to the value of min frequency.
-// This function is adapted from wcp schedext
+// This function is adapted from wcp schedext.
 func ComputeCPUInfo(ctx goctx.Context, cluster *object.ClusterComputeResource) (uint64, error) {
 	var cr mo.ComputeResource
 	var hosts []mo.HostSystem
@@ -612,9 +611,9 @@ func ComputeCPUInfo(ctx goctx.Context, cluster *object.ClusterComputeResource) (
 		if h.Summary.Hardware == nil {
 			continue
 		}
-		hostCpuMHz := uint64(h.Summary.Hardware.CpuMhz)
-		if hostCpuMHz < minFreq || minFreq == 0 {
-			minFreq = hostCpuMHz
+		hostCPUMHz := uint64(h.Summary.Hardware.CpuMhz)
+		if hostCPUMHz < minFreq || minFreq == 0 {
+			minFreq = hostCPUMHz
 		}
 	}
 
@@ -642,14 +641,14 @@ func (s *Session) String() string {
 	if s.datastore != nil {
 		sb.WriteString(fmt.Sprintf("datastore: %s, ", s.datastore.Reference().Value))
 	}
-	sb.WriteString(fmt.Sprintf("cpuMinMHzInCluster: %v, ", s.GetCpuMinMHzInCluster()))
+	sb.WriteString(fmt.Sprintf("cpuMinMHzInCluster: %v, ", s.GetCPUMinMHzInCluster()))
 	sb.WriteString(fmt.Sprintf("tagInfo: %v ", s.tagInfo))
 	sb.WriteString("}")
 	return sb.String()
 }
 
-// AttachTagToVm attaches a tag with a given name to the vm.
-func (s *Session) AttachTagToVm(ctx goctx.Context, tagName string, tagCatName string, vmRef mo.Reference) error {
+// AttachTagToVM attaches a tag with a given name to the vm.
+func (s *Session) AttachTagToVM(ctx goctx.Context, tagName string, tagCatName string, vmRef mo.Reference) error {
 	restClient := s.Client.RestClient()
 	manager := tags.NewManager(restClient)
 	tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
@@ -660,8 +659,8 @@ func (s *Session) AttachTagToVm(ctx goctx.Context, tagName string, tagCatName st
 	return manager.AttachTag(ctx, tag.ID, vmRef)
 }
 
-// DetachTagFromVm detaches a tag with a given name from the vm.
-func (s *Session) DetachTagFromVm(ctx goctx.Context, tagName string, tagCatName string, vmRef mo.Reference) error {
+// DetachTagFromVM detaches a tag with a given name from the vm.
+func (s *Session) DetachTagFromVM(ctx goctx.Context, tagName string, tagCatName string, vmRef mo.Reference) error {
 	restClient := s.Client.RestClient()
 	manager := tags.NewManager(restClient)
 	tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)

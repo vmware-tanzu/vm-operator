@@ -63,8 +63,8 @@ func (s *Session) deployOvf(vmCtx context.VMCloneContext, itemID string, storage
 	return res.NewVMFromObject(ref.(*object.VirtualMachine))
 }
 
-// getClusterVMConfigOptions fetches the virtualmachine config options from the cluster specifically
-// 1. valid guestOS descriptor IDs for the cluster
+// GetClusterVMConfigOptions fetches the virtualmachine config options from the cluster specifically
+// 1. valid guestOS descriptor IDs for the cluster.
 func GetClusterVMConfigOptions(
 	ctx goctx.Context,
 	cluster *object.ClusterComputeResource,
@@ -107,12 +107,12 @@ func GetClusterVMConfigOptions(
 // CheckVMConfigOptions validates that the specified VM Image has a supported OS type.
 func CheckVMConfigOptions(
 	vmCtx context.VMCloneContext,
-	vmConfigArgs vmprovider.VmConfigArgs,
+	vmConfigArgs vmprovider.VMConfigArgs,
 	guestOSIdsToFamily map[string]string) error {
 
 	val := vmCtx.VM.Annotations[constants.VMOperatorImageSupportedCheckKey]
 	if val != constants.VMOperatorImageSupportedCheckDisable && len(guestOSIdsToFamily) > 0 {
-		osType := vmConfigArgs.VmImage.Spec.OSInfo.Type
+		osType := vmConfigArgs.VMImage.Spec.OSInfo.Type
 		// osFamily will be present for supported OSTypes and support only VirtualMachineGuestOsFamilyLinuxGuest for now
 		if osFamily := guestOSIdsToFamily[osType]; osFamily != string(vimTypes.VirtualMachineGuestOsFamilyLinuxGuest) {
 			return fmt.Errorf("image osType '%s' is not supported by VMService", osType)
@@ -124,7 +124,7 @@ func CheckVMConfigOptions(
 
 func deployVMFromCLPreCheck(
 	vmCtx context.VMCloneContext,
-	vmConfigArgs vmprovider.VmConfigArgs,
+	vmConfigArgs vmprovider.VMConfigArgs,
 	cluster *object.ClusterComputeResource,
 	client *vim25.Client) error {
 
@@ -133,14 +133,10 @@ func deployVMFromCLPreCheck(
 		return errors.Wrapf(err, "Failed to get guestOS descriptors and hardware options from cluster")
 	}
 
-	if err := CheckVMConfigOptions(vmCtx, vmConfigArgs, guestOSIdsToFamily); err != nil {
-		return err
-	}
-
-	return nil
+	return CheckVMConfigOptions(vmCtx, vmConfigArgs, guestOSIdsToFamily)
 }
 
-func (s *Session) deployVMFromCL(vmCtx context.VMCloneContext, vmConfigArgs vmprovider.VmConfigArgs, item *library.Item) (*res.VirtualMachine, error) {
+func (s *Session) deployVMFromCL(vmCtx context.VMCloneContext, vmConfigArgs vmprovider.VMConfigArgs, item *library.Item) (*res.VirtualMachine, error) {
 	vmCtx.Logger.Info("Performing preChecks before deploying library item", "itemName", item.Name, "itemType", item.Type)
 
 	if err := deployVMFromCLPreCheck(vmCtx, vmConfigArgs, s.cluster, s.Client.VimClient()); err != nil {
@@ -151,19 +147,19 @@ func (s *Session) deployVMFromCL(vmCtx context.VMCloneContext, vmConfigArgs vmpr
 		"itemType", item.Type, "imageName", vmCtx.VM.Spec.ImageName,
 		"resourcePolicyName", vmCtx.VM.Spec.ResourcePolicyName, "storageProfileID", vmConfigArgs.StorageProfileID)
 
-	deployedVm, err := s.deployOvf(vmCtx, item.ID, vmConfigArgs.StorageProfileID)
+	deployedVM, err := s.deployOvf(vmCtx, item.ID, vmConfigArgs.StorageProfileID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "deploy from content library failed for image %q", vmCtx.VM.Spec.ImageName)
 	}
 
-	return deployedVm, nil
+	return deployedVM, nil
 }
 
-func (s *Session) cloneVm(vmCtx context.VMContext, resSrcVm *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
+func (s *Session) cloneVM(vmCtx context.VMContext, resSrcVM *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
 	vmCtx.Logger.Info("Cloning VM", "cloneSpec", *cloneSpec)
 
 	// We always set cloneSpec.Location.Folder so Clone ignores the s.folder param.
-	clonedVM, err := resSrcVm.Clone(vmCtx, s.folder, cloneSpec)
+	clonedVM, err := resSrcVM.Clone(vmCtx, s.folder, cloneSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +172,7 @@ func (s *Session) cloneVm(vmCtx context.VMContext, resSrcVm *res.VirtualMachine,
 	return res.NewVMFromObject(ref.(*object.VirtualMachine))
 }
 
-func (s *Session) cloneVMFromInventory(vmCtx context.VMCloneContext, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
+func (s *Session) cloneVMFromInventory(vmCtx context.VMCloneContext, vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
 	sourceVM, err := s.lookupVMByName(vmCtx, vmCtx.VM.Spec.ImageName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to lookup clone source %q", vmCtx.VM.Spec.ImageName)
@@ -187,7 +183,7 @@ func (s *Session) cloneVMFromInventory(vmCtx context.VMCloneContext, vmConfigArg
 		return nil, errors.Wrap(err, "failed to create clone spec")
 	}
 
-	clonedVM, err := s.cloneVm(vmCtx.VMContext, sourceVM, cloneSpec)
+	clonedVM, err := s.cloneVM(vmCtx.VMContext, sourceVM, cloneSpec)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to clone %q from %q", vmCtx.VM.Name, sourceVM.Name)
 	}
@@ -195,8 +191,8 @@ func (s *Session) cloneVMFromInventory(vmCtx context.VMCloneContext, vmConfigArg
 	return clonedVM, nil
 }
 
-func (s *Session) cloneVMFromContentLibrary(vmCtx context.VMCloneContext, vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
-	item, err := s.Client.ContentLibClient().GetLibraryItem(vmCtx, vmConfigArgs.ContentLibraryUUID, vmConfigArgs.VmImage.Status.ImageName)
+func (s *Session) cloneVMFromContentLibrary(vmCtx context.VMCloneContext, vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
+	item, err := s.Client.ContentLibClient().GetLibraryItem(vmCtx, vmConfigArgs.ContentLibraryUUID, vmConfigArgs.VMImage.Status.ImageName)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +209,7 @@ func (s *Session) cloneVMFromContentLibrary(vmCtx context.VMCloneContext, vmConf
 
 func (s *Session) CloneVirtualMachine(
 	vmCtx context.VMContext,
-	vmConfigArgs vmprovider.VmConfigArgs) (*res.VirtualMachine, error) {
+	vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
 
 	if vmConfigArgs.StorageProfileID == "" {
 		if s.storageClassRequired {
@@ -261,7 +257,7 @@ func (s *Session) CloneVirtualMachine(
 // policyThickProvision returns true if the storage profile is vSAN and disk provisioning is thick, false otherwise.
 // thick provisioning is determined based on its "proportionalCapacity":
 // Percentage (0-100) of the logical size of the storage object that will be reserved upon provisioning.
-// The UI presents options for "thin" (0%), 25%, 50%, 75% and "thick" (100%)
+// The UI presents options for "thin" (0%), 25%, 50%, 75% and "thick" (100%).
 func policyThickProvision(profile pbmTypes.BasePbmProfile) bool {
 	capProfile, ok := profile.(*pbmTypes.PbmCapabilityProfile)
 	if !ok {
@@ -358,14 +354,14 @@ func (s *Session) createConfigSpec(name string, vmClassSpec *v1alpha1.VirtualMac
 
 	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
 
-	minFreq := s.GetCpuMinMHzInCluster()
+	minFreq := s.GetCPUMinMHzInCluster()
 	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
-		rsv := CpuQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minFreq)
+		rsv := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minFreq)
 		configSpec.CpuAllocation.Reservation = &rsv
 	}
 
 	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
-		lim := CpuQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minFreq)
+		lim := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minFreq)
 		configSpec.CpuAllocation.Limit = &lim
 	}
 
@@ -387,10 +383,10 @@ func (s *Session) createConfigSpec(name string, vmClassSpec *v1alpha1.VirtualMac
 func (s *Session) createCloneSpec(
 	vmCtx context.VMCloneContext,
 	sourceVM *res.VirtualMachine,
-	vmConfigArgs vmprovider.VmConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
+	vmConfigArgs vmprovider.VMConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
 
 	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
-		Config: s.createConfigSpec(vmCtx.VM.Name, &vmConfigArgs.VmClass.Spec),
+		Config: s.createConfigSpec(vmCtx.VM.Name, &vmConfigArgs.VMClass.Spec),
 		Memory: pointer.BoolPtr(false), // No full memory clones.
 	}
 
@@ -439,10 +435,7 @@ func (s *Session) createCloneSpec(
 	cloneSpec.Location.Host = relocateSpec.Host
 	cloneSpec.Location.Datastore = relocateSpec.Datastore
 
-	diskLocators, err := cloneVMDiskLocators(vmCtx, virtualDisks, cloneSpec.Location.Datastore, cloneSpec.Location.Profile)
-	if err != nil {
-		return nil, err
-	}
+	diskLocators := cloneVMDiskLocators(vmCtx, virtualDisks, cloneSpec.Location.Datastore, cloneSpec.Location.Profile)
 	cloneSpec.Location.Disk = diskLocators
 
 	return cloneSpec, nil
@@ -512,7 +505,7 @@ func cloneVMDiskLocators(
 	vmCtx context.VMCloneContext,
 	disks object.VirtualDeviceList,
 	datastore *vimTypes.ManagedObjectReference,
-	profile []vimTypes.BaseVirtualMachineProfileSpec) ([]vimTypes.VirtualMachineRelocateSpecDiskLocator, error) {
+	profile []vimTypes.BaseVirtualMachineProfileSpec) []vimTypes.VirtualMachineRelocateSpecDiskLocator {
 
 	diskLocators := make([]vimTypes.VirtualMachineRelocateSpecDiskLocator, 0, len(disks))
 	for _, disk := range disks {
@@ -542,5 +535,5 @@ func cloneVMDiskLocators(
 		diskLocators = append(diskLocators, locator)
 	}
 
-	return diskLocators, nil
+	return diskLocators
 }

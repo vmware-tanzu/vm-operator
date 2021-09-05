@@ -41,9 +41,9 @@ var _ = Describe("NetworkProvider", func() {
 	const (
 		dummyObjectName     = "dummy-object"
 		dummyNamespace      = "dummy-ns"
-		dummyNsxSwitchId    = "dummy-opaque-network-id"
+		dummyNsxSwitchID    = "dummy-opaque-network-id"
 		macAddress          = "01-23-45-67-89-AB-CD-EF"
-		interfaceId         = "interface-id"
+		interfaceID         = "interface-id"
 		dummyVirtualNetwork = "dummy-virtual-net"
 		vcsimPortGroup      = "dvportgroup-11"
 		vcsimNetworkName    = "DC0_DVPG0"
@@ -68,7 +68,7 @@ var _ = Describe("NetworkProvider", func() {
 		np network.Provider
 	)
 
-	createInterface := func(ctx goctx.Context, c *vim25.Client, k8sClient ctrlruntime.Client, scheme *runtime.Scheme) {
+	createInterface := func(ctx goctx.Context, c *vim25.Client, k8sClient ctrlruntime.Client, _ *runtime.Scheme) {
 		finder := find.NewFinder(c)
 		cluster, err := finder.DefaultClusterComputeResource(ctx)
 		Expect(err).ToNot(HaveOccurred())
@@ -76,7 +76,7 @@ var _ = Describe("NetworkProvider", func() {
 		net, err := finder.Network(ctx, "DC0_DVPG0")
 		Expect(err).ToNot(HaveOccurred())
 		dvpg := simulator.Map.Get(net.Reference()).(*simulator.DistributedVirtualPortgroup)
-		dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchId // Convert to an NSX backed PG
+		dvpg.Config.LogicalSwitchUuid = dummyNsxSwitchID // Convert to an NSX backed PG
 		dvpg.Config.BackingType = "nsx"
 
 		np = network.NewProvider(k8sClient, c, finder, cluster)
@@ -87,7 +87,7 @@ var _ = Describe("NetworkProvider", func() {
 
 		nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 		Expect(nic).NotTo(BeNil())
-		Expect(nic.ExternalId).To(Equal(interfaceId))
+		Expect(nic.ExternalId).To(Equal(interfaceID))
 		Expect(nic.MacAddress).To(Equal(macAddress))
 		Expect(nic.AddressType).To(Equal(string(types.VirtualEthernetCardMacTypeManual)))
 	}
@@ -177,7 +177,7 @@ var _ = Describe("NetworkProvider", func() {
 			k8sClient ctrlruntime.Client
 			scheme    *runtime.Scheme
 			netIf     *netopv1alpha1.NetworkInterface
-			dummyIp   = "192.168.100.20"
+			dummyIP   = "192.168.100.20"
 		)
 
 		BeforeEach(func() {
@@ -202,12 +202,12 @@ var _ = Describe("NetworkProvider", func() {
 					},
 					IPConfigs: []netopv1alpha1.IPConfig{
 						{
-							IP:       dummyIp,
+							IP:       dummyIP,
 							IPFamily: netopv1alpha1.IPv4Protocol,
 						},
 					},
 					MacAddress: macAddress,
-					ExternalID: interfaceId,
+					ExternalID: interfaceID,
 					NetworkID:  vcsimPortGroup,
 				},
 			}
@@ -280,7 +280,7 @@ var _ = Describe("NetworkProvider", func() {
 				Expect(info.Device).ToNot(BeNil())
 				nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 				Expect(nic).NotTo(BeNil())
-				Expect(nic.ExternalId).To(Equal(interfaceId))
+				Expect(nic.ExternalId).To(Equal(interfaceID))
 				Expect(nic.MacAddress).To(Equal(macAddress))
 				Expect(nic.AddressType).To(Equal(string(types.VirtualEthernetCardMacTypeManual)))
 
@@ -303,7 +303,7 @@ var _ = Describe("NetworkProvider", func() {
 					Expect(info.Device).ToNot(BeNil())
 					nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 					Expect(nic).NotTo(BeNil())
-					Expect(nic.ExternalId).To(Equal(interfaceId))
+					Expect(nic.ExternalId).To(Equal(interfaceID))
 					Expect(nic.MacAddress).To(BeEmpty())
 					Expect(nic.AddressType).To(Equal(string(types.VirtualEthernetCardMacTypeGenerated)))
 				})
@@ -329,7 +329,7 @@ var _ = Describe("NetworkProvider", func() {
 					Expect(info.Device).ToNot(BeNil())
 					nic := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard()
 					Expect(nic).NotTo(BeNil())
-					Expect(nic.ExternalId).To(Equal(interfaceId))
+					Expect(nic.ExternalId).To(Equal(interfaceID))
 					Expect(nic.MacAddress).To(Equal(macAddress))
 					Expect(nic.AddressType).To(Equal(string(types.VirtualEthernetCardMacTypeManual)))
 
@@ -372,7 +372,7 @@ var _ = Describe("NetworkProvider", func() {
 				BeforeEach(func() {
 					vmNif.NetworkType = network.NsxtNetworkType
 					netIf.Name = dummyNetIfName
-					netIf.Status.NetworkID = dummyNsxSwitchId
+					netIf.Status.NetworkID = dummyNsxSwitchID
 					netIf.Status.IPConfigs = nil
 
 					vmNif.ProviderRef = &v1alpha1.NetworkInterfaceProviderReference{
@@ -429,8 +429,8 @@ var _ = Describe("NetworkProvider", func() {
 						info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(info.Customization.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationFixedIp{}))
-						fixedIp := info.Customization.Adapter.Ip.(*types.CustomizationFixedIp)
-						Expect(fixedIp.IpAddress).To(Equal(ip))
+						fixedIP := info.Customization.Adapter.Ip.(*types.CustomizationFixedIp)
+						Expect(fixedIP.IpAddress).To(Equal(ip))
 					})
 				})
 
@@ -451,8 +451,8 @@ var _ = Describe("NetworkProvider", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(info.Customization.Adapter.IpV6Spec).To(BeAssignableToTypeOf(&types.CustomizationIPSettingsIpV6AddressSpec{}))
 						Expect(info.Customization.Adapter.IpV6Spec.Ip).To(HaveLen(1))
-						fixedIp := info.Customization.Adapter.IpV6Spec.Ip[0].(*types.CustomizationFixedIpV6)
-						Expect(fixedIp.IpAddress).To(Equal(ip))
+						fixedIP := info.Customization.Adapter.IpV6Spec.Ip[0].(*types.CustomizationFixedIpV6)
+						Expect(fixedIP.IpAddress).To(Equal(ip))
 					})
 				})
 			})
@@ -521,10 +521,10 @@ var _ = Describe("NetworkProvider", func() {
 				},
 				Status: ncpv1alpha1.VirtualNetworkInterfaceStatus{
 					MacAddress:  macAddress,
-					InterfaceID: interfaceId,
+					InterfaceID: interfaceID,
 					Conditions:  []ncpv1alpha1.VirtualNetworkCondition{{Type: "Ready", Status: "True"}},
 					ProviderStatus: &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
-						NsxLogicalSwitchID: dummyNsxSwitchId,
+						NsxLogicalSwitchID: dummyNsxSwitchID,
 					},
 				},
 			}
@@ -665,8 +665,8 @@ var _ = Describe("NetworkProvider", func() {
 
 							info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 							Expect(err).ToNot(HaveOccurred())
-							fixedIp := info.Customization.Adapter.Ip.(*types.CustomizationFixedIp)
-							Expect(fixedIp.IpAddress).To(Equal(ip))
+							fixedIP := info.Customization.Adapter.Ip.(*types.CustomizationFixedIp)
+							Expect(fixedIP.IpAddress).To(Equal(ip))
 							Expect(info.NetplanEthernet.Dhcp4).To(BeFalse())
 							Expect(info.NetplanEthernet.Match.MacAddress).To(Equal(ncpVif.Status.MacAddress))
 							Expect(info.NetplanEthernet.Gateway4).ToNot(BeEmpty())

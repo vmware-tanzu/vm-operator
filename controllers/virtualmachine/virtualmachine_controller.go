@@ -512,7 +512,7 @@ func (r *Reconciler) getVMClass(ctx *context.VirtualMachineContext) (*vmopv1alph
 	return vmClass, nil
 }
 
-func (r *Reconciler) getVMMetadata(ctx *context.VirtualMachineContext) (*vmprovider.VmMetadata, error) {
+func (r *Reconciler) getVMMetadata(ctx *context.VirtualMachineContext) (*vmprovider.VMMetadata, error) {
 	inMetadata := ctx.VM.Spec.VmMetadata
 	if inMetadata == nil {
 		return nil, nil
@@ -524,7 +524,7 @@ func (r *Reconciler) getVMMetadata(ctx *context.VirtualMachineContext) (*vmprovi
 		return nil, err
 	}
 
-	outMetadata := &vmprovider.VmMetadata{
+	outMetadata := &vmprovider.VMMetadata{
 		Transport: inMetadata.Transport,
 		Data:      vmMetadataConfigMap.Data,
 	}
@@ -590,10 +590,10 @@ func (r *Reconciler) createOrUpdateVM(ctx *context.VirtualMachineContext) error 
 	conditions.MarkTrue(ctx.VM, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
 
 	vm := ctx.VM
-	vmConfigArgs := vmprovider.VmConfigArgs{
-		VmClass:            *vmClass,
-		VmImage:            vmImage,
-		VmMetadata:         vmMetadata,
+	vmConfigArgs := vmprovider.VMConfigArgs{
+		VMClass:            *vmClass,
+		VMImage:            vmImage,
+		VMMetadata:         vmMetadata,
 		ResourcePolicy:     resourcePolicy,
 		StorageProfileID:   storagePolicyID,
 		ContentLibraryUUID: clUUID,

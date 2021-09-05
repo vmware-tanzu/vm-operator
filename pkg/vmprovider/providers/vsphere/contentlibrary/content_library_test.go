@@ -48,10 +48,10 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 
 	Context("Expose ovfEnv properties", func() {
 		const (
-			ovfStringType            = "string"
-			userConfigurableKey      = "dummy-key-configurable"
-			notUserConfigurableKey   = "dummy-key-not-configurable"
-			defaultValue             = "dummy-value"
+			ovfStringType          = "string"
+			userConfigurableKey    = "dummy-key-configurable"
+			notUserConfigurableKey = "dummy-key-not-configurable"
+			defaultValue           = "dummy-value"
 		)
 
 		It("returns a VirtualMachineImage with expected annotations and ovfEnv", func() {

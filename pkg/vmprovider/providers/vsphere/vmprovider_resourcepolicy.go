@@ -15,8 +15,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 )
 
-// DoesVirtualMachineSetResourcePolicyExist checks if the entities of a VirtualMachineSetResourcePolicy exist on vSphere
-func (vs *vSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(
+// DoesVirtualMachineSetResourcePolicyExist checks if the entities of a VirtualMachineSetResourcePolicy exist on vSphere.
+func (vs *vSphereVMProvider) DoesVirtualMachineSetResourcePolicyExist(
 	ctx context.Context,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 
@@ -62,7 +62,7 @@ func (vs *vSphereVmProvider) DoesVirtualMachineSetResourcePolicyExist(
 }
 
 // CreateOrUpdateVirtualMachineSetResourcePolicy creates if a VirtualMachineSetResourcePolicy doesn't exist, updates otherwise.
-func (vs *vSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
+func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 	ctx context.Context,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 
@@ -118,7 +118,7 @@ func (vs *vSphereVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 }
 
 // DeleteVirtualMachineSetResourcePolicy deletes the VirtualMachineSetPolicy.
-func (vs *vSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(
+func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 	ctx context.Context,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 
@@ -142,16 +142,12 @@ func (vs *vSphereVmProvider) DeleteVirtualMachineSetResourcePolicy(
 		}
 	}
 
-	if err = vs.deleteClusterModules(ctx, resourcePolicy); err != nil {
-		return err
-	}
-
-	return nil
+	return vs.deleteClusterModules(ctx, resourcePolicy)
 }
 
 // doClusterModulesExist checks whether all the ClusterModules for the given VirtualMachineSetResourcePolicy
 // have been created and exist in VC for the Session's Cluster.
-func (vs *vSphereVmProvider) doClusterModulesExist(
+func (vs *vSphereVMProvider) doClusterModulesExist(
 	ctx context.Context,
 	clusterModProvider clustermodules.Provider,
 	cluster *object.ClusterComputeResource,
@@ -180,7 +176,7 @@ func (vs *vSphereVmProvider) doClusterModulesExist(
 
 // createClusterModules creates all the ClusterModules that has not created yet for a
 // given VirtualMachineSetResourcePolicy in VC.
-func (vs *vSphereVmProvider) createClusterModules(
+func (vs *vSphereVMProvider) createClusterModules(
 	ctx context.Context,
 	clusterModProvider clustermodules.Provider,
 	cluster *object.ClusterComputeResource,
@@ -235,7 +231,7 @@ func (vs *vSphereVmProvider) createClusterModules(
 }
 
 // deleteClusterModules deletes all the ClusterModules associated with a given VirtualMachineSetResourcePolicy in VC.
-func (vs *vSphereVmProvider) deleteClusterModules(
+func (vs *vSphereVMProvider) deleteClusterModules(
 	ctx context.Context,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 

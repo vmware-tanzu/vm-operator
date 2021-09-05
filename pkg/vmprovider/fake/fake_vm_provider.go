@@ -23,8 +23,8 @@ import (
 
 type funcs struct {
 	DoesVirtualMachineExistFn         func(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
-	CreateVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
-	UpdateVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error
+	CreateVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error
+	UpdateVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error
 	DeleteVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeatFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 
@@ -38,19 +38,19 @@ type funcs struct {
 	CreateOrUpdateVirtualMachineSetResourcePolicyFn func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
 	DoesVirtualMachineSetResourcePolicyExistFn      func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicyFn         func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
-	ComputeClusterCpuMinFrequencyFn                 func(ctx context.Context) error
+	ComputeClusterCPUMinFrequencyFn                 func(ctx context.Context) error
 }
 
-type FakeVmProvider struct {
+type VMProvider struct {
 	sync.Mutex
 	funcs
 	vmMap             map[client.ObjectKey]*v1alpha1.VirtualMachine
 	resourcePolicyMap map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy
 }
 
-var _ vmprovider.VirtualMachineProviderInterface = &FakeVmProvider{}
+var _ vmprovider.VirtualMachineProviderInterface = &VMProvider{}
 
-func (s *FakeVmProvider) Reset() {
+func (s *VMProvider) Reset() {
 	s.Lock()
 	defer s.Unlock()
 
@@ -59,7 +59,7 @@ func (s *FakeVmProvider) Reset() {
 	s.resourcePolicyMap = make(map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy)
 }
 
-func (s *FakeVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
+func (s *VMProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
 	s.Lock()
 	defer s.Unlock()
 	if s.DoesVirtualMachineExistFn != nil {
@@ -73,7 +73,7 @@ func (s *FakeVmProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alph
 	return ok, nil
 }
 
-func (s *FakeVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+func (s *VMProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 	s.Lock()
 	defer s.Unlock()
 	if s.CreateVirtualMachineFn != nil {
@@ -84,7 +84,7 @@ func (s *FakeVmProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.
 	return nil
 }
 
-func (s *FakeVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+func (s *VMProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 	s.Lock()
 	defer s.Unlock()
 	if s.UpdateVirtualMachineFn != nil {
@@ -94,7 +94,7 @@ func (s *FakeVmProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.
 	return nil
 }
 
-func (s *FakeVmProvider) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
+func (s *VMProvider) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
 	s.Lock()
 	defer s.Unlock()
 	if s.DeleteVirtualMachineFn != nil {
@@ -104,7 +104,7 @@ func (s *FakeVmProvider) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.
 	return nil
 }
 
-func (s *FakeVmProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error) {
+func (s *VMProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error) {
 	s.Lock()
 	defer s.Unlock()
 	if s.GetVirtualMachineGuestHeartbeatFn != nil {
@@ -113,17 +113,17 @@ func (s *FakeVmProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm
 	return "", nil
 }
 
-func (s *FakeVmProvider) Initialize(stop <-chan struct{}) {}
+func (s *VMProvider) Initialize(stop <-chan struct{}) {}
 
-func (s *FakeVmProvider) Name() string {
+func (s *VMProvider) Name() string {
 	return "fake"
 }
 
-func (s *FakeVmProvider) GetClusterID(ctx context.Context, namespace string) (string, error) {
+func (s *VMProvider) GetClusterID(ctx context.Context, namespace string) (string, error) {
 	return "domain-c8", nil
 }
 
-func (s *FakeVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+func (s *VMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	s.Lock()
 	defer s.Unlock()
 	if s.CreateOrUpdateVirtualMachineSetResourcePolicyFn != nil {
@@ -134,7 +134,7 @@ func (s *FakeVmProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx conte
 	return nil
 }
 
-func (s *FakeVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+func (s *VMProvider) DoesVirtualMachineSetResourcePolicyExist(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 	s.Lock()
 	defer s.Unlock()
 	if s.DoesVirtualMachineSetResourcePolicyExistFn != nil {
@@ -149,7 +149,7 @@ func (s *FakeVmProvider) DoesVirtualMachineSetResourcePolicyExist(ctx context.Co
 	return found, nil
 }
 
-func (s *FakeVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+func (s *VMProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 	s.Lock()
 	defer s.Unlock()
 	if s.DeleteVirtualMachineSetResourcePolicyFn != nil {
@@ -160,17 +160,17 @@ func (s *FakeVmProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Conte
 	return nil
 }
 
-func (s *FakeVmProvider) ComputeClusterCpuMinFrequency(ctx context.Context) error {
+func (s *VMProvider) ComputeClusterCPUMinFrequency(ctx context.Context) error {
 	s.Lock()
 	defer s.Unlock()
-	if s.ComputeClusterCpuMinFrequencyFn != nil {
-		return s.ComputeClusterCpuMinFrequencyFn(ctx)
+	if s.ComputeClusterCPUMinFrequencyFn != nil {
+		return s.ComputeClusterCPUMinFrequencyFn(ctx)
 	}
 
 	return nil
 }
 
-func (s *FakeVmProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error {
+func (s *VMProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error {
 	s.Lock()
 	defer s.Unlock()
 	if s.UpdateVcPNIDFn != nil {
@@ -179,7 +179,7 @@ func (s *FakeVmProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string
 	return nil
 }
 
-func (s *FakeVmProvider) ClearSessionsAndClient(ctx context.Context) {
+func (s *VMProvider) ClearSessionsAndClient(ctx context.Context) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -188,7 +188,7 @@ func (s *FakeVmProvider) ClearSessionsAndClient(ctx context.Context) {
 	}
 }
 
-func (s *FakeVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, namespace string) error {
+func (s *VMProvider) DeleteNamespaceSessionInCache(ctx context.Context, namespace string) error {
 	s.Lock()
 	defer s.Unlock()
 
@@ -199,7 +199,7 @@ func (s *FakeVmProvider) DeleteNamespaceSessionInCache(ctx context.Context, name
 	return nil
 }
 
-func (s *FakeVmProvider) DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error) {
+func (s *VMProvider) DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error) {
 	s.Lock()
 	defer s.Unlock()
 	if s.DoesContentLibraryExistFn != nil {
@@ -209,7 +209,7 @@ func (s *FakeVmProvider) DoesContentLibraryExist(ctx context.Context, contentLib
 	return true, nil
 }
 
-func (s *FakeVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+func (s *VMProvider) ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -221,15 +221,15 @@ func (s *FakeVmProvider) ListVirtualMachineImagesFromContentLibrary(ctx context.
 	return []*v1alpha1.VirtualMachineImage{}, nil
 }
 
-func (s *FakeVmProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
+func (s *VMProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
 	return []*v1alpha1.VirtualMachineImage{}, nil
 }
 
-func (s *FakeVmProvider) GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error) {
+func (s *VMProvider) GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error) {
 	return nil, nil
 }
 
-func (s *FakeVmProvider) addToVMMap(vm *v1alpha1.VirtualMachine) {
+func (s *VMProvider) addToVMMap(vm *v1alpha1.VirtualMachine) {
 	objectKey := client.ObjectKey{
 		Namespace: vm.Namespace,
 		Name:      vm.Name,
@@ -237,7 +237,7 @@ func (s *FakeVmProvider) addToVMMap(vm *v1alpha1.VirtualMachine) {
 	s.vmMap[objectKey] = vm
 }
 
-func (s *FakeVmProvider) deleteFromVMMap(vm *v1alpha1.VirtualMachine) {
+func (s *VMProvider) deleteFromVMMap(vm *v1alpha1.VirtualMachine) {
 	objectKey := client.ObjectKey{
 		Namespace: vm.Namespace,
 		Name:      vm.Name,
@@ -245,7 +245,7 @@ func (s *FakeVmProvider) deleteFromVMMap(vm *v1alpha1.VirtualMachine) {
 	delete(s.vmMap, objectKey)
 }
 
-func (s *FakeVmProvider) addToResourcePolicyMap(rp *v1alpha1.VirtualMachineSetResourcePolicy) {
+func (s *VMProvider) addToResourcePolicyMap(rp *v1alpha1.VirtualMachineSetResourcePolicy) {
 	objectKey := client.ObjectKey{
 		Namespace: rp.Namespace,
 		Name:      rp.Name,
@@ -254,7 +254,7 @@ func (s *FakeVmProvider) addToResourcePolicyMap(rp *v1alpha1.VirtualMachineSetRe
 	s.resourcePolicyMap[objectKey] = rp
 }
 
-func (s *FakeVmProvider) deleteFromResourcePolicyMap(rp *v1alpha1.VirtualMachineSetResourcePolicy) {
+func (s *VMProvider) deleteFromResourcePolicyMap(rp *v1alpha1.VirtualMachineSetResourcePolicy) {
 	objectKey := client.ObjectKey{
 		Namespace: rp.Namespace,
 		Name:      rp.Name,
@@ -262,8 +262,8 @@ func (s *FakeVmProvider) deleteFromResourcePolicyMap(rp *v1alpha1.VirtualMachine
 	delete(s.resourcePolicyMap, objectKey)
 }
 
-func NewFakeVmProvider() *FakeVmProvider {
-	provider := FakeVmProvider{
+func NewVMProvider() *VMProvider {
+	provider := VMProvider{
 		vmMap:             map[client.ObjectKey]*v1alpha1.VirtualMachine{},
 		resourcePolicyMap: map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy{},
 	}

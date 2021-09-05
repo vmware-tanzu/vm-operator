@@ -184,7 +184,7 @@ func GetVmwareSystemPropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]stri
 	return properties
 }
 
-func readerFromUrl(ctx context.Context, c *rest.Client, url *url.URL) (io.ReadCloser, error) {
+func readerFromURL(ctx context.Context, c *rest.Client, url *url.URL) (io.ReadCloser, error) {
 	p := soap.DefaultDownload
 	readerStream, _, err := c.Download(ctx, url, &p)
 	if err != nil {
@@ -196,13 +196,13 @@ func readerFromUrl(ctx context.Context, c *rest.Client, url *url.URL) (io.ReadCl
 	return readerStream, nil
 }
 
-// libItemVersionAnnotation returns the version annotation value for the item
+// libItemVersionAnnotation returns the version annotation value for the item.
 func libItemVersionAnnotation(item *library.Item) string {
 	return fmt.Sprintf("%s:%s:%d", item.ID, item.Version, constants.VMImageCLVersionAnnotationVersion)
 }
 
 // isOVFV1Alpha1Compatible checks the image if it has VMOperatorV1Alpha1ExtraConfigKey set to VMOperatorV1Alpha1ConfigReady
-// in the ExtraConfig
+// in the ExtraConfig.
 func isOVFV1Alpha1Compatible(ovfEnvelope *ovf.Envelope) bool {
 	if ovfEnvelope.VirtualSystem != nil {
 		for _, virtualHardware := range ovfEnvelope.VirtualSystem.VirtualHardware {
@@ -216,7 +216,7 @@ func isOVFV1Alpha1Compatible(ovfEnvelope *ovf.Envelope) bool {
 	return false
 }
 
-// isATKGImage validates if a VirtualMachineImage OVF is a TKG Image type
+// isATKGImage validates if a VirtualMachineImage OVF is a TKG Image type.
 func isATKGImage(systemProperties map[string]string) bool {
 	const tkgImageIdentifier = "vmware-system.guest.kubernetes"
 	for key := range systemProperties {

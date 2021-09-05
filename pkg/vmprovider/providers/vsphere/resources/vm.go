@@ -36,11 +36,11 @@ func NewVMForCreate(name string) *VirtualMachine {
 	}
 }
 
-func NewVMFromObject(objVm *object.VirtualMachine) (*VirtualMachine, error) {
+func NewVMFromObject(objVM *object.VirtualMachine) (*VirtualMachine, error) {
 	return &VirtualMachine{
-		Name:             objVm.Name(),
-		vcVirtualMachine: objVm,
-		logger:           log.WithValues("name", objVm.Name()),
+		Name:             objVM.Name(),
+		vcVirtualMachine: objVM,
+		logger:           log.WithValues("name", objVM.Name()),
 	}, nil
 }
 
@@ -231,7 +231,7 @@ func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState v
 	return nil
 }
 
-// GetVirtualDevices returns the VMs VirtualDeviceList
+// GetVirtualDevices returns the VMs VirtualDeviceList.
 func (vm *VirtualMachine) GetVirtualDevices(ctx context.Context) (object.VirtualDeviceList, error) {
 	vm.logger.V(5).Info("GetVirtualDevices")
 	deviceList, err := vm.vcVirtualMachine.Device(ctx)
@@ -243,7 +243,7 @@ func (vm *VirtualMachine) GetVirtualDevices(ctx context.Context) (object.Virtual
 	return deviceList, err
 }
 
-// GetVirtualDisks returns the list of VMs vmdks
+// GetVirtualDisks returns the list of VMs vmdks.
 func (vm *VirtualMachine) GetVirtualDisks(ctx context.Context) (object.VirtualDeviceList, error) {
 	vm.logger.V(5).Info("GetVirtualDisks")
 	deviceList, err := vm.vcVirtualMachine.Device(ctx)

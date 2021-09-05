@@ -12,7 +12,7 @@ import (
 
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/simulator"
-	_ "github.com/vmware/govmomi/vapi/simulator"
+	_ "github.com/vmware/govmomi/vapi/simulator" // blank import the VAPI simulator bindings
 )
 
 func BeforeSuite() (ctx context.Context,
@@ -25,7 +25,9 @@ func BeforeSuite() (ctx context.Context,
 	ctx = context.Background()
 
 	// Set up a simulator for testing most client interactions (ignoring TLS)
-	model, server = SetupModelAndServerWithSettings(&tls.Config{})
+	model, server = SetupModelAndServerWithSettings(&tls.Config{
+		MinVersion: tls.VersionTLS12,
+	})
 
 	// Set up a second simulator for testing TLS.
 	tlsKeyPath, tlsCertPath = GenerateSelfSignedCert()
@@ -36,6 +38,7 @@ func BeforeSuite() (ctx context.Context,
 			tlsCert,
 		},
 		PreferServerCipherSuites: true,
+		MinVersion:               tls.VersionTLS12,
 	})
 
 	return
@@ -55,6 +58,6 @@ func AfterSuite(
 	tlsServer.Close()
 	tlsModel.Remove()
 
-	os.Remove(tlsKeyPath)
-	os.Remove(tlsCertPath)
+	_ = os.Remove(tlsKeyPath)
+	_ = os.Remove(tlsCertPath)
 }

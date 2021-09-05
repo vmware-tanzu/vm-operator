@@ -27,6 +27,6 @@ func NewControllerManagerContext(scheme *runtime.Scheme) *context.ControllerMana
 		LeaderElectionNamespace: LeaderElectionNamespace,
 		LeaderElectionID:        LeaderElectionID,
 		Recorder:                record.New(clientrecord.NewFakeRecorder(1024)),
-		VMProvider:              providerfake.NewFakeVmProvider(),
+		VMProvider:              providerfake.NewVMProvider(),
 	}
 }

@@ -13,7 +13,7 @@ import (
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/simulator"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
@@ -24,12 +24,12 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func newConfig(namespace string, vcPNID string, vcPort string, vcCredsSecretName string) (*v1.ConfigMap, *v1.Secret, *VSphereVmProviderConfig) {
+func newConfig(namespace string, vcPNID string, vcPort string, vcCredsSecretName string) (*corev1.ConfigMap, *corev1.Secret, *VSphereVMProviderConfig) {
 
-	providerConfig := &VSphereVmProviderConfig{
+	providerConfig := &VSphereVMProviderConfig{
 		VcPNID: vcPNID,
 		VcPort: vcPort,
-		VcCreds: &credentials.VSphereVmProviderCredentials{
+		VcCreds: &credentials.VSphereVMProviderCredentials{
 			Username: "some-user",
 			Password: "some-pass",
 		},
@@ -52,7 +52,7 @@ var _ = Describe("UpdateProviderConfigFromZoneAndNamespace", func() {
 		Specify("provider config is updated with RP and VM folder from zone", func() {
 			namespaceRP := "namespace-test-RP"
 			namespaceVMFolder := "namespace-test-vmfolder"
-			ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
 			zone := &topologyv1.AvailabilityZone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "homer",
@@ -68,7 +68,7 @@ var _ = Describe("UpdateProviderConfigFromZoneAndNamespace", func() {
 				},
 			}
 			client := builder.NewFakeClient(ns, zone)
-			providerConfig := &VSphereVmProviderConfig{}
+			providerConfig := &VSphereVMProviderConfig{}
 			Expect(UpdateProviderConfigFromZoneAndNamespace(
 				ctx, client, zone.Name, ns.Name, providerConfig)).To(Succeed())
 			Expect(providerConfig.ResourcePool).To(Equal(namespaceRP))
@@ -78,9 +78,9 @@ var _ = Describe("UpdateProviderConfigFromZoneAndNamespace", func() {
 
 	Context("when a good provider config exists and zone/namespace info does not exist", func() {
 		Specify("should succeed with providerconfig unmodified", func() {
-			ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
 			client := builder.NewFakeClient(ns)
-			providerConfig := &VSphereVmProviderConfig{}
+			providerConfig := &VSphereVMProviderConfig{}
 			providerConfigRP := "namespace-test-RP"
 			providerConfigFolder := "namespace-test-vmfolder"
 			providerConfig.ResourcePool = providerConfigRP
@@ -95,7 +95,7 @@ var _ = Describe("UpdateProviderConfigFromZoneAndNamespace", func() {
 	Context("namespace does not exist", func() {
 		Specify("returns error", func() {
 			client := builder.NewFakeClient()
-			providerConfig := &VSphereVmProviderConfig{}
+			providerConfig := &VSphereVMProviderConfig{}
 			err := UpdateProviderConfigFromZoneAndNamespace(
 				ctx, client, "homer", "test-namespace", providerConfig)
 			Expect(err).Should(HaveOccurred())
@@ -107,7 +107,7 @@ var _ = Describe("UpdateProviderConfigFromZoneAndNamespace", func() {
 
 	Context("ResourcePool and Folder not present in zone/namespace info", func() {
 		It("should not modify config", func() {
-			ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
 			zone := &topologyv1.AvailabilityZone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "homer",
@@ -120,7 +120,7 @@ var _ = Describe("UpdateProviderConfigFromZoneAndNamespace", func() {
 				},
 			}
 			client := builder.NewFakeClient(ns, zone)
-			providerConfig := VSphereVmProviderConfig{}
+			providerConfig := VSphereVMProviderConfig{}
 			providerConfig.ResourcePool = "foo"
 			providerConfig.Folder = "bar"
 			providerConfigIn := providerConfig
@@ -135,9 +135,9 @@ var _ = Describe("UpdateProviderConfigFromZoneAndNamespace", func() {
 var _ = Describe("GetProviderConfigFromConfigMap", func() {
 
 	var (
-		configMapIn      *v1.ConfigMap
-		secretIn         *v1.Secret
-		providerConfigIn *VSphereVmProviderConfig
+		configMapIn      *corev1.ConfigMap
+		secretIn         *corev1.Secret
+		providerConfigIn *VSphereVMProviderConfig
 	)
 
 	BeforeEach(func() {
@@ -153,7 +153,7 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 
 		Context("when a secret doesn't exist", func() {
 			Specify("returns no provider config and an error", func() {
-				ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
+				ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
 				client := builder.NewFakeClient(configMapIn, ns)
 
 				providerConfig, err := GetProviderConfigFromConfigMap(ctx, client, "", "namespace")
@@ -166,7 +166,7 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 			Specify("should return an error", func() {
 				delete(configMapIn.Data, "ResourcePool")
 				delete(configMapIn.Data, "Folder")
-				ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
+				ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
 				zone := &topologyv1.AvailabilityZone{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "homer",
@@ -189,7 +189,7 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 
 		Context("when a secret exists", func() {
 			Specify("returns a good provider config", func() {
-				ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
+				ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
 				client := builder.NewFakeClient(configMapIn, secretIn, ns)
 
 				providerConfig, err := GetProviderConfigFromConfigMap(ctx, client, "", "namespace")
@@ -213,7 +213,7 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 						newPort = providerConfigIn.VcPort
 					}
 
-					ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
+					ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
 					client := builder.NewFakeClient(configMapIn, secretIn, ns)
 
 					Expect(PatchVcURLInConfigMap(client, newPnid, newPort)).To(Succeed())
@@ -231,7 +231,7 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 
 	Context("when base config does not exist", func() {
 		Specify("returns no provider config and an error", func() {
-			ns := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "namespace"}}
 			client := builder.NewFakeClient(configMapIn, secretIn, ns)
 
 			providerConfig, err := GetProviderConfigFromConfigMap(ctx, client, "", "namespace")
@@ -244,14 +244,14 @@ var _ = Describe("GetProviderConfigFromConfigMap", func() {
 var _ = Describe("ConfigMapToProviderConfig", func() {
 
 	var (
-		configMapIn *v1.ConfigMap
-		vcCreds     *credentials.VSphereVmProviderCredentials
+		configMapIn *corev1.ConfigMap
+		vcCreds     *credentials.VSphereVMProviderCredentials
 	)
 
 	BeforeEach(func() {
 		Expect(os.Unsetenv(lib.VmopNamespaceEnv)).To(Succeed())
 		configMapIn, _, _ = newConfig("namespace", "pnid", "port", "secret-name")
-		vcCreds = &credentials.VSphereVmProviderCredentials{Username: "some-user", Password: "some-pass"}
+		vcCreds = &credentials.VSphereVMProviderCredentials{Username: "some-user", Password: "some-pass"}
 	})
 
 	It("verifies that a config is correctly extracted from the configMap", func() {
@@ -291,7 +291,7 @@ var _ = Describe("ConfigMapToProviderConfig", func() {
 
 	Describe("Tests for TLS configuration", func() {
 		var (
-			providerConfig   *VSphereVmProviderConfig
+			providerConfig   *VSphereVMProviderConfig
 			expectErrToOccur bool
 			err              error
 		)

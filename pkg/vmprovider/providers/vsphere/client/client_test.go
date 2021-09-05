@@ -26,11 +26,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/test"
 )
 
-func testConfig(vcpnid string, vcport string, user string, pass string) *config.VSphereVmProviderConfig {
-	providerConfig := &config.VSphereVmProviderConfig{
+func testConfig(vcpnid string, vcport string, user string, pass string) *config.VSphereVMProviderConfig {
+	providerConfig := &config.VSphereVMProviderConfig{
 		VcPNID: vcpnid,
 		VcPort: vcport,
-		VcCreds: &credentials.VSphereVmProviderCredentials{
+		VcCreds: &credentials.VSphereVMProviderCredentials{
 			Username: user,
 			Password: pass,
 		},

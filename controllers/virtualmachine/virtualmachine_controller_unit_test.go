@@ -50,7 +50,7 @@ func unitTestsReconcile() {
 		ctx         *builder.UnitTestContextForController
 
 		reconciler       *virtualmachine.Reconciler
-		fakeVMProvider   *providerfake.FakeVmProvider
+		fakeVMProvider   *providerfake.VMProvider
 		vmCtx            *vmopContext.VirtualMachineContext
 		vm               *vmopv1alpha1.VirtualMachine
 		contentSource    *vmopv1alpha1.ContentSource
@@ -186,7 +186,7 @@ func unitTestsReconcile() {
 			ctx.VMProvider,
 			fakeProbeManagerIf,
 		)
-		fakeVMProvider = ctx.VMProvider.(*providerfake.FakeVmProvider)
+		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 		fakeProbeManager = fakeProbeManagerIf.(*proberfake.ProberManager)
 
 		vmCtx = &vmopContext.VirtualMachineContext{
@@ -476,7 +476,7 @@ func unitTestsReconcile() {
 			var isCalled int32
 
 			It("does not call into the provider to create the new VM", func() {
-				intgFakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+				intgFakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 					atomic.AddInt32(&isCalled, 1)
 					return nil
 				}
@@ -493,7 +493,7 @@ func unitTestsReconcile() {
 
 		It("will return error when provider fails to create VM", func() {
 			// Simulate an error during VM create
-			fakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+			fakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 				return errors.New(providerError)
 			}
 
@@ -506,7 +506,7 @@ func unitTestsReconcile() {
 
 		It("will return error when provider fails to update VM", func() {
 			// Simulate an error after the VM is created.
-			fakeVMProvider.UpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+			fakeVMProvider.UpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 				return errors.New(providerError)
 			}
 
@@ -651,7 +651,7 @@ func unitTestsReconcile() {
 
 		It("Should not call add to Prober Manager if ReconcileNormal fails", func() {
 			// Simulate an error during VM create
-			fakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+			fakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 				return errors.New(providerError)
 			}
 

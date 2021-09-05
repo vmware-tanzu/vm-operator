@@ -16,7 +16,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var intgFakeVMProvider = providerfake.NewFakeVmProvider()
+var intgFakeVMProvider = providerfake.NewVMProvider()
 
 var suite = builder.NewTestSuiteForController(
 	infraprovider.AddToManager,

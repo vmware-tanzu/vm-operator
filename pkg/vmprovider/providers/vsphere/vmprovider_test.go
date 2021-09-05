@@ -27,19 +27,19 @@ var _ = Describe("ResVmToVirtualMachineImage", func() {
 			svm := simulator.Map.Any("VirtualMachine").(*simulator.VirtualMachine)
 			obj := object.NewVirtualMachine(c, svm.Reference())
 
-			resVm, err := res.NewVMFromObject(obj)
+			resVM, err := res.NewVMFromObject(obj)
 			Expect(err).To(BeNil())
 
 			// TODO: Need to convert this VM to a vApp (and back).
-			//annotations := map[string]string{}
-			//annotations[versionKey] = versionVal
+			// annotations := map[string]string{}
+			// annotations[versionKey] = versionVal
 
-			image, err := vsphere.ResVmToVirtualMachineImage(ctx, resVm)
+			image, err := vsphere.ResVMToVirtualMachineImage(ctx, resVM)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal(obj.Name()))
-			//Expect(image.Annotations).ToNot(BeEmpty())
-			//Expect(image.Annotations).To(HaveKeyWithValue(versionKey, versionVal))
+			// Expect(image.Annotations).ToNot(BeEmpty())
+			// Expect(image.Annotations).To(HaveKeyWithValue(versionKey, versionVal))
 		})
 	})
 })

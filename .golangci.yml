@@ -2,7 +2,6 @@ run:
   deadline: 5m
   skip-files:
    - ".*generated.*\\.go"
-   - pkg/vmprovider/
    - external/
    - controllers/virtualmachineservice/utils/
 
@@ -85,3 +84,5 @@ issues:
   # Ignore the linter warnings for now.
   - path: webhooks/
     text: ".* `ctx` is unused"
+  - path: pkg/vmprovider/providers/vsphere/internal/internal.go
+    text: ".*ST1003|don\'t use underscores in Go names.*"

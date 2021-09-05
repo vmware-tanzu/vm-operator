@@ -27,7 +27,7 @@ var _ = Describe("Test Session", func() {
 		Specify("return whole number for non-integer CPU quantity", func() {
 			q, err := resource.ParseQuantity("500m")
 			Expect(err).NotTo(HaveOccurred())
-			freq := session.CpuQuantityToMhz(q, 3225)
+			freq := session.CPUQuantityToMhz(q, 3225)
 			expectVal := int64(1613)
 			Expect(freq).Should(BeNumerically("==", expectVal))
 		})
@@ -35,7 +35,7 @@ var _ = Describe("Test Session", func() {
 		Specify("return whole number for integer CPU quantity", func() {
 			q, err := resource.ParseQuantity("1000m")
 			Expect(err).NotTo(HaveOccurred())
-			freq := session.CpuQuantityToMhz(q, 3225)
+			freq := session.CPUQuantityToMhz(q, 3225)
 			expectVal := int64(3225)
 			Expect(freq).Should(BeNumerically("==", expectVal))
 		})

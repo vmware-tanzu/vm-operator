@@ -35,13 +35,13 @@ import (
 
 // IPFamily represents the IP Family (IPv4 or IPv6). This type is used
 // to express the family of an IP expressed by a type (i.e. service.Spec.IPFamily)
-// NOTE: Copied from k8s.io/api/core/v1" because VM Operator is using old version
+// NOTE: Copied from k8s.io/api/core/v1" because VM Operator is using old version.
 type IPFamily string
 
 const (
-	// IPv4Protocol indicates that this IP is IPv4 protocol
+	// IPv4Protocol indicates that this IP is IPv4 protocol.
 	IPv4Protocol IPFamily = "IPv4"
-	// IPv6Protocol indicates that this IP is IPv6 protocol
+	// IPv6Protocol indicates that this IP is IPv6 protocol.
 	IPv6Protocol IPFamily = "IPv6"
 )
 
@@ -66,16 +66,16 @@ const (
 	retryTimeout            = 15 * time.Second
 )
 
-type NetworkInterfaceInfo struct {
+type InterfaceInfo struct {
 	Device          vimtypes.BaseVirtualDevice
 	Customization   *vimtypes.CustomizationAdapterMapping
 	IPConfiguration IPConfig
 	NetplanEthernet NetplanEthernet
 }
 
-type NetworkInterfaceInfoList []NetworkInterfaceInfo
+type InterfaceInfoList []InterfaceInfo
 
-func (l NetworkInterfaceInfoList) GetVirtualDeviceList() object.VirtualDeviceList {
+func (l InterfaceInfoList) GetVirtualDeviceList() object.VirtualDeviceList {
 	var devList object.VirtualDeviceList
 	for _, info := range l {
 		devList = append(devList, info.Device.(vimtypes.BaseVirtualDevice))
@@ -97,7 +97,7 @@ type NetplanEthernet struct {
 	Nameservers NetplanEthernetNameserver `yaml:"nameservers,omitempty"`
 }
 
-func (l NetworkInterfaceInfoList) GetNetplanEthernets(currentEthCards object.VirtualDeviceList, dnsServers []string) (map[string]NetplanEthernet, error) {
+func (l InterfaceInfoList) GetNetplanEthernets(currentEthCards object.VirtualDeviceList, dnsServers []string) (map[string]NetplanEthernet, error) {
 	ethernets := make(map[string]NetplanEthernet)
 
 	for index, info := range l {
@@ -122,26 +122,26 @@ func (l NetworkInterfaceInfoList) GetNetplanEthernets(currentEthCards object.Vir
 	return ethernets, nil
 }
 
-func (l NetworkInterfaceInfoList) GetInterfaceCustomizations() []vimtypes.CustomizationAdapterMapping {
-	var mappings []vimtypes.CustomizationAdapterMapping
+func (l InterfaceInfoList) GetInterfaceCustomizations() []vimtypes.CustomizationAdapterMapping {
+	mappings := make([]vimtypes.CustomizationAdapterMapping, 0, len(l))
 	for _, info := range l {
 		mappings = append(mappings, *info.Customization)
 	}
 	return mappings
 }
 
-func (l NetworkInterfaceInfoList) GetIPConfigs() []IPConfig {
-	var ipConfigs []IPConfig
+func (l InterfaceInfoList) GetIPConfigs() []IPConfig {
+	ipConfigs := make([]IPConfig, 0, len(l))
 	for _, info := range l {
 		ipConfigs = append(ipConfigs, info.IPConfiguration)
 	}
 	return ipConfigs
 }
 
-// Provider sets up network for different type of network
+// Provider sets up network for different type of network.
 type Provider interface {
 	// EnsureNetworkInterface returns the NetworkInterfaceInfo for the vif.
-	EnsureNetworkInterface(vmCtx context.VMContext, vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*NetworkInterfaceInfo, error)
+	EnsureNetworkInterface(vmCtx context.VMContext, vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error)
 }
 
 type networkProvider struct {
@@ -166,7 +166,7 @@ func NewProvider(
 	}
 }
 
-func (np *networkProvider) EnsureNetworkInterface(vmCtx context.VMContext, vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*NetworkInterfaceInfo, error) {
+func (np *networkProvider) EnsureNetworkInterface(vmCtx context.VMContext, vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error) {
 	if providerRef := vif.ProviderRef; providerRef != nil {
 		// ProviderRef is only supported for NetOP types.
 		gvk, err := apiutil.GVKForObject(&netopv1alpha1.NetworkInterface{}, np.scheme)
@@ -194,7 +194,7 @@ func (np *networkProvider) EnsureNetworkInterface(vmCtx context.VMContext, vif *
 	}
 }
 
-// createEthernetCard creates an ethernet card with the network reference backing
+// createEthernetCard creates an ethernet card with the network reference backing.
 func createEthernetCard(ctx goctx.Context, network object.NetworkReference, ethCardType string) (vimtypes.BaseVirtualDevice, error) {
 	if ethCardType == "" {
 		ethCardType = defaultEthernetCardType
@@ -237,7 +237,7 @@ type namedNetworkProvider struct {
 
 func (np *namedNetworkProvider) EnsureNetworkInterface(
 	vmCtx context.VMContext,
-	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*NetworkInterfaceInfo, error) {
+	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error) {
 
 	networkRef, err := np.finder.Network(vmCtx, vif.NetworkName)
 	if err != nil {
@@ -249,7 +249,7 @@ func (np *namedNetworkProvider) EnsureNetworkInterface(
 		return nil, err
 	}
 
-	return &NetworkInterfaceInfo{
+	return &InterfaceInfo{
 		Device: ethDev,
 		Customization: &vimtypes.CustomizationAdapterMapping{
 			Adapter: vimtypes.CustomizationIPSettings{
@@ -263,7 +263,7 @@ func (np *namedNetworkProvider) EnsureNetworkInterface(
 
 // +kubebuilder:rbac:groups=netoperator.vmware.com,resources=networkinterfaces;vmxnet3networkinterfaces,verbs=get;list;watch;create;update;patch;delete
 
-// newNetOpNetworkProvider returns a netOpNetworkProvider instance
+// newNetOpNetworkProvider returns a netOpNetworkProvider instance.
 func newNetOpNetworkProvider(
 	k8sClient ctrlruntime.Client,
 	vimClient *vim25.Client,
@@ -294,7 +294,7 @@ func (np *netOpNetworkProvider) networkInterfaceName(networkName, vmName string)
 	return fmt.Sprintf("%s-%s", networkName, vmName)
 }
 
-// createNetworkInterface creates a NetOP NetworkInterface for the VM network interface
+// createNetworkInterface creates a NetOP NetworkInterface for the VM network interface.
 func (np *netOpNetworkProvider) createNetworkInterface(
 	vmCtx context.VMContext,
 	vmIf *vmopv1alpha1.VirtualMachineNetworkInterface) (*netopv1alpha1.NetworkInterface, error) {
@@ -331,10 +331,10 @@ func (np *netOpNetworkProvider) createNetworkInterface(
 	return np.waitForReadyNetworkInterface(vmCtx, vmIf)
 }
 
-func (np *netOpNetworkProvider) networkForPortGroupId(portGroupId string) (object.NetworkReference, error) {
+func (np *netOpNetworkProvider) networkForPortGroupID(portGroupID string) (object.NetworkReference, error) {
 	pgObjRef := vimtypes.ManagedObjectReference{
 		Type:  "DistributedVirtualPortgroup",
-		Value: portGroupId,
+		Value: portGroupID,
 	}
 
 	return object.NewDistributedVirtualPortgroup(np.vimClient, pgObjRef), nil
@@ -343,7 +343,7 @@ func (np *netOpNetworkProvider) networkForPortGroupId(portGroupId string) (objec
 func (np *netOpNetworkProvider) getNetworkRef(ctx goctx.Context, networkType, networkID string) (object.NetworkReference, error) {
 	switch networkType {
 	case VdsNetworkType:
-		return np.networkForPortGroupId(networkID)
+		return np.networkForPortGroupID(networkID)
 	case NsxtNetworkType:
 		return searchNsxtNetworkReference(ctx, np.finder, np.cluster, networkID)
 	default:
@@ -413,14 +413,14 @@ func (np *netOpNetworkProvider) goscCustomization(netIf *netopv1alpha1.NetworkIn
 			Ip: &vimtypes.CustomizationDhcpIpGenerator{},
 		}
 	} else {
-		ipConfig := netIf.Status.IPConfigs[0]
-		if ipConfig.IPFamily == netopv1alpha1.IPv4Protocol {
+		switch ipConfig := netIf.Status.IPConfigs[0]; ipConfig.IPFamily {
+		case netopv1alpha1.IPv4Protocol:
 			adapter = &vimtypes.CustomizationIPSettings{
 				Ip:         &vimtypes.CustomizationFixedIp{IpAddress: ipConfig.IP},
 				SubnetMask: ipConfig.SubnetMask,
 				Gateway:    []string{ipConfig.Gateway},
 			}
-		} else if ipConfig.IPFamily == netopv1alpha1.IPv6Protocol {
+		case netopv1alpha1.IPv6Protocol:
 			subnetMask := net.ParseIP(ipConfig.SubnetMask)
 			var ipMask net.IPMask = make([]byte, net.IPv6len)
 			copy(ipMask, subnetMask)
@@ -437,7 +437,7 @@ func (np *netOpNetworkProvider) goscCustomization(netIf *netopv1alpha1.NetworkIn
 					Gateway: []string{ipConfig.Gateway},
 				},
 			}
-		} else {
+		default:
 			adapter = &vimtypes.CustomizationIPSettings{}
 		}
 	}
@@ -455,7 +455,7 @@ func (np *netOpNetworkProvider) goscCustomization(netIf *netopv1alpha1.NetworkIn
 
 func (np *netOpNetworkProvider) EnsureNetworkInterface(
 	vmCtx context.VMContext,
-	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*NetworkInterfaceInfo, error) {
+	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error) {
 
 	netIf, err := np.createNetworkInterface(vmCtx, vif)
 	if err != nil {
@@ -467,7 +467,7 @@ func (np *netOpNetworkProvider) EnsureNetworkInterface(
 		return nil, err
 	}
 
-	return &NetworkInterfaceInfo{
+	return &InterfaceInfo{
 		Device:          ethDev,
 		Customization:   np.goscCustomization(netIf),
 		IPConfiguration: np.getIPConfig(netIf),
@@ -514,7 +514,7 @@ type nsxtNetworkProvider struct {
 	scheme    *runtime.Scheme
 }
 
-// newNsxtNetworkProvider returns a nsxtNetworkProvider instance
+// newNsxtNetworkProvider returns a nsxtNetworkProvider instance.
 func newNsxtNetworkProvider(
 	client ctrlruntime.Client,
 	finder *find.Finder,
@@ -528,7 +528,7 @@ func newNsxtNetworkProvider(
 	}
 }
 
-// virtualNetworkInterfaceName returns the VirtualNetworkInterface name for the VM
+// virtualNetworkInterfaceName returns the VirtualNetworkInterface name for the VM.
 func (np *nsxtNetworkProvider) virtualNetworkInterfaceName(networkName, vmName string) string {
 	vnetifName := fmt.Sprintf("%s-lsp", vmName)
 	if networkName != "" {
@@ -537,7 +537,7 @@ func (np *nsxtNetworkProvider) virtualNetworkInterfaceName(networkName, vmName s
 	return vnetifName
 }
 
-// createVirtualNetworkInterface creates a NCP VirtualNetworkInterface for a given VM network interface
+// createVirtualNetworkInterface creates a NCP VirtualNetworkInterface for a given VM network interface.
 func (np *nsxtNetworkProvider) createVirtualNetworkInterface(
 	vmCtx context.VMContext,
 	vmIf *vmopv1alpha1.VirtualMachineNetworkInterface) (*ncpv1alpha1.VirtualNetworkInterface, error) {
@@ -652,7 +652,7 @@ func (np *nsxtNetworkProvider) goscCustomization(vnetIf *ncpv1alpha1.VirtualNetw
 
 func (np *nsxtNetworkProvider) EnsureNetworkInterface(
 	vmCtx context.VMContext,
-	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*NetworkInterfaceInfo, error) {
+	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error) {
 
 	vnetIf, err := np.createVirtualNetworkInterface(vmCtx, vif)
 	if err != nil {
@@ -665,7 +665,7 @@ func (np *nsxtNetworkProvider) EnsureNetworkInterface(
 		return nil, err
 	}
 
-	return &NetworkInterfaceInfo{
+	return &InterfaceInfo{
 		Device:          ethDev,
 		Customization:   np.goscCustomization(vnetIf),
 		IPConfiguration: np.getIPConfig(vnetIf),
@@ -705,7 +705,7 @@ func (np *nsxtNetworkProvider) getNetplanEthernet(vnetIf *ncpv1alpha1.VirtualNet
 	return eth
 }
 
-// matchOpaqueNetwork takes the network ID, returns whether the opaque network matches the networkID
+// matchOpaqueNetwork takes the network ID, returns whether the opaque network matches the networkID.
 func matchOpaqueNetwork(ctx goctx.Context, network object.NetworkReference, networkID string) bool {
 	obj, ok := network.(*object.OpaqueNetwork)
 	if !ok {
@@ -721,7 +721,7 @@ func matchOpaqueNetwork(ctx goctx.Context, network object.NetworkReference, netw
 	return summary.OpaqueNetworkId == networkID
 }
 
-// matchDistributedPortGroup takes the network ID, returns whether the distributed port group matches the networkID
+// matchDistributedPortGroup takes the network ID, returns whether the distributed port group matches the networkID.
 func matchDistributedPortGroup(
 	ctx goctx.Context,
 	network object.NetworkReference,
@@ -784,7 +784,7 @@ func matchDistributedPortGroup(
 	return false
 }
 
-// searchNsxtNetworkReference takes in nsx-t logical switch UUID and returns the reference of the network
+// searchNsxtNetworkReference takes in nsx-t logical switch UUID and returns the reference of the network.
 func searchNsxtNetworkReference(ctx goctx.Context, finder *find.Finder, cluster *object.ClusterComputeResource, networkID string) (object.NetworkReference, error) {
 	networks, err := finder.NetworkList(ctx, "*")
 	if err != nil {

@@ -6,17 +6,16 @@ package constants
 import "github.com/vmware-tanzu/vm-operator/pkg"
 
 const (
-	// ExtraConfig constants
 	ExtraConfigTrue            = "TRUE"
 	ExtraConfigFalse           = "FALSE"
 	ExtraConfigUnset           = ""
 	ExtraConfigGuestInfoPrefix = "guestinfo."
 
-	// VCVMAnnotation Annotation placed on the VM
+	// VCVMAnnotation Annotation placed on the VM.
 	VCVMAnnotation = "Virtual Machine managed by the vSphere Virtual Machine service"
 
 	// VMOperatorImageSupportedCheckKey Annotation key to skip validation checks of GuestOS Type
-	// TODO: Rename and move to vmoperator-api
+	// TODO: Rename and move to vmoperator-api.
 	VMOperatorImageSupportedCheckKey     = pkg.VMOperatorKey + "/image-supported-check"
 	VMOperatorImageSupportedCheckDisable = "disable"
 
@@ -29,11 +28,11 @@ const (
 	VMOperatorV1Alpha1ConfigReady    = "ready"
 	VMOperatorV1Alpha1ConfigEnabled  = "enabled"
 
-	// GOSC Related ExtraConfig keys
+	// GOSCPendingExtraConfigKey and GOSCIgnoreToolsCheckExtraConfigKey are GOSC Related ExtraConfig keys.
 	GOSCPendingExtraConfigKey          = "tools.deployPkg.fileName"
 	GOSCIgnoreToolsCheckExtraConfigKey = "vmware.tools.gosc.ignoretoolscheck"
 
-	// EnableDiskUUIDExtraConfigKey Enable UUID ExtraConfig key
+	// EnableDiskUUIDExtraConfigKey Enable UUID ExtraConfig key.
 	EnableDiskUUIDExtraConfigKey = "disk.enableUUID"
 
 	// MMPowerOffVMExtraConfigKey ExtraConfig key to enable DRS to powerOff VMs when underlying host enters into
@@ -46,18 +45,19 @@ const (
 
 	// VMImageCLVersionAnnotation VirtualMachineImage annotation to cache the last fetched version.
 	VMImageCLVersionAnnotation = pkg.VMOperatorKey + "/content-library-version"
-	// Version of the VMImageCLVersionAnnotation for the VirtualMachineImage.
+	// VMImageCLVersionAnnotationVersion is the version of the VMImageCLVersionAnnotation for the VirtualMachineImage.
 	VMImageCLVersionAnnotationVersion = 1
 
-	// 64bitMMIO for Passthrough Devices
+	// 64bitMMIO for Passthrough Devices.
+
 	PCIPassthruMMIOOverrideAnnotation = pkg.VMOperatorKey + "/pci-passthru-64bit-mmio-size"
 	PCIPassthruMMIOExtraConfigKey     = "pciPassthru.use64bitMMIO"    // nolint:gosec
 	PCIPassthruMMIOSizeExtraConfigKey = "pciPassthru.64bitMMIOSizeGB" // nolint:gosec
 	PCIPassthruMMIOSizeDefault        = "512"
 
-	// Minimum supported virtual hardware version for persistent volumes
+	// MinSupportedHWVersionForPVC is the supported virtual hardware version for persistent volumes.
 	MinSupportedHWVersionForPVC = 13
 
-	// Firmware Override
+	// FirmwareOverrideAnnotation is the annotation key used for firmware override.
 	FirmwareOverrideAnnotation = pkg.VMOperatorKey + "/firmware"
 )

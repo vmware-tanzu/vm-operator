@@ -79,7 +79,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result
 
 	// Update the minimum CPU frequency. This frequency is used to populate the resource allocation
 	// fields in the ConfigSpec for cloning the VM.
-	if err := r.VMProvider.ComputeClusterCpuMinFrequency(ctx); err != nil {
+	if err := r.VMProvider.ComputeClusterCPUMinFrequency(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
 

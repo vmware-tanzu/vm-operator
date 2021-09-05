@@ -194,7 +194,7 @@ func intgTests() {
 
 		BeforeEach(func() {
 			intgFakeVMProvider.Lock()
-			intgFakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, _ vmprovider.VmConfigArgs) error {
+			intgFakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, _ vmprovider.VMConfigArgs) error {
 				vm.Status.BiosUUID = dummyBiosUUID
 				vm.Status.InstanceUUID = dummyInstanceUUID
 				return nil
@@ -489,7 +489,7 @@ func intgTests() {
 
 			BeforeEach(func() {
 				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VmConfigArgs) error {
+				intgFakeVMProvider.CreateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 					return errors.New(errMsg)
 				}
 				intgFakeVMProvider.Unlock()

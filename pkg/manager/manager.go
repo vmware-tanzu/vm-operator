@@ -107,7 +107,7 @@ func New(opts Options) (Manager, error) {
 func InitializeProviders(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	vmProviderName := fmt.Sprintf("%s/%s/vmProvider", ctx.Namespace, ctx.Name)
 	recorder := record.New(mgr.GetEventRecorderFor(vmProviderName))
-	ctx.VMProvider = vsphere.NewVSphereVmProviderFromClient(mgr.GetClient(), recorder)
+	ctx.VMProvider = vsphere.NewVSphereVMProviderFromClient(mgr.GetClient(), recorder)
 	return nil
 }
 

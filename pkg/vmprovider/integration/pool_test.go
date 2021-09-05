@@ -226,7 +226,7 @@ var _ = Describe("ParsePlaceVmResponse", func() {
 			res.Recommendations = append(res.Recommendations, rec)
 			rec, spec := createValidRecommendation()
 			res.Recommendations = append(res.Recommendations, rec)
-			rSpec := pool.ParsePlaceVmResponse(&res)
+			rSpec := pool.ParsePlaceVMResponse(&res)
 			Expect(rSpec).NotTo(BeNil())
 			Expect(rSpec.Host).To(BeEquivalentTo(spec.Host))
 			Expect(rSpec.Pool).To(BeEquivalentTo(spec.Pool))
@@ -236,7 +236,7 @@ var _ = Describe("ParsePlaceVmResponse", func() {
 	Context("when response is not valid", func() {
 		Specify("PlaceVm Response without recommendations", func() {
 			res := types.PlacementResult{}
-			rSpec := pool.ParsePlaceVmResponse(&res)
+			rSpec := pool.ParsePlaceVMResponse(&res)
 			Expect(rSpec).To(BeNil())
 		})
 	})
@@ -248,7 +248,7 @@ var _ = Describe("ParsePlaceVmResponse", func() {
 			rec, _ := createValidRecommendation()
 			rec.Reason = string(types.RecommendationReasonCodePowerOnVm)
 			res.Recommendations = append(res.Recommendations, rec)
-			rSpec := pool.ParsePlaceVmResponse(&res)
+			rSpec := pool.ParsePlaceVMResponse(&res)
 			Expect(rSpec).To(BeNil())
 		})
 	})

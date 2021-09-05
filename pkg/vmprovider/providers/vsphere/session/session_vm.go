@@ -13,11 +13,11 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
-// Prepare a vApp VmConfigSpec which will set the vmMetadata supplied key/value fields. Only
+// GetMergedvAppConfigSpec prepares a vApp VmConfigSpec which will set the vmMetadata supplied key/value fields. Only
 // fields marked userConfigurable and pre-existing on the VM (ie. originated from the OVF Image)
 // will be set, and all others will be ignored.
 func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppPropertyInfo) *vimTypes.VmConfigSpec {
-	var outProps []vimTypes.VAppPropertySpec
+	outProps := make([]vimTypes.VAppPropertySpec, 0)
 
 	for _, vmProp := range vmProps {
 		if vmProp.UserConfigurable == nil || !*vmProp.UserConfigurable {
@@ -50,7 +50,7 @@ func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppP
 func (s *Session) DeleteVirtualMachine(vmCtx context.VMContext) error {
 	resVM, err := s.GetVirtualMachine(vmCtx)
 	if err != nil {
-		return transformVmError(vmCtx.VM.NamespacedName(), err)
+		return transformVMError(vmCtx.VM.NamespacedName(), err)
 	}
 
 	moVM, err := resVM.GetProperties(vmCtx, []string{"summary.runtime"})
@@ -64,17 +64,13 @@ func (s *Session) DeleteVirtualMachine(vmCtx context.VMContext) error {
 		}
 	}
 
-	if err := resVM.Delete(vmCtx); err != nil {
-		return err
-	}
-
-	return nil
+	return resVM.Delete(vmCtx)
 }
 
 func (s *Session) GetVirtualMachineGuestHeartbeat(vmCtx context.VMContext) (vmopv1alpha1.GuestHeartbeatStatus, error) {
 	resVM, err := s.GetVirtualMachine(vmCtx)
 	if err != nil {
-		return "", transformVmError(vmCtx.VM.NamespacedName(), err)
+		return "", transformVMError(vmCtx.VM.NamespacedName(), err)
 	}
 
 	moVM, err := resVM.GetProperties(vmCtx, []string{"guestHeartbeatStatus"})

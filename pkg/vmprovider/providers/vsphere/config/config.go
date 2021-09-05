@@ -9,13 +9,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pkg/errors"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/pkg/errors"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
@@ -24,12 +25,12 @@ import (
 
 var log = logf.Log.WithName("vsphere").WithName("config")
 
-// Configuration for a Vsphere VM Provider instance.  Contains information enabling integration with a backend
-// vSphere instance for VM management.
-type VSphereVmProviderConfig struct {
+// VSphereVMProviderConfig represents the configuration for a Vsphere VM Provider instance.
+// Contains information enabling integration with a backend vSphere instance for VM management.
+type VSphereVMProviderConfig struct {
 	VcPNID                      string
 	VcPort                      string
-	VcCreds                     *credentials.VSphereVmProviderCredentials
+	VcCreds                     *credentials.VSphereVMProviderCredentials
 	Datacenter                  string
 	Cluster                     string
 	ResourcePool                string
@@ -40,8 +41,8 @@ type VSphereVmProviderConfig struct {
 	UseInventoryAsContentSource bool
 	InsecureSkipTLSVerify       bool
 	CAFilePath                  string
-	CtrlVmVmAntiAffinityTag     string
-	WorkerVmVmAntiAffinityTag   string
+	CtrlVMVMAntiAffinityTag     string
+	WorkerVMVMAntiAffinityTag   string
 	TagCategoryName             string
 }
 
@@ -49,7 +50,7 @@ const (
 	DefaultVCPort = "443"
 
 	ProviderConfigMapName = "vsphere.provider.config.vmoperator.vmware.com"
-	// Keys in provider ConfigMap
+	// Keys in provider ConfigMap.
 	vcPNIDKey                    = "VcPNID"
 	vcPortKey                    = "VcPort"
 	vcCredsSecretNameKey         = "VcCredsSecretName" // nolint:gosec
@@ -64,18 +65,19 @@ const (
 	insecureSkipTLSVerifyKey     = "InsecureSkipTLSVerify"
 	caFilePathKey                = "CAFilePath"
 	ContentSourceKey             = "ContentSource"
-	CtrlVmVmAntiAffinityTagKey   = "CtrlVmVmAATag"
-	WorkerVmVmAntiAffinityTagKey = "WorkerVmVmAATag"
+	CtrlVMVMAntiAffinityTagKey   = "CtrlVmVmAATag"
+	WorkerVMVMAntiAffinityTagKey = "WorkerVmVmAATag"
 	ProviderTagCategoryNameKey   = "VmVmAntiAffinityTagCategoryName"
 
 	NetworkConfigMapName = "vmoperator-network-config"
-	// Keys in the NetworkConfigMapName
-	NameserversKey = "nameservers"
+	NameserversKey       = "nameservers" // Key in the NetworkConfigMapName.
 )
 
+// ConfigMapToProviderConfig converts the VM provider ConfigMap to the a ProviderConfig.
+// nolint: revive // Ignore linter error about stuttering.
 func ConfigMapToProviderConfig(
-	configMap *v1.ConfigMap,
-	vcCreds *credentials.VSphereVmProviderCredentials) (*VSphereVmProviderConfig, error) {
+	configMap *corev1.ConfigMap,
+	vcCreds *credentials.VSphereVMProviderCredentials) (*VSphereVMProviderConfig, error) {
 
 	dataMap := make(map[string]string)
 
@@ -132,7 +134,7 @@ func ConfigMapToProviderConfig(
 		}
 	}
 
-	ret := &VSphereVmProviderConfig{
+	ret := &VSphereVMProviderConfig{
 		VcPNID:                      vcPNID,
 		VcPort:                      vcPort,
 		VcCreds:                     vcCreds,
@@ -146,8 +148,8 @@ func ConfigMapToProviderConfig(
 		UseInventoryAsContentSource: useInventory,
 		InsecureSkipTLSVerify:       insecureSkipTLSVerify,
 		CAFilePath:                  caFilePath,
-		CtrlVmVmAntiAffinityTag:     dataMap[CtrlVmVmAntiAffinityTagKey],
-		WorkerVmVmAntiAffinityTag:   dataMap[WorkerVmVmAntiAffinityTagKey],
+		CtrlVMVMAntiAffinityTag:     dataMap[CtrlVMVMAntiAffinityTagKey],
+		WorkerVMVMAntiAffinityTag:   dataMap[WorkerVMVMAntiAffinityTagKey],
 		TagCategoryName:             dataMap[ProviderTagCategoryNameKey],
 	}
 
@@ -156,7 +158,7 @@ func ConfigMapToProviderConfig(
 
 func configMapToProviderCredentials(
 	client ctrlruntime.Client,
-	configMap *v1.ConfigMap) (*credentials.VSphereVmProviderCredentials, error) {
+	configMap *corev1.ConfigMap) (*credentials.VSphereVMProviderCredentials, error) {
 
 	if configMap.Data[vcCredsSecretNameKey] == "" {
 		return nil, errors.Errorf("%s creds secret not set in vmop system namespace", vcCredsSecretNameKey)
@@ -174,7 +176,7 @@ func GetNameserversFromConfigMap(client ctrlruntime.Client) ([]string, error) {
 		return nil, err
 	}
 
-	configMap := &v1.ConfigMap{}
+	configMap := &corev1.ConfigMap{}
 	configMapKey := types.NamespacedName{Name: NetworkConfigMapName, Namespace: vmopNamespace}
 	if err := client.Get(context.Background(), configMapKey, configMap); err != nil {
 		return nil, errors.Wrapf(err, "cannot retrieve %v ConfigMap", NetworkConfigMapName)
@@ -202,14 +204,14 @@ func GetNameserversFromConfigMap(client ctrlruntime.Client) ([]string, error) {
 func GetProviderConfigFromConfigMap(
 	ctx context.Context,
 	client ctrlruntime.Client,
-	zone, namespace string) (*VSphereVmProviderConfig, error) {
+	zone, namespace string) (*VSphereVMProviderConfig, error) {
 
 	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
 	if err != nil {
 		return nil, err
 	}
 
-	configMap := &v1.ConfigMap{}
+	configMap := &corev1.ConfigMap{}
 	configMapKey := types.NamespacedName{Name: ProviderConfigMapName, Namespace: vmopNamespace}
 	err = client.Get(ctx, configMapKey, configMap)
 	if err != nil {
@@ -264,9 +266,9 @@ func UpdateProviderConfigFromZoneAndNamespace(
 	ctx context.Context,
 	client ctrlruntime.Client,
 	zone, namespace string,
-	providerConfig *VSphereVmProviderConfig) error {
+	providerConfig *VSphereVMProviderConfig) error {
 
-	ns := &v1.Namespace{}
+	ns := &corev1.Namespace{}
 	if err := client.Get(ctx, types.NamespacedName{Name: namespace}, ns); err != nil {
 		return errors.Wrapf(err, "could not get the namespace: %s", namespace)
 	}
@@ -302,7 +304,7 @@ func UpdateProviderConfigFromZoneAndNamespace(
 	return nil
 }
 
-func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig, vcCredsSecretName string) *v1.ConfigMap {
+func ProviderConfigToConfigMap(namespace string, config *VSphereVMProviderConfig, vcCredsSecretName string) *corev1.ConfigMap {
 	dataMap := make(map[string]string)
 
 	dataMap[vcPNIDKey] = config.VcPNID
@@ -317,10 +319,10 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 	dataMap[useInventoryKey] = strconv.FormatBool(config.UseInventoryAsContentSource)
 	dataMap[caFilePathKey] = config.CAFilePath
 	dataMap[insecureSkipTLSVerifyKey] = strconv.FormatBool(config.InsecureSkipTLSVerify)
-	dataMap[CtrlVmVmAntiAffinityTagKey] = config.CtrlVmVmAntiAffinityTag
-	dataMap[WorkerVmVmAntiAffinityTagKey] = config.WorkerVmVmAntiAffinityTag
+	dataMap[CtrlVMVMAntiAffinityTagKey] = config.CtrlVMVMAntiAffinityTag
+	dataMap[WorkerVMVMAntiAffinityTagKey] = config.WorkerVMVMAntiAffinityTag
 
-	return &v1.ConfigMap{
+	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ProviderConfigMapName,
 			Namespace: namespace,
@@ -329,9 +331,9 @@ func ProviderConfigToConfigMap(namespace string, config *VSphereVmProviderConfig
 	}
 }
 
-// Install the Config Map for the VM operator in the API master
+// InstallVSphereVMProviderConfig installs the ConfigMap for the VM operator in the API server.
 // Used only in testing.
-func InstallVSphereVmProviderConfig(client ctrlruntime.Client, namespace string, config *VSphereVmProviderConfig, vcCredsSecretName string) error {
+func InstallVSphereVMProviderConfig(client ctrlruntime.Client, namespace string, config *VSphereVMProviderConfig, vcCredsSecretName string) error {
 	configMap := ProviderConfigToConfigMap(namespace, config, vcCredsSecretName)
 
 	if err := client.Create(context.Background(), configMap); err != nil {
@@ -345,7 +347,7 @@ func InstallVSphereVmProviderConfig(client ctrlruntime.Client, namespace string,
 		}
 	}
 
-	return credentials.InstallVSphereVmProviderSecret(
+	return credentials.InstallVSphereVMProviderSecret(
 		client, namespace, config.VcCreds, vcCredsSecretName)
 }
 
@@ -357,7 +359,7 @@ func PatchVcURLInConfigMap(client ctrlruntime.Client, vcPNID, vcPort string) err
 		return err
 	}
 
-	configMap := &v1.ConfigMap{}
+	configMap := &corev1.ConfigMap{}
 	configMapKey := types.NamespacedName{Name: ProviderConfigMapName, Namespace: vmopNamespace}
 	if err := client.Get(context.Background(), configMapKey, configMap); err != nil {
 		return err
@@ -376,7 +378,7 @@ func PatchVcURLInConfigMap(client ctrlruntime.Client, vcPNID, vcPort string) err
 	return nil
 }
 
-// Install the Network Config Map for the VM operator in the API master
+// InstallNetworkConfigMap installs the Network ConfigMap for the VM operator in the API master
 // Used only in testing.
 func InstallNetworkConfigMap(client ctrlruntime.Client, nameservers string) error {
 	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
@@ -387,7 +389,7 @@ func InstallNetworkConfigMap(client ctrlruntime.Client, nameservers string) erro
 	dataMap := make(map[string]string)
 	dataMap[NameserversKey] = nameservers
 
-	configMap := &v1.ConfigMap{
+	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      NetworkConfigMapName,
 			Namespace: vmopNamespace,

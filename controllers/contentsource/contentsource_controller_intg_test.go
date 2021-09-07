@@ -169,7 +169,8 @@ func intgTests() {
 				intgFakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context,
 					_ vmopv1alpha1.ContentLibraryProvider, _ map[string]vmopv1alpha1.VirtualMachineImage) (
 					[]*vmopv1alpha1.VirtualMachineImage, error) {
-					return []*vmopv1alpha1.VirtualMachineImage{&img}, nil
+					// use DeepCopy to avoid race
+					return []*vmopv1alpha1.VirtualMachineImage{img.DeepCopy()}, nil
 				}
 				intgFakeVMProvider.Unlock()
 			})

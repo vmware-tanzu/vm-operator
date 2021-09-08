@@ -19,7 +19,6 @@ type ContentSourceReference struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced
-// +kubebuilder:printcolumn:name="ContentSource",type="string",JSONPath=".contentSourceRef.name"
 
 // ContentSourceBinding is an object that represents a ContentSource to Namespace mapping.
 type ContentSourceBinding struct {

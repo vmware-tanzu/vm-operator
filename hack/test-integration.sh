@@ -20,9 +20,6 @@ COVERAGE_FILE="${1-}"
 INTEGRATION_COVERAGE_FILE="$(pwd)/int.cover.out"
 ENVIRONMENT_COVERAGE_FILE="$(pwd)/env.cover.out"
 
-# shellcheck disable=SC1091
-source hack/ensure-go.sh
-
 COVER_PKGS=(
   "./controllers/..."
   "./pkg/..."

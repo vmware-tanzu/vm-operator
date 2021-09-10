@@ -14,9 +14,6 @@ function join_packages { local IFS=","; echo "$*"; }
 # script is located.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-# shellcheck disable=SC1091
-source hack/ensure-go.sh
-
 # Initialize GOFLAGS by indicating verbose output.
 GOFLAGS="-v"
 

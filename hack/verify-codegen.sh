@@ -12,7 +12,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 make generate
 
-git_status=$(git status config hack pkg mocks --porcelain)
+git_status=$(git status config hack pkg --porcelain)
 if [ -z "${git_status}" ]; then
     echo "Generated files are up to date!"
 else

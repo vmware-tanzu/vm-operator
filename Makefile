@@ -110,7 +110,7 @@ manager: prereqs generate lint-go manager-only ## Build manager binary
 ## --------------------------------------
 
 # The necessary tools are built into the container at /tools/bin
-# They need to be copied into the tools dir becasue this is bind-mounted into the container
+# They need to be copied into the tools dir because this is bind-mounted into the container
 # This will overwrite any locally built tools in the bin dir
 IMAGE_TOOLS_BIN := /tools/bin
 COPY_TOOLS_CMD := cp -rf $(IMAGE_TOOLS_BIN) $(TOOLS_DIR)

@@ -490,7 +490,7 @@ var _ = Describe("NetworkProvider", func() {
 						info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(info.NetplanEthernet.Dhcp4).To(BeFalse())
-						Expect(info.NetplanEthernet.Match.MacAddress).To(Equal(netIf.Status.MacAddress))
+						Expect(info.NetplanEthernet.Match.MacAddress).To(Equal(network.NormalizeNetplanMac(netIf.Status.MacAddress)))
 						Expect(info.NetplanEthernet.Gateway4).ToNot(BeEmpty())
 						Expect(info.NetplanEthernet.Gateway4).To(Equal(netIf.Status.IPConfigs[0].Gateway))
 						Expect(info.NetplanEthernet.Addresses[0]).To(Equal(expectedCidrNotation))
@@ -668,7 +668,7 @@ var _ = Describe("NetworkProvider", func() {
 							fixedIP := info.Customization.Adapter.Ip.(*types.CustomizationFixedIp)
 							Expect(fixedIP.IpAddress).To(Equal(ip))
 							Expect(info.NetplanEthernet.Dhcp4).To(BeFalse())
-							Expect(info.NetplanEthernet.Match.MacAddress).To(Equal(ncpVif.Status.MacAddress))
+							Expect(info.NetplanEthernet.Match.MacAddress).To(Equal(network.NormalizeNetplanMac(ncpVif.Status.MacAddress)))
 							Expect(info.NetplanEthernet.Gateway4).ToNot(BeEmpty())
 							Expect(info.NetplanEthernet.Gateway4).To(Equal(ncpVif.Status.IPAddresses[0].Gateway))
 							Expect(info.NetplanEthernet.Addresses[0]).To(Equal(expectedCidrNotation))
@@ -678,6 +678,29 @@ var _ = Describe("NetworkProvider", func() {
 					})
 				})
 			})
+		})
+	})
+})
+
+var _ = Describe("NetworkProvider utils", func() {
+	Context("ToCidrNotation", func() {
+		It("should work", func() {
+			cidrNotation := network.ToCidrNotation("1.2.3.4", "255.255.255.0")
+			Expect(cidrNotation).To(Equal("1.2.3.4/24"))
+		})
+	})
+	Context("NormalizeNetplanMac", func() {
+		It("empty string", func() {
+			Expect(network.NormalizeNetplanMac("")).To(Equal(""))
+		})
+		It("lowercase mac", func() {
+			Expect(network.NormalizeNetplanMac("12:ab:e4:99:c4")).To(Equal("12:AB:E4:99:C4"))
+		})
+		It("uppercase mac", func() {
+			Expect(network.NormalizeNetplanMac("E4:99:C4:12:AB")).To(Equal("E4:99:C4:12:AB"))
+		})
+		It("mac with dashes", func() {
+			Expect(network.NormalizeNetplanMac("ab-e4-99-c4-12")).To(Equal("AB:E4:99:C4:12"))
 		})
 	})
 })

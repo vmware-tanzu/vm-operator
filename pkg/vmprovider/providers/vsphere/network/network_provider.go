@@ -117,7 +117,7 @@ func (l InterfaceInfoList) GetNetplan(currentEthCards object.VirtualDeviceList, 
 			// NetOp (VDS) never assigns MacAddress to the NetworkInterface status, therefore
 			// netplanEthernet.Match.MacAddress will be empty.
 			// At this point, it is assumed that VirtuaLMachine.Config.Hardware.Device has MacAddress generated.
-			netplanEthernet.Match.MacAddress = curNic.GetVirtualEthernetCard().MacAddress
+			netplanEthernet.Match.MacAddress = NormalizeNetplanMac(curNic.GetVirtualEthernetCard().MacAddress)
 		}
 
 		// Inject nameserver settings for each ethernet.
@@ -502,7 +502,7 @@ func (np *netOpNetworkProvider) getIPConfig(netIf *netopv1alpha1.NetworkInterfac
 func (np *netOpNetworkProvider) getNetplanEthernet(netIf *netopv1alpha1.NetworkInterface) NetplanEthernet {
 	eth := NetplanEthernet{
 		Match: NetplanEthernetMatch{
-			MacAddress: netIf.Status.MacAddress,
+			MacAddress: NormalizeNetplanMac(netIf.Status.MacAddress),
 		},
 	}
 
@@ -510,7 +510,7 @@ func (np *netOpNetworkProvider) getNetplanEthernet(netIf *netopv1alpha1.NetworkI
 		eth.Dhcp4 = true
 	} else {
 		ipAddr := netIf.Status.IPConfigs[0]
-		eth.Addresses = []string{toCidrNotation(ipAddr.IP, ipAddr.SubnetMask)}
+		eth.Addresses = []string{ToCidrNotation(ipAddr.IP, ipAddr.SubnetMask)}
 		eth.Gateway4 = ipAddr.Gateway
 	}
 
@@ -699,7 +699,7 @@ func (np *nsxtNetworkProvider) getIPConfig(vnetIf *ncpv1alpha1.VirtualNetworkInt
 func (np *nsxtNetworkProvider) getNetplanEthernet(vnetIf *ncpv1alpha1.VirtualNetworkInterface) NetplanEthernet {
 	eth := NetplanEthernet{
 		Match: NetplanEthernetMatch{
-			MacAddress: vnetIf.Status.MacAddress,
+			MacAddress: NormalizeNetplanMac(vnetIf.Status.MacAddress),
 		},
 	}
 
@@ -708,7 +708,7 @@ func (np *nsxtNetworkProvider) getNetplanEthernet(vnetIf *ncpv1alpha1.VirtualNet
 		eth.Dhcp4 = true
 	} else {
 		ipAddr := addrs[0]
-		eth.Addresses = []string{toCidrNotation(ipAddr.IP, ipAddr.SubnetMask)}
+		eth.Addresses = []string{ToCidrNotation(ipAddr.IP, ipAddr.SubnetMask)}
 		eth.Gateway4 = ipAddr.Gateway
 	}
 
@@ -819,12 +819,19 @@ func searchNsxtNetworkReference(ctx goctx.Context, finder *find.Finder, cluster 
 	return nil, fmt.Errorf("opaque network with ID '%s' not found", networkID)
 }
 
-// toCidrNotation takes ip and mask as ip addresses and returns a cidr notation.
+// ToCidrNotation takes ip and mask as ip addresses and returns a cidr notation.
 // It Assumes ipv4.
-func toCidrNotation(ip string, mask string) string {
+func ToCidrNotation(ip string, mask string) string {
 	IPNet := net.IPNet{
 		IP:   net.ParseIP(ip).To4(),
 		Mask: net.IPMask(net.ParseIP(mask).To4()),
 	}
 	return IPNet.String()
+}
+
+// NormalizeNetplanMac normalizes the mac address format to one compatible with netplan.
+func NormalizeNetplanMac(mac string) string {
+	mac = strings.ReplaceAll(mac, "-", ":")
+	mac = strings.ToUpper(mac)
+	return mac
 }

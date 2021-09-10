@@ -10,5 +10,6 @@ require (
 	github.com/t-yuki/gocover-cobertura v0.0.0-20180217150009-aaee18c8195c
 	github.com/wadey/gocovmerge v0.0.0-20160331181800-b5bfa59ec0ad
 	k8s.io/code-generator v0.21.3
+	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20210906140630-386c2b5b29ba
 	sigs.k8s.io/controller-tools v0.6.2
 )

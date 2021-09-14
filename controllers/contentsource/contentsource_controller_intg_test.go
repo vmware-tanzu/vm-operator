@@ -114,12 +114,6 @@ func intgTests() {
 		}).Should(ContainElement(ownerRef), "waiting for ContentSource OwnerRef on the ContentLibraryProvider resource")
 	}
 
-	checkVirtualMachineImage := func(image, expectedImg vmopv1alpha1.VirtualMachineImage) {
-		ExpectWithOffset(1, image.OwnerReferences).Should(Equal(expectedImg.OwnerReferences))
-		ExpectWithOffset(1, image.Spec).Should(Equal(expectedImg.Spec))
-		ExpectWithOffset(1, image.Status).Should(Equal(expectedImg.Status))
-	}
-
 	getVirtualMachineImage := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1alpha1.VirtualMachineImage {
 		img := &vmopv1alpha1.VirtualMachineImage{}
 		if err := ctx.Client.Get(ctx, objKey, img); err != nil {
@@ -233,7 +227,7 @@ func intgTests() {
 					intgFakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context,
 						_ vmopv1alpha1.ContentLibraryProvider, _ map[string]vmopv1alpha1.VirtualMachineImage) (
 						[]*vmopv1alpha1.VirtualMachineImage, error) {
-						return []*vmopv1alpha1.VirtualMachineImage{&newImg}, nil
+						return []*vmopv1alpha1.VirtualMachineImage{newImg.DeepCopy()}, nil
 					}
 					intgFakeVMProvider.Unlock()
 
@@ -310,15 +304,17 @@ func intgTests() {
 
 					newCLObj := getContentLibraryProvider(ctx, newCLKey)
 					Expect(newCLObj).ToNot(BeNil())
+
+					var generatedName string
 					if images.Items[0].Name == imageName {
-						Expect(images.Items[1].Name).Should(ContainSubstring(imageName + "-"))
-						expectedImg := populateExpectedImg(img, newCLObj)
-						checkVirtualMachineImage(images.Items[1], expectedImg)
+						generatedName = images.Items[1].Name
 					} else {
-						Expect(images.Items[0].Name).Should(ContainSubstring(imageName + "-"))
-						expectedImg := populateExpectedImg(img, newCLObj)
-						checkVirtualMachineImage(images.Items[0], expectedImg)
+						generatedName = images.Items[0].Name
 					}
+
+					Expect(generatedName).Should(HavePrefix(imageName + "-"))
+					expectedImg := populateExpectedImg(img, newCLObj)
+					waitForVirtualMachineImage(ctx, types.NamespacedName{Name: generatedName}, expectedImg)
 				})
 			})
 		})

@@ -6,6 +6,7 @@ package providerconfigmap_test
 import (
 	"sync/atomic"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -30,8 +31,9 @@ func intgTestsCM() {
 	var (
 		ctx *builder.IntegrationTestContext
 
-		cm     *corev1.ConfigMap
-		clUUID = "dummy-cl"
+		cm                *corev1.ConfigMap
+		clUUID            = "dummy-cl"
+		contentSourceKind = "ContentSource"
 
 		// represents the VM Service FSS. This should be manipulated atomically to avoid races where
 		// the controller is trying to read this _while_ the tests are updating it.
@@ -60,25 +62,19 @@ func intgTestsCM() {
 
 	Context("Reconcile", func() {
 		clExists := func(clName string) bool {
-			clList := &vmopv1alpha1.ContentLibraryProviderList{}
-			Expect(ctx.Client.List(ctx, clList)).To(Succeed())
-
-			for _, cl := range clList.Items {
-				if cl.Name == clName {
-					return true
-				}
-			}
-
-			return false
+			clObj := &vmopv1alpha1.ContentLibraryProvider{}
+			return ctx.Client.Get(ctx, client.ObjectKey{Name: clName}, clObj) == nil
 		}
 
 		// Verifies that a ContentSource exists, has a matching label and has a ProviderRef set to the content library..
 		csExists := func(csName, clName string) bool {
-			csList := &vmopv1alpha1.ContentSourceList{}
-			Expect(ctx.Client.List(ctx, csList)).To(Succeed())
+			csObj := &vmopv1alpha1.ContentSource{}
+			if err := ctx.Client.Get(ctx, client.ObjectKey{Name: csName}, csObj); err != nil {
+				return false
+			}
 
-			return len(csList.Items) == 1 && csList.Items[0].Name == csName && csList.Items[0].Spec.ProviderRef.Name == clName &&
-				csList.Items[0].Labels[providerconfigmap.TKGContentSourceLabelKey] == providerconfigmap.TKGContentSourceLabelValue
+			return csObj.Spec.ProviderRef.Name == clName &&
+				csObj.Labels[providerconfigmap.TKGContentSourceLabelKey] == providerconfigmap.TKGContentSourceLabelValue
 		}
 
 		JustBeforeEach(func() {
@@ -110,14 +106,12 @@ func intgTestsCM() {
 					return csExists(clUUID, clUUID) && clExists(clUUID)
 				}).Should(BeTrue())
 
-				Eventually(func() bool {
-					return clExists(clUUID)
-				}).Should(BeTrue())
-
 				// Validate that no ContentSources exist in the system namespace.
-				bindingList := &vmopv1alpha1.ContentSourceBindingList{}
-				Expect(ctx.Client.List(ctx, bindingList, client.InNamespace(ctx.Namespace))).To(Succeed())
-				Expect(bindingList.Items).To(BeEmpty())
+				Consistently(func() bool {
+					bindingList := &vmopv1alpha1.ContentSourceBindingList{}
+					Expect(ctx.Client.List(ctx, bindingList, client.InNamespace(ctx.PodNamespace))).To(Succeed())
+					return len(bindingList.Items) == 0
+				}).Should(BeTrue())
 			})
 		})
 
@@ -162,6 +156,15 @@ func intgTestsCM() {
 				atomic.StoreUint32(&vmServiceFSS, oldVMServiceFSSState)
 			})
 
+			verifyContentSourceBinding := func(namespace string) {
+				Eventually(func() bool {
+					bindingList := &vmopv1alpha1.ContentSourceBindingList{}
+					err := ctx.Client.List(ctx, bindingList, client.InNamespace(namespace))
+					return err == nil && len(bindingList.Items) == 1 && bindingList.Items[0].ContentSourceRef.Kind == contentSourceKind &&
+						bindingList.Items[0].ContentSourceRef.Name == clUUID
+				}).Should(BeTrue())
+			}
+
 			When("ConfigMap is created with a ContentSource key", func() {
 				var workloadNs *corev1.Namespace
 				BeforeEach(func() {
@@ -169,9 +172,11 @@ func intgTestsCM() {
 					cm.Data[config.ContentSourceKey] = clUUID
 
 					// Create a user workload namespace.
+					// Note: the namespace won't be deleted immediately after calling .Delete,
+					// using random namespace name instead, so that we have a new name for each test.
 					workloadNs = &corev1.Namespace{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "user-workload-ns-1",
+							Name: "user-workload-ns-" + uuid.New().String(),
 							Labels: map[string]string{
 								providerconfigmap.UserWorkloadNamespaceLabel: "cluster-moid",
 							},
@@ -181,16 +186,17 @@ func intgTestsCM() {
 				})
 
 				AfterEach(func() {
-					Expect(ctx.Client.Delete(ctx, workloadNs)).To(Succeed())
+					err := ctx.Client.Delete(ctx, workloadNs)
+					Expect(err == nil || k8serrors.IsNotFound(err) || k8serrors.IsConflict(err)).To(BeTrue())
 				})
 
 				When("And a new workload is added after the initial reconciliation", func() {
 					var newWorkloadNs *corev1.Namespace
 					BeforeEach(func() {
-						// Create a user workload namespace.
+						// Create a user workload namespace with random name.
 						newWorkloadNs = &corev1.Namespace{
 							ObjectMeta: metav1.ObjectMeta{
-								Name: "user-workload-ns-2",
+								Name: "user-workload-ns-" + uuid.New().String(),
 								Labels: map[string]string{
 									providerconfigmap.UserWorkloadNamespaceLabel: "cluster-moid",
 								},
@@ -210,28 +216,45 @@ func intgTestsCM() {
 							return csExists(clUUID, clUUID) && clExists(clUUID)
 						}).Should(BeTrue())
 
-						Eventually(func() bool {
-							return clExists(clUUID)
-						}).Should(BeTrue())
-
 						// Validate that ContentSourceBindings exist in the existing user workload namespace.
-						Eventually(func() bool {
-							bindingList := &vmopv1alpha1.ContentSourceBindingList{}
-							err := ctx.Client.List(ctx, bindingList, client.InNamespace(workloadNs.Name))
-							return err == nil && len(bindingList.Items) == 1 && bindingList.Items[0].ContentSourceRef.Kind == "ContentSource" &&
-								bindingList.Items[0].ContentSourceRef.Name == clUUID
-						}).Should(BeTrue())
+						verifyContentSourceBinding(workloadNs.Name)
 
 						// Create a new workload
 						Expect(ctx.Client.Create(ctx, newWorkloadNs)).To(Succeed())
 
 						// Validate that ContentSourceBindings exist in the newly created user workload namespace.
-						Eventually(func() bool {
-							bindingList := &vmopv1alpha1.ContentSourceBindingList{}
-							err := ctx.Client.List(ctx, bindingList, client.InNamespace(newWorkloadNs.Name))
-							return err == nil && len(bindingList.Items) == 1 && bindingList.Items[0].ContentSourceRef.Kind == "ContentSource" &&
-								bindingList.Items[0].ContentSourceRef.Name == clUUID
-						}).Should(BeTrue())
+						verifyContentSourceBinding(newWorkloadNs.Name)
+					})
+
+					When("the initial reconciliation failed", func() {
+						It("should ContentSourceBinding resource should be created in the newly added namespace.", func() {
+							// Validate that ContentSourceBindings exist in the existing user workload namespace.
+							verifyContentSourceBinding(workloadNs.Name)
+
+							// Delete the contentSourceBinding to mock a failed workflow
+							binding := &vmopv1alpha1.ContentSourceBinding{}
+							Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: clUUID, Namespace: workloadNs.Name}, binding)).To(Succeed())
+							Expect(ctx.Client.Delete(ctx, binding)).To(Succeed())
+
+							// The namespace.Spec contains finalizers "kubernetes", which puts the namespace in Terminating
+							// state when deleted, and ContentSourceBinding resource creation in this namespace would fail.
+							Expect(ctx.Client.Delete(ctx, workloadNs)).Should(Succeed())
+
+							// Ensure the namespace is in Terminating state
+							Eventually(func() bool {
+								obj := &corev1.Namespace{}
+								if err := ctx.Client.Get(ctx, client.ObjectKey{Name: workloadNs.Name}, obj); err != nil {
+									return false
+								}
+								return obj.Status.Phase == "Terminating"
+							}).Should(BeTrue())
+
+							// Create a new workload
+							Expect(ctx.Client.Create(ctx, newWorkloadNs)).To(Succeed())
+
+							// Validate that ContentSourceBindings exist in the newly created user workload namespace.
+							verifyContentSourceBinding(newWorkloadNs.Name)
+						})
 					})
 				})
 			})

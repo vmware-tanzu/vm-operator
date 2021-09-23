@@ -17,6 +17,7 @@ import (
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -229,6 +230,7 @@ func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clU
 		return err
 	}
 
+	resErr := make([]error, 0)
 	for _, ns := range nsList.Items {
 		r.Logger.Info("Creating ContentSourceBinding for TKG content library in namespace", "contentLibraryUUID", clUUID, "namespace", ns.Name)
 		csBinding := &vmopv1alpha1.ContentSourceBinding{
@@ -253,11 +255,12 @@ func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clU
 			return nil
 		}); err != nil {
 			r.Logger.Error(err, "error creating/updating the ContentSourceBinding resource", "contentSourceBinding", csBinding, "namespace", ns.Name)
-			return err
+			resErr = append(resErr, err)
+			continue
 		}
 	}
 
-	return nil
+	return k8serrors.NewAggregate(resErr)
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentlibraryproviders,verbs=get;list;create;update;delete
@@ -315,14 +318,12 @@ func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *corev1.Conf
 
 	// Ensure that the ContentSource and ContentLibraryProviders exist and are up to date.
 	if err := r.CreateOrUpdateContentSourceResources(ctx, clUUID); err != nil {
-		r.Logger.Error(err, "failed to create resource from the ConfigMap")
 		return err
 	}
 
 	if lib.IsVMServiceFSSEnabled() {
 		// Ensure that all workload namespaces have access to the TKG ContentSource by creating ContentSourceBindings.
 		if err := r.CreateContentSourceBindings(ctx, clUUID); err != nil {
-			r.Logger.Error(err, "failed to create ContentSourceBindings in user workload namespaces")
 			return err
 		}
 	}

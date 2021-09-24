@@ -7,6 +7,7 @@ package session_test
 
 import (
 	"fmt"
+	"strings"
 	"sync/atomic"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -20,6 +21,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/instancevm"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 )
@@ -312,6 +314,26 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			It("No changes", func() {
 				Expect(ecMap).To(BeEmpty())
+			})
+		})
+
+		Context("InstanceStorage related tests", func() {
+
+			Context("When InstanceStorage is NOT configured on VM", func() {
+				It("No Changes", func() {
+					Expect(ecMap).To(BeEmpty())
+				})
+			})
+
+			Context("When InstanceStorage is configured on VM", func() {
+				BeforeEach(func() {
+					vm.Annotations[instancevm.PVCsAnnotationKey] = strings.Join([]string{
+						"testPVCName1", "testPvcName2"}, instancevm.PVCsAnnotationValueSeparator)
+				})
+
+				It("maintenance mode powerOff extraConfig should be added", func() {
+					Expect(ecMap).To(HaveKeyWithValue(constants.MMPowerOffVMExtraConfigKey, constants.ExtraConfigTrue))
+				})
 			})
 		})
 

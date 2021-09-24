@@ -17,6 +17,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/instancevm"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -333,6 +334,11 @@ func UpdateConfigSpecExtraConfig(
 		// Add "maintenance.vm.evacuation.poweroff" extraConfig key when GPU devices are present in the VMClass Spec.
 		extraConfig[constants.MMPowerOffVMExtraConfigKey] = constants.ExtraConfigTrue
 		setMMIOExtraConfig(vm, extraConfig)
+	}
+
+	// If VM has InstanceStorage configured, add "maintenance.vm.evacuation.poweroff" to extraConfig
+	if instancevm.IsInstanceStorageConfigured(vm) {
+		extraConfig[constants.MMPowerOffVMExtraConfigKey] = constants.ExtraConfigTrue
 	}
 
 	configSpec.ExtraConfig = MergeExtraConfig(config.ExtraConfig, extraConfig)

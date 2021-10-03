@@ -16,9 +16,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/task"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -163,7 +163,7 @@ func GetOvfEnvCustSpec(
 }
 
 func customizeCloudInit(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, *vimTypes.CustomizationSpec, error) {
@@ -200,7 +200,7 @@ func customizeCloudInit(
 }
 
 func (s *Session) customize(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs) error {
@@ -277,7 +277,7 @@ type TemplateData struct {
 	NameServers       []string
 }
 
-func TemplateVMMetadata(vmCtx context.VMContext, updateArgs VMUpdateArgs) {
+func TemplateVMMetadata(vmCtx context.VirtualMachineContext, updateArgs VMUpdateArgs) {
 	templateData := TemplateData{
 		NetworkInterfaces: updateArgs.NetIfList.GetIPConfigs(),
 		NameServers:       updateArgs.DNSServers,

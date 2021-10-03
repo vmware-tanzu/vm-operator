@@ -25,9 +25,9 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	vmopsession "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -39,8 +39,8 @@ var (
 	testVMName    = "test-vm"
 )
 
-func vmContext(ctx goctx.Context, vm *vmopv1alpha1.VirtualMachine) context.VMContext {
-	return context.VMContext{
+func vmContext(ctx goctx.Context, vm *vmopv1alpha1.VirtualMachine) context.VirtualMachineContext {
+	return context.VirtualMachineContext{
 		Context: ctx,
 		Logger:  integration.Log,
 		VM:      vm,

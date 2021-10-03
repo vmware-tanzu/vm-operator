@@ -20,14 +20,21 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/utils/pointer"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/pool"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
-func (s *Session) deployOvf(vmCtx context.VMCloneContext, itemID string, storageProfileID string) (*res.VirtualMachine, error) {
+type VirtualMachineCloneContext struct {
+	context.VirtualMachineContext
+	ResourcePool        *object.ResourcePool
+	Folder              *object.Folder
+	StorageProvisioning string
+}
+
+func (s *Session) deployOvf(vmCtx VirtualMachineCloneContext, itemID string, storageProfileID string) (*res.VirtualMachine, error) {
 	deploymentSpec := vcenter.DeploymentSpec{
 		Name:                vmCtx.VM.Name,
 		StorageProvisioning: vmCtx.StorageProvisioning,
@@ -106,7 +113,7 @@ func GetClusterVMConfigOptions(
 
 // CheckVMConfigOptions validates that the specified VM Image has a supported OS type.
 func CheckVMConfigOptions(
-	vmCtx context.VMCloneContext,
+	vmCtx VirtualMachineCloneContext,
 	vmConfigArgs vmprovider.VMConfigArgs,
 	guestOSIdsToFamily map[string]string) error {
 
@@ -123,7 +130,7 @@ func CheckVMConfigOptions(
 }
 
 func deployVMFromCLPreCheck(
-	vmCtx context.VMCloneContext,
+	vmCtx VirtualMachineCloneContext,
 	vmConfigArgs vmprovider.VMConfigArgs,
 	cluster *object.ClusterComputeResource,
 	client *vim25.Client) error {
@@ -136,7 +143,7 @@ func deployVMFromCLPreCheck(
 	return CheckVMConfigOptions(vmCtx, vmConfigArgs, guestOSIdsToFamily)
 }
 
-func (s *Session) deployVMFromCL(vmCtx context.VMCloneContext, vmConfigArgs vmprovider.VMConfigArgs, item *library.Item) (*res.VirtualMachine, error) {
+func (s *Session) deployVMFromCL(vmCtx VirtualMachineCloneContext, vmConfigArgs vmprovider.VMConfigArgs, item *library.Item) (*res.VirtualMachine, error) {
 	vmCtx.Logger.Info("Performing preChecks before deploying library item", "itemName", item.Name, "itemType", item.Type)
 
 	if err := deployVMFromCLPreCheck(vmCtx, vmConfigArgs, s.cluster, s.Client.VimClient()); err != nil {
@@ -155,7 +162,7 @@ func (s *Session) deployVMFromCL(vmCtx context.VMCloneContext, vmConfigArgs vmpr
 	return deployedVM, nil
 }
 
-func (s *Session) cloneVM(vmCtx context.VMContext, resSrcVM *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
+func (s *Session) cloneVM(vmCtx context.VirtualMachineContext, resSrcVM *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
 	vmCtx.Logger.Info("Cloning VM", "cloneSpec", *cloneSpec)
 
 	// We always set cloneSpec.Location.Folder so Clone ignores the s.folder param.
@@ -172,7 +179,7 @@ func (s *Session) cloneVM(vmCtx context.VMContext, resSrcVM *res.VirtualMachine,
 	return res.NewVMFromObject(ref.(*object.VirtualMachine))
 }
 
-func (s *Session) cloneVMFromInventory(vmCtx context.VMCloneContext, vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
+func (s *Session) cloneVMFromInventory(vmCtx VirtualMachineCloneContext, vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
 	sourceVM, err := s.lookupVMByName(vmCtx, vmCtx.VM.Spec.ImageName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to lookup clone source %q", vmCtx.VM.Spec.ImageName)
@@ -183,7 +190,7 @@ func (s *Session) cloneVMFromInventory(vmCtx context.VMCloneContext, vmConfigArg
 		return nil, errors.Wrap(err, "failed to create clone spec")
 	}
 
-	clonedVM, err := s.cloneVM(vmCtx.VMContext, sourceVM, cloneSpec)
+	clonedVM, err := s.cloneVM(vmCtx.VirtualMachineContext, sourceVM, cloneSpec)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to clone %q from %q", vmCtx.VM.Name, sourceVM.Name)
 	}
@@ -191,7 +198,7 @@ func (s *Session) cloneVMFromInventory(vmCtx context.VMCloneContext, vmConfigArg
 	return clonedVM, nil
 }
 
-func (s *Session) cloneVMFromContentLibrary(vmCtx context.VMCloneContext, vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
+func (s *Session) cloneVMFromContentLibrary(vmCtx VirtualMachineCloneContext, vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
 	item, err := s.Client.ContentLibClient().GetLibraryItem(vmCtx, vmConfigArgs.ContentLibraryUUID, vmConfigArgs.VMImage.Status.ImageName)
 	if err != nil {
 		return nil, err
@@ -208,7 +215,7 @@ func (s *Session) cloneVMFromContentLibrary(vmCtx context.VMCloneContext, vmConf
 }
 
 func (s *Session) CloneVirtualMachine(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
 
 	if vmConfigArgs.StorageProfileID == "" {
@@ -232,11 +239,11 @@ func (s *Session) CloneVirtualMachine(
 		return nil, err
 	}
 
-	vmCloneCtx := context.VMCloneContext{
-		VMContext:           vmCtx,
-		ResourcePool:        resourcePool,
-		Folder:              folder,
-		StorageProvisioning: storageProvisioning,
+	vmCloneCtx := VirtualMachineCloneContext{
+		VirtualMachineContext: vmCtx,
+		ResourcePool:          resourcePool,
+		Folder:                folder,
+		StorageProvisioning:   storageProvisioning,
 	}
 
 	// The ContentLibraryUUID can be empty when we want to clone from inventory VMs. This is
@@ -302,7 +309,7 @@ func policyThickProvision(profile pbmTypes.BasePbmProfile) bool {
 
 // getStorageProvisioning gets the storage provisioning VM Spec Advanced Options. If absent, the
 // storage profile ID is used to try to determine provisioning.
-func (s *Session) getStorageProvisioning(vmCtx context.VMContext, storageProfileID string) (string, error) {
+func (s *Session) getStorageProvisioning(vmCtx context.VirtualMachineContext, storageProfileID string) (string, error) {
 	// Try to get storage provisioning from VM advanced options section of the spec
 	if advOpts := vmCtx.VM.Spec.AdvancedOptions; advOpts != nil && advOpts.DefaultVolumeProvisioningOptions != nil {
 		// Webhook validated the combination of provisioning options so we can set to EagerZeroedThick if set.
@@ -381,7 +388,7 @@ func (s *Session) createConfigSpec(name string, vmClassSpec *v1alpha1.VirtualMac
 }
 
 func (s *Session) createCloneSpec(
-	vmCtx context.VMCloneContext,
+	vmCtx VirtualMachineCloneContext,
 	sourceVM *res.VirtualMachine,
 	vmConfigArgs vmprovider.VMConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
 
@@ -398,7 +405,7 @@ func (s *Session) createCloneSpec(
 	virtualDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
 	virtualNICs := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
 
-	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx.VMContext, virtualDisks)
+	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx.VirtualMachineContext, virtualDisks)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +451,7 @@ func (s *Session) createCloneSpec(
 // cloneEthCardDeviceChanges returns changes for network device changes that need to be performed
 // on a new VM being cloned from the source VM.
 func (s *Session) cloneEthCardDeviceChanges(
-	vmCtx context.VMCloneContext,
+	vmCtx VirtualMachineCloneContext,
 	srcEthCards object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
 	// To ease local and simulation testing, if the VM Spec interfaces is empty, leave the
@@ -476,7 +483,7 @@ func (s *Session) cloneEthCardDeviceChanges(
 
 	// BMV: Is this really required for cloning, or OK to defer to later update reconcile like OVF deploy?
 
-	netIfList, err := s.ensureNetworkInterfaces(vmCtx.VMContext)
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx.VirtualMachineContext)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +509,7 @@ func (s *Session) cloneEthCardDeviceChanges(
 }
 
 func cloneVMDiskLocators(
-	vmCtx context.VMCloneContext,
+	vmCtx VirtualMachineCloneContext,
 	disks object.VirtualDeviceList,
 	datastore *vimTypes.ManagedObjectReference,
 	profile []vimTypes.BaseVirtualMachineProfileSpec) []vimTypes.VirtualMachineRelocateSpecDiskLocator {

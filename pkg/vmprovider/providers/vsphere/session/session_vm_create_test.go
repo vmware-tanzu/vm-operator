@@ -21,7 +21,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 )
 
@@ -43,7 +42,7 @@ var _ = Describe("deploy VM", func() {
 
 	Context("preCheck", func() {
 		var (
-			vmCtx              context.VMCloneContext
+			vmCtx              session.VirtualMachineCloneContext
 			vmConfig           vmprovider.VMConfigArgs
 			vmImage            *vmopv1alpha1.VirtualMachineImage
 			guestOSIdsToFamily map[string]string

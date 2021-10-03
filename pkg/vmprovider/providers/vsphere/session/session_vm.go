@@ -8,12 +8,12 @@ import (
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
-func (s *Session) DeleteVirtualMachine(vmCtx context.VMContext) error {
+func (s *Session) DeleteVirtualMachine(vmCtx context.VirtualMachineContext) error {
 	resVM, err := s.GetVirtualMachine(vmCtx)
 	if err != nil {
 		return transformVMError(vmCtx.VM.NamespacedName(), err)
@@ -33,7 +33,7 @@ func (s *Session) DeleteVirtualMachine(vmCtx context.VMContext) error {
 	return resVM.Delete(vmCtx)
 }
 
-func (s *Session) GetVirtualMachineGuestHeartbeat(vmCtx context.VMContext) (vmopv1alpha1.GuestHeartbeatStatus, error) {
+func (s *Session) GetVirtualMachineGuestHeartbeat(vmCtx context.VirtualMachineContext) (vmopv1alpha1.GuestHeartbeatStatus, error) {
 	resVM, err := s.GetVirtualMachine(vmCtx)
 	if err != nil {
 		return "", transformVMError(vmCtx.VM.NamespacedName(), err)
@@ -48,7 +48,7 @@ func (s *Session) GetVirtualMachineGuestHeartbeat(vmCtx context.VMContext) (vmop
 }
 
 func updateVirtualDiskDeviceChanges(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	virtualDisks object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
 	// XXX (dramdass): Right now, we only resize disks that exist in the VM template. The disks

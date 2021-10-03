@@ -13,7 +13,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
@@ -86,7 +86,7 @@ func MarkCustomizationInfoCondition(vm *v1alpha1.VirtualMachine, guestInfo *vimT
 }
 
 func (s *Session) updateVMStatus(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine) error {
 
 	// TODO: We could be smarter about not re-fetching the config: if we didn't do a

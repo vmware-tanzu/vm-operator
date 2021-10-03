@@ -17,12 +17,12 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/instancevm"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
@@ -417,7 +417,7 @@ func UpdateConfigSpecFirmware(
 
 // TODO: Fix parameter explosion.
 func updateConfigSpec(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs,
 	globalExtraConfig map[string]string,
@@ -438,7 +438,7 @@ func updateConfigSpec(
 }
 
 func (s *Session) prePowerOnVMConfigSpec(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, error) {
 
@@ -479,7 +479,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 }
 
 func (s *Session) prePowerOnVMReconfigure(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs) error {
@@ -501,7 +501,7 @@ func (s *Session) prePowerOnVMReconfigure(
 	return nil
 }
 
-func (s *Session) ensureNetworkInterfaces(vmCtx context.VMContext) (network.InterfaceInfoList, error) {
+func (s *Session) ensureNetworkInterfaces(vmCtx context.VirtualMachineContext) (network.InterfaceInfoList, error) {
 	// This negative device key is the traditional range used for network interfaces.
 	deviceKey := int32(-100)
 
@@ -525,7 +525,7 @@ func (s *Session) ensureNetworkInterfaces(vmCtx context.VMContext) (network.Inte
 }
 
 func (s *Session) fakeUpClonedNetIfList(
-	_ context.VMContext,
+	_ context.VirtualMachineContext,
 	config *vimTypes.VirtualMachineConfigInfo) network.InterfaceInfoList {
 
 	netIfList := make([]network.InterfaceInfo, 0)
@@ -551,7 +551,7 @@ func (s *Session) fakeUpClonedNetIfList(
 	return netIfList
 }
 
-func (s *Session) ensureCNSVolumes(vmCtx context.VMContext) error {
+func (s *Session) ensureCNSVolumes(vmCtx context.VirtualMachineContext) error {
 	// If VM spec has a PVC, check if the volume is attached before powering on
 	for _, volume := range vmCtx.VM.Spec.Volumes {
 		if volume.PersistentVolumeClaim == nil {
@@ -586,7 +586,7 @@ type VMUpdateArgs struct {
 }
 
 func (s *Session) prepareVMForPowerOn(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
 	cfg *vimTypes.VirtualMachineConfigInfo,
 	vmConfigArgs vmprovider.VMConfigArgs) error {
@@ -634,7 +634,7 @@ func (s *Session) prepareVMForPowerOn(
 }
 
 func (s *Session) poweredOnVMReconfigure(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
 	config *vimTypes.VirtualMachineConfigInfo) error {
 
@@ -664,7 +664,7 @@ func (s *Session) poweredOnVMReconfigure(
 }
 
 func (s *Session) attachTagsAndModules(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 
@@ -699,7 +699,7 @@ func (s *Session) attachTagsAndModules(
 }
 
 func (s *Session) UpdateVirtualMachine(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	vmConfigArgs vmprovider.VMConfigArgs) (err error) {
 
 	resVM, err := s.GetVirtualMachine(vmCtx)

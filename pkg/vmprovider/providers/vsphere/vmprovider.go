@@ -23,8 +23,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 )
 
@@ -103,7 +103,7 @@ func (vs *vSphereVMProvider) ListVirtualMachineImagesFromContentLibrary(
 }
 
 func (vs *vSphereVMProvider) DoesVirtualMachineExist(ctx goctx.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
-	vmCtx := context.VMContext{
+	vmCtx := context.VirtualMachineContext{
 		Context: ctx,
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
@@ -146,7 +146,7 @@ func (vs *vSphereVMProvider) getOpID(ctx goctx.Context, vm *v1alpha1.VirtualMach
 }
 
 func (vs *vSphereVMProvider) CreateVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
-	vmCtx := context.VMContext{
+	vmCtx := context.VirtualMachineContext{
 		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "create")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
@@ -175,7 +175,7 @@ func (vs *vSphereVMProvider) CreateVirtualMachine(ctx goctx.Context, vm *v1alpha
 
 // UpdateVirtualMachine updates the VM status, power state, phase etc.
 func (vs *vSphereVMProvider) UpdateVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
-	vmCtx := context.VMContext{
+	vmCtx := context.VirtualMachineContext{
 		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "update")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
@@ -197,7 +197,7 @@ func (vs *vSphereVMProvider) UpdateVirtualMachine(ctx goctx.Context, vm *v1alpha
 }
 
 func (vs *vSphereVMProvider) DeleteVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine) error {
-	vmCtx := context.VMContext{
+	vmCtx := context.VirtualMachineContext{
 		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "delete")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
@@ -220,7 +220,7 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(ctx goctx.Context, vm *v1alpha
 }
 
 func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(ctx goctx.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error) {
-	vmCtx := context.VMContext{
+	vmCtx := context.VirtualMachineContext{
 		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "heartbeat")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,

@@ -24,10 +24,10 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/pool"
@@ -416,7 +416,7 @@ func (s *Session) DeleteFolder(ctx goctx.Context, folderName string) error {
 
 // getResourcePoolAndFolder gets the ResourcePool and Folder from the Resource Policy. If no policy
 // is specified, the session's ResourcePool and Folder is returned instead.
-func (s *Session) getResourcePoolAndFolder(vmCtx context.VMContext,
+func (s *Session) getResourcePoolAndFolder(vmCtx context.VirtualMachineContext,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (*object.ResourcePool, *object.Folder, error) {
 
 	if resourcePolicy == nil {
@@ -454,7 +454,7 @@ func (s *Session) lookupVMByName(ctx goctx.Context, name string) (*res.VirtualMa
 	return res.NewVMFromObject(vm)
 }
 
-func (s *Session) GetVirtualMachine(vmCtx context.VMContext) (*res.VirtualMachine, error) {
+func (s *Session) GetVirtualMachine(vmCtx context.VirtualMachineContext) (*res.VirtualMachine, error) {
 	if uniqueID := vmCtx.VM.Status.UniqueID; uniqueID != "" {
 		vm, err := s.lookupVMByMoID(vmCtx, uniqueID)
 		if err == nil {
@@ -512,7 +512,7 @@ func (s *Session) lookupVMByMoID(ctx goctx.Context, moID string) (*res.VirtualMa
 	return res.NewVMFromObject(vm)
 }
 
-func (s *Session) invokeFsrVirtualMachine(vmCtx context.VMContext, resVM *res.VirtualMachine) error {
+func (s *Session) invokeFsrVirtualMachine(vmCtx context.VirtualMachineContext, resVM *res.VirtualMachine) error {
 	vmCtx.Logger.Info("Invoking FSR on VM")
 
 	task, err := internal.VirtualMachineFSR(vmCtx, resVM.MoRef(), s.Client.VimClient())

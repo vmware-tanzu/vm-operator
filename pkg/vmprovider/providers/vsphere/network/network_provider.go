@@ -30,8 +30,8 @@ import (
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 )
 
 // IPFamily represents the IP Family (IPv4 or IPv6). This type is used
@@ -151,7 +151,7 @@ func (l InterfaceInfoList) GetIPConfigs() []IPConfig {
 // Provider sets up network for different type of network.
 type Provider interface {
 	// EnsureNetworkInterface returns the NetworkInterfaceInfo for the vif.
-	EnsureNetworkInterface(vmCtx context.VMContext, vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error)
+	EnsureNetworkInterface(vmCtx context.VirtualMachineContext, vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error)
 }
 
 type networkProvider struct {
@@ -176,7 +176,7 @@ func NewProvider(
 	}
 }
 
-func (np *networkProvider) EnsureNetworkInterface(vmCtx context.VMContext, vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error) {
+func (np *networkProvider) EnsureNetworkInterface(vmCtx context.VirtualMachineContext, vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error) {
 	if providerRef := vif.ProviderRef; providerRef != nil {
 		// ProviderRef is only supported for NetOP types.
 		gvk, err := apiutil.GVKForObject(&netopv1alpha1.NetworkInterface{}, np.scheme)
@@ -246,7 +246,7 @@ type namedNetworkProvider struct {
 }
 
 func (np *namedNetworkProvider) EnsureNetworkInterface(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error) {
 
 	networkRef, err := np.finder.Network(vmCtx, vif.NetworkName)
@@ -306,7 +306,7 @@ func (np *netOpNetworkProvider) networkInterfaceName(networkName, vmName string)
 
 // createNetworkInterface creates a NetOP NetworkInterface for the VM network interface.
 func (np *netOpNetworkProvider) createNetworkInterface(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	vmIf *vmopv1alpha1.VirtualMachineNetworkInterface) (*netopv1alpha1.NetworkInterface, error) {
 
 	if vmIf.ProviderRef == nil {
@@ -362,7 +362,7 @@ func (np *netOpNetworkProvider) getNetworkRef(ctx goctx.Context, networkType, ne
 }
 
 func (np *netOpNetworkProvider) createEthernetCard(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	vif *vmopv1alpha1.VirtualMachineNetworkInterface,
 	netIf *netopv1alpha1.NetworkInterface) (vimtypes.BaseVirtualDevice, error) {
 
@@ -382,7 +382,7 @@ func (np *netOpNetworkProvider) createEthernetCard(
 }
 
 func (np *netOpNetworkProvider) waitForReadyNetworkInterface(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	vmIf *vmopv1alpha1.VirtualMachineNetworkInterface) (*netopv1alpha1.NetworkInterface, error) {
 
 	var name string
@@ -464,7 +464,7 @@ func (np *netOpNetworkProvider) goscCustomization(netIf *netopv1alpha1.NetworkIn
 }
 
 func (np *netOpNetworkProvider) EnsureNetworkInterface(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error) {
 
 	netIf, err := np.createNetworkInterface(vmCtx, vif)
@@ -549,7 +549,7 @@ func (np *nsxtNetworkProvider) virtualNetworkInterfaceName(networkName, vmName s
 
 // createVirtualNetworkInterface creates a NCP VirtualNetworkInterface for a given VM network interface.
 func (np *nsxtNetworkProvider) createVirtualNetworkInterface(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	vmIf *vmopv1alpha1.VirtualMachineNetworkInterface) (*ncpv1alpha1.VirtualNetworkInterface, error) {
 
 	vnetIf := &ncpv1alpha1.VirtualNetworkInterface{
@@ -581,7 +581,7 @@ func (np *nsxtNetworkProvider) createVirtualNetworkInterface(
 }
 
 func (np *nsxtNetworkProvider) createEthernetCard(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	vif *vmopv1alpha1.VirtualMachineNetworkInterface,
 	vnetIf *ncpv1alpha1.VirtualNetworkInterface) (vimtypes.BaseVirtualDevice, error) {
 
@@ -609,7 +609,7 @@ func (np *nsxtNetworkProvider) createEthernetCard(
 }
 
 func (np *nsxtNetworkProvider) waitForReadyVirtualNetworkInterface(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	vmIf *vmopv1alpha1.VirtualMachineNetworkInterface) (*ncpv1alpha1.VirtualNetworkInterface, error) {
 
 	vnetIfName := np.virtualNetworkInterfaceName(vmIf.NetworkName, vmCtx.VM.Name)
@@ -661,7 +661,7 @@ func (np *nsxtNetworkProvider) goscCustomization(vnetIf *ncpv1alpha1.VirtualNetw
 }
 
 func (np *nsxtNetworkProvider) EnsureNetworkInterface(
-	vmCtx context.VMContext,
+	vmCtx context.VirtualMachineContext,
 	vif *vmopv1alpha1.VirtualMachineNetworkInterface) (*InterfaceInfo, error) {
 
 	vnetIf, err := np.createVirtualNetworkInterface(vmCtx, vif)

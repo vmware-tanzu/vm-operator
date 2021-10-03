@@ -31,7 +31,7 @@ import (
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -63,7 +63,7 @@ var _ = Describe("NetworkProvider", func() {
 
 		vmNif *v1alpha1.VirtualMachineNetworkInterface
 		vm    *v1alpha1.VirtualMachine
-		vmCtx context.VMContext
+		vmCtx context.VirtualMachineContext
 
 		np network.Provider
 	)
@@ -127,7 +127,7 @@ var _ = Describe("NetworkProvider", func() {
 			},
 		}
 
-		vmCtx = context.VMContext{
+		vmCtx = context.VirtualMachineContext{
 			Context: ctx,
 			Logger:  logf.Log.WithName("network_test"),
 			VM:      vm,

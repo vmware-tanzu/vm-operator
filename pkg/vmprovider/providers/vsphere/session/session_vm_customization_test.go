@@ -18,9 +18,9 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"gopkg.in/yaml.v2"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
@@ -327,7 +327,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 				Namespace: "dummy-ns",
 			},
 		}
-		vmCtx := context.VMContext{
+		vmCtx := context.VirtualMachineContext{
 			Context: goctx.Background(),
 			Logger:  logf.Log.WithValues("vmName", vm.NamespacedName()),
 			VM:      vm,

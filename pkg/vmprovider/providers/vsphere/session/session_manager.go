@@ -11,11 +11,11 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/context"
 )
 
 type Manager struct {
@@ -110,7 +110,7 @@ func (sm *Manager) GetSession(
 	return newSession, nil
 }
 
-func (sm *Manager) GetSessionForVM(vmCtx context.VMContext) (*Session, error) {
+func (sm *Manager) GetSessionForVM(vmCtx context.VirtualMachineContext) (*Session, error) {
 	return sm.GetSession(
 		vmCtx,
 		vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey],

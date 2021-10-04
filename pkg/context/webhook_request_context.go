@@ -6,6 +6,8 @@ package context
 import (
 	"fmt"
 
+	authv1 "k8s.io/api/authentication/v1"
+
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -24,6 +26,9 @@ type WebhookRequestContext struct {
 	// IsPrivilegedAccount is if this request is from a privileged account (currently
 	// that's either kube-admin or the pod's system account).
 	IsPrivilegedAccount bool
+
+	// UserInfo is the user information associated with the webhook request.
+	UserInfo authv1.UserInfo
 
 	// Logger is the logger associated with the webhook request.
 	Logger logr.Logger

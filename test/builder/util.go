@@ -278,3 +278,22 @@ func ToUnstructured(obj runtime.Object) (*unstructured.Unstructured, error) {
 	u.SetUnstructuredContent(content)
 	return u, nil
 }
+
+func DummyPersistentVolumeClaim() *corev1.PersistentVolumeClaim {
+	var storageClass = "dummy-storage-class"
+	return &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "validate-webhook-pvc",
+			Labels: make(map[string]string),
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse("5Gi"),
+				},
+			},
+			StorageClassName: &storageClass,
+		},
+	}
+}

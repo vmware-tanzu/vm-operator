@@ -37,6 +37,27 @@ metadata:
 webhooks:
 - admissionReviewVersions:
   - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-validate--v1-persistentvolumeclaim
+  failurePolicy: Fail
+  name: default.validating.persistentvolumeclaim.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    - DELETE
+    resources:
+    - persistentvolumeclaims
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
   - v1beta1
   clientConfig:
     service:

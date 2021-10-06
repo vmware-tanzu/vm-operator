@@ -87,6 +87,10 @@ func (w *readinessWorker) ProcessProbeResult(ctx *context.ProbeContext, res prob
 		} else {
 			w.recorder.Eventf(vm, condition.Reason, condition.Message)
 		}
+		// Log the time when the VM changes it's readiness condition.
+		ctx.Logger.Info("VM resource READINESS probe condition updated",
+			"condition.status", condition.Status, "time", condition.LastTransitionTime,
+			"reason", condition.Reason)
 	}
 
 	conditions.Set(vm, condition)

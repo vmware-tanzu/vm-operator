@@ -15,6 +15,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -232,6 +233,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 	if err != nil {
 		return ctrl.Result{}, errors.Wrapf(err, "failed to init patch helper for %s", vmCtx.String())
 	}
+
 	defer func() {
 		if err := patchHelper.Patch(ctx, vm); err != nil {
 			if reterr == nil {
@@ -286,7 +288,7 @@ func (r *Reconciler) deleteVM(ctx *context.VirtualMachineContext) (err error) {
 			ctx.Logger.Info("To be deleted VirtualMachine was not found")
 			return nil
 		}
-		ctx.Logger.Error(err, "Failed to delete VirtualMachine")
+		ctx.Logger.Error(err, "Provider failed to delete VirtualMachine")
 		return err
 	}
 
@@ -311,6 +313,8 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineContext) error {
 
 		vm.Status.Phase = vmopv1alpha1.Deleted
 		controllerutil.RemoveFinalizer(vm, finalizerName)
+		ctx.Logger.Info("Provider Completed deleting Virtual Machine",
+			"time", time.Now().Format(time.RFC3339))
 	}
 
 	// Remove the VM from prober manager if ReconcileDelete succeeds.
@@ -320,7 +324,7 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineContext) error {
 }
 
 // ReconcileNormal processes a level trigger for this VM: create if it doesn't exist otherwise update the existing VM.
-func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) error {
+func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr error) {
 	if !controllerutil.ContainsFinalizer(ctx.VM, finalizerName) {
 		// The finalizer must be present before proceeding in order to ensure that the VM will
 		// be cleaned up. Return immediately after here to let the patcher helper update the
@@ -329,9 +333,23 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) error {
 		return nil
 	}
 
+	initialVMStatus := ctx.VM.Status.DeepCopy()
 	ctx.Logger.Info("Reconciling VirtualMachine")
+	// Defer block to handle logging for SLI items
 	defer func() {
-		ctx.Logger.Info("Finished Reconciling VirtualMachine")
+		// Log the reconcile time using the CR creation time and the time the VM reached the desired state
+		if reterr == nil && !apiequality.Semantic.DeepEqual(initialVMStatus, &ctx.VM.Status) {
+			ctx.Logger.Info("Finished Reconciling VirtualMachine with updates to the CR",
+				"createdTime", ctx.VM.CreationTimestamp, "currentTime", time.Now().Format(time.RFC3339),
+				"spec.PowerState", ctx.VM.Spec.PowerState, "status.PowerState", ctx.VM.Status.PowerState)
+		} else {
+			ctx.Logger.Info("Finished Reconciling VirtualMachine")
+		}
+		// Log the first time VM was assigned with an IP address successfully
+		if initialVMStatus.VmIp != ctx.VM.Status.VmIp {
+			ctx.Logger.Info("VM successfully got assigned with an IP address",
+				"time", time.Now().Format(time.RFC3339))
+		}
 	}()
 
 	if err := r.createOrUpdateVM(ctx); err != nil {

@@ -42,6 +42,11 @@ CRD_ROOT      ?= $(MANIFEST_ROOT)/crd/bases
 WEBHOOK_ROOT  ?= $(MANIFEST_ROOT)/webhook
 RBAC_ROOT     ?= $(MANIFEST_ROOT)/rbac
 
+# Image URL to use all building/pushing image targets
+IMAGE ?= vmoperator-controller
+IMAGE_TAG ?= latest
+IMG ?= ${IMAGE}:${IMAGE_TAG}
+
 # Code coverage files
 COVERAGE_FILE = cover.out
 INT_COV_FILE  = integration-cover.out
@@ -110,7 +115,7 @@ manager: prereqs generate lint-go manager-only ## Build manager binary
 ## --------------------------------------
 
 # The necessary tools are built into the container at /tools/bin
-# They need to be copied into the tools dir becasue this is bind-mounted into the container
+# They need to be copied into the tools dir because this is bind-mounted into the container
 # This will overwrite any locally built tools in the bin dir
 IMAGE_TOOLS_BIN := /tools/bin
 COPY_TOOLS_CMD := cp -rf $(IMAGE_TOOLS_BIN) $(TOOLS_DIR)
@@ -138,6 +143,13 @@ test-integration-docker: ## Integration test manager binary using a Docker build
 .PHONY: clean-docker
 clean-docker: ## Clean up the Docker image from the local image cache
 	docker image rm $(DOCKER_BUILD_IMAGE_NAME)
+
+.PHONY: docker-remove
+docker-remove: ## Remove the docker image
+	@if [[ "`docker images -q ${IMG} 2>/dev/null`" != "" ]]; then \
+		echo "Remove docker container ${IMG}"; \
+		docker rmi ${IMG}; \
+	fi
 
 ## --------------------------------------
 ## Tooling Binaries
@@ -250,6 +262,12 @@ kustomize-local: CONFIG_TYPE=local
 kustomize-local: YAML_OUT=$(LOCAL_YAML)
 kustomize-local: kustomize-x ## Kustomize for local cluster
 
+.PHONY: kustomize-local-vcsim
+kustomize-local-vcsim: CONFIG_TYPE=local-vcsim
+kustomize-local-vcsim: YAML_OUT=$(LOCAL_YAML)
+kustomize-local-vcsim: prereqs generate-manifests | $(KUSTOMIZE)
+kustomize-local-vcsim: kustomize-x ## Kustomize for local-vcsim cluster
+
 ## --------------------------------------
 ## Clean and verify
 ## --------------------------------------
@@ -265,3 +283,65 @@ verify: prereqs ## Run static code analysis
 .PHONY: verify-codegen
 verify-codegen: ## Verify generated code
 	hack/verify-codegen.sh
+
+## --------------------------------------
+## Development - kind
+## --------------------------------------
+# Kind cluster name used in integration tests.
+KIND_CLUSTER_NAME ?= vmoperator-kind-it
+
+# The path to the kubeconfig file used to access the bootstrap cluster.
+KUBECONFIG ?= $(HOME)/.kube/config
+
+# The directory to which information about the kind cluster is dumped.
+KIND_CLUSTER_INFO_DUMP_DIR ?= kind-cluster-info-dump
+
+.PHONY: kind-cluster-info
+kind-cluster-info: ## Print the name of the Kind cluster and its kubeconfig
+	@kind get kubeconfig --name "$(KIND_CLUSTER_NAME)" >/dev/null 2>&1
+	@printf "kind cluster name:   %s\nkind cluster config: %s\n" "$(KIND_CLUSTER_NAME)" "$(KUBECONFIG)"
+	@printf "KUBECONFIG=%s\n" "$(KUBECONFIG)" >local.envvars
+
+.PHONY: kind-cluster-info-dump
+kind-cluster-info-dump: ## Collect diagnostic information from the kind cluster.
+	@KUBECONFIG=$(KUBECONFIG) kubectl cluster-info dump --all-namespaces --output-directory $(KIND_CLUSTER_INFO_DUMP_DIR) 1>/dev/null
+	# Collect any logs from previously failed container invocations
+	@KUBECONFIG=$(KUBECONFIG) kubectl -n vmop-system logs --previous vmoperator-controller-manager-0 >$(KIND_CLUSTER_INFO_DUMP_DIR)/manager-0-prev-logs.txt 2>&1 || true
+	@KUBECONFIG=$(KUBECONFIG) kubectl -n vmop-system logs --previous vmoperator-controller-manager-1 >$(KIND_CLUSTER_INFO_DUMP_DIR)/manager-1-prev-logs.txt 2>&1 || true
+	@KUBECONFIG=$(KUBECONFIG) kubectl -n vmop-system logs --previous vmoperator-controller-manager-2 >$(KIND_CLUSTER_INFO_DUMP_DIR)/manager-2-prev-logs.txt 2>&1 || true
+	@printf "kind cluster dump:   %s\n" "./$(KIND_CLUSTER_INFO_DUMP_DIR)"
+
+.PHONY: kind-cluster
+kind-cluster: ## Create a kind cluster of name $(KIND_CLUSTER_NAME) for integration (if it does not exist yet)
+	@$(MAKE) --no-print-directory kind-cluster-info 2>/dev/null || \
+	kind create cluster --name "$(KIND_CLUSTER_NAME)"
+
+.PHONY: delete-kind-cluster
+delete-kind-cluster: ## Delete the kind cluster created for integration tests
+	@{ $(MAKE) --no-print-directory kind-cluster-info >/dev/null 2>&1 && \
+	kind delete cluster --name "$(KIND_CLUSTER_NAME)"; } || true
+
+.PHONY: load-kind
+load-kind: ## Load the image into the kind cluster
+	kind load docker-image $(IMG) --name $(KIND_CLUSTER_NAME) --loglevel debug
+
+## --------------------------------------
+## Development - local
+## --------------------------------------
+
+.PHONY: deploy-local
+deploy-local: prereqs kustomize-local  ## Deploy controller in the configured Kubernetes cluster in ~/.kube/config
+	KUBECONFIG=$(KUBECONFIG) hack/deploy-local.sh $(LOCAL_YAML) $(DEFAULT_VMCLASSES_YAML)
+
+.PHONY: undeploy-local
+undeploy-local:  ## Un-Deploy controller in the configured Kubernetes cluster in ~/.kube/config
+	KUBECONFIG=$(KUBECONFIG) kubectl delete -f $(DEFAULT_VMCLASSES_YAML)
+	KUBECONFIG=$(KUBECONFIG) kubectl delete -f $(LOCAL_YAML)
+
+## --------------------------------------
+## Development - gce2e
+## --------------------------------------
+
+.PHONY: deploy-local-vcsim
+deploy-local-vcsim: prereqs kustomize-local-vcsim  ## Deploy controller in the configured Kubernetes cluster in ~/.kube/config
+	KUBECONFIG=$(KUBECONFIG) hack/deploy-local.sh $(LOCAL_YAML) $(DEFAULT_VMCLASSES_YAML)

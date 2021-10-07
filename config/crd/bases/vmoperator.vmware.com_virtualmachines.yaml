@@ -295,16 +295,39 @@ spec:
                         name.
                       type: string
                     persistentVolumeClaim:
-                      description: PersistentVolumeClaim represents a reference to
+                      description: "PersistentVolumeClaim represents a reference to
                         a PersistentVolumeClaim in the same namespace. The PersistentVolumeClaim
-                        must match a persistent volume provisioned (either statically
-                        or dynamically) by the cluster's CSI provider.
+                        must match one of the following: \n   * A volume provisioned
+                        (either statically or dynamically) by the     cluster's CSI
+                        provider. \n   * An instance volume with a lifecycle coupled
+                        to the VM."
                       properties:
                         claimName:
                           description: 'ClaimName is the name of a PersistentVolumeClaim
                             in the same namespace as the pod using this volume. More
                             info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims'
                           type: string
+                        instanceVolumeClaim:
+                          description: InstanceVolumeClaim is set if the PVC is backed
+                            by instance storage.
+                          properties:
+                            size:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              description: Size is the size of the requested instance
+                                storage volume.
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            storageClass:
+                              description: StorageClass is the name of the Kubernetes
+                                StorageClass that provides the backing storage for
+                                this instance storage volume.
+                              type: string
+                          required:
+                          - size
+                          - storageClass
+                          type: object
                         readOnly:
                           description: Will force the ReadOnly setting in VolumeMounts.
                             Default false.

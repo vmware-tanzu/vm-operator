@@ -721,8 +721,10 @@ var _ = Describe("Sessions", func() {
 				vm.Spec.Volumes = []vmopv1alpha1.VirtualMachineVolume{
 					{
 						Name: cnsVolumeName,
-						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: "pvc-volume-1",
+						PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "pvc-volume-1",
+							},
 						},
 					},
 				}
@@ -754,8 +756,10 @@ var _ = Describe("Sessions", func() {
 				vm.Spec.Volumes = []vmopv1alpha1.VirtualMachineVolume{
 					{
 						Name: cnsVolumeName,
-						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: "pvc-volume-1",
+						PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "pvc-volume-1",
+							},
 						},
 					},
 				}
@@ -789,8 +793,10 @@ var _ = Describe("Sessions", func() {
 				vm.Spec.Volumes = []vmopv1alpha1.VirtualMachineVolume{
 					{
 						Name: cnsVolumeName,
-						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: "pvc-volume-1",
+						PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "pvc-volume-1",
+							},
 						},
 					},
 				}

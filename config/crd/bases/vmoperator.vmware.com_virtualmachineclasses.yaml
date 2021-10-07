@@ -61,6 +61,11 @@ spec:
           spec:
             description: VirtualMachineClassSpec defines the desired state of VirtualMachineClass
             properties:
+              description:
+                description: Description describes the configuration of the VirtualMachineClass
+                  which is not related to virtual hardware or infrastructure policy.
+                  This field is used to address remaining specs about this VirtualMachineClass.
+                type: string
               hardware:
                 description: Hardware describes the configuration of the VirtualMachineClass
                   attributes related to virtual hardware.  The configuration specified

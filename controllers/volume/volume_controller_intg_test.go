@@ -43,15 +43,19 @@ func intgTests() {
 
 		vmVolume1 = vmopv1alpha1.VirtualMachineVolume{
 			Name: "cns-volume-1",
-			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-				ClaimName: "pvc-volume-1",
+			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: "pvc-volume-1",
+				},
 			},
 		}
 
 		vmVolume2 = vmopv1alpha1.VirtualMachineVolume{
 			Name: "cns-volume-2",
-			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-				ClaimName: "pvc-volume-2",
+			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: "pvc-volume-2",
+				},
 			},
 		}
 

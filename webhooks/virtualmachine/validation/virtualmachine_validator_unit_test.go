@@ -179,7 +179,7 @@ func unitTestsValidateCreate() {
 			ctx.vm.Spec.Volumes[0].VsphereVolume = nil
 		}
 		if args.multipleVolumeSource {
-			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = &corev1.PersistentVolumeClaimVolumeSource{}
+			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = &vmopv1.PersistentVolumeClaimVolumeSource{}
 			ctx.vm.Spec.Volumes[0].VsphereVolume = &vmopv1.VsphereVolumeSource{}
 		}
 		if args.invalidPVCName {

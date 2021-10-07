@@ -19,9 +19,6 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .classRef.name
-      name: VirtualMachineClass
-      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

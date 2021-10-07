@@ -254,8 +254,10 @@ func intgTestsValidateUpdate() {
 					ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes,
 						vmopv1.VirtualMachineVolume{
 							Name: "dummy-new-pv-volume",
-							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-								ClaimName: "dummy-new-claim-name",
+							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "dummy-new-claim-name",
+								},
 							},
 						},
 					)

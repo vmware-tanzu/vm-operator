@@ -86,8 +86,10 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 			Volumes: []vmopv1.VirtualMachineVolume{
 				{
 					Name: DummyVolumeName,
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: DummyPVCName,
+					PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: DummyPVCName,
+						},
 					},
 				},
 			},

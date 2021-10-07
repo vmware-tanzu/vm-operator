@@ -5,6 +5,7 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -140,15 +141,42 @@ type VirtualMachineVolume struct {
 	// have a unique name.
 	Name string `json:"name"`
 
-	// PersistentVolumeClaim represents a reference to a PersistentVolumeClaim in the same namespace. The PersistentVolumeClaim
-	// must match a persistent volume provisioned (either statically or dynamically) by the cluster's CSI provider.
+	// PersistentVolumeClaim represents a reference to a PersistentVolumeClaim
+	// in the same namespace. The PersistentVolumeClaim must match one of the
+	// following:
+	//
+	//   * A volume provisioned (either statically or dynamically) by the
+	//     cluster's CSI provider.
+	//
+	//   * An instance volume with a lifecycle coupled to the VM.
 	// +optional
-	PersistentVolumeClaim *corev1.PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
+	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
 
 	// VsphereVolume represents a reference to a VsphereVolumeSource in the same namespace. Only one of PersistentVolumeClaim or
 	// VsphereVolume can be specified. This is enforced via a webhook
 	// +optional
 	VsphereVolume *VsphereVolumeSource `json:"vSphereVolume,omitempty"`
+}
+
+// PersistentVolumeClaimVolumeSource is a composite for the Kubernetes
+// corev1.PersistentVolumeClaimVolumeSource and instance storage options.
+type PersistentVolumeClaimVolumeSource struct {
+	corev1.PersistentVolumeClaimVolumeSource `json:",inline" yaml:",inline"`
+
+	// InstanceVolumeClaim is set if the PVC is backed by instance storage.
+	// +optional
+	InstanceVolumeClaim *InstanceVolumeClaimVolumeSource `json:"instanceVolumeClaim,omitempty"`
+}
+
+// InstanceVolumeClaimVolumeSource contains information about the instance
+// storage volume claimed as a PVC.
+type InstanceVolumeClaimVolumeSource struct {
+	// StorageClass is the name of the Kubernetes StorageClass that provides
+	// the backing storage for this instance storage volume.
+	StorageClass string `json:"storageClass"`
+
+	// Size is the size of the requested instance storage volume.
+	Size resource.Quantity `json:"size"`
 }
 
 // VsphereVolumeSource describes a volume source that represent static disks that belong to a VirtualMachine.

@@ -20,8 +20,9 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
 func TestGetStepCounterMessage(t *testing.T) {

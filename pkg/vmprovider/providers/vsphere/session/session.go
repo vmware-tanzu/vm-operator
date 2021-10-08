@@ -313,7 +313,7 @@ func (s *Session) UpdateResourcePool(ctx goctx.Context, rpSpec *v1alpha1.Resourc
 	}
 
 	log.V(4).Info("Updating the ResourcePool", "name", rpSpec.Name)
-	// TODO 
+	// TODO
 	return nil
 }
 
@@ -485,7 +485,7 @@ func (s *Session) GetVirtualMachine(vmCtx context.VirtualMachineContext) (*res.V
 	} else {
 		// Developer enablement path: use the default folder for the session.
 		// TODO: AKP: If any of the parent objects have been renamed, the cached inventory
-		// path will be stale: 
+		// path will be stale:
 		folder = s.folder
 	}
 

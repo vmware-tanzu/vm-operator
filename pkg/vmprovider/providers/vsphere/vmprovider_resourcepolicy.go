@@ -7,9 +7,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
+
+	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"

@@ -13,8 +13,9 @@ import (
 	"gopkg.in/yaml.v2"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/task"
+
+	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"

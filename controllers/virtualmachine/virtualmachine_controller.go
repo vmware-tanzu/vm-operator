@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -581,6 +580,26 @@ func (r *Reconciler) getResourcePolicy(ctx *context.VirtualMachineContext) (*vmo
 	return resourcePolicy, nil
 }
 
+func (r *Reconciler) findInstanceStorageVMPlacementStatus(vmCtx *context.VirtualMachineContext) (ready bool) {
+	if !instancestorage.IsConfigured(vmCtx.VM) {
+		return true
+	}
+
+	// TODO:
+	// 1. Set the selected-node (if not set already) annotation for the volume controller to place PVCs on that node.
+
+	// Check if all PVCs are realized, if not, inform reconcile handler to wait till the state is ready.
+	if _, exists := vmCtx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]; !exists {
+		vmCtx.Logger.V(5).WithValues(
+			"reason", "Instance storage PVCs are not realized yet",
+		).Info("Returning with not ready")
+		return false
+	}
+
+	// Placement successful
+	return true
+}
+
 // createOrUpdateVM calls into the VM provider to reconcile a VirtualMachine.
 func (r *Reconciler) createOrUpdateVM(ctx *context.VirtualMachineContext) error {
 	vmClass, err := r.getVMClass(ctx)
@@ -673,6 +692,12 @@ func (r *Reconciler) createOrUpdateVM(ctx *context.VirtualMachineContext) error 
 		}
 	}
 
+	if lib.IsInstanceStorageFSSEnabled() {
+		if !r.findInstanceStorageVMPlacementStatus(ctx) {
+			return nil
+		}
+	}
+
 	vm.Status.Phase = vmopv1alpha1.Created
 
 	err = r.VMProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
@@ -754,14 +779,5 @@ func (r *Reconciler) addInstanceStorageSpec(
 	// Append PVCs to existing virtual machine volume spec
 	vm.Spec.Volumes = append(vm.Spec.Volumes, pvcs...)
 
-	if vm.Labels == nil {
-		vm.Labels = map[string]string{}
-	}
-	vm.Labels[constants.InstanceStorageVMLabelKey] = strconv.FormatBool(true)
-
-	ctx.Logger.V(5).WithValues(
-		"VM Label", vm.GetLabels(),
-		"VM Spec", vm.Spec,
-	).Info("Updated VM Spec and Label")
 	return nil
 }

@@ -559,7 +559,7 @@ func unitTestsReconcile() {
 				err := reconciler.ReconcileNormal(vmCtx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)).To(HaveLen(0))
-				Expect(vmCtx.VM.GetLabels()).ToNot(HaveKey(constants.InstanceStorageVMLabelKey))
+				Expect(vmCtx.VM.GetLabels()).ToNot(HaveKey(constants.InstanceStorageLabelKey))
 			})
 
 			It("Virtual Machine is created", func() {
@@ -567,14 +567,14 @@ func unitTestsReconcile() {
 				err := reconciler.ReconcileNormal(vmCtx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)).To(HaveLen(0))
-				Expect(vmCtx.VM.GetLabels()).ToNot(HaveKey(constants.InstanceStorageVMLabelKey))
+				Expect(vmCtx.VM.GetLabels()).ToNot(HaveKey(constants.InstanceStorageLabelKey))
 			})
 
 			It("Instance Storage is not configured in VM Spec and Instance Volume is not added in VM Class", func() {
 				err := reconciler.ReconcileNormal(vmCtx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)).To(HaveLen(0))
-				Expect(vmCtx.VM.GetLabels()).ToNot(HaveKey(constants.InstanceStorageVMLabelKey))
+				Expect(vmCtx.VM.GetLabels()).ToNot(HaveKey(constants.InstanceStorageLabelKey))
 			})
 
 			When("Instance Volume is added in VM Class", func() {
@@ -584,12 +584,11 @@ func unitTestsReconcile() {
 					initObjects = append(initObjects, vm, vmClass, vmImage, clProvider, contentSource)
 				})
 
-				It("Instance Volumes/Label Should be added", func() {
+				It("Instance Volumes should be added", func() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)).ToNot(HaveLen(0))
 					Expect(instancestoragetestutil.InstanceVolumeEqComparator(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)).Should(BeTrue())
-					Expect(vmCtx.VM.GetLabels()).To(HaveKey(constants.InstanceStorageVMLabelKey))
 				})
 
 				It("Instance Storage is already configured in VM Spec", func() {
@@ -598,7 +597,6 @@ func unitTestsReconcile() {
 					instanceVolumesBefore := instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)
 					Expect(instanceVolumesBefore).ToNot(HaveLen(0))
 					Expect(instancestoragetestutil.InstanceVolumeEqComparator(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)).Should(BeTrue())
-					Expect(vmCtx.VM.GetLabels()).To(HaveKey(constants.InstanceStorageVMLabelKey))
 
 					// Instance Storage is already configured, should not patch again
 					err = reconciler.ReconcileNormal(vmCtx)
@@ -607,7 +605,17 @@ func unitTestsReconcile() {
 					Expect(instanceVolumesAfter).ToNot(HaveLen(0))
 					Expect(instanceVolumesAfter).Should(HaveLen(len(instanceVolumesBefore)))
 					Expect(instancestoragetestutil.InstanceVolumeEqComparator(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)).Should(BeTrue())
-					Expect(vmCtx.VM.GetLabels()).To(HaveKey(constants.InstanceStorageVMLabelKey))
+				})
+
+				It("Instance Volumes/Label should be added and Phase set to Created", func() {
+					vmCtx.VM.Annotations = make(map[string]string)
+					vmCtx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey] = lib.TrueString
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)).ToNot(HaveLen(0))
+					Expect(instancestoragetestutil.InstanceVolumeEqComparator(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)).Should(BeTrue())
+					// When volume bound annotation is set, VM's status.phase is set to Created.
+					Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Created))
 				})
 			})
 		})

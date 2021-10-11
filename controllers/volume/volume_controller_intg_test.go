@@ -4,20 +4,28 @@
 package volume_test
 
 import (
-	"github.com/google/uuid"
+	"fmt"
+	"sync/atomic"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/google/uuid"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -25,14 +33,25 @@ func intgTests() {
 	var (
 		ctx *builder.IntegrationTestContext
 
-		vm             *vmopv1alpha1.VirtualMachine
-		vmKey          types.NamespacedName
-		vmVolume1      vmopv1alpha1.VirtualMachineVolume
-		vmVolume2      vmopv1alpha1.VirtualMachineVolume
-		dummyBiosUUID  string
-		dummyDiskUUID1 string
-		dummyDiskUUID2 string
+		vm                *vmopv1alpha1.VirtualMachine
+		vmClass           *vmopv1alpha1.VirtualMachineClass
+		vmKey             types.NamespacedName
+		vmVolume1         vmopv1alpha1.VirtualMachineVolume
+		vmVolume2         vmopv1alpha1.VirtualMachineVolume
+		dummyBiosUUID     string
+		dummyDiskUUID1    string
+		dummyDiskUUID2    string
+		dummySelectedNode string
+
+		// represents the Instance Storage FSS. This should be manipulated atomically to avoid races
+		// where the controller is trying to read this _while_ the tests are updating it.
+		instanceStorageFSS uint32
 	)
+
+	// Modify the helper function to return the custom value of the FSS
+	lib.IsInstanceStorageFSSEnabled = func() bool {
+		return atomic.LoadUint32(&instanceStorageFSS) != 0
+	}
 
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
@@ -59,6 +78,31 @@ func intgTests() {
 			},
 		}
 
+		vmClass = &vmopv1alpha1.VirtualMachineClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "small",
+			},
+			Spec: vmopv1alpha1.VirtualMachineClassSpec{
+				Hardware: vmopv1alpha1.VirtualMachineClassHardware{
+					Cpus:            4,
+					Memory:          resource.MustParse("1Mi"),
+					InstanceStorage: builder.DummyInstanceStorage(),
+				},
+				Policies: vmopv1alpha1.VirtualMachineClassPolicies{
+					Resources: vmopv1alpha1.VirtualMachineClassResources{
+						Requests: vmopv1alpha1.VirtualMachineResourceSpec{
+							Cpu:    resource.MustParse("1000Mi"),
+							Memory: resource.MustParse("100Mi"),
+						},
+						Limits: vmopv1alpha1.VirtualMachineResourceSpec{
+							Cpu:    resource.MustParse("2000Mi"),
+							Memory: resource.MustParse("200Mi"),
+						},
+					},
+				},
+			},
+		}
+
 		vm = &vmopv1alpha1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: ctx.Namespace,
@@ -70,6 +114,8 @@ func intgTests() {
 			},
 		}
 		vmKey = types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
+
+		dummySelectedNode = "selected-node.domain.com"
 	})
 
 	AfterEach(func() {
@@ -93,6 +139,124 @@ func intgTests() {
 		}
 		return nil
 	}
+
+	waitForVirtualMachineInstanceStorage := func(objKey types.NamespacedName, selectedNodeSet, bound bool) {
+		getAnnotations := func() map[string]string {
+			vm := getVirtualMachine(objKey)
+			if vm != nil {
+				return vm.Annotations
+			}
+			return map[string]string{}
+		}
+
+		desc := fmt.Sprintf("waiting for selected-node annotation set %v", selectedNodeSet)
+		if selectedNodeSet {
+			Eventually(getAnnotations).Should(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey), desc)
+		} else {
+			Eventually(getAnnotations).ShouldNot(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey), desc)
+		}
+
+		desc = fmt.Sprintf("waiting for VirtualMachine instance storage volumes BOUND status set to %v", bound)
+		if bound {
+			Eventually(getAnnotations).Should(HaveKey(constants.InstanceStoragePVCsBoundAnnotationKey), desc)
+		} else {
+			Eventually(getAnnotations).ShouldNot(HaveKey(constants.InstanceStoragePVCsBoundAnnotationKey), desc)
+		}
+	}
+
+	patchInstanceStoragePVCs := func(objKey types.NamespacedName, setStatusBound, setErrorAnnotation bool) {
+		vm := getVirtualMachine(objKey)
+		Expect(vm).ToNot(BeNil())
+
+		volumes := instancestorage.FilterVolumes(vm)
+		for _, vol := range volumes {
+			objKey := client.ObjectKey{
+				Namespace: vm.Namespace,
+				Name:      vol.PersistentVolumeClaim.ClaimName,
+			}
+			pvc := &corev1.PersistentVolumeClaim{}
+			if err := ctx.Client.Get(ctx, objKey, pvc); client.IgnoreNotFound(err) != nil {
+				Expect(err).To(BeNil())
+			}
+
+			patchHelper, err := patch.NewHelper(pvc, ctx.Client)
+			Expect(err).To(BeNil())
+
+			if setStatusBound {
+				pvc.Status.Phase = corev1.ClaimBound
+			}
+			if setErrorAnnotation {
+				if pvc.Annotations == nil {
+					pvc.Annotations = make(map[string]string)
+				}
+				pvc.Annotations[constants.InstanceStoragePVPlacementErrorAnnotationKey] = constants.InstanceStorageNotEnoughResErr
+			}
+			Expect(patchHelper.Patch(ctx, pvc)).To(BeNil())
+
+		}
+	}
+
+	Context("Reconcile Instance Storage", func() {
+		var (
+			origInstanceStorageFSSState uint32
+		)
+		BeforeEach(func() {
+			origInstanceStorageFSSState = instanceStorageFSS
+			atomic.StoreUint32(&instanceStorageFSS, 1)
+
+			vm.Spec.ClassName = vmClass.Name
+			vm.Spec.Volumes = append(vm.Spec.Volumes, builder.DummyInstanceStorageVirtualMachineVolumes()...)
+			vm.Labels = make(map[string]string)
+			vm.Labels[constants.InstanceStorageLabelKey] = lib.TrueString
+			vm.Annotations = make(map[string]string)
+			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
+			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			err := ctx.Client.Delete(ctx, vm)
+			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			err = ctx.Client.Delete(ctx, vmClass)
+			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			atomic.StoreUint32(&instanceStorageFSS, origInstanceStorageFSSState)
+		})
+
+		It("Reconcile instance storage PVCs - selected-node annotation not set", func() {
+			waitForVirtualMachineInstanceStorage(vmKey, false, false)
+		})
+
+		It("Reconcile instance storage PVCs - PVCs should be created and realized after setting selected-node annotation", func() {
+			By("set selected-node annotation", func() {
+				vm.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = dummySelectedNode
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+			})
+			By("PVCs should have created", func() {
+				waitForVirtualMachineInstanceStorage(vmKey, true, false)
+			})
+			By("realize PVCs by setting PVC status to BOUND", func() {
+				patchInstanceStoragePVCs(vmKey, true, false)
+			})
+			By("PVCs should be bound", func() {
+				waitForVirtualMachineInstanceStorage(vmKey, true, true)
+			})
+		})
+
+		It("Reconcile instance storage PVCs - PVCs should be deleted after PVCs turned into error", func() {
+			By("set selected-node annotation", func() {
+				vm.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = dummySelectedNode
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+			})
+			By("PVCs should have created", func() {
+				waitForVirtualMachineInstanceStorage(vmKey, true, false)
+			})
+			By("Set PVCs with errors", func() {
+				patchInstanceStoragePVCs(vmKey, false, true)
+			})
+			By("PVCs should be deleted", func() {
+				waitForVirtualMachineInstanceStorage(vmKey, true, false)
+			})
+		})
+	})
 
 	Context("Reconcile", func() {
 		BeforeEach(func() {

@@ -3,7 +3,9 @@
 
 package constants
 
-import "github.com/vmware-tanzu/vm-operator/pkg"
+import (
+	"github.com/vmware-tanzu/vm-operator/pkg"
+)
 
 const (
 	ExtraConfigTrue            = "TRUE"
@@ -70,6 +72,22 @@ const (
 
 	// InstanceStoragePVCNamePrefix prefix of auto-generated PVC names.
 	InstanceStoragePVCNamePrefix = "instance-pvc-"
-	// InstanceStorageVMLabelKey identifies VMs with instance storage.
-	InstanceStorageVMLabelKey = "vmoperator.vmware.com/instance-vm"
+	// InstanceStorageLabelKey identifies resources related to instance storage.
+	// The primary purpose of this label is to identify instance storage resources such as
+	// PVCs and CNSNodeVMAttachments but not for List and kubectl-get of VM resources.
+	InstanceStorageLabelKey = "vmoperator.vmware.com/instance-storage-resource"
+	// InstanceStoragePVCsBoundAnnotationKey annotation key used to set bound state of all instance storage PVCs.
+	InstanceStoragePVCsBoundAnnotationKey = "vmoperator.vmware.com/instance-storage-pvcs-bound"
+	// InstanceStoragePVPlacementErrorAnnotationKey annotation key to set PV creation error.
+	// CSI reference to this annotation where it is defined:
+	// https://github.com/kubernetes-sigs/vsphere-csi-driver/blob/master/pkg/syncer/k8scloudoperator/placement.go
+	InstanceStoragePVPlacementErrorAnnotationKey = "failure-domain.beta.vmware.com/storagepool"
+	// InstanceStorageSelectedNodeAnnotationKey value corresponds to FQDN of ESXi node that is elected to place instance storage volumes.
+	InstanceStorageSelectedNodeAnnotationKey = "vmoperator.vmware.com/instance-storage-selected-node"
+	// KubernetesSelectedNodeAnnotationKey annotation key to set selected node on PVC.
+	KubernetesSelectedNodeAnnotationKey = "volume.kubernetes.io/selected-node"
+	// InstanceStoragePVPlacementErrorPrefix indicates prefix of error value.
+	InstanceStoragePVPlacementErrorPrefix = "FAILED_"
+	// InstanceStorageNotEnoughResErr is an error constant to indicate not enough resources.
+	InstanceStorageNotEnoughResErr = "FAILED_PLACEMENT-NotEnoughResources"
 )

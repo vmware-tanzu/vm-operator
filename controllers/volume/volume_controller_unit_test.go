@@ -4,19 +4,27 @@
 package volume_test
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
+	"github.com/pkg/errors"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8serrors "k8s.io/apimachinery/pkg/util/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	volContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -26,8 +34,9 @@ func unitTests() {
 
 func unitTestsReconcile() {
 	const (
-		dummyBiosUUID = "dummy-bios-uuid"
-		dummyDiskUUID = "111-222-333-disk-uuid"
+		dummyBiosUUID                 = "dummy-bios-uuid"
+		dummyDiskUUID                 = "111-222-333-disk-uuid"
+		dummyInstanceStorageClassName = "dummy-instance-storage-class"
 	)
 
 	var (
@@ -43,6 +52,9 @@ func unitTestsReconcile() {
 		vmVolumeWithPVC1    *vmopv1alpha1.VirtualMachineVolume
 		vmVolumeWithPVC2    *vmopv1alpha1.VirtualMachineVolume
 		attachment          *cnsv1alpha1.CnsNodeVmAttachment
+
+		vmVolForInstPVC1 *vmopv1alpha1.VirtualMachineVolume
+		// vmClassWithInstStorage *vmopv1alpha1.VirtualMachineClass
 	)
 
 	BeforeEach(func() {
@@ -76,6 +88,19 @@ func unitTestsReconcile() {
 			},
 			Status: vmopv1alpha1.VirtualMachineStatus{
 				BiosUUID: dummyBiosUUID,
+			},
+		}
+
+		vmVolForInstPVC1 = &vmopv1alpha1.VirtualMachineVolume{
+			Name: "instance-pvc-1",
+			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: "instance-pvc-1",
+				},
+				InstanceVolumeClaim: &vmopv1alpha1.InstanceVolumeClaimVolumeSource{
+					StorageClass: dummyInstanceStorageClassName,
+					Size:         resource.MustParse("256Gi"),
+				},
 			},
 		}
 	})
@@ -114,7 +139,7 @@ func unitTestsReconcile() {
 			return attachment
 		}
 
-		if errors.IsNotFound(err) {
+		if k8sapierrors.IsNotFound(err) {
 			return nil
 		}
 
@@ -123,6 +148,73 @@ func unitTestsReconcile() {
 	}
 
 	Context("ReconcileNormal", func() {
+		origIsInstanceStorageFSSEnabled := lib.IsInstanceStorageFSSEnabled
+
+		When("Instance storage is configured on VM", func() {
+			BeforeEach(func() {
+				lib.IsInstanceStorageFSSEnabled = func() bool {
+					return true
+				}
+				vmVol = *vmVolForInstPVC1
+				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+				vm.Annotations = make(map[string]string)
+				vm.CreationTimestamp = metav1.NewTime(time.Now())
+				vm.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = "selected-node.domain.com"
+			})
+
+			AfterEach(func() {
+				err := deleteInstanceStoragePVCs(volCtx, reconciler)
+				Expect(err).NotTo(HaveOccurred())
+				vm.Spec.Volumes = nil
+				lib.IsInstanceStorageFSSEnabled = origIsInstanceStorageFSSEnabled
+			})
+
+			It("selected-node annotation not set - no PVCs created", func() {
+				delete(vm.Annotations, constants.InstanceStorageSelectedNodeAnnotationKey)
+				Expect(deleteInstanceStoragePVCs(volCtx, reconciler)).To(BeNil())
+				err := reconciler.ReconcileNormal(volCtx)
+				Expect(err).To(BeNil())
+				expectPVCsStatus(volCtx, ctx, false, false, 0)
+			})
+
+			It("PVCs are created but not bound after selected-node annotation set", func() {
+				err := reconciler.ReconcileNormal(volCtx)
+				Expect(err).To(BeNil())
+				// PVC creationTimeStamp is set to "0001-01-01 00:00:00 +0000 UTC" using the Unit Test client.
+				// This means, the the time.Since(creationTimeStamp) always returns a large number which is greater
+				// than InstanceStorageDefaultPVPlacementFailedTTL.
+				expectPVCsStatus(volCtx, ctx, true, false, len(vm.Spec.Volumes))
+			})
+
+			It("PVCs are created and placement is failed - remove all error PVCs", func() {
+				By("create PVCs and not realized", func() {
+					Expect(createInstanceStorageVolume(volCtx, ctx, &vmVol, true)).To(BeNil())
+					Expect(reconciler.ReconcileNormal(volCtx)).To(BeNil())
+					expectPVCsStatus(volCtx, ctx, true, false, len(vm.Spec.Volumes))
+				})
+
+				By("PVCs realization turned into error - remove all PVCs", func() {
+					patchInstanceStoragePVCs(volCtx, ctx, false, true)
+					Expect(reconciler.ReconcileNormal(volCtx)).To(BeNil())
+					expectPVCsStatus(volCtx, ctx, false, false, 0)
+				})
+			})
+
+			It("PVCs are created and realized", func() {
+				By("create PVCs and not realized", func() {
+					Expect(createInstanceStorageVolume(volCtx, ctx, &vmVol, false)).To(BeNil())
+					Expect(reconciler.ReconcileNormal(volCtx)).To(BeNil())
+					expectPVCsStatus(volCtx, ctx, true, false, len(vm.Spec.Volumes))
+				})
+
+				By("PVCs are bound", func() {
+					patchInstanceStoragePVCs(volCtx, ctx, true, false)
+					Expect(reconciler.ReconcileNormal(volCtx)).To(BeNil())
+					expectPVCsStatus(volCtx, ctx, true, true, len(vm.Spec.Volumes))
+				})
+			})
+		})
+
 		When("VM does not have BiosUUID", func() {
 			BeforeEach(func() {
 				vmVol = *vmVolumeWithPVC1
@@ -421,6 +513,133 @@ func cnsAttachmentForVMVolume(
 			VolumeName: vmVol.PersistentVolumeClaim.ClaimName,
 		},
 	}
+}
+
+func expectPVCsStatus(ctx *volContext.VolumeContext, testCtx *builder.UnitTestContextForController, selectedNodeSet, bound bool, pvcsCount int) {
+	if selectedNodeSet {
+		Expect(ctx.VM.Annotations).To(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
+	} else {
+		Expect(ctx.VM.Annotations).ToNot(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
+	}
+
+	if bound {
+		Expect(ctx.VM.Annotations).To(HaveKey(constants.InstanceStoragePVCsBoundAnnotationKey))
+	} else {
+		Expect(ctx.VM.Annotations).ToNot(HaveKey(constants.InstanceStoragePVCsBoundAnnotationKey))
+	}
+
+	pvcList, err := getInstanceStoragePVCs(ctx, testCtx)
+	Expect(err).To(BeNil())
+
+	Expect(pvcsCount).To(Equal(len(pvcList)))
+}
+
+func createInstanceStorageVolume(ctx *volContext.VolumeContext, testCtx *builder.UnitTestContextForController, volume *vmopv1alpha1.VirtualMachineVolume, setOldCreationTime bool) error {
+	// The existence check is done by the caller.
+	selectedNode := ctx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey]
+	var requestList corev1.ResourceList = make(map[corev1.ResourceName]resource.Quantity)
+	requestList[corev1.ResourceStorage] = volume.PersistentVolumeClaim.InstanceVolumeClaim.Size
+	creationTimestamp := metav1.Now()
+	if setOldCreationTime {
+		creationTimestamp = metav1.NewTime(time.Now().Add(-2 * lib.GetInstanceStoragePVPlacementFailedTTL()))
+	}
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              volume.Name,
+			Namespace:         ctx.VM.Namespace,
+			Labels:            map[string]string{constants.InstanceStorageLabelKey: lib.TrueString},
+			Annotations:       map[string]string{constants.KubernetesSelectedNodeAnnotationKey: selectedNode},
+			CreationTimestamp: creationTimestamp,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			StorageClassName: &volume.PersistentVolumeClaim.InstanceVolumeClaim.StorageClass,
+			Resources: corev1.ResourceRequirements{
+				Requests: requestList,
+			},
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+		},
+	}
+	if err := controllerutil.SetControllerReference(ctx.VM, pvc, testCtx.Scheme); err != nil {
+		// This is an unexpected error.
+		return errors.Wrap(err, "Cannot set controller reference on PersistentVolumeClaim")
+	}
+
+	return testCtx.Client.Create(ctx, pvc)
+}
+
+func getInstanceStoragePVCs(ctx *volContext.VolumeContext, testCtx *builder.UnitTestContextForController) ([]corev1.PersistentVolumeClaim, error) {
+
+	var errs []error
+	pvcList := make([]corev1.PersistentVolumeClaim, 0)
+
+	volumes := instancestorage.FilterVolumes(ctx.VM)
+
+	for _, vol := range volumes {
+		objKey := client.ObjectKey{
+			Namespace: ctx.VM.Namespace,
+			Name:      vol.PersistentVolumeClaim.ClaimName,
+		}
+		pvc := &corev1.PersistentVolumeClaim{}
+		if err := testCtx.Client.Get(ctx, objKey, pvc); client.IgnoreNotFound(err) != nil {
+			errs = append(errs, err)
+			continue
+		}
+		// The system returns empty object when no PVC resources exists in the system.
+		// This check filters out unwanted objects that causes assertions fail.
+		if !metav1.IsControlledBy(pvc, ctx.VM) {
+			continue
+		}
+		pvcList = append(pvcList, *pvc)
+	}
+
+	return pvcList, k8serrors.NewAggregate(errs)
+}
+
+func patchInstanceStoragePVCs(ctx *volContext.VolumeContext, testCtx *builder.UnitTestContextForController, setStatusBound, setErrorAnnotation bool) {
+	pvcList, err := getInstanceStoragePVCs(ctx, testCtx)
+	Expect(err).To(BeNil())
+
+	if !setErrorAnnotation {
+		delete(ctx.VM.Annotations, constants.InstanceStoragePVPlacementErrorAnnotationKey)
+	}
+
+	for _, pvc := range pvcList {
+		pvc := pvc
+		if setStatusBound {
+			pvc.Status.Phase = corev1.ClaimBound
+		}
+		if setErrorAnnotation {
+			if pvc.Annotations == nil {
+				pvc.Annotations = make(map[string]string)
+			}
+			pvc.Annotations[constants.InstanceStoragePVPlacementErrorAnnotationKey] = constants.InstanceStorageNotEnoughResErr
+		} else {
+			delete(pvc.Annotations, constants.InstanceStoragePVPlacementErrorAnnotationKey)
+		}
+
+		Expect(testCtx.Client.Update(ctx, &pvc)).To(Succeed())
+		Expect(testCtx.Client.Status().Update(ctx, &pvc)).To(Succeed())
+	}
+}
+
+func deleteInstanceStoragePVCs(ctx *volContext.VolumeContext, r *volume.Reconciler) error {
+
+	var errs []error
+	volumes := instancestorage.FilterVolumes(ctx.VM)
+
+	for _, vol := range volumes {
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vol.PersistentVolumeClaim.ClaimName,
+				Namespace: ctx.VM.Namespace,
+			},
+		}
+		if err := r.Delete(ctx, pvc); client.IgnoreNotFound(err) != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return k8serrors.NewAggregate(errs)
 }
 
 func assertAttachmentSpecFromVMVol(

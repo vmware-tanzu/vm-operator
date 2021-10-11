@@ -57,4 +57,8 @@ const (
 
 	// DefaultContainerNode is the default value for the eponymous manager option.
 	DefaultContainerNode = false
+
+	// DefaultInstanceStoragePVPlacementFailedTTL is the default wait time before declaring PV placement failed
+	// after error annotation is set on PVC.
+	DefaultInstanceStoragePVPlacementFailedTTL = 5 * time.Minute
 )

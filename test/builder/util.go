@@ -77,6 +77,35 @@ func DummyInstanceStorage() vmopv1.InstanceStorage {
 	}
 }
 
+func DummyInstanceStorageVirtualMachineVolumes() []vmopv1.VirtualMachineVolume {
+	return []vmopv1.VirtualMachineVolume{
+		{
+			Name: "instance-pvc-1",
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: "instance-pvc-1",
+				},
+				InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
+					StorageClass: DummyStorageClassName,
+					Size:         resource.MustParse("256Gi"),
+				},
+			},
+		},
+		{
+			Name: "instance-pvc-2",
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: "instance-pvc-2",
+				},
+				InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
+					StorageClass: DummyStorageClassName,
+					Size:         resource.MustParse("512Gi"),
+				},
+			},
+		},
+	}
+}
+
 func DummyVirtualMachine() *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{

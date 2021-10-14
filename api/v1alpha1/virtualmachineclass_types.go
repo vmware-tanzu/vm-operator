@@ -93,6 +93,7 @@ type VirtualMachineClassSpec struct {
 
 	// Description describes the configuration of the VirtualMachineClass which is not related to virtual hardware
 	// or infrastructure policy. This field is used to address remaining specs about this VirtualMachineClass.
+	// +optional
 	Description string `json:"description,omitempty"`
 }
 

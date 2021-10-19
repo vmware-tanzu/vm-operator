@@ -151,8 +151,7 @@ func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 		return err
 	}
 
-	// minFrequencies is a map of minimum frequencies for each cluster.
-	minFrequencies := map[string]uint64{}
+	var minFreq uint64
 	for _, az := range availabilityZones {
 		// Get the minimum frequency for this cluster.
 		ccr := object.NewClusterComputeResource(
@@ -162,22 +161,22 @@ func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 				Value: az.Spec.ClusterComputeResourceMoId,
 			},
 		)
-		minFreq, err := ComputeCPUInfo(ctx, ccr)
+		freq, err := ComputeCPUInfo(ctx, ccr)
 		if err != nil {
 			return err
 		}
-		minFrequencies[az.Spec.ClusterComputeResourceMoId] = minFreq
+		if minFreq == 0 || freq < minFreq {
+			minFreq = freq
+		}
 	}
 
-	sm.Lock()
-	defer sm.Unlock()
-
-	// Iterate over each session, setting its minimum frequency to the
-	// value for its cluster.
-	for _, session := range sm.sessions {
-		if minFreq, ok := minFrequencies[session.Cluster().Reference().Value]; ok {
+	if minFreq != 0 {
+		// Iterate over each session, setting its minimum frequency to the global minimum.
+		sm.Lock()
+		for _, session := range sm.sessions {
 			session.SetCPUMinMHzInCluster(minFreq)
 		}
+		sm.Unlock()
 	}
 
 	return nil

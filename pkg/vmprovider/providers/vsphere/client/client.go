@@ -108,7 +108,7 @@ func newVimClient(ctx context.Context, config *config.VSphereVMProviderConfig) (
 	}
 
 	soapClient := soap.NewClient(soapURL, config.InsecureSkipTLSVerify)
-	if !config.InsecureSkipTLSVerify {
+	if config.CAFilePath != "" {
 		err = soapClient.SetRootCAs(config.CAFilePath)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "failed to set root CA %s: %v", config.CAFilePath, err)

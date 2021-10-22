@@ -67,13 +67,13 @@ func (sm *Manager) DeleteSession(
 }
 
 func (sm *Manager) GetClient(ctx goctx.Context) (*vcclient.Client, error) {
-	sm.Lock()
-	defer sm.Unlock()
-
-	config, err := sm.getConfig(ctx, "", "")
+	config, err := vcconfig.GetProviderConfig(ctx, sm.k8sClient)
 	if err != nil {
 		return nil, err
 	}
+
+	sm.Lock()
+	defer sm.Unlock()
 
 	return sm.getClient(ctx, config)
 }
@@ -189,16 +189,8 @@ func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 }
 
 func (sm *Manager) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {
-	cfg, err := vcconfig.GetProviderConfigFromConfigMap(ctx, sm.k8sClient, "", "")
-	if err != nil {
-		return err
-	}
-
-	if cfg.VcPNID == vcPNID && cfg.VcPort == vcPort {
-		return nil
-	}
-
-	if err = vcconfig.PatchVcURLInConfigMap(sm.k8sClient, vcPNID, vcPort); err != nil {
+	updated, err := vcconfig.UpdateVcInConfigMap(ctx, sm.k8sClient, vcPNID, vcPort)
+	if err != nil || !updated {
 		return err
 	}
 
@@ -227,19 +219,11 @@ func (sm *Manager) getClient(
 	return sm.client, nil
 }
 
-func (sm *Manager) getConfig(
-	ctx goctx.Context,
-	zone, namespace string) (*vcconfig.VSphereVMProviderConfig, error) {
-
-	return vcconfig.GetProviderConfigFromConfigMap(
-		ctx, sm.k8sClient, zone, namespace)
-}
-
 func (sm *Manager) createSession(
 	ctx goctx.Context,
 	zone, namespace string) (*Session, error) {
 
-	config, err := sm.getConfig(ctx, zone, namespace)
+	config, err := vcconfig.GetProviderConfigForNamespace(ctx, sm.k8sClient, zone, namespace)
 	if err != nil {
 		return nil, err
 	}

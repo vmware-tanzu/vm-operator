@@ -10,10 +10,9 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/pkg/errors"
@@ -32,18 +31,22 @@ type VSphereVMProviderConfig struct {
 	VcPort                      string
 	VcCreds                     *credentials.VSphereVMProviderCredentials
 	Datacenter                  string
-	Cluster                     string
-	ResourcePool                string
-	Folder                      string
-	Datastore                   string
-	Network                     string
-	StorageClassRequired        bool
-	UseInventoryAsContentSource bool
-	InsecureSkipTLSVerify       bool
+	StorageClassRequired        bool // Always true in WCP env.
+	UseInventoryAsContentSource bool // Always false in WCP env.
 	CAFilePath                  string
+	InsecureSkipTLSVerify       bool // Always false in WCP env.
 	CtrlVMVMAntiAffinityTag     string
 	WorkerVMVMAntiAffinityTag   string
 	TagCategoryName             string
+
+	// Zone and namespace scoped resources. Note the Cluster is obtained from the ResourcePool.
+	Cluster      string
+	ResourcePool string
+	Folder       string
+
+	// Only set in simulated testing env.
+	Datastore string
+	Network   string
 }
 
 const (
@@ -73,7 +76,7 @@ const (
 	NameserversKey       = "nameservers" // Key in the NetworkConfigMapName.
 )
 
-// ConfigMapToProviderConfig converts the VM provider ConfigMap to the a ProviderConfig.
+// ConfigMapToProviderConfig converts the VM provider ConfigMap to a VSphereVMProviderConfig.
 // nolint: revive // Ignore linter error about stuttering.
 func ConfigMapToProviderConfig(
 	configMap *corev1.ConfigMap,
@@ -113,7 +116,7 @@ func ConfigMapToProviderConfig(
 		}
 	}
 
-	// Default to validating TLS by default.
+	// Default to validating TLS.
 	insecureSkipTLSVerify := false
 	if v, ok := dataMap[insecureSkipTLSVerifyKey]; ok {
 		var err error
@@ -122,16 +125,12 @@ func ConfigMapToProviderConfig(
 			return nil, errors.Wrap(err, "unable to parse value of InsecureSkipTLSVerify")
 		}
 	}
-	// Only load the CA file path if we're not skipping TLS verification.
-	// Pick the system root CA bundle by default, but allow the user to override this using the CAFilePath
-	//  parameter
-	// Golang by default uses the system root CAs.
-	// ref: https://golang.org/src/crypto/x509/root_linux.go
-	caFilePath := "/etc/pki/tls/certs/ca-bundle.crt"
-	if !insecureSkipTLSVerify {
-		if ca, ok := dataMap[caFilePathKey]; ok {
-			caFilePath = ca
-		}
+
+	var caFilePath string
+	if ca, ok := dataMap[caFilePathKey]; !insecureSkipTLSVerify && ok {
+		// The value will be /etc/vmware/wcp/tls/vmca.pem. While this is from our provider ConfigMap
+		// it must match the volume path in our Deployment.
+		caFilePath = ca
 	}
 
 	ret := &VSphereVMProviderConfig{
@@ -160,14 +159,12 @@ func configMapToProviderCredentials(
 	client ctrlruntime.Client,
 	configMap *corev1.ConfigMap) (*credentials.VSphereVMProviderCredentials, error) {
 
-	if configMap.Data[vcCredsSecretNameKey] == "" {
+	secretName := configMap.Data[vcCredsSecretNameKey]
+	if secretName == "" {
 		return nil, errors.Errorf("%s creds secret not set in vmop system namespace", vcCredsSecretNameKey)
 	}
 
-	return credentials.GetProviderCredentials(
-		client,
-		configMap.ObjectMeta.Namespace,
-		configMap.Data[vcCredsSecretNameKey])
+	return credentials.GetProviderCredentials(client, configMap.Namespace, secretName)
 }
 
 func GetNameserversFromConfigMap(client ctrlruntime.Client) ([]string, error) {
@@ -177,7 +174,7 @@ func GetNameserversFromConfigMap(client ctrlruntime.Client) ([]string, error) {
 	}
 
 	configMap := &corev1.ConfigMap{}
-	configMapKey := types.NamespacedName{Name: NetworkConfigMapName, Namespace: vmopNamespace}
+	configMapKey := ctrlruntime.ObjectKey{Name: NetworkConfigMapName, Namespace: vmopNamespace}
 	if err := client.Get(context.Background(), configMapKey, configMap); err != nil {
 		return nil, errors.Wrapf(err, "cannot retrieve %v ConfigMap", NetworkConfigMapName)
 	}
@@ -200,11 +197,10 @@ func GetNameserversFromConfigMap(client ctrlruntime.Client) ([]string, error) {
 	return nameserverList, nil
 }
 
-// GetProviderConfigFromConfigMap returns a provider config constructed from vSphere Provider ConfigMap in the VM operator namespace.
-func GetProviderConfigFromConfigMap(
+// getProviderConfigMap returns the provider ConfigMap.
+func getProviderConfigMap(
 	ctx context.Context,
-	client ctrlruntime.Client,
-	zone, namespace string) (*VSphereVMProviderConfig, error) {
+	client ctrlruntime.Client) (*corev1.ConfigMap, error) {
 
 	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
 	if err != nil {
@@ -212,11 +208,23 @@ func GetProviderConfigFromConfigMap(
 	}
 
 	configMap := &corev1.ConfigMap{}
-	configMapKey := types.NamespacedName{Name: ProviderConfigMapName, Namespace: vmopNamespace}
-	err = client.Get(ctx, configMapKey, configMap)
-	if err != nil {
+	configMapKey := ctrlruntime.ObjectKey{Name: ProviderConfigMapName, Namespace: vmopNamespace}
+	if err := client.Get(ctx, configMapKey, configMap); err != nil {
 		// Log message used by VMC LINT. Refer to before making changes
 		return nil, errors.Wrapf(err, "error retrieving the provider ConfigMap %s", configMapKey)
+	}
+
+	return configMap, nil
+}
+
+// GetProviderConfig returns a provider config constructed from vSphere Provider ConfigMap in the VM Operator namespace.
+func GetProviderConfig(
+	ctx context.Context,
+	client ctrlruntime.Client) (*VSphereVMProviderConfig, error) {
+
+	configMap, err := getProviderConfigMap(ctx, client)
+	if err != nil {
+		return nil, err
 	}
 
 	vcCreds, err := configMapToProviderCredentials(client, configMap)
@@ -229,153 +237,154 @@ func GetProviderConfigFromConfigMap(
 		return nil, err
 	}
 
-	// If the FSS is not enabled and no zone was specified then assume the
-	// default zone.
-	if !lib.IsWcpFaultDomainsFSSEnabled() {
-		if zone == "" {
-			zone = topology.DefaultAvailabilityZoneName
-		}
+	return providerConfig, nil
+}
+
+// GetProviderConfigForNamespace returns a provider config constructed from vSphere Provider ConfigMap in the
+// VM operator namespace, with per zone and namespace fields populated.
+func GetProviderConfigForNamespace(
+	ctx context.Context,
+	client ctrlruntime.Client,
+	zone, namespace string) (*VSphereVMProviderConfig, error) {
+
+	providerConfig, err := GetProviderConfig(ctx, client)
+	if err != nil {
+		return nil, err
 	}
 
-	if zone != "" && namespace != "" {
-		if err := UpdateProviderConfigFromZoneAndNamespace(
-			ctx, client, zone, namespace, providerConfig); err != nil {
-
-			return nil, err
-		}
-
-		// Preserve the existing behavior but this isn't quite right. We assume
-		// in various places that we always have a ResourcePool, but we only
-		// check that in the namespace case. Whatever we happen to currently do
-		// with a client without it set doesn't need it so it "works".
-		if providerConfig.ResourcePool == "" || providerConfig.Folder == "" {
-			return nil, fmt.Errorf(
-				"missing ResourcePool and Folder in ProviderConfig. "+
-					"ResourcePool: %v, Folder: %v",
-				providerConfig.ResourcePool,
-				providerConfig.Folder)
-		}
+	err = updateProviderConfigForZoneAndNamespace(ctx, client, zone, namespace, providerConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	return providerConfig, nil
 }
 
-// UpdateProviderConfigFromZoneAndNamespace updates provider config for the specified zone
-// and namespace.
-func UpdateProviderConfigFromZoneAndNamespace(
+// updateProviderConfigForZoneAndNamespace updates provider config for the specified zone and namespace.
+func updateProviderConfigForZoneAndNamespace(
 	ctx context.Context,
 	client ctrlruntime.Client,
 	zone, namespace string,
 	providerConfig *VSphereVMProviderConfig) error {
 
-	ns := &corev1.Namespace{}
-	if err := client.Get(ctx, types.NamespacedName{Name: namespace}, ns); err != nil {
-		return errors.Wrapf(err, "could not get the namespace: %s", namespace)
-	}
-
-	availabilityZone, err := topology.GetAvailabilityZone(ctx, client, zone)
+	poolMoID, folderMoID, err := topology.GetNamespaceRPAndFolder(ctx, client, zone, namespace)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			log.Info("missing zone/namespace information", "zone", zone, "namespace", namespace)
-			return nil
-		}
 		return err
 	}
 
-	if nsInfo, ok := availabilityZone.Spec.Namespaces[namespace]; !ok {
-		log.Info(
-			"Missing availability zone for namespace",
-			"zone", zone,
-			"namespace", namespace)
-	} else {
-		if nsInfo.PoolMoId == "" || nsInfo.FolderMoId == "" {
-			log.Info(
-				"Incomplete namespace resources",
-				"zone", zone,
-				"namespace", namespace,
-				"resourcePool", nsInfo.PoolMoId,
-				"vmFolder", nsInfo.FolderMoId)
-		} else {
-			providerConfig.ResourcePool = nsInfo.PoolMoId
-			providerConfig.Folder = nsInfo.FolderMoId
-		}
+	if poolMoID == "" || folderMoID == "" {
+		// These are required to init a new Session.
+		return fmt.Errorf("namespace %s is missing ResourcePool and Folder config. RP: %s, Folder: %s",
+			namespace, poolMoID, folderMoID)
 	}
+
+	providerConfig.ResourcePool = poolMoID
+	providerConfig.Folder = folderMoID
 
 	return nil
 }
 
-func ProviderConfigToConfigMap(namespace string, config *VSphereVMProviderConfig, vcCredsSecretName string) *corev1.ConfigMap {
-	dataMap := make(map[string]string)
+func setConfigMapData(configMap *corev1.ConfigMap, config *VSphereVMProviderConfig, vcCredsSecretName string) {
+	if configMap.Data == nil {
+		configMap.Data = map[string]string{}
+	}
 
-	dataMap[vcPNIDKey] = config.VcPNID
-	dataMap[vcPortKey] = config.VcPort
-	dataMap[vcCredsSecretNameKey] = vcCredsSecretName
-	dataMap[datacenterKey] = config.Datacenter
-	dataMap[clusterKey] = config.Cluster
-	dataMap[resourcePoolKey] = config.ResourcePool
-	dataMap[folderKey] = config.Folder
-	dataMap[datastoreKey] = config.Datastore
-	dataMap[scRequiredKey] = strconv.FormatBool(config.StorageClassRequired)
-	dataMap[useInventoryKey] = strconv.FormatBool(config.UseInventoryAsContentSource)
-	dataMap[caFilePathKey] = config.CAFilePath
-	dataMap[insecureSkipTLSVerifyKey] = strconv.FormatBool(config.InsecureSkipTLSVerify)
-	dataMap[CtrlVMVMAntiAffinityTagKey] = config.CtrlVMVMAntiAffinityTag
-	dataMap[WorkerVMVMAntiAffinityTagKey] = config.WorkerVMVMAntiAffinityTag
+	configMap.Data[vcPNIDKey] = config.VcPNID
+	configMap.Data[vcPortKey] = config.VcPort
+	configMap.Data[vcCredsSecretNameKey] = vcCredsSecretName
+	configMap.Data[datacenterKey] = config.Datacenter
+	configMap.Data[clusterKey] = config.Cluster
+	configMap.Data[resourcePoolKey] = config.ResourcePool
+	configMap.Data[folderKey] = config.Folder
+	configMap.Data[datastoreKey] = config.Datastore
+	configMap.Data[scRequiredKey] = strconv.FormatBool(config.StorageClassRequired)
+	configMap.Data[useInventoryKey] = strconv.FormatBool(config.UseInventoryAsContentSource)
+	configMap.Data[caFilePathKey] = config.CAFilePath
+	configMap.Data[insecureSkipTLSVerifyKey] = strconv.FormatBool(config.InsecureSkipTLSVerify)
+	configMap.Data[CtrlVMVMAntiAffinityTagKey] = config.CtrlVMVMAntiAffinityTag
+	configMap.Data[WorkerVMVMAntiAffinityTagKey] = config.WorkerVMVMAntiAffinityTag
+}
 
-	return &corev1.ConfigMap{
+// ProviderConfigToConfigMap returns the ConfigMap for the config.
+// Used only in testing.
+func ProviderConfigToConfigMap(
+	namespace string,
+	config *VSphereVMProviderConfig,
+	vcCredsSecretName string) *corev1.ConfigMap {
+
+	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ProviderConfigMapName,
 			Namespace: namespace,
 		},
-		Data: dataMap,
 	}
+	setConfigMapData(configMap, config, vcCredsSecretName)
+
+	return configMap
 }
 
-// InstallVSphereVMProviderConfig installs the ConfigMap for the VM operator in the API server.
+// InstallVSphereVMProviderConfig creates or updates the provider Config.
 // Used only in testing.
-func InstallVSphereVMProviderConfig(client ctrlruntime.Client, namespace string, config *VSphereVMProviderConfig, vcCredsSecretName string) error {
-	configMap := ProviderConfigToConfigMap(namespace, config, vcCredsSecretName)
+func InstallVSphereVMProviderConfig(
+	client ctrlruntime.Client,
+	namespace string,
+	config *VSphereVMProviderConfig,
+	vcCredsSecretName string) error {
 
-	if err := client.Create(context.Background(), configMap); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return err
-		}
-
-		log.Info("Updating VM Operator ConfigMap as it already exists")
-		if err := client.Update(context.Background(), configMap); err != nil {
-			return err
-		}
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+	if err := client.Get(context.TODO(), ctrlruntime.ObjectKeyFromObject(ns), ns); err != nil {
+		return err
+	}
+	if ns.Annotations == nil {
+		ns.Annotations = map[string]string{}
+	}
+	ns.Annotations[topology.NamespaceRPAnnotationKey] = config.ResourcePool
+	ns.Annotations[topology.NamespaceFolderAnnotationKey] = config.Folder
+	if err := client.Update(context.TODO(), ns); err != nil {
+		return err
 	}
 
-	return credentials.InstallVSphereVMProviderSecret(
-		client, namespace, config.VcCreds, vcCredsSecretName)
-}
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ProviderConfigMapName,
+			Namespace: namespace,
+		},
+	}
 
-// PatchVcURLInConfigMap updates the ConfigMap with the new vSphere PNID and Port.
-// BMV: This doesn't really have to be a Patch.
-func PatchVcURLInConfigMap(client ctrlruntime.Client, vcPNID, vcPort string) error {
-	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
+	_, err := controllerutil.CreateOrUpdate(context.TODO(), client, configMap, func() error {
+		setConfigMapData(configMap, config, vcCredsSecretName)
+		return nil
+	})
 	if err != nil {
 		return err
 	}
 
-	configMap := &corev1.ConfigMap{}
-	configMapKey := types.NamespacedName{Name: ProviderConfigMapName, Namespace: vmopNamespace}
-	if err := client.Get(context.Background(), configMapKey, configMap); err != nil {
-		return err
+	return credentials.InstallVSphereVMProviderSecret(client, namespace, config.VcCreds, vcCredsSecretName)
+}
+
+// UpdateVcInConfigMap updates the ConfigMap with the new vCenter PNID and Port. Returns false if no updated needed.
+func UpdateVcInConfigMap(ctx context.Context, client ctrlruntime.Client, vcPNID, vcPort string) (bool, error) {
+	configMap, err := getProviderConfigMap(ctx, client)
+	if err != nil {
+		return false, err
 	}
 
-	origConfigMap := configMap.DeepCopyObject().(ctrlruntime.Object)
+	if configMap.Data[vcPNIDKey] == vcPNID && configMap.Data[vcPortKey] == vcPort {
+		// No update needed.
+		return false, nil
+	}
+
+	origConfigMap := configMap.DeepCopy()
 	configMap.Data[vcPNIDKey] = vcPNID
 	configMap.Data[vcPortKey] = vcPort
 
-	err = client.Patch(context.Background(), configMap, ctrlruntime.MergeFrom(origConfigMap))
+	err = client.Patch(ctx, configMap, ctrlruntime.MergeFrom(origConfigMap))
 	if err != nil {
-		log.Error(err, "Failed to apply patch for ConfigMap", "configMapName", configMapKey)
-		return err
+		log.Error(err, "Failed to update provider ConfigMap", "configMapName", configMap.Name)
+		return false, err
 	}
 
-	return nil
+	return true, nil
 }
 
 // InstallNetworkConfigMap installs the Network ConfigMap for the VM operator in the API master
@@ -386,26 +395,20 @@ func InstallNetworkConfigMap(client ctrlruntime.Client, nameservers string) erro
 		return err
 	}
 
-	dataMap := make(map[string]string)
-	dataMap[NameserversKey] = nameservers
-
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      NetworkConfigMapName,
 			Namespace: vmopNamespace,
 		},
-		Data: dataMap,
 	}
 
-	err = client.Create(context.Background(), configMap)
-	if err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return err
+	_, err = controllerutil.CreateOrUpdate(context.Background(), client, configMap, func() error {
+		if configMap.Data == nil {
+			configMap.Data = map[string]string{}
 		}
+		configMap.Data[NameserversKey] = nameservers
+		return nil
+	})
 
-		log.Info("Updating VM Operator ConfigMap since it already exists")
-		return client.Update(context.Background(), configMap)
-	}
-
-	return nil
+	return err
 }

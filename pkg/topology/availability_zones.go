@@ -6,6 +6,7 @@ package topology
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -44,6 +45,36 @@ var (
 	// is disabled when the WCP_FaultDomains FSS is enabled.
 	ErrWcpFaultDomainsFSSIsEnabled = errors.New("wcp fault domains fss is enabled")
 )
+
+// GetNamespaceRPAndFolder returns the ResourcePool and Folder MoIDs for the zone and namespace.
+func GetNamespaceRPAndFolder(
+	ctx context.Context,
+	client ctrlclient.Client,
+	availabilityZoneName, namespace string) (string, string, error) {
+
+	if !lib.IsWcpFaultDomainsFSSEnabled() {
+		if availabilityZoneName == "" {
+			availabilityZoneName = DefaultAvailabilityZoneName
+		}
+
+		// Note that GetAvailabilityZone() will return a synthesized zone for all
+		// namespaces even though we only care about one namespace. We can address
+		// that later if we don't enable the FSS by default.
+	}
+
+	availabilityZone, err := GetAvailabilityZone(ctx, client, availabilityZoneName)
+	if err != nil {
+		return "", "", err
+	}
+
+	nsInfo, ok := availabilityZone.Spec.Namespaces[namespace]
+	if !ok {
+		return "", "", fmt.Errorf("availability zone %s missing info for namespace %s",
+			availabilityZoneName, namespace)
+	}
+
+	return nsInfo.PoolMoId, nsInfo.FolderMoId, nil
+}
 
 // GetAvailabilityZones returns a list of the AvailabilityZone resources.
 func GetAvailabilityZones(
@@ -84,6 +115,7 @@ func GetAvailabilityZone(
 	ctx context.Context,
 	client ctrlclient.Client,
 	availabilityZoneName string) (topologyv1.AvailabilityZone, error) {
+
 	var availabilityZone topologyv1.AvailabilityZone
 	if err := client.Get(
 		ctx,
@@ -114,6 +146,7 @@ func GetAvailabilityZone(
 func GetDefaultAvailabilityZone(
 	ctx context.Context,
 	client ctrlclient.Client) (topologyv1.AvailabilityZone, error) {
+
 	// Please note the default AZ has no ClusterComputeResourceMoId, and this
 	// is okay, because the Session.init call will grab the Cluster's MoId from
 	// the resource pool.

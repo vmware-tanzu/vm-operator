@@ -361,37 +361,4 @@ var _ = Describe("VMProvider Tests", func() {
 			Expect(session.GetCPUMinMHzInCluster()).Should(BeNumerically(">", 0))
 		})
 	})
-
-	Context("Update PNID", func() {
-		It("update pnid when the same pnid is supplied", func() {
-			vmProvider := vsphere.NewVSphereVMProviderFromClient(k8sClient, recorder)
-			vcClient, err := vmProvider.(vsphere.VSphereVMProviderGetSessionHack).GetClient(ctx)
-			Expect(vcClient).ToNot(BeNil())
-			Expect(err).NotTo(HaveOccurred())
-			providerConfig, err := config.GetProviderConfigFromConfigMap(ctx, k8sClient, "", "")
-			Expect(err).NotTo(HaveOccurred())
-
-			// Same PNID
-			err = vmProvider.UpdateVcPNID(context.TODO(), providerConfig.VcPNID, config.DefaultVCPort)
-			Expect(err).NotTo(HaveOccurred())
-		})
-
-		// This test ends up causes races with other tests in this suite because it changes the PNID
-		// but all the tests in this directory run in the same suite with the same testenv so the
-		// same apiserver. We could restore the valid PNID after but we should really fix the tests
-		// to use a unique vcsim env per Describe() context. This VM Provider code is also executed
-		// and tested in the infra controller test so disable it here.
-		XIt("update pnid when a different pnid is supplied", func() {
-			vmProvider := vsphere.NewVSphereVMProviderFromClient(k8sClient, recorder)
-			providerConfig, err := config.GetProviderConfigFromConfigMap(ctx, k8sClient, "", "")
-			Expect(err).NotTo(HaveOccurred())
-
-			// Different PNID
-			pnid := providerConfig.VcPNID + "-01"
-			err = vmProvider.UpdateVcPNID(context.TODO(), pnid, config.DefaultVCPort)
-			Expect(err).NotTo(HaveOccurred())
-			providerConfig, _ = config.GetProviderConfigFromConfigMap(ctx, k8sClient, "", "")
-			Expect(providerConfig.VcPNID).Should(Equal(pnid))
-		})
-	})
 })

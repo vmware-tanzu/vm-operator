@@ -340,10 +340,8 @@ var _ = Describe("Tests for client TLS", func() {
 			config.CAFilePath = "/a/nonexistent/ca-bundle.crt"
 			config.InsecureSkipTLSVerify = false
 			_, err := NewClient(context.Background(), config)
-
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to set root CA"))
-
 		})
 
 	})
@@ -360,18 +358,6 @@ var _ = Describe("Tests for client TLS", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("x509: certificate signed by unknown authority"))
 			})
-
-		})
-		Context("when TLS verification is skipped", func() {
-			It("Successfully connects", func() {
-				tlsServer.URL.User = url.UserPassword("some-username", "some-password")
-				config := testConfig(tlsServer.URL.Hostname(), tlsServer.URL.Port(), "some-username", "some-password")
-				config.CAFilePath = "/a/nonexistent/ca-bundle.crt"
-				_, err := NewClient(context.Background(), config)
-
-				Expect(err).NotTo(HaveOccurred())
-			})
-
 		})
 	})
 })

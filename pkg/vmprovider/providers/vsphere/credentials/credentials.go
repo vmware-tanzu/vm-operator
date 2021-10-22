@@ -7,10 +7,10 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/pkg/errors"
 )
@@ -21,7 +21,7 @@ type VSphereVMProviderCredentials struct {
 	Password string
 }
 
-func GetProviderCredentials(client ctrlruntime.Client, namespace string, secretName string) (*VSphereVMProviderCredentials, error) {
+func GetProviderCredentials(client ctrlruntime.Client, namespace, secretName string) (*VSphereVMProviderCredentials, error) {
 	secret := &corev1.Secret{}
 	secretKey := types.NamespacedName{Namespace: namespace, Name: secretName}
 	if err := client.Get(context.Background(), secretKey, secret); err != nil {
@@ -40,29 +40,48 @@ func GetProviderCredentials(client ctrlruntime.Client, namespace string, secretN
 	return &credentials, nil
 }
 
+func setSecretData(secret *corev1.Secret, credentials *VSphereVMProviderCredentials) {
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+
+	secret.Data["username"] = []byte(credentials.Username)
+	secret.Data["password"] = []byte(credentials.Password)
+}
+
+// ProviderCredentialsToSecret returns the Secret for the credentials.
+// Testing only.
 func ProviderCredentialsToSecret(namespace string, credentials *VSphereVMProviderCredentials, vcCredsSecretName string) *corev1.Secret {
-	return &corev1.Secret{
+	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vcCredsSecretName,
 			Namespace: namespace,
 		},
-		Data: map[string][]byte{
-			"username": []byte(credentials.Username),
-			"password": []byte(credentials.Password),
-		},
 	}
+	setSecretData(secret, credentials)
+
+	return secret
 }
 
-func InstallVSphereVMProviderSecret(client ctrlruntime.Client, namespace string, credentials *VSphereVMProviderCredentials, vcCredsSecretName string) error {
-	secret := ProviderCredentialsToSecret(namespace, credentials, vcCredsSecretName)
+// InstallVSphereVMProviderSecret creates or updates the provider Secret.
+// Testing only.
+func InstallVSphereVMProviderSecret(
+	client ctrlruntime.Client,
+	namespace string,
+	credentials *VSphereVMProviderCredentials,
+	vcCredsSecretName string) error {
 
-	if err := client.Create(context.Background(), secret); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return err
-		}
-
-		return client.Update(context.Background(), secret)
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vcCredsSecretName,
+			Namespace: namespace,
+		},
 	}
 
-	return nil
+	_, err := controllerutil.CreateOrUpdate(context.Background(), client, secret, func() error {
+		setSecretData(secret, credentials)
+		return nil
+	})
+
+	return err
 }

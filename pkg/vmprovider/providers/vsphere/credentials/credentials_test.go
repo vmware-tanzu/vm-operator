@@ -30,9 +30,9 @@ var _ = Describe("GetProviderCredentials", func() {
 		Specify("returns good credentials with no error", func() {
 			secretIn, credsIn := newSecret("some-name", "some-namespace", "some-user", "some-pass")
 			client := builder.NewFakeClient(secretIn)
-			credsOut, err := GetProviderCredentials(client, secretIn.ObjectMeta.Namespace, secretIn.ObjectMeta.Name)
+			credsOut, err := GetProviderCredentials(client, secretIn.Namespace, secretIn.Name)
+			Expect(err).ToNot(HaveOccurred())
 			Expect(credsOut).To(Equal(credsIn))
-			Expect(err).To(BeNil())
 		})
 	})
 
@@ -42,9 +42,9 @@ var _ = Describe("GetProviderCredentials", func() {
 			Specify("returns no credentials with error", func() {
 				secretIn, _ := newSecret("some-name", "some-namespace", "", "some-pass")
 				client := builder.NewFakeClient(secretIn)
-				credsOut, err := GetProviderCredentials(client, secretIn.ObjectMeta.Namespace, secretIn.ObjectMeta.Name)
+				credsOut, err := GetProviderCredentials(client, secretIn.Namespace, secretIn.Name)
+				Expect(err).To(HaveOccurred())
 				Expect(credsOut).To(BeNil())
-				Expect(err).NotTo(BeNil())
 			})
 		})
 
@@ -52,9 +52,9 @@ var _ = Describe("GetProviderCredentials", func() {
 			Specify("returns no credentials with error", func() {
 				secretIn, _ := newSecret("some-name", "some-namespace", "some-user", "")
 				client := builder.NewFakeClient(secretIn)
-				credsOut, err := GetProviderCredentials(client, secretIn.ObjectMeta.Namespace, secretIn.ObjectMeta.Name)
+				credsOut, err := GetProviderCredentials(client, secretIn.Namespace, secretIn.Name)
+				Expect(err).To(HaveOccurred())
 				Expect(credsOut).To(BeNil())
-				Expect(err).NotTo(BeNil())
 			})
 		})
 	})
@@ -63,9 +63,8 @@ var _ = Describe("GetProviderCredentials", func() {
 		Specify("returns no credentials with error", func() {
 			client := builder.NewFakeClient()
 			credsOut, err := GetProviderCredentials(client, "none-namespace", "none-name")
+			Expect(err).To(HaveOccurred())
 			Expect(credsOut).To(BeNil())
-			Expect(err).NotTo(BeNil())
 		})
 	})
-
 })

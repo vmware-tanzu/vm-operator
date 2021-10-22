@@ -48,11 +48,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
-type VSphereVMProviderTestConfig struct {
-	VcCredsSecretName string
-	*config.VSphereVMProviderConfig
-}
-
 const (
 	IntegrationContentLibraryItemName = "test-item"
 	DefaultNamespace                  = "default"
@@ -143,8 +138,6 @@ func enableDebugLogging() {
 }
 
 // GetCtrlRuntimeClient gets a vm-operator-api client
-// This is separate from NewVMService so that a fake client can be injected for testing
-// This should really take the Scheme as a param.
 func GetCtrlRuntimeClient(config *rest.Config) (client.Client, error) {
 	s := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(s)
@@ -191,13 +184,15 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSp
 	vSphereConfig := NewIntegrationVMOperatorConfig(address, port)
 	Expect(vSphereConfig).ToNot(BeNil())
 
-	vmopClient, err := SetupVcSimEnv(vSphereConfig, k8sClient, vcSim, namespaces)
+	vmopClient, err := SetupVcSimEnv(vSphereConfig, k8sClient)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = os.Setenv(contentlibrary.EnvContentLibAPIWaitSecs, "1")
 	Expect(err).NotTo(HaveOccurred())
 
 	// Create a default AZ with the namespaces in it.
+	// NOTE: Even though for these tests the FSS is (generally) off, GetAvailabilityZones() will
+	// return any AZs if they exist regardless of the FSS value.
 	az := &topologyv1.AvailabilityZone{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "availabilityzone",
@@ -208,7 +203,10 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSp
 		},
 	}
 	for _, ns := range namespaces {
-		az.Spec.Namespaces[ns] = topologyv1.NamespaceInfo{}
+		az.Spec.Namespaces[ns] = topologyv1.NamespaceInfo{
+			PoolMoId:   vSphereConfig.ResourcePool,
+			FolderMoId: vSphereConfig.Folder,
+		}
 	}
 	Expect(k8sClient.Create(context.Background(), az)).To(Succeed())
 
@@ -227,9 +225,7 @@ func TeardownIntegrationEnv(testEnv *envtest.Environment, vcSim *VcSimInstance) 
 
 func SetupVcSimEnv(
 	vSphereConfig *config.VSphereVMProviderConfig,
-	client client.Client,
-	vcSim *VcSimInstance,
-	namespaces []string) (*vmopclient.Client, error) {
+	client client.Client) (*vmopclient.Client, error) {
 
 	// Support for bootstrapping VM operator resource requirements in Kubernetes.
 	// Generate a fake vsphere provider config that is suitable for the integration test environment.
@@ -259,16 +255,6 @@ func SetupVcSimEnv(
 
 	if err := SetupContentLibrary(client, vmopClient); err != nil {
 		return nil, fmt.Errorf("failed to setup the VC Simulator: %v", err)
-	}
-
-	// Configure each requested namespace to use CL as the content source
-	for _, ns := range namespaces {
-		err = config.InstallVSphereVMProviderConfig(client,
-			ns,
-			NewIntegrationVMOperatorConfig(vcSim.IP, vcSim.Port),
-			SecretName,
-		)
-		Expect(err).NotTo(HaveOccurred())
 	}
 
 	return vmopClient, nil

@@ -65,20 +65,30 @@ var _ = Describe("Availability Zones", func() {
 					Namespaces: map[string]topologyv1.NamespaceInfo{},
 				},
 			}
+			if wcpFaultDomainsFssEnabled {
+				for j := 0; j < numberOfNamespaces; j++ {
+					obj.Spec.Namespaces[fmt.Sprintf("ns-%d", j)] = topologyv1.NamespaceInfo{
+						PoolMoId:   poolMoID,
+						FolderMoId: folderMoID,
+					}
+				}
+			}
 			Expect(client.Create(ctx, obj)).To(Succeed())
 		}
 
-		for i := 0; i < numberOfNamespaces; i++ {
-			obj := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: fmt.Sprintf("ns-%d", i),
-					Annotations: map[string]string{
-						topology.NamespaceFolderAnnotationKey: folderMoID,
-						topology.NamespaceRPAnnotationKey:     poolMoID,
+		if !wcpFaultDomainsFssEnabled {
+			for i := 0; i < numberOfNamespaces; i++ {
+				obj := &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: fmt.Sprintf("ns-%d", i),
+						Annotations: map[string]string{
+							topology.NamespaceRPAnnotationKey:     poolMoID,
+							topology.NamespaceFolderAnnotationKey: folderMoID,
+						},
 					},
-				},
+				}
+				Expect(client.Create(ctx, obj)).To(Succeed())
 			}
-			Expect(client.Create(ctx, obj)).To(Succeed())
 		}
 	})
 
@@ -135,11 +145,48 @@ var _ = Describe("Availability Zones", func() {
 	assertGetAvailabilityZoneInvalidNameErrNotFound := func() {
 		_, err := topology.GetAvailabilityZone(ctx, client, "invalid")
 		ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
-
 	}
 	assertGetAvailabilityZoneEmptyNameErrNotFound := func() {
 		_, err := topology.GetAvailabilityZone(ctx, client, "")
 		ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
+	}
+
+	assertGetNamespaceRPAndFolderInvalidNameErrNotFound := func() {
+		_, _, err := topology.GetNamespaceRPAndFolder(ctx, client, "invalid", "ns-1")
+		ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
+	}
+	assertGetNamespaceRPAndFolderSuccessForAZ := func(azName string) {
+		for i := 0; i < numberOfNamespaces; i++ {
+			rp, folder, err := topology.GetNamespaceRPAndFolder(ctx, client, azName, fmt.Sprintf("ns-%d", i))
+			ExpectWithOffset(2, err).ToNot(HaveOccurred())
+			ExpectWithOffset(2, rp).To(Equal(poolMoID))
+			ExpectWithOffset(2, folder).To(Equal(folderMoID))
+		}
+	}
+	assertGetNamespaceRPAndFolderSuccess := func() {
+		for i := 0; i < numberOfAvailabilityZones; i++ {
+			assertGetNamespaceRPAndFolderSuccessForAZ(fmt.Sprintf("az-%d", i))
+		}
+	}
+	assertGetNamespaceRPAndFolderSuccessNoZone := func() {
+		assertGetNamespaceRPAndFolderSuccessForAZ("")
+	}
+	assertGetNamespaceRPAndFolderSuccessDefaultZone := func() {
+		assertGetNamespaceRPAndFolderSuccessForAZ(topology.DefaultAvailabilityZoneName)
+	}
+	assertGetNamespaceRPAndFolderInvalidAZErrNotFound := func() {
+		for i := 0; i < numberOfNamespaces; i++ {
+			_, _, err := topology.GetNamespaceRPAndFolder(ctx, client, "invalid", fmt.Sprintf("ns-%d", i))
+			ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
+		}
+	}
+	assertGetNamespaceRPAndFolderInvalidNamespaceErrNotFound := func() {
+		for i := 0; i < numberOfAvailabilityZones; i++ {
+			azName := fmt.Sprintf("az-%d", i)
+			_, _, err := topology.GetNamespaceRPAndFolder(ctx, client, azName, "invalid")
+			ExpectWithOffset(1, err).To(
+				MatchError(fmt.Errorf("availability zone %s missing info for namespace %s", azName, "invalid")))
+		}
 	}
 
 	When("Two AvailabilityZone resources exist", func() {
@@ -168,6 +215,18 @@ var _ = Describe("Availability Zones", func() {
 						It("Should return an apierrors.NotFound error", assertGetAvailabilityZoneEmptyNameErrNotFound)
 					})
 				})
+				Context("GetNamespaceRPAndFolder", func() {
+					Context("With an invalid AvailabilityZone name", assertGetNamespaceRPAndFolderInvalidAZErrNotFound)
+					Context("With a valid AvailabilityZone name", func() {
+						It("Should return the RP and Folder resources", assertGetNamespaceRPAndFolderSuccess)
+					})
+					Context("With an invalid AvailabilityZone name", func() {
+						It("Should return an apierrors.NotFound error", assertGetNamespaceRPAndFolderInvalidNameErrNotFound)
+					})
+					Context("With an invalid Namespace name", func() {
+						It("Should return an missing info error", assertGetNamespaceRPAndFolderInvalidNamespaceErrNotFound)
+					})
+				})
 			})
 			Context("WCP_FaultDomains=disabled", func() {
 				Context("GetAvailabilityZones", func() {
@@ -182,6 +241,18 @@ var _ = Describe("Availability Zones", func() {
 					})
 					Context("With an empty AvailabilityZone name", func() {
 						It("Should return an apierrors.NotFound error", assertGetAvailabilityZoneEmptyNameErrNotFound)
+					})
+				})
+				Context("GetNamespaceRPAndFolder", func() {
+					Context("With an invalid AvailabilityZone name", assertGetNamespaceRPAndFolderInvalidAZErrNotFound)
+					Context("With the default AvailabilityZone name", func() {
+						It("Should return the RP and Folder resources", assertGetNamespaceRPAndFolderSuccessDefaultZone)
+					})
+					Context("With an empty AvailabilityZone name", func() {
+						It("Should return the RP and Folder resources", assertGetNamespaceRPAndFolderSuccessNoZone)
+					})
+					Context("With an invalid Namespace name", func() {
+						It("Should return an missing info error", assertGetNamespaceRPAndFolderInvalidNamespaceErrNotFound)
 					})
 				})
 			})

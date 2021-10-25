@@ -12,17 +12,17 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
 
@@ -105,21 +105,9 @@ func LibItemToVirtualMachineImage(
 			image.Spec.OVFEnv = GetUserConfigurablePropertiesFromOvf(ovfEnvelope)
 			image.Spec.HardwareVersion = hwVersion
 
-			// Allow OVF compatibility if
-			// - The OVF contains the VMOperatorV1Alpha1ConfigKey key that denotes cloud-init being disabled at first-boot
-			// - If it is a TKG image
-			if isOVFV1Alpha1Compatible(ovfEnvelope) || isATKGImage(ovfSystemProps) {
-				conditions.MarkTrue(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
-			} else {
-				msg := "VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1"
-				conditions.MarkFalse(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
-					v1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason, v1alpha1.ConditionSeverityError, msg)
-			}
+			// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_VMService_UnifiedTKG_BYOI FSS state.
+			image.Status.ImageSupported = pointer.BoolPtr(isImageSupported(image, ovfEnvelope, ovfSystemProps))
 		}
-
-		// Set Status.ImageSupported to combined compatibility of OVF compatibility.
-		image.Status.ImageSupported = pointer.BoolPtr(conditions.IsTrue(image,
-			v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition))
 	}
 
 	return image
@@ -199,6 +187,24 @@ func readerFromURL(ctx context.Context, c *rest.Client, url *url.URL) (io.ReadCl
 // libItemVersionAnnotation returns the version annotation value for the item.
 func libItemVersionAnnotation(item *library.Item) string {
 	return fmt.Sprintf("%s:%s:%d", item.ID, item.Version, constants.VMImageCLVersionAnnotationVersion)
+}
+
+// isImageSupported checks if the image is deemed supported by VM Operator.
+// Image is marked supported if:
+// - WCP_VMService_UnifiedTKG_BYOI FSS is enabled. We assume images are compliant by default and not rely on the presence of ExtraConfig key in the OVF image.
+// - Otherwise, The OVF should contain the VMOperatorV1Alpha1ConfigKey key that denotes cloud-init being disabled at first-boot, or it is a TKG image.
+func isImageSupported(image *v1alpha1.VirtualMachineImage, ovfEnvelope *ovf.Envelope, ovfSystemProps map[string]string) bool {
+	if lib.IsUnifiedTKGBYOIFSSEnabled() {
+		return true
+	}
+	if isOVFV1Alpha1Compatible(ovfEnvelope) || isATKGImage(ovfSystemProps) {
+		conditions.MarkTrue(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
+	} else {
+		msg := "VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1"
+		conditions.MarkFalse(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
+			v1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason, v1alpha1.ConditionSeverityError, msg)
+	}
+	return conditions.IsTrue(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
 }
 
 // isOVFV1Alpha1Compatible checks the image if it has VMOperatorV1Alpha1ExtraConfigKey set to VMOperatorV1Alpha1ConfigReady

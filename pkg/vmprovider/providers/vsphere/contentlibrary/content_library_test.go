@@ -6,6 +6,7 @@
 package contentlibrary_test
 
 import (
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -19,6 +20,7 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
 )
@@ -45,6 +47,18 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 		versionKey = "vmware-system-version"
 		versionVal = "1.15"
 	)
+
+	var (
+		// FSS related to UnifiedTKGBYOI. This FSS should be manipulated atomically to avoid races between tests and
+		// provider.
+		unifiedTKGBYOIFSS uint32
+	)
+
+	BeforeEach(func() {
+		lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
+			return atomic.LoadUint32(&unifiedTKGBYOIFSS) != 0
+		}
+	})
 
 	Context("Expose ovfEnv properties", func() {
 		const (
@@ -142,91 +156,143 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 			Expect(image.Status.Conditions).Should(BeEmpty())
 		})
 
-		It("ImageSupported should be set to true when it is a TKG image and valid OS Type is set and OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig", func() {
-			tkgKey := "vmware-system.guest.kubernetes.distribution.image.version"
+		When("WCP_VMService_UnifiedTKG_BYOI FSS is enabled", func() {
+			var (
+				oldUnifiedTKGBYOIFSSState uint32
+			)
+			BeforeEach(func() {
+				oldUnifiedTKGBYOIFSSState = unifiedTKGBYOIFSS
+				atomic.StoreUint32(&unifiedTKGBYOIFSS, 1)
+			})
 
-			ovfEnvelope := &ovf.Envelope{
-				VirtualSystem: &ovf.VirtualSystem{
-					OperatingSystem: []ovf.OperatingSystemSection{
-						{
-							OSType: pointer.String("dummy_valid_os_type"),
-						},
-					},
-					Product: []ovf.ProductSection{
-						{
-							Property: []ovf.Property{
-								{
-									Key:     tkgKey,
-									Default: pointer.StringPtr("someRandom"),
+			AfterEach(func() {
+				atomic.StoreUint32(&unifiedTKGBYOIFSS, oldUnifiedTKGBYOIFSSState)
+			})
+
+			It("ImageSupported should be set to true when OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig and WCP_VMService_UnifiedTKG_BYOI FSS is set ", func() {
+				ovfEnvelope := &ovf.Envelope{
+					VirtualSystem: &ovf.VirtualSystem{
+						Product: []ovf.ProductSection{
+							{
+								Property: []ovf.Property{
+									{
+										Key:     "someKey",
+										Default: pointer.StringPtr("someRandom"),
+									},
 								},
 							},
 						},
 					},
-				},
-			}
+				}
 
-			image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
-			Expect(image).ToNot(BeNil())
+				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
+				Expect(image).ToNot(BeNil())
+				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
 
-			Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
-			expectedCondition := vmopv1alpha1.Conditions{
-				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
-			}
-			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
+				Expect(image.Status.Conditions).Should(BeEmpty())
+			})
+
 		})
 
-		It("ImageSupported should be set to false when OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig and is not a TKG image and has a valid OS type set", func() {
-			ovfEnvelope := &ovf.Envelope{
-				VirtualSystem: &ovf.VirtualSystem{
-					Product: []ovf.ProductSection{
-						{
-							Property: []ovf.Property{
-								{
-									Key:     "someKey",
-									Default: pointer.StringPtr("someRandom"),
+		When("WCP_VMService_UnifiedTKG_BYOI FSS is not enabled", func() {
+			var (
+				oldUnifiedTKGBYOIFSSState uint32
+			)
+			BeforeEach(func() {
+				oldUnifiedTKGBYOIFSSState = unifiedTKGBYOIFSS
+				atomic.StoreUint32(&unifiedTKGBYOIFSS, 0)
+			})
+
+			AfterEach(func() {
+				atomic.StoreUint32(&unifiedTKGBYOIFSS, oldUnifiedTKGBYOIFSSState)
+			})
+
+			It("ImageSupported should be set to true when it is a TKG image and valid OS Type is set and OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig", func() {
+				tkgKey := "vmware-system.guest.kubernetes.distribution.image.version"
+
+				ovfEnvelope := &ovf.Envelope{
+					VirtualSystem: &ovf.VirtualSystem{
+						OperatingSystem: []ovf.OperatingSystemSection{
+							{
+								OSType: pointer.String("dummy_valid_os_type"),
+							},
+						},
+						Product: []ovf.ProductSection{
+							{
+								Property: []ovf.Property{
+									{
+										Key:     tkgKey,
+										Default: pointer.StringPtr("someRandom"),
+									},
 								},
 							},
 						},
 					},
-				},
-			}
+				}
 
-			image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
-			Expect(image).ToNot(BeNil())
-			Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(false)))
+				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
+				Expect(image).ToNot(BeNil())
 
-			expectedCondition := vmopv1alpha1.Conditions{
-				*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
-					vmopv1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
-					vmopv1alpha1.ConditionSeverityError,
-					"VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1"),
-			}
-			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
-		})
+				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
+				}
+				Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
+			})
 
-		It("ImageSupported should be set to true when OVF Envelope has VMOperatorV1Alpha1ExtraConfigKey set to VMOperatorV1Alpha1ConfigReady in extraConfig and has a valid OS type set", func() {
-			ovfEnvelope := &ovf.Envelope{
-				VirtualSystem: &ovf.VirtualSystem{
-					VirtualHardware: []ovf.VirtualHardwareSection{
-						{
-							ExtraConfig: []ovf.Config{
-								{
-									Key:   constants.VMOperatorV1Alpha1ExtraConfigKey,
-									Value: constants.VMOperatorV1Alpha1ConfigReady,
+			It("ImageSupported should be set to false when OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig and is not a TKG image and has a valid OS type set", func() {
+				ovfEnvelope := &ovf.Envelope{
+					VirtualSystem: &ovf.VirtualSystem{
+						Product: []ovf.ProductSection{
+							{
+								Property: []ovf.Property{
+									{
+										Key:     "someKey",
+										Default: pointer.StringPtr("someRandom"),
+									},
 								},
 							},
 						},
 					},
-				},
-			}
+				}
 
-			image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
-			Expect(image).ToNot(BeNil())
-			Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
-			expectedCondition := vmopv1alpha1.Conditions{
-				*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
-			}
-			Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
+				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
+				Expect(image).ToNot(BeNil())
+				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(false)))
+
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
+						vmopv1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
+						vmopv1alpha1.ConditionSeverityError,
+						"VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1"),
+				}
+				Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
+			})
+
+			It("ImageSupported should be set to true when OVF Envelope has VMOperatorV1Alpha1ExtraConfigKey set to VMOperatorV1Alpha1ConfigReady in extraConfig and has a valid OS type set", func() {
+				ovfEnvelope := &ovf.Envelope{
+					VirtualSystem: &ovf.VirtualSystem{
+						VirtualHardware: []ovf.VirtualHardwareSection{
+							{
+								ExtraConfig: []ovf.Config{
+									{
+										Key:   constants.VMOperatorV1Alpha1ExtraConfigKey,
+										Value: constants.VMOperatorV1Alpha1ConfigReady,
+									},
+								},
+							},
+						},
+					},
+				}
+
+				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
+				Expect(image).ToNot(BeNil())
+				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
+				}
+				Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
+			})
 		})
 	})
 })

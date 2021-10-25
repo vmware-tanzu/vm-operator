@@ -10,12 +10,14 @@ import (
 )
 
 const (
-	trueString                    = "true"
-	VmopNamespaceEnv              = "POD_NAMESPACE"
-	WcpFaultDomainsFSS            = "FSS_WCP_FAULTDOMAINS"
-	VMServiceFSS                  = "FSS_WCP_VMSERVICE"
-	VMServiceV1Alpha2FSS          = "FSS_WCP_VMSERVICE_V1ALPHA2"
-	InstanceStorageFSS            = "FSS_WCP_INSTANCE_STORAGE"
+	trueString           = "true"
+	VmopNamespaceEnv     = "POD_NAMESPACE"
+	WcpFaultDomainsFSS   = "FSS_WCP_FAULTDOMAINS"
+	VMServiceFSS         = "FSS_WCP_VMSERVICE"
+	VMServiceV1Alpha2FSS = "FSS_WCP_VMSERVICE_V1ALPHA2"
+	InstanceStorageFSS   = "FSS_WCP_INSTANCE_STORAGE"
+	UnifiedTKGBYOIFSS    = "FSS_WCP_VMService_UnifiedTKG_BYOI"
+
 	MaxCreateVMsOnProviderEnv     = "MAX_CREATE_VMS_ON_PROVIDER"
 	DefaultMaxCreateVMsOnProvider = 80
 )
@@ -52,6 +54,10 @@ var IsVMServiceV1Alpha2FSSEnabled = func() bool {
 
 var IsInstanceStorageFSSEnabled = func() bool {
 	return os.Getenv(InstanceStorageFSS) == trueString
+}
+
+var IsUnifiedTKGBYOIFSSEnabled = func() bool {
+	return os.Getenv(UnifiedTKGBYOIFSS) == trueString
 }
 
 // MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler threads that can be used to create VMs on the provider

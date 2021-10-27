@@ -11,6 +11,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -662,6 +663,32 @@ func unitTestsReconcile() {
 			err := reconciler.ReconcileDelete(vmServiceCtx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(vmServiceCtx.VMService.GetFinalizers()).ToNot(ContainElement(finalizerName))
+		})
+
+		Context("When Endpoint and Service exists", func() {
+
+			BeforeEach(func() {
+				objectMeta := metav1.ObjectMeta{
+					Name:      vmService.Name,
+					Namespace: vmService.Namespace,
+				}
+				endpoint := &corev1.Endpoints{ObjectMeta: objectMeta}
+				service := &corev1.Service{ObjectMeta: objectMeta}
+				initObjects = append(initObjects, endpoint, service)
+			})
+
+			It("Deletes Endpoint and Service", func() {
+				err := reconciler.ReconcileDelete(vmServiceCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				endpoint := &corev1.Endpoints{}
+				err = ctx.Client.Get(ctx, objKey, endpoint)
+				Expect(errors.IsNotFound(err)).To(BeTrue())
+
+				service := &corev1.Service{}
+				err = ctx.Client.Get(ctx, objKey, service)
+				Expect(errors.IsNotFound(err)).To(BeTrue())
+			})
 		})
 	})
 }

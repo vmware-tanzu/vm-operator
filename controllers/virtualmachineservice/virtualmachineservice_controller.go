@@ -155,9 +155,25 @@ func (r *ReconcileVirtualMachineService) Reconcile(ctx goctx.Context, request re
 
 func (r *ReconcileVirtualMachineService) ReconcileDelete(ctx *context.VirtualMachineServiceContext) error {
 	if controllerutil.ContainsFinalizer(ctx.VMService, finalizerName) {
+		objectMeta := metav1.ObjectMeta{
+			Name:      ctx.VMService.Name,
+			Namespace: ctx.VMService.Namespace,
+		}
+
+		endpoint := &corev1.Endpoints{ObjectMeta: objectMeta}
+		if err := r.Client.Delete(ctx, endpoint); client.IgnoreNotFound(err) != nil {
+			ctx.Logger.Error(err, "Failed to delete Endpoints")
+			return err
+		}
+
+		service := &corev1.Service{ObjectMeta: objectMeta}
+		if err := r.Client.Delete(ctx, service); client.IgnoreNotFound(err) != nil {
+			ctx.Logger.Error(err, "Failed to delete Service")
+			return err
+		}
+
 		ctx.Logger.Info("Delete VirtualMachineService")
 		r.recorder.EmitEvent(ctx.VMService, OpDelete, nil, false)
-		// NOTE: For now, we let k8s GC delete the Service and Endpoints.
 		controllerutil.RemoveFinalizer(ctx.VMService, finalizerName)
 	}
 
@@ -167,9 +183,11 @@ func (r *ReconcileVirtualMachineService) ReconcileDelete(ctx *context.VirtualMac
 func (r *ReconcileVirtualMachineService) ReconcileNormal(ctx *context.VirtualMachineServiceContext) error {
 	if !controllerutil.ContainsFinalizer(ctx.VMService, finalizerName) {
 		controllerutil.AddFinalizer(ctx.VMService, finalizerName)
-		// NOTE: The VirtualMachineService is set as the OwnerReference of the Service and Endpoints,
-		// and we let k8s GC delete those so we don't _have_ to return here to let the patch helper
-		// update the VM Service finalizer before proceeding.
+		// NOTE: The VirtualMachineService is set as the OwnerReference of the Service and Endpoints.
+		// So while ReconcileDelete() does delete them when our finalizer is set, the k8s GC will
+		// delete them if they still exist if the VirtualMachineService is deleted so we do not have
+		// to return here. The explicit delete in ReconcileDelete() just speeds up the ultimate removal
+		// of the service from the LB.
 	}
 
 	if err := r.reconcileVMService(ctx); err != nil {
@@ -196,7 +214,7 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *context.Virtual
 
 		// Get the provider specific annotations for service and add them to the VMService as
 		// that's where Service inherits the values.
-		annotations, err := r.loadbalancerProvider.GetServiceAnnotations(ctx, ctx.VMService)
+		annotations, err := r.loadbalancerProvider.GetServiceAnnotations(ctx, vmService)
 		if err != nil {
 			ctx.Logger.Error(err, "Failed to get loadbalancer annotations for service")
 			return err
@@ -216,7 +234,7 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *context.Virtual
 
 		// Get the provider specific labels for Service and add them to the vm service
 		// as that's where Service inherits the values.
-		labels, err := r.loadbalancerProvider.GetServiceLabels(ctx, ctx.VMService)
+		labels, err := r.loadbalancerProvider.GetServiceLabels(ctx, vmService)
 		if err != nil {
 			ctx.Logger.Error(err, "Failed to get loadbalancer labels for service")
 			return err

@@ -98,18 +98,19 @@ type VirtualMachineNetworkInterface struct {
 type VirtualMachineMetadataTransport string
 
 const (
-	// VirtualMachineMetadataExtraConfigTransport will set the VirtualMachineMetadata ConfigMap data as
-	// extraConfig key value fields on the VM. Only keys prefixed with "guestinfo." will be set.
+	// VirtualMachineMetadataExtraConfigTransport indicates that the data set in the VirtualMachineMetadata Transport Resource,
+	// i.e., a ConfigMap or Secret, will be extraConfig key value fields on the VM. Only keys prefixed with "guestinfo." will
+	// be set.
 	VirtualMachineMetadataExtraConfigTransport VirtualMachineMetadataTransport = "ExtraConfig"
 
-	// VirtualMachineMetadataOvfEnvTransport will set the VirtualMachineMetadata ConfigMap data as
-	// vApp properties on the VM, which will be exposed as OvfEnv to the Guest VM. Only properties
+	// VirtualMachineMetadataOvfEnvTransport indicates that the data set in the VirtualMachineMetadata Transport Resource,
+	// i.e., a ConfigMap or Secret, will be vApp properties on the VM, which will be exposed as OvfEnv to the Guest VM. Only properties
 	// marked userConfigurable and already present in either OVF Properties of a VirtualMachineImage
 	// or as vApp properties on an existing VM or VMTX will be set, all others will be ignored.
 	VirtualMachineMetadataOvfEnvTransport VirtualMachineMetadataTransport = "OvfEnv"
 
-	// VirtualMachineMetadataCloudInitTransport indicates the data in
-	// the ConfigMap resource specified by VirtualMachineMetadata.ConfigMapName
+	// VirtualMachineMetadataCloudInitTransport indicates the data set in
+	// the VirtualMachineMetadata Transport Resource, i.e., a ConfigMap or Secret,
 	// in the "user-data" key is cloud-init userdata.
 	//
 	// Please note that, despite the name, VirtualMachineMetadata has no
@@ -121,16 +122,25 @@ const (
 
 // VirtualMachineMetadata defines any metadata that should be passed to the VirtualMachine instance.  A typical use
 // case is for this metadata to be used for Guest Customization, however the intended use of the metadata is
-// agnostic to the VirtualMachine controller.  VirtualMachineMetadata is read from a configured ConfigMap and then
+// agnostic to the VirtualMachine controller.  VirtualMachineMetadata is read from a configured ConfigMap or a Secret and then
 // propagated to the VirtualMachine instance using a desired "Transport" mechanism.
 type VirtualMachineMetadata struct {
 	// ConfigMapName describes the name of the ConfigMap, in the same Namespace as the VirtualMachine, that should be
 	// used for VirtualMachine metadata.  The contents of the Data field of the ConfigMap is used as the VM Metadata.
 	// The format of the contents of the VM Metadata are not parsed or interpreted by the VirtualMachine controller.
+	// Please note, this field and SecretName are mutually exclusive.
+	// +optional
 	ConfigMapName string `json:"configMapName,omitempty"`
 
+	// SecretName describes the name of the Secret, in the same Namespace as the VirtualMachine, that should be used
+	// for VirtualMachine metadata. The contents of the Data field of the Secret is used as the VM Metadata.
+	// The format of the contents of the VM Metadata are not parsed or interpreted by the VirtualMachine controller.
+	// Please note, this field and ConfigMapName are mutually exclusive.
+	// +optional
+	SecretName string `json:"secretName,omitempty"`
+
 	// Transport describes the name of a supported VirtualMachineMetadata transport protocol.  Currently, the only supported
-	// transport protocols are "ExtraConfig" and "OvfEnv".
+	// transport protocols are "ExtraConfig", "OvfEnv" and "CloudInit".
 	Transport VirtualMachineMetadataTransport `json:"transport,omitempty"`
 }
 

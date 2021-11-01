@@ -7,23 +7,23 @@ import (
 	"net/http"
 	"reflect"
 
-	"github.com/pkg/errors"
-	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/pkg/errors"
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesetresourcepolicy/validation/messages"
 )
 
 const (
@@ -67,7 +67,6 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	}
 
 	var fieldErrs field.ErrorList
-	fieldErrs = append(fieldErrs, v.validateMetadata(ctx, vmRP)...)
 	fieldErrs = append(fieldErrs, v.validateSpec(ctx, vmRP)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
@@ -83,8 +82,6 @@ func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Resp
 }
 
 func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
-	var validationErrs []string
-
 	vmRP, err := v.vmRPFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -95,13 +92,15 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	validationErrs = append(validationErrs, v.validateAllowedChanges(ctx, vmRP, oldVMRP)...)
-	return common.BuildValidationResponse(ctx, validationErrs, nil)
-}
-
-func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vmRP *vmopv1.VirtualMachineSetResourcePolicy) field.ErrorList {
 	var fieldErrs field.ErrorList
-	return fieldErrs
+	fieldErrs = append(fieldErrs, v.validateAllowedChanges(ctx, vmRP, oldVMRP)...)
+
+	validationErrs := make([]string, 0, len(fieldErrs))
+	for _, fieldErr := range fieldErrs {
+		validationErrs = append(validationErrs, fieldErr.Error())
+	}
+
+	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
 
 func (v validator) validateSpec(ctx *context.WebhookRequestContext, vmRP *vmopv1.VirtualMachineSetResourcePolicy) field.ErrorList {
@@ -148,15 +147,16 @@ func (v validator) validateClusterModules(ctx *context.WebhookRequestContext, fl
 }
 
 // validateAllowedChanges returns true only if immutable fields have not been modified.
-func (v validator) validateAllowedChanges(ctx *context.WebhookRequestContext, vmRP, oldVMRP *vmopv1.VirtualMachineSetResourcePolicy) []string {
-	var validationErrs []string
+func (v validator) validateAllowedChanges(ctx *context.WebhookRequestContext, vmRP, oldVMRP *vmopv1.VirtualMachineSetResourcePolicy) field.ErrorList {
+	var allErrs field.ErrorList
+	specPath := field.NewPath("spec")
 
-	// TODO: Make this error more granular.
-	if !apiEquality.Semantic.DeepEqual(vmRP.Spec, oldVMRP.Spec) {
-		validationErrs = append(validationErrs, messages.UpdatingImmutableFieldsNotAllowed)
-	}
+	// Validate all fields under spec which are not allowed to change.
+	allErrs = append(allErrs, validation.ValidateImmutableField(vmRP.Spec.ResourcePool, oldVMRP.Spec.ResourcePool, specPath.Child("resourcepool"))...)
+	allErrs = append(allErrs, validation.ValidateImmutableField(vmRP.Spec.Folder, oldVMRP.Spec.Folder, specPath.Child("folder"))...)
+	allErrs = append(allErrs, validation.ValidateImmutableField(vmRP.Spec.ClusterModules, oldVMRP.Spec.ClusterModules, specPath.Child("clustermodules"))...)
 
-	return validationErrs
+	return allErrs
 }
 
 // vmRPFromUnstructured returns the VirtualMachineSetResourcePolicy from the unstructured object.

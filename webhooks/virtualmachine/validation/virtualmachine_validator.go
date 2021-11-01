@@ -7,16 +7,18 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
@@ -36,7 +38,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
 
 const (
@@ -44,6 +45,17 @@ const (
 	storageResourceQuotaStrPattern       = ".storageclass.storage.k8s.io/"
 	isRestrictedNetworkKey               = "IsRestrictedNetwork"
 	allowedRestrictedNetworkTCPProbePort = 6443
+
+	readinessProbeNoActions                   = "must specify an action"
+	readinessProbeOnlyOneAction               = "only one action can be specified"
+	updatesNotAllowedWhenPowerOn              = "updates to this filed is not allowed when VM power is on"
+	virtualMachineImageNotSupported           = "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image"
+	storageClassNotAssignedFmt                = "Storage policy is not associated with the namespace %s"
+	storageClassNotFoundFmt                   = "Storage policy is not associated with the namespace %s"
+	pvcHardwareVersionNotSupportedFmt         = "VirtualMachineImage has an unsupported hardware version %d for PersistentVolumes. Minimum supported hardware version %d"
+	invalidVolumeSpecified                    = "only one of persistentVolumeClaim or vsphereVolume must be specified"
+	vSphereVolumeSizeNotMBMultiple            = "value must be a multiple of MB"
+	eagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha1,name=default.validating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -80,22 +92,27 @@ func (v validator) For() schema.GroupVersionKind {
 }
 
 func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
-	var validationErrs []string
-
 	vm, err := v.vmFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	validationErrs = append(validationErrs, v.validateMetadata(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateAvailabilityZone(ctx, vm, nil)...)
-	validationErrs = append(validationErrs, v.validateImage(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateClass(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateStorageClass(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateReadinessProbe(ctx, vm)...)
+	var fieldErrs field.ErrorList
+
+	fieldErrs = append(fieldErrs, v.validateMetadata(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, nil)...)
+	fieldErrs = append(fieldErrs, v.validateImage(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateClass(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateStorageClass(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
+
+	validationErrs := make([]string, 0, len(fieldErrs))
+	for _, fieldErr := range fieldErrs {
+		validationErrs = append(validationErrs, fieldErr.Error())
+	}
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
@@ -121,8 +138,6 @@ func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Resp
 
 // All other updates are allowed.
 func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
-	var validationErrs []string
-
 	vm, err := v.vmFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -133,8 +148,10 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
+	var fieldErrs field.ErrorList
+
 	// Check if an immutable field has been modified.
-	validationErrs = append(validationErrs, v.validateImmutableFields(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateImmutableFields(ctx, vm, oldVM)...)
 
 	currentPowerState := oldVM.Spec.PowerState
 	desiredPowerState := vm.Spec.PowerState
@@ -145,129 +162,140 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	// So, we only run these validations when the VM is powered on, and is not requesting a power state change.
 	if currentPowerState == vmopv1.VirtualMachinePoweredOn && desiredPowerState == vmopv1.VirtualMachinePoweredOn {
 		invalidFields := v.validateUpdatesWhenPoweredOn(ctx, vm, oldVM)
-		if len(invalidFields) > 0 {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, invalidFields, vm.Spec.PowerState))
-		}
+		fieldErrs = append(fieldErrs, invalidFields...)
 	}
 
 	// Validations for allowed updates. Return validation responses here for conditional updates regardless
 	// of whether the update is allowed or not.
-	validationErrs = append(validationErrs, v.validateMetadata(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
-	validationErrs = append(validationErrs, v.validateNetwork(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateVolumes(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
-	validationErrs = append(validationErrs, v.validateReadinessProbe(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateMetadata(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
+
+	validationErrs := make([]string, 0, len(fieldErrs))
+	for _, fieldErr := range fieldErrs {
+		validationErrs = append(validationErrs, fieldErr.Error())
+	}
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
 
-func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
-	var validationErrs []string
+func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
 
 	if vm.Spec.VmMetadata == nil {
-		return validationErrs
+		return allErrs
 	}
 
 	if vm.Spec.VmMetadata.ConfigMapName == "" {
-		validationErrs = append(validationErrs, messages.MetadataTransportConfigMapNotSpecified)
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "vmMetadata", "configMapName"), ""))
 	}
 
-	return validationErrs
+	return allErrs
 }
 
-func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
-	var validationErrs []string
+func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	imageNamePath := field.NewPath("spec", "imageName")
 
 	if vm.Spec.ImageName == "" {
-		return []string{messages.ImageNotSpecified}
+		return append(allErrs, field.Required(imageNamePath, ""))
 	}
 
 	vmoperatorImageSupportedCheck := vm.Annotations[constants.VMOperatorImageSupportedCheckKey]
 
 	if vmoperatorImageSupportedCheck == constants.VMOperatorImageSupportedCheckDisable {
-		return validationErrs
+		return allErrs
 	}
 
 	if vm.Spec.VmMetadata != nil && vm.Spec.VmMetadata.Transport == vmopv1.VirtualMachineMetadataCloudInitTransport {
-		return validationErrs
+		return allErrs
 	}
 
 	image := vmopv1.VirtualMachineImage{}
-	if err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image); err != nil {
-		validationErrs = append(validationErrs, fmt.Sprintf("error validating image: %v", err))
-		return validationErrs
+	imageName := vm.Spec.ImageName
+	if err := v.client.Get(ctx, types.NamespacedName{Name: imageName}, &image); err != nil {
+		return append(allErrs, field.Invalid(imageNamePath, imageName, err.Error()))
 	}
 	if image.Status.ImageSupported != nil && !*image.Status.ImageSupported {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.VirtualMachineImageNotSupported))
+		allErrs = append(allErrs, field.Invalid(imageNamePath, imageName, virtualMachineImageNotSupported))
 	}
 
-	return validationErrs
+	return allErrs
 }
 
-func (v validator) validateClass(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
-	var validationErrs []string
+func (v validator) validateClass(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
 
 	if vm.Spec.ClassName == "" {
-		return []string{messages.ClassNotSpecified}
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "className"), ""))
 	}
 
-	return validationErrs
+	return allErrs
 }
 
-func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
+func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
 	if vm.Spec.StorageClass == "" {
-		return nil
+		return allErrs
 	}
 
-	var validationErrs []string
+	scPath := field.NewPath("spec", "storageClass")
 	scName := vm.Spec.StorageClass
 	namespace := vm.Namespace
 
 	sc := &storagev1.StorageClass{}
 	if err := v.client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.StorageClassNotFoundFmt, scName, namespace))
-		return validationErrs
+		return append(allErrs, field.Invalid(scPath, scName,
+			fmt.Sprintf(storageClassNotFoundFmt, namespace)))
 	}
 
 	resourceQuotas := &corev1.ResourceQuotaList{}
 	if err := v.client.List(ctx, resourceQuotas, client.InNamespace(namespace)); err != nil {
-		validationErrs = append(validationErrs, fmt.Sprintf("error validating storageClass: %v", err))
-		return validationErrs
+		return append(allErrs, field.Invalid(scPath, scName, err.Error()))
 	}
 
 	prefix := scName + storageResourceQuotaStrPattern
 	for _, resourceQuota := range resourceQuotas.Items {
 		for resourceName := range resourceQuota.Spec.Hard {
 			if strings.HasPrefix(resourceName.String(), prefix) {
-				return validationErrs
+				return nil
 			}
 		}
 	}
-	validationErrs = append(validationErrs, fmt.Sprintf(messages.StorageClassNotAssignedFmt, scName, namespace))
-	return validationErrs
+
+	return append(allErrs, field.Invalid(scPath, scName,
+		fmt.Sprintf(storageClassNotAssignedFmt, namespace)))
 }
 
-func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
-	var validationErrs []string
+func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	networkInterfacePath := field.NewPath("spec", "networkInterfaces")
 	var networkNames = map[string]struct{}{}
 
 	for i, nif := range vm.Spec.NetworkInterfaces {
+		curPath := networkInterfacePath.Index(i)
 		switch nif.NetworkType {
 		case network.NsxtNetworkType:
 			// Empty NetworkName is allowed to let NCP pick the namespace default.
 		case network.VdsNetworkType:
 			if nif.NetworkName == "" {
-				validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, i))
+				allErrs = append(allErrs, field.Required(curPath.Child("networkName"), ""))
 			}
 		case "":
 			// Must unfortunately allow for testing.
 		default:
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, i, network.NsxtNetworkType, network.VdsNetworkType))
+			allErrs = append(allErrs, field.NotSupported(curPath.Child("networkType"), nif.NetworkType,
+				[]string{network.NsxtNetworkType, network.VdsNetworkType}))
 		}
 
 		if _, ok := networkNames[nif.NetworkName]; ok {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, i))
+			allErrs = append(allErrs, field.Duplicate(curPath.Child("networkName"), nif.NetworkName))
 		} else {
 			networkNames[nif.NetworkName] = struct{}{}
 		}
@@ -276,189 +304,216 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 			// We only support ProviderRef with NetOP types.
 			gvk := netopv1alpha1.SchemeGroupVersion.WithKind(reflect.TypeOf(netopv1alpha1.NetworkInterface{}).Name())
 			if gvk.Group != nif.ProviderRef.APIGroup || gvk.Kind != nif.ProviderRef.Kind {
-				validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeProviderRefNotSupportedFmt, i))
+				allErrs = append(allErrs, field.NotSupported(curPath.Child("providerRef"), nif.ProviderRef,
+					[]string{gvk.String()}))
 			}
 		}
 
-		switch nif.EthernetCardType {
-		case "", "pcnet32", "e1000", "e1000e", "vmxnet2", "vmxnet3":
-		default:
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.NetworkTypeEthCardTypeNotSupportedFmt, i))
+		supportedEthernetCardTypes := []string{"", "pcnet32", "e1000", "e1000e", "vmxnet2", "vmxnet3"}
+		supportedMap := make(map[string]bool, len(supportedEthernetCardTypes))
+		for _, cardType := range supportedEthernetCardTypes {
+			supportedMap[cardType] = true
 		}
+		if _, ok := supportedMap[nif.EthernetCardType]; !ok {
+			allErrs = append(allErrs, field.NotSupported(curPath.Child("ethernetCardType"), nif.EthernetCardType,
+				supportedEthernetCardTypes))
+		}
+
 	}
 
-	return validationErrs
+	return allErrs
 }
 
-func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
-	var validationErrs []string
+func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
 
+	volumesPath := field.NewPath("spec", "volumes")
 	volumeNames := map[string]bool{}
+
 	for i, vol := range vm.Spec.Volumes {
+		curVolPath := volumesPath.Index(i)
+		curVolNamePath := curVolPath.Child("name")
 		if vol.Name != "" {
 			if volumeNames[vol.Name] {
-				validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNameDuplicateFmt, i))
+				allErrs = append(allErrs, field.Duplicate(curVolNamePath, vol.Name))
 			} else {
 				volumeNames[vol.Name] = true
 			}
 		} else {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNameNotSpecifiedFmt, i))
+			allErrs = append(allErrs, field.Required(curVolNamePath, ""))
 		}
 
-		if vol.PersistentVolumeClaim == nil && vol.VsphereVolume == nil {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNotSpecifiedFmt, i, i))
-			continue
-		}
-
-		if vol.PersistentVolumeClaim != nil && vol.VsphereVolume != nil {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, i, i))
+		if (vol.PersistentVolumeClaim == nil && vol.VsphereVolume == nil) ||
+			(vol.PersistentVolumeClaim != nil && vol.VsphereVolume != nil) {
+			allErrs = append(allErrs, field.Forbidden(curVolPath, invalidVolumeSpecified))
 			continue
 		}
 
 		if vol.PersistentVolumeClaim != nil {
-			validationErrs = append(validationErrs, v.validateVolumeWithPVC(ctx, vm, vol, i)...)
+			allErrs = append(allErrs, v.validateVolumeWithPVC(ctx, vm, vol, curVolPath)...)
 		} else { // vol.VsphereVolume != nil
-			validationErrs = append(validationErrs, v.validateVsphereVolume(vol.VsphereVolume, i)...)
+			allErrs = append(allErrs, v.validateVsphereVolume(vol.VsphereVolume, curVolPath)...)
 		}
 	}
 
-	return validationErrs
+	return allErrs
 }
 
-func (v validator) validateVolumeWithPVC(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine, vol vmopv1.VirtualMachineVolume, idx int) []string {
-	var validationErrs []string
+func (v validator) validateVolumeWithPVC(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine,
+	vol vmopv1.VirtualMachineVolume, volPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
 
+	imageNamePath := field.NewPath("spec", "imageName")
 	image := vmopv1.VirtualMachineImage{}
 	err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image)
 	if err != nil {
-		validationErrs = append(validationErrs, fmt.Sprintf("error validating image for PVC: %v", err))
+		allErrs = append(allErrs, field.Invalid(imageNamePath, vm.Spec.ImageName,
+			fmt.Sprintf("error validating image for PVC: %v", err)))
 	}
 
 	// Check that the VirtualMachineImage's hardware version is at least the minimum supported virtual hardware version
 	if image.Spec.HardwareVersion != 0 && image.Spec.HardwareVersion < constants.MinSupportedHWVersionForPVC {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupportedFmt,
-			image.Name, image.Spec.HardwareVersion, constants.MinSupportedHWVersionForPVC))
+		allErrs = append(allErrs, field.Invalid(imageNamePath, vm.Spec.ImageName,
+			fmt.Sprintf(pvcHardwareVersionNotSupportedFmt, image.Spec.HardwareVersion, constants.MinSupportedHWVersionForPVC)))
 	}
 
 	// Check that the name used for the CnsNodeVmAttachment will be valid. Don't double up errors if name is missing.
 	if vol.Name != "" {
-		errs := validation.IsDNS1123Subdomain(volume.CNSAttachmentNameForVolume(vm, vol.Name))
-		if len(errs) > 0 {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.VolumeNameNotValidObjectNameFmt, idx, strings.Join(errs, ",")))
+		errs := validation.NameIsDNSSubdomain(volume.CNSAttachmentNameForVolume(vm, vol.Name), false)
+		for _, msg := range errs {
+			allErrs = append(allErrs, field.Invalid(volPath.Child("name"), vol.Name, msg))
 		}
 	}
 
+	pvcPath := volPath.Child("persistentVolumeClaim")
 	pvcSource := vol.PersistentVolumeClaim
 	if pvcSource.ClaimName == "" {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, idx))
+		allErrs = append(allErrs, field.Required(pvcPath.Child("claimName"), ""))
 	}
 	if pvcSource.ReadOnly {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.PersistentVolumeClaimNameReadOnlyFmt, idx))
+		allErrs = append(allErrs, field.NotSupported(pvcPath.Child("readOnly"), pvcSource.ReadOnly,
+			[]string{"false"}))
 	}
 
-	return validationErrs
+	return allErrs
 }
 
-func (v validator) validateVsphereVolume(vsphereVolume *vmopv1.VsphereVolumeSource, idx int) []string {
-	var validationErrs []string
+func (v validator) validateVsphereVolume(vsphereVolume *vmopv1.VsphereVolumeSource,
+	volPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+
+	fieldPath := volPath.Child("vsphereVolume", "capacity", "ephemeral-storage")
 
 	// Validate that the desired size is a multiple of a megabyte
 	megaByte := resource.MustParse("1Mi")
 	if vsphereVolume.Capacity.StorageEphemeral().Value()%megaByte.Value() != 0 {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, idx))
+		allErrs = append(allErrs, field.Invalid(fieldPath, vsphereVolume.Capacity.StorageEphemeral(),
+			vSphereVolumeSizeNotMBMultiple))
 	}
 
-	return validationErrs
+	return allErrs
 }
 
-func (v validator) validateVMVolumeProvisioningOptions(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
-	var validationErrs []string
+func (v validator) validateVMVolumeProvisioningOptions(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
 	if vm.Spec.AdvancedOptions != nil && vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions != nil {
 		provOpts := vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions
 		if provOpts.ThinProvisioned != nil && *provOpts.ThinProvisioned && provOpts.EagerZeroed != nil && *provOpts.EagerZeroed {
-			validationErrs = append(validationErrs, messages.EagerZeroedAndThinProvisionedNotSupported)
+			fieldPath := field.NewPath("spec", "advancedOptions", "defaultVolumeProvisioningOptions")
+			allErrs = append(allErrs, field.Forbidden(fieldPath, eagerZeroedAndThinProvisionedNotSupported))
 		}
 	}
-	return validationErrs
+
+	return allErrs
 }
 
-func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) []string {
+func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
 	probe := vm.Spec.ReadinessProbe
 	if probe == nil {
-		return nil
+		return allErrs
 	}
 
-	var validationErrs []string
+	readinessProbePath := field.NewPath("spec", "readinessProbe")
 
 	if probe.TCPSocket == nil && probe.GuestHeartbeat == nil {
-		validationErrs = append(validationErrs, messages.ReadinessProbeNoActions)
+		allErrs = append(allErrs, field.Forbidden(readinessProbePath, readinessProbeNoActions))
 	} else if probe.TCPSocket != nil && probe.GuestHeartbeat != nil {
-		validationErrs = append(validationErrs, messages.ReadinessProbeOnlyOneAction)
+		allErrs = append(allErrs, field.Forbidden(readinessProbePath, readinessProbeOnlyOneAction))
 	}
 
 	// Validate the TCP probe if set and environment is a restricted network environment between CP VMs and Workload VMs e.g. VMC
 	if probe.TCPSocket != nil {
+		tcpSocketPath := readinessProbePath.Child("tcpSocket")
 		isRestrictedEnv, err := v.isNetworkRestrictedForReadinessProbe(ctx)
 		if err != nil {
-			validationErrs = append(validationErrs, err.Error())
+			allErrs = append(allErrs, field.Forbidden(tcpSocketPath, err.Error()))
 		} else if isRestrictedEnv && probe.TCPSocket.Port.IntValue() != allowedRestrictedNetworkTCPProbePort {
-			validationErrs = append(validationErrs, fmt.Sprintf(messages.ReadinessProbePortNotSupportedFmt, allowedRestrictedNetworkTCPProbePort))
+			allErrs = append(allErrs, field.NotSupported(tcpSocketPath.Child("port"), probe.TCPSocket.Port.IntValue(),
+				[]string{strconv.Itoa(allowedRestrictedNetworkTCPProbePort)}))
 		}
 	}
-	return validationErrs
+
+	return allErrs
 }
 
-func (v validator) validateUpdatesWhenPoweredOn(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) []string {
-	var fieldNames []string
+func (v validator) validateUpdatesWhenPoweredOn(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	specPath := field.NewPath("spec")
 
 	if !equality.Semantic.DeepEqual(vm.Spec.Ports, oldVM.Spec.Ports) {
-		fieldNames = append(fieldNames, "spec.ports")
+		allErrs = append(allErrs, field.Forbidden(specPath.Child("ports"), updatesNotAllowedWhenPowerOn))
 	}
 	if !equality.Semantic.DeepEqual(vm.Spec.VmMetadata, oldVM.Spec.VmMetadata) {
-		fieldNames = append(fieldNames, "spec.vmMetadata")
+		allErrs = append(allErrs, field.Forbidden(specPath.Child("vmMetadata"), updatesNotAllowedWhenPowerOn))
 	}
 	// AKP: This would fail if the API server shuffles the Spec up before passing it to the webhook. Should this be a sorted compare? Same for Volumes.
 	if !equality.Semantic.DeepEqual(vm.Spec.NetworkInterfaces, oldVM.Spec.NetworkInterfaces) {
-		fieldNames = append(fieldNames, "spec.networkInterfaces")
+		allErrs = append(allErrs, field.Forbidden(specPath.Child("networkInterfaces"), updatesNotAllowedWhenPowerOn))
 	}
 
 	if vm.Spec.AdvancedOptions != nil {
-		fieldNames = append(fieldNames, v.validateAdvancedOptionsUpdateWhenPoweredOn(ctx, vm, oldVM)...)
+		allErrs = append(allErrs, v.validateAdvancedOptionsUpdateWhenPoweredOn(ctx, vm, oldVM)...)
 	}
 
 	if vm.Spec.Volumes != nil {
-		fieldNames = append(fieldNames, v.validateVsphereVolumesUpdateWhenPoweredOn(ctx, vm, oldVM)...)
+		allErrs = append(allErrs, v.validateVsphereVolumesUpdateWhenPoweredOn(ctx, vm, oldVM)...)
 	}
 
-	return fieldNames
+	return allErrs
 }
 
 // validateAdvancedOptionsUpdateWhenPoweredOn validates that AdvancedOptions update request is valid when the VM is powered on.
 // We do not reconcile DefaultVolumeProvisioningOptions, so ANY updates to those are denied.
-func (v validator) validateAdvancedOptionsUpdateWhenPoweredOn(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) []string {
-	var fieldNames []string
-	defaultVolumeProvisioningOptionsKey := "spec.advancedOptions.defaultVolumeProvisioningOptions"
+func (v validator) validateAdvancedOptionsUpdateWhenPoweredOn(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	fieldPath := field.NewPath("spec", "advancedOptions", "defaultVolumeProvisioningOptions")
 
 	if vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions != nil {
 		if oldVM.Spec.AdvancedOptions == nil || oldVM.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions == nil {
 			// Newly added default provisioning options.
-			fieldNames = append(fieldNames, defaultVolumeProvisioningOptionsKey)
+			allErrs = append(allErrs, field.Forbidden(fieldPath, updatesNotAllowedWhenPowerOn))
 		} else if oldVM.Spec.AdvancedOptions != nil && oldVM.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions != nil {
 			// Updated default provisioning options.
 			if !equality.Semantic.DeepEqual(vm.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions, oldVM.Spec.AdvancedOptions.DefaultVolumeProvisioningOptions) {
-				fieldNames = append(fieldNames, defaultVolumeProvisioningOptionsKey)
+				allErrs = append(allErrs, field.Forbidden(fieldPath, updatesNotAllowedWhenPowerOn))
 			}
 		}
 	}
 
-	return fieldNames
+	return allErrs
 }
 
 // validateVsphereVolumesUpdateWhenPoweredOn validates that Volume update request is valid when the VM is powered on.
 // We do not support any modifications to vSphere volumes while the VM is powered on.
-func (v validator) validateVsphereVolumesUpdateWhenPoweredOn(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) []string {
-	volumesKey := "spec.volumes[VsphereVolume]"
-	var fieldNames []string
+func (v validator) validateVsphereVolumesUpdateWhenPoweredOn(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	fieldPath := field.NewPath("spec", "volumes").Key("VsphereVolume")
 
 	// Do not allow modifications to vSphere Volumes while the VM is powered on.
 	oldvSphereVolumes := make(map[string]vmopv1.VirtualMachineVolume)
@@ -476,60 +531,45 @@ func (v validator) validateVsphereVolumesUpdateWhenPoweredOn(ctx *context.Webhoo
 	}
 
 	if !reflect.DeepEqual(oldvSphereVolumes, newvSphereVolumes) {
-		fieldNames = append(fieldNames, volumesKey)
+		allErrs = append(allErrs, field.Forbidden(fieldPath, updatesNotAllowedWhenPowerOn))
 	}
 
-	return fieldNames
+	return allErrs
 }
 
-func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) []string {
-	var validationErrs, fieldNames []string
+func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
 
-	if vm.Spec.ImageName != oldVM.Spec.ImageName {
-		fieldNames = append(fieldNames, "spec.imageName")
-	}
-	if vm.Spec.ClassName != oldVM.Spec.ClassName {
-		fieldNames = append(fieldNames, "spec.className")
-	}
-	if vm.Spec.StorageClass != oldVM.Spec.StorageClass {
-		fieldNames = append(fieldNames, "spec.storageClass")
-	}
-	if vm.Spec.ResourcePolicyName != oldVM.Spec.ResourcePolicyName {
-		fieldNames = append(fieldNames, "spec.resourcePolicyName")
-	}
+	specPath := field.NewPath("spec")
 
-	if len(fieldNames) > 0 {
-		validationErrs = append(validationErrs, fmt.Sprintf(messages.UpdatingImmutableFieldsNotAllowedFmt, fieldNames))
-	}
+	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ImageName, oldVM.Spec.ImageName, specPath.Child("imageName"))...)
+	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ClassName, oldVM.Spec.ClassName, specPath.Child("className"))...)
+	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.StorageClass, oldVM.Spec.StorageClass, specPath.Child("storageClass"))...)
+	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ResourcePolicyName, oldVM.Spec.ResourcePolicyName, specPath.Child("resourcePolicyName"))...)
 
-	return validationErrs
+	return allErrs
 }
 
-func (v validator) validateAvailabilityZone(
-	ctx *context.WebhookRequestContext,
-	vm, oldVM *vmopv1.VirtualMachine) []string {
+func (v validator) validateAvailabilityZone(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	zoneLabelPath := field.NewPath("metadata", "labels").Key(topology.KubernetesTopologyZoneLabelKey)
+
 	// If there is an oldVM in play then make sure the field is immutable.
 	if oldVM != nil {
-		if vm.Labels[topology.KubernetesTopologyZoneLabelKey] != oldVM.Labels[topology.KubernetesTopologyZoneLabelKey] {
-			return []string{
-				fmt.Sprintf(
-					messages.UpdatingImmutableFieldsNotAllowedFmt,
-					[]string{"metadata.labels." + topology.KubernetesTopologyZoneLabelKey}),
-			}
-		}
+		newVal := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+		oldVal := oldVM.Labels[topology.KubernetesTopologyZoneLabelKey]
+		return append(allErrs, validation.ValidateImmutableField(newVal, oldVal, zoneLabelPath)...)
 	}
 
 	// Validate the name of the provided availability zone.
 	if zone := vm.Labels[topology.KubernetesTopologyZoneLabelKey]; zone != "" {
-		if _, err := topology.GetAvailabilityZone(
-			ctx.Context, v.client, zone); err != nil {
-			return []string{
-				fmt.Sprintf(messages.MetadataInvalidAvailabilityZone, zone),
-			}
+		if _, err := topology.GetAvailabilityZone(ctx.Context, v.client, zone); err != nil {
+			return append(allErrs, field.Invalid(zoneLabelPath, zone, err.Error()))
 		}
 	}
 
-	return nil
+	return allErrs
 }
 
 // vmFromUnstructured returns the VirtualMachine from the unstructured object.

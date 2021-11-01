@@ -17,6 +17,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -24,9 +26,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
 
 const updateSuffix = "-updated"
@@ -100,6 +102,8 @@ func unitTestsValidateCreate() {
 	var (
 		ctx                 *unitValidatingWebhookContext
 		oldFaultDomainsFunc func() bool
+
+		bogusNetworkName = "bogus-network-name"
 	)
 
 	type createArgs struct {
@@ -157,13 +161,16 @@ func unitTestsValidateCreate() {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkType = network.VdsNetworkType
 		}
 		if args.invalidNetworkType {
+			ctx.vm.Spec.NetworkInterfaces[0].NetworkName = bogusNetworkName
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkType = "bogusNetworkType"
 		}
 		if args.invalidNetworkCardType {
+			ctx.vm.Spec.NetworkInterfaces[0].NetworkName = bogusNetworkName
 			ctx.vm.Spec.NetworkInterfaces[0].EthernetCardType = "bogusCardType"
 		}
 		if args.multipleNetIfToSameNetwork {
-			ctx.vm.Spec.NetworkInterfaces[1].NetworkName = ctx.vm.Spec.NetworkInterfaces[0].NetworkName
+			ctx.vm.Spec.NetworkInterfaces[0].NetworkName = bogusNetworkName
+			ctx.vm.Spec.NetworkInterfaces[1].NetworkName = bogusNetworkName
 		}
 		if args.emptyVolumeName {
 			ctx.vm.Spec.Volumes[0].Name = ""
@@ -172,6 +179,7 @@ func unitTestsValidateCreate() {
 			ctx.vm.Spec.Volumes[0].Name = "underscore_not_valid"
 		}
 		if args.dupVolumeName {
+			ctx.vm.Spec.Volumes[0].Name = "duplicate-name"
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, ctx.vm.Spec.Volumes[0])
 		}
 		if args.invalidVolumeSource {
@@ -296,34 +304,66 @@ func unitTestsValidateCreate() {
 		Expect(os.Unsetenv(lib.VmopNamespaceEnv)).To(Succeed())
 	})
 
+	specPath := field.NewPath("spec")
+	netIntPath := specPath.Child("networkInterfaces")
+	volPath := specPath.Child("volumes")
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
-		Entry("should deny invalid class name", createArgs{invalidClassName: true}, false, messages.ClassNotSpecified, nil),
-		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false, messages.ImageNotSpecified, nil),
-		Entry("should fail when Readiness probe has multiple actions", createArgs{invalidReadinessProbe: true}, false, fmt.Sprintf(messages.ReadinessProbeOnlyOneAction), nil),
-		Entry("should fail when Readiness probe has no actions", createArgs{invalidReadinessNoProbe: true}, false, fmt.Sprintf(messages.ReadinessProbeNoActions), nil),
-		Entry("should deny invalid network name for VDS network type", createArgs{invalidNetworkName: true}, false, fmt.Sprintf(messages.NetworkNameNotSpecifiedFmt, 0), nil),
-		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false, fmt.Sprintf(messages.NetworkTypeNotSupportedFmt, 0, network.NsxtNetworkType, network.VdsNetworkType), nil),
-		Entry("should deny invalid network card type", createArgs{invalidNetworkCardType: true}, false, fmt.Sprintf(messages.NetworkTypeEthCardTypeNotSupportedFmt, 0), nil),
-		Entry("should deny connection of multiple network interfaces of a VM to the same network", createArgs{multipleNetIfToSameNetwork: true},
-			false, fmt.Sprintf(messages.MultipleNetworkInterfacesNotSupportedFmt, 1), nil),
-		Entry("should deny empty volume name", createArgs{emptyVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameNotSpecifiedFmt, 0), nil),
-		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameNotValidObjectNameFmt, 0, ""), nil),
-		Entry("should deny duplicated volume names", createArgs{dupVolumeName: true}, false, fmt.Sprintf(messages.VolumeNameDuplicateFmt, 1), nil),
-		Entry("should deny invalid volume source spec", createArgs{invalidVolumeSource: true}, false, fmt.Sprintf(messages.VolumeNotSpecifiedFmt, 0, 0), nil),
-		Entry("should deny multiple volume source spec", createArgs{multipleVolumeSource: true}, false, fmt.Sprintf(messages.MultipleVolumeSpecifiedFmt, 0, 0), nil),
-		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameNotSpecifiedFmt, 0), nil),
-		Entry("should deny invalid PVC name", createArgs{invalidPVCReadOnly: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimNameReadOnlyFmt, 0), nil),
-		Entry("should deny invalid PVC hardware verion", createArgs{invalidPVCHwVersion: true}, false, fmt.Sprintf(messages.PersistentVolumeClaimHardwareVersionNotSupportedFmt, builder.DummyImageName, 12, 13), nil),
-		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false, fmt.Sprintf(messages.VsphereVolumeSizeNotMBMultipleFmt, 0), nil),
-		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVMVolumeProvOpts: true}, false, fmt.Sprintf(messages.EagerZeroedAndThinProvisionedNotSupported), nil),
-		Entry("should deny invalid vmMetadata configmap", createArgs{invalidMetadataConfigMap: true}, false, messages.MetadataTransportConfigMapNotSpecified, nil),
-		Entry("should deny a storage class that does not exist", createArgs{notfoundStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotFoundFmt, builder.DummyStorageClassName, ""), nil),
-		Entry("should deny a storage class that is not associated with the namespace", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssignedFmt, builder.DummyStorageClassName, ""), nil),
+		Entry("should deny invalid class name", createArgs{invalidClassName: true}, false,
+			field.Required(specPath.Child("className"), "").Error(), nil),
+		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false,
+			field.Required(specPath.Child("imageName"), "").Error(), nil),
+		Entry("should fail when Readiness probe has multiple actions", createArgs{invalidReadinessProbe: true}, false,
+			field.Forbidden(specPath.Child("readinessProbe"), "only one action can be specified").Error(), nil),
+		Entry("should fail when Readiness probe has no actions", createArgs{invalidReadinessNoProbe: true}, false,
+			field.Forbidden(specPath.Child("readinessProbe"), "must specify an action").Error(), nil),
+
+		Entry("should deny empty network name for VDS network type", createArgs{invalidNetworkName: true}, false,
+			field.Required(netIntPath.Index(0).Child("networkName"), "").Error(), nil),
+		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false,
+			field.NotSupported(netIntPath.Index(0).Child("networkType"), "bogusNetworkType", []string{network.NsxtNetworkType, network.VdsNetworkType}).Error(), nil),
+		Entry("should deny invalid network card type", createArgs{invalidNetworkCardType: true}, false,
+			field.NotSupported(netIntPath.Index(0).Child("ethernetCardType"), "bogusCardType", []string{"", "pcnet32", "e1000", "e1000e", "vmxnet2", "vmxnet3"}).Error(), nil),
+		Entry("should deny connection of multiple network interfaces of a VM to the same network", createArgs{multipleNetIfToSameNetwork: true}, false,
+			field.Duplicate(netIntPath.Index(1).Child("networkName"), bogusNetworkName).Error(), nil),
+
+		Entry("should deny empty volume name", createArgs{emptyVolumeName: true}, false,
+			field.Required(volPath.Index(0).Child("name"), "").Error(), nil),
+		Entry("should deny invalid volume name", createArgs{invalidVolumeName: true}, false,
+			field.Invalid(volPath.Index(0).Child("name"), "underscore_not_valid", validation.IsDNS1123Subdomain("underscore_not_valid")[0]).Error(), nil),
+		Entry("should deny duplicated volume names", createArgs{dupVolumeName: true}, false,
+			field.Duplicate(volPath.Index(1).Child("name"), "duplicate-name").Error(), nil),
+		Entry("should deny invalid volume source spec", createArgs{invalidVolumeSource: true}, false,
+			field.Forbidden(volPath.Index(0), "only one of persistentVolumeClaim or vsphereVolume must be specified").Error(), nil),
+		Entry("should deny multiple volume source spec", createArgs{multipleVolumeSource: true}, false,
+			field.Forbidden(volPath.Index(0), "only one of persistentVolumeClaim or vsphereVolume must be specified").Error(), nil),
+		Entry("should deny invalid PVC name", createArgs{invalidPVCName: true}, false,
+			field.Required(volPath.Index(0).Child("persistentVolumeClaim", "claimName"), "").Error(), nil),
+		Entry("should deny invalid PVC read only", createArgs{invalidPVCReadOnly: true}, false,
+			field.NotSupported(volPath.Index(0).Child("persistentVolumeClaim", "readOnly"), true, []string{"false"}).Error(), nil),
+		Entry("should deny invalid PVC hardware version", createArgs{invalidPVCHwVersion: true}, false,
+			field.Invalid(field.NewPath("spec", "imageName"), builder.DummyImageName, fmt.Sprintf("VirtualMachineImage has an unsupported hardware version %d for PersistentVolumes. Minimum supported hardware version %d", 12, constants.MinSupportedHWVersionForPVC)).Error(), nil),
+		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false,
+			field.Invalid(volPath.Index(0).Child("vsphereVolume", "capacity", "ephemeral-storage"), resource.MustParse("1Ki"), "value must be a multiple of MB").Error(), nil),
+
+		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVMVolumeProvOpts: true}, false,
+			field.Forbidden(field.NewPath("spec", "advancedOptions", "defaultVolumeProvisioningOptions"), "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning").Error(), nil),
+
+		Entry("should deny invalid vmMetadata configmap", createArgs{invalidMetadataConfigMap: true}, false,
+			field.Required(specPath.Child("vmMetadata", "configMapName"), "").Error(), nil),
+
+		Entry("should deny a storage class that does not exist", createArgs{notfoundStorageClass: true}, false,
+			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
+		Entry("should deny a storage class that is not associated with the namespace", createArgs{invalidStorageClass: true}, false,
+			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
-		Entry("should fail when image is not compatible", createArgs{imageNonCompatible: true}, false, fmt.Sprintf(messages.VirtualMachineImageNotSupported), nil),
+
+		Entry("should fail when image is not compatible", createArgs{imageNonCompatible: true}, false,
+			field.Invalid(specPath.Child("imageName"), builder.DummyImageName, "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
 		Entry("should allow when image is not compatible and VirtualMachineMetadataTransport is CloudInit", createArgs{imageNonCompatibleCloudInitTransport: true}, true, nil, nil),
-		Entry("should fail when restricted network env is set in provider config map and TCP port in readiness probe is not 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, false, fmt.Sprintf(messages.ReadinessProbePortNotSupportedFmt, 6443), nil),
+
+		Entry("should fail when restricted network env is set in provider config map and TCP port in readiness probe is not 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, false,
+			field.NotSupported(specPath.Child("readinessProbe", "tcpSocket", "port"), 443, []string{"6443"}).Error(), nil),
 		Entry("should allow when restricted network env is set in provider config map and TCP port in readiness probe is 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: true}, true, nil, nil),
 		Entry("should allow when restricted network env is not set in provider config map and TCP port in readiness probe is not 6443", createArgs{isNonRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, true, nil, nil),
 
@@ -397,14 +437,15 @@ func unitTestsValidateUpdate() {
 		ctx = nil
 	})
 
+	msg := "field is immutable"
 	DescribeTable("update table", validateUpdate,
 		// Immutable Fields
 		Entry("should allow", updateArgs{}, true, nil, nil),
-		Entry("should deny class name change", updateArgs{changeClassName: true}, false, "updates to immutable fields are not allowed: [spec.className]", nil),
-		Entry("should deny image name change", updateArgs{changeImageName: true}, false, "updates to immutable fields are not allowed: [spec.imageName]", nil),
-		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, "updates to immutable fields are not allowed: [spec.storageClass]", nil),
-		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, "updates to immutable fields are not allowed: [spec.resourcePolicyName]", nil),
-		Entry("should deny zone name change", updateArgs{changeZoneName: true}, false, "updates to immutable fields are not allowed: [metadata.labels."+topology.KubernetesTopologyZoneLabelKey+"]", nil),
+		Entry("should deny class name change", updateArgs{changeClassName: true}, false, msg, nil),
+		Entry("should deny image name change", updateArgs{changeImageName: true}, false, msg, nil),
+		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, msg, nil),
+		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, msg, nil),
+		Entry("should deny zone name change", updateArgs{changeZoneName: true}, false, msg, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

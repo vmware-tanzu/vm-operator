@@ -4,19 +4,16 @@
 package validation_test
 
 import (
-	"fmt"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
-
-	corev1 "k8s.io/api/core/v1"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/validation/messages"
 )
 
 func intgTests() {
@@ -125,14 +122,19 @@ func intgTestsValidateCreate() {
 		ctx = nil
 	})
 
+	specPath := field.NewPath("spec")
 	DescribeTable("create table", validateCreate,
 		Entry("should work", createArgs{}, true, "", nil),
 		Entry("should work despite incompatible image when VMOperatorImageSupportedCheckKey is disabled", createArgs{imageSupportCheckSkipAnnotation: true, imageNonCompatible: true}, true, "", nil),
 		Entry("should work despite incompatible image when VirtualMachineMetadataTransport is CloudInit", createArgs{imageNonCompatibleCloudInitTransport: true}, true, "", nil),
-		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false, "spec.imageName must be specified", nil),
-		Entry("should not work for image which is v1alpha1 incompatible or a non-tkg image", createArgs{imageNonCompatible: true}, false, fmt.Sprintf(messages.VirtualMachineImageNotSupported), nil),
-		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false, "spec.vmMetadata.configMapName must be specified", nil),
-		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false, fmt.Sprintf(messages.StorageClassNotAssignedFmt, builder.DummyStorageClassName, ""), nil),
+		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false,
+			field.Required(specPath.Child("imageName"), "").Error(), nil),
+		Entry("should not work for image which is v1alpha1 incompatible or a non-tkg image", createArgs{imageNonCompatible: true}, false,
+			field.Invalid(specPath.Child("imageName"), "dummy-image-name", "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
+		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false,
+			field.Required(specPath.Child("vmMetadata", "configMapName"), "").Error(), nil),
+		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false,
+			field.Invalid(specPath.Child("storageClass"), "dummy-storage-class", "Storage policy is not associated with the namespace").Error(), nil),
 	)
 }
 
@@ -140,6 +142,8 @@ func intgTestsValidateUpdate() {
 	var (
 		err error
 		ctx *intgValidatingWebhookContext
+
+		immutableFieldMsg = "field is immutable"
 	)
 
 	BeforeEach(func() {
@@ -168,7 +172,9 @@ func intgTestsValidateUpdate() {
 		})
 		It("should deny the request", func() {
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("updates to immutable fields are not allowed: [spec.imageName]"))
+			expectedPathStr := field.NewPath("spec", "imageName").String()
+			Expect(err.Error()).To(ContainSubstring(expectedPathStr))
+			Expect(err.Error()).To(ContainSubstring(immutableFieldMsg))
 		})
 	})
 	When("update is performed with changed storageClass name", func() {
@@ -177,7 +183,9 @@ func intgTestsValidateUpdate() {
 		})
 		It("should deny the request", func() {
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("updates to immutable fields are not allowed: [spec.storageClass]"))
+			expectedPath := field.NewPath("spec", "storageClass")
+			Expect(err.Error()).To(ContainSubstring(expectedPath.String()))
+			Expect(err.Error()).To(ContainSubstring(immutableFieldMsg))
 		})
 	})
 
@@ -193,8 +201,8 @@ func intgTestsValidateUpdate() {
 				}}
 			})
 			It("rejects the request", func() {
-				fields := []string{"spec.ports"}
-				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, fields, ctx.vm.Spec.PowerState)
+				portPath := field.NewPath("spec", "ports")
+				expectedReason := field.Forbidden(portPath, "updates to this filed is not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -208,8 +216,8 @@ func intgTestsValidateUpdate() {
 			})
 
 			It("rejects the request", func() {
-				fields := []string{"spec.vmMetadata"}
-				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, fields, ctx.vm.Spec.PowerState)
+				metadataPath := field.NewPath("spec", "vmMetadata")
+				expectedReason := field.Forbidden(metadataPath, "updates to this filed is not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -223,8 +231,8 @@ func intgTestsValidateUpdate() {
 			})
 
 			It("rejects the request", func() {
-				fields := []string{"spec.networkInterfaces"}
-				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, fields, ctx.vm.Spec.PowerState)
+				networkPath := field.NewPath("spec", "networkInterfaces")
+				expectedReason := field.Forbidden(networkPath, "updates to this filed is not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -242,8 +250,8 @@ func intgTestsValidateUpdate() {
 				})
 
 				It("rejects the request", func() {
-					fields := []string{"spec.volumes[VsphereVolume]"}
-					expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, fields, ctx.vm.Spec.PowerState)
+					vSphereVolumePath := field.NewPath("spec", "volumes").Key("VsphereVolume")
+					expectedReason := field.Forbidden(vSphereVolumePath, "updates to this filed is not allowed when VM power is on").Error()
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(expectedReason))
 				})
@@ -280,8 +288,8 @@ func intgTestsValidateUpdate() {
 			})
 
 			It("rejects the request", func() {
-				fields := []string{"spec.advancedOptions.defaultVolumeProvisioningOptions"}
-				expectedReason := fmt.Sprintf(messages.UpdatingFieldsNotAllowedInPowerStateFmt, fields, ctx.vm.Spec.PowerState)
+				fieldPath := field.NewPath("spec", "advancedOptions", "defaultVolumeProvisioningOptions")
+				expectedReason := field.Forbidden(fieldPath, "updates to this filed is not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})

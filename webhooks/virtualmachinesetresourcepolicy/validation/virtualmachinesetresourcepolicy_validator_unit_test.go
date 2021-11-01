@@ -4,15 +4,16 @@
 package validation_test
 
 import (
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
-	. "github.com/onsi/gomega"
-
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/gomega"
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -101,12 +102,16 @@ func unitTestsValidateCreate() {
 		ctx = nil
 	})
 
+	reservationsPath := field.NewPath("spec", "resourcepool", "reservations")
+	detailMsg := "reservation value cannot exceed the limit value"
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should allow no cpu limit", createArgs{noCPULimit: true}, true, nil, nil),
 		Entry("should allow no memory limit", createArgs{noMemoryLimit: true}, true, nil, nil),
-		Entry("should deny invalid cpu reservation", createArgs{invalidCPURequest: true}, false, "spec.resourcepool.reservations.cpu: Invalid value: \"2Gi\": reservation value cannot exceed the limit value", nil),
-		Entry("should deny invalid memory reservation", createArgs{invalidMemoryRequest: true}, false, "spec.resourcepool.reservations.memory: Invalid value: \"4Gi\": reservation value cannot exceed the limit value", nil),
+		Entry("should deny invalid cpu reservation", createArgs{invalidCPURequest: true}, false,
+			field.Invalid(reservationsPath.Child("cpu"), "2Gi", detailMsg).Error(), nil),
+		Entry("should deny invalid memory reservation", createArgs{invalidMemoryRequest: true}, false,
+			field.Invalid(reservationsPath.Child("memory"), "4Gi", detailMsg).Error(), nil),
 	)
 }
 
@@ -139,7 +144,7 @@ func unitTestsValidateUpdate() {
 		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(expectedAllowed))
 		if expectedReason != "" {
-			Expect(string(response.Result.Reason)).To(Equal(expectedReason))
+			Expect(string(response.Result.Reason)).To(ContainSubstring(expectedReason))
 		}
 		if expectedErr != nil {
 			Expect(response.Result.Message).To(Equal(expectedErr.Error()))
@@ -153,10 +158,11 @@ func unitTestsValidateUpdate() {
 		ctx = nil
 	})
 
+	immutableFieldMsg := "field is immutable"
 	DescribeTable("update table", validateUpdate,
 		Entry("should allow", updateArgs{}, true, nil, nil),
-		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, false, "updates to immutable fields are not allowed", nil),
-		Entry("should deny policy memory change", updateArgs{changeMemory: true}, false, "updates to immutable fields are not allowed", nil),
+		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, false, immutableFieldMsg, nil),
+		Entry("should deny policy memory change", updateArgs{changeMemory: true}, false, immutableFieldMsg, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

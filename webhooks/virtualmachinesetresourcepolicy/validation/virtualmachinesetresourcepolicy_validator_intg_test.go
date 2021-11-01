@@ -4,11 +4,12 @@
 package validation_test
 
 import (
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/resource"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -67,9 +68,11 @@ func intgTestsValidateCreate() {
 		ctx = nil
 	})
 
+	fieldPath := field.NewPath("spec", "resourcepool", "reservations", "memory")
 	DescribeTable("create table", validateCreate,
 		Entry("should work", true, "", nil),
-		Entry("should not work for invalid", false, "spec.resourcepool.reservations.memory: Invalid value: \"2Gi\": reservation value cannot exceed the limit value", nil),
+		Entry("should not work for invalid", false,
+			field.Invalid(fieldPath, "2Gi", "reservation value cannot exceed the limit value").Error(), nil),
 	)
 }
 
@@ -98,7 +101,7 @@ func intgTestsValidateUpdate() {
 		})
 		It("should deny the request", func() {
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("updates to immutable fields are not allowed"))
+			Expect(err.Error()).To(ContainSubstring("field is immutable"))
 		})
 	})
 }

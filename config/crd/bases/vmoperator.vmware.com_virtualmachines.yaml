@@ -266,12 +266,22 @@ spec:
                       used for VirtualMachine metadata.  The contents of the Data
                       field of the ConfigMap is used as the VM Metadata. The format
                       of the contents of the VM Metadata are not parsed or interpreted
-                      by the VirtualMachine controller.
+                      by the VirtualMachine controller. Please note, this field and
+                      SecretName are mutually exclusive.
+                    type: string
+                  secretName:
+                    description: SecretName describes the name of the Secret, in the
+                      same Namespace as the VirtualMachine, that should be used for
+                      VirtualMachine metadata. The contents of the Data field of the
+                      Secret is used as the VM Metadata. The format of the contents
+                      of the VM Metadata are not parsed or interpreted by the VirtualMachine
+                      controller. Please note, this field and ConfigMapName are mutually
+                      exclusive.
                     type: string
                   transport:
                     description: Transport describes the name of a supported VirtualMachineMetadata
                       transport protocol.  Currently, the only supported transport
-                      protocols are "ExtraConfig" and "OvfEnv".
+                      protocols are "ExtraConfig", "OvfEnv" and "CloudInit".
                     enum:
                     - ExtraConfig
                     - OvfEnv

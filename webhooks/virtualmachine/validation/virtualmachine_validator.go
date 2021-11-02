@@ -56,6 +56,8 @@ const (
 	invalidVolumeSpecified                    = "only one of persistentVolumeClaim or vsphereVolume must be specified"
 	vSphereVolumeSizeNotMBMultiple            = "value must be a multiple of MB"
 	eagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning"
+	metadataTransportResourcesEmpty           = "must specify either %s or %s, but not both"
+	metadataTransportResourcesInvalid         = "%s and %s cannot be specified simultaneously"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha1,name=default.validating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -189,8 +191,16 @@ func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmop
 		return allErrs
 	}
 
-	if vm.Spec.VmMetadata.ConfigMapName == "" {
-		allErrs = append(allErrs, field.Required(field.NewPath("spec", "vmMetadata", "configMapName"), ""))
+	mdPath := field.NewPath("spec", "vmMetadata")
+
+	if vm.Spec.VmMetadata.ConfigMapName == "" && vm.Spec.VmMetadata.SecretName == "" {
+		allErrs = append(allErrs, field.Required(mdPath.Child("configMapName"),
+			fmt.Sprintf(metadataTransportResourcesEmpty, mdPath.Child("configMapName"), mdPath.Child("secretName"))))
+	}
+
+	if vm.Spec.VmMetadata.ConfigMapName != "" && vm.Spec.VmMetadata.SecretName != "" {
+		allErrs = append(allErrs, field.Invalid(mdPath.Child("configMapName"), vm.Spec.VmMetadata.ConfigMapName,
+			fmt.Sprintf(metadataTransportResourcesInvalid, mdPath.Child("configMapName"), mdPath.Child("secretName"))))
 	}
 
 	return allErrs

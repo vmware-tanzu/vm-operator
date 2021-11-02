@@ -121,7 +121,8 @@ func unitTestsValidateCreate() {
 		invalidPVCName                       bool
 		invalidPVCReadOnly                   bool
 		invalidPVCHwVersion                  bool
-		invalidMetadataConfigMap             bool
+		emptyMetadataResource                bool
+		multipleMetadataResources            bool
 		invalidVsphereVolumeSource           bool
 		invalidVMVolumeProvOpts              bool
 		invalidStorageClass                  bool
@@ -200,8 +201,13 @@ func unitTestsValidateCreate() {
 			ctx.vmImage.Spec.HardwareVersion = 12
 			Expect(ctx.Client.Update(ctx, ctx.vmImage)).ToNot(HaveOccurred())
 		}
-		if args.invalidMetadataConfigMap {
+		if args.emptyMetadataResource {
 			ctx.vm.Spec.VmMetadata.ConfigMapName = ""
+			ctx.vm.Spec.VmMetadata.SecretName = ""
+		}
+		if args.multipleMetadataResources {
+			ctx.vm.Spec.VmMetadata.ConfigMapName = "foo"
+			ctx.vm.Spec.VmMetadata.SecretName = "bar"
 		}
 		if args.invalidVsphereVolumeSource {
 			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim = nil
@@ -349,13 +355,12 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVMVolumeProvOpts: true}, false,
 			field.Forbidden(field.NewPath("spec", "advancedOptions", "defaultVolumeProvisioningOptions"), "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning").Error(), nil),
 
-		Entry("should deny invalid vmMetadata configmap", createArgs{invalidMetadataConfigMap: true}, false,
-			field.Required(specPath.Child("vmMetadata", "configMapName"), "").Error(), nil),
-
 		Entry("should deny a storage class that does not exist", createArgs{notfoundStorageClass: true}, false,
 			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
 		Entry("should deny a storage class that is not associated with the namespace", createArgs{invalidStorageClass: true}, false,
 			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
+		Entry("should deny empty vmMetadata resource Names", createArgs{emptyMetadataResource: true}, false, "must specify either spec.vmMetadata.configMapName or spec.vmMetadata.secretName, but not both", nil),
+		Entry("should deny when mutiple vmMetadata resources are specified", createArgs{multipleMetadataResources: true}, false, "spec.vmMetadata.configMapName and spec.vmMetadata.secretName cannot be specified simultaneously", nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
 
 		Entry("should fail when image is not compatible", createArgs{imageNonCompatible: true}, false,

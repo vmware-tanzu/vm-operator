@@ -639,6 +639,14 @@ func (r *Reconciler) createOrUpdateVM(ctx *context.VirtualMachineContext) error 
 			r.mutex.Unlock()
 		}()
 
+		// Check if the specified resource policy is in deleting state.
+		if resourcePolicy != nil && !resourcePolicy.DeletionTimestamp.IsZero() {
+			err = fmt.Errorf("cannot create VirtualMachine with its resource policy in DELETING state")
+			ctx.Logger.Error(err, "resourcePolicyName", resourcePolicy.Name)
+			r.Recorder.EmitEvent(vm, "Create", err, false)
+			return err
+		}
+
 		err = r.VMProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 		if err != nil {
 			ctx.Logger.Error(err, "Provider failed to create VirtualMachine")

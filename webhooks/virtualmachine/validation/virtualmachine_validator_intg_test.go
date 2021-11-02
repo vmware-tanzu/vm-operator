@@ -51,7 +51,7 @@ func intgTestsValidateCreate() {
 		imageNonCompatibleCloudInitTransport bool
 		imageNotFound                        bool
 		imageSupportCheckSkipAnnotation      bool
-		invalidMetadataConfigMap             bool
+		invalidMetadataResource              bool
 		invalidStorageClass                  bool
 	}
 
@@ -85,8 +85,9 @@ func intgTestsValidateCreate() {
 		if args.imageNonCompatibleCloudInitTransport {
 			vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataCloudInitTransport
 		}
-		if args.invalidMetadataConfigMap {
+		if args.invalidMetadataResource {
 			vm.Spec.VmMetadata.ConfigMapName = ""
+			vm.Spec.VmMetadata.SecretName = ""
 		}
 		// StorageClass specifies but not assigned to ResourceQuota
 		if args.invalidStorageClass {
@@ -131,10 +132,10 @@ func intgTestsValidateCreate() {
 			field.Required(specPath.Child("imageName"), "").Error(), nil),
 		Entry("should not work for image which is v1alpha1 incompatible or a non-tkg image", createArgs{imageNonCompatible: true}, false,
 			field.Invalid(specPath.Child("imageName"), "dummy-image-name", "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
-		Entry("should not work for invalid metadata configmapname", createArgs{invalidMetadataConfigMap: true}, false,
-			field.Required(specPath.Child("vmMetadata", "configMapName"), "").Error(), nil),
 		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false,
 			field.Invalid(specPath.Child("storageClass"), "dummy-storage-class", "Storage policy is not associated with the namespace").Error(), nil),
+		Entry("should not work for empty metadata resource name", createArgs{invalidMetadataResource: true}, false,
+			"must specify either spec.vmMetadata.configMapName or spec.vmMetadata.secretName, but not both", nil),
 	)
 }
 

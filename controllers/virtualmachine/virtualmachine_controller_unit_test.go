@@ -51,18 +51,19 @@ func unitTestsReconcile() {
 		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 
-		reconciler       *virtualmachine.Reconciler
-		fakeVMProvider   *providerfake.VMProvider
-		vmCtx            *vmopContext.VirtualMachineContext
-		vm               *vmopv1alpha1.VirtualMachine
-		contentSource    *vmopv1alpha1.ContentSource
-		clProvider       *vmopv1alpha1.ContentLibraryProvider
-		vmClass          *vmopv1alpha1.VirtualMachineClass
-		vmImage          *vmopv1alpha1.VirtualMachineImage
-		vmMetaData       *corev1.ConfigMap
-		vmResourcePolicy *vmopv1alpha1.VirtualMachineSetResourcePolicy
-		storageClass     *storagev1.StorageClass
-		resourceQuota    *corev1.ResourceQuota
+		reconciler          *virtualmachine.Reconciler
+		fakeVMProvider      *providerfake.VMProvider
+		vmCtx               *vmopContext.VirtualMachineContext
+		vm                  *vmopv1alpha1.VirtualMachine
+		contentSource       *vmopv1alpha1.ContentSource
+		clProvider          *vmopv1alpha1.ContentLibraryProvider
+		vmClass             *vmopv1alpha1.VirtualMachineClass
+		vmImage             *vmopv1alpha1.VirtualMachineImage
+		vmMetaDataConfigMap *corev1.ConfigMap
+		vmMetaDataSecret    *corev1.Secret
+		vmResourcePolicy    *vmopv1alpha1.VirtualMachineSetResourcePolicy
+		storageClass        *storagev1.StorageClass
+		resourceQuota       *corev1.ResourceQuota
 
 		fakeProbeManager *proberfake.ProberManager
 
@@ -128,13 +129,23 @@ func unitTestsReconcile() {
 			},
 		}
 
-		vmMetaData = &corev1.ConfigMap{
+		vmMetaDataConfigMap = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm-metadata",
 				Namespace: vm.Namespace,
 			},
 			Data: map[string]string{
 				"foo": "bar",
+			},
+		}
+
+		vmMetaDataSecret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dummy-vm-metadata",
+				Namespace: vm.Namespace,
+			},
+			Data: map[string][]byte{
+				"foo": []byte("bar"),
 			},
 		}
 
@@ -620,10 +631,10 @@ func unitTestsReconcile() {
 			})
 		})
 
-		When("VM Metadata is specified", func() {
+		When("VM Metadata is specified via a ConfigMap", func() {
 			BeforeEach(func() {
 				vm.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
-					ConfigMapName: vmMetaData.Name,
+					ConfigMapName: vmMetaDataConfigMap.Name,
 					Transport:     "transport",
 				}
 			})
@@ -637,7 +648,34 @@ func unitTestsReconcile() {
 
 			When("VM Metadata exists", func() {
 				BeforeEach(func() {
-					initObjects = append(initObjects, vmMetaData)
+					initObjects = append(initObjects, vmMetaDataConfigMap)
+				})
+
+				It("returns success", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+		})
+
+		When("VM Metadata is specified via a Secret", func() {
+			BeforeEach(func() {
+				vm.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
+					SecretName: vmMetaDataSecret.Name,
+					Transport:  "transport",
+				}
+			})
+
+			When("VM Metadata does not exist", func() {
+				It("return an error", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).To(HaveOccurred())
+				})
+			})
+
+			When("VM Metadata exists", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, vmMetaDataSecret)
 				})
 
 				It("returns success", func() {

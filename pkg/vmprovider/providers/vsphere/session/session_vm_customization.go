@@ -111,11 +111,23 @@ func GetCloudInitGuestInfoCustSpec(
 	extraConfig[constants.CloudInitGuestInfoMetadata] = encodedMetadata
 	extraConfig[constants.CloudInitGuestInfoMetadataEncoding] = "gzip+base64"
 
-	if updateArgs.VMMetadata.Data["user-data"] != "" {
-		encodedUserdata, err := EncodeGzipBase64(updateArgs.VMMetadata.Data["user-data"])
+	var data string
+	// Check for the 'user-data' key as per official contract and API documentation.
+	// Additionally, To support the cluster bootstrap data supplied by CAPBK's secret,
+	// we check for a 'value' key when 'user-data' is not supplied. The 'value' key
+	// lookup will eventually be deprecated.
+	if userdata := updateArgs.VMMetadata.Data["user-data"]; userdata != "" {
+		data = userdata
+	} else if value := updateArgs.VMMetadata.Data["value"]; value != "" {
+		data = value
+	}
+
+	if data != "" {
+		encodedUserdata, err := EncodeGzipBase64(data)
 		if err != nil {
 			return nil, fmt.Errorf("encoding cloud-init userdata failed %v", err)
 		}
+
 		extraConfig[constants.CloudInitGuestInfoUserdata] = encodedUserdata
 		extraConfig[constants.CloudInitGuestInfoUserdataEncoding] = "gzip+base64"
 	}

@@ -11,7 +11,7 @@ require (
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.13.0
 	github.com/pkg/errors v0.9.1
-	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20211026172858-d82e8100c04c
+	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20211029224930-6ec913d11bff
 	github.com/vmware/govmomi v0.26.2-0.20210830195332-e67b1b118ec7
 	google.golang.org/grpc v1.27.1
 	gopkg.in/yaml.v2 v2.4.0

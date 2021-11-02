@@ -232,12 +232,14 @@ var _ = Describe("CloudInitmetadata", func() {
 var _ = Describe("Cloud-Init Customization", func() {
 	var (
 		cloudInitMetadata string
+		cloudInitUserdata string
 		updateArgs        session.VMUpdateArgs
 		configInfo        *vimTypes.VirtualMachineConfigInfo
 	)
 
 	BeforeEach(func() {
 		cloudInitMetadata = "cloud-init-metadata"
+		cloudInitUserdata = "cloud-init-userdata"
 		configInfo = &vimTypes.VirtualMachineConfigInfo{}
 		updateArgs.VMMetadata.Data = map[string]string{}
 	})
@@ -264,7 +266,7 @@ var _ = Describe("Cloud-Init Customization", func() {
 
 		Context("With userdata", func() {
 			BeforeEach(func() {
-				updateArgs.VMMetadata.Data["user-data"] = "cloud-init-userdata"
+				updateArgs.VMMetadata.Data["user-data"] = cloudInitUserdata
 			})
 			It("ConfigSpec.ExtraConfig to have metadata and userdata", func() {
 				Expect(configSpec).ToNot(BeNil())
@@ -277,6 +279,40 @@ var _ = Describe("Cloud-Init Customization", func() {
 				Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
 			})
 		})
+
+		Context("With userdata in both a 'user-data' and a 'value'  key", func() {
+			BeforeEach(func() {
+				updateArgs.VMMetadata.Data["user-data"] = cloudInitUserdata
+				updateArgs.VMMetadata.Data["value"] = cloudInitUserdata + "-in-value"
+			})
+			It("the 'user-data' key overrides as the ConfigSpec.ExtraConfig userdata ", func() {
+				Expect(configSpec).ToNot(BeNil())
+				Expect(err).ToNot(HaveOccurred())
+				extraConfig := session.ExtraConfigToMap(configSpec.ExtraConfig)
+				Expect(extraConfig).To(HaveLen(4))
+				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
+				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+				Expect(extraConfig[constants.CloudInitGuestInfoUserdata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
+				Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+			})
+		})
+
+		Context("With CAPBK userdata in a 'value' key", func() {
+			BeforeEach(func() {
+				updateArgs.VMMetadata.Data["value"] = cloudInitUserdata
+			})
+			It("ConfigSpec.ExtraConfig's userdata will have values from the 'value' key", func() {
+				Expect(configSpec).ToNot(BeNil())
+				Expect(err).ToNot(HaveOccurred())
+				extraConfig := session.ExtraConfigToMap(configSpec.ExtraConfig)
+				Expect(extraConfig).To(HaveLen(4))
+				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
+				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+				Expect(extraConfig[constants.CloudInitGuestInfoUserdata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
+				Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+			})
+		})
+
 	})
 
 	Context("GetCloudInitPrepCustSpec", func() {

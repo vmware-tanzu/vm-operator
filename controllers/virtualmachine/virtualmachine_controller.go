@@ -542,14 +542,36 @@ func (r *Reconciler) getVMMetadata(ctx *context.VirtualMachineContext) (vmprovid
 		return outMetadata, nil
 	}
 
-	vmMetadataConfigMap := &corev1.ConfigMap{}
-	err := r.Get(ctx, client.ObjectKey{Name: inMetadata.ConfigMapName, Namespace: ctx.VM.Namespace}, vmMetadataConfigMap)
-	if err != nil {
-		return outMetadata, err
+	// VmMetadata's ConfigMapName and SecretName are mutually exclusive.
+	// Webhooks currently enforce this during create/update
+	// Regardless check if both are set here and return err
+	if inMetadata.ConfigMapName != "" && inMetadata.SecretName != "" {
+		return outMetadata, fmt.Errorf("failed to get VM metadata. Both configMapName and secretName are specified")
+	}
+
+	if inMetadata.ConfigMapName != "" {
+		vmMetadataConfigMap := &corev1.ConfigMap{}
+		err := r.Get(ctx, client.ObjectKey{Name: inMetadata.ConfigMapName, Namespace: ctx.VM.Namespace}, vmMetadataConfigMap)
+		if err != nil {
+			return outMetadata, err
+		}
+		outMetadata.Data = vmMetadataConfigMap.Data
+	}
+
+	if inMetadata.SecretName != "" {
+		vmMetadataSecret := &corev1.Secret{}
+		err := r.Get(ctx, client.ObjectKey{Name: inMetadata.SecretName, Namespace: ctx.VM.Namespace}, vmMetadataSecret)
+		if err != nil {
+			return outMetadata, err
+		}
+
+		outMetadata.Data = make(map[string]string)
+		for k, v := range vmMetadataSecret.Data {
+			outMetadata.Data[k] = string(v)
+		}
 	}
 
 	outMetadata.Transport = inMetadata.Transport
-	outMetadata.Data = vmMetadataConfigMap.Data
 	return outMetadata, nil
 }
 

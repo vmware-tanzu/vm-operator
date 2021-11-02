@@ -686,9 +686,23 @@ func unitTestsReconcile() {
 						}
 					})
 
-					It("returns success", func() {
-						err := reconciler.ReconcileNormal(vmCtx)
-						Expect(err).ToNot(HaveOccurred())
+					When("VM ResourcePolicy is not in DELETING State", func() {
+						It("returns success", func() {
+							err := reconciler.ReconcileNormal(vmCtx)
+							Expect(err).ToNot(HaveOccurred())
+						})
+					})
+
+					When("VM ResourcePolicy is in deleting state", func() {
+						BeforeEach(func() {
+							t := metav1.Now()
+							vmResourcePolicy.SetDeletionTimestamp(&t)
+						})
+
+						It("returns an error", func() {
+							err := reconciler.ReconcileNormal(vmCtx)
+							Expect(err.Error()).To(ContainSubstring("cannot create VirtualMachine with its resource policy in DELETING state"))
+						})
 					})
 				})
 			})

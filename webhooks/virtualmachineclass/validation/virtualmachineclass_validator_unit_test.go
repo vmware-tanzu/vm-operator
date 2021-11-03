@@ -12,6 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -103,12 +105,15 @@ func unitTestsValidateCreate() {
 		ctx = nil
 	})
 
+	reqPath := field.NewPath("spec", "policies", "resources", "requests")
+	invalidCPUField := field.Invalid(reqPath.Child("cpu"), "2Gi", "CPU request must not be larger than the CPU limit")
+	invalidMemField := field.Invalid(reqPath.Child("memory"), "2Gi", "memory request must not be larger than the memory limit")
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should allow no cpu limit", createArgs{noCPULimit: true}, true, nil, nil),
 		Entry("should allow no memory limit", createArgs{noMemoryLimit: true}, true, nil, nil),
-		Entry("should deny invalid cpu request", createArgs{invalidCPURequest: true}, false, "CPU request must not be larger than the CPU limit", nil),
-		Entry("should deny invalid memory request", createArgs{invalidMemoryRequest: true}, false, "memory request must not be larger than the memory limit", nil),
+		Entry("should deny invalid cpu request", createArgs{invalidCPURequest: true}, false, invalidCPUField.Error(), nil),
+		Entry("should deny invalid memory request", createArgs{invalidMemoryRequest: true}, false, invalidMemField.Error(), nil),
 	)
 }
 
@@ -153,10 +158,12 @@ func unitTestsValidateUpdate() {
 		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(expectedAllowed))
 		if expectedReason != "" {
-			Expect(string(response.Result.Reason)).To(Equal(expectedReason))
+			// Construct the complete reason here as ctx.vmClass.Spec is nil when initializing the DescribeTable below.
+			completeReason := field.Invalid(field.NewPath("spec"), ctx.vmClass.Spec, expectedReason).Error()
+			Expect(string(response.Result.Reason)).To(ContainSubstring(completeReason))
 		}
 		if expectedErr != nil {
-			Expect(response.Result.Message).To(Equal(expectedErr.Error()))
+			Expect(response.Result.Message).To(ContainSubstring(expectedErr.Error()))
 		}
 	}
 
@@ -192,12 +199,13 @@ func unitTestsValidateUpdate() {
 		)
 	})
 
+	immutableFieldMsg := "field is immutable"
 	DescribeTable("update table", validateUpdate,
 		Entry("should allow", updateArgs{}, true, nil, nil),
-		Entry("should deny hw cpu change", updateArgs{changeHwCPU: true}, false, "updates to immutable fields are not allowed", nil),
-		Entry("should deny hw memory change", updateArgs{changeHwMemory: true}, false, "updates to immutable fields are not allowed", nil),
-		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, false, "updates to immutable fields are not allowed", nil),
-		Entry("should deny policy memory change", updateArgs{changeMemory: true}, false, "updates to immutable fields are not allowed", nil),
+		Entry("should deny hw cpu change", updateArgs{changeHwCPU: true}, false, immutableFieldMsg, nil),
+		Entry("should deny hw memory change", updateArgs{changeHwMemory: true}, false, immutableFieldMsg, nil),
+		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, false, immutableFieldMsg, nil),
+		Entry("should deny policy memory change", updateArgs{changeMemory: true}, false, immutableFieldMsg, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

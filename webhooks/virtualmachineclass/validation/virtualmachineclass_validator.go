@@ -8,8 +8,11 @@ import (
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -22,11 +25,13 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass/validation/messages"
 )
 
 const (
 	webHookName = "default"
+
+	invalidCPUReqMsg    = "CPU request must not be larger than the CPU limit"
+	invalidMemoryReqMsg = "memory request must not be larger than the memory limit"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachineclass,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachineclasses,versions=v1alpha1,name=default.validating.virtualmachineclass.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -60,16 +65,19 @@ func (v validator) For() schema.GroupVersionKind {
 }
 
 func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
-	var validationErrs []string
-
 	vmClass, err := v.vmClassFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
-	validationErrs = append(validationErrs, v.validateMetadata(ctx, vmClass)...)
-	validationErrs = append(validationErrs, v.validateMemory(ctx, vmClass)...)
-	validationErrs = append(validationErrs, v.validateCPU(ctx, vmClass)...)
+	var fieldErrs field.ErrorList
+
+	fieldErrs = append(fieldErrs, v.validatePolicies(ctx, vmClass, field.NewPath("spec", "policies"))...)
+
+	validationErrs := make([]string, 0, len(fieldErrs))
+	for _, fieldErr := range fieldErrs {
+		validationErrs = append(validationErrs, fieldErr.Error())
+	}
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
@@ -79,8 +87,6 @@ func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Resp
 }
 
 func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
-	var validationErrs []string
-
 	vmClass, err := v.vmClassFromUnstructured(ctx.Obj)
 	if err != nil {
 		return webhook.Errored(http.StatusBadRequest, err)
@@ -91,54 +97,42 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 		return webhook.Errored(http.StatusBadRequest, err)
 	}
 
+	var fieldErrs field.ErrorList
+
 	// If the WCP_VMService FSS is enabled, we allow VirtualMachineClasses edits.
 	if !lib.IsVMServiceFSSEnabled() {
-		validationErrs = append(validationErrs, v.validateAllowedChanges(ctx, vmClass, oldVMClass)...)
+		invalidEdits := validation.ValidateImmutableField(vmClass.Spec, oldVMClass.Spec, field.NewPath("spec"))
+		fieldErrs = append(fieldErrs, invalidEdits...)
+	}
+
+	validationErrs := make([]string, 0, len(fieldErrs))
+	for _, fieldErr := range fieldErrs {
+		validationErrs = append(validationErrs, fieldErr.Error())
 	}
 
 	return common.BuildValidationResponse(ctx, validationErrs, nil)
 }
 
-func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass) []string {
-	var validationErrs []string
-	return validationErrs
-}
-
-func (v validator) validateMemory(ctx *context.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass) []string {
-	var validationErrs []string
+func (v validator) validatePolicies(ctx *context.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass,
+	polPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
 
 	request, limits := vmClass.Spec.Policies.Resources.Requests, vmClass.Spec.Policies.Resources.Limits
-	if !isRequestLimitValid(request.Memory, limits.Memory) {
-		validationErrs = append(validationErrs, messages.InvalidMemoryRequest)
-	}
+	reqPath := polPath.Child("resources", "requests")
 
-	// TODO: Validate req and limit against hardware configuration of the class
-
-	return validationErrs
-}
-
-func (v validator) validateCPU(ctx *context.WebhookRequestContext, vmClass *vmopv1.VirtualMachineClass) []string {
-	var validationErrs []string
-
-	request, limits := vmClass.Spec.Policies.Resources.Requests, vmClass.Spec.Policies.Resources.Limits
+	// Validate the CPU request.
 	if !isRequestLimitValid(request.Cpu, limits.Cpu) {
-		validationErrs = append(validationErrs, messages.InvalidCPURequest)
+		allErrs = append(allErrs, field.Invalid(reqPath.Child("cpu"), request.Cpu.String(), invalidCPUReqMsg))
+	}
+
+	// Validate the memory request.
+	if !isRequestLimitValid(request.Memory, limits.Memory) {
+		allErrs = append(allErrs, field.Invalid(reqPath.Child("memory"), request.Memory.String(), invalidMemoryReqMsg))
 	}
 
 	// TODO: Validate req and limit against hardware configuration of the class
 
-	return validationErrs
-}
-
-// validateAllowedChanges returns true only if immutable fields have not been modified.
-func (v validator) validateAllowedChanges(ctx *context.WebhookRequestContext, vmClass, oldVMClass *vmopv1.VirtualMachineClass) []string {
-	var validationErrs []string
-
-	if !reflect.DeepEqual(vmClass.Spec, oldVMClass.Spec) {
-		validationErrs = append(validationErrs, messages.UpdatingImmutableFieldsNotAllowed)
-	}
-
-	return validationErrs
+	return allErrs
 }
 
 // vmClassFromUnstructured returns the VirtualMachineClass from the unstructured object.

@@ -93,6 +93,12 @@ func (sm *Manager) GetSession(
 	ctx goctx.Context,
 	zone, namespace string) (*Session, error) {
 
+	if !lib.IsWcpFaultDomainsFSSEnabled() {
+		if zone == "" {
+			zone = topology.DefaultAvailabilityZoneName
+		}
+	}
+
 	sm.Lock()
 	defer sm.Unlock()
 
@@ -269,5 +275,5 @@ func (sm *Manager) clearSessionsAndClient(ctx goctx.Context) {
 
 // Gets the session key for a given zone and namespace.
 func getSessionKey(zone, namespace string) string {
-	return zone + namespace
+	return zone + "/" + namespace
 }

@@ -15,8 +15,9 @@ import (
 // VolumeContext is the context used for VolumeController.
 type VolumeContext struct {
 	context.Context
-	Logger logr.Logger
-	VM     *vmopv1.VirtualMachine
+	Logger                    logr.Logger
+	VM                        *vmopv1.VirtualMachine
+	InstanceStorageFSSEnabled bool
 }
 
 func (v *VolumeContext) String() string {

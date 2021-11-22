@@ -5,6 +5,7 @@ package volume_test
 
 import (
 	"fmt"
+	"os"
 	"sync/atomic"
 
 	. "github.com/onsi/ginkgo"
@@ -12,7 +13,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,7 +34,6 @@ func intgTests() {
 		ctx *builder.IntegrationTestContext
 
 		vm                *vmopv1alpha1.VirtualMachine
-		vmClass           *vmopv1alpha1.VirtualMachineClass
 		vmKey             types.NamespacedName
 		vmVolume1         vmopv1alpha1.VirtualMachineVolume
 		vmVolume2         vmopv1alpha1.VirtualMachineVolume
@@ -74,31 +73,6 @@ func intgTests() {
 			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
 				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: "pvc-volume-2",
-				},
-			},
-		}
-
-		vmClass = &vmopv1alpha1.VirtualMachineClass{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "small",
-			},
-			Spec: vmopv1alpha1.VirtualMachineClassSpec{
-				Hardware: vmopv1alpha1.VirtualMachineClassHardware{
-					Cpus:            4,
-					Memory:          resource.MustParse("1Mi"),
-					InstanceStorage: builder.DummyInstanceStorage(),
-				},
-				Policies: vmopv1alpha1.VirtualMachineClassPolicies{
-					Resources: vmopv1alpha1.VirtualMachineClassResources{
-						Requests: vmopv1alpha1.VirtualMachineResourceSpec{
-							Cpu:    resource.MustParse("1000Mi"),
-							Memory: resource.MustParse("100Mi"),
-						},
-						Limits: vmopv1alpha1.VirtualMachineResourceSpec{
-							Cpu:    resource.MustParse("2000Mi"),
-							Memory: resource.MustParse("200Mi"),
-						},
-					},
 				},
 			},
 		}
@@ -164,23 +138,80 @@ func intgTests() {
 		}
 	}
 
+	waitForInstanceStoragePVCs := func(objKey types.NamespacedName) {
+		vm := getVirtualMachine(objKey)
+		Expect(vm).ToNot(BeNil())
+
+		volumes := instancestorage.FilterVolumes(vm)
+		Expect(volumes).ToNot(BeEmpty())
+
+		Eventually(func() bool {
+			for _, vol := range volumes {
+				pvcKey := client.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      vol.PersistentVolumeClaim.ClaimName,
+				}
+
+				pvc := &corev1.PersistentVolumeClaim{}
+				if ctx.Client.Get(ctx, pvcKey, pvc) != nil {
+					return false
+				}
+
+				isClaim := vol.PersistentVolumeClaim.InstanceVolumeClaim
+				Expect(pvc.Labels).To(HaveKey(constants.InstanceStorageLabelKey))
+				Expect(pvc.Annotations).To(HaveKeyWithValue(constants.KubernetesSelectedNodeAnnotationKey, dummySelectedNode))
+				Expect(pvc.Spec.StorageClassName).ToNot(BeNil())
+				Expect(*pvc.Spec.StorageClassName).To(Equal(isClaim.StorageClass))
+				Expect(pvc.Spec.Resources.Requests).To(HaveKeyWithValue(corev1.ResourceStorage, isClaim.Size))
+				Expect(pvc.Spec.AccessModes).To(ConsistOf(corev1.ReadWriteOnce))
+			}
+			return true
+		}).Should(BeTrue(), "waiting for instance storage PVCs to be created")
+	}
+
+	waitForInstanceStoragePVCsToBeDeleted := func(objKey types.NamespacedName) {
+		vm := getVirtualMachine(objKey)
+		Expect(vm).ToNot(BeNil())
+
+		volumes := instancestorage.FilterVolumes(vm)
+		Expect(volumes).ToNot(BeEmpty())
+
+		Eventually(func() bool {
+			for _, vol := range volumes {
+				pvcKey := client.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      vol.PersistentVolumeClaim.ClaimName,
+				}
+
+				// PVCs gets finalizer set on creation so expect the deletion timestamp to be set.
+				pvc := &corev1.PersistentVolumeClaim{}
+				if err := ctx.Client.Get(ctx, pvcKey, pvc); err != nil || pvc.DeletionTimestamp.IsZero() {
+					return false
+				}
+			}
+			return true
+		}).Should(BeTrue(), "waiting for instance storage PVCs to be deleted")
+	}
+
 	patchInstanceStoragePVCs := func(objKey types.NamespacedName, setStatusBound, setErrorAnnotation bool) {
 		vm := getVirtualMachine(objKey)
 		Expect(vm).ToNot(BeNil())
 
 		volumes := instancestorage.FilterVolumes(vm)
+		Expect(volumes).ToNot(BeEmpty())
+
 		for _, vol := range volumes {
-			objKey := client.ObjectKey{
+			pvcKey := client.ObjectKey{
 				Namespace: vm.Namespace,
 				Name:      vol.PersistentVolumeClaim.ClaimName,
 			}
+
 			pvc := &corev1.PersistentVolumeClaim{}
-			if err := ctx.Client.Get(ctx, objKey, pvc); client.IgnoreNotFound(err) != nil {
-				Expect(err).To(BeNil())
-			}
+			err := ctx.Client.Get(ctx, pvcKey, pvc)
+			Expect(err).ToNot(HaveOccurred())
 
 			patchHelper, err := patch.NewHelper(pvc, ctx.Client)
-			Expect(err).To(BeNil())
+			Expect(err).ToNot(HaveOccurred())
 
 			if setStatusBound {
 				pvc.Status.Phase = corev1.ClaimBound
@@ -191,34 +222,34 @@ func intgTests() {
 				}
 				pvc.Annotations[constants.InstanceStoragePVPlacementErrorAnnotationKey] = constants.InstanceStorageNotEnoughResErr
 			}
-			Expect(patchHelper.Patch(ctx, pvc)).To(BeNil())
-
+			Expect(patchHelper.Patch(ctx, pvc)).To(Succeed())
 		}
 	}
 
 	Context("Reconcile Instance Storage", func() {
 		var (
-			origInstanceStorageFSSState uint32
+			origInstanceStorageFSSState  uint32
+			origInstanceStorageFailedTTL string
 		)
+
 		BeforeEach(func() {
 			origInstanceStorageFSSState = instanceStorageFSS
 			atomic.StoreUint32(&instanceStorageFSS, 1)
+			origInstanceStorageFailedTTL = os.Getenv(lib.InstanceStoragePVPlacementFailedTTLEnv)
+			Expect(os.Setenv(lib.InstanceStoragePVPlacementFailedTTLEnv, "0s")).To(Succeed())
 
-			vm.Spec.ClassName = vmClass.Name
 			vm.Spec.Volumes = append(vm.Spec.Volumes, builder.DummyInstanceStorageVirtualMachineVolumes()...)
 			vm.Labels = make(map[string]string)
 			vm.Labels[constants.InstanceStorageLabelKey] = lib.TrueString
 			vm.Annotations = make(map[string]string)
-			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 		})
 
 		AfterEach(func() {
 			err := ctx.Client.Delete(ctx, vm)
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
-			err = ctx.Client.Delete(ctx, vmClass)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 			atomic.StoreUint32(&instanceStorageFSS, origInstanceStorageFSSState)
+			Expect(os.Setenv(lib.InstanceStoragePVPlacementFailedTTLEnv, origInstanceStorageFailedTTL)).To(Succeed())
 		})
 
 		It("Reconcile instance storage PVCs - selected-node annotation not set", func() {
@@ -230,8 +261,8 @@ func intgTests() {
 				vm.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = dummySelectedNode
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
-			By("PVCs should have created", func() {
-				waitForVirtualMachineInstanceStorage(vmKey, true, false)
+			By("PVCs should be created", func() {
+				waitForInstanceStoragePVCs(vmKey)
 			})
 			By("realize PVCs by setting PVC status to BOUND", func() {
 				patchInstanceStoragePVCs(vmKey, true, false)
@@ -246,14 +277,17 @@ func intgTests() {
 				vm.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = dummySelectedNode
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
-			By("PVCs should have created", func() {
-				waitForVirtualMachineInstanceStorage(vmKey, true, false)
+			By("PVCs should be created", func() {
+				waitForInstanceStoragePVCs(vmKey)
 			})
 			By("Set PVCs with errors", func() {
 				patchInstanceStoragePVCs(vmKey, false, true)
 			})
 			By("PVCs should be deleted", func() {
-				waitForVirtualMachineInstanceStorage(vmKey, true, false)
+				waitForInstanceStoragePVCsToBeDeleted(vmKey)
+			})
+			By("selected-node annotations should be removed", func() {
+				waitForVirtualMachineInstanceStorage(vmKey, false, false)
 			})
 		})
 	})

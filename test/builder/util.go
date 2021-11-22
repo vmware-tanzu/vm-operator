@@ -111,6 +111,7 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "test-",
 			Labels:       map[string]string{},
+			Annotations:  map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSpec{
 			ImageName:  DummyImageName,

@@ -340,16 +340,16 @@ func (s *TestSuite) getManagerRunning() bool {
 
 // Starts the manager and sets managerRunning
 func (s *TestSuite) startManager() {
+	ctx, cancel := context.WithCancel(s.Context)
+	s.cancelFuncMutex.Lock()
+	s.cancelFunc = cancel
+	s.cancelFuncMutex.Unlock()
+
 	go func() {
 		defer GinkgoRecover()
 
 		s.setManagerRunning(true)
-		ctx, cancel := context.WithCancel(s.Context)
-		s.cancelFuncMutex.Lock()
-		s.cancelFunc = cancel
-		s.cancelFuncMutex.Unlock()
 		Expect(s.manager.Start(ctx)).ToNot(HaveOccurred())
-
 		s.setManagerRunning(false)
 	}()
 }
@@ -461,8 +461,11 @@ func (s *TestSuite) afterSuiteForIntegrationTesting() {
 	if s.integrationTest {
 		By("tearing down the manager", func() {
 			s.cancelFuncMutex.Lock()
-			s.cancelFunc()
+			if s.cancelFunc != nil {
+				s.cancelFunc()
+			}
 			s.cancelFuncMutex.Unlock()
+
 			Eventually(s.getManagerRunning).Should(BeFalse())
 
 			if s.webhookYaml != nil {

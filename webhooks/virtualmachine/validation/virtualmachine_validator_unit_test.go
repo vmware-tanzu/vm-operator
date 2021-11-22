@@ -116,6 +116,7 @@ func unitTestsValidateCreate() {
 
 	type createArgs struct {
 		invalidImageName                     bool
+		imageNotFound                        bool
 		invalidClassName                     bool
 		invalidNetworkName                   bool
 		invalidNetworkType                   bool
@@ -137,6 +138,7 @@ func unitTestsValidateCreate() {
 		notfoundStorageClass                 bool
 		validStorageClass                    bool
 		imageNonCompatible                   bool
+		imageSupportCheckSkipAnnotation      bool
 		imageNonCompatibleCloudInitTransport bool
 		invalidReadinessNoProbe              bool
 		invalidReadinessProbe                bool
@@ -161,9 +163,15 @@ func unitTestsValidateCreate() {
 		if args.invalidImageName {
 			ctx.vm.Spec.ImageName = ""
 		}
+		if args.imageNotFound {
+			ctx.vm.Spec.ImageName = "image-does-not-exist"
+		}
 		if args.imageNonCompatible {
 			ctx.vmImage.Status.ImageSupported = &[]bool{false}[0]
 			Expect(ctx.Client.Status().Update(ctx, ctx.vmImage)).ToNot(HaveOccurred())
+		}
+		if args.imageSupportCheckSkipAnnotation {
+			ctx.vm.Annotations[constants.VMOperatorImageSupportedCheckKey] = constants.VMOperatorImageSupportedCheckDisable
 		}
 		if args.imageNonCompatibleCloudInitTransport {
 			ctx.vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataCloudInitTransport
@@ -352,6 +360,8 @@ func unitTestsValidateCreate() {
 			field.Required(specPath.Child("className"), "").Error(), nil),
 		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false,
 			field.Required(specPath.Child("imageName"), "").Error(), nil),
+		Entry("should deny image that does not exist", createArgs{imageNotFound: true}, false,
+			field.Invalid(specPath.Child("imageName"), "image-does-not-exist", "").Error(), nil),
 		Entry("should fail when Readiness probe has multiple actions", createArgs{invalidReadinessProbe: true}, false,
 			field.Forbidden(specPath.Child("readinessProbe"), "only one action can be specified").Error(), nil),
 		Entry("should fail when Readiness probe has no actions", createArgs{invalidReadinessNoProbe: true}, false,
@@ -393,11 +403,12 @@ func unitTestsValidateCreate() {
 		Entry("should deny a storage class that is not associated with the namespace", createArgs{invalidStorageClass: true}, false,
 			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
 		Entry("should deny empty vmMetadata resource Names", createArgs{emptyMetadataResource: true}, false, "must specify either spec.vmMetadata.configMapName or spec.vmMetadata.secretName, but not both", nil),
-		Entry("should deny when mutiple vmMetadata resources are specified", createArgs{multipleMetadataResources: true}, false, "spec.vmMetadata.configMapName and spec.vmMetadata.secretName cannot be specified simultaneously", nil),
+		Entry("should deny when multiple vmMetadata resources are specified", createArgs{multipleMetadataResources: true}, false, "spec.vmMetadata.configMapName and spec.vmMetadata.secretName cannot be specified simultaneously", nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
 
 		Entry("should fail when image is not compatible", createArgs{imageNonCompatible: true}, false,
 			field.Invalid(specPath.Child("imageName"), builder.DummyImageName, "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
+		Entry("should allow despite incompatible image when VMOperatorImageSupportedCheckKey is disabled", createArgs{imageSupportCheckSkipAnnotation: true, imageNonCompatible: true}, true, nil, nil),
 		Entry("should allow when image is not compatible and VirtualMachineMetadataTransport is CloudInit", createArgs{imageNonCompatibleCloudInitTransport: true}, true, nil, nil),
 
 		Entry("should fail when restricted network env is set in provider config map and TCP port in readiness probe is not 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, false,

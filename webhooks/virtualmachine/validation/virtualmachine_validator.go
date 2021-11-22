@@ -225,7 +225,6 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 	}
 
 	vmoperatorImageSupportedCheck := vm.Annotations[constants.VMOperatorImageSupportedCheckKey]
-
 	if vmoperatorImageSupportedCheck == constants.VMOperatorImageSupportedCheckDisable {
 		return allErrs
 	}

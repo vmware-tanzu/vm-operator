@@ -133,9 +133,10 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.
 	}
 
 	volCtx := &context.VolumeContext{
-		Context: ctx,
-		Logger:  ctrl.Log.WithName("Volumes").WithValues("name", vm.NamespacedName()),
-		VM:      vm,
+		Context:                   ctx,
+		Logger:                    ctrl.Log.WithName("Volumes").WithValues("name", vm.NamespacedName()),
+		VM:                        vm,
+		InstanceStorageFSSEnabled: lib.IsInstanceStorageFSSEnabled(),
 	}
 
 	patchHelper, err := patch.NewHelper(vm, r.Client)
@@ -162,7 +163,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.
 }
 
 func (r *Reconciler) reconcileResult(ctx *context.VolumeContext) ctrl.Result {
-	if lib.IsInstanceStorageFSSEnabled() {
+	if ctx.InstanceStorageFSSEnabled {
 		// Requeue the request if all instance storage PVCs are not bound.
 		_, pvcsBound := ctx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]
 		if instancestorage.IsConfigured(ctx.VM) && !pvcsBound {
@@ -187,7 +188,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VolumeContext) error {
 		ctx.Logger.Info("Finished Reconciling VirtualMachine for processing volumes")
 	}()
 
-	if lib.IsInstanceStorageFSSEnabled() {
+	if ctx.InstanceStorageFSSEnabled {
 		ready, err := r.reconcileInstanceStoragePVCs(ctx)
 		if err != nil || !ready {
 			return err
@@ -270,7 +271,7 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(ctx *context.VolumeContext) (b
 		}
 
 		if !metav1.IsControlledBy(&pvc, ctx.VM) {
-			// This PVC's OwerRef doesn't match with VM resource UUID. This shouldn't happen
+			// This PVC's OwnerRef doesn't match with VM resource UUID. This shouldn't happen
 			// since PVCs are always created with OwnerRef as well as Controller watch filters
 			// out non instance storage PVCs. Ignore it.
 			continue
@@ -334,7 +335,7 @@ func instanceStoragePVCFailed(pvc *corev1.PersistentVolumeClaim) bool {
 	errAnn := pvc.Annotations[constants.InstanceStoragePVPlacementErrorAnnotationKey]
 	if strings.HasPrefix(errAnn, constants.InstanceStoragePVPlacementErrorPrefix) &&
 		time.Since(pvc.CreationTimestamp.Time) >= lib.GetInstanceStoragePVPlacementFailedTTL() {
-		// This triggers delete PVCs operation - Delay it by 5m (default) so that the system is
+		// This triggers delete PVCs operation - Delay it by 5m (default) so that the system is
 		// not over loaded with repeated create/delete PVCs.
 		// NOTE: There is no limitation of CSI on the rate of create/delete PVCs. With this delay,
 		// there is a better chance of successful instance storage VM creation after a delay.

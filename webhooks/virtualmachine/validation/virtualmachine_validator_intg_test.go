@@ -12,7 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -46,60 +45,15 @@ func intgTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidImageName                     bool
-		imageNonCompatible                   bool
-		imageNonCompatibleCloudInitTransport bool
-		imageNotFound                        bool
-		imageSupportCheckSkipAnnotation      bool
-		invalidMetadataResource              bool
-		invalidStorageClass                  bool
+		invalidImageName bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
-		vm := ctx.vm.DeepCopy()
-
 		if args.invalidImageName {
-			vm.Spec.ImageName = ""
+			ctx.vm.Spec.ImageName = ""
 		}
 
-		// Delete image before VM create
-		if args.imageNotFound {
-			err := ctx.Client.Delete(ctx, ctx.vmImage)
-			Expect(err).NotTo(HaveOccurred())
-		}
-
-		// Setting the annotation skips Image compatibility validation
-		// works with validGuestOSType or invalidGuestOSType or v1alpha1 non-compatible images
-		if args.imageSupportCheckSkipAnnotation {
-			vm.Annotations = make(map[string]string)
-			vm.Annotations[constants.VMOperatorImageSupportedCheckKey] = constants.VMOperatorImageSupportedCheckDisable
-		}
-
-		if args.imageNonCompatible {
-			ctx.vmImage.Status.ImageSupported = &[]bool{false}[0]
-			err := ctx.Client.Status().Update(ctx, ctx.vmImage)
-			Expect(err).ToNot(HaveOccurred())
-		}
-		// Setting the VirtualMachineMetaData Transport to VirtualMachineMetadataCloudInitTransport
-		// works with validGuestOSType or invalidGuestOSType or v1alpha1 non-compatible images
-		if args.imageNonCompatibleCloudInitTransport {
-			vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataCloudInitTransport
-		}
-		if args.invalidMetadataResource {
-			vm.Spec.VmMetadata.ConfigMapName = ""
-			vm.Spec.VmMetadata.SecretName = ""
-		}
-		// StorageClass specifies but not assigned to ResourceQuota
-		if args.invalidStorageClass {
-			vm.Spec.StorageClass = builder.DummyStorageClassName
-			storageClass := builder.DummyStorageClass()
-			rlName := "blah.storageclass.storage.k8s.io/persistentvolumeclaims"
-			resourceQuota := builder.DummyResourceQuota(ctx.vm.Namespace, rlName)
-			Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
-			Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
-		}
-
-		err := ctx.Client.Create(ctx, vm)
+		err := ctx.Client.Create(ctx, ctx.vm)
 		if expectedAllowed {
 			Expect(err).ToNot(HaveOccurred())
 		} else {
@@ -118,6 +72,7 @@ func intgTestsValidateCreate() {
 		err = ctx.Client.Status().Update(ctx, ctx.vmImage)
 		Expect(err).ToNot(HaveOccurred())
 	})
+
 	AfterEach(func() {
 		_ = ctx.Client.Delete(ctx, ctx.vmImage)
 		ctx = nil
@@ -126,16 +81,8 @@ func intgTestsValidateCreate() {
 	specPath := field.NewPath("spec")
 	DescribeTable("create table", validateCreate,
 		Entry("should work", createArgs{}, true, "", nil),
-		Entry("should work despite incompatible image when VMOperatorImageSupportedCheckKey is disabled", createArgs{imageSupportCheckSkipAnnotation: true, imageNonCompatible: true}, true, "", nil),
-		Entry("should work despite incompatible image when VirtualMachineMetadataTransport is CloudInit", createArgs{imageNonCompatibleCloudInitTransport: true}, true, "", nil),
 		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false,
 			field.Required(specPath.Child("imageName"), "").Error(), nil),
-		Entry("should not work for image which is v1alpha1 incompatible or a non-tkg image", createArgs{imageNonCompatible: true}, false,
-			field.Invalid(specPath.Child("imageName"), "dummy-image-name", "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
-		Entry("should not work for invalid storage class", createArgs{invalidStorageClass: true}, false,
-			field.Invalid(specPath.Child("storageClass"), "dummy-storage-class", "Storage policy is not associated with the namespace").Error(), nil),
-		Entry("should not work for empty metadata resource name", createArgs{invalidMetadataResource: true}, false,
-			"must specify either spec.vmMetadata.configMapName or spec.vmMetadata.secretName, but not both", nil),
 	)
 }
 

@@ -152,6 +152,7 @@ func (h *validatingWebhookHandler) Handle(_ goctx.Context, req admission.Request
 		Obj:            obj,
 		OldObj:         oldObj,
 		Logger:         h.WebhookContext.Logger.WithName(obj.GetNamespace()).WithName(obj.GetName()),
+		UserInfo:       &req.UserInfo,
 	}
 
 	return h.HandleValidate(req, webhookRequestContext)

@@ -30,12 +30,14 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/auth"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
@@ -56,6 +58,7 @@ const (
 	invalidVolumeSpecified                    = "only one of persistentVolumeClaim or vsphereVolume must be specified"
 	vSphereVolumeSizeNotMBMultiple            = "value must be a multiple of MB"
 	eagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning"
+	addingModifyingInstanceVolumesNotAllowed  = "adding or modifying instance storage volume(s) is not allowed"
 	metadataTransportResourcesEmpty           = "must specify either %s or %s, but not both"
 	metadataTransportResourcesInvalid         = "%s and %s cannot be specified simultaneously"
 )
@@ -110,6 +113,9 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
+	if lib.IsInstanceStorageFSSEnabled() {
+		fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
+	}
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -175,6 +181,9 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
+	if lib.IsInstanceStorageFSSEnabled() {
+		fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
+	}
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -331,6 +340,29 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 
 	}
 
+	return allErrs
+}
+
+// validateInstanceStorageVolumes - validates volumes associated with Instance Storage.
+func (v validator) validateInstanceStorageVolumes(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+	// Skip validations for VMOperator service account user and Kubernetes administrator.
+	if auth.IsPODServiceAccountUser(*ctx.UserInfo) || auth.IsKubernetesAdmin(*ctx.UserInfo) {
+		return allErrs
+	}
+	volumesPath := field.NewPath("spec", "volumes")
+
+	vmInstanceStorageVolumes := instancestorage.FilterVolumes(vm)
+
+	var oldVMInstanceStorageVolumes []vmopv1.VirtualMachineVolume
+	if oldVM != nil {
+		oldVMInstanceStorageVolumes = instancestorage.FilterVolumes(oldVM)
+	}
+
+	// Check if both volume maps are same.
+	if !reflect.DeepEqual(oldVMInstanceStorageVolumes, vmInstanceStorageVolumes) {
+		allErrs = append(allErrs, field.Forbidden(volumesPath, addingModifyingInstanceVolumesNotAllowed))
+	}
 	return allErrs
 }
 

@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 
+	v1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -41,9 +42,10 @@ func unitTests() {
 
 type unitValidatingWebhookContext struct {
 	builder.UnitTestContextForValidatingWebhook
-	vm      *vmopv1.VirtualMachine
-	oldVM   *vmopv1.VirtualMachine
-	vmImage *vmopv1.VirtualMachineImage
+	vm       *vmopv1.VirtualMachine
+	oldVM    *vmopv1.VirtualMachine
+	vmImage  *vmopv1.VirtualMachineImage
+	userInfo *v1.UserInfo
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
@@ -65,11 +67,16 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 		Expect(err).ToNot(HaveOccurred())
 	}
 
+	userInfo := &v1.UserInfo{
+		Username: "sso:devUser1@vsphere.local",
+	}
+
 	return &unitValidatingWebhookContext{
 		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, vmImage, vmImage1, zone),
 		vm:                                  vm,
 		oldVM:                               oldVM,
 		vmImage:                             vmImage,
+		userInfo:                            userInfo,
 	}
 }
 
@@ -100,8 +107,9 @@ func setReadinessProbe(validPortProbe bool) *vmopv1.Probe {
 // nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
-		ctx                 *unitValidatingWebhookContext
-		oldFaultDomainsFunc func() bool
+		ctx                       *unitValidatingWebhookContext
+		oldFaultDomainsFunc       func() bool
+		oldInstanceStorageFSSFunc func() bool
 
 		bogusNetworkName = "bogus-network-name"
 	)
@@ -139,6 +147,9 @@ func unitTestsValidateCreate() {
 		isWCPFaultDomainsFSSEnabled          bool
 		isInvalidAvailabilityZone            bool
 		isEmptyAvailabilityZone              bool
+		isWCPInstanceStorageFSSEnabled       bool
+		isServiceUser                        bool
+		addInstanceStorageVolumes            bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -261,6 +272,18 @@ func unitTestsValidateCreate() {
 			ctx.vm.Spec.ReadinessProbe = setReadinessProbe(args.isRestrictedNetworkValidProbePort)
 			Expect(ctx.Client.Create(ctx, configMapIn)).To(Succeed())
 		}
+		if args.isServiceUser {
+			Expect(os.Setenv("POD_SERVICE_ACCOUNT_NAME", "default")).To(Succeed())
+			Expect(os.Setenv("POD_NAMESPACE", "vmware-system-vmop")).To(Succeed())
+			ctx.userInfo.Username = "system:serviceaccount:vmware-system-vmop:default"
+		}
+		if args.addInstanceStorageVolumes {
+			instanceStorageVolume := builder.DummyInstanceStorageVirtualMachineVolumes()
+			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolume...)
+		}
+		lib.IsInstanceStorageFSSEnabled = func() bool {
+			return args.isWCPInstanceStorageFSSEnabled
+		}
 
 		// Please note this prevents the unit tests from running safely in
 		// parallel.
@@ -286,6 +309,8 @@ func unitTestsValidateCreate() {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 		}
 
+		ctx.WebhookRequestContext.UserInfo = ctx.userInfo
+
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -302,11 +327,19 @@ func unitTestsValidateCreate() {
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
 		oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
+		oldInstanceStorageFSSFunc = lib.IsInstanceStorageFSSEnabled
 		Expect(os.Setenv(lib.VmopNamespaceEnv, "namespace")).To(Succeed())
 	})
 	AfterEach(func() {
 		ctx = nil
 		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
+		lib.IsInstanceStorageFSSEnabled = oldInstanceStorageFSSFunc
+		if _, ok := os.LookupEnv("POD_SERVICE_ACCOUNT_NAME"); ok {
+			Expect(os.Unsetenv("POD_SERVICE_ACCOUNT_NAME")).To(Succeed())
+		}
+		if _, ok := os.LookupEnv("POD_NAMESPACE"); ok {
+			Expect(os.Unsetenv("POD_NAMESPACE")).To(Succeed())
+		}
 		Expect(os.Unsetenv(lib.VmopNamespaceEnv)).To(Succeed())
 	})
 
@@ -386,6 +419,9 @@ func unitTestsValidateCreate() {
 		Entry("should deny when VM specifies invalid availability zone, there are no availability zones, and WCP FaultDomains FSS is enabled", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
 
 		Entry("should deny when there are no availability zones and WCP FaultDomains FSS is enabled", createArgs{isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
+		Entry("should deny when there are instance storage volumes with WCP Instance Storage FSS enabled and user is SSO user", createArgs{addInstanceStorageVolumes: true, isWCPInstanceStorageFSSEnabled: true}, false,
+			field.Forbidden(volPath, "adding or modifying instance storage volume(s) is not allowed").Error(), nil),
+		Entry("should allow when there are instance storage volumes with WCP Instance Storage FSS enabled and user is service user", createArgs{addInstanceStorageVolumes: true, isWCPInstanceStorageFSSEnabled: true, isServiceUser: true}, true, nil, nil),
 	)
 }
 
@@ -393,14 +429,20 @@ func unitTestsValidateUpdate() {
 	var (
 		ctx      *unitValidatingWebhookContext
 		response admission.Response
+
+		oldInstanceStorageFSSFunc func() bool
 	)
 
 	type updateArgs struct {
-		changeClassName      bool
-		changeImageName      bool
-		changeStorageClass   bool
-		changeResourcePolicy bool
-		changeZoneName       bool
+		changeClassName                 bool
+		changeImageName                 bool
+		changeStorageClass              bool
+		changeResourcePolicy            bool
+		changeZoneName                  bool
+		changeInstanceStorageVolumeName bool
+		isServiceUser                   bool
+		isWCPInstanceStorageFSSEnabled  bool
+		addInstanceStorageVolume        bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -421,10 +463,29 @@ func unitTestsValidateUpdate() {
 		if args.changeZoneName {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] += updateSuffix
 		}
-
+		if args.isServiceUser {
+			Expect(os.Setenv("POD_NAMESPACE", "vmware-system-vmop")).To(Succeed())
+			Expect(os.Setenv("POD_SERVICE_ACCOUNT_NAME", "default")).To(Succeed())
+			ctx.userInfo.Username = "system:serviceaccount:vmware-system-vmop:default"
+		}
+		if args.addInstanceStorageVolume {
+			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
+			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
+		}
+		if args.changeInstanceStorageVolumeName {
+			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
+			ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, instanceStorageVolumes...)
+			instanceStorageVolumes[0].Name += updateSuffix
+			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
+		}
+		lib.IsInstanceStorageFSSEnabled = func() bool {
+			return args.isWCPInstanceStorageFSSEnabled
+		}
+		ctx.WebhookRequestContext.UserInfo = ctx.userInfo
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
-
+		ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+		Expect(err).ToNot(HaveOccurred())
 		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 		Expect(response.Allowed).To(Equal(expectedAllowed))
 		if expectedReason != "" {
@@ -436,13 +497,22 @@ func unitTestsValidateUpdate() {
 	}
 
 	BeforeEach(func() {
+		oldInstanceStorageFSSFunc = lib.IsInstanceStorageFSSEnabled
 		ctx = newUnitTestContextForValidatingWebhook(true)
 	})
 	AfterEach(func() {
+		lib.IsInstanceStorageFSSEnabled = oldInstanceStorageFSSFunc
+		if _, ok := os.LookupEnv("POD_SERVICE_ACCOUNT_NAME"); ok {
+			Expect(os.Unsetenv("POD_SERVICE_ACCOUNT_NAME")).To(Succeed())
+		}
+		if _, ok := os.LookupEnv("POD_NAMESPACE"); ok {
+			Expect(os.Unsetenv("POD_NAMESPACE")).To(Succeed())
+		}
 		ctx = nil
 	})
 
 	msg := "field is immutable"
+	volumesPath := field.NewPath("spec", "volumes")
 	DescribeTable("update table", validateUpdate,
 		// Immutable Fields
 		Entry("should allow", updateArgs{}, true, nil, nil),
@@ -451,6 +521,12 @@ func unitTestsValidateUpdate() {
 		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, msg, nil),
 		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, msg, nil),
 		Entry("should deny zone name change", updateArgs{changeZoneName: true}, false, msg, nil),
+		Entry("should deny instance storage volume name change, when WCP Instance Storage FSS is enabled and user type is SSO user", updateArgs{isWCPInstanceStorageFSSEnabled: true, changeInstanceStorageVolumeName: true}, false,
+			field.Forbidden(volumesPath, "adding or modifying instance storage volume(s) is not allowed").Error(), nil),
+		Entry("should deny adding new instance storage volume, when WCP Instance Storage FSS is enabled and user type is SSO user", updateArgs{isWCPInstanceStorageFSSEnabled: true, addInstanceStorageVolume: true}, false,
+			field.Forbidden(volumesPath, "adding or modifying instance storage volume(s) is not allowed").Error(), nil),
+		Entry("should allow adding new instance storage volume, when WCP Instance Storage FSS is enabled and user type is service user", updateArgs{isWCPInstanceStorageFSSEnabled: true, addInstanceStorageVolume: true, isServiceUser: true}, true, nil, nil),
+		Entry("should allow instance storage volume name change, when WCP Instance Storage FSS is enabled and user type is service user", updateArgs{isWCPInstanceStorageFSSEnabled: true, changeInstanceStorageVolumeName: true, isServiceUser: true}, true, nil, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

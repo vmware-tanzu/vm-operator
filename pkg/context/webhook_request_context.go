@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	authv1 "k8s.io/api/authentication/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -23,6 +24,9 @@ type WebhookRequestContext struct {
 
 	// Logger is the logger associated with the webhook request.
 	Logger logr.Logger
+
+	// UserInfo is the user information associated with the webhook request
+	*authv1.UserInfo
 }
 
 // String returns Obj.GroupVersionKind Obj.Namespace/Obj.Name.

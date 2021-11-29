@@ -21,8 +21,10 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/pool"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
@@ -32,6 +34,7 @@ type VirtualMachineCloneContext struct {
 	ResourcePool        *object.ResourcePool
 	Folder              *object.Folder
 	StorageProvisioning string
+	HostID              string
 }
 
 func (s *Session) deployOvf(vmCtx VirtualMachineCloneContext, itemID string, storageProfileID string) (*res.VirtualMachine, error) {
@@ -53,6 +56,7 @@ func (s *Session) deployOvf(vmCtx VirtualMachineCloneContext, itemID string, sto
 		Target: vcenter.Target{
 			ResourcePoolID: vmCtx.ResourcePool.Reference().Value,
 			FolderID:       vmCtx.Folder.Reference().Value,
+			HostID:         vmCtx.HostID,
 		},
 	}
 
@@ -244,6 +248,12 @@ func (s *Session) CloneVirtualMachine(
 		ResourcePool:          resourcePool,
 		Folder:                folder,
 		StorageProvisioning:   storageProvisioning,
+	}
+
+	if lib.IsInstanceStorageFSSEnabled() {
+		if hostMOID, ok := vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey]; ok {
+			vmCloneCtx.HostID = hostMOID
+		}
 	}
 
 	// The ContentLibraryUUID can be empty when we want to clone from inventory VMs. This is
@@ -506,6 +516,113 @@ func (s *Session) cloneEthCardDeviceChanges(
 	}
 
 	return deviceChanges, nil
+}
+
+func (s *Session) updateInstanceVolumesInVMConfigSpec(
+	vmCtx context.VirtualMachineContext,
+	configSpec *vimTypes.VirtualMachineConfigSpec) error {
+	var storagePolicyID string
+	var err error
+	// Add DeviceChange spec for instance volumes
+	instanceStorageVolumes := instancestorage.FilterVolumes(vmCtx.VM)
+	// Storage Policy is same for all Instance Volumes.
+	storagePolicyID, err = s.GetStoragePolicyIDbyName(vmCtx,
+		instanceStorageVolumes[0].PersistentVolumeClaim.InstanceVolumeClaim.StorageClass)
+	if err != nil {
+		return err
+	}
+	for _, volume := range instanceStorageVolumes {
+		thinProv := false
+		v := &vimTypes.VirtualDeviceConfigSpec{
+			Operation:     vimTypes.VirtualDeviceConfigSpecOperationAdd,
+			FileOperation: vimTypes.VirtualDeviceConfigSpecFileOperationCreate,
+			Device: &vimTypes.VirtualDisk{
+				CapacityInKB: volume.PersistentVolumeClaim.InstanceVolumeClaim.Size.Value() >> 10,
+				VirtualDevice: vimTypes.VirtualDevice{
+					Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
+						ThinProvisioned: &thinProv,
+					},
+				},
+				VDiskId: &vimTypes.ID{Id: constants.InstanceStorageVDiskID},
+			},
+			Profile: []vimTypes.BaseVirtualMachineProfileSpec{
+				&vimTypes.VirtualMachineDefinedProfileSpec{
+					ProfileId: storagePolicyID,
+					ProfileData: &vimTypes.VirtualMachineProfileRawData{
+						ExtensionKey: "com.vmware.vim.sps",
+					},
+				},
+			},
+		}
+
+		configSpec.DeviceChange = append(configSpec.DeviceChange, v)
+	}
+
+	vmCtx.Logger.V(5).WithValues("configSpec", configSpec).Info("Updated ConfigSpec with instance volumes")
+
+	return nil
+}
+
+func (s *Session) updateResourceAllocSharesInVMConfigSpec(
+	configSpec *vimTypes.VirtualMachineConfigSpec,
+	sharesLevel vimTypes.SharesLevel) {
+	if configSpec.CpuAllocation == nil {
+		configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
+	}
+
+	if configSpec.CpuAllocation.Shares == nil {
+		configSpec.CpuAllocation.Shares = &vimTypes.SharesInfo{
+			Level: sharesLevel,
+		}
+
+	}
+
+	if configSpec.MemoryAllocation == nil {
+		configSpec.MemoryAllocation = &vimTypes.ResourceAllocationInfo{}
+	}
+	if configSpec.MemoryAllocation.Shares == nil {
+		configSpec.MemoryAllocation.Shares = &vimTypes.SharesInfo{
+			Level: sharesLevel,
+		}
+
+	}
+}
+
+// GetCompatibleHosts creates a placement spec from VM config info and Instance volumes and gets compatible hosts from DRS.
+func (s *Session) GetCompatibleHosts(vmCtx context.VirtualMachineContext, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error) {
+	configSpec := s.createConfigSpec(vmCtx.VM.Name, &vmConfigArgs.VMClass.Spec)
+	s.updateResourceAllocSharesInVMConfigSpec(configSpec, vimTypes.SharesLevelNormal)
+	err := s.updateInstanceVolumesInVMConfigSpec(vmCtx, configSpec)
+	if err != nil {
+		return nil, err
+	}
+	// Call placeVM with placement spec
+	placementSpec := vimTypes.PlacementSpec{
+		ConfigSpec:    configSpec,
+		PlacementType: string(vimTypes.PlacementSpecPlacementTypeCreate),
+	}
+
+	res, err := s.cluster.PlaceVm(vmCtx, placementSpec)
+	if err != nil {
+		return nil, err
+	}
+
+	vmCtx.Logger.V(5).WithValues("Recommendations", res.Recommendations).Info("Received compatible hosts recommendations")
+
+	var compatHostMoIDs []string
+	for _, r := range res.Recommendations {
+		if r.Reason == string(vimTypes.RecommendationReasonCodeXvmotionPlacement) {
+			for _, a := range r.Action {
+				if pa, ok := a.(*vimTypes.PlacementAction); ok {
+					compatHostMoIDs = append(compatHostMoIDs, pa.TargetHost.Value)
+				}
+			}
+		}
+	}
+
+	vmCtx.Logger.V(5).WithValues("compatHostMoIDs", compatHostMoIDs).Info("Returning compatible Host MOIDs")
+
+	return compatHostMoIDs, nil
 }
 
 func cloneVMDiskLocators(

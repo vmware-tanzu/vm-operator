@@ -33,14 +33,15 @@ func intgTests() {
 	var (
 		ctx *builder.IntegrationTestContext
 
-		vm                *vmopv1alpha1.VirtualMachine
-		vmKey             types.NamespacedName
-		vmVolume1         vmopv1alpha1.VirtualMachineVolume
-		vmVolume2         vmopv1alpha1.VirtualMachineVolume
-		dummyBiosUUID     string
-		dummyDiskUUID1    string
-		dummyDiskUUID2    string
-		dummySelectedNode string
+		vm                    *vmopv1alpha1.VirtualMachine
+		vmKey                 types.NamespacedName
+		vmVolume1             vmopv1alpha1.VirtualMachineVolume
+		vmVolume2             vmopv1alpha1.VirtualMachineVolume
+		dummyBiosUUID         string
+		dummyDiskUUID1        string
+		dummyDiskUUID2        string
+		dummySelectedNode     string
+		dummySelectedNodeMOID string
 
 		// represents the Instance Storage FSS. This should be manipulated atomically to avoid races
 		// where the controller is trying to read this _while_ the tests are updating it.
@@ -90,6 +91,7 @@ func intgTests() {
 		vmKey = types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
 
 		dummySelectedNode = "selected-node.domain.com"
+		dummySelectedNodeMOID = "host-88"
 	})
 
 	AfterEach(func() {
@@ -126,8 +128,10 @@ func intgTests() {
 		desc := fmt.Sprintf("waiting for selected-node annotation set %v", selectedNodeSet)
 		if selectedNodeSet {
 			Eventually(getAnnotations).Should(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey), desc)
+			Eventually(getAnnotations).Should(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey), desc)
 		} else {
 			Eventually(getAnnotations).ShouldNot(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey), desc)
+			Eventually(getAnnotations).ShouldNot(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey), desc)
 		}
 
 		desc = fmt.Sprintf("waiting for VirtualMachine instance storage volumes BOUND status set to %v", bound)
@@ -259,6 +263,7 @@ func intgTests() {
 		It("Reconcile instance storage PVCs - PVCs should be created and realized after setting selected-node annotation", func() {
 			By("set selected-node annotation", func() {
 				vm.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = dummySelectedNode
+				vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = dummySelectedNodeMOID
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 			By("PVCs should be created", func() {
@@ -275,6 +280,7 @@ func intgTests() {
 		It("Reconcile instance storage PVCs - PVCs should be deleted after PVCs turned into error", func() {
 			By("set selected-node annotation", func() {
 				vm.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = dummySelectedNode
+				vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = dummySelectedNodeMOID
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 			By("PVCs should be created", func() {

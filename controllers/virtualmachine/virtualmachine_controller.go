@@ -7,6 +7,7 @@ import (
 	goctx "context"
 	"fmt"
 	"math"
+	"math/rand"
 	"reflect"
 	"strings"
 	"sync"
@@ -661,13 +662,42 @@ func (r *Reconciler) getResourcePolicy(ctx *context.VirtualMachineContext) (*vmo
 	return resourcePolicy, nil
 }
 
-func (r *Reconciler) findInstanceStorageVMPlacementStatus(vmCtx *context.VirtualMachineContext) bool {
+func (r *Reconciler) findInstanceStorageVMPlacementStatus(vmCtx *context.VirtualMachineContext, vmConfigArgs vmprovider.VMConfigArgs) bool {
 	if !instancestorage.IsConfigured(vmCtx.VM) {
 		return true
 	}
 
-	// TODO:
-	// 1. Set the selected-node (if not set already) annotation for the volume controller to place PVCs on that node.
+	// Set the selected-node (if not set already) annotation for the volume controller to place PVCs on that node.
+	if _, exists := vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey]; !exists {
+		selectedNodes, err := r.VMProvider.GetCompatibleHosts(vmCtx, vmCtx.VM, vmConfigArgs)
+		if err != nil {
+			vmCtx.Logger.Error(err, "Failed to get compatible hosts recommendation. Will retry operation")
+			return false
+		}
+
+		if len(selectedNodes) == 0 {
+			vmCtx.Logger.V(3).Info("No compatible hosts recommendation found. Will retry operation")
+			return false
+		}
+
+		// Select random node to: 1. Avoid Failure loop 2. Avoid overload only single host
+		selectedHostMoID := r.selectRandomNode(selectedNodes)
+
+		vmCtx.Logger.V(5).WithValues("selectedHostMoID", selectedHostMoID).Info("Selected random HostMoID")
+		// Get Host FQDN for selectedHostMoID
+		selectedHostFQDN, err := r.VMProvider.GetHostNetworkInfo(vmCtx, vmCtx.VM, selectedHostMoID)
+		if err != nil {
+			vmCtx.Logger.Error(err, "Failed to get selected host FQDN. Will retry operation")
+			return false
+		}
+		vmCtx.Logger.V(5).WithValues("selectedHostFQDN", selectedHostFQDN).Info("FQDN of selected host")
+		if vmCtx.VM.Annotations == nil {
+			vmCtx.VM.Annotations = make(map[string]string)
+		}
+		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = selectedHostMoID
+		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = selectedHostFQDN
+		return false
+	}
 
 	// Check if all PVCs are realized, if not, inform reconcile handler to wait till the state is ready.
 	if _, exists := vmCtx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]; !exists {
@@ -677,8 +707,19 @@ func (r *Reconciler) findInstanceStorageVMPlacementStatus(vmCtx *context.Virtual
 		return false
 	}
 
-	// Placement successful
+	// PVC Placement successful
+
 	return true
+}
+
+func (r *Reconciler) selectRandomNode(selectedNodes []string) string {
+	now := time.Now()
+	seed := now.UnixNano()
+	s := rand.NewSource(seed)
+
+	// nolint:gosec
+	idx := rand.New(s).Intn(len(selectedNodes))
+	return selectedNodes[idx]
 }
 
 // createOrUpdateVM calls into the VM provider to reconcile a VirtualMachine.
@@ -765,17 +806,17 @@ func (r *Reconciler) createOrUpdateVM(ctx *context.VirtualMachineContext) error 
 			return err
 		}
 
+		if lib.IsInstanceStorageFSSEnabled() {
+			if !r.findInstanceStorageVMPlacementStatus(ctx, vmConfigArgs) {
+				return nil
+			}
+		}
+
 		err = r.VMProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
 		if err != nil {
 			ctx.Logger.Error(err, "Provider failed to create VirtualMachine")
 			r.Recorder.EmitEvent(vm, "Create", err, false)
 			return err
-		}
-	}
-
-	if lib.IsInstanceStorageFSSEnabled() {
-		if !r.findInstanceStorageVMPlacementStatus(ctx) {
-			return nil
 		}
 	}
 

@@ -363,6 +363,7 @@ func (r *Reconciler) instanceStoragePlacementFailed(
 
 	// Tell the VM controller that it needs to compute placement again.
 	delete(ctx.VM.Annotations, constants.InstanceStorageSelectedNodeAnnotationKey)
+	delete(ctx.VM.Annotations, constants.InstanceStorageSelectedNodeMOIDAnnotationKey)
 
 	objKeys := make([]client.ObjectKey, 0, len(failedVolumesMap))
 	for volName := range failedVolumesMap {

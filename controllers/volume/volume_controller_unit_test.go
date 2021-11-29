@@ -153,6 +153,7 @@ func unitTestsReconcile() {
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
 				vm.Annotations = make(map[string]string)
 				vm.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = "selected-node.domain.com"
+				vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = "host-88"
 			})
 
 			JustBeforeEach(func() {
@@ -161,6 +162,7 @@ func unitTestsReconcile() {
 
 			It("selected-node annotation not set - no PVCs created", func() {
 				delete(vm.Annotations, constants.InstanceStorageSelectedNodeAnnotationKey)
+				delete(vm.Annotations, constants.InstanceStorageSelectedNodeMOIDAnnotationKey)
 				err := reconciler.ReconcileNormal(volCtx)
 				Expect(err).ToNot(HaveOccurred())
 				expectPVCsStatus(volCtx, ctx, false, false, 0)
@@ -512,8 +514,10 @@ func cnsAttachmentForVMVolume(
 func expectPVCsStatus(ctx *volContext.VolumeContext, testCtx *builder.UnitTestContextForController, selectedNodeSet, bound bool, pvcsCount int) {
 	if selectedNodeSet {
 		Expect(ctx.VM.Annotations).To(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
+		Expect(ctx.VM.Annotations).To(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey))
 	} else {
 		Expect(ctx.VM.Annotations).ToNot(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
+		Expect(ctx.VM.Annotations).ToNot(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey))
 	}
 
 	if bound {

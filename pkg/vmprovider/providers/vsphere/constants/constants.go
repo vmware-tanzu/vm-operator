@@ -82,6 +82,8 @@ const (
 	// CSI reference to this annotation where it is defined:
 	// https://github.com/kubernetes-sigs/vsphere-csi-driver/blob/master/pkg/syncer/k8scloudoperator/placement.go
 	InstanceStoragePVPlacementErrorAnnotationKey = "failure-domain.beta.vmware.com/storagepool"
+	// InstanceStorageSelectedNodeMOIDAnnotationKey value corresponds to MOID of ESXi node that is elected to place instance storage volumes.
+	InstanceStorageSelectedNodeMOIDAnnotationKey = "vmoperator.vmware.com/instance-storage-selected-node-moid"
 	// InstanceStorageSelectedNodeAnnotationKey value corresponds to FQDN of ESXi node that is elected to place instance storage volumes.
 	InstanceStorageSelectedNodeAnnotationKey = "vmoperator.vmware.com/instance-storage-selected-node"
 	// KubernetesSelectedNodeAnnotationKey annotation key to set selected node on PVC.
@@ -90,4 +92,6 @@ const (
 	InstanceStoragePVPlacementErrorPrefix = "FAILED_"
 	// InstanceStorageNotEnoughResErr is an error constant to indicate not enough resources.
 	InstanceStorageNotEnoughResErr = "FAILED_PLACEMENT-NotEnoughResources"
+	// InstanceStorageVDiskID vDisk ID for instance storage volume.
+	InstanceStorageVDiskID = "cc737f33-2aa3-4594-aa60-df7d6d4cb984"
 )

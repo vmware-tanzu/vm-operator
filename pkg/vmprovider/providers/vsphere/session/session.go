@@ -18,6 +18,7 @@ import (
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
+	storagev1 "k8s.io/api/storage/v1"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -460,6 +461,50 @@ func (s *Session) GetVirtualMachine(vmCtx context.VirtualMachineContext) (*res.V
 
 	vmCtx.Logger.V(4).Info("Found VM via path", "vmRef", vm.Reference(), "path", path)
 	return res.NewVMFromObject(vm)
+}
+
+// GetStoragePolicyIDbyName returns Storage Policy ID from Storage Class Name.
+func (s *Session) GetStoragePolicyIDbyName(vmCtx context.VirtualMachineContext, storageClassName string) (string, error) {
+	if storageClassName == "" {
+		return "", nil
+	}
+
+	sc := &storagev1.StorageClass{}
+	if err := s.k8sClient.Get(vmCtx, ctrlruntime.ObjectKey{Name: storageClassName}, sc); err != nil {
+		vmCtx.Logger.Error(err, "Failed to get StorageClass", "storageClass", storageClassName)
+		return "", err
+	}
+
+	return sc.Parameters["storagePolicyID"], nil
+}
+
+// GetHostNetworkInfo returns HostFQDN, Error.
+func (s *Session) GetHostNetworkInfo(vmCtx context.VirtualMachineContext, hostMoID string) (string, error) {
+	hostMoRef := types.ManagedObjectReference{Type: "HostSystem", Value: hostMoID}
+	host := object.NewHostSystem(s.Client.VimClient(), hostMoRef)
+	nwSystem, err := host.ConfigManager().NetworkSystem(vmCtx)
+	if err != nil {
+		vmCtx.Logger.Error(err, "failed to get HostNetworkSystem", "host", hostMoID)
+		return "", err
+	}
+
+	var hostNwSystem mo.HostNetworkSystem
+	err = nwSystem.Properties(vmCtx, nwSystem.Reference(), []string{"dnsConfig"}, &hostNwSystem)
+	if err != nil {
+		vmCtx.Logger.Error(err, "failed to get dnsConfig", "host", hostMoID)
+		return "", err
+	}
+	if hostNwSystem.DnsConfig == nil {
+		vmCtx.Logger.Error(err, "Host dnsConfig is nil", "host", hostMoID)
+		return "", fmt.Errorf("host %s dnsConfig nil", hostMoID)
+	}
+
+	hostDNSConfig := hostNwSystem.DnsConfig.GetHostDnsConfig()
+	hostFQDN := strings.ToLower(hostDNSConfig.HostName + "." + hostDNSConfig.DomainName)
+	// If the FQDN ends in a period, remove the trailing period.
+	hostFQDN = strings.TrimSuffix(hostFQDN, ".")
+
+	return hostFQDN, nil
 }
 
 func (s *Session) lookupVMByMoID(ctx goctx.Context, moID string) (*res.VirtualMachine, error) {

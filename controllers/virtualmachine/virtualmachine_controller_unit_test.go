@@ -673,8 +673,33 @@ func unitTestsReconcile() {
 					Expect(instancestoragetestutil.InstanceVolumeEqComparator(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)).Should(BeTrue())
 				})
 
-				It("Instance Volumes/Label should be added and Phase set to Created", func() {
+				It("No host recommendation returned, Selected Node annotations should not be added", func() {
+					fakeVMProvider.GetCompatibleHostsFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error) {
+						return []string{}, nil
+					}
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vmCtx.VM.GetAnnotations()).ToNot(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey))
+					Expect(vmCtx.VM.GetAnnotations()).ToNot(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
+				})
+
+				It("Selected Node annotations should be added", func() {
+					fakeVMProvider.GetCompatibleHostsFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error) {
+						return []string{"host-28", "host-88", "host-64"}, nil
+					}
+					fakeVMProvider.GetHostNetworkInfoFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, hostMoID string) (string, error) {
+						return "sc2-rdops-vm05-dhcp-186-183.eng.vmware.com", nil
+					}
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vmCtx.VM.GetAnnotations()).To(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey))
+					Expect(vmCtx.VM.GetAnnotations()).To(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
+				})
+
+				It("Selected Node annotation is already added, PVC is bound then VM status should be created", func() {
 					vmCtx.VM.Annotations = make(map[string]string)
+					vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = "host-88"
+					vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = "sc2-rdops-vm05-dhcp-186-183.eng.vmware.com"
 					vmCtx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey] = lib.TrueString
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).ToNot(HaveOccurred())

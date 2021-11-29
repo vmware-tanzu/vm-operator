@@ -223,6 +223,18 @@ func intgTests() {
 		Expect(patchHelper.Patch(ctx, vm)).To(BeNil())
 	}
 
+	waitForVirtualMachineInstanceStorageSelectedNode := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) {
+		Eventually(func() bool {
+			if vm := getVirtualMachine(ctx, objKey); vm != nil {
+				vmAnnotations := vm.GetAnnotations()
+				_, snaExists := vmAnnotations[constants.InstanceStorageSelectedNodeAnnotationKey]
+				_, snmaExists := vmAnnotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey]
+				return snaExists && snmaExists
+			}
+			return false
+		}).Should(BeTrue(), "waiting for VirtualMachine instance storage selected node annotations to be added")
+	}
+
 	Context("Reconcile", func() {
 		dummyBiosUUID := "biosUUID42"
 		dummyInstanceUUID := "instanceUUID1234"
@@ -237,6 +249,12 @@ func intgTests() {
 				vm.Status.BiosUUID = dummyBiosUUID
 				vm.Status.InstanceUUID = dummyInstanceUUID
 				return nil
+			}
+			intgFakeVMProvider.GetCompatibleHostsFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error) {
+				return []string{"host-28", "host-88", "host-64"}, nil
+			}
+			intgFakeVMProvider.GetHostNetworkInfoFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, hostMoID string) (string, error) {
+				return "sc2-rdops-vm05-dhcp-201-64.eng.vmware.com", nil
 			}
 			intgFakeVMProvider.Unlock()
 
@@ -341,6 +359,10 @@ func intgTests() {
 
 			By("VirtualMachine should have instance storage configured", func() {
 				waitForVirtualMachineInstanceStorage(ctx, vmKey)
+			})
+
+			By("VirtualMachine should have selected node annotations", func() {
+				waitForVirtualMachineInstanceStorageSelectedNode(ctx, vmKey)
 			})
 
 			By("set pvcs-bound annotation", func() {

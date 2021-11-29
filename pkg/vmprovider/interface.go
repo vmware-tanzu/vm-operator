@@ -37,6 +37,8 @@ type VirtualMachineProviderInterface interface {
 	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
+	GetCompatibleHosts(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) ([]string, error)
+	GetHostNetworkInfo(ctx context.Context, vm *v1alpha1.VirtualMachine, hostMoID string) (string, error)
 
 	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
 	IsVirtualMachineSetResourcePolicyReady(ctx context.Context, availabilityZoneName string, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)

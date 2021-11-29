@@ -239,6 +239,48 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(ctx goctx.Context, 
 	return status, nil
 }
 
+func (vs *vSphereVMProvider) GetCompatibleHosts(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error) {
+	vmCtx := context.VirtualMachineContext{
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "create")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
+	vmSession, err := vs.sessions.GetSessionForVM(vmCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	selectedNodes, err := vmSession.GetCompatibleHosts(vmCtx, vmConfigArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	return selectedNodes, nil
+}
+
+// GetHostNetworkInfoFn is added for integration tests.
+// VC Simulator does not configure Network Info of Hosts.
+// Also, we can not update DNS config of host as govmomi does not implement UpdateDnsConfig method for host NetworkSystem.
+var GetHostNetworkInfoFn = func(vmSession *session.Session, vmCtx context.VirtualMachineContext, hostMoID string) (string, error) {
+	return vmSession.GetHostNetworkInfo(vmCtx, hostMoID)
+}
+
+func (vs *vSphereVMProvider) GetHostNetworkInfo(ctx goctx.Context, vm *v1alpha1.VirtualMachine, hostMoID string) (string, error) {
+	vmCtx := context.VirtualMachineContext{
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "create")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
+	vmSession, err := vs.sessions.GetSessionForVM(vmCtx)
+	if err != nil {
+		return "", err
+	}
+
+	return GetHostNetworkInfoFn(vmSession, vmCtx, hostMoID)
+}
+
 func (vs *vSphereVMProvider) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 	return vs.sessions.ComputeClusterCPUMinFrequency(ctx)
 }

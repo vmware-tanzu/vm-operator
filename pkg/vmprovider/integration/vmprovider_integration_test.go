@@ -11,17 +11,19 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-
+	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	vcsession "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
@@ -359,6 +361,66 @@ var _ = Describe("VMProvider Tests", func() {
 			err = vmProvider.ComputeClusterCPUMinFrequency(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(session.GetCPUMinMHzInCluster()).Should(BeNumerically(">", 0))
+		})
+	})
+})
+
+var _ = Describe("VMProvider Instance Storage Tests", func() {
+	var (
+		vmIS         *vmoperatorv1alpha1.VirtualMachine
+		vmConfigArgs vmprovider.VMConfigArgs
+
+		GetHostNetworkInfoFn_Org func(vmSession *vcsession.Session, vmCtx vmopContext.VirtualMachineContext, hostMoID string) (string, error)
+	)
+
+	BeforeEach(func() {
+		if GetHostNetworkInfoFn_Org == nil {
+			GetHostNetworkInfoFn_Org = vsphere.GetHostNetworkInfoFn
+		}
+	})
+
+	AfterEach(func() {
+		vsphere.GetHostNetworkInfoFn = GetHostNetworkInfoFn_Org
+	})
+
+	Context("Instance VM related", func() {
+
+		It("GetCompatibleHosts", func() {
+			vmNamespace := integration.DefaultNamespace
+			vmName := "test-vm-vmp-invt-deploy-instancevm"
+			storageProfileId := "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
+
+			vmMetadata := vmprovider.VMMetadata{
+				Transport: vmoperatorv1alpha1.VirtualMachineMetadataOvfEnvTransport,
+			}
+			imageName := "DC0_H0_VM0" // Default govcsim image name
+			vmClass := getVMClassInstance(vmName, vmNamespace)
+			vmIS = getVirtualMachineInstance(vmName, vmNamespace, imageName, vmClass.Name)
+			Expect(k8sClient.Create(context.Background(), builder.DummyStorageClass())).To(Succeed())
+			vmIS.Spec.Volumes = append(vmIS.Spec.Volumes, builder.DummyInstanceStorageVirtualMachineVolumes()...)
+			vmImage := builder.DummyVirtualMachineImage(imageName)
+			Expect(vmIS.Status.BiosUUID).Should(BeEmpty())
+			Expect(vmIS.Status.InstanceUUID).Should(BeEmpty())
+
+			vmConfigArgs = vmprovider.VMConfigArgs{
+				VMClass:          *vmClass,
+				VMImage:          vmImage,
+				VMMetadata:       vmMetadata,
+				StorageProfileID: storageProfileId,
+			}
+
+			nodes, err := vmProvider.GetCompatibleHosts(context.TODO(), vmIS, vmConfigArgs)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(nodes)).NotTo(Equal(0))
+		})
+
+		It("GetHostNetworkInfo", func() {
+			vsphere.GetHostNetworkInfoFn = func(vmSession *vcsession.Session, vmCtx vmopContext.VirtualMachineContext, hostMoID string) (string, error) {
+				return "sc1-10-10-10-10.eng.vmware.com", nil
+			}
+			hostFqdn, err := vmProvider.GetHostNetworkInfo(context.TODO(), vmIS, "host-24")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(hostFqdn).ShouldNot(BeEmpty())
 		})
 	})
 })

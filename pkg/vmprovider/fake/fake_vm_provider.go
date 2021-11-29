@@ -28,6 +28,9 @@ type funcs struct {
 	DeleteVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeatFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 
+	GetCompatibleHostsFn func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error)
+	GetHostNetworkInfoFn func(ctx context.Context, vm *v1alpha1.VirtualMachine, hostMoID string) (string, error)
+
 	ListVirtualMachineImagesFromContentLibraryFn func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error)
 	DoesContentLibraryExistFn                    func(ctx context.Context, cl *v1alpha1.ContentLibraryProvider) (bool, error)
 
@@ -109,6 +112,24 @@ func (s *VMProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1
 	defer s.Unlock()
 	if s.GetVirtualMachineGuestHeartbeatFn != nil {
 		return s.GetVirtualMachineGuestHeartbeatFn(ctx, vm)
+	}
+	return "", nil
+}
+
+func (s *VMProvider) GetCompatibleHosts(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error) {
+	s.Lock()
+	defer s.Unlock()
+	if s.GetCompatibleHostsFn != nil {
+		return s.GetCompatibleHostsFn(ctx, vm, vmConfigArgs)
+	}
+	return []string{""}, nil
+}
+
+func (s *VMProvider) GetHostNetworkInfo(ctx context.Context, vm *v1alpha1.VirtualMachine, hostMoID string) (string, error) {
+	s.Lock()
+	defer s.Unlock()
+	if s.GetHostNetworkInfoFn != nil {
+		return s.GetHostNetworkInfoFn(ctx, vm, hostMoID)
 	}
 	return "", nil
 }

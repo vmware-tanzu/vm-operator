@@ -25,10 +25,12 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
@@ -67,15 +69,20 @@ func unitTestsReconcile() {
 
 		fakeProbeManager *proberfake.ProberManager
 
-		// represents the VM Service FSS. This should be manupulated atomiocally to avoid races where
-		// the controller is trying to read this _while_ the tests are updaing it.
-		vmServiceFSS uint32
+		// Various FSS. This should be manipulated atomically to avoid races where
+		// the controller is trying to read this _while_ the tests are updating it.
+		vmServiceFSS   uint32
+		faultDomainFSS uint32
 	)
 
 	BeforeEach(func() {
 		// Modify the helper function to return the custom value of the FSS
 		lib.IsVMServiceFSSEnabled = func() bool {
 			return atomic.LoadUint32(&vmServiceFSS) != 0
+		}
+
+		lib.IsWcpFaultDomainsFSSEnabled = func() bool {
+			return atomic.LoadUint32(&faultDomainFSS) != 0
 		}
 
 		vmClass = &vmopv1alpha1.VirtualMachineClass{
@@ -121,6 +128,7 @@ func unitTestsReconcile() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "dummy-vm",
 				Namespace:  "dummy-ns",
+				Labels:     map[string]string{},
 				Finalizers: []string{finalizer},
 			},
 			Spec: vmopv1alpha1.VirtualMachineSpec{
@@ -422,6 +430,53 @@ func unitTestsReconcile() {
 						*conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition),
 					}
 					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+				})
+			})
+		})
+
+		When("the WCP_FAULT_DOMAINS FSS is enabled", func() {
+			var oldFaultDomainFSSState uint32
+
+			BeforeEach(func() {
+				oldFaultDomainFSSState = faultDomainFSS
+				atomic.StoreUint32(&faultDomainFSS, 1)
+			})
+
+			AfterEach(func() {
+				atomic.StoreUint32(&faultDomainFSS, oldFaultDomainFSSState)
+			})
+
+			It("Returns error when no AZs exist", func() {
+				err := reconciler.ReconcileNormal(vmCtx)
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(topology.ErrNoAvailabilityZones))
+				Expect(vmCtx.VM.Labels).ToNot(HaveKey(topology.KubernetesTopologyZoneLabelKey))
+			})
+
+			When("VM already has AZ assigned", func() {
+				JustBeforeEach(func() {
+					vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = "mars-east-1"
+				})
+
+				It("VM has same AZ assigned", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vmCtx.VM.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, "mars-east-1"))
+				})
+			})
+
+			When("AZ exist", func() {
+				var az *topologyv1.AvailabilityZone
+
+				BeforeEach(func() {
+					az = builder.DummyAvailabilityZone()
+					initObjects = append(initObjects, az)
+				})
+
+				It("Assigns zone to VM that does not have one already assigned", func() {
+					err := reconciler.ReconcileNormal(vmCtx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(vmCtx.VM.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, az.Name))
 				})
 			})
 		})

@@ -46,6 +46,9 @@ var (
 	ErrWcpFaultDomainsFSSIsEnabled = errors.New("wcp fault domains fss is enabled")
 )
 
+// +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=availabilityzones,verbs=get;list;watch
+// +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=availabilityzones/status,verbs=get;list;watch
+
 // GetNamespaceRPAndFolder returns the ResourcePool and Folder MoIDs for the zone and namespace.
 func GetNamespaceRPAndFolder(
 	ctx context.Context,

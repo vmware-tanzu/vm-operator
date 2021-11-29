@@ -42,6 +42,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 )
 
+var zoneIndex int
+
 const finalizerName = "virtualmachine.vmoperator.vmware.com"
 
 // AddToManager adds this package's controller to the provided manager.
@@ -341,8 +343,22 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 		return nil
 	}
 
+	if lib.IsWcpFaultDomainsFSSEnabled() {
+		updated, err := r.assignAvailabilityZone(ctx)
+		if err != nil {
+			return err
+		}
+
+		// If a zone was assigned, then return early to ensure that the CR is updated.
+		// We'll proceed on the next reconciliation.
+		if updated {
+			return nil
+		}
+	}
+
 	initialVMStatus := ctx.VM.Status.DeepCopy()
 	ctx.Logger.Info("Reconciling VirtualMachine")
+
 	// Defer block to handle logging for SLI items
 	defer func() {
 		// Log the reconcile time using the CR creation time and the time the VM reached the desired state
@@ -353,6 +369,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 		} else {
 			ctx.Logger.Info("Finished Reconciling VirtualMachine")
 		}
+
 		// Log the first time VM was assigned with an IP address successfully
 		if initialVMStatus.VmIp != ctx.VM.Status.VmIp {
 			ctx.Logger.Info("VM successfully got assigned with an IP address",
@@ -369,6 +386,39 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 	r.Prober.AddToProberManager(ctx.VM)
 
 	return nil
+}
+
+func (r *Reconciler) assignAvailabilityZone(ctx *context.VirtualMachineContext) (bool, error) {
+	// Don't change the topology value if/once it is already set.
+	if ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] != "" {
+		return false, nil
+	}
+
+	zones, err := topology.GetAvailabilityZones(ctx, r.Client)
+	if err != nil {
+		return false, err
+	}
+
+	if len(zones) == 0 {
+		return false, topology.ErrNoAvailabilityZones
+	}
+
+	// Get the next available zone name.
+	var zoneName string
+	func() {
+		r.mutex.Lock()
+		defer r.mutex.Unlock()
+
+		zoneName = zones[zoneIndex%len(zones)].Name
+		zoneIndex++
+	}()
+
+	if ctx.VM.Labels == nil {
+		ctx.VM.Labels = map[string]string{}
+	}
+
+	ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+	return true, nil
 }
 
 func (r *Reconciler) getStoragePolicyID(ctx *context.VirtualMachineContext) (string, error) {
@@ -427,7 +477,7 @@ func (r *Reconciler) getImageAndContentLibraryUUID(ctx *context.VirtualMachineCo
 
 	vmImage := &vmopv1alpha1.VirtualMachineImage{}
 	if err := r.Get(ctx, client.ObjectKey{Name: imageName}, vmImage); err != nil {
-		msg := fmt.Sprintf("Failed to get VirtualMachineImage %s: %s", ctx.VM.Spec.ImageName, err)
+		msg := fmt.Sprintf("Failed to get VirtualMachineImage %s: %s", imageName, err)
 		conditions.MarkFalse(ctx.VM,
 			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
 			vmopv1alpha1.VirtualMachineImageNotFoundReason,
@@ -496,7 +546,7 @@ func (r *Reconciler) getVMClass(ctx *context.VirtualMachineContext) (*vmopv1alph
 
 	vmClass := &vmopv1alpha1.VirtualMachineClass{}
 	if err := r.Get(ctx, client.ObjectKey{Name: className}, vmClass); err != nil {
-		msg := fmt.Sprintf("Failed to get VirtualMachineClass %s: %s", ctx.VM.Spec.ClassName, err)
+		msg := fmt.Sprintf("Failed to get VirtualMachineClass %s: %s", className, err)
 		conditions.MarkFalse(ctx.VM,
 			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
 			vmopv1alpha1.VirtualMachineClassNotFoundReason,
@@ -529,7 +579,7 @@ func (r *Reconciler) getVMClass(ctx *context.VirtualMachineContext) (*vmopv1alph
 		}
 
 		if !matchingClassBinding {
-			msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %v, namespace: %v", ctx.VM.Spec.ClassName, ctx.VM.Namespace)
+			msg := fmt.Sprintf("Namespace does not have access to VirtualMachineClass. className: %v, namespace: %v", className, ctx.VM.Namespace)
 			conditions.MarkFalse(ctx.VM,
 				vmopv1alpha1.VirtualMachinePrereqReadyCondition,
 				vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
@@ -611,7 +661,7 @@ func (r *Reconciler) getResourcePolicy(ctx *context.VirtualMachineContext) (*vmo
 	return resourcePolicy, nil
 }
 
-func (r *Reconciler) findInstanceStorageVMPlacementStatus(vmCtx *context.VirtualMachineContext) (ready bool) {
+func (r *Reconciler) findInstanceStorageVMPlacementStatus(vmCtx *context.VirtualMachineContext) bool {
 	if !instancestorage.IsConfigured(vmCtx.VM) {
 		return true
 	}
@@ -745,6 +795,7 @@ func (r *Reconciler) createOrUpdateVM(ctx *context.VirtualMachineContext) error 
 func (r *Reconciler) reconcileInstanceStorageSpec(
 	ctx *context.VirtualMachineContext,
 	vmClass *vmopv1alpha1.VirtualMachineClass) error {
+
 	if !lib.IsInstanceStorageFSSEnabled() {
 		return nil
 	}

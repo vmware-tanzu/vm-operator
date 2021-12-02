@@ -43,6 +43,14 @@ const (
 	Unknown VMStatusPhase = "Unknown"
 )
 
+// PauseAnnotation is an annotation that can be applied to any VirtualMachine object to prevent VM Operator from
+// reconciling the object with the vSphere infrastructure.  VM Operator checks the presence of this annotation to
+// skip the reconcile of a VirtualMachine.
+//
+// This can be used when a Virtual Machine needs to be modified out-of-band of VM Operator on the infrastructure
+// directly (e.g., during a VADP based Restore operation).
+const PauseAnnotation = GroupName + "/pause-reconcile"
+
 // VirtualMachinePort is unused and can be considered deprecated.
 type VirtualMachinePort struct {
 	Port     int             `json:"port"`

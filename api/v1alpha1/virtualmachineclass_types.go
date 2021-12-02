@@ -15,8 +15,8 @@ type VGPUDevice struct {
 
 // DynamicDirectPathIODevice contains the configuration corresponding to a Dynamic DirectPath I/O device.
 type DynamicDirectPathIODevice struct {
-	VendorID    int    `json:"vendorID"`
-	DeviceID    int    `json:"deviceID"`
+	VendorID int `json:"vendorID"`
+	DeviceID int `json:"deviceID"`
 	// +optional
 	CustomLabel string `json:"customLabel,omitempty"`
 }
@@ -46,17 +46,17 @@ type InstanceStorageVolume struct {
 // VirtualDevices contains information about the virtual devices associated with a VirtualMachineClass.
 type VirtualDevices struct {
 	// +optional
-	VGPUDevices                []VGPUDevice                `json:"vgpuDevices,omitempty" patchStrategy:"merge" patchMergeKey:"profileName"`
+	VGPUDevices []VGPUDevice `json:"vgpuDevices,omitempty" patchStrategy:"merge" patchMergeKey:"profileName"`
 	// +optional
 	DynamicDirectPathIODevices []DynamicDirectPathIODevice `json:"dynamicDirectPathIODevices,omitempty"`
 }
 
 // VirtualMachineClassHardware describes a virtual hardware resource specification.
 type VirtualMachineClassHardware struct {
-	Cpus    int64             `json:"cpus,omitempty"`
-	Memory  resource.Quantity `json:"memory,omitempty"`
+	Cpus   int64             `json:"cpus,omitempty"`
+	Memory resource.Quantity `json:"memory,omitempty"`
 	// +optional
-	Devices VirtualDevices    `json:"devices,omitempty"`
+	Devices VirtualDevices `json:"devices,omitempty"`
 	// +optional
 	InstanceStorage InstanceStorage `json:"instanceStorage,omitempty"`
 }

@@ -516,6 +516,11 @@ spec:
                   - name
                   type: object
                 type: array
+              zone:
+                description: Zone describes the availability zone where the VirtualMachine
+                  has been scheduled. Please note this field may be empty when the
+                  cluster is not zone-aware.
+                type: string
             type: object
         type: object
     served: true

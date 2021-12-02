@@ -423,6 +423,11 @@ type VirtualMachineStatus struct {
 	// be attached to the VirtualMachine.
 	// +optional
 	NetworkInterfaces []NetworkInterfaceStatus `json:"networkInterfaces,omitempty"`
+
+	// Zone describes the availability zone where the VirtualMachine has been scheduled.
+	// Please note this field may be empty when the cluster is not zone-aware.
+	// +optional
+	Zone string `json:"zone,omitempty"`
 }
 
 func (vm *VirtualMachine) GetConditions() Conditions {

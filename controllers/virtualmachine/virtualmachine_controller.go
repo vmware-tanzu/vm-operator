@@ -228,6 +228,15 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 		VM:      vm,
 	}
 
+	// If the VM has a pause reconcile annotation, it is being restored on vCenter. Return here so our reconcile
+	// does not replace the VM being restored on the vCenter inventory.
+	//
+	// Do not requeue the reconcile here since removing the pause annotation will trigger a reconcile anyway.
+	if _, ok := vm.Annotations[vmopv1alpha1.PauseAnnotation]; ok {
+		vmCtx.Logger.Info("Skipping reconcile since Pause annotation is set on the VM")
+		return ctrl.Result{}, nil
+	}
+
 	patchHelper, err := patch.NewHelper(vm, r.Client)
 	if err != nil {
 		return ctrl.Result{}, errors.Wrapf(err, "failed to init patch helper for %s", vmCtx.String())

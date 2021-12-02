@@ -21,3 +21,5 @@ spec:
           value: "false"
         - name: FSS_WCP_INSTANCE_STORAGE
           value: "false"
+        - name: FSS_WCP_VMSERVICE_BACKUPRESTORE
+          value: "false"

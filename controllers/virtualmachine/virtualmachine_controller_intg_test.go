@@ -296,6 +296,42 @@ func intgTests() {
 			atomic.StoreUint32(&instanceStorageFSS, origInstanceStorageFSSState)
 		})
 
+		Context("with the WCP_VMService_BackupRestore FSS enabled", func() {
+			var (
+				vmServiceBackupRestoreFSS uint32
+			)
+
+			BeforeEach(func() {
+				lib.IsVMServiceBackupRestoreFSSEnabled = func() bool {
+					return atomic.LoadUint32(&vmServiceBackupRestoreFSS) != 0
+				}
+
+				atomic.StoreUint32(&vmServiceBackupRestoreFSS, 1)
+			})
+
+			AfterEach(func() {
+				atomic.StoreUint32(&vmServiceBackupRestoreFSS, 0)
+			})
+
+			When("the pause annotation is set", func() {
+				It("Reconcile returns early and the finalizer never gets added", func() {
+					// Set the Pause annotation on the VM
+					vm.Annotations = map[string]string{
+						vmopv1alpha1.PauseAnnotation: "",
+					}
+
+					Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+					Consistently(func() []string {
+						if vm := getVirtualMachine(ctx, vmKey); vm != nil {
+							return vm.GetFinalizers()
+						}
+						return nil
+					}).ShouldNot(ContainElement(finalizer), "waiting for VirtualMachine finalizer")
+				})
+			})
+		})
+
 		It("Reconciles after VirtualMachine creation", func() {
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 

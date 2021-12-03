@@ -16,4 +16,4 @@ help: ## Display this help
 infrastructure-components: $(INFRASTRUCTURE_COMPONENTS)
 infrastructure-components: ## Build the local infrastructure components
 $(INFRASTRUCTURE_COMPONENTS):
-	kustomize build --load_restrictor none >$@
+	kustomize build --load-restrictor LoadRestrictionsNone >$@

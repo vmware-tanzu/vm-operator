@@ -13,7 +13,7 @@ CERT_MANAGER_URL="${CERT_MANAGER_URL:?}"
 mkdir -p artifacts
 
 ./hack/tools/bin/kustomize build \
-  --load_restrictor none \
+  --load-restrictor LoadRestrictionsNone \
   "${CERT_MANAGER_URL}" \
   >artifacts/cert-manager.yaml
 

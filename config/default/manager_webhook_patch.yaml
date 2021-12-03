@@ -25,9 +25,9 @@ spec:
         - name: WEBHOOK_SECRET_NAME
           value: $(WEBHOOK_SECRET_NAME)
         - name: WEBHOOK_SECRET_VOLUME_MOUNT_PATH
-          value: $(WEBHOOK_SECRET_VOLUME_MOUNT_PATH)
+          value: WEBHOOK_SECRET_VOLUME_MOUNT_PATH_VALUE
         - name: WEBHOOK_SERVICE_CONTAINER_PORT
-          value: $(WEBHOOK_SERVICE_CONTAINER_PORT_STRING)
+          value: WEBHOOK_SERVICE_CONTAINER_PORT_STRING
         ports:
         # This value is used as the int constant for webhook port across our YAML
         # String constant for the same port is webhooks.vmoperator.vmware.com/service-container-port above. The two should be consistent.
@@ -36,11 +36,11 @@ spec:
           name: webhook-server
           protocol: TCP
         volumeMounts:
-        - mountPath: $(WEBHOOK_SECRET_VOLUME_MOUNT_PATH)
-          name: $(WEBHOOK_SECRET_VOLUME_NAME)
+        - mountPath: WEBHOOK_SECRET_VOLUME_MOUNT_PATH_VALUE
+          name: WEBHOOK_SECRET_VOLUME_NAME
           readOnly: true
       volumes:
-      - name: $(WEBHOOK_SECRET_VOLUME_NAME)
+      - name: WEBHOOK_SECRET_VOLUME_NAME
         secret:
           defaultMode: 420
           secretName: $(WEBHOOK_SECRET_NAME)

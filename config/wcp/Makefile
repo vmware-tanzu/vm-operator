@@ -42,4 +42,4 @@ kustomize-set-version: kustomize-copy ## Update kustomization.yaml to set the cu
 infrastructure-components: $(INFRASTRUCTURE_COMPONENTS)
 infrastructure-components: ## Build the WCP infrastructure components
 $(INFRASTRUCTURE_COMPONENTS): kustomize-set-version
-	kustomize build $(ARTIFACTS_DIR_TMP)/$(KUSTOMIZE_TYPE) --load_restrictor none >$@
+	kustomize build $(ARTIFACTS_DIR_TMP)/$(KUSTOMIZE_TYPE) --load-restrictor LoadRestrictionsNone >$@

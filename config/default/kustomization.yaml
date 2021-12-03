@@ -52,27 +52,6 @@ vars:
   fieldref:
     # Note that this assumes "manager" is containers[0] and the webhook port is ports[0]
     fieldpath: spec.template.spec.containers[0].ports[0].containerPort
-- name: WEBHOOK_SERVICE_CONTAINER_PORT_STRING
-  objref:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: controller-manager
-  fieldref:
-    fieldpath: metadata.annotations["webhooks.vmoperator.vmware.com/service-container-port"]
-- name: WEBHOOK_SECRET_VOLUME_MOUNT_PATH
-  objref:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: controller-manager
-  fieldref:
-    fieldpath: metadata.annotations["webhooks.vmoperator.vmware.com/secret-volume-mount-path"]
-- name: WEBHOOK_SECRET_VOLUME_NAME
-  objref:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: controller-manager
-  fieldref:
-    fieldpath: metadata.annotations["webhooks.vmoperator.vmware.com/secret-volume-name"]
 - name: WEBHOOK_CERTIFICATE_NAMESPACE # namespace of the certificate CR
   objref:
     kind: Certificate
@@ -104,3 +83,36 @@ vars:
   fieldref:
     fieldpath: spec.secretName
 
+replacements:
+  - source:
+      kind: Deployment
+      name: controller-manager
+      fieldPath: metadata.annotations.[webhooks.vmoperator.vmware.com/service-container-port]
+    targets:
+    - select:
+        kind: Deployment
+        name: controller-manager
+      fieldPaths:
+      - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SERVICE_CONTAINER_PORT].value
+  - source:
+      kind: Deployment
+      name: controller-manager
+      fieldPath: metadata.annotations.[webhooks.vmoperator.vmware.com/secret-volume-mount-path]
+    targets:
+    - select:
+        kind: Deployment
+        name: controller-manager
+      fieldPaths:
+      - spec.template.spec.containers.[name=manager].env.[name=WEBHOOK_SECRET_VOLUME_MOUNT_PATH].value
+      - spec.template.spec.containers.[name=manager].volumeMounts.0.mountPath
+  - source:
+      kind: Deployment
+      name: controller-manager
+      fieldPath: metadata.annotations.[webhooks.vmoperator.vmware.com/secret-volume-name]
+    targets:
+    - select:
+        kind: Deployment
+        name: controller-manager
+      fieldPaths:
+      - spec.template.spec.containers.[name=manager].volumeMounts.0.name
+      - spec.template.spec.volumes.0.name

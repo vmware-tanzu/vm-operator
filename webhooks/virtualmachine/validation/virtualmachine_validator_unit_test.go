@@ -99,9 +99,8 @@ func setReadinessProbe(validPortProbe bool) *vmopv1.Probe {
 // nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
-		ctx                       *unitValidatingWebhookContext
-		oldFaultDomainsFunc       func() bool
-		oldInstanceStorageFSSFunc func() bool
+		ctx                 *unitValidatingWebhookContext
+		oldFaultDomainsFunc func() bool
 	)
 
 	const (
@@ -143,7 +142,6 @@ func unitTestsValidateCreate() {
 		isWCPFaultDomainsFSSEnabled          bool
 		isInvalidAvailabilityZone            bool
 		isEmptyAvailabilityZone              bool
-		isWCPInstanceStorageFSSEnabled       bool
 		isServiceUser                        bool
 		addInstanceStorageVolumes            bool
 	}
@@ -281,9 +279,6 @@ func unitTestsValidateCreate() {
 			instanceStorageVolume := builder.DummyInstanceStorageVirtualMachineVolumes()
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolume...)
 		}
-		lib.IsInstanceStorageFSSEnabled = func() bool {
-			return args.isWCPInstanceStorageFSSEnabled
-		}
 
 		// Please note this prevents the unit tests from running safely in parallel.
 		lib.IsWcpFaultDomainsFSSEnabled = func() bool {
@@ -322,11 +317,9 @@ func unitTestsValidateCreate() {
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
 		oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
-		oldInstanceStorageFSSFunc = lib.IsInstanceStorageFSSEnabled
 	})
 
 	AfterEach(func() {
-		lib.IsInstanceStorageFSSEnabled = oldInstanceStorageFSSFunc
 		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
 		ctx = nil
 	})
@@ -411,17 +404,15 @@ func unitTestsValidateCreate() {
 		Entry("should deny when VM specifies invalid availability zone, there are no availability zones, and WCP FaultDomains FSS is enabled", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
 
 		Entry("should deny when there are no availability zones and WCP FaultDomains FSS is enabled", createArgs{isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
-		Entry("should deny when there are instance storage volumes with WCP Instance Storage FSS enabled and user is SSO user", createArgs{addInstanceStorageVolumes: true, isWCPInstanceStorageFSSEnabled: true}, false,
-			field.Forbidden(volPath, "adding or modifying instance storage volume(s) is not allowed").Error(), nil),
-		Entry("should allow when there are instance storage volumes with WCP Instance Storage FSS enabled and user is service user", createArgs{addInstanceStorageVolumes: true, isWCPInstanceStorageFSSEnabled: true, isServiceUser: true}, true, nil, nil),
+		Entry("should deny when there are instance storage volumes and user is SSO user", createArgs{addInstanceStorageVolumes: true}, false,
+			field.Forbidden(volPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),
+		Entry("should allow when there are instance storage volumes and user is service user", createArgs{addInstanceStorageVolumes: true, isServiceUser: true}, true, nil, nil),
 	)
 }
 
 func unitTestsValidateUpdate() {
 	var (
 		ctx *unitValidatingWebhookContext
-
-		oldInstanceStorageFSSFunc func() bool
 	)
 
 	type updateArgs struct {
@@ -433,7 +424,6 @@ func unitTestsValidateUpdate() {
 		changeZoneName                  bool
 		changeInstanceStorageVolumeName bool
 		isServiceUser                   bool
-		isWCPInstanceStorageFSSEnabled  bool
 		addInstanceStorageVolume        bool
 	}
 
@@ -473,9 +463,6 @@ func unitTestsValidateUpdate() {
 			instanceStorageVolumes[0].Name += updateSuffix
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
 		}
-		lib.IsInstanceStorageFSSEnabled = func() bool {
-			return args.isWCPInstanceStorageFSSEnabled
-		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
@@ -494,11 +481,9 @@ func unitTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
-		oldInstanceStorageFSSFunc = lib.IsInstanceStorageFSSEnabled
 	})
 
 	AfterEach(func() {
-		lib.IsInstanceStorageFSSEnabled = oldInstanceStorageFSSFunc
 		ctx = nil
 	})
 
@@ -514,12 +499,12 @@ func unitTestsValidateUpdate() {
 		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, msg, nil),
 		Entry("should allow initial zone assignment", updateArgs{assignZoneName: true}, true, nil, nil),
 		Entry("should deny zone name change", updateArgs{changeZoneName: true}, false, msg, nil),
-		Entry("should deny instance storage volume name change, when WCP Instance Storage FSS is enabled and user type is SSO user", updateArgs{isWCPInstanceStorageFSSEnabled: true, changeInstanceStorageVolumeName: true}, false,
-			field.Forbidden(volumesPath, "adding or modifying instance storage volume(s) is not allowed").Error(), nil),
-		Entry("should deny adding new instance storage volume, when WCP Instance Storage FSS is enabled and user type is SSO user", updateArgs{isWCPInstanceStorageFSSEnabled: true, addInstanceStorageVolume: true}, false,
-			field.Forbidden(volumesPath, "adding or modifying instance storage volume(s) is not allowed").Error(), nil),
-		Entry("should allow adding new instance storage volume, when WCP Instance Storage FSS is enabled and user type is service user", updateArgs{isWCPInstanceStorageFSSEnabled: true, addInstanceStorageVolume: true, isServiceUser: true}, true, nil, nil),
-		Entry("should allow instance storage volume name change, when WCP Instance Storage FSS is enabled and user type is service user", updateArgs{isWCPInstanceStorageFSSEnabled: true, changeInstanceStorageVolumeName: true, isServiceUser: true}, true, nil, nil),
+		Entry("should deny instance storage volume name change, when user is SSO user", updateArgs{changeInstanceStorageVolumeName: true}, false,
+			field.Forbidden(volumesPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),
+		Entry("should deny adding new instance storage volume, when user is SSO user", updateArgs{addInstanceStorageVolume: true}, false,
+			field.Forbidden(volumesPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),
+		Entry("should allow adding new instance storage volume, when user type is service user", updateArgs{addInstanceStorageVolume: true, isServiceUser: true}, true, nil, nil),
+		Entry("should allow instance storage volume name change, when user type is service user", updateArgs{changeInstanceStorageVolumeName: true, isServiceUser: true}, true, nil, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

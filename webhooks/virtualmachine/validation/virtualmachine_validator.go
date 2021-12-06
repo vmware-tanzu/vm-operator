@@ -32,7 +32,6 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
@@ -57,7 +56,7 @@ const (
 	invalidVolumeSpecified                    = "only one of persistentVolumeClaim or vsphereVolume must be specified"
 	vSphereVolumeSizeNotMBMultiple            = "value must be a multiple of MB"
 	eagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning"
-	addingModifyingInstanceVolumesNotAllowed  = "adding or modifying instance storage volume(s) is not allowed"
+	addingModifyingInstanceVolumesNotAllowed  = "adding or modifying instance storage volume claim(s) is not allowed"
 	metadataTransportResourcesEmpty           = "must specify either %s or %s, but not both"
 	metadataTransportResourcesInvalid         = "%s and %s cannot be specified simultaneously"
 )
@@ -112,9 +111,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
-	if lib.IsInstanceStorageFSSEnabled() {
-		fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
-	}
+	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -180,9 +177,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
-	if lib.IsInstanceStorageFSSEnabled() {
-		fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
-	}
+	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -341,7 +336,9 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 	return allErrs
 }
 
-// validateInstanceStorageVolumes validates volumes associated with Instance Storage.
+// validateInstanceStorageVolumes validates if instance storage volumes are added/modified.
+// The instance storage volumes should to be validated irrespective of WCP_Instance_Storage FSS status,
+// as we don't allow any users other than privileged users to add/modify instance storage volumes even if FSS is disabled.
 func (v validator) validateInstanceStorageVolumes(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 

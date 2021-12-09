@@ -38,7 +38,7 @@
   path: /spec/template/spec/containers/0/env/-
   value:
     name: FSS_WCP_FAULTDOMAINS
-    value: "false"
+    value: "<FSS_WCP_FAULTDOMAINS_VALUE>"
 
 - op: add
   path: /spec/template/spec/containers/0/env/-

@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/pbm"
 	pbmTypes "github.com/vmware/govmomi/pbm/types"
@@ -19,6 +18,8 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/utils/pointer"
+
+	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"

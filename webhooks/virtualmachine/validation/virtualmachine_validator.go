@@ -17,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -229,7 +228,7 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 
 	image := vmopv1.VirtualMachineImage{}
 	imageName := vm.Spec.ImageName
-	if err := v.client.Get(ctx, types.NamespacedName{Name: imageName}, &image); err != nil {
+	if err := v.client.Get(ctx, client.ObjectKey{Name: imageName}, &image); err != nil {
 		return append(allErrs, field.Invalid(imageNamePath, imageName, err.Error()))
 	}
 	if image.Status.ImageSupported != nil && !*image.Status.ImageSupported {
@@ -363,6 +362,7 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 
 	volumesPath := field.NewPath("spec", "volumes")
 	volumeNames := map[string]bool{}
+	hasPVC := false
 
 	for i, vol := range vm.Spec.Volumes {
 		curVolPath := volumesPath.Index(i)
@@ -384,9 +384,23 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 		}
 
 		if vol.PersistentVolumeClaim != nil {
+			hasPVC = true
 			allErrs = append(allErrs, v.validateVolumeWithPVC(ctx, vm, vol, curVolPath)...)
 		} else { // vol.VsphereVolume != nil
 			allErrs = append(allErrs, v.validateVsphereVolume(vol.VsphereVolume, curVolPath)...)
+		}
+	}
+
+	if hasPVC {
+		imageNamePath := field.NewPath("spec", "imageName")
+		image := vmopv1.VirtualMachineImage{}
+		if err := v.client.Get(ctx, client.ObjectKey{Name: vm.Spec.ImageName}, &image); err != nil {
+			allErrs = append(allErrs, field.Invalid(imageNamePath, vm.Spec.ImageName,
+				fmt.Sprintf("error validating image hardware version for PVC: %s", err.Error())))
+		} else if image.Spec.HardwareVersion != 0 && image.Spec.HardwareVersion < constants.MinSupportedHWVersionForPVC {
+			// Check that the VirtualMachineImage's hardware version is at least the minimum supported virtual hardware version
+			allErrs = append(allErrs, field.Invalid(imageNamePath, vm.Spec.ImageName,
+				fmt.Sprintf(pvcHardwareVersionNotSupportedFmt, image.Spec.HardwareVersion, constants.MinSupportedHWVersionForPVC)))
 		}
 	}
 
@@ -395,21 +409,8 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 
 func (v validator) validateVolumeWithPVC(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine,
 	vol vmopv1.VirtualMachineVolume, volPath *field.Path) field.ErrorList {
+
 	var allErrs field.ErrorList
-
-	imageNamePath := field.NewPath("spec", "imageName")
-	image := vmopv1.VirtualMachineImage{}
-	err := v.client.Get(ctx, types.NamespacedName{Name: vm.Spec.ImageName}, &image)
-	if err != nil {
-		allErrs = append(allErrs, field.Invalid(imageNamePath, vm.Spec.ImageName,
-			fmt.Sprintf("error validating image for PVC: %v", err)))
-	}
-
-	// Check that the VirtualMachineImage's hardware version is at least the minimum supported virtual hardware version
-	if image.Spec.HardwareVersion != 0 && image.Spec.HardwareVersion < constants.MinSupportedHWVersionForPVC {
-		allErrs = append(allErrs, field.Invalid(imageNamePath, vm.Spec.ImageName,
-			fmt.Sprintf(pvcHardwareVersionNotSupportedFmt, image.Spec.HardwareVersion, constants.MinSupportedHWVersionForPVC)))
-	}
 
 	// Check that the name used for the CnsNodeVmAttachment will be valid. Don't double up errors if name is missing.
 	if vol.Name != "" {
@@ -618,7 +619,7 @@ func (v validator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virtual
 
 func (v validator) isNetworkRestrictedForReadinessProbe(ctx *context.WebhookRequestContext) (bool, error) {
 	configMap := &corev1.ConfigMap{}
-	configMapKey := types.NamespacedName{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
+	configMapKey := client.ObjectKey{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
 	if err := v.client.Get(ctx, configMapKey, configMap); err != nil {
 		return false, fmt.Errorf("error fetching config map: %s while validating TCP readiness probe port: %v", configMapKey, err)
 	}

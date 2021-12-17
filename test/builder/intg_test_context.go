@@ -23,7 +23,6 @@ type IntegrationTestContext struct {
 	Client       client.Client
 	Namespace    string
 	PodNamespace string
-	suite        *TestSuite
 }
 
 func (*IntegrationTestContext) GetLogger() logr.Logger {
@@ -32,13 +31,14 @@ func (*IntegrationTestContext) GetLogger() logr.Logger {
 
 // AfterEach should be invoked by ginkgo.AfterEach to destroy the test namespace
 func (ctx *IntegrationTestContext) AfterEach() {
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: ctx.Namespace,
-		},
-	}
-	By("Destroying integration test namespace")
-	Expect(ctx.suite.integrationTestClient.Delete(ctx, namespace)).To(Succeed())
+	By("Destroying temporary namespace", func() {
+		namespace := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: ctx.Namespace,
+			},
+		}
+		Expect(ctx.Client.Delete(ctx, namespace)).To(Succeed())
+	})
 }
 
 // NewIntegrationTestContext should be invoked by ginkgo.BeforeEach
@@ -54,7 +54,6 @@ func (s *TestSuite) NewIntegrationTestContext() *IntegrationTestContext {
 		Context:      context.Background(),
 		Client:       s.integrationTestClient,
 		PodNamespace: s.manager.GetContext().Namespace,
-		suite:        s,
 	}
 
 	By("Creating a temporary namespace", func() {

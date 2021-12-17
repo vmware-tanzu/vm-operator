@@ -29,7 +29,7 @@ COV_OPTS=$(join_packages_for_cover "${COVER_PKGS[@]}")
 
 # Packages tested with the old test framework.
 TEST_PKGS=(
-  "./pkg/vmprovider/..."
+  "./pkg/vmprovider/integration/..."
 )
 
 # Packages tested with the new test framework.

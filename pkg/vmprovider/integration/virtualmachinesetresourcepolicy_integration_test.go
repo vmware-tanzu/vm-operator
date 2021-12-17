@@ -17,7 +17,6 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
-	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
 
 func getVirtualMachineSetResourcePolicy(name, namespace string) *vmopv1alpha1.VirtualMachineSetResourcePolicy {
@@ -44,72 +43,6 @@ func getVirtualMachineSetResourcePolicy(name, namespace string) *vmopv1alpha1.Vi
 }
 
 var _ = Describe("vSphere VM resource policy tests", func() {
-
-	Context("VirtualMachineSetResourcePolicy", func() {
-		var (
-			resourcePolicy      *vmopv1alpha1.VirtualMachineSetResourcePolicy
-			testPolicyName      string
-			testPolicyNamespace string
-		)
-
-		JustBeforeEach(func() {
-			testPolicyName = "test-name"
-			testPolicyNamespace = integration.DefaultNamespace
-
-			resourcePolicy = getVirtualMachineSetResourcePolicy(testPolicyName, testPolicyNamespace)
-			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
-
-			modules := resourcePolicy.Status.ClusterModules
-			Expect(modules).Should(HaveLen(2))
-			module := modules[0]
-			Expect(module.GroupName).To(Equal(resourcePolicy.Spec.ClusterModules[0].GroupName))
-			Expect(module.ModuleUuid).ToNot(BeEmpty())
-			module = modules[1]
-			Expect(module.GroupName).To(Equal(resourcePolicy.Spec.ClusterModules[1].GroupName))
-			Expect(module.ModuleUuid).ToNot(BeEmpty())
-		})
-
-		JustAfterEach(func() {
-			Expect(vmProvider.DeleteVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
-			Expect(resourcePolicy.Status.ClusterModules).Should(BeEmpty())
-		})
-
-		Context("for an existing resource policy", func() {
-			It("should keep existing cluster modules", func() {
-				saved := make([]vmopv1alpha1.ClusterModuleStatus, 2)
-				copy(saved, resourcePolicy.Status.ClusterModules)
-
-				Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
-				Expect(resourcePolicy.Status.ClusterModules).To(ContainElements(saved))
-			})
-
-			It("successfully able to find the resource policy", func() {
-				exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, "availabilityzone", resourcePolicy)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(exists).To(BeTrue())
-			})
-		})
-
-		Context("for an absent resource policy", func() {
-			It("should fail to find the resource policy without any errors", func() {
-				failResPolicy := getVirtualMachineSetResourcePolicy("test-policy", testPolicyNamespace)
-				exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, "availabilityzone", failResPolicy)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(exists).To(BeFalse())
-			})
-		})
-
-		Context("for a resource policy with invalid cluster module", func() {
-			It("successfully able to delete the resource policy", func() {
-				resourcePolicy.Status.ClusterModules = append([]vmopv1alpha1.ClusterModuleStatus{
-					{
-						GroupName:  "invalid-group",
-						ModuleUuid: "invalid-uuid",
-					},
-				}, resourcePolicy.Status.ClusterModules...)
-			})
-		})
-	})
 
 	Context("Cluster Modules", func() {
 		var (

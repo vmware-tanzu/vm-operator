@@ -15,7 +15,6 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
@@ -193,29 +192,6 @@ func (s *Session) initSession(
 	s.tagInfo[config.ProviderTagCategoryNameKey] = cfg.TagCategoryName
 
 	return nil
-}
-
-func (s *Session) CreateLibrary(ctx goctx.Context, name, datastoreID string) (string, error) {
-	return s.Client.ContentLibClient().CreateLibrary(ctx, name, datastoreID)
-}
-
-func (s *Session) CreateLibraryItem(ctx goctx.Context, libraryItem library.Item, path string) error {
-	return s.Client.ContentLibClient().CreateLibraryItem(ctx, libraryItem, path)
-}
-
-// DeleteLibraryItem deletes an item from a library. Only used in tests.
-func (s *Session) DeleteLibraryItem(ctx goctx.Context, libraryItem *library.Item) error {
-	return s.Client.ContentLibClient().DeleteLibraryItem(ctx, libraryItem)
-}
-
-func IsSupportedDeployType(t string) bool {
-	switch t {
-	case library.ItemTypeVMTX, library.ItemTypeOVF:
-		// Keep in sync with what cloneVMFromContentLibrary() handles.
-		return true
-	default:
-		return false
-	}
 }
 
 // findChildEntity finds a child entity by a given name under a parent object.

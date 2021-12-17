@@ -1,5 +1,3 @@
-// +build !integration
-
 // Copyright (c) 2019 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -58,7 +56,7 @@ var _ = Describe("Test Session Utils", func() {
 
 				return nil
 			})
-			Expect(res).To(BeNil())
+			Expect(res).ShouldNot(HaveOccurred())
 		})
 
 		Specify("return cpu min frequency when the cluster contains no hosts", func() {

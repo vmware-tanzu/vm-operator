@@ -52,6 +52,7 @@ func NewMutatingWebhook(
 	mgr ctrlmgr.Manager,
 	webhookName string,
 	mutator Mutator) (*MutatingWebhook, error) {
+
 	if webhookName == "" {
 		return nil, errors.New("webhookName arg is empty")
 	}
@@ -65,10 +66,12 @@ func NewMutatingWebhook(
 
 	// Build the WebhookContext.
 	webhookContext := &context.WebhookContext{
-		Context:  ctx,
-		Name:     webhookNameShort,
-		Recorder: record.New(mgr.GetEventRecorderFor(webhookNameLong)),
-		Logger:   ctx.Logger.WithName(webhookNameShort),
+		Context:            ctx,
+		Name:               webhookNameShort,
+		Namespace:          ctx.Namespace,
+		ServiceAccountName: ctx.ServiceAccountName,
+		Recorder:           record.New(mgr.GetEventRecorderFor(webhookNameLong)),
+		Logger:             ctx.Logger.WithName(webhookNameShort),
 	}
 
 	// Initialize the webhook's decoder.
@@ -114,8 +117,10 @@ func (h *mutatingWebhookHandler) Handle(_ goctx.Context, req admission.Request) 
 	}
 
 	webhookRequestContext := &context.WebhookRequestContext{
-		WebhookContext: h.WebhookContext,
-		Obj:            obj,
+		WebhookContext:      h.WebhookContext,
+		Obj:                 obj,
+		IsPrivilegedAccount: isPrivilegedAccount(h.WebhookContext, req.UserInfo),
+		Logger:              h.WebhookContext.Logger.WithName(obj.GetNamespace()).WithName(obj.GetName()),
 	}
 
 	return h.Mutate(webhookRequestContext)

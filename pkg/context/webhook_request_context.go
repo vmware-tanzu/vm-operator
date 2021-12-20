@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	authv1 "k8s.io/api/authentication/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -22,11 +21,12 @@ type WebhookRequestContext struct {
 	// OldObj is set only for Update requests.
 	OldObj *unstructured.Unstructured
 
+	// IsPrivilegedAccount is if this request is from a privileged account (currently
+	// that's either kube-admin or the pod's system account).
+	IsPrivilegedAccount bool
+
 	// Logger is the logger associated with the webhook request.
 	Logger logr.Logger
-
-	// UserInfo is the user information associated with the webhook request
-	*authv1.UserInfo
 }
 
 // String returns Obj.GroupVersionKind Obj.Namespace/Obj.Name.

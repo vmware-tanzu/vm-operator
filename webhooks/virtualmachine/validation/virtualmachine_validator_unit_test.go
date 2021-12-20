@@ -5,7 +5,6 @@ package validation_test
 
 import (
 	"fmt"
-	"os"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -13,7 +12,6 @@ import (
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 
-	v1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -42,10 +40,9 @@ func unitTests() {
 
 type unitValidatingWebhookContext struct {
 	builder.UnitTestContextForValidatingWebhook
-	vm       *vmopv1.VirtualMachine
-	oldVM    *vmopv1.VirtualMachine
-	vmImage  *vmopv1.VirtualMachineImage
-	userInfo *v1.UserInfo
+	vm      *vmopv1.VirtualMachine
+	oldVM   *vmopv1.VirtualMachine
+	vmImage *vmopv1.VirtualMachineImage
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
@@ -67,24 +64,19 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 		Expect(err).ToNot(HaveOccurred())
 	}
 
-	userInfo := &v1.UserInfo{
-		Username: "sso:devUser1@vsphere.local",
-	}
-
 	return &unitValidatingWebhookContext{
 		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, vmImage, vmImage1, zone),
 		vm:                                  vm,
 		oldVM:                               oldVM,
 		vmImage:                             vmImage,
-		userInfo:                            userInfo,
 	}
 }
 
-func setConfigMap(isRestrictedEnv bool) *corev1.ConfigMap {
+func setConfigMap(namespace string, isRestrictedEnv bool) *corev1.ConfigMap {
 	configMapIn := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      config.ProviderConfigMapName,
-			Namespace: "namespace",
+			Namespace: namespace,
 		},
 		Data: make(map[string]string),
 	}
@@ -110,7 +102,9 @@ func unitTestsValidateCreate() {
 		ctx                       *unitValidatingWebhookContext
 		oldFaultDomainsFunc       func() bool
 		oldInstanceStorageFSSFunc func() bool
+	)
 
+	const (
 		bogusNetworkName = "bogus-network-name"
 	)
 
@@ -135,7 +129,7 @@ func unitTestsValidateCreate() {
 		invalidVsphereVolumeSource           bool
 		invalidVMVolumeProvOpts              bool
 		invalidStorageClass                  bool
-		notfoundStorageClass                 bool
+		notFoundStorageClass                 bool
 		validStorageClass                    bool
 		imageNonCompatible                   bool
 		imageSupportCheckSkipAnnotation      bool
@@ -253,12 +247,12 @@ func unitTestsValidateCreate() {
 			ctx.vm.Spec.StorageClass = storageClass.Name
 			Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
 		}
-		if args.notfoundStorageClass {
-			// StorageClass specified but no ResourceQuotas
+		if args.notFoundStorageClass {
+			// StorageClass specified but no ResourceQuotas.
 			ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
 		}
 		if args.validStorageClass {
-			// StorageClass specified and is assigned to ResourceQuota
+			// StorageClass specified and is assigned to ResourceQuota.
 			ctx.vm.Spec.StorageClass = builder.DummyStorageClassName
 			storageClass := builder.DummyStorageClass()
 			rlName := storageClass.Name + ".storageclass.storage.k8s.io/persistentvolumeclaims"
@@ -276,14 +270,12 @@ func unitTestsValidateCreate() {
 			}
 		}
 		if args.isRestrictedNetworkEnv || args.isNonRestrictedNetworkEnv {
-			configMapIn := setConfigMap(args.isRestrictedNetworkEnv)
+			configMapIn := setConfigMap(ctx.Namespace, args.isRestrictedNetworkEnv)
 			ctx.vm.Spec.ReadinessProbe = setReadinessProbe(args.isRestrictedNetworkValidProbePort)
 			Expect(ctx.Client.Create(ctx, configMapIn)).To(Succeed())
 		}
 		if args.isServiceUser {
-			Expect(os.Setenv("POD_SERVICE_ACCOUNT_NAME", "default")).To(Succeed())
-			Expect(os.Setenv("POD_NAMESPACE", "vmware-system-vmop")).To(Succeed())
-			ctx.userInfo.Username = "system:serviceaccount:vmware-system-vmop:default"
+			ctx.IsPrivilegedAccount = true
 		}
 		if args.addInstanceStorageVolumes {
 			instanceStorageVolume := builder.DummyInstanceStorageVirtualMachineVolumes()
@@ -314,7 +306,6 @@ func unitTestsValidateCreate() {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 		}
 
-		ctx.WebhookRequestContext.UserInfo = ctx.userInfo
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -332,20 +323,12 @@ func unitTestsValidateCreate() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
 		oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
 		oldInstanceStorageFSSFunc = lib.IsInstanceStorageFSSEnabled
-		Expect(os.Setenv(lib.VmopNamespaceEnv, "namespace")).To(Succeed())
 	})
 
 	AfterEach(func() {
-		ctx = nil
-		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
 		lib.IsInstanceStorageFSSEnabled = oldInstanceStorageFSSFunc
-		if _, ok := os.LookupEnv("POD_SERVICE_ACCOUNT_NAME"); ok {
-			Expect(os.Unsetenv("POD_SERVICE_ACCOUNT_NAME")).To(Succeed())
-		}
-		if _, ok := os.LookupEnv("POD_NAMESPACE"); ok {
-			Expect(os.Unsetenv("POD_NAMESPACE")).To(Succeed())
-		}
-		Expect(os.Unsetenv(lib.VmopNamespaceEnv)).To(Succeed())
+		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
+		ctx = nil
 	})
 
 	specPath := field.NewPath("spec")
@@ -396,7 +379,7 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid vm volume provisioning opts", createArgs{invalidVMVolumeProvOpts: true}, false,
 			field.Forbidden(field.NewPath("spec", "advancedOptions", "defaultVolumeProvisioningOptions"), "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning").Error(), nil),
 
-		Entry("should deny a storage class that does not exist", createArgs{notfoundStorageClass: true}, false,
+		Entry("should deny a storage class that does not exist", createArgs{notFoundStorageClass: true}, false,
 			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
 		Entry("should deny a storage class that is not associated with the namespace", createArgs{invalidStorageClass: true}, false,
 			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
@@ -436,8 +419,7 @@ func unitTestsValidateCreate() {
 
 func unitTestsValidateUpdate() {
 	var (
-		ctx      *unitValidatingWebhookContext
-		response admission.Response
+		ctx *unitValidatingWebhookContext
 
 		oldInstanceStorageFSSFunc func() bool
 	)
@@ -479,9 +461,7 @@ func unitTestsValidateUpdate() {
 		}
 
 		if args.isServiceUser {
-			Expect(os.Setenv("POD_NAMESPACE", "vmware-system-vmop")).To(Succeed())
-			Expect(os.Setenv("POD_SERVICE_ACCOUNT_NAME", "default")).To(Succeed())
-			ctx.userInfo.Username = "system:serviceaccount:vmware-system-vmop:default"
+			ctx.IsPrivilegedAccount = true
 		}
 		if args.addInstanceStorageVolume {
 			instanceStorageVolumes := builder.DummyInstanceStorageVirtualMachineVolumes()
@@ -497,7 +477,6 @@ func unitTestsValidateUpdate() {
 			return args.isWCPInstanceStorageFSSEnabled
 		}
 
-		ctx.WebhookRequestContext.UserInfo = ctx.userInfo
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
 		ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
@@ -514,18 +493,12 @@ func unitTestsValidateUpdate() {
 	}
 
 	BeforeEach(func() {
-		oldInstanceStorageFSSFunc = lib.IsInstanceStorageFSSEnabled
 		ctx = newUnitTestContextForValidatingWebhook(true)
+		oldInstanceStorageFSSFunc = lib.IsInstanceStorageFSSEnabled
 	})
 
 	AfterEach(func() {
 		lib.IsInstanceStorageFSSEnabled = oldInstanceStorageFSSFunc
-		if _, ok := os.LookupEnv("POD_SERVICE_ACCOUNT_NAME"); ok {
-			Expect(os.Unsetenv("POD_SERVICE_ACCOUNT_NAME")).To(Succeed())
-		}
-		if _, ok := os.LookupEnv("POD_NAMESPACE"); ok {
-			Expect(os.Unsetenv("POD_NAMESPACE")).To(Succeed())
-		}
 		ctx = nil
 	})
 
@@ -550,13 +523,10 @@ func unitTestsValidateUpdate() {
 	)
 
 	When("the update is performed while object deletion", func() {
-		JustBeforeEach(func() {
+		It("should allow the request", func() {
 			t := metav1.Now()
 			ctx.WebhookRequestContext.Obj.SetDeletionTimestamp(&t)
-			response = ctx.ValidateUpdate(&ctx.WebhookRequestContext)
-		})
-
-		It("should allow the request", func() {
+			response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
 			Expect(response.Allowed).To(BeTrue())
 			Expect(response.Result).ToNot(BeNil())
 		})

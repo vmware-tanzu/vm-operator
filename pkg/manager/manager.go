@@ -77,6 +77,7 @@ func New(opts Options) (Manager, error) {
 		Context:                 goctx.Background(),
 		Namespace:               opts.PodNamespace,
 		Name:                    opts.PodName,
+		ServiceAccountName:      opts.PodServiceAccountName,
 		LeaderElectionID:        opts.LeaderElectionID,
 		LeaderElectionNamespace: opts.PodNamespace,
 		MaxConcurrentReconciles: opts.MaxConcurrentReconciles,

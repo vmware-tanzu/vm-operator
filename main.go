@@ -41,6 +41,7 @@ var (
 	defaultLeaderElectionID             = manager.DefaultLeaderElectionID
 	defaultPodNamespace                 = manager.DefaultPodNamespace
 	defaultPodName                      = manager.DefaultPodName
+	defaultPodServiceAccountName        = manager.DefaultPodServiceAccountName
 	defaultWebhookServiceContainerPort  = manager.DefaultWebhookServiceContainerPort
 	defaultWebhookServiceNamespace      = manager.DefaultWebhookServiceNamespace
 	defaultWebhookServiceName           = manager.DefaultWebhookServiceName
@@ -68,7 +69,6 @@ func init() {
 	if v, err := strconv.Atoi(os.Getenv("RATE_LIMIT_BURST")); err == nil {
 		defaultRateLimiterBurst = v
 	}
-
 	if v, err := time.ParseDuration(os.Getenv("SYNC_PERIOD")); err == nil {
 		defaultSyncPeriod = v
 	}
@@ -83,6 +83,9 @@ func init() {
 	}
 	if v := os.Getenv("POD_NAME"); v != "" {
 		defaultPodName = v
+	}
+	if v := os.Getenv("POD_SERVICE_ACCOUNT_NAME"); v != "" {
+		defaultPodServiceAccountName = v
 	}
 	if v, err := strconv.Atoi(os.Getenv("WEBHOOK_SERVICE_CONTAINER_PORT")); err == nil {
 		defaultWebhookServiceContainerPort = v
@@ -171,6 +174,11 @@ func main() {
 		"pod-name",
 		defaultPodName,
 		"The name of the pod running the controller manager.")
+	flag.StringVar(
+		&managerOpts.PodServiceAccountName,
+		"pod-service-account-name",
+		defaultPodServiceAccountName,
+		"The service account name of the pod running the controller manager.")
 	flag.IntVar(
 		&managerOpts.WebhookServiceContainerPort,
 		"webhook-service-container-port",

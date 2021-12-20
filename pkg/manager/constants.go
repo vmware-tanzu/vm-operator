@@ -27,6 +27,9 @@ const (
 	// DefaultPodName is the default value for the eponymous manager option.
 	DefaultPodName = defaultPrefix + "controller-manager"
 
+	// DefaultPodServiceAccountName is the default name of the pod service account.
+	DefaultPodServiceAccountName = "default"
+
 	// DefaultLeaderElectionID is the default value for the eponymous manager option.
 	DefaultLeaderElectionID = DefaultPodName + "-runtime"
 

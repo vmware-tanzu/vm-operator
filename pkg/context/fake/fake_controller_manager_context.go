@@ -24,6 +24,7 @@ func NewControllerManagerContext(scheme *runtime.Scheme) *context.ControllerMana
 		Scheme:                  scheme,
 		Namespace:               ControllerManagerNamespace,
 		Name:                    ControllerManagerName,
+		ServiceAccountName:      ServiceAccountName,
 		LeaderElectionNamespace: LeaderElectionNamespace,
 		LeaderElectionID:        LeaderElectionID,
 		Recorder:                record.New(clientrecord.NewFakeRecorder(1024)),

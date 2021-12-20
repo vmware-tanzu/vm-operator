@@ -19,6 +19,12 @@ type WebhookContext struct {
 	// Name is the name of the webhook.
 	Name string
 
+	// Namespace is the namespace the webhook is running in.
+	Namespace string
+
+	// ServiceAccountName is the service account name of the pod.
+	ServiceAccountName string
+
 	// Logger is the webhook's logger.
 	Logger logr.Logger
 
@@ -28,5 +34,5 @@ type WebhookContext struct {
 
 // String returns WebhookName.
 func (c *WebhookContext) String() string {
-	return fmt.Sprintf("%s/%s", c.Name, c.Name)
+	return fmt.Sprintf("%s/%s", c.Namespace, c.Name)
 }

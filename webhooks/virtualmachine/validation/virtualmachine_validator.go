@@ -596,11 +596,12 @@ func (v validator) validateAvailabilityZone(ctx *context.WebhookRequestContext, 
 
 	zoneLabelPath := field.NewPath("metadata", "labels").Key(topology.KubernetesTopologyZoneLabelKey)
 
-	// If there is an oldVM in play then make sure the field is immutable.
 	if oldVM != nil {
-		newVal := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
-		oldVal := oldVM.Labels[topology.KubernetesTopologyZoneLabelKey]
-		return append(allErrs, validation.ValidateImmutableField(newVal, oldVal, zoneLabelPath)...)
+		// Once the zone has been set then make sure the field is immutable.
+		if oldVal := oldVM.Labels[topology.KubernetesTopologyZoneLabelKey]; oldVal != "" {
+			newVal := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+			return append(allErrs, validation.ValidateImmutableField(newVal, oldVal, zoneLabelPath)...)
+		}
 	}
 
 	// Validate the name of the provided availability zone.

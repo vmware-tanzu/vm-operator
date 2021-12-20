@@ -30,7 +30,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/auth"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -342,26 +341,23 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 	return allErrs
 }
 
-// validateInstanceStorageVolumes - validates volumes associated with Instance Storage.
+// validateInstanceStorageVolumes validates volumes associated with Instance Storage.
 func (v validator) validateInstanceStorageVolumes(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
-	// Skip validations for VMOperator service account user and Kubernetes administrator.
-	if auth.IsPODServiceAccountUser(*ctx.UserInfo) || auth.IsKubernetesAdmin(*ctx.UserInfo) {
+
+	if ctx.IsPrivilegedAccount {
 		return allErrs
 	}
-	volumesPath := field.NewPath("spec", "volumes")
-
-	vmInstanceStorageVolumes := instancestorage.FilterVolumes(vm)
 
 	var oldVMInstanceStorageVolumes []vmopv1.VirtualMachineVolume
 	if oldVM != nil {
 		oldVMInstanceStorageVolumes = instancestorage.FilterVolumes(oldVM)
 	}
 
-	// Check if both volume maps are same.
-	if !reflect.DeepEqual(oldVMInstanceStorageVolumes, vmInstanceStorageVolumes) {
-		allErrs = append(allErrs, field.Forbidden(volumesPath, addingModifyingInstanceVolumesNotAllowed))
+	if !equality.Semantic.DeepEqual(instancestorage.FilterVolumes(vm), oldVMInstanceStorageVolumes) {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "volumes"), addingModifyingInstanceVolumesNotAllowed))
 	}
+
 	return allErrs
 }
 
@@ -624,16 +620,11 @@ func (v validator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virtual
 }
 
 func (v validator) isNetworkRestrictedForReadinessProbe(ctx *context.WebhookRequestContext) (bool, error) {
-	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
-	if err != nil {
-		return false, fmt.Errorf("error fetching VMOpNamespace while validating TCP readiness probe port: %v", err)
-	}
 	configMap := &corev1.ConfigMap{}
-	configMapKey := types.NamespacedName{Name: config.ProviderConfigMapName, Namespace: vmopNamespace}
-	err = v.client.Get(ctx, configMapKey, configMap)
-	if err != nil {
-		return false, fmt.Errorf("error fetching config map: %s while validating TCP readiness probe port: %v", config.ProviderConfigMapName, err)
+	configMapKey := types.NamespacedName{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
+	if err := v.client.Get(ctx, configMapKey, configMap); err != nil {
+		return false, fmt.Errorf("error fetching config map: %s while validating TCP readiness probe port: %v", configMapKey, err)
 	}
-	restrictedNetworkEnv := configMap.Data[isRestrictedNetworkKey]
-	return restrictedNetworkEnv == "true", nil
+
+	return configMap.Data[isRestrictedNetworkKey] == "true", nil
 }

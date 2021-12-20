@@ -26,6 +26,9 @@ type ControllerManagerContext struct {
 	// Name is the name of the controller manager.
 	Name string
 
+	// ServiceAccountName is the name of the pod's service account.
+	ServiceAccountName string
+
 	// LeaderElectionID is the information used to identify the object
 	// responsible for synchronizing leader election.
 	LeaderElectionID string

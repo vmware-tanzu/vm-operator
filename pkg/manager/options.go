@@ -70,6 +70,11 @@ type Options struct {
 	// Defaults to the eponymous constant in this package.
 	PodName string
 
+	// PodServiceAccountName is the name of the pod's service account.
+	//
+	// Defaults to the eponymous constant in this package.
+	PodServiceAccountName string
+
 	// WatchNamespace is the namespace the controllers watch for changes. If
 	// no value is specified then all namespaces are watched.
 	//
@@ -142,6 +147,10 @@ func (o *Options) defaults() {
 		o.PodName = DefaultPodName
 	}
 
+	if o.PodServiceAccountName == "" {
+		o.PodServiceAccountName = DefaultPodServiceAccountName
+	}
+
 	if o.SyncPeriod == 0 {
 		o.SyncPeriod = DefaultSyncPeriod
 	}
@@ -172,10 +181,6 @@ func (o *Options) defaults() {
 
 	if o.WebhookServiceName == "" {
 		o.WebhookServiceName = DefaultWebhookServiceName
-	}
-
-	if o.WebhookServiceNamespace == "" {
-		o.WebhookServiceNamespace = DefaultWebhookServiceNamespace
 	}
 
 	if o.WebhookSecretNamespace == "" {

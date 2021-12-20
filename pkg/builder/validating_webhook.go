@@ -58,6 +58,7 @@ func NewValidatingWebhook(
 	mgr ctrlmgr.Manager,
 	webhookName string,
 	validator Validator) (*ValidatingWebhook, error) {
+
 	if webhookName == "" {
 		return nil, errors.New("webhookName arg is empty")
 	}
@@ -73,10 +74,12 @@ func NewValidatingWebhook(
 
 	// Build the webhookContext.
 	webhookContext := &context.WebhookContext{
-		Context:  ctx,
-		Name:     webhookNameShort,
-		Recorder: record.New(mgr.GetEventRecorderFor(webhookNameLong)),
-		Logger:   ctx.Logger.WithName(webhookNameShort),
+		Context:            ctx,
+		Name:               webhookNameShort,
+		Namespace:          ctx.Namespace,
+		ServiceAccountName: ctx.ServiceAccountName,
+		Recorder:           record.New(mgr.GetEventRecorderFor(webhookNameLong)),
+		Logger:             ctx.Logger.WithName(webhookNameShort),
 	}
 
 	// Initialize the webhook's decoder.
@@ -148,11 +151,11 @@ func (h *validatingWebhookHandler) Handle(_ goctx.Context, req admission.Request
 
 	// Create the webhook request context.
 	webhookRequestContext := &context.WebhookRequestContext{
-		WebhookContext: h.WebhookContext,
-		Obj:            obj,
-		OldObj:         oldObj,
-		Logger:         h.WebhookContext.Logger.WithName(obj.GetNamespace()).WithName(obj.GetName()),
-		UserInfo:       &req.UserInfo,
+		WebhookContext:      h.WebhookContext,
+		Obj:                 obj,
+		OldObj:              oldObj,
+		IsPrivilegedAccount: isPrivilegedAccount(h.WebhookContext, req.UserInfo),
+		Logger:              h.WebhookContext.Logger.WithName(obj.GetNamespace()).WithName(obj.GetName()),
 	}
 
 	return h.HandleValidate(req, webhookRequestContext)

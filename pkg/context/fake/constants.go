@@ -27,4 +27,7 @@ const (
 
 	// WebhookName is the name of the fake webhook.
 	WebhookName = "fake-webhook"
+
+	// ServiceAccountName is fake service account name.
+	ServiceAccountName = "fake-service-account"
 )

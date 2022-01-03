@@ -29,7 +29,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/pool"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
@@ -100,12 +99,11 @@ func (s *Session) initSession(
 
 	s.Finder = find.NewFinder(s.Client.VimClient(), false)
 
-	ref := types.ManagedObjectReference{Type: "Datacenter", Value: cfg.Datacenter}
-	o, err := s.Finder.ObjectReference(ctx, ref)
+	dc, err := s.Finder.ObjectReference(ctx, types.ManagedObjectReference{Type: "Datacenter", Value: cfg.Datacenter})
 	if err != nil {
 		return errors.Wrapf(err, "failed to init Datacenter %q", cfg.Datacenter)
 	}
-	s.datacenter = o.(*object.Datacenter)
+	s.datacenter = dc.(*object.Datacenter)
 	s.Finder.SetDatacenter(s.datacenter)
 
 	if cfg.Cluster != "" {
@@ -122,12 +120,18 @@ func (s *Session) initSession(
 			return errors.Wrapf(err, "failed to init Resource Pool %q", cfg.ResourcePool)
 		}
 
-		// TODO: Remove this and fetch from config.Cluster once we populate the value from wcpsvc
 		if s.cluster == nil {
-			s.cluster, err = pool.GetResourcePoolOwner(ctx, s.resourcePool)
+			owner, err := s.resourcePool.Owner(ctx)
 			if err != nil {
-				return errors.Wrapf(err, "failed to init cluster from Resource Pool %q", cfg.ResourcePool)
+				return err
 			}
+
+			cluster, ok := owner.(*object.ClusterComputeResource)
+			if !ok {
+				return fmt.Errorf("owner of the ResourcePool is not a cluster but %T", owner)
+			}
+
+			s.cluster = cluster
 		}
 	}
 

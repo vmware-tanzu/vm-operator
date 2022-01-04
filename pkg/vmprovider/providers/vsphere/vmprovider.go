@@ -5,27 +5,27 @@ package vsphere
 
 import (
 	goctx "context"
-	"crypto/rand"
-	"math/big"
+	"math/rand"
 	"strings"
-
-	"github.com/vmware/govmomi/find"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
-	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
+	"github.com/vmware/govmomi/find"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
+	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/storage"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
 
 const (
@@ -36,6 +36,7 @@ var log = logf.Log.WithName(VsphereVMProviderName)
 
 type vSphereVMProvider struct {
 	sessions      session.Manager
+	k8sClient     ctrlruntime.Client
 	eventRecorder record.Recorder
 }
 
@@ -45,6 +46,7 @@ func NewVSphereVMProviderFromClient(
 
 	return &vSphereVMProvider{
 		sessions:      session.NewManager(client),
+		k8sClient:     client,
 		eventRecorder: recorder,
 	}
 }
@@ -109,12 +111,12 @@ func (vs *vSphereVMProvider) DoesVirtualMachineExist(ctx goctx.Context, vm *v1al
 		VM:      vm,
 	}
 
-	ses, err := vs.sessions.GetSessionForVM(vmCtx)
+	client, err := vs.GetClient(vmCtx)
 	if err != nil {
 		return false, err
 	}
 
-	if _, err = ses.GetVirtualMachine(vmCtx); err != nil {
+	if _, err := vcenter.GetVirtualMachine(vmCtx, vs.k8sClient, client.Finder(), nil); err != nil {
 		switch err.(type) {
 		case *find.NotFoundError, *find.DefaultNotFoundError:
 			return false, nil
@@ -126,28 +128,57 @@ func (vs *vSphereVMProvider) DoesVirtualMachineExist(ctx goctx.Context, vm *v1al
 	return true, nil
 }
 
-func (vs *vSphereVMProvider) getOpID(ctx goctx.Context, vm *v1alpha1.VirtualMachine, operation string) string {
+func (vs *vSphereVMProvider) getOpID(vm *v1alpha1.VirtualMachine, operation string) string {
 	const charset = "0123456789abcdef"
 
-	// TODO: Is this actually useful? Avoid looking up the session multiple times.
-	var clusterID string
-	if ses, err := vs.sessions.GetSession(ctx, vm.Labels[topology.KubernetesTopologyZoneLabelKey], vm.Namespace); err == nil {
-		clusterID = ses.Cluster().Reference().Value
-	}
-
+	// TODO: Is this actually useful?
 	id := make([]byte, 8)
 	for i := range id {
-		randOpID, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
-
-		id[i] = charset[int(randOpID.Int64())]
+		idx := rand.Intn(len(charset)) //nolint:gosec
+		id[i] = charset[idx]
 	}
 
-	return strings.Join([]string{"vmoperator", clusterID, vm.Name, operation, string(id)}, "-")
+	return strings.Join([]string{"vmoperator", vm.Name, operation, string(id)}, "-")
+}
+
+func (vs *vSphereVMProvider) PlaceVirtualMachine(
+	ctx goctx.Context,
+	vm *v1alpha1.VirtualMachine,
+	vmConfigArgs vmprovider.VMConfigArgs) error {
+
+	vmCtx := context.VirtualMachineContext{
+		Context: ctx,
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
+	client, err := vs.GetClient(vmCtx)
+	if err != nil {
+		return err
+	}
+
+	storageClassesToIDs, err := storage.GetVMStoragePoliciesIDs(vmCtx, vs.k8sClient)
+	if err != nil {
+		return err
+	}
+
+	configSpec := virtualmachine.CreateConfigSpecForPlacement(
+		vmCtx,
+		&vmConfigArgs.VMClass.Spec,
+		2500, // TODO: Silly that keeps on giving
+		storageClassesToIDs)
+
+	err = placement.Placement(vmCtx, vs.k8sClient, client.VimClient(), configSpec)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (vs *vSphereVMProvider) CreateVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "create")),
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "create")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -176,7 +207,7 @@ func (vs *vSphereVMProvider) CreateVirtualMachine(ctx goctx.Context, vm *v1alpha
 // UpdateVirtualMachine updates the VM status, power state, phase etc.
 func (vs *vSphereVMProvider) UpdateVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "update")),
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "update")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -198,7 +229,7 @@ func (vs *vSphereVMProvider) UpdateVirtualMachine(ctx goctx.Context, vm *v1alpha
 
 func (vs *vSphereVMProvider) DeleteVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine) error {
 	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "delete")),
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "delete")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -221,7 +252,7 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(ctx goctx.Context, vm *v1alpha
 
 func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(ctx goctx.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error) {
 	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "heartbeat")),
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "heartbeat")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}
@@ -239,51 +270,9 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(ctx goctx.Context, 
 	return status, nil
 }
 
-func (vs *vSphereVMProvider) GetCompatibleHosts(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error) {
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "create")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
-	}
-
-	vmSession, err := vs.sessions.GetSessionForVM(vmCtx)
-	if err != nil {
-		return nil, err
-	}
-
-	selectedNodes, err := vmSession.GetCompatibleHosts(vmCtx, vmConfigArgs)
-	if err != nil {
-		return nil, err
-	}
-
-	return selectedNodes, nil
-}
-
-// GetHostNetworkInfoFn is added for integration tests.
-// VC Simulator does not configure Network Info of Hosts.
-// Also, we can not update DNS config of host as govmomi does not implement UpdateDnsConfig method for host NetworkSystem.
-var GetHostNetworkInfoFn = func(vmSession *session.Session, vmCtx context.VirtualMachineContext, hostMoID string) (string, error) {
-	return vmSession.GetHostNetworkInfo(vmCtx, hostMoID)
-}
-
-func (vs *vSphereVMProvider) GetHostNetworkInfo(ctx goctx.Context, vm *v1alpha1.VirtualMachine, hostMoID string) (string, error) {
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "create")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
-	}
-
-	vmSession, err := vs.sessions.GetSessionForVM(vmCtx)
-	if err != nil {
-		return "", err
-	}
-
-	return GetHostNetworkInfoFn(vmSession, vmCtx, hostMoID)
-}
-
 func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(ctx goctx.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error) {
 	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "webconsole")),
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "webconsole")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}

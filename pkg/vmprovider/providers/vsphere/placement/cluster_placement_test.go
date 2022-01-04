@@ -1,7 +1,7 @@
 // Copyright (c) 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package pool_test
+package placement_test
 
 import (
 	. "github.com/onsi/ginkgo"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/pool"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
 )
 
 func createRelocateSpec() *types.VirtualMachineRelocateSpec {
@@ -66,7 +66,7 @@ var _ = Describe("ParsePlaceVMResponse", func() {
 			rec, spec := createValidRecommendation()
 			res.Recommendations = append(res.Recommendations, rec)
 
-			rSpec := pool.ParsePlaceVMResponse(&res)
+			rSpec := placement.ParseRelocateVMResponse(&res)
 			Expect(rSpec).NotTo(BeNil())
 			Expect(rSpec.Host).To(BeEquivalentTo(spec.Host))
 			Expect(rSpec.Pool).To(BeEquivalentTo(spec.Pool))
@@ -77,7 +77,7 @@ var _ = Describe("ParsePlaceVMResponse", func() {
 	Context("when response is not valid", func() {
 		Specify("PlaceVm Response without recommendations", func() {
 			res := types.PlacementResult{}
-			rSpec := pool.ParsePlaceVMResponse(&res)
+			rSpec := placement.ParseRelocateVMResponse(&res)
 			Expect(rSpec).To(BeNil())
 		})
 	})
@@ -90,7 +90,7 @@ var _ = Describe("ParsePlaceVMResponse", func() {
 			rec.Reason = string(types.RecommendationReasonCodePowerOnVm)
 			res.Recommendations = append(res.Recommendations, rec)
 
-			rSpec := pool.ParsePlaceVMResponse(&res)
+			rSpec := placement.ParseRelocateVMResponse(&res)
 			Expect(rSpec).To(BeNil())
 		})
 	})
@@ -101,35 +101,35 @@ var _ = Describe("CheckPlacementRelocateSpec", func() {
 	Context("when relocation spec is valid", func() {
 		Specify("Relocation spec is valid", func() {
 			spec := createRelocateSpec()
-			isValid := pool.CheckPlacementRelocateSpec(spec)
+			isValid := placement.CheckPlacementRelocateSpec(spec)
 			Expect(isValid).To(BeTrue())
 		})
 	})
 
 	Context("when relocation spec is not valid", func() {
 		Specify("Relocation spec is nil", func() {
-			isValid := pool.CheckPlacementRelocateSpec(nil)
+			isValid := placement.CheckPlacementRelocateSpec(nil)
 			Expect(isValid).To(BeFalse())
 		})
 
 		Specify("Host is nil", func() {
 			spec := createRelocateSpec()
 			spec.Host = nil
-			isValid := pool.CheckPlacementRelocateSpec(spec)
+			isValid := placement.CheckPlacementRelocateSpec(spec)
 			Expect(isValid).To(BeFalse())
 		})
 
 		Specify("Pool is nil", func() {
 			spec := createRelocateSpec()
 			spec.Pool = nil
-			isValid := pool.CheckPlacementRelocateSpec(spec)
+			isValid := placement.CheckPlacementRelocateSpec(spec)
 			Expect(isValid).To(BeFalse())
 		})
 
 		Specify("Datastore is nil", func() {
 			spec := createRelocateSpec()
 			spec.Datastore = nil
-			isValid := pool.CheckPlacementRelocateSpec(spec)
+			isValid := placement.CheckPlacementRelocateSpec(spec)
 			Expect(isValid).To(BeFalse())
 		})
 	})

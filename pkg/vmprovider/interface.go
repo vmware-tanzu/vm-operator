@@ -33,12 +33,11 @@ type VirtualMachineProviderInterface interface {
 	Initialize(stop <-chan struct{})
 
 	DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
+	PlaceVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) error
 	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) error
 	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
-	GetCompatibleHosts(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) ([]string, error)
-	GetHostNetworkInfo(ctx context.Context, vm *v1alpha1.VirtualMachine, hostMoID string) (string, error)
 	GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
 
 	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error

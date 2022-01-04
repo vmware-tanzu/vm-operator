@@ -25,17 +25,15 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
-	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
-	instancestoragetestutil "github.com/vmware-tanzu/vm-operator/test/instancestorage"
 )
 
 func unitTests() {
@@ -71,18 +69,13 @@ func unitTestsReconcile() {
 
 		// Various FSS. This should be manipulated atomically to avoid races where
 		// the controller is trying to read this _while_ the tests are updating it.
-		vmServiceFSS   uint32
-		faultDomainFSS uint32
+		vmServiceFSS uint32
 	)
 
 	BeforeEach(func() {
 		// Modify the helper function to return the custom value of the FSS
 		lib.IsVMServiceFSSEnabled = func() bool {
 			return atomic.LoadUint32(&vmServiceFSS) != 0
-		}
-
-		lib.IsWcpFaultDomainsFSSEnabled = func() bool {
-			return atomic.LoadUint32(&faultDomainFSS) != 0
 		}
 
 		vmClass = &vmopv1alpha1.VirtualMachineClass{
@@ -434,53 +427,6 @@ func unitTestsReconcile() {
 			})
 		})
 
-		When("the WCP_FAULT_DOMAINS FSS is enabled", func() {
-			var oldFaultDomainFSSState uint32
-
-			BeforeEach(func() {
-				oldFaultDomainFSSState = faultDomainFSS
-				atomic.StoreUint32(&faultDomainFSS, 1)
-			})
-
-			AfterEach(func() {
-				atomic.StoreUint32(&faultDomainFSS, oldFaultDomainFSSState)
-			})
-
-			It("Returns error when no AZs exist", func() {
-				err := reconciler.ReconcileNormal(vmCtx)
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(topology.ErrNoAvailabilityZones))
-				Expect(vmCtx.VM.Labels).ToNot(HaveKey(topology.KubernetesTopologyZoneLabelKey))
-			})
-
-			When("VM already has AZ assigned", func() {
-				JustBeforeEach(func() {
-					vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = "mars-east-1"
-				})
-
-				It("VM has same AZ assigned", func() {
-					err := reconciler.ReconcileNormal(vmCtx)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(vmCtx.VM.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, "mars-east-1"))
-				})
-			})
-
-			When("AZ exist", func() {
-				var az *topologyv1.AvailabilityZone
-
-				BeforeEach(func() {
-					az = builder.DummyAvailabilityZone()
-					initObjects = append(initObjects, az)
-				})
-
-				It("Assigns zone to VM that does not have one already assigned", func() {
-					err := reconciler.ReconcileNormal(vmCtx)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(vmCtx.VM.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, az.Name))
-				})
-			})
-		})
-
 		Context("VirtualMachineClass does not exist for the class specified in the VM spec", func() {
 			It("returns error and sets the VirtualMachinePrereqReady Condition to false", func() {
 				vmCtx.VM.Spec.ClassName = "non-existent-class"
@@ -609,11 +555,13 @@ func unitTestsReconcile() {
 
 		When("Instance Storage related", func() {
 			orgIsInstanceStorageFSSEnabled := lib.IsInstanceStorageFSSEnabled
+
 			BeforeEach(func() {
 				lib.IsInstanceStorageFSSEnabled = func() bool {
 					return true
 				}
 			})
+
 			AfterEach(func() {
 				lib.IsInstanceStorageFSSEnabled = orgIsInstanceStorageFSSEnabled
 			})
@@ -624,7 +572,7 @@ func unitTestsReconcile() {
 				}
 				err := reconciler.ReconcileNormal(vmCtx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)).To(HaveLen(0))
+				Expect(instancestorage.FilterVolumes(vmCtx.VM)).To(BeEmpty())
 				Expect(vmCtx.VM.GetLabels()).ToNot(HaveKey(constants.InstanceStorageLabelKey))
 			})
 
@@ -632,80 +580,81 @@ func unitTestsReconcile() {
 				vmCtx.VM.Status.Phase = vmopv1alpha1.Created
 				err := reconciler.ReconcileNormal(vmCtx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)).To(HaveLen(0))
+				Expect(instancestorage.FilterVolumes(vmCtx.VM)).To(BeEmpty())
 				Expect(vmCtx.VM.GetLabels()).ToNot(HaveKey(constants.InstanceStorageLabelKey))
 			})
 
 			It("Instance Storage is not configured in VM Spec and Instance Volume is not added in VM Class", func() {
 				err := reconciler.ReconcileNormal(vmCtx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)).To(HaveLen(0))
+				Expect(instancestorage.FilterVolumes(vmCtx.VM)).To(BeEmpty())
 				Expect(vmCtx.VM.GetLabels()).ToNot(HaveKey(constants.InstanceStorageLabelKey))
 			})
 
 			When("Instance Volume is added in VM Class", func() {
 				BeforeEach(func() {
 					vmClass.Spec.Hardware.InstanceStorage = builder.DummyInstanceStorage()
-					initObjects = []client.Object{}
-					initObjects = append(initObjects, vm, vmClass, vmImage, clProvider, contentSource)
+					initObjects = []client.Object{vm, vmClass, vmImage, clProvider, contentSource}
 				})
 
 				It("Instance Volumes should be added", func() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)).ToNot(HaveLen(0))
-					Expect(instancestoragetestutil.InstanceVolumeEqComparator(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)).Should(BeTrue())
+					expectInstanceStorageVolumes(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)
 				})
 
 				It("Instance Storage is already configured in VM Spec", func() {
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).ToNot(HaveOccurred())
-					instanceVolumesBefore := instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)
-					Expect(instanceVolumesBefore).ToNot(HaveLen(0))
-					Expect(instancestoragetestutil.InstanceVolumeEqComparator(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)).Should(BeTrue())
+
+					isVolumesBefore := instancestorage.FilterVolumes(vmCtx.VM)
+					expectInstanceStorageVolumes(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)
 
 					// Instance Storage is already configured, should not patch again
 					err = reconciler.ReconcileNormal(vmCtx)
 					Expect(err).ToNot(HaveOccurred())
-					instanceVolumesAfter := instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)
-					Expect(instanceVolumesAfter).ToNot(HaveLen(0))
-					Expect(instanceVolumesAfter).Should(HaveLen(len(instanceVolumesBefore)))
-					Expect(instancestoragetestutil.InstanceVolumeEqComparator(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)).Should(BeTrue())
+					isVolumesAfter := instancestorage.FilterVolumes(vmCtx.VM)
+					Expect(isVolumesAfter).To(Equal(isVolumesBefore))
 				})
 
 				It("No host recommendation returned, Selected Node annotations should not be added", func() {
-					fakeVMProvider.GetCompatibleHostsFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error) {
-						return []string{}, nil
+					fakeVMProvider.PlaceVirtualMachineFn = func(_ context.Context, vm *vmopv1alpha1.VirtualMachine, _ vmprovider.VMConfigArgs) error {
+						return nil
 					}
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(vmCtx.VM.GetAnnotations()).ToNot(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey))
-					Expect(vmCtx.VM.GetAnnotations()).ToNot(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
+					Expect(vmCtx.VM.Annotations).ToNot(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey))
+					Expect(vmCtx.VM.Annotations).ToNot(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
 				})
 
 				It("Selected Node annotations should be added", func() {
-					fakeVMProvider.GetCompatibleHostsFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error) {
-						return []string{"host-28", "host-88", "host-64"}, nil
+					fakeVMProvider.PlaceVirtualMachineFn = func(_ context.Context, vm *vmopv1alpha1.VirtualMachine, _ vmprovider.VMConfigArgs) error {
+						vm.Annotations = map[string]string{}
+						vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = "host-10"
+						vm.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = "host-10.vmware.com"
+						return nil
 					}
-					fakeVMProvider.GetHostNetworkInfoFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine, hostMoID string) (string, error) {
-						return "sc2-rdops-vm05-dhcp-186-183.eng.vmware.com", nil
-					}
+
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(vmCtx.VM.GetAnnotations()).To(HaveKey(constants.InstanceStorageSelectedNodeMOIDAnnotationKey))
-					Expect(vmCtx.VM.GetAnnotations()).To(HaveKey(constants.InstanceStorageSelectedNodeAnnotationKey))
+					Expect(vmCtx.VM.Annotations).To(HaveKeyWithValue(constants.InstanceStorageSelectedNodeMOIDAnnotationKey, "host-10"))
+					Expect(vmCtx.VM.Annotations).To(HaveKeyWithValue(constants.InstanceStorageSelectedNodeAnnotationKey, "host-10.vmware.com"))
 				})
 
 				It("Selected Node annotation is already added, PVC is bound then VM status should be created", func() {
 					vmCtx.VM.Annotations = make(map[string]string)
-					vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = "host-88"
-					vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = "sc2-rdops-vm05-dhcp-186-183.eng.vmware.com"
-					vmCtx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey] = lib.TrueString
+					vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = "host-11"
+					vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = "host-11.vmware.com"
+					vmCtx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey] = ""
+
 					err := reconciler.ReconcileNormal(vmCtx)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(instancestoragetestutil.GetConfiguredInstanceVolumes(vmCtx.VM)).ToNot(HaveLen(0))
-					Expect(instancestoragetestutil.InstanceVolumeEqComparator(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)).Should(BeTrue())
-					// When volume bound annotation is set, VM's status.phase is set to Created.
+
+					expectInstanceStorageVolumes(vmCtx.VM, vmClass.Spec.Hardware.InstanceStorage)
+
+					vmExists, err := fakeVMProvider.DoesVirtualMachineExist(vmCtx, vmCtx.VM)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(vmExists).To(BeTrue())
 					Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Created))
 				})
 			})
@@ -951,4 +900,28 @@ func expectEvent(ctx *builder.UnitTestContextForController, eventStr string) {
 	EventuallyWithOffset(1, ctx.Events).Should(Receive(&event))
 	eventComponents := strings.Split(event, " ")
 	ExpectWithOffset(1, eventComponents[1]).To(Equal(eventStr))
+}
+
+func expectInstanceStorageVolumes(
+	vm *vmopv1alpha1.VirtualMachine,
+	isStorage vmopv1alpha1.InstanceStorage) {
+
+	ExpectWithOffset(1, isStorage.Volumes).ToNot(BeEmpty())
+	isVolumes := instancestorage.FilterVolumes(vm)
+	ExpectWithOffset(1, isVolumes).To(HaveLen(len(isStorage.Volumes)))
+
+	for _, isVol := range isStorage.Volumes {
+		found := false
+
+		for idx, vol := range isVolumes {
+			claim := vol.PersistentVolumeClaim.InstanceVolumeClaim
+			if claim.StorageClass == isStorage.StorageClass && claim.Size == isVol.Size {
+				isVolumes = append(isVolumes[:idx], isVolumes[idx+1:]...)
+				found = true
+				break
+			}
+		}
+
+		ExpectWithOffset(1, found).To(BeTrue(), "failed to find instance storage volume for %v", isVol)
+	}
 }

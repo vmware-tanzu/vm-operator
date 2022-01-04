@@ -34,7 +34,7 @@ func (vs *vSphereVMProvider) IsVirtualMachineSetResourcePolicyReady(
 		}
 	}
 
-	az, err := topology.GetAvailabilityZone(ctx, vs.sessions.KubeClient(), availabilityZoneName)
+	az, err := topology.GetAvailabilityZone(ctx, vs.k8sClient, availabilityZoneName)
 	if err != nil {
 		return false, err
 	}
@@ -78,7 +78,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 		return err
 	}
 
-	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.sessions.KubeClient())
+	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.k8sClient)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 	ctx context.Context,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 
-	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.sessions.KubeClient())
+	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.k8sClient)
 	if err != nil {
 		return err
 	}

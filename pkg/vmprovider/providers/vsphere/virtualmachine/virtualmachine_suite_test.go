@@ -1,7 +1,7 @@
 // Copyright (c) 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package pool_test
+package virtualmachine_test
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestPool(t *testing.T) {
+func TestVirtualMachine(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "vSphere Provider Pool Suite")
+	RunSpecs(t, "vSphere Provider VirtualMachine Suite")
 }

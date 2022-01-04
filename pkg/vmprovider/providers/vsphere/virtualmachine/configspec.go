@@ -1,0 +1,115 @@
+// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package virtualmachine
+
+import (
+	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
+)
+
+func CreateConfigSpec(
+	name string,
+	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
+	minFreq uint64) *vimtypes.VirtualMachineConfigSpec {
+
+	configSpec := &vimtypes.VirtualMachineConfigSpec{
+		Name:       name,
+		Annotation: constants.VCVMAnnotation,
+		NumCPUs:    int32(vmClassSpec.Hardware.Cpus),
+		MemoryMB:   MemoryQuantityToMb(vmClassSpec.Hardware.Memory),
+		// Enable clients to differentiate the managed VMs from the regular VMs.
+		ManagedBy: &vimtypes.ManagedByInfo{
+			ExtensionKey: "com.vmware.vcenter.wcp",
+			Type:         "VirtualMachine",
+		},
+	}
+
+	configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+		Shares: &vimtypes.SharesInfo{
+			Level: vimtypes.SharesLevelNormal,
+		},
+	}
+
+	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
+		rsv := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minFreq)
+		configSpec.CpuAllocation.Reservation = &rsv
+	}
+
+	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
+		lim := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minFreq)
+		configSpec.CpuAllocation.Limit = &lim
+	}
+
+	configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+		Shares: &vimtypes.SharesInfo{
+			Level: vimtypes.SharesLevelNormal,
+		},
+	}
+
+	if !vmClassSpec.Policies.Resources.Requests.Memory.IsZero() {
+		rsv := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Requests.Memory)
+		configSpec.MemoryAllocation.Reservation = &rsv
+	}
+
+	if !vmClassSpec.Policies.Resources.Limits.Memory.IsZero() {
+		lim := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
+		configSpec.MemoryAllocation.Limit = &lim
+	}
+
+	return configSpec
+}
+
+// CreateConfigSpecForPlacement creates a ConfigSpec to use for placement. Once CL deploy can accept
+// a ConfigSpec, this should largely - or ideally entirely - be folded into CreateConfigSpec() above.
+func CreateConfigSpecForPlacement(
+	vmCtx context.VirtualMachineContext,
+	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
+	minFreq uint64,
+	storageClassesToIDs map[string]string) *vimtypes.VirtualMachineConfigSpec {
+
+	configSpec := CreateConfigSpec(vmCtx.VM.Name, vmClassSpec, minFreq)
+
+	for _, dev := range CreatePCIDevices(vmClassSpec.Hardware.Devices) {
+		configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+			Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+			Device:    dev,
+		})
+	}
+
+	if lib.IsInstanceStorageFSSEnabled() {
+		isVolumes := instancestorage.FilterVolumes(vmCtx.VM)
+
+		for idx, dev := range CreateInstanceStorageDiskDevices(isVolumes) {
+			configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+				Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+				Device:        dev,
+				Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+					&vimtypes.VirtualMachineDefinedProfileSpec{
+						ProfileId: storageClassesToIDs[isVolumes[idx].PersistentVolumeClaim.InstanceVolumeClaim.StorageClass],
+						ProfileData: &vimtypes.VirtualMachineProfileRawData{
+							ExtensionKey: "com.vmware.vim.sps",
+						},
+					},
+				},
+			})
+		}
+	}
+
+	// TODO: Add more devices and fields
+	//  - boot disks from OVA
+	//  - storage profile/class
+	//  - PVC volumes
+	//  - Network devices (meh for now b/c of wcp constraints)
+	//  - anything in ExtraConfig matter here?
+	//  - any way to do the cluster modules for anti-affinity?
+	//  - whatever else I'm forgetting
+
+	return configSpec
+}

@@ -25,6 +25,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
 
 func ethCardMatch(newEthCard, curEthCard *vimTypes.VirtualEthernetCard) bool {
@@ -132,50 +133,10 @@ func UpdateEthCardDeviceChanges(
 	return append(removeDeviceChanges, deviceChanges...), nil
 }
 
-func CreatePCIPassThroughDevice(deviceKey int32, backingInfo vimTypes.BaseVirtualDeviceBackingInfo) vimTypes.BaseVirtualDevice {
-	device := &vimTypes.VirtualPCIPassthrough{
-		VirtualDevice: vimTypes.VirtualDevice{
-			Key:     deviceKey,
-			Backing: backingInfo,
-		},
-	}
-	return device
-}
-
-func CreatePCIDevices(pciDevices v1alpha1.VirtualDevices) []vimTypes.BaseVirtualDevice {
-	expectedPciDevices := make([]vimTypes.BaseVirtualDevice, 0, len(pciDevices.VGPUDevices))
-
-	// A negative device range is used for pciDevices here.
-	deviceKey := int32(-200)
-
-	for _, vGPU := range pciDevices.VGPUDevices {
-		backingInfo := &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
-			Vgpu: vGPU.ProfileName,
-		}
-		vGPUDevice := CreatePCIPassThroughDevice(deviceKey, backingInfo)
-		expectedPciDevices = append(expectedPciDevices, vGPUDevice)
-		deviceKey--
-	}
-
-	for _, dynamicDirectPath := range pciDevices.DynamicDirectPathIODevices {
-		allowedDev := vimTypes.VirtualPCIPassthroughAllowedDevice{
-			VendorId: int32(dynamicDirectPath.VendorID),
-			DeviceId: int32(dynamicDirectPath.DeviceID),
-		}
-		backingInfo := &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
-			AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{allowedDev},
-			CustomLabel:   dynamicDirectPath.CustomLabel,
-		}
-		dynamicDirectPathDevice := CreatePCIPassThroughDevice(deviceKey, backingInfo)
-		expectedPciDevices = append(expectedPciDevices, dynamicDirectPathDevice)
-		deviceKey--
-	}
-	return expectedPciDevices
-}
-
-// UpdatePCIDeviceChanges returns devices changes for PCI devices attached to a VM. There are 2 types of PCI devices processed
-// here and in case of cloning a VM, devices listed in VMClass are considered as source of truth.
-func UpdatePCIDeviceChanges(expectedPciDevices object.VirtualDeviceList,
+// UpdatePCIDeviceChanges returns devices changes for PCI devices attached to a VM. There are 2 types of PCI devices
+// processed here and in case of cloning a VM, devices listed in VMClass are considered as source of truth.
+func UpdatePCIDeviceChanges(
+	expectedPciDevices object.VirtualDeviceList,
 	currentPciDevices object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
 	var deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec
@@ -201,8 +162,8 @@ func UpdatePCIDeviceChanges(expectedPciDevices object.VirtualDeviceList,
 				currAllowedDevs := a.AllowedDevice
 				b := expectedBacking.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
 				if a.CustomLabel == b.CustomLabel {
-					// b.AllowedDevice has only one element because createPCIDevices() adds only one device based on the
-					// devices listed in vmclass.spec.hardware.devices.dynamicDirectPathIODevices.
+					// b.AllowedDevice has only one element because CreatePCIDevices() adds only one device based
+					// on the devices listed in vmclass.spec.hardware.devices.dynamicDirectPathIODevices.
 					expectedAllowedDev := b.AllowedDevice[0]
 					for i := 0; i < len(currAllowedDevs) && !backingMatch; i++ {
 						backingMatch = expectedAllowedDev.DeviceId == currAllowedDevs[i].DeviceId &&
@@ -223,7 +184,7 @@ func UpdatePCIDeviceChanges(expectedPciDevices object.VirtualDeviceList,
 				Device:    expectedPci,
 			})
 		} else {
-			// There could be multiple vgpus with same backinginfo. Remove current device if matching found.
+			// There could be multiple vGPUs with same BackingInfo. Remove current device if matching found.
 			currentPciDevices = append(currentPciDevices[:matchingIdx], currentPciDevices[matchingIdx+1:]...)
 		}
 	}
@@ -251,14 +212,14 @@ func UpdateConfigSpecCPUAllocation(
 	var cpuLimit *int64
 
 	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
-		rsv := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minCPUFeq)
+		rsv := virtualmachine.CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minCPUFeq)
 		if cpuAllocation == nil || cpuAllocation.Reservation == nil || *cpuAllocation.Reservation != rsv {
 			cpuReservation = &rsv
 		}
 	}
 
 	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
-		lim := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minCPUFeq)
+		lim := virtualmachine.CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minCPUFeq)
 		if cpuAllocation == nil || cpuAllocation.Limit == nil || *cpuAllocation.Limit != lim {
 			cpuLimit = &lim
 		}
@@ -282,14 +243,14 @@ func UpdateConfigSpecMemoryAllocation(
 	var memoryLimit *int64
 
 	if !vmClassSpec.Policies.Resources.Requests.Memory.IsZero() {
-		rsv := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Requests.Memory)
+		rsv := virtualmachine.MemoryQuantityToMb(vmClassSpec.Policies.Resources.Requests.Memory)
 		if memAllocation == nil || memAllocation.Reservation == nil || *memAllocation.Reservation != rsv {
 			memoryReservation = &rsv
 		}
 	}
 
 	if !vmClassSpec.Policies.Resources.Limits.Memory.IsZero() {
-		lim := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
+		lim := virtualmachine.MemoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
 		if memAllocation == nil || memAllocation.Limit == nil || *memAllocation.Limit != lim {
 			memoryLimit = &lim
 		}
@@ -392,7 +353,7 @@ func UpdateHardwareConfigSpec(
 	if nCPUs := int32(vmClassSpec.Hardware.Cpus); config.Hardware.NumCPU != nCPUs {
 		configSpec.NumCPUs = nCPUs
 	}
-	if memMB := MemoryQuantityToMb(vmClassSpec.Hardware.Memory); int64(config.Hardware.MemoryMB) != memMB {
+	if memMB := virtualmachine.MemoryQuantityToMb(vmClassSpec.Hardware.Memory); int64(config.Hardware.MemoryMB) != memMB {
 		configSpec.MemoryMB = memMB
 	}
 	if config.ManagedBy == nil {
@@ -468,7 +429,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
 	currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
-	expectedPciDevices := CreatePCIDevices(updateArgs.VMClass.Spec.Hardware.Devices)
+	expectedPciDevices := virtualmachine.CreatePCIDevices(updateArgs.VMClass.Spec.Hardware.Devices)
 	pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPciDevices, currentPciDevices)
 	if err != nil {
 		return nil, err

@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/pbm"
 	pbmTypes "github.com/vmware/govmomi/pbm/types"
@@ -24,9 +23,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/pool"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
 
 type VirtualMachineCloneContext struct {
@@ -355,55 +354,18 @@ func (s *Session) getStorageProvisioning(vmCtx context.VirtualMachineContext, st
 	return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
 }
 
-// createConfigSpec creates the very basic configSpec for the VM when cloning.
-func (s *Session) createConfigSpec(name string, vmClassSpec *v1alpha1.VirtualMachineClassSpec) *vimTypes.VirtualMachineConfigSpec {
-	configSpec := &vimTypes.VirtualMachineConfigSpec{
-		Name:       name,
-		Annotation: constants.VCVMAnnotation,
-		NumCPUs:    int32(vmClassSpec.Hardware.Cpus),
-		MemoryMB:   MemoryQuantityToMb(vmClassSpec.Hardware.Memory),
-		// Enable clients to differentiate the managed VMs from the regular VMs.
-		ManagedBy: &vimTypes.ManagedByInfo{
-			ExtensionKey: "com.vmware.vcenter.wcp",
-			Type:         "VirtualMachine",
-		},
-	}
-
-	configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
-
-	minFreq := s.GetCPUMinMHzInCluster()
-	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
-		rsv := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minFreq)
-		configSpec.CpuAllocation.Reservation = &rsv
-	}
-
-	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
-		lim := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minFreq)
-		configSpec.CpuAllocation.Limit = &lim
-	}
-
-	configSpec.MemoryAllocation = &vimTypes.ResourceAllocationInfo{}
-
-	if !vmClassSpec.Policies.Resources.Requests.Memory.IsZero() {
-		rsv := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Requests.Memory)
-		configSpec.MemoryAllocation.Reservation = &rsv
-	}
-
-	if !vmClassSpec.Policies.Resources.Limits.Memory.IsZero() {
-		lim := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
-		configSpec.MemoryAllocation.Limit = &lim
-	}
-
-	return configSpec
-}
-
 func (s *Session) createCloneSpec(
 	vmCtx VirtualMachineCloneContext,
 	sourceVM *res.VirtualMachine,
 	vmConfigArgs vmprovider.VMConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
 
+	configSpec := virtualmachine.CreateConfigSpec(
+		vmCtx.VM.Name,
+		&vmConfigArgs.VMClass.Spec,
+		s.GetCPUMinMHzInCluster())
+
 	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
-		Config: s.createConfigSpec(vmCtx.VM.Name, &vmConfigArgs.VMClass.Spec),
+		Config: configSpec,
 		Memory: pointer.BoolPtr(false), // No full memory clones.
 	}
 
@@ -445,7 +407,7 @@ func (s *Session) createCloneSpec(
 	cloneSpec.Location.Pool = vimTypes.NewReference(vmCtx.ResourcePool.Reference())
 	cloneSpec.Location.Folder = vimTypes.NewReference(vmCtx.Folder.Reference())
 
-	relocateSpec, err := pool.CloneVMRelocateSpec(vmCtx, s.cluster, sourceVM.MoRef(), cloneSpec)
+	relocateSpec, err := placement.CloneVMRelocateSpec(vmCtx, s.cluster, sourceVM.MoRef(), cloneSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -516,115 +478,6 @@ func (s *Session) cloneEthCardDeviceChanges(
 	}
 
 	return deviceChanges, nil
-}
-
-func (s *Session) updateInstanceVolumesInVMConfigSpec(
-	vmCtx context.VirtualMachineContext,
-	configSpec *vimTypes.VirtualMachineConfigSpec) error {
-	var storagePolicyID string
-	var err error
-	// Add DeviceChange spec for instance volumes
-	instanceStorageVolumes := instancestorage.FilterVolumes(vmCtx.VM)
-	// Storage Policy is same for all Instance Volumes.
-	storagePolicyID, err = s.GetStoragePolicyIDbyName(vmCtx,
-		instanceStorageVolumes[0].PersistentVolumeClaim.InstanceVolumeClaim.StorageClass)
-	if err != nil {
-		return err
-	}
-	// DRS contract mandates the device key IDs to be unique negative numbers.
-	deviceKey := constants.StartingDeviceKeyForPlaceVMCreate
-	for _, volume := range instanceStorageVolumes {
-		v := &vimTypes.VirtualDeviceConfigSpec{
-			Operation:     vimTypes.VirtualDeviceConfigSpecOperationAdd,
-			FileOperation: vimTypes.VirtualDeviceConfigSpecFileOperationCreate,
-			Device: &vimTypes.VirtualDisk{
-				CapacityInKB: volume.PersistentVolumeClaim.InstanceVolumeClaim.Size.Value() >> 10,
-				VirtualDevice: vimTypes.VirtualDevice{
-					Key: deviceKey,
-					Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
-						ThinProvisioned: pointer.BoolPtr(false), // disks created on vSAND are thick in nature.
-					},
-				},
-				VDiskId: &vimTypes.ID{Id: constants.InstanceStorageVDiskID},
-			},
-			Profile: []vimTypes.BaseVirtualMachineProfileSpec{
-				&vimTypes.VirtualMachineDefinedProfileSpec{
-					ProfileId: storagePolicyID,
-					ProfileData: &vimTypes.VirtualMachineProfileRawData{
-						ExtensionKey: "com.vmware.vim.sps",
-					},
-				},
-			},
-		}
-		deviceKey--
-		configSpec.DeviceChange = append(configSpec.DeviceChange, v)
-	}
-
-	vmCtx.Logger.V(5).WithValues("configSpec", configSpec).Info("Updated ConfigSpec with instance volumes")
-
-	return nil
-}
-
-func (s *Session) updateResourceAllocSharesInVMConfigSpec(
-	configSpec *vimTypes.VirtualMachineConfigSpec,
-	sharesLevel vimTypes.SharesLevel) {
-	if configSpec.CpuAllocation == nil {
-		configSpec.CpuAllocation = &vimTypes.ResourceAllocationInfo{}
-	}
-
-	if configSpec.CpuAllocation.Shares == nil {
-		configSpec.CpuAllocation.Shares = &vimTypes.SharesInfo{
-			Level: sharesLevel,
-		}
-
-	}
-
-	if configSpec.MemoryAllocation == nil {
-		configSpec.MemoryAllocation = &vimTypes.ResourceAllocationInfo{}
-	}
-	if configSpec.MemoryAllocation.Shares == nil {
-		configSpec.MemoryAllocation.Shares = &vimTypes.SharesInfo{
-			Level: sharesLevel,
-		}
-
-	}
-}
-
-// GetCompatibleHosts creates a placement spec from VM config info and Instance volumes and gets compatible hosts from DRS.
-func (s *Session) GetCompatibleHosts(vmCtx context.VirtualMachineContext, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error) {
-	configSpec := s.createConfigSpec(vmCtx.VM.Name, &vmConfigArgs.VMClass.Spec)
-	s.updateResourceAllocSharesInVMConfigSpec(configSpec, vimTypes.SharesLevelNormal)
-	err := s.updateInstanceVolumesInVMConfigSpec(vmCtx, configSpec)
-	if err != nil {
-		return nil, err
-	}
-	// Call placeVM with placement spec
-	placementSpec := vimTypes.PlacementSpec{
-		ConfigSpec:    configSpec,
-		PlacementType: string(vimTypes.PlacementSpecPlacementTypeCreate),
-	}
-
-	res, err := s.cluster.PlaceVm(vmCtx, placementSpec)
-	if err != nil {
-		return nil, err
-	}
-
-	vmCtx.Logger.V(5).WithValues("Recommendations", res.Recommendations).Info("Received compatible hosts recommendations")
-
-	var compatHostMoIDs []string
-	for _, r := range res.Recommendations {
-		if r.Reason == string(vimTypes.RecommendationReasonCodeXvmotionPlacement) {
-			for _, a := range r.Action {
-				if pa, ok := a.(*vimTypes.PlacementAction); ok {
-					compatHostMoIDs = append(compatHostMoIDs, pa.TargetHost.Value)
-				}
-			}
-		}
-	}
-
-	vmCtx.Logger.V(5).WithValues("compatHostMoIDs", compatHostMoIDs).Info("Returning compatible Host MOIDs")
-
-	return compatHostMoIDs, nil
 }
 
 func cloneVMDiskLocators(

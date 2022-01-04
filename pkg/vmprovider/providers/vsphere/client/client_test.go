@@ -26,8 +26,9 @@ import (
 
 func testConfig(vcpnid string, vcport string, user string, pass string) *config.VSphereVMProviderConfig {
 	providerConfig := &config.VSphereVMProviderConfig{
-		VcPNID: vcpnid,
-		VcPort: vcport,
+		VcPNID:     vcpnid,
+		VcPort:     vcport,
+		Datacenter: "datacenter-2",
 		VcCreds: &credentials.VSphereVMProviderCredentials{
 			Username: user,
 			Password: pass,

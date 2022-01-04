@@ -5,6 +5,7 @@ package main
 
 import (
 	"flag"
+	"math/rand"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -115,6 +116,8 @@ func main() {
 
 	setupLog.Info("Starting VM Operator controller", "version", pkg.BuildVersion,
 		"buildnumber", pkg.BuildNumber, "buildtype", pkg.BuildType, "commit", pkg.BuildCommit)
+
+	rand.Seed(time.Now().UnixNano())
 
 	profilerAddress := flag.String(
 		"profiler-address",

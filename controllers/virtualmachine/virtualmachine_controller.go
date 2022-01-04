@@ -7,7 +7,6 @@ import (
 	goctx "context"
 	"fmt"
 	"math"
-	"math/rand"
 	"reflect"
 	"strings"
 	"sync"
@@ -43,8 +42,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 )
-
-var zoneIndex int
 
 const finalizerName = "virtualmachine.vmoperator.vmware.com"
 
@@ -352,21 +349,8 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 		return nil
 	}
 
-	if lib.IsWcpFaultDomainsFSSEnabled() {
-		updated, err := r.assignAvailabilityZone(ctx)
-		if err != nil {
-			return err
-		}
-
-		// If a zone was assigned, then return early to ensure that the CR is updated.
-		// We'll proceed on the next reconciliation.
-		if updated {
-			return nil
-		}
-	}
-
-	initialVMStatus := ctx.VM.Status.DeepCopy()
 	ctx.Logger.Info("Reconciling VirtualMachine")
+	initialVMStatus := ctx.VM.Status.DeepCopy()
 
 	// Defer block to handle logging for SLI items and record metrics for VM creation/update workflows
 	defer func() {
@@ -397,39 +381,6 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 	r.Prober.AddToProberManager(ctx.VM)
 
 	return nil
-}
-
-func (r *Reconciler) assignAvailabilityZone(ctx *context.VirtualMachineContext) (bool, error) {
-	// Don't change the topology value if/once it is already set.
-	if ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] != "" {
-		return false, nil
-	}
-
-	zones, err := topology.GetAvailabilityZones(ctx, r.Client)
-	if err != nil {
-		return false, err
-	}
-
-	if len(zones) == 0 {
-		return false, topology.ErrNoAvailabilityZones
-	}
-
-	// Get the next available zone name.
-	var zoneName string
-	func() {
-		r.mutex.Lock()
-		defer r.mutex.Unlock()
-
-		zoneName = zones[zoneIndex%len(zones)].Name
-		zoneIndex++
-	}()
-
-	if ctx.VM.Labels == nil {
-		ctx.VM.Labels = map[string]string{}
-	}
-
-	ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
-	return true, nil
 }
 
 func (r *Reconciler) getStoragePolicyID(ctx *context.VirtualMachineContext) (string, error) {
@@ -658,55 +609,12 @@ func (r *Reconciler) getResourcePolicy(ctx *context.VirtualMachineContext) (*vmo
 		return nil, err
 	}
 
-	// Make sure that the corresponding entities (RP and Folder) are created on the infra provider before
-	// reconciling the VM. Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy.
-	rpReady, err := r.VMProvider.IsVirtualMachineSetResourcePolicyReady(ctx, ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey], resourcePolicy)
-	if err != nil {
-		ctx.Logger.Error(err, "Failed to check if VirtualMachineSetResourcePolicy exists")
-		return nil, err
-	}
-	if !rpReady {
-		return nil, fmt.Errorf("VirtualMachineSetResourcePolicy is not yet ready")
-	}
-
 	return resourcePolicy, nil
 }
 
-func (r *Reconciler) findInstanceStorageVMPlacementStatus(vmCtx *context.VirtualMachineContext, vmConfigArgs vmprovider.VMConfigArgs) bool {
+func (r *Reconciler) findInstanceStorageVMPlacementStatus(vmCtx *context.VirtualMachineContext) bool {
 	if !instancestorage.IsConfigured(vmCtx.VM) {
 		return true
-	}
-
-	// Set the selected-node (if not set already) annotation for the volume controller to place PVCs on that node.
-	if _, exists := vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey]; !exists {
-		selectedNodes, err := r.VMProvider.GetCompatibleHosts(vmCtx, vmCtx.VM, vmConfigArgs)
-		if err != nil {
-			vmCtx.Logger.Error(err, "Failed to get compatible hosts recommendation. Will retry operation")
-			return false
-		}
-
-		if len(selectedNodes) == 0 {
-			vmCtx.Logger.V(3).Info("No compatible hosts recommendation found. Will retry operation")
-			return false
-		}
-
-		// Select random node to: 1. Avoid Failure loop 2. Avoid overload only single host
-		selectedHostMoID := r.selectRandomNode(selectedNodes)
-
-		vmCtx.Logger.V(5).WithValues("selectedHostMoID", selectedHostMoID).Info("Selected random HostMoID")
-		// Get Host FQDN for selectedHostMoID
-		selectedHostFQDN, err := r.VMProvider.GetHostNetworkInfo(vmCtx, vmCtx.VM, selectedHostMoID)
-		if err != nil {
-			vmCtx.Logger.Error(err, "Failed to get selected host FQDN. Will retry operation")
-			return false
-		}
-		vmCtx.Logger.V(5).WithValues("selectedHostFQDN", selectedHostFQDN).Info("FQDN of selected host")
-		if vmCtx.VM.Annotations == nil {
-			vmCtx.VM.Annotations = make(map[string]string)
-		}
-		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = selectedHostMoID
-		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = selectedHostFQDN
-		return false
 	}
 
 	// Check if all PVCs are realized, if not, inform reconcile handler to wait till the state is ready.
@@ -720,16 +628,6 @@ func (r *Reconciler) findInstanceStorageVMPlacementStatus(vmCtx *context.Virtual
 	// PVC Placement successful
 
 	return true
-}
-
-func (r *Reconciler) selectRandomNode(selectedNodes []string) string {
-	now := time.Now()
-	seed := now.UnixNano()
-	s := rand.NewSource(seed)
-
-	// nolint:gosec
-	idx := rand.New(s).Intn(len(selectedNodes))
-	return selectedNodes[idx]
 }
 
 // createOrUpdateVM calls into the VM provider to reconcile a VirtualMachine.
@@ -784,45 +682,68 @@ func (r *Reconciler) createOrUpdateVM(ctx *context.VirtualMachineContext) error 
 	}
 
 	if !exists {
-		// Set the phase to Creating first so we do not queue the reconcile immediately if we do not have threads available.
+		// Set the phase to Creating first so we do not queue the reconcile immediately if
+		// we do not have threads available.
 		vm.Status.Phase = vmopv1alpha1.Creating
 
-		// Return and requeue the reconcile request so the provider has reconciler threads available to update the Status of
-		// existing VirtualMachines.
-		// Ignore overflow since we never expect this to go beyond 32 bits.
-		r.mutex.Lock()
-
-		if r.NumVMsBeingCreatedOnProvider >= r.MaxConcurrentCreateVMsOnProvider {
-			ctx.Logger.Info("Not enough workers to update VirtualMachine status. Re-queueing the reconcile request")
-			// Return nil here so we don't requeue immediately and cause an exponential backoff.
-			r.mutex.Unlock()
-			return nil
-		}
-
-		r.NumVMsBeingCreatedOnProvider++
-		r.mutex.Unlock()
-
-		defer func() {
-			r.mutex.Lock()
-			r.NumVMsBeingCreatedOnProvider--
-			r.mutex.Unlock()
-		}()
-
-		// Check if the specified resource policy is in deleting state.
 		if resourcePolicy != nil && !resourcePolicy.DeletionTimestamp.IsZero() {
-			err = fmt.Errorf("cannot create VirtualMachine with its resource policy in DELETING state")
+			err := fmt.Errorf("cannot create VirtualMachine with its resource policy in DELETING state")
 			ctx.Logger.Error(err, "resourcePolicyName", resourcePolicy.Name)
 			r.Recorder.EmitEvent(vm, "Create", err, false)
 			return err
 		}
 
+		err := r.VMProvider.PlaceVirtualMachine(ctx, vm, vmConfigArgs)
+		if err != nil {
+			ctx.Logger.Error(err, "Provider failed to place VirtualMachine")
+			r.Recorder.EmitEvent(vm, "Placement", err, false)
+			return err
+		}
+
+		if resourcePolicy != nil {
+			// TODO: Move this into CreateVirtualMachine().
+
+			// Make sure that the corresponding entities (RP and Folder) are created on the infra provider before
+			// reconciling the VM. Requeue if the ResourcePool and Folders are not yet created for this ResourcePolicy.
+			rpReady, err := r.VMProvider.IsVirtualMachineSetResourcePolicyReady(ctx,
+				ctx.VM.Labels[topology.KubernetesTopologyZoneLabelKey], resourcePolicy)
+			if err != nil {
+				ctx.Logger.Error(err, "Failed to check if VirtualMachineSetResourcePolicy exists")
+				return err
+			}
+			if !rpReady {
+				return fmt.Errorf("VirtualMachineSetResourcePolicy is not yet ready")
+			}
+		}
+
 		if lib.IsInstanceStorageFSSEnabled() {
-			if !r.findInstanceStorageVMPlacementStatus(ctx, vmConfigArgs) {
+			if !r.findInstanceStorageVMPlacementStatus(ctx) {
 				return nil
 			}
 		}
 
-		err = r.VMProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
+		// Return and requeue the reconcile request if too many creates are already in progress so the
+		// controller can continue to reconcile created VirtualMachines. This is a hack that will go
+		// away once we stop blocking for the the CL deploy task to complete.
+		r.mutex.Lock()
+		if r.NumVMsBeingCreatedOnProvider >= r.MaxConcurrentCreateVMsOnProvider {
+			ctx.Logger.Info("Too many create VirtualMachine already occurring. Re-queueing request")
+			r.mutex.Unlock()
+			return nil // requeueDelay() will cause this to retry/poll.
+		}
+		r.NumVMsBeingCreatedOnProvider++
+		r.mutex.Unlock()
+
+		err = func() error {
+			defer func() {
+				r.mutex.Lock()
+				r.NumVMsBeingCreatedOnProvider--
+				r.mutex.Unlock()
+			}()
+
+			return r.VMProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
+		}()
+
 		if err != nil {
 			ctx.Logger.Error(err, "Provider failed to create VirtualMachine")
 			r.Recorder.EmitEvent(vm, "Create", err, false)
@@ -842,7 +763,8 @@ func (r *Reconciler) createOrUpdateVM(ctx *context.VirtualMachineContext) error 
 	return nil
 }
 
-// reconcileInstanceStorageSpec checks if VM class is configured with instance volumes and adds instance storage data in VM spec accordingly.
+// reconcileInstanceStorageSpec checks if VM class is configured with instance volumes and adds instance
+// storage data in VM spec accordingly.
 func (r *Reconciler) reconcileInstanceStorageSpec(
 	ctx *context.VirtualMachineContext,
 	vmClass *vmopv1alpha1.VirtualMachineClass) error {
@@ -884,19 +806,21 @@ func (r *Reconciler) reconcileInstanceStorageSpec(
 func (r *Reconciler) addInstanceStorageSpec(
 	ctx *context.VirtualMachineContext,
 	instanceStorage vmopv1alpha1.InstanceStorage) error {
-	pvcs := []vmopv1alpha1.VirtualMachineVolume{}
+
+	volumes := make([]vmopv1alpha1.VirtualMachineVolume, 0, len(instanceStorage.Volumes))
 
 	for _, isv := range instanceStorage.Volumes {
 		uuid, err := uuid.NewUUID()
 		if err != nil {
 			return err
 		}
-		pvcName := constants.InstanceStoragePVCNamePrefix + uuid.String()
+
+		name := constants.InstanceStoragePVCNamePrefix + uuid.String()
 		vmv := vmopv1alpha1.VirtualMachineVolume{
-			Name: pvcName,
+			Name: name,
 			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
 				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: pvcName,
+					ClaimName: name,
 					ReadOnly:  false,
 				},
 				InstanceVolumeClaim: &vmopv1alpha1.InstanceVolumeClaimVolumeSource{
@@ -905,12 +829,11 @@ func (r *Reconciler) addInstanceStorageSpec(
 				},
 			},
 		}
-		pvcs = append(pvcs, vmv)
+		volumes = append(volumes, vmv)
 	}
 
-	vm := ctx.VM
 	// Append PVCs to existing virtual machine volume spec
-	vm.Spec.Volumes = append(vm.Spec.Volumes, pvcs...)
+	ctx.VM.Spec.Volumes = append(ctx.VM.Spec.Volumes, volumes...)
 
 	return nil
 }

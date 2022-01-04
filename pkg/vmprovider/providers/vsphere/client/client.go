@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/vmware/govmomi/find"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/session"
 	"github.com/vmware/govmomi/session/keepalive"
 	"github.com/vmware/govmomi/vapi/rest"
@@ -28,6 +30,7 @@ var log = logf.Log.WithName("vsphere").WithName("client")
 
 type Client struct {
 	vimClient        *vim25.Client
+	finder           *find.Finder
 	restClient       *rest.Client
 	contentLibClient contentlibrary.Provider
 	clusterModClient clustermodules.Provider
@@ -136,9 +139,26 @@ func NewVimClient(ctx context.Context, config *config.VSphereVMProviderConfig) (
 	return vimClient, sm, err
 }
 
+func newFinder(ctx context.Context, vimClient *vim25.Client, config *config.VSphereVMProviderConfig) (*find.Finder, error) {
+	finder := find.NewFinder(vimClient, false)
+
+	dc, err := finder.ObjectReference(ctx, types.ManagedObjectReference{Type: "Datacenter", Value: config.Datacenter})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to find Datacenter %q", config.Datacenter)
+	}
+	finder.SetDatacenter(dc.(*object.Datacenter))
+
+	return finder, nil
+}
+
 // NewClient creates a new Client. As a side effect, it creates a vim25 client and a REST client.
 func NewClient(ctx context.Context, config *config.VSphereVMProviderConfig) (*Client, error) {
 	vimClient, sm, err := NewVimClient(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	finder, err := newFinder(ctx, vimClient, config)
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +170,7 @@ func NewClient(ctx context.Context, config *config.VSphereVMProviderConfig) (*Cl
 
 	return &Client{
 		vimClient:        vimClient,
+		finder:           finder,
 		restClient:       restClient,
 		contentLibClient: contentlibrary.NewProvider(restClient),
 		clusterModClient: clustermodules.NewProvider(restClient),
@@ -181,6 +202,10 @@ func isInvalidLogin(err error) bool {
 
 func (c *Client) VimClient() *vim25.Client {
 	return c.vimClient
+}
+
+func (c *Client) Finder() *find.Finder {
+	return c.finder
 }
 
 func (c *Client) RestClient() *rest.Client {

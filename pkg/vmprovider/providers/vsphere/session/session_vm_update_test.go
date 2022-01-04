@@ -21,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
 
 var _ = Describe("Update ConfigSpec", func() {
@@ -104,7 +105,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Reservation: pointer.Int64Ptr(session.CPUQuantityToMhz(r, minCPUFreq)),
+					Reservation: pointer.Int64Ptr(virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Cpu = r
 			})
@@ -118,7 +119,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Limit: pointer.Int64Ptr(session.CPUQuantityToMhz(r, minCPUFreq)),
+					Limit: pointer.Int64Ptr(virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Cpu = r
 			})
@@ -132,7 +133,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Limit: pointer.Int64Ptr(10 * session.CPUQuantityToMhz(r, minCPUFreq)),
+					Limit: pointer.Int64Ptr(10 * virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Cpu = r
 			})
@@ -149,7 +150,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Reservation: pointer.Int64Ptr(10 * session.CPUQuantityToMhz(r, minCPUFreq)),
+					Reservation: pointer.Int64Ptr(10 * virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Cpu = r
 			})
@@ -182,7 +183,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
-					Reservation: pointer.Int64Ptr(session.MemoryQuantityToMb(r)),
+					Reservation: pointer.Int64Ptr(virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Memory = r
 			})
@@ -196,7 +197,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
-					Limit: pointer.Int64Ptr(session.MemoryQuantityToMb(r)),
+					Limit: pointer.Int64Ptr(virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Memory = r
 			})
@@ -210,7 +211,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
-					Limit: pointer.Int64Ptr(10 * session.MemoryQuantityToMb(r)),
+					Limit: pointer.Int64Ptr(10 * virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Memory = r
 			})
@@ -227,7 +228,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
-					Reservation: pointer.Int64Ptr(10 * session.MemoryQuantityToMb(r)),
+					Reservation: pointer.Int64Ptr(10 * virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Memory = r
 			})
@@ -700,8 +701,8 @@ var _ = Describe("Update ConfigSpec", func() {
 				}
 			})
 			It("should create vSphere device with VmiopBackingInfo", func() {
-				vSphereDevices := session.CreatePCIDevices(pciDevices)
-				Expect(len(vSphereDevices)).To(Equal(1))
+				vSphereDevices := virtualmachine.CreatePCIDevices(pciDevices)
+				Expect(vSphereDevices).To(HaveLen(1))
 				virtualDevice := vSphereDevices[0].GetVirtualDevice()
 				backing := virtualDevice.Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
 				Expect(backing.Vgpu).To(Equal(pciDevices.VGPUDevices[0].ProfileName))
@@ -714,8 +715,8 @@ var _ = Describe("Update ConfigSpec", func() {
 				}
 			})
 			It("should create vSphere device with DynamicBackingInfo", func() {
-				vSphereDevices := session.CreatePCIDevices(pciDevices)
-				Expect(len(vSphereDevices)).To(Equal(1))
+				vSphereDevices := virtualmachine.CreatePCIDevices(pciDevices)
+				Expect(vSphereDevices).To(HaveLen(1))
 				virtualDevice := vSphereDevices[0].GetVirtualDevice()
 				backing := virtualDevice.Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
 				Expect(backing.AllowedDevice[0].DeviceId).To(Equal(int32(pciDevices.DynamicDirectPathIODevices[0].DeviceID)))
@@ -753,8 +754,8 @@ var _ = Describe("Update ConfigSpec", func() {
 			backingInfo2 = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop2"}
 			deviceKey1 = int32(-200)
 			deviceKey2 = int32(-201)
-			vGPUDevice1 = session.CreatePCIPassThroughDevice(deviceKey1, backingInfo1)
-			vGPUDevice2 = session.CreatePCIPassThroughDevice(deviceKey2, backingInfo2)
+			vGPUDevice1 = virtualmachine.CreatePCIPassThroughDevice(deviceKey1, backingInfo1)
+			vGPUDevice2 = virtualmachine.CreatePCIPassThroughDevice(deviceKey2, backingInfo2)
 
 			allowedDev1 = vimTypes.VirtualPCIPassthroughAllowedDevice{
 				VendorId: 1000,
@@ -774,8 +775,8 @@ var _ = Describe("Update ConfigSpec", func() {
 			}
 			deviceKey3 = int32(-202)
 			deviceKey4 = int32(-203)
-			dynamicDirectPathIODev1 = session.CreatePCIPassThroughDevice(deviceKey3, backingInfo3)
-			dynamicDirectPathIODev2 = session.CreatePCIPassThroughDevice(deviceKey4, backingInfo4)
+			dynamicDirectPathIODev1 = virtualmachine.CreatePCIPassThroughDevice(deviceKey3, backingInfo3)
+			dynamicDirectPathIODev2 = virtualmachine.CreatePCIPassThroughDevice(deviceKey4, backingInfo4)
 		})
 
 		JustBeforeEach(func() {
@@ -820,11 +821,11 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				expectedList = append(expectedList, vGPUDevice1)
 				// Creating a vGPUDevice with same backingInfo1 but different deviceKey.
-				vGPUDevice2 = session.CreatePCIPassThroughDevice(deviceKey2, backingInfo1)
+				vGPUDevice2 = virtualmachine.CreatePCIPassThroughDevice(deviceKey2, backingInfo1)
 				expectedList = append(expectedList, vGPUDevice2)
 				expectedList = append(expectedList, dynamicDirectPathIODev1)
 				// Creating a dynamicDirectPathIO device with same backingInfo3 but different deviceKey.
-				dynamicDirectPathIODev2 = session.CreatePCIPassThroughDevice(deviceKey4, backingInfo3)
+				dynamicDirectPathIODev2 = virtualmachine.CreatePCIPassThroughDevice(deviceKey4, backingInfo3)
 				expectedList = append(expectedList, dynamicDirectPathIODev2)
 			})
 
@@ -848,7 +849,7 @@ var _ = Describe("Update ConfigSpec", func() {
 					AllowedDevice: backingInfo3.AllowedDevice,
 					CustomLabel:   "DifferentLabel",
 				}
-				dynamicDirectPathIODev2 = session.CreatePCIPassThroughDevice(deviceKey4, backingInfoDiffCustomLabel)
+				dynamicDirectPathIODev2 = virtualmachine.CreatePCIPassThroughDevice(deviceKey4, backingInfoDiffCustomLabel)
 				currentList = []vimTypes.BaseVirtualDevice{dynamicDirectPathIODev2}
 			})
 

@@ -21,10 +21,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func vmProviderResourcePolicyTests() {
-	Describe("ResourcePolicyTests", resourcePolicyTests)
-}
-
 func getVirtualMachineSetResourcePolicy(name, namespace string) *vmopv1alpha1.VirtualMachineSetResourcePolicy {
 	return &vmopv1alpha1.VirtualMachineSetResourcePolicy{
 		ObjectMeta: metav1.ObjectMeta{

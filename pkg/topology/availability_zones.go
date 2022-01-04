@@ -79,10 +79,37 @@ func GetNamespaceRPAndFolder(
 	return nsInfo.PoolMoId, nsInfo.FolderMoId, nil
 }
 
+// GetNamespaceFolderMoID returns the FolderMoID for the namespace.
+func GetNamespaceFolderMoID(
+	ctx context.Context,
+	client ctrlclient.Client,
+	namespace string) (string, error) {
+
+	// Similar to the comment in GetNamespaceRPAndFolder(), when the FSS is not enabled,
+	// GetAvailabilityZones() will return a synthesized zone for all namespaces even
+	// though we only care about one namespace.
+	availabilityZones, err := GetAvailabilityZones(ctx, client)
+	if err != nil {
+		return "", err
+	}
+
+	// Note that the Folder is VC-scoped, but we store the MoID in each Zone CRD so we can
+	// return the first match.
+	for _, zone := range availabilityZones {
+		nsInfo, ok := zone.Spec.Namespaces[namespace]
+		if ok {
+			return nsInfo.FolderMoId, nil
+		}
+	}
+
+	return "", fmt.Errorf("unable to get FolderMoID for namespace %s", namespace)
+}
+
 // GetAvailabilityZones returns a list of the AvailabilityZone resources.
 func GetAvailabilityZones(
 	ctx context.Context,
 	client ctrlclient.Client) ([]topologyv1.AvailabilityZone, error) {
+
 	availabilityZoneList := &topologyv1.AvailabilityZoneList{}
 	if err := client.List(ctx, availabilityZoneList); err != nil {
 		return nil, err
@@ -129,7 +156,7 @@ func GetAvailabilityZone(
 		// AZ, then return the default AZ.
 		if apierrors.IsNotFound(err) {
 			if !lib.IsWcpFaultDomainsFSSEnabled() {
-				if availabilityZoneName == DefaultAvailabilityZoneName {
+				if availabilityZoneName == "" || availabilityZoneName == DefaultAvailabilityZoneName {
 					// Return the default AZ.
 					return GetDefaultAvailabilityZone(ctx, client)
 				}

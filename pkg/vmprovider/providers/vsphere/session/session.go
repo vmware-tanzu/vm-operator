@@ -14,11 +14,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
-	storagev1 "k8s.io/api/storage/v1"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -31,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 )
 
 var log = logf.Log.WithName("vsphere").WithName("session")
@@ -123,7 +122,7 @@ func (s *Session) initSession(
 	}
 	s.cluster = cluster
 
-	minFreq, err := ComputeCPUInfo(ctx, s.cluster)
+	minFreq, err := vcenter.ClusterMinCPUFreq(ctx, s.cluster)
 	if err != nil {
 		return errors.Wrapf(err, "failed to init minimum CPU frequency")
 	}
@@ -418,105 +417,11 @@ func (s *Session) lookupVMByName(ctx goctx.Context, name string) (*res.VirtualMa
 }
 
 func (s *Session) GetVirtualMachine(vmCtx context.VirtualMachineContext) (*res.VirtualMachine, error) {
-	if uniqueID := vmCtx.VM.Status.UniqueID; uniqueID != "" {
-		vm, err := s.lookupVMByMoID(vmCtx, uniqueID)
-		if err == nil {
-			return vm, nil
-		}
-		vmCtx.Logger.V(4).Info("Failed to lookup VM by MoID, falling back to path",
-			"moID", uniqueID, "error", err)
-	}
-
-	var folder *object.Folder
-
-	if policyName := vmCtx.VM.Spec.ResourcePolicyName; policyName != "" {
-		// Lookup the VM by name using the full inventory path to the VM. To do so, we need the
-		// resource policy to get the VM's Folder.
-		rp := &v1alpha1.VirtualMachineSetResourcePolicy{}
-		rpKey := ctrlruntime.ObjectKey{Name: policyName, Namespace: vmCtx.VM.Namespace}
-		if err := s.k8sClient.Get(vmCtx, rpKey, rp); err != nil {
-			vmCtx.Logger.Error(err, "Failed to get resource policy", "name", rpKey)
-			return nil, err
-		}
-
-		var err error
-		folder, err = s.ChildFolder(vmCtx, rp.Spec.Folder.Name)
-		if err != nil {
-			vmCtx.Logger.Error(err, "Failed to find child Folder", "name", rp.Spec.Folder.Name, "rpName", rpKey)
-			return nil, err
-		}
-	} else {
-		// Developer enablement path: use the default folder for the session.
-		// TODO: AKP: If any of the parent objects have been renamed, the cached inventory
-		// path will be stale: 
-		folder = s.folder
-	}
-
-	path := folder.InventoryPath + "/" + vmCtx.VM.Name
-	vm, err := s.Finder.VirtualMachine(vmCtx, path)
-	if err != nil {
-		vmCtx.Logger.Error(err, "Failed lookup VM by path", "path", path)
-		return nil, err
-	}
-
-	vmCtx.Logger.V(4).Info("Found VM via path", "vmRef", vm.Reference(), "path", path)
-	return res.NewVMFromObject(vm)
-}
-
-// GetStoragePolicyIDbyName returns Storage Policy ID from Storage Class Name.
-func (s *Session) GetStoragePolicyIDbyName(vmCtx context.VirtualMachineContext, storageClassName string) (string, error) {
-	if storageClassName == "" {
-		return "", nil
-	}
-
-	sc := &storagev1.StorageClass{}
-	if err := s.k8sClient.Get(vmCtx, ctrlruntime.ObjectKey{Name: storageClassName}, sc); err != nil {
-		vmCtx.Logger.Error(err, "Failed to get StorageClass", "storageClass", storageClassName)
-		return "", err
-	}
-
-	return sc.Parameters["storagePolicyID"], nil
-}
-
-// GetHostNetworkInfo returns HostFQDN, Error.
-func (s *Session) GetHostNetworkInfo(vmCtx context.VirtualMachineContext, hostMoID string) (string, error) {
-	hostMoRef := types.ManagedObjectReference{Type: "HostSystem", Value: hostMoID}
-	host := object.NewHostSystem(s.Client.VimClient(), hostMoRef)
-	nwSystem, err := host.ConfigManager().NetworkSystem(vmCtx)
-	if err != nil {
-		vmCtx.Logger.Error(err, "failed to get HostNetworkSystem", "host", hostMoID)
-		return "", err
-	}
-
-	var hostNwSystem mo.HostNetworkSystem
-	err = nwSystem.Properties(vmCtx, nwSystem.Reference(), []string{"dnsConfig"}, &hostNwSystem)
-	if err != nil {
-		vmCtx.Logger.Error(err, "failed to get dnsConfig", "host", hostMoID)
-		return "", err
-	}
-	if hostNwSystem.DnsConfig == nil {
-		vmCtx.Logger.Error(err, "Host dnsConfig is nil", "host", hostMoID)
-		return "", fmt.Errorf("host %s dnsConfig nil", hostMoID)
-	}
-
-	hostDNSConfig := hostNwSystem.DnsConfig.GetHostDnsConfig()
-	hostFQDN := strings.ToLower(hostDNSConfig.HostName + "." + hostDNSConfig.DomainName)
-	// If the FQDN ends in a period, remove the trailing period.
-	hostFQDN = strings.TrimSuffix(hostFQDN, ".")
-
-	return hostFQDN, nil
-}
-
-func (s *Session) lookupVMByMoID(ctx goctx.Context, moID string) (*res.VirtualMachine, error) {
-	ref, err := s.Finder.ObjectReference(ctx, types.ManagedObjectReference{Type: "VirtualMachine", Value: moID})
-	if err != nil {
-		return nil, err
-	}
-
-	vm := ref.(*object.VirtualMachine)
-	log.V(4).Info("Found VM", "name", vm.Name(), "path", vm.InventoryPath, "moRef", vm.Reference())
-
-	return res.NewVMFromObject(vm)
+	return vcenter.GetVirtualMachine(
+		vmCtx,
+		s.k8sClient,
+		s.Finder,
+		s.folder)
 }
 
 func (s *Session) invokeFsrVirtualMachine(vmCtx context.VirtualMachineContext, resVM *res.VirtualMachine) error {
@@ -548,12 +453,7 @@ func (s *Session) GetResourcePoolByMoID(ctx goctx.Context, moID string) (*object
 
 // GetFolderByMoID returns a folder for a given moref.
 func (s *Session) GetFolderByMoID(ctx goctx.Context, moID string) (*object.Folder, error) {
-	ref := types.ManagedObjectReference{Type: "Folder", Value: moID}
-	o, err := s.Finder.ObjectReference(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	return o.(*object.Folder), nil
+	return vcenter.GetFolderByMoID(ctx, s.Finder, moID)
 }
 
 func (s *Session) GetCPUMinMHzInCluster() uint64 {
@@ -571,46 +471,6 @@ func (s *Session) SetCPUMinMHzInCluster(minFreq uint64) {
 		s.cpuMinMHzInCluster = minFreq
 		log.V(4).Info("Successfully set CPU min frequency", "prevFreq", prevFreq, "newFreq", minFreq)
 	}
-}
-
-// ComputeCPUInfo computes the minimum frequency across all the hosts in the cluster. This is needed to convert the CPU
-// requirements specified in cores to MHz. vSphere core is assumed to be equivalent to the value of min frequency.
-// This function is adapted from wcp schedext.
-func ComputeCPUInfo(ctx goctx.Context, cluster *object.ClusterComputeResource) (uint64, error) {
-	var cr mo.ComputeResource
-	var hosts []mo.HostSystem
-	var minFreq uint64
-
-	if cluster == nil {
-		return 0, errors.New("Must have a valid cluster reference to compute the cpu info")
-	}
-
-	err := cluster.Properties(ctx, cluster.Reference(), nil, &cr)
-	if err != nil {
-		return 0, err
-	}
-
-	if len(cr.Host) == 0 {
-		return 0, errors.New("No hosts found in the cluster")
-	}
-
-	pc := property.DefaultCollector(cluster.Client())
-	err = pc.Retrieve(ctx, cr.Host, []string{"summary"}, &hosts)
-	if err != nil {
-		return 0, err
-	}
-
-	for _, h := range hosts {
-		if h.Summary.Hardware == nil {
-			continue
-		}
-		hostCPUMHz := uint64(h.Summary.Hardware.CpuMhz)
-		if hostCPUMHz < minFreq || minFreq == 0 {
-			minFreq = hostCPUMHz
-		}
-	}
-
-	return minFreq, nil
 }
 
 func (s *Session) String() string {

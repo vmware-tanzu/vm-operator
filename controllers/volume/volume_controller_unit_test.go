@@ -52,7 +52,6 @@ func unitTestsReconcile() {
 		attachment          *cnsv1alpha1.CnsNodeVmAttachment
 
 		vmVolForInstPVC1 *vmopv1alpha1.VirtualMachineVolume
-		// vmClassWithInstStorage *vmopv1alpha1.VirtualMachineClass
 	)
 
 	BeforeEach(func() {

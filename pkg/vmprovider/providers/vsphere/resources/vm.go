@@ -27,15 +27,6 @@ type VirtualMachine struct {
 
 var log = logf.Log.WithName("vmresource")
 
-// NewVMForCreate returns a VirtualMachine that Create() can be called on
-// to create the VM and set the VirtualMachine object reference.
-func NewVMForCreate(name string) *VirtualMachine {
-	return &VirtualMachine{
-		Name:   name,
-		logger: log.WithValues("name", name),
-	}
-}
-
 func NewVMFromObject(objVM *object.VirtualMachine) (*VirtualMachine, error) {
 	return &VirtualMachine{
 		Name:             objVM.Name(),

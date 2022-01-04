@@ -60,6 +60,9 @@ type VCSimTestConfig struct {
 	// WithContentLibrary configures a Content Library, populated with one image's
 	// name available in the TestContextForVCSim.ContentLibraryImageName.
 	WithContentLibrary bool
+
+	// WithInstanceStorage enables the WCP_INSTANCE_STORAGE FSS.
+	WithInstanceStorage bool
 }
 
 type TestContextForVCSim struct {
@@ -214,6 +217,21 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 		Expect(c.Client.Update(c, ns)).To(Succeed())
 	}
 
+	if clID := c.ContentLibraryID; clID != "" {
+		csBinding := &vmopv1alpha1.ContentSourceBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clID,
+				Namespace: ns.Name,
+			},
+			ContentSourceRef: vmopv1alpha1.ContentSourceReference{
+				APIVersion: vmopv1alpha1.SchemeGroupVersion.Group,
+				Kind:       "ContentSource",
+				Name:       clID,
+			},
+		}
+		Expect(c.Client.Create(c, csBinding)).To(Succeed())
+	}
+
 	return WorkloadNamespaceInfo{
 		Namespace: ns.Name,
 		Folder:    nsFolder,
@@ -233,6 +251,12 @@ func (c *TestContextForVCSim) setupEnvFSS(config VCSimTestConfig) {
 		faultDomains = "true"
 	}
 	Expect(os.Setenv(lib.WcpFaultDomainsFSS, faultDomains)).To(Succeed())
+
+	instanceStorage := "false"
+	if config.WithInstanceStorage {
+		instanceStorage = "true"
+	}
+	Expect(os.Setenv(lib.InstanceStorageFSS, instanceStorage)).To(Succeed())
 }
 
 func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
@@ -269,9 +293,7 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	c.VCClient = vcClient
 
 	c.RestClient = rest.NewClient(c.VCClient.Client)
-	// Actual username and password don't matter for vcsim.
-	userPassword := url.UserPassword("vmware", "VMWARE")
-	Expect(c.RestClient.Login(c, userPassword)).To(Succeed())
+	Expect(c.RestClient.Login(c, simulator.DefaultLogin)).To(Succeed())
 
 	c.Finder = find.NewFinder(vcClient.Client)
 
@@ -288,6 +310,22 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ccrs).To(HaveLen(1))
 		c.singleCCR = ccrs[0]
+	}
+
+	if config.WithInstanceStorage {
+		// Instance storage (because of CSI) apparently needs the hosts' FQDN to be populated.
+		systems := simulator.Map.AllReference("HostNetworkSystem")
+		Expect(systems).ToNot(BeEmpty())
+		for _, s := range systems {
+			hns, ok := s.(*simulator.HostNetworkSystem)
+			Expect(ok).To(BeTrue())
+			Expect(hns.Host).ToNot(BeNil())
+
+			hns.DnsConfig = &types.HostDnsConfig{
+				HostName:   hns.Host.Reference().Value,
+				DomainName: "vmop.vmware.com",
+			}
+		}
 	}
 }
 
@@ -403,15 +441,15 @@ func createContentLibraryItem(
 }
 
 func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
+	password, _ := simulator.DefaultLogin.Password()
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "vmop-vcsim-dummy-creds",
 			Namespace: c.PodNamespace,
 		},
-		// Values don't matter for vcsim.
 		Data: map[string][]byte{
-			"username": []byte("vmware"),
-			"password": []byte("VMWARE"),
+			"username": []byte(simulator.DefaultLogin.Username()),
+			"password": []byte(password),
 		},
 	}
 

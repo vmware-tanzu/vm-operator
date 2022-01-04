@@ -1,7 +1,7 @@
-// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package vsphere_test
+package vcenter_test
 
 import (
 	"testing"
@@ -14,12 +14,12 @@ import (
 var suite = builder.NewTestSuite()
 
 func vcSimTests() {
-	Describe("VirtualMachine", vmTests)
-	Describe("ResourcePolicyTests", resourcePolicyTests)
+	Describe("Cluster", clusterTests)
+	Describe("Host", hostTests)
 }
 
-func TestVSphereProvider(t *testing.T) {
-	suite.Register(t, "VMProvider Tests", nil, vcSimTests)
+func TestVCenter(t *testing.T) {
+	suite.Register(t, "VMProvider VCenter Tests", nil, vcSimTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

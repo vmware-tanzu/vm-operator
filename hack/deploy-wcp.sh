@@ -61,18 +61,12 @@ verifyEnvironmentVariables() {
         VCSA_PASSWORD="vmware"
     fi
 
-    output=$(SSHPASS="$VCSA_PASSWORD" sshpass -e ssh "${SSHCommonArgs[@]}" \
-            root@"$VCSA_IP" "/usr/lib/vmware-wcp/decryptK8Pwd.py" 2>&1)
-    WCP_SA_IP=$(echo "$output" | grep -oEI "IP: (\\S)+" | cut -d" " -f2)
-    WCP_SA_PASSWORD=$(echo "$output" | grep -oEI "PWD: (\\S)+" | cut -d" " -f2)
-
-    #if ! ping -c 3 -i 0.25 "$WCP_SA_IP" > /dev/null 2>&1 ; then
-    #    error "Error: Could not access WCP Supervisor Cluster API Server at" \
-    #        "$WCP_SA_IP"
-    #    exit 1
-    #fi
-
     if [[ -z ${SKIP_YAML:-} ]] ; then
+        output=$(SSHPASS="$VCSA_PASSWORD" sshpass -e ssh "${SSHCommonArgs[@]}" \
+                root@"$VCSA_IP" "/usr/lib/vmware-wcp/decryptK8Pwd.py" 2>&1)
+        WCP_SA_IP=$(echo "$output" | grep -oEI "IP: (\\S)+" | cut -d" " -f2)
+        WCP_SA_PASSWORD=$(echo "$output" | grep -oEI "PWD: (\\S)+" | cut -d" " -f2)
+
         if [[ -z ${VCSA_DATACENTER:-} ]]; then
             error "Error: The VCSA_DATACENTER environment variable must be set" \
                 "to point to a valid VCSA Datacenter"

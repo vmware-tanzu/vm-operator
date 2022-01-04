@@ -23,14 +23,12 @@ import (
 
 type funcs struct {
 	DoesVirtualMachineExistFn         func(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
+	PlaceVirtualMachineFn             func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error
 	CreateVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error
 	UpdateVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error
 	DeleteVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeatFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 	GetVirtualMachineWebMKSTicketFn   func(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
-
-	GetCompatibleHostsFn func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error)
-	GetHostNetworkInfoFn func(ctx context.Context, vm *v1alpha1.VirtualMachine, hostMoID string) (string, error)
 
 	ListVirtualMachineImagesFromContentLibraryFn func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error)
 	DoesContentLibraryExistFn                    func(ctx context.Context, cl *v1alpha1.ContentLibraryProvider) (bool, error)
@@ -77,6 +75,15 @@ func (s *VMProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.V
 	return ok, nil
 }
 
+func (s *VMProvider) PlaceVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
+	s.Lock()
+	defer s.Unlock()
+	if s.PlaceVirtualMachineFn != nil {
+		return s.PlaceVirtualMachineFn(ctx, vm, vmConfigArgs)
+	}
+	return nil
+}
+
 func (s *VMProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
 	s.Lock()
 	defer s.Unlock()
@@ -113,24 +120,6 @@ func (s *VMProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1
 	defer s.Unlock()
 	if s.GetVirtualMachineGuestHeartbeatFn != nil {
 		return s.GetVirtualMachineGuestHeartbeatFn(ctx, vm)
-	}
-	return "", nil
-}
-
-func (s *VMProvider) GetCompatibleHosts(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error) {
-	s.Lock()
-	defer s.Unlock()
-	if s.GetCompatibleHostsFn != nil {
-		return s.GetCompatibleHostsFn(ctx, vm, vmConfigArgs)
-	}
-	return []string{""}, nil
-}
-
-func (s *VMProvider) GetHostNetworkInfo(ctx context.Context, vm *v1alpha1.VirtualMachine, hostMoID string) (string, error) {
-	s.Lock()
-	defer s.Unlock()
-	if s.GetHostNetworkInfoFn != nil {
-		return s.GetHostNetworkInfoFn(ctx, vm, hostMoID)
 	}
 	return "", nil
 }

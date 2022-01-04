@@ -149,6 +149,10 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 	}
 }
 
+func AddDummyInstanceStorageVolume(vm *vmopv1.VirtualMachine) {
+	vm.Spec.Volumes = append(vm.Spec.Volumes, DummyInstanceStorageVirtualMachineVolumes()...)
+}
+
 func DummyVirtualMachineService() *vmopv1.VirtualMachineService {
 	return &vmopv1.VirtualMachineService{
 		ObjectMeta: metav1.ObjectMeta{

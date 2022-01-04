@@ -16,6 +16,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 )
 
 type Manager struct {
@@ -31,12 +32,6 @@ func NewManager(k8sClient ctrlruntime.Client) Manager {
 		k8sClient: k8sClient,
 		sessions:  map[string]*Session{},
 	}
-}
-
-func (sm *Manager) KubeClient() ctrlruntime.Client {
-	sm.Lock()
-	defer sm.Unlock()
-	return sm.k8sClient
 }
 
 func (sm *Manager) ClearSessionsAndClient(ctx goctx.Context) {
@@ -167,7 +162,7 @@ func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 				Value: az.Spec.ClusterComputeResourceMoId,
 			},
 		)
-		freq, err := ComputeCPUInfo(ctx, ccr)
+		freq, err := vcenter.ClusterMinCPUFreq(ctx, ccr)
 		if err != nil {
 			return err
 		}
@@ -207,6 +202,7 @@ func (sm *Manager) getClient(
 	config *vcconfig.VSphereVMProviderConfig) (*vcclient.Client, error) {
 
 	if sm.client != nil {
+		// NOTE: We're assuming here that the config is the same.
 		return sm.client, nil
 	}
 

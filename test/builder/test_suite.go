@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
@@ -94,6 +95,10 @@ func (s *TestSuite) isWebhookTest() bool {
 
 func (s *TestSuite) GetEnvTestConfig() *rest.Config {
 	return s.config
+}
+
+func (s *TestSuite) GetLogger() logr.Logger {
+	return logf.Log
 }
 
 func getCrdPaths(crdPaths ...string) []string {

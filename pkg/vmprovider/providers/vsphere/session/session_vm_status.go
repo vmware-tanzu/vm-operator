@@ -14,6 +14,8 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
@@ -140,6 +142,10 @@ func (s *Session) updateVMStatus(
 		vm.Status.ChangeBlockTracking = config.ChangeTrackingEnabled
 	} else {
 		vm.Status.ChangeBlockTracking = nil
+	}
+
+	if lib.IsWcpFaultDomainsFSSEnabled() {
+		vm.Status.Zone = vm.Labels[topology.KubernetesTopologyZoneLabelKey]
 	}
 
 	return k8serrors.NewAggregate(errs)

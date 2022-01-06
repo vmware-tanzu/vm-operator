@@ -435,7 +435,6 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 	data["Datastore"] = c.datastore.Reference().Value
 
 	// These config fields are ignored now (mostly true).
-	// data["Cluster"] = ""
 	// data["ResourcePool"] = ""
 	// data["Folder"] = ""
 

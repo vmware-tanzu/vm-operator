@@ -39,8 +39,7 @@ type VSphereVMProviderConfig struct {
 	WorkerVMVMAntiAffinityTag   string
 	TagCategoryName             string
 
-	// Zone and namespace scoped resources. Note the Cluster is obtained from the ResourcePool.
-	Cluster      string
+	// These are Zone and/or Namespace specific.
 	ResourcePool string
 	Folder       string
 
@@ -58,7 +57,6 @@ const (
 	vcPortKey                    = "VcPort"
 	vcCredsSecretNameKey         = "VcCredsSecretName" // nolint:gosec
 	datacenterKey                = "Datacenter"
-	clusterKey                   = "Cluster"
 	resourcePoolKey              = "ResourcePool"
 	folderKey                    = "Folder"
 	datastoreKey                 = "Datastore"
@@ -138,7 +136,6 @@ func ConfigMapToProviderConfig(
 		VcPort:                      vcPort,
 		VcCreds:                     vcCreds,
 		Datacenter:                  dataMap[datacenterKey],
-		Cluster:                     dataMap[clusterKey],
 		ResourcePool:                dataMap[resourcePoolKey],
 		Folder:                      dataMap[folderKey],
 		Datastore:                   dataMap[datastoreKey],
@@ -293,7 +290,6 @@ func setConfigMapData(configMap *corev1.ConfigMap, config *VSphereVMProviderConf
 	configMap.Data[vcPortKey] = config.VcPort
 	configMap.Data[vcCredsSecretNameKey] = vcCredsSecretName
 	configMap.Data[datacenterKey] = config.Datacenter
-	configMap.Data[clusterKey] = config.Cluster
 	configMap.Data[resourcePoolKey] = config.ResourcePool
 	configMap.Data[folderKey] = config.Folder
 	configMap.Data[datastoreKey] = config.Datastore

@@ -79,12 +79,6 @@ verifyEnvironmentVariables() {
             exit 1
         fi
 
-        if [[ -z ${VCSA_CLUSTER:-} ]]; then
-            error "Error: The VCSA_CLUSTER environment variable must be set" \
-                "to point to a valid VCSA Cluster"
-            exit 1
-        fi
-
         VCSA_DATASTORE=${VCSA_DATASTORE:-nfs0-1}
 
         if [[ ${FSS_WCP_VMSERVICE_VALUE:-} != "true" ]]; then

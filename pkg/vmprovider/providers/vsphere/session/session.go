@@ -106,50 +106,32 @@ func (s *Session) initSession(
 	s.datacenter = dc.(*object.Datacenter)
 	s.Finder.SetDatacenter(s.datacenter)
 
-	if cfg.Cluster != "" {
-		s.cluster, err = s.GetClusterByMoID(ctx, cfg.Cluster)
-		if err != nil {
-			return errors.Wrapf(err, "failed to init Cluster %q", cfg.Cluster)
-		}
+	s.resourcePool, err = s.GetResourcePoolByMoID(ctx, cfg.ResourcePool)
+	if err != nil {
+		return errors.Wrapf(err, "failed to init Resource Pool %q", cfg.ResourcePool)
 	}
 
-	// On WCP, the RP is extracted from an annotation on the namespace.
-	if cfg.ResourcePool != "" {
-		s.resourcePool, err = s.GetResourcePoolByMoID(ctx, cfg.ResourcePool)
-		if err != nil {
-			return errors.Wrapf(err, "failed to init Resource Pool %q", cfg.ResourcePool)
-		}
-
-		if s.cluster == nil {
-			owner, err := s.resourcePool.Owner(ctx)
-			if err != nil {
-				return err
-			}
-
-			cluster, ok := owner.(*object.ClusterComputeResource)
-			if !ok {
-				return fmt.Errorf("owner of the ResourcePool is not a cluster but %T", owner)
-			}
-
-			s.cluster = cluster
-		}
+	rpOwner, err := s.resourcePool.Owner(ctx)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get Resource Pool owner")
 	}
 
-	// Initialize fields that require a cluster.
-	if s.cluster != nil {
-		minFreq, err := s.computeCPUInfo(ctx)
-		if err != nil {
-			return errors.Wrapf(err, "failed to init minimum CPU frequency")
-		}
-		s.SetCPUMinMHzInCluster(minFreq)
+	cluster, ok := rpOwner.(*object.ClusterComputeResource)
+	if !ok {
+		return fmt.Errorf("owner of the ResourcePool is not a cluster but %T", rpOwner)
 	}
+	s.cluster = cluster
+
+	minFreq, err := ComputeCPUInfo(ctx, s.cluster)
+	if err != nil {
+		return errors.Wrapf(err, "failed to init minimum CPU frequency")
+	}
+	s.SetCPUMinMHzInCluster(minFreq)
 
 	// On WCP, the Folder is extracted from an annotation on the namespace.
-	if cfg.Folder != "" {
-		s.folder, err = s.GetFolderByMoID(ctx, cfg.Folder)
-		if err != nil {
-			return errors.Wrapf(err, "failed to init folder %q", cfg.Folder)
-		}
+	s.folder, err = s.GetFolderByMoID(ctx, cfg.Folder)
+	if err != nil {
+		return errors.Wrapf(err, "failed to init folder %q", cfg.Folder)
 	}
 
 	// Network setting is optional. This is only supported for test env, if that.
@@ -509,16 +491,6 @@ func (s *Session) invokeFsrVirtualMachine(vmCtx context.VirtualMachineContext, r
 	return nil
 }
 
-// GetClusterByMoID returns resource pool for a given a moref.
-func (s *Session) GetClusterByMoID(ctx goctx.Context, moID string) (*object.ClusterComputeResource, error) {
-	ref := types.ManagedObjectReference{Type: "ClusterComputeResource", Value: moID}
-	o, err := s.Finder.ObjectReference(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	return o.(*object.ClusterComputeResource), nil
-}
-
 // GetResourcePoolByMoID returns resource pool for a given a moref.
 func (s *Session) GetResourcePoolByMoID(ctx goctx.Context, moID string) (*object.ResourcePool, error) {
 	ref := types.ManagedObjectReference{Type: "ResourcePool", Value: moID}
@@ -554,10 +526,6 @@ func (s *Session) SetCPUMinMHzInCluster(minFreq uint64) {
 		s.cpuMinMHzInCluster = minFreq
 		log.V(4).Info("Successfully set CPU min frequency", "prevFreq", prevFreq, "newFreq", minFreq)
 	}
-}
-
-func (s *Session) computeCPUInfo(ctx goctx.Context) (uint64, error) {
-	return ComputeCPUInfo(ctx, s.cluster)
 }
 
 // ComputeCPUInfo computes the minimum frequency across all the hosts in the cluster. This is needed to convert the CPU

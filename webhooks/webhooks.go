@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package webhooks
@@ -12,6 +12,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesetresourcepolicy"
+	"github.com/vmware-tanzu/vm-operator/webhooks/webconsolerequest"
 )
 
 // AddToManager adds all webhooks and a certificate manager to the provided controller manager.
@@ -27,6 +28,9 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) er
 	}
 	if err := virtualmachinesetresourcepolicy.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachineSetResourcePolicy webhooks")
+	}
+	if err := webconsolerequest.AddToManager(ctx, mgr); err != nil {
+		return errors.Wrap(err, "failed to initialize WebConsoleRequest webhooks")
 	}
 	return nil
 }

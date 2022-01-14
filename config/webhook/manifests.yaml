@@ -119,3 +119,24 @@ webhooks:
     resources:
     - virtualmachinesetresourcepolicies
   sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-validate-vmoperator-vmware-com-v1alpha1-webconsolerequest
+  failurePolicy: Fail
+  name: default.validating.webconsolerequest.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - webconsolerequests
+  sideEffects: None

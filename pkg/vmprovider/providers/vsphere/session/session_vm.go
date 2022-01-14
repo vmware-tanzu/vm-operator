@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session
@@ -45,6 +45,20 @@ func (s *Session) GetVirtualMachineGuestHeartbeat(vmCtx context.VirtualMachineCo
 	}
 
 	return vmopv1alpha1.GuestHeartbeatStatus(moVM.GuestHeartbeatStatus), nil
+}
+
+func (s *Session) GetVirtualMachineWebMKSTicket(vmCtx context.VirtualMachineContext, pubKey string) (string, error) {
+	resVM, err := s.GetVirtualMachine(vmCtx)
+	if err != nil {
+		return "", transformVMError(vmCtx.VM.NamespacedName(), err)
+	}
+
+	ticket, err := resVM.GetWebMKSTicket(vmCtx)
+	if err != nil {
+		return "", err
+	}
+
+	return EncryptWebMKS(pubKey, ticket)
 }
 
 func updateVirtualDiskDeviceChanges(

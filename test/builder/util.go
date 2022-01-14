@@ -1,4 +1,4 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder
@@ -251,6 +251,19 @@ func DummyAvailabilityZone() *topologyv1.AvailabilityZone {
 		Spec: topologyv1.AvailabilityZoneSpec{
 			ClusterComputeResourceMoId: "cluster",
 			Namespaces:                 map[string]topologyv1.NamespaceInfo{},
+		},
+	}
+}
+
+func DummyWebConsoleRequest(namespace, wcrName, vmName, pubKey string) *vmopv1.WebConsoleRequest {
+	return &vmopv1.WebConsoleRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      wcrName,
+			Namespace: namespace,
+		},
+		Spec: vmopv1.WebConsoleRequestSpec{
+			VirtualMachineName: vmName,
+			PublicKey:          pubKey,
 		},
 	}
 }

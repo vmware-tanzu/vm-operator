@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package controllers
@@ -19,6 +19,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
+	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
 )
 
 // AddToManager adds all controllers to the provided manager.
@@ -52,6 +53,9 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	}
 	if err := volume.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize Volume controller")
+	}
+	if err := webconsolerequest.AddToManager(ctx, mgr); err != nil {
+		return errors.Wrap(err, "failed to initialize WebConsoleRequest controller")
 	}
 	return nil
 }

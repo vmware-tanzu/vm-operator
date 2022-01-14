@@ -314,6 +314,26 @@ rules:
   - patch
   - update
 - apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - webconsolerequests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - webconsolerequests/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - vmware.com
   resources:
   - virtualnetworkinterfaces

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package resources
@@ -292,4 +292,17 @@ func (vm *VirtualMachine) Customize(ctx context.Context, spec types.Customizatio
 	}
 
 	return nil
+}
+
+func (vm *VirtualMachine) GetWebMKSTicket(ctx context.Context) (string, error) {
+	vm.logger.V(5).Info("GetWebMKSTicket")
+
+	ticket, err := vm.vcVirtualMachine.AcquireTicket(ctx, string(types.VirtualMachineTicketTypeWebmks))
+	if err != nil {
+		return "", err
+	}
+
+	url := fmt.Sprintf("wss://%s:%d/ticket/%s", ticket.Host, ticket.Port, ticket.Ticket)
+
+	return url, nil
 }

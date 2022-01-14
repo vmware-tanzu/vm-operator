@@ -1,10 +1,14 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
@@ -220,5 +224,40 @@ var _ = Describe("Test Session Utils", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(output).To(Equal("H4sIAAAAAAAA//JIzcnJD88vykkBAAAA//8BAAD//3kMd3cKAAAA"))
 		})
+	})
+
+	Context("EncryptWebMKS", func() {
+		var (
+			privateKey   *rsa.PrivateKey
+			publicKey    rsa.PublicKey
+			publicKeyPem string
+		)
+
+		BeforeEach(func() {
+			privateKey, _ = rsa.GenerateKey(rand.Reader, 2048)
+			publicKey = privateKey.PublicKey
+			publicKeyPem = string(pem.EncodeToMemory(
+				&pem.Block{
+					Type:  "PUBLIC KEY",
+					Bytes: x509.MarshalPKCS1PublicKey(&publicKey),
+				},
+			))
+		})
+
+		It("Encrypts a string correctly", func() {
+			plaintext := "HelloWorld2"
+			ciphertext, err := session.EncryptWebMKS(publicKeyPem, plaintext)
+			Expect(err).ShouldNot(HaveOccurred())
+			decrypted, err := session.DecryptWebMKS(privateKey, ciphertext)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(decrypted).To(Equal(plaintext))
+		})
+
+		It("Error on invalid public key", func() {
+			plaintext := "HelloWorld3"
+			_, err := session.EncryptWebMKS("invalid-pub-key", plaintext)
+			Expect(err).Should(HaveOccurred())
+		})
+
 	})
 })

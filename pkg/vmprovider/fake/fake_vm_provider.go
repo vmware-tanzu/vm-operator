@@ -1,4 +1,4 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package fake
@@ -27,6 +27,7 @@ type funcs struct {
 	UpdateVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error
 	DeleteVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeatFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
+	GetVirtualMachineWebMKSTicketFn   func(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
 
 	GetCompatibleHostsFn func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) ([]string, error)
 	GetHostNetworkInfoFn func(ctx context.Context, vm *v1alpha1.VirtualMachine, hostMoID string) (string, error)
@@ -130,6 +131,15 @@ func (s *VMProvider) GetHostNetworkInfo(ctx context.Context, vm *v1alpha1.Virtua
 	defer s.Unlock()
 	if s.GetHostNetworkInfoFn != nil {
 		return s.GetHostNetworkInfoFn(ctx, vm, hostMoID)
+	}
+	return "", nil
+}
+
+func (s *VMProvider) GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error) {
+	s.Lock()
+	defer s.Unlock()
+	if s.GetVirtualMachineWebMKSTicketFn != nil {
+		return s.GetVirtualMachineWebMKSTicketFn(ctx, vm, pubKey)
 	}
 	return "", nil
 }

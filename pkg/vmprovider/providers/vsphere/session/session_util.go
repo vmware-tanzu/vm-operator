@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session
@@ -6,10 +6,16 @@ package session
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha512"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"math"
 	"strings"
 
+	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
@@ -119,4 +125,33 @@ func EncodeGzipBase64(s string) (string, error) {
 
 	b64 := base64.StdEncoding.EncodeToString(zbuf.Bytes())
 	return b64, nil
+}
+
+func EncryptWebMKS(pubkey string, plaintext string) (string, error) {
+	block, _ := pem.Decode([]byte(pubkey))
+	if block == nil || block.Type != "PUBLIC KEY" {
+		return "", errors.New("failed to decode PEM block containing public key")
+	}
+	pub, err := x509.ParsePKCS1PublicKey(block.Bytes)
+	if err != nil {
+		return "", err
+	}
+	cipherbytes, err := rsa.EncryptOAEP(sha512.New(), rand.Reader, pub, []byte(plaintext), nil)
+	if err != nil {
+		return "", err
+	}
+	ciphertext := base64.StdEncoding.EncodeToString(cipherbytes)
+	return ciphertext, nil
+}
+
+func DecryptWebMKS(privkey *rsa.PrivateKey, ciphertext string) (string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(ciphertext)
+	if err != nil {
+		return "", err
+	}
+	decrypted, err := rsa.DecryptOAEP(sha512.New(), rand.Reader, privkey, decoded, nil)
+	if err != nil {
+		return "", err
+	}
+	return string(decrypted), nil
 }

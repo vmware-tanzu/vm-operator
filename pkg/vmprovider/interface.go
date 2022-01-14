@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vmprovider
@@ -39,6 +39,7 @@ type VirtualMachineProviderInterface interface {
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 	GetCompatibleHosts(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) ([]string, error)
 	GetHostNetworkInfo(ctx context.Context, vm *v1alpha1.VirtualMachine, hostMoID string) (string, error)
+	GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
 
 	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
 	IsVirtualMachineSetResourcePolicyReady(ctx context.Context, availabilityZoneName string, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)

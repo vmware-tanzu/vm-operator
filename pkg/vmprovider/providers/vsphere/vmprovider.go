@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere
@@ -279,6 +279,21 @@ func (vs *vSphereVMProvider) GetHostNetworkInfo(ctx goctx.Context, vm *v1alpha1.
 	}
 
 	return GetHostNetworkInfoFn(vmSession, vmCtx, hostMoID)
+}
+
+func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(ctx goctx.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error) {
+	vmCtx := context.VirtualMachineContext{
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(ctx, vm, "webconsole")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
+	ses, err := vs.sessions.GetSessionForVM(vmCtx)
+	if err != nil {
+		return "", err
+	}
+
+	return ses.GetVirtualMachineWebMKSTicket(vmCtx, pubKey)
 }
 
 func (vs *vSphereVMProvider) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {

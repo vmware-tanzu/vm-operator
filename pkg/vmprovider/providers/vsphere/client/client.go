@@ -99,8 +99,9 @@ func newRestClient(ctx context.Context, vimClient *vim25.Client, config *config.
 	return restClient, nil
 }
 
-// newVimClient creates a new vim25 client which is configured to use a custom keepalive handler function.
-func newVimClient(ctx context.Context, config *config.VSphereVMProviderConfig) (*vim25.Client, *session.Manager, error) {
+// NewVimClient creates a new vim25 client which is configured to use a custom keepalive handler function.
+// Making this public to allow access from other packages when only VimClient is needed.
+func NewVimClient(ctx context.Context, config *config.VSphereVMProviderConfig) (*vim25.Client, *session.Manager, error) {
 	log.Info("Creating new vim Client", "VcPNID", config.VcPNID, "VcPort", config.VcPort)
 	soapURL, err := soap.ParseURL(net.JoinHostPort(config.VcPNID, config.VcPort))
 	if err != nil {
@@ -111,7 +112,7 @@ func newVimClient(ctx context.Context, config *config.VSphereVMProviderConfig) (
 	if config.CAFilePath != "" {
 		err = soapClient.SetRootCAs(config.CAFilePath)
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to set root CA %s: %v", config.CAFilePath, err)
+			return nil, nil, errors.Wrapf(err, "failed to set root CA %s", config.CAFilePath)
 		}
 	}
 
@@ -137,7 +138,7 @@ func newVimClient(ctx context.Context, config *config.VSphereVMProviderConfig) (
 
 // NewClient creates a new Client. As a side effect, it creates a vim25 client and a REST client.
 func NewClient(ctx context.Context, config *config.VSphereVMProviderConfig) (*Client, error) {
-	vimClient, sm, err := newVimClient(ctx, config)
+	vimClient, sm, err := NewVimClient(ctx, config)
 	if err != nil {
 		return nil, err
 	}

@@ -34,6 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -190,6 +191,7 @@ func NewReconciler(
 		VMProvider:                       vmProvider,
 		Prober:                           prober,
 		MaxConcurrentCreateVMsOnProvider: maxConcurrentCreateVMsOnProvider,
+		vmMetrics:                        metrics.NewVMMetrics(),
 	}
 }
 
@@ -200,6 +202,7 @@ type Reconciler struct {
 	Recorder   record.Recorder
 	VMProvider vmprovider.VirtualMachineProviderInterface
 	Prober     prober.Manager
+	vmMetrics  *metrics.VMMetrics
 
 	// Hack to limit concurrent create operations because they block and can take a long time.
 	mutex                            sync.Mutex
@@ -326,10 +329,15 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineContext) error {
 		controllerutil.RemoveFinalizer(vm, finalizerName)
 		ctx.Logger.Info("Provider Completed deleting Virtual Machine",
 			"time", time.Now().Format(time.RFC3339))
+
+		// Record VM deletion related metrics
+		r.vmMetrics.RegisterVMDeletionMetrics(ctx)
 	}
 
 	// Remove the VM from prober manager if ReconcileDelete succeeds.
 	r.Prober.RemoveFromProberManager(vm)
+	// Delete metrics for the VM object as the deletion operation is successful
+	r.vmMetrics.DeleteMetrics(ctx)
 
 	return nil
 }
@@ -360,8 +368,10 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 	initialVMStatus := ctx.VM.Status.DeepCopy()
 	ctx.Logger.Info("Reconciling VirtualMachine")
 
-	// Defer block to handle logging for SLI items
+	// Defer block to handle logging for SLI items and record metrics for VM creation/update workflows
 	defer func() {
+		r.vmMetrics.RegisterVMCreateOrUpdateMetrics(ctx)
+
 		// Log the reconcile time using the CR creation time and the time the VM reached the desired state
 		if reterr == nil && !apiequality.Semantic.DeepEqual(initialVMStatus, &ctx.VM.Status) {
 			ctx.Logger.Info("Finished Reconciling VirtualMachine with updates to the CR",

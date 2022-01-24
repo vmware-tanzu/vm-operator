@@ -528,35 +528,73 @@ func unitTestsReconcile() {
 
 				It("With Expected Subsets", func() {
 					subsets := endpoints.Subsets
-					Expect(subsets).To(HaveLen(2))
+					Expect(subsets).To(HaveLen(1))
 
-					for _, subset := range subsets {
-						Expect(subset.Ports).To(HaveLen(1))
-						ssPort := subset.Ports[0]
-						Expect(ssPort.Name).To(Equal(vmServicePort1.Name))
-						Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
-						Expect(ssPort.Port).To(Equal(vmServicePort1.TargetPort))
-					}
-
-					// NOTE: Hardcode our subset sorting order of VM1, VM2.
 					subset := subsets[0]
 
-					Expect(subset.Addresses).To(HaveLen(1))
+					Expect(subset.Ports).To(HaveLen(1))
+					ssPort := subset.Ports[0]
+					Expect(ssPort.Name).To(Equal(vmServicePort1.Name))
+					Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
+					Expect(ssPort.Port).To(Equal(vmServicePort1.TargetPort))
+
+					// NOTE: Hardcode our subset sorting order of VM1, VM2.
+					Expect(subset.Addresses).To(HaveLen(2))
+
 					ssAddr := subset.Addresses[0]
 					Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
 					Expect(ssAddr.TargetRef).ToNot(BeNil())
 					Expect(ssAddr.TargetRef.Name).To(Equal(vm1.Name))
 
-					subset = subsets[1]
-
-					Expect(subset.Addresses).To(HaveLen(1))
-					ssAddr = subset.Addresses[0]
+					ssAddr = subset.Addresses[1]
 					Expect(ssAddr.IP).To(Equal(vm2.Status.VmIp))
 					Expect(ssAddr.TargetRef).ToNot(BeNil())
 					Expect(ssAddr.TargetRef.Name).To(Equal(vm2.Name))
 
 					// NOTE: We do not assign this yet.
 					Expect(subset.NotReadyAddresses).To(BeEmpty())
+				})
+
+				When("Service has multiple ports", func() {
+					BeforeEach(func() {
+						vmService.Spec.Ports = append(vmService.Spec.Ports, vmServicePort2)
+						Expect(vmService.Spec.Ports).To(HaveLen(2))
+					})
+
+					It("Expected subsets should be packed", func() {
+						subsets := endpoints.Subsets
+						Expect(subsets).To(HaveLen(1))
+
+						subset := subsets[0]
+
+						// NOTE: Hardcode our subset sorting order of Port1, Port2.
+						Expect(subset.Ports).To(HaveLen(2))
+						ssPort := subset.Ports[0]
+						Expect(ssPort.Name).To(Equal(vmServicePort1.Name))
+						Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
+						Expect(ssPort.Port).To(Equal(vmServicePort1.TargetPort))
+
+						ssPort = subset.Ports[1]
+						Expect(ssPort.Name).To(Equal(vmServicePort2.Name))
+						Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort2.Protocol))
+						Expect(ssPort.Port).To(Equal(vmServicePort2.TargetPort))
+
+						// NOTE: Hardcode our subset sorting order of VM1, VM2.
+						Expect(subset.Addresses).To(HaveLen(2))
+
+						ssAddr := subset.Addresses[0]
+						Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
+						Expect(ssAddr.TargetRef).ToNot(BeNil())
+						Expect(ssAddr.TargetRef.Name).To(Equal(vm1.Name))
+
+						ssAddr = subset.Addresses[1]
+						Expect(ssAddr.IP).To(Equal(vm2.Status.VmIp))
+						Expect(ssAddr.TargetRef).ToNot(BeNil())
+						Expect(ssAddr.TargetRef.Name).To(Equal(vm2.Name))
+
+						// NOTE: We do not assign this yet.
+						Expect(subset.NotReadyAddresses).To(BeEmpty())
+					})
 				})
 			})
 

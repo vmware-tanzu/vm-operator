@@ -158,7 +158,7 @@ deploy() {
     PATH="/usr/local/opt/gnu-getopt/bin:/usr/local/bin:$PATH" \
       $WCP_LOAD_K8S_MASTER \
         --component vmop \
-        --binary bin/wcp/manager \
+        --binary bin/wcp/manager,bin/wcp/hostvalidator \
         --vc-ip "$VCSA_IP" \
         --vc-user root \
         --vc-password "$VCSA_PASSWORD" \

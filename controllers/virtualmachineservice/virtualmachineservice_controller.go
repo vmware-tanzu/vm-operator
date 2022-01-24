@@ -12,8 +12,6 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
-	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -539,57 +537,41 @@ func (r *ReconcileVirtualMachineService) createOrUpdateEndpoints(ctx *context.Vi
 	ctx.Logger.V(5).Info("Updating VirtualMachineService Endpoints")
 	defer ctx.Logger.V(5).Info("Finished updating VirtualMachineService Endpoints")
 
-	subsets, err := r.generateSubsetsForService(ctx, service)
+	unpackedSubsets, err := r.generateSubsetsForService(ctx, service)
 	if err != nil {
 		return err
 	}
+	subsets := utils.RepackSubsets(unpackedSubsets)
 
-	endpoints := &corev1.Endpoints{}
-	endpointsKey := types.NamespacedName{Name: service.Name, Namespace: service.Namespace}
+	endpoints := &corev1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      service.Name,
+			Namespace: service.Namespace,
+		},
+	}
 
-	// The kube apiserver sorts the Endpoint subsets before saving, so the order that we create or
-	// update with isn't necessarily the order we'll get back. Basically unroll controller-runtime's
-	// CreateOrUpdate() here to handle resorting the subsets before the DeepEqual() comparison.
+	result, err := controllerutil.CreateOrPatch(ctx, r.Client, endpoints, func() error {
+		if err := controllerutil.SetControllerReference(ctx.VMService, endpoints, r.scheme); err != nil {
+			return err
+		}
 
-	mutateFn := func(epSubsets []corev1.EndpointSubset) error {
-		endpoints.Name = service.Name
-		endpoints.Namespace = service.Namespace
 		// NCP apparently needs the same Labels as what is present on the Service, and I'm not aware
 		// of anything else setting Labels, so just sync the Labels (and Annotations) with the Service.
 		endpoints.Labels = service.Labels
 		endpoints.Annotations = service.Annotations
-		endpoints.Subsets = epSubsets
-		return controllerutil.SetControllerReference(ctx.VMService, endpoints, r.scheme)
-	}
+		endpoints.Subsets = subsets
+		return nil
+	})
 
-	if err := r.Get(ctx, endpointsKey, endpoints); err != nil {
-		if !apiErrors.IsNotFound(err) {
-			ctx.Logger.Error(err, "Failed to get Endpoints")
-			return err
-		}
-
-		if err := mutateFn(subsets); err != nil {
-			return err
-		}
-
-		ctx.Logger.Info("Creating Service Endpoints", "endpoints", endpoints)
-		return r.Create(ctx, endpoints)
-	}
-
-	// Copy the Endpoints and resort the subsets so that DeepEquals() doesn't return false when the
-	// subsets are just sorted differently, causing the Endpoints to churn.
-	existingEndpoints := endpoints.DeepCopy()
-	existingEndpoints.Subsets = utils.RepackSubsets(existingEndpoints.Subsets)
-
-	if err := mutateFn(utils.RepackSubsets(subsets)); err != nil {
+	if err != nil {
 		return err
 	}
 
-	if !apiequality.Semantic.DeepEqual(endpoints, existingEndpoints) {
+	switch result {
+	case controllerutil.OperationResultCreated:
+		ctx.Logger.Info("Creating Service Endpoints", "endpoints", endpoints)
+	case controllerutil.OperationResultUpdated:
 		ctx.Logger.Info("Updating Service Endpoints", "endpoints", endpoints)
-		if err := r.Update(ctx, endpoints); err != nil {
-			return err
-		}
 	}
 
 	return nil

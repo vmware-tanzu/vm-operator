@@ -1,296 +1,120 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package contentlibrary_test
 
 import (
-	"sync/atomic"
-	"time"
+	"io/ioutil"
+	"os"
+	"strings"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/vapi/library"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe("ParseVirtualHardwareVersion", func() {
-	It("empty hardware string", func() {
-		vmxHwVersionString := ""
-		Expect(contentlibrary.ParseVirtualHardwareVersion(vmxHwVersionString)).To(BeZero())
-	})
+func clTests() {
+	Describe("Content Library", func() {
 
-	It("invalid hardware string", func() {
-		vmxHwVersionString := "blah"
-		Expect(contentlibrary.ParseVirtualHardwareVersion(vmxHwVersionString)).To(BeZero())
-	})
+		var (
+			initObjects []client.Object
+			ctx         *builder.TestContextForVCSim
+			testConfig  builder.VCSimTestConfig
 
-	It("valid hardware version string eg. vmx-15", func() {
-		vmxHwVersionString := "vmx-15"
-		Expect(contentlibrary.ParseVirtualHardwareVersion(vmxHwVersionString)).To(Equal(int32(15)))
-	})
-})
-
-var _ = Describe("LibItemToVirtualMachineImage", func() {
-	const (
-		versionKey = "vmware-system-version"
-		versionVal = "1.15"
-	)
-
-	var (
-		// FSS related to UnifiedTKGBYOI. This FSS should be manipulated atomically to avoid races between tests and
-		// provider.
-		unifiedTKGBYOIFSS uint32
-	)
-
-	BeforeEach(func() {
-		lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
-			return atomic.LoadUint32(&unifiedTKGBYOIFSS) != 0
-		}
-	})
-
-	Context("Expose ovfEnv properties", func() {
-		const (
-			ovfStringType          = "string"
-			userConfigurableKey    = "dummy-key-configurable"
-			notUserConfigurableKey = "dummy-key-not-configurable"
-			defaultValue           = "dummy-value"
+			clProvider contentlibrary.Provider
 		)
 
-		It("returns a VirtualMachineImage with expected annotations and ovfEnv", func() {
-			ts := time.Now()
-			item := &library.Item{
-				Name:         "fakeItem",
-				Type:         "ovf",
-				LibraryID:    "fakeID",
-				CreationTime: &ts,
-			}
-
-			ovfEnvelope := &ovf.Envelope{
-				VirtualSystem: &ovf.VirtualSystem{
-					Product: []ovf.ProductSection{
-						{
-							Vendor:      "vendor",
-							Product:     "product",
-							FullVersion: "fullVersion",
-							Version:     "version",
-							Property: []ovf.Property{
-								{
-									Key:     versionKey,
-									Type:    ovfStringType,
-									Default: pointer.String(versionVal),
-								},
-								{
-									Key:              userConfigurableKey,
-									Type:             ovfStringType,
-									Default:          pointer.String(defaultValue),
-									UserConfigurable: pointer.BoolPtr(true),
-								},
-								{
-									Key:              notUserConfigurableKey,
-									Type:             ovfStringType,
-									Default:          pointer.String(defaultValue),
-									UserConfigurable: pointer.Bool(false),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
-			Expect(image).ToNot(BeNil())
-			Expect(image.Name).Should(Equal("fakeItem"))
-
-			Expect(image.Annotations).To(HaveLen(2))
-			Expect(image.Annotations).To(HaveKey(constants.VMImageCLVersionAnnotation))
-			Expect(image.Annotations).Should(HaveKeyWithValue(versionKey, versionVal))
-			Expect(image.CreationTimestamp).To(BeEquivalentTo(metav1.NewTime(ts)))
-
-			Expect(image.Spec.ProductInfo.Vendor).Should(Equal("vendor"))
-			Expect(image.Spec.ProductInfo.Product).Should(Equal("product"))
-			Expect(image.Spec.ProductInfo.Version).Should(Equal("version"))
-			Expect(image.Spec.ProductInfo.FullVersion).Should(Equal("fullVersion"))
-
-			Expect(image.Spec.OVFEnv).Should(HaveLen(1))
-			Expect(image.Spec.OVFEnv).Should(HaveKey(userConfigurableKey))
-			Expect(image.Spec.OVFEnv[userConfigurableKey].Key).Should(Equal(userConfigurableKey))
-			Expect(image.Spec.OVFEnv[userConfigurableKey].Type).Should(Equal(ovfStringType))
-			Expect(image.Spec.OVFEnv[userConfigurableKey].Default).Should(Equal(pointer.String(defaultValue)))
-		})
-	})
-
-	Context("LibItemToVirtualMachineImage, ImageCompatibility and SupportedGuestOS", func() {
-		var item *library.Item
-
 		BeforeEach(func() {
-			ts := time.Now()
-			item = &library.Item{
-				Name:         "fakeItem",
-				Type:         "ovf",
-				LibraryID:    "fakeID",
-				CreationTime: &ts,
-			}
+			testConfig = builder.VCSimTestConfig{}
+			testConfig.WithContentLibrary = true
 		})
 
-		It("with vmtx type", func() {
-			item.Type = "vmtx"
-			image := contentlibrary.LibItemToVirtualMachineImage(item, nil)
-			Expect(image).ToNot(BeNil())
-			Expect(image.Name).Should(Equal("fakeItem"))
-			Expect(image.Annotations).To(HaveKey(constants.VMImageCLVersionAnnotation))
-
-			// ImageSupported in Status is unset as the image type is not OVF type
-			Expect(image.Status.ImageSupported).Should(BeNil())
-			Expect(image.Status.Conditions).Should(BeEmpty())
+		JustBeforeEach(func() {
+			ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
+			clProvider = contentlibrary.NewProvider(ctx.RestClient)
 		})
 
-		When("WCP_VMService_UnifiedTKG_BYOI FSS is enabled", func() {
-			var (
-				oldUnifiedTKGBYOIFSSState uint32
-			)
-			BeforeEach(func() {
-				oldUnifiedTKGBYOIFSSState = unifiedTKGBYOIFSS
-				atomic.StoreUint32(&unifiedTKGBYOIFSS, 1)
+		AfterEach(func() {
+			ctx.AfterEach()
+			ctx = nil
+			initObjects = nil
+		})
+
+		Context("when items are present in library", func() {
+
+			It("lists items", func() {
+				items, err := clProvider.GetLibraryItems(ctx, ctx.ContentLibraryID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(items).ToNot(BeEmpty())
 			})
+
+			It("gets and downloads the ovf", func() {
+				libItem, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, ctx.ContentLibraryImageName)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(libItem).ToNot(BeNil())
+
+				ovfEnvelope, err := clProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ovfEnvelope).ToNot(BeNil())
+			})
+		})
+
+		Context("when invalid item id is passed", func() {
+			It("returns an error creating a download session", func() {
+				libItem := &library.Item{
+					Name:      "fakeItem",
+					Type:      "ovf",
+					LibraryID: "fakeID",
+				}
+
+				ovf, err := clProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("404 Not Found"))
+				Expect(ovf).To(BeNil())
+			})
+		})
+
+		Context("called with an OVF that is invalid", func() {
+			var ovfPath string
 
 			AfterEach(func() {
-				atomic.StoreUint32(&unifiedTKGBYOIFSS, oldUnifiedTKGBYOIFSSState)
+				if ovfPath != "" {
+					Expect(os.Remove(ovfPath)).To(Succeed())
+				}
 			})
 
-			It("ImageSupported should be set to true when OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig and WCP_VMService_UnifiedTKG_BYOI FSS is set ", func() {
-				ovfEnvelope := &ovf.Envelope{
-					VirtualSystem: &ovf.VirtualSystem{
-						Product: []ovf.ProductSection{
-							{
-								Property: []ovf.Property{
-									{
-										Key:     "someKey",
-										Default: pointer.StringPtr("someRandom"),
-									},
-								},
-							},
-						},
-					},
+			It("does not return error", func() {
+				ovf, err := ioutil.TempFile("", "fake-*.ovf")
+				Expect(err).NotTo(HaveOccurred())
+				ovfPath = ovf.Name()
+
+				ovfInfo, err := ovf.Stat()
+				Expect(err).NotTo(HaveOccurred())
+
+				libItemName := strings.Split(ovfInfo.Name(), ".ovf")[0]
+				libItem := library.Item{
+					Name:      libItemName,
+					Type:      "ovf",
+					LibraryID: ctx.ContentLibraryID,
 				}
 
-				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
-				Expect(image).ToNot(BeNil())
-				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
+				err = clProvider.CreateLibraryItem(ctx, libItem, ovfPath)
+				Expect(err).NotTo(HaveOccurred())
 
-				Expect(image.Status.Conditions).Should(BeEmpty())
-			})
+				libItem2, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, libItemName)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(libItem2).ToNot(BeNil())
+				Expect(libItem2.Name).To(Equal(libItem.Name))
 
-		})
-
-		When("WCP_VMService_UnifiedTKG_BYOI FSS is not enabled", func() {
-			var (
-				oldUnifiedTKGBYOIFSSState uint32
-			)
-			BeforeEach(func() {
-				oldUnifiedTKGBYOIFSSState = unifiedTKGBYOIFSS
-				atomic.StoreUint32(&unifiedTKGBYOIFSS, 0)
-			})
-
-			AfterEach(func() {
-				atomic.StoreUint32(&unifiedTKGBYOIFSS, oldUnifiedTKGBYOIFSSState)
-			})
-
-			It("ImageSupported should be set to true when it is a TKG image and valid OS Type is set and OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig", func() {
-				tkgKey := "vmware-system.guest.kubernetes.distribution.image.version"
-
-				ovfEnvelope := &ovf.Envelope{
-					VirtualSystem: &ovf.VirtualSystem{
-						OperatingSystem: []ovf.OperatingSystemSection{
-							{
-								OSType: pointer.String("dummy_valid_os_type"),
-							},
-						},
-						Product: []ovf.ProductSection{
-							{
-								Property: []ovf.Property{
-									{
-										Key:     tkgKey,
-										Default: pointer.StringPtr("someRandom"),
-									},
-								},
-							},
-						},
-					},
-				}
-
-				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
-				Expect(image).ToNot(BeNil())
-
-				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
-				expectedCondition := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
-				}
-				Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
-			})
-
-			It("ImageSupported should be set to false when OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig and is not a TKG image and has a valid OS type set", func() {
-				ovfEnvelope := &ovf.Envelope{
-					VirtualSystem: &ovf.VirtualSystem{
-						Product: []ovf.ProductSection{
-							{
-								Property: []ovf.Property{
-									{
-										Key:     "someKey",
-										Default: pointer.StringPtr("someRandom"),
-									},
-								},
-							},
-						},
-					},
-				}
-
-				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
-				Expect(image).ToNot(BeNil())
-				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(false)))
-
-				expectedCondition := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
-						vmopv1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
-						vmopv1alpha1.ConditionSeverityError,
-						"VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1"),
-				}
-				Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
-			})
-
-			It("ImageSupported should be set to true when OVF Envelope has VMOperatorV1Alpha1ExtraConfigKey set to VMOperatorV1Alpha1ConfigReady in extraConfig and has a valid OS type set", func() {
-				ovfEnvelope := &ovf.Envelope{
-					VirtualSystem: &ovf.VirtualSystem{
-						VirtualHardware: []ovf.VirtualHardwareSection{
-							{
-								ExtraConfig: []ovf.Config{
-									{
-										Key:   constants.VMOperatorV1Alpha1ExtraConfigKey,
-										Value: constants.VMOperatorV1Alpha1ConfigReady,
-									},
-								},
-							},
-						},
-					},
-				}
-
-				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
-				Expect(image).ToNot(BeNil())
-				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
-				expectedCondition := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
-				}
-				Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
+				ovfEnvelope, err := clProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem2)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ovfEnvelope).To(BeNil())
 			})
 		})
 	})
-})
+}

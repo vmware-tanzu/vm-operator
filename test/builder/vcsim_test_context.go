@@ -71,6 +71,7 @@ type TestContextForVCSim struct {
 	PodNamespace string
 	VCClient     *govmomi.Client
 	Finder       *find.Finder
+	RestClient   *rest.Client
 	Recorder     record.Recorder
 
 	// When WithFaultDomains is true:
@@ -80,16 +81,15 @@ type TestContextForVCSim struct {
 
 	// When WithContentLibrary is true:
 	ContentLibraryImageName string
+	ContentLibraryID        string
 
 	model             *simulator.Model
 	server            *simulator.Server
 	tlsServerCertPath string
 	tlsServerKeyPath  string
 
-	restClient       *rest.Client
 	folder           *object.Folder
 	datastore        *object.Datastore
-	contentLibraryID string
 	withFaultDomains bool
 
 	singleCCR *object.ClusterComputeResource
@@ -268,10 +268,10 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	Expect(err).ToNot(HaveOccurred())
 	c.VCClient = vcClient
 
-	c.restClient = rest.NewClient(c.VCClient.Client)
+	c.RestClient = rest.NewClient(c.VCClient.Client)
 	// Actual username and password don't matter for vcsim.
 	userPassword := url.UserPassword("vmware", "VMWARE")
-	Expect(c.restClient.Login(c, userPassword)).To(Succeed())
+	Expect(c.RestClient.Login(c, userPassword)).To(Succeed())
 
 	c.Finder = find.NewFinder(vcClient.Client)
 
@@ -296,7 +296,7 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 		return
 	}
 
-	libMgr := library.NewManager(c.restClient)
+	libMgr := library.NewManager(c.RestClient)
 
 	libSpec := library.Library{
 		Name: "vmop-content-library",
@@ -312,7 +312,7 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	clID, err := libMgr.CreateLibrary(c, libSpec)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(clID).ToNot(BeEmpty())
-	c.contentLibraryID = clID
+	c.ContentLibraryID = clID
 
 	clProvider := &vmopv1alpha1.ContentLibraryProvider{
 		ObjectMeta: metav1.ObjectMeta{

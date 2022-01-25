@@ -7,10 +7,20 @@ import (
 	"testing"
 
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func TestContentLibrary(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "vSphere Provider Content Library Suite")
+func vcSimTests() {
+	Describe("ContentLibrary Provider", clTests)
 }
+
+var suite = builder.NewTestSuite()
+
+func TestContentLibrary(t *testing.T) {
+	suite.Register(t, "vSphere Provider ContentLibrary Suite", nil, vcSimTests)
+}
+
+var _ = BeforeSuite(suite.BeforeSuite)
+
+var _ = AfterSuite(suite.AfterSuite)

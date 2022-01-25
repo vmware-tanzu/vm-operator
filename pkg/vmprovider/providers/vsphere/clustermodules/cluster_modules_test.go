@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package clustermodules_test
@@ -7,154 +7,96 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var _ = Describe("FindClusterModuleUUID", func() {
-	const (
-		groupName1, groupName2   = "groupName1", "groupName2"
-		moduleUUID1, moduleUUID2 = "uuid1", "uuid2"
-	)
+func cmTests() {
+	Describe("Cluster Modules", func() {
 
-	var (
-		resourcePolicy           *vmopv1.VirtualMachineSetResourcePolicy
-		clusterRef1, clusterRef2 types.ManagedObjectReference
-	)
-
-	BeforeEach(func() {
-		resourcePolicy = &vmopv1.VirtualMachineSetResourcePolicy{
-			Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
-				ClusterModules: []vmopv1.ClusterModuleSpec{
-					{
-						GroupName: groupName1,
-					},
-					{
-						GroupName: groupName2,
-					},
-				},
-			},
-		}
-
-		clusterRef1 = types.ManagedObjectReference{Value: "dummy-cluster1"}
-		clusterRef2 = types.ManagedObjectReference{Value: "dummy-cluster2"}
-	})
-
-	Context("FaultDomains FSS is disabled", func() {
-
-		Context("GroupName does not exist", func() {
-			It("Returns expected values", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID("does-not-exist", clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(-1))
-				Expect(uuid).To(BeEmpty())
-			})
-		})
-
-		Context("GroupName exists", func() {
-			BeforeEach(func() {
-				resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules,
-					vmopv1.ClusterModuleStatus{
-						GroupName:  groupName1,
-						ModuleUuid: moduleUUID1,
-					},
-					vmopv1.ClusterModuleStatus{
-						GroupName:   groupName2,
-						ModuleUuid:  moduleUUID2,
-						ClusterMoID: "this should be ignored",
-					},
-				)
-			})
-
-			It("Returns expected entry", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID(groupName1, clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(0))
-				Expect(uuid).To(Equal(moduleUUID1))
-
-				idx, uuid = clustermodules.FindClusterModuleUUID(groupName2, clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(1))
-				Expect(uuid).To(Equal(moduleUUID2))
-			})
-		})
-
-	})
-
-	Context("FaultDomains FSS is enabled", func() {
 		var (
-			oldFaultDomainsFunc func() bool
+			ctx        *builder.TestContextForVCSim
+			cmProvider clustermodules.Provider
+
+			moduleGroup  string
+			moduleSpec   *vmopv1alpha1.ClusterModuleSpec
+			moduleStatus *vmopv1alpha1.ClusterModuleStatus
+			clusterRef   types.ManagedObjectReference
+			vmRef        types.ManagedObjectReference
 		)
 
 		BeforeEach(func() {
-			oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
-			lib.IsWcpFaultDomainsFSSEnabled = func() bool { return true }
+			ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+			cmProvider = clustermodules.NewProvider(ctx.RestClient)
+
+			clusterRef = ctx.GetSingleClusterCompute().Reference()
+
+			moduleGroup = "controller-group"
+			moduleSpec = &vmopv1alpha1.ClusterModuleSpec{
+				GroupName: moduleGroup,
+			}
+
+			moduleID, err := cmProvider.CreateModule(ctx, clusterRef)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(moduleID).ToNot(BeEmpty())
+
+			moduleStatus = &vmopv1alpha1.ClusterModuleStatus{
+				GroupName:  moduleSpec.GroupName,
+				ModuleUuid: moduleID,
+			}
+
+			// TODO: Create VM instead of using one that vcsim creates for free.
+			vm, err := ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
+			Expect(err).ToNot(HaveOccurred())
+			vmRef = vm.Reference()
 		})
 
 		AfterEach(func() {
-			lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
+			ctx.AfterEach()
+			ctx = nil
 		})
 
-		Context("GroupName does not exist", func() {
-			It("Returns expected values", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID("does-not-exist", clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(-1))
-				Expect(uuid).To(BeEmpty())
-			})
+		It("Create a ClusterModule, verify it exists and delete it", func() {
+			exists, err := cmProvider.DoesModuleExist(ctx, moduleStatus.ModuleUuid, clusterRef)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(exists).To(BeTrue())
+
+			Expect(cmProvider.DeleteModule(ctx, moduleStatus.ModuleUuid)).To(Succeed())
+
+			exists, err = cmProvider.DoesModuleExist(ctx, moduleStatus.ModuleUuid, clusterRef)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(exists).To(BeFalse())
 		})
 
-		Context("GroupName exists", func() {
-			BeforeEach(func() {
-				resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules,
-					vmopv1.ClusterModuleStatus{
-						GroupName:   groupName1,
-						ModuleUuid:  moduleUUID1,
-						ClusterMoID: clusterRef1.Value,
-					},
-					vmopv1.ClusterModuleStatus{
-						GroupName:   groupName2,
-						ModuleUuid:  moduleUUID2,
-						ClusterMoID: clusterRef1.Value,
-					},
-				)
+		Context("ClusterModule-VM association", func() {
+			It("check membership doesn't exist", func() {
+				isMember, err := cmProvider.IsMoRefModuleMember(ctx, moduleStatus.ModuleUuid, vmRef)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(isMember).To(BeFalse())
 			})
 
-			It("Returns expected entry", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID(groupName1, clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(0))
-				Expect(uuid).To(Equal(moduleUUID1))
+			It("Associate a VM with a clusterModule, check the membership and remove it", func() {
+				By("Associate VM")
+				err := cmProvider.AddMoRefToModule(ctx, moduleStatus.ModuleUuid, vmRef)
+				Expect(err).NotTo(HaveOccurred())
 
-				idx, uuid = clustermodules.FindClusterModuleUUID(groupName2, clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(1))
-				Expect(uuid).To(Equal(moduleUUID2))
-			})
-		})
+				By("Verify membership")
+				isMember, err := cmProvider.IsMoRefModuleMember(ctx, moduleStatus.ModuleUuid, vmRef)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(isMember).To(BeTrue())
 
-		Context("Matches by cluster reference", func() {
-			BeforeEach(func() {
-				resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules,
-					vmopv1.ClusterModuleStatus{
-						GroupName:   groupName1,
-						ModuleUuid:  moduleUUID1,
-						ClusterMoID: clusterRef1.Value,
-					},
-					vmopv1.ClusterModuleStatus{
-						GroupName:   groupName1,
-						ModuleUuid:  moduleUUID2,
-						ClusterMoID: clusterRef2.Value,
-					},
-				)
-			})
+				By("Remove the association")
+				err = cmProvider.RemoveMoRefFromModule(ctx, moduleStatus.ModuleUuid, vmRef)
+				Expect(err).NotTo(HaveOccurred())
 
-			It("Returns expected entry", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID(groupName1, clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(0))
-				Expect(uuid).To(Equal(moduleUUID1))
-
-				idx, uuid = clustermodules.FindClusterModuleUUID(groupName1, clusterRef2, resourcePolicy)
-				Expect(idx).To(Equal(1))
-				Expect(uuid).To(Equal(moduleUUID2))
+				By("Verify no longer a member")
+				isMember, err = cmProvider.IsMoRefModuleMember(ctx, moduleStatus.ModuleUuid, vmRef)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(isMember).To(BeFalse())
 			})
 		})
 	})
-})
+}

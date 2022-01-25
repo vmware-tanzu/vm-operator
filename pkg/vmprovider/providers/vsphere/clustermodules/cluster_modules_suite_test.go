@@ -7,10 +7,20 @@ import (
 	"testing"
 
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func TestClusterModules(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "vSphere Provider Cluster Modules Suite")
+func vcSimTests() {
+	Describe("ClusterModules Provider", cmTests)
 }
+
+var suite = builder.NewTestSuite()
+
+func TestClusterModules(t *testing.T) {
+	suite.Register(t, "vSphere Provider Cluster Modules Suite", nil, vcSimTests)
+}
+
+var _ = BeforeSuite(suite.BeforeSuite)
+
+var _ = AfterSuite(suite.AfterSuite)

@@ -4,10 +4,7 @@
 package validation_test
 
 import (
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -32,14 +29,7 @@ type intgValidatingWebhookContext struct {
 }
 
 func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
-	privateKey, _ := rsa.GenerateKey(rand.Reader, 2048)
-	publicKey := privateKey.PublicKey
-	publicKeyPem := string(pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "PUBLIC KEY",
-			Bytes: x509.MarshalPKCS1PublicKey(&publicKey),
-		},
-	))
+	privateKey, publicKeyPem := builder.WebConsoleRequestKeyPair()
 
 	ctx := &intgValidatingWebhookContext{
 		IntegrationTestContext: *suite.NewIntegrationTestContext(),

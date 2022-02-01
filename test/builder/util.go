@@ -4,6 +4,10 @@
 package builder
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -266,6 +270,18 @@ func DummyWebConsoleRequest(namespace, wcrName, vmName, pubKey string) *vmopv1.W
 			PublicKey:          pubKey,
 		},
 	}
+}
+
+func WebConsoleRequestKeyPair() (privateKey *rsa.PrivateKey, publicKeyPem string) {
+	privateKey, _ = rsa.GenerateKey(rand.Reader, 2048)
+	publicKey := privateKey.PublicKey
+	publicKeyPem = string(pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: x509.MarshalPKCS1PublicKey(&publicKey),
+		},
+	))
+	return privateKey, publicKeyPem
 }
 
 func ToUnstructured(obj runtime.Object) (*unstructured.Unstructured, error) {

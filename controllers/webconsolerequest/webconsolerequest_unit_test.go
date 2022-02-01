@@ -56,7 +56,6 @@ func unitTestsReconcile() {
 				PublicKey:          "",
 			},
 		}
-
 	})
 
 	JustBeforeEach(func() {

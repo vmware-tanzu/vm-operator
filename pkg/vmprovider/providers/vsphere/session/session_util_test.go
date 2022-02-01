@@ -5,10 +5,7 @@ package session_test
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
@@ -24,6 +21,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var _ = Describe("Test Session Utils", func() {
@@ -229,19 +227,11 @@ var _ = Describe("Test Session Utils", func() {
 	Context("EncryptWebMKS", func() {
 		var (
 			privateKey   *rsa.PrivateKey
-			publicKey    rsa.PublicKey
 			publicKeyPem string
 		)
 
 		BeforeEach(func() {
-			privateKey, _ = rsa.GenerateKey(rand.Reader, 2048)
-			publicKey = privateKey.PublicKey
-			publicKeyPem = string(pem.EncodeToMemory(
-				&pem.Block{
-					Type:  "PUBLIC KEY",
-					Bytes: x509.MarshalPKCS1PublicKey(&publicKey),
-				},
-			))
+			privateKey, publicKeyPem = builder.WebConsoleRequestKeyPair()
 		})
 
 		It("Encrypts a string correctly", func() {

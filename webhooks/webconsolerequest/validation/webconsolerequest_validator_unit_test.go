@@ -4,10 +4,7 @@
 package validation_test
 
 import (
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
@@ -37,14 +34,7 @@ type unitValidatingWebhookContext struct {
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
-	privateKey, _ := rsa.GenerateKey(rand.Reader, 2048)
-	publicKey := privateKey.PublicKey
-	publicKeyPem := string(pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "PUBLIC KEY",
-			Bytes: x509.MarshalPKCS1PublicKey(&publicKey),
-		},
-	))
+	privateKey, publicKeyPem := builder.WebConsoleRequestKeyPair()
 
 	wcr := builder.DummyWebConsoleRequest("some-namespace", "some-name", "some-vm-name", publicKeyPem)
 	obj, err := builder.ToUnstructured(wcr)

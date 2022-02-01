@@ -5,6 +5,7 @@ package webconsolerequest_test
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -31,15 +32,20 @@ func webConsoleRequestReconcile() {
 		wcr *v1alpha1.WebConsoleRequest
 		vm  *v1alpha1.VirtualMachine
 
-		oldIsUnifiedTKGBYOIFSSEnabled func() bool
+		unifiedTKGBYOIFSS     uint32
+		origunifiedTKGBYOIFSS uint32
 	)
 
 	getWebConsoleRequest := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *v1alpha1.WebConsoleRequest {
 		wcr := &v1alpha1.WebConsoleRequest{}
-		if err := ctx.Client.Get(ctx, objKey, vm); err != nil {
+		if err := ctx.Client.Get(ctx, objKey, wcr); err != nil {
 			return nil
 		}
 		return wcr
+	}
+
+	lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
+		return atomic.LoadUint32(&unifiedTKGBYOIFSS) != 0
 	}
 
 	BeforeEach(func() {
@@ -50,7 +56,13 @@ func webConsoleRequestReconcile() {
 				Name:      "dummy-vm",
 				Namespace: ctx.Namespace,
 			},
+			Spec: v1alpha1.VirtualMachineSpec{
+				ImageName:  "dummy-image",
+				PowerState: v1alpha1.VirtualMachinePoweredOn,
+			},
 		}
+
+		_, publicKeyPem := builder.WebConsoleRequestKeyPair()
 
 		wcr = &v1alpha1.WebConsoleRequest{
 			ObjectMeta: metav1.ObjectMeta{
@@ -59,14 +71,12 @@ func webConsoleRequestReconcile() {
 			},
 			Spec: v1alpha1.WebConsoleRequestSpec{
 				VirtualMachineName: vm.Name,
-				PublicKey:          "",
+				PublicKey:          publicKeyPem,
 			},
 		}
 
-		oldIsUnifiedTKGBYOIFSSEnabled = lib.IsUnifiedTKGBYOIFSSEnabled
-		lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
-			return true
-		}
+		origunifiedTKGBYOIFSS = unifiedTKGBYOIFSS
+		atomic.StoreUint32(&unifiedTKGBYOIFSS, 1)
 
 		fakeVMProvider.Lock()
 		defer fakeVMProvider.Unlock()
@@ -79,24 +89,32 @@ func webConsoleRequestReconcile() {
 		ctx.AfterEach()
 		ctx = nil
 
-		fakeVMProvider.Reset()
+		atomic.StoreUint32(&unifiedTKGBYOIFSS, origunifiedTKGBYOIFSS)
 
-		lib.IsUnifiedTKGBYOIFSSEnabled = oldIsUnifiedTKGBYOIFSSEnabled
+		fakeVMProvider.Reset()
 	})
 
 	Context("Reconcile", func() {
 		BeforeEach(func() {
+			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, wcr)).To(Succeed())
 		})
 
 		AfterEach(func() {
 			err := ctx.Client.Delete(ctx, wcr)
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+			err = ctx.Client.Delete(ctx, vm)
+			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 		})
 
 		It("resource successfully created", func() {
-			wcr := getWebConsoleRequest(ctx, types.NamespacedName{Name: wcr.Name, Namespace: wcr.Namespace})
-			Expect(wcr).ToNot(BeNil())
+			Eventually(func() bool {
+				wcr = getWebConsoleRequest(ctx, types.NamespacedName{Name: wcr.Name, Namespace: wcr.Namespace})
+				if wcr != nil && wcr.Status.Response != "" {
+					return true
+				}
+				return false
+			}).Should(BeTrue(), "waiting for webconsolerequest to be")
 			Expect(wcr.Status.Response).ToNot(BeEmpty())
 			Expect(wcr.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
 		})

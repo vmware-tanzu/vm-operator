@@ -34,16 +34,7 @@ TEST_PKGS=(
 
 # Packages tested with the new test framework.
 NEW_TEST_PKGS=(
-  "./controllers/contentsource"
-  "./controllers/infracluster"
-  "./controllers/infraprovider"
-  "./controllers/providerconfigmap"
-  "./controllers/virtualmachine"
-  "./controllers/virtualmachineclass"
-  "./controllers/virtualmachineimage"
-  "./controllers/virtualmachineservice"
-  "./controllers/virtualmachinesetresourcepolicy"
-  "./controllers/volume"
+  "./controllers/..."
   "./webhooks/..."
 )
 

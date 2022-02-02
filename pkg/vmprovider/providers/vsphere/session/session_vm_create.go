@@ -531,16 +531,18 @@ func (s *Session) updateInstanceVolumesInVMConfigSpec(
 	if err != nil {
 		return err
 	}
+	// DRS contract mandates the device key IDs to be unique negative numbers.
+	deviceKey := constants.StartingDeviceKeyForPlaceVMCreate
 	for _, volume := range instanceStorageVolumes {
-		thinProv := false
 		v := &vimTypes.VirtualDeviceConfigSpec{
 			Operation:     vimTypes.VirtualDeviceConfigSpecOperationAdd,
 			FileOperation: vimTypes.VirtualDeviceConfigSpecFileOperationCreate,
 			Device: &vimTypes.VirtualDisk{
 				CapacityInKB: volume.PersistentVolumeClaim.InstanceVolumeClaim.Size.Value() >> 10,
 				VirtualDevice: vimTypes.VirtualDevice{
+					Key: deviceKey,
 					Backing: &vimTypes.VirtualDiskFlatVer2BackingInfo{
-						ThinProvisioned: &thinProv,
+						ThinProvisioned: pointer.BoolPtr(false), // disks created on vSAND are thick in nature.
 					},
 				},
 				VDiskId: &vimTypes.ID{Id: constants.InstanceStorageVDiskID},
@@ -554,7 +556,7 @@ func (s *Session) updateInstanceVolumesInVMConfigSpec(
 				},
 			},
 		}
-
+		deviceKey--
 		configSpec.DeviceChange = append(configSpec.DeviceChange, v)
 	}
 

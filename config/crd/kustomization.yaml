@@ -11,6 +11,7 @@ resources:
 - bases/vmoperator.vmware.com_contentsources.yaml
 - bases/vmoperator.vmware.com_contentsourcebindings.yaml
 - bases/vmoperator.vmware.com_contentlibraryproviders.yaml
+- bases/vmoperator.vmware.com_webconsolerequests.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

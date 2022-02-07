@@ -4,6 +4,8 @@
 package volume_test
 
 import (
+	goctx "context"
+	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -14,6 +16,7 @@ import (
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -28,6 +31,15 @@ import (
 
 func unitTests() {
 	Describe("Invoking Reconcile", unitTestsReconcile)
+}
+
+type testFailClient struct {
+	client.Client
+}
+
+// This is used for returning an error while unit testing.
+func (f *testFailClient) Create(ctx goctx.Context, obj client.Object, opts ...client.CreateOption) error {
+	return k8sapierrors.NewForbidden(schema.GroupResource{}, "", errors.New("insufficient quota for creating PVC"))
 }
 
 func unitTestsReconcile() {
@@ -208,6 +220,16 @@ func unitTestsReconcile() {
 					expectPVCsStatus(volCtx, ctx, true, true, len(vm.Spec.Volumes))
 				})
 			})
+
+			It("Storage policy quota is insufficient - PVCs should not create", func() {
+				tfc := testFailClient{reconciler.Client}
+				reconciler.Client = &tfc
+				err := reconciler.ReconcileNormal(volCtx)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("insufficient quota"))
+				expectPVCsStatus(volCtx, ctx, true, false, 0)
+			})
+
 		})
 
 		When("VM does not have BiosUUID", func() {

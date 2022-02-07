@@ -425,7 +425,14 @@ func (r *Reconciler) createInstanceStoragePVC(
 
 	// We merely consider creating non-existing PVCs in reconcileInstanceStoragePVCs flow.
 	// We specifically don't need of CreateOrUpdate / CreateOrPatch.
-	return r.Create(ctx, pvc)
+	if err := r.Create(ctx, pvc); err != nil {
+		if instancestorage.IsInsufficientQuota(err) {
+			r.recorder.EmitEvent(ctx.VM, "Create", err, true)
+		}
+		return err
+	}
+
+	return nil
 }
 
 func (r *Reconciler) getInstanceStoragePVCs(

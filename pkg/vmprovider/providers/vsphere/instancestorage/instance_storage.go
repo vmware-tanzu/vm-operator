@@ -4,7 +4,10 @@
 package instancestorage
 
 import (
+	"strings"
+
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // IsConfigured checks if VM spec has instance volumes to identify if VM is configured with instance storage
@@ -28,4 +31,11 @@ func FilterVolumes(vm *vmopv1alpha1.VirtualMachine) []vmopv1alpha1.VirtualMachin
 	}
 
 	return volumes
+}
+
+func IsInsufficientQuota(err error) bool {
+	if apiErrors.IsForbidden(err) && (strings.Contains(err.Error(), "insufficient quota") || strings.Contains(err.Error(), "exceeded quota")) {
+		return true
+	}
+	return false
 }

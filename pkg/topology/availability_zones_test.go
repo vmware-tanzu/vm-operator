@@ -142,6 +142,13 @@ var _ = Describe("Availability Zones", func() {
 			ExpectWithOffset(1, err).ToNot(HaveOccurred())
 		}
 	}
+	assertGetAvailabilityZoneFSSDisabled := func() {
+		for i := 0; i < numberOfAvailabilityZones; i++ {
+			_, err := topology.GetAvailabilityZone(ctx, client, fmt.Sprintf("az-%d", i))
+			ExpectWithOffset(1, err).To(
+				MatchError(fmt.Sprintf("FaultDomains FSS is not enabled but requested non-default AZ az-%d", i)))
+		}
+	}
 
 	assertGetAvailabilityZonesErrNoAvailabilityZones := func() {
 		_, err := topology.GetAvailabilityZones(ctx, client)
@@ -160,6 +167,11 @@ var _ = Describe("Availability Zones", func() {
 	assertGetAvailabilityZoneEmptyNameErrNotFound := func() {
 		_, err := topology.GetAvailabilityZone(ctx, client, "")
 		ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
+	}
+	assertGetAvailabilityZoneInvalidNameFSSDisabled := func() {
+		_, err := topology.GetAvailabilityZone(ctx, client, "invalid")
+		ExpectWithOffset(1, err).To(
+			MatchError("FaultDomains FSS is not enabled but requested non-default AZ invalid"))
 	}
 
 	assertGetNamespaceRPAndFolderInvalidNameErrNotFound := func() {
@@ -196,7 +208,15 @@ var _ = Describe("Availability Zones", func() {
 			azName := fmt.Sprintf("az-%d", i)
 			_, _, err := topology.GetNamespaceRPAndFolder(ctx, client, azName, "invalid")
 			ExpectWithOffset(1, err).To(
-				MatchError(fmt.Errorf("availability zone %s missing info for namespace %s", azName, "invalid")))
+				MatchError(fmt.Errorf("availability zone %q missing info for namespace %s", azName, "invalid")))
+		}
+	}
+	assertGetNamespaceRPAndFolderFSSDisabled := func() {
+		for i := 0; i < numberOfAvailabilityZones; i++ {
+			azName := fmt.Sprintf("az-%d", i)
+			_, _, err := topology.GetNamespaceRPAndFolder(ctx, client, azName, "invalid")
+			ExpectWithOffset(1, err).To(
+				MatchError(fmt.Sprintf("FaultDomains FSS is not enabled but requested non-default AZ az-%d", i)))
 		}
 	}
 
@@ -241,14 +261,11 @@ var _ = Describe("Availability Zones", func() {
 			})
 			Context("WCP_FaultDomains=disabled", func() {
 				Context("GetAvailabilityZones", func() {
-					It("Should return the two AvailabilityZone resources", assertGetAvailabilityZonesSuccess)
+					It("Should return the default AvailabilityZone", assertGetAvailabilityZonesDefaultZone)
 				})
 				Context("GetAvailabilityZone", func() {
 					Context("With a valid AvailabilityZone name", func() {
-						It("Should return the AvailabilityZone resource", assertGetAvailabilityZoneSuccess)
-					})
-					Context("With an invalid AvailabilityZone name", func() {
-						It("Should return an apierrors.NotFound error", assertGetAvailabilityZoneInvalidNameErrNotFound)
+						It("Should return expected error", assertGetAvailabilityZoneFSSDisabled)
 					})
 					Context("With an empty AvailabilityZone name", func() {
 						It("Should return the Default AvailabilityZone resource", assertGetAvailabilityEmptyZoneDefaultZone)
@@ -263,7 +280,7 @@ var _ = Describe("Availability Zones", func() {
 						It("Should return the RP and Folder resources", assertGetNamespaceRPAndFolderSuccessNoZone)
 					})
 					Context("With an invalid Namespace name", func() {
-						It("Should return an missing info error", assertGetNamespaceRPAndFolderInvalidNamespaceErrNotFound)
+						It("Should return an not default AvailabilityZone name error", assertGetNamespaceRPAndFolderFSSDisabled)
 					})
 				})
 			})
@@ -290,14 +307,11 @@ var _ = Describe("Availability Zones", func() {
 			})
 			Context("WCP_FaultDomains=disabled", func() {
 				Context("GetAvailabilityZones", func() {
-					It("Should return the two AvailabilityZone resources", assertGetAvailabilityZonesSuccess)
+					It("Should return the default AvailabilityZone resource", assertGetAvailabilityZonesDefaultZone)
 				})
 				Context("GetAvailabilityZone", func() {
-					Context("With a valid AvailabilityZone name", func() {
-						It("Should return the AvailabilityZone resource", assertGetAvailabilityZoneSuccess)
-					})
 					Context("With an invalid AvailabilityZone name", func() {
-						It("Should return an apierrors.NotFound error", assertGetAvailabilityZoneInvalidNameErrNotFound)
+						It("Should return an expected error", assertGetAvailabilityZoneFSSDisabled)
 					})
 					Context("With an empty AvailabilityZone name", func() {
 						It("Should return the Default AvailabilityZone resource", assertGetAvailabilityEmptyZoneDefaultZone)
@@ -344,7 +358,7 @@ var _ = Describe("Availability Zones", func() {
 							"DevOps Namespace resources", assertGetAvailabilityZoneDefaultZone)
 					})
 					Context("With an invalid AvailabilityZone name", func() {
-						It("Should return an apierrors.NotFound error", assertGetAvailabilityZoneInvalidNameErrNotFound)
+						It("Should return an expected error", assertGetAvailabilityZoneInvalidNameFSSDisabled)
 					})
 					Context("With an empty AvailabilityZone name", func() {
 						It("Should return the Default AvailabilityZone resource", assertGetAvailabilityEmptyZoneDefaultZone)
@@ -385,7 +399,7 @@ var _ = Describe("Availability Zones", func() {
 							"DevOps Namespace resources", assertGetAvailabilityZoneDefaultZone)
 					})
 					Context("With an invalid AvailabilityZone name", func() {
-						It("Should return an apierrors.NotFound error", assertGetAvailabilityZoneInvalidNameErrNotFound)
+						It("Should return an expected error", assertGetAvailabilityZoneInvalidNameFSSDisabled)
 					})
 					Context("With an empty AvailabilityZone name", func() {
 						It("Should return the Default AvailabilityZone resource", assertGetAvailabilityEmptyZoneDefaultZone)

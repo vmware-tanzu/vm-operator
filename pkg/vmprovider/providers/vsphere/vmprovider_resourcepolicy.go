@@ -11,7 +11,6 @@ import (
 	"github.com/vmware/govmomi/object"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 )
@@ -25,13 +24,6 @@ func (vs *vSphereVMProvider) IsVirtualMachineSetResourcePolicyReady(
 	client, err := vs.GetClient(ctx)
 	if err != nil {
 		return false, err
-	}
-
-	// If the FSS is not enabled and no zone was specified then assume the default zone.
-	if !lib.IsWcpFaultDomainsFSSEnabled() {
-		if availabilityZoneName == "" {
-			availabilityZoneName = topology.DefaultAvailabilityZoneName
-		}
 	}
 
 	az, err := topology.GetAvailabilityZone(ctx, vs.k8sClient, availabilityZoneName)

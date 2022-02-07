@@ -4,41 +4,23 @@
 package config_test
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/simulator"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/test"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var (
-	model             *simulator.Model
-	server            *simulator.Server
-	ctx               context.Context
-	tlsTestModel      *simulator.Model
-	tlsServer         *simulator.Server
-	tlsServerCertPath string
-	tlsServerKeyPath  string
-)
+func vcSimTests() {
+	Describe("Config", configTests)
+}
 
-var _ = BeforeSuite(func() {
-	ctx, model, server,
-		tlsServerKeyPath, tlsServerCertPath,
-		tlsTestModel, tlsServer = test.BeforeSuite()
-})
-
-var _ = AfterSuite(func() {
-	test.AfterSuite(
-		ctx,
-		model, server,
-		tlsServerKeyPath, tlsServerCertPath,
-		tlsTestModel, tlsServer)
-})
+var suite = builder.NewTestSuite()
 
 func TestConfig(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "vSphere Provider Config Suite")
+	suite.Register(t, "vSphere Provider Config Suite", nil, vcSimTests)
 }
+
+var _ = BeforeSuite(suite.BeforeSuite)
+
+var _ = AfterSuite(suite.AfterSuite)

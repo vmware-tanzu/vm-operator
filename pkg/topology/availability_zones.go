@@ -9,8 +9,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
@@ -55,16 +54,6 @@ func GetNamespaceRPAndFolder(
 	client ctrlclient.Client,
 	availabilityZoneName, namespace string) (string, string, error) {
 
-	if !lib.IsWcpFaultDomainsFSSEnabled() {
-		if availabilityZoneName == "" {
-			availabilityZoneName = DefaultAvailabilityZoneName
-		}
-
-		// Note that GetAvailabilityZone() will return a synthesized zone for all
-		// namespaces even though we only care about one namespace. We can address
-		// that later if we don't enable the FSS by default.
-	}
-
 	availabilityZone, err := GetAvailabilityZone(ctx, client, availabilityZoneName)
 	if err != nil {
 		return "", "", err
@@ -72,7 +61,7 @@ func GetNamespaceRPAndFolder(
 
 	nsInfo, ok := availabilityZone.Spec.Namespaces[namespace]
 	if !ok {
-		return "", "", fmt.Errorf("availability zone %s missing info for namespace %s",
+		return "", "", fmt.Errorf("availability zone %q missing info for namespace %s",
 			availabilityZoneName, namespace)
 	}
 
@@ -85,16 +74,13 @@ func GetNamespaceFolderMoID(
 	client ctrlclient.Client,
 	namespace string) (string, error) {
 
-	// Similar to the comment in GetNamespaceRPAndFolder(), when the FSS is not enabled,
-	// GetAvailabilityZones() will return a synthesized zone for all namespaces even
-	// though we only care about one namespace.
 	availabilityZones, err := GetAvailabilityZones(ctx, client)
 	if err != nil {
 		return "", err
 	}
 
-	// Note that the Folder is VC-scoped, but we store the MoID in each Zone CRD so we can
-	// return the first match.
+	// Note that the Folder is VC-scoped, but we store the Folder MoID in each Zone CR
+	// so we can return the first match.
 	for _, zone := range availabilityZones {
 		nsInfo, ok := zone.Spec.Namespaces[namespace]
 		if ok {
@@ -110,26 +96,22 @@ func GetAvailabilityZones(
 	ctx context.Context,
 	client ctrlclient.Client) ([]topologyv1.AvailabilityZone, error) {
 
-	availabilityZoneList := &topologyv1.AvailabilityZoneList{}
-	if err := client.List(ctx, availabilityZoneList); err != nil {
-		return nil, err
-	}
-
-	if len(availabilityZoneList.Items) == 0 {
-		// If there are no AZs and the WCP Fault Domain FSS is enabled then
-		// do not default to backwards compatibility mode.
-		if lib.IsWcpFaultDomainsFSSEnabled() {
-			return nil, ErrNoAvailabilityZones
-		}
-
-		// There are no AZs and the WCP Fault Domain FSS is disabled, so it is
-		// okay to use backwards compatibility mode.
+	if !lib.IsWcpFaultDomainsFSSEnabled() {
 		defaultAz, err := GetDefaultAvailabilityZone(ctx, client)
 		if err != nil {
 			return nil, err
 		}
 
 		return []topologyv1.AvailabilityZone{defaultAz}, nil
+	}
+
+	availabilityZoneList := &topologyv1.AvailabilityZoneList{}
+	if err := client.List(ctx, availabilityZoneList); err != nil {
+		return nil, err
+	}
+
+	if len(availabilityZoneList.Items) == 0 {
+		return nil, ErrNoAvailabilityZones
 	}
 
 	zones := make([]topologyv1.AvailabilityZone, len(availabilityZoneList.Items))
@@ -146,26 +128,17 @@ func GetAvailabilityZone(
 	client ctrlclient.Client,
 	availabilityZoneName string) (topologyv1.AvailabilityZone, error) {
 
-	var availabilityZone topologyv1.AvailabilityZone
-	if err := client.Get(
-		ctx,
-		ctrlclient.ObjectKey{Name: availabilityZoneName},
-		&availabilityZone); err != nil {
-		// If the AZ was not found, the WCP FaultDomains FSS is not
-		// enabled, and the requested AZ matches the name of the default
-		// AZ, then return the default AZ.
-		if apierrors.IsNotFound(err) {
-			if !lib.IsWcpFaultDomainsFSSEnabled() {
-				if availabilityZoneName == "" || availabilityZoneName == DefaultAvailabilityZoneName {
-					// Return the default AZ.
-					return GetDefaultAvailabilityZone(ctx, client)
-				}
-			}
+	if !lib.IsWcpFaultDomainsFSSEnabled() {
+		if availabilityZoneName == "" || availabilityZoneName == DefaultAvailabilityZoneName {
+			return GetDefaultAvailabilityZone(ctx, client)
 		}
-
-		return availabilityZone, err
+		return topologyv1.AvailabilityZone{},
+			fmt.Errorf("FaultDomains FSS is not enabled but requested non-default AZ %s", availabilityZoneName)
 	}
-	return availabilityZone, nil
+
+	var availabilityZone topologyv1.AvailabilityZone
+	err := client.Get(ctx, ctrlclient.ObjectKey{Name: availabilityZoneName}, &availabilityZone)
+	return availabilityZone, err
 }
 
 // GetDefaultAvailabilityZone returns the default AvailabilityZone resource
@@ -177,27 +150,22 @@ func GetDefaultAvailabilityZone(
 	ctx context.Context,
 	client ctrlclient.Client) (topologyv1.AvailabilityZone, error) {
 
-	// Please note the default AZ has no ClusterComputeResourceMoId, and this
-	// is okay, because the Session.init call will grab the Cluster's MoId from
-	// the resource pool.
+	if lib.IsWcpFaultDomainsFSSEnabled() {
+		return topologyv1.AvailabilityZone{}, ErrWcpFaultDomainsFSSIsEnabled
+	}
+
+	namespaceList := &corev1.NamespaceList{}
+	if err := client.List(ctx, namespaceList); err != nil {
+		return topologyv1.AvailabilityZone{}, err
+	}
+
 	availabilityZone := topologyv1.AvailabilityZone{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: DefaultAvailabilityZoneName,
 		},
 		Spec: topologyv1.AvailabilityZoneSpec{
 			Namespaces: map[string]topologyv1.NamespaceInfo{},
 		},
-	}
-
-	if lib.IsWcpFaultDomainsFSSEnabled() {
-		return availabilityZone, ErrWcpFaultDomainsFSSIsEnabled
-	}
-
-	// There are no AZs and the WCP Fault Domain FSS is disabled, so it is
-	// okay to use backwards compatibility mode.
-	namespaceList := &corev1.NamespaceList{}
-	if err := client.List(ctx, namespaceList); err != nil {
-		return availabilityZone, err
 	}
 
 	// Collect all the DevOps namespaces into the AvailabilityZone's Namespaces map.

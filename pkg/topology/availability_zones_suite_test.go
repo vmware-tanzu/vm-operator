@@ -10,14 +10,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = BeforeSuite(func() {
-	// TBD
-})
-
-var _ = AfterSuite(func() {
-	// TBD
-})
-
 func TestTopology(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Topology Suite")

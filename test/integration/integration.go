@@ -190,26 +190,6 @@ func SetupIntegrationEnv(namespaces []string) (*envtest.Environment, *config.VSp
 	err = os.Setenv(contentlibrary.EnvContentLibAPIWaitSecs, "1")
 	Expect(err).NotTo(HaveOccurred())
 
-	// Create a default AZ with the namespaces in it.
-	// NOTE: Even though for these tests the FSS is (generally) off, GetAvailabilityZones() will
-	// return any AZs if they exist regardless of the FSS value.
-	az := &topologyv1.AvailabilityZone{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "availabilityzone",
-		},
-		Spec: topologyv1.AvailabilityZoneSpec{
-			ClusterComputeResourceMoId: simulator.Map.All("ClusterComputeResource")[0].Reference().Value,
-			Namespaces:                 map[string]topologyv1.NamespaceInfo{},
-		},
-	}
-	for _, ns := range namespaces {
-		az.Spec.Namespaces[ns] = topologyv1.NamespaceInfo{
-			PoolMoId:   vSphereConfig.ResourcePool,
-			FolderMoId: vSphereConfig.Folder,
-		}
-	}
-	Expect(k8sClient.Create(context.Background(), az)).To(Succeed())
-
 	return testEnv, vSphereConfig, k8sClient, vcSim, vmopClient, vmProvider
 }
 

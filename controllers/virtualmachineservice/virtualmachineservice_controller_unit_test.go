@@ -487,26 +487,15 @@ func unitTestsReconcile() {
 					initObjects = append(initObjects, vm1, vm3)
 				})
 
-				It("With Expected Subset", func() {
-					subsets := endpoints.Subsets
-					Expect(subsets).To(HaveLen(1))
-
-					subset := subsets[0]
+				It("With Expected Subsets", func() {
+					Expect(endpoints.Subsets).To(HaveLen(1))
+					subset := endpoints.Subsets[0]
 
 					Expect(subset.Ports).To(HaveLen(1))
-					ssPort := subset.Ports[0]
-					Expect(ssPort.Name).To(Equal(vmServicePort1.Name))
-					Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
-					Expect(ssPort.Port).To(Equal(vmServicePort1.TargetPort))
+					assertEPPortFromVMServicePort(subset.Ports[0], vmServicePort1)
 
 					Expect(subset.Addresses).To(HaveLen(1))
-					ssAddr := subset.Addresses[0]
-					Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
-					Expect(ssAddr.TargetRef).ToNot(BeNil())
-					Expect(ssAddr.TargetRef.Name).To(Equal(vm1.Name))
-					Expect(ssAddr.TargetRef.Namespace).To(Equal(vm1.Namespace))
-
-					// NOTE: We do not assign this yet.
+					assertEPAddrFromVM(subset.Addresses[0], vm1)
 					Expect(subset.NotReadyAddresses).To(BeEmpty())
 				})
 
@@ -515,7 +504,7 @@ func unitTestsReconcile() {
 						vm1.Status.VmIp = ""
 					})
 
-					It("Is not included in Subsets", func() {
+					It("Not included in Subsets", func() {
 						Expect(endpoints.Subsets).To(BeEmpty())
 					})
 				})
@@ -527,31 +516,15 @@ func unitTestsReconcile() {
 				})
 
 				It("With Expected Subsets", func() {
-					subsets := endpoints.Subsets
-					Expect(subsets).To(HaveLen(1))
-
-					subset := subsets[0]
+					Expect(endpoints.Subsets).To(HaveLen(1))
+					subset := endpoints.Subsets[0]
 
 					Expect(subset.Ports).To(HaveLen(1))
-					ssPort := subset.Ports[0]
-					Expect(ssPort.Name).To(Equal(vmServicePort1.Name))
-					Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
-					Expect(ssPort.Port).To(Equal(vmServicePort1.TargetPort))
+					assertEPPortFromVMServicePort(subset.Ports[0], vmServicePort1)
 
-					// NOTE: Hardcode our subset sorting order of VM1, VM2.
 					Expect(subset.Addresses).To(HaveLen(2))
-
-					ssAddr := subset.Addresses[0]
-					Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
-					Expect(ssAddr.TargetRef).ToNot(BeNil())
-					Expect(ssAddr.TargetRef.Name).To(Equal(vm1.Name))
-
-					ssAddr = subset.Addresses[1]
-					Expect(ssAddr.IP).To(Equal(vm2.Status.VmIp))
-					Expect(ssAddr.TargetRef).ToNot(BeNil())
-					Expect(ssAddr.TargetRef.Name).To(Equal(vm2.Name))
-
-					// NOTE: We do not assign this yet.
+					assertEPAddrFromVM(subset.Addresses[0], vm1)
+					assertEPAddrFromVM(subset.Addresses[1], vm2)
 					Expect(subset.NotReadyAddresses).To(BeEmpty())
 				})
 
@@ -562,43 +535,22 @@ func unitTestsReconcile() {
 					})
 
 					It("Expected subsets should be packed", func() {
-						subsets := endpoints.Subsets
-						Expect(subsets).To(HaveLen(1))
+						Expect(endpoints.Subsets).To(HaveLen(1))
+						subset := endpoints.Subsets[0]
 
-						subset := subsets[0]
-
-						// NOTE: Hardcode our subset sorting order of Port1, Port2.
 						Expect(subset.Ports).To(HaveLen(2))
-						ssPort := subset.Ports[0]
-						Expect(ssPort.Name).To(Equal(vmServicePort1.Name))
-						Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
-						Expect(ssPort.Port).To(Equal(vmServicePort1.TargetPort))
+						assertEPPortFromVMServicePort(subset.Ports[0], vmServicePort1)
+						assertEPPortFromVMServicePort(subset.Ports[1], vmServicePort2)
 
-						ssPort = subset.Ports[1]
-						Expect(ssPort.Name).To(Equal(vmServicePort2.Name))
-						Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort2.Protocol))
-						Expect(ssPort.Port).To(Equal(vmServicePort2.TargetPort))
-
-						// NOTE: Hardcode our subset sorting order of VM1, VM2.
 						Expect(subset.Addresses).To(HaveLen(2))
-
-						ssAddr := subset.Addresses[0]
-						Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
-						Expect(ssAddr.TargetRef).ToNot(BeNil())
-						Expect(ssAddr.TargetRef.Name).To(Equal(vm1.Name))
-
-						ssAddr = subset.Addresses[1]
-						Expect(ssAddr.IP).To(Equal(vm2.Status.VmIp))
-						Expect(ssAddr.TargetRef).ToNot(BeNil())
-						Expect(ssAddr.TargetRef.Name).To(Equal(vm2.Name))
-
-						// NOTE: We do not assign this yet.
+						assertEPAddrFromVM(subset.Addresses[0], vm1)
+						assertEPAddrFromVM(subset.Addresses[1], vm2)
 						Expect(subset.NotReadyAddresses).To(BeEmpty())
 					})
 				})
 			})
 
-			Context("When VM has Readiness Probe", func() {
+			Context("When VMs have Readiness Probe", func() {
 				BeforeEach(func() {
 					vm1.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
 					vm2.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
@@ -607,46 +559,54 @@ func unitTestsReconcile() {
 					initObjects = append(initObjects, vm1, vm2, vm3)
 				})
 
-				It("VMs without Ready Condition are not included in Subsets", func() {
-					Expect(endpoints.Subsets).To(BeEmpty())
+				It("VMs without Ready Condition are included in NotReadyAddresses", func() {
+					Expect(endpoints.Subsets).To(HaveLen(1))
+					subset := endpoints.Subsets[0]
+
+					Expect(subset.Ports).To(HaveLen(1))
+					assertEPPortFromVMServicePort(subset.Ports[0], vmServicePort1)
+
+					Expect(subset.Addresses).To(BeEmpty())
+					Expect(subset.NotReadyAddresses).To(HaveLen(2))
+					assertEPAddrFromVM(subset.NotReadyAddresses[0], vm1)
+					assertEPAddrFromVM(subset.NotReadyAddresses[1], vm2)
 				})
 
-				Context("Unready VMs are not included in Subset", func() {
+				Context("Unready VM with false Ready condition", func() {
 					BeforeEach(func() {
 						conditions.MarkFalse(vm1, vmopv1alpha1.ReadyCondition, "reason", vmopv1alpha1.ConditionSeverityError, "")
 					})
 
-					It("Subsets is Empty", func() {
-						Expect(endpoints.Subsets).To(BeEmpty())
+					It("With expected Subsets", func() {
+						Expect(endpoints.Subsets).To(HaveLen(1))
+						subset := endpoints.Subsets[0]
+
+						Expect(subset.Ports).To(HaveLen(1))
+						assertEPPortFromVMServicePort(subset.Ports[0], vmServicePort1)
+
+						Expect(subset.Addresses).To(BeEmpty())
+						Expect(subset.NotReadyAddresses).To(HaveLen(2))
+						assertEPAddrFromVM(subset.NotReadyAddresses[0], vm1)
+						assertEPAddrFromVM(subset.NotReadyAddresses[1], vm2)
 					})
 				})
 
-				Context("Ready VM is included in Subset", func() {
+				Context("Ready VM with true Ready condition", func() {
 					BeforeEach(func() {
 						conditions.MarkTrue(vm1, vmopv1alpha1.ReadyCondition)
 					})
 
-					It("Ready VM is included in Subsets", func() {
-						subsets := endpoints.Subsets
-						Expect(subsets).To(HaveLen(1))
-
-						subset := subsets[0]
+					It("With expected Subsets", func() {
+						Expect(endpoints.Subsets).To(HaveLen(1))
+						subset := endpoints.Subsets[0]
 
 						Expect(subset.Ports).To(HaveLen(1))
-						ssPort := subset.Ports[0]
-						Expect(ssPort.Name).To(Equal(vmServicePort1.Name))
-						Expect(ssPort.Protocol).To(BeEquivalentTo(vmServicePort1.Protocol))
-						Expect(ssPort.Port).To(Equal(vmServicePort1.TargetPort))
+						assertEPPortFromVMServicePort(subset.Ports[0], vmServicePort1)
 
 						Expect(subset.Addresses).To(HaveLen(1))
-						ssAddr := subset.Addresses[0]
-						Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
-						Expect(ssAddr.TargetRef).ToNot(BeNil())
-						Expect(ssAddr.TargetRef.Name).To(Equal(vm1.Name))
-						Expect(ssAddr.TargetRef.Namespace).To(Equal(vm1.Namespace))
-
-						// NOTE: We do not assign this yet.
-						Expect(subset.NotReadyAddresses).To(BeEmpty())
+						assertEPAddrFromVM(subset.Addresses[0], vm1)
+						Expect(subset.NotReadyAddresses).To(HaveLen(1))
+						assertEPAddrFromVM(subset.NotReadyAddresses[0], vm2)
 					})
 				})
 			})
@@ -667,8 +627,9 @@ func unitTestsReconcile() {
 					Expect(subsets).To(HaveLen(1))
 					subset := subsets[0]
 					Expect(subset.Addresses).To(HaveLen(1))
-					ssAddr := subset.Addresses[0]
-					Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
+					assertEPAddrFromVM(subset.Addresses[0], vm1)
+					Expect(subset.NotReadyAddresses).To(HaveLen(1))
+					assertEPAddrFromVM(subset.NotReadyAddresses[0], vm2)
 
 					// Remove Ready condition but keep the ReadinessProbe. This simulates the probe not
 					// being run yet.
@@ -685,8 +646,9 @@ func unitTestsReconcile() {
 					Expect(subsets).To(HaveLen(1))
 					subset = subsets[0]
 					Expect(subset.Addresses).To(HaveLen(1))
-					ssAddr = subset.Addresses[0]
-					Expect(ssAddr.IP).To(Equal(vm1.Status.VmIp))
+					assertEPAddrFromVM(subset.Addresses[0], vm1)
+					Expect(subset.NotReadyAddresses).To(HaveLen(1))
+					assertEPAddrFromVM(subset.NotReadyAddresses[0], vm2)
 				})
 			})
 		})
@@ -936,4 +898,23 @@ func expectEvent(ctx *builder.UnitTestContextForController, matcher types.Gomega
 	var event string
 	EventuallyWithOffset(1, ctx.Events).Should(Receive(&event))
 	ExpectWithOffset(1, event).To(matcher)
+}
+
+func assertEPPortFromVMServicePort(
+	port corev1.EndpointPort,
+	vmServicePort vmopv1alpha1.VirtualMachineServicePort) {
+
+	ExpectWithOffset(1, port.Name).To(Equal(vmServicePort.Name))
+	ExpectWithOffset(1, port.Protocol).To(BeEquivalentTo(vmServicePort.Protocol))
+	ExpectWithOffset(1, port.Port).To(Equal(vmServicePort.TargetPort))
+}
+
+func assertEPAddrFromVM(
+	addr corev1.EndpointAddress,
+	vm *vmopv1alpha1.VirtualMachine) {
+
+	ExpectWithOffset(1, addr.IP).To(Equal(vm.Status.VmIp))
+	ExpectWithOffset(1, addr.TargetRef).ToNot(BeNil())
+	ExpectWithOffset(1, addr.TargetRef.Name).To(Equal(vm.Name))
+	ExpectWithOffset(1, addr.TargetRef.Namespace).To(Equal(vm.Namespace))
 }

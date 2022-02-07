@@ -595,13 +595,15 @@ func findVMPortNum(vm *vmopv1alpha1.VirtualMachine, port intstr.IntOrString, por
 
 // generateSubsetsForService generates Endpoints subsets for a given Service.
 func (r *ReconcileVirtualMachineService) generateSubsetsForService(
-	ctx *context.VirtualMachineServiceContext, service *corev1.Service) ([]corev1.EndpointSubset, error) {
+	ctx *context.VirtualMachineServiceContext,
+	service *corev1.Service) ([]corev1.EndpointSubset, error) {
+
 	vmList, err := r.getVirtualMachinesSelectedByVMService(ctx, ctx.VMService)
 	if err != nil {
 		return nil, err
 	}
 
-	var subsets []corev1.EndpointSubset
+	var subsets = make([]corev1.EndpointSubset, 0, len(vmList.Items))
 	var vmInSubsetsMap map[types.UID]struct{}
 
 	for i := range vmList.Items {
@@ -613,33 +615,33 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 			continue
 		}
 
-		// TODO: Handle multiple VM interfaces.
 		if vm.Status.VmIp == "" {
+			// The EndpointAddress must have a valid IP so we cannot include this VM in the
+			// NotReadyAddresses.
+			// TODO: When we more fully support multiple NICs, we'll need someway to select which IP.
 			logger.Info("Skipping VM that does not have an IP")
 			continue
 		}
 
-		// Ignore VMs that fail the readiness check (only when probes are specified)
-		// If VM has Ready condition in the status and the value is true, we add the VM to the subset.
-		// If this condition is missing but the probe spec is set, which may happen right after upgrade when it is first released,
-		// we check the service's backing endpoints and determine whether this VM needs to be added to the subset.
-		// If this VM isn't in the old endpoint subsets, we skip it.
-		// Otherwise, we consider this VM as ready and add it to the subset.
+		// If the VM has a ReadinessProbe and Ready condition, ready is a reflection of the condition
+		// status. If the VM has a ReadinessProbe but no condition, we assume that the prober just
+		// hasn't run against the VM yet, so infer the VM's readiness if it was previously in the EP;
+		// this is to handle upgrade scenarios.
+		// Otherwise, a VM that does not have a ReadinessProbe is implicitly ready.
+		ready := true
+
 		if vm.Spec.ReadinessProbe != nil {
 			if condition := conditions.Get(&vm, vmopv1alpha1.ReadyCondition); condition == nil {
 				if vmInSubsetsMap == nil {
 					vmInSubsetsMap = r.getVMsReferencedByServiceEndpoints(ctx, service)
 				}
 
-				if _, ok := vmInSubsetsMap[vm.UID]; !ok {
-					// This VM was not previously in the Service's Endpoints so don't include it yet.
-					logger.Info("Skipping VM due to missing Ready condition")
-					continue
-				}
-			} else if condition.Status != corev1.ConditionTrue {
-				logger.Info("Skipping VM due to false Ready condition",
-					"conditionReason", condition.Reason, "conditionMessage", condition.Message)
-				continue
+				// If this VM was previously in the EP subset, preserve its readiness until prober
+				// updates the condition (the probe used to be done inline here before we had a
+				// Ready condition).
+				_, ready = vmInSubsetsMap[vm.UID]
+			} else {
+				ready = condition.Status == corev1.ConditionTrue
 			}
 		}
 
@@ -658,6 +660,15 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 			},
 		}
 
+		// Populate the EP subset for this VM. We create one subset for each VM, and then our
+		// caller will repack the subsets that have identical ports.
+		subset := corev1.EndpointSubset{}
+		if ready {
+			subset.Addresses = []corev1.EndpointAddress{epa}
+		} else {
+			subset.NotReadyAddresses = []corev1.EndpointAddress{epa}
+		}
+
 		// TODO: Headless support
 		for _, servicePort := range service.Spec.Ports {
 			portName := servicePort.Name
@@ -673,12 +684,11 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 				continue
 			}
 
-			epp := corev1.EndpointPort{Name: portName, Port: int32(portNum), Protocol: portProto}
-			subsets = append(subsets, corev1.EndpointSubset{
-				Addresses: []corev1.EndpointAddress{epa},
-				Ports:     []corev1.EndpointPort{epp},
-			})
+			subset.Ports = append(subset.Ports,
+				corev1.EndpointPort{Name: portName, Port: int32(portNum), Protocol: portProto})
 		}
+
+		subsets = append(subsets, subset)
 	}
 
 	return subsets, nil

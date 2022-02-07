@@ -76,8 +76,9 @@ func intgTests() {
 				dummyAnnotationKey, dummyAnnotationVal := "dummy-annotation-key", "dummy-annotation-val"
 				dummyLabelKey, dummyLabelVal := "dummy-label-key", "dummy-label-val"
 
+				notReadyVM := &vmopv1alpha1.VirtualMachine{}
 				By("Create not ready VM with selected labels", func() {
-					notReadyVM := &vmopv1alpha1.VirtualMachine{
+					notReadyVM = &vmopv1alpha1.VirtualMachine{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "not-ready-vm",
 							Namespace: ctx.Namespace,
@@ -151,7 +152,24 @@ func intgTests() {
 
 					Expect(endpoints.Labels).To(HaveKeyWithValue(dummyLabelKey, dummyLabelVal))
 					Expect(endpoints.Annotations).To(HaveKeyWithValue(dummyAnnotationKey, dummyAnnotationVal))
-					Expect(endpoints.Subsets).To(BeEmpty())
+
+					Expect(endpoints.Subsets).To(HaveLen(1))
+					subset := endpoints.Subsets[0]
+					Expect(subset.Addresses).To(BeEmpty())
+
+					By("Not ready VM should be included to Endpoints", func() {
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(notReadyVM), notReadyVM)).To(Succeed())
+
+						Expect(subset.NotReadyAddresses).To(HaveLen(1))
+						address := subset.NotReadyAddresses[0]
+						Expect(address.IP).To(Equal(notReadyVM.Status.VmIp))
+						Expect(address.TargetRef).ToNot(BeNil())
+						Expect(address.TargetRef.Name).To(Equal(notReadyVM.Name))
+						Expect(address.TargetRef.Namespace).To(Equal(notReadyVM.Namespace))
+						Expect(address.TargetRef.UID).To(Equal(notReadyVM.UID))
+						Expect(address.TargetRef.Kind).ToNot(BeEmpty())
+						Expect(address.TargetRef.APIVersion).ToNot(BeEmpty())
+					})
 				})
 
 				readyVM := &vmopv1alpha1.VirtualMachine{}
@@ -177,8 +195,9 @@ func intgTests() {
 				By("Ready VM should be added to Endpoints", func() {
 					endpoints := &corev1.Endpoints{}
 					Eventually(func() bool {
-						if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil {
-							return len(endpoints.Subsets) != 0
+						if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil && len(endpoints.Subsets) == 1 {
+							subset := endpoints.Subsets[0]
+							return len(subset.Addresses) != 0 && len(subset.NotReadyAddresses) != 0
 						}
 						return false
 					}).Should(BeTrue())
@@ -188,6 +207,7 @@ func intgTests() {
 
 					subset := subsets[0]
 					Expect(subset.Addresses).To(HaveLen(1))
+					Expect(subset.NotReadyAddresses).To(HaveLen(1))
 
 					address := subset.Addresses[0]
 					Expect(address.IP).To(Equal(readyVM.Status.VmIp))
@@ -210,6 +230,18 @@ func intgTests() {
 					// VM mapping function assumes that the VM exists. This is a bug, and should have
 					// a similar solution as the XIt() test below. In practice, this should be hard to
 					// hit because of the VirtualMachine controller finalizer.
+					notReadyVM.Finalizers = append(notReadyVM.Finalizers, "dummy.test.finalizer")
+					Expect(ctx.Client.Update(ctx, notReadyVM)).To(Succeed())
+					Expect(ctx.Client.Delete(ctx, notReadyVM)).To(Succeed())
+
+					Eventually(func() bool {
+						endpoints := &corev1.Endpoints{}
+						if err := ctx.Client.Get(ctx, objKey, endpoints); err == nil {
+							return len(endpoints.Subsets) == 1 && len(endpoints.Subsets[0].NotReadyAddresses) == 0
+						}
+						return false
+					}).Should(BeTrue(), "not ready VM should be removed from Endpoints")
+
 					readyVM.Finalizers = append(readyVM.Finalizers, "dummy.test.finalizer")
 					Expect(ctx.Client.Update(ctx, readyVM)).To(Succeed())
 					Expect(ctx.Client.Delete(ctx, readyVM)).To(Succeed())
@@ -222,8 +254,11 @@ func intgTests() {
 						return false
 					}).Should(BeTrue())
 
-					vmKey := client.ObjectKey{Namespace: readyVM.Namespace, Name: readyVM.Name}
-					Expect(ctx.Client.Get(ctx, vmKey, readyVM)).To(Succeed())
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(notReadyVM), notReadyVM)).To(Succeed())
+					notReadyVM.Finalizers = nil
+					Expect(ctx.Client.Update(ctx, notReadyVM)).To(Succeed())
+
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(readyVM), readyVM)).To(Succeed())
 					readyVM.Finalizers = nil
 					Expect(ctx.Client.Update(ctx, readyVM)).To(Succeed())
 				})

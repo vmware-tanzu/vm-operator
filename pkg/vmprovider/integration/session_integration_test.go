@@ -78,37 +78,6 @@ var _ = Describe("Sessions", func() {
 				Expect(vm).Should(BeNil())
 			})
 		})
-
-		Context("From Content Library", func() {
-
-			It("should list VirtualMachineImages from CL", func() {
-				images, err := vcClient.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, nil)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(images).ShouldNot(BeEmpty())
-				Expect(images[0].ObjectMeta.Name).Should(Equal(integration.IntegrationContentLibraryItemName))
-				Expect(images[0].Spec.Type).Should(Equal("ovf"))
-				Expect(images[0].Status.ImageName).Should(Equal(integration.IntegrationContentLibraryItemName))
-			})
-
-			It("should return cached VirtualMachineImage from CL", func() {
-				images, err := vcClient.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, nil)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(images).ShouldNot(BeEmpty())
-
-				vmImage := *images[0]
-				vmImage.Spec.Type = "dummy-type-to-test-cache"
-
-				currentCLImages := map[string]vmopv1alpha1.VirtualMachineImage{
-					vmImage.Spec.ImageID: vmImage,
-				}
-
-				images, err = vcClient.ContentLibClient().VirtualMachineImageResourcesForLibrary(ctx, integration.ContentSourceID, currentCLImages)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(images).ShouldNot(BeEmpty())
-				Expect(images[0].ObjectMeta.Name).Should(Equal(integration.IntegrationContentLibraryItemName))
-				Expect(images[0].Spec.Type).Should(Equal(vmImage.Spec.Type))
-			})
-		})
 	})
 
 	Describe("GetVirtualMachine", func() {

@@ -14,6 +14,8 @@ import (
 	"github.com/vmware/govmomi/vapi/library"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -47,20 +49,56 @@ func clTests() {
 
 		Context("when items are present in library", func() {
 
-			It("lists items", func() {
+			It("List items in library", func() {
 				items, err := clProvider.GetLibraryItems(ctx, ctx.ContentLibraryID)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(items).ToNot(BeEmpty())
 			})
 
-			It("gets and downloads the ovf", func() {
-				libItem, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, ctx.ContentLibraryImageName)
+			It("Does not return error when library does not exist", func() {
+				items, err := clProvider.GetLibraryItems(ctx, "dummy-cl")
 				Expect(err).ToNot(HaveOccurred())
-				Expect(libItem).ToNot(BeNil())
+				Expect(items).To(BeEmpty())
+			})
 
-				ovfEnvelope, err := clProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem)
+			It("Gets items and returns OVF", func() {
+				item, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, ctx.ContentLibraryImageName)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(item).ToNot(BeNil())
+
+				ovfEnvelope, err := clProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, item)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ovfEnvelope).ToNot(BeNil())
+			})
+
+			It("List VirtualMachineImages from library", func() {
+				images, err := clProvider.VirtualMachineImageResourcesForLibrary(ctx, ctx.ContentLibraryID, nil)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(images).ToNot(BeEmpty())
+				image := images[0]
+				Expect(image.Name).To(Equal(ctx.ContentLibraryImageName))
+				Expect(image.Spec.Type).To(Equal("ovf"))
+				Expect(image.Status.ImageName).To(Equal(ctx.ContentLibraryImageName))
+			})
+
+			It("Returns cached VirtualMachineImage from from map", func() {
+				images, err := clProvider.VirtualMachineImageResourcesForLibrary(ctx, ctx.ContentLibraryID, nil)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(images).ToNot(BeEmpty())
+
+				image := *images[0]
+				Expect(image.Name).To(Equal(ctx.ContentLibraryImageName))
+				image.Spec.Type = "dummy-type-to-test-cache"
+				currentCLImages := map[string]vmopv1alpha1.VirtualMachineImage{
+					image.Spec.ImageID: image,
+				}
+
+				images, err = clProvider.VirtualMachineImageResourcesForLibrary(ctx, ctx.ContentLibraryID, currentCLImages)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(images).ToNot(BeEmpty())
+				Expect(images[0].Name).To(Equal(image.Name))
+				Expect(images[0].Spec.Type).To(Equal(image.Spec.Type))
 			})
 		})
 

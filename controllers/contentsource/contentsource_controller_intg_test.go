@@ -96,6 +96,15 @@ func intgTests() {
 		}).Should(ContainElement(finalizer), "waiting for ContentSource finalizer")
 	}
 
+	waitForContentSourceDeleted := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) {
+		err := ctx.Client.Delete(ctx, &cs)
+		Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+
+		Eventually(func() *vmopv1alpha1.ContentSource {
+			return getContentSource(ctx, objKey)
+		}).Should(BeNil(), "waiting for ContentSource to be deleted")
+	}
+
 	getContentLibraryProvider := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1alpha1.ContentLibraryProvider {
 		cl := &vmopv1alpha1.ContentLibraryProvider{}
 		if err := ctx.Client.Get(ctx, objKey, cl); err != nil {
@@ -173,8 +182,13 @@ func intgTests() {
 				err := ctx.Client.Delete(ctx, &cl)
 				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 
-				err = ctx.Client.Delete(ctx, &cs)
-				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+				// ContentSource object has finalizers, so we wait for the object to be actually deleted.
+				waitForContentSourceDeleted(ctx, csKey)
+
+				// Explicitly delete the VirtualMachineImage objects to avoid race.
+				// VirtualMachineImage objects have a OwnerRef pointing to ContentLibraryProvider,
+				// but they are not immediately deleted and can cause race.
+				Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1alpha1.VirtualMachineImage{})).Should(Succeed())
 			})
 
 			It("Reconciles after ContentSource creation", func() {

@@ -15,3 +15,16 @@ spec:
         imagePullPolicy: IfNotPresent
         command:
           - /kube-rbac-proxy
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hostvalidator
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: hostvalidator
+        image: vmware/vmop:0.0.1
+        imagePullPolicy: IfNotPresent

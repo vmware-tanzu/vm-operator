@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hostvalidator
+  namespace: system
+  labels:
+    app: hostvalidator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hostvalidator
+  template:
+    metadata:
+      labels:
+        app: hostvalidator
+    spec:
+      containers:
+      - name: hostvalidator
+        command:
+        - /hostvalidator
+        args:
+        - "--server-port=9868"
+        - "--server-path=/hostvalidation"
+        image: controller:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: 100m
+            memory: 100Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
+        ports:
+        - containerPort: 9868
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_SERVICE_ACCOUNT_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.serviceAccountName
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      terminationGracePeriodSeconds: 10
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: "Exists"
+        effect: "NoSchedule"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: hostvalidator
+  name: hostvalidator
+  namespace: system
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: $(HOSTVALIDATOR_CONTAINER_PORT)
+  selector:
+    app: hostvalidator

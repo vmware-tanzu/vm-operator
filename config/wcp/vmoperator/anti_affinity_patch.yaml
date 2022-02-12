@@ -16,3 +16,22 @@ spec:
                 values:
                 - vmoperator-controller-manager
             topologyKey: "kubernetes.io/hostname"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+ name: hostvalidator
+ namespace: system
+spec:
+ template:
+   spec:
+     affinity:
+       podAntiAffinity:
+         requiredDuringSchedulingIgnoredDuringExecution:
+         - labelSelector:
+             matchExpressions:
+             - key: name
+               operator: In
+               values:
+               - hostvalidator
+           topologyKey: "kubernetes.io/hostname"

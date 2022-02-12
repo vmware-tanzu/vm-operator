@@ -20,14 +20,21 @@ resources:
 - privileged_psp_role_binding.yaml
 
 patchesStrategicMerge:
-- manager_image_patch.yaml
-- manager_certs_volume_patch.yaml
-- manager_network_patch.yaml
-- manager_anti_affinity_patch.yaml
+- image_patch.yaml
+- certs_volume_patch.yaml
+- network_patch.yaml
+- anti_affinity_patch.yaml
 - service_metrics_port_patch.yaml
 - cpu_resources_patch.yaml
 
 patchesJson6902:
+- path: hostvalidator_patch.yaml
+  target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: hostvalidator
+    namespace: system
 - path: manager_metrics_port_patch.yaml
   target:
     group: apps

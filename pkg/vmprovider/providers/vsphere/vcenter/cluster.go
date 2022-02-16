@@ -5,7 +5,6 @@ package vcenter
 
 import (
 	goctx "context"
-	"errors"
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
@@ -22,7 +21,7 @@ func ClusterMinCPUFreq(ctx goctx.Context, cluster *object.ClusterComputeResource
 	}
 
 	if len(cr.Host) == 0 {
-		return 0, errors.New("no hosts cluster")
+		return 0, nil
 	}
 
 	var hosts []mo.HostSystem

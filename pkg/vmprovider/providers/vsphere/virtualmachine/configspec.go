@@ -36,14 +36,16 @@ func CreateConfigSpec(
 		},
 	}
 
-	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
-		rsv := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minFreq)
-		configSpec.CpuAllocation.Reservation = &rsv
-	}
+	if minFreq != 0 {
+		if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
+			rsv := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minFreq)
+			configSpec.CpuAllocation.Reservation = &rsv
+		}
 
-	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
-		lim := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minFreq)
-		configSpec.CpuAllocation.Limit = &lim
+		if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
+			lim := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minFreq)
+			configSpec.CpuAllocation.Limit = &lim
+		}
 	}
 
 	configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{

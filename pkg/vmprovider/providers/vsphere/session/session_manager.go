@@ -118,12 +118,12 @@ func (sm *Manager) GetSessionForVM(vmCtx context.VirtualMachineContext) (*Sessio
 		vmCtx.VM.Namespace)
 }
 
-func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
+func (sm *Manager) ComputeAndGetCPUMinFrequency(ctx goctx.Context) (uint64, error) {
 	// Get all the availability zones in order to calculate the minimum
 	// CPU frequencies for each of the zones' vSphere clusters.
 	availabilityZones, err := topology.GetAvailabilityZones(ctx, sm.k8sClient)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if !lib.IsWcpFaultDomainsFSSEnabled() {
@@ -138,7 +138,7 @@ func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 		sm.Unlock()
 
 		if clusterMoID == "" {
-			return nil
+			return 0, nil
 		}
 
 		// Only expect 1 AZ in this case.
@@ -149,7 +149,7 @@ func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 
 	client, err := sm.GetClient(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	var minFreq uint64
@@ -170,7 +170,7 @@ func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 			freq, err := vcenter.ClusterMinCPUFreq(ctx, ccr)
 			if err != nil {
 				// TODO This alone should not be a fatal error.
-				return err
+				return 0, err
 			}
 			if minFreq == 0 || freq < minFreq {
 				minFreq = freq
@@ -187,7 +187,7 @@ func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 		sm.Unlock()
 	}
 
-	return nil
+	return minFreq, nil
 }
 
 func (sm *Manager) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {

@@ -157,6 +157,19 @@ func (vs *vSphereVMProvider) PlaceVirtualMachine(
 		return err
 	}
 
+	var minCPUFreq uint64
+	if resPolicy := vmConfigArgs.ResourcePolicy; resPolicy != nil {
+		rp := resPolicy.Spec.ResourcePool
+
+		if !rp.Reservations.Cpu.IsZero() || !rp.Limits.Cpu.IsZero() {
+			var err error
+			minCPUFreq, err = vs.ComputeAndGetCPUMinFrequency(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	storageClassesToIDs, err := storage.GetVMStoragePoliciesIDs(vmCtx, vs.k8sClient)
 	if err != nil {
 		return err
@@ -165,7 +178,7 @@ func (vs *vSphereVMProvider) PlaceVirtualMachine(
 	configSpec := virtualmachine.CreateConfigSpecForPlacement(
 		vmCtx,
 		&vmConfigArgs.VMClass.Spec,
-		2500, // TODO: Silly that keeps on giving
+		minCPUFreq,
 		storageClassesToIDs)
 
 	err = placement.Placement(vmCtx, vs.k8sClient, client.VimClient(), configSpec)
@@ -286,7 +299,12 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(ctx goctx.Context, vm
 }
 
 func (vs *vSphereVMProvider) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
-	return vs.sessions.ComputeClusterCPUMinFrequency(ctx)
+	_, err := vs.sessions.ComputeAndGetCPUMinFrequency(ctx)
+	return err
+}
+
+func (vs *vSphereVMProvider) ComputeAndGetCPUMinFrequency(ctx goctx.Context) (uint64, error) {
+	return vs.sessions.ComputeAndGetCPUMinFrequency(ctx)
 }
 
 func (vs *vSphereVMProvider) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {

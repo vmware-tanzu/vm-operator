@@ -147,7 +147,7 @@ func (vs *vSphereVMProvider) PlaceVirtualMachine(
 	vmConfigArgs vmprovider.VMConfigArgs) error {
 
 	vmCtx := context.VirtualMachineContext{
-		Context: ctx,
+		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "place")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
 	}

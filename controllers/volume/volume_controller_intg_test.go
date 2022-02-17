@@ -364,7 +364,7 @@ func intgTests() {
 				attachment.Status.AttachmentMetadata = map[string]string{
 					volume.AttributeFirstClassDiskUUID: dummyDiskUUID1,
 				}
-				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
+				Expect(ctx.Client.Update(ctx, attachment)).To(Succeed())
 			})
 
 			By("VM Status.Volume should reflect attached volume", func() {
@@ -448,7 +448,7 @@ func intgTests() {
 				attachment.Status.AttachmentMetadata = map[string]string{
 					volume.AttributeFirstClassDiskUUID: dummyDiskUUID1,
 				}
-				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
+				Expect(ctx.Client.Update(ctx, attachment)).To(Succeed())
 			})
 
 			By("Simulate CNS attachment for volume2", func() {
@@ -458,7 +458,7 @@ func intgTests() {
 				attachment.Status.AttachmentMetadata = map[string]string{
 					volume.AttributeFirstClassDiskUUID: dummyDiskUUID2,
 				}
-				Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
+				Expect(ctx.Client.Update(ctx, attachment)).To(Succeed())
 			})
 
 			By("VM Status.Volume should reflect attached volumes", func() {

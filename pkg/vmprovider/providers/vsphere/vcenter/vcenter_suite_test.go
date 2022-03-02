@@ -16,6 +16,8 @@ var suite = builder.NewTestSuite()
 func vcSimTests() {
 	Describe("Cluster", clusterTests)
 	Describe("Host", hostTests)
+	Describe("Folder", folderTests)
+	Describe("GetVM", getVMTests)
 }
 
 func TestVCenter(t *testing.T) {

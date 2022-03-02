@@ -60,104 +60,6 @@ var _ = Describe("Sessions", func() {
 		Expect(session).ToNot(BeNil())
 	})
 
-	Describe("Query VM images", func() {
-
-		Context("From Inventory - VMs", func() {
-			// TODO: The default govcsim setups 2 VM's per resource pool however we should create our own
-			//  	 fixture for better consistency and avoid failures when govcsim is updated.
-			It("should get a VirtualMachine", func() {
-				simVM := simulator.Map.Any("VirtualMachine").(*simulator.VirtualMachine)
-				vm, err := session.GetVirtualMachine(vmContext(ctx, getSimpleVirtualMachine(simVM.Name)))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(vm.Name).Should(Equal(simVM.Name))
-			})
-
-			It("should not get a VirtualMachine", func() {
-				vm, err := session.GetVirtualMachine(vmContext(ctx, getSimpleVirtualMachine("NonExistingVM")))
-				Expect(err).To(HaveOccurred())
-				Expect(vm).Should(BeNil())
-			})
-		})
-	})
-
-	Describe("GetVirtualMachine", func() {
-
-		Context("When MoID is present", func() {
-
-			It("should successfully find the VM by MoID", func() {
-				imageName := "test-item"
-				vmName := "getvm-with-moID"
-
-				vmConfigArgs := getVmConfigArgs(testNamespace, vmName, imageName)
-				vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VMClass.Name)
-
-				clonedVM, err := session.CloneVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(clonedVM.Name).Should(Equal(vmName))
-				moId, err := clonedVM.UniqueID(ctx)
-				Expect(err).NotTo(HaveOccurred())
-
-				vm1, err := session.GetVirtualMachine(vmContext(ctx, vm))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(vm1.UniqueID(ctx)).To(Equal(moId))
-			})
-		})
-
-		Context("When MoID is absent", func() {
-
-			Context("When ResourcePolicy exists", func() {
-				It("should successfully find the VM by path", func() {
-					namespace := integration.DefaultNamespace
-					vmName := "getvm-with-rp-and-without-moid"
-					resourcePolicy := getVirtualMachineSetResourcePolicy(vmName, namespace)
-					Expect(k8sClient.Create(ctx, resourcePolicy)).To(Succeed())
-					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
-
-					imageName := "test-item"
-					vmConfigArgs := getVmConfigArgs(namespace, vmName, imageName)
-					vmConfigArgs.ResourcePolicy = resourcePolicy
-					vm := getVirtualMachineInstance(vmName, namespace, imageName, vmConfigArgs.VMClass.Name)
-					vm.Spec.ResourcePolicyName = resourcePolicy.Name
-
-					clonedVM, err := session.CloneVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(clonedVM.Name).Should(Equal(vmName))
-					moId, err := clonedVM.UniqueID(ctx)
-					Expect(err).NotTo(HaveOccurred())
-
-					// BMV: Would this even be set?
-					vm.Status.UniqueID = ""
-
-					vm1, err := session.GetVirtualMachine(vmContext(ctx, vm))
-					Expect(err).NotTo(HaveOccurred())
-					Expect(vm1.UniqueID(ctx)).To(Equal(moId))
-				})
-			})
-
-			Context("When ResourcePolicy doesn't exist", func() {
-				It("should successfully find the VM by path", func() {
-					imageName := "test-item"
-					vmName := "getvm-without-moID"
-
-					vmConfigArgs := getVmConfigArgs(testNamespace, vmName, imageName)
-					vm := getVirtualMachineInstance(vmName, testNamespace, imageName, vmConfigArgs.VMClass.Name)
-
-					clonedVM, err := session.CloneVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(clonedVM.Name).Should(Equal(vmName))
-					moId, err := clonedVM.UniqueID(ctx)
-					Expect(err).NotTo(HaveOccurred())
-
-					vm.Status.UniqueID = ""
-
-					vm1, err := session.GetVirtualMachine(vmContext(ctx, vm))
-					Expect(err).NotTo(HaveOccurred())
-					Expect(vm1.UniqueID(ctx)).To(Equal(moId))
-				})
-			})
-		})
-	})
-
 	Describe("Clone VM", func() {
 
 		Context("without specifying any networks in VM Spec", func() {
@@ -998,78 +900,6 @@ var _ = Describe("Sessions", func() {
 			})
 		})
 
-		Describe("Folder", func() {
-			var folderName string
-			var folderSpec *vmopv1alpha1.FolderSpec
-
-			BeforeEach(func() {
-				folderName = "test-folder"
-				folderSpec = &vmopv1alpha1.FolderSpec{
-					Name: folderName,
-				}
-			})
-
-			Context("Create a folder, verify it exists and delete it", func() {
-				JustBeforeEach(func() {
-					folderMoId, err := session.CreateFolder(ctx, folderSpec)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(folderMoId).ToNot(BeEmpty())
-				})
-
-				JustAfterEach(func() {
-					Expect(session.DeleteFolder(ctx, folderName)).To(Succeed())
-				})
-
-				It("Verifies if a Folder exists", func() {
-					exists, err := session.DoesFolderExist(ctx, folderName)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(exists).To(BeTrue())
-				})
-			})
-
-			Context("Create two folders with the duplicate names", func() {
-				It("Second folder should fail to create", func() {
-					folderMoId1, err := session.CreateFolder(ctx, folderSpec)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(folderMoId1).ToNot(BeEmpty())
-
-					// Try to crete another folder with the same spec.
-					folderMoId2, err := session.CreateFolder(ctx, folderSpec)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(Equal("ServerFaultCode: DuplicateName"))
-					Expect(folderMoId2).To(BeEmpty())
-				})
-			})
-
-			Context("ChildFolder", func() {
-				It("returns NotFoundError for a folder that doesn't exist", func() {
-					_, err := session.ChildFolder(ctx, "nonExistentFolderName")
-					Expect(err).To(HaveOccurred())
-					_, ok := err.(*find.NotFoundError)
-					Expect(ok).Should(BeTrue())
-				})
-			})
-
-			Context("Delete a Folder that doesnt exist", func() {
-				It("should succeed", func() {
-					Expect(session.DeleteFolder(ctx, folderSpec.Name)).To(Succeed())
-				})
-			})
-
-			Context("Folder as moID", func() {
-				It("returns Folder object without error", func() {
-					folders, err := session.Finder.FolderList(ctx, "*")
-					Expect(err).ShouldNot(HaveOccurred())
-					Expect(folders).ToNot(BeEmpty())
-
-					folder, err := session.GetFolderByMoID(ctx, folders[0].Reference().Value)
-					Expect(err).ShouldNot(HaveOccurred())
-					Expect(folder.InventoryPath).To(Equal(folders[0].InventoryPath))
-					Expect(folder.Reference().Value).To(Equal(folders[0].Reference().Value))
-				})
-			})
-		})
-
 		Describe("Clone VM gracefully fails", func() {
 			Context("Should fail gracefully", func() {
 				var savedDatastoreAttribute string
@@ -1193,9 +1023,10 @@ var _ = Describe("Sessions", func() {
 		var vmConfigArgs vmprovider.VMConfigArgs
 		badClusterModuleName := "badClusterModuleName"
 		badProviderTagsName := "badProviderTagsName"
+		var resourcePolicy *vmopv1alpha1.VirtualMachineSetResourcePolicy
 
 		BeforeEach(func() {
-			resourcePolicy := getVirtualMachineSetResourcePolicy(vmName, namespace)
+			resourcePolicy = getVirtualMachineSetResourcePolicy(vmName, namespace)
 			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
 			vmConfigArgs = getVmConfigArgs(namespace, vmName, imageName)
 			vmConfigArgs.ResourcePolicy = resourcePolicy
@@ -1209,6 +1040,12 @@ var _ = Describe("Sessions", func() {
 
 		Context("With non-exist clusterModule", func() {
 			It("Should fail", func() {
+				Expect(k8sClient.Create(ctx, resourcePolicy)).To(Succeed())
+
+				clonedVM, err := session.CloneVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(clonedVM.Name).Should(Equal(vmName))
+
 				vm.Annotations[pkg.ClusterModuleNameKey] = badClusterModuleName
 				vm.Annotations[pkg.ProviderTagsAnnotationKey] = badProviderTagsName
 				err = session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
@@ -1218,6 +1055,7 @@ var _ = Describe("Sessions", func() {
 			})
 		})
 
+		// This depends on the prior test.
 		Context("With empty tagName", func() {
 			It("Should fail", func() {
 				vm.Annotations[pkg.ClusterModuleNameKey] = "ControlPlane"

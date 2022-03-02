@@ -110,6 +110,22 @@ func DummyInstanceStorageVirtualMachineVolumes() []vmopv1.VirtualMachineVolume {
 	}
 }
 
+func DummyBasicVirtualMachine(name, namespace string) *vmopv1.VirtualMachine {
+	return &vmopv1.VirtualMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   namespace,
+			Labels:      map[string]string{},
+			Annotations: map[string]string{},
+		},
+		Spec: vmopv1.VirtualMachineSpec{
+			ImageName:  DummyImageName,
+			ClassName:  DummyClassName,
+			PowerState: vmopv1.VirtualMachinePoweredOn,
+		},
+	}
+}
+
 func DummyVirtualMachine() *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
@@ -200,6 +216,23 @@ func DummyVirtualMachineSetResourcePolicy() *vmopv1.VirtualMachineSetResourcePol
 				{
 					GroupName: "dummy-cluster-modules",
 				},
+			},
+		},
+	}
+}
+
+func DummyVirtualMachineSetResourcePolicy2(name, namespace string) *vmopv1.VirtualMachineSetResourcePolicy {
+	return &vmopv1.VirtualMachineSetResourcePolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
+			ResourcePool: vmopv1.ResourcePoolSpec{
+				Name: name,
+			},
+			Folder: vmopv1.FolderSpec{
+				Name: name,
 			},
 		},
 	}

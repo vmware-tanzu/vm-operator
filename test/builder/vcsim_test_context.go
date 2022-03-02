@@ -35,6 +35,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -63,6 +64,11 @@ type VCSimTestConfig struct {
 
 	// WithInstanceStorage enables the WCP_INSTANCE_STORAGE FSS.
 	WithInstanceStorage bool
+
+	// WithoutStorageClass disables the storage class required, meaning that the
+	// Datastore will be used instead. In WCP production the storage class is
+	// always required; the Datastore is only needed for gce2e.
+	WithoutStorageClass bool
 }
 
 type TestContextForVCSim struct {
@@ -85,6 +91,10 @@ type TestContextForVCSim struct {
 	// When WithContentLibrary is true:
 	ContentLibraryImageName string
 	ContentLibraryID        string
+
+	// When WithoutStorageClass is false:
+	StorageClassName string
+	StorageProfileID string
 
 	model             *simulator.Model
 	server            *simulator.Server
@@ -231,6 +241,13 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 		}
 		Expect(c.Client.Create(c, csBinding)).To(Succeed())
 	}
+
+	// Make trip through the Finder to populate InventoryPath.
+	objRef, err := c.Finder.ObjectReference(c, nsFolder.Reference())
+	Expect(err).ToNot(HaveOccurred())
+	nsFolder, ok := objRef.(*object.Folder)
+	Expect(ok).To(BeTrue())
+	Expect(nsFolder.InventoryPath).ToNot(BeEmpty())
 
 	return WorkloadNamespaceInfo{
 		Namespace: ns.Name,
@@ -467,14 +484,31 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 	data["InsecureSkipTLSVerify"] = "false"
 	data["VmVmAntiAffinityTagCategoryName"] = ""
 	data["WorkerVmVmAATag"] = ""
-
-	// TODO: Support vcsim magic storage profile ID: "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
-	data["StorageClassRequired"] = "true"
-	data["Datastore"] = c.datastore.Reference().Value
-
 	// These config fields are ignored now (mostly true).
 	// data["ResourcePool"] = ""
 	// data["Folder"] = ""
+
+	if config.WithoutStorageClass {
+		// Only used in gce2e.
+		data["StorageClassRequired"] = "false"
+		data["Datastore"] = c.datastore.Reference().Value
+	} else {
+		data["StorageClassRequired"] = "true"
+
+		c.StorageClassName = "vcsim-default-storageclass"
+		// Use the hardcoded vcsim profile ID.
+		c.StorageProfileID = "aa6d5a82-1c88-45da-85d3-3d74b91a5bad"
+
+		storageClass := &storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: c.StorageClassName,
+			},
+			Parameters: map[string]string{
+				"storagePolicyID": c.StorageProfileID,
+			},
+		}
+		Expect(c.Client.Create(c, storageClass)).To(Succeed())
+	}
 
 	if !config.WithContentLibrary {
 		data["UseInventoryAsContentSource"] = "true"
@@ -544,6 +578,79 @@ func (c *TestContextForVCSim) GetAZClusterComputes(azName string) []*object.Clus
 	ccrs, ok := c.azCCRs[azName]
 	Expect(ok).To(BeTrue())
 	return ccrs
+}
+
+func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicy(
+	name string,
+	nsInfo WorkloadNamespaceInfo) (*vmopv1alpha1.VirtualMachineSetResourcePolicy, *object.Folder) {
+
+	resourcePolicy := DummyVirtualMachineSetResourcePolicy2(name, nsInfo.Namespace)
+	Expect(c.Client.Create(c, resourcePolicy)).To(Succeed())
+
+	var rps []*object.ResourcePool
+
+	if c.withFaultDomains {
+		for _, ccrs := range c.azCCRs {
+			for _, ccr := range ccrs {
+				rp, err := ccr.ResourcePool(c)
+				Expect(err).ToNot(HaveOccurred())
+				rps = append(rps, rp)
+			}
+		}
+	} else {
+		rp, err := c.singleCCR.ResourcePool(c)
+		Expect(err).ToNot(HaveOccurred())
+		rps = append(rps, rp)
+	}
+
+	for _, rp := range rps {
+		_, err := rp.Create(c, resourcePolicy.Spec.ResourcePool.Name, types.DefaultResourceConfigSpec())
+		Expect(err).ToNot(HaveOccurred())
+	}
+
+	folder, err := nsInfo.Folder.CreateFolder(c, resourcePolicy.Spec.Folder.Name)
+	Expect(err).ToNot(HaveOccurred())
+
+	return resourcePolicy, folder
+}
+
+func (c *TestContextForVCSim) GetVMFromMoID(moID string) *object.VirtualMachine {
+	objRef, err := c.Finder.ObjectReference(c, types.ManagedObjectReference{Type: "VirtualMachine", Value: moID})
+	if err != nil {
+		return nil
+	}
+
+	vm, ok := objRef.(*object.VirtualMachine)
+	Expect(ok).To(BeTrue())
+	return vm
+}
+
+func (c *TestContextForVCSim) GetResourcePoolForNamespace(namespace, azName string) *object.ResourcePool {
+	var ccr *object.ClusterComputeResource
+
+	if c.withFaultDomains {
+		Expect(azName).ToNot(BeEmpty())
+		Expect(c.ClustersPerZone).To(Equal(1)) // TODO: Deal with Zones w/ multiple CCRs later
+
+		ccrs := c.GetAZClusterComputes(azName)
+		ccr = ccrs[0]
+	} else {
+		ccr = c.GetSingleClusterCompute()
+	}
+
+	rp, err := ccr.ResourcePool(c)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Make trip through the Finder to populate InventoryPath.
+	objRef, err := c.Finder.ObjectReference(c, rp.Reference())
+	Expect(err).ToNot(HaveOccurred())
+	rp, ok := objRef.(*object.ResourcePool)
+	Expect(ok).To(BeTrue())
+
+	nsRP, err := c.Finder.ResourcePool(c, path.Join(rp.InventoryPath, namespace))
+	Expect(err).ToNot(HaveOccurred())
+
+	return nsRP
 }
 
 func generatePrivateKey() *rsa.PrivateKey {

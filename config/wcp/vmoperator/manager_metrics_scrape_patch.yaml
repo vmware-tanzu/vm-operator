@@ -1,0 +1,14 @@
+# The following annotations are required for scraping metrics by Telegraf.
+# See https://github.com/influxdata/telegraf/blob/master/plugins/inputs/prometheus/README.md#kubernetes-scraping for more detail.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "9848"
+        prometheus.io/scheme: "https"
+        prometheus.io/scrape: "true"

@@ -37,6 +37,13 @@ spec:
           spec:
             description: AvailabilityZoneSpec defines the desired state of AvailabilityZone.
             properties:
+              clusterComputeResourceMoIDs:
+                description: ClusterComputeResourceMoIDs are the managed object IDs
+                  of the vSphere ClusterComputeResources represented by this availability
+                  zone.
+                items:
+                  type: string
+                type: array
               clusterComputeResourceMoId:
                 description: ClusterComputeResourceMoId is the managed object ID of
                   the vSphere ClusterComputeResource represented by this availability

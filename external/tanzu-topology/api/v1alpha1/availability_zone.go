@@ -26,6 +26,10 @@ type AvailabilityZoneSpec struct {
 	// ClusterComputeResource represented by this availability zone.
 	ClusterComputeResourceMoId string `json:"clusterComputeResourceMoId,omitempty"`
 
+	// ClusterComputeResourceMoIDs are the managed object IDs of the vSphere
+	// ClusterComputeResources represented by this availability zone.
+	ClusterComputeResourceMoIDs []string `json:"clusterComputeResourceMoIDs,omitempty"`
+
 	// Namespaces is a map that enables querying information about the vSphere
 	// objects that make up a Kubernetes Namespace based on its name.
 	Namespaces map[string]NamespaceInfo `json:"namespaces,omitempty"`

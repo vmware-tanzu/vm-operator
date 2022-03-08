@@ -555,10 +555,11 @@ func (c *TestContextForVCSim) setupAZs(config VCSimTestConfig) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: fmt.Sprintf("az-%d", i),
 			},
-			Spec: topologyv1.AvailabilityZoneSpec{
-				ClusterComputeResourceMoId: clusters[0].Reference().Value,
-			},
 		}
+		for _, c := range clusters {
+			az.Spec.ClusterComputeResourceMoIDs = append(az.Spec.ClusterComputeResourceMoIDs, c.Reference().Value)
+		}
+
 		Expect(c.Client.Create(c, az)).To(Succeed())
 		c.ZoneNames = append(c.ZoneNames, az.Name)
 		c.azCCRs[az.Name] = clusters

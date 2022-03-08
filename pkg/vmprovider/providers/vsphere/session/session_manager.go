@@ -143,7 +143,7 @@ func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 
 		// Only expect 1 AZ in this case.
 		for i := range availabilityZones {
-			availabilityZones[i].Spec.ClusterComputeResourceMoId = clusterMoID
+			availabilityZones[i].Spec.ClusterComputeResourceMoIDs = []string{clusterMoID}
 		}
 	}
 
@@ -154,20 +154,27 @@ func (sm *Manager) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
 
 	var minFreq uint64
 	for _, az := range availabilityZones {
-		// Get the minimum frequency for this cluster.
-		ccr := object.NewClusterComputeResource(
-			client.VimClient(),
-			types.ManagedObjectReference{
-				Type:  "ClusterComputeResource",
-				Value: az.Spec.ClusterComputeResourceMoId,
-			},
-		)
-		freq, err := vcenter.ClusterMinCPUFreq(ctx, ccr)
-		if err != nil {
-			return err
+		moIDs := az.Spec.ClusterComputeResourceMoIDs
+		if len(moIDs) == 0 {
+			moIDs = []string{az.Spec.ClusterComputeResourceMoId} // HA TEMP
 		}
-		if minFreq == 0 || freq < minFreq {
-			minFreq = freq
+
+		for _, moID := range moIDs {
+			ccr := object.NewClusterComputeResource(
+				client.VimClient(),
+				types.ManagedObjectReference{
+					Type:  "ClusterComputeResource",
+					Value: moID,
+				},
+			)
+			freq, err := vcenter.ClusterMinCPUFreq(ctx, ccr)
+			if err != nil {
+				// TODO This alone should not be a fatal error.
+				return err
+			}
+			if minFreq == 0 || freq < minFreq {
+				minFreq = freq
+			}
 		}
 	}
 

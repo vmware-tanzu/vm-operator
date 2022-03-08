@@ -290,8 +290,8 @@ func DummyAvailabilityZone() *topologyv1.AvailabilityZone {
 			Name: DummyAvailabilityZoneName,
 		},
 		Spec: topologyv1.AvailabilityZoneSpec{
-			ClusterComputeResourceMoId: "cluster",
-			Namespaces:                 map[string]topologyv1.NamespaceInfo{},
+			ClusterComputeResourceMoIDs: []string{"cluster"},
+			Namespaces:                  map[string]topologyv1.NamespaceInfo{},
 		},
 	}
 }

@@ -9,7 +9,7 @@ import (
 
 	"github.com/vmware/govmomi/object"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -21,7 +21,6 @@ func resourcePoolTests() {
 }
 
 func getResourcePoolTests() {
-
 	var (
 		ctx    *builder.TestContextForVCSim
 		nsInfo builder.WorkloadNamespaceInfo
@@ -104,7 +103,7 @@ func createDeleteExistResourcePoolChild() {
 		nsRP   *object.ResourcePool
 
 		parentRPMoID   string
-		resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
+		resourcePolicy *vmopv1alpha1.VirtualMachineSetResourcePolicy
 	)
 
 	BeforeEach(func() {

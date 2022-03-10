@@ -57,9 +57,7 @@ func vmTests() {
 	Context("PlaceVirtualMachine", func() {
 
 		It("noop when placement isn't needed", func() {
-			vm := builder.DummyVirtualMachine()
-			vm.Namespace = nsInfo.Namespace
-
+			vm := builder.DummyBasicVirtualMachine("test-vm", nsInfo.Namespace)
 			vmConfigArgs := vmprovider.VMConfigArgs{}
 
 			err := vmProvider.PlaceVirtualMachine(ctx, vm, vmConfigArgs)
@@ -75,9 +73,7 @@ func vmTests() {
 			})
 
 			It("places VM in zone", func() {
-				vm := builder.DummyVirtualMachine()
-				vm.Namespace = nsInfo.Namespace
-
+				vm := builder.DummyBasicVirtualMachine("test-vm", nsInfo.Namespace)
 				vmConfigArgs := vmprovider.VMConfigArgs{}
 
 				err := vmProvider.PlaceVirtualMachine(ctx, vm, vmConfigArgs)
@@ -98,8 +94,7 @@ func vmTests() {
 				storageClass := builder.DummyStorageClass()
 				Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
 
-				vm := builder.DummyVirtualMachine()
-				vm.Namespace = nsInfo.Namespace
+				vm := builder.DummyBasicVirtualMachine("test-vm", nsInfo.Namespace)
 				builder.AddDummyInstanceStorageVolume(vm)
 
 				vmConfigArgs := vmprovider.VMConfigArgs{}

@@ -160,10 +160,15 @@ func newTestContextForVCSim(
 // AfterEach is a comment just to silence the linter
 // TODO: Once we update ginkgo, this is more suitable as an AfterAll().
 func (c *TestContextForVCSim) AfterEach() {
+	if c.RestClient != nil {
+		_ = c.RestClient.Logout(c)
+	}
+	if c.VCClient != nil {
+		_ = c.VCClient.Logout(c)
+	}
 	if c.server != nil {
 		c.server.Close()
 	}
-
 	if c.model != nil {
 		c.model.Remove()
 	}

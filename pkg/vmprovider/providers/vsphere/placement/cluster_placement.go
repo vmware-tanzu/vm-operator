@@ -4,17 +4,51 @@
 package placement
 
 import (
-	"context"
+	goctx "context"
 	"fmt"
+	"strings"
 
 	"github.com/vmware/govmomi/object"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
 var log = logf.Log.WithName("vsphere").WithName("placement")
 
-func CheckPlacementRelocateSpec(spec *vimtypes.VirtualMachineRelocateSpec) bool {
+// Recommendation is the info about a placement recommendation.
+type Recommendation struct {
+	PoolMoRef types.ManagedObjectReference
+	HostMoRef *types.ManagedObjectReference
+	// TODO: Datastore, whatever else as we need it.
+}
+
+func relocateSpecToRecommendation(relocateSpec *types.VirtualMachineRelocateSpec) *Recommendation {
+	// Instance Storage requires the host.
+	if relocateSpec == nil || relocateSpec.Pool == nil || relocateSpec.Host == nil {
+		return nil
+	}
+
+	return &Recommendation{
+		PoolMoRef: *relocateSpec.Pool,
+		HostMoRef: relocateSpec.Host,
+	}
+}
+
+func clusterPlacementActionToRecommendation(action types.ClusterClusterInitialPlacementAction) *Recommendation {
+	if action.Pool == nil {
+		return nil
+	}
+
+	return &Recommendation{
+		PoolMoRef: *action.Pool,
+		HostMoRef: &action.TargetHost,
+	}
+}
+
+func CheckPlacementRelocateSpec(spec *types.VirtualMachineRelocateSpec) bool {
 	if spec == nil {
 		log.Info("RelocateSpec is nil")
 		return false
@@ -34,11 +68,11 @@ func CheckPlacementRelocateSpec(spec *vimtypes.VirtualMachineRelocateSpec) bool 
 	return true
 }
 
-func ParseRelocateVMResponse(res *vimtypes.PlacementResult) *vimtypes.VirtualMachineRelocateSpec {
+func ParseRelocateVMResponse(res *types.PlacementResult) *types.VirtualMachineRelocateSpec {
 	for _, r := range res.Recommendations {
-		if r.Reason == string(vimtypes.RecommendationReasonCodeXvmotionPlacement) {
+		if r.Reason == string(types.RecommendationReasonCodeXvmotionPlacement) {
 			for _, a := range r.Action {
-				if pa, ok := a.(*vimtypes.PlacementAction); ok {
+				if pa, ok := a.(*types.PlacementAction); ok {
 					if CheckPlacementRelocateSpec(pa.RelocateSpec) {
 						return pa.RelocateSpec
 					}
@@ -50,13 +84,13 @@ func ParseRelocateVMResponse(res *vimtypes.PlacementResult) *vimtypes.VirtualMac
 }
 
 func CloneVMRelocateSpec(
-	ctx context.Context,
+	ctx goctx.Context,
 	cluster *object.ClusterComputeResource,
-	vmRef vimtypes.ManagedObjectReference,
-	cloneSpec *vimtypes.VirtualMachineCloneSpec) (*vimtypes.VirtualMachineRelocateSpec, error) {
+	vmRef types.ManagedObjectReference,
+	cloneSpec *types.VirtualMachineCloneSpec) (*types.VirtualMachineRelocateSpec, error) {
 
-	placementSpec := vimtypes.PlacementSpec{
-		PlacementType: string(vimtypes.PlacementSpecPlacementTypeClone),
+	placementSpec := types.PlacementSpec{
+		PlacementType: string(types.PlacementSpecPlacementTypeClone),
 		CloneSpec:     cloneSpec,
 		RelocateSpec:  &cloneSpec.Location,
 		CloneName:     cloneSpec.Config.Name,
@@ -76,14 +110,14 @@ func CloneVMRelocateSpec(
 	return rSpec, nil
 }
 
-// PlaceVMForCreate determines the suitable placement for the hosts in the cluster.
+// PlaceVMForCreate determines the suitable placement candidates in the cluster.
 func PlaceVMForCreate(
-	ctx context.Context,
+	ctx goctx.Context,
 	cluster *object.ClusterComputeResource,
-	configSpec *vimtypes.VirtualMachineConfigSpec) ([]vimtypes.ManagedObjectReference, error) {
+	configSpec *types.VirtualMachineConfigSpec) ([]Recommendation, error) {
 
-	placementSpec := vimtypes.PlacementSpec{
-		PlacementType: string(vimtypes.PlacementSpecPlacementTypeCreate),
+	placementSpec := types.PlacementSpec{
+		PlacementType: string(types.PlacementSpecPlacementTypeCreate),
 		ConfigSpec:    configSpec,
 	}
 
@@ -92,24 +126,80 @@ func PlaceVMForCreate(
 		return nil, err
 	}
 
-	var hostMoIDs []vimtypes.ManagedObjectReference
+	var recommendations []Recommendation
 
 	for _, r := range resp.Recommendations {
-		if r.Reason != string(vimtypes.RecommendationReasonCodeXvmotionPlacement) {
+		if r.Reason != string(types.RecommendationReasonCodeXvmotionPlacement) {
 			continue
 		}
 
 		for _, a := range r.Action {
-			if pa, ok := a.(*vimtypes.PlacementAction); ok {
-				// TBD: What response do we actually expect? govc create uses RelocateSpec.
-				if pa.RelocateSpec != nil && pa.RelocateSpec.Host != nil {
-					hostMoIDs = append(hostMoIDs, *pa.RelocateSpec.Host)
-				} else if pa.TargetHost != nil {
-					hostMoIDs = append(hostMoIDs, *pa.TargetHost)
+			if pa, ok := a.(*types.PlacementAction); ok {
+				if r := relocateSpecToRecommendation(pa.RelocateSpec); r != nil {
+					recommendations = append(recommendations, *r)
 				}
 			}
 		}
 	}
 
-	return hostMoIDs, nil
+	return recommendations, nil
+}
+
+// ClusterPlaceVMForCreate determines the suitable cluster placement among the specified ResourcePools.
+func ClusterPlaceVMForCreate(
+	vmCtx context.VirtualMachineContext,
+	vcClient *vim25.Client,
+	resourcePoolsMoRefs []types.ManagedObjectReference,
+	configSpec *types.VirtualMachineConfigSpec) ([]Recommendation, error) {
+
+	// Work around PlaceVmsXCluster bug that crashes vpxd when ConfigSpec.Files is nil.
+	cs := *configSpec
+	cs.Files = new(types.VirtualMachineFileInfo)
+
+	placementSpec := types.PlaceVmsXClusterSpec{
+		ResourcePools: resourcePoolsMoRefs,
+		VmPlacementSpecs: []types.PlaceVmsXClusterSpecVmPlacementSpec{
+			{
+				ConfigSpec: cs,
+			},
+		},
+	}
+
+	resp, err := object.NewRootFolder(vcClient).PlaceVmsXCluster(vmCtx, placementSpec)
+	if err != nil {
+		return nil, err
+	}
+
+	vmCtx.Logger.V(6).Info("PlaceVmxCluster response", "resp", resp)
+
+	if len(resp.Faults) != 0 {
+		var faultMgs []string
+		for _, f := range resp.Faults {
+			msgs := make([]string, 0, len(f.Faults))
+			for _, ff := range f.Faults {
+				msgs = append(msgs, ff.LocalizedMessage)
+			}
+			faultMgs = append(faultMgs,
+				fmt.Sprintf("ResourcePool %s faults: %s", f.ResourcePool.Value, strings.Join(msgs, ", ")))
+		}
+		return nil, fmt.Errorf("PlaceVmsXCluster faults: %v", faultMgs)
+	}
+
+	var recommendations []Recommendation
+
+	for _, info := range resp.PlacementInfos {
+		if info.Recommendation.Reason != string(types.RecommendationReasonCodeXClusterPlacement) {
+			continue
+		}
+
+		for _, a := range info.Recommendation.Action {
+			if ca, ok := a.(*types.ClusterClusterInitialPlacementAction); ok {
+				if r := clusterPlacementActionToRecommendation(*ca); r != nil {
+					recommendations = append(recommendations, *r)
+				}
+			}
+		}
+	}
+
+	return recommendations, nil
 }

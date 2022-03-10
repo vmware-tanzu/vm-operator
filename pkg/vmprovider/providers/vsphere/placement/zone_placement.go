@@ -10,7 +10,7 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"github.com/vmware/govmomi/vim25/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
@@ -49,22 +49,23 @@ func getPlacementCandidates(
 	zonePlacement bool) (map[string][]string, error) {
 
 	var zones []topologyv1.AvailabilityZone
-	var err error
 
 	if zonePlacement {
-		zones, err = topology.GetAvailabilityZones(vmCtx, client)
+		z, err := topology.GetAvailabilityZones(vmCtx, client)
+		if err != nil {
+			return nil, err
+		}
+
+		zones = z
 	} else {
 		// Consider candidates only within the already assigned zone.
 		// NOTE: GetAvailabilityZone() will return a "default" AZ when the FSS is not enabled.
-		zone, err := topology.GetAvailabilityZone(vmCtx, client,
-			vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey])
-		if err == nil {
-			zones = append(zones, zone)
+		zone, err := topology.GetAvailabilityZone(vmCtx, client, vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey])
+		if err != nil {
+			return nil, err
 		}
-	}
 
-	if err != nil {
-		return nil, err
+		zones = append(zones, zone)
 	}
 
 	candidates := map[string][]string{}
@@ -79,20 +80,19 @@ func getPlacementCandidates(
 	return candidates, nil
 }
 
-// PlaceVMCluster() will take resources pools so this will go away.
 func rpMoIDToCluster(
 	ctx goctx.Context,
 	vcClient *vim25.Client,
 	rpMoID string) (*object.ClusterComputeResource, error) {
 
-	rp := object.NewResourcePool(vcClient, vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
+	rp := object.NewResourcePool(vcClient, types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
 
-	clusterMO, err := rp.Owner(ctx)
+	cluster, err := rp.Owner(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return object.NewClusterComputeResource(vcClient, clusterMO.Reference()), nil
+	return object.NewClusterComputeResource(vcClient, cluster.Reference()), nil
 }
 
 // getPlacementRecommendations calls DRS PlaceVM to determine clusters suitable for placement.
@@ -100,33 +100,33 @@ func getPlacementRecommendations(
 	vmCtx context.VirtualMachineContext,
 	vcClient *vim25.Client,
 	candidates map[string][]string,
-	configSpec *vimtypes.VirtualMachineConfigSpec) map[string][]vimtypes.ManagedObjectReference {
+	configSpec *types.VirtualMachineConfigSpec) map[string][]Recommendation {
 
-	recommendations := map[string][]vimtypes.ManagedObjectReference{}
+	recommendations := map[string][]Recommendation{}
 
 	for zoneName, rpMoIDs := range candidates {
-		// TODO: For PlaceVMCluster() we'll need to pass in the SetResourcePolicy child RPs. Yuck.
-		// Currently, HA only has one cluster per zone so simplify.
-		rpMoID := rpMoIDs[0]
+		for _, rpMoID := range rpMoIDs {
+			cluster, err := rpMoIDToCluster(vmCtx, vcClient, rpMoID)
+			if err != nil {
+				vmCtx.Logger.Error(err, "failed to get CCR from RP", "zone", zoneName, "rpMoID", rpMoID)
+				continue
+			}
 
-		cluster, err := rpMoIDToCluster(vmCtx, vcClient, rpMoID)
-		if err != nil {
-			vmCtx.Logger.Error(err, "failed to get CCR from RP", "rpMoID", rpMoID)
-			continue
+			recs, err := PlaceVMForCreate(vmCtx, cluster, configSpec)
+			if err != nil {
+				vmCtx.Logger.Error(err, "PlaceVM failed", "zone", zoneName,
+					"clusterMoID", cluster.Reference().Value, "rpMoID", rpMoID)
+				continue
+			}
+
+			if len(recs) == 0 {
+				vmCtx.Logger.Info("No placement recommendations", "zone", zoneName,
+					"clusterMoID", cluster.Reference().Value, "rpMoID", rpMoID)
+				continue
+			}
+
+			recommendations[zoneName] = append(recommendations[zoneName], recs...)
 		}
-
-		hostMoIDs, err := PlaceVMForCreate(vmCtx, cluster, configSpec)
-		if err != nil {
-			vmCtx.Logger.Error(err, "PlaceVM failed", "cluster", cluster.Reference().Value)
-			continue
-		}
-
-		if len(hostMoIDs) == 0 {
-			vmCtx.Logger.Info("No compatible hosts for placement", "cluster", cluster.Reference().Value)
-			continue
-		}
-
-		recommendations[zoneName] = hostMoIDs
 	}
 
 	vmCtx.Logger.V(5).Info("Placement recommendations", "recommendations", recommendations)
@@ -134,17 +134,73 @@ func getPlacementRecommendations(
 	return recommendations
 }
 
-// MakePlacementDecision selects a zone/host for placement.
-func MakePlacementDecision(recommendations map[string][]vimtypes.ManagedObjectReference) (string, string) {
-	// For now, use first zone returned by map iterator.
-	for zoneName, hostMoIDs := range recommendations {
-		idx := rand.Intn(len(hostMoIDs)) //nolint:gosec
-		hostMoID := hostMoIDs[idx]
+// getZonalPlacementRecommendations calls DRS PlaceVmsXCluster to determine clusters suitable for placement.
+func getZonalPlacementRecommendations(
+	vmCtx context.VirtualMachineContext,
+	vcClient *vim25.Client,
+	candidates map[string][]string,
+	configSpec *types.VirtualMachineConfigSpec,
+	childRPName string) map[string][]Recommendation {
 
-		return zoneName, hostMoID.Reference().Value
+	rpMOToZone := map[types.ManagedObjectReference]string{}
+	var candidateRPMoRefs []types.ManagedObjectReference
+
+	for zoneName, rpMoIDs := range candidates {
+		for _, rpMoID := range rpMoIDs {
+			rpMoRef := types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID}
+
+			if childRPName != "" {
+				// If this VM has SetResourcePolicy - because it is apart of a TKG - lookup the
+				// child RP under the namespace's RP since it may have more specific resource limits.
+				rp := object.NewResourcePool(vcClient, rpMoRef)
+
+				childRP, err := vcenter.GetChildResourcePool(vmCtx, rp, childRPName)
+				if err != nil {
+					vmCtx.Logger.Error(err, "Failed to get child ResourcePool",
+						"parentRPMoID", rpMoRef.Value, "childRPName", childRPName)
+					continue
+				}
+
+				rpMoRef = childRP.Reference()
+			}
+
+			candidateRPMoRefs = append(candidateRPMoRefs, rpMoRef)
+			rpMOToZone[rpMoRef] = zoneName
+		}
 	}
 
-	return "", ""
+	recs, err := ClusterPlaceVMForCreate(vmCtx, vcClient, candidateRPMoRefs, configSpec)
+	if err != nil {
+		vmCtx.Logger.Error(err, "PlaceVmsXCluster failed")
+		return nil
+	}
+
+	recommendations := map[string][]Recommendation{}
+	for _, rec := range recs {
+		if rpZoneName, ok := rpMOToZone[rec.PoolMoRef]; ok {
+			recommendations[rpZoneName] = append(recommendations[rpZoneName], rec)
+		} else {
+			vmCtx.Logger.V(4).Info("Received unexpected ResourcePool recommendation",
+				"poolMoRef", rec.PoolMoRef)
+		}
+	}
+
+	vmCtx.Logger.V(5).Info("Placement recommendations", "recommendations", recommendations)
+
+	return recommendations
+}
+
+// MakePlacementDecision selects one of the recommendations for placement.
+func MakePlacementDecision(recommendations map[string][]Recommendation) (string, Recommendation) {
+	// Use an explicit rand.Intn() instead of first entry returned by map iterator.
+	zoneNames := make([]string, 0, len(recommendations))
+	for zoneName := range recommendations {
+		zoneNames = append(zoneNames, zoneName)
+	}
+	zoneName := zoneNames[rand.Intn(len(zoneNames))] //nolint:gosec
+
+	recs := recommendations[zoneName]
+	return zoneName, recs[rand.Intn(len(recs))] //nolint:gosec
 }
 
 // Placement determines if the VM needs placement, and if so, determines where to place the VM
@@ -153,7 +209,8 @@ func Placement(
 	vmCtx context.VirtualMachineContext,
 	client ctrlclient.Client,
 	vcClient *vim25.Client,
-	configSpec *vimtypes.VirtualMachineConfigSpec) error {
+	configSpec *types.VirtualMachineConfigSpec,
+	childRPName string) error {
 
 	zonePlacement, instanceStoragePlacement := doesVMNeedPlacement(vmCtx)
 	if !zonePlacement && !instanceStoragePlacement {
@@ -169,13 +226,18 @@ func Placement(
 		return fmt.Errorf("no placement candidates available")
 	}
 
-	recommendations := getPlacementRecommendations(vmCtx, vcClient, candidates, configSpec)
+	var recommendations map[string][]Recommendation
+	if zonePlacement {
+		recommendations = getZonalPlacementRecommendations(vmCtx, vcClient, candidates, configSpec, childRPName)
+	} else /* instanceStoragePlacement */ {
+		recommendations = getPlacementRecommendations(vmCtx, vcClient, candidates, configSpec)
+	}
 	if len(recommendations) == 0 {
 		return fmt.Errorf("no placement recommendations available")
 	}
 
-	zoneName, hostMoID := MakePlacementDecision(recommendations)
-	vmCtx.Logger.V(5).Info("Placement decision results", "zone", zoneName, "hostMoID", hostMoID)
+	zoneName, rec := MakePlacementDecision(recommendations)
+	vmCtx.Logger.V(5).Info("Placement decision result", "zone", zoneName, "recommendation", rec)
 
 	if zonePlacement {
 		if vmCtx.VM.Labels == nil {
@@ -185,6 +247,8 @@ func Placement(
 	}
 
 	if instanceStoragePlacement {
+		hostMoID := rec.HostMoRef.Value
+
 		hostFQDN, err := vcenter.GetESXHostFQDN(vmCtx, vcClient, hostMoID)
 		if err != nil {
 			return err
@@ -193,7 +257,6 @@ func Placement(
 		if vmCtx.VM.Annotations == nil {
 			vmCtx.VM.Annotations = map[string]string{}
 		}
-
 		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
 		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = hostFQDN
 	}

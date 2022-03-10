@@ -181,7 +181,12 @@ func (vs *vSphereVMProvider) PlaceVirtualMachine(
 		minCPUFreq,
 		storageClassesToIDs)
 
-	err = placement.Placement(vmCtx, vs.k8sClient, client.VimClient(), configSpec)
+	childRPName := ""
+	if vmConfigArgs.ResourcePolicy != nil {
+		childRPName = vmConfigArgs.ResourcePolicy.Spec.ResourcePool.Name
+	}
+
+	err = placement.Placement(vmCtx, vs.k8sClient, client.VimClient(), configSpec, childRPName)
 	if err != nil {
 		return err
 	}

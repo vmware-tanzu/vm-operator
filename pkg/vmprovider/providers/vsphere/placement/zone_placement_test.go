@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"github.com/vmware/govmomi/vim25/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -23,35 +23,43 @@ var _ = Describe("MakePlacementDecision", func() {
 
 	Context("only one placement decision is possible", func() {
 		It("makes expected decision", func() {
-			recommendations := map[string][]vimtypes.ManagedObjectReference{
+			recommendations := map[string][]placement.Recommendation{
 				"zone1": {
-					{Type: "whatever", Value: "host123"},
+					placement.Recommendation{
+						PoolMoRef: types.ManagedObjectReference{Type: "a", Value: "abc"},
+						HostMoRef: &types.ManagedObjectReference{Type: "b", Value: "xyz"},
+					},
 				},
 			}
 
-			zoneName, hostMoID := placement.MakePlacementDecision(recommendations)
+			zoneName, rec := placement.MakePlacementDecision(recommendations)
 			Expect(zoneName).To(Equal("zone1"))
-			Expect(hostMoID).To(Equal("host123"))
+			Expect(rec).To(BeElementOf(recommendations[zoneName]))
 		})
 	})
 
 	Context("multiple placement candidates exist", func() {
-		zones := map[string][]string{
-			"zone1": {"z1-host1", "z1-host2", "z1-host3"},
-			"zone2": {"z2-host1", "z2-host2"},
-		}
-
-		recommendations := map[string][]vimtypes.ManagedObjectReference{}
-		for zoneName, hosts := range zones {
-			for _, host := range hosts {
-				recommendations[zoneName] = append(recommendations[zoneName],
-					vimtypes.ManagedObjectReference{Type: "whatever", Value: host})
+		It("makes an decision", func() {
+			zones := map[string][]string{
+				"zone1": {"z1-host1", "z1-host2", "z1-host3"},
+				"zone2": {"z2-host1", "z2-host2"},
 			}
-		}
 
-		zoneName, hostMoID := placement.MakePlacementDecision(recommendations)
-		Expect(zones).To(HaveKey(zoneName))
-		Expect(hostMoID).To(BeElementOf(zones[zoneName]))
+			recommendations := map[string][]placement.Recommendation{}
+			for zoneName, hosts := range zones {
+				for _, host := range hosts {
+					recommendations[zoneName] = append(recommendations[zoneName],
+						placement.Recommendation{
+							PoolMoRef: types.ManagedObjectReference{Type: "a", Value: "abc"},
+							HostMoRef: &types.ManagedObjectReference{Type: "b", Value: host},
+						})
+				}
+			}
+
+			zoneName, rec := placement.MakePlacementDecision(recommendations)
+			Expect(zones).To(HaveKey(zoneName))
+			Expect(rec).To(BeElementOf(recommendations[zoneName]))
+		})
 	})
 })
 
@@ -65,7 +73,7 @@ func vcSimPlacement() {
 
 		vm         *vmopv1alpha1.VirtualMachine
 		vmCtx      context.VirtualMachineContext
-		configSpec *vimtypes.VirtualMachineConfigSpec
+		configSpec *types.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
@@ -74,8 +82,10 @@ func vcSimPlacement() {
 		vm = builder.DummyVirtualMachine()
 		vm.Name = "placement-test"
 
-		// ConfigSpec contents don't matter for vcsim.
-		configSpec = &vimtypes.VirtualMachineConfigSpec{}
+		// Other than the name ConfigSpec contents don't matter for vcsim.
+		configSpec = &types.VirtualMachineConfigSpec{
+			Name: vm.Name,
+		}
 	})
 
 	JustBeforeEach(func() {
@@ -110,7 +120,7 @@ func vcSimPlacement() {
 			})
 
 			It("returns success without changing zone", func() {
-				err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec)
+				err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
@@ -123,19 +133,36 @@ func vcSimPlacement() {
 			})
 
 			It("returns an error", func() {
-				err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec)
+				err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
 				Expect(err).To(MatchError("no placement candidates available"))
 				Expect(vm.Labels).ToNot(HaveKey(topology.KubernetesTopologyZoneLabelKey))
 			})
 		})
 
 		It("returns success", func() {
-			err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec)
+			err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
 			Expect(err).ToNot(HaveOccurred())
 
 			zone, ok := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
 			Expect(ok).To(BeTrue())
 			Expect(zone).To(BeElementOf(ctx.ZoneNames))
+		})
+
+		Context("VM is in child RP via ResourcePolicy", func() {
+			It("returns success", func() {
+				resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicy("my-child-rp", nsInfo)
+				Expect(resourcePolicy).ToNot(BeNil())
+				childRPName := resourcePolicy.Spec.ResourcePool.Name
+				Expect(childRPName).ToNot(BeEmpty())
+				vmCtx.VM.Spec.ResourcePolicyName = resourcePolicy.Name
+
+				err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, childRPName)
+				Expect(err).ToNot(HaveOccurred())
+
+				zone, ok := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+				Expect(ok).To(BeTrue())
+				Expect(zone).To(BeElementOf(ctx.ZoneNames))
+			})
 		})
 	})
 
@@ -147,7 +174,7 @@ func vcSimPlacement() {
 		})
 
 		It("returns success", func() {
-			err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec)
+			err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
 			Expect(err).ToNot(HaveOccurred())
 
 			hostMoID, ok := vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey]

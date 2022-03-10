@@ -124,6 +124,10 @@ func NewVimClient(ctx context.Context, config *config.VSphereVMProviderConfig) (
 		return nil, nil, errors.Wrapf(err, "error creating a new vim client for url: %v", soapURL)
 	}
 
+	if err := vimClient.UseServiceVersion(); err != nil {
+		return nil, nil, errors.Wrapf(err, "error setting vim client version for url: %v", soapURL)
+	}
+
 	userInfo := url.UserPassword(config.VcCreds.Username, config.VcCreds.Password)
 	sm := session.NewManager(vimClient)
 

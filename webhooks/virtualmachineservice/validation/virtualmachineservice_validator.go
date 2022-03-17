@@ -148,12 +148,6 @@ func (v validator) validateSpec(ctx *context.WebhookRequestContext, vmService *v
 				"may not be set to 'None' for LoadBalancer services"))
 		}
 
-		if loadBalancerIP := vmService.Spec.LoadBalancerIP; loadBalancerIP != "" {
-			for _, msg := range validation.IsValidIP(loadBalancerIP) {
-				allErrs = append(allErrs, field.Invalid(specPath.Child("loadBalancerIP"), loadBalancerIP, msg))
-			}
-		}
-
 	case vmopv1.VirtualMachineServiceTypeExternalName:
 		if vmService.Spec.ClusterIP != "" {
 			allErrs = append(allErrs, field.Forbidden(specPath.Child("clusterIP"), "may not be set for ExternalName services"))

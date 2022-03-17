@@ -174,47 +174,47 @@ var _ = Describe("Availability Zones", func() {
 			MatchError("FaultDomains FSS is not enabled but requested non-default AZ invalid"))
 	}
 
-	assertGetNamespaceRPAndFolderInvalidNameErrNotFound := func() {
-		_, _, err := topology.GetNamespaceRPAndFolder(ctx, client, "invalid", "ns-1")
+	assertGetNamespaceFolderAndRPMoIDInvalidNameErrNotFound := func() {
+		_, _, err := topology.GetNamespaceFolderAndRPMoID(ctx, client, "invalid", "ns-1")
 		ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
 	}
-	assertGetNamespaceRPAndFolderSuccessForAZ := func(azName string) {
+	assertGetNamespaceFolderAndRPMoIDSuccessForAZ := func(azName string) {
 		for i := 0; i < numberOfNamespaces; i++ {
-			rp, folder, err := topology.GetNamespaceRPAndFolder(ctx, client, azName, fmt.Sprintf("ns-%d", i))
+			folder, rp, err := topology.GetNamespaceFolderAndRPMoID(ctx, client, azName, fmt.Sprintf("ns-%d", i))
 			ExpectWithOffset(2, err).ToNot(HaveOccurred())
 			ExpectWithOffset(2, rp).To(Equal(poolMoID))
 			ExpectWithOffset(2, folder).To(Equal(folderMoID))
 		}
 	}
-	assertGetNamespaceRPAndFolderSuccess := func() {
+	assertGetNamespaceFolderAndRPMoIDSuccess := func() {
 		for i := 0; i < numberOfAvailabilityZones; i++ {
-			assertGetNamespaceRPAndFolderSuccessForAZ(fmt.Sprintf("az-%d", i))
+			assertGetNamespaceFolderAndRPMoIDSuccessForAZ(fmt.Sprintf("az-%d", i))
 		}
 	}
-	assertGetNamespaceRPAndFolderSuccessNoZone := func() {
-		assertGetNamespaceRPAndFolderSuccessForAZ("")
+	assertGetNamespaceFolderAndRPMoIDSuccessNoZone := func() {
+		assertGetNamespaceFolderAndRPMoIDSuccessForAZ("")
 	}
-	assertGetNamespaceRPAndFolderSuccessDefaultZone := func() {
-		assertGetNamespaceRPAndFolderSuccessForAZ(topology.DefaultAvailabilityZoneName)
+	assertGetNamespaceFolderAndRPMoIDSuccessDefaultZone := func() {
+		assertGetNamespaceFolderAndRPMoIDSuccessForAZ(topology.DefaultAvailabilityZoneName)
 	}
-	assertGetNamespaceRPAndFolderInvalidAZErrNotFound := func() {
+	assertGetNamespaceFolderAndRPMoIDInvalidAZErrNotFound := func() {
 		for i := 0; i < numberOfNamespaces; i++ {
-			_, _, err := topology.GetNamespaceRPAndFolder(ctx, client, "invalid", fmt.Sprintf("ns-%d", i))
+			_, _, err := topology.GetNamespaceFolderAndRPMoID(ctx, client, "invalid", fmt.Sprintf("ns-%d", i))
 			ExpectWithOffset(1, apierrors.IsNotFound(err)).To(BeTrue())
 		}
 	}
-	assertGetNamespaceRPAndFolderInvalidNamespaceErrNotFound := func() {
+	assertGetNamespaceFolderAndRPMoIDInvalidNamespaceErrNotFound := func() {
 		for i := 0; i < numberOfAvailabilityZones; i++ {
 			azName := fmt.Sprintf("az-%d", i)
-			_, _, err := topology.GetNamespaceRPAndFolder(ctx, client, azName, "invalid")
+			_, _, err := topology.GetNamespaceFolderAndRPMoID(ctx, client, azName, "invalid")
 			ExpectWithOffset(1, err).To(
 				MatchError(fmt.Errorf("availability zone %q missing info for namespace %s", azName, "invalid")))
 		}
 	}
-	assertGetNamespaceRPAndFolderFSSDisabled := func() {
+	assertGetNamespaceFolderAndRPMoIDFSSDisabled := func() {
 		for i := 0; i < numberOfAvailabilityZones; i++ {
 			azName := fmt.Sprintf("az-%d", i)
-			_, _, err := topology.GetNamespaceRPAndFolder(ctx, client, azName, "invalid")
+			_, _, err := topology.GetNamespaceFolderAndRPMoID(ctx, client, azName, "invalid")
 			ExpectWithOffset(1, err).To(
 				MatchError(fmt.Sprintf("FaultDomains FSS is not enabled but requested non-default AZ az-%d", i)))
 		}
@@ -246,16 +246,16 @@ var _ = Describe("Availability Zones", func() {
 						It("Should return an apierrors.NotFound error", assertGetAvailabilityZoneEmptyNameErrNotFound)
 					})
 				})
-				Context("GetNamespaceRPAndFolder", func() {
-					Context("With an invalid AvailabilityZone name", assertGetNamespaceRPAndFolderInvalidAZErrNotFound)
+				Context("GetNamespaceFolderAndRPMoID", func() {
+					Context("With an invalid AvailabilityZone name", assertGetNamespaceFolderAndRPMoIDInvalidAZErrNotFound)
 					Context("With a valid AvailabilityZone name", func() {
-						It("Should return the RP and Folder resources", assertGetNamespaceRPAndFolderSuccess)
+						It("Should return the RP and Folder resources", assertGetNamespaceFolderAndRPMoIDSuccess)
 					})
 					Context("With an invalid AvailabilityZone name", func() {
-						It("Should return an apierrors.NotFound error", assertGetNamespaceRPAndFolderInvalidNameErrNotFound)
+						It("Should return an apierrors.NotFound error", assertGetNamespaceFolderAndRPMoIDInvalidNameErrNotFound)
 					})
 					Context("With an invalid Namespace name", func() {
-						It("Should return an missing info error", assertGetNamespaceRPAndFolderInvalidNamespaceErrNotFound)
+						It("Should return an missing info error", assertGetNamespaceFolderAndRPMoIDInvalidNamespaceErrNotFound)
 					})
 				})
 			})
@@ -271,16 +271,16 @@ var _ = Describe("Availability Zones", func() {
 						It("Should return the Default AvailabilityZone resource", assertGetAvailabilityEmptyZoneDefaultZone)
 					})
 				})
-				Context("GetNamespaceRPAndFolder", func() {
-					Context("With an invalid AvailabilityZone name", assertGetNamespaceRPAndFolderInvalidAZErrNotFound)
+				Context("GetNamespaceFolderAndRPMoID", func() {
+					Context("With an invalid AvailabilityZone name", assertGetNamespaceFolderAndRPMoIDInvalidAZErrNotFound)
 					Context("With the default AvailabilityZone name", func() {
-						It("Should return the RP and Folder resources", assertGetNamespaceRPAndFolderSuccessDefaultZone)
+						It("Should return the RP and Folder resources", assertGetNamespaceFolderAndRPMoIDSuccessDefaultZone)
 					})
 					Context("With an empty AvailabilityZone name", func() {
-						It("Should return the RP and Folder resources", assertGetNamespaceRPAndFolderSuccessNoZone)
+						It("Should return the RP and Folder resources", assertGetNamespaceFolderAndRPMoIDSuccessNoZone)
 					})
 					Context("With an invalid Namespace name", func() {
-						It("Should return an not default AvailabilityZone name error", assertGetNamespaceRPAndFolderFSSDisabled)
+						It("Should return an not default AvailabilityZone name error", assertGetNamespaceFolderAndRPMoIDFSSDisabled)
 					})
 				})
 			})

@@ -203,9 +203,9 @@ func (s *Session) findChildEntity(ctx goctx.Context, parent object.Reference, ch
 	return child, nil
 }
 
-// ChildResourcePool returns a child resource pool by a given name under the session's parent
+// childResourcePool returns a child resource pool by a given name under the session's parent
 // resource pool, returns error if no child resource pool exists with a given name.
-func (s *Session) ChildResourcePool(ctx goctx.Context, resourcePoolName string) (*object.ResourcePool, error) {
+func (s *Session) childResourcePool(ctx goctx.Context, resourcePoolName string) (*object.ResourcePool, error) {
 	resourcePool, err := s.findChildEntity(ctx, s.resourcePool, resourcePoolName)
 	if err != nil {
 		return nil, err
@@ -218,9 +218,9 @@ func (s *Session) ChildResourcePool(ctx goctx.Context, resourcePoolName string) 
 	return rp, nil
 }
 
-// ChildFolder returns a child resource pool by a given name under the session's parent
+// childFolder returns a child resource pool by a given name under the session's parent
 // resource pool, returns error if no child resource pool exists with a given name.
-func (s *Session) ChildFolder(ctx goctx.Context, folderName string) (*object.Folder, error) {
+func (s *Session) childFolder(ctx goctx.Context, folderName string) (*object.Folder, error) {
 	folder, err := s.findChildEntity(ctx, s.folder, folderName)
 	if err != nil {
 		return nil, err
@@ -233,149 +233,6 @@ func (s *Session) ChildFolder(ctx goctx.Context, folderName string) (*object.Fol
 	return f, nil
 }
 
-// DoesResourcePoolExist checks if a ResourcePool with the given name exists.
-func (s *Session) DoesResourcePoolExist(ctx goctx.Context, resourcePoolName string) (bool, error) {
-	log.V(4).Info("Checking if ResourcePool exists", "resourcePoolName", resourcePoolName)
-	_, err := s.ChildResourcePool(ctx, resourcePoolName)
-	if err != nil {
-		switch err.(type) {
-		case *find.NotFoundError:
-			return false, nil
-		default:
-			return false, err
-		}
-	}
-
-	return true, nil
-}
-
-// CreateResourcePool creates a ResourcePool under the parent ResourcePool (session.resourcePool).
-func (s *Session) CreateResourcePool(ctx goctx.Context, rpSpec *v1alpha1.ResourcePoolSpec) (string, error) {
-	log.Info("Creating ResourcePool with session", "name", rpSpec.Name)
-
-	// CreateResourcePool is invoked during a ResourcePolicy reconciliation to create a ResourcePool for a set of
-	// VirtualMachines. This RP is created as a child of RP of the session's RP.
-	resourcePool, err := s.resourcePool.Create(ctx, rpSpec.Name, types.DefaultResourceConfigSpec())
-	if err != nil {
-		return "", err
-	}
-
-	log.Info("Created ResourcePool", "name", resourcePool.Name(), "path", resourcePool.InventoryPath)
-
-	return resourcePool.Reference().Value, nil
-}
-
-// UpdateResourcePool updates a ResourcePool with the given spec.
-func (s *Session) UpdateResourcePool(ctx goctx.Context, rpSpec *v1alpha1.ResourcePoolSpec) error {
-	// Nothing to do if no reservation and limits set.
-	hasReservations := !rpSpec.Reservations.Cpu.IsZero() || !rpSpec.Reservations.Memory.IsZero()
-	hasLimits := !rpSpec.Limits.Cpu.IsZero() || !rpSpec.Limits.Memory.IsZero()
-	if !hasReservations || !hasLimits {
-		return nil
-	}
-
-	log.V(4).Info("Updating the ResourcePool", "name", rpSpec.Name)
-	// TODO 
-	return nil
-}
-
-func (s *Session) DeleteResourcePool(ctx goctx.Context, resourcePoolName string) error {
-	log.Info("Deleting the ResourcePool", "name", resourcePoolName)
-
-	resourcePool, err := s.ChildResourcePool(ctx, resourcePoolName)
-	if err != nil {
-		switch err.(type) {
-		case *find.NotFoundError, *find.DefaultNotFoundError:
-			return nil
-		default:
-			log.Error(err, "Error getting the ResourcePool to be deleted", "name", resourcePoolName)
-			return err
-		}
-	}
-
-	task, err := resourcePool.Destroy(ctx)
-	if err != nil {
-		log.Error(err, "Failed to invoke destroy for ResourcePool", "name", resourcePoolName)
-		return err
-	}
-
-	if taskResult, err := task.WaitForResult(ctx, nil); err != nil {
-		msg := ""
-		if taskResult != nil && taskResult.Error != nil {
-			msg = taskResult.Error.LocalizedMessage
-		}
-		log.Error(err, "Error in deleting ResourcePool", "name", resourcePoolName, "msg", msg)
-		return err
-	}
-
-	return nil
-}
-
-// DoesFolderExist checks if a Folder with the given name exists.
-func (s *Session) DoesFolderExist(ctx goctx.Context, folderName string) (bool, error) {
-	_, err := s.ChildFolder(ctx, folderName)
-	if err != nil {
-		switch err.(type) {
-		case *find.NotFoundError:
-			return false, nil
-		default:
-			return false, err
-		}
-	}
-
-	return true, nil
-}
-
-// CreateFolder creates a folder under the parent Folder (session.folder).
-func (s *Session) CreateFolder(ctx goctx.Context, folderSpec *v1alpha1.FolderSpec) (string, error) {
-	log.Info("Creating a new Folder", "name", folderSpec.Name)
-
-	// CreateFolder is invoked during a ResourcePolicy reconciliation to create a Folder for a set of VirtualMachines.
-	// The new Folder is created as a child of the Folder corresponding to the session.
-	folder, err := s.folder.CreateFolder(ctx, folderSpec.Name)
-	if err != nil {
-		return "", err
-	}
-
-	log.Info("Created Folder", "name", folder.Name(), "path", folder.InventoryPath)
-
-	return folder.Reference().Value, nil
-}
-
-// DeleteFolder deletes the folder under the parent Folder (session.folder).
-func (s *Session) DeleteFolder(ctx goctx.Context, folderName string) error {
-	log.Info("Deleting the Folder", "name", folderName)
-
-	folder, err := s.ChildFolder(ctx, folderName)
-	if err != nil {
-		switch err.(type) {
-		case *find.NotFoundError, *find.DefaultNotFoundError:
-			return nil
-		default:
-			log.Error(err, "Error finding the VM folder to delete", "name", folderName)
-			return err
-		}
-	}
-
-	task, err := folder.Destroy(ctx)
-	if err != nil {
-		return err
-	}
-
-	if taskResult, err := task.WaitForResult(ctx, nil); err != nil {
-		msg := ""
-		if taskResult != nil && taskResult.Error != nil {
-			msg = taskResult.Error.LocalizedMessage
-		}
-		log.Error(err, "Error deleting folder", "name", folderName, "message", msg)
-		return err
-	}
-
-	log.Info("Successfully deleted folder", "name", folderName)
-
-	return nil
-}
-
 // getResourcePoolAndFolder gets the ResourcePool and Folder from the Resource Policy. If no policy
 // is specified, the session's ResourcePool and Folder is returned instead.
 func (s *Session) getResourcePoolAndFolder(vmCtx context.VirtualMachineContext,
@@ -386,7 +243,7 @@ func (s *Session) getResourcePoolAndFolder(vmCtx context.VirtualMachineContext,
 	}
 
 	resourcePoolName := resourcePolicy.Spec.ResourcePool.Name
-	resourcePool, err := s.ChildResourcePool(vmCtx, resourcePoolName)
+	resourcePool, err := s.childResourcePool(vmCtx, resourcePoolName)
 	if err != nil {
 		vmCtx.Logger.Error(err, "Unable to find ResourcePool", "name", resourcePoolName)
 		return nil, nil, err
@@ -396,7 +253,7 @@ func (s *Session) getResourcePoolAndFolder(vmCtx context.VirtualMachineContext,
 		"name", resourcePoolName, "moRef", resourcePool.Reference().Value)
 
 	folderName := resourcePolicy.Spec.Folder.Name
-	folder, err := s.ChildFolder(vmCtx, folderName)
+	folder, err := s.childFolder(vmCtx, folderName)
 	if err != nil {
 		vmCtx.Logger.Error(err, "Unable to find Folder", "name", folderName)
 		return nil, nil, err
@@ -443,12 +300,7 @@ func (s *Session) invokeFsrVirtualMachine(vmCtx context.VirtualMachineContext, r
 
 // GetResourcePoolByMoID returns resource pool for a given a moref.
 func (s *Session) GetResourcePoolByMoID(ctx goctx.Context, moID string) (*object.ResourcePool, error) {
-	ref := types.ManagedObjectReference{Type: "ResourcePool", Value: moID}
-	o, err := s.Finder.ObjectReference(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	return o.(*object.ResourcePool), nil
+	return vcenter.GetResourcePoolByMoID(ctx, s.Finder, moID)
 }
 
 // GetFolderByMoID returns a folder for a given moref.

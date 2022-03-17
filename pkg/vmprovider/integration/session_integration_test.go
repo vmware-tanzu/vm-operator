@@ -17,8 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/vmware/govmomi/find"
-	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/tags"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
@@ -809,93 +807,6 @@ var _ = Describe("Sessions", func() {
 					for k, v := range keysFound {
 						Expect(v).Should(BeTrue(), "Key %v not found in VM", k)
 					}
-				})
-			})
-		})
-
-		Describe("Resource Pool", func() {
-			var rpName string
-			var rpSpec *vmopv1alpha1.ResourcePoolSpec
-
-			BeforeEach(func() {
-				rpName = "test-folder"
-				rpSpec = &vmopv1alpha1.ResourcePoolSpec{
-					Name: rpName,
-				}
-				rpMoId, err := session.CreateResourcePool(ctx, rpSpec)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(rpMoId).ToNot(BeEmpty())
-			})
-
-			AfterEach(func() {
-				// RP would already be deleted after the deletion test. But DeleteResourcePool handles delete of an RP if it's already deleted.
-				Expect(session.DeleteResourcePool(ctx, rpSpec.Name)).To(Succeed())
-			})
-
-			Context("Create a ResourcePool, verify it exists and delete it", func() {
-				It("Verifies if a ResourcePool exists", func() {
-					exists, err := session.DoesResourcePoolExist(ctx, rpSpec.Name)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(exists).To(BeTrue())
-				})
-			})
-
-			Context("Create a ResourcePool, rename the VC cluster, verify that resource pool is still found", func() {
-				var defaultVCSimCluster string
-
-				BeforeEach(func() {
-					defaultVCSimCluster = simulator.Map.Any("ClusterComputeResource").Entity().Name
-					newClusterName := "newCluster"
-					Expect(session.RenameSessionCluster(ctx, newClusterName)).To(Succeed())
-				})
-
-				AfterEach(func() {
-					Expect(session.RenameSessionCluster(ctx, defaultVCSimCluster)).To(Succeed())
-				})
-
-				It("Verify that the resource pool exists", func() {
-					exists, err := session.DoesResourcePoolExist(ctx, rpSpec.Name)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(exists).To(BeTrue())
-				})
-			})
-
-			Context("Create two resource pools with the duplicate names", func() {
-				It("second resource pool should fail to create", func() {
-					// Try to create another ResourcePool with the same spec.
-					rpMoId, err := session.CreateResourcePool(ctx, rpSpec)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(Equal("ServerFaultCode: DuplicateName"))
-					Expect(rpMoId).To(BeEmpty())
-				})
-			})
-
-			Context("ChildResourcePool", func() {
-				It("returns NotFoundError for a resource pool that doesn't exist", func() {
-					_, err := session.ChildResourcePool(ctx, "nonExistentResourcePool")
-					Expect(err).To(HaveOccurred())
-					_, ok := err.(*find.NotFoundError)
-					Expect(ok).Should(BeTrue())
-				})
-			})
-
-			Context("Delete a Resource Pool that doesn't exist", func() {
-				It("should succeed", func() {
-					Expect(session.DeleteResourcePool(ctx, "nonexistent-resourcepool")).To(Succeed())
-				})
-			})
-
-			Context("Resource Pool as moID", func() {
-				It("returns Resource Pool object without error", func() {
-					pools, err := session.Finder.ResourcePoolList(ctx, "*")
-					Expect(err).ShouldNot(HaveOccurred())
-					Expect(pools).ToNot(BeEmpty())
-
-					existingPool := pools[0]
-					pool, err := session.GetResourcePoolByMoID(ctx, existingPool.Reference().Value)
-					Expect(err).ShouldNot(HaveOccurred())
-					Expect(pool.InventoryPath).To(Equal(existingPool.InventoryPath))
-					Expect(pool.Reference().Value).To(Equal(existingPool.Reference().Value))
 				})
 			})
 		})

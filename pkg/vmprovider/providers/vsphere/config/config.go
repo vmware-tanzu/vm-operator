@@ -264,18 +264,18 @@ func updateProviderConfigForZoneAndNamespace(
 	zone, namespace string,
 	providerConfig *VSphereVMProviderConfig) error {
 
-	poolMoID, folderMoID, err := topology.GetNamespaceRPAndFolder(ctx, client, zone, namespace)
+	folderMoID, rpMoID, err := topology.GetNamespaceFolderAndRPMoID(ctx, client, zone, namespace)
 	if err != nil {
 		return err
 	}
 
-	if poolMoID == "" || folderMoID == "" {
+	if folderMoID == "" || rpMoID == "" {
 		// These are required to init a new Session.
-		return fmt.Errorf("namespace %s is missing ResourcePool and Folder config. RP: %s, Folder: %s",
-			namespace, poolMoID, folderMoID)
+		return fmt.Errorf("namespace %s is missing Folder and ResourcePool config. Folder: %s, ResourcePool: %s",
+			namespace, folderMoID, rpMoID)
 	}
 
-	providerConfig.ResourcePool = poolMoID
+	providerConfig.ResourcePool = rpMoID
 	providerConfig.Folder = folderMoID
 
 	return nil

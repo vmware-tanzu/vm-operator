@@ -12,9 +12,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-	"github.com/vmware/govmomi/object"
 
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -25,26 +23,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/test/integration"
 )
-
-func createResourcePool(rpName string) (*object.ResourcePool, error) {
-	rpSpec := &vmoperatorv1alpha1.ResourcePoolSpec{
-		Name: rpName,
-	}
-	_, err := session.CreateResourcePool(context.TODO(), rpSpec)
-	Expect(err).NotTo(HaveOccurred())
-
-	return session.ChildResourcePool(context.TODO(), rpSpec.Name)
-}
-
-func createFolder(folderName string) (*object.Folder, error) {
-	folderSpec := &vmoperatorv1alpha1.FolderSpec{
-		Name: folderName,
-	}
-	_, err := session.CreateFolder(context.TODO(), folderSpec)
-	Expect(err).NotTo(HaveOccurred())
-
-	return session.ChildFolder(context.TODO(), folderSpec.Name)
-}
 
 func getSimpleVirtualMachine(name string) *vmoperatorv1alpha1.VirtualMachine {
 	return &vmoperatorv1alpha1.VirtualMachine{
@@ -234,119 +212,6 @@ var _ = Describe("VMProvider Tests", func() {
 
 		It("should work", func() {
 			// Everything done in the BeforeEach().
-		})
-
-		// DWB: Disabling this test until I work with Doug M. to determine why there is a FileAlreadyExists error being
-		// emitted by Govmomi (I suspect from simulator/virtual_machine.go
-		XIt("2 VMs with the same name should be created in different namespaces", func() {
-			sameVmName := "same-vm"
-			vmNamespace1 := vmNamespace + "-1"
-			vmNamespace2 := vmNamespace + "-2"
-
-			err := k8sClient.Create(ctx, &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: vmNamespace1}})
-			Expect(err).NotTo(HaveOccurred())
-
-			err = k8sClient.Create(ctx, &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: vmNamespace2}})
-			Expect(err).NotTo(HaveOccurred())
-
-			folder1, err := createFolder(vmNamespace1)
-			Expect(err).NotTo(HaveOccurred())
-
-			rp1, err := createResourcePool(vmNamespace1)
-			Expect(err).NotTo(HaveOccurred())
-
-			folder2, err := createFolder(vmNamespace2)
-			Expect(err).NotTo(HaveOccurred())
-
-			rp2, err := createResourcePool(vmNamespace2)
-			Expect(err).NotTo(HaveOccurred())
-
-			resourcePolicy1 := &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: vmNamespace1,
-					Name:      sameVmName,
-				},
-				Spec: vmoperatorv1alpha1.VirtualMachineSetResourcePolicySpec{
-					ResourcePool: vmoperatorv1alpha1.ResourcePoolSpec{
-						Name:         rp1.Name(),
-						Reservations: vmoperatorv1alpha1.VirtualMachineResourceSpec{},
-						Limits:       vmoperatorv1alpha1.VirtualMachineResourceSpec{},
-					},
-					Folder: vmoperatorv1alpha1.FolderSpec{
-						Name: folder1.Name(),
-					},
-				},
-			}
-			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy1)).To(Succeed())
-
-			resourcePolicy2 := &vmoperatorv1alpha1.VirtualMachineSetResourcePolicy{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: vmNamespace2,
-					Name:      sameVmName,
-				},
-				Spec: vmoperatorv1alpha1.VirtualMachineSetResourcePolicySpec{
-					ResourcePool: vmoperatorv1alpha1.ResourcePoolSpec{
-						Name:         rp2.Name(),
-						Reservations: vmoperatorv1alpha1.VirtualMachineResourceSpec{},
-						Limits:       vmoperatorv1alpha1.VirtualMachineResourceSpec{},
-					},
-					Folder: vmoperatorv1alpha1.FolderSpec{
-						Name: folder2.Name(),
-					},
-				},
-			}
-			Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(context.TODO(), resourcePolicy2)).To(Succeed())
-			imageName := integration.IntegrationContentLibraryItemName
-
-			vmImage := builder.DummyVirtualMachineImage(imageName)
-
-			vmConfigArgs1 := vmprovider.VMConfigArgs{
-				VMClass:          *getVMClassInstance(sameVmName, vmNamespace1),
-				VMImage:          vmImage,
-				ResourcePolicy:   resourcePolicy1,
-				StorageProfileID: "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
-			}
-
-			vmConfigArgs2 := vmprovider.VMConfigArgs{
-				VMClass:          *getVMClassInstance(sameVmName, vmNamespace2),
-				VMImage:          vmImage,
-				ResourcePolicy:   resourcePolicy2,
-				StorageProfileID: "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
-			}
-
-			vm1 := &vmoperatorv1alpha1.VirtualMachine{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: vmNamespace1,
-					Name:      sameVmName,
-				},
-				Spec: vmoperatorv1alpha1.VirtualMachineSpec{
-					ImageName:          imageName,
-					ClassName:          vmConfigArgs1.VMClass.Name,
-					PowerState:         vmoperatorv1alpha1.VirtualMachinePoweredOn,
-					Ports:              []vmoperatorv1alpha1.VirtualMachinePort{},
-					ResourcePolicyName: resourcePolicy1.Name,
-				},
-			}
-
-			// CreateVirtualMachine from CL
-			err = vmProvider.CreateVirtualMachine(context.TODO(), vm1, vmConfigArgs1)
-			Expect(err).NotTo(HaveOccurred())
-
-			vm2 := &vmoperatorv1alpha1.VirtualMachine{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: vmNamespace2,
-					Name:      sameVmName,
-				},
-				Spec: vmoperatorv1alpha1.VirtualMachineSpec{
-					ImageName:          imageName,
-					ClassName:          vmConfigArgs2.VMClass.Name,
-					PowerState:         vmoperatorv1alpha1.VirtualMachinePoweredOn,
-					Ports:              []vmoperatorv1alpha1.VirtualMachinePort{},
-					ResourcePolicyName: resourcePolicy2.Name,
-				},
-			}
-			err = vmProvider.CreateVirtualMachine(context.TODO(), vm2, vmConfigArgs2)
-			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 

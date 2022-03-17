@@ -604,8 +604,15 @@ func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicy(
 		rps = append(rps, rp)
 	}
 
+	si := object.NewSearchIndex(c.VCClient.Client)
 	for _, rp := range rps {
-		_, err := rp.Create(c, resourcePolicy.Spec.ResourcePool.Name, types.DefaultResourceConfigSpec())
+		objRef, err := si.FindChild(c, rp.Reference(), nsInfo.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(objRef).ToNot(BeNil())
+		nsRP, ok := objRef.(*object.ResourcePool)
+		Expect(ok).To(BeTrue())
+
+		_, err = nsRP.Create(c, resourcePolicy.Spec.ResourcePool.Name, types.DefaultResourceConfigSpec())
 		Expect(err).ToNot(HaveOccurred())
 	}
 

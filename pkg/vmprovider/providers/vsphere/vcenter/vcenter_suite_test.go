@@ -18,6 +18,7 @@ func vcSimTests() {
 	Describe("Host", hostTests)
 	Describe("Folder", folderTests)
 	Describe("GetVM", getVMTests)
+	Describe("ResourcePool", resourcePoolTests)
 }
 
 func TestVCenter(t *testing.T) {

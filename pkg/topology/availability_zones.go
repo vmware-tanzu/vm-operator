@@ -48,8 +48,8 @@ var (
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=availabilityzones,verbs=get;list;watch
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=availabilityzones/status,verbs=get;list;watch
 
-// GetNamespaceRPAndFolder returns the ResourcePool and Folder MoIDs for the zone and namespace.
-func GetNamespaceRPAndFolder(
+// GetNamespaceFolderAndRPMoID returns the Folder and ResourcePool MoID for the zone and namespace.
+func GetNamespaceFolderAndRPMoID(
 	ctx context.Context,
 	client ctrlclient.Client,
 	availabilityZoneName, namespace string) (string, string, error) {
@@ -65,7 +65,31 @@ func GetNamespaceRPAndFolder(
 			availabilityZoneName, namespace)
 	}
 
-	return nsInfo.PoolMoId, nsInfo.FolderMoId, nil
+	return nsInfo.FolderMoId, nsInfo.PoolMoId, nil
+}
+
+// GetNamespaceFolderAndRPMoIDs returns the Folder and ResourcePool MoIDs for the namespace, across all zones.
+func GetNamespaceFolderAndRPMoIDs(
+	ctx context.Context,
+	client ctrlclient.Client,
+	namespace string) (string, []string, error) {
+
+	availabilityZones, err := GetAvailabilityZones(ctx, client)
+	if err != nil {
+		return "", nil, err
+	}
+
+	var folderMoID string
+	var rpMoIDs []string
+
+	for _, az := range availabilityZones {
+		if nsInfo, ok := az.Spec.Namespaces[namespace]; ok {
+			folderMoID = nsInfo.FolderMoId
+			rpMoIDs = append(rpMoIDs, nsInfo.PoolMoId)
+		}
+	}
+
+	return folderMoID, rpMoIDs, nil
 }
 
 // GetNamespaceFolderMoID returns the FolderMoID for the namespace.

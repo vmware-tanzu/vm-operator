@@ -8,17 +8,18 @@ import (
 	"fmt"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-	"github.com/vmware/govmomi/object"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 )
 
 // IsVirtualMachineSetResourcePolicyReady checks if the VirtualMachineSetResourcePolicy for the AZ is ready.
 func (vs *vSphereVMProvider) IsVirtualMachineSetResourcePolicyReady(
 	ctx context.Context,
-	availabilityZoneName string,
+	azName string,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 
 	client, err := vs.GetClient(ctx)
@@ -26,34 +27,34 @@ func (vs *vSphereVMProvider) IsVirtualMachineSetResourcePolicyReady(
 		return false, err
 	}
 
-	az, err := topology.GetAvailabilityZone(ctx, vs.k8sClient, availabilityZoneName)
+	folderMoID, rpMoID, err := topology.GetNamespaceFolderAndRPMoID(ctx, vs.k8sClient, azName, resourcePolicy.Namespace)
 	if err != nil {
 		return false, err
 	}
 
-	ses, err := vs.sessions.GetSession(ctx, az.Name, resourcePolicy.Namespace)
+	folderExists, err := vcenter.DoesChildFolderExist(ctx, client.VimClient(), folderMoID, resourcePolicy.Spec.Folder.Name)
 	if err != nil {
 		return false, err
 	}
 
-	rpExists, err := ses.DoesResourcePoolExist(ctx, resourcePolicy.Spec.ResourcePool.Name)
+	rpExists, err := vcenter.DoesChildResourcePoolExist(ctx, client.VimClient(), rpMoID, resourcePolicy.Spec.ResourcePool.Name)
 	if err != nil {
 		return false, err
 	}
 
-	folderExists, err := ses.DoesFolderExist(ctx, resourcePolicy.Spec.Folder.Name)
+	clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, client.VimClient(), rpMoID)
 	if err != nil {
 		return false, err
 	}
 
-	modulesExist, err := vs.doClusterModulesExist(ctx, client.ClusterModuleClient(), ses.Cluster(), resourcePolicy)
+	modulesExist, err := vs.doClusterModulesExist(ctx, client.ClusterModuleClient(), clusterRef.Reference(), resourcePolicy)
 	if err != nil {
 		return false, err
 	}
 
 	if !rpExists || !folderExists || !modulesExist {
-		log.V(4).Info("Resource policy is not ready",
-			"az", az.Name, "resourcePool", rpExists, "folder", folderExists, "modules", modulesExist)
+		log.V(4).Info("Resource policy is not ready", "resourcePolicy", resourcePolicy.Name,
+			"namespace", resourcePolicy.Name, "az", azName, "resourcePool", rpExists, "folder", folderExists, "modules", modulesExist)
 		return false, nil
 	}
 
@@ -65,55 +66,40 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 	ctx context.Context,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 
+	folderMoID, rpMoIDs, err := vs.getNamespaceFolderAndRPMoIDs(ctx, resourcePolicy.Namespace)
+	if err != nil {
+		return err
+	}
+
 	client, err := vs.GetClient(ctx)
 	if err != nil {
 		return err
 	}
 
-	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.k8sClient)
+	vimClient := client.VimClient()
+	var errs []error
+
+	_, err = vcenter.CreateFolder(ctx, vimClient, folderMoID, resourcePolicy.Spec.Folder.Name)
 	if err != nil {
-		return err
+		errs = append(errs, err)
 	}
 
-	for _, az := range availabilityZones {
-		ses, err := vs.sessions.GetSession(ctx, az.Name, resourcePolicy.Namespace)
+	for _, rpMoID := range rpMoIDs {
+		_, err := vcenter.CreateOrUpdateChildResourcePool(ctx, vimClient, rpMoID, &resourcePolicy.Spec.ResourcePool)
 		if err != nil {
-			return err
+			errs = append(errs, err)
 		}
 
-		rpExists, err := ses.DoesResourcePoolExist(ctx, resourcePolicy.Spec.ResourcePool.Name)
+		clusterRef, err := vcenter.GetResourcePoolOwnerMoRef(ctx, vimClient, rpMoID)
+		if err == nil {
+			err = vs.createClusterModules(ctx, client.ClusterModuleClient(), clusterRef.Reference(), resourcePolicy)
+		}
 		if err != nil {
-			return err
-		}
-
-		if !rpExists {
-			if _, err = ses.CreateResourcePool(ctx, &resourcePolicy.Spec.ResourcePool); err != nil {
-				return err
-			}
-		} else {
-			if err = ses.UpdateResourcePool(ctx, &resourcePolicy.Spec.ResourcePool); err != nil {
-				return err
-			}
-		}
-
-		folderExists, err := ses.DoesFolderExist(ctx, resourcePolicy.Spec.Folder.Name)
-		if err != nil {
-			return err
-		}
-
-		if !folderExists {
-			if _, err = ses.CreateFolder(ctx, &resourcePolicy.Spec.Folder); err != nil {
-				return err
-			}
-		}
-
-		err = vs.createClusterModules(ctx, client.ClusterModuleClient(), ses.Cluster(), resourcePolicy)
-		if err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 
-	return nil
+	return k8serrors.NewAggregate(errs)
 }
 
 // DeleteVirtualMachineSetResourcePolicy deletes the VirtualMachineSetPolicy.
@@ -121,27 +107,33 @@ func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 	ctx context.Context,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 
-	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.k8sClient)
+	folderMoID, rpMoIDs, err := vs.getNamespaceFolderAndRPMoIDs(ctx, resourcePolicy.Namespace)
 	if err != nil {
 		return err
 	}
 
-	for _, az := range availabilityZones {
-		ses, err := vs.sessions.GetSession(ctx, az.Name, resourcePolicy.Namespace)
+	client, err := vs.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	vimClient := client.VimClient()
+	var errs []error
+
+	for _, rpMoID := range rpMoIDs {
+		err := vcenter.DeleteChildResourcePool(ctx, vimClient, rpMoID, resourcePolicy.Spec.ResourcePool.Name)
 		if err != nil {
-			return err
-		}
-
-		if err = ses.DeleteResourcePool(ctx, resourcePolicy.Spec.ResourcePool.Name); err != nil {
-			return err
-		}
-
-		if err = ses.DeleteFolder(ctx, resourcePolicy.Spec.Folder.Name); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 
-	return vs.deleteClusterModules(ctx, resourcePolicy)
+	errs = append(errs, vs.deleteClusterModules(ctx, client.ClusterModuleClient(), resourcePolicy)...)
+
+	if err := vcenter.DeleteChildFolder(ctx, vimClient, folderMoID, resourcePolicy.Spec.Folder.Name); err != nil {
+		errs = append(errs, err)
+	}
+
+	return k8serrors.NewAggregate(errs)
 }
 
 // doClusterModulesExist checks whether all the ClusterModules for the given VirtualMachineSetResourcePolicy
@@ -149,14 +141,8 @@ func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 func (vs *vSphereVMProvider) doClusterModulesExist(
 	ctx context.Context,
 	clusterModProvider clustermodules.Provider,
-	cluster *object.ClusterComputeResource,
+	clusterRef vimtypes.ManagedObjectReference,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
-
-	if cluster == nil {
-		return false, fmt.Errorf("cluster does not exist")
-	}
-
-	clusterRef := cluster.Reference()
 
 	for _, moduleSpec := range resourcePolicy.Spec.ClusterModules {
 		_, moduleID := clustermodules.FindClusterModuleUUID(moduleSpec.GroupName, clusterRef, resourcePolicy)
@@ -178,14 +164,10 @@ func (vs *vSphereVMProvider) doClusterModulesExist(
 func (vs *vSphereVMProvider) createClusterModules(
 	ctx context.Context,
 	clusterModProvider clustermodules.Provider,
-	cluster *object.ClusterComputeResource,
+	clusterRef vimtypes.ManagedObjectReference,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 
-	if cluster == nil {
-		return fmt.Errorf("cluster does not exist")
-	}
-
-	clusterRef := cluster.Reference()
+	var errs []error
 
 	// There is no way to give a name when creating a VC cluster module, so we have to
 	// resort to using the status as the source of truth. This can result in orphaned
@@ -197,7 +179,8 @@ func (vs *vSphereVMProvider) createClusterModules(
 			// Verify this cluster module exists on VC for this cluster.
 			exists, err := clusterModProvider.DoesModuleExist(ctx, moduleID, clusterRef)
 			if err != nil {
-				return err
+				errs = append(errs, err)
+				continue
 			}
 			if !exists {
 				// Status entry is stale. Create below.
@@ -209,7 +192,8 @@ func (vs *vSphereVMProvider) createClusterModules(
 			var err error
 			moduleID, err = clusterModProvider.CreateModule(ctx, clusterRef)
 			if err != nil {
-				return err
+				errs = append(errs, err)
+				continue
 			}
 		}
 
@@ -226,24 +210,20 @@ func (vs *vSphereVMProvider) createClusterModules(
 		}
 	}
 
-	return nil
+	return k8serrors.NewAggregate(errs)
 }
 
 // deleteClusterModules deletes all the ClusterModules associated with a given VirtualMachineSetResourcePolicy in VC.
 func (vs *vSphereVMProvider) deleteClusterModules(
 	ctx context.Context,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
-
-	client, err := vs.GetClient(ctx)
-	if err != nil {
-		return err
-	}
+	clusterModProvider clustermodules.Provider,
+	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) []error {
 
 	var errModStatus []v1alpha1.ClusterModuleStatus
 	var errs []error
 
 	for _, moduleStatus := range resourcePolicy.Status.ClusterModules {
-		err := client.ClusterModuleClient().DeleteModule(ctx, moduleStatus.ModuleUuid)
+		err := clusterModProvider.DeleteModule(ctx, moduleStatus.ModuleUuid)
 		if err != nil {
 			errModStatus = append(errModStatus, moduleStatus)
 			errs = append(errs, err)
@@ -251,5 +231,21 @@ func (vs *vSphereVMProvider) deleteClusterModules(
 	}
 
 	resourcePolicy.Status.ClusterModules = errModStatus
-	return k8serrors.NewAggregate(errs)
+	return errs
+}
+
+func (vs *vSphereVMProvider) getNamespaceFolderAndRPMoIDs(
+	ctx context.Context,
+	namespace string) (string, []string, error) {
+
+	folderMoID, rpMoIDs, err := topology.GetNamespaceFolderAndRPMoIDs(ctx, vs.k8sClient, namespace)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if folderMoID == "" {
+		return "", nil, fmt.Errorf("namespace %s not present in any AvailabilityZones", namespace)
+	}
+
+	return folderMoID, rpMoIDs, nil
 }

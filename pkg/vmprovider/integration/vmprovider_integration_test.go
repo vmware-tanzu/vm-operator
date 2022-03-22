@@ -214,16 +214,4 @@ var _ = Describe("VMProvider Tests", func() {
 			// Everything done in the BeforeEach().
 		})
 	})
-
-	Context("Compute CPU Min Frequency in the Cluster", func() {
-		It("reconfigure and power on without errors", func() {
-			vmProvider := vsphere.NewVSphereVMProviderFromClient(k8sClient, recorder)
-			vcClient, err := vmProvider.(vsphere.VSphereVMProviderGetSessionHack).GetClient(ctx)
-			Expect(vcClient).ToNot(BeNil())
-			Expect(err).NotTo(HaveOccurred())
-			err = vmProvider.ComputeClusterCPUMinFrequency(ctx)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(session.GetCPUMinMHzInCluster()).Should(BeNumerically(">", 0))
-		})
-	})
 })

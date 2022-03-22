@@ -31,6 +31,7 @@ import (
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
 
@@ -69,6 +70,15 @@ type VCSimTestConfig struct {
 	// Datastore will be used instead. In WCP production the storage class is
 	// always required; the Datastore is only needed for gce2e.
 	WithoutStorageClass bool
+
+	// WithJSONExtraConfig enables additional ExtraConfig that is included when
+	// creating a VM.
+	WithJSONExtraConfig string
+
+	// WithDefaultNetwork string sets the default network VM NICs will use.
+	// In WCP production this is never set; it only exists for current
+	// limitations of gce2e.
+	WithDefaultNetwork string
 }
 
 type TestContextForVCSim struct {
@@ -281,6 +291,12 @@ func (c *TestContextForVCSim) setupEnvFSS(config VCSimTestConfig) {
 		instanceStorage = "true"
 	}
 	Expect(os.Setenv(lib.InstanceStorageFSS, instanceStorage)).To(Succeed())
+
+	if config.WithJSONExtraConfig != "" {
+		Expect(os.Setenv("JSON_EXTRA_CONFIG", config.WithJSONExtraConfig)).To(Succeed())
+	} else {
+		Expect(os.Unsetenv("JSON_EXTRA_CONFIG")).To(Succeed())
+	}
 }
 
 func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
@@ -412,6 +428,32 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 		path.Join(testutil.GetRootDirOrDie(), "images", "ttylinux-pc_i486-16.1.ovf"))
 }
 
+func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName string) {
+	Expect(c.ContentLibraryID).ToNot(BeEmpty())
+
+	vm, err := c.Finder.VirtualMachine(c, srcVMName)
+	Expect(err).ToNot(HaveOccurred())
+
+	folder, err := c.Finder.DefaultFolder(c)
+	Expect(err).ToNot(HaveOccurred())
+
+	rp, err := vm.ResourcePool(c)
+	Expect(err).ToNot(HaveOccurred())
+
+	spec := vcenter.Template{
+		Name:     templateName,
+		Library:  c.ContentLibraryID,
+		SourceVM: vm.Reference().Value,
+		Placement: &vcenter.Placement{
+			Folder:       folder.Reference().Value,
+			ResourcePool: rp.Reference().Value,
+		},
+	}
+
+	_, err = vcenter.NewManager(c.RestClient).CreateTemplate(c, spec)
+	Expect(err).ToNot(HaveOccurred())
+}
+
 func createContentLibraryItem(
 	libMgr *library.Manager,
 	libraryItem library.Item,
@@ -518,6 +560,10 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 
 	if !config.WithContentLibrary {
 		data["UseInventoryAsContentSource"] = "true"
+	}
+
+	if config.WithDefaultNetwork != "" {
+		data["Network"] = config.WithDefaultNetwork
 	}
 
 	cm := &corev1.ConfigMap{

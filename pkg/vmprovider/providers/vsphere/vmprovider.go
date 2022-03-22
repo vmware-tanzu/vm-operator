@@ -8,6 +8,8 @@ import (
 	"math/rand"
 	"strings"
 
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/mo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -21,7 +23,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
-	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/storage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
@@ -320,24 +321,41 @@ func (vs *vSphereVMProvider) ClearSessionsAndClient(ctx goctx.Context) {
 	vs.sessions.ClearSessionsAndClient(ctx)
 }
 
-func ResVMToVirtualMachineImage(ctx goctx.Context, resVM *res.VirtualMachine) (*v1alpha1.VirtualMachineImage, error) {
-	ovfProperties, err := resVM.GetOvfProperties(ctx)
+// ResVMToVirtualMachineImage isn't currently used.
+func ResVMToVirtualMachineImage(ctx goctx.Context, vm *object.VirtualMachine) (*v1alpha1.VirtualMachineImage, error) {
+	var o mo.VirtualMachine
+	err := vm.Properties(ctx, vm.Reference(), []string{"summary", "config.createDate", "config.vAppConfig"}, &o)
 	if err != nil {
 		return nil, err
 	}
 
-	// Prior code just used default values if the Properties called failed.
-	moVM, _ := resVM.GetProperties(ctx, []string{"config.createDate", "summary"})
-
 	var createTimestamp metav1.Time
-	if moVM.Config != nil && moVM.Config.CreateDate != nil {
-		createTimestamp = metav1.NewTime(*moVM.Config.CreateDate)
+	ovfProps := make(map[string]string)
+
+	if o.Config != nil {
+		if o.Config.CreateDate != nil {
+			createTimestamp = metav1.NewTime(*o.Config.CreateDate)
+		}
+
+		if o.Config.VAppConfig != nil {
+			if vAppConfig := o.Config.VAppConfig.GetVmConfigInfo(); vAppConfig != nil {
+				for _, prop := range vAppConfig.Property {
+					if strings.HasPrefix(prop.Id, "vmware-system") {
+						if prop.Value != "" {
+							ovfProps[prop.Id] = prop.Value
+						} else {
+							ovfProps[prop.Id] = prop.DefaultValue
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return &v1alpha1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:              resVM.Name,
-			Annotations:       ovfProperties,
+			Name:              o.Summary.Config.Name,
+			Annotations:       ovfProps,
 			CreationTimestamp: createTimestamp,
 		},
 		Spec: v1alpha1.VirtualMachineImageSpec{
@@ -345,9 +363,9 @@ func ResVMToVirtualMachineImage(ctx goctx.Context, resVM *res.VirtualMachine) (*
 			ImageSourceType: "Inventory",
 		},
 		Status: v1alpha1.VirtualMachineImageStatus{
-			Uuid:       moVM.Summary.Config.Uuid,
-			InternalId: resVM.ReferenceValue(),
-			PowerState: string(moVM.Summary.Runtime.PowerState),
+			Uuid:       o.Summary.Config.Uuid,
+			InternalId: vm.Reference().Value,
+			PowerState: string(o.Summary.Runtime.PowerState),
 		},
 	}, nil
 }

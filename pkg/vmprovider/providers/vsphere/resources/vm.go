@@ -6,7 +6,6 @@ package resources
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -153,35 +152,6 @@ func (vm *VirtualMachine) UniqueID(ctx context.Context) (string, error) {
 	// RegisterVM operation from VC)
 	// Basically, lifetime of the identity is tied to VC’s knowledge of it’s existence in it’s inventory
 	return vm.ReferenceValue(), nil
-}
-
-func (vm *VirtualMachine) GetOvfProperties(ctx context.Context) (map[string]string, error) {
-	vm.logger.V(5).Info("GetOvfProperties")
-
-	moVM, err := vm.GetProperties(ctx, []string{"config.vAppConfig"})
-	if err != nil {
-		return nil, err
-	}
-
-	if moVM.Config == nil || moVM.Config.VAppConfig == nil {
-		return nil, nil
-	}
-
-	properties := make(map[string]string)
-
-	if vAppConfig := moVM.Config.VAppConfig.GetVmConfigInfo(); vAppConfig != nil {
-		for _, prop := range vAppConfig.Property {
-			if strings.HasPrefix(prop.Id, "vmware-system") {
-				if prop.Value != "" {
-					properties[prop.Id] = prop.Value
-				} else {
-					properties[prop.Id] = prop.DefaultValue
-				}
-			}
-		}
-	}
-
-	return properties, nil
 }
 
 func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState v1alpha1.VirtualMachinePowerState) error {

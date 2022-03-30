@@ -265,11 +265,16 @@ func (s *Session) lookupVMByName(ctx goctx.Context, name string) (*res.VirtualMa
 }
 
 func (s *Session) GetVirtualMachine(vmCtx context.VirtualMachineContext) (*res.VirtualMachine, error) {
-	return vcenter.GetVirtualMachine(
+	vm, err := vcenter.GetVirtualMachine(
 		vmCtx,
 		s.k8sClient,
 		s.Finder,
 		s.folder)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.NewVMFromObject(vm)
 }
 
 func (s *Session) invokeFsrVirtualMachine(vmCtx context.VirtualMachineContext, resVM *res.VirtualMachine) error {

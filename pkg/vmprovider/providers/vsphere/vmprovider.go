@@ -276,12 +276,12 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(ctx goctx.Context, 
 		VM:      vm,
 	}
 
-	ses, err := vs.sessions.GetSessionForVM(vmCtx)
+	vcVM, err := vs.getVM(vmCtx)
 	if err != nil {
 		return "", err
 	}
 
-	status, err := ses.GetVirtualMachineGuestHeartbeat(vmCtx)
+	status, err := virtualmachine.GetGuestHeartBeatStatus(vmCtx, vcVM)
 	if err != nil {
 		return "", err
 	}
@@ -296,12 +296,17 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(ctx goctx.Context, vm
 		VM:      vm,
 	}
 
-	ses, err := vs.sessions.GetSessionForVM(vmCtx)
+	vcVM, err := vs.getVM(vmCtx)
 	if err != nil {
 		return "", err
 	}
 
-	return ses.GetVirtualMachineWebMKSTicket(vmCtx, pubKey)
+	ticket, err := virtualmachine.GetWebConsoleTicket(vmCtx, vcVM, pubKey)
+	if err != nil {
+		return "", err
+	}
+
+	return ticket, nil
 }
 
 func (vs *vSphereVMProvider) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
@@ -319,6 +324,15 @@ func (vs *vSphereVMProvider) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort stri
 
 func (vs *vSphereVMProvider) ClearSessionsAndClient(ctx goctx.Context) {
 	vs.sessions.ClearSessionsAndClient(ctx)
+}
+
+func (vs *vSphereVMProvider) getVM(vmCtx context.VirtualMachineContext) (*object.VirtualMachine, error) {
+	client, err := vs.GetClient(vmCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	return vcenter.GetVirtualMachine(vmCtx, vs.k8sClient, client.Finder(), nil)
 }
 
 // ResVMToVirtualMachineImage isn't currently used.

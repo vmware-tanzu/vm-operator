@@ -33,34 +33,6 @@ func (s *Session) DeleteVirtualMachine(vmCtx context.VirtualMachineContext) erro
 	return resVM.Delete(vmCtx)
 }
 
-func (s *Session) GetVirtualMachineGuestHeartbeat(vmCtx context.VirtualMachineContext) (vmopv1alpha1.GuestHeartbeatStatus, error) {
-	resVM, err := s.GetVirtualMachine(vmCtx)
-	if err != nil {
-		return "", transformVMError(vmCtx.VM.NamespacedName(), err)
-	}
-
-	moVM, err := resVM.GetProperties(vmCtx, []string{"guestHeartbeatStatus"})
-	if err != nil {
-		return "", err
-	}
-
-	return vmopv1alpha1.GuestHeartbeatStatus(moVM.GuestHeartbeatStatus), nil
-}
-
-func (s *Session) GetVirtualMachineWebMKSTicket(vmCtx context.VirtualMachineContext, pubKey string) (string, error) {
-	resVM, err := s.GetVirtualMachine(vmCtx)
-	if err != nil {
-		return "", transformVMError(vmCtx.VM.NamespacedName(), err)
-	}
-
-	ticket, err := resVM.GetWebMKSTicket(vmCtx)
-	if err != nil {
-		return "", err
-	}
-
-	return EncryptWebMKS(pubKey, ticket)
-}
-
 func updateVirtualDiskDeviceChanges(
 	vmCtx context.VirtualMachineContext,
 	virtualDisks object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {

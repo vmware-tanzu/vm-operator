@@ -78,7 +78,7 @@ func getVM() {
 			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.Client, ctx.Finder, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(vm).ToNot(BeNil())
-			Expect(vm.UniqueID(ctx)).To(Equal(vmCtx.VM.Status.UniqueID))
+			Expect(vm.Reference().Value).To(Equal(vmCtx.VM.Status.UniqueID))
 		})
 	})
 

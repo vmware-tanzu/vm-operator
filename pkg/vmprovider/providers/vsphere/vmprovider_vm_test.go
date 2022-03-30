@@ -137,7 +137,7 @@ func vmTests() {
 			if testConfig.WithContentLibrary {
 				vmImage = builder.DummyVirtualMachineImage(ctx.ContentLibraryImageName)
 			} else {
-				// Used VM created by default by vcsim.
+				// Use VM created by default by vcsim.
 				vmImage = builder.DummyVirtualMachineImage("DC0_C0_RP0_VM0")
 			}
 			Expect(ctx.Client.Create(ctx, vmImage)).To(Succeed())
@@ -636,12 +636,10 @@ func vmTests() {
 		Context("Guest Heartbeat", func() {
 			JustBeforeEach(func() {
 				Expect(vmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)).To(Succeed())
+				Expect(vmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)).To(Succeed())
 			})
 
 			It("return guest heartbeat", func() {
-				vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
-				Expect(vmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)).To(Succeed())
-
 				heartbeat, err := vmProvider.GetVirtualMachineGuestHeartbeat(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
 				// Just testing for property query: field not set in vcsim.
@@ -649,20 +647,18 @@ func vmTests() {
 			})
 		})
 
-		XContext("Web console ticket", func() {
+		Context("Web console ticket", func() {
 			JustBeforeEach(func() {
 				Expect(vmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)).To(Succeed())
-
-				vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
 				Expect(vmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)).To(Succeed())
 			})
 
 			It("return ticket", func() {
-				// vcsim doesn't implement this yet.
+				// vcsim doesn't implement this yet so expect an error.
 				_, err := vmProvider.GetVirtualMachineWebMKSTicket(ctx, vm, "foo")
-				Expect(err).ToNot(HaveOccurred())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("does not implement: AcquireTicket"))
 			})
-
 		})
 
 		Context("ResVMToVirtualMachineImage", func() {

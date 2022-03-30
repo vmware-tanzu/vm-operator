@@ -4,8 +4,6 @@
 package session_test
 
 import (
-	"crypto/rsa"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
@@ -13,7 +11,6 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
-	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var _ = Describe("Test Session Utils", func() {
@@ -165,32 +162,5 @@ var _ = Describe("Test Session Utils", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(output).To(Equal("H4sIAAAAAAAA//JIzcnJD88vykkBAAAA//8BAAD//3kMd3cKAAAA"))
 		})
-	})
-
-	Context("EncryptWebMKS", func() {
-		var (
-			privateKey   *rsa.PrivateKey
-			publicKeyPem string
-		)
-
-		BeforeEach(func() {
-			privateKey, publicKeyPem = builder.WebConsoleRequestKeyPair()
-		})
-
-		It("Encrypts a string correctly", func() {
-			plaintext := "HelloWorld2"
-			ciphertext, err := session.EncryptWebMKS(publicKeyPem, plaintext)
-			Expect(err).ShouldNot(HaveOccurred())
-			decrypted, err := session.DecryptWebMKS(privateKey, ciphertext)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(decrypted).To(Equal(plaintext))
-		})
-
-		It("Error on invalid public key", func() {
-			plaintext := "HelloWorld3"
-			_, err := session.EncryptWebMKS("invalid-pub-key", plaintext)
-			Expect(err).Should(HaveOccurred())
-		})
-
 	})
 })

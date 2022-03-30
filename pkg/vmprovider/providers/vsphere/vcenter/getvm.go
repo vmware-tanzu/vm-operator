@@ -15,7 +15,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
 // GetVirtualMachine gets the VM from VC, either by the MoID or by the inventory path.
@@ -25,7 +24,7 @@ func GetVirtualMachine(
 	vmCtx context.VirtualMachineContext,
 	client ctrlclient.Client,
 	finder *find.Finder,
-	folder *object.Folder) (*res.VirtualMachine, error) {
+	folder *object.Folder) (*object.VirtualMachine, error) {
 
 	if uniqueID := vmCtx.VM.Status.UniqueID; uniqueID != "" {
 		// Fast path: lookup via the MoID.
@@ -82,13 +81,13 @@ func GetVirtualMachine(
 	}
 
 	vmCtx.Logger.V(4).Info("Found VM via path", "path", vmPath, "moID", vm.Reference().Value)
-	return res.NewVMFromObject(vm)
+	return vm, nil
 }
 
 func findVMByMoID(
 	vmCtx context.VirtualMachineContext,
 	finder *find.Finder,
-	moID string) (*res.VirtualMachine, error) {
+	moID string) (*object.VirtualMachine, error) {
 
 	ref, err := finder.ObjectReference(vmCtx, types.ManagedObjectReference{Type: "VirtualMachine", Value: moID})
 	if err != nil {
@@ -98,6 +97,5 @@ func findVMByMoID(
 	vm := ref.(*object.VirtualMachine)
 	vmCtx.Logger.V(4).Info("Found VM via MoID", "name", vm.Name(),
 		"path", vm.InventoryPath, "moID", moID)
-
-	return res.NewVMFromObject(vm)
+	return vm, nil
 }

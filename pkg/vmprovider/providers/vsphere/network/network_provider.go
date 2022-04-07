@@ -122,7 +122,7 @@ func (l InterfaceInfoList) GetNetplan(currentEthCards object.VirtualDeviceList, 
 
 		// Inject nameserver settings for each ethernet.
 		netplanEthernet.Nameservers.Addresses = dnsServers
-		name := fmt.Sprintf("nic%d", index)
+		name := fmt.Sprintf("eth%d", index)
 		ethernets[name] = netplanEthernet
 	}
 

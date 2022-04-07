@@ -198,7 +198,7 @@ var _ = Describe("CloudInitmetadata", func() {
 		netplan = network.Netplan{
 			Version: constants.NetPlanVersion,
 			Ethernets: map[string]network.NetplanEthernet{
-				"nic0": {
+				"eth0": {
 					Dhcp4:     false,
 					Addresses: []string{"192.168.1.55"},
 					Gateway4:  "192.168.1.1",

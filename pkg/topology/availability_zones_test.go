@@ -68,7 +68,7 @@ var _ = Describe("Availability Zones", func() {
 			if wcpFaultDomainsFssEnabled {
 				for j := 0; j < numberOfNamespaces; j++ {
 					obj.Spec.Namespaces[fmt.Sprintf("ns-%d", j)] = topologyv1.NamespaceInfo{
-						PoolMoId:   poolMoID,
+						PoolMoIDs:  []string{poolMoID},
 						FolderMoId: folderMoID,
 					}
 				}
@@ -96,7 +96,7 @@ var _ = Describe("Availability Zones", func() {
 		nsName := ctrlclient.ObjectKey{Name: name}
 		ExpectWithOffset(2, zone.Spec.Namespaces).To(HaveKey(nsName.Name))
 		ExpectWithOffset(2, client.Get(ctx, nsName, &corev1.Namespace{})).To(Succeed())
-		ExpectWithOffset(2, zone.Spec.Namespaces[nsName.Name].PoolMoId).To(Equal(poolMoID))
+		ExpectWithOffset(2, zone.Spec.Namespaces[nsName.Name].PoolMoIDs).To(ConsistOf(poolMoID))
 		ExpectWithOffset(2, zone.Spec.Namespaces[nsName.Name].FolderMoId).To(Equal(folderMoID))
 	}
 

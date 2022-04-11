@@ -208,7 +208,9 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 				nsRPs = append(nsRPs, nsRP)
 			}
 			Expect(nsRPs).To(HaveLen(c.ClustersPerZone))
-			nsInfo.PoolMoId = nsRPs[0].Reference().Value
+			for _, rp := range nsRPs {
+				nsInfo.PoolMoIDs = append(nsInfo.PoolMoIDs, rp.Reference().Value)
+			}
 
 			az := &topologyv1.AvailabilityZone{}
 			Expect(c.Client.Get(c, client.ObjectKey{Name: azName}, az)).To(Succeed())

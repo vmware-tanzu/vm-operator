@@ -15,7 +15,6 @@ import (
 )
 
 // GetStoragePolicyID returns Storage Policy ID from Storage Class Name.
-// TODO: Dedupe this with VM controller implementation once we have CreateOrUpdateVM().
 func GetStoragePolicyID(
 	vmCtx context.VirtualMachineContext,
 	client ctrlclient.Client,
@@ -29,7 +28,7 @@ func GetStoragePolicyID(
 
 	policyID, ok := sc.Parameters["storagePolicyID"]
 	if !ok {
-		return "", fmt.Errorf("StorageClass %s parameters does not have 'storagePolicyID' field", storageClassName)
+		return "", fmt.Errorf("StorageClass %s does not have 'storagePolicyID' parameter", storageClassName)
 	}
 
 	return policyID, nil

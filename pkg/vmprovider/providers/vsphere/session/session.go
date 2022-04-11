@@ -252,7 +252,7 @@ func (s *Session) lookupVMByName(ctx goctx.Context, name string) (*res.VirtualMa
 	if err != nil {
 		return nil, err
 	}
-	return res.NewVMFromObject(vm)
+	return res.NewVMFromObject(vm), nil
 }
 
 func (s *Session) GetVirtualMachine(vmCtx context.VirtualMachineContext) (*res.VirtualMachine, error) {
@@ -265,7 +265,7 @@ func (s *Session) GetVirtualMachine(vmCtx context.VirtualMachineContext) (*res.V
 		return nil, err
 	}
 
-	return res.NewVMFromObject(vm)
+	return res.NewVMFromObject(vm), nil
 }
 
 func (s *Session) invokeFsrVirtualMachine(vmCtx context.VirtualMachineContext, resVM *res.VirtualMachine) error {

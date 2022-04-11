@@ -26,12 +26,16 @@ type VirtualMachine struct {
 
 var log = logf.Log.WithName("vmresource")
 
-func NewVMFromObject(objVM *object.VirtualMachine) (*VirtualMachine, error) {
+func NewVMFromObject(objVM *object.VirtualMachine) *VirtualMachine {
 	return &VirtualMachine{
 		Name:             objVM.Name(),
 		vcVirtualMachine: objVM,
 		logger:           log.WithValues("name", objVM.Name()),
-	}, nil
+	}
+}
+
+func (vm *VirtualMachine) VcVM() *object.VirtualMachine {
+	return vm.vcVirtualMachine
 }
 
 func (vm *VirtualMachine) Create(ctx context.Context, folder *object.Folder, pool *object.ResourcePool, vmSpec *types.VirtualMachineConfigSpec) error {

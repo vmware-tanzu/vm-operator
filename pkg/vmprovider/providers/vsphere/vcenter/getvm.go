@@ -59,11 +59,11 @@ func GetVirtualMachine(
 
 		key := ctrlclient.ObjectKey{Name: policyName, Namespace: vmCtx.VM.Namespace}
 		if err := client.Get(vmCtx, key, resourcePolicy); err != nil {
-			vmCtx.Logger.Error(err, "Failed to get ResourcePolicy", "name", key)
+			vmCtx.Logger.Error(err, "Failed to get VirtualMachineSetResourcePolicy", "name", key)
 			// Don't return a wrapped error because that can cause us to later incorrectly assume
 			// the VM doesn't exist. There is just a fundamental issue with potentially needing the
 			// ResourcePolicy to find a VM that we need to fully sort out.
-			return nil, fmt.Errorf("failed to get ResourcePolicy: %s", err.Error())
+			return nil, fmt.Errorf("failed to get VirtualMachineSetResourcePolicy: %v", err)
 		}
 
 		childFolder, err := finder.Folder(vmCtx, folder.InventoryPath+"/"+resourcePolicy.Spec.Folder.Name)

@@ -690,12 +690,10 @@ func (s *Session) attachClusterModule(
 
 func (s *Session) UpdateVirtualMachine(
 	vmCtx context.VirtualMachineContext,
+	vcVM *object.VirtualMachine,
 	vmConfigArgs vmprovider.VMConfigArgs) (err error) {
 
-	resVM, err := s.GetVirtualMachine(vmCtx)
-	if err != nil {
-		return err
-	}
+	resVM := res.NewVMFromObject(vcVM)
 
 	moVM, err := resVM.GetProperties(vmCtx, []string{"config", "runtime"})
 	if err != nil {

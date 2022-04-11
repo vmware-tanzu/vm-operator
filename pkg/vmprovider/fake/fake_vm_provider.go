@@ -22,10 +22,7 @@ import (
 // expected to evolve as more tests get added in the future.
 
 type funcs struct {
-	DoesVirtualMachineExistFn         func(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
-	PlaceVirtualMachineFn             func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error
-	CreateVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error
-	UpdateVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error
+	CreateOrUpdateVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	DeleteVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeatFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 	GetVirtualMachineWebMKSTicketFn   func(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
@@ -33,7 +30,6 @@ type funcs struct {
 	ListItemsFromContentLibraryFn              func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
 	GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
-	DoesContentLibraryExistFn func(ctx context.Context, cl *v1alpha1.ContentLibraryProvider) (bool, error)
 
 	UpdateVcPNIDFn                  func(ctx context.Context, vcPNID, vcPort string) error
 	ClearSessionsAndClientFn        func(ctx context.Context)
@@ -63,47 +59,14 @@ func (s *VMProvider) Reset() {
 	s.resourcePolicyMap = make(map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy)
 }
 
-func (s *VMProvider) DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
+func (s *VMProvider) CreateOrUpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
 	s.Lock()
 	defer s.Unlock()
-	if s.DoesVirtualMachineExistFn != nil {
-		return s.DoesVirtualMachineExistFn(ctx, vm)
-	}
-	objectKey := client.ObjectKey{
-		Namespace: vm.Namespace,
-		Name:      vm.Name,
-	}
-	_, ok := s.vmMap[objectKey]
-	return ok, nil
-}
-
-func (s *VMProvider) PlaceVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
-	s.Lock()
-	defer s.Unlock()
-	if s.PlaceVirtualMachineFn != nil {
-		return s.PlaceVirtualMachineFn(ctx, vm, vmConfigArgs)
-	}
-	return nil
-}
-
-func (s *VMProvider) CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
-	s.Lock()
-	defer s.Unlock()
-	if s.CreateVirtualMachineFn != nil {
-		return s.CreateVirtualMachineFn(ctx, vm, vmConfigArgs)
+	if s.CreateOrUpdateVirtualMachineFn != nil {
+		return s.CreateOrUpdateVirtualMachineFn(ctx, vm)
 	}
 	s.addToVMMap(vm)
 	vm.Status.Phase = v1alpha1.Created
-	return nil
-}
-
-func (s *VMProvider) UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
-	s.Lock()
-	defer s.Unlock()
-	if s.UpdateVirtualMachineFn != nil {
-		return s.UpdateVirtualMachineFn(ctx, vm, vmConfigArgs)
-	}
-	s.addToVMMap(vm)
 	return nil
 }
 
@@ -133,16 +96,6 @@ func (s *VMProvider) GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1al
 		return s.GetVirtualMachineWebMKSTicketFn(ctx, vm, pubKey)
 	}
 	return "", nil
-}
-
-func (s *VMProvider) Initialize(stop <-chan struct{}) {}
-
-func (s *VMProvider) Name() string {
-	return "fake"
-}
-
-func (s *VMProvider) GetClusterID(ctx context.Context, namespace string) (string, error) {
-	return "domain-c8", nil
 }
 
 func (s *VMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
@@ -222,16 +175,6 @@ func (s *VMProvider) DeleteNamespaceSessionInCache(ctx context.Context, namespac
 	}
 
 	return nil
-}
-
-func (s *VMProvider) DoesContentLibraryExist(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) (bool, error) {
-	s.Lock()
-	defer s.Unlock()
-	if s.DoesContentLibraryExistFn != nil {
-		return s.DoesContentLibraryExistFn(ctx, contentLibrary)
-	}
-
-	return true, nil
 }
 
 func (s *VMProvider) ListItemsFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error) {

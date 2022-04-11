@@ -25,17 +25,7 @@ type VMConfigArgs struct {
 
 // VirtualMachineProviderInterface is a plugable interface for VM Providers.
 type VirtualMachineProviderInterface interface {
-	Name() string
-
-	// Initialize provides the cloud with a kubernetes client builder and may spawn goroutines
-	// to perform housekeeping or run custom controllers specific to the cloud provider.
-	// Any tasks started here should be cleaned up when the stop channel closes.
-	Initialize(stop <-chan struct{})
-
-	DoesVirtualMachineExist(ctx context.Context, vm *v1alpha1.VirtualMachine) (bool, error)
-	PlaceVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) error
-	CreateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) error
-	UpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs VMConfigArgs) error
+	CreateOrUpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 	GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)

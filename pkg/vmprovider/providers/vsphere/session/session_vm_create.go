@@ -86,7 +86,7 @@ func (s *Session) deployOvf(vmCtx VirtualMachineCloneContext, itemID string, sto
 		return nil, err
 	}
 
-	return res.NewVMFromObject(ref.(*object.VirtualMachine))
+	return res.NewVMFromObject(ref.(*object.VirtualMachine)), nil
 }
 
 // GetClusterVMConfigOptions fetches the virtualmachine config options from the cluster specifically
@@ -197,7 +197,7 @@ func (s *Session) cloneVM(vmCtx context.VirtualMachineContext, resSrcVM *res.Vir
 		return nil, err
 	}
 
-	return res.NewVMFromObject(ref.(*object.VirtualMachine))
+	return res.NewVMFromObject(ref.(*object.VirtualMachine)), nil
 }
 
 func (s *Session) cloneVMFromInventory(vmCtx VirtualMachineCloneContext, vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {

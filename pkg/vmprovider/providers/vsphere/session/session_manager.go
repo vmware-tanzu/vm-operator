@@ -62,26 +62,19 @@ func (sm *Manager) DeleteSession(
 }
 
 func (sm *Manager) GetClient(ctx goctx.Context) (*vcclient.Client, error) {
+	sm.Lock()
+	defer sm.Unlock()
+
+	if sm.client != nil {
+		return sm.client, nil
+	}
+
 	config, err := vcconfig.GetProviderConfig(ctx, sm.k8sClient)
 	if err != nil {
 		return nil, err
 	}
 
-	sm.Lock()
-	defer sm.Unlock()
-
 	return sm.getClient(ctx, config)
-}
-
-func (sm *Manager) WithClient(
-	ctx goctx.Context,
-	fn func(goctx.Context, *vcclient.Client) error) error {
-
-	client, err := sm.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	return fn(ctx, client)
 }
 
 func (sm *Manager) GetSession(

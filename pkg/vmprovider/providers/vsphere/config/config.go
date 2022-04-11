@@ -35,9 +35,6 @@ type VSphereVMProviderConfig struct {
 	UseInventoryAsContentSource bool // Always false in WCP env.
 	CAFilePath                  string
 	InsecureSkipTLSVerify       bool // Always false in WCP env.
-	CtrlVMVMAntiAffinityTag     string
-	WorkerVMVMAntiAffinityTag   string
-	TagCategoryName             string
 
 	// These are Zone and/or Namespace specific.
 	ResourcePool string
@@ -53,22 +50,19 @@ const (
 
 	ProviderConfigMapName = "vsphere.provider.config.vmoperator.vmware.com"
 	// Keys in provider ConfigMap.
-	vcPNIDKey                    = "VcPNID"
-	vcPortKey                    = "VcPort"
-	vcCredsSecretNameKey         = "VcCredsSecretName" // nolint:gosec
-	datacenterKey                = "Datacenter"
-	resourcePoolKey              = "ResourcePool"
-	folderKey                    = "Folder"
-	datastoreKey                 = "Datastore"
-	networkNameKey               = "Network"
-	scRequiredKey                = "StorageClassRequired"
-	useInventoryKey              = "UseInventoryAsContentSource"
-	insecureSkipTLSVerifyKey     = "InsecureSkipTLSVerify"
-	caFilePathKey                = "CAFilePath"
-	ContentSourceKey             = "ContentSource"
-	CtrlVMVMAntiAffinityTagKey   = "CtrlVmVmAATag"
-	WorkerVMVMAntiAffinityTagKey = "WorkerVmVmAATag"
-	ProviderTagCategoryNameKey   = "VmVmAntiAffinityTagCategoryName"
+	vcPNIDKey                = "VcPNID"
+	vcPortKey                = "VcPort"
+	vcCredsSecretNameKey     = "VcCredsSecretName" // nolint:gosec
+	datacenterKey            = "Datacenter"
+	resourcePoolKey          = "ResourcePool"
+	folderKey                = "Folder"
+	datastoreKey             = "Datastore"
+	networkNameKey           = "Network"
+	scRequiredKey            = "StorageClassRequired"
+	useInventoryKey          = "UseInventoryAsContentSource"
+	insecureSkipTLSVerifyKey = "InsecureSkipTLSVerify"
+	caFilePathKey            = "CAFilePath"
+	ContentSourceKey         = "ContentSource"
 
 	NetworkConfigMapName = "vmoperator-network-config"
 	NameserversKey       = "nameservers" // Key in the NetworkConfigMapName.
@@ -144,9 +138,6 @@ func ConfigMapToProviderConfig(
 		UseInventoryAsContentSource: useInventory,
 		InsecureSkipTLSVerify:       insecureSkipTLSVerify,
 		CAFilePath:                  caFilePath,
-		CtrlVMVMAntiAffinityTag:     dataMap[CtrlVMVMAntiAffinityTagKey],
-		WorkerVMVMAntiAffinityTag:   dataMap[WorkerVMVMAntiAffinityTagKey],
-		TagCategoryName:             dataMap[ProviderTagCategoryNameKey],
 	}
 
 	return ret, nil
@@ -297,8 +288,6 @@ func setConfigMapData(configMap *corev1.ConfigMap, config *VSphereVMProviderConf
 	configMap.Data[useInventoryKey] = strconv.FormatBool(config.UseInventoryAsContentSource)
 	configMap.Data[caFilePathKey] = config.CAFilePath
 	configMap.Data[insecureSkipTLSVerifyKey] = strconv.FormatBool(config.InsecureSkipTLSVerify)
-	configMap.Data[CtrlVMVMAntiAffinityTagKey] = config.CtrlVMVMAntiAffinityTag
-	configMap.Data[WorkerVMVMAntiAffinityTagKey] = config.WorkerVMVMAntiAffinityTag
 }
 
 // ProviderConfigToConfigMap returns the ConfigMap for the config.

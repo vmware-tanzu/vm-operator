@@ -17,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/vmware/govmomi/vapi/tags"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -882,58 +881,13 @@ var _ = Describe("Sessions", func() {
 		})
 	})
 
-	Describe("vSphere Tags", func() {
-		var resVM *resources.VirtualMachine
-		tagCatName := "tag-category-name"
-		tagName := "tag-name"
-
-		BeforeEach(func() {
-			resVM, err = session.GetVirtualMachine(vmContext(ctx, getSimpleVirtualMachine("DC0_H0_VM0")))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resVM).NotTo(BeNil())
-
-			manager := tags.NewManager(session.Client.RestClient())
-
-			// Create a tag category and a tag
-			cat := tags.Category{
-				Name:            tagCatName,
-				Description:     "test-description",
-				Cardinality:     "SINGLE",
-				AssociableTypes: []string{"VirtualMachine"},
-			}
-			catId, err := manager.CreateCategory(ctx, &cat)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(catId).NotTo(BeEmpty())
-
-			tag := tags.Tag{
-				Name:        tagName,
-				Description: "test-description",
-				CategoryID:  catId,
-			}
-			tagId, err := manager.CreateTag(ctx, &tag)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(tagId).NotTo(BeEmpty())
-		})
-
-		Context("Attach a tag to a VM", func() {
-			It("Attach/Detach", func() {
-				err = session.AttachTagToVM(ctx, tagName, tagCatName, resVM.MoRef())
-				Expect(err).NotTo(HaveOccurred())
-
-				err = session.DetachTagFromVM(ctx, tagName, tagCatName, resVM.MoRef())
-				Expect(err).NotTo(HaveOccurred())
-			})
-		})
-	})
-
-	Describe("Attach tags and modules to a VM", func() {
+	Describe("Attach cluster module to a VM", func() {
 		namespace := integration.DefaultNamespace
 		vmName := "getvm-with-rp-and-without-moid"
 		imageName := "test-item"
 		var vm *vmopv1alpha1.VirtualMachine
 		var vmConfigArgs vmprovider.VMConfigArgs
 		badClusterModuleName := "badClusterModuleName"
-		badProviderTagsName := "badProviderTagsName"
 		var resourcePolicy *vmopv1alpha1.VirtualMachineSetResourcePolicy
 
 		BeforeEach(func() {
@@ -958,23 +912,10 @@ var _ = Describe("Sessions", func() {
 				Expect(clonedVM.Name).Should(Equal(vmName))
 
 				vm.Annotations[pkg.ClusterModuleNameKey] = badClusterModuleName
-				vm.Annotations[pkg.ProviderTagsAnnotationKey] = badProviderTagsName
 				err = session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
 
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(fmt.Sprintf("ClusterModule %s not found", badClusterModuleName)))
-			})
-		})
-
-		// This depends on the prior test.
-		Context("With empty tagName", func() {
-			It("Should fail", func() {
-				vm.Annotations[pkg.ClusterModuleNameKey] = "ControlPlane"
-				vm.Annotations[pkg.ProviderTagsAnnotationKey] = badProviderTagsName
-				err = session.UpdateVirtualMachine(vmContext(ctx, vm), vmConfigArgs)
-
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(fmt.Sprintf("empty tagName, TagInfo %s not found", badProviderTagsName)))
 			})
 		})
 	})

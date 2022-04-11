@@ -624,16 +624,14 @@ func (s *Session) poweredOnVMReconfigure(
 	return nil
 }
 
-func (s *Session) attachTagsAndModules(
+func (s *Session) attachClusterModule(
 	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
 
+	// The clusterModule is required be able to enforce the vm-vm anti-affinity policy.
 	clusterModuleName := vmCtx.VM.Annotations[pkg.ClusterModuleNameKey]
-	providerTagsName := vmCtx.VM.Annotations[pkg.ProviderTagsAnnotationKey]
-
-	// Both the clusterModule and tag are required be able to enforce the vm-vm anti-affinity policy.
-	if clusterModuleName == "" || providerTagsName == "" {
+	if clusterModuleName == "" {
 		return nil
 	}
 
@@ -643,20 +641,7 @@ func (s *Session) attachTagsAndModules(
 		return fmt.Errorf("ClusterModule %s not found", clusterModuleName)
 	}
 
-	vmRef := resVM.MoRef()
-
-	err := s.Client.ClusterModuleClient().AddMoRefToModule(vmCtx, moduleUUID, vmRef)
-	if err != nil {
-		return err
-	}
-
-	// Lookup the real tag name from config and attach to the VM.
-	tagName := s.tagInfo[providerTagsName]
-	if tagName == "" {
-		return fmt.Errorf("empty tagName, TagInfo %s not found", providerTagsName)
-	}
-	tagCategoryName := s.tagInfo[config.ProviderTagCategoryNameKey]
-	return s.AttachTagToVM(vmCtx, tagName, tagCategoryName, vmRef)
+	return s.Client.ClusterModuleClient().AddMoRefToModule(vmCtx, moduleUUID, resVM.MoRef())
 }
 
 func (s *Session) UpdateVirtualMachine(
@@ -725,5 +710,5 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	// TODO: Find a better place for this?
-	return s.attachTagsAndModules(vmCtx, resVM, vmConfigArgs.ResourcePolicy)
+	return s.attachClusterModule(vmCtx, resVM, vmConfigArgs.ResourcePolicy)
 }

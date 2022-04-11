@@ -487,8 +487,7 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 	data["Datacenter"] = dc.Reference().Value
 	data["CAFilePath"] = c.tlsServerCertPath
 	data["InsecureSkipTLSVerify"] = "false"
-	data["VmVmAntiAffinityTagCategoryName"] = ""
-	data["WorkerVmVmAATag"] = ""
+
 	// These config fields are ignored now (mostly true).
 	// data["ResourcePool"] = ""
 	// data["Folder"] = ""

@@ -14,8 +14,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vapi/tags"
-	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -56,7 +54,6 @@ type Session struct {
 	extraConfig           map[string]string
 	storageClassRequired  bool
 	useInventoryForImages bool
-	tagInfo               map[string]string
 
 	mutex              sync.Mutex
 	cpuMinMHzInCluster uint64 // CPU Min Frequency across all Hosts in the cluster
@@ -170,12 +167,6 @@ func (s *Session) initSession(
 	}
 
 	s.networkProvider = network.NewProvider(s.k8sClient, s.Client.VimClient(), s.Finder, s.cluster)
-
-	// Initialize tagging information
-	s.tagInfo = make(map[string]string)
-	s.tagInfo[config.CtrlVMVMAntiAffinityTagKey] = cfg.CtrlVMVMAntiAffinityTag
-	s.tagInfo[config.WorkerVMVMAntiAffinityTagKey] = cfg.WorkerVMVMAntiAffinityTag
-	s.tagInfo[config.ProviderTagCategoryNameKey] = cfg.TagCategoryName
 
 	return nil
 }
@@ -347,33 +338,8 @@ func (s *Session) String() string {
 		sb.WriteString(fmt.Sprintf("datastore: %s, ", s.datastore.Reference().Value))
 	}
 	sb.WriteString(fmt.Sprintf("cpuMinMHzInCluster: %v, ", s.GetCPUMinMHzInCluster()))
-	sb.WriteString(fmt.Sprintf("tagInfo: %v ", s.tagInfo))
 	sb.WriteString("}")
 	return sb.String()
-}
-
-// AttachTagToVM attaches a tag with a given name to the vm.
-func (s *Session) AttachTagToVM(ctx goctx.Context, tagName string, tagCatName string, vmRef mo.Reference) error {
-	restClient := s.Client.RestClient()
-	manager := tags.NewManager(restClient)
-	tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
-	if err != nil {
-		return err
-	}
-
-	return manager.AttachTag(ctx, tag.ID, vmRef)
-}
-
-// DetachTagFromVM detaches a tag with a given name from the vm.
-func (s *Session) DetachTagFromVM(ctx goctx.Context, tagName string, tagCatName string, vmRef mo.Reference) error {
-	restClient := s.Client.RestClient()
-	manager := tags.NewManager(restClient)
-	tag, err := manager.GetTagForCategory(ctx, tagName, tagCatName)
-	if err != nil {
-		return err
-	}
-
-	return manager.DetachTag(ctx, tag.ID, vmRef)
 }
 
 // RenameSessionCluster renames the cluster corresponding to this session. Used only in integration tests for now.

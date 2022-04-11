@@ -14,9 +14,10 @@ import (
 var suite = builder.NewTestSuite()
 
 func vcSimTests() {
-	Describe("VirtualMachine", vmTests)
-	Describe("ResourcePolicyTests", resourcePolicyTests)
 	Describe("CPUFreq", cpuFreqTests)
+	Describe("ResourcePolicyTests", resourcePolicyTests)
+	Describe("VirtualMachine", vmTests)
+	Describe("VirtualMachineUtilsTest", vmUtilTests)
 }
 
 func TestVSphereProvider(t *testing.T) {

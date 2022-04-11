@@ -13,7 +13,6 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -25,9 +24,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/storage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
@@ -53,13 +50,6 @@ func NewVSphereVMProviderFromClient(
 		k8sClient:     client,
 		eventRecorder: recorder,
 	}
-}
-
-func (vs *vSphereVMProvider) Name() string {
-	return VsphereVMProviderName
-}
-
-func (vs *vSphereVMProvider) Initialize(stop <-chan struct{}) {
 }
 
 func (vs *vSphereVMProvider) GetClient(ctx goctx.Context) (*vcclient.Client, error) {
@@ -112,28 +102,6 @@ func (vs *vSphereVMProvider) GetVirtualMachineImageFromContentLibrary(
 		currentCLImages)
 }
 
-func (vs *vSphereVMProvider) DoesVirtualMachineExist(ctx goctx.Context, vm *v1alpha1.VirtualMachine) (bool, error) {
-	vmCtx := context.VirtualMachineContext{
-		Context: ctx,
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
-	}
-
-	client, err := vs.GetClient(vmCtx)
-	if err != nil {
-		return false, err
-	}
-
-	if _, err := vcenter.GetVirtualMachine(vmCtx, vs.k8sClient, client.Finder(), nil); err != nil {
-		if k8serrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return true, nil
-}
-
 func (vs *vSphereVMProvider) getOpID(vm *v1alpha1.VirtualMachine, operation string) string {
 	const charset = "0123456789abcdef"
 
@@ -145,116 +113,6 @@ func (vs *vSphereVMProvider) getOpID(vm *v1alpha1.VirtualMachine, operation stri
 	}
 
 	return strings.Join([]string{"vmoperator", vm.Name, operation, string(id)}, "-")
-}
-
-func (vs *vSphereVMProvider) PlaceVirtualMachine(
-	ctx goctx.Context,
-	vm *v1alpha1.VirtualMachine,
-	vmConfigArgs vmprovider.VMConfigArgs) error {
-
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "place")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
-	}
-
-	client, err := vs.GetClient(vmCtx)
-	if err != nil {
-		return err
-	}
-
-	var minCPUFreq uint64
-	if resPolicy := vmConfigArgs.ResourcePolicy; resPolicy != nil {
-		rp := resPolicy.Spec.ResourcePool
-
-		if !rp.Reservations.Cpu.IsZero() || !rp.Limits.Cpu.IsZero() {
-			var err error
-			minCPUFreq, err = vs.ComputeAndGetCPUMinFrequency(ctx)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	storageClassesToIDs, err := storage.GetVMStoragePoliciesIDs(vmCtx, vs.k8sClient)
-	if err != nil {
-		return err
-	}
-
-	configSpec := virtualmachine.CreateConfigSpecForPlacement(
-		vmCtx,
-		&vmConfigArgs.VMClass.Spec,
-		minCPUFreq,
-		storageClassesToIDs)
-
-	childRPName := ""
-	if vmConfigArgs.ResourcePolicy != nil {
-		childRPName = vmConfigArgs.ResourcePolicy.Spec.ResourcePool.Name
-	}
-
-	err = placement.Placement(vmCtx, vs.k8sClient, client.VimClient(), configSpec, childRPName)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (vs *vSphereVMProvider) CreateVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "create")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
-	}
-
-	vmCtx.Logger.Info("Creating VirtualMachine")
-
-	ses, err := vs.sessions.GetSessionForVM(vmCtx)
-	if err != nil {
-		return err
-	}
-
-	resVM, err := ses.CloneVirtualMachine(vmCtx, vmConfigArgs)
-	if err != nil {
-		vmCtx.Logger.Error(err, "Clone VirtualMachine failed")
-		return err
-	}
-
-	// Set a few Status fields that we easily have on hand here. The controller will immediately call
-	// UpdateVirtualMachine() which will set it all.
-	vm.Status.Phase = v1alpha1.Created
-	vm.Status.UniqueID = resVM.MoRef().Value
-
-	return nil
-}
-
-// UpdateVirtualMachine updates the VM status, power state, phase etc.
-func (vs *vSphereVMProvider) UpdateVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine, vmConfigArgs vmprovider.VMConfigArgs) error {
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "update")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
-	}
-
-	vmCtx.Logger.V(4).Info("Updating VirtualMachine")
-
-	if lib.IsWcpFaultDomainsFSSEnabled() {
-		if err := vs.reverseVMZoneLookup(vmCtx); err != nil {
-			return err
-		}
-	}
-
-	ses, err := vs.sessions.GetSessionForVM(vmCtx)
-	if err != nil {
-		return err
-	}
-
-	err = ses.UpdateVirtualMachine(vmCtx, vmConfigArgs)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (vs *vSphereVMProvider) DeleteVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine) error {

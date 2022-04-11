@@ -24,7 +24,6 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -34,6 +33,8 @@ import (
 	"github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -270,6 +271,19 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 		Expect(c.Client.Create(c, csBinding)).To(Succeed())
 	}
 
+	resourceQuota := &corev1.ResourceQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dummy-resource-quota",
+			Namespace: ns.Name,
+		},
+		Spec: corev1.ResourceQuotaSpec{
+			Hard: corev1.ResourceList{
+				corev1.ResourceName(c.StorageClassName + ".storageclass.storage.k8s.io/persistentvolumeclaims"): resource.MustParse("1"),
+			},
+		},
+	}
+	Expect(c.Client.Create(c, resourceQuota)).To(Succeed())
+
 	// Make trip through the Finder to populate InventoryPath.
 	objRef, err := c.Finder.ObjectReference(c, nsFolder.Reference())
 	Expect(err).ToNot(HaveOccurred())
@@ -417,7 +431,6 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 			UUID: clID,
 		},
 	}
-
 	Expect(c.Client.Create(c, clProvider)).To(Succeed())
 
 	cs := &vmopv1alpha1.ContentSource{
@@ -426,13 +439,15 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 		},
 		Spec: vmopv1alpha1.ContentSourceSpec{
 			ProviderRef: vmopv1alpha1.ContentProviderReference{
-				Name: clProvider.ObjectMeta.Name,
+				Name: clProvider.Name,
 				Kind: "ContentLibraryProvider",
 			},
 		},
 	}
-
 	Expect(c.Client.Create(c, cs)).To(Succeed())
+
+	Expect(controllerutil.SetOwnerReference(cs, clProvider, c.Client.Scheme())).To(Succeed())
+	Expect(c.Client.Update(c, clProvider)).To(Succeed())
 
 	libraryItem := library.Item{
 		Name:      "test-image-ovf",
@@ -441,12 +456,17 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	}
 	c.ContentLibraryImageName = libraryItem.Name
 
+	vmImage := DummyVirtualMachineImage(c.ContentLibraryImageName)
+	Expect(controllerutil.SetOwnerReference(clProvider, vmImage, c.Client.Scheme())).To(Succeed())
+	Expect(c.Client.Create(c, vmImage)).To(Succeed())
+
 	createContentLibraryItem(libMgr, libraryItem,
 		path.Join(testutil.GetRootDirOrDie(), "images", "ttylinux-pc_i486-16.1.ovf"))
 }
 
 func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName string) {
-	Expect(c.ContentLibraryID).ToNot(BeEmpty())
+	clID := c.ContentLibraryID
+	Expect(clID).ToNot(BeEmpty())
 
 	vm, err := c.Finder.VirtualMachine(c, srcVMName)
 	Expect(err).ToNot(HaveOccurred())
@@ -459,7 +479,7 @@ func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName
 
 	spec := vcenter.Template{
 		Name:     templateName,
-		Library:  c.ContentLibraryID,
+		Library:  clID,
 		SourceVM: vm.Reference().Value,
 		Placement: &vcenter.Placement{
 			Folder:       folder.Reference().Value,
@@ -469,6 +489,13 @@ func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName
 
 	_, err = vcenter.NewManager(c.RestClient).CreateTemplate(c, spec)
 	Expect(err).ToNot(HaveOccurred())
+
+	// Create the expected VirtualMachineImage for the template.
+	vmImage := DummyVirtualMachineImage(templateName)
+	cl := &vmopv1alpha1.ContentLibraryProvider{}
+	Expect(c.Client.Get(c, client.ObjectKey{Name: clID}, cl)).To(Succeed())
+	Expect(controllerutil.SetOwnerReference(cl, vmImage, c.Client.Scheme())).To(Succeed())
+	Expect(c.Client.Create(c, vmImage)).To(Succeed())
 }
 
 func createContentLibraryItem(

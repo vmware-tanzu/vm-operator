@@ -41,6 +41,31 @@ var (
 	converter runtime.UnstructuredConverter = runtime.DefaultUnstructuredConverter
 )
 
+func DummyContentSourceAndProvider(uuid string) (*vmopv1.ContentSource, *vmopv1.ContentLibraryProvider) {
+	contentLibraryProvider := &vmopv1.ContentLibraryProvider{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "dummy-content-library-provider",
+		},
+		Spec: vmopv1.ContentLibraryProviderSpec{
+			UUID: uuid,
+		},
+	}
+
+	contentSource := &vmopv1.ContentSource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "dummy-content-source",
+		},
+		Spec: vmopv1.ContentSourceSpec{
+			ProviderRef: vmopv1.ContentProviderReference{
+				Name: contentLibraryProvider.Name,
+				Kind: "ContentLibraryProvider",
+			},
+		},
+	}
+
+	return contentSource, contentLibraryProvider
+}
+
 func DummyVirtualMachineClass() *vmopv1.VirtualMachineClass {
 	return &vmopv1.VirtualMachineClass{
 		ObjectMeta: metav1.ObjectMeta{
@@ -252,8 +277,7 @@ func DummyVirtualMachineImage(imageName string) *vmopv1.VirtualMachineImage {
 			},
 		},
 		Status: vmopv1.VirtualMachineImageStatus{
-			InternalId: DummyImageName,
-			ImageName:  imageName,
+			ImageName: imageName,
 		},
 	}
 }

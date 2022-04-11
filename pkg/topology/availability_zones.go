@@ -65,7 +65,12 @@ func GetNamespaceFolderAndRPMoID(
 			availabilityZoneName, namespace)
 	}
 
-	return nsInfo.FolderMoId, nsInfo.PoolMoId, nil
+	poolMoID := nsInfo.PoolMoId
+	if len(nsInfo.PoolMoIDs) != 0 {
+		poolMoID = nsInfo.PoolMoIDs[0]
+	}
+
+	return nsInfo.FolderMoId, poolMoID, nil
 }
 
 // GetNamespaceFolderAndRPMoIDs returns the Folder and ResourcePool MoIDs for the namespace, across all zones.
@@ -85,7 +90,11 @@ func GetNamespaceFolderAndRPMoIDs(
 	for _, az := range availabilityZones {
 		if nsInfo, ok := az.Spec.Namespaces[namespace]; ok {
 			folderMoID = nsInfo.FolderMoId
-			rpMoIDs = append(rpMoIDs, nsInfo.PoolMoId)
+			if len(nsInfo.PoolMoIDs) != 0 {
+				rpMoIDs = append(rpMoIDs, nsInfo.PoolMoIDs...)
+			} else {
+				rpMoIDs = append(rpMoIDs, nsInfo.PoolMoId)
+			}
 		}
 	}
 
@@ -198,7 +207,7 @@ func GetDefaultAvailabilityZone(
 		folderMoID := ns.Annotations[NamespaceFolderAnnotationKey]
 		if poolMoID != "" && folderMoID != "" {
 			availabilityZone.Spec.Namespaces[ns.Name] = topologyv1.NamespaceInfo{
-				PoolMoId:   poolMoID,
+				PoolMoIDs:  []string{poolMoID},
 				FolderMoId: folderMoID,
 			}
 		}

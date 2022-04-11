@@ -72,8 +72,11 @@ func getPlacementCandidates(
 	for _, zone := range zones {
 		nsInfo, ok := zone.Spec.Namespaces[vmCtx.VM.Namespace]
 		if ok {
-			// NOTE: PoolMoId will be an array soon.
-			candidates[zone.Name] = []string{nsInfo.PoolMoId}
+			if len(nsInfo.PoolMoIDs) != 0 {
+				candidates[zone.Name] = nsInfo.PoolMoIDs
+			} else {
+				candidates[zone.Name] = []string{nsInfo.PoolMoId}
+			}
 		}
 	}
 

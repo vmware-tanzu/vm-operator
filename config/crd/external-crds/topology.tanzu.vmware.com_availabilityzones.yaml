@@ -52,8 +52,8 @@ spec:
               namespaces:
                 additionalProperties:
                   description: NamespaceInfo contains identifying information about
-                    the vSphere resources used to represent a Kuberentes namespace
-                    on individual vSphere Clusters.
+                    the vSphere resources used to represent a Kubernetes namespace
+                    on individual vSphere Zones.
                   properties:
                     folderMoId:
                       description: FolderMoId is the managed object ID of the vSphere
@@ -61,6 +61,13 @@ spec:
                         Cluster, but the FolderMoId is stored here, alongside the
                         PoolMoId for convenience.
                       type: string
+                    poolMoIDs:
+                      description: PoolMoIDs are the managed object ID of the vSphere
+                        ResourcePools for a Namespace in an individual vSphere Zone.
+                        A zone may be comprised of multiple ResourcePools.
+                      items:
+                        type: string
+                      type: array
                     poolMoId:
                       description: PoolMoId is the managed object ID of the vSphere
                         ResourcePool for a Namespace on an individual vSphere Cluster.

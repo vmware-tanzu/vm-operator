@@ -23,3 +23,5 @@ spec:
           value: "false"
         - name: FSS_WCP_VMSERVICE_BACKUPRESTORE
           value: "false"
+        - name: FSS_WCP_VM_CLASS_AS_CONFIG
+          value: "false"

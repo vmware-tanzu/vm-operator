@@ -51,3 +51,9 @@
   value:
     name: FSS_WCP_VMSERVICE_BACKUPRESTORE
     value: "<FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_VM_CLASS_AS_CONFIG
+    value: "<FSS_WCP_VM_CLASS_AS_CONFIG_VALUE>"

@@ -1,0 +1,13 @@
+apiVersion: appplatform.wcp.vmware.com/v1alpha1
+kind: CCSPlugin
+metadata:
+  name: vmservice-plugin
+  namespace: vmware-system-vmop
+spec:
+  description: "VM Service plugin allows DevOps persona to create and manage Virtual Machine based workloads on vSphere infrastructure."
+  displayName: "VM Service Plugin"
+  fetch:
+    http:
+      url: <plugin-url>
+      sha256: <plugin-sha256>
+  version: <plugin-version>

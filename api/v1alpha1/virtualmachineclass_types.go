@@ -8,6 +8,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// VirtualMachineConfigSpec contains additional virtual machine
+// configuration settings including hardware specifications for the VirtualMachine.
+// We only support XML for now, but that may change in the future.
+type VirtualMachineConfigSpec struct {
+	// XML contains a vim.vm.ConfigSpec object that has been serialized to XML
+	// and base64-encoded.
+	// +optional
+	XML string `json:"xml,omitempty"`
+}
+
 // VGPUDevice contains the configuration corresponding to a vGPU device.
 type VGPUDevice struct {
 	ProfileName string `json:"profileName"`
@@ -95,6 +105,11 @@ type VirtualMachineClassSpec struct {
 	// or infrastructure policy. This field is used to address remaining specs about this VirtualMachineClass.
 	// +optional
 	Description string `json:"description,omitempty"`
+
+	// ConfigSpec may specify additional virtual machine configuration settings including hardware specifications
+	// for a VirtualMachine
+	// +optional
+	ConfigSpec *VirtualMachineConfigSpec `json:"configSpec,omitempty"`
 }
 
 // VirtualMachineClassStatus defines the observed state of VirtualMachineClass.  VirtualMachineClasses are immutable,

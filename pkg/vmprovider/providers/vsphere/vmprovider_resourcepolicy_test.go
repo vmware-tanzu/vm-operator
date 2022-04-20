@@ -196,6 +196,22 @@ func resourcePolicyTests() {
 					}
 				})
 
+				It("should claim cluster module without ClusterMoID set", func() {
+					Expect(resourcePolicy.Spec.ClusterModules).ToNot(BeEmpty())
+					groupName := resourcePolicy.Spec.ClusterModules[0].GroupName
+
+					moduleStatus := resourcePolicy.Status.DeepCopy()
+					Expect(moduleStatus.ClusterModules).ToNot(BeEmpty())
+
+					for i := range resourcePolicy.Status.ClusterModules {
+						if resourcePolicy.Status.ClusterModules[i].GroupName == groupName {
+							resourcePolicy.Status.ClusterModules[i].ClusterMoID = ""
+						}
+					}
+					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+					Expect(resourcePolicy.Status.ClusterModules).To(Equal(moduleStatus.ClusterModules))
+				})
+
 				It("successfully able to find the resource policy in each zone", func() {
 					for _, zoneName := range ctx.ZoneNames {
 						exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, zoneName, resourcePolicy)

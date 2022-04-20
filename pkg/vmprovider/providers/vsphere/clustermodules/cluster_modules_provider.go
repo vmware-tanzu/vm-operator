@@ -64,6 +64,7 @@ func (cm *provider) DoesModuleExist(ctx context.Context, moduleID string, cluste
 		return false, nil
 	}
 
+	// This is not efficient for as we use DoesModuleExist().
 	modules, err := cm.manager.ListModules(ctx)
 	if err != nil {
 		return false, err

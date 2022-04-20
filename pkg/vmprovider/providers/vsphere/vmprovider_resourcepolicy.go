@@ -186,6 +186,16 @@ func (vs *vSphereVMProvider) createClusterModules(
 				// Status entry is stale. Create below.
 				moduleID = ""
 			}
+		} else {
+			var err error
+			// See if there is already a module for this cluster but without the ClusterMoID field
+			// set that we can claim.
+			idx, moduleID, err = clustermodules.ClaimClusterModuleUUID(ctx, clusterModProvider,
+				moduleSpec.GroupName, clusterRef, resourcePolicy)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
 		}
 
 		if moduleID == "" {

@@ -2,15 +2,13 @@
 # Deploy VMOP to the given cluster
 #
 # Usage:
-# $ deploy-local.sh <deploy_yaml> <vmclasses_yaml>
+# $ deploy-local.sh <deploy_yaml> [vmclasses_yaml]
 
 set -o errexit
 set -o pipefail
 set -o nounset
 
 YAML=$1
-VMCLASSES_YAML=$2
-
 KUBECTL="kubectl"
 
 VMOP_NAMESPACE="vmware-system-vmop"
@@ -64,16 +62,19 @@ until $KUBECTL wait --for=condition=Ready -n vmware-system-vmop cert/vmware-syst
   sleep 1
 done
 
-# Hack that retries applying the default VM Classes until the
-# validating webhook is available.
-VMOP_VMCLASSES_ATTEMPTS=0
-while true; do
-  kubectl apply -f "${VMCLASSES_YAML}" && break
-  VMOP_VMCLASSES_ATTEMPTS=$((VMOP_VMCLASSES_ATTEMPTS + 1))
-  if [[ $VMOP_VMCLASSES_ATTEMPTS -ge 60 ]]; then
-    echo "Failed to apply default VM Classes"
-    exit 1
-  fi
-  echo "Cannot create default VM Classes. Trying again."
-  sleep "5s"
-done
+if [[ $# -eq 2 ]]; then
+  VMCLASSES_YAML=$2
+  # Hack that retries applying the default VM Classes until the
+  # validating webhook is available.
+  VMOP_VMCLASSES_ATTEMPTS=0
+  while true; do
+    $KUBECTL apply -f "${VMCLASSES_YAML}" && break
+    VMOP_VMCLASSES_ATTEMPTS=$((VMOP_VMCLASSES_ATTEMPTS + 1))
+    if [[ $VMOP_VMCLASSES_ATTEMPTS -ge 60 ]]; then
+      echo "Failed to apply default VM Classes"
+      exit 1
+    fi
+    echo "Cannot create default VM Classes. Trying again."
+    sleep "5s"
+  done
+fi

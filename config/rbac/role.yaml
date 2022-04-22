@@ -89,6 +89,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - services/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - cns.vmware.com
   resources:
   - cnsnodevmattachments

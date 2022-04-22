@@ -1,0 +1,4 @@
+- op: remove
+  path: /spec/template/spec/nodeSelector
+  value:
+    node-role.kubernetes.io/master: ""

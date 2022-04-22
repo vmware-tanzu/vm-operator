@@ -8,5 +8,31 @@ resources:
 - sc.yaml
 - lb-xds.yaml
 
+patches:
+- target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: vmware-system-vmop-controller-manager
+    namespace: vmware-system-vmop
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+- target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: vmware-system-vmop-controller-manager
+    namespace: vmware-system-vmop
+  path: remove-node-selector-patch.yaml
+- target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: vmware-system-vmop-hostvalidator
+    namespace: vmware-system-vmop
+  path: remove-node-selector-patch.yaml
+
 patchesStrategicMerge:
   - vcsim-patch.yaml

@@ -174,12 +174,21 @@ func (s *Provider) ensureLBIP(ctx context.Context, vmService *vmopv1alpha1.Virtu
 		if vm.Status.VmIp == "" {
 			return errors.New("LB VM IP is not ready yet")
 		}
-		vmService = vmService.DeepCopy()
-		vmService.Status.LoadBalancer.Ingress = []vmopv1alpha1.LoadBalancerIngress{{
-			IP: vm.Status.VmIp,
-		}}
-		err := s.client.Status().Update(ctx, vmService)
-		return err
+
+		service := &corev1.Service{}
+		if err := s.client.Get(ctx, types.NamespacedName{
+			Namespace: vmService.Namespace,
+			Name:      vmService.Name,
+		}, service); err == nil {
+			service.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+				IP: vm.Status.VmIp,
+			}}
+			err := s.client.Status().Update(ctx, service)
+			if err != nil {
+				s.log.Error(err, "Failed to update Service")
+				// Keep going.
+			}
+		}
 	}
 	return nil
 }

@@ -99,15 +99,23 @@ var _ = Describe("", func() {
 				err := client.Status().Update(context.TODO(), vm)
 				Expect(err).ToNot(HaveOccurred())
 
+				service := &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testSvc,
+						Namespace: testNs,
+					},
+				}
+				Expect(client.Create(context.TODO(), service)).To(Succeed())
+
 				err = simpleLbProvider.EnsureLoadBalancer(context.TODO(), vmService)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(controlPlane.calls).To(BeEmpty())
 
-				err = client.Get(context.TODO(), types.NamespacedName{Namespace: testNs, Name: testSvc}, vmService)
+				err = client.Get(context.TODO(), types.NamespacedName{Namespace: testNs, Name: testSvc}, service)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(vmService.Status.LoadBalancer.Ingress).To(HaveLen(1))
-				Expect(vmService.Status.LoadBalancer.Ingress[0].IP).To(Equal(lbVMIP))
+				Expect(service.Status.LoadBalancer.Ingress).To(HaveLen(1))
+				Expect(service.Status.LoadBalancer.Ingress[0].IP).To(Equal(lbVMIP))
 			})
 		})
 
@@ -149,9 +157,7 @@ var _ = Describe("", func() {
 				}},
 			}
 			It("should update the LB control plane", func() {
-				err := client.Create(context.TODO(), svc)
-				Expect(err).ToNot(HaveOccurred())
-				err = client.Create(context.TODO(), eps)
+				err := client.Create(context.TODO(), eps)
 				Expect(err).ToNot(HaveOccurred())
 
 				err = simpleLbProvider.EnsureLoadBalancer(context.TODO(), vmService)

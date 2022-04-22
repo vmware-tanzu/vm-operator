@@ -117,6 +117,7 @@ type ReconcileVirtualMachineService struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineservices,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineservices/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=services/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ReconcileVirtualMachineService) Reconcile(ctx goctx.Context, request reconcile.Request) (_ reconcile.Result, reterr error) {

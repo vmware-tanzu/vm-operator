@@ -66,14 +66,13 @@ type CloudInitMetadata struct {
 	Network       network.Netplan `yaml:"network,omitempty"`
 }
 
-func GetCloudInitMetadata(
-	vmName string,
+func GetCloudInitMetadata(vm *v1alpha1.VirtualMachine,
 	netplan network.Netplan) (string, error) {
 
 	metadataObj := &CloudInitMetadata{
-		InstanceID:    vmName,
-		LocalHostname: vmName,
-		Hostname:      vmName,
+		InstanceID:    string(vm.UID),
+		LocalHostname: vm.Name,
+		Hostname:      vm.Name,
 		Network:       netplan,
 	}
 
@@ -187,7 +186,7 @@ func customizeCloudInit(
 
 	netplan := updateArgs.NetIfList.GetNetplan(ethCards, updateArgs.DNSServers)
 
-	cloudInitMetadata, err := GetCloudInitMetadata(vmCtx.VM.Name, netplan)
+	cloudInitMetadata, err := GetCloudInitMetadata(vmCtx.VM, netplan)
 	if err != nil {
 		return nil, nil, err
 	}

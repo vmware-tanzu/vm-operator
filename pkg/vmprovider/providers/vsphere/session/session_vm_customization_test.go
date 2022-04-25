@@ -188,13 +188,19 @@ var _ = Describe("Customization via Cust Spec", func() {
 
 var _ = Describe("CloudInitmetadata", func() {
 	var (
-		vmName         string
+		vm             *vmopv1alpha1.VirtualMachine
 		netplan        network.Netplan
 		metadataString string
 		err            error
 	)
 	BeforeEach(func() {
-		vmName = "SomeVmName"
+		vm = &vmopv1alpha1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dummy-vm",
+				Namespace: "dummy-ns",
+				UID:       "dummy-id",
+			},
+		}
 		netplan = network.Netplan{
 			Version: constants.NetPlanVersion,
 			Ethernets: map[string]network.NetplanEthernet{
@@ -210,7 +216,7 @@ var _ = Describe("CloudInitmetadata", func() {
 		}
 	})
 	JustBeforeEach(func() {
-		metadataString, err = session.GetCloudInitMetadata(vmName, netplan)
+		metadataString, err = session.GetCloudInitMetadata(vm, netplan)
 	})
 
 	It("Return a valid cloud-init metadata yaml", func() {
@@ -221,9 +227,9 @@ var _ = Describe("CloudInitmetadata", func() {
 		err = yaml.Unmarshal([]byte(metadataString), &metadata)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(metadata.InstanceID).To(Equal(vmName))
-		Expect(metadata.LocalHostname).To(Equal(vmName))
-		Expect(metadata.Hostname).To(Equal(vmName))
+		Expect(metadata.InstanceID).To(Equal(string(vm.UID)))
+		Expect(metadata.LocalHostname).To(Equal(vm.Name))
+		Expect(metadata.Hostname).To(Equal(vm.Name))
 		Expect(metadata.Network).To(Equal(netplan))
 	})
 })

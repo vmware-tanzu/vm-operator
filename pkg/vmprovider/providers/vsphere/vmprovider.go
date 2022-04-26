@@ -5,6 +5,7 @@ package vsphere
 
 import (
 	goctx "context"
+	"fmt"
 	"math/rand"
 	"strings"
 
@@ -18,8 +19,11 @@ import (
 	"github.com/vmware/govmomi/find"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
@@ -233,6 +237,12 @@ func (vs *vSphereVMProvider) UpdateVirtualMachine(ctx goctx.Context, vm *v1alpha
 
 	vmCtx.Logger.V(4).Info("Updating VirtualMachine")
 
+	if lib.IsWcpFaultDomainsFSSEnabled() {
+		if err := vs.reverseVMZoneLookup(vmCtx); err != nil {
+			return err
+		}
+	}
+
 	ses, err := vs.sessions.GetSessionForVM(vmCtx)
 	if err != nil {
 		return err
@@ -254,6 +264,12 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(ctx goctx.Context, vm *v1alpha
 	}
 
 	vmCtx.Logger.Info("Deleting VirtualMachine")
+
+	if lib.IsWcpFaultDomainsFSSEnabled() {
+		if err := vs.reverseVMZoneLookup(vmCtx); err != nil {
+			return err
+		}
+	}
 
 	ses, err := vs.sessions.GetSessionForVM(vmCtx)
 	if err != nil {
@@ -382,4 +398,71 @@ func ResVMToVirtualMachineImage(ctx goctx.Context, vm *object.VirtualMachine) (*
 			PowerState: string(o.Summary.Runtime.PowerState),
 		},
 	}, nil
+}
+
+func (vs *vSphereVMProvider) reverseVMZoneLookup(vmCtx context.VirtualMachineContext) error {
+	if vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] != "" {
+		return nil
+	}
+
+	availabilityZones, err := topology.GetAvailabilityZones(vmCtx, vs.k8sClient)
+	if err != nil {
+		return err
+	}
+
+	if len(availabilityZones) == 0 {
+		return fmt.Errorf("no AvailabilityZones")
+	}
+
+	zone, err := vs.vmToZoneLookup(vmCtx, availabilityZones)
+	if err != nil {
+		return err
+	}
+
+	if vmCtx.VM.Labels == nil {
+		vmCtx.VM.Labels = map[string]string{}
+	}
+	vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zone
+	return nil
+}
+
+func (vs *vSphereVMProvider) vmToZoneLookup(
+	vmCtx context.VirtualMachineContext,
+	availabilityZones []topologyv1.AvailabilityZone) (string, error) {
+
+	client, err := vs.GetClient(vmCtx)
+	if err != nil {
+		return "", err
+	}
+
+	vcVM, err := vcenter.GetVirtualMachine(vmCtx, vs.k8sClient, client.Finder(), nil)
+	if err != nil {
+		return "", err
+	}
+
+	rp, err := vcVM.ResourcePool(vmCtx)
+	if err != nil {
+		return "", err
+	}
+
+	cluster, err := rp.Owner(vmCtx)
+	if err != nil {
+		return "", err
+	}
+
+	clusterMoID := cluster.Reference().Value
+
+	for _, az := range availabilityZones {
+		if az.Spec.ClusterComputeResourceMoId == clusterMoID {
+			return az.Name, nil
+		}
+
+		for _, moID := range az.Spec.ClusterComputeResourceMoIDs {
+			if moID == clusterMoID {
+				return az.Name, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("failed to find zone for cluster MoID %s", clusterMoID)
 }

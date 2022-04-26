@@ -567,6 +567,25 @@ func vmTests() {
 				})
 			})
 
+			Context("When fault domains is enabled", func() {
+				const zoneName = "az-1"
+
+				BeforeEach(func() {
+					testConfig.WithFaultDomains = true
+					// Explicitly place the VM into one of the zones that the test context will create.
+					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				})
+
+				It("Reverse lookups existing VM into correct zone", func() {
+					Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+					Expect(vm.Status.Zone).To(Equal(zoneName))
+					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+
+					Expect(vmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)).To(Succeed())
+					Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+					Expect(vm.Status.Zone).To(Equal(zoneName))
+				})
+			})
 		})
 
 		Context("VM SetResourcePolicy", func() {
@@ -630,6 +649,27 @@ func vmTests() {
 				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 				err := vmProvider.DeleteVirtualMachine(ctx, vm)
 				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			})
+
+			Context("When fault domains is enabled", func() {
+				const zoneName = "az-1"
+
+				BeforeEach(func() {
+					testConfig.WithFaultDomains = true
+					// Explicitly place the VM into one of the zones that the test context will create.
+					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				})
+
+				It("Reverse lookups existing VM into correct zone", func() {
+					uniqueID := vm.Status.UniqueID
+					Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
+
+					Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+
+					Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+					Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
+				})
 			})
 		})
 

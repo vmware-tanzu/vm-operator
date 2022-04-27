@@ -29,6 +29,12 @@ FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE=${FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE:-f
 # VM service VM Class as Config
 FSS_WCP_VM_CLASS_AS_CONFIG_VALUE=${FSS_WCP_VM_CLASS_AS_CONFIG_VALUE:-false}
 
+# VM service Instance Storage
+FSS_WCP_INSTANCE_STORAGE_VALUE=${FSS_WCP_INSTANCE_STORAGE_VALUE:-false}
+
+# VM service Fault Domain
+FSS_WCP_FAULTDOMAINS_VALUE=${FSS_WCP_FAULTDOMAINS_VALUE:-false}
+
 # Change directories to the parent directory of the one in which this
 # script is located.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -138,6 +144,16 @@ patchWcpDeploymentYaml() {
     sed -i'' -E "s,\"?<FSS_WCP_VM_CLASS_AS_CONFIG_VALUE>\"?,\"$FSS_WCP_VM_CLASS_AS_CONFIG_VALUE\",g" "artifacts/wcp-deployment.yaml"
     if grep -q "<FSS_WCP_VM_CLASS_AS_CONFIG_VALUE>" artifacts/wcp-deployment.yaml; then
         echo "Failed to subst FSS_WCP_VM_CLASS_AS_CONFIG_VALUE in artifacts/wcp-deployment.yaml"
+        exit 1
+    fi
+    sed -i'' -E "s,\"?<FSS_WCP_FAULTDOMAINS_VALUE>\"?,\"$FSS_WCP_FAULTDOMAINS_VALUE\",g" "artifacts/wcp-deployment.yaml"
+    if grep -q "<FSS_WCP_FAULTDOMAINS_VALUE>" artifacts/wcp-deployment.yaml; then
+        echo "Failed to subst FSS_WCP_FAULTDOMAINS_VALUE in artifacts/wcp-deployment.yaml"
+        exit 1
+    fi
+    sed -i'' -E "s,\"?<FSS_WCP_INSTANCE_STORAGE_VALUE>\"?,\"$FSS_WCP_INSTANCE_STORAGE_VALUE\",g" "artifacts/wcp-deployment.yaml"
+    if grep -q "<FSS_WCP_INSTANCE_STORAGE_VALUE>" artifacts/wcp-deployment.yaml; then
+        echo "Failed to subst FSS_WCP_INSTANCE_STORAGE_VALUE in artifacts/wcp-deployment.yaml"
         exit 1
     fi
     if  [[ -n ${INSECURE_TLS:-} ]]; then

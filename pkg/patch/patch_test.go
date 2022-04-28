@@ -162,6 +162,9 @@ func intgTests() {
 						GenerateName: "test-",
 						Namespace:    "default",
 					},
+					Spec: vmopv1alpha1.VirtualMachineSpec{
+						PowerState: vmopv1alpha1.VirtualMachinePoweredOn,
+					},
 				}
 
 				Specify("should mark it ready", func() {
@@ -414,20 +417,27 @@ func intgTests() {
 		})
 
 		Describe("Should patch a vmopv1alpha1.VirtualMachine", func() {
-			obj := &vmopv1alpha1.VirtualMachine{
-				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: "test-",
-					Namespace:    "test-namespace",
-				},
-				Status: vmopv1alpha1.VirtualMachineStatus{
-					BiosUUID:     "bios-uuid-foo",
-					InstanceUUID: "instance-uuid-foo",
-					UniqueID:     "unique-id",
-					Phase:        "created",
-					PowerState:   "poweredOn",
-					VmIp:         "192.168.10.1",
-				},
-			}
+			var obj *vmopv1alpha1.VirtualMachine
+
+			BeforeEach(func() {
+				obj = &vmopv1alpha1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						GenerateName: "test-",
+						Namespace:    ctx.Namespace,
+					},
+					Spec: vmopv1alpha1.VirtualMachineSpec{
+						PowerState: vmopv1alpha1.VirtualMachinePoweredOn,
+					},
+					Status: vmopv1alpha1.VirtualMachineStatus{
+						BiosUUID:     "bios-uuid-foo",
+						InstanceUUID: "instance-uuid-foo",
+						UniqueID:     "unique-id",
+						Phase:        "created",
+						PowerState:   "poweredOn",
+						VmIp:         "192.168.10.1",
+					},
+				}
+			})
 
 			Specify("add a finalizers", func() {
 				obj := obj.DeepCopy()
@@ -494,7 +504,7 @@ func intgTests() {
 
 			Specify("updating spec", func() {
 				obj := obj.DeepCopy()
-				obj.ObjectMeta.Namespace = "test-namespace"
+				obj.ObjectMeta.Namespace = ctx.Namespace
 
 				By("Creating the object")
 				Expect(ctx.Client.Create(ctx, obj)).ToNot(HaveOccurred())
@@ -556,7 +566,7 @@ func intgTests() {
 
 			Specify("updating both spec, status, and adding a condition", func() {
 				obj := obj.DeepCopy()
-				obj.ObjectMeta.Namespace = "test-namespace"
+				obj.ObjectMeta.Namespace = ctx.Namespace
 
 				By("Creating the object")
 				Expect(ctx.Client.Create(ctx, obj)).ToNot(HaveOccurred())

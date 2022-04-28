@@ -175,6 +175,31 @@ func vmTests() {
 				// TODO: More assertions!
 			})
 
+			Context("Without Content Library", func() {
+				BeforeEach(func() {
+					testConfig.WithContentLibrary = false
+				})
+
+				It("Clones VM", func() {
+					err := vmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vm.Status.Phase).To(Equal(vmopv1alpha1.Created))
+
+					Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+					vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
+					Expect(vcVM).ToNot(BeNil())
+
+					Expect(vcVM.InventoryPath).To(HaveSuffix(fmt.Sprintf("/%s/%s", nsInfo.Namespace, vm.Name)))
+
+					rp, err := vcVM.ResourcePool(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "")
+					Expect(nsRP).ToNot(BeNil())
+					Expect(rp.Reference().Value).To(Equal(nsRP.Reference().Value))
+				})
+			})
+
 			It("Create VM from VMTX in ContentLibrary", func() {
 				imageName := "test-vm-vmtx"
 
@@ -217,6 +242,7 @@ func vmTests() {
 					Expect(err).To(MatchError("storage class is required but not specified"))
 				})
 			})
+
 		})
 
 		Context("Does VM Exist", func() {
@@ -615,6 +641,12 @@ func vmTests() {
 				members, err := cluster.NewManager(ctx.RestClient).ListModuleMembers(ctx, resourcePolicy.Status.ClusterModules[0].ModuleUuid)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(members).To(ContainElements(vcVM.Reference()))
+			})
+
+			It("Returns error with non-existence cluster module", func() {
+				vm.Annotations["vsphere-cluster-module-group"] = "bogusClusterMod"
+				err := vmProvider.UpdateVirtualMachine(ctx, vm, vmConfigArgs)
+				Expect(err).To(MatchError("ClusterModule bogusClusterMod not found"))
 			})
 		})
 

@@ -7,36 +7,75 @@
 set -o errexit
 set -o nounset
 set -o pipefail
+set -x
 
-function join_packages { local IFS=","; echo "$*"; }
+function join_packages_for_cover { local IFS=","; echo "$*"; }
+function join_packages_for_tests { local IFS=" "; echo "$*"; }
 
 # Change directories to the parent directory of the one in which this
 # script is located.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-# Initialize GOFLAGS by indicating verbose output.
-GOFLAGS="-v"
+COVERAGE_FILE="${1-}"
+NO_RACE_COVERAGE_FILE="${PWD}/no_race_unit_cover.out"
 
-# The "-count=1" argument is the idiomatic way to ensure all tests
-# are run and the cached test results are ignored. Please see
-# the output of "go help test" for more information.
-GOFLAGS="${GOFLAGS} -count=1"
-
-# The first argument is the name of the coverage file to use.
-coverage_file="${1-}"
-packages=(
+COVER_PKGS=(
   "./controllers/..."
   "./pkg/..."
   "./webhooks/..."
 )
-cov_opts=$(join_packages "${packages[@]}")
+COV_OPTS=$(join_packages_for_cover "${COVER_PKGS[@]}")
 
-if [[ -n ${coverage_file} ]]; then
-    GOFLAGS="${GOFLAGS} -coverprofile=${coverage_file} -coverpkg=${cov_opts} -covermode=atomic"
+TEST_PKGS=(
+  "./controllers/..."
+  "./pkg/..."
+  "./webhooks/..."
+)
+
+# Packages that cannot be tested with "-race" due to dependency races
+NO_RACE_TEST_PKGS=(
+  "./pkg/vmprovider/providers/vsphere/client"
+)
+
+ENV_GOFLAGS=()
+NO_RACE_ENV_GOFLAGS=()
+
+# The first argument is the name of the coverage file to use.
+if [[ -n ${COVERAGE_FILE} ]]; then
+    ENV_GOFLAGS+=("-coverprofile=${COVERAGE_FILE}" "-coverpkg=${COV_OPTS}" "-covermode=atomic")
+    NO_RACE_ENV_GOFLAGS+=("-coverprofile=${NO_RACE_COVERAGE_FILE}" "-coverpkg=${COV_OPTS}" "-covermode=atomic")
 fi
 
-# Tell Go how to do things.
-export GOFLAGS
+GINKGO_FLAGS=()
 
-# Execute the tests.
-go test ./controllers/... ./pkg/... ./webhooks/...
+if [[ -n ${JOB_NAME:-} ]]; then
+    # Disable color output on Jenkins.
+    GINKGO_FLAGS+=("-ginkgo.noColor")
+fi
+
+# Run unit tests
+# go test: -race requires cgo
+# shellcheck disable=SC2046
+CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" \
+    $(join_packages_for_tests "${TEST_PKGS[@]}") \
+    "${GINKGO_FLAGS[@]}" \
+    -- \
+    -enable-unit-tests=true \
+    -enable-integration-tests=false
+
+# Run certain unit tests without -race
+# shellcheck disable=SC2046
+go test -v -p 1 -count=1 "${NO_RACE_ENV_GOFLAGS[@]}" \
+    $(join_packages_for_tests "${NO_RACE_TEST_PKGS[@]}") \
+    "${GINKGO_FLAGS[@]}" \
+    -- \
+    -enable-unit-tests=true \
+    -enable-integration-tests=false
+
+# Merge the coverage files.
+if [[ -n ${COVERAGE_FILE} ]]; then
+    TMP_COVERAGE_FILE=$(mktemp)
+    mv "${COVERAGE_FILE}" "${TMP_COVERAGE_FILE}"
+    gocovmerge "${TMP_COVERAGE_FILE}" "${NO_RACE_COVERAGE_FILE}" > "${COVERAGE_FILE}"
+    rm -f "${TMP_COVERAGE_FILE}" "${NO_RACE_COVERAGE_FILE}"
+fi

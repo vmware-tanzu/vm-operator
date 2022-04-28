@@ -17,8 +17,6 @@ function join_packages_for_tests { local IFS=" "; echo "$*"; }
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 COVERAGE_FILE="${1-}"
-INTEGRATION_COVERAGE_FILE="$(pwd)/int.cover.out"
-ENVIRONMENT_COVERAGE_FILE="$(pwd)/env.cover.out"
 
 COVER_PKGS=(
   "./controllers/..."
@@ -27,45 +25,33 @@ COVER_PKGS=(
 )
 COV_OPTS=$(join_packages_for_cover "${COVER_PKGS[@]}")
 
-# Packages tested with the old test framework.
-TEST_PKGS=(
-  "./pkg/vmprovider/integration/..."
-)
-
 # Packages tested with the new test framework.
-NEW_TEST_PKGS=(
+TEST_PKGS=(
   "./controllers/..."
+  "./pkg/..."
   "./webhooks/..."
 )
 
-INT_GOFLAGS=()
 ENV_GOFLAGS=()
 
 # The first argument is the name of the coverage file to use.
 if [[ -n ${COVERAGE_FILE} ]]; then
-    INT_GOFLAGS=("-coverprofile=${INTEGRATION_COVERAGE_FILE}" "-coverpkg=${COV_OPTS}")
-    ENV_GOFLAGS=("-coverprofile=${ENVIRONMENT_COVERAGE_FILE}" "-coverpkg=${COV_OPTS}")
+    ENV_GOFLAGS+=("-coverprofile=${COVERAGE_FILE}" "-coverpkg=${COV_OPTS}")
 fi
 
-# Run the package integration tests.
-# go test: -race requires cgo
-# shellcheck disable=SC2046
-CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${INT_GOFLAGS[@]}" \
-  -tags=integration \
-  $(join_packages_for_tests "${TEST_PKGS[@]}")
+GINKGO_FLAGS=()
 
-# Run integration tests with new framework
+if [[ -n ${JOB_NAME:-} ]]; then
+    # Disable color output on Jenkins.
+    GINKGO_FLAGS+=("-ginkgo.noColor")
+fi
+
+# Run integration tests
 # go test: -race requires cgo
 # shellcheck disable=SC2046
 CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" \
-           $(join_packages_for_tests "${NEW_TEST_PKGS[@]}") \
+           $(join_packages_for_tests "${TEST_PKGS[@]}") \
+           "${GINKGO_FLAGS[@]}" \
            -- \
            -enable-integration-tests \
            -enable-unit-tests=false
-
-# Merge the coverage files.
-if [[ -n ${COVERAGE_FILE} ]]; then
-    touch "${ENVIRONMENT_COVERAGE_FILE}" "${INTEGRATION_COVERAGE_FILE}"
-    gocovmerge "${ENVIRONMENT_COVERAGE_FILE}" "${INTEGRATION_COVERAGE_FILE}" > "${COVERAGE_FILE}"
-    rm -f "${ENVIRONMENT_COVERAGE_FILE}" "${INTEGRATION_COVERAGE_FILE}"
-fi

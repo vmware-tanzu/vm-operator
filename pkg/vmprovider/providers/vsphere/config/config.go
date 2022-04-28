@@ -12,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/pkg/errors"
@@ -308,45 +307,6 @@ func ProviderConfigToConfigMap(
 	return configMap
 }
 
-// InstallVSphereVMProviderConfig creates or updates the provider Config.
-// Used only in testing.
-func InstallVSphereVMProviderConfig(
-	client ctrlruntime.Client,
-	namespace string,
-	config *VSphereVMProviderConfig,
-	vcCredsSecretName string) error {
-
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
-	if err := client.Get(context.TODO(), ctrlruntime.ObjectKeyFromObject(ns), ns); err != nil {
-		return err
-	}
-	if ns.Annotations == nil {
-		ns.Annotations = map[string]string{}
-	}
-	ns.Annotations[topology.NamespaceRPAnnotationKey] = config.ResourcePool
-	ns.Annotations[topology.NamespaceFolderAnnotationKey] = config.Folder
-	if err := client.Update(context.TODO(), ns); err != nil {
-		return err
-	}
-
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      ProviderConfigMapName,
-			Namespace: namespace,
-		},
-	}
-
-	_, err := controllerutil.CreateOrUpdate(context.TODO(), client, configMap, func() error {
-		setConfigMapData(configMap, config, vcCredsSecretName)
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	return credentials.InstallVSphereVMProviderSecret(client, namespace, config.VcCreds, vcCredsSecretName)
-}
-
 // UpdateVcInConfigMap updates the ConfigMap with the new vCenter PNID and Port. Returns false if no updated needed.
 func UpdateVcInConfigMap(ctx context.Context, client ctrlruntime.Client, vcPNID, vcPort string) (bool, error) {
 	configMap, err := getProviderConfigMap(ctx, client)
@@ -370,30 +330,4 @@ func UpdateVcInConfigMap(ctx context.Context, client ctrlruntime.Client, vcPNID,
 	}
 
 	return true, nil
-}
-
-// InstallNetworkConfigMap installs the Network ConfigMap for the VM operator in the API master
-// Used only in testing.
-func InstallNetworkConfigMap(client ctrlruntime.Client, nameservers string) error {
-	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
-	if err != nil {
-		return err
-	}
-
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      NetworkConfigMapName,
-			Namespace: vmopNamespace,
-		},
-	}
-
-	_, err = controllerutil.CreateOrUpdate(context.Background(), client, configMap, func() error {
-		if configMap.Data == nil {
-			configMap.Data = map[string]string{}
-		}
-		configMap.Data[NameserversKey] = nameservers
-		return nil
-	})
-
-	return err
 }

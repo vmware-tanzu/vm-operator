@@ -56,19 +56,6 @@ func NewVSphereVMProviderFromClient(
 	}
 }
 
-// VSphereVMProviderGetSessionHack is an interface that exposes helpful
-// functions to access certain resources without polluting the vm provider
-// interface.
-//
-// Typical usecase might be a VM image test that wants to set a custom content
-// library.
-//
-// ONLY USED IN TESTS.
-//nolint: revive // Ignore the warning about stuttering since this is only used in tests.
-type VSphereVMProviderGetSessionHack interface {
-	GetClient(ctx goctx.Context) (*vcclient.Client, error)
-}
-
 func (vs *vSphereVMProvider) Name() string {
 	return VsphereVMProviderName
 }

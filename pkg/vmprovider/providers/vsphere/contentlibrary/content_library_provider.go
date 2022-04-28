@@ -31,9 +31,7 @@ type Provider interface {
 	RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item *library.Item) (*ovf.Envelope, error)
 
 	// TODO: Testing only. Remove these from this file.
-	CreateLibrary(ctx context.Context, contentSource, datastoreID string) (string, error)
 	CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error
-	DeleteLibraryItem(ctx context.Context, libraryItem *library.Item) error
 
 	VirtualMachineImageResourcesForLibrary(
 		ctx context.Context,
@@ -153,35 +151,6 @@ func (cs *provider) RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item
 	}
 
 	return envelope, nil
-}
-
-// Only used in testing.
-func (cs *provider) CreateLibrary(ctx context.Context, name, datastoreID string) (string, error) {
-	log.Info("Creating Library", "libraryName", name)
-
-	lib := library.Library{
-		Name: name,
-		Type: "LOCAL",
-		Storage: []library.StorageBackings{
-			{
-				DatastoreID: datastoreID,
-				Type:        "DATASTORE",
-			},
-		},
-	}
-
-	libID, err := cs.libMgr.CreateLibrary(ctx, lib)
-	if err != nil || libID == "" {
-		log.Error(err, "failed to create library")
-		return "", err
-	}
-
-	return libID, nil
-}
-
-// Only used in testing.
-func (cs *provider) DeleteLibraryItem(ctx context.Context, libraryItem *library.Item) error {
-	return cs.libMgr.DeleteLibraryItem(ctx, libraryItem)
 }
 
 // Only used in testing.

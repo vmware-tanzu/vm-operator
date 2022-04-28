@@ -1,3 +1,5 @@
+//go:build !race
+
 // Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -61,6 +63,7 @@ var _ = Describe("keepalive handler", func() {
 	}
 
 	BeforeEach(func() {
+		// Sharing this variable causes the race detector to trip.
 		simulator.SessionIdleTimeout = sessionIdleTimeout
 	})
 

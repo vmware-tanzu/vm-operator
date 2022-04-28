@@ -6,13 +6,11 @@ package credentials
 import (
 	"context"
 
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
-	"github.com/pkg/errors"
 )
 
 // VSphereVMProviderCredentials wraps the data needed to login to vCenter.
@@ -61,27 +59,4 @@ func ProviderCredentialsToSecret(namespace string, credentials *VSphereVMProvide
 	setSecretData(secret, credentials)
 
 	return secret
-}
-
-// InstallVSphereVMProviderSecret creates or updates the provider Secret.
-// Testing only.
-func InstallVSphereVMProviderSecret(
-	client ctrlruntime.Client,
-	namespace string,
-	credentials *VSphereVMProviderCredentials,
-	vcCredsSecretName string) error {
-
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      vcCredsSecretName,
-			Namespace: namespace,
-		},
-	}
-
-	_, err := controllerutil.CreateOrUpdate(context.Background(), client, secret, func() error {
-		setSecretData(secret, credentials)
-		return nil
-	})
-
-	return err
 }

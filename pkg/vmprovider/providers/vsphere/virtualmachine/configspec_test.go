@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -71,7 +72,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		vm := builder.DummyVirtualMachine()
 		vmCtx = context.VirtualMachineContext{
 			Context: goctx.Background(),
-			Logger:  logf.NullLogger{},
+			Logger:  logr.New(logf.NullLogSink{}),
 			VM:      vm,
 		}
 	})

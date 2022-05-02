@@ -22,8 +22,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog"
-	"k8s.io/klog/klogr"
+	klog "k8s.io/klog/v2"
+	"k8s.io/klog/v2/klogr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -129,7 +129,7 @@ func enableDebugLogging() {
 				stdlog.Fatalf("failed to set klog level flag: %v", err)
 			}
 			flag.Parse()
-			logf.Log.Fulfill(klogr.New())
+			logf.SetLogger(klogr.New())
 			return
 		}
 	}

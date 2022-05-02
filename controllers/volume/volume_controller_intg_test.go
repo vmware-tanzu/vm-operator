@@ -243,10 +243,14 @@ func intgTests() {
 			Expect(os.Setenv(lib.InstanceStoragePVPlacementFailedTTLEnv, "0s")).To(Succeed())
 
 			vm.Spec.Volumes = append(vm.Spec.Volumes, builder.DummyInstanceStorageVirtualMachineVolumes()...)
-			vm.Labels = make(map[string]string)
-			vm.Labels[constants.InstanceStorageLabelKey] = lib.TrueString
-			vm.Annotations = make(map[string]string)
+			vm.Labels = map[string]string{constants.InstanceStorageLabelKey: lib.TrueString}
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+
+			// This is line is due to a change in controller-runtime's change to
+			// Create/Update calls that nils out empty fields. If this was set
+			// prior to the above Create call, then vm.Metadata.Annotations
+			// would be reset to nil.
+			vm.Annotations = map[string]string{}
 		})
 
 		AfterEach(func() {

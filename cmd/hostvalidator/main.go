@@ -9,8 +9,8 @@ import (
 	"os"
 	"strconv"
 
-	"k8s.io/klog"
-	"k8s.io/klog/klogr"
+	klog "k8s.io/klog/v2"
+	"k8s.io/klog/v2/klogr"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"

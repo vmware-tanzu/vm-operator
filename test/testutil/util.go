@@ -14,7 +14,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
-	"k8s.io/klog"
+	klog "k8s.io/klog/v2"
 )
 
 // GetRootDir returns the root directory of this git repo

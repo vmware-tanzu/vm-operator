@@ -15,8 +15,8 @@ import (
 
 	"github.com/go-logr/logr"
 	"k8s.io/client-go/util/flowcontrol"
-	"k8s.io/klog"
-	"k8s.io/klog/klogr"
+	klog "k8s.io/klog/v2"
+	"k8s.io/klog/v2/klogr"
 
 	"github.com/vmware-tanzu/vm-operator/controllers"
 	"github.com/vmware-tanzu/vm-operator/pkg"

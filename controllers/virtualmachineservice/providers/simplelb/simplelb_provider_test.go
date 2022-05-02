@@ -64,7 +64,7 @@ var _ = Describe("", func() {
 	simpleLbProvider := Provider{
 		client:       client,
 		controlPlane: controlPlane,
-		log:          logr.DiscardLogger{},
+		log:          logr.Discard(),
 	}
 	vmImage := &vmopv1alpha1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{

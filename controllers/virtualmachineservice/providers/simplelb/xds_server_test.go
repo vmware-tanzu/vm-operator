@@ -27,7 +27,7 @@ var _ = Describe("xdsServer", func() {
 
 	x := &XdsServer{
 		snapshotCache: cache.NewSnapshotCache(false, cache.IDHash{}, nil),
-		log:           logr.DiscardLogger{},
+		log:           logr.Discard(),
 	}
 
 	svc := &corev1.Service{

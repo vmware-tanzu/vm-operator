@@ -120,7 +120,7 @@ type Options struct {
 	// Defaults to the eponymous constant in this package.
 	ContainerNode bool
 
-	Logger     logr.Logger
+	Logger     *logr.Logger
 	KubeConfig *rest.Config
 	Scheme     *runtime.Scheme
 	NewCache   cache.NewCacheFunc
@@ -136,7 +136,7 @@ type Options struct {
 
 func (o *Options) defaults() {
 	if o.Logger == nil {
-		o.Logger = ctrllog.Log
+		o.Logger = &ctrllog.Log
 	}
 
 	if o.PodNamespace == "" {

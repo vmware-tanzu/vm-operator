@@ -82,6 +82,15 @@ func (r *Reconciler) CreateImages(ctx goctx.Context, images []vmopv1alpha1.Virtu
 	var retErr error
 	for _, image := range images {
 		img := image
+
+		// Preserve the status information. This is due to a change in
+		// controller-runtime's change to Create/Update calls that nils out
+		// empty fields. The copy here is to reintroduce the status later when
+		// performing the Update call below. This is because the call a few
+		// lines from here, r.Create(ctx, &img), will cause img.Status to
+		// be unset.
+		imgStatus := img.Status.DeepCopy()
+
 		r.Logger.V(4).Info("Creating VirtualMachineImage", "name", img.Name)
 		if err := r.Create(ctx, &img); err != nil {
 			if apiErrors.IsAlreadyExists(err) {
@@ -101,6 +110,8 @@ func (r *Reconciler) CreateImages(ctx goctx.Context, images []vmopv1alpha1.Virtu
 		}
 
 		// Update status sub resource for the VirtualMachineImage.
+		// Reintroduce the status from imgWithStatus.
+		imgStatus.DeepCopyInto(&img.Status)
 		if err := r.Status().Update(ctx, &img); err != nil {
 			retErr = err
 			r.Logger.Error(err, "failed to update status sub resource for image", "name", img.Name)

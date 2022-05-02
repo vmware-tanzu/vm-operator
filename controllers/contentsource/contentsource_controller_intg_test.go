@@ -165,9 +165,6 @@ func intgTests() {
 	Context("Reconcile ContentSource", func() {
 		When("ContentSource and ContentLibraryProvider exists", func() {
 			BeforeEach(func() {
-				Expect(ctx.Client.Create(ctx, &cl)).To(Succeed())
-				Expect(ctx.Client.Create(ctx, &cs)).To(Succeed())
-
 				intgFakeVMProvider.Lock()
 				intgFakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context,
 					_ vmopv1alpha1.ContentLibraryProvider, _ map[string]vmopv1alpha1.VirtualMachineImage) (
@@ -176,6 +173,9 @@ func intgTests() {
 					return []*vmopv1alpha1.VirtualMachineImage{img.DeepCopy()}, nil
 				}
 				intgFakeVMProvider.Unlock()
+
+				Expect(ctx.Client.Create(ctx, &cl)).To(Succeed())
+				Expect(ctx.Client.Create(ctx, &cs)).To(Succeed())
 			})
 
 			AfterEach(func() {

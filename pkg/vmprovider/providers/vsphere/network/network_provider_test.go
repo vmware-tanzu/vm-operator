@@ -692,13 +692,19 @@ var _ = Describe("NetworkProvider utils", func() {
 			Expect(network.NormalizeNetplanMac("")).To(Equal(""))
 		})
 		It("lowercase mac", func() {
-			Expect(network.NormalizeNetplanMac("12:ab:e4:99:c4")).To(Equal("12:AB:E4:99:C4"))
+			Expect(network.NormalizeNetplanMac("12:ab:e4:99:c4")).To(Equal("12:ab:e4:99:c4"))
 		})
 		It("uppercase mac", func() {
-			Expect(network.NormalizeNetplanMac("E4:99:C4:12:AB")).To(Equal("E4:99:C4:12:AB"))
+			Expect(network.NormalizeNetplanMac("E4:99:C4:12:AB")).To(Equal("e4:99:c4:12:ab"))
+		})
+		It("mac with all numbers", func() {
+			Expect(network.NormalizeNetplanMac("00:50:56:90:66")).To(Equal("00:50:56:90:66"))
+		})
+		It("mac with single quotes", func() {
+			Expect(network.NormalizeNetplanMac("E4:99:C4:12:AB")).To(Equal("e4:99:c4:12:ab"))
 		})
 		It("mac with dashes", func() {
-			Expect(network.NormalizeNetplanMac("ab-e4-99-c4-12")).To(Equal("AB:E4:99:C4:12"))
+			Expect(network.NormalizeNetplanMac("ab-e4-99-c4-12")).To(Equal("ab:e4:99:c4:12"))
 		})
 	})
 })

@@ -205,7 +205,10 @@ var _ = Describe("CloudInitmetadata", func() {
 			Version: constants.NetPlanVersion,
 			Ethernets: map[string]network.NetplanEthernet{
 				"eth0": {
-					Dhcp4:     false,
+					Dhcp4: false,
+					Match: network.NetplanEthernetMatch{
+						MacAddress: "00:50:56:9b:3a:67",
+					},
 					Addresses: []string{"192.168.1.55"},
 					Gateway4:  "192.168.1.1",
 					Nameservers: network.NetplanEthernetNameserver{

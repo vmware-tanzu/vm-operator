@@ -91,6 +91,7 @@ type Netplan struct {
 }
 type NetplanEthernet struct {
 	Match       NetplanEthernetMatch      `yaml:"match,omitempty"`
+	SetName     string                    `yaml:"set-name,omitempty"`
 	Dhcp4       bool                      `yaml:"dhcp4,omitempty"`
 	Addresses   []string                  `yaml:"addresses,omitempty"`
 	Gateway4    string                    `yaml:"gateway4,omitempty"`
@@ -123,6 +124,7 @@ func (l InterfaceInfoList) GetNetplan(currentEthCards object.VirtualDeviceList, 
 		// Inject nameserver settings for each ethernet.
 		netplanEthernet.Nameservers.Addresses = dnsServers
 		name := fmt.Sprintf("eth%d", index)
+		netplanEthernet.SetName = name
 		ethernets[name] = netplanEthernet
 	}
 
@@ -831,7 +833,10 @@ func ToCidrNotation(ip string, mask string) string {
 
 // NormalizeNetplanMac normalizes the mac address format to one compatible with netplan.
 func NormalizeNetplanMac(mac string) string {
+	if len(mac) == 0 {
+		return mac
+	}
 	mac = strings.ReplaceAll(mac, "-", ":")
-	mac = strings.ToUpper(mac)
+	mac = strings.ToLower(mac)
 	return mac
 }

@@ -103,9 +103,9 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		})
 
 		It("ConfigSpec contains expected InstanceStorage devices", func() {
-			Expect(configSpec.DeviceChange).To(HaveLen(2))
-			assertInstanceStorageDeviceChange(configSpec.DeviceChange[0], 256, storagePolicyID)
-			assertInstanceStorageDeviceChange(configSpec.DeviceChange[1], 512, storagePolicyID)
+			Expect(configSpec.DeviceChange).To(HaveLen(3))
+			assertInstanceStorageDeviceChange(configSpec.DeviceChange[1], 256, storagePolicyID)
+			assertInstanceStorageDeviceChange(configSpec.DeviceChange[2], 512, storagePolicyID)
 		})
 	})
 })

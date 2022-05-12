@@ -6,6 +6,7 @@ package virtualmachine
 import (
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/utils/pointer"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -76,6 +77,27 @@ func CreateConfigSpecForPlacement(
 	storageClassesToIDs map[string]string) *vimtypes.VirtualMachineConfigSpec {
 
 	configSpec := CreateConfigSpec(vmCtx.VM.Name, vmClassSpec, minFreq)
+
+	// Add a dummy disk for placement: PlaceVmsXCluster expects there to always be at least one disk.
+	// Until we're in a position to have the OVF envelope here, add a dummy disk satisfy it.
+	configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+		Operation:     vimtypes.VirtualDeviceConfigSpecOperationAdd,
+		FileOperation: vimtypes.VirtualDeviceConfigSpecFileOperationCreate,
+		Device: &vimtypes.VirtualDisk{
+			CapacityInBytes: 1024 * 1024,
+			VirtualDevice: vimtypes.VirtualDevice{
+				Key: -42,
+				Backing: &vimtypes.VirtualDiskFlatVer2BackingInfo{
+					ThinProvisioned: pointer.Bool(true),
+				},
+			},
+		},
+		Profile: []vimtypes.BaseVirtualMachineProfileSpec{
+			&vimtypes.VirtualMachineDefinedProfileSpec{
+				ProfileId: storageClassesToIDs[vmCtx.VM.Spec.StorageClass],
+			},
+		},
+	})
 
 	for _, dev := range CreatePCIDevices(vmClassSpec.Hardware.Devices) {
 		configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{

@@ -58,6 +58,9 @@ const (
 	serverKeyName = "tls.key"
 	// serverCertName is the name of the serving certificate.
 	serverCertName = "tls.crt"
+
+	// Minimum version of TLS supported by the webhook server.
+	webhookTLSMinVersion = "1.2"
 )
 
 func init() {
@@ -261,6 +264,8 @@ func main() {
 			return err
 		}
 
+		// Reject TLS < specified min version in the webhook requests.
+		mgr.GetWebhookServer().TLSMinVersion = webhookTLSMinVersion
 		return webhooks.AddToManager(ctx, mgr)
 	}
 

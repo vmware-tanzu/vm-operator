@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation
@@ -299,9 +299,7 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 		case network.NsxtNetworkType:
 			// Empty NetworkName is allowed to let NCP pick the namespace default.
 		case network.VdsNetworkType:
-			if nif.NetworkName == "" {
-				allErrs = append(allErrs, field.Required(curPath.Child("networkName"), ""))
-			}
+			// Empty NetworkName is allowed to let net-operator pick the namespace default.
 		case "":
 			// Must unfortunately allow for testing.
 		default:

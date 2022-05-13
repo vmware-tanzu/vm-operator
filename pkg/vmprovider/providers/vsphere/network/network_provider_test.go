@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package network_test
@@ -267,6 +267,24 @@ var _ = Describe("NetworkProvider", func() {
 					_, err := np.EnsureNetworkInterface(vmCtx, vmNif)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("unable to get ethernet card backing info for network DistributedVirtualPortgroup:" + doesNotExist))
+				})
+			})
+
+			Context("when the network name is not specified", func() {
+				BeforeEach(func() {
+					vmNif.NetworkName = ""
+					netIf.Name = vm.Name
+				})
+
+				It("should succeed", func() {
+					info, err := np.EnsureNetworkInterface(vmCtx, vmNif)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(info).NotTo(BeNil())
+
+					instance := &netopv1alpha1.NetworkInterface{}
+					err = k8sClient.Get(ctx, ctrlruntime.ObjectKeyFromObject(netIf), instance)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(instance.Spec.NetworkName).To(Equal(""))
 				})
 			})
 

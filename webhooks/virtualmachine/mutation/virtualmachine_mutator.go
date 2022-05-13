@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package mutation
@@ -6,6 +6,7 @@ package mutation
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"reflect"
 
 	"github.com/pkg/errors"
@@ -15,14 +16,19 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-
-	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 )
 
 const (
 	webHookName = "default"
+
+	NetworkProviderKey = "NETWORK_PROVIDER"
+	NSXTYPE            = "NSXT"
+	VDSTYPE            = "VSPHERE_NETWORK"
 )
 
 // +kubebuilder:webhook:path=/default-mutate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=true,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,verbs=create;update,versions=v1alpha1,name=default.mutating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -64,6 +70,13 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 	original := vm
 	modified := original.DeepCopy()
 
+	// Check and Add default NetworkInterface only for a newly created VM.
+	if modified.CreationTimestamp.IsZero() {
+		if AddDefaultNetworkInterface(modified) {
+			wasMutated = true
+		}
+	}
+
 	if !wasMutated {
 		return admission.Allowed("")
 	}
@@ -90,4 +103,33 @@ func (m mutator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.VirtualMa
 		return nil, err
 	}
 	return vm, nil
+}
+
+// AddDefaultNetworkInterface adds default network interface to a VM if the NoNetwork annotation is not set
+// and no NetworkInterface is specified.
+// Return true if default NetworkInterface is added, otherwise return false.
+func AddDefaultNetworkInterface(vm *vmopv1.VirtualMachine) bool {
+	if _, ok := vm.Annotations[vmopv1.NoDefaultNicAnnotation]; ok {
+		return false
+	}
+
+	if len(vm.Spec.NetworkInterfaces) != 0 {
+		return false
+	}
+
+	networkProviderType := os.Getenv(NetworkProviderKey)
+	networkType := ""
+	switch networkProviderType {
+	case NSXTYPE:
+		networkType = network.NsxtNetworkType
+	case VDSTYPE:
+		networkType = network.VdsNetworkType
+	default:
+		return false
+	}
+	defaultNif := vmopv1.VirtualMachineNetworkInterface{
+		NetworkType: networkType,
+	}
+	vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{defaultNif}
+	return true
 }

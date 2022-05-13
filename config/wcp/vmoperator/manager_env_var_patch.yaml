@@ -69,3 +69,10 @@
   value:
     name: FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI
     value: "<FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: NETWORK_PROVIDER
+    value: "<NETWORK_PROVIDER_VALUE>"
+

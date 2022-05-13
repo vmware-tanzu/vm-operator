@@ -17,7 +17,7 @@ require (
 	github.com/onsi/gomega v1.17.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
-	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20211202185235-43eb44c09ecd
+	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20220603171035-2c49e5b83360
 	github.com/vmware/govmomi v0.27.1-0.20220325125915-8c9ba37bcf91
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.40.0

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation_test
@@ -111,7 +111,6 @@ func unitTestsValidateCreate() {
 		invalidImageName                     bool
 		imageNotFound                        bool
 		invalidClassName                     bool
-		invalidNetworkName                   bool
 		invalidNetworkType                   bool
 		invalidNetworkCardType               bool
 		multipleNetIfToSameNetwork           bool
@@ -168,10 +167,6 @@ func unitTestsValidateCreate() {
 		}
 		if args.imageNonCompatibleCloudInitTransport {
 			ctx.vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataCloudInitTransport
-		}
-		if args.invalidNetworkName {
-			ctx.vm.Spec.NetworkInterfaces[0].NetworkName = ""
-			ctx.vm.Spec.NetworkInterfaces[0].NetworkType = network.VdsNetworkType
 		}
 		if args.invalidNetworkType {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkName = bogusNetworkName
@@ -344,8 +339,6 @@ func unitTestsValidateCreate() {
 		Entry("should fail when Readiness probe has no actions", createArgs{invalidReadinessNoProbe: true}, false,
 			field.Forbidden(specPath.Child("readinessProbe"), "must specify an action").Error(), nil),
 
-		Entry("should deny empty network name for VDS network type", createArgs{invalidNetworkName: true}, false,
-			field.Required(netIntPath.Index(0).Child("networkName"), "").Error(), nil),
 		Entry("should deny invalid network type", createArgs{invalidNetworkType: true}, false,
 			field.NotSupported(netIntPath.Index(0).Child("networkType"), "bogusNetworkType", []string{network.NsxtNetworkType, network.VdsNetworkType}).Error(), nil),
 		Entry("should deny invalid network card type", createArgs{invalidNetworkCardType: true}, false,

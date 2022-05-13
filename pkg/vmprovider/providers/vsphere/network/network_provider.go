@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package network
@@ -302,8 +302,12 @@ type netOpNetworkProvider struct {
 // BMV: This is similar to what NSX does but isn't really right: we can only have one
 // interface per network. Although if we had multiple interfaces per network, we really
 // don't have a way to identify each NIC so true reconciliation is broken.
+// If networkName is not specified, use vm name instead.
 func (np *netOpNetworkProvider) networkInterfaceName(networkName, vmName string) string {
-	return fmt.Sprintf("%s-%s", networkName, vmName)
+	if networkName != "" {
+		return fmt.Sprintf("%s-%s", networkName, vmName)
+	}
+	return vmName
 }
 
 // createNetworkInterface creates a NetOP NetworkInterface for the VM network interface.

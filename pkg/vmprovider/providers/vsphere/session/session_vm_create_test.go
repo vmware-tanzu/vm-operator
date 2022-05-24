@@ -18,6 +18,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/types"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
@@ -41,15 +42,16 @@ var _ = Describe("deploy VM", func() {
 
 	Context("preCheck", func() {
 		var (
-			vmCtx              session.VirtualMachineCloneContext
-			vmConfig           vmprovider.VMConfigArgs
-			vmImage            *vmopv1alpha1.VirtualMachineImage
-			guestOSIdsToFamily map[string]string
-			dummyValidOsType   = "dummy_valid_os_type"
-			dummyEmptyOsType   = ""
-			dummyWindowsOSType = "dummy_win_os"
-			dummyLinuxFamily   = string(types.VirtualMachineGuestOsFamilyLinuxGuest)
-			dummyWindowsFamily = string(types.VirtualMachineGuestOsFamilyWindowsGuest)
+			vmCtx                         session.VirtualMachineCloneContext
+			vmConfig                      vmprovider.VMConfigArgs
+			vmImage                       *vmopv1alpha1.VirtualMachineImage
+			guestOSIdsToFamily            map[string]string
+			dummyValidOsType              = "dummy_valid_os_type"
+			dummyEmptyOsType              = ""
+			dummyWindowsOSType            = "dummy_win_os"
+			dummyLinuxFamily              = string(types.VirtualMachineGuestOsFamilyLinuxGuest)
+			dummyWindowsFamily            = string(types.VirtualMachineGuestOsFamilyWindowsGuest)
+			oldIsUnifiedTKGBYOIFSSEnabled func() bool
 		)
 
 		BeforeEach(func() {
@@ -73,32 +75,64 @@ var _ = Describe("deploy VM", func() {
 			guestOSIdsToFamily[dummyValidOsType] = dummyLinuxFamily
 			guestOSIdsToFamily[dummyWindowsOSType] = dummyWindowsFamily
 		})
-		It("passes when osType is Linux", func() {
-			vmConfig.VMImage = vmImage
-			Expect(session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)).To(Succeed())
+
+		When("with FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI disabled", func() {
+			It("passes when osType is Linux", func() {
+				vmConfig.VMImage = vmImage
+				Expect(session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)).To(Succeed())
+			})
+			It("fails when osType is not Linux", func() {
+				vmImage.Spec.OSInfo.Type = dummyWindowsOSType
+				vmConfig.VMImage = vmImage
+				err := session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(fmt.Sprintf("image osType '%s' is not "+
+					"supported by VMService", dummyWindowsOSType)))
+			})
+			It("fails when osType is empty", func() {
+				vmImage.Spec.OSInfo.Type = dummyEmptyOsType
+				vmConfig.VMImage = vmImage
+				err := session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(fmt.Sprintf("image osType '%s' is not "+
+					"supported by VMService", dummyEmptyOsType)))
+			})
+			It("passes when osType is invalid and VMOperatorImageSupportedCheckKey==disable annotation is set", func() {
+				vmImage.Spec.OSInfo.Type = dummyWindowsOSType
+				vmConfig.VMImage = vmImage
+				vmCtx.VM.Annotations = make(map[string]string)
+				vmCtx.VM.Annotations[constants.VMOperatorImageSupportedCheckKey] = constants.VMOperatorImageSupportedCheckDisable
+				Expect(session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)).To(Succeed())
+			})
+
 		})
-		It("fails when osType is not Linux", func() {
-			vmImage.Spec.OSInfo.Type = dummyWindowsOSType
-			vmConfig.VMImage = vmImage
-			err := session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)
-			Expect(err).To(HaveOccurred())
-			Expect(err).To(MatchError(fmt.Sprintf("image osType '%s' is not "+
-				"supported by VMService", dummyWindowsOSType)))
-		})
-		It("fails when osType is empty", func() {
-			vmImage.Spec.OSInfo.Type = dummyEmptyOsType
-			vmConfig.VMImage = vmImage
-			err := session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)
-			Expect(err).To(HaveOccurred())
-			Expect(err).To(MatchError(fmt.Sprintf("image osType '%s' is not "+
-				"supported by VMService", dummyEmptyOsType)))
-		})
-		It("passes when osType is invalid and VMOperatorImageSupportedCheckKey==disable annotation is set", func() {
-			vmImage.Spec.OSInfo.Type = dummyWindowsOSType
-			vmConfig.VMImage = vmImage
-			vmCtx.VM.Annotations = make(map[string]string)
-			vmCtx.VM.Annotations[constants.VMOperatorImageSupportedCheckKey] = constants.VMOperatorImageSupportedCheckDisable
-			Expect(session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)).To(Succeed())
+
+		When("with FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI enabled", func() {
+			BeforeEach(func() {
+				oldIsUnifiedTKGBYOIFSSEnabled = lib.IsUnifiedTKGBYOIFSSEnabled
+				lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
+					return true
+				}
+			})
+
+			AfterEach(func() {
+				lib.IsUnifiedTKGBYOIFSSEnabled = oldIsUnifiedTKGBYOIFSSEnabled
+			})
+
+			It("passes when osType is Linux", func() {
+				vmConfig.VMImage = vmImage
+				Expect(session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)).To(Succeed())
+			})
+			It("passes when osType is not Linux", func() {
+				vmImage.Spec.OSInfo.Type = dummyWindowsOSType
+				vmConfig.VMImage = vmImage
+				Expect(session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)).To(Succeed())
+			})
+			It("passes when osType is empty", func() {
+				vmImage.Spec.OSInfo.Type = dummyEmptyOsType
+				vmConfig.VMImage = vmImage
+				Expect(session.CheckVMConfigOptions(vmCtx, vmConfig, guestOSIdsToFamily)).To(Succeed())
+			})
 		})
 	})
 })

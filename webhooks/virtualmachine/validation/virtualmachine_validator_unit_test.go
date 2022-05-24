@@ -140,6 +140,7 @@ func unitTestsValidateCreate() {
 		isNonRestrictedNetworkEnv            bool
 		isNoAvailabilityZones                bool
 		isWCPFaultDomainsFSSEnabled          bool
+		isUnifiedTKGBYOIFSSEnabled           bool
 		isInvalidAvailabilityZone            bool
 		isEmptyAvailabilityZone              bool
 		isServiceUser                        bool
@@ -279,10 +280,12 @@ func unitTestsValidateCreate() {
 			instanceStorageVolume := builder.DummyInstanceStorageVirtualMachineVolumes()
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolume...)
 		}
-
 		// Please note this prevents the unit tests from running safely in parallel.
 		lib.IsWcpFaultDomainsFSSEnabled = func() bool {
 			return args.isWCPFaultDomainsFSSEnabled
+		}
+		lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
+			return args.isUnifiedTKGBYOIFSSEnabled
 		}
 		if args.isNoAvailabilityZones {
 			// Delete the dummy AZ.
@@ -380,10 +383,11 @@ func unitTestsValidateCreate() {
 		Entry("should deny when multiple vmMetadata resources are specified", createArgs{multipleMetadataResources: true}, false, "spec.vmMetadata.configMapName and spec.vmMetadata.secretName cannot be specified simultaneously", nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
 
-		Entry("should fail when image is not compatible", createArgs{imageNonCompatible: true}, false,
+		Entry("should fail when image is not compatible and UnifiedTKG BYOI FSS disabled", createArgs{imageNonCompatible: true}, false,
 			field.Invalid(specPath.Child("imageName"), builder.DummyImageName, "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
-		Entry("should allow despite incompatible image when VMOperatorImageSupportedCheckKey is disabled", createArgs{imageSupportCheckSkipAnnotation: true, imageNonCompatible: true}, true, nil, nil),
-		Entry("should allow when image is not compatible and VirtualMachineMetadataTransport is CloudInit", createArgs{imageNonCompatibleCloudInitTransport: true}, true, nil, nil),
+		Entry("should allow despite incompatible image when UnifiedTKG BYOI FSS disabled and VMOperatorImageSupportedCheckKey is enabled", createArgs{imageSupportCheckSkipAnnotation: true, imageNonCompatible: true}, true, nil, nil),
+		Entry("should allow despite incompatible image when UnifiedTKG BYOI FSS enabled", createArgs{isUnifiedTKGBYOIFSSEnabled: true, imageNonCompatible: true}, true, nil, nil),
+		Entry("should allow despite incompatible image when VirtualMachineMetadataTransport is CloudInit", createArgs{imageNonCompatibleCloudInitTransport: true}, true, nil, nil),
 
 		Entry("should fail when restricted network env is set in provider config map and TCP port in readiness probe is not 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, false,
 			field.NotSupported(specPath.Child("readinessProbe", "tcpSocket", "port"), 443, []string{"6443"}).Error(), nil),

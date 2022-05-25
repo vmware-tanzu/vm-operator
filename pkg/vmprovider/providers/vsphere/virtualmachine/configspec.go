@@ -4,8 +4,13 @@
 package virtualmachine
 
 import (
+	"bytes"
+	"reflect"
+
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"github.com/vmware/govmomi/vim25/xml"
 	"k8s.io/utils/pointer"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -136,4 +141,35 @@ func CreateConfigSpecForPlacement(
 	//  - whatever else I'm forgetting
 
 	return configSpec
+}
+
+// MarshalConfigSpec returns a serialized XML byte array when provided with a VirtualMachineConfigSpec.
+func MarshalConfigSpec(configSpec vimtypes.VirtualMachineConfigSpec) ([]byte, error) {
+	start := xml.StartElement{
+		Name: xml.Name{
+			Local: "obj",
+		},
+		Attr: []xml.Attr{
+			{
+				Name:  xml.Name{Local: "xmlns:" + vim25.Namespace},
+				Value: "urn:" + vim25.Namespace,
+			},
+			{
+				Name:  xml.Name{Local: "xmlns:xsi"},
+				Value: constants.XsiNamespace,
+			},
+			{
+				Name:  xml.Name{Local: "xsi:type"},
+				Value: vim25.Namespace + ":" + reflect.TypeOf(configSpec).Name(),
+			},
+		},
+	}
+	specWriter := new(bytes.Buffer)
+	enc := xml.NewEncoder(specWriter)
+	err := enc.EncodeElement(configSpec, start)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return specWriter.Bytes(), nil
 }

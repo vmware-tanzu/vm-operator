@@ -5,6 +5,7 @@ package session
 
 import (
 	goctx "context"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -34,6 +35,7 @@ type VirtualMachineCloneContext struct {
 	Folder              *object.Folder
 	StorageProvisioning string
 	HostID              string
+	ConfigSpec          *vimTypes.VirtualMachineConfigSpec
 }
 
 func (s *Session) deployOvf(vmCtx VirtualMachineCloneContext, itemID string, storageProfileID string) (*res.VirtualMachine, error) {
@@ -48,6 +50,18 @@ func (s *Session) deployOvf(vmCtx VirtualMachineCloneContext, itemID string, sto
 	} else {
 		// Without a storage profile, fall back to the datastore.
 		deploymentSpec.DefaultDatastoreID = s.datastore.Reference().Value
+	}
+
+	if lib.IsVMClassAsConfigFSSEnabled() && vmCtx.ConfigSpec != nil {
+		configSpecBytes, err := virtualmachine.MarshalConfigSpec(*vmCtx.ConfigSpec)
+		if err != nil {
+			return nil, err
+		}
+
+		deploymentSpec.VmConfigSpec = &vcenter.VmConfigSpec{
+			XML:      base64.StdEncoding.EncodeToString(configSpecBytes),
+			Provider: constants.ConfigSpecProviderXML,
+		}
 	}
 
 	deploy := vcenter.Deploy{
@@ -257,6 +271,11 @@ func (s *Session) CloneVirtualMachine(
 		}
 	}
 
+	vmCloneCtx.ConfigSpec = virtualmachine.CreateConfigSpec(
+		vmCtx.VM.Name,
+		&vmConfigArgs.VMClass.Spec,
+		s.GetCPUMinMHzInCluster())
+
 	// The ContentLibraryUUID can be empty when we want to clone from inventory VMs. This is
 	// not a supported workflow but we have tests that use this.
 	if vmConfigArgs.ContentLibraryUUID != "" {
@@ -361,13 +380,8 @@ func (s *Session) createCloneSpec(
 	sourceVM *res.VirtualMachine,
 	vmConfigArgs vmprovider.VMConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
 
-	configSpec := virtualmachine.CreateConfigSpec(
-		vmCtx.VM.Name,
-		&vmConfigArgs.VMClass.Spec,
-		s.GetCPUMinMHzInCluster())
-
 	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
-		Config: configSpec,
+		Config: vmCtx.ConfigSpec,
 		Memory: pointer.BoolPtr(false), // No full memory clones.
 	}
 

@@ -24,6 +24,7 @@ const (
 	VMServiceBackupRestoreFSS     = "FSS_WCP_VMSERVICE_BACKUPRESTORE"
 	VMServicePublicCloudBYOIFSS   = "FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI"
 	UnifiedTKGFSS                 = "FSS_WCP_Unified_TKG"
+	VMClassAsConfigFSS            = "FSS_WCP_VM_CLASS_AS_CONFIG"
 	MaxCreateVMsOnProviderEnv     = "MAX_CREATE_VMS_ON_PROVIDER"
 	DefaultMaxCreateVMsOnProvider = 80
 
@@ -96,6 +97,10 @@ var IsVMServiceBackupRestoreFSSEnabled = func() bool {
 
 var IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
 	return os.Getenv(VMServicePublicCloudBYOIFSS) == trueString
+}
+
+var IsVMClassAsConfigFSSEnabled = func() bool {
+	return os.Getenv(VMClassAsConfigFSS) == trueString
 }
 
 // MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler threads that can be used to create VMs on the provider

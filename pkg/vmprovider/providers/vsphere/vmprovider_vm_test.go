@@ -243,6 +243,29 @@ func vmTests() {
 				})
 			})
 
+			Context("When VM Class as Config is enabled", func() {
+				BeforeEach(func() {
+					testConfig.WithVMClassAsConfig = true
+				})
+
+				It("creates VM matching VM Class's hardware specs", func() {
+					err := vmProvider.CreateVirtualMachine(ctx, vm, vmConfigArgs)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(vm.Status.Phase).To(Equal(vmopv1alpha1.Created))
+
+					Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+					vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
+					Expect(vcVM).ToNot(BeNil())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+					vmClass := vmConfigArgs.VMClass
+					Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
+					Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+				})
+			})
 		})
 
 		Context("Does VM Exist", func() {

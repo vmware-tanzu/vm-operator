@@ -82,6 +82,9 @@ type VCSimTestConfig struct {
 	// In WCP production this is never set; it only exists for current
 	// limitations of gce2e.
 	WithDefaultNetwork string
+
+	// WithVMClassAsConfig enables the WCP_VM_CLASS_AS_CONFIG FSS.
+	WithVMClassAsConfig bool
 }
 
 type TestContextForVCSim struct {
@@ -299,6 +302,12 @@ func (c *TestContextForVCSim) setupEnvFSS(config VCSimTestConfig) {
 		instanceStorage = "true"
 	}
 	Expect(os.Setenv(lib.InstanceStorageFSS, instanceStorage)).To(Succeed())
+
+	vmClassAsConfig := "false"
+	if config.WithVMClassAsConfig {
+		vmClassAsConfig = "true"
+	}
+	Expect(os.Setenv(lib.VMClassAsConfigFSS, vmClassAsConfig)).To(Succeed())
 
 	if config.WithJSONExtraConfig != "" {
 		Expect(os.Setenv("JSON_EXTRA_CONFIG", config.WithJSONExtraConfig)).To(Succeed())

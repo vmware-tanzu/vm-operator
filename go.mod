@@ -12,13 +12,13 @@ require (
 	github.com/envoyproxy/go-control-plane v0.9.9-0.20210512163311-63b5d3c536b0
 	github.com/go-logr/logr v1.2.0
 	github.com/google/go-cmp v0.5.5
-	github.com/google/uuid v1.2.0
+	github.com/google/uuid v1.3.0
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.17.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20220603171035-2c49e5b83360
-	github.com/vmware/govmomi v0.27.1-0.20220325125915-8c9ba37bcf91
+	github.com/vmware/govmomi v0.28.1-0.20220526232518-4a6c4b155da4
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.40.0
 	gopkg.in/yaml.v2 v2.4.0

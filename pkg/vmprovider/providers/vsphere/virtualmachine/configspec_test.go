@@ -5,6 +5,8 @@ package virtualmachine_test
 
 import (
 	goctx "context"
+	"encoding/base64"
+	"reflect"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -12,6 +14,7 @@ import (
 	"github.com/go-logr/logr"
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	"github.com/vmware/govmomi/vim25/xml"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -106,6 +109,29 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			Expect(configSpec.DeviceChange).To(HaveLen(3))
 			assertInstanceStorageDeviceChange(configSpec.DeviceChange[1], 256, storagePolicyID)
 			assertInstanceStorageDeviceChange(configSpec.DeviceChange[2], 512, storagePolicyID)
+		})
+	})
+})
+
+var _ = Describe("ConfigSpec Util", func() {
+	Context("MarshalConfigSpec", func() {
+		It("marshals and unmarshal to the same spec", func() {
+			inputSpec := vimtypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
+			bytes, err := virtualmachine.MarshalConfigSpec(inputSpec)
+			Expect(err).ShouldNot(HaveOccurred())
+			var outputSpec vimtypes.VirtualMachineConfigSpec
+			err = xml.Unmarshal(bytes, &outputSpec)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(reflect.DeepEqual(inputSpec, outputSpec)).To(Equal(true))
+		})
+
+		It("marshals spec correctly to expected base64 encoded XML", func() {
+			inputSpec := vimtypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
+			bytes, err := virtualmachine.MarshalConfigSpec(inputSpec)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(base64.StdEncoding.EncodeToString(bytes)).To(Equal("PG9iaiB4bWxuczp2aW0yNT0idXJuOnZpbTI1I" +
+				"iB4bWxuczp4c2k9Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvWE1MU2NoZW1hLWluc3RhbmNlIiB4c2k6dHlwZT0idmltMjU6Vmlyd" +
+				"HVhbE1hY2hpbmVDb25maWdTcGVjIj48bmFtZT5kdW1teS1WTTwvbmFtZT48L29iaj4="))
 		})
 	})
 })

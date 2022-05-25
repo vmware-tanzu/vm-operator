@@ -94,4 +94,9 @@ const (
 	InstanceStorageNotEnoughResErr = "FAILED_PLACEMENT-NotEnoughResources"
 	// InstanceStorageVDiskID vDisk ID for instance storage volume.
 	InstanceStorageVDiskID = "cc737f33-2aa3-4594-aa60-df7d6d4cb984"
+
+	// XsiNamespace indicates the XML scheme instance namespace.
+	XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance"
+	// ConfigSpecProviderXML indicates XML as the config spec transport type for virtual machine deployment.
+	ConfigSpecProviderXML = "XML"
 )

@@ -59,22 +59,22 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 
 func unitTestsValidateCreate() {
 	var (
-		ctx                           *unitValidatingWebhookContext
-		oldIsUnifiedTKGBYOIFSSEnabled func() bool
+		ctx                                *unitValidatingWebhookContext
+		oldIsPublicCloudBYOIFSSEnabledFunc func() bool
 	)
 
 	type createArgs struct {
-		unifiedTKGBYOIFSSDisabled bool
-		emptyVirtualMachineName   bool
-		emptyPublicKey            bool
-		invalidPublicKey          bool
+		publicCloudBYOIFSSDisabled bool
+		emptyVirtualMachineName    bool
+		emptyPublicKey             bool
+		invalidPublicKey           bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		var err error
 
-		lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
-			return !args.unifiedTKGBYOIFSSDisabled
+		lib.IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
+			return !args.publicCloudBYOIFSSDisabled
 		}
 
 		if args.emptyVirtualMachineName {
@@ -102,15 +102,15 @@ func unitTestsValidateCreate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
-		oldIsUnifiedTKGBYOIFSSEnabled = lib.IsUnifiedTKGBYOIFSSEnabled
+		oldIsPublicCloudBYOIFSSEnabledFunc = lib.IsVMServicePublicCloudBYOIFSSEnabled
 	})
 	AfterEach(func() {
 		ctx = nil
-		lib.IsUnifiedTKGBYOIFSSEnabled = oldIsUnifiedTKGBYOIFSSEnabled
+		lib.IsVMServicePublicCloudBYOIFSSEnabled = oldIsPublicCloudBYOIFSSEnabledFunc
 	})
 
 	DescribeTable("create table", validateCreate,
-		Entry("should deny when fss disabled", createArgs{unifiedTKGBYOIFSSDisabled: true}, false, "web console feature not enabled", nil),
+		Entry("should deny when fss disabled", createArgs{publicCloudBYOIFSSDisabled: true}, false, "web console feature not enabled", nil),
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should deny empty virtualmachinename", createArgs{emptyVirtualMachineName: true}, false, "spec.virtualMachineName: Required value", nil),
 		Entry("should deny empty publickey", createArgs{emptyPublicKey: true}, false, "spec.publicKey: Required value", nil),

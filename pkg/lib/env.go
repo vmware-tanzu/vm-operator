@@ -13,17 +13,17 @@ import (
 )
 
 const (
-	trueString                = "true"
-	TrueString                = "true"
-	VmopNamespaceEnv          = "POD_NAMESPACE"
-	WcpFaultDomainsFSS        = "FSS_WCP_FAULTDOMAINS"
-	VMServiceFSS              = "FSS_WCP_VMSERVICE"
-	VMServiceV1Alpha2FSS      = "FSS_WCP_VMSERVICE_V1ALPHA2"
-	InstanceStorageFSS        = "FSS_WCP_INSTANCE_STORAGE"
-	UnifiedTKGBYOIFSS         = "FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI"
-	UnifiedTKGFSS             = "FSS_WCP_Unified_TKG"
-	VMServiceBackupRestoreFSS = "FSS_WCP_VMSERVICE_BACKUPRESTORE"
-
+	trueString                    = "true"
+	TrueString                    = "true"
+	VmopNamespaceEnv              = "POD_NAMESPACE"
+	WcpFaultDomainsFSS            = "FSS_WCP_FAULTDOMAINS"
+	VMServiceFSS                  = "FSS_WCP_VMSERVICE"
+	VMServiceV1Alpha2FSS          = "FSS_WCP_VMSERVICE_V1ALPHA2"
+	InstanceStorageFSS            = "FSS_WCP_INSTANCE_STORAGE"
+	UnifiedTKGBYOIFSS             = "FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI"
+	VMServiceBackupRestoreFSS     = "FSS_WCP_VMSERVICE_BACKUPRESTORE"
+	VMServicePublicCloudBYOIFSS   = "FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI"
+	UnifiedTKGFSS                 = "FSS_WCP_Unified_TKG"
 	MaxCreateVMsOnProviderEnv     = "MAX_CREATE_VMS_ON_PROVIDER"
 	DefaultMaxCreateVMsOnProvider = 80
 
@@ -92,6 +92,10 @@ var IsUnifiedTKGFSSEnabled = func() bool {
 
 var IsVMServiceBackupRestoreFSSEnabled = func() bool {
 	return os.Getenv(VMServiceBackupRestoreFSS) == trueString
+}
+
+var IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
+	return os.Getenv(VMServicePublicCloudBYOIFSS) == trueString
 }
 
 // MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler threads that can be used to create VMs on the provider

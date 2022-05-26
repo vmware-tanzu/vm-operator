@@ -25,7 +25,7 @@ type intgValidatingWebhookContext struct {
 	wcr        *vmopv1.WebConsoleRequest
 	privateKey *rsa.PrivateKey
 
-	oldIsUnifiedTKGBYOIFSSEnabled func() bool
+	oldIsPublicCloudBYOIFSSEnabledFunc func() bool
 }
 
 func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
@@ -38,7 +38,7 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 	ctx.wcr = builder.DummyWebConsoleRequest(ctx.Namespace, "some-name", "some-vm-name", publicKeyPem)
 	ctx.privateKey = privateKey
 
-	ctx.oldIsUnifiedTKGBYOIFSSEnabled = lib.IsUnifiedTKGBYOIFSSEnabled
+	ctx.oldIsPublicCloudBYOIFSSEnabledFunc = lib.IsVMServicePublicCloudBYOIFSSEnabled
 
 	return ctx
 }
@@ -51,12 +51,12 @@ func intgTestsValidateCreate() {
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
 
-		lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
+		lib.IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
 			return true
 		}
 	})
 	AfterEach(func() {
-		lib.IsUnifiedTKGBYOIFSSEnabled = ctx.oldIsUnifiedTKGBYOIFSSEnabled
+		lib.IsVMServicePublicCloudBYOIFSSEnabled = ctx.oldIsPublicCloudBYOIFSSEnabledFunc
 
 		err = nil
 		ctx = nil
@@ -79,11 +79,14 @@ func intgTestsValidateUpdate() {
 	)
 
 	BeforeEach(func() {
-		lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
+		ctx = newIntgValidatingWebhookContext()
+
+		// This needs to go after initializing the ctx to store the old value
+		// and before creating the webconsolerequest to enable the feature.
+		lib.IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
 			return true
 		}
 
-		ctx = newIntgValidatingWebhookContext()
 		err = ctx.Client.Create(ctx, ctx.wcr)
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -91,7 +94,7 @@ func intgTestsValidateUpdate() {
 		err = ctx.Client.Update(suite, ctx.wcr)
 	})
 	AfterEach(func() {
-		lib.IsUnifiedTKGBYOIFSSEnabled = ctx.oldIsUnifiedTKGBYOIFSSEnabled
+		lib.IsVMServicePublicCloudBYOIFSSEnabled = ctx.oldIsPublicCloudBYOIFSSEnabledFunc
 
 		err = nil
 		ctx = nil
@@ -114,11 +117,14 @@ func intgTestsValidateDelete() {
 	)
 
 	BeforeEach(func() {
-		lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
+		ctx = newIntgValidatingWebhookContext()
+
+		// This needs to go after initializing the ctx to store the old value
+		// and before creating the webconsolerequest to enable the feature.
+		lib.IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
 			return true
 		}
 
-		ctx = newIntgValidatingWebhookContext()
 		err = ctx.Client.Create(ctx, ctx.wcr)
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -126,7 +132,7 @@ func intgTestsValidateDelete() {
 		err = ctx.Client.Delete(suite, ctx.wcr)
 	})
 	AfterEach(func() {
-		lib.IsUnifiedTKGBYOIFSSEnabled = ctx.oldIsUnifiedTKGBYOIFSSEnabled
+		lib.IsVMServicePublicCloudBYOIFSSEnabled = ctx.oldIsPublicCloudBYOIFSSEnabledFunc
 
 		err = nil
 		ctx = nil

@@ -32,8 +32,8 @@ func webConsoleRequestReconcile() {
 		wcr *v1alpha1.WebConsoleRequest
 		vm  *v1alpha1.VirtualMachine
 
-		unifiedTKGBYOIFSS     uint32
-		origunifiedTKGBYOIFSS uint32
+		publicCloudBYOIFSSVal    uint32
+		oldPublicCloudBYOIFSSVal uint32
 	)
 
 	getWebConsoleRequest := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *v1alpha1.WebConsoleRequest {
@@ -44,8 +44,8 @@ func webConsoleRequestReconcile() {
 		return wcr
 	}
 
-	lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
-		return atomic.LoadUint32(&unifiedTKGBYOIFSS) != 0
+	lib.IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
+		return atomic.LoadUint32(&publicCloudBYOIFSSVal) != 0
 	}
 
 	BeforeEach(func() {
@@ -75,8 +75,8 @@ func webConsoleRequestReconcile() {
 			},
 		}
 
-		origunifiedTKGBYOIFSS = unifiedTKGBYOIFSS
-		atomic.StoreUint32(&unifiedTKGBYOIFSS, 1)
+		oldPublicCloudBYOIFSSVal = publicCloudBYOIFSSVal
+		atomic.StoreUint32(&publicCloudBYOIFSSVal, 1)
 
 		fakeVMProvider.Lock()
 		defer fakeVMProvider.Unlock()
@@ -89,7 +89,7 @@ func webConsoleRequestReconcile() {
 		ctx.AfterEach()
 		ctx = nil
 
-		atomic.StoreUint32(&unifiedTKGBYOIFSS, origunifiedTKGBYOIFSS)
+		atomic.StoreUint32(&publicCloudBYOIFSSVal, oldPublicCloudBYOIFSSVal)
 
 		fakeVMProvider.Reset()
 	})

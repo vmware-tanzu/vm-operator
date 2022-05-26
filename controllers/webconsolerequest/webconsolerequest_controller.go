@@ -81,7 +81,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	if !lib.IsUnifiedTKGBYOIFSSEnabled() {
+	if !lib.IsVMServicePublicCloudBYOIFSSEnabled() {
 		return ctrl.Result{}, nil
 	}
 

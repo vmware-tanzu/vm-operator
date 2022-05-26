@@ -37,7 +37,7 @@ func unitTestsReconcile() {
 		wcr        *v1alpha1.WebConsoleRequest
 		vm         *v1alpha1.VirtualMachine
 
-		oldIsUnifiedTKGBYOIFSSEnabled func() bool
+		oldIsPublicCloudBYOIFSSEnabledFunc func() bool
 	)
 
 	BeforeEach(func() {
@@ -75,8 +75,8 @@ func unitTestsReconcile() {
 			VM:                vm,
 		}
 
-		oldIsUnifiedTKGBYOIFSSEnabled = lib.IsUnifiedTKGBYOIFSSEnabled
-		lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
+		oldIsPublicCloudBYOIFSSEnabledFunc = lib.IsVMServicePublicCloudBYOIFSSEnabled
+		lib.IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
 			return true
 		}
 	})
@@ -88,7 +88,7 @@ func unitTestsReconcile() {
 		reconciler = nil
 		fakeVMProvider.Reset()
 
-		lib.IsUnifiedTKGBYOIFSSEnabled = oldIsUnifiedTKGBYOIFSSEnabled
+		lib.IsVMServicePublicCloudBYOIFSSEnabled = oldIsPublicCloudBYOIFSSEnabledFunc
 	})
 
 	Context("ReconcileNormal", func() {

@@ -61,7 +61,7 @@ func (v validator) For() schema.GroupVersionKind {
 }
 
 func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
-	if !lib.IsUnifiedTKGBYOIFSSEnabled() {
+	if !lib.IsVMServicePublicCloudBYOIFSSEnabled() {
 		return common.BuildValidationResponse(ctx, []string{"web console feature not enabled"}, nil)
 	}
 

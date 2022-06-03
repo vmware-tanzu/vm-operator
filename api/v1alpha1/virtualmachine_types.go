@@ -43,13 +43,25 @@ const (
 	Unknown VMStatusPhase = "Unknown"
 )
 
-// PauseAnnotation is an annotation that can be applied to any VirtualMachine object to prevent VM Operator from
-// reconciling the object with the vSphere infrastructure.  VM Operator checks the presence of this annotation to
-// skip the reconcile of a VirtualMachine.
-//
-// This can be used when a Virtual Machine needs to be modified out-of-band of VM Operator on the infrastructure
-// directly (e.g., during a VADP based Restore operation).
-const PauseAnnotation = GroupName + "/pause-reconcile"
+const (
+	// PauseAnnotation is an annotation that can be applied to any VirtualMachine object to prevent VM Operator from
+	// reconciling the object with the vSphere infrastructure.  VM Operator checks the presence of this annotation to
+	// skip the reconcile of a VirtualMachine.
+	//
+	// This can be used when a Virtual Machine needs to be modified out-of-band of VM Operator on the infrastructure
+	// directly (e.g., during a VADP based Restore operation).
+	PauseAnnotation = GroupName + "/pause-reconcile"
+
+	// NoDefaultNicAnnotation is an annotation that can be applied to prevent VM Operator from creating a default nic for
+	// a VirtualMachine object with empty VirtualMachineNetworkInterfaces list.
+	//
+	// This can be used when users want to opt out a default network device when creating new VirtualMachines.
+	//
+	// When a VM without any VirtualMachineNetworkInterfaces is being created, VM Operator webhook checks the presence of
+	// this annotation to skip adding a default nic. VM Operator won't add default NIC to any existing VMs or new VMs
+	// with VirtualMachineNetworkInterfaces specified. This annotation is not required for such VMs.
+	NoDefaultNicAnnotation = GroupName + "/no-default-nic"
+)
 
 // VirtualMachinePort is unused and can be considered deprecated.
 type VirtualMachinePort struct {

@@ -105,7 +105,7 @@ func LibItemToVirtualMachineImage(
 			image.Spec.OVFEnv = GetUserConfigurablePropertiesFromOvf(ovfEnvelope)
 			image.Spec.HardwareVersion = hwVersion
 
-			// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_VMService_UnifiedTKG_BYOI FSS state.
+			// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
 			image.Status.ImageSupported = pointer.BoolPtr(isImageSupported(image, ovfEnvelope, ovfSystemProps))
 		}
 	}
@@ -191,10 +191,10 @@ func libItemVersionAnnotation(item *library.Item) string {
 
 // isImageSupported checks if the image is deemed supported by VM Operator.
 // Image is marked supported if:
-// - WCP_VMService_UnifiedTKG_BYOI FSS is enabled. We assume images are compliant by default and not rely on the presence of ExtraConfig key in the OVF image.
+// - WCP_UNIFIED_TKG FSS is enabled. We assume images are compliant by default and not rely on the presence of ExtraConfig key in the OVF image.
 // - Otherwise, The OVF should contain the VMOperatorV1Alpha1ConfigKey key that denotes cloud-init being disabled at first-boot, or it is a TKG image.
 func isImageSupported(image *v1alpha1.VirtualMachineImage, ovfEnvelope *ovf.Envelope, ovfSystemProps map[string]string) bool {
-	if lib.IsUnifiedTKGBYOIFSSEnabled() {
+	if lib.IsUnifiedTKGFSSEnabled() {
 		return true
 	}
 	if isOVFV1Alpha1Compatible(ovfEnvelope) || isATKGImage(ovfSystemProps) {

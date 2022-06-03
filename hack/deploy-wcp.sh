@@ -17,6 +17,9 @@ FSS_WCP_VMSERVICE_VALUE=${FSS_WCP_VMSERVICE_VALUE:-false}
 # VM service UnifiedTKG BYOI FSS
 FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE=${FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE:-false}
 
+# WCP Unified TKG FSS
+FSS_WCP_Unified_TKG_VALUE=${FSS_WCP_Unified_TKG_VALUE:-false}
+
 # VM service v1alpha2 FSS
 FSS_WCP_VMSERVICE_V1ALPHA2_VALUE=${FSS_WCP_VMSERVICE_V1ALPHA2_VALUE:-false}
 
@@ -124,6 +127,11 @@ patchWcpDeploymentYaml() {
     sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE>\"?,\"$FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE\",g" "artifacts/wcp-deployment.yaml"
     if grep -q "<FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE>" artifacts/wcp-deployment.yaml; then
         echo "Failed to subst <FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE> in artifacts/wcp-deployment.yaml"
+        exit 1
+    fi
+        sed -i'' -E "s,\"?<FSS_WCP_Unified_TKG_VALUE>\"?,\"$FSS_WCP_Unified_TKG_VALUE\",g" "artifacts/wcp-deployment.yaml"
+    if grep -q "<FSS_WCP_Unified_TKG_VALUE>" artifacts/wcp-deployment.yaml; then
+        echo "Failed to subst <FSS_WCP_Unified_TKG_VALUE> in artifacts/wcp-deployment.yaml"
         exit 1
     fi
     sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_V1ALPHA2_VALUE>\"?,\"$FSS_WCP_VMSERVICE_V1ALPHA2_VALUE\",g" "artifacts/wcp-deployment.yaml"

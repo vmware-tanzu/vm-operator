@@ -115,12 +115,12 @@ func GetClusterVMConfigOptions(
 }
 
 // CheckVMConfigOptions validates that the specified VM Image has a supported OS type
-// Only when FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI is disabled.
+// Only when FSS_WCP_Unified_TKG is disabled.
 func CheckVMConfigOptions(
 	vmCtx VirtualMachineCloneContext,
 	vmConfigArgs vmprovider.VMConfigArgs,
 	guestOSIdsToFamily map[string]string) error {
-	if lib.IsUnifiedTKGBYOIFSSEnabled() {
+	if lib.IsUnifiedTKGFSSEnabled() {
 		return nil
 	}
 	val := vmCtx.VM.Annotations[constants.VMOperatorImageSupportedCheckKey]

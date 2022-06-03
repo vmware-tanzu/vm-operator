@@ -232,8 +232,8 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 	if err := v.client.Get(ctx, client.ObjectKey{Name: imageName}, &image); err != nil {
 		return append(allErrs, field.Invalid(imageNamePath, imageName, err.Error()))
 	}
-	// With the effort of UnifiedTKG BYOI, image-support-check isn't needed when UnifiedTKGBYOIFSS enabled.
-	if !lib.IsUnifiedTKGBYOIFSSEnabled() {
+	// With the effort of UnifiedTKG, image-support-check isn't needed when UnifiedTKG FSS enabled.
+	if !lib.IsUnifiedTKGFSSEnabled() {
 		if image.Status.ImageSupported != nil && !*image.Status.ImageSupported {
 			allErrs = append(allErrs, field.Invalid(imageNamePath, imageName, virtualMachineImageNotSupported))
 		}

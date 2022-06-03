@@ -47,14 +47,14 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 	)
 
 	var (
-		// FSS related to UnifiedTKGBYOI. This FSS should be manipulated atomically to avoid races between tests and
+		// FSS related to UnifiedTKG. This FSS should be manipulated atomically to avoid races between tests and
 		// provider.
-		unifiedTKGBYOIFSS uint32
+		unifiedTKGFSS uint32
 	)
 
 	BeforeEach(func() {
-		lib.IsUnifiedTKGBYOIFSSEnabled = func() bool {
-			return atomic.LoadUint32(&unifiedTKGBYOIFSS) != 0
+		lib.IsUnifiedTKGFSSEnabled = func() bool {
+			return atomic.LoadUint32(&unifiedTKGFSS) != 0
 		}
 	})
 
@@ -154,20 +154,20 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 			Expect(image.Status.Conditions).Should(BeEmpty())
 		})
 
-		When("WCP_VMService_UnifiedTKG_BYOI FSS is enabled", func() {
+		When("WCP_Unified_TKG FSS is enabled", func() {
 			var (
-				oldUnifiedTKGBYOIFSSState uint32
+				oldUnifiedTKGFSSState uint32
 			)
 			BeforeEach(func() {
-				oldUnifiedTKGBYOIFSSState = unifiedTKGBYOIFSS
-				atomic.StoreUint32(&unifiedTKGBYOIFSS, 1)
+				oldUnifiedTKGFSSState = unifiedTKGFSS
+				atomic.StoreUint32(&unifiedTKGFSS, 1)
 			})
 
 			AfterEach(func() {
-				atomic.StoreUint32(&unifiedTKGBYOIFSS, oldUnifiedTKGBYOIFSSState)
+				atomic.StoreUint32(&unifiedTKGFSS, oldUnifiedTKGFSSState)
 			})
 
-			It("ImageSupported should be set to true when OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig and WCP_VMService_UnifiedTKG_BYOI FSS is set ", func() {
+			It("ImageSupported should be set to true when OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig and WCP_Unified_TKG FSS is set ", func() {
 				ovfEnvelope := &ovf.Envelope{
 					VirtualSystem: &ovf.VirtualSystem{
 						Product: []ovf.ProductSection{
@@ -192,17 +192,17 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 
 		})
 
-		When("WCP_VMService_UnifiedTKG_BYOI FSS is not enabled", func() {
+		When("WCP_Unified_TKG FSS is not enabled", func() {
 			var (
-				oldUnifiedTKGBYOIFSSState uint32
+				oldUnifiedTKGFSSState uint32
 			)
 			BeforeEach(func() {
-				oldUnifiedTKGBYOIFSSState = unifiedTKGBYOIFSS
-				atomic.StoreUint32(&unifiedTKGBYOIFSS, 0)
+				oldUnifiedTKGFSSState = unifiedTKGFSS
+				atomic.StoreUint32(&unifiedTKGFSS, 0)
 			})
 
 			AfterEach(func() {
-				atomic.StoreUint32(&unifiedTKGBYOIFSS, oldUnifiedTKGBYOIFSSState)
+				atomic.StoreUint32(&unifiedTKGFSS, oldUnifiedTKGFSSState)
 			})
 
 			It("ImageSupported should be set to true when it is a TKG image and valid OS Type is set and OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig", func() {

@@ -21,6 +21,7 @@ const (
 	VMServiceV1Alpha2FSS      = "FSS_WCP_VMSERVICE_V1ALPHA2"
 	InstanceStorageFSS        = "FSS_WCP_INSTANCE_STORAGE"
 	UnifiedTKGBYOIFSS         = "FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI"
+	UnifiedTKGFSS             = "FSS_WCP_Unified_TKG"
 	VMServiceBackupRestoreFSS = "FSS_WCP_VMSERVICE_BACKUPRESTORE"
 
 	MaxCreateVMsOnProviderEnv     = "MAX_CREATE_VMS_ON_PROVIDER"
@@ -83,6 +84,10 @@ var IsInstanceStorageFSSEnabled = func() bool {
 
 var IsUnifiedTKGBYOIFSSEnabled = func() bool {
 	return os.Getenv(UnifiedTKGBYOIFSS) == trueString
+}
+
+var IsUnifiedTKGFSSEnabled = func() bool {
+	return os.Getenv(UnifiedTKGFSS) == trueString
 }
 
 var IsVMServiceBackupRestoreFSSEnabled = func() bool {

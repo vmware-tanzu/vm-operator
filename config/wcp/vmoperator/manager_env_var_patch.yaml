@@ -25,6 +25,12 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
+    name: FSS_WCP_Unified_TKG
+    value: "<FSS_WCP_Unified_TKG_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
     name: FSS_WCP_VMSERVICE_V1ALPHA2
     value: "<FSS_WCP_VMSERVICE_V1ALPHA2_VALUE>"
 

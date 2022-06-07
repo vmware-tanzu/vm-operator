@@ -442,33 +442,6 @@ func (s *Session) cloneEthCardDeviceChanges(
 	vmCtx VirtualMachineCloneContext,
 	srcEthCards object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
-	// To ease local and simulation testing, if the VM Spec interfaces is empty, leave the
-	// existing interfaces. If a default network as been configured, change the backing for
-	// all the existing interfaces. In non-test environments, this can cause confusion
-	// because the existing interfaces will end up on some default network so we should
-	// work to remove or better guard this.
-	if len(vmCtx.VM.Spec.NetworkInterfaces) == 0 {
-		if s.network == nil {
-			return nil, nil
-		}
-
-		backingInfo, err := s.network.EthernetCardBackingInfo(vmCtx)
-		if err != nil {
-			return nil, errors.Wrapf(err, "cannot get backing info for default network %+v", s.network.Reference())
-		}
-
-		deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcEthCards))
-		for _, dev := range srcEthCards {
-			dev.GetVirtualDevice().Backing = backingInfo
-			deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
-				Device:    dev,
-				Operation: vimTypes.VirtualDeviceConfigSpecOperationEdit,
-			})
-		}
-
-		return deviceChanges, nil
-	}
-
 	// BMV: Is this really required for cloning, or OK to defer to later update reconcile like OVF deploy?
 
 	netIfList, err := s.ensureNetworkInterfaces(vmCtx.VirtualMachineContext)

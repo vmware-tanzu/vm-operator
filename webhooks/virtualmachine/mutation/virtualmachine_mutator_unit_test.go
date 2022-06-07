@@ -10,8 +10,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
 )
@@ -62,11 +65,11 @@ func unitTestsMutating() {
 
 	Describe("AddDefaultNetworkInterface", func() {
 		BeforeEach(func() {
-			Expect(os.Setenv(mutation.NetworkProviderKey, mutation.VDSTYPE)).Should(Succeed())
+			Expect(os.Setenv(lib.NetworkProviderType, mutation.VDSTYPE)).Should(Succeed())
 		})
 
 		AfterEach(func() {
-			Expect(os.Unsetenv(mutation.NetworkProviderKey)).Should(Succeed())
+			Expect(os.Unsetenv(lib.NetworkProviderType)).Should(Succeed())
 		})
 
 		Context("When VM NetworkInterface is empty", func() {
@@ -74,9 +77,13 @@ func unitTestsMutating() {
 				ctx.vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{}
 			})
 
+			AfterEach(func() {
+				Expect(os.Unsetenv(lib.NetworkProviderType)).To(Succeed())
+			})
+
 			When("VDS network", func() {
 				It("Should add default network interface with type vsphere-distributed", func() {
-					Expect(mutation.AddDefaultNetworkInterface(ctx.vm)).To(BeTrue())
+					Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
 					Expect(ctx.vm.Spec.NetworkInterfaces).Should(HaveLen(1))
 					Expect(ctx.vm.Spec.NetworkInterfaces[0].NetworkType).Should(Equal("vsphere-distributed"))
 				})
@@ -84,11 +91,41 @@ func unitTestsMutating() {
 
 			When("NSX-T network", func() {
 				It("Should add default network interface with type NSX-T", func() {
-					Expect(os.Setenv(mutation.NetworkProviderKey, mutation.NSXTYPE)).Should(Succeed())
+					Expect(os.Setenv(lib.NetworkProviderType, mutation.NSXTYPE)).Should(Succeed())
 
-					Expect(mutation.AddDefaultNetworkInterface(ctx.vm)).To(BeTrue())
+					Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
 					Expect(ctx.vm.Spec.NetworkInterfaces).Should(HaveLen(1))
 					Expect(ctx.vm.Spec.NetworkInterfaces[0].NetworkType).Should(Equal("nsx-t"))
+				})
+			})
+
+			When("Named network", func() {
+				var networkName string
+
+				BeforeEach(func() {
+					networkName = "VM Network"
+					Expect(os.Setenv(lib.NetworkProviderType, mutation.NAMEDTYPE)).Should(Succeed())
+				})
+
+				AfterEach(func() {
+					networkName = ""
+					Expect(os.Unsetenv(lib.NetworkProviderType)).Should(Succeed())
+				})
+
+				It("Should add default network interface with name set in the configMap Network", func() {
+					configMap := corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: "vmware-system-vmop",
+							Name:      config.ProviderConfigMapName,
+						},
+						Data: map[string]string{"Network": networkName},
+					}
+
+					Expect(ctx.Client.Create(ctx, &configMap)).To(Succeed())
+					Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+					Expect(ctx.vm.Spec.NetworkInterfaces).Should(HaveLen(1))
+					Expect(ctx.vm.Spec.NetworkInterfaces[0].NetworkType).Should(Equal(""))
+					Expect(ctx.vm.Spec.NetworkInterfaces[0].NetworkName).Should(Equal(networkName))
 				})
 			})
 
@@ -96,7 +133,7 @@ func unitTestsMutating() {
 				It("Should not add default network interface", func() {
 					ctx.vm.Annotations[vmopv1.NoDefaultNicAnnotation] = "true"
 					oldVM := ctx.vm.DeepCopy()
-					Expect(mutation.AddDefaultNetworkInterface(ctx.vm)).To(BeFalse())
+					Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeFalse())
 					Expect(ctx.vm.Spec.NetworkInterfaces).Should(Equal(oldVM.Spec.NetworkInterfaces))
 				})
 			})
@@ -105,7 +142,7 @@ func unitTestsMutating() {
 		Context("VM NetworkInterface is not empty", func() {
 			It("Should not add default network interface", func() {
 				oldVM := ctx.vm.DeepCopy()
-				Expect(mutation.AddDefaultNetworkInterface(ctx.vm)).To(BeFalse())
+				Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeFalse())
 				Expect(ctx.vm.Spec.NetworkInterfaces).Should(Equal(oldVM.Spec.NetworkInterfaces))
 			})
 		})

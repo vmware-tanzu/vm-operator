@@ -396,17 +396,13 @@ func vmTests() {
 			Context("Network", func() {
 				// This really only tests functionality that is used in gce2e.
 
-				It("Should have a single nic", func() {
+				It("Should not have a nic", func() {
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
 					l := devList.SelectByType(&types.VirtualEthernetCard{})
-					Expect(l).To(HaveLen(1))
-
-					backing1, ok := l[0].GetVirtualDevice().Backing.(*types.VirtualEthernetCardNetworkBackingInfo)
-					Expect(ok).Should(BeTrue())
-					Expect(backing1.DeviceName).To(Equal("VM Network"))
+					Expect(l).To(BeEmpty())
 				})
 
 				Context("Multiple NICs are specified", func() {
@@ -447,6 +443,13 @@ func vmTests() {
 					BeforeEach(func() {
 						testConfig.WithContentLibrary = false
 						testConfig.WithDefaultNetwork = "DC0_DVPG0"
+
+						// The webhook will add a default NetworkInterface to the VM.
+						vm.Spec.NetworkInterfaces = []vmopv1alpha1.VirtualMachineNetworkInterface{
+							{
+								NetworkName: "DC0_DVPG0",
+							},
+						}
 					})
 
 					It("Has expected devices", func() {

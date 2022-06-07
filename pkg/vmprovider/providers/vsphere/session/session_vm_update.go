@@ -485,33 +485,6 @@ func (s *Session) ensureNetworkInterfaces(vmCtx context.VirtualMachineContext) (
 	return netIfList, nil
 }
 
-func (s *Session) fakeUpClonedNetIfList(
-	_ context.VirtualMachineContext,
-	config *vimTypes.VirtualMachineConfigInfo) network.InterfaceInfoList {
-
-	netIfList := make([]network.InterfaceInfo, 0)
-	currentEthCards := object.VirtualDeviceList(config.Hardware.Device).SelectByType((*vimTypes.VirtualEthernetCard)(nil))
-
-	for _, dev := range currentEthCards {
-		card, ok := dev.(vimTypes.BaseVirtualEthernetCard)
-		if !ok {
-			continue
-		}
-
-		netIfList = append(netIfList, network.InterfaceInfo{
-			Device: dev,
-			Customization: &vimTypes.CustomizationAdapterMapping{
-				MacAddress: card.GetVirtualEthernetCard().MacAddress,
-				Adapter: vimTypes.CustomizationIPSettings{
-					Ip: &vimTypes.CustomizationDhcpIpGenerator{},
-				},
-			},
-		})
-	}
-
-	return netIfList
-}
-
 func (s *Session) ensureCNSVolumes(vmCtx context.VirtualMachineContext) error {
 	// If VM spec has a PVC, check if the volume is attached before powering on
 	for _, volume := range vmCtx.VM.Spec.Volumes {
@@ -555,13 +528,6 @@ func (s *Session) prepareVMForPowerOn(
 	netIfList, err := s.ensureNetworkInterfaces(vmCtx)
 	if err != nil {
 		return err
-	}
-
-	if len(netIfList) == 0 {
-		// Assume this is the special condition in cloneVMNicDeviceChanges(), instead of actually
-		// wanting to remove all the interfaces. Create fake list that matches the current interfaces.
-		// The special clone condition is a hack that we should address later.
-		netIfList = s.fakeUpClonedNetIfList(vmCtx, cfg)
 	}
 
 	dnsServers, err := config.GetNameserversFromConfigMap(s.k8sClient)

@@ -47,6 +47,10 @@ const (
 	InstanceStorageSeedRequeueDurationEnv = "INSTANCE_STORAGE_SEED_REQUEUE_DURATION"
 	// DefaultInstanceStorageSeedRequeueDuration is the default seed requeue duration for instance storage.
 	DefaultInstanceStorageSeedRequeueDuration = 10 * time.Second
+
+	// NetworkProviderType is the cluster network provider type. It can be VSPHERE_NETWORK, NSX-T or NAMED.
+	// NAMED is only used in a local test environment.
+	NetworkProviderType = "NETWORK_PROVIDER"
 )
 
 // SetVMOpNamespaceEnv sets the VM Operator pod's namespace in the environment.

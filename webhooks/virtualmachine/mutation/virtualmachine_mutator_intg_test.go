@@ -12,6 +12,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
@@ -47,11 +48,11 @@ func intgTestsMutating() {
 		ctx = newIntgMutatingWebhookContext()
 		vm = ctx.vm.DeepCopy()
 		vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{}
-		Expect(os.Setenv(mutation.NetworkProviderKey, mutation.VDSTYPE)).Should(Succeed())
+		Expect(os.Setenv(lib.NetworkProviderType, mutation.VDSTYPE)).Should(Succeed())
 	})
 	AfterEach(func() {
 		ctx = nil
-		Expect(os.Unsetenv(mutation.NetworkProviderKey)).Should(Succeed())
+		Expect(os.Unsetenv(lib.NetworkProviderType)).Should(Succeed())
 	})
 
 	Describe("mutate", func() {

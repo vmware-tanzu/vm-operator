@@ -46,7 +46,6 @@ type Session struct {
 	cluster      *object.ClusterComputeResource
 	folder       *object.Folder
 	resourcePool *object.ResourcePool
-	network      object.NetworkReference // BMV: Dead? (never set in ConfigMap)
 	datastore    *object.Datastore
 
 	networkProvider network.Provider
@@ -129,14 +128,6 @@ func (s *Session) initSession(
 	s.folder, err = s.GetFolderByMoID(ctx, cfg.Folder)
 	if err != nil {
 		return errors.Wrapf(err, "failed to init folder %q", cfg.Folder)
-	}
-
-	// Network setting is optional. This is only supported for test env, if that.
-	if cfg.Network != "" {
-		s.network, err = s.Finder.Network(ctx, cfg.Network)
-		if err != nil {
-			return errors.Wrapf(err, "failed to init Network %q", cfg.Network)
-		}
 	}
 
 	if s.storageClassRequired {
@@ -329,9 +320,6 @@ func (s *Session) String() string {
 	}
 	if s.folder != nil {
 		sb.WriteString(fmt.Sprintf("folder: %s, ", s.folder.Reference().Value))
-	}
-	if s.network != nil {
-		sb.WriteString(fmt.Sprintf("network: %s, ", s.network.Reference().Value))
 	}
 	if s.resourcePool != nil {
 		sb.WriteString(fmt.Sprintf("resourcePool: %s, ", s.resourcePool.Reference().Value))

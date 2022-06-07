@@ -10,6 +10,7 @@ import (
 	"reflect"
 
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,15 +21,17 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 )
 
 const (
 	webHookName = "default"
 
-	NetworkProviderKey = "NETWORK_PROVIDER"
-	NSXTYPE            = "NSXT"
-	VDSTYPE            = "VSPHERE_NETWORK"
+	NSXTYPE   = "NSXT"
+	VDSTYPE   = "VSPHERE_NETWORK"
+	NAMEDTYPE = "NAMED"
 )
 
 // +kubebuilder:webhook:path=/default-mutate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=true,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,verbs=create;update,versions=v1alpha1,name=default.mutating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -72,7 +75,7 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 
 	// Check and Add default NetworkInterface only for a newly created VM.
 	if modified.CreationTimestamp.IsZero() {
-		if AddDefaultNetworkInterface(modified) {
+		if AddDefaultNetworkInterface(ctx, m.client, modified) {
 			wasMutated = true
 		}
 	}
@@ -108,7 +111,7 @@ func (m mutator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.VirtualMa
 // AddDefaultNetworkInterface adds default network interface to a VM if the NoNetwork annotation is not set
 // and no NetworkInterface is specified.
 // Return true if default NetworkInterface is added, otherwise return false.
-func AddDefaultNetworkInterface(vm *vmopv1.VirtualMachine) bool {
+func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client client.Client, vm *vmopv1.VirtualMachine) bool {
 	if _, ok := vm.Annotations[vmopv1.NoDefaultNicAnnotation]; ok {
 		return false
 	}
@@ -117,19 +120,42 @@ func AddDefaultNetworkInterface(vm *vmopv1.VirtualMachine) bool {
 		return false
 	}
 
-	networkProviderType := os.Getenv(NetworkProviderKey)
+	networkProviderType := os.Getenv(lib.NetworkProviderType)
 	networkType := ""
+	networkName := ""
 	switch networkProviderType {
 	case NSXTYPE:
 		networkType = network.NsxtNetworkType
 	case VDSTYPE:
 		networkType = network.VdsNetworkType
+	case NAMEDTYPE:
+		// gce2e/local setup only
+		// Use named network provider
+		name, _ := getVSphereProviderConfigMap(ctx, client)
+		if name == "" {
+			networkName = "VM Network"
+		} else {
+			networkName = name
+		}
 	default:
 		return false
 	}
 	defaultNif := vmopv1.VirtualMachineNetworkInterface{
 		NetworkType: networkType,
+		NetworkName: networkName,
 	}
 	vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{defaultNif}
 	return true
+}
+
+// Only used in gce2e tests.
+func getVSphereProviderConfigMap(ctx *context.WebhookRequestContext, c client.Client) (string, error) {
+	configMapKey := client.ObjectKey{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
+	configMap := corev1.ConfigMap{}
+	if err := c.Get(ctx, configMapKey, &configMap); err != nil {
+		return "", err
+	}
+
+	data := configMap.Data
+	return data["Network"], nil
 }

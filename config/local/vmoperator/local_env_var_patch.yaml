@@ -30,3 +30,5 @@ spec:
           value: "false"
         - name: FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI
           value: "false"
+        - name: NETWORK_PROVIDER
+          value: "NAMED"

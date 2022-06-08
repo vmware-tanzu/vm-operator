@@ -136,6 +136,43 @@ var _ = Describe("ConfigSpec Util", func() {
 	})
 })
 
+var _ = Describe("DecodeAndUnmarshalConfigSpec", func() {
+	var vmCtx context.VirtualMachineContext
+
+	BeforeEach(func() {
+		vmCtx = context.VirtualMachineContext{
+			Context: goctx.Background(),
+			Logger:  logr.New(logf.NullLogSink{}),
+		}
+	})
+
+	Context("with an invalid base64 encoded string", func() {
+		It("returns corrupt input error while decoding", func() {
+			fakeEncodedSpec := "fake-incorrect-configspec"
+
+			configSpec, err := virtualmachine.DecodeAndUnmarshalConfigSpec(vmCtx, fakeEncodedSpec)
+			Expect(err).To(HaveOccurred())
+			_, ok := err.(base64.CorruptInputError)
+			Expect(ok).To(BeTrue())
+			Expect(configSpec).To(BeNil())
+		})
+
+	})
+
+	Context("with a valid, base64 encoded ConfigSpec XML", func() {
+		It("successfully unmarshals", func() {
+			inputSpec := vimtypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
+			bytes, err := virtualmachine.MarshalConfigSpec(inputSpec)
+			Expect(err).ShouldNot(HaveOccurred())
+			fakeEncodedConfigSpecXML := base64.StdEncoding.EncodeToString(bytes)
+
+			configSpec, err := virtualmachine.DecodeAndUnmarshalConfigSpec(vmCtx, fakeEncodedConfigSpecXML)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(configSpec).ToNot(BeNil())
+		})
+	})
+})
+
 func assertInstanceStorageDeviceChange(
 	deviceChange vimtypes.BaseVirtualDeviceConfigSpec,
 	expectedSizeGB int,

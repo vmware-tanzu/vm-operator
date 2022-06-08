@@ -18,6 +18,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -462,10 +463,57 @@ func (s *Session) prePowerOnVMReconfigure(
 	return nil
 }
 
-func (s *Session) ensureNetworkInterfaces(vmCtx context.VirtualMachineContext) (network.InterfaceInfoList, error) {
+// networkDevicesFromConfigSpec returns a list of supported network devices
+// (ethernet cards) from the base64 encoded ConfigSpec XML.
+func networkDevicesFromConfigSpec(
+	vmCtx context.VirtualMachineContext,
+	configSpecXML string) ([]vimTypes.BaseVirtualDevice, error) {
+
+	configSpec, err := virtualmachine.DecodeAndUnmarshalConfigSpec(vmCtx, configSpecXML)
+	if err != nil {
+		return nil, err
+	}
+
+	vmCtx.Logger.V(5).Info("Decoded VM Class ConfigSpec", "configSpec", configSpec)
+
+	networkDevices := make([]vimTypes.BaseVirtualDevice, 0)
+	for _, change := range configSpec.DeviceChange {
+		dspec := change.GetVirtualDeviceConfigSpec()
+
+		switch dspec.Device.(type) {
+		// Ethernet card types supported by VM Service today.
+		case *vimTypes.VirtualE1000, *vimTypes.VirtualE1000e, *vimTypes.VirtualPCNet32, *vimTypes.VirtualVmxnet2, *vimTypes.VirtualVmxnet3, *vimTypes.VirtualSriovEthernetCard:
+			networkDevices = append(networkDevices, dspec.Device)
+		default:
+			// TODO: Handle different device types when VM Class ConfigSpec starts supporting them.
+			vmCtx.Logger.Error(nil, "unsupported device type specified in VM Class ConfigSpec",
+				"deviceSpec", dspec, "deviceType", fmt.Sprintf("%T", dspec.Device))
+		}
+	}
+
+	return networkDevices, nil
+}
+
+func (s *Session) ensureNetworkInterfaces(
+	vmCtx context.VirtualMachineContext,
+	classSpec *v1alpha1.VirtualMachineClassSpec) (network.InterfaceInfoList, error) {
+
 	// This negative device key is the traditional range used for network interfaces.
 	deviceKey := int32(-100)
 
+	var networkDevices []vimTypes.BaseVirtualDevice
+	if lib.IsVMClassAsConfigFSSEnabled() {
+		var err error
+		networkDevices, err = networkDevicesFromConfigSpec(vmCtx, classSpec.ConfigSpec.XML)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// XXX: The following logic assumes that the order of network interfaces specified in the
+	// VM spec matches one to one with the device changes in the ConfigSpec in VM class.
+	// This is a safe assumption for now since VM service only supports one network interface.
+	// TODO: Needs update when VM Service supports VMs with more then one network interface.
 	var netIfList = make(network.InterfaceInfoList, len(vmCtx.VM.Spec.NetworkInterfaces))
 	for i := range vmCtx.VM.Spec.NetworkInterfaces {
 		vif := vmCtx.VM.Spec.NetworkInterfaces[i]
@@ -473,6 +521,23 @@ func (s *Session) ensureNetworkInterfaces(vmCtx context.VirtualMachineContext) (
 		info, err := s.networkProvider.EnsureNetworkInterface(vmCtx, &vif)
 		if err != nil {
 			return nil, err
+		}
+
+		if lib.IsVMClassAsConfigFSSEnabled() {
+			// If VM Class-as-a-Config is supported, we use the network device from the Class.
+			// If the VM class doesn't specify enough number of network devices, we fall back to default behavior.
+			if i < len(networkDevices) {
+				ethCardFromNetProvider := info.Device.(vimTypes.BaseVirtualEthernetCard)
+
+				networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId =
+					ethCardFromNetProvider.GetVirtualEthernetCard().ExternalId
+				networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress =
+					ethCardFromNetProvider.GetVirtualEthernetCard().MacAddress
+				networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().Backing =
+					ethCardFromNetProvider.GetVirtualEthernetCard().Backing
+
+				info.Device = networkDevices[i]
+			}
 		}
 
 		// govmomi assigns a random device key. Fix that up here.
@@ -525,7 +590,7 @@ func (s *Session) prepareVMForPowerOn(
 	cfg *vimTypes.VirtualMachineConfigInfo,
 	vmConfigArgs vmprovider.VMConfigArgs) error {
 
-	netIfList, err := s.ensureNetworkInterfaces(vmCtx)
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx, &vmConfigArgs.VMClass.Spec)
 	if err != nil {
 		return err
 	}

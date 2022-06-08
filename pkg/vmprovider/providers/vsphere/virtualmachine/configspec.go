@@ -5,6 +5,7 @@ package virtualmachine
 
 import (
 	"bytes"
+	"encoding/base64"
 	"reflect"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -172,4 +173,25 @@ func MarshalConfigSpec(configSpec vimtypes.VirtualMachineConfigSpec) ([]byte, er
 	}
 
 	return specWriter.Bytes(), nil
+}
+
+// DecodeAndUnmarshalConfigSpec returns a ConfigSpec from a base64 encoded XML blob.
+func DecodeAndUnmarshalConfigSpec(vmCtx context.VirtualMachineContext, encodedConfigSpecXML string) (*vimtypes.VirtualMachineConfigSpec, error) {
+	configSpecBytes, err := base64.StdEncoding.DecodeString(encodedConfigSpecXML)
+	if err != nil {
+		vmCtx.Logger.Error(err, "error decoding the base64 encoded VM class ConfigSpec XML", "encodedConfigSpecXML", encodedConfigSpecXML)
+		return nil, err
+	}
+
+	var configSpec *vimtypes.VirtualMachineConfigSpec
+	// Govmomi's default XML decoder doesn't specify a type function, which results in nested types being dropped
+	// from the decoded ConfigSpec.  Use a custom decoder with the default type function to overcome that.
+	decoder := xml.NewDecoder(bytes.NewReader(configSpecBytes))
+	decoder.TypeFunc = vimtypes.TypeFunc()
+	if err := decoder.Decode(&configSpec); err != nil {
+		vmCtx.Logger.Error(err, "error in unmarshling ConfigSpec XML", "configSpecXML", configSpecBytes)
+		return nil, err
+	}
+
+	return configSpec, nil
 }

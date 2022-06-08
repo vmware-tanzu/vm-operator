@@ -79,7 +79,7 @@ type InterfaceInfoList []InterfaceInfo
 func (l InterfaceInfoList) GetVirtualDeviceList() object.VirtualDeviceList {
 	var devList object.VirtualDeviceList
 	for _, info := range l {
-		devList = append(devList, info.Device.(vimtypes.BaseVirtualDevice))
+		devList = append(devList, info.Device)
 	}
 	return devList
 }

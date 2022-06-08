@@ -18,7 +18,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20220603171035-2c49e5b83360
-	github.com/vmware/govmomi v0.28.1-0.20220617062252-7556da875430
+	github.com/vmware/govmomi v0.28.1-0.20220628215734-1f67efe15a2e
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.40.0
 	gopkg.in/yaml.v2 v2.4.0

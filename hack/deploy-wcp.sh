@@ -189,7 +189,7 @@ deploy() {
     fi
 
     # shellcheck disable=SC2086
-    PATH="/usr/local/opt/gnu-getopt/bin:/usr/local/bin:$PATH" \
+    PATH="/opt/homebrew/bin:/usr/local/opt/gnu-getopt/bin:/usr/local/bin:$PATH" \
       $WCP_LOAD_K8S_MASTER \
         --component vmop \
         --binary bin/wcp/manager,bin/wcp/hostvalidator \

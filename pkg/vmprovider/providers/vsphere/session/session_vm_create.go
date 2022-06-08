@@ -8,7 +8,10 @@ import (
 	"encoding/base64"
 	"fmt"
 
+	"k8s.io/utils/pointer"
+
 	"github.com/pkg/errors"
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/pbm"
 	pbmTypes "github.com/vmware/govmomi/pbm/types"
@@ -18,7 +21,6 @@ import (
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-	"k8s.io/utils/pointer"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -398,7 +400,7 @@ func (s *Session) createCloneSpec(
 		return nil, err
 	}
 
-	ethCardDeviceChanges, err := s.cloneEthCardDeviceChanges(vmCtx, virtualNICs)
+	ethCardDeviceChanges, err := s.cloneEthCardDeviceChanges(vmCtx, virtualNICs, &vmConfigArgs.VMClass.Spec)
 	if err != nil {
 		return nil, err
 	}
@@ -440,11 +442,11 @@ func (s *Session) createCloneSpec(
 // on a new VM being cloned from the source VM.
 func (s *Session) cloneEthCardDeviceChanges(
 	vmCtx VirtualMachineCloneContext,
-	srcEthCards object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+	srcEthCards object.VirtualDeviceList,
+	vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
 	// BMV: Is this really required for cloning, or OK to defer to later update reconcile like OVF deploy?
-
-	netIfList, err := s.ensureNetworkInterfaces(vmCtx.VirtualMachineContext)
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx.VirtualMachineContext, vmClassSpec)
 	if err != nil {
 		return nil, err
 	}

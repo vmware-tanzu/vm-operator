@@ -59,6 +59,9 @@ type VCSimTestConfig struct {
 	// WithFaultDomains enables the HA WCP_FAULTDOMAINS_FSS.
 	WithFaultDomains bool
 
+	// NumFaultDomains is the number of zones when WithFaultDomains is true.
+	NumFaultDomains int
+
 	// WithContentLibrary configures a Content Library, populated with one image's
 	// name available in the TestContextForVCSim.ContentLibraryImageName.
 	WithContentLibrary bool
@@ -160,7 +163,12 @@ func newTestContextForVCSim(
 	}
 
 	if ctx.withFaultDomains {
-		ctx.ZoneCount = zoneCount
+		if config.NumFaultDomains != 0 {
+			ctx.ZoneCount = config.NumFaultDomains
+		} else {
+			ctx.ZoneCount = zoneCount
+		}
+
 		ctx.ClustersPerZone = clustersPerZone
 	}
 

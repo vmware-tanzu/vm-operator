@@ -172,10 +172,21 @@ func getZonalPlacementRecommendations(
 		}
 	}
 
-	recs, err := ClusterPlaceVMForCreate(vmCtx, vcClient, candidateRPMoRefs, configSpec)
-	if err != nil {
-		vmCtx.Logger.Error(err, "PlaceVmsXCluster failed")
-		return nil
+	var recs []Recommendation
+
+	if len(candidateRPMoRefs) == 1 {
+		rp := candidateRPMoRefs[0]
+		recs = append(recs, Recommendation{PoolMoRef: rp})
+		vmCtx.Logger.V(5).Info("Skipping placement call since there is only one candidate", "rpMoID", rp.Value)
+	} else {
+		var err error
+
+		recs, err = ClusterPlaceVMForCreate(vmCtx, vcClient, candidateRPMoRefs, configSpec)
+		if err != nil {
+			vmCtx.Logger.Error(err, "PlaceVmsXCluster failed")
+			return nil
+		}
+
 	}
 
 	recommendations := map[string][]Recommendation{}

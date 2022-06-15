@@ -148,6 +148,22 @@ func vcSimPlacement() {
 			Expect(zone).To(BeElementOf(ctx.ZoneNames))
 		})
 
+		Context("Only one zone exists", func() {
+			BeforeEach(func() {
+				testConfig.NumFaultDomains = 1
+			})
+
+			It("returns success", func() {
+				err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+				Expect(err).ToNot(HaveOccurred())
+
+				zone, ok := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+				Expect(ok).To(BeTrue())
+				Expect(zone).To(BeElementOf(ctx.ZoneNames))
+			})
+
+		})
+
 		Context("VM is in child RP via ResourcePolicy", func() {
 			It("returns success", func() {
 				resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicy("my-child-rp", nsInfo)

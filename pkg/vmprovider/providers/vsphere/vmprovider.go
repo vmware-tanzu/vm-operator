@@ -74,12 +74,9 @@ func (vs *vSphereVMProvider) DeleteNamespaceSessionInCache(
 	return vs.sessions.DeleteSession(ctx, namespace)
 }
 
-// ListVirtualMachineImagesFromContentLibrary lists VM images from a ContentLibrary.
-func (vs *vSphereVMProvider) ListVirtualMachineImagesFromContentLibrary(
-	ctx goctx.Context,
-	contentLibrary v1alpha1.ContentLibraryProvider,
-	currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
-
+// ListItemsFromContentLibrary list items from a content library.
+func (vs *vSphereVMProvider) ListItemsFromContentLibrary(ctx goctx.Context,
+	contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error) {
 	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary",
 		"name", contentLibrary.Name,
 		"UUID", contentLibrary.Spec.UUID)
@@ -89,8 +86,28 @@ func (vs *vSphereVMProvider) ListVirtualMachineImagesFromContentLibrary(
 		return nil, err
 	}
 
-	return client.ContentLibClient().VirtualMachineImageResourcesForLibrary(
+	return client.ContentLibClient().ListLibraryItems(ctx, contentLibrary.Spec.UUID)
+}
+
+// GetVirtualMachineImageFromContentLibrary gets a VM image from a ContentLibrary.
+func (vs *vSphereVMProvider) GetVirtualMachineImageFromContentLibrary(
+	ctx goctx.Context,
+	contentLibrary *v1alpha1.ContentLibraryProvider,
+	itemID string,
+	currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error) {
+
+	log.V(4).Info("Getting VirtualMachineImage from ContentLibrary",
+		"name", contentLibrary.Name,
+		"UUID", contentLibrary.Spec.UUID)
+
+	client, err := vs.sessions.GetClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.ContentLibClient().VirtualMachineImageResourceForLibrary(
 		ctx,
+		itemID,
 		contentLibrary.Spec.UUID,
 		currentCLImages)
 }

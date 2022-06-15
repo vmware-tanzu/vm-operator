@@ -134,7 +134,7 @@ func intgTests() {
 
 	waitForVirtualMachineImage := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName,
 		expectedImg vmopv1alpha1.VirtualMachineImage) {
-		Eventually(func() bool {
+		EventuallyWithOffset(1, func() bool {
 			image := getVirtualMachineImage(ctx, objKey)
 			if image == nil {
 				return false
@@ -166,11 +166,15 @@ func intgTests() {
 		When("ContentSource and ContentLibraryProvider exists", func() {
 			BeforeEach(func() {
 				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context,
-					_ vmopv1alpha1.ContentLibraryProvider, _ map[string]vmopv1alpha1.VirtualMachineImage) (
-					[]*vmopv1alpha1.VirtualMachineImage, error) {
+				intgFakeVMProvider.ListItemsFromContentLibraryFn = func(_ context.Context,
+					_ *vmopv1alpha1.ContentLibraryProvider) ([]string, error) {
 					// use DeepCopy to avoid race
-					return []*vmopv1alpha1.VirtualMachineImage{img.DeepCopy()}, nil
+					return []string{img.Spec.ImageID}, nil
+				}
+				intgFakeVMProvider.GetVirtualMachineImageFromContentLibraryFn = func(_ context.Context,
+					_ *vmopv1alpha1.ContentLibraryProvider, itemID string,
+					_ map[string]vmopv1alpha1.VirtualMachineImage) (*vmopv1alpha1.VirtualMachineImage, error) {
+					return img.DeepCopy(), nil
 				}
 				intgFakeVMProvider.Unlock()
 
@@ -238,10 +242,15 @@ func intgTests() {
 						},
 					}
 					intgFakeVMProvider.Lock()
-					intgFakeVMProvider.ListVirtualMachineImagesFromContentLibraryFn = func(_ context.Context,
-						_ vmopv1alpha1.ContentLibraryProvider, _ map[string]vmopv1alpha1.VirtualMachineImage) (
-						[]*vmopv1alpha1.VirtualMachineImage, error) {
-						return []*vmopv1alpha1.VirtualMachineImage{newImg.DeepCopy()}, nil
+					intgFakeVMProvider.ListItemsFromContentLibraryFn = func(_ context.Context,
+						_ *vmopv1alpha1.ContentLibraryProvider) ([]string, error) {
+						// use DeepCopy to avoid race
+						return []string{newImg.Spec.ImageID}, nil
+					}
+					intgFakeVMProvider.GetVirtualMachineImageFromContentLibraryFn = func(_ context.Context,
+						_ *vmopv1alpha1.ContentLibraryProvider, _ string,
+						_ map[string]vmopv1alpha1.VirtualMachineImage) (*vmopv1alpha1.VirtualMachineImage, error) {
+						return newImg.DeepCopy(), nil
 					}
 					intgFakeVMProvider.Unlock()
 

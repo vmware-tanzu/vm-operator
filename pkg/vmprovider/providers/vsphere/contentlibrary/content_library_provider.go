@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/go-logr/logr"
@@ -28,15 +29,16 @@ import (
 type Provider interface {
 	GetLibraryItems(ctx context.Context, clUUID string) ([]library.Item, error)
 	GetLibraryItem(ctx context.Context, clUUID, itemName string) (*library.Item, error)
+	ListLibraryItems(ctx context.Context, libraryUUID string) ([]string, error)
 	RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item *library.Item) (*ovf.Envelope, error)
 
 	// TODO: Testing only. Remove these from this file.
 	CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error
 
-	VirtualMachineImageResourcesForLibrary(
-		ctx context.Context,
+	VirtualMachineImageResourceForLibrary(ctx context.Context,
+		itemID string,
 		clUUID string,
-		currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error)
+		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
 }
 
 type provider struct {
@@ -75,17 +77,44 @@ func NewProviderWithWaitSec(restClient *rest.Client, waitSeconds int) Provider {
 	}
 }
 
-func (cs *provider) GetLibraryItems(ctx context.Context, libraryUUID string) ([]library.Item, error) {
-	items, err := cs.libMgr.GetLibraryItems(ctx, libraryUUID)
+func (cs *provider) ListLibraryItems(ctx context.Context, libraryUUID string) ([]string, error) {
+	logger := log.WithValues("libraryUUID", libraryUUID)
+	itemList, err := cs.libMgr.ListLibraryItems(ctx, libraryUUID)
 	if err != nil {
 		if lib.IsNotFoundError(err) {
-			log.Error(err, "cannot list items from content library that does not exist", "libraryUUID", libraryUUID)
+			logger.Error(err, "cannot list items from content library that does not exist")
+			return nil, nil
+		}
+		return nil, err
+	}
+	return itemList, err
+}
+
+func (cs *provider) GetLibraryItems(ctx context.Context, libraryUUID string) ([]library.Item, error) {
+	logger := log.WithValues("libraryUUID", libraryUUID)
+	itemList, err := cs.libMgr.ListLibraryItems(ctx, libraryUUID)
+	if err != nil {
+		if lib.IsNotFoundError(err) {
+			logger.Error(err, "cannot list items from content library that does not exist")
 			return nil, nil
 		}
 		return nil, err
 	}
 
-	return items, nil
+	// best effort to get content library items.
+	resErrs := make([]error, 0)
+	items := make([]library.Item, 0)
+	for _, itemID := range itemList {
+		item, err := cs.libMgr.GetLibraryItem(ctx, itemID)
+		if err != nil {
+			resErrs = append(resErrs, err)
+			logger.Error(err, "get library item failed", "itemID", itemID)
+			continue
+		}
+		items = append(items, *item)
+	}
+
+	return items, k8serrors.NewAggregate(resErrs)
 }
 
 func (cs *provider) GetLibraryItem(ctx context.Context, libraryUUID, itemName string) (*library.Item, error) {
@@ -211,58 +240,54 @@ func (cs *provider) CreateLibraryItem(ctx context.Context, libraryItem library.I
 	return cs.libMgr.CompleteLibraryItemUpdateSession(ctx, sessionID)
 }
 
-// Lists all the VirtualMachineImages from a CL by a given UUID.
-func (cs *provider) VirtualMachineImageResourcesForLibrary(
-	ctx context.Context,
+func (cs *provider) VirtualMachineImageResourceForLibrary(ctx context.Context,
+	itemID string,
 	clUUID string,
-	currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+	currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error) {
+	var ovfEnvelope *ovf.Envelope
+	var err error
 
-	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary", "contentLibraryUUID", clUUID)
-
-	items, err := cs.GetLibraryItems(ctx, clUUID)
+	logger := log.WithValues("contentLibraryUUID", clUUID)
+	item, err := cs.libMgr.GetLibraryItem(ctx, itemID)
 	if err != nil {
 		return nil, err
 	}
 
-	images := make([]*v1alpha1.VirtualMachineImage, 0, len(items))
-	for i := range items {
-		var ovfEnvelope *ovf.Envelope
-		item := items[i]
-
-		if curImage, ok := currentCLImages[item.ID]; ok {
-			// If there is already an VMImage for this item, and it is the same - as determined by _just_ the
-			// annotation - reuse the existing VMImage. This is to avoid repeated CL fetch tasks that would
-			// otherwise be created, spamming the UI. It would be nice if CL provided an external API that
-			// allowed us to silently fetch the OVF.
-			annotations := curImage.GetAnnotations()
-			if ver := annotations[constants.VMImageCLVersionAnnotation]; ver == libItemVersionAnnotation(&item) {
-				images = append(images, &curImage)
-				continue
+	if curImage, ok := currentCLImages[item.Name]; ok {
+		// If there is already an VMImage for this item, and it is the same - as determined by _just_ the
+		// annotation - reuse the existing VMImage. This is to avoid repeated CL fetch tasks that would
+		// otherwise be created, spamming the UI. It would be nice if CL provided an external API that
+		// allowed us to silently fetch the OVF.
+		annotations := curImage.GetAnnotations()
+		if ver := annotations[constants.VMImageCLVersionAnnotation]; ver == libItemVersionAnnotation(item) {
+			// If an image was created before duplicate names are supported, update its .Spec.ImageID and .Status.ImageName
+			if curImage.Spec.ImageID == "" {
+				curImage.Spec.ImageID = itemID
+				curImage.Status.ImageName = item.Name
 			}
+			return &curImage, nil
 		}
-
-		switch item.Type {
-		case library.ItemTypeOVF:
-			if ovfEnvelope, err = cs.RetrieveOvfEnvelopeFromLibraryItem(ctx, &item); err != nil {
-				log.Error(err, "error extracting the OVF envelope from the library item", "itemName", item.Name)
-				return nil, err
-			}
-			if ovfEnvelope == nil {
-				log.Error(err, "no valid OVF envelope found, skipping library item", "itemName", item.Name)
-				continue
-			}
-		case library.ItemTypeVMTX:
-			// Do not try to populate VMTX types, but resVm.GetOvfProperties() should return an
-			// OvfEnvelope.
-		default:
-			// Not a supported type. Keep this in sync with cloneVMFromContentLibrary().
-			continue
-		}
-
-		images = append(images, LibItemToVirtualMachineImage(&item, ovfEnvelope))
 	}
 
-	return images, nil
+	switch item.Type {
+	case library.ItemTypeOVF:
+		if ovfEnvelope, err = cs.RetrieveOvfEnvelopeFromLibraryItem(ctx, item); err != nil {
+			logger.Error(err, "error extracting the OVF envelope from the library item", "itemName", item.Name)
+			return nil, err
+		}
+		if ovfEnvelope == nil {
+			logger.Error(err, "no valid OVF envelope found, skipping library item", "itemName", item.Name)
+			return nil, nil
+		}
+	case library.ItemTypeVMTX:
+		// Do not try to populate VMTX types, but resVm.GetOvfProperties() should return an
+		// OvfEnvelope.
+	default:
+		// Not a supported type. Keep this in sync with cloneVMFromContentLibrary().
+		return nil, nil
+	}
+
+	return LibItemToVirtualMachineImage(item, ovfEnvelope), nil
 }
 
 // generateDownloadURLForLibraryItem downloads the file from content library in 3 steps:

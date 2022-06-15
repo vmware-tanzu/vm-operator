@@ -30,8 +30,10 @@ type funcs struct {
 	GetVirtualMachineGuestHeartbeatFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 	GetVirtualMachineWebMKSTicketFn   func(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
 
-	ListVirtualMachineImagesFromContentLibraryFn func(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error)
-	DoesContentLibraryExistFn                    func(ctx context.Context, cl *v1alpha1.ContentLibraryProvider) (bool, error)
+	ListItemsFromContentLibraryFn              func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
+	GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
+		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
+	DoesContentLibraryExistFn func(ctx context.Context, cl *v1alpha1.ContentLibraryProvider) (bool, error)
 
 	UpdateVcPNIDFn                  func(ctx context.Context, vcPNID, vcPort string) error
 	ClearSessionsAndClientFn        func(ctx context.Context)
@@ -232,23 +234,28 @@ func (s *VMProvider) DoesContentLibraryExist(ctx context.Context, contentLibrary
 	return true, nil
 }
 
-func (s *VMProvider) ListVirtualMachineImagesFromContentLibrary(ctx context.Context, cl v1alpha1.ContentLibraryProvider, currentCLImages map[string]v1alpha1.VirtualMachineImage) ([]*v1alpha1.VirtualMachineImage, error) {
+func (s *VMProvider) ListItemsFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.ListVirtualMachineImagesFromContentLibraryFn != nil {
-		return s.ListVirtualMachineImagesFromContentLibraryFn(ctx, cl, currentCLImages)
+	if s.ListItemsFromContentLibraryFn != nil {
+		return s.ListItemsFromContentLibraryFn(ctx, contentLibrary)
 	}
 
 	// No-op for now.
-	return []*v1alpha1.VirtualMachineImage{}, nil
+	return []string{}, nil
 }
 
-func (s *VMProvider) ListVirtualMachineImages(ctx context.Context, namespace string) ([]*v1alpha1.VirtualMachineImage, error) {
-	return []*v1alpha1.VirtualMachineImage{}, nil
-}
+func (s *VMProvider) GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
+	currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error) {
+	s.Lock()
+	defer s.Unlock()
 
-func (s *VMProvider) GetVirtualMachineImage(ctx context.Context, namespace, name string) (*v1alpha1.VirtualMachineImage, error) {
+	if s.GetVirtualMachineImageFromContentLibraryFn != nil {
+		return s.GetVirtualMachineImageFromContentLibraryFn(ctx, contentLibrary, itemID, currentCLImages)
+	}
+
+	// No-op for now.
 	return nil, nil
 }
 

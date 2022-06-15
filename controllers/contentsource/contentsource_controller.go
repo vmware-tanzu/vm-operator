@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -77,85 +78,85 @@ type Reconciler struct {
 	VMProvider vmprovider.VirtualMachineProviderInterface
 }
 
-// CreateImages creates a set of VirtualMachineImages in a best effort manner.
-func (r *Reconciler) CreateImages(ctx goctx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
-	var retErr error
-	for _, image := range images {
-		img := image
+// CreateImage creates thr VirtualMachineImage. If a VirtualMachineImage with the same name alreay exists,
+// use GenerateName to give this image a new name.
+func (r *Reconciler) CreateImage(ctx goctx.Context, image vmopv1alpha1.VirtualMachineImage) error {
+	// Preserve the status information. This is due to a change in
+	// controller-runtime's change to Create/Update calls that nils out
+	// empty fields. The copy here is to reintroduce the status later when
+	// performing the Update call below. This is because the call a few
+	// lines from here, r.Create(ctx, &img), will cause img.Status to
+	// be unset.
+	imgStatus := image.Status.DeepCopy()
 
-		// Preserve the status information. This is due to a change in
-		// controller-runtime's change to Create/Update calls that nils out
-		// empty fields. The copy here is to reintroduce the status later when
-		// performing the Update call below. This is because the call a few
-		// lines from here, r.Create(ctx, &img), will cause img.Status to
-		// be unset.
-		imgStatus := img.Status.DeepCopy()
-
-		r.Logger.V(4).Info("Creating VirtualMachineImage", "name", img.Name)
-		if err := r.Create(ctx, &img); err != nil {
-			if apiErrors.IsAlreadyExists(err) {
-				r.Logger.V(4).Info("VirtualMachineImage already exists, generating a new name",
-					"name", img.Name, "ContentProvider name", img.Spec.ProviderRef.Name)
-				// If this image already exists, it happens when there's a vm image with duplicate name from a different
-				// content source. Then we use GenerateName and try to create it again.
-				img.Name = ""
-				img.GenerateName = img.Status.ImageName + "-"
-				err = r.Create(ctx, &img)
-			}
-			if err != nil {
-				retErr = err
-				r.Logger.Error(err, "failed to create VirtualMachineImage", "name", img.Name)
-				continue
-			}
+	r.Logger.V(4).Info("Creating VirtualMachineImage", "name", image.Name)
+	if err := r.Create(ctx, &image); err != nil {
+		if apiErrors.IsAlreadyExists(err) {
+			r.Logger.V(4).Info("VirtualMachineImage already exists, generating a new name",
+				"name", image.Name, "ContentProvider name", image.Spec.ProviderRef.Name)
+			// If this image already exists, it happens when there's a vm image with duplicate name from a different
+			// content source. Then we use GenerateName and try to create it again.
+			image.Name = ""
+			image.GenerateName = image.Status.ImageName + "-"
+			err = r.Create(ctx, &image)
 		}
-
-		// Update status sub resource for the VirtualMachineImage.
-		// Reintroduce the status from imgWithStatus.
-		imgStatus.DeepCopyInto(&img.Status)
-		if err := r.Status().Update(ctx, &img); err != nil {
-			retErr = err
-			r.Logger.Error(err, "failed to update status sub resource for image", "name", img.Name)
+		if err != nil {
+			r.Logger.Error(err, "failed to create VirtualMachineImage", "name", image.Name)
+			return err
 		}
 	}
 
-	return retErr
+	// Update status sub resource for the VirtualMachineImage.
+	// Reintroduce the status from imgWithStatus.
+	imgStatus.DeepCopyInto(&image.Status)
+	if err := r.Status().Update(ctx, &image); err != nil {
+		r.Logger.Error(err, "failed to update status sub resource for image", "name", image.Name)
+		return err
+	}
+
+	return nil
 }
 
-// DeleteImages deletes a set of VirtualMachineImages in a best effort manner.
-func (r *Reconciler) DeleteImages(ctx goctx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
-	var retErr error
-	for _, image := range images {
-		img := image
-		r.Logger.V(4).Info("Deleting image", "name", img.Name)
-		if err := r.Delete(ctx, &img); err != nil {
-			retErr = err
-			r.Logger.Error(err, "failed to delete VirtualMachineImage", "name", img.Name)
-		}
+// DeleteImage deletes a VirtualMachineImage. Ignore the NotFound error.
+func (r *Reconciler) DeleteImage(ctx goctx.Context, image vmopv1alpha1.VirtualMachineImage) error {
+	r.Logger.V(4).Info("Deleting image", "name", image.Name)
+	if err := client.IgnoreNotFound(r.Delete(ctx, &image)); err != nil {
+		r.Logger.Error(err, "failed to delete VirtualMachineImage", "name", image.Name)
+		return err
 	}
 
-	return retErr
+	return nil
 }
 
-// UpdateImages updates a set of VirtualMachineImages in a best effort manner.
-func (r *Reconciler) UpdateImages(ctx goctx.Context, images []vmopv1alpha1.VirtualMachineImage) error {
-	var retErr error
-	for _, image := range images {
-		img := image
-		r.Logger.V(4).Info("Updating image", "name", img.Name)
-		if err := r.Update(ctx, &img); err != nil {
-			retErr = err
-			r.Logger.Error(err, "failed to update VirtualMachineImage", "name", img.Name)
-			continue
-		}
+// UpdateImage checks a VirtualMachineImage non-status and status resource and update it if needed.
+func (r *Reconciler) UpdateImage(ctx goctx.Context, currentImage, expectedImage vmopv1alpha1.VirtualMachineImage) error {
+	r.Logger.V(4).Info("Updating image", "name", expectedImage.Name)
 
-		// Update status sub resource for the VirtualMachineImage.
-		if err := r.Status().Update(ctx, &img); err != nil {
-			retErr = err
-			r.Logger.Error(err, "failed to update status sub resource for image", "name", img.Name)
+	beforeUpdate := currentImage.DeepCopy()
+	currentImage.Annotations = expectedImage.Annotations
+	currentImage.OwnerReferences = expectedImage.OwnerReferences
+	currentImage.Spec = expectedImage.Spec
+
+	// Check VirtualMachineImage non-status.
+	if !equality.Semantic.DeepEqual(currentImage.ObjectMeta, beforeUpdate.ObjectMeta) ||
+		!equality.Semantic.DeepEqual(currentImage.Spec, beforeUpdate.Spec) {
+		if err := r.Update(ctx, &currentImage); err != nil {
+			r.Logger.Error(err, "failed to update VirtualMachineImage", "name", expectedImage.Name)
+			return err
 		}
 	}
 
-	return retErr
+	// Check status sub resource.
+	currentImage.Status = expectedImage.Status
+	if !equality.Semantic.DeepEqual(currentImage.Status, beforeUpdate.Status) {
+		// Update status sub resource for the VirtualMachineImage.
+		if err := r.Status().Update(ctx, &currentImage); err != nil {
+			r.Logger.Error(err, "failed to update status sub resource for image", "name", expectedImage.Name)
+			return err
+		}
+	}
+
+	return nil
 }
 
 // IsImageOwnedByContentLibrary checks whether a VirtualMachineImage is owned by a content library with given UUID.
@@ -188,190 +189,114 @@ func GetVMImageName(img vmopv1alpha1.VirtualMachineImage) string {
 	return name
 }
 
-// DiffImages difference two lists of VirtualMachineImages producing 3 lists: images that have been added
-// to "providerImages", images that have been removed in "providerImages", and images that have been updated in "providerImages".
-// It only differences VirtualMachineImages that belong to the content library with name clUUID.
-func (r *Reconciler) DiffImages(
-	clUUID string,
-	k8sImages []vmopv1alpha1.VirtualMachineImage,
-	providerImages []vmopv1alpha1.VirtualMachineImage) (
-	added []vmopv1alpha1.VirtualMachineImage,
-	removed []vmopv1alpha1.VirtualMachineImage,
-	updated []vmopv1alpha1.VirtualMachineImage) {
-	// k8sImagesInCLMap describes k8s images that are in the cluster and belong to the content library with UUID clUUID.
-	// providerImagesMap describes images returned by the content library provider whose UUID is clUUID.
-	k8sImagesInCLMap := make(map[string]struct{}, len(k8sImages))
-	providerImagesMap := make(map[string]int, len(providerImages))
-
-	for i, item := range providerImages {
-		providerImagesMap[item.Status.ImageName] = i
+func (r *Reconciler) ProcessItemFromContentLibrary(ctx goctx.Context,
+	clProvider *vmopv1alpha1.ContentLibraryProvider,
+	itemID string, currentCLImages map[string]vmopv1alpha1.VirtualMachineImage) error {
+	providerImage, err := r.VMProvider.GetVirtualMachineImageFromContentLibrary(ctx, clProvider, itemID, currentCLImages)
+	if err != nil {
+		return err
 	}
 
-	// TODO: Use imageID as the key in the map.
-	// In order to support duplicate vm image names in the cluster, we change the name format of an image.
-	// We'd like to preserve existing images to avoid any potential problems caused by this changes after upgrade.
-	// So we need a common field to match the existing k8s managed images and provider images.
-	// It makes more sense to use image ID to identify an image. However, for those images created before
-	// duplicate name is supported, .spec.imageID is empty and .status.uuid is deprecated,
-	// there are no easy ways to get the image ID. Use image name instead as the key for now.
-	// Difference
-	for _, image := range k8sImages {
-		// Only process the VirtualMachineImage resources that are owned by the content source.
-		if !IsImageOwnedByContentLibrary(image, clUUID) {
-			continue
+	if providerImage != nil {
+		clOwnerRef := metav1.OwnerReference{
+			APIVersion: clProvider.APIVersion,
+			Kind:       clProvider.Kind,
+			Name:       clProvider.Name,
+			UID:        clProvider.UID,
 		}
-		name := GetVMImageName(image)
-		k8sImagesInCLMap[name] = struct{}{}
+		providerImage.OwnerReferences = []metav1.OwnerReference{clOwnerRef}
+		providerImage.Spec.ProviderRef = vmopv1alpha1.ContentProviderReference{
+			APIVersion: clProvider.APIVersion,
+			Kind:       clProvider.Kind,
+			Name:       clProvider.Name,
+			Namespace:  clProvider.Namespace,
+		}
 
-		i, ok := providerImagesMap[name]
-		if !ok {
-			// Identify removed items
-			removed = append(removed, image)
+		if currentImage, ok := currentCLImages[providerImage.Status.ImageName]; !ok {
+			// Create this VM Image
+			if err := r.CreateImage(ctx, *providerImage); err != nil {
+				return err
+			}
 		} else {
-			// Image already exists on the API server.
-			beforeUpdate := image.DeepCopy()
-			// Identify updated items.
-			image.Annotations = providerImages[i].Annotations
-			image.OwnerReferences = providerImages[i].OwnerReferences
-			image.Spec = providerImages[i].Spec
-			image.Status = providerImages[i].Status
+			// After processing all the items from the CL, we delete all remaining images in this map.
+			// Remove from the currentCLImages to avoid deletion.
+			delete(currentCLImages, providerImage.Status.ImageName)
 
-			if !equality.Semantic.DeepEqual(image, *beforeUpdate) {
-				updated = append(updated, image)
+			// Image already exists on the API server. Update it.
+			if err := r.UpdateImage(ctx, currentImage, *providerImage); err != nil {
+				return err
 			}
 		}
 	}
-
-	// Identify added items
-	for _, i := range providerImages {
-		providerImageName := i.Status.ImageName
-		if _, ok := k8sImagesInCLMap[providerImageName]; !ok {
-			added = append(added, i)
-		}
-	}
-
-	return added, removed, updated
+	return nil
 }
 
-// GetImagesFromContentProvider fetches the VM images from a given content provider. Also sets the owner ref in the images.
-func (r *Reconciler) GetImagesFromContentProvider(
-	ctx goctx.Context,
-	contentSource vmopv1alpha1.ContentSource,
-	existingImages []vmopv1alpha1.VirtualMachineImage) ([]vmopv1alpha1.VirtualMachineImage, error) {
-	providerRef := contentSource.Spec.ProviderRef
-
-	// Currently, the only supported content provider is content library, so we assume that the providerRef
-	// is of ContentLibraryProvider kind.
-	clProvider := vmopv1alpha1.ContentLibraryProvider{}
-	if err := r.Get(ctx, client.ObjectKey{Name: providerRef.Name, Namespace: providerRef.Namespace}, &clProvider); err != nil {
-		return nil, err
-	}
-
-	clOwnerRef := metav1.OwnerReference{
-		APIVersion: clProvider.APIVersion,
-		Kind:       clProvider.Kind,
-		Name:       clProvider.Name,
-		UID:        clProvider.UID,
-	}
-
+// SyncImagesFromContentProvider fetches the VM images from a given content provider. Also sets the owner ref in the images.
+func (r *Reconciler) SyncImagesFromContentProvider(
+	ctx goctx.Context, clProvider *vmopv1alpha1.ContentLibraryProvider) error {
 	logger := r.Logger.WithValues("clProviderName", clProvider.Name, "clProviderUUID", clProvider.Spec.UUID)
 	logger.V(4).Info("listing images from content library")
 
-	currentCLImages := map[string]vmopv1alpha1.VirtualMachineImage{}
-	for _, image := range existingImages {
-		imageID := image.Spec.ImageID
-		if imageID == "" {
-			// This occurs during upgrade from not supporting to supporting duplicate vm image names.
-			// We need to update all existing VirtualMachineImage objects.
-			continue
-		}
-		// For a vm image missing clOwnerRef, it doesn't matter that IsImageOwnedByContentLibrary returns true.
-		// It always has empty imageID, so that it won't reach this line.
-		if IsImageOwnedByContentLibrary(image, clProvider.Name) {
-			currentCLImages[imageID] = image
-		}
-	}
-
-	images, err := r.VMProvider.ListVirtualMachineImagesFromContentLibrary(ctx, clProvider, currentCLImages)
-	if err != nil {
-		logger.Error(err, "error listing images from provider")
-		return nil, err
-	}
-
-	convertedImages := make([]vmopv1alpha1.VirtualMachineImage, 0)
-	for _, img := range images {
-		img.OwnerReferences = []metav1.OwnerReference{clOwnerRef}
-		img.Spec.ProviderRef = providerRef
-		convertedImages = append(convertedImages, *img)
-	}
-
-	return convertedImages, nil
-}
-
-func (r *Reconciler) DifferenceImages(ctx goctx.Context,
-	contentSource *vmopv1alpha1.ContentSource) ([]vmopv1alpha1.VirtualMachineImage, []vmopv1alpha1.VirtualMachineImage, []vmopv1alpha1.VirtualMachineImage, error) {
-	r.Logger.V(4).Info("Differencing images")
-
-	// List the existing images from both the vm provider backend and the Kubernetes control plane (etcd).
-	// Difference this list and update the k8s control plane to reflect the state of the image inventory from
-	// the backend.
+	// List the existing images from the supervisor cluster.
 	k8sManagedImageList := &vmopv1alpha1.VirtualMachineImageList{}
 	if err := r.List(ctx, k8sManagedImageList); err != nil {
-		return nil, nil, nil, errors.Wrap(err, "failed to list VirtualMachineImages from control plane")
+		return errors.Wrap(err, "failed to list VirtualMachineImages from control plane")
 	}
 
 	k8sManagedImages := k8sManagedImageList.Items
 
-	// Best effort to list VirtualMachineImages from this content sources.
-	providerManagedImages, err := r.GetImagesFromContentProvider(ctx, *contentSource, k8sManagedImages)
-	if err != nil {
-		r.Logger.Error(err, "Error listing VirtualMachineImages from the content provider", "contentSourceName", contentSource.Name)
-		return nil, nil, nil, err
+	// Use ImageName as te key instead of ImageID.
+	// In order to support duplicate vm image names in the cluster, we change the name format of an image.
+	// We'd like to preserve existing images to avoid any potential problems caused by this changes after upgrade.
+	// So we need a common field to match the existing k8s managed images and provider images.
+	// Also, use imageName as the key can help us identify a VMImage which has been renamed.
+	currentCLImages := map[string]vmopv1alpha1.VirtualMachineImage{}
+	for _, image := range k8sManagedImages {
+		// Only process the VirtualMachineImage resources that are owned by the content source.
+		if !IsImageOwnedByContentLibrary(image, clProvider.Name) {
+			continue
+		}
+
+		imageName := GetVMImageName(image)
+		currentCLImages[imageName] = image
 	}
 
-	// Difference the kubernetes images with the provider images
-	added, removed, updated := r.DiffImages(contentSource.Spec.ProviderRef.Name, k8sManagedImages, providerManagedImages)
-	r.Logger.V(4).Info("Differenced", "added", added, "removed", removed, "updated", updated)
-
-	return added, removed, updated, nil
-}
-
-// SyncImages syncs images from the given content sources.
-func (r *Reconciler) SyncImages(ctx goctx.Context, contentSource *vmopv1alpha1.ContentSource) error {
-	added, removed, updated, err := r.DifferenceImages(ctx, contentSource)
+	libItemList, err := r.VMProvider.ListItemsFromContentLibrary(ctx, clProvider)
 	if err != nil {
-		r.Logger.Error(err, "failed to difference images")
 		return err
 	}
 
-	// Best effort to sync VirtualMachineImage resources between provider and API server.
-	// DeleteImages should be called before CreateImages, in case that removed list and added list have duplicate
-	// vm images.
-	deleteErr := r.DeleteImages(ctx, removed)
-	if deleteErr != nil {
-		r.Logger.Error(deleteErr, "failed to delete VirtualMachineImages")
+	retErrs := make([]error, 0)
+	for _, item := range libItemList {
+		err := r.ProcessItemFromContentLibrary(ctx, clProvider, item, currentCLImages)
+		if err != nil {
+			retErrs = append(retErrs, err)
+			continue
+		}
 	}
 
-	createErr := r.CreateImages(ctx, added)
-	if createErr != nil {
-		r.Logger.Error(createErr, "failed to create VirtualMachineImages")
+	if len(retErrs) > 0 {
+		// For now, assume they are transient errors and let the controller reconcile it.
+		// Don't delete Images here. Otherwise, for VM images with duplicate names, they will have new generated names
+		// once the transient errors are gone.
+		return k8serrors.NewAggregate(retErrs)
 	}
 
-	updateErr := r.UpdateImages(ctx, updated)
-	if updateErr != nil {
-		r.Logger.Error(updateErr, "failed to update VirtualMachineImages")
+	// Remaining images in the currentCLImages map were deleted from the CL.
+	// Delete them from the cluster.
+	for _, currentImage := range currentCLImages {
+		if err := r.DeleteImage(ctx, currentImage); err != nil {
+			retErrs = append(retErrs, err)
+		}
 	}
 
-	if createErr != nil || updateErr != nil || deleteErr != nil {
-		return fmt.Errorf("error syncing VirtualMachineImage resources between provider and API server")
-	}
-
-	return nil
+	return k8serrors.NewAggregate(retErrs)
 }
 
 // ReconcileProviderRef reconciles a ContentSource's provider reference. Verifies that the content provider pointed by
 // the provider ref exists on the infrastructure.
-func (r *Reconciler) ReconcileProviderRef(ctx goctx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+func (r *Reconciler) ReconcileProviderRef(ctx goctx.Context,
+	contentSource *vmopv1alpha1.ContentSource) (*vmopv1alpha1.ContentLibraryProvider, error) {
 	logger := r.Logger.WithValues("contentSourceName", contentSource.Name)
 
 	logger.Info("Reconciling content provider reference")
@@ -384,13 +309,13 @@ func (r *Reconciler) ReconcileProviderRef(ctx goctx.Context, contentSource *vmop
 	providerRef := contentSource.Spec.ProviderRef
 	if providerRef.Kind != "ContentLibraryProvider" {
 		logger.Info("Unknown provider. Only ContentLibraryProvider is supported", "providerRefName", providerRef.Name, "providerRefKind", providerRef.Kind)
-		return nil
+		return nil, nil
 	}
 
 	contentLibrary := &vmopv1alpha1.ContentLibraryProvider{}
 	if err := r.Get(ctx, client.ObjectKey{Name: providerRef.Name, Namespace: providerRef.Namespace}, contentLibrary); err != nil {
 		logger.Error(err, "failed to get ContentLibraryProvider resource", "providerRef", providerRef)
-		return err
+		return nil, err
 	}
 
 	logger = logger.WithValues("contentLibraryName", contentLibrary.Name, "contentLibraryUUID", contentLibrary.Spec.UUID)
@@ -413,11 +338,11 @@ func (r *Reconciler) ReconcileProviderRef(ctx goctx.Context, contentSource *vmop
 	if !equality.Semantic.DeepEqual(beforeObj, contentLibrary) {
 		if err := r.Update(ctx, contentLibrary); err != nil {
 			logger.Error(err, "error updating the ContentLibraryProvider")
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return contentLibrary, nil
 }
 
 // ReconcileDeleteProviderRef reconciles a delete for a provider reference. Currently, no op.
@@ -449,13 +374,17 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, contentSource *vmopv1alp
 
 	// TODO: If a ContentSource is deleted before we can add an OwnerReference to the ContentLibraryProvider,
 	// we will have an orphan ContentLibraryProvider resource in the cluster.
-	if err := r.ReconcileProviderRef(ctx, contentSource); err != nil {
+	clProvider, err := r.ReconcileProviderRef(ctx, contentSource)
+	if err != nil {
 		logger.Error(err, "error in reconciling the provider ref")
 		return err
 	}
 
-	if err := r.SyncImages(ctx, contentSource); err != nil {
+	// Currently, the only supported content provider is content library, so we assume that the providerRef
+	// is of ContentLibraryProvider kind.
+	if err := r.SyncImagesFromContentProvider(ctx, clProvider); err != nil {
 		logger.Error(err, "Error in syncing image from the content provider")
+		r.Recorder.EmitEvent(clProvider, "SyncImages", err, true)
 		return err
 	}
 

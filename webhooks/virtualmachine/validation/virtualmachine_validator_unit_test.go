@@ -372,7 +372,7 @@ func unitTestsValidateCreate() {
 			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
 		Entry("should deny a storage class that is not associated with the namespace", createArgs{invalidStorageClass: true}, false,
 			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
-		Entry("should deny empty vmMetadata resource Names", createArgs{emptyMetadataResource: true}, false, "must specify either spec.vmMetadata.configMapName or spec.vmMetadata.secretName, but not both", nil),
+		Entry("should allow empty vmMetadata resource Names", createArgs{emptyMetadataResource: true}, true, nil, nil),
 		Entry("should deny when multiple vmMetadata resources are specified", createArgs{multipleMetadataResources: true}, false, "spec.vmMetadata.configMapName and spec.vmMetadata.secretName cannot be specified simultaneously", nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
 

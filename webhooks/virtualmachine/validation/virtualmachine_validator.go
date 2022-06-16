@@ -57,7 +57,6 @@ const (
 	vSphereVolumeSizeNotMBMultiple            = "value must be a multiple of MB"
 	eagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning"
 	addingModifyingInstanceVolumesNotAllowed  = "adding or modifying instance storage volume claim(s) is not allowed"
-	metadataTransportResourcesEmpty           = "must specify either %s or %s, but not both"
 	metadataTransportResourcesInvalid         = "%s and %s cannot be specified simultaneously"
 )
 
@@ -195,11 +194,6 @@ func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmop
 	}
 
 	mdPath := field.NewPath("spec", "vmMetadata")
-
-	if vm.Spec.VmMetadata.ConfigMapName == "" && vm.Spec.VmMetadata.SecretName == "" {
-		allErrs = append(allErrs, field.Required(mdPath.Child("configMapName"),
-			fmt.Sprintf(metadataTransportResourcesEmpty, mdPath.Child("configMapName"), mdPath.Child("secretName"))))
-	}
 
 	if vm.Spec.VmMetadata.ConfigMapName != "" && vm.Spec.VmMetadata.SecretName != "" {
 		allErrs = append(allErrs, field.Invalid(mdPath.Child("configMapName"), vm.Spec.VmMetadata.ConfigMapName,

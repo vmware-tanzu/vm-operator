@@ -1,4 +1,4 @@
-// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session
@@ -64,16 +64,19 @@ type CloudInitMetadata struct {
 	LocalHostname string          `yaml:"local-hostname,omitempty"`
 	Hostname      string          `yaml:"hostname,omitempty"`
 	Network       network.Netplan `yaml:"network,omitempty"`
+	PublicKeys    string          `yaml:"public-keys,omitempty"`
 }
 
 func GetCloudInitMetadata(vm *v1alpha1.VirtualMachine,
-	netplan network.Netplan) (string, error) {
+	netplan network.Netplan,
+	data map[string]string) (string, error) {
 
 	metadataObj := &CloudInitMetadata{
 		InstanceID:    string(vm.UID),
 		LocalHostname: vm.Name,
 		Hostname:      vm.Name,
 		Network:       netplan,
+		PublicKeys:    data["ssh-public-keys"],
 	}
 
 	metadataBytes, err := yaml.Marshal(metadataObj)
@@ -186,7 +189,7 @@ func customizeCloudInit(
 
 	netplan := updateArgs.NetIfList.GetNetplan(ethCards, updateArgs.DNSServers)
 
-	cloudInitMetadata, err := GetCloudInitMetadata(vmCtx.VM, netplan)
+	cloudInitMetadata, err := GetCloudInitMetadata(vmCtx.VM, netplan, updateArgs.VMMetadata.Data)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -1,4 +1,4 @@
-// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session_test
@@ -192,6 +192,8 @@ var _ = Describe("CloudInitmetadata", func() {
 		netplan        network.Netplan
 		metadataString string
 		err            error
+		updateArgs     session.VMUpdateArgs
+		publicKeys     string
 	)
 	BeforeEach(func() {
 		vm = &vmopv1alpha1.VirtualMachine{
@@ -217,9 +219,12 @@ var _ = Describe("CloudInitmetadata", func() {
 				},
 			},
 		}
+		publicKeys = "dummy-ssh-public-key"
+		updateArgs.VMMetadata.Data = map[string]string{}
+		updateArgs.VMMetadata.Data["ssh-public-keys"] = publicKeys
 	})
 	JustBeforeEach(func() {
-		metadataString, err = session.GetCloudInitMetadata(vm, netplan)
+		metadataString, err = session.GetCloudInitMetadata(vm, netplan, updateArgs.VMMetadata.Data)
 	})
 
 	It("Return a valid cloud-init metadata yaml", func() {
@@ -234,6 +239,7 @@ var _ = Describe("CloudInitmetadata", func() {
 		Expect(metadata.LocalHostname).To(Equal(vm.Name))
 		Expect(metadata.Hostname).To(Equal(vm.Name))
 		Expect(metadata.Network).To(Equal(netplan))
+		Expect(metadata.PublicKeys).To(Equal(publicKeys))
 	})
 })
 

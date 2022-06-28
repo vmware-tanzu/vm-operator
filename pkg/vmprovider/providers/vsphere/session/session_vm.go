@@ -16,7 +16,7 @@ import (
 func (s *Session) DeleteVirtualMachine(vmCtx context.VirtualMachineContext) error {
 	resVM, err := s.GetVirtualMachine(vmCtx)
 	if err != nil {
-		return transformVMError(vmCtx.VM.NamespacedName(), err)
+		return err
 	}
 
 	moVM, err := resVM.GetProperties(vmCtx, []string{"summary.runtime"})

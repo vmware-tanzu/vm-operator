@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
@@ -100,6 +101,15 @@ func getVM() {
 			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.Client, ctx.Finder, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(vm).ToNot(BeNil())
+		})
+	})
+
+	Context("Gets VM when VM does not exist", func() {
+
+		It("returns NotFound", func() {
+			_, err := vcenter.GetVirtualMachine(vmCtx, ctx.Client, ctx.Finder, nil)
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		})
 	})
 }

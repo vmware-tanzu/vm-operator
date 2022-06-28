@@ -5,6 +5,7 @@ package vcenter
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -15,6 +16,9 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // GetVirtualMachine gets the VM from VC, either by the MoID or by the inventory path.
@@ -77,7 +81,7 @@ func GetVirtualMachine(
 	vm, err := finder.VirtualMachine(vmCtx, vmPath)
 	if err != nil {
 		vmCtx.Logger.Error(err, "Failed find VM by path", "path", vmPath)
-		return nil, err
+		return nil, transformVMError(vmCtx.VM.NamespacedName(), err)
 	}
 
 	vmCtx.Logger.V(4).Info("Found VM via path", "path", vmPath, "moID", vm.Reference().Value)
@@ -98,4 +102,22 @@ func findVMByMoID(
 	vmCtx.Logger.V(4).Info("Found VM via MoID", "name", vm.Name(),
 		"path", vm.InventoryPath, "moID", moID)
 	return vm, nil
+}
+
+// Transform Govmomi error to Kubernetes error
+// TODO: Fill out with VIM fault types.
+func transformError(resourceType string, resource string, err error) error {
+	switch err.(type) {
+	case *find.NotFoundError, *find.DefaultNotFoundError:
+		return k8serrors.NewNotFound(schema.GroupResource{Group: "vmoperator.vmware.com", Resource: strings.ToLower(resourceType)}, resource)
+	case *find.MultipleFoundError, *find.DefaultMultipleFoundError:
+		// Transform?
+		return err
+	default:
+		return err
+	}
+}
+
+func transformVMError(resource string, err error) error {
+	return transformError("VirtualMachine", resource, err)
 }

@@ -715,6 +715,14 @@ func vmTests() {
 					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 				})
 
+				It("returns NotFound when VM does not exist", func() {
+					Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+
+					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+					err := vmProvider.DeleteVirtualMachine(ctx, vm)
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				})
+
 				It("Reverse lookups existing VM into correct zone", func() {
 					uniqueID := vm.Status.UniqueID
 					Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())

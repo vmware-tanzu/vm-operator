@@ -9,15 +9,14 @@ import (
 	"math/rand"
 	"strings"
 
+	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
+	vimtypes "github.com/vmware/govmomi/vim25/types"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-	"github.com/vmware/govmomi/find"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -109,12 +108,10 @@ func (vs *vSphereVMProvider) DoesVirtualMachineExist(ctx goctx.Context, vm *v1al
 	}
 
 	if _, err := vcenter.GetVirtualMachine(vmCtx, vs.k8sClient, client.Finder(), nil); err != nil {
-		switch err.(type) {
-		case *find.NotFoundError, *find.DefaultNotFoundError:
+		if k8serrors.IsNotFound(err) {
 			return false, nil
-		default:
-			return false, err
 		}
+		return false, err
 	}
 
 	return true, nil

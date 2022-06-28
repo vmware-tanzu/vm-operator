@@ -7,32 +7,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
-	"strings"
 
-	"github.com/vmware/govmomi/find"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
-
-// Transform Govmomi error to Kubernetes error
-// TODO: Fill out with VIM fault types.
-func transformError(resourceType string, resource string, err error) error {
-	switch err.(type) {
-	case *find.NotFoundError, *find.DefaultNotFoundError:
-		return k8serrors.NewNotFound(schema.GroupResource{Group: "vmoperator.vmware.com", Resource: strings.ToLower(resourceType)}, resource)
-	case *find.MultipleFoundError, *find.DefaultMultipleFoundError:
-		// Transform?
-		return err
-	default:
-		return err
-	}
-}
-
-func transformVMError(resource string, err error) error {
-	return transformError("VirtualMachine", resource, err)
-}
 
 func ExtraConfigToMap(input []vimTypes.BaseOptionValue) (output map[string]string) {
 	output = make(map[string]string)

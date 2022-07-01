@@ -56,7 +56,7 @@ fi
 # Run unit tests
 # go test: -race requires cgo
 # shellcheck disable=SC2046
-CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" \
+CGO_ENABLED=1 go test -v -race -count=1 "${ENV_GOFLAGS[@]}" \
     $(join_packages_for_tests "${TEST_PKGS[@]}") \
     "${GINKGO_FLAGS[@]}" \
     -- \
@@ -65,7 +65,7 @@ CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" \
 
 # Run certain unit tests without -race
 # shellcheck disable=SC2046
-go test -v -p 1 -count=1 "${NO_RACE_ENV_GOFLAGS[@]}" \
+go test -v -count=1 "${NO_RACE_ENV_GOFLAGS[@]}" \
     $(join_packages_for_tests "${NO_RACE_TEST_PKGS[@]}") \
     "${GINKGO_FLAGS[@]}" \
     -- \

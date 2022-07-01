@@ -49,7 +49,7 @@ fi
 # Run integration tests
 # go test: -race requires cgo
 # shellcheck disable=SC2046
-CGO_ENABLED=1 go test -v -race -p 1 -count=1 "${ENV_GOFLAGS[@]}" \
+CGO_ENABLED=1 go test -v -race -count=1 "${ENV_GOFLAGS[@]}" \
            $(join_packages_for_tests "${TEST_PKGS[@]}") \
            "${GINKGO_FLAGS[@]}" \
            -- \

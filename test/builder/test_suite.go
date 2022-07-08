@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder
@@ -33,7 +33,6 @@ import (
 	"k8s.io/klog/v2/klogr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/yaml"
@@ -244,10 +243,9 @@ func (s *TestSuite) Register(t *testing.T, name string, runIntegrationTestsFn, r
 	if s.flags.IntegrationTestsEnabled {
 		SetDefaultEventuallyTimeout(time.Second * 10)
 		SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
-		RunSpecsWithDefaultAndCustomReporters(t, name, []Reporter{printer.NewlineReporter{}})
-	} else if s.flags.UnitTestsEnabled {
-		RunSpecs(t, name)
 	}
+
+	RunSpecs(t, name)
 }
 
 // NewUnitTestContextForController returns a new unit test context for this

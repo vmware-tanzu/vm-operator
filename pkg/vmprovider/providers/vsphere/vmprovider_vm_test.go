@@ -84,6 +84,9 @@ func vmTests() {
 			vmClass := builder.DummyVirtualMachineClass()
 			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 
+			vmClassBinding := builder.DummyVirtualMachineClassBinding(vmClass.Name, nsInfo.Namespace)
+			Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
+
 			vmImage := &vmopv1alpha1.VirtualMachineImage{}
 			if testConfig.WithContentLibrary {
 				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: ctx.ContentLibraryImageName}, vmImage)).To(Succeed())

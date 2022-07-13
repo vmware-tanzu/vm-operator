@@ -4,8 +4,6 @@
 package validation_test
 
 import (
-	"sync/atomic"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
@@ -18,7 +16,6 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -121,10 +118,6 @@ func unitTestsValidateUpdate() {
 	var (
 		ctx      *unitValidatingWebhookContext
 		response admission.Response
-
-		// represents the VM Service FSS. This should be manipulated atomically to avoid races where
-		// the controller is trying to read this _while_ the tests are updating it.
-		vmServiceFSS uint32
 	)
 
 	type updateArgs struct {
@@ -168,29 +161,14 @@ func unitTestsValidateUpdate() {
 	}
 
 	BeforeEach(func() {
-		// Modify the helper function to return the custom value of the FSS
-		lib.IsVMServiceFSSEnabled = func() bool {
-			return atomic.LoadUint32(&vmServiceFSS) != 0
-		}
-
 		ctx = newUnitTestContextForValidatingWebhook(true)
 	})
 	AfterEach(func() {
 		ctx = nil
 	})
 
-	Context("WCP_VMService FSS is set", func() {
-		var oldVMServiceFSSState uint32
-
-		BeforeEach(func() {
-			oldVMServiceFSSState = vmServiceFSS
-			atomic.StoreUint32(&vmServiceFSS, 1)
-		})
-		AfterEach(func() {
-			atomic.StoreUint32(&vmServiceFSS, oldVMServiceFSSState)
-		})
-
-		DescribeTable("update table with VMService FSS", validateUpdate,
+	Context("WCP_VMService FSS is enabled", func() {
+		DescribeTable("update VM Class spec", validateUpdate,
 			Entry("should allow", updateArgs{}, true, nil, nil),
 			Entry("should allow hw cpu change", updateArgs{changeHwCPU: true}, true, nil, nil),
 			Entry("should allow hw memory change", updateArgs{changeHwMemory: true}, true, nil, nil),
@@ -199,13 +177,12 @@ func unitTestsValidateUpdate() {
 		)
 	})
 
-	immutableFieldMsg := "field is immutable"
 	DescribeTable("update table", validateUpdate,
 		Entry("should allow", updateArgs{}, true, nil, nil),
-		Entry("should deny hw cpu change", updateArgs{changeHwCPU: true}, false, immutableFieldMsg, nil),
-		Entry("should deny hw memory change", updateArgs{changeHwMemory: true}, false, immutableFieldMsg, nil),
-		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, false, immutableFieldMsg, nil),
-		Entry("should deny policy memory change", updateArgs{changeMemory: true}, false, immutableFieldMsg, nil),
+		Entry("should deny hw cpu change", updateArgs{changeHwCPU: true}, true, nil, nil),
+		Entry("should deny hw memory change", updateArgs{changeHwMemory: true}, true, nil, nil),
+		Entry("should deny policy cpu change", updateArgs{changeCPU: true}, true, nil, nil),
+		Entry("should deny policy memory change", updateArgs{changeMemory: true}, true, nil, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

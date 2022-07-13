@@ -14,7 +14,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
@@ -42,39 +41,37 @@ func GetVirtualMachineClass(
 		return nil, errors.Wrap(err, msg)
 	}
 
-	if lib.IsVMServiceFSSEnabled() {
-		namespace := vmCtx.VM.Namespace
+	namespace := vmCtx.VM.Namespace
 
-		classBindingList := &vmopv1alpha1.VirtualMachineClassBindingList{}
-		if err := k8sClient.List(vmCtx, classBindingList, ctrlclient.InNamespace(namespace)); err != nil {
-			msg := fmt.Sprintf("Failed to list VirtualMachineClassBindings in namespace: %s", namespace)
-			conditions.MarkFalse(vmCtx.VM,
-				vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-				vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
-				vmopv1alpha1.ConditionSeverityError,
-				msg)
-			return nil, errors.Wrap(err, msg)
-		}
+	classBindingList := &vmopv1alpha1.VirtualMachineClassBindingList{}
+	if err := k8sClient.List(vmCtx, classBindingList, ctrlclient.InNamespace(namespace)); err != nil {
+		msg := fmt.Sprintf("Failed to list VirtualMachineClassBindings in namespace: %s", namespace)
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+			vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+			vmopv1alpha1.ConditionSeverityError,
+			msg)
+		return nil, errors.Wrap(err, msg)
+	}
 
-		// Filter the bindings for the specified VM class.
-		matchingClassBinding := false
-		for _, classBinding := range classBindingList.Items {
-			if classBinding.ClassRef.Kind == "VirtualMachineClass" && classBinding.ClassRef.Name == className {
-				matchingClassBinding = true
-				break
-			}
+	// Filter the bindings for the specified VM class.
+	matchingClassBinding := false
+	for _, classBinding := range classBindingList.Items {
+		if classBinding.ClassRef.Kind == "VirtualMachineClass" && classBinding.ClassRef.Name == className {
+			matchingClassBinding = true
+			break
 		}
+	}
 
-		if !matchingClassBinding {
-			msg := fmt.Sprintf("Namespace %s does not have access to VirtualMachineClass %s", namespace, className)
-			conditions.MarkFalse(vmCtx.VM,
-				vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-				vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
-				vmopv1alpha1.ConditionSeverityError,
-				msg)
-			err := fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", className, vmCtx.VM.Namespace)
-			return nil, err
-		}
+	if !matchingClassBinding {
+		msg := fmt.Sprintf("Namespace %s does not have access to VirtualMachineClass %s", namespace, className)
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+			vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+			vmopv1alpha1.ConditionSeverityError,
+			msg)
+		err := fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", className, vmCtx.VM.Namespace)
+		return nil, err
 	}
 
 	return vmClass, nil
@@ -132,55 +129,53 @@ func GetVMImageAndContentLibraryUUID(
 	clUUID := clProvider.Spec.UUID
 
 	// With VM Service, we only allow deploying a VM from an image that a developer's namespace has access to.
-	if lib.IsVMServiceFSSEnabled() {
-		var contentSourceName string
-		for _, ownerRef := range clProvider.OwnerReferences {
-			if ownerRef.Kind == "ContentSource" {
-				contentSourceName = ownerRef.Name
-				break
-			}
+	var contentSourceName string
+	for _, ownerRef := range clProvider.OwnerReferences {
+		if ownerRef.Kind == "ContentSource" {
+			contentSourceName = ownerRef.Name
+			break
 		}
-		if contentSourceName == "" {
-			msg := fmt.Sprintf("ContentLibraryProvider %s does not have a ContentSource OwnerReference", clProvider.Name)
-			conditions.MarkFalse(vmCtx.VM,
-				vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-				vmopv1alpha1.ContentSourceBindingNotFoundReason,
-				vmopv1alpha1.ConditionSeverityError,
-				msg)
-			return nil, "", errors.New(msg)
-		}
+	}
+	if contentSourceName == "" {
+		msg := fmt.Sprintf("ContentLibraryProvider %s does not have a ContentSource OwnerReference", clProvider.Name)
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+			vmopv1alpha1.ContentSourceBindingNotFoundReason,
+			vmopv1alpha1.ConditionSeverityError,
+			msg)
+		return nil, "", errors.New(msg)
+	}
 
-		csBindingList := &vmopv1alpha1.ContentSourceBindingList{}
-		if err := k8sClient.List(vmCtx, csBindingList, ctrlclient.InNamespace(vmCtx.VM.Namespace)); err != nil {
-			msg := fmt.Sprintf("Failed to list ContentSourceBindings in namespace: %s", vmCtx.VM.Namespace)
-			conditions.MarkFalse(vmCtx.VM,
-				vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-				vmopv1alpha1.ContentSourceBindingNotFoundReason,
-				vmopv1alpha1.ConditionSeverityError,
-				msg)
-			vmCtx.Logger.Error(err, msg)
-			return nil, "", errors.Wrap(err, msg)
-		}
+	csBindingList := &vmopv1alpha1.ContentSourceBindingList{}
+	if err := k8sClient.List(vmCtx, csBindingList, ctrlclient.InNamespace(vmCtx.VM.Namespace)); err != nil {
+		msg := fmt.Sprintf("Failed to list ContentSourceBindings in namespace: %s", vmCtx.VM.Namespace)
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+			vmopv1alpha1.ContentSourceBindingNotFoundReason,
+			vmopv1alpha1.ConditionSeverityError,
+			msg)
+		vmCtx.Logger.Error(err, msg)
+		return nil, "", errors.Wrap(err, msg)
+	}
 
-		// Filter the bindings for the specified ContentSource.
-		matchingContentSourceBinding := false
-		for _, csBinding := range csBindingList.Items {
-			if csBinding.ContentSourceRef.Kind == "ContentSource" && csBinding.ContentSourceRef.Name == contentSourceName {
-				matchingContentSourceBinding = true
-				break
-			}
+	// Filter the bindings for the specified ContentSource.
+	matchingContentSourceBinding := false
+	for _, csBinding := range csBindingList.Items {
+		if csBinding.ContentSourceRef.Kind == "ContentSource" && csBinding.ContentSourceRef.Name == contentSourceName {
+			matchingContentSourceBinding = true
+			break
 		}
+	}
 
-		if !matchingContentSourceBinding {
-			msg := fmt.Sprintf("Namespace %s does not have access to ContentSource %s for VirtualMachineImage %s",
-				vmCtx.VM.Namespace, clUUID, vmImage.Name)
-			conditions.MarkFalse(vmCtx.VM,
-				vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-				vmopv1alpha1.ContentSourceBindingNotFoundReason,
-				vmopv1alpha1.ConditionSeverityError,
-				msg)
-			return nil, "", errors.New(msg)
-		}
+	if !matchingContentSourceBinding {
+		msg := fmt.Sprintf("Namespace %s does not have access to ContentSource %s for VirtualMachineImage %s",
+			vmCtx.VM.Namespace, clUUID, vmImage.Name)
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+			vmopv1alpha1.ContentSourceBindingNotFoundReason,
+			vmopv1alpha1.ConditionSeverityError,
+			msg)
+		return nil, "", errors.New(msg)
 	}
 
 	return vmImage, clUUID, nil

@@ -17,7 +17,6 @@ import (
 
 func intgTests() {
 	Describe("Invoking Create", intgTestsValidateCreate)
-	Describe("Invoking Update", intgTestsValidateUpdate)
 	Describe("Invoking Delete", intgTestsValidateDelete)
 }
 
@@ -73,36 +72,6 @@ func intgTestsValidateCreate() {
 		Entry("should work", true, "", nil),
 		Entry("should not work for invalid", false, invalidMemField.Error(), nil),
 	)
-}
-
-func intgTestsValidateUpdate() {
-	var (
-		err error
-		ctx *intgValidatingWebhookContext
-	)
-
-	BeforeEach(func() {
-		ctx = newIntgValidatingWebhookContext()
-		err = ctx.Client.Create(ctx, ctx.vmClass)
-		Expect(err).ToNot(HaveOccurred())
-	})
-	JustBeforeEach(func() {
-		err = ctx.Client.Update(suite, ctx.vmClass)
-	})
-	AfterEach(func() {
-		err = nil
-		ctx = nil
-	})
-
-	When("update is performed with changed cpu request", func() {
-		BeforeEach(func() {
-			ctx.vmClass.Spec.Policies.Resources.Requests.Memory = resource.MustParse("10Gi")
-		})
-		It("should deny the request", func() {
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("field is immutable"))
-		})
-	})
 }
 
 func intgTestsValidateDelete() {

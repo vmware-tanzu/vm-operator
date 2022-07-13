@@ -5,7 +5,6 @@ package session_test
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -29,10 +28,6 @@ var _ = Describe("Update ConfigSpec", func() {
 
 	var config *vimTypes.VirtualMachineConfigInfo
 	var configSpec *vimTypes.VirtualMachineConfigSpec
-
-	// represents the VM Service FSS. This should be manipulated atomically to avoid races where
-	// the controller is trying to read this _while_ the tests are updating it.
-	var vmServiceFSS uint32
 
 	BeforeEach(func() {
 		config = &vimTypes.VirtualMachineConfigInfo{}
@@ -915,14 +910,9 @@ var _ = Describe("Update ConfigSpec", func() {
 			backingInfo3, backingInfo4                       *vimTypes.VirtualPCIPassthroughDynamicBackingInfo
 			deviceKey3, deviceKey4                           int32
 			dynamicDirectPathIODev1, dynamicDirectPathIODev2 vimTypes.BaseVirtualDevice
-
-			oldVMServiceFSSState uint32
 		)
 
 		BeforeEach(func() {
-			oldVMServiceFSSState = vmServiceFSS
-			atomic.StoreUint32(&vmServiceFSS, 1)
-
 			backingInfo1 = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop1"}
 			backingInfo2 = &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{Vgpu: "mockup-vmiop2"}
 			deviceKey1 = int32(-200)
@@ -959,8 +949,6 @@ var _ = Describe("Update ConfigSpec", func() {
 		AfterEach(func() {
 			currentList = nil
 			expectedList = nil
-
-			atomic.StoreUint32(&vmServiceFSS, oldVMServiceFSSState)
 		})
 
 		Context("No devices", func() {

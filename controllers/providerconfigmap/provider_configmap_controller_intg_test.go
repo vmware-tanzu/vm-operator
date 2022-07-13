@@ -4,8 +4,6 @@
 package providerconfigmap_test
 
 import (
-	"sync/atomic"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -18,7 +16,6 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/providerconfigmap"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -34,18 +31,9 @@ func intgTestsCM() {
 		cm                *corev1.ConfigMap
 		clUUID            = "dummy-cl"
 		contentSourceKind = "ContentSource"
-
-		// represents the VM Service FSS. This should be manipulated atomically to avoid races where
-		// the controller is trying to read this _while_ the tests are updating it.
-		vmServiceFSS uint32
 	)
 
 	BeforeEach(func() {
-		// Modify the helper function to return the custom value of the FSS
-		lib.IsVMServiceFSSEnabled = func() bool {
-			return atomic.LoadUint32(&vmServiceFSS) != 0
-		}
-
 		ctx = suite.NewIntegrationTestContext()
 		cm = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -145,17 +133,6 @@ func intgTestsCM() {
 		})
 
 		Context("VMService FSS is enabled", func() {
-			var oldVMServiceFSSState uint32
-
-			BeforeEach(func() {
-				oldVMServiceFSSState = vmServiceFSS
-				atomic.StoreUint32(&vmServiceFSS, 1)
-			})
-
-			AfterEach(func() {
-				atomic.StoreUint32(&vmServiceFSS, oldVMServiceFSSState)
-			})
-
 			verifyContentSourceBinding := func(namespace string) {
 				Eventually(func() bool {
 					bindingList := &vmopv1alpha1.ContentSourceBindingList{}

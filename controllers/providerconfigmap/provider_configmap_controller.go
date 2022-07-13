@@ -34,7 +34,6 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -321,11 +320,9 @@ func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *corev1.Conf
 		return err
 	}
 
-	if lib.IsVMServiceFSSEnabled() {
-		// Ensure that all workload namespaces have access to the TKG ContentSource by creating ContentSourceBindings.
-		if err := r.CreateContentSourceBindings(ctx, clUUID); err != nil {
-			return err
-		}
+	// Ensure that all workload namespaces have access to the TKG ContentSource by creating ContentSourceBindings.
+	if err := r.CreateContentSourceBindings(ctx, clUUID); err != nil {
+		return err
 	}
 
 	r.Logger.Info("Finished reconciling VM provider ConfigMap", "name", cm.Name, "namespace", cm.Namespace)

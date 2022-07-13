@@ -8,7 +8,6 @@ import (
 	"reflect"
 
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -23,7 +22,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -87,24 +85,7 @@ func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Resp
 }
 
 func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
-	vmClass, err := v.vmClassFromUnstructured(ctx.Obj)
-	if err != nil {
-		return webhook.Errored(http.StatusBadRequest, err)
-	}
-
-	oldVMClass, err := v.vmClassFromUnstructured(ctx.OldObj)
-	if err != nil {
-		return webhook.Errored(http.StatusBadRequest, err)
-	}
-
 	var fieldErrs field.ErrorList
-
-	// If the WCP_VMService FSS is enabled, we allow VirtualMachineClasses edits.
-	if !lib.IsVMServiceFSSEnabled() {
-		invalidEdits := validation.ValidateImmutableField(vmClass.Spec, oldVMClass.Spec, field.NewPath("spec"))
-		fieldErrs = append(fieldErrs, invalidEdits...)
-	}
-
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
 		validationErrs = append(validationErrs, fieldErr.Error())

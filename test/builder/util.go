@@ -41,10 +41,19 @@ var (
 	converter runtime.UnstructuredConverter = runtime.DefaultUnstructuredConverter
 )
 
-func DummyContentSourceAndProvider(uuid string) (*vmopv1.ContentSource, *vmopv1.ContentLibraryProvider) {
+func DummyContentSourceProviderAndBinding(uuid, namespace string) (
+	*vmopv1.ContentSource,
+	*vmopv1.ContentLibraryProvider,
+	*vmopv1.ContentSourceBinding) {
+
+	contentSourceName := "dummy-content-source"
 	contentLibraryProvider := &vmopv1.ContentLibraryProvider{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "dummy-content-library-provider",
+			OwnerReferences: []metav1.OwnerReference{{
+				Name: contentSourceName,
+				Kind: "ContentSource",
+			}},
 		},
 		Spec: vmopv1.ContentLibraryProviderSpec{
 			UUID: uuid,
@@ -53,7 +62,7 @@ func DummyContentSourceAndProvider(uuid string) (*vmopv1.ContentSource, *vmopv1.
 
 	contentSource := &vmopv1.ContentSource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "dummy-content-source",
+			Name: contentSourceName,
 		},
 		Spec: vmopv1.ContentSourceSpec{
 			ProviderRef: vmopv1.ContentProviderReference{
@@ -63,7 +72,18 @@ func DummyContentSourceAndProvider(uuid string) (*vmopv1.ContentSource, *vmopv1.
 		},
 	}
 
-	return contentSource, contentLibraryProvider
+	csBinding := &vmopv1.ContentSourceBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      contentSourceName,
+			Namespace: namespace,
+		},
+		ContentSourceRef: vmopv1.ContentSourceReference{
+			Kind: "ContentSource",
+			Name: contentSourceName,
+		},
+	}
+
+	return contentSource, contentLibraryProvider, csBinding
 }
 
 func DummyVirtualMachineClass() *vmopv1.VirtualMachineClass {
@@ -90,6 +110,61 @@ func DummyVirtualMachineClass() *vmopv1.VirtualMachineClass {
 			},
 		},
 	}
+}
+
+func DummyVirtualMachineClassBinding(className, namespace string) *vmopv1.VirtualMachineClassBinding {
+	return &vmopv1.VirtualMachineClassBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "test-",
+			Namespace:    namespace,
+		},
+		ClassRef: vmopv1.ClassReference{
+			Name: className,
+			Kind: "VirtualMachineClass",
+		},
+	}
+}
+
+func DummyVirtualMachineClassAndBinding(className, namespace string) (
+	*vmopv1.VirtualMachineClass,
+	*vmopv1.VirtualMachineClassBinding) {
+
+	class := &vmopv1.VirtualMachineClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: className,
+		},
+		Spec: vmopv1.VirtualMachineClassSpec{
+			Hardware: vmopv1.VirtualMachineClassHardware{
+				Cpus:   int64(2),
+				Memory: resource.MustParse("4Gi"),
+			},
+			Policies: vmopv1.VirtualMachineClassPolicies{
+				Resources: vmopv1.VirtualMachineClassResources{
+					Requests: vmopv1.VirtualMachineResourceSpec{
+						Cpu:    resource.MustParse("1Gi"),
+						Memory: resource.MustParse("2Gi"),
+					},
+					Limits: vmopv1.VirtualMachineResourceSpec{
+						Cpu:    resource.MustParse("2Gi"),
+						Memory: resource.MustParse("4Gi"),
+					},
+				},
+			},
+		},
+	}
+
+	binding := &vmopv1.VirtualMachineClassBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      className,
+			Namespace: namespace,
+		},
+		ClassRef: vmopv1.ClassReference{
+			Name: className,
+			Kind: "VirtualMachineClass",
+		},
+	}
+
+	return class, binding
 }
 
 func DummyInstanceStorage() vmopv1.InstanceStorage {

@@ -74,10 +74,6 @@ var IsWcpFaultDomainsFSSEnabled = func() bool {
 	return os.Getenv(WcpFaultDomainsFSS) == trueString
 }
 
-var IsVMServiceFSSEnabled = func() bool {
-	return os.Getenv(VMServiceFSS) == trueString
-}
-
 var IsVMServiceV1Alpha2FSSEnabled = func() bool {
 	return os.Getenv(VMServiceV1Alpha2FSS) == trueString
 }

@@ -6,7 +6,6 @@ package vsphere_test
 import (
 	goctx "context"
 	"fmt"
-	"reflect"
 	"sync/atomic"
 
 	. "github.com/onsi/ginkgo"
@@ -28,19 +27,13 @@ import (
 func vmUtilTests() {
 
 	var (
-		k8sClient    client.Client
-		initObjects  []client.Object
-		vmServiceFSS uint32
+		k8sClient   client.Client
+		initObjects []client.Object
 
 		vmCtx context.VirtualMachineContext
 	)
 
 	BeforeEach(func() {
-		// Modify the helper function to return the custom value of the FSS
-		lib.IsVMServiceFSSEnabled = func() bool {
-			return atomic.LoadUint32(&vmServiceFSS) != 0
-		}
-
 		vm := builder.DummyBasicVirtualMachine("test-vm", "dummy-ns")
 
 		vmCtx = context.VirtualMachineContext{
@@ -57,7 +50,6 @@ func vmUtilTests() {
 	AfterEach(func() {
 		k8sClient = nil
 		initObjects = nil
-		atomic.StoreUint32(&vmServiceFSS, 0)
 	})
 
 	Context("GetVirtualMachineClass", func() {
@@ -68,74 +60,45 @@ func vmUtilTests() {
 		)
 
 		BeforeEach(func() {
-			vmClass = &vmopv1alpha1.VirtualMachineClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "dummy-vmclass",
-				},
-			}
-
+			vmClass, vmClassBinding = builder.DummyVirtualMachineClassAndBinding("dummy-vm-class", vmCtx.VM.Namespace)
 			vmCtx.VM.Spec.ClassName = vmClass.Name
-
-			vmClassBinding = &vmopv1alpha1.VirtualMachineClassBinding{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "dummy-class-binding",
-					Namespace: vmCtx.VM.Namespace,
-				},
-				ClassRef: vmopv1alpha1.ClassReference{
-					APIVersion: vmopv1alpha1.SchemeGroupVersion.Group,
-					Name:       vmClass.Name,
-					Kind:       reflect.TypeOf(vmClass).Elem().Name(),
-				},
-			}
 		})
 
-		It("Returns error and sets condition when VM Class does not exist", func() {
-			expectedErrMsg := fmt.Sprintf("Failed to get VirtualMachineClass: %s", vmCtx.VM.Spec.ClassName)
+		Context("VirtualMachineClass custom resource doesn't exist", func() {
+			It("Returns error and sets condition when VM Class does not exist", func() {
+				expectedErrMsg := fmt.Sprintf("Failed to get VirtualMachineClass: %s", vmCtx.VM.Spec.ClassName)
 
-			_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
-
-			expectedCondition := vmopv1alpha1.Conditions{
-				*conditions.FalseCondition(
-					vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-					vmopv1alpha1.VirtualMachineClassNotFoundReason,
-					vmopv1alpha1.ConditionSeverityError,
-					expectedErrMsg),
-			}
-			Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
-		})
-
-		When("VM Class exists", func() {
-			BeforeEach(func() {
-				initObjects = append(initObjects, vmClass)
-			})
-
-			It("returns success", func() {
-				class, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(class).ToNot(BeNil())
-			})
-		})
-
-		When("WCP_VMService FSS is enabled", func() {
-
-			validateNoVMClassBindingCondition := func(vm *vmopv1alpha1.VirtualMachine) {
-				msg := fmt.Sprintf("Namespace %s does not have access to VirtualMachineClass %s", vm.Namespace, vm.Spec.ClassName)
+				_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
 				expectedCondition := vmopv1alpha1.Conditions{
 					*conditions.FalseCondition(
 						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-						vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+						vmopv1alpha1.VirtualMachineClassNotFoundReason,
 						vmopv1alpha1.ConditionSeverityError,
-						msg),
+						expectedErrMsg),
 				}
 				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
-			}
+			})
+		})
 
+		validateNoVMClassBindingCondition := func(vm *vmopv1alpha1.VirtualMachine) {
+			msg := fmt.Sprintf("Namespace %s does not have access to VirtualMachineClass %s", vm.Namespace, vm.Spec.ClassName)
+
+			expectedCondition := vmopv1alpha1.Conditions{
+				*conditions.FalseCondition(
+					vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+					vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
+					vmopv1alpha1.ConditionSeverityError,
+					msg),
+			}
+			Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+		}
+
+		Context("VirtualMachineClass custom resource exists", func() {
 			BeforeEach(func() {
 				initObjects = append(initObjects, vmClass)
-				atomic.StoreUint32(&vmServiceFSS, 1)
 			})
 
 			Context("No VirtualMachineClassBinding exists in namespace", func() {
@@ -177,6 +140,7 @@ func vmUtilTests() {
 				})
 			})
 		})
+
 	})
 
 	Context("GetVMImageAndContentLibraryUUID", func() {
@@ -189,47 +153,13 @@ func vmUtilTests() {
 		)
 
 		BeforeEach(func() {
-			contentSource = &vmopv1alpha1.ContentSource{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "dummy-contentsource",
-				},
-			}
-
-			// For ContentSourceBindings Condition tests, we need to add an OwnerRef to the VM image
-			// to point to the ContentLibraryProvider.
-			clProvider = &vmopv1alpha1.ContentLibraryProvider{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "dummy-contentlibraryprovider",
-					OwnerReferences: []metav1.OwnerReference{{
-						Name: contentSource.Name,
-						Kind: "ContentSource",
-						// UID:  contentSource.UID,
-					}},
-				},
-				Spec: vmopv1alpha1.ContentLibraryProviderSpec{
-					UUID: "dummy-cl-uuid",
-				},
-			}
-
-			contentSourceBinding = &vmopv1alpha1.ContentSourceBinding{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "fake-contentsource-binding",
-					Namespace: vmCtx.VM.Namespace,
-				},
-				ContentSourceRef: vmopv1alpha1.ContentSourceReference{
-					APIVersion: vmopv1alpha1.SchemeGroupVersion.Group,
-					Name:       contentSource.Name,
-					Kind:       reflect.TypeOf(contentSource).Elem().Name(),
-				},
-			}
-
+			contentSource, clProvider, contentSourceBinding = builder.DummyContentSourceProviderAndBinding("dummy-cl-uuid", vmCtx.VM.Namespace)
 			vmImage = &vmopv1alpha1.VirtualMachineImage{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "dummy-image",
 					OwnerReferences: []metav1.OwnerReference{{
 						Name: clProvider.Name,
 						Kind: "ContentLibraryProvider",
-						// UID:  clProvider.UID,
 					}},
 				},
 			}
@@ -237,24 +167,26 @@ func vmUtilTests() {
 			vmCtx.VM.Spec.ImageName = vmImage.Name
 		})
 
-		It("returns error and sets condition when VM Image does not exist", func() {
-			expectedErrMsg := fmt.Sprintf("Failed to get VirtualMachineImage: %s", vmCtx.VM.Spec.ImageName)
+		When("VirtualMachineImage does not exist", func() {
+			It("returns error and sets condition", func() {
+				expectedErrMsg := fmt.Sprintf("Failed to get VirtualMachineImage: %s", vmCtx.VM.Spec.ImageName)
 
-			_, _, err := vsphere.GetVMImageAndContentLibraryUUID(vmCtx, k8sClient)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+				_, _, err := vsphere.GetVMImageAndContentLibraryUUID(vmCtx, k8sClient)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
-			expectedCondition := vmopv1alpha1.Conditions{
-				*conditions.FalseCondition(
-					vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-					vmopv1alpha1.VirtualMachineImageNotFoundReason,
-					vmopv1alpha1.ConditionSeverityError,
-					expectedErrMsg),
-			}
-			Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+				expectedCondition := vmopv1alpha1.Conditions{
+					*conditions.FalseCondition(
+						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+						vmopv1alpha1.VirtualMachineImageNotFoundReason,
+						vmopv1alpha1.ConditionSeverityError,
+						expectedErrMsg),
+				}
+				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+			})
 		})
 
-		When("ContentSourceProvider does not exist", func() {
+		When("ContentLibraryProvider does not exist", func() {
 			BeforeEach(func() {
 				initObjects = append(initObjects, vmImage)
 			})
@@ -277,40 +209,24 @@ func vmUtilTests() {
 			})
 		})
 
-		When("ContentSourceProvider exists", func() {
-			BeforeEach(func() {
-				initObjects = append(initObjects, vmImage, clProvider)
-			})
+		validateNoContentSourceBindingCondition := func(vm *vmopv1alpha1.VirtualMachine, clUUID string) {
+			msg := fmt.Sprintf("Namespace %s does not have access to ContentSource %s for VirtualMachineImage %s",
+				vm.Namespace, clUUID, vm.Spec.ImageName)
 
-			It("returns success", func() {
-				image, uuid, err := vsphere.GetVMImageAndContentLibraryUUID(vmCtx, k8sClient)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(image).ToNot(BeNil())
-				Expect(uuid).ToNot(BeEmpty())
-				Expect(uuid).To(Equal(clProvider.Spec.UUID))
-			})
-		})
-
-		When("WCP_VMService FSS is enabled", func() {
-
-			validateNoContentSourceBindingCondition := func(vm *vmopv1alpha1.VirtualMachine, clUUID string) {
-				msg := fmt.Sprintf("Namespace %s does not have access to ContentSource %s for VirtualMachineImage %s",
-					vm.Namespace, clUUID, vm.Spec.ImageName)
-
-				expectedCondition := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(
-						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-						vmopv1alpha1.ContentSourceBindingNotFoundReason,
-						vmopv1alpha1.ConditionSeverityError,
-						msg),
-				}
-
-				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+			expectedCondition := vmopv1alpha1.Conditions{
+				*conditions.FalseCondition(
+					vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+					vmopv1alpha1.ContentSourceBindingNotFoundReason,
+					vmopv1alpha1.ConditionSeverityError,
+					msg),
 			}
 
+			Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+		}
+
+		Context("VirtualMachineImage and ContentLibraryProvider exist", func() {
 			BeforeEach(func() {
 				initObjects = append(initObjects, clProvider, vmImage)
-				atomic.StoreUint32(&vmServiceFSS, 1)
 			})
 
 			When("No ContentSourceBindings exist in the namespace", func() {

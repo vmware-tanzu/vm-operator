@@ -9,29 +9,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
-
-func (s *Session) DeleteVirtualMachine(vmCtx context.VirtualMachineContext) error {
-	resVM, err := s.GetVirtualMachine(vmCtx)
-	if err != nil {
-		return err
-	}
-
-	moVM, err := resVM.GetProperties(vmCtx, []string{"summary.runtime"})
-	if err != nil {
-		return err
-	}
-
-	if moVM.Summary.Runtime.PowerState != vimTypes.VirtualMachinePowerStatePoweredOff {
-		if err := resVM.SetPowerState(vmCtx, vmopv1alpha1.VirtualMachinePoweredOff); err != nil {
-			return err
-		}
-	}
-
-	return resVM.Delete(vmCtx)
-}
 
 func updateVirtualDiskDeviceChanges(
 	vmCtx context.VirtualMachineContext,

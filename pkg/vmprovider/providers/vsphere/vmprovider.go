@@ -12,21 +12,18 @@ import (
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
-	vimtypes "github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
 
 const (
@@ -113,75 +110,6 @@ func (vs *vSphereVMProvider) getOpID(vm *v1alpha1.VirtualMachine, operation stri
 	}
 
 	return strings.Join([]string{"vmoperator", vm.Name, operation, string(id)}, "-")
-}
-
-func (vs *vSphereVMProvider) DeleteVirtualMachine(ctx goctx.Context, vm *v1alpha1.VirtualMachine) error {
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "delete")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
-	}
-
-	vmCtx.Logger.Info("Deleting VirtualMachine")
-
-	if lib.IsWcpFaultDomainsFSSEnabled() {
-		if err := vs.reverseVMZoneLookup(vmCtx); err != nil {
-			return err
-		}
-	}
-
-	ses, err := vs.sessions.GetSessionForVM(vmCtx)
-	if err != nil {
-		return err
-	}
-
-	err = ses.DeleteVirtualMachine(vmCtx)
-	if err != nil {
-		vmCtx.Logger.Error(err, "Failed to delete VM")
-		return err
-	}
-
-	return nil
-}
-
-func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(ctx goctx.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error) {
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "heartbeat")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
-	}
-
-	vcVM, err := vs.getVM(vmCtx)
-	if err != nil {
-		return "", err
-	}
-
-	status, err := virtualmachine.GetGuestHeartBeatStatus(vmCtx, vcVM)
-	if err != nil {
-		return "", err
-	}
-
-	return status, nil
-}
-
-func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(ctx goctx.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error) {
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, vimtypes.ID{}, vs.getOpID(vm, "webconsole")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
-	}
-
-	vcVM, err := vs.getVM(vmCtx)
-	if err != nil {
-		return "", err
-	}
-
-	ticket, err := virtualmachine.GetWebConsoleTicket(vmCtx, vcVM, pubKey)
-	if err != nil {
-		return "", err
-	}
-
-	return ticket, nil
 }
 
 func (vs *vSphereVMProvider) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {

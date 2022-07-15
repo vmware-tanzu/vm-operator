@@ -85,6 +85,71 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 	return vs.updateVirtualMachine(vmCtx, vcVM)
 }
 
+func (vs *vSphereVMProvider) DeleteVirtualMachine(
+	ctx goctx.Context,
+	vm *vmopv1alpha1.VirtualMachine) error {
+
+	vmCtx := context.VirtualMachineContext{
+		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "deleteVM")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
+	vcVM, err := vs.getVM(vmCtx)
+	if err != nil {
+		return err
+	}
+
+	return virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
+}
+
+func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
+	ctx goctx.Context,
+	vm *vmopv1alpha1.VirtualMachine) (vmopv1alpha1.GuestHeartbeatStatus, error) {
+
+	vmCtx := context.VirtualMachineContext{
+		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "heartbeat")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
+	vcVM, err := vs.getVM(vmCtx)
+	if err != nil {
+		return "", err
+	}
+
+	status, err := virtualmachine.GetGuestHeartBeatStatus(vmCtx, vcVM)
+	if err != nil {
+		return "", err
+	}
+
+	return status, nil
+}
+
+func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
+	ctx goctx.Context,
+	vm *vmopv1alpha1.VirtualMachine,
+	pubKey string) (string, error) {
+
+	vmCtx := context.VirtualMachineContext{
+		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "webconsole")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
+	vcVM, err := vs.getVM(vmCtx)
+	if err != nil {
+		return "", err
+	}
+
+	ticket, err := virtualmachine.GetWebConsoleTicket(vmCtx, vcVM, pubKey)
+	if err != nil {
+		return "", err
+	}
+
+	return ticket, nil
+}
+
 func (vs *vSphereVMProvider) createVirtualMachine(
 	vmCtx context.VirtualMachineContext,
 	vcClient *vcclient.Client) (*object.VirtualMachine, error) {

@@ -76,26 +76,6 @@ func (vm *VirtualMachine) Clone(ctx context.Context, folder *object.Folder, clon
 	return &ref, nil
 }
 
-func (vm *VirtualMachine) Delete(ctx context.Context) error {
-	vm.logger.V(5).Info("Delete VM")
-
-	if vm.vcVirtualMachine == nil {
-		return fmt.Errorf("failed to delete VM because the VM object is not set")
-	}
-
-	destroyTask, err := vm.vcVirtualMachine.Destroy(ctx)
-	if err != nil {
-		return err
-	}
-
-	_, err = destroyTask.WaitForResult(ctx, nil)
-	if err != nil {
-		return errors.Wrapf(err, "delete VM task failed")
-	}
-
-	return nil
-}
-
 func (vm *VirtualMachine) Reconfigure(ctx context.Context, configSpec *types.VirtualMachineConfigSpec) error {
 	vm.logger.V(5).Info("Reconfiguring VM", "configSpec", configSpec)
 

@@ -7,10 +7,21 @@ import (
 	"testing"
 
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func TestVirtualMachine(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "vSphere Provider VirtualMachine Suite")
+func vcSimTests() {
+	Describe("Delete", deleteTests)
+	Describe("Power State", powerStateTests)
 }
+
+var suite = builder.NewTestSuite()
+
+func TestClusterModules(t *testing.T) {
+	suite.Register(t, "vSphere Provider VirtualMachine Suite", nil, vcSimTests)
+}
+
+var _ = BeforeSuite(suite.BeforeSuite)
+
+var _ = AfterSuite(suite.AfterSuite)

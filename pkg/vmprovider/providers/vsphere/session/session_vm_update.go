@@ -29,7 +29,15 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
 
-func ethCardMatch(newEthCard, curEthCard *vimTypes.VirtualEthernetCard) bool {
+func ethCardMatch(newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCard) bool {
+	if lib.IsVMClassAsConfigFSSEnabled() {
+		if reflect.TypeOf(curBaseEthCard) != reflect.TypeOf(newBaseEthCard) {
+			return false
+		}
+	}
+
+	curEthCard := curBaseEthCard.GetVirtualEthernetCard()
+	newEthCard := newBaseEthCard.GetVirtualEthernetCard()
 	if newEthCard.AddressType == string(vimTypes.VirtualEthernetCardMacTypeManual) {
 		// If the new card has an assigned MAC address, then it should match with
 		// the current card. Note only NCP sets the MAC address.
@@ -45,8 +53,6 @@ func ethCardMatch(newEthCard, curEthCard *vimTypes.VirtualEthernetCard) bool {
 			return false
 		}
 	}
-
-	// TODO: Compare other attributes, like the card type (e1000 vs vmxnet3).
 
 	return true
 }
@@ -78,7 +84,7 @@ func UpdateEthCardDeviceChanges(
 			// This assumes we don't have multiple NICs in the same backing network. This is kind of, sort
 			// of enforced by the webhook, but we lack a guaranteed way to match up the NICs.
 
-			if !ethCardMatch(expectedNic.GetVirtualEthernetCard(), nic.GetVirtualEthernetCard()) {
+			if !ethCardMatch(expectedNic, nic) {
 				continue
 			}
 
@@ -502,7 +508,7 @@ func (s *Session) ensureNetworkInterfaces(
 	deviceKey := int32(-100)
 
 	var networkDevices []vimTypes.BaseVirtualDevice
-	if lib.IsVMClassAsConfigFSSEnabled() {
+	if lib.IsVMClassAsConfigFSSEnabled() && classSpec.ConfigSpec != nil {
 		var err error
 		networkDevices, err = networkDevicesFromConfigSpec(vmCtx, classSpec.ConfigSpec.XML)
 		if err != nil {
@@ -533,6 +539,8 @@ func (s *Session) ensureNetworkInterfaces(
 					ethCardFromNetProvider.GetVirtualEthernetCard().ExternalId
 				networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress =
 					ethCardFromNetProvider.GetVirtualEthernetCard().MacAddress
+				// If the device from VM class has a DVX backing, this should still work if the backing as well
+				// as the DVX backing are set. VPXD checks for DVX backing before checking for normal device backings.
 				networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().Backing =
 					ethCardFromNetProvider.GetVirtualEthernetCard().Backing
 

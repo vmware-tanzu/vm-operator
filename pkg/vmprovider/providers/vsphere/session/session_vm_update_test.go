@@ -19,6 +19,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
@@ -536,6 +537,30 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
+		Context("No device change when nothing changes", func() {
+			var card1 vimTypes.BaseVirtualDevice
+			var key1 int32 = 100
+			var card2 vimTypes.BaseVirtualDevice
+			var key2 int32 = 200
+
+			BeforeEach(func() {
+				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				card1.GetVirtualDevice().Key = key1
+				expectedList = append(expectedList, card1)
+
+				card2, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				card2.GetVirtualDevice().Key = key2
+				currentList = append(currentList, card2)
+			})
+
+			It("returns no device changes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deviceChanges).To(HaveLen(0))
+			})
+		})
+
 		Context("Add device", func() {
 			var card1 vimTypes.BaseVirtualDevice
 			var key1 int32 = 100
@@ -605,6 +630,47 @@ var _ = Describe("Update ConfigSpec", func() {
 				card2.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeManual)
 				card2.(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = "mac2"
 				currentList = append(currentList, card2)
+			})
+
+			It("returns remove and add device changes", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deviceChanges).To(HaveLen(2))
+
+				configSpec := deviceChanges[0].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card2.GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationRemove))
+
+				configSpec = deviceChanges[1].GetVirtualDeviceConfigSpec()
+				Expect(configSpec.Device.GetVirtualDevice().Key).To(Equal(card1.GetVirtualDevice().Key))
+				Expect(configSpec.Operation).To(Equal(vimTypes.VirtualDeviceConfigSpecOperationAdd))
+			})
+		})
+
+		Context("When WCP_VMClassAdd and remove device when card type is different", func() {
+			var card1 vimTypes.BaseVirtualDevice
+			var key1 int32 = 100
+			var card2 vimTypes.BaseVirtualDevice
+			var key2 int32 = 200
+			var oldVMClassAsConfigFunc func() bool
+
+			BeforeEach(func() {
+				oldVMClassAsConfigFunc = lib.IsVMClassAsConfigFSSEnabled
+				lib.IsVMClassAsConfigFSSEnabled = func() bool {
+					return true
+				}
+				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				card1.GetVirtualDevice().Key = key1
+				expectedList = append(expectedList, card1)
+
+				card2, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet2", dvpg1)
+				Expect(err).ToNot(HaveOccurred())
+				card2.GetVirtualDevice().Key = key2
+				currentList = append(currentList, card2)
+			})
+
+			AfterEach(func() {
+				lib.IsVMClassAsConfigFSSEnabled = oldVMClassAsConfigFunc
 			})
 
 			It("returns remove and add device changes", func() {

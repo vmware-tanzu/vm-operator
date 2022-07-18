@@ -164,7 +164,9 @@ func GetVmwareSystemPropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]stri
 		for _, product := range ovfEnvelope.VirtualSystem.Product {
 			for _, prop := range product.Property {
 				if strings.HasPrefix(prop.Key, "vmware-system") {
-					properties[prop.Key] = *prop.Default
+					if prop.Default != nil {
+						properties[prop.Key] = *prop.Default
+					}
 				}
 			}
 		}

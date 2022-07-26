@@ -78,6 +78,27 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 		if AddDefaultNetworkInterface(ctx, m.client, modified) {
 			wasMutated = true
 		}
+	} else {
+		// Prevent someone from setting the Spec.VmMetadata.SecretName
+		// field to an empty string if the field is already set to a
+		// non-empty string.
+		if original.Spec.VmMetadata.SecretName == "" {
+			var currentVM vmopv1.VirtualMachine
+			if err := m.client.Get(
+				ctx,
+				client.ObjectKey{
+					Namespace: vm.Namespace,
+					Name:      vm.Name,
+				},
+				&currentVM); err != nil {
+
+				return admission.Errored(http.StatusInternalServerError, err)
+			}
+			if sn := currentVM.Spec.VmMetadata.SecretName; sn != "" {
+				modified.Spec.VmMetadata.SecretName = sn
+				wasMutated = true
+			}
+		}
 	}
 
 	if !wasMutated {

@@ -10,6 +10,7 @@ import (
 	"reflect"
 
 	"github.com/pkg/errors"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -64,6 +65,10 @@ type mutator struct {
 
 //nolint
 func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
+	if ctx.Op == admissionv1.Delete {
+		return admission.Allowed("")
+	}
+
 	vm, err := m.vmFromUnstructured(ctx.Obj)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
@@ -73,30 +78,25 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 	original := vm
 	modified := original.DeepCopy()
 
-	// Check and Add default NetworkInterface only for a newly created VM.
-	if modified.CreationTimestamp.IsZero() {
+	switch ctx.Op {
+	case admissionv1.Create:
 		if AddDefaultNetworkInterface(ctx, m.client, modified) {
 			wasMutated = true
 		}
-	} else {
+	case admissionv1.Update:
 		// Prevent someone from setting the Spec.VmMetadata.SecretName
 		// field to an empty string if the field is already set to a
 		// non-empty string.
-		if original.Spec.VmMetadata.SecretName == "" {
-			var currentVM vmopv1.VirtualMachine
-			if err := m.client.Get(
-				ctx,
-				client.ObjectKey{
-					Namespace: vm.Namespace,
-					Name:      vm.Name,
-				},
-				&currentVM); err != nil {
-
+		if omd := original.Spec.VmMetadata; omd != nil && omd.SecretName == "" {
+			vmOnDisk, err := m.vmFromUnstructured(ctx.OldObj)
+			if err != nil {
 				return admission.Errored(http.StatusInternalServerError, err)
 			}
-			if sn := currentVM.Spec.VmMetadata.SecretName; sn != "" {
-				modified.Spec.VmMetadata.SecretName = sn
-				wasMutated = true
+			if cmd := vmOnDisk.Spec.VmMetadata; cmd != nil {
+				if sn := cmd.SecretName; sn != "" {
+					modified.Spec.VmMetadata.SecretName = sn
+					wasMutated = true
+				}
 			}
 		}
 	}

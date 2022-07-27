@@ -152,6 +152,7 @@ func (h *validatingWebhookHandler) Handle(_ goctx.Context, req admission.Request
 	// Create the webhook request context.
 	webhookRequestContext := &context.WebhookRequestContext{
 		WebhookContext:      h.WebhookContext,
+		Op:                  req.Operation,
 		Obj:                 obj,
 		OldObj:              oldObj,
 		UserInfo:            req.UserInfo,

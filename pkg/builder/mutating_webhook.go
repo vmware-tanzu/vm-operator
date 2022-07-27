@@ -44,7 +44,7 @@ type Mutator interface {
 	Mutate(*context.WebhookRequestContext) admission.Response
 }
 
-type MutatorFunc func(client client.Client) Mutator
+type MutatorFunc func(client.Client) Mutator
 
 // NewMutatingWebhook returns a new admissions webhook for mutating requests.
 func NewMutatingWebhook(
@@ -107,18 +107,45 @@ func (h *mutatingWebhookHandler) Handle(_ goctx.Context, req admission.Request) 
 		panic("mutator should never be nil")
 	}
 
-	obj := &unstructured.Unstructured{}
-	if err := h.DecodeRaw(req.Object, obj); err != nil {
-		return webhook.Errored(http.StatusBadRequest, err)
+	var (
+		obj, oldObj *unstructured.Unstructured
+	)
+
+	// Get the Object for Create and Update operations.
+	//
+	// For Delete operations the OldObject contains the Object being
+	// deleted. Please see https://github.com/kubernetes/kubernetes/pull/76346
+	// for more information.
+
+	if req.Operation == admissionv1.Create || req.Operation == admissionv1.Update {
+		obj = &unstructured.Unstructured{}
+		if err := h.DecodeRaw(req.Object, obj); err != nil {
+			return webhook.Errored(http.StatusBadRequest, err)
+		}
+	} else if req.Operation == admissionv1.Delete {
+		oldObj = &unstructured.Unstructured{}
+		if err := h.DecodeRaw(req.OldObject, oldObj); err != nil {
+			return webhook.Errored(http.StatusBadRequest, err)
+		}
 	}
 
 	if req.Operation == admissionv1.Update && !obj.GetDeletionTimestamp().IsZero() {
 		return admission.Allowed(AdmitMesgUpdateOnDeleting)
 	}
 
+	// Get the old Object for Update operations.
+	if req.Operation == admissionv1.Update {
+		oldObj = &unstructured.Unstructured{}
+		if err := h.DecodeRaw(req.OldObject, oldObj); err != nil {
+			return webhook.Errored(http.StatusBadRequest, err)
+		}
+	}
+
 	webhookRequestContext := &context.WebhookRequestContext{
 		WebhookContext:      h.WebhookContext,
+		Op:                  req.Operation,
 		Obj:                 obj,
+		OldObj:              oldObj,
 		UserInfo:            req.UserInfo,
 		IsPrivilegedAccount: isPrivilegedAccount(h.WebhookContext, req.UserInfo),
 		Logger:              h.WebhookContext.Logger.WithName(obj.GetNamespace()).WithName(obj.GetName()),

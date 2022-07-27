@@ -8,10 +8,14 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	jsonpatch "gomodules.xyz/jsonpatch/v2"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -59,6 +63,69 @@ func unitTestsMutating() {
 				ctx.WebhookRequestContext.Obj.SetDeletionTimestamp(&t)
 				response := ctx.Mutate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+	})
+
+	Describe("Handling Spec.VmMetadata.SecretName", func() {
+
+		var (
+			secretNameInWebhookContext string
+			response                   admission.Response
+		)
+
+		BeforeEach(func() {
+			ctx.vm.Spec.VmMetadata.ConfigMapName = ""
+		})
+		JustBeforeEach(func() {
+			ctx.WebhookRequestContext.Op = admissionv1.Update
+			Expect(ctx.vm.Name).To(BeEmpty())
+			ctx.vm.CreationTimestamp = metav1.Now()
+			Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+
+			// Assert the name was generated.
+			Expect(ctx.vm.Name).ToNot(BeEmpty())
+
+			// Update the webhook context with the object.
+			obj, err := builder.ToUnstructured(ctx.vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(obj).ToNot(BeNil())
+			ctx.WebhookRequestContext.Obj = obj
+			ctx.WebhookRequestContext.OldObj = obj.DeepCopy()
+
+			Expect(unstructured.SetNestedField(
+				ctx.WebhookRequestContext.Obj.Object,
+				secretNameInWebhookContext,
+				"spec", "vmMetadata", "secretName",
+			)).To(Succeed())
+
+			response = ctx.Mutate(&ctx.WebhookRequestContext)
+			Expect(response.Allowed).To(BeTrue())
+		})
+		When("it is empty", func() {
+			BeforeEach(func() {
+				secretNameInWebhookContext = "my-secret"
+			})
+			Specify("a request to set it to non-zero value should be allowed", func() {
+				Expect(response.PatchType).To(BeNil())
+				Expect(response.Patches).To(BeEmpty())
+			})
+		})
+		When("it is non-empty", func() {
+			BeforeEach(func() {
+				secretNameInWebhookContext = ""
+				ctx.vm.Spec.VmMetadata.SecretName = "my-secret"
+			})
+			Specify("a request to set it to zero-length string should be mutated with the current value", func() {
+				Expect(response.PatchType).ToNot(BeNil())
+				Expect(string(*response.PatchType)).To(Equal("JSONPatch"))
+				Expect(response.Patches).To(Equal([]jsonpatch.Operation{
+					{
+						Operation: "add",
+						Path:      "/spec/vmMetadata/secretName",
+						Value:     "my-secret",
+					},
+				}))
 			})
 		})
 	})

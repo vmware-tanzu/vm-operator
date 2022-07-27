@@ -6,6 +6,7 @@ package context
 import (
 	"fmt"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	authv1 "k8s.io/api/authentication/v1"
 
 	"github.com/go-logr/logr"
@@ -22,6 +23,9 @@ type WebhookRequestContext struct {
 
 	// OldObj is set only for Update requests.
 	OldObj *unstructured.Unstructured
+
+	// Operation is the operation.
+	Op admissionv1.Operation
 
 	// IsPrivilegedAccount is if this request is from a privileged account (currently
 	// that's either kube-admin or the pod's system account).

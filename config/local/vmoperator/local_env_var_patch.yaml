@@ -26,6 +26,8 @@ spec:
           value: "false"
         - name: FSS_WCP_VM_CLASS_AS_CONFIG
           value: "false"
+        - name: FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE
+          value: "false"
         - name: FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI
           value: "false"
         - name: NETWORK_PROVIDER

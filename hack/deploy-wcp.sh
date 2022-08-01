@@ -29,6 +29,9 @@ VSPHERE_NETWORKING_VALUE=${VSPHERE_NETWORKING_VALUE:-false}
 # VM service VM Class as Config
 FSS_WCP_VM_CLASS_AS_CONFIG_VALUE=${FSS_WCP_VM_CLASS_AS_CONFIG_VALUE:-false}
 
+# VM service VM Class as Config Day and Date
+FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE=${FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE:-false}
+
 # VM service Instance Storage
 FSS_WCP_INSTANCE_STORAGE_VALUE=${FSS_WCP_INSTANCE_STORAGE_VALUE:-false}
 
@@ -147,6 +150,11 @@ patchWcpDeploymentYaml() {
     sed -i'' -E "s,\"?<FSS_WCP_VM_CLASS_AS_CONFIG_VALUE>\"?,\"$FSS_WCP_VM_CLASS_AS_CONFIG_VALUE\",g" "artifacts/wcp-deployment.yaml"
     if grep -q "<FSS_WCP_VM_CLASS_AS_CONFIG_VALUE>" artifacts/wcp-deployment.yaml; then
         echo "Failed to subst FSS_WCP_VM_CLASS_AS_CONFIG_VALUE in artifacts/wcp-deployment.yaml"
+        exit 1
+    fi
+    sed -i'' -E "s,\"?<FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE>\"?,\"$FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE\",g" "artifacts/wcp-deployment.yaml"
+    if grep -q "<FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE>" artifacts/wcp-deployment.yaml; then
+        echo "Failed to subst FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE in artifacts/wcp-deployment.yaml"
         exit 1
     fi
     sed -i'' -E "s,\"?<FSS_WCP_FAULTDOMAINS_VALUE>\"?,\"$FSS_WCP_FAULTDOMAINS_VALUE\",g" "artifacts/wcp-deployment.yaml"

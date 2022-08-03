@@ -326,9 +326,6 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineContext) error {
 		controllerutil.RemoveFinalizer(vm, finalizerName)
 		ctx.Logger.Info("Provider Completed deleting Virtual Machine",
 			"time", time.Now().Format(time.RFC3339))
-
-		// Record VM deletion related metrics
-		r.vmMetrics.RegisterVMDeletionMetrics(ctx)
 	}
 
 	// Remove the VM from prober manager if ReconcileDelete succeeds.

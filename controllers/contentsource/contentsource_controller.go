@@ -25,6 +25,7 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
@@ -67,6 +68,7 @@ func NewReconciler(
 		Logger:     logger,
 		Recorder:   recorder,
 		VMProvider: vmProvider,
+		CSMetrics:  metrics.NewContentSourceMetrics(),
 	}
 }
 
@@ -76,6 +78,7 @@ type Reconciler struct {
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider vmprovider.VirtualMachineProviderInterface
+	CSMetrics  *metrics.ContentSourceMetrics
 }
 
 // CreateImage creates thr VirtualMachineImage. If a VirtualMachineImage with the same name alreay exists,
@@ -190,10 +193,14 @@ func GetVMImageName(img vmopv1alpha1.VirtualMachineImage) string {
 }
 
 func (r *Reconciler) ProcessItemFromContentLibrary(ctx goctx.Context,
+	logger logr.Logger,
 	clProvider *vmopv1alpha1.ContentLibraryProvider,
-	itemID string, currentCLImages map[string]vmopv1alpha1.VirtualMachineImage) error {
+	itemID string, currentCLImages map[string]vmopv1alpha1.VirtualMachineImage) (reterr error) {
+	logger.V(4).Info("Processing image item", "itemID", itemID)
+
 	providerImage, err := r.VMProvider.GetVirtualMachineImageFromContentLibrary(ctx, clProvider, itemID, currentCLImages)
 	if err != nil {
+		logger.Error(err, "failed to get VirtualMachineImage from content library")
 		return err
 	}
 
@@ -211,6 +218,10 @@ func (r *Reconciler) ProcessItemFromContentLibrary(ctx goctx.Context,
 			Name:       clProvider.Name,
 			Namespace:  clProvider.Namespace,
 		}
+
+		defer func() {
+			r.CSMetrics.RegisterVMImageCreateOrUpdate(logger, *providerImage, reterr == nil)
+		}()
 
 		if currentImage, ok := currentCLImages[providerImage.Status.ImageName]; !ok {
 			// Create this VM Image
@@ -268,7 +279,7 @@ func (r *Reconciler) SyncImagesFromContentProvider(
 
 	retErrs := make([]error, 0)
 	for _, item := range libItemList {
-		err := r.ProcessItemFromContentLibrary(ctx, clProvider, item, currentCLImages)
+		err := r.ProcessItemFromContentLibrary(ctx, logger, clProvider, item, currentCLImages)
 		if err != nil {
 			retErrs = append(retErrs, err)
 			continue
@@ -285,9 +296,11 @@ func (r *Reconciler) SyncImagesFromContentProvider(
 	// Remaining images in the currentCLImages map were deleted from the CL.
 	// Delete them from the cluster.
 	for _, currentImage := range currentCLImages {
-		if err := r.DeleteImage(ctx, currentImage); err != nil {
+		err := r.DeleteImage(ctx, currentImage)
+		if err != nil {
 			retErrs = append(retErrs, err)
 		}
+		r.CSMetrics.RegisterVMImageDelete(logger, currentImage, err == nil)
 	}
 
 	return k8serrors.NewAggregate(retErrs)
@@ -353,6 +366,8 @@ func (r *Reconciler) ReconcileDeleteProviderRef(ctx goctx.Context, contentSource
 
 	logger.V(4).Info("Reconciling delete for a content provider", "contentProviderName", providerRef.Name,
 		"contentProviderKind", providerRef.Kind, "contentProviderAPIVersion", providerRef.APIVersion)
+
+	r.CSMetrics.DeleteMetrics(logger, providerRef)
 
 	// NoOp. The VirtualMachineImages are automatically deleted because of OwnerReference.
 

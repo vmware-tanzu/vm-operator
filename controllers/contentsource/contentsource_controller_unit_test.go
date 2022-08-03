@@ -487,7 +487,7 @@ func unitTestsCRUDImage() {
 					_ map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error) {
 					return nil, fmt.Errorf("failed to get virtual machine image")
 				}
-				err := reconciler.ProcessItemFromContentLibrary(ctx, &cl, itemID, currentCLImages)
+				err := reconciler.ProcessItemFromContentLibrary(ctx, ctx.Logger, &cl, itemID, currentCLImages)
 				Expect(err).Should(HaveOccurred())
 				Expect(err.Error()).Should(ContainSubstring("failed to get virtual machine image"))
 			})
@@ -519,7 +519,7 @@ func unitTestsCRUDImage() {
 			})
 
 			It("Create a new VirtualMachineImage if VirtualMachineImage doesn't exist", func() {
-				err := reconciler.ProcessItemFromContentLibrary(ctx, &cl, itemID, currentCLImages)
+				err := reconciler.ProcessItemFromContentLibrary(ctx, ctx.Logger, &cl, itemID, currentCLImages)
 				Expect(err).ShouldNot(HaveOccurred())
 			})
 
@@ -536,7 +536,7 @@ func unitTestsCRUDImage() {
 
 				When("Existing image is from another CL", func() {
 					It("Successfully creates the image with a different generated name if the existing", func() {
-						err := reconciler.ProcessItemFromContentLibrary(ctx, &cl, itemID, currentCLImages)
+						err := reconciler.ProcessItemFromContentLibrary(ctx, ctx.Logger, &cl, itemID, currentCLImages)
 						Expect(err).ShouldNot(HaveOccurred())
 
 						imgs := v1alpha1.VirtualMachineImageList{}
@@ -558,7 +558,7 @@ func unitTestsCRUDImage() {
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmImage), img)).To(Succeed())
 						currentCLImages[vmImage.Status.ImageName] = *img
 
-						err := reconciler.ProcessItemFromContentLibrary(ctx, &cl, itemID, currentCLImages)
+						err := reconciler.ProcessItemFromContentLibrary(ctx, ctx.Logger, &cl, itemID, currentCLImages)
 						Expect(err).ShouldNot(HaveOccurred())
 
 						img = &v1alpha1.VirtualMachineImage{}

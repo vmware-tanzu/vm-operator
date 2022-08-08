@@ -311,12 +311,17 @@ func UpdateConfigSpecExtraConfig(
 
 	configSpec.ExtraConfig = MergeExtraConfig(config.ExtraConfig, extraConfig)
 
-	if conditions.IsTrue(vmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) {
-		ecMap := ExtraConfigToMap(config.ExtraConfig)
-		if ecMap[constants.VMOperatorV1Alpha1ExtraConfigKey] == constants.VMOperatorV1Alpha1ConfigReady {
-			// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
-			configSpec.ExtraConfig = append(configSpec.ExtraConfig,
-				&vimTypes.OptionValue{Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigEnabled})
+	// Enabling the defer-cloud-init extraConfig key for V1Alpha1Compatible images defers cloud-init from running on first boot
+	// and disables networking configurations by cloud-init. Therefore, only set the extraConfig key to enabled
+	// when the vmMetadata is nil or when the transport requested is not CloudInit.
+	if vm.Spec.VmMetadata == nil || vm.Spec.VmMetadata.Transport != v1alpha1.VirtualMachineMetadataCloudInitTransport {
+		if conditions.IsTrue(vmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) {
+			ecMap := ExtraConfigToMap(config.ExtraConfig)
+			if ecMap[constants.VMOperatorV1Alpha1ExtraConfigKey] == constants.VMOperatorV1Alpha1ConfigReady {
+				// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
+				configSpec.ExtraConfig = append(configSpec.ExtraConfig,
+					&vimTypes.OptionValue{Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigEnabled})
+			}
 		}
 	}
 }

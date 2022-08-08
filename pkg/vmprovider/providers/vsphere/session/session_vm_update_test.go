@@ -303,6 +303,30 @@ var _ = Describe("Update ConfigSpec", func() {
 					Expect(ecMap).To(HaveKeyWithValue("global", "test"))
 				})
 			})
+
+			Context("When VM uses metadata transport types other than CloudInit", func() {
+				BeforeEach(func() {
+					vm.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
+						Transport:     vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
+						ConfigMapName: "dummy-config",
+					}
+				})
+				It("defer cloud-init extra config is not enabled", func() {
+					Expect(ecMap).To(HaveKeyWithValue("guestinfo.vmservice.defer-cloud-init", "enabled"))
+				})
+			})
+
+			Context("When VM uses CloudInit metadata transport type", func() {
+				BeforeEach(func() {
+					vm.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
+						Transport:     vmopv1alpha1.VirtualMachineMetadataCloudInitTransport,
+						ConfigMapName: "dummy-config",
+					}
+				})
+				It("defer cloud-init extra config is not enabled", func() {
+					Expect(ecMap).ToNot(HaveKeyWithValue("guestinfo.vmservice.defer-cloud-init", "enabled"))
+				})
+			})
 		})
 
 		Context("ExtraConfig value already exists", func() {

@@ -4,15 +4,10 @@
 package virtualmachine
 
 import (
-	"bytes"
-	"encoding/base64"
-	"reflect"
+	"k8s.io/utils/pointer"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
-	"github.com/vmware/govmomi/vim25/xml"
-	"k8s.io/utils/pointer"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -23,18 +18,31 @@ import (
 func CreateConfigSpec(
 	name string,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
-	minFreq uint64) *vimtypes.VirtualMachineConfigSpec {
+	minFreq uint64,
+	vmClassConfigSpec *vimtypes.VirtualMachineConfigSpec) *vimtypes.VirtualMachineConfigSpec {
 
-	configSpec := &vimtypes.VirtualMachineConfigSpec{
-		Name:       name,
-		Annotation: constants.VCVMAnnotation,
-		NumCPUs:    int32(vmClassSpec.Hardware.Cpus),
-		MemoryMB:   MemoryQuantityToMb(vmClassSpec.Hardware.Memory),
-		// Enable clients to differentiate the managed VMs from the regular VMs.
-		ManagedBy: &vimtypes.ManagedByInfo{
-			ExtensionKey: "com.vmware.vcenter.wcp",
-			Type:         "VirtualMachine",
-		},
+	var configSpec *vimtypes.VirtualMachineConfigSpec
+	if vmClassConfigSpec != nil {
+		// Use VMClass ConfigSpec as the initial ConfigSpec.
+		t := *vmClassConfigSpec
+		configSpec = &t
+	} else {
+		configSpec = &vimtypes.VirtualMachineConfigSpec{}
+	}
+
+	configSpec.Name = name
+	configSpec.Annotation = constants.VCVMAnnotation
+	// CPU and Memory configurations specified in the VM Class spec.hardware
+	// takes precedence over values in the config spec
+	// TODO: might need revisiting to conform on a single way of consuming cpu and memory.
+	//  we prefer the vm class CR to have consistent values to reduce confusion.
+	configSpec.NumCPUs = int32(vmClassSpec.Hardware.Cpus)
+	configSpec.MemoryMB = MemoryQuantityToMb(vmClassSpec.Hardware.Memory)
+
+	// TODO: add constants for this key.
+	configSpec.ManagedBy = &vimtypes.ManagedByInfo{
+		ExtensionKey: "com.vmware.vcenter.wcp",
+		Type:         "VirtualMachine",
 	}
 
 	configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
@@ -80,9 +88,10 @@ func CreateConfigSpecForPlacement(
 	vmCtx context.VirtualMachineContext,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	minFreq uint64,
-	storageClassesToIDs map[string]string) *vimtypes.VirtualMachineConfigSpec {
+	storageClassesToIDs map[string]string,
+	vmClassConfigSpec *vimtypes.VirtualMachineConfigSpec) *vimtypes.VirtualMachineConfigSpec {
 
-	configSpec := CreateConfigSpec(vmCtx.VM.Name, vmClassSpec, minFreq)
+	configSpec := CreateConfigSpec(vmCtx.VM.Name, vmClassSpec, minFreq, vmClassConfigSpec)
 
 	// Add a dummy disk for placement: PlaceVmsXCluster expects there to always be at least one disk.
 	// Until we're in a position to have the OVF envelope here, add a dummy disk satisfy it.
@@ -142,56 +151,4 @@ func CreateConfigSpecForPlacement(
 	//  - whatever else I'm forgetting
 
 	return configSpec
-}
-
-// MarshalConfigSpec returns a serialized XML byte array when provided with a VirtualMachineConfigSpec.
-func MarshalConfigSpec(configSpec vimtypes.VirtualMachineConfigSpec) ([]byte, error) {
-	start := xml.StartElement{
-		Name: xml.Name{
-			Local: "obj",
-		},
-		Attr: []xml.Attr{
-			{
-				Name:  xml.Name{Local: "xmlns:" + vim25.Namespace},
-				Value: "urn:" + vim25.Namespace,
-			},
-			{
-				Name:  xml.Name{Local: "xmlns:xsi"},
-				Value: constants.XsiNamespace,
-			},
-			{
-				Name:  xml.Name{Local: "xsi:type"},
-				Value: vim25.Namespace + ":" + reflect.TypeOf(configSpec).Name(),
-			},
-		},
-	}
-	specWriter := new(bytes.Buffer)
-	enc := xml.NewEncoder(specWriter)
-	err := enc.EncodeElement(configSpec, start)
-	if err != nil {
-		return []byte{}, err
-	}
-
-	return specWriter.Bytes(), nil
-}
-
-// DecodeAndUnmarshalConfigSpec returns a ConfigSpec from a base64 encoded XML blob.
-func DecodeAndUnmarshalConfigSpec(vmCtx context.VirtualMachineContext, encodedConfigSpecXML string) (*vimtypes.VirtualMachineConfigSpec, error) {
-	configSpecBytes, err := base64.StdEncoding.DecodeString(encodedConfigSpecXML)
-	if err != nil {
-		vmCtx.Logger.Error(err, "error decoding the base64 encoded VM class ConfigSpec XML", "encodedConfigSpecXML", encodedConfigSpecXML)
-		return nil, err
-	}
-
-	var configSpec *vimtypes.VirtualMachineConfigSpec
-	// Govmomi's default XML decoder doesn't specify a type function, which results in nested types being dropped
-	// from the decoded ConfigSpec.  Use a custom decoder with the default type function to overcome that.
-	decoder := xml.NewDecoder(bytes.NewReader(configSpecBytes))
-	decoder.TypeFunc = vimtypes.TypeFunc()
-	if err := decoder.Decode(&configSpec); err != nil {
-		vmCtx.Logger.Error(err, "error in unmarshling ConfigSpec XML", "configSpecXML", configSpecBytes)
-		return nil, err
-	}
-
-	return configSpec, nil
 }

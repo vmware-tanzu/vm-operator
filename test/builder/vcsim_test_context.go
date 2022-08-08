@@ -86,6 +86,9 @@ type VCSimTestConfig struct {
 
 	// WithVMClassAsConfig enables the WCP_VM_CLASS_AS_CONFIG FSS.
 	WithVMClassAsConfig bool
+
+	// WithVMClassAsConfigDaynDate enables the WCP_VM_CLASS_AS_CONFIG_DAYNDATE FSS.
+	WithVMClassAsConfigDaynDate bool
 }
 
 type TestContextForVCSim struct {
@@ -322,6 +325,12 @@ func (c *TestContextForVCSim) setupEnvFSS(config VCSimTestConfig) {
 		vmClassAsConfig = "true"
 	}
 	Expect(os.Setenv(lib.VMClassAsConfigFSS, vmClassAsConfig)).To(Succeed())
+
+	vmClassAsConfigDaynDate := "false"
+	if config.WithVMClassAsConfigDaynDate {
+		vmClassAsConfigDaynDate = "true"
+	}
+	Expect(os.Setenv(lib.VMClassAsConfigDaynDateFSS, vmClassAsConfigDaynDate)).To(Succeed())
 
 	if config.WithJSONExtraConfig != "" {
 		Expect(os.Setenv("JSON_EXTRA_CONFIG", config.WithJSONExtraConfig)).To(Succeed())

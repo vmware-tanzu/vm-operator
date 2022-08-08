@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vimTypes "github.com/vmware/govmomi/vim25/types"
 )
 
 type VMMetadata struct {
@@ -21,6 +22,7 @@ type VMConfigArgs struct {
 	VMMetadata         VMMetadata
 	StorageProfileID   string
 	ContentLibraryUUID string
+	ConfigSpec         *vimTypes.VirtualMachineConfigSpec
 }
 
 // VirtualMachineProviderInterface is a plugable interface for VM Providers.

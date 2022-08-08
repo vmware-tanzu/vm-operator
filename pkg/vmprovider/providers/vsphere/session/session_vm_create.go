@@ -26,7 +26,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
 
 type VirtualMachineCloneContext struct {
@@ -53,7 +52,7 @@ func (s *Session) deployOvf(vmCtx VirtualMachineCloneContext, itemID string, sto
 	}
 
 	if lib.IsVMClassAsConfigFSSEnabled() && vmCtx.ConfigSpec != nil {
-		configSpecBytes, err := virtualmachine.MarshalConfigSpec(*vmCtx.ConfigSpec)
+		configSpecBytes, err := util.MarshalConfigSpecToXML(*vmCtx.ConfigSpec)
 		if err != nil {
 			return nil, err
 		}
@@ -288,18 +287,6 @@ func (s *Session) createCloneSpec(
 	sourceVM *res.VirtualMachine,
 	vmConfigArgs vmprovider.VMConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
 
-	// Unmarshal the ConfigSpec from the VM Class.
-	var configSpecFromClass vimTypes.VirtualMachineConfigSpec
-	if lib.IsVMClassAsConfigFSSEnabled() {
-		if data := vmConfigArgs.VMClass.Spec.ConfigSpec.XML; len(data) > 0 {
-			spec, err := util.UnmarshalConfigSpecFromBase64XML([]byte(data))
-			if err != nil {
-				return nil, fmt.Errorf("failed to unmarshal ConfigSpec from class: %v", err)
-			}
-			configSpecFromClass = spec
-		}
-	}
-
 	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
 		Config: vmCtx.ConfigSpec,
 		Memory: pointer.BoolPtr(false), // No full memory clones.
@@ -311,19 +298,13 @@ func (s *Session) createCloneSpec(
 	}
 
 	virtualDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
-	virtualNICs := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
 
 	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx.VirtualMachineContext, virtualDisks)
 	if err != nil {
 		return nil, err
 	}
 
-	ethCardDeviceChanges, err := s.cloneEthCardDeviceChanges(vmCtx, virtualNICs, configSpecFromClass)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, deviceChange := range append(diskDeviceChanges, ethCardDeviceChanges...) {
+	for _, deviceChange := range diskDeviceChanges {
 		if deviceChange.GetVirtualDeviceConfigSpec().Operation == vimTypes.VirtualDeviceConfigSpecOperationEdit {
 			cloneSpec.Location.DeviceChange = append(cloneSpec.Location.DeviceChange, deviceChange)
 		} else {
@@ -354,39 +335,6 @@ func (s *Session) createCloneSpec(
 	cloneSpec.Location.Disk = diskLocators
 
 	return cloneSpec, nil
-}
-
-// cloneEthCardDeviceChanges returns changes for network device changes that need to be performed
-// on a new VM being cloned from the source VM.
-func (s *Session) cloneEthCardDeviceChanges(
-	vmCtx VirtualMachineCloneContext,
-	srcEthCards object.VirtualDeviceList,
-	configSpec vimTypes.VirtualMachineConfigSpec) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
-
-	// BMV: Is this really required for cloning, or OK to defer to later update reconcile like OVF deploy?
-	netIfList, err := s.ensureNetworkInterfaces(vmCtx.VirtualMachineContext, configSpec)
-	if err != nil {
-		return nil, err
-	}
-
-	newEthCards := netIfList.GetVirtualDeviceList()
-
-	// Remove all the existing interfaces, and then add the new interfaces.
-	deviceChanges := make([]vimTypes.BaseVirtualDeviceConfigSpec, 0, len(srcEthCards)+len(newEthCards))
-	for _, dev := range srcEthCards {
-		deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
-			Device:    dev,
-			Operation: vimTypes.VirtualDeviceConfigSpecOperationRemove,
-		})
-	}
-	for _, dev := range newEthCards {
-		deviceChanges = append(deviceChanges, &vimTypes.VirtualDeviceConfigSpec{
-			Device:    dev,
-			Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
-		})
-	}
-
-	return deviceChanges, nil
 }
 
 func cloneVMDiskLocators(

@@ -83,8 +83,11 @@ func UnmarshalConfigSpecFromBase64XML(
 // DevicesFromConfigSpec returns a slice of devices from the ConfigSpec's
 // DeviceChange property.
 func DevicesFromConfigSpec(
-	configSpec vimTypes.VirtualMachineConfigSpec,
+	configSpec *vimTypes.VirtualMachineConfigSpec,
 ) []vimTypes.BaseVirtualDevice {
+	if configSpec == nil {
+		return nil
+	}
 
 	var devices []vimTypes.BaseVirtualDevice
 	for _, devChange := range configSpec.DeviceChange {
@@ -95,4 +98,37 @@ func DevicesFromConfigSpec(
 		}
 	}
 	return devices
+}
+
+// ProcessVMClassConfigSpecExclusions discards config spec entries related to
+// - disks,
+// - disk controllers,
+// - files and
+// - storage profiles
+// as VM Service does not support specifying these options via the config spec at the moment.
+func ProcessVMClassConfigSpecExclusions(configSpec *vimTypes.VirtualMachineConfigSpec) {
+	if configSpec != nil {
+		// remove disk and disk controllers
+		RemoveDevicesFromConfigSpec(configSpec, isDiskorDiskController)
+		// nil files as they usually ref files in disk
+		configSpec.Files = nil
+		// empty vmProfile as storage profiles are disk specific
+		configSpec.VmProfile = []vimTypes.BaseVirtualMachineProfileSpec{}
+	}
+}
+
+// RemoveDevicesFromConfigSpec removes devices from config spec device changes based on the matcher function.
+func RemoveDevicesFromConfigSpec(configSpec *vimTypes.VirtualMachineConfigSpec, fn func(vimTypes.BaseVirtualDevice) bool) {
+	if configSpec == nil {
+		return
+	}
+
+	var targetDevChanges []vimTypes.BaseVirtualDeviceConfigSpec
+	for _, devChange := range configSpec.DeviceChange {
+		dSpec := devChange.GetVirtualDeviceConfigSpec()
+		if !fn(dSpec.Device) {
+			targetDevChanges = append(targetDevChanges, devChange)
+		}
+	}
+	configSpec.DeviceChange = targetDevChanges
 }

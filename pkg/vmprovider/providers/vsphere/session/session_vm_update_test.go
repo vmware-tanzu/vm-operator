@@ -241,6 +241,7 @@ var _ = Describe("Update ConfigSpec", func() {
 	Context("ExtraConfig", func() {
 		var vmImage *vmopv1alpha1.VirtualMachineImage
 		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
+		var classConfigSpec *vimTypes.VirtualMachineConfigSpec
 		var vm *vmopv1alpha1.VirtualMachine
 		var globalExtraConfig map[string]string
 		var ecMap map[string]string
@@ -254,12 +255,14 @@ var _ = Describe("Update ConfigSpec", func() {
 				},
 			}
 			globalExtraConfig = make(map[string]string)
+			classConfigSpec = nil
 		})
 
 		JustBeforeEach(func() {
 			session.UpdateConfigSpecExtraConfig(
 				config,
 				configSpec,
+				classConfigSpec,
 				vmImage,
 				vmClassSpec,
 				vm,
@@ -435,20 +438,114 @@ var _ = Describe("Update ConfigSpec", func() {
 				})
 			})
 		})
+
+		Context("when VM_Class_as_Config_DaynDate FSS is enabled", func() {
+			var oldVMClassAsConfigDaynDateFunc func() bool
+			const dummyKey = "dummy-key"
+			const dummyVal = "dummy-val"
+
+			BeforeEach(func() {
+				oldVMClassAsConfigDaynDateFunc = lib.IsVMClassAsConfigFSSDaynDateEnabled
+				lib.IsVMClassAsConfigFSSDaynDateEnabled = func() bool {
+					return true
+				}
+			})
+
+			AfterEach(func() {
+				lib.IsVMClassAsConfigFSSDaynDateEnabled = oldVMClassAsConfigDaynDateFunc
+			})
+
+			Context("classConfigSpec extra config is not nil", func() {
+				BeforeEach(func() {
+					classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
+						ExtraConfig: []vimTypes.BaseOptionValue{
+							&vimTypes.OptionValue{
+								Key:   dummyKey + "-1",
+								Value: dummyVal + "-1",
+							},
+							&vimTypes.OptionValue{
+								Key:   dummyKey + "-2",
+								Value: dummyVal + "-2",
+							},
+						},
+					}
+					config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{Key: "hello", Value: "world"})
+				})
+				It("vm extra config overlaps with global extra config", func() {
+					globalExtraConfig["hello"] = "world"
+
+					Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-1", dummyVal+"-1"))
+					Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-2", dummyVal+"-2"))
+					Expect(ecMap).ToNot(HaveKeyWithValue("hello", "world"))
+				})
+
+				It("global extra config overlaps with class config spec - class config spec takes precedence", func() {
+					globalExtraConfig[dummyKey+"-1"] = dummyVal + "-3"
+					Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-1", dummyVal+"-1"))
+					Expect(ecMap).To(HaveKeyWithValue(dummyKey+"-2", dummyVal+"-2"))
+				})
+
+				Context("class config spec has vGPU and DDPIO devices", func() {
+					BeforeEach(func() {
+						classConfigSpec.DeviceChange = []vimTypes.BaseVirtualDeviceConfigSpec{
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualPCIPassthrough{
+									VirtualDevice: vimTypes.VirtualDevice{
+										Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
+											Vgpu: "SampleProfile2",
+										},
+									},
+								},
+							},
+							&vimTypes.VirtualDeviceConfigSpec{
+								Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+								Device: &vimTypes.VirtualPCIPassthrough{
+									VirtualDevice: vimTypes.VirtualDevice{
+										Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+											AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
+												{
+													VendorId: 52,
+													DeviceId: 53,
+												},
+											},
+											CustomLabel: "SampleLabel2",
+										},
+									},
+								},
+							},
+						}
+
+					})
+
+					It("extraConfig Map has MMIO and MMPowerOff related keys added", func() {
+						Expect(ecMap).To(HaveKeyWithValue(constants.MMPowerOffVMExtraConfigKey, constants.ExtraConfigTrue))
+						Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOExtraConfigKey, constants.ExtraConfigTrue))
+						Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOSizeExtraConfigKey, constants.PCIPassthruMMIOSizeDefault))
+					})
+				})
+			})
+		})
 	})
 
 	Context("ChangeBlockTracking", func() {
 		var vmSpec vmopv1alpha1.VirtualMachineSpec
+		var classConfigSpec *vimTypes.VirtualMachineConfigSpec
 
 		BeforeEach(func() {
 			vmSpec = vmopv1alpha1.VirtualMachineSpec{
 				AdvancedOptions: &vmopv1alpha1.VirtualMachineAdvancedOptions{},
 			}
 			config.ChangeTrackingEnabled = nil
+			classConfigSpec = nil
+		})
+
+		AfterEach(func() {
+			configSpec.ChangeTrackingEnabled = nil
 		})
 
 		It("cbt and status cbt unset", func() {
-			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
@@ -456,7 +553,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			config.ChangeTrackingEnabled = pointer.BoolPtr(true)
 			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(false)
 
-			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeFalse())
 		})
@@ -465,7 +562,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			config.ChangeTrackingEnabled = pointer.BoolPtr(false)
 			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(true)
 
-			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
 		})
@@ -474,8 +571,55 @@ var _ = Describe("Update ConfigSpec", func() {
 			config.ChangeTrackingEnabled = pointer.BoolPtr(true)
 			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(true)
 
-			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
+		})
+
+		It("classConfigSpec not nil and is ignored", func() {
+			config.ChangeTrackingEnabled = pointer.BoolPtr(false)
+			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(true)
+			classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
+				ChangeTrackingEnabled: pointer.BoolPtr(false),
+			}
+
+			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
+			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
+			Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
+		})
+
+		Context("VM_Class_as_Config_DaynDate FSS is enabled", func() {
+			var oldVMClassAsConfigDaynDateFunc func() bool
+			BeforeEach(func() {
+				oldVMClassAsConfigDaynDateFunc = lib.IsVMClassAsConfigFSSDaynDateEnabled
+				lib.IsVMClassAsConfigFSSDaynDateEnabled = func() bool {
+					return true
+				}
+				config.ChangeTrackingEnabled = pointer.BoolPtr(false)
+				vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(true)
+			})
+
+			AfterEach(func() {
+				lib.IsVMClassAsConfigFSSDaynDateEnabled = oldVMClassAsConfigDaynDateFunc
+			})
+
+			It("classConfigSpec not nil and same as configInfo", func() {
+				classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
+					ChangeTrackingEnabled: pointer.BoolPtr(false),
+				}
+
+				session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
+				Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
+			})
+
+			It("classConfigSpec not nil, different from configInfo, overrides vm spec cbt", func() {
+				classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
+					ChangeTrackingEnabled: pointer.BoolPtr(true),
+				}
+
+				session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
+				Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
+				Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
+			})
 		})
 	})
 
@@ -514,6 +658,59 @@ var _ = Describe("Update ConfigSpec", func() {
 			Expect(configSpec.Firmware).To(BeEmpty())
 		})
 
+	})
+
+	Context("DeviceGroups", func() {
+		var classConfigSpec *vimTypes.VirtualMachineConfigSpec
+
+		BeforeEach(func() {
+			classConfigSpec = &vimTypes.VirtualMachineConfigSpec{}
+		})
+
+		It("No DeviceGroups set in class config spec", func() {
+			session.UpdateConfigSpecDeviceGroups(config, classConfigSpec, configSpec)
+			Expect(configSpec.DeviceGroups).To(BeNil())
+		})
+
+		It("DeviceGroups set in class config spec", func() {
+			classConfigSpec.DeviceGroups = &vimTypes.VirtualMachineVirtualDeviceGroups{
+				DeviceGroup: []vimTypes.BaseVirtualMachineVirtualDeviceGroupsDeviceGroup{
+					&vimTypes.VirtualMachineVirtualDeviceGroupsDeviceGroup{
+						GroupInstanceKey: int32(400),
+					},
+				},
+			}
+
+			session.UpdateConfigSpecDeviceGroups(config, classConfigSpec, configSpec)
+			Expect(configSpec.DeviceGroups).NotTo(BeNil())
+			Expect(configSpec.DeviceGroups.DeviceGroup).To(HaveLen(1))
+			deviceGroup := configSpec.DeviceGroups.DeviceGroup[0].GetVirtualMachineVirtualDeviceGroupsDeviceGroup()
+			Expect(deviceGroup.GroupInstanceKey).To(Equal(int32(400)))
+		})
+
+		It("configInfo DeviceGroups set with vals different than the class config spec", func() {
+			classConfigSpec.DeviceGroups = &vimTypes.VirtualMachineVirtualDeviceGroups{
+				DeviceGroup: []vimTypes.BaseVirtualMachineVirtualDeviceGroupsDeviceGroup{
+					&vimTypes.VirtualMachineVirtualDeviceGroupsDeviceGroup{
+						GroupInstanceKey: int32(400),
+					},
+				},
+			}
+
+			config.DeviceGroups = &vimTypes.VirtualMachineVirtualDeviceGroups{
+				DeviceGroup: []vimTypes.BaseVirtualMachineVirtualDeviceGroupsDeviceGroup{
+					&vimTypes.VirtualMachineVirtualDeviceGroupsDeviceGroup{
+						GroupInstanceKey: int32(500),
+					},
+				},
+			}
+
+			session.UpdateConfigSpecDeviceGroups(config, classConfigSpec, configSpec)
+			Expect(configSpec.DeviceGroups).NotTo(BeNil())
+			Expect(configSpec.DeviceGroups.DeviceGroup).To(HaveLen(1))
+			deviceGroup := configSpec.DeviceGroups.DeviceGroup[0].GetVirtualMachineVirtualDeviceGroupsDeviceGroup()
+			Expect(deviceGroup.GroupInstanceKey).To(Equal(int32(400)))
+		})
 	})
 
 	Context("Ethernet Card Changes", func() {
@@ -665,7 +862,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
-		Context("When WCP_VMClassAdd and remove device when card type is different", func() {
+		Context("When WCP_VMClass_as_Config is enabled, Add and remove device when card type is different", func() {
 			var card1 vimTypes.BaseVirtualDevice
 			var key1 int32 = 100
 			var card2 vimTypes.BaseVirtualDevice
@@ -847,48 +1044,6 @@ var _ = Describe("Update ConfigSpec", func() {
 					Expect(devList[1].(*vimTypes.VirtualPCIPassthrough).Backing).ToNot(BeNil())
 					Expect(devList[1].(*vimTypes.VirtualPCIPassthrough).Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughVmiopBackingInfo{}))
 					Expect(devList[1].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo).Vgpu).To(Equal("SampleProfile2"))
-				})
-			})
-
-			Context("For Dynamic DirectPath I/O device", func() {
-				BeforeEach(func() {
-					pciDevices = vmopv1alpha1.VirtualDevices{
-						DynamicDirectPathIODevices: []vmopv1alpha1.DynamicDirectPathIODevice{
-							{
-								VendorID:    42,
-								DeviceID:    43,
-								CustomLabel: "SampleLabel1",
-							},
-						},
-					}
-					devIn = []*vimTypes.VirtualPCIPassthrough{
-						{
-							VirtualDevice: vimTypes.VirtualDevice{
-								Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
-									AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
-										{
-											VendorId: 52,
-											DeviceId: 53,
-										},
-									},
-									CustomLabel: "SampleLabel2",
-								},
-							},
-						},
-					}
-				})
-				It("should create one dynamic directpath i/o device", func() {
-					devList := virtualmachine.CreatePCIDevices(pciDevices, devIn)
-					Expect(devList).To(HaveLen(1))
-
-					Expect(devList[0]).ToNot(BeNil())
-					Expect(devList[0]).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthrough{}))
-					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing).ToNot(BeNil())
-					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughDynamicBackingInfo{}))
-					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo).AllowedDevice).To(HaveLen(1))
-					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo).CustomLabel).To(Equal("SampleLabel1"))
-					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo).AllowedDevice[0].VendorId).To(BeEquivalentTo(42))
-					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo).AllowedDevice[0].DeviceId).To(BeEquivalentTo(43))
 				})
 			})
 		})

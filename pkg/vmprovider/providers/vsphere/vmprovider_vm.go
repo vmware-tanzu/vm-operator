@@ -11,12 +11,14 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
@@ -41,7 +43,9 @@ type vmCreateArgs struct {
 	// From the VMSetResourcePolicy (if specified)
 	ChildResourcePoolName string
 	ChildFolderName       string
+	MinCPUFreq            uint64
 
+	ClassConfigSpec     *types.VirtualMachineConfigSpec
 	ConfigSpec          *types.VirtualMachineConfigSpec
 	PlacementConfigSpec *types.VirtualMachineConfigSpec
 
@@ -260,6 +264,13 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			return err
 		}
 
+		// VM update path utilizes the VM class config spec
+		createArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
+			vmCtx.VM.Name,
+			&createArgs.VMClass.Spec,
+			createArgs.MinCPUFreq,
+			createArgs.ClassConfigSpec)
+
 		vmConfigArgs := vmprovider.VMConfigArgs{
 			VMClass:            *createArgs.VMClass,
 			VMImage:            createArgs.VMImage,
@@ -267,6 +278,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			VMMetadata:         createArgs.VMMetadata,
 			StorageProfileID:   createArgs.StorageClassesToIDs[vmCtx.VM.Spec.StorageClass],
 			ContentLibraryUUID: createArgs.ContentLibraryUUID,
+			ConfigSpec:         createArgs.ConfigSpec,
 		}
 
 		err = ses.UpdateVirtualMachine(vmCtx, vcVM, vmConfigArgs)
@@ -463,10 +475,7 @@ func (vs *vSphereVMProvider) vmCreateGetArgs(
 		return nil, err
 	}
 
-	err = vs.vmCreateGenConfigSpec(vmCtx, createArgs)
-	if err != nil {
-		return nil, err
-	}
+	vs.vmCreateGenConfigSpec(vmCtx, createArgs)
 
 	return createArgs, nil
 }
@@ -500,12 +509,36 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 	createArgs.VMClass = vmClass
 	createArgs.VMImage = vmImage
 	createArgs.ContentLibraryUUID = clUUID
-	createArgs.ResourcePolicy = resourcePolicy
 	createArgs.VMMetadata = vmMetadata
 
+	// set child RP, folder and minCPUFreq
 	if resourcePolicy != nil {
-		createArgs.ChildResourcePoolName = resourcePolicy.Spec.ResourcePool.Name
+		createArgs.ResourcePolicy = resourcePolicy
 		createArgs.ChildFolderName = resourcePolicy.Spec.Folder.Name
+
+		rp := resourcePolicy.Spec.ResourcePool
+		createArgs.ChildResourcePoolName = rp.Name
+		if !rp.Reservations.Cpu.IsZero() || !rp.Limits.Cpu.IsZero() {
+			freq, err := vs.ComputeAndGetCPUMinFrequency(vmCtx)
+			if err != nil {
+				return nil, err
+			}
+			createArgs.MinCPUFreq = freq
+		}
+	}
+
+	if lib.IsVMClassAsConfigFSSEnabled() {
+		if cs := createArgs.VMClass.Spec.ConfigSpec; cs != nil {
+			if cs.XML != "" {
+				// TODO: Have a single func that unmarshals & excludes
+				classConfigSpec, err := util.UnmarshalConfigSpecFromBase64XML([]byte(cs.XML))
+				if err != nil {
+					return nil, err
+				}
+				util.ProcessVMClassConfigSpecExclusions(&classConfigSpec)
+				createArgs.ClassConfigSpec = &classConfigSpec
+			}
+		}
 	}
 
 	// TODO: Perhaps a condition type for each resource is better so all missing one(s)
@@ -539,34 +572,30 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 
 func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	vmCtx context.VirtualMachineContext,
-	createArgs *vmCreateArgs) error {
+	createArgs *vmCreateArgs) {
+	// Create both until we can sanitize the placement ConfigSpec for creation.
 
-	var minCPUFreq uint64
-
-	if createArgs.ResourcePolicy != nil {
-		rp := createArgs.ResourcePolicy.Spec.ResourcePool
-
-		if !rp.Reservations.Cpu.IsZero() || !rp.Limits.Cpu.IsZero() {
-			freq, err := vs.ComputeAndGetCPUMinFrequency(vmCtx)
-			if err != nil {
-				return err
-			}
-			minCPUFreq = freq
+	// When VM_Class_as_Config_DaynDate FSS enabled, the VM create path utilizes the optional VM class config spec sans
+	// ethernet card device changes. It will be nil otherwise.
+	var vmClassConfigSpec *types.VirtualMachineConfigSpec
+	if createArgs.ClassConfigSpec != nil {
+		if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+			t := *createArgs.ClassConfigSpec
+			util.RemoveDevicesFromConfigSpec(&t, util.IsEthernetCard)
+			vmClassConfigSpec = &t
 		}
 	}
-
-	// Create both until we can sanitize the placement ConfigSpec for creation.
 
 	createArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
 		vmCtx.VM.Name,
 		&createArgs.VMClass.Spec,
-		minCPUFreq)
+		createArgs.MinCPUFreq,
+		vmClassConfigSpec)
 
 	createArgs.PlacementConfigSpec = virtualmachine.CreateConfigSpecForPlacement(
 		vmCtx,
 		&createArgs.VMClass.Spec,
-		minCPUFreq,
-		createArgs.StorageClassesToIDs)
-
-	return nil
+		createArgs.MinCPUFreq,
+		createArgs.StorageClassesToIDs,
+		vmClassConfigSpec)
 }

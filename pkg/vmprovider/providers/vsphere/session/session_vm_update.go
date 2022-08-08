@@ -274,7 +274,8 @@ func UpdateConfigSpecMemoryAllocation(
 
 func UpdateConfigSpecExtraConfig(
 	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec *vimTypes.VirtualMachineConfigSpec,
+	configSpec,
+	classConfigSpec *vimTypes.VirtualMachineConfigSpec,
 	vmImage *v1alpha1.VirtualMachineImage,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	vm *v1alpha1.VirtualMachine,
@@ -299,7 +300,8 @@ func UpdateConfigSpecExtraConfig(
 	}
 
 	virtualDevices := vmClassSpec.Hardware.Devices
-	if len(virtualDevices.VGPUDevices) > 0 || len(virtualDevices.DynamicDirectPathIODevices) > 0 {
+	pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(util.DevicesFromConfigSpec(classConfigSpec))
+	if len(virtualDevices.VGPUDevices) > 0 || len(virtualDevices.DynamicDirectPathIODevices) > 0 || len(pciPassthruFromConfigSpec) > 0 {
 		// Add "maintenance.vm.evacuation.poweroff" extraConfig key when GPU devices are present in the VMClass Spec.
 		extraConfig[constants.MMPowerOffVMExtraConfigKey] = constants.ExtraConfigTrue
 		setMMIOExtraConfig(vm, extraConfig)
@@ -308,6 +310,19 @@ func UpdateConfigSpecExtraConfig(
 	// If VM has InstanceStorage configured, add "maintenance.vm.evacuation.poweroff" to extraConfig
 	if instancestorage.IsConfigured(vm) {
 		extraConfig[constants.MMPowerOffVMExtraConfigKey] = constants.ExtraConfigTrue
+	}
+
+	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+		// Merge non intersecting keys from the desired config spec extra config with the class config spec extra config
+		// (ie) class config spec extra config keys takes precedence over the desired config spec extra config keys
+		ecFromClassConfigSpec := ExtraConfigToMap(classConfigSpec.ExtraConfig)
+		mergedExtraConfig := classConfigSpec.ExtraConfig
+		for k, v := range extraConfig {
+			if _, exists := ecFromClassConfigSpec[k]; !exists {
+				mergedExtraConfig = append(mergedExtraConfig, &vimTypes.OptionValue{Key: k, Value: v})
+			}
+		}
+		extraConfig = ExtraConfigToMap(mergedExtraConfig)
 	}
 
 	configSpec.ExtraConfig = MergeExtraConfig(config.ExtraConfig, extraConfig)
@@ -325,6 +340,7 @@ func UpdateConfigSpecExtraConfig(
 			}
 		}
 	}
+
 }
 
 func setMMIOExtraConfig(vm *v1alpha1.VirtualMachine, extraConfig map[string]string) {
@@ -340,8 +356,15 @@ func setMMIOExtraConfig(vm *v1alpha1.VirtualMachine, extraConfig map[string]stri
 
 func UpdateConfigSpecChangeBlockTracking(
 	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec *vimTypes.VirtualMachineConfigSpec,
+	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec,
 	vmSpec v1alpha1.VirtualMachineSpec) {
+	// When VM_Class_as_Config_DaynDate is enabled, class config spec cbt if set overrides the VM spec advanced options cbt.
+	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && classConfigSpec.ChangeTrackingEnabled != nil {
+		if !apiEquality.Semantic.DeepEqual(config.ChangeTrackingEnabled, classConfigSpec.ChangeTrackingEnabled) {
+			configSpec.ChangeTrackingEnabled = classConfigSpec.ChangeTrackingEnabled
+		}
+		return
+	}
 
 	if vmSpec.AdvancedOptions == nil || vmSpec.AdvancedOptions.ChangeBlockTracking == nil {
 		// Treat this as we preserve whatever the current CBT status is. I think we'd need
@@ -389,6 +412,18 @@ func UpdateConfigSpecFirmware(
 	}
 }
 
+// UpdateConfigSpecDeviceGroups sets the desired config spec device groups to reconcile by differencing the current VM config and
+// the class config spec device groups.
+func UpdateConfigSpecDeviceGroups(
+	config *vimTypes.VirtualMachineConfigInfo,
+	classConfigSpec, configSpec *vimTypes.VirtualMachineConfigSpec) {
+	if classConfigSpec.DeviceGroups != nil {
+		if config.DeviceGroups == nil || !reflect.DeepEqual(classConfigSpec.DeviceGroups.DeviceGroup, config.DeviceGroups.DeviceGroup) {
+			configSpec.DeviceGroups = classConfigSpec.DeviceGroups
+		}
+	}
+}
+
 // TODO: Fix parameter explosion.
 func updateConfigSpec(
 	vmCtx context.VirtualMachineContext,
@@ -404,8 +439,8 @@ func updateConfigSpec(
 	UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
 	UpdateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, minCPUFreq)
 	UpdateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
-	UpdateConfigSpecExtraConfig(config, configSpec, vmImage, &vmClassSpec, vmCtx.VM, globalExtraConfig)
-	UpdateConfigSpecChangeBlockTracking(config, configSpec, vmCtx.VM.Spec)
+	UpdateConfigSpecExtraConfig(config, configSpec, updateArgs.ConfigSpec, vmImage, &vmClassSpec, vmCtx.VM, globalExtraConfig)
+	UpdateConfigSpecChangeBlockTracking(config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 
 	return configSpec
@@ -439,23 +474,34 @@ func (s *Session) prePowerOnVMConfigSpec(
 	if err != nil {
 		return nil, err
 	}
+
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
 	currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
+
+	var pciPassthruFromConfigSpec []*vimTypes.VirtualPCIPassthrough
+	if configSpecDevs := util.DevicesFromConfigSpec(updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
+		if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+			pciPassthruFromConfigSpec = util.SelectVirtualPCIPassthrough(configSpecDevs)
+		} else {
+			// Only support vGPUs as passthrough devices from the class config spec
+			// until VM_Class_as_Config_DaynDate FSS is enabled
+			pciPassthruFromConfigSpec = util.SelectVGPUs(configSpecDevs)
+		}
+	}
+
 	expectedPciDevices := virtualmachine.CreatePCIDevices(
 		updateArgs.VMClass.Spec.Hardware.Devices,
-		util.SelectVirtualPCIPassthrough(
-			util.DevicesFromConfigSpec(updateArgs.ConfigSpecFromClass),
-		),
-	)
+		pciPassthruFromConfigSpec)
+
 	pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPciDevices, currentPciDevices)
 	if err != nil {
 		return nil, err
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
 
-	// Update the device groups.
-	configSpec.DeviceGroups = updateArgs.ConfigSpecFromClass.DeviceGroups
+	// Update device groups
+	UpdateConfigSpecDeviceGroups(config, updateArgs.ConfigSpec, configSpec)
 
 	return configSpec, nil
 }
@@ -485,13 +531,13 @@ func (s *Session) prePowerOnVMReconfigure(
 
 func (s *Session) ensureNetworkInterfaces(
 	vmCtx context.VirtualMachineContext,
-	configSpec vimTypes.VirtualMachineConfigSpec) (network.InterfaceInfoList, error) {
+	configSpec *vimTypes.VirtualMachineConfigSpec) (network.InterfaceInfoList, error) {
 
 	// This negative device key is the traditional range used for network interfaces.
 	deviceKey := int32(-100)
 
 	var networkDevices []vimTypes.BaseVirtualDevice
-	if lib.IsVMClassAsConfigFSSEnabled() {
+	if lib.IsVMClassAsConfigFSSEnabled() && configSpec != nil {
 		networkDevices = util.SelectDevicesByTypes(
 			util.DevicesFromConfigSpec(configSpec),
 			&vimTypes.VirtualE1000{},
@@ -499,6 +545,7 @@ func (s *Session) ensureNetworkInterfaces(
 			&vimTypes.VirtualPCNet32{},
 			&vimTypes.VirtualVmxnet2{},
 			&vimTypes.VirtualVmxnet3{},
+			&vimTypes.VirtualVmxnet3Vrdma{},
 			&vimTypes.VirtualSriovEthernetCard{},
 		)
 	}
@@ -575,9 +622,8 @@ func (s *Session) ensureCNSVolumes(vmCtx context.VirtualMachineContext) error {
 
 type VMUpdateArgs struct {
 	vmprovider.VMConfigArgs
-	NetIfList           network.InterfaceInfoList
-	DNSServers          []string
-	ConfigSpecFromClass vimTypes.VirtualMachineConfigSpec
+	NetIfList  network.InterfaceInfoList
+	DNSServers []string
 }
 
 func (s *Session) prepareVMForPowerOn(
@@ -586,21 +632,7 @@ func (s *Session) prepareVMForPowerOn(
 	cfg *vimTypes.VirtualMachineConfigInfo,
 	vmConfigArgs vmprovider.VMConfigArgs) error {
 
-	// Unmarshal the ConfigSpec from the VM Class.
-	var configSpecFromClass vimTypes.VirtualMachineConfigSpec
-	if lib.IsVMClassAsConfigFSSEnabled() {
-		if vmClassCfgSpec := vmConfigArgs.VMClass.Spec.ConfigSpec; vmClassCfgSpec != nil {
-			if data := vmClassCfgSpec.XML; len(data) > 0 {
-				spec, err := util.UnmarshalConfigSpecFromBase64XML([]byte(data))
-				if err != nil {
-					return fmt.Errorf("failed to unmarshal ConfigSpec from class: %v", err)
-				}
-				configSpecFromClass = spec
-			}
-		}
-	}
-
-	netIfList, err := s.ensureNetworkInterfaces(vmCtx, configSpecFromClass)
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx, vmConfigArgs.ConfigSpec)
 	if err != nil {
 		return err
 	}
@@ -612,10 +644,9 @@ func (s *Session) prepareVMForPowerOn(
 	}
 
 	updateArgs := VMUpdateArgs{
-		VMConfigArgs:        vmConfigArgs,
-		NetIfList:           netIfList,
-		DNSServers:          dnsServers,
-		ConfigSpecFromClass: configSpecFromClass,
+		VMConfigArgs: vmConfigArgs,
+		NetIfList:    netIfList,
+		DNSServers:   dnsServers,
 	}
 
 	err = s.prePowerOnVMReconfigure(vmCtx, resVM, cfg, updateArgs)
@@ -639,10 +670,11 @@ func (s *Session) prepareVMForPowerOn(
 func (s *Session) poweredOnVMReconfigure(
 	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
-	config *vimTypes.VirtualMachineConfigInfo) error {
+	config *vimTypes.VirtualMachineConfigInfo,
+	classConfigSpec *vimTypes.VirtualMachineConfigSpec) error {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
-	UpdateConfigSpecChangeBlockTracking(config, configSpec, vmCtx.VM.Spec)
+	UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmCtx.VM.Spec)
 
 	defaultConfigSpec := &vimTypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
@@ -742,7 +774,7 @@ func (s *Session) UpdateVirtualMachine(
 				return err
 			}
 		} else {
-			err := s.poweredOnVMReconfigure(vmCtx, resVM, config)
+			err := s.poweredOnVMReconfigure(vmCtx, resVM, config, vmConfigArgs.ConfigSpec)
 			if err != nil {
 				return err
 			}

@@ -9,7 +9,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
 
@@ -66,14 +65,9 @@ func CreatePCIDevices(
 	// Append PCI devices from the VM Class ConfigSpec.
 	for i := range pciDevsFromConfigSpec {
 		dev := pciDevsFromConfigSpec[i]
-
-		// TODO(akutz) This check will be removed at some point once we
-		//             more than just vGPU devices via the ConfigSpec.
-		if util.IsDeviceVGPU(dev) {
-			dev.Key = deviceKey
-			devices = append(devices, dev)
-			deviceKey--
-		}
+		dev.Key = deviceKey
+		devices = append(devices, dev)
+		deviceKey--
 	}
 
 	return devices

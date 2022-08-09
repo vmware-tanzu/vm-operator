@@ -136,6 +136,12 @@ func GetCloudInitGuestInfoCustSpec(
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
 	configSpec.ExtraConfig = MergeExtraConfig(config.ExtraConfig, extraConfig)
+
+	// Remove the VAppConfig to ensure Cloud-Init inside of the guest does not
+	// activate and prefer the OVF datasource over the VMware datasource.
+	vappConfigRemoved := true
+	configSpec.VAppConfigRemoved = &vappConfigRemoved
+
 	return configSpec, nil
 }
 

@@ -18,6 +18,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
@@ -89,14 +90,25 @@ func GetCloudInitMetadata(vm *v1alpha1.VirtualMachine,
 
 func GetCloudInitPrepCustSpec(
 	cloudInitMetadata string,
-	updateArgs VMUpdateArgs) *vimTypes.CustomizationSpec {
+	updateArgs VMUpdateArgs) (*vimTypes.CustomizationSpec, error) {
+
+	userdata := updateArgs.VMMetadata.Data["user-data"]
+
+	if userdata != "" {
+		// Ensure the data is normalized first to plain-text.
+		plainText, err := util.TryToDecodeBase64Gzip([]byte(userdata))
+		if err != nil {
+			return nil, fmt.Errorf("decoding cloud-init prep userdata failed %v", err)
+		}
+		userdata = plainText
+	}
 
 	return &vimTypes.CustomizationSpec{
 		Identity: &internal.CustomizationCloudinitPrep{
 			Metadata: cloudInitMetadata,
-			Userdata: updateArgs.VMMetadata.Data["user-data"],
+			Userdata: userdata,
 		},
-	}
+	}, nil
 }
 
 func GetCloudInitGuestInfoCustSpec(
@@ -125,7 +137,13 @@ func GetCloudInitGuestInfoCustSpec(
 	}
 
 	if data != "" {
-		encodedUserdata, err := EncodeGzipBase64(data)
+		// Ensure the data is normalized first to plain-text.
+		plainText, err := util.TryToDecodeBase64Gzip([]byte(data))
+		if err != nil {
+			return nil, fmt.Errorf("decoding cloud-init userdata failed %v", err)
+		}
+
+		encodedUserdata, err := EncodeGzipBase64(plainText)
 		if err != nil {
 			return nil, fmt.Errorf("encoding cloud-init userdata failed %v", err)
 		}
@@ -205,7 +223,7 @@ func customizeCloudInit(
 
 	switch vmCtx.VM.Annotations[constants.CloudInitTypeAnnotation] {
 	case constants.CloudInitTypeValueCloudInitPrep:
-		custSpec = GetCloudInitPrepCustSpec(cloudInitMetadata, updateArgs)
+		custSpec, err = GetCloudInitPrepCustSpec(cloudInitMetadata, updateArgs)
 	case constants.CloudInitTypeValueGuestInfo, "":
 		fallthrough
 	default:

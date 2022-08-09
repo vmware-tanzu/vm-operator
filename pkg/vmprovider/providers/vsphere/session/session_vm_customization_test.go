@@ -267,6 +267,15 @@ var _ = Describe("Cloud-Init Customization", func() {
 			configSpec, err = session.GetCloudInitGuestInfoCustSpec(cloudInitMetadata, configInfo, updateArgs)
 		})
 
+		Context("VAppConfig Disabled", func() {
+			It("Should disable the VAppConfig", func() {
+				Expect(configSpec).ToNot(BeNil())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(configSpec.VAppConfigRemoved).ToNot(BeNil())
+				Expect(*configSpec.VAppConfigRemoved).To(BeTrue())
+			})
+		})
+
 		Context("No userdata", func() {
 			It("ConfigSpec.ExtraConfig to only have metadata", func() {
 				Expect(configSpec).ToNot(BeNil())

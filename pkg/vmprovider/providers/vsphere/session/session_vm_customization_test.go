@@ -5,6 +5,7 @@ package session_test
 
 import (
 	goctx "context"
+	"encoding/base64"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -303,6 +304,40 @@ var _ = Describe("Cloud-Init Customization", func() {
 			})
 		})
 
+		Context("With base64-encoded userdata but no encoding specified", func() {
+			BeforeEach(func() {
+				updateArgs.VMMetadata.Data["user-data"] = base64.StdEncoding.EncodeToString([]byte(cloudInitUserdata))
+			})
+			It("ConfigSpec.ExtraConfig to have metadata and userdata", func() {
+				Expect(configSpec).ToNot(BeNil())
+				Expect(err).ToNot(HaveOccurred())
+				extraConfig := session.ExtraConfigToMap(configSpec.ExtraConfig)
+				Expect(extraConfig).To(HaveLen(4))
+				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
+				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+				Expect(extraConfig[constants.CloudInitGuestInfoUserdata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
+				Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+			})
+		})
+
+		Context("With gzipped, base64-encoded userdata but no encoding specified", func() {
+			BeforeEach(func() {
+				data, err := session.EncodeGzipBase64(cloudInitUserdata)
+				Expect(err).ToNot(HaveOccurred())
+				updateArgs.VMMetadata.Data["user-data"] = data
+			})
+			It("ConfigSpec.ExtraConfig to have metadata and userdata", func() {
+				Expect(configSpec).ToNot(BeNil())
+				Expect(err).ToNot(HaveOccurred())
+				extraConfig := session.ExtraConfigToMap(configSpec.ExtraConfig)
+				Expect(extraConfig).To(HaveLen(4))
+				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
+				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+				Expect(extraConfig[constants.CloudInitGuestInfoUserdata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRLS1OLUpJLEkEAAAA//8BAAD//weVSMoTAAAA"))
+				Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+			})
+		})
+
 		Context("With userdata in both a 'user-data' and a 'value'  key", func() {
 			BeforeEach(func() {
 				updateArgs.VMMetadata.Data["user-data"] = cloudInitUserdata
@@ -340,14 +375,16 @@ var _ = Describe("Cloud-Init Customization", func() {
 
 	Context("GetCloudInitPrepCustSpec", func() {
 		var (
+			err      error
 			custSpec *vimTypes.CustomizationSpec
 		)
 		JustBeforeEach(func() {
-			custSpec = session.GetCloudInitPrepCustSpec(cloudInitMetadata, updateArgs)
+			custSpec, err = session.GetCloudInitPrepCustSpec(cloudInitMetadata, updateArgs)
 		})
 
 		Context("No userdata", func() {
 			It("Cust spec to only have metadata", func() {
+				Expect(err).ToNot(HaveOccurred())
 				Expect(custSpec).ToNot(BeNil())
 				cloudinitPrepSpec := custSpec.Identity.(*internal.CustomizationCloudinitPrep)
 				Expect(cloudinitPrepSpec.Metadata).To(Equal(cloudInitMetadata))
@@ -359,11 +396,40 @@ var _ = Describe("Cloud-Init Customization", func() {
 			BeforeEach(func() {
 				updateArgs.VMMetadata.Data["user-data"] = "cloud-init-userdata"
 			})
-			It("Cust spec to only have metadata", func() {
+			It("Cust spec to have metadata and userdata", func() {
+				Expect(err).ToNot(HaveOccurred())
 				Expect(custSpec).ToNot(BeNil())
 				cloudinitPrepSpec := custSpec.Identity.(*internal.CustomizationCloudinitPrep)
 				Expect(cloudinitPrepSpec.Metadata).To(Equal(cloudInitMetadata))
-				Expect(cloudinitPrepSpec.Userdata).To(Equal(updateArgs.VMMetadata.Data["user-data"]))
+				Expect(cloudinitPrepSpec.Userdata).To(Equal("cloud-init-userdata"))
+			})
+		})
+
+		Context("With base64-encoded userdata but no encoding specified", func() {
+			BeforeEach(func() {
+				updateArgs.VMMetadata.Data["user-data"] = base64.StdEncoding.EncodeToString([]byte(cloudInitUserdata))
+			})
+			It("Cust spec to have metadata and userdata", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(custSpec).ToNot(BeNil())
+				cloudinitPrepSpec := custSpec.Identity.(*internal.CustomizationCloudinitPrep)
+				Expect(cloudinitPrepSpec.Metadata).To(Equal(cloudInitMetadata))
+				Expect(cloudinitPrepSpec.Userdata).To(Equal("cloud-init-userdata"))
+			})
+		})
+
+		Context("With gzipped, base64-encoded userdata but no encoding specified", func() {
+			BeforeEach(func() {
+				data, err := session.EncodeGzipBase64(cloudInitUserdata)
+				Expect(err).ToNot(HaveOccurred())
+				updateArgs.VMMetadata.Data["user-data"] = data
+			})
+			It("Cust spec to have metadata and userdata", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(custSpec).ToNot(BeNil())
+				cloudinitPrepSpec := custSpec.Identity.(*internal.CustomizationCloudinitPrep)
+				Expect(cloudinitPrepSpec.Metadata).To(Equal(cloudInitMetadata))
+				Expect(cloudinitPrepSpec.Userdata).To(Equal("cloud-init-userdata"))
 			})
 		})
 	})

@@ -191,20 +191,26 @@ func libItemVersionAnnotation(item *library.Item) string {
 	return fmt.Sprintf("%s:%s:%d", item.ID, item.Version, constants.VMImageCLVersionAnnotationVersion)
 }
 
-// isImageSupported checks if the image is deemed supported by VM Operator.
-// Image is marked supported if:
-// - WCP_UNIFIED_TKG FSS is enabled. We assume images are compliant by default and not rely on the presence of ExtraConfig key in the OVF image.
-// - Otherwise, The OVF should contain the VMOperatorV1Alpha1ConfigKey key that denotes cloud-init being disabled at first-boot, or it is a TKG image.
+// isImageSupported returns true IFF:
+//
+// - the image is marked as compatible in the OVF or is a TKG node image
+// - the WCP_UNIFIED_TKG FSS is enabled
+//
+// Otherwise, the image is marked as unsupported.
 func isImageSupported(image *v1alpha1.VirtualMachineImage, ovfEnvelope *ovf.Envelope, ovfSystemProps map[string]string) bool {
-	if lib.IsUnifiedTKGFSSEnabled() {
-		return true
-	}
-	if isOVFV1Alpha1Compatible(ovfEnvelope) || isATKGImage(ovfSystemProps) {
+	switch {
+	case isOVFV1Alpha1Compatible(ovfEnvelope) || isATKGImage(ovfSystemProps):
 		conditions.MarkTrue(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
-	} else {
-		msg := "VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1"
-		conditions.MarkFalse(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
-			v1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason, v1alpha1.ConditionSeverityError, msg)
+	case lib.IsUnifiedTKGFSSEnabled():
+		return true
+	default:
+		conditions.MarkFalse(
+			image,
+			v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
+			v1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
+			v1alpha1.ConditionSeverityError,
+			"VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1",
+		)
 	}
 	return conditions.IsTrue(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
 }

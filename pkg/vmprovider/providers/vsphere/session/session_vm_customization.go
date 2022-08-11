@@ -243,7 +243,7 @@ func (s *Session) customize(
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs) error {
 
-	if lib.IsVMServiceV1Alpha2FSSEnabled() {
+	if lib.IsVMServicePublicCloudBYOIFSSEnabled() {
 		TemplateVMMetadata(vmCtx, updateArgs)
 	}
 
@@ -306,19 +306,47 @@ func (s *Session) customize(
 	return nil
 }
 
-// TemplateData is used to specify templating values
-// for guest customization data. Users will be able
-// to specify fields from this struct as values
-// for customization. E.g.: {{ (index .NetworkInterfaces 0).Gateway }}.
-type TemplateData struct {
-	NetworkInterfaces []network.IPConfig
-	NameServers       []string
+func NicInfoToDevicesStatus(vmCtx context.VirtualMachineContext, updateArgs VMUpdateArgs) []v1alpha1.NetworkDeviceStatus {
+	networkDevicesStatus := make([]v1alpha1.NetworkDeviceStatus, 0, len(updateArgs.NetIfList))
+
+	// TODO: Add MacAddress field when the generated mac is reflected into the updateArgs.NetIfList entries
+	for _, info := range updateArgs.NetIfList {
+		ipConfig := info.IPConfiguration
+		networkDevice := v1alpha1.NetworkDeviceStatus{
+			Gateway4:    ipConfig.Gateway,
+			IPAddresses: []string{network.ToCidrNotation(ipConfig.IP, ipConfig.SubnetMask)},
+		}
+		networkDevicesStatus = append(networkDevicesStatus, networkDevice)
+	}
+	return networkDevicesStatus
 }
 
+// TemplateVMMetadata can convert templated expressions to dynamic configuration data.
 func TemplateVMMetadata(vmCtx context.VirtualMachineContext, updateArgs VMUpdateArgs) {
-	templateData := TemplateData{
-		NetworkInterfaces: updateArgs.NetIfList.GetIPConfigs(),
-		NameServers:       updateArgs.DNSServers,
+
+	networkDevicesStatus := NicInfoToDevicesStatus(vmCtx, updateArgs)
+
+	networkStatus := v1alpha1.NetworkStatus{
+		Devices:     networkDevicesStatus,
+		Nameservers: updateArgs.DNSServers,
+	}
+
+	templateData := struct {
+		V1alpha1 v1alpha1.VirtualMachineTemplate
+	}{
+		V1alpha1: v1alpha1.VirtualMachineTemplate{
+			Net: networkStatus,
+			VM:  vmCtx.VM,
+		},
+	}
+
+	// skip parsing when encountering escape character('\{',"\}")
+	normalizeStr := func(str string) string {
+		if strings.Contains(str, "\\{") || strings.Contains(str, "\\}") {
+			str = strings.ReplaceAll(str, "\\{", "{")
+			str = strings.ReplaceAll(str, "\\}", "}")
+		}
+		return str
 	}
 
 	renderTemplate := func(name, templateStr string) string {
@@ -326,16 +354,16 @@ func TemplateVMMetadata(vmCtx context.VirtualMachineContext, updateArgs VMUpdate
 		if err != nil {
 			vmCtx.Logger.Error(err, "failed to parse template", "templateStr", templateStr)
 			// TODO: emit related events
-			return templateStr
+			return normalizeStr(templateStr)
 		}
 		var doc bytes.Buffer
 		err = templ.Execute(&doc, &templateData)
 		if err != nil {
 			vmCtx.Logger.Error(err, "failed to execute template", "templateStr", templateStr)
 			// TODO: emit related events
-			return templateStr
+			return normalizeStr(templateStr)
 		}
-		return doc.String()
+		return normalizeStr(doc.String())
 	}
 
 	data := updateArgs.VMMetadata.Data

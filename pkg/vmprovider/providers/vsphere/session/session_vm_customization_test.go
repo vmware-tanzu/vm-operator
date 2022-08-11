@@ -438,12 +438,16 @@ var _ = Describe("Cloud-Init Customization", func() {
 var _ = Describe("TemplateVMMetadata", func() {
 	Context("update VmConfigArgs", func() {
 		var (
-			updateArgs session.VMUpdateArgs
-
-			ip         = "192.168.1.37"
-			subnetMask = "255.255.255.0"
-			gateway    = "192.168.1.1"
-			nameserver = "8.8.8.8"
+			updateArgs  session.VMUpdateArgs
+			ip1         = "192.168.1.37"
+			ip2         = "192.168.10.48"
+			subnetMask1 = "255.0.0.0"
+			subnetMask2 = "255.255.255.0"
+			IP1         = "192.168.1.37/8"
+			IP2         = "192.168.10.48/24"
+			gateway1    = "192.168.1.1"
+			gateway2    = "192.168.10.1"
+			nameserver  = "8.8.8.8"
 		)
 
 		vm := &vmopv1alpha1.VirtualMachine{
@@ -463,9 +467,16 @@ var _ = Describe("TemplateVMMetadata", func() {
 			updateArgs.NetIfList = []network.InterfaceInfo{
 				{
 					IPConfiguration: network.IPConfig{
-						IP:         ip,
-						SubnetMask: subnetMask,
-						Gateway:    gateway,
+						Gateway:    gateway1,
+						IP:         ip1,
+						SubnetMask: subnetMask1,
+					},
+				},
+				{
+					IPConfiguration: network.IPConfig{
+						Gateway:    gateway2,
+						IP:         ip2,
+						SubnetMask: subnetMask2,
 					},
 				},
 			}
@@ -474,32 +485,56 @@ var _ = Describe("TemplateVMMetadata", func() {
 			}
 		})
 
+		It("should return populated NicInfoToNetworkIfStatusEx correctly", func() {
+			networkDevicesStatus := session.NicInfoToDevicesStatus(vmCtx, updateArgs)
+			Expect(networkDevicesStatus[0].IPAddresses[0]).To(Equal(IP1))
+			Expect(networkDevicesStatus[0].Gateway4).To(Equal(gateway1))
+			Expect(networkDevicesStatus[1].IPAddresses[0]).To(Equal(IP2))
+			Expect(networkDevicesStatus[1].Gateway4).To(Equal(gateway2))
+		})
+
 		It("should resolve them correctly while specifying valid templates", func() {
-			updateArgs.VMMetadata.Data["ip"] = "{{ (index .NetworkInterfaces 0).IP }}"
-			updateArgs.VMMetadata.Data["subMask"] = "{{ (index .NetworkInterfaces 0).SubnetMask }}"
-			updateArgs.VMMetadata.Data["gateway"] = "{{ (index .NetworkInterfaces 0).Gateway }}"
-			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .NameServers 0) }}"
+
+			updateArgs.VMMetadata.Data["first_ip"] = "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"
+			updateArgs.VMMetadata.Data["second_ip"] = "{{ (index (index .V1alpha1.Net.Devices 1).IPAddresses 0) }}"
+			updateArgs.VMMetadata.Data["first_gateway"] = "{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}"
+			updateArgs.VMMetadata.Data["second_gateway"] = "{{ (index .V1alpha1.Net.Devices 1).Gateway4 }}"
+			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .V1alpha1.Net.Nameservers 0) }}"
+			updateArgs.VMMetadata.Data["name"] = "{{ .V1alpha1.VM.Name }}"
 
 			session.TemplateVMMetadata(vmCtx, updateArgs)
-
-			Expect(updateArgs.VMMetadata.Data["ip"]).To(Equal(ip))
-			Expect(updateArgs.VMMetadata.Data["subMask"]).To(Equal(subnetMask))
-			Expect(updateArgs.VMMetadata.Data["gateway"]).To(Equal(gateway))
-			Expect(updateArgs.VMMetadata.Data["nameserver"]).To(Equal(nameserver))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("first_ip", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("second_ip", IP2))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("first_gateway", gateway1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("second_gateway", gateway2))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameserver", nameserver))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("name", "dummy-vm"))
 		})
 
 		It("should use the original text if resolving template failed", func() {
-			updateArgs.VMMetadata.Data["ip"] = "{{ (index .NetworkInterfaces 100).IP }}"
-			updateArgs.VMMetadata.Data["subMask"] = "{{ invalidTemplate }}"
-			updateArgs.VMMetadata.Data["gateway"] = "{{ (index .NetworkInterfaces ).Gateway }}"
-			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .NameServers 0) }}"
+			updateArgs.VMMetadata.Data["ip"] = "{{ (index .V1alpha1.Net.NetworkInterfaces 100).IPAddresses }}"
+			updateArgs.VMMetadata.Data["gateway"] = "{{ (index .V1alpha1.Net.NetworkInterfaces ).Gateway }}"
+			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .V1alpha1.Net.NameServers 0) }}"
 
 			session.TemplateVMMetadata(vmCtx, updateArgs)
 
-			Expect(updateArgs.VMMetadata.Data["ip"]).To(Equal("{{ (index .NetworkInterfaces 100).IP }}"))
-			Expect(updateArgs.VMMetadata.Data["subMask"]).To(Equal("{{ invalidTemplate }}"))
-			Expect(updateArgs.VMMetadata.Data["gateway"]).To(Equal("{{ (index .NetworkInterfaces ).Gateway }}"))
-			Expect(updateArgs.VMMetadata.Data["nameserver"]).To(Equal(nameserver))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip", "{{ (index .V1alpha1.Net.NetworkInterfaces 100).IPAddresses }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("gateway", "{{ (index .V1alpha1.Net.NetworkInterfaces ).Gateway }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameserver", "{{ (index .V1alpha1.Net.NameServers 0) }}"))
+		})
+
+		It("should escape parsing when escape character used", func() {
+			updateArgs.VMMetadata.Data["skip_data1"] = "\\{\\{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) \\}\\}"
+			updateArgs.VMMetadata.Data["skip_data2"] = "\\{\\{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"
+			updateArgs.VMMetadata.Data["skip_data3"] = "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) \\}\\}"
+			updateArgs.VMMetadata.Data["skip_data4"] = "skip \\{\\{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) \\}\\}"
+
+			session.TemplateVMMetadata(vmCtx, updateArgs)
+
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("skip_data1", "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("skip_data2", "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("skip_data3", "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("skip_data4", "skip {{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"))
 		})
 	})
 })

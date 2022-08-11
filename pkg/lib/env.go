@@ -21,7 +21,6 @@ const (
 	VMServiceV1Alpha2FSS          = "FSS_WCP_VMSERVICE_V1ALPHA2"
 	InstanceStorageFSS            = "FSS_WCP_INSTANCE_STORAGE"
 	UnifiedTKGBYOIFSS             = "FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI"
-	VMServiceBackupRestoreFSS     = "FSS_WCP_VMSERVICE_BACKUPRESTORE"
 	VMServicePublicCloudBYOIFSS   = "FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI"
 	UnifiedTKGFSS                 = "FSS_WCP_Unified_TKG"
 	VMClassAsConfigFSS            = "FSS_WCP_VM_CLASS_AS_CONFIG"
@@ -93,10 +92,6 @@ var IsUnifiedTKGBYOIFSSEnabled = func() bool {
 
 var IsUnifiedTKGFSSEnabled = func() bool {
 	return os.Getenv(UnifiedTKGFSS) == trueString
-}
-
-var IsVMServiceBackupRestoreFSSEnabled = func() bool {
-	return os.Getenv(VMServiceBackupRestoreFSS) == trueString
 }
 
 var IsVMServicePublicCloudBYOIFSSEnabled = func() bool {

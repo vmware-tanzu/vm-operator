@@ -26,9 +26,6 @@ FSS_WCP_VMSERVICE_V1ALPHA2_VALUE=${FSS_WCP_VMSERVICE_V1ALPHA2_VALUE:-false}
 # Using VDS Networking
 VSPHERE_NETWORKING_VALUE=${VSPHERE_NETWORKING_VALUE:-false}
 
-# Is VADP based Backup/Restore of VM Service VMs supported
-FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE=${FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE:-false}
-
 # VM service VM Class as Config
 FSS_WCP_VM_CLASS_AS_CONFIG_VALUE=${FSS_WCP_VM_CLASS_AS_CONFIG_VALUE:-false}
 
@@ -145,11 +142,6 @@ patchWcpDeploymentYaml() {
     sed -i'' -E "s,\"?<VSPHERE_NETWORKING_VALUE>\"?,\"$VSPHERE_NETWORKING_VALUE\",g" "artifacts/wcp-deployment.yaml"
     if grep -q "<VSPHERE_NETWORKING_VALUE>" artifacts/wcp-deployment.yaml; then
         echo "Failed to subst VSPHERE_NETWORKING_VALUE in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE>\"?,\"$FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE in artifacts/wcp-deployment.yaml"
         exit 1
     fi
     sed -i'' -E "s,\"?<FSS_WCP_VM_CLASS_AS_CONFIG_VALUE>\"?,\"$FSS_WCP_VM_CLASS_AS_CONFIG_VALUE\",g" "artifacts/wcp-deployment.yaml"

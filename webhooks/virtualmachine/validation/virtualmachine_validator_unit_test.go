@@ -96,7 +96,7 @@ func setReadinessProbe(validPortProbe bool) *vmopv1.Probe {
 	}
 }
 
-// nolint:gocyclo
+//nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
 		ctx                 *unitValidatingWebhookContext
@@ -286,7 +286,7 @@ func unitTestsValidateCreate() {
 			// Delete the dummy AZ.
 			Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
 		}
-		// nolint:gocritic // Ignore linter complaint about converting to switch case since the following is more readable.
+		//nolint:gocritic // Ignore linter complaint about converting to switch case since the following is more readable.
 		if args.isEmptyAvailabilityZone {
 			delete(ctx.vm.Labels, topology.KubernetesTopologyZoneLabelKey)
 		} else if args.isInvalidAvailabilityZone {

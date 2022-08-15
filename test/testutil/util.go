@@ -24,7 +24,11 @@ func GetRootDir() (string, error) {
 		return "", fmt.Errorf("could not determine Caller to get root path")
 	}
 	t := "test" + string(os.PathSeparator)
-	return s[:strings.Index(s, t)], nil
+	i := strings.Index(s, t)
+	if i < 0 {
+		return "", fmt.Errorf("could not determine Caller to get root path")
+	}
+	return s[:i], nil
 }
 
 // GetRootDirOrDie returns the root directory of this git repo or dies
@@ -38,7 +42,7 @@ func GetRootDirOrDie() string {
 
 // FindModuleDir returns the on-disk directory for the provided Go module.
 func FindModuleDir(module string) string {
-	cmd := exec.Command("go", "mod", "download", "-json", module) // nolint: gosec // ignore lint errors about launching a subprocess with a variable
+	cmd := exec.Command("go", "mod", "download", "-json", module)
 	out, err := cmd.Output()
 	if err != nil {
 		klog.Fatalf("Failed to run go mod to find module %q directory", module)

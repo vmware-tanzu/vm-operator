@@ -148,9 +148,7 @@ func GetAvailabilityZones(
 	}
 
 	zones := make([]topologyv1.AvailabilityZone, len(availabilityZoneList.Items))
-	for i := range availabilityZoneList.Items {
-		zones[i] = availabilityZoneList.Items[i]
-	}
+	copy(zones, availabilityZoneList.Items)
 
 	return zones, nil
 }

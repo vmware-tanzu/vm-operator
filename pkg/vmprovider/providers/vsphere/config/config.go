@@ -51,7 +51,7 @@ const (
 	// Keys in provider ConfigMap.
 	vcPNIDKey                = "VcPNID"
 	vcPortKey                = "VcPort"
-	vcCredsSecretNameKey     = "VcCredsSecretName" // nolint:gosec
+	vcCredsSecretNameKey     = "VcCredsSecretName" //nolint:gosec
 	datacenterKey            = "Datacenter"
 	resourcePoolKey          = "ResourcePool"
 	folderKey                = "Folder"
@@ -68,7 +68,7 @@ const (
 )
 
 // ConfigMapToProviderConfig converts the VM provider ConfigMap to a VSphereVMProviderConfig.
-// nolint: revive // Ignore linter error about stuttering.
+//nolint: revive // Ignore linter error about stuttering.
 func ConfigMapToProviderConfig(
 	configMap *corev1.ConfigMap,
 	vcCreds *credentials.VSphereVMProviderCredentials) (*VSphereVMProviderConfig, error) {

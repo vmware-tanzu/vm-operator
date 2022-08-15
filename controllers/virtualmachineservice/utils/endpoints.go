@@ -17,7 +17,7 @@ limitations under the License.
 // Imported https://github.com/kubernetes/kubernetes/blob/master/pkg/api/v1/endpoints/util.go
 // to avoid depending on k8s.io/kubernetes
 
-// nolint: gosec
+//nolint: gosec
 package utils
 
 import (

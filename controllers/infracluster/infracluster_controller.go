@@ -30,7 +30,7 @@ import (
 
 const (
 	// VcCredsSecretName is the credential secret that stores the VM operator service provider user credentials.
-	VcCredsSecretName = "wcp-vmop-sa-vc-auth" // nolint:gosec
+	VcCredsSecretName = "wcp-vmop-sa-vc-auth" //nolint:gosec
 )
 
 // AddToManager adds this package's controller to the provided manager.

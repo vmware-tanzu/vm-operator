@@ -51,8 +51,8 @@ const (
 	VMImageCLVersionAnnotationVersion = 1
 
 	PCIPassthruMMIOOverrideAnnotation = pkg.VMOperatorKey + "/pci-passthru-64bit-mmio-size"
-	PCIPassthruMMIOExtraConfigKey     = "pciPassthru.use64bitMMIO"    // nolint:gosec
-	PCIPassthruMMIOSizeExtraConfigKey = "pciPassthru.64bitMMIOSizeGB" // nolint:gosec
+	PCIPassthruMMIOExtraConfigKey     = "pciPassthru.use64bitMMIO"    //nolint:gosec
+	PCIPassthruMMIOSizeExtraConfigKey = "pciPassthru.64bitMMIOSizeGB" //nolint:gosec
 	PCIPassthruMMIOSizeDefault        = "512"
 
 	// MinSupportedHWVersionForPVC is the supported virtual hardware version for persistent volumes.

@@ -11,7 +11,6 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/pkg/errors"
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/pbm"
 	pbmTypes "github.com/vmware/govmomi/pbm/types"
@@ -24,6 +23,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
@@ -382,6 +382,18 @@ func (s *Session) createCloneSpec(
 	sourceVM *res.VirtualMachine,
 	vmConfigArgs vmprovider.VMConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
 
+	// Unmarshal the ConfigSpec from the VM Class.
+	var configSpecFromClass vimTypes.VirtualMachineConfigSpec
+	if lib.IsVMClassAsConfigFSSEnabled() {
+		if data := vmConfigArgs.VMClass.Spec.ConfigSpec.XML; len(data) > 0 {
+			spec, err := util.UnmarshalConfigSpecFromBase64XML([]byte(data))
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal ConfigSpec from class: %v", err)
+			}
+			configSpecFromClass = spec
+		}
+	}
+
 	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
 		Config: vmCtx.ConfigSpec,
 		Memory: pointer.BoolPtr(false), // No full memory clones.
@@ -400,7 +412,7 @@ func (s *Session) createCloneSpec(
 		return nil, err
 	}
 
-	ethCardDeviceChanges, err := s.cloneEthCardDeviceChanges(vmCtx, virtualNICs, &vmConfigArgs.VMClass.Spec)
+	ethCardDeviceChanges, err := s.cloneEthCardDeviceChanges(vmCtx, virtualNICs, configSpecFromClass)
 	if err != nil {
 		return nil, err
 	}
@@ -443,10 +455,10 @@ func (s *Session) createCloneSpec(
 func (s *Session) cloneEthCardDeviceChanges(
 	vmCtx VirtualMachineCloneContext,
 	srcEthCards object.VirtualDeviceList,
-	vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
+	configSpec vimTypes.VirtualMachineConfigSpec) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
 	// BMV: Is this really required for cloning, or OK to defer to later update reconcile like OVF deploy?
-	netIfList, err := s.ensureNetworkInterfaces(vmCtx.VirtualMachineContext, vmClassSpec)
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx.VirtualMachineContext, configSpec)
 	if err != nil {
 		return nil, err
 	}

@@ -10,6 +10,17 @@ import (
 	"io"
 )
 
+// Base64Decode returns a byte slice decoded from a base64 byte slice.
+func Base64Decode(src []byte) ([]byte, error) {
+	b64 := base64.StdEncoding
+	dst := make([]byte, b64.DecodedLen(len(src)))
+	n, err := b64.Decode(dst, src)
+	if err != nil {
+		return nil, err
+	}
+	return dst[:n], nil
+}
+
 // TryToDecodeBase64Gzip base64-decodes the provided data until the
 // DecodeString function fails. If the result is gzipped, then it is
 // decompressed and returned. Otherwise the decoded data is returned.
@@ -23,7 +34,7 @@ func TryToDecodeBase64Gzip(data []byte) (string, error) {
 
 	gzipOrPlainText := data
 	for {
-		decoded, err := base64.StdEncoding.DecodeString(string(data))
+		decoded, err := Base64Decode(data)
 		if err != nil {
 			break
 		}

@@ -19,6 +19,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -441,12 +442,20 @@ func (s *Session) prePowerOnVMConfigSpec(
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
 	currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
-	expectedPciDevices := virtualmachine.CreatePCIDevices(updateArgs.VMClass.Spec.Hardware.Devices)
+	expectedPciDevices := virtualmachine.CreatePCIDevices(
+		updateArgs.VMClass.Spec.Hardware.Devices,
+		util.SelectVirtualPCIPassthrough(
+			util.DevicesFromConfigSpec(updateArgs.ConfigSpecFromClass),
+		),
+	)
 	pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPciDevices, currentPciDevices)
 	if err != nil {
 		return nil, err
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
+
+	// Update the device groups.
+	configSpec.DeviceGroups = updateArgs.ConfigSpecFromClass.DeviceGroups
 
 	return configSpec, nil
 }
@@ -474,51 +483,24 @@ func (s *Session) prePowerOnVMReconfigure(
 	return nil
 }
 
-// networkDevicesFromConfigSpec returns a list of supported network devices
-// (ethernet cards) from the base64 encoded ConfigSpec XML.
-func networkDevicesFromConfigSpec(
-	vmCtx context.VirtualMachineContext,
-	configSpecXML string) ([]vimTypes.BaseVirtualDevice, error) {
-
-	configSpec, err := virtualmachine.DecodeAndUnmarshalConfigSpec(vmCtx, configSpecXML)
-	if err != nil {
-		return nil, err
-	}
-
-	vmCtx.Logger.V(5).Info("Decoded VM Class ConfigSpec", "configSpec", configSpec)
-
-	networkDevices := make([]vimTypes.BaseVirtualDevice, 0)
-	for _, change := range configSpec.DeviceChange {
-		dspec := change.GetVirtualDeviceConfigSpec()
-
-		switch dspec.Device.(type) {
-		// Ethernet card types supported by VM Service today.
-		case *vimTypes.VirtualE1000, *vimTypes.VirtualE1000e, *vimTypes.VirtualPCNet32, *vimTypes.VirtualVmxnet2, *vimTypes.VirtualVmxnet3, *vimTypes.VirtualSriovEthernetCard:
-			networkDevices = append(networkDevices, dspec.Device)
-		default:
-			// TODO: Handle different device types when VM Class ConfigSpec starts supporting them.
-			vmCtx.Logger.Error(nil, "unsupported device type specified in VM Class ConfigSpec",
-				"deviceSpec", dspec, "deviceType", fmt.Sprintf("%T", dspec.Device))
-		}
-	}
-
-	return networkDevices, nil
-}
-
 func (s *Session) ensureNetworkInterfaces(
 	vmCtx context.VirtualMachineContext,
-	classSpec *v1alpha1.VirtualMachineClassSpec) (network.InterfaceInfoList, error) {
+	configSpec vimTypes.VirtualMachineConfigSpec) (network.InterfaceInfoList, error) {
 
 	// This negative device key is the traditional range used for network interfaces.
 	deviceKey := int32(-100)
 
 	var networkDevices []vimTypes.BaseVirtualDevice
-	if lib.IsVMClassAsConfigFSSEnabled() && classSpec.ConfigSpec != nil {
-		var err error
-		networkDevices, err = networkDevicesFromConfigSpec(vmCtx, classSpec.ConfigSpec.XML)
-		if err != nil {
-			return nil, err
-		}
+	if lib.IsVMClassAsConfigFSSEnabled() {
+		networkDevices = util.SelectDevicesByTypes(
+			util.DevicesFromConfigSpec(configSpec),
+			&vimTypes.VirtualE1000{},
+			&vimTypes.VirtualE1000e{},
+			&vimTypes.VirtualPCNet32{},
+			&vimTypes.VirtualVmxnet2{},
+			&vimTypes.VirtualVmxnet3{},
+			&vimTypes.VirtualSriovEthernetCard{},
+		)
 	}
 
 	// XXX: The following logic assumes that the order of network interfaces specified in the
@@ -593,8 +575,9 @@ func (s *Session) ensureCNSVolumes(vmCtx context.VirtualMachineContext) error {
 
 type VMUpdateArgs struct {
 	vmprovider.VMConfigArgs
-	NetIfList  network.InterfaceInfoList
-	DNSServers []string
+	NetIfList           network.InterfaceInfoList
+	DNSServers          []string
+	ConfigSpecFromClass vimTypes.VirtualMachineConfigSpec
 }
 
 func (s *Session) prepareVMForPowerOn(
@@ -603,7 +586,21 @@ func (s *Session) prepareVMForPowerOn(
 	cfg *vimTypes.VirtualMachineConfigInfo,
 	vmConfigArgs vmprovider.VMConfigArgs) error {
 
-	netIfList, err := s.ensureNetworkInterfaces(vmCtx, &vmConfigArgs.VMClass.Spec)
+	// Unmarshal the ConfigSpec from the VM Class.
+	var configSpecFromClass vimTypes.VirtualMachineConfigSpec
+	if lib.IsVMClassAsConfigFSSEnabled() {
+		if vmClassCfgSpec := vmConfigArgs.VMClass.Spec.ConfigSpec; vmClassCfgSpec != nil {
+			if data := vmClassCfgSpec.XML; len(data) > 0 {
+				spec, err := util.UnmarshalConfigSpecFromBase64XML([]byte(data))
+				if err != nil {
+					return fmt.Errorf("failed to unmarshal ConfigSpec from class: %v", err)
+				}
+				configSpecFromClass = spec
+			}
+		}
+	}
+
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx, configSpecFromClass)
 	if err != nil {
 		return err
 	}
@@ -615,9 +612,10 @@ func (s *Session) prepareVMForPowerOn(
 	}
 
 	updateArgs := VMUpdateArgs{
-		VMConfigArgs: vmConfigArgs,
-		NetIfList:    netIfList,
-		DNSServers:   dnsServers,
+		VMConfigArgs:        vmConfigArgs,
+		NetIfList:           netIfList,
+		DNSServers:          dnsServers,
+		ConfigSpecFromClass: configSpecFromClass,
 	}
 
 	err = s.prePowerOnVMReconfigure(vmCtx, resVM, cfg, updateArgs)

@@ -7,14 +7,39 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
-	"testing"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
-func TestTryToDecodeBase64Gzip(t *testing.T) {
+var _ = Describe("Base64Decode", func() {
 
-	const helloWorld = "Hello, world."
+	b64 := func(src []byte) []byte {
+		return []byte(base64.StdEncoding.EncodeToString(src))
+	}
+
+	Context("Valid input", func() {
+		It("Should decode successfully", func() {
+			src := []byte("Hello, world.")
+			data, err := util.Base64Decode(b64(src))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(data).To(Equal(src))
+		})
+	})
+
+	Context("Invalid input", func() {
+		It("Should return an error", func() {
+			src := []byte("Hello, world.")
+			data, err := util.Base64Decode(src)
+			Expect(err).To(HaveOccurred())
+			Expect(data).To(BeNil())
+		})
+	})
+})
+
+var _ = Describe("TryToDecodeBase64Gzip", func() {
 
 	b64 := func(count int, data []byte) []byte {
 		for i := 0; i <= count; i++ {
@@ -33,60 +58,100 @@ func TestTryToDecodeBase64Gzip(t *testing.T) {
 		return w.Bytes()
 	}
 
-	testCases := []struct {
-		name      string
-		data      []byte
-		expString string
-		expError  error
-	}{
-		{
-			name:      "Plain text",
-			data:      []byte(helloWorld),
-			expString: helloWorld,
-		},
-		{
-			name:      "Base64-encoded once",
-			data:      b64(1, []byte(helloWorld)),
-			expString: helloWorld,
-		},
-		{
-			name:      "Base64-encoded twice",
-			data:      b64(2, []byte(helloWorld)),
-			expString: helloWorld,
-		},
-		{
-			name:      "Base64-encoded thrice",
-			data:      b64(3, []byte(helloWorld)),
-			expString: helloWorld,
-		},
-		{
-			name:      "Gzipped and base64-encoded once",
-			data:      b64(1, gz([]byte(helloWorld))),
-			expString: helloWorld,
-		},
-		{
-			name:      "Gzipped and base64-encoded twice",
-			data:      b64(2, gz([]byte(helloWorld))),
-			expString: helloWorld,
-		},
-		{
-			name:      "Gzipped and base64-encoded thrice",
-			data:      b64(3, gz([]byte(helloWorld))),
-			expString: helloWorld,
-		},
-	}
+	var (
+		inData    []byte
+		inString  string
+		outString string
+		err       error
+	)
 
-	for i := range testCases {
-		tc := testCases[i]
-		t.Run(tc.name, func(t *testing.T) {
-			s, err := util.TryToDecodeBase64Gzip(tc.data)
-			if e, a := tc.expError, err; e != nil && a != nil && e.Error() != a.Error() {
-				t.Errorf("expErr=%q != actErr=%q", e, a)
-			}
-			if e, a := tc.expString, s; e != a {
-				t.Errorf("expStr=%q != actStr=%q", e, a)
-			}
+	BeforeEach(func() {
+		inString = "Hello, world."
+	})
+
+	JustBeforeEach(func() {
+		outString, err = util.TryToDecodeBase64Gzip(inData)
+	})
+
+	Context("plain-text", func() {
+		BeforeEach(func() {
+			inData = []byte(inString)
 		})
-	}
+		It("should return expected value", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(outString).To(Equal(inString))
+		})
 
-}
+		Context("base64-encoded once", func() {
+			BeforeEach(func() {
+				inData = b64(1, inData)
+			})
+			It("should return expected value", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(outString).To(Equal(inString))
+			})
+		})
+
+		Context("base64-encoded twice", func() {
+			BeforeEach(func() {
+				inData = b64(2, inData)
+			})
+			It("should return expected value", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(outString).To(Equal(inString))
+			})
+		})
+
+		Context("base64-encoded thrice", func() {
+			BeforeEach(func() {
+				inData = b64(3, inData)
+			})
+			It("should return expected value", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(outString).To(Equal(inString))
+			})
+		})
+
+		Context("gzipped", func() {
+			BeforeEach(func() {
+				inData = gz([]byte(inString))
+			})
+
+			It("should return expected value", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(outString).To(Equal(inString))
+			})
+
+			Context("base64-encoded once", func() {
+				BeforeEach(func() {
+					inData = b64(1, inData)
+				})
+				It("should return expected value", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(outString).To(Equal(inString))
+				})
+			})
+
+			Context("base64-encoded twice", func() {
+				BeforeEach(func() {
+					inData = b64(2, inData)
+				})
+				It("should return expected value", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(outString).To(Equal(inString))
+				})
+			})
+
+			Context("base64-encoded thrice", func() {
+				BeforeEach(func() {
+					inData = b64(3, inData)
+				})
+				It("should return expected value", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(outString).To(Equal(inString))
+				})
+			})
+		})
+	})
+
+})

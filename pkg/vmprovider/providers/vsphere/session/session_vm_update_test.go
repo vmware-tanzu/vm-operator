@@ -791,7 +791,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				}
 			})
 			It("should create vSphere device with VmiopBackingInfo", func() {
-				vSphereDevices := virtualmachine.CreatePCIDevices(pciDevices)
+				vSphereDevices := virtualmachine.CreatePCIDevices(pciDevices, nil)
 				Expect(vSphereDevices).To(HaveLen(1))
 				virtualDevice := vSphereDevices[0].GetVirtualDevice()
 				backing := virtualDevice.Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo)
@@ -805,13 +805,96 @@ var _ = Describe("Update ConfigSpec", func() {
 				}
 			})
 			It("should create vSphere device with DynamicBackingInfo", func() {
-				vSphereDevices := virtualmachine.CreatePCIDevices(pciDevices)
+				vSphereDevices := virtualmachine.CreatePCIDevices(pciDevices, nil)
 				Expect(vSphereDevices).To(HaveLen(1))
 				virtualDevice := vSphereDevices[0].GetVirtualDevice()
 				backing := virtualDevice.Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
 				Expect(backing.AllowedDevice[0].DeviceId).To(Equal(int32(pciDevices.DynamicDirectPathIODevices[0].DeviceID)))
 				Expect(backing.AllowedDevice[0].VendorId).To(Equal(int32(pciDevices.DynamicDirectPathIODevices[0].VendorID)))
 				Expect(backing.CustomLabel).To(Equal(pciDevices.DynamicDirectPathIODevices[0].CustomLabel))
+			})
+		})
+		Context("with VMClassAsConfig", func() {
+			var (
+				devIn []*vimTypes.VirtualPCIPassthrough
+			)
+			Context("For vGPU device", func() {
+				BeforeEach(func() {
+					pciDevices = vmopv1alpha1.VirtualDevices{
+						VGPUDevices: []vmopv1alpha1.VGPUDevice{
+							{
+								ProfileName: "SampleProfile1",
+							},
+						},
+					}
+					devIn = []*vimTypes.VirtualPCIPassthrough{
+						{
+							VirtualDevice: vimTypes.VirtualDevice{
+								Backing: &vimTypes.VirtualPCIPassthroughVmiopBackingInfo{
+									Vgpu: "SampleProfile2",
+								},
+							},
+						},
+					}
+				})
+				It("should create two vGPUs", func() {
+					devList := virtualmachine.CreatePCIDevices(pciDevices, devIn)
+					Expect(devList).To(HaveLen(2))
+
+					Expect(devList[0]).ToNot(BeNil())
+					Expect(devList[0]).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthrough{}))
+					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing).ToNot(BeNil())
+					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughVmiopBackingInfo{}))
+					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo).Vgpu).To(Equal("SampleProfile1"))
+
+					Expect(devList[1]).ToNot(BeNil())
+					Expect(devList[1]).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthrough{}))
+					Expect(devList[1].(*vimTypes.VirtualPCIPassthrough).Backing).ToNot(BeNil())
+					Expect(devList[1].(*vimTypes.VirtualPCIPassthrough).Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughVmiopBackingInfo{}))
+					Expect(devList[1].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughVmiopBackingInfo).Vgpu).To(Equal("SampleProfile2"))
+				})
+			})
+
+			Context("For Dynamic DirectPath I/O device", func() {
+				BeforeEach(func() {
+					pciDevices = vmopv1alpha1.VirtualDevices{
+						DynamicDirectPathIODevices: []vmopv1alpha1.DynamicDirectPathIODevice{
+							{
+								VendorID:    42,
+								DeviceID:    43,
+								CustomLabel: "SampleLabel1",
+							},
+						},
+					}
+					devIn = []*vimTypes.VirtualPCIPassthrough{
+						{
+							VirtualDevice: vimTypes.VirtualDevice{
+								Backing: &vimTypes.VirtualPCIPassthroughDynamicBackingInfo{
+									AllowedDevice: []vimTypes.VirtualPCIPassthroughAllowedDevice{
+										{
+											VendorId: 52,
+											DeviceId: 53,
+										},
+									},
+									CustomLabel: "SampleLabel2",
+								},
+							},
+						},
+					}
+				})
+				It("should create one dynamic directpath i/o device", func() {
+					devList := virtualmachine.CreatePCIDevices(pciDevices, devIn)
+					Expect(devList).To(HaveLen(1))
+
+					Expect(devList[0]).ToNot(BeNil())
+					Expect(devList[0]).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthrough{}))
+					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing).ToNot(BeNil())
+					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughDynamicBackingInfo{}))
+					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo).AllowedDevice).To(HaveLen(1))
+					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo).CustomLabel).To(Equal("SampleLabel1"))
+					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo).AllowedDevice[0].VendorId).To(BeEquivalentTo(42))
+					Expect(devList[0].(*vimTypes.VirtualPCIPassthrough).Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo).AllowedDevice[0].DeviceId).To(BeEquivalentTo(43))
+				})
 			})
 		})
 	})

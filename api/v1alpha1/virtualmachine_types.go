@@ -113,21 +113,39 @@ type VirtualMachineNetworkInterface struct {
 }
 
 // VirtualMachineMetadataTransport is used to indicate the transport used by VirtualMachineMetadata
-// Valid values are "ExtraConfig", "OvfEnv" and "CloudInit".
-// +kubebuilder:validation:Enum=ExtraConfig;OvfEnv;CloudInit
+// Valid values are "ExtraConfig", "OvfEnv", "vAppConfig" and "CloudInit".
+// +kubebuilder:validation:Enum=ExtraConfig;OvfEnv;vAppConfig;CloudInit
 type VirtualMachineMetadataTransport string
 
 const (
-	// VirtualMachineMetadataExtraConfigTransport indicates that the data set in the VirtualMachineMetadata Transport Resource,
-	// i.e., a ConfigMap or Secret, will be extraConfig key value fields on the VM. Only keys prefixed with "guestinfo." will
-	// be set.
+	// VirtualMachineMetadataExtraConfigTransport indicates that the data set in
+	// the VirtualMachineMetadata Transport Resource, i.e., a ConfigMap or Secret,
+	// will be extraConfig key value fields on the VM.
+	// Only keys prefixed with "guestinfo." will be set.
 	VirtualMachineMetadataExtraConfigTransport VirtualMachineMetadataTransport = "ExtraConfig"
 
-	// VirtualMachineMetadataOvfEnvTransport indicates that the data set in the VirtualMachineMetadata Transport Resource,
-	// i.e., a ConfigMap or Secret, will be vApp properties on the VM, which will be exposed as OvfEnv to the Guest VM. Only properties
-	// marked userConfigurable and already present in either OVF Properties of a VirtualMachineImage
-	// or as vApp properties on an existing VM or VMTX will be set, all others will be ignored.
+	// VirtualMachineMetadataOvfEnvTransport indicates that the data set in
+	// the VirtualMachineMetadata Transport Resource, i.e., a ConfigMap or Secret,
+	// will be vApp properties on the VM, which will be exposed as OvfEnv to the Guest VM.
+	// Only properties marked userConfigurable and already present in either
+	// OVF Properties of a VirtualMachineImage or as vApp properties on an existing VM
+	// or VMTX will be set, all others will be ignored.
+	//
+	// This transport uses Guest OS customization for networking.
 	VirtualMachineMetadataOvfEnvTransport VirtualMachineMetadataTransport = "OvfEnv"
+
+	// VirtualMachineMetadataVAppConfigTransport indicates that the data set in
+	// the VirtualMachineMetadata Transport Resource, i.e., a ConfigMap or Secret,
+	// will be vApp properties on the VM, which will be exposed as vAppConfig to the Guest VM.
+	// Only properties marked userConfigurable and already present in either
+	// OVF Properties of a VirtualMachineImage or as vApp properties on an existing VM
+	// or VMTX will be set, all others will be ignored.
+	//
+	// Selecting this transport means the guest's network is not automatically
+	// configured by vm-tools. This transport should only be selected if the image
+	// exposes OVF/vApp properties that are used by the guest to bootstrap
+	// its networking configuration.
+	VirtualMachineMetadataVAppConfigTransport VirtualMachineMetadataTransport = "vAppConfig"
 
 	// VirtualMachineMetadataCloudInitTransport indicates the data set in
 	// the VirtualMachineMetadata Transport Resource, i.e., a ConfigMap or Secret,

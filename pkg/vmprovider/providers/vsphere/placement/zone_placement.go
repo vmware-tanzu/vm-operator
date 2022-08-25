@@ -172,21 +172,18 @@ func getZonalPlacementRecommendations(
 		}
 	}
 
-	var recs []Recommendation
-
 	if len(candidateRPMoRefs) == 1 {
-		rp := candidateRPMoRefs[0]
-		recs = append(recs, Recommendation{PoolMoRef: rp})
-		vmCtx.Logger.V(5).Info("Skipping placement call since there is only one candidate", "rpMoID", rp.Value)
-	} else {
-		var err error
+		vmCtx.Logger.Info(
+			"Falling back into non-zonal placement since there is only one candidate",
+			"rpMoID", candidateRPMoRefs[0].Value)
+		return getPlacementRecommendations(vmCtx, vcClient, candidates, configSpec)
 
-		recs, err = ClusterPlaceVMForCreate(vmCtx, vcClient, candidateRPMoRefs, configSpec)
-		if err != nil {
-			vmCtx.Logger.Error(err, "PlaceVmsXCluster failed")
-			return nil
-		}
+	}
 
+	recs, err := ClusterPlaceVMForCreate(vmCtx, vcClient, candidateRPMoRefs, configSpec)
+	if err != nil {
+		vmCtx.Logger.Error(err, "PlaceVmsXCluster failed")
+		return nil
 	}
 
 	recommendations := map[string][]Recommendation{}
@@ -261,6 +258,10 @@ func Placement(
 	}
 
 	if instanceStoragePlacement {
+		if rec.HostMoRef == nil {
+			return fmt.Errorf("recommendation is missing host required for instance storage")
+		}
+
 		hostMoID := rec.HostMoRef.Value
 
 		hostFQDN, err := vcenter.GetESXHostFQDN(vmCtx, vcClient, hostMoID)

@@ -72,7 +72,33 @@ var _ = Describe("", func() {
 		},
 	}
 
+	vmClass := &vmopv1alpha1.VirtualMachineClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "best-effort-small",
+		},
+	}
+
+	vmClassBinding := &vmopv1alpha1.VirtualMachineClassBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "best-effort-small",
+			Namespace: testNs,
+		},
+	}
+
 	BeforeEach(func() {
+		// ensure vm class and vm class binding exists.
+		classList := &vmopv1alpha1.VirtualMachineClassList{}
+		Expect(client.List(context.TODO(), classList)).To(Succeed())
+		if len(classList.Items) == 0 {
+			Expect(client.Create(context.TODO(), vmClass)).To(Succeed())
+		}
+
+		bindingList := &vmopv1alpha1.VirtualMachineClassBindingList{}
+		Expect(client.List(context.TODO(), bindingList)).To(Succeed())
+		if len(bindingList.Items) == 0 {
+			Expect(client.Create(context.TODO(), vmClassBinding)).To(Succeed())
+		}
+
 		// ensure vm image exists.
 		imageList := &vmopv1alpha1.VirtualMachineImageList{}
 		Expect(client.List(context.TODO(), imageList)).To(Succeed())

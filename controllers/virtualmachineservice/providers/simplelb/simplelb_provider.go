@@ -52,8 +52,12 @@ func (s *Provider) EnsureLoadBalancer(ctx context.Context, vmService *vmopv1alph
 	if err != nil {
 		return err
 	}
+	vmClassName, err := s.GetVirtualMachineClassName(ctx, vmService.Namespace)
+	if err != nil {
+		return err
+	}
 	lbParams := getLBConfigParams(vmService, xdsNodes)
-	vm := loadbalancerVM(vmService, vmImageName)
+	vm := loadbalancerVM(vmService, vmClassName, vmImageName)
 	cm := loadbalancerCM(vmService, lbParams)
 	if err := s.ensureLBVM(ctx, vm, cm); err != nil {
 		return err
@@ -63,6 +67,22 @@ func (s *Provider) EnsureLoadBalancer(ctx context.Context, vmService *vmopv1alph
 	}
 
 	return s.updateLBConfig(ctx, vmService)
+}
+
+// GetVirtualMachineClassName returns the class name for loadbalancer-vm.
+// We need to choose the VM class name which the namespace has access to instead of hardcode it.
+func (s *Provider) GetVirtualMachineClassName(ctx context.Context, namespace string) (string, error) {
+	bindingList := &vmopv1alpha1.VirtualMachineClassBindingList{}
+	if err := s.client.List(ctx, bindingList, client.InNamespace(namespace)); err != nil {
+		s.log.Error(err, "failed to list VirtualMachineClassBindings from control plane")
+		return "", err
+	}
+
+	if len(bindingList.Items) == 0 {
+		return "", fmt.Errorf("no virtual machine class is available in namespace %s", namespace)
+	}
+
+	return bindingList.Items[0].Name, nil
 }
 
 // GetVirtualMachineImageName returns the image name for loadbalancer-vm image in the cluster.
@@ -132,7 +152,7 @@ func makeVMServiceOwnerRef(vmService *vmopv1alpha1.VirtualMachineService) metav1
 	}
 }
 
-func loadbalancerVM(vmService *vmopv1alpha1.VirtualMachineService, vmImageName string) *vmopv1alpha1.VirtualMachine {
+func loadbalancerVM(vmService *vmopv1alpha1.VirtualMachineService, vmClassName, vmImageName string) *vmopv1alpha1.VirtualMachine {
 	return &vmopv1alpha1.VirtualMachine{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            vmService.Name + "-lb",
@@ -141,7 +161,7 @@ func loadbalancerVM(vmService *vmopv1alpha1.VirtualMachineService, vmImageName s
 		},
 		Spec: vmopv1alpha1.VirtualMachineSpec{
 			ImageName:  vmImageName,
-			ClassName:  "best-effort-xsmall",
+			ClassName:  vmClassName,
 			PowerState: "poweredOn",
 			VmMetadata: &vmopv1alpha1.VirtualMachineMetadata{
 				ConfigMapName: metadataCMName(vmService),

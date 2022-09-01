@@ -259,6 +259,8 @@ func (s *Session) customize(
 	case v1alpha1.VirtualMachineMetadataOvfEnvTransport:
 		configSpec = GetOvfEnvCustSpec(config, updateArgs)
 		custSpec = GetLinuxPrepCustSpec(vmCtx.VM.Name, updateArgs)
+	case v1alpha1.VirtualMachineMetadataVAppConfigTransport:
+		configSpec = GetOvfEnvCustSpec(config, updateArgs)
 	case v1alpha1.VirtualMachineMetadataExtraConfigTransport:
 		configSpec = GetExtraConfigCustSpec(config, updateArgs)
 		custSpec = GetLinuxPrepCustSpec(vmCtx.VM.Name, updateArgs)

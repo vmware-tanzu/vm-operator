@@ -17,9 +17,10 @@ require (
 	github.com/onsi/gomega v1.17.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.2-0.20220421062905-4dcf02ec7b3c
-	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20220811192737-498185897c0d
+	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20220829180940-668c997eb271
 	github.com/vmware/govmomi v0.28.1-0.20220628215734-1f67efe15a2e
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
+	golang.org/x/text v0.3.7
 	gomodules.xyz/jsonpatch/v2 v2.2.0
 	google.golang.org/grpc v1.40.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -59,7 +60,6 @@ require (
 	golang.org/x/oauth2 v0.0.0-20220223155221-ee480838109b // indirect
 	golang.org/x/sys v0.0.0-20220328115105-d36c6a25d886 // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
-	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20210831024726-fe130286e0e2 // indirect

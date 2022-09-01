@@ -99,4 +99,19 @@ const (
 	XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance"
 	// ConfigSpecProviderXML indicates XML as the config spec transport type for virtual machine deployment.
 	ConfigSpecProviderXML = "XML"
+
+	// V1alpha1FirstIP is an alias for versioned templating function V1alpha1_FirstIP.
+	V1alpha1FirstIP = "V1alpha1_FirstIP"
+	// V1alpha1FirstIPFromNIC is an alias for versioned templating function V1alpha1_FirstIPFromNIC.
+	V1alpha1FirstIPFromNIC = "V1alpha1_FirstIPFromNIC"
+	// V1alpha1IPsFromNIC is an alias for versioned templating function V1alpha1_IPsFromNIC.
+	V1alpha1IPsFromNIC = "V1alpha1_IPsFromNIC"
+	// V1alpha1FormatIP is an alias for versioned templating function V1alpha1_FormatIP.
+	V1alpha1FormatIP = "V1alpha1_FormatIP"
+	// V1alpha1IP is an alias for versioned templating function V1alpha1_IP.
+	V1alpha1IP = "V1alpha1_IP"
+	// V1alpha1SubnetMask is an alias for versioned templating function  V1alpha1_SubnetMask.
+	V1alpha1SubnetMask = "V1alpha1_SubnetMask"
+	// V1alpha1FormatNameservers is an alias for versioned templating function V1alpha1_FormatNameservers.
+	V1alpha1FormatNameservers = "V1alpha1_FormatNameservers"
 )

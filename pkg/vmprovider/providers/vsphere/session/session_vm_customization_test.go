@@ -6,6 +6,7 @@ package session_test
 import (
 	goctx "context"
 	"encoding/base64"
+	"fmt"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -441,13 +442,13 @@ var _ = Describe("TemplateVMMetadata", func() {
 			updateArgs  session.VMUpdateArgs
 			ip1         = "192.168.1.37"
 			ip2         = "192.168.10.48"
-			subnetMask1 = "255.0.0.0"
-			subnetMask2 = "255.255.255.0"
-			IP1         = "192.168.1.37/8"
+			subnetMask  = "255.255.255.0"
+			IP1         = "192.168.1.37/24"
 			IP2         = "192.168.10.48/24"
 			gateway1    = "192.168.1.1"
 			gateway2    = "192.168.10.1"
-			nameserver  = "8.8.8.8"
+			nameserver1 = "8.8.8.8"
+			nameserver2 = "1.1.1.1"
 		)
 
 		vm := &vmopv1alpha1.VirtualMachine{
@@ -463,20 +464,20 @@ var _ = Describe("TemplateVMMetadata", func() {
 		}
 
 		BeforeEach(func() {
-			updateArgs.DNSServers = []string{nameserver}
+			updateArgs.DNSServers = []string{nameserver1, nameserver2}
 			updateArgs.NetIfList = []network.InterfaceInfo{
 				{
 					IPConfiguration: network.IPConfig{
 						Gateway:    gateway1,
 						IP:         ip1,
-						SubnetMask: subnetMask1,
+						SubnetMask: subnetMask,
 					},
 				},
 				{
 					IPConfiguration: network.IPConfig{
 						Gateway:    gateway2,
 						IP:         ip2,
-						SubnetMask: subnetMask2,
+						SubnetMask: subnetMask,
 					},
 				},
 			}
@@ -486,7 +487,9 @@ var _ = Describe("TemplateVMMetadata", func() {
 		})
 
 		It("should return populated NicInfoToNetworkIfStatusEx correctly", func() {
-			networkDevicesStatus := session.NicInfoToDevicesStatus(vmCtx, updateArgs)
+			IPs := []string{IP1}
+			networkDevicesStatus := session.NicInfoToDevicesStatus(updateArgs)
+			Expect(networkDevicesStatus[0].IPAddresses).To(Equal(IPs))
 			Expect(networkDevicesStatus[0].IPAddresses[0]).To(Equal(IP1))
 			Expect(networkDevicesStatus[0].Gateway4).To(Equal(gateway1))
 			Expect(networkDevicesStatus[1].IPAddresses[0]).To(Equal(IP2))
@@ -507,18 +510,49 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("second_ip", IP2))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("first_gateway", gateway1))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("second_gateway", gateway2))
-			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameserver", nameserver))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameserver", nameserver1))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("name", "dummy-vm"))
 		})
 
+		It("should resolve them correctly while using support template queries", func() {
+			updateArgs.VMMetadata.Data["ip1"] = "{{ " + constants.V1alpha1FirstIP + " }}"
+			updateArgs.VMMetadata.Data["ip2"] = "{{ " + constants.V1alpha1FirstIPFromNIC + " 1 }}"
+			updateArgs.VMMetadata.Data["ips_1"] = "{{ " + constants.V1alpha1IPsFromNIC + " 0 }}"
+			updateArgs.VMMetadata.Data["cidr_ip1"] = "{{ (" + constants.V1alpha1IP + " \"192.168.1.37\") }}"
+			updateArgs.VMMetadata.Data["cidr_ip2"] = "{{ (" + constants.V1alpha1FormatIP + " \"192.168.1.37\" \"/24\") }}"
+			updateArgs.VMMetadata.Data["cidr_ip3"] = "{{ (" + constants.V1alpha1FormatIP + " \"192.168.1.37\" \"255.255.255.0\") }}"
+			updateArgs.VMMetadata.Data["subnetmask"] = "{{ " + constants.V1alpha1SubnetMask + " \"192.168.1.37/26\" }}"
+			updateArgs.VMMetadata.Data["formatted_nameserver1"] = "{{ " + constants.V1alpha1FormatNameservers + " 1 \"-\"}}"
+			updateArgs.VMMetadata.Data["formatted_nameserver2"] = "{{ " + constants.V1alpha1FormatNameservers + " -1 \"-\"}}"
+			session.TemplateVMMetadata(vmCtx, updateArgs)
+
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip1", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip2", IP2))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ips_1", fmt.Sprint([]string{IP1})))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip1", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip2", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip3", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("subnetmask", "255.255.255.192"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("formatted_nameserver1", nameserver1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("formatted_nameserver2", nameserver1+"-"+nameserver2))
+		})
+
 		It("should use the original text if resolving template failed", func() {
-			updateArgs.VMMetadata.Data["ip"] = "{{ (index .V1alpha1.Net.NetworkInterfaces 100).IPAddresses }}"
+			updateArgs.VMMetadata.Data["ip1"] = "{{ " + constants.V1alpha1IP + " \"192.1.0\" }}"
+			updateArgs.VMMetadata.Data["ip2"] = "{{ " + constants.V1alpha1FirstIPFromNIC + " 5 }}"
+			updateArgs.VMMetadata.Data["ips_1"] = "{{ " + constants.V1alpha1IPsFromNIC + " 5 }}"
+			updateArgs.VMMetadata.Data["cidr_ip1"] = "{{ (" + constants.V1alpha1FormatIP + " \"192.168.1.37\" \"127.255.255.255\") }}"
+			updateArgs.VMMetadata.Data["cidr_ip2"] = "{{ (" + constants.V1alpha1FormatIP + " \"192.168.1\" \"255.0.0.0\") }}"
 			updateArgs.VMMetadata.Data["gateway"] = "{{ (index .V1alpha1.Net.NetworkInterfaces ).Gateway }}"
 			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .V1alpha1.Net.NameServers 0) }}"
 
 			session.TemplateVMMetadata(vmCtx, updateArgs)
 
-			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip", "{{ (index .V1alpha1.Net.NetworkInterfaces 100).IPAddresses }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip1", "{{ "+constants.V1alpha1IP+" \"192.1.0\" }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip2", "{{ "+constants.V1alpha1FirstIPFromNIC+" 5 }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ips_1", "{{ "+constants.V1alpha1IPsFromNIC+" 5 }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip1", "{{ ("+constants.V1alpha1FormatIP+" \"192.168.1.37\" \"127.255.255.255\") }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip2", "{{ ("+constants.V1alpha1FormatIP+" \"192.168.1\" \"255.0.0.0\") }}"))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("gateway", "{{ (index .V1alpha1.Net.NetworkInterfaces ).Gateway }}"))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameserver", "{{ (index .V1alpha1.Net.NameServers 0) }}"))
 		})
@@ -536,5 +570,39 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("skip_data3", "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("skip_data4", "skip {{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"))
 		})
+	})
+
+	Context("update VmConfigArgs with empty updateArgs", func() {
+		var (
+			updateArgs session.VMUpdateArgs
+		)
+		vm := &vmopv1alpha1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dummy-vm",
+				Namespace: "dummy-ns",
+			},
+		}
+		vmCtx := context.VirtualMachineContext{
+			Context: goctx.Background(),
+			Logger:  logf.Log.WithValues("vmName", vm.NamespacedName()),
+			VM:      vm,
+		}
+		updateArgs.VMMetadata = vmprovider.VMMetadata{
+			Data: make(map[string]string),
+		}
+		It("should return the original text when no available network", func() {
+			updateArgs.VMMetadata.Data["ip1"] = "{{ " + constants.V1alpha1FirstIP + " }}"
+			updateArgs.VMMetadata.Data["ip2"] = "{{ " + constants.V1alpha1FirstIPFromNIC + " 0 }}"
+			updateArgs.VMMetadata.Data["ip3"] = "{{ " + constants.V1alpha1IPsFromNIC + " 0 }}"
+			updateArgs.VMMetadata.Data["formatted_nameserver1"] = "{{ " + constants.V1alpha1FormatNameservers + " 1 \"-\"}}"
+
+			session.TemplateVMMetadata(vmCtx, updateArgs)
+
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip1", "{{ "+constants.V1alpha1FirstIP+" }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip2", "{{ "+constants.V1alpha1FirstIPFromNIC+" 0 }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip3", "{{ "+constants.V1alpha1IPsFromNIC+" 0 }}"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("formatted_nameserver1", "{{ "+constants.V1alpha1FormatNameservers+" 1 \"-\"}}"))
+		})
+
 	})
 })

@@ -5,7 +5,9 @@ package session
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"text/template"
 
@@ -308,10 +310,10 @@ func (s *Session) customize(
 	return nil
 }
 
-func NicInfoToDevicesStatus(vmCtx context.VirtualMachineContext, updateArgs VMUpdateArgs) []v1alpha1.NetworkDeviceStatus {
+func NicInfoToDevicesStatus(updateArgs VMUpdateArgs) []v1alpha1.NetworkDeviceStatus {
 	networkDevicesStatus := make([]v1alpha1.NetworkDeviceStatus, 0, len(updateArgs.NetIfList))
 
-	// TODO: Add MacAddress field when the generated mac is reflected into the updateArgs.NetIfList entries
+	// TODO: Add MacAddress field when the it's present in updateArgs.NetIfList
 	for _, info := range updateArgs.NetIfList {
 		ipConfig := info.IPConfiguration
 		networkDevice := v1alpha1.NetworkDeviceStatus{
@@ -325,8 +327,7 @@ func NicInfoToDevicesStatus(vmCtx context.VirtualMachineContext, updateArgs VMUp
 
 // TemplateVMMetadata can convert templated expressions to dynamic configuration data.
 func TemplateVMMetadata(vmCtx context.VirtualMachineContext, updateArgs VMUpdateArgs) {
-
-	networkDevicesStatus := NicInfoToDevicesStatus(vmCtx, updateArgs)
+	networkDevicesStatus := NicInfoToDevicesStatus(updateArgs)
 
 	networkStatus := v1alpha1.NetworkStatus{
 		Devices:     networkDevicesStatus,
@@ -342,6 +343,109 @@ func TemplateVMMetadata(vmCtx context.VirtualMachineContext, updateArgs VMUpdate
 		},
 	}
 
+	// TODO: Differentiate IP4 and IP6 when IP6 is supported
+	// eg. adding V1alpha1_FirstIPv4FromNIC
+
+	// Get the first IP address from the first NIC.
+	v1alpha1FirstIP := func() (string, error) {
+		if len(networkDevicesStatus) == 0 {
+			return "", errors.New("no available network device, check with VI admin")
+		}
+		return networkDevicesStatus[0].IPAddresses[0], nil
+	}
+
+	// Get the first IP address from the ith NIC.
+	// if index out of bound, throw an error and template string won't be parsed
+	v1alpha1FirstIPFromNIC := func(index int) (string, error) {
+		if len(networkDevicesStatus) == 0 {
+			return "", errors.New("no available network device, check with VI admin")
+		}
+		if index >= len(networkDevicesStatus) {
+			return "", errors.New("index out of bound")
+		}
+		return networkDevicesStatus[index].IPAddresses[0], nil
+	}
+
+	// Get all IP addresses from the ith NIC.
+	// if index out of bound, throw an error and template string won't be parsed
+	v1alpha1IPsFromNIC := func(index int) ([]string, error) {
+		if len(networkDevicesStatus) == 0 {
+			return []string{""}, errors.New("no available network device, check with VI admin")
+		}
+		if index >= len(networkDevicesStatus) {
+			return []string{""}, errors.New("index out of bound")
+		}
+		return networkDevicesStatus[index].IPAddresses, nil
+	}
+
+	// Get subnet mask from a CIDR notation IP address and prefix length
+	// if IP address and prefix length not valid, throw an error and template string won't be parsed
+	v1alpha1SubnetMask := func(cidr string) (string, error) {
+		_, ipv4Net, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return "", err
+		}
+		netmask := fmt.Sprintf("%d.%d.%d.%d", ipv4Net.Mask[0], ipv4Net.Mask[1], ipv4Net.Mask[2], ipv4Net.Mask[3])
+		return netmask, nil
+	}
+
+	// Format an IP address with default netmask CIDR
+	// if IP not valid, throw an error and template string won't be parsed
+	v1alpha1IP := func(IP string) (string, error) {
+		if net.ParseIP(IP) == nil {
+			return "", errors.New("input IP address not valid")
+		}
+		defaultMask := net.ParseIP(IP).DefaultMask()
+		ones, _ := defaultMask.Size()
+		expectedCidrNotation := IP + "/" + fmt.Sprintf("%d", int32(ones))
+		return expectedCidrNotation, nil
+	}
+
+	// Format an IP address with network length(eg. /24) or decimal notation(eg. 255.255.255.0)
+	// if input netmask not valid, throw an error and template string won't be parsed
+	v1alpha1FormatIP := func(IP string, netmask string) (string, error) {
+		if net.ParseIP(IP) == nil {
+			return "", errors.New("input IP address not valid")
+		}
+		var userIP string
+		if strings.HasPrefix(netmask, "/") {
+			userIP = IP + netmask
+		} else {
+			userIP = network.ToCidrNotation(IP, netmask)
+		}
+		// validate IP and netmask's combination
+		_, _, err := net.ParseCIDR(userIP)
+		if err != nil {
+			return "", err
+		}
+		return userIP, nil
+	}
+
+	// Format the first occurred count of nameservers with specific delimiter
+	// A negative count number would mean format all nameservers
+	v1alpha1FormatNameservers := func(count int, delimiter string) (string, error) {
+		var nameservers []string
+		if len(networkStatus.Nameservers) == 0 {
+			return "", errors.New("no available nameservers, check with VI admin")
+		}
+		if count < 0 || count >= len(networkStatus.Nameservers) {
+			nameservers = networkStatus.Nameservers
+			return strings.Join(nameservers, delimiter), nil
+		}
+		nameservers = networkStatus.Nameservers[:count]
+		return strings.Join(nameservers, delimiter), nil
+	}
+
+	funcMap := template.FuncMap{
+		constants.V1alpha1FirstIPFromNIC:    v1alpha1FirstIPFromNIC,
+		constants.V1alpha1FirstIP:           v1alpha1FirstIP,
+		constants.V1alpha1IPsFromNIC:        v1alpha1IPsFromNIC,
+		constants.V1alpha1FormatIP:          v1alpha1FormatIP,
+		constants.V1alpha1IP:                v1alpha1IP,
+		constants.V1alpha1SubnetMask:        v1alpha1SubnetMask,
+		constants.V1alpha1FormatNameservers: v1alpha1FormatNameservers,
+	}
+
 	// skip parsing when encountering escape character('\{',"\}")
 	normalizeStr := func(str string) string {
 		if strings.Contains(str, "\\{") || strings.Contains(str, "\\}") {
@@ -352,7 +456,7 @@ func TemplateVMMetadata(vmCtx context.VirtualMachineContext, updateArgs VMUpdate
 	}
 
 	renderTemplate := func(name, templateStr string) string {
-		templ, err := template.New(name).Parse(templateStr)
+		templ, err := template.New(name).Funcs(funcMap).Parse(templateStr)
 		if err != nil {
 			vmCtx.Logger.Error(err, "failed to parse template", "templateStr", templateStr)
 			// TODO: emit related events

@@ -285,6 +285,7 @@ spec:
                     enum:
                     - ExtraConfig
                     - OvfEnv
+                    - vAppConfig
                     - CloudInit
                     type: string
                 type: object

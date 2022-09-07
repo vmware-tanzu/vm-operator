@@ -17,6 +17,8 @@ usage() {
 }
 
 build() {
+    GOOS=linux
+    echo "GOOS=${GOOS} GOARCH=${GOARCH}"
     docker build . \
         -t $IMAGE:$IMAGE_TAG \
         -t $IMAGE:$BUILD_NUMBER \
@@ -25,7 +27,8 @@ build() {
         --build-arg commit=${COMMIT} \
         --build-arg branch=${BRANCH} \
         --build-arg version=${VERSION} \
-        --rm
+        --build-arg TARGETOS=${GOOS} \
+        --build-arg TARGETARCH=${GOARCH}
 }
 
 while getopts ":i:t:n:c:b:v:" opt ; do

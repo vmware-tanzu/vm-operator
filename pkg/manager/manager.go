@@ -58,6 +58,7 @@ func New(opts Options) (Manager, error) {
 	mgr, err := ctrlmgr.New(opts.KubeConfig, ctrlmgr.Options{
 		Scheme:                  opts.Scheme,
 		MetricsBindAddress:      opts.MetricsAddr,
+		HealthProbeBindAddress:  opts.HealthProbeBindAddress,
 		LeaderElection:          opts.LeaderElectionEnabled,
 		LeaderElectionID:        opts.LeaderElectionID,
 		LeaderElectionNamespace: opts.PodNamespace,

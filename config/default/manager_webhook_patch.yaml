@@ -35,6 +35,14 @@ spec:
         - containerPort: 9878
           name: webhook-server
           protocol: TCP
+        - containerPort: 9445
+          name: health-probe
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health-probe
+          initialDelaySeconds: 5
         volumeMounts:
         - mountPath: WEBHOOK_SECRET_VOLUME_MOUNT_PATH_VALUE
           name: WEBHOOK_SECRET_VOLUME_NAME

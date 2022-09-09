@@ -42,5 +42,5 @@ spec:
             cpu: 100m
             memory: 75Mi
       nodeSelector:
-        node-role.kubernetes.io/master: ""
+        node-role.kubernetes.io/control-plane: ""
       terminationGracePeriodSeconds: 10

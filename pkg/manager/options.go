@@ -46,6 +46,10 @@ type Options struct {
 	// locking resource when configuring leader election.
 	LeaderElectionID string
 
+	// HealthProbeBindAddress is the TCP address that the controller should bind to
+	// for serving health probes
+	HealthProbeBindAddress string
+
 	// SyncPeriod is the amount of time to wait between syncing the local
 	// object cache with the API server.
 	SyncPeriod time.Duration

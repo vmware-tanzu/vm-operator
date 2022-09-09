@@ -145,6 +145,11 @@ func main() {
 		"metrics-addr",
 		":8083",
 		"The address the metric endpoint binds to.")
+	flag.StringVar(
+		&managerOpts.HealthProbeBindAddress,
+		"health-addr",
+		":9445",
+		"The address the health probe endpoint binds to.")
 	flag.BoolVar(
 		&managerOpts.LeaderElectionEnabled,
 		"enable-leader-election",
@@ -275,6 +280,12 @@ func main() {
 	mgr, err := manager.New(managerOpts)
 	if err != nil {
 		setupLog.Error(err, "problem creating controller manager")
+		os.Exit(1)
+	}
+
+	setupLog.Info("adding readiness check to controller manager")
+	if err := mgr.AddReadyzCheck("webhook", mgr.GetWebhookServer().StartedChecker()); err != nil {
+		setupLog.Error(err, "unable to create readiness check")
 		os.Exit(1)
 	}
 

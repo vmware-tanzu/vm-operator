@@ -18,8 +18,6 @@ import (
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -41,12 +39,10 @@ type Session struct {
 	Client    *client.Client
 	k8sClient ctrlruntime.Client
 
-	Finder       *find.Finder
-	datacenter   *object.Datacenter
-	cluster      *object.ClusterComputeResource
-	folder       *object.Folder
-	resourcePool *object.ResourcePool
-	datastore    *object.Datastore
+	Finder     *find.Finder
+	datacenter *object.Datacenter
+	cluster    *object.ClusterComputeResource
+	datastore  *object.Datastore
 
 	networkProvider network.Provider
 
@@ -102,12 +98,12 @@ func (s *Session) initSession(
 	s.datacenter = dc.(*object.Datacenter)
 	s.Finder.SetDatacenter(s.datacenter)
 
-	s.resourcePool, err = s.GetResourcePoolByMoID(ctx, cfg.ResourcePool)
+	resourcePool, err := s.GetResourcePoolByMoID(ctx, cfg.ResourcePool)
 	if err != nil {
 		return errors.Wrapf(err, "failed to init Resource Pool %q", cfg.ResourcePool)
 	}
 
-	rpOwner, err := s.resourcePool.Owner(ctx)
+	rpOwner, err := resourcePool.Owner(ctx)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get Resource Pool owner")
 	}
@@ -123,12 +119,6 @@ func (s *Session) initSession(
 		return errors.Wrapf(err, "failed to init minimum CPU frequency")
 	}
 	s.SetCPUMinMHzInCluster(minFreq)
-
-	// On WCP, the Folder is extracted from an annotation on the namespace.
-	s.folder, err = s.GetFolderByMoID(ctx, cfg.Folder)
-	if err != nil {
-		return errors.Wrapf(err, "failed to init folder %q", cfg.Folder)
-	}
 
 	if s.storageClassRequired {
 		if cfg.Datastore != "" {
@@ -162,109 +152,11 @@ func (s *Session) initSession(
 	return nil
 }
 
-// findChildEntity finds a child entity by a given name under a parent object.
-func (s *Session) findChildEntity(ctx goctx.Context, parent object.Reference, childName string) (object.Reference, error) {
-	si := object.NewSearchIndex(s.Client.VimClient())
-	ref, err := si.FindChild(ctx, parent, childName)
-	if err != nil {
-		return nil, err
-	}
-	if ref == nil {
-		// SearchIndex returns nil when child name is not found
-		log.Error(fmt.Errorf("entity not found"), "child entity not found on vSphere", "name", childName)
-		return nil, &find.NotFoundError{}
-	}
-
-	// We have found a child entity with the given name. Populate the inventory path before returning.
-	child, err := s.Finder.ObjectReference(ctx, ref.Reference())
-	if err != nil {
-		log.Error(err, "error when setting inventory path for the object", "moRef", ref.Reference().Value)
-		return nil, err
-	}
-
-	return child, nil
-}
-
-// childResourcePool returns a child resource pool by a given name under the session's parent
-// resource pool, returns error if no child resource pool exists with a given name.
-func (s *Session) childResourcePool(ctx goctx.Context, resourcePoolName string) (*object.ResourcePool, error) {
-	resourcePool, err := s.findChildEntity(ctx, s.resourcePool, resourcePoolName)
-	if err != nil {
-		return nil, err
-	}
-
-	rp, ok := resourcePool.(*object.ResourcePool)
-	if !ok {
-		return nil, fmt.Errorf("ResourcePool %q is not expected ResourcePool type but a %T", resourcePoolName, resourcePool)
-	}
-	return rp, nil
-}
-
-// childFolder returns a child resource pool by a given name under the session's parent
-// resource pool, returns error if no child resource pool exists with a given name.
-func (s *Session) childFolder(ctx goctx.Context, folderName string) (*object.Folder, error) {
-	folder, err := s.findChildEntity(ctx, s.folder, folderName)
-	if err != nil {
-		return nil, err
-	}
-
-	f, ok := folder.(*object.Folder)
-	if !ok {
-		return nil, fmt.Errorf("folder %q is not expected Folder type but a %T", folderName, folder)
-	}
-	return f, nil
-}
-
-// getResourcePoolAndFolder gets the ResourcePool and Folder from the Resource Policy. If no policy
-// is specified, the session's ResourcePool and Folder is returned instead.
-func (s *Session) getResourcePoolAndFolder(vmCtx context.VirtualMachineContext,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (*object.ResourcePool, *object.Folder, error) {
-
-	if resourcePolicy == nil {
-		return s.resourcePool, s.folder, nil
-	}
-
-	resourcePoolName := resourcePolicy.Spec.ResourcePool.Name
-	resourcePool, err := s.childResourcePool(vmCtx, resourcePoolName)
-	if err != nil {
-		vmCtx.Logger.Error(err, "Unable to find ResourcePool", "name", resourcePoolName)
-		return nil, nil, err
-	}
-
-	vmCtx.Logger.V(4).Info("Found ResourcePool",
-		"name", resourcePoolName, "moRef", resourcePool.Reference().Value)
-
-	folderName := resourcePolicy.Spec.Folder.Name
-	folder, err := s.childFolder(vmCtx, folderName)
-	if err != nil {
-		vmCtx.Logger.Error(err, "Unable to find Folder", "name", folderName)
-		return nil, nil, err
-	}
-
-	vmCtx.Logger.V(4).Info("Found Folder",
-		"name", folderName, "moRef", folder.Reference().Value)
-
-	return resourcePool, folder, nil
-}
-
 func (s *Session) lookupVMByName(ctx goctx.Context, name string) (*res.VirtualMachine, error) {
 	vm, err := s.Finder.VirtualMachine(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	return res.NewVMFromObject(vm), nil
-}
-
-func (s *Session) GetVirtualMachine(vmCtx context.VirtualMachineContext) (*res.VirtualMachine, error) {
-	vm, err := vcenter.GetVirtualMachine(
-		vmCtx,
-		s.k8sClient,
-		s.Finder,
-		s.folder)
-	if err != nil {
-		return nil, err
-	}
-
 	return res.NewVMFromObject(vm), nil
 }
 
@@ -290,11 +182,6 @@ func (s *Session) GetResourcePoolByMoID(ctx goctx.Context, moID string) (*object
 	return vcenter.GetResourcePoolByMoID(ctx, s.Finder, moID)
 }
 
-// GetFolderByMoID returns a folder for a given moref.
-func (s *Session) GetFolderByMoID(ctx goctx.Context, moID string) (*object.Folder, error) {
-	return vcenter.GetFolderByMoID(ctx, s.Finder, moID)
-}
-
 func (s *Session) GetCPUMinMHzInCluster() uint64 {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -317,12 +204,6 @@ func (s *Session) String() string {
 	sb.WriteString("{")
 	if s.datacenter != nil {
 		sb.WriteString(fmt.Sprintf("datacenter: %s, ", s.datacenter.Reference().Value))
-	}
-	if s.folder != nil {
-		sb.WriteString(fmt.Sprintf("folder: %s, ", s.folder.Reference().Value))
-	}
-	if s.resourcePool != nil {
-		sb.WriteString(fmt.Sprintf("resourcePool: %s, ", s.resourcePool.Reference().Value))
 	}
 	if s.cluster != nil {
 		sb.WriteString(fmt.Sprintf("cluster: %s, ", s.cluster.Reference().Value))

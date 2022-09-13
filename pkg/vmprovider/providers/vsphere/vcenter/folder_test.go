@@ -7,6 +7,9 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/types"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -93,6 +96,35 @@ func createDeleteExistsFolder() {
 			childMoID, err := vcenter.CreateFolder(ctx, ctx.VCClient.Client, "bogus", "myFolder")
 			Expect(err).To(HaveOccurred())
 			Expect(childMoID).To(BeEmpty())
+		})
+	})
+
+	Context("GetChildFolder", func() {
+		It("returns success when child Folder exists", func() {
+			childFolderMoID, err := vcenter.CreateFolder(ctx, ctx.VCClient.Client, parentFolderMoID, "myFolder")
+			Expect(err).ToNot(HaveOccurred())
+
+			parentFolder := object.NewFolder(ctx.VCClient.Client, types.ManagedObjectReference{
+				Type:  "Folder",
+				Value: parentFolderMoID,
+			})
+
+			childFolder, err := vcenter.GetChildFolder(ctx, parentFolder, "myFolder")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(childFolder).ToNot(BeNil())
+			Expect(childFolder.Reference().Value).To(Equal(childFolderMoID))
+		})
+
+		It("returns error when child Folder does not exists", func() {
+			parentFolder := object.NewFolder(ctx.VCClient.Client, types.ManagedObjectReference{
+				Type:  "Folder",
+				Value: parentFolderMoID,
+			})
+
+			childFolder, err := vcenter.GetChildFolder(ctx, parentFolder, "myFolder")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found under parent Folder"))
+			Expect(childFolder).To(BeNil())
 		})
 	})
 

@@ -12,8 +12,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/pbm"
-	pbmTypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25"
@@ -33,8 +31,8 @@ import (
 
 type VirtualMachineCloneContext struct {
 	context.VirtualMachineContext
-	ResourcePool        *object.ResourcePool
-	Folder              *object.Folder
+	ResourcePool        vimTypes.ManagedObjectReference
+	Folder              vimTypes.ManagedObjectReference
 	StorageProvisioning string
 	HostID              string
 	ConfigSpec          *vimTypes.VirtualMachineConfigSpec
@@ -69,8 +67,8 @@ func (s *Session) deployOvf(vmCtx VirtualMachineCloneContext, itemID string, sto
 	deploy := vcenter.Deploy{
 		DeploymentSpec: deploymentSpec,
 		Target: vcenter.Target{
-			ResourcePoolID: vmCtx.ResourcePool.Reference().Value,
-			FolderID:       vmCtx.Folder.Reference().Value,
+			ResourcePoolID: vmCtx.ResourcePool.Value,
+			FolderID:       vmCtx.Folder.Value,
 			HostID:         vmCtx.HostID,
 		},
 	}
@@ -186,8 +184,10 @@ func (s *Session) deployVMFromCL(vmCtx VirtualMachineCloneContext, vmConfigArgs 
 func (s *Session) cloneVM(vmCtx context.VirtualMachineContext, resSrcVM *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
 	vmCtx.Logger.Info("Cloning VM", "cloneSpec", *cloneSpec)
 
-	// We always set cloneSpec.Location.Folder so Clone ignores the s.folder param.
-	clonedVM, err := resSrcVM.Clone(vmCtx, s.folder, cloneSpec)
+	// We always set cloneSpec.Location.Folder use that to get the parent inventory folder.
+	folder := object.NewFolder(s.Client.VimClient(), *cloneSpec.Location.Folder)
+
+	clonedVM, err := resSrcVM.Clone(vmCtx, folder, cloneSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +219,10 @@ func (s *Session) cloneVMFromInventory(vmCtx VirtualMachineCloneContext, vmConfi
 	return clonedVM, nil
 }
 
-func (s *Session) cloneVMFromContentLibrary(vmCtx VirtualMachineCloneContext, vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
+func (s *Session) cloneVMFromContentLibrary(
+	vmCtx VirtualMachineCloneContext,
+	vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
+
 	item, err := s.Client.ContentLibClient().GetLibraryItem(vmCtx, vmConfigArgs.ContentLibraryUUID, vmConfigArgs.VMImage.Status.ImageName)
 	if err != nil {
 		return nil, err
@@ -229,6 +232,7 @@ func (s *Session) cloneVMFromContentLibrary(vmCtx VirtualMachineCloneContext, vm
 	case library.ItemTypeOVF:
 		return s.deployVMFromCL(vmCtx, vmConfigArgs, item)
 	case library.ItemTypeVMTX:
+		// BMV: Does this work? We'll try to find the source VM with the VM.Spec.ImageName name.
 		return s.cloneVMFromInventory(vmCtx, vmConfigArgs)
 	default:
 		return nil, errors.Errorf("item %v not a supported type: %s", item.Name, item.Type)
@@ -237,6 +241,11 @@ func (s *Session) cloneVMFromContentLibrary(vmCtx VirtualMachineCloneContext, vm
 
 func (s *Session) CloneVirtualMachine(
 	vmCtx context.VirtualMachineContext,
+	folderMoID string,
+	resourcePoolMoID string,
+	hostMoID string,
+	configSpec *vimTypes.VirtualMachineConfigSpec,
+	storageProvisioning string,
 	vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
 
 	if vmConfigArgs.StorageProfileID == "" {
@@ -250,33 +259,14 @@ func (s *Session) CloneVirtualMachine(
 		}
 	}
 
-	resourcePool, folder, err := s.getResourcePoolAndFolder(vmCtx, vmConfigArgs.ResourcePolicy)
-	if err != nil {
-		return nil, err
-	}
-
-	storageProvisioning, err := s.getStorageProvisioning(vmCtx, vmConfigArgs.StorageProfileID)
-	if err != nil {
-		return nil, err
-	}
-
 	vmCloneCtx := VirtualMachineCloneContext{
 		VirtualMachineContext: vmCtx,
-		ResourcePool:          resourcePool,
-		Folder:                folder,
+		ResourcePool:          vimTypes.ManagedObjectReference{Type: "ResourcePool", Value: resourcePoolMoID},
+		Folder:                vimTypes.ManagedObjectReference{Type: "Folder", Value: folderMoID},
+		HostID:                hostMoID,
 		StorageProvisioning:   storageProvisioning,
+		ConfigSpec:            configSpec,
 	}
-
-	if lib.IsInstanceStorageFSSEnabled() {
-		if hostMOID, ok := vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey]; ok {
-			vmCloneCtx.HostID = hostMOID
-		}
-	}
-
-	vmCloneCtx.ConfigSpec = virtualmachine.CreateConfigSpec(
-		vmCtx.VM.Name,
-		&vmConfigArgs.VMClass.Spec,
-		s.GetCPUMinMHzInCluster())
 
 	// The ContentLibraryUUID can be empty when we want to clone from inventory VMs. This is
 	// not a supported workflow but we have tests that use this.
@@ -291,90 +281,6 @@ func (s *Session) CloneVirtualMachine(
 	}
 
 	return nil, fmt.Errorf("no Content Library specified and inventory disallowed")
-}
-
-// policyThickProvision returns true if the storage profile is vSAN and disk provisioning is thick, false otherwise.
-// thick provisioning is determined based on its "proportionalCapacity":
-// Percentage (0-100) of the logical size of the storage object that will be reserved upon provisioning.
-// The UI presents options for "thin" (0%), 25%, 50%, 75% and "thick" (100%).
-func policyThickProvision(profile pbmTypes.BasePbmProfile) bool {
-	capProfile, ok := profile.(*pbmTypes.PbmCapabilityProfile)
-	if !ok {
-		return false
-	}
-
-	if capProfile.ResourceType.ResourceType != string(pbmTypes.PbmProfileResourceTypeEnumSTORAGE) {
-		return false
-	}
-
-	if capProfile.ProfileCategory != string(pbmTypes.PbmProfileCategoryEnumREQUIREMENT) {
-		return false
-	}
-
-	sub, ok := capProfile.Constraints.(*pbmTypes.PbmCapabilitySubProfileConstraints)
-	if !ok {
-		return false
-	}
-
-	for _, p := range sub.SubProfiles {
-		for _, capability := range p.Capability {
-			if capability.Id.Namespace != "VSAN" || capability.Id.Id != "proportionalCapacity" {
-				continue
-			}
-
-			for _, c := range capability.Constraint {
-				for _, prop := range c.PropertyInstance {
-					if prop.Id != capability.Id.Id {
-						continue
-					}
-					if val, ok := prop.Value.(int32); ok {
-						// 100% means thick provisioning.
-						return val == 100
-					}
-				}
-			}
-		}
-	}
-
-	return false
-}
-
-// getStorageProvisioning gets the storage provisioning VM Spec Advanced Options. If absent, the
-// storage profile ID is used to try to determine provisioning.
-func (s *Session) getStorageProvisioning(vmCtx context.VirtualMachineContext, storageProfileID string) (string, error) {
-	// Try to get storage provisioning from VM advanced options section of the spec
-	if advOpts := vmCtx.VM.Spec.AdvancedOptions; advOpts != nil && advOpts.DefaultVolumeProvisioningOptions != nil {
-		// Webhook validated the combination of provisioning options so we can set to EagerZeroedThick if set.
-		if eagerZeroed := advOpts.DefaultVolumeProvisioningOptions.EagerZeroed; eagerZeroed != nil && *eagerZeroed {
-			return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeEagerZeroedThick), nil
-		}
-		if thinProv := advOpts.DefaultVolumeProvisioningOptions.ThinProvisioned; thinProv != nil {
-			if *thinProv {
-				return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
-			}
-			// Explicitly setting ThinProvisioning to false means use thick provisioning.
-			return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThick), nil
-		}
-	}
-
-	if storageProfileID != "" {
-		c, err := pbm.NewClient(vmCtx, s.Client.VimClient())
-		if err != nil {
-			return "", err
-		}
-
-		profiles, err := c.RetrieveContent(vmCtx, []pbmTypes.PbmProfileId{{UniqueId: storageProfileID}})
-		if err != nil {
-			return "", err
-		}
-
-		// BMV: Will there only be zero or one profile?
-		if len(profiles) > 0 && policyThickProvision(profiles[0]) {
-			return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThick), nil
-		} // Else defer error handling to clone or deploy if storage profile does not exist.
-	}
-
-	return string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
 }
 
 func (s *Session) createCloneSpec(

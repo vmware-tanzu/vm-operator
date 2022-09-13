@@ -27,6 +27,23 @@ func GetFolderByMoID(
 	return o.(*object.Folder), nil
 }
 
+// GetChildFolder gets the named child Folder from the parent Folder.
+func GetChildFolder(
+	ctx goctx.Context,
+	parentFolder *object.Folder,
+	childName string) (*object.Folder, error) {
+
+	childFolder, err := findChildFolder(ctx, parentFolder, childName)
+	if err != nil {
+		return nil, err
+	} else if childFolder == nil {
+		return nil, fmt.Errorf("folder child %s not found under parent Folder %s",
+			childName, parentFolder.Reference().Value)
+	}
+
+	return childFolder, nil
+}
+
 // DoesChildFolderExist returns if the named child Folder exists under the parent Folder.
 func DoesChildFolderExist(
 	ctx goctx.Context,

@@ -301,7 +301,7 @@ func vmTests() {
 				By("has expected namespace resource pool", func() {
 					rp, err := vcVM.ResourcePool(ctx)
 					Expect(err).ToNot(HaveOccurred())
-					nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "")
+					nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
 					Expect(nsRP).ToNot(BeNil())
 					Expect(rp.Reference().Value).To(Equal(nsRP.Reference().Value))
 				})
@@ -348,7 +348,7 @@ func vmTests() {
 					By("has expected namespace resource pool", func() {
 						rp, err := vcVM.ResourcePool(ctx)
 						Expect(err).ToNot(HaveOccurred())
-						nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "")
+						nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", "")
 						Expect(nsRP).ToNot(BeNil())
 						Expect(rp.Reference().Value).To(Equal(nsRP.Reference().Value))
 					})
@@ -395,7 +395,7 @@ func vmTests() {
 					By("VM is created in the zone's ResourcePool", func() {
 						rp, err := vcVM.ResourcePool(ctx)
 						Expect(err).ToNot(HaveOccurred())
-						nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, azName)
+						nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, azName, "")
 						Expect(nsRP).ToNot(BeNil())
 						Expect(rp.Reference().Value).To(Equal(nsRP.Reference().Value))
 					})
@@ -411,7 +411,7 @@ func vmTests() {
 					By("VM is created in the zone's ResourcePool", func() {
 						rp, err := vcVM.ResourcePool(ctx)
 						Expect(err).ToNot(HaveOccurred())
-						nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, azName)
+						nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, azName, "")
 						Expect(nsRP).ToNot(BeNil())
 						Expect(rp.Reference().Value).To(Equal(nsRP.Reference().Value))
 					})
@@ -860,6 +860,7 @@ func vmTests() {
 			JustBeforeEach(func() {
 				resourcePolicyName := "test-policy"
 				resourcePolicy = getVirtualMachineSetResourcePolicy(resourcePolicyName, nsInfo.Namespace)
+				resourcePolicy.Spec.ResourcePool.Limits.Cpu = resource.MustParse("1000")
 				Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
 				Expect(ctx.Client.Create(ctx, resourcePolicy)).To(Succeed())
 
@@ -869,6 +870,24 @@ func vmTests() {
 
 			AfterEach(func() {
 				resourcePolicy = nil
+			})
+
+			It("VM is created in child Folder and ResourcePool", func() {
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("has expected inventory path", func() {
+					Expect(vcVM.InventoryPath).To(HaveSuffix(
+						fmt.Sprintf("/%s/%s/%s", nsInfo.Namespace, resourcePolicy.Spec.Folder.Name, vm.Name)))
+				})
+
+				By("has expected namespace resource pool", func() {
+					rp, err := vcVM.ResourcePool(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					childRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", resourcePolicy.Spec.ResourcePool.Name)
+					Expect(childRP).ToNot(BeNil())
+					Expect(rp.Reference().Value).To(Equal(childRP.Reference().Value))
+				})
 			})
 
 			It("Cluster Modules", func() {

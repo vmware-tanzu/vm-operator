@@ -729,7 +729,7 @@ func (c *TestContextForVCSim) GetVMFromMoID(moID string) *object.VirtualMachine 
 	return vm
 }
 
-func (c *TestContextForVCSim) GetResourcePoolForNamespace(namespace, azName string) *object.ResourcePool {
+func (c *TestContextForVCSim) GetResourcePoolForNamespace(namespace, azName, childName string) *object.ResourcePool {
 	var ccr *object.ClusterComputeResource
 
 	if c.withFaultDomains {
@@ -751,7 +751,7 @@ func (c *TestContextForVCSim) GetResourcePoolForNamespace(namespace, azName stri
 	rp, ok := objRef.(*object.ResourcePool)
 	Expect(ok).To(BeTrue())
 
-	nsRP, err := c.Finder.ResourcePool(c, path.Join(rp.InventoryPath, namespace))
+	nsRP, err := c.Finder.ResourcePool(c, path.Join(rp.InventoryPath, namespace, childName))
 	Expect(err).ToNot(HaveOccurred())
 
 	return nsRP

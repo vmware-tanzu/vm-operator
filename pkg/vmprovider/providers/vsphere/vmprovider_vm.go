@@ -36,11 +36,18 @@ type vmCreateArgs struct {
 	ContentLibraryUUID  string
 	StorageClassesToIDs map[string]string
 	StorageProvisioning string
+	HasInstanceStorage  bool
+
+	// From the VMSetResourcePolicy (if specified)
+	ChildResourcePoolName string
+	ChildFolderName       string
 
 	ConfigSpec          *types.VirtualMachineConfigSpec
 	PlacementConfigSpec *types.VirtualMachineConfigSpec
 
-	// TODO: FolderMoID, ResourcePoolMoID
+	FolderMoID       string
+	ResourcePoolMoID string
+	HostMoID         string
 }
 
 var (
@@ -168,11 +175,18 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 		return nil, err
 	}
 
-	err = vs.vmCreateIsReady(vmCtx, createArgs)
+	err = vs.vmCreateGetFolderAndRPMoIDs(vmCtx, vcClient, createArgs)
 	if err != nil {
 		return nil, err
 	}
 
+	err = vs.vmCreateIsReady(vmCtx, vcClient, createArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	// BMV: This is about where we used to do this check but it prb make more sense
+	// to do earlier, as to limit wasted work.
 	allowed, createDeferFn := vs.vmCreateConcurrentAllowed(vmCtx)
 	if !allowed {
 		return nil, nil
@@ -190,15 +204,22 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 		}
 
 		vmConfigArgs := vmprovider.VMConfigArgs{
-			VMClass:            *createArgs.VMClass,
-			VMImage:            createArgs.VMImage,
-			ResourcePolicy:     createArgs.ResourcePolicy,
-			VMMetadata:         createArgs.VMMetadata,
+			VMClass:            *createArgs.VMClass,       // Only in corner case - should be folded into ConfigSpec we create
+			VMImage:            createArgs.VMImage,        // Only need the image name
+			ResourcePolicy:     createArgs.ResourcePolicy, // Not needed for Create
+			VMMetadata:         createArgs.VMMetadata,     // Not needed for Create
 			StorageProfileID:   createArgs.StorageClassesToIDs[vmCtx.VM.Spec.StorageClass],
 			ContentLibraryUUID: createArgs.ContentLibraryUUID,
 		}
 
-		resVM, err := ses.CloneVirtualMachine(vmCtx, vmConfigArgs)
+		resVM, err := ses.CloneVirtualMachine(
+			vmCtx,
+			createArgs.FolderMoID,
+			createArgs.ResourcePoolMoID,
+			createArgs.HostMoID,
+			createArgs.ConfigSpec,
+			createArgs.StorageProvisioning,
+			vmConfigArgs)
 		if err != nil {
 			vmCtx.Logger.Error(err, "Clone VirtualMachine failed")
 			return nil, err
@@ -263,40 +284,135 @@ func (vs *vSphereVMProvider) vmCreateDoPlacement(
 	vcClient *vcclient.Client,
 	createArgs *vmCreateArgs) error {
 
-	childRPName := ""
-	if createArgs.ResourcePolicy != nil {
-		childRPName = createArgs.ResourcePolicy.Spec.ResourcePool.Name
+	result, err := placement.Placement(vmCtx, vs.k8sClient, vcClient.VimClient(),
+		createArgs.PlacementConfigSpec, createArgs.ChildResourcePoolName)
+	if err != nil {
+		return err
 	}
 
-	return placement.Placement(vmCtx, vs.k8sClient, vcClient.VimClient(), createArgs.PlacementConfigSpec, childRPName)
-}
+	if result.PoolMoRef.Value != "" {
+		createArgs.ResourcePoolMoID = result.PoolMoRef.Value
+	}
 
-func (vs *vSphereVMProvider) vmCreateIsReady(
-	vmCtx context.VirtualMachineContext,
-	vmCreateArgs *vmCreateArgs) error {
+	if result.HostMoRef != nil {
+		createArgs.HostMoID = result.HostMoRef.Value
+	}
 
-	if rp := vmCreateArgs.ResourcePolicy; rp != nil {
-		if !rp.DeletionTimestamp.IsZero() {
-			return fmt.Errorf("cannot create VirtualMachine when its resource policy is being deleted")
+	if result.InstanceStoragePlacement {
+		hostMoID := createArgs.HostMoID
+
+		if hostMoID == "" {
+			return fmt.Errorf("placement result missing host required for instance storage")
 		}
 
-		// TODO: Parts of this check should be done as to filter the placement candidates.
-		ready, err := vs.IsVirtualMachineSetResourcePolicyReady(vmCtx,
-			vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey], rp)
+		hostFQDN, err := vcenter.GetESXHostFQDN(vmCtx, vcClient.VimClient(), hostMoID)
 		if err != nil {
 			return err
 		}
 
-		if !ready {
-			return fmt.Errorf("VirtualMachineSetResourcePolicy is not yet ready")
+		if vmCtx.VM.Annotations == nil {
+			vmCtx.VM.Annotations = map[string]string{}
+		}
+		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
+		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = hostFQDN
+	}
+
+	if result.ZonePlacement {
+		if vmCtx.VM.Labels == nil {
+			vmCtx.VM.Labels = map[string]string{}
+		}
+		vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = result.ZoneName
+	}
+
+	return nil
+}
+
+// vmCreateGetFolderAndRPMoIDs gets the MoIDs of the Folder and Resource Pool the VM will be created under.
+func (vs *vSphereVMProvider) vmCreateGetFolderAndRPMoIDs(
+	vmCtx context.VirtualMachineContext,
+	vcClient *vcclient.Client,
+	createArgs *vmCreateArgs) error {
+
+	if createArgs.ResourcePoolMoID == "" {
+		// We did not do placement so find this namespace/zone ResourcePool and Folder.
+
+		nsFolderMoID, rpMoID, err := topology.GetNamespaceFolderAndRPMoID(vmCtx, vs.k8sClient,
+			vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey], vmCtx.VM.Namespace)
+		if err != nil {
+			return err
+		}
+
+		// If this VM has a ResourcePolicy, then lookup the child ResourcePool under the namespace/zone
+		// root ResourcePool so we create the VM in the correct ResourcePool.
+		if createArgs.ChildResourcePoolName != "" {
+			parentRP := object.NewResourcePool(vcClient.VimClient(),
+				types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
+
+			childRP, err := vcenter.GetChildResourcePool(vmCtx, parentRP, createArgs.ChildResourcePoolName)
+			if err != nil {
+				return err
+			}
+
+			rpMoID = childRP.Reference().Value
+		}
+
+		createArgs.ResourcePoolMoID = rpMoID
+		createArgs.FolderMoID = nsFolderMoID
+
+	} else {
+		// Placement already selected the ResourcePool/Cluster, so we just need this namespace's folder.
+		nsFolderMoID, err := topology.GetNamespaceFolderMoID(vmCtx, vs.k8sClient, vmCtx.VM.Namespace)
+		if err != nil {
+			return err
+		}
+
+		createArgs.FolderMoID = nsFolderMoID
+	}
+
+	// If this VM has a ResourcePolicy lookup the child folder under the namespace's folder. This will
+	// be the VM's parent folder in the VC inventory.
+	if createArgs.ChildFolderName != "" {
+		parentFolder := object.NewFolder(vcClient.VimClient(),
+			types.ManagedObjectReference{Type: "Folder", Value: createArgs.FolderMoID})
+
+		childFolder, err := vcenter.GetChildFolder(vmCtx, parentFolder, createArgs.ChildFolderName)
+		if err != nil {
+			return err
+		}
+
+		createArgs.FolderMoID = childFolder.Reference().Value
+	}
+
+	return nil
+}
+
+func (vs *vSphereVMProvider) vmCreateIsReady(
+	vmCtx context.VirtualMachineContext,
+	vcClient *vcclient.Client,
+	createArgs *vmCreateArgs) error {
+
+	if policy := createArgs.ResourcePolicy; policy != nil {
+		if !policy.DeletionTimestamp.IsZero() {
+			return fmt.Errorf("cannot create VirtualMachine when its resource policy is being deleted")
+		}
+
+		clusterMoRef, err := vcenter.GetResourcePoolOwnerMoRef(vmCtx, vcClient.VimClient(), createArgs.ResourcePoolMoID)
+		if err != nil {
+			return err
+		}
+
+		// TODO: May want to do this as to filter the placement candidates.
+		exists, err := vs.doClusterModulesExist(vmCtx, vcClient.ClusterModuleClient(), clusterMoRef, policy)
+		if err != nil {
+			return err
+		} else if !exists {
+			return fmt.Errorf("VirtualMachineSetResourcePolicy cluster modules is not ready")
 		}
 	}
 
-	if lib.IsInstanceStorageFSSEnabled() {
-		if instancestorage.IsConfigured(vmCtx.VM) {
-			if _, ok := vmCtx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]; !ok {
-				return fmt.Errorf("instance storage PVCs are not bound yet")
-			}
+	if createArgs.HasInstanceStorage {
+		if _, ok := vmCtx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]; !ok {
+			return fmt.Errorf("instance storage PVCs are not bound yet")
 		}
 	}
 
@@ -338,6 +454,8 @@ func (vs *vSphereVMProvider) vmCreateGetArgs(
 		if err := AddInstanceStorageVolumes(vmCtx, createArgs.VMClass); err != nil {
 			return nil, err
 		}
+
+		createArgs.HasInstanceStorage = instancestorage.IsConfigured(vmCtx.VM)
 	}
 
 	err = vs.vmCreateGetStoragePrereqs(vmCtx, vcClient, createArgs)
@@ -384,6 +502,11 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 	createArgs.ContentLibraryUUID = clUUID
 	createArgs.ResourcePolicy = resourcePolicy
 	createArgs.VMMetadata = vmMetadata
+
+	if resourcePolicy != nil {
+		createArgs.ChildResourcePoolName = resourcePolicy.Spec.ResourcePool.Name
+		createArgs.ChildFolderName = resourcePolicy.Spec.Folder.Name
+	}
 
 	// TODO: Perhaps a condition type for each resource is better so all missing one(s)
 	// 	     can be reported at once (and will help for the best-effort update changes).

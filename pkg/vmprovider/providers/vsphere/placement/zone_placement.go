@@ -22,19 +22,38 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 )
 
-func doesVMNeedPlacement(vmCtx context.VirtualMachineContext) (zonePlacement, instanceStoragePlacement bool) {
+type Result struct {
+	ZonePlacement            bool
+	InstanceStoragePlacement bool
+	ZoneName                 string
+	HostMoRef                *types.ManagedObjectReference
+	PoolMoRef                types.ManagedObjectReference
+	// TODO: Datastore, whatever else as we need it.
+}
+
+func doesVMNeedPlacement(vmCtx context.VirtualMachineContext) (res Result, needZonePlacement, needInstanceStoragePlacement bool) {
 	if lib.IsWcpFaultDomainsFSSEnabled() {
-		// If the VM does not have a zone already assigned, a zone needs to be selected.
-		if vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] == "" {
-			zonePlacement = true
+		res.ZonePlacement = true
+
+		if zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName != "" {
+			// Zone has already been selected.
+			res.ZoneName = zoneName
+		} else {
+			// VM does not have a zone already assigned so we need to select one.
+			needZonePlacement = true
 		}
 	}
 
 	if lib.IsInstanceStorageFSSEnabled() {
-		// If the VM has InstanceStorage volumes, a host needs to be selected.
 		if instancestorage.IsConfigured(vmCtx.VM) {
-			if vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] == "" {
-				instanceStoragePlacement = true
+			res.InstanceStoragePlacement = true
+
+			if hostMoID := vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey]; hostMoID != "" {
+				// Host has already been selected.
+				res.HostMoRef = &types.ManagedObjectReference{Type: "HostSystem", Value: hostMoID}
+			} else {
+				// VM has InstanceStorage volumes so we need to select a host.
+				needInstanceStoragePlacement = true
 			}
 		}
 	}
@@ -42,11 +61,39 @@ func doesVMNeedPlacement(vmCtx context.VirtualMachineContext) (zonePlacement, in
 	return
 }
 
+// lookupChildRPs lookups the child ResourcePool under each parent ResourcePool. A VM with a ResourcePolicy
+// may specify a child ResourcePool that the VM will be created under.
+func lookupChildRPs(
+	vmCtx context.VirtualMachineContext,
+	vcClient *vim25.Client,
+	rpMoIDs []string,
+	zoneName, childRPName string) []string {
+
+	childRPMoIDs := make([]string, 0, len(rpMoIDs))
+
+	for _, rpMoID := range rpMoIDs {
+		rp := object.NewResourcePool(vcClient, types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
+
+		childRP, err := vcenter.GetChildResourcePool(vmCtx, rp, childRPName)
+		if err != nil {
+			vmCtx.Logger.Error(err, "Skipping this resource pool since failed to get child ResourcePool",
+				"zone", zoneName, "parentRPMoID", rpMoID, "childRPName", childRPName)
+			continue
+		}
+
+		childRPMoIDs = append(childRPMoIDs, childRP.Reference().Value)
+	}
+
+	return childRPMoIDs
+}
+
 // getPlacementCandidates determines the candidate resource pools for VM placement.
 func getPlacementCandidates(
 	vmCtx context.VirtualMachineContext,
 	client ctrlclient.Client,
-	zonePlacement bool) (map[string][]string, error) {
+	vcClient *vim25.Client,
+	zonePlacement bool,
+	childRPName string) (map[string][]string, error) {
 
 	var zones []topologyv1.AvailabilityZone
 
@@ -69,15 +116,31 @@ func getPlacementCandidates(
 	}
 
 	candidates := map[string][]string{}
+
 	for _, zone := range zones {
 		nsInfo, ok := zone.Spec.Namespaces[vmCtx.VM.Namespace]
-		if ok {
-			if len(nsInfo.PoolMoIDs) != 0 {
-				candidates[zone.Name] = nsInfo.PoolMoIDs
-			} else {
-				candidates[zone.Name] = []string{nsInfo.PoolMoId}
-			}
+		if !ok {
+			continue
 		}
+
+		var rpMoIDs []string
+		if len(nsInfo.PoolMoIDs) != 0 {
+			rpMoIDs = nsInfo.PoolMoIDs
+		} else {
+			rpMoIDs = []string{nsInfo.PoolMoId}
+		}
+
+		if childRPName != "" {
+			childRPMoIDs := lookupChildRPs(vmCtx, vcClient, rpMoIDs, zone.Name, childRPName)
+			if len(childRPMoIDs) == 0 {
+				vmCtx.Logger.Info("Zone had no candidates after looking up children ResourcePools",
+					"zone", zone.Name, "rpMoIDs", rpMoIDs, "childRPName", childRPName)
+				continue
+			}
+			rpMoIDs = childRPMoIDs
+		}
+
+		candidates[zone.Name] = rpMoIDs
 	}
 
 	return candidates, nil
@@ -86,11 +149,9 @@ func getPlacementCandidates(
 func rpMoIDToCluster(
 	ctx goctx.Context,
 	vcClient *vim25.Client,
-	rpMoID string) (*object.ClusterComputeResource, error) {
+	rpMoRef types.ManagedObjectReference) (*object.ClusterComputeResource, error) {
 
-	rp := object.NewResourcePool(vcClient, types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
-
-	cluster, err := rp.Owner(ctx)
+	cluster, err := object.NewResourcePool(vcClient, rpMoRef).Owner(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +170,9 @@ func getPlacementRecommendations(
 
 	for zoneName, rpMoIDs := range candidates {
 		for _, rpMoID := range rpMoIDs {
-			cluster, err := rpMoIDToCluster(vmCtx, vcClient, rpMoID)
+			rpMoRef := types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID}
+
+			cluster, err := rpMoIDToCluster(vmCtx, vcClient, rpMoRef)
 			if err != nil {
 				vmCtx.Logger.Error(err, "failed to get CCR from RP", "zone", zoneName, "rpMoID", rpMoID)
 				continue
@@ -128,6 +191,14 @@ func getPlacementRecommendations(
 				continue
 			}
 
+			// Replace the resource pool returned by PlaceVM - that is the cluster's root RP - with
+			// our more specific namespace or namespace child RP since this VM needs to be under the
+			// more specific RP. This makes the recommendations returned here the same as what zonal
+			// would return.
+			for idx := range recs {
+				recs[idx].PoolMoRef = rpMoRef
+			}
+
 			recommendations[zoneName] = append(recommendations[zoneName], recs...)
 		}
 	}
@@ -143,7 +214,7 @@ func getZonalPlacementRecommendations(
 	vcClient *vim25.Client,
 	candidates map[string][]string,
 	configSpec *types.VirtualMachineConfigSpec,
-	childRPName string) map[string][]Recommendation {
+	needsHost bool) map[string][]Recommendation {
 
 	rpMOToZone := map[types.ManagedObjectReference]string{}
 	var candidateRPMoRefs []types.ManagedObjectReference
@@ -151,39 +222,37 @@ func getZonalPlacementRecommendations(
 	for zoneName, rpMoIDs := range candidates {
 		for _, rpMoID := range rpMoIDs {
 			rpMoRef := types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID}
-
-			if childRPName != "" {
-				// If this VM has SetResourcePolicy - because it is apart of a TKG - lookup the
-				// child RP under the namespace's RP since it may have more specific resource limits.
-				rp := object.NewResourcePool(vcClient, rpMoRef)
-
-				childRP, err := vcenter.GetChildResourcePool(vmCtx, rp, childRPName)
-				if err != nil {
-					vmCtx.Logger.Error(err, "Failed to get child ResourcePool",
-						"parentRPMoID", rpMoRef.Value, "childRPName", childRPName)
-					continue
-				}
-
-				rpMoRef = childRP.Reference()
-			}
-
 			candidateRPMoRefs = append(candidateRPMoRefs, rpMoRef)
 			rpMOToZone[rpMoRef] = zoneName
 		}
 	}
 
+	var recs []Recommendation
+
 	if len(candidateRPMoRefs) == 1 {
-		vmCtx.Logger.Info(
-			"Falling back into non-zonal placement since there is only one candidate",
-			"rpMoID", candidateRPMoRefs[0].Value)
-		return getPlacementRecommendations(vmCtx, vcClient, candidates, configSpec)
+		// If there is only one candidate, we might be able to skip some work.
 
-	}
+		if needsHost {
+			// This is a hack until PlaceVmsXCluster() supports instance storage disks.
+			vmCtx.Logger.Info("Falling back into non-zonal placement since the only candidate needs host selected",
+				"rpMoID", candidateRPMoRefs[0].Value)
+			return getPlacementRecommendations(vmCtx, vcClient, candidates, configSpec)
+		}
 
-	recs, err := ClusterPlaceVMForCreate(vmCtx, vcClient, candidateRPMoRefs, configSpec)
-	if err != nil {
-		vmCtx.Logger.Error(err, "PlaceVmsXCluster failed")
-		return nil
+		recs = append(recs, Recommendation{
+			PoolMoRef: candidateRPMoRefs[0],
+		})
+		vmCtx.Logger.V(5).Info("Implied placement since there was only one candidate", "rec", recs[0])
+
+	} else {
+		var err error
+
+		// TODO: Once DRS PlaceVmsXCluster() adds flag for needing the host, pass that along here.
+		recs, err = ClusterPlaceVMForCreate(vmCtx, vcClient, candidateRPMoRefs, configSpec)
+		if err != nil {
+			vmCtx.Logger.Error(err, "PlaceVmsXCluster failed")
+			return nil
+		}
 	}
 
 	recommendations := map[string][]Recommendation{}
@@ -221,60 +290,45 @@ func Placement(
 	client ctrlclient.Client,
 	vcClient *vim25.Client,
 	configSpec *types.VirtualMachineConfigSpec,
-	childRPName string) error {
+	childRPName string) (*Result, error) {
 
-	zonePlacement, instanceStoragePlacement := doesVMNeedPlacement(vmCtx)
+	existingRes, zonePlacement, instanceStoragePlacement := doesVMNeedPlacement(vmCtx)
 	if !zonePlacement && !instanceStoragePlacement {
-		return nil
+		return &existingRes, nil
 	}
 
-	candidates, err := getPlacementCandidates(vmCtx, client, zonePlacement)
+	candidates, err := getPlacementCandidates(vmCtx, client, vcClient, zonePlacement, childRPName)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(candidates) == 0 {
-		return fmt.Errorf("no placement candidates available")
+		return nil, fmt.Errorf("no placement candidates available")
 	}
+
+	// TBD: May want to get the host for vGPU and other passthru devices too.
+	needsHost := instanceStoragePlacement
 
 	var recommendations map[string][]Recommendation
 	if zonePlacement {
-		recommendations = getZonalPlacementRecommendations(vmCtx, vcClient, candidates, configSpec, childRPName)
+		recommendations = getZonalPlacementRecommendations(vmCtx, vcClient, candidates, configSpec, needsHost)
 	} else /* instanceStoragePlacement */ {
 		recommendations = getPlacementRecommendations(vmCtx, vcClient, candidates, configSpec)
 	}
 	if len(recommendations) == 0 {
-		return fmt.Errorf("no placement recommendations available")
+		return nil, fmt.Errorf("no placement recommendations available")
 	}
 
 	zoneName, rec := MakePlacementDecision(recommendations)
 	vmCtx.Logger.V(5).Info("Placement decision result", "zone", zoneName, "recommendation", rec)
 
-	if zonePlacement {
-		if vmCtx.VM.Labels == nil {
-			vmCtx.VM.Labels = map[string]string{}
-		}
-		vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+	result := &Result{
+		ZonePlacement:            zonePlacement,
+		InstanceStoragePlacement: instanceStoragePlacement,
+		ZoneName:                 zoneName,
+		PoolMoRef:                rec.PoolMoRef,
+		HostMoRef:                rec.HostMoRef,
 	}
 
-	if instanceStoragePlacement {
-		if rec.HostMoRef == nil {
-			return fmt.Errorf("recommendation is missing host required for instance storage")
-		}
-
-		hostMoID := rec.HostMoRef.Value
-
-		hostFQDN, err := vcenter.GetESXHostFQDN(vmCtx, vcClient, hostMoID)
-		if err != nil {
-			return err
-		}
-
-		if vmCtx.VM.Annotations == nil {
-			vmCtx.VM.Annotations = map[string]string{}
-		}
-		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
-		vmCtx.VM.Annotations[constants.InstanceStorageSelectedNodeAnnotationKey] = hostFQDN
-	}
-
-	return nil
+	return result, nil
 }

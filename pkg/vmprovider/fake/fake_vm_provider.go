@@ -38,7 +38,7 @@ type funcs struct {
 	CreateOrUpdateVirtualMachineSetResourcePolicyFn func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
 	IsVirtualMachineSetResourcePolicyReadyFn        func(ctx context.Context, azName string, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
 	DeleteVirtualMachineSetResourcePolicyFn         func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
-	ComputeClusterCPUMinFrequencyFn                 func(ctx context.Context) error
+	ComputeCPUMinFrequencyFn                        func(ctx context.Context) error
 }
 
 type VMProvider struct {
@@ -138,11 +138,11 @@ func (s *VMProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, 
 	return nil
 }
 
-func (s *VMProvider) ComputeClusterCPUMinFrequency(ctx context.Context) error {
+func (s *VMProvider) ComputeCPUMinFrequency(ctx context.Context) error {
 	s.Lock()
 	defer s.Unlock()
-	if s.ComputeClusterCPUMinFrequencyFn != nil {
-		return s.ComputeClusterCPUMinFrequencyFn(ctx)
+	if s.ComputeCPUMinFrequencyFn != nil {
+		return s.ComputeCPUMinFrequencyFn(ctx)
 	}
 
 	return nil

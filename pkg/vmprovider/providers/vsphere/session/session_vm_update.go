@@ -429,15 +429,14 @@ func updateConfigSpec(
 	vmCtx context.VirtualMachineContext,
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs,
-	globalExtraConfig map[string]string,
-	minCPUFreq uint64) *vimTypes.VirtualMachineConfigSpec {
+	globalExtraConfig map[string]string) *vimTypes.VirtualMachineConfigSpec {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
 	vmImage := updateArgs.VMImage
 	vmClassSpec := updateArgs.VMClass.Spec
 
 	UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
-	UpdateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, minCPUFreq)
+	UpdateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, updateArgs.MinCPUFreq)
 	UpdateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
 	UpdateConfigSpecExtraConfig(config, configSpec, updateArgs.ConfigSpec, vmImage, &vmClassSpec, vmCtx.VM, globalExtraConfig)
 	UpdateConfigSpecChangeBlockTracking(config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
@@ -455,9 +454,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 		vmCtx,
 		config,
 		updateArgs,
-		s.extraConfig,
-		s.GetCPUMinMHzInCluster(),
-	)
+		s.extraConfig)
 
 	virtualDevices := object.VirtualDeviceList(config.Hardware.Device)
 	currentDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
@@ -637,7 +634,7 @@ func (s *Session) prepareVMForPowerOn(
 		return err
 	}
 
-	dnsServers, err := config.GetNameserversFromConfigMap(s.k8sClient)
+	dnsServers, err := config.GetNameserversFromConfigMap(s.K8sClient)
 	if err != nil {
 		vmCtx.Logger.Error(err, "Unable to get DNS server list from ConfigMap")
 		// Prior code only logged?!?

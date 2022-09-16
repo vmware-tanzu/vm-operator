@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
@@ -37,21 +36,13 @@ var DefaultExtraConfig = map[string]string{
 
 type Session struct {
 	Client    *client.Client
-	k8sClient ctrlruntime.Client
+	K8sClient ctrlruntime.Client
+	Finder    *find.Finder
 
-	Finder     *find.Finder
-	datacenter *object.Datacenter
-	cluster    *object.ClusterComputeResource
-	datastore  *object.Datastore
-
+	// Fields only used during Update
+	cluster         *object.ClusterComputeResource
 	networkProvider network.Provider
-
-	extraConfig           map[string]string
-	storageClassRequired  bool
-	useInventoryForImages bool
-
-	mutex              sync.Mutex
-	cpuMinMHzInCluster uint64 // CPU Min Frequency across all Hosts in the cluster
+	extraConfig     map[string]string
 }
 
 func NewSessionAndConfigure(
@@ -67,10 +58,8 @@ func NewSessionAndConfigure(
 	}
 
 	s := &Session{
-		Client:                client,
-		k8sClient:             k8sClient,
-		storageClassRequired:  config.StorageClassRequired,
-		useInventoryForImages: config.UseInventoryAsContentSource,
+		Client:    client,
+		K8sClient: k8sClient,
 	}
 
 	if err := s.initSession(ctx, config); err != nil {
@@ -95,8 +84,7 @@ func (s *Session) initSession(
 	if err != nil {
 		return errors.Wrapf(err, "failed to init Datacenter %q", cfg.Datacenter)
 	}
-	s.datacenter = dc.(*object.Datacenter)
-	s.Finder.SetDatacenter(s.datacenter)
+	s.Finder.SetDatacenter(dc.(*object.Datacenter))
 
 	resourcePool, err := s.GetResourcePoolByMoID(ctx, cfg.ResourcePool)
 	if err != nil {
@@ -114,25 +102,6 @@ func (s *Session) initSession(
 	}
 	s.cluster = cluster
 
-	minFreq, err := vcenter.ClusterMinCPUFreq(ctx, s.cluster)
-	if err != nil {
-		return errors.Wrapf(err, "failed to init minimum CPU frequency")
-	}
-	s.SetCPUMinMHzInCluster(minFreq)
-
-	if s.storageClassRequired {
-		if cfg.Datastore != "" {
-			log.V(4).Info("Ignoring configured datastore since storage class is required")
-		}
-	} else {
-		if cfg.Datastore != "" {
-			s.datastore, err = s.Finder.Datastore(ctx, cfg.Datastore)
-			if err != nil {
-				return errors.Wrapf(err, "failed to init Datastore %q", cfg.Datastore)
-			}
-		}
-	}
-
 	// Apply default extra config values. Allow for the option to specify extraConfig to be applied to all VMs
 	s.extraConfig = DefaultExtraConfig
 	if jsonExtraConfig := os.Getenv("JSON_EXTRA_CONFIG"); jsonExtraConfig != "" {
@@ -147,17 +116,9 @@ func (s *Session) initSession(
 		}
 	}
 
-	s.networkProvider = network.NewProvider(s.k8sClient, s.Client.VimClient(), s.Finder, s.cluster)
+	s.networkProvider = network.NewProvider(s.K8sClient, s.Client.VimClient(), s.Finder, s.cluster)
 
 	return nil
-}
-
-func (s *Session) lookupVMByName(ctx goctx.Context, name string) (*res.VirtualMachine, error) {
-	vm, err := s.Finder.VirtualMachine(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	return res.NewVMFromObject(vm), nil
 }
 
 func (s *Session) invokeFsrVirtualMachine(vmCtx context.VirtualMachineContext, resVM *res.VirtualMachine) error {
@@ -182,56 +143,12 @@ func (s *Session) GetResourcePoolByMoID(ctx goctx.Context, moID string) (*object
 	return vcenter.GetResourcePoolByMoID(ctx, s.Finder, moID)
 }
 
-func (s *Session) GetCPUMinMHzInCluster() uint64 {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	return s.cpuMinMHzInCluster
-}
-
-func (s *Session) SetCPUMinMHzInCluster(minFreq uint64) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	if s.cpuMinMHzInCluster != minFreq {
-		prevFreq := s.cpuMinMHzInCluster
-		s.cpuMinMHzInCluster = minFreq
-		log.V(4).Info("Successfully set CPU min frequency", "prevFreq", prevFreq, "newFreq", minFreq)
-	}
-}
-
 func (s *Session) String() string {
 	var sb strings.Builder
 	sb.WriteString("{")
-	if s.datacenter != nil {
-		sb.WriteString(fmt.Sprintf("datacenter: %s, ", s.datacenter.Reference().Value))
-	}
 	if s.cluster != nil {
 		sb.WriteString(fmt.Sprintf("cluster: %s, ", s.cluster.Reference().Value))
 	}
-	if s.datastore != nil {
-		sb.WriteString(fmt.Sprintf("datastore: %s, ", s.datastore.Reference().Value))
-	}
-	sb.WriteString(fmt.Sprintf("cpuMinMHzInCluster: %v, ", s.GetCPUMinMHzInCluster()))
 	sb.WriteString("}")
 	return sb.String()
-}
-
-// RenameSessionCluster renames the cluster corresponding to this session. Used only in integration tests for now.
-func (s *Session) RenameSessionCluster(ctx goctx.Context, name string) error {
-	task, err := s.cluster.Rename(ctx, name)
-	if err != nil {
-		log.Error(err, "Failed to invoke rename for cluster", "clusterMoID", s.cluster.Reference().Value)
-		return err
-	}
-
-	if taskResult, err := task.WaitForResult(ctx, nil); err != nil {
-		msg := ""
-		if taskResult != nil && taskResult.Error != nil {
-			msg = taskResult.Error.LocalizedMessage
-		}
-		log.Error(err, "Error in renaming cluster", "clusterMoID", s.cluster.Reference().Value, "msg", msg)
-		return err
-	}
-
-	return nil
 }

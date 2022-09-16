@@ -4,7 +4,6 @@
 package session
 
 import (
-	goctx "context"
 	"encoding/base64"
 	"fmt"
 
@@ -14,10 +13,9 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vapi/vcenter"
-	"github.com/vmware/govmomi/vim25"
-	"github.com/vmware/govmomi/vim25/methods"
-	"github.com/vmware/govmomi/vim25/mo"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
+
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -28,278 +26,165 @@ import (
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
-type VirtualMachineCloneContext struct {
-	context.VirtualMachineContext
-	ResourcePool        vimTypes.ManagedObjectReference
-	Folder              vimTypes.ManagedObjectReference
+// VMCreateArgs contains the arguments needed to create a VM on VC.
+type VMCreateArgs struct {
+	VMClass             *vmopv1alpha1.VirtualMachineClass
+	VMImage             *vmopv1alpha1.VirtualMachineImage
+	ResourcePolicy      *vmopv1alpha1.VirtualMachineSetResourcePolicy
+	VMMetadata          vmprovider.VMMetadata
+	ContentLibraryUUID  string
+	StorageClassesToIDs map[string]string
 	StorageProvisioning string
-	HostID              string
+	HasInstanceStorage  bool
+
+	// From the ResourcePolicy if specified
+	ChildResourcePoolName string
+	ChildFolderName       string
+	MinCPUFreq            uint64
+
 	ConfigSpec          *vimTypes.VirtualMachineConfigSpec
+	PlacementConfigSpec *vimTypes.VirtualMachineConfigSpec
+	ClassConfigSpec     *vimTypes.VirtualMachineConfigSpec
+
+	FolderMoID       string
+	ResourcePoolMoID string
+	HostMoID         string
+	StorageProfileID string
+	DatastoreMoID    string // gce2e only: used if StorageProfileID is unset
 }
 
-func (s *Session) deployOvf(vmCtx VirtualMachineCloneContext, itemID string, storageProfileID string) (*res.VirtualMachine, error) {
+func (s *Session) deployVMFromCL(
+	vmCtx context.VirtualMachineContext,
+	item *library.Item,
+	createArgs *VMCreateArgs) (*object.VirtualMachine, error) {
+
 	deploymentSpec := vcenter.DeploymentSpec{
 		Name:                vmCtx.VM.Name,
-		StorageProvisioning: vmCtx.StorageProvisioning,
+		StorageProfileID:    createArgs.StorageProfileID,
+		StorageProvisioning: createArgs.StorageProvisioning,
 		AcceptAllEULA:       true, // TODO (): Plumb in AcceptAllEULA
 	}
 
-	if storageProfileID != "" {
-		deploymentSpec.StorageProfileID = storageProfileID
-	} else {
+	if deploymentSpec.StorageProfileID == "" {
 		// Without a storage profile, fall back to the datastore.
-		deploymentSpec.DefaultDatastoreID = s.datastore.Reference().Value
+		deploymentSpec.DefaultDatastoreID = createArgs.DatastoreMoID
 	}
 
-	if lib.IsVMClassAsConfigFSSEnabled() && vmCtx.ConfigSpec != nil {
-		configSpecBytes, err := util.MarshalConfigSpecToXML(*vmCtx.ConfigSpec)
+	if lib.IsVMClassAsConfigFSSEnabled() && createArgs.ConfigSpec != nil {
+		configSpecXML, err := util.MarshalConfigSpecToXML(createArgs.ConfigSpec)
 		if err != nil {
 			return nil, err
 		}
 
 		deploymentSpec.VmConfigSpec = &vcenter.VmConfigSpec{
-			XML:      base64.StdEncoding.EncodeToString(configSpecBytes),
 			Provider: constants.ConfigSpecProviderXML,
+			XML:      base64.StdEncoding.EncodeToString(configSpecXML),
 		}
 	}
 
 	deploy := vcenter.Deploy{
 		DeploymentSpec: deploymentSpec,
 		Target: vcenter.Target{
-			ResourcePoolID: vmCtx.ResourcePool.Value,
-			FolderID:       vmCtx.Folder.Value,
-			HostID:         vmCtx.HostID,
+			ResourcePoolID: createArgs.ResourcePoolMoID,
+			FolderID:       createArgs.FolderMoID,
+			HostID:         createArgs.HostMoID,
 		},
 	}
 
-	vmCtx.Logger.Info("Deploying Library Item", "itemID", itemID, "deploy", deploy)
-	deployedVM, err := vcenter.NewManager(s.Client.RestClient()).DeployLibraryItem(vmCtx, itemID, deploy)
+	vmCtx.Logger.Info("Deploying Library Item", "itemID", item.ID, "deploy", deploy)
+
+	vmMoRef, err := vcenter.NewManager(s.Client.RestClient()).DeployLibraryItem(vmCtx, item.ID, deploy)
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := s.Finder.ObjectReference(vmCtx, deployedVM.Reference())
+	return object.NewVirtualMachine(s.Client.VimClient(), *vmMoRef), nil
+}
+
+func (s *Session) cloneVMFromInventory(
+	vmCtx context.VirtualMachineContext,
+	createArgs *VMCreateArgs) (*object.VirtualMachine, error) {
+
+	srcVMName := vmCtx.VM.Spec.ImageName
+
+	srcVM, err := s.Finder.VirtualMachine(vmCtx, srcVMName)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to find clone source VM: %s", srcVMName)
 	}
 
-	return res.NewVMFromObject(ref.(*object.VirtualMachine)), nil
-}
-
-// GetClusterVMConfigOptions fetches the virtualmachine config options from the cluster specifically
-// 1. valid guestOS descriptor IDs for the cluster.
-func GetClusterVMConfigOptions(
-	ctx goctx.Context,
-	cluster *object.ClusterComputeResource,
-	client *vim25.Client) (map[string]string, error) {
-	if cluster == nil {
-		return nil, fmt.Errorf("no cluster exists, can't get cluster properties")
-	}
-
-	log.V(4).Info("Fetching supported guestOS types and default hardware version for the cluster")
-	var computeResource mo.ComputeResource
-	if err := cluster.Properties(ctx, cluster.Reference(), []string{"environmentBrowser"}, &computeResource); err != nil {
-		log.Error(err, "Failed to get environment browser for the cluster")
-		return nil, err
-	}
-
-	req := vimTypes.QueryConfigOptionEx{
-		This: *computeResource.EnvironmentBrowser,
-		Spec: &vimTypes.EnvironmentBrowserConfigOptionQuerySpec{},
-	}
-
-	opt, err := methods.QueryConfigOptionEx(ctx, client.RoundTripper, &req)
+	cloneSpec, err := s.createCloneSpec(vmCtx, createArgs, srcVM)
 	if err != nil {
-		log.Error(err, "Failed to query config options for cluster properties")
-		return nil, err
+		return nil, errors.Wrap(err, "failed to create CloneSpec")
 	}
 
-	guestOSIdsToFamily := make(map[string]string)
-	if opt.Returnval != nil {
-		for _, descriptor := range opt.Returnval.GuestOSDescriptor {
-			// Fetch all ids and families that have supportLevel other than unsupported
-			if descriptor.SupportLevel != "unsupported" {
-				guestOSIdsToFamily[descriptor.Id] = descriptor.Family
-			}
-		}
-	}
-
-	return guestOSIdsToFamily, nil
-}
-
-// CheckVMConfigOptions validates that the specified VM Image has a supported OS type
-// Only when FSS_WCP_Unified_TKG is disabled.
-func CheckVMConfigOptions(
-	vmCtx VirtualMachineCloneContext,
-	vmConfigArgs vmprovider.VMConfigArgs,
-	guestOSIdsToFamily map[string]string) error {
-	if lib.IsUnifiedTKGFSSEnabled() {
-		return nil
-	}
-	val := vmCtx.VM.Annotations[constants.VMOperatorImageSupportedCheckKey]
-	if val != constants.VMOperatorImageSupportedCheckDisable && len(guestOSIdsToFamily) > 0 {
-		osType := vmConfigArgs.VMImage.Spec.OSInfo.Type
-		// osFamily will be present for supported OSTypes and support only VirtualMachineGuestOsFamilyLinuxGuest for now
-		if osFamily := guestOSIdsToFamily[osType]; osFamily != string(vimTypes.VirtualMachineGuestOsFamilyLinuxGuest) {
-			return fmt.Errorf("image osType '%s' is not supported by VMService", osType)
-		}
-	}
-	return nil
-}
-
-func deployVMFromCLPreCheck(
-	vmCtx VirtualMachineCloneContext,
-	vmConfigArgs vmprovider.VMConfigArgs,
-	cluster *object.ClusterComputeResource,
-	client *vim25.Client) error {
-
-	guestOSIdsToFamily, err := GetClusterVMConfigOptions(vmCtx.Context, cluster, client)
-	if err != nil {
-		return errors.Wrapf(err, "Failed to get guestOS descriptors and hardware options from cluster")
-	}
-
-	return CheckVMConfigOptions(vmCtx, vmConfigArgs, guestOSIdsToFamily)
-}
-
-func (s *Session) deployVMFromCL(vmCtx VirtualMachineCloneContext, vmConfigArgs vmprovider.VMConfigArgs, item *library.Item) (*res.VirtualMachine, error) {
-	vmCtx.Logger.Info("Performing preChecks before deploying library item", "itemName", item.Name, "itemType", item.Type)
-
-	if err := deployVMFromCLPreCheck(vmCtx, vmConfigArgs, s.cluster, s.Client.VimClient()); err != nil {
-		return nil, errors.Wrapf(err, "deploy VM preCheck failed for image %q", vmCtx.VM.Spec.ImageName)
-	}
-
-	vmCtx.Logger.Info("Deploying Content Library item", "itemName", item.Name,
-		"itemType", item.Type, "imageName", vmCtx.VM.Spec.ImageName,
-		"resourcePolicyName", vmCtx.VM.Spec.ResourcePolicyName, "storageProfileID", vmConfigArgs.StorageProfileID)
-
-	deployedVM, err := s.deployOvf(vmCtx, item.ID, vmConfigArgs.StorageProfileID)
-	if err != nil {
-		return nil, errors.Wrapf(err, "deploy from content library failed for image %q", vmCtx.VM.Spec.ImageName)
-	}
-
-	return deployedVM, nil
-}
-
-func (s *Session) cloneVM(vmCtx context.VirtualMachineContext, resSrcVM *res.VirtualMachine, cloneSpec *vimTypes.VirtualMachineCloneSpec) (*res.VirtualMachine, error) {
-	vmCtx.Logger.Info("Cloning VM", "cloneSpec", *cloneSpec)
-
-	// We always set cloneSpec.Location.Folder use that to get the parent inventory folder.
+	// We always set cloneSpec.Location.Folder so use that to get the parent folder object.
 	folder := object.NewFolder(s.Client.VimClient(), *cloneSpec.Location.Folder)
 
-	clonedVM, err := resSrcVM.Clone(vmCtx, folder, cloneSpec)
+	vmMoRef, err := res.NewVMFromObject(srcVM).Clone(vmCtx, folder, cloneSpec)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "clone from source VM %s failed", srcVMName)
 	}
 
-	ref, err := s.Finder.ObjectReference(vmCtx, clonedVM.Reference())
-	if err != nil {
-		return nil, err
-	}
-
-	return res.NewVMFromObject(ref.(*object.VirtualMachine)), nil
-}
-
-func (s *Session) cloneVMFromInventory(vmCtx VirtualMachineCloneContext, vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
-	sourceVM, err := s.lookupVMByName(vmCtx, vmCtx.VM.Spec.ImageName)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to lookup clone source %q", vmCtx.VM.Spec.ImageName)
-	}
-
-	cloneSpec, err := s.createCloneSpec(vmCtx, sourceVM, vmConfigArgs)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create clone spec")
-	}
-
-	clonedVM, err := s.cloneVM(vmCtx.VirtualMachineContext, sourceVM, cloneSpec)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to clone %q from %q", vmCtx.VM.Name, sourceVM.Name)
-	}
-
-	return clonedVM, nil
+	return object.NewVirtualMachine(s.Client.VimClient(), *vmMoRef), nil
 }
 
 func (s *Session) cloneVMFromContentLibrary(
-	vmCtx VirtualMachineCloneContext,
-	vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
+	vmCtx context.VirtualMachineContext,
+	createArgs *VMCreateArgs) (*object.VirtualMachine, error) {
 
-	item, err := s.Client.ContentLibClient().GetLibraryItem(vmCtx, vmConfigArgs.ContentLibraryUUID, vmConfigArgs.VMImage.Status.ImageName)
+	item, err := s.Client.ContentLibClient().GetLibraryItem(
+		vmCtx,
+		createArgs.ContentLibraryUUID,
+		createArgs.VMImage.Status.ImageName)
 	if err != nil {
 		return nil, err
 	}
 
 	switch item.Type {
 	case library.ItemTypeOVF:
-		return s.deployVMFromCL(vmCtx, vmConfigArgs, item)
+		return s.deployVMFromCL(vmCtx, item, createArgs)
 	case library.ItemTypeVMTX:
 		// BMV: Does this work? We'll try to find the source VM with the VM.Spec.ImageName name.
-		return s.cloneVMFromInventory(vmCtx, vmConfigArgs)
+		return s.cloneVMFromInventory(vmCtx, createArgs)
 	default:
 		return nil, errors.Errorf("item %v not a supported type: %s", item.Name, item.Type)
 	}
 }
 
-func (s *Session) CloneVirtualMachine(
+func (s *Session) CreateVirtualMachine(
 	vmCtx context.VirtualMachineContext,
-	folderMoID string,
-	resourcePoolMoID string,
-	hostMoID string,
-	configSpec *vimTypes.VirtualMachineConfigSpec,
-	storageProvisioning string,
-	vmConfigArgs vmprovider.VMConfigArgs) (*res.VirtualMachine, error) {
-
-	if vmConfigArgs.StorageProfileID == "" {
-		if s.storageClassRequired {
-			// Note the storageProfileID is obtained from a StorageClass.
-			return nil, fmt.Errorf("storage class is required but not specified")
-		}
-
-		if s.datastore == nil {
-			return nil, fmt.Errorf("cannot clone VM when neither storage class or datastore is specified")
-		}
-	}
-
-	vmCloneCtx := VirtualMachineCloneContext{
-		VirtualMachineContext: vmCtx,
-		ResourcePool:          vimTypes.ManagedObjectReference{Type: "ResourcePool", Value: resourcePoolMoID},
-		Folder:                vimTypes.ManagedObjectReference{Type: "Folder", Value: folderMoID},
-		HostID:                hostMoID,
-		StorageProvisioning:   storageProvisioning,
-		ConfigSpec:            configSpec,
-	}
+	createArgs *VMCreateArgs) (*object.VirtualMachine, error) {
 
 	// The ContentLibraryUUID can be empty when we want to clone from inventory VMs. This is
 	// not a supported workflow but we have tests that use this.
-	if vmConfigArgs.ContentLibraryUUID != "" {
-		resVM, err := s.cloneVMFromContentLibrary(vmCloneCtx, vmConfigArgs)
-		return resVM, err
+	if createArgs.ContentLibraryUUID != "" {
+		return s.cloneVMFromContentLibrary(vmCtx, createArgs)
 	}
 
-	if s.useInventoryForImages {
-		resVM, err := s.cloneVMFromInventory(vmCloneCtx, vmConfigArgs)
-		return resVM, err
-	}
-
-	return nil, fmt.Errorf("no Content Library specified and inventory disallowed")
+	// Fall back to using the inventory. Note that here is only reachable in our test suite
+	// because without SkipVMImageCLProviderCheck we require the VirtualMachineImage to have
+	// a ref to the ContentLibrary.
+	return s.cloneVMFromInventory(vmCtx, createArgs)
 }
 
 func (s *Session) createCloneSpec(
-	vmCtx VirtualMachineCloneContext,
-	sourceVM *res.VirtualMachine,
-	vmConfigArgs vmprovider.VMConfigArgs) (*vimTypes.VirtualMachineCloneSpec, error) {
+	vmCtx context.VirtualMachineContext,
+	createArgs *VMCreateArgs,
+	srcVM *object.VirtualMachine) (*vimTypes.VirtualMachineCloneSpec, error) {
 
 	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
-		Config: vmCtx.ConfigSpec,
+		Config: createArgs.ConfigSpec,
 		Memory: pointer.BoolPtr(false), // No full memory clones.
 	}
 
-	virtualDevices, err := sourceVM.GetVirtualDevices(vmCtx)
+	virtualDevices, err := srcVM.Device(vmCtx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get VM devices: %w", err)
 	}
 
 	virtualDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
 
-	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx.VirtualMachineContext, virtualDisks)
+	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx, virtualDisks)
 	if err != nil {
 		return nil, err
 	}
@@ -312,49 +197,67 @@ func (s *Session) createCloneSpec(
 		}
 	}
 
-	if vmConfigArgs.StorageProfileID != "" {
+	if createArgs.StorageProfileID != "" {
 		cloneSpec.Location.Profile = []vimTypes.BaseVirtualMachineProfileSpec{
-			&vimTypes.VirtualMachineDefinedProfileSpec{ProfileId: vmConfigArgs.StorageProfileID},
+			&vimTypes.VirtualMachineDefinedProfileSpec{ProfileId: createArgs.StorageProfileID},
 		}
 	} else {
-		// BMV: Used to compute placement? Otherwise always overwritten later.
-		cloneSpec.Location.Datastore = vimTypes.NewReference(s.datastore.Reference())
+		// BMV: Used to compute placement? Otherwise, always overwritten later.
+		cloneSpec.Location.Datastore = &vimTypes.ManagedObjectReference{
+			Type:  "Datastore",
+			Value: createArgs.DatastoreMoID,
+		}
 	}
 
-	cloneSpec.Location.Pool = vimTypes.NewReference(vmCtx.ResourcePool.Reference())
-	cloneSpec.Location.Folder = vimTypes.NewReference(vmCtx.Folder.Reference())
+	cloneSpec.Location.Pool = &vimTypes.ManagedObjectReference{
+		Type:  "ResourcePool",
+		Value: createArgs.ResourcePoolMoID,
+	}
+	cloneSpec.Location.Folder = &vimTypes.ManagedObjectReference{
+		Type:  "Folder",
+		Value: createArgs.FolderMoID,
+	}
 
-	relocateSpec, err := placement.CloneVMRelocateSpec(vmCtx, s.cluster, sourceVM.MoRef(), cloneSpec)
+	rpOwner, err := object.NewResourcePool(srcVM.Client(), *cloneSpec.Location.Pool).Owner(vmCtx)
 	if err != nil {
 		return nil, err
 	}
+
+	cluster, ok := rpOwner.(*object.ClusterComputeResource)
+	if !ok {
+		return nil, fmt.Errorf("owner of the ResourcePool is not a cluster but %T", rpOwner)
+	}
+
+	relocateSpec, err := placement.CloneVMRelocateSpec(vmCtx, cluster, srcVM.Reference(), cloneSpec)
+	if err != nil {
+		return nil, err
+	}
+
 	cloneSpec.Location.Host = relocateSpec.Host
 	cloneSpec.Location.Datastore = relocateSpec.Datastore
-
-	diskLocators := cloneVMDiskLocators(vmCtx, virtualDisks, cloneSpec.Location.Datastore, cloneSpec.Location.Profile)
-	cloneSpec.Location.Disk = diskLocators
+	cloneSpec.Location.Disk = cloneVMDiskLocators(virtualDisks, createArgs, cloneSpec.Location)
 
 	return cloneSpec, nil
 }
 
 func cloneVMDiskLocators(
-	vmCtx VirtualMachineCloneContext,
 	disks object.VirtualDeviceList,
-	datastore *vimTypes.ManagedObjectReference,
-	profile []vimTypes.BaseVirtualMachineProfileSpec) []vimTypes.VirtualMachineRelocateSpecDiskLocator {
+	createArgs *VMCreateArgs,
+	location vimTypes.VirtualMachineRelocateSpec) []vimTypes.VirtualMachineRelocateSpecDiskLocator {
 
 	diskLocators := make([]vimTypes.VirtualMachineRelocateSpecDiskLocator, 0, len(disks))
+
 	for _, disk := range disks {
 		locator := vimTypes.VirtualMachineRelocateSpecDiskLocator{
 			DiskId:    disk.GetVirtualDevice().Key,
-			Datastore: *datastore,
-			Profile:   profile,
+			Datastore: *location.Datastore,
+			Profile:   location.Profile,
 			// TODO: Check if policy is encrypted and use correct DiskMoveType
 			DiskMoveType: string(vimTypes.VirtualMachineRelocateDiskMoveOptionsMoveChildMostDiskBacking),
 		}
 
 		if backing, ok := disk.(*vimTypes.VirtualDisk).Backing.(*vimTypes.VirtualDiskFlatVer2BackingInfo); ok {
-			switch vmCtx.StorageProvisioning {
+			switch createArgs.StorageProvisioning {
 			case string(vimTypes.OvfCreateImportSpecParamsDiskProvisioningTypeThin):
 				thin := true
 				backing.ThinProvisioned = &thin

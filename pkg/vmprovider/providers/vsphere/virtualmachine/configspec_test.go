@@ -56,7 +56,7 @@ var _ = Describe("CreateConfigSpec", func() {
 	Context("Use VM Class ConfigSpec", func() {
 		BeforeEach(func() {
 			classConfigSpec = &vimtypes.VirtualMachineConfigSpec{
-				Name:       "dummy-VM",
+				Name:       "dont-use-this-dummy-VM",
 				Annotation: "test-annotation",
 				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
 					&vimtypes.VirtualDeviceConfigSpec{

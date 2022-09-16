@@ -7,8 +7,6 @@ import (
 	goctx "context"
 	"sync"
 
-	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -16,7 +14,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 )
 
 type Manager struct {
@@ -109,78 +106,6 @@ func (sm *Manager) GetSessionForVM(vmCtx context.VirtualMachineContext) (*Sessio
 		vmCtx,
 		vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey],
 		vmCtx.VM.Namespace)
-}
-
-func (sm *Manager) ComputeAndGetCPUMinFrequency(ctx goctx.Context) (uint64, error) {
-	// Get all the availability zones in order to calculate the minimum
-	// CPU frequencies for each of the zones' vSphere clusters.
-	availabilityZones, err := topology.GetAvailabilityZones(ctx, sm.k8sClient)
-	if err != nil {
-		return 0, err
-	}
-
-	if !lib.IsWcpFaultDomainsFSSEnabled() {
-		// Hack to fix up the default AZ to add the cluster MoID. Since in this setup,
-		// all sessions share a single cluster, we can use any session.
-		var clusterMoID string
-		sm.Lock()
-		for _, session := range sm.sessions {
-			clusterMoID = session.Cluster().Reference().Value
-			break
-		}
-		sm.Unlock()
-
-		if clusterMoID == "" {
-			return 0, nil
-		}
-
-		// Only expect 1 AZ in this case.
-		for i := range availabilityZones {
-			availabilityZones[i].Spec.ClusterComputeResourceMoIDs = []string{clusterMoID}
-		}
-	}
-
-	client, err := sm.GetClient(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	var minFreq uint64
-	for _, az := range availabilityZones {
-		moIDs := az.Spec.ClusterComputeResourceMoIDs
-		if len(moIDs) == 0 {
-			moIDs = []string{az.Spec.ClusterComputeResourceMoId} // HA TEMP
-		}
-
-		for _, moID := range moIDs {
-			ccr := object.NewClusterComputeResource(
-				client.VimClient(),
-				types.ManagedObjectReference{
-					Type:  "ClusterComputeResource",
-					Value: moID,
-				},
-			)
-			freq, err := vcenter.ClusterMinCPUFreq(ctx, ccr)
-			if err != nil {
-				// TODO This alone should not be a fatal error.
-				return 0, err
-			}
-			if minFreq == 0 || freq < minFreq {
-				minFreq = freq
-			}
-		}
-	}
-
-	if minFreq != 0 {
-		// Iterate over each session, setting its minimum frequency to the global minimum.
-		sm.Lock()
-		for _, session := range sm.sessions {
-			session.SetCPUMinMHzInCluster(minFreq)
-		}
-		sm.Unlock()
-	}
-
-	return minFreq, nil
 }
 
 func (sm *Manager) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {

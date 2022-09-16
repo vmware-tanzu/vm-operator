@@ -23,6 +23,7 @@ type VMConfigArgs struct {
 	StorageProfileID   string
 	ContentLibraryUUID string
 	ConfigSpec         *vimTypes.VirtualMachineConfigSpec
+	MinCPUFreq         uint64
 }
 
 // VirtualMachineProviderInterface is a plugable interface for VM Providers.
@@ -40,7 +41,7 @@ type VirtualMachineProviderInterface interface {
 	UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error
 	ClearSessionsAndClient(ctx context.Context)
 	DeleteNamespaceSessionInCache(ctx context.Context, namespace string) error
-	ComputeClusterCPUMinFrequency(ctx context.Context) error
+	ComputeCPUMinFrequency(ctx context.Context) error
 
 	ListItemsFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
 	GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,

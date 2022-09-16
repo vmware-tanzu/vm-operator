@@ -103,17 +103,17 @@ var _ = Describe("DevicesFromConfigSpec", func() {
 var _ = Describe("ConfigSpec Util", func() {
 	Context("MarshalConfigSpecToXML", func() {
 		It("marshals and unmarshal to the same spec", func() {
-			inputSpec := vimTypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
+			inputSpec := &vimTypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
 			bytes, err := util.MarshalConfigSpecToXML(inputSpec)
 			Expect(err).ShouldNot(HaveOccurred())
 			var outputSpec vimTypes.VirtualMachineConfigSpec
 			err = xml.Unmarshal(bytes, &outputSpec)
 			Expect(err).ShouldNot(HaveOccurred())
-			Expect(reflect.DeepEqual(inputSpec, outputSpec)).To(Equal(true))
+			Expect(reflect.DeepEqual(inputSpec, &outputSpec)).To(BeTrue())
 		})
 
 		It("marshals spec correctly to expected base64 encoded XML", func() {
-			inputSpec := vimTypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
+			inputSpec := &vimTypes.VirtualMachineConfigSpec{Name: "dummy-VM"}
 			bytes, err := util.MarshalConfigSpecToXML(inputSpec)
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(base64.StdEncoding.EncodeToString(bytes)).To(Equal("PG9iaiB4bWxuczp2aW0yNT0idXJuOnZpbTI1I" +

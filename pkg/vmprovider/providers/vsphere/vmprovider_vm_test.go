@@ -156,8 +156,9 @@ func vmTests() {
 			})
 
 			JustBeforeEach(func() {
+
 				if configSpec != nil {
-					bytes, err := util.MarshalConfigSpecToXML(*configSpec)
+					bytes, err := util.MarshalConfigSpecToXML(configSpec)
 					Expect(err).ToNot(HaveOccurred())
 
 					// Update the VM Class with the XML.
@@ -641,6 +642,30 @@ func vmTests() {
 				// TODO: More assertions!
 			})
 
+			Context("Without Storage Class", func() {
+				BeforeEach(func() {
+					testConfig.WithoutStorageClass = true
+				})
+
+				It("Creates VM", func() {
+					Expect(vm.Spec.StorageClass).To(BeEmpty())
+
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+					By("has expected datastore", func() {
+						datastore, err := ctx.Finder.DefaultDatastore(ctx)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(o.Datastore).To(HaveLen(1))
+						Expect(o.Datastore[0]).To(Equal(datastore.Reference()))
+					})
+				})
+			})
+
 			Context("Without Content Library", func() {
 				BeforeEach(func() {
 					testConfig.WithContentLibrary = false
@@ -846,7 +871,7 @@ func vmTests() {
 			It("returns error when StorageClass is required but none specified", func() {
 				vm.Spec.StorageClass = ""
 				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
-				Expect(err).To(MatchError("storage class is required but not specified"))
+				Expect(err).To(MatchError("StorageClass is required but not specified"))
 			})
 
 			It("Can be called multiple times", func() {

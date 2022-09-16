@@ -24,35 +24,13 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/storage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
 
-// vmCreateArgs contains the arguments needed to create a VM on VC.
-type vmCreateArgs struct {
-	VMClass             *vmopv1alpha1.VirtualMachineClass
-	VMImage             *vmopv1alpha1.VirtualMachineImage
-	ResourcePolicy      *vmopv1alpha1.VirtualMachineSetResourcePolicy
-	VMMetadata          vmprovider.VMMetadata
-	ContentLibraryUUID  string
-	StorageClassesToIDs map[string]string
-	StorageProvisioning string
-	HasInstanceStorage  bool
-
-	// From the VMSetResourcePolicy (if specified)
-	ChildResourcePoolName string
-	ChildFolderName       string
-	MinCPUFreq            uint64
-
-	ClassConfigSpec     *types.VirtualMachineConfigSpec
-	ConfigSpec          *types.VirtualMachineConfigSpec
-	PlacementConfigSpec *types.VirtualMachineConfigSpec
-
-	FolderMoID       string
-	ResourcePoolMoID string
-	HostMoID         string
-}
+type vmCreateArgs = session.VMCreateArgs // Until we sort out what the Session becomes
 
 var (
 	createCountLock          sync.Mutex
@@ -199,42 +177,25 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 
 	var vcVM *object.VirtualMachine
 	{
-		// Hack
+		// Hack - create just enough of the Session that's needed for create
 		vmCtx.Logger.Info("Creating VirtualMachine")
 
-		ses, err := vs.sessions.GetSessionForVM(vmCtx)
+		ses := &session.Session{
+			K8sClient: vs.k8sClient,
+			Client:    vcClient,
+			Finder:    vcClient.Finder(),
+		}
+
+		vcVM, err = ses.CreateVirtualMachine(vmCtx, createArgs)
 		if err != nil {
+			vmCtx.Logger.Error(err, "CreateVirtualMachine failed")
 			return nil, err
 		}
 
-		vmConfigArgs := vmprovider.VMConfigArgs{
-			VMClass:            *createArgs.VMClass,       // Only in corner case - should be folded into ConfigSpec we create
-			VMImage:            createArgs.VMImage,        // Only need the image name
-			ResourcePolicy:     createArgs.ResourcePolicy, // Not needed for Create
-			VMMetadata:         createArgs.VMMetadata,     // Not needed for Create
-			StorageProfileID:   createArgs.StorageClassesToIDs[vmCtx.VM.Spec.StorageClass],
-			ContentLibraryUUID: createArgs.ContentLibraryUUID,
-		}
-
-		resVM, err := ses.CloneVirtualMachine(
-			vmCtx,
-			createArgs.FolderMoID,
-			createArgs.ResourcePoolMoID,
-			createArgs.HostMoID,
-			createArgs.ConfigSpec,
-			createArgs.StorageProvisioning,
-			vmConfigArgs)
-		if err != nil {
-			vmCtx.Logger.Error(err, "Clone VirtualMachine failed")
-			return nil, err
-		}
-
-		// Set a few Status fields that we easily have on hand here. The controller will immediately call
-		// UpdateVirtualMachine() which will set it all.
+		// Set a few Status fields that we easily have on hand here. We will immediately call
+		// UpdateVirtualMachine() next which will set it all.
 		vmCtx.VM.Status.Phase = vmopv1alpha1.Created
-		vmCtx.VM.Status.UniqueID = resVM.MoRef().Value
-
-		vcVM = resVM.VcVM()
+		vmCtx.VM.Status.UniqueID = vcVM.Reference().Value
 	}
 
 	return vcVM, nil
@@ -279,6 +240,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			StorageProfileID:   createArgs.StorageClassesToIDs[vmCtx.VM.Spec.StorageClass],
 			ContentLibraryUUID: createArgs.ContentLibraryUUID,
 			ConfigSpec:         createArgs.ConfigSpec,
+			MinCPUFreq:         createArgs.MinCPUFreq,
 		}
 
 		err = ses.UpdateVirtualMachine(vmCtx, vcVM, vmConfigArgs)
@@ -354,8 +316,8 @@ func (vs *vSphereVMProvider) vmCreateGetFolderAndRPMoIDs(
 			return err
 		}
 
-		// If this VM has a ResourcePolicy, then lookup the child ResourcePool under the namespace/zone
-		// root ResourcePool so we create the VM in the correct ResourcePool.
+		// If this VM has a ResourcePolicy ResourcePool, lookup the child ResourcePool under the
+		// namespace/zone's root ResourcePool. This will be the VM's ResourcePool.
 		if createArgs.ChildResourcePoolName != "" {
 			parentRP := object.NewResourcePool(vcClient.VimClient(),
 				types.ManagedObjectReference{Type: "ResourcePool", Value: rpMoID})
@@ -381,8 +343,8 @@ func (vs *vSphereVMProvider) vmCreateGetFolderAndRPMoIDs(
 		createArgs.FolderMoID = nsFolderMoID
 	}
 
-	// If this VM has a ResourcePolicy lookup the child folder under the namespace's folder. This will
-	// be the VM's parent folder in the VC inventory.
+	// If this VM has a ResourcePolicy Folder, lookup the child Folder under the namespace's Folder.
+	// This will be the VM's parent Folder in the VC inventory.
 	if createArgs.ChildFolderName != "" {
 		parentFolder := object.NewFolder(vcClient.VimClient(),
 			types.ManagedObjectReference{Type: "Folder", Value: createArgs.FolderMoID})
@@ -477,6 +439,11 @@ func (vs *vSphereVMProvider) vmCreateGetArgs(
 
 	vs.vmCreateGenConfigSpec(vmCtx, createArgs)
 
+	err = vs.vmCreateValidateArgs(vmCtx, vcClient, createArgs)
+	if err != nil {
+		return nil, err
+	}
+
 	return createArgs, nil
 }
 
@@ -511,15 +478,20 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 	createArgs.ContentLibraryUUID = clUUID
 	createArgs.VMMetadata = vmMetadata
 
-	// set child RP, folder and minCPUFreq
+	// TODO: Perhaps a condition type for each resource is better so all missing one(s)
+	// 	     can be reported at once (and will help for the best-effort update changes).
+	// This is about where historically we set this condition but there are still a lot
+	// more checks to go.
+	conditions.MarkTrue(vmCtx.VM, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+
 	if resourcePolicy != nil {
+		rp := resourcePolicy.Spec.ResourcePool
+
 		createArgs.ResourcePolicy = resourcePolicy
 		createArgs.ChildFolderName = resourcePolicy.Spec.Folder.Name
-
-		rp := resourcePolicy.Spec.ResourcePool
 		createArgs.ChildResourcePoolName = rp.Name
 		if !rp.Reservations.Cpu.IsZero() || !rp.Limits.Cpu.IsZero() {
-			freq, err := vs.ComputeAndGetCPUMinFrequency(vmCtx)
+			freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
 			if err != nil {
 				return nil, err
 			}
@@ -535,15 +507,11 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 				if err != nil {
 					return nil, err
 				}
-				util.ProcessVMClassConfigSpecExclusions(&classConfigSpec)
-				createArgs.ClassConfigSpec = &classConfigSpec
+				util.ProcessVMClassConfigSpecExclusions(classConfigSpec)
+				createArgs.ClassConfigSpec = classConfigSpec
 			}
 		}
 	}
-
-	// TODO: Perhaps a condition type for each resource is better so all missing one(s)
-	// 	     can be reported at once (and will help for the best-effort update changes).
-	conditions.MarkTrue(vmCtx.VM, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
 
 	return createArgs, nil
 }
@@ -558,14 +526,16 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		return err
 	}
 
-	provisioningType, err := virtualmachine.GetDefaultDiskProvisioningType(vmCtx, vcClient,
-		storageClassesToIDs[vmCtx.VM.Spec.StorageClass])
+	vmStorageProfileID := storageClassesToIDs[vmCtx.VM.Spec.StorageClass]
+
+	provisioningType, err := virtualmachine.GetDefaultDiskProvisioningType(vmCtx, vcClient, vmStorageProfileID)
 	if err != nil {
 		return err
 	}
 
 	createArgs.StorageClassesToIDs = storageClassesToIDs
 	createArgs.StorageProvisioning = provisioningType
+	createArgs.StorageProfileID = vmStorageProfileID
 
 	return nil
 }
@@ -573,18 +543,20 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	vmCtx context.VirtualMachineContext,
 	createArgs *vmCreateArgs) {
-	// Create both until we can sanitize the placement ConfigSpec for creation.
 
-	// When VM_Class_as_Config_DaynDate FSS enabled, the VM create path utilizes the optional VM class config spec sans
-	// ethernet card device changes. It will be nil otherwise.
 	var vmClassConfigSpec *types.VirtualMachineConfigSpec
 	if createArgs.ClassConfigSpec != nil {
+		// With DaynDate FFS, the VM created is based on the VMClass ConfigSpec. Otherwise, the VMClass
+		// ConfigSpec is handled during the post-create Update.
 		if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
 			t := *createArgs.ClassConfigSpec
+			// Remove the NICs since we don't know the backing yet; they'll be added in the post-create Update.
 			util.RemoveDevicesFromConfigSpec(&t, util.IsEthernetCard)
 			vmClassConfigSpec = &t
 		}
 	}
+
+	// Create both until we can sanitize the placement ConfigSpec for creation.
 
 	createArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
 		vmCtx.VM.Name,
@@ -598,4 +570,41 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		createArgs.MinCPUFreq,
 		createArgs.StorageClassesToIDs,
 		vmClassConfigSpec)
+}
+
+func (vs *vSphereVMProvider) vmCreateValidateArgs(
+	vmCtx context.VirtualMachineContext,
+	vcClient *vcclient.Client,
+	createArgs *vmCreateArgs) error {
+
+	// Some of this would be better done in the validation webhook but have it here for now.
+	cfg := vcClient.Config()
+
+	if cfg.StorageClassRequired {
+		// In WCP this is always required.
+		if vmCtx.VM.Spec.StorageClass == "" {
+			return fmt.Errorf("StorageClass is required but not specified")
+		}
+
+		if createArgs.StorageProfileID == "" {
+			// GetVMStoragePoliciesIDs() would have returned an error if the policy didn't exist, but
+			// ensure the field is set.
+			return fmt.Errorf("no StorageProfile found for StorageClass %s", vmCtx.VM.Spec.StorageClass)
+		}
+
+	} else if vmCtx.VM.Spec.StorageClass == "" {
+		// This is only set in gce2e.
+		if cfg.Datastore == "" {
+			return fmt.Errorf("no Datastore provided in configuration")
+		}
+
+		datastore, err := vcClient.Finder().Datastore(vmCtx, cfg.Datastore)
+		if err != nil {
+			return fmt.Errorf("failed to find Datastore %s: %w", cfg.Datastore, err)
+		}
+
+		createArgs.DatastoreMoID = datastore.Reference().Value
+	}
+
+	return nil
 }

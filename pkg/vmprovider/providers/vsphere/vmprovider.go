@@ -8,16 +8,20 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync/atomic"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -36,6 +40,7 @@ type vSphereVMProvider struct {
 	sessions      session.Manager
 	k8sClient     ctrlruntime.Client
 	eventRecorder record.Recorder
+	minCPUFreq    uint64
 }
 
 func NewVSphereVMProviderFromClient(
@@ -112,15 +117,6 @@ func (vs *vSphereVMProvider) getOpID(vm *v1alpha1.VirtualMachine, operation stri
 	return strings.Join([]string{"vmoperator", vm.Name, operation, string(id)}, "-")
 }
 
-func (vs *vSphereVMProvider) ComputeClusterCPUMinFrequency(ctx goctx.Context) error {
-	_, err := vs.sessions.ComputeAndGetCPUMinFrequency(ctx)
-	return err
-}
-
-func (vs *vSphereVMProvider) ComputeAndGetCPUMinFrequency(ctx goctx.Context) (uint64, error) {
-	return vs.sessions.ComputeAndGetCPUMinFrequency(ctx)
-}
-
 func (vs *vSphereVMProvider) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {
 	return vs.sessions.UpdateVcPNID(ctx, vcPNID, vcPort)
 }
@@ -136,6 +132,89 @@ func (vs *vSphereVMProvider) getVM(vmCtx context.VirtualMachineContext) (*object
 	}
 
 	return vcenter.GetVirtualMachine(vmCtx, vs.k8sClient, client.Finder(), nil)
+}
+
+func (vs *vSphereVMProvider) getOrComputeCPUMinFrequency(ctx goctx.Context) (uint64, error) {
+	minFreq := atomic.LoadUint64(&vs.minCPUFreq)
+	if minFreq == 0 {
+		// The infra controller hasn't finished ComputeCPUMinFrequency() yet, so try to
+		// compute that value now.
+		var err error
+		minFreq, err = vs.computeCPUMinFrequency(ctx)
+		if err != nil {
+			// minFreq may be non-zero in case of partial success.
+			return minFreq, err
+		}
+
+		// Update value if not updated already.
+		atomic.CompareAndSwapUint64(&vs.minCPUFreq, 0, minFreq)
+	}
+
+	return minFreq, nil
+}
+
+func (vs *vSphereVMProvider) ComputeCPUMinFrequency(ctx goctx.Context) error {
+	minFreq, err := vs.computeCPUMinFrequency(ctx)
+	if err != nil {
+		// Might have a partial success (non-zero freq): store that if we haven't updated
+		// the min freq yet, and let the controller retry. This whole min CPU freq thing
+		// is kind of unfortunate & busted.
+		atomic.CompareAndSwapUint64(&vs.minCPUFreq, 0, minFreq)
+		return err
+	}
+
+	atomic.StoreUint64(&vs.minCPUFreq, minFreq)
+	return nil
+}
+
+func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx goctx.Context) (uint64, error) {
+	// Get all the availability zones in order to calculate the minimum
+	// CPU frequencies for each of the zones' vSphere clusters.
+	availabilityZones, err := topology.GetAvailabilityZones(ctx, vs.k8sClient)
+	if err != nil {
+		return 0, err
+	}
+
+	client, err := vs.GetClient(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	if !lib.IsWcpFaultDomainsFSSEnabled() {
+		ccr, err := vcenter.GetResourcePoolOwnerMoRef(ctx, client.VimClient(), client.Config().ResourcePool)
+		if err != nil {
+			return 0, err
+		}
+
+		// Only expect 1 AZ in this case.
+		for i := range availabilityZones {
+			availabilityZones[i].Spec.ClusterComputeResourceMoIDs = []string{ccr.Value}
+		}
+	}
+
+	var errs []error
+
+	var minFreq uint64
+	for _, az := range availabilityZones {
+		moIDs := az.Spec.ClusterComputeResourceMoIDs
+		if len(moIDs) == 0 {
+			moIDs = []string{az.Spec.ClusterComputeResourceMoId} // HA TEMP
+		}
+
+		for _, moID := range moIDs {
+			ccr := object.NewClusterComputeResource(client.VimClient(),
+				types.ManagedObjectReference{Type: "ClusterComputeResource", Value: moID})
+
+			freq, err := vcenter.ClusterMinCPUFreq(ctx, ccr)
+			if err != nil {
+				errs = append(errs, err)
+			} else if minFreq == 0 || freq < minFreq {
+				minFreq = freq
+			}
+		}
+	}
+
+	return minFreq, k8serrors.NewAggregate(errs)
 }
 
 // ResVMToVirtualMachineImage isn't currently used.

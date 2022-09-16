@@ -35,6 +35,7 @@ type Client struct {
 	contentLibClient contentlibrary.Provider
 	clusterModClient clustermodules.Provider
 	sessionManager   *session.Manager
+	config           *config.VSphereVMProviderConfig
 }
 
 // Idle time before a keepalive will be invoked.
@@ -179,6 +180,7 @@ func NewClient(ctx context.Context, config *config.VSphereVMProviderConfig) (*Cl
 		contentLibClient: contentlibrary.NewProvider(restClient),
 		clusterModClient: clustermodules.NewProvider(restClient),
 		sessionManager:   sm,
+		config:           config,
 	}, nil
 }
 
@@ -222,6 +224,10 @@ func (c *Client) ContentLibClient() contentlibrary.Provider {
 
 func (c *Client) ClusterModuleClient() clustermodules.Provider {
 	return c.clusterModClient
+}
+
+func (c *Client) Config() *config.VSphereVMProviderConfig {
+	return c.config
 }
 
 func (c *Client) Logout(ctx context.Context) {

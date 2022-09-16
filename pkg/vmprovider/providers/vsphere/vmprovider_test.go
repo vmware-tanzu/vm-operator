@@ -35,9 +35,9 @@ func cpuFreqTests() {
 		vmProvider = nil
 	})
 
-	Context("ComputeClusterCPUMinFrequency", func() {
+	Context("ComputeCPUMinFrequency", func() {
 		It("returns success", func() {
-			Expect(vmProvider.ComputeClusterCPUMinFrequency(ctx)).To(Succeed())
+			Expect(vmProvider.ComputeCPUMinFrequency(ctx)).To(Succeed())
 		})
 	})
 }

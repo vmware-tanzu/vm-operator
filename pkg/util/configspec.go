@@ -15,7 +15,7 @@ import (
 // MarshalConfigSpecToXML returns a byte slice of the provided ConfigSpec
 // marshalled to an XML string.
 func MarshalConfigSpecToXML(
-	configSpec vimTypes.VirtualMachineConfigSpec) ([]byte, error) {
+	configSpec *vimTypes.VirtualMachineConfigSpec) ([]byte, error) {
 
 	start := xml.StartElement{
 		Name: xml.Name{
@@ -32,7 +32,7 @@ func MarshalConfigSpecToXML(
 			},
 			{
 				Name:  xml.Name{Local: "xsi:type"},
-				Value: vim25.Namespace + ":" + reflect.TypeOf(configSpec).Name(),
+				Value: vim25.Namespace + ":" + reflect.TypeOf(vimTypes.VirtualMachineConfigSpec{}).Name(),
 			},
 		},
 	}
@@ -52,9 +52,9 @@ func MarshalConfigSpecToXML(
 // UnmarshalConfigSpecFromXML returns a ConfigSpec object from a byte-slice of
 // the ConfigSpec marshaled as an XML string.
 func UnmarshalConfigSpecFromXML(
-	data []byte) (vimTypes.VirtualMachineConfigSpec, error) {
+	data []byte) (*vimTypes.VirtualMachineConfigSpec, error) {
 
-	var configSpec vimTypes.VirtualMachineConfigSpec
+	configSpec := &vimTypes.VirtualMachineConfigSpec{}
 
 	// Instantiate a new XML decoder in order to specify the lookup table used
 	// by GoVmomi to transform XML types to Golang types.
@@ -62,7 +62,7 @@ func UnmarshalConfigSpecFromXML(
 	dec.TypeFunc = vimTypes.TypeFunc()
 
 	if err := dec.Decode(&configSpec); err != nil {
-		return vimTypes.VirtualMachineConfigSpec{}, err
+		return nil, err
 	}
 
 	return configSpec, nil
@@ -71,11 +71,11 @@ func UnmarshalConfigSpecFromXML(
 // UnmarshalConfigSpecFromBase64XML returns a ConfigSpec object from a
 // byte-slice of the ConfigSpec marshaled as a base64-encoded, XML string.
 func UnmarshalConfigSpecFromBase64XML(
-	src []byte) (vimTypes.VirtualMachineConfigSpec, error) {
+	src []byte) (*vimTypes.VirtualMachineConfigSpec, error) {
 
 	data, err := Base64Decode(src)
 	if err != nil {
-		return vimTypes.VirtualMachineConfigSpec{}, err
+		return nil, err
 	}
 	return UnmarshalConfigSpecFromXML(data)
 }

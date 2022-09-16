@@ -1,8 +1,9 @@
 // Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//nolint:goconst
 // Package builder is a comment just to silence the linter
+//
+//nolint:goconst
 package builder
 
 import (
@@ -585,14 +586,16 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 	data["CAFilePath"] = c.tlsServerCertPath
 	data["InsecureSkipTLSVerify"] = "false"
 
-	// These config fields are ignored now (mostly true).
-	// data["ResourcePool"] = ""
-	// data["Folder"] = ""
+	if !config.WithFaultDomains {
+		rp, err := c.singleCCR.ResourcePool(c)
+		Expect(err).ToNot(HaveOccurred())
+		data["ResourcePool"] = rp.Reference().Value
+	}
 
 	if config.WithoutStorageClass {
-		// Only used in gce2e.
+		// Only used in gce2e (LocalDS_0)
 		data["StorageClassRequired"] = "false"
-		data["Datastore"] = c.datastore.Reference().Value
+		data["Datastore"] = c.datastore.Name()
 	} else {
 		data["StorageClassRequired"] = "true"
 

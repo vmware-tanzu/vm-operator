@@ -11,29 +11,31 @@ export GO111MODULE := on
 
 # Directories.
 BIN_DIR := bin
+# The SETUP_ENVTEST download directory. setup-envtest will install binaries here,
+# but it is easiest if we copy them to our BIN_DIR.
+ENVTEST_DOWNLOAD_DIR = $(shell $(SETUP_ENVTEST) use -p path $(K8S_VERSION))
 
 # Versions.
-KUBEBUILDER_VERSION=2.3.1
-KUBECTL_VERSION=1.15.3
-KIND_VERSION=0.7.0
-GOLANGCI_LINT_VERSION=v1.40.0
+KUBEBUILDER_VERSION=3.3.0
+K8S_VERSION=1.21.4
+KIND_VERSION=0.11.1
 
 HOST_OS=$(shell go env GOOS)
 HOST_ARCH=$(shell go env GOARCH)
 
 # Binaries.
 CONTROLLER_GEN    := $(BIN_DIR)/controller-gen
-CLIENT_GEN        := $(BIN_DIR)/client-gen
+SETUP_ENVTEST     := $(BIN_DIR)/setup-envtest
 GOLANGCI_LINT     := $(BIN_DIR)/golangci-lint
 KUSTOMIZE         := $(BIN_DIR)/kustomize
 GO_JUNIT_REPORT   := $(BIN_DIR)/go-junit-report
+GINKGO            := $(BIN_DIR)/ginkgo
 GOCOVMERGE        := $(BIN_DIR)/gocovmerge
 GOCOVER_COBERTURA := $(BIN_DIR)/gocover-cobertura
-GINKGO            := $(BIN_DIR)/ginkgo
-KUBE_APISERVER    := $(BIN_DIR)/kube-apiserver
 KUBEBUILDER       := $(BIN_DIR)/kubebuilder
-KUBECTL           := $(BIN_DIR)/kubectl
 ETCD              := $(BIN_DIR)/etcd
+KUBE_APISERVER    := $(BIN_DIR)/kube-apiserver
+KUBECTL           := $(BIN_DIR)/kubectl
 KIND              := $(BIN_DIR)/kind
 
 ## --------------------------------------
@@ -52,15 +54,15 @@ controller-gen: $(CONTROLLER_GEN) ## Install controller-gen
 $(CONTROLLER_GEN): go.mod
 	go build -tags=tools -o $@ sigs.k8s.io/controller-tools/cmd/controller-gen
 
-.PHONY: $(CLIENT_GEN)
-client-gen: $(CLIENT_GEN) ## Install client-gen
-$(CLIENT_GEN): go.mod
-	go build -tags=tools -o $@ k8s.io/code-generator/cmd/client-gen
+.PHONY:$(SETUP_ENVTEST)
+setup-envtest: $(SETUP_ENVTEST) ## Install setup-envtest
+$(SETUP_ENVTEST): go.mod
+	go build -tags=tools -o $@ sigs.k8s.io/controller-runtime/tools/setup-envtest
 
 .PHONY: $(GOLANGCI_LINT)
 golangci-lint: $(GOLANGCI_LINT) ## Install golangci-lint
 $(GOLANGCI_LINT):
-	[ -f $(BIN_DIR)/golangci-lint ] || curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(BIN_DIR) $(GOLANGCI_LINT_VERSION)
+	go build -tags=tools -o $@ github.com/golangci/golangci-lint/cmd/golangci-lint
 
 .PHONY: $(KUSTOMIZE)
 kustomize: $(KUSTOMIZE) ## Install kustomize
@@ -87,19 +89,19 @@ gocover-cobertura: $(GOCOVER_COBERTURA) ## Install gocover-cobertura
 $(GOCOVER_COBERTURA): go.mod
 	go build -tags=tools -o $@ github.com/t-yuki/gocover-cobertura
 
+.PHONY: $(KUBEBUILDER)
+kubebuilder: $(KUBEBUILDER) ## Install kubebuilder
+	curl -sL https://github.com/kubernetes-sigs/kubebuilder/releases/download/v$(KUBEBUILDER_VERSION)/kubebuilder_$(HOST_OS)_$(HOST_ARCH) --output $(KUBEBUILDER) && chmod a+x $(KUBEBUILDER)
+
+.PHONY: k8s-envtest
+k8s-envtest: $(SETUP_ENVTEST) ## Download envtest binaries
+	$(SETUP_ENVTEST) use --os $(HOST_OS) --arch $(HOST_ARCH) $(K8S_VERSION)
+
 etcd: $(ETCD) ## Install etcd
 kube-apiserver: $(KUBE_APISERVER) ## Install kube-apiserver
-kubebuilder: $(KUBEBUILDER) ## Install kubebuilder
 kubectl: $(KUBECTL) ## Install kubectl
-$(ETCD) $(KUBE_APISERVER) $(KUBEBUILDER):
-	@mkdir -p $(@D)
-	TEMP_DL_DIR=$$(mktemp -d) && echo $${TEMP_DL_DIR} && \
-	curl -sL https://github.com/kubernetes-sigs/kubebuilder/releases/download/v$(KUBEBUILDER_VERSION)/kubebuilder_$(KUBEBUILDER_VERSION)_$(HOST_OS)_$(HOST_ARCH).tar.gz | \
-	tar -xz -C "$${TEMP_DL_DIR}" --exclude=kubectl && \
-	mv "$${TEMP_DL_DIR}/"*/bin/* $(@D)
-$(KUBECTL):
-	curl -sL https://storage.googleapis.com/kubernetes-release/release/v$(KUBECTL_VERSION)/bin/$(HOST_OS)/$(HOST_ARCH)/kubectl -o $(@) && \
-	chmod a+x $(@)
+$(ETCD) $(KUBE_APISERVER) $(KUBECTL): k8s-envtest  ## Install envtest related binaries
+	@cp -f "$(ENVTEST_DOWNLOAD_DIR)/$(@F)" $(BIN_DIR)
 
 .PHONY: $(KIND)
 kind: $(KIND) ## Install kind

@@ -28,4 +28,4 @@ Please see our [Quick Start Guide](docs/quick-start-guide.md) for details on bui
 ## Community
 - Find us on Slack at [#ug-vmware](https://kubernetes.slack.com/messages/ug-vmware)
 - Regular working group [meetings](https://docs.google.com/document/d/1B2oUAuNbYc8nXjRrN353Pt-mDPtwyLrBO3cok7BfV4s/edit?usp=sharing)
-- Reach out directly via VMware liaison [Nikitha Suryadevara](suryadevaran@vmware.com)
+- Reach out directly via VMware liaison [Ellen Mei](meie@vmware.com)

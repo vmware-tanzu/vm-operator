@@ -17,25 +17,28 @@ usage() {
 }
 
 build() {
+    GOOS=linux
+    echo "GOOS=${GOOS} GOARCH=${GOARCH}"
     docker build . \
         -t $IMAGE:$IMAGE_TAG \
         -t $IMAGE:$BUILD_NUMBER \
-        -t $IMAGE:$VERSION \
-        --build-arg buildNumber=${BUILD_NUMBER} \
-        --build-arg commit=${COMMIT} \
-        --build-arg branch=${BRANCH} \
-        --build-arg version=${VERSION} \
-        --rm
+        -t $IMAGE:$BUILD_VERSION \
+        --build-arg BUILD_BRANCH=${BUILD_BRANCH} \
+        --build-arg BUILD_COMMIT=${BUILD_COMMIT} \
+        --build-arg BUILD_NUMBER=${BUILD_NUMBER} \
+        --build-arg BUILD_VERSION=${BUILD_VERSION} \
+        --build-arg TARGETOS=${GOOS} \
+        --build-arg TARGETARCH=${GOARCH}
 }
 
 while getopts ":i:t:n:c:b:v:" opt ; do
     case $opt in
         "i" ) IMAGE=$OPTARG ;;
         "t" ) IMAGE_TAG=$OPTARG ;;
+        "b" ) BUILD_BRANCH=$OPTARG ;;
+        "c" ) BUILD_COMMIT=$OPTARG ;;
         "n" ) BUILD_NUMBER=$OPTARG ;;
-        "c" ) COMMIT=$OPTARG ;;
-        "b" ) BRANCH=$OPTARG ;;
-        "v" ) VERSION=$OPTARG ;;
+        "v" ) BUILD_VERSION=$OPTARG ;;
         \? ) usage ;;
     esac
 done
@@ -51,7 +54,7 @@ if [[ -z ${IMAGE:-} || -z ${IMAGE_TAG:-} ]] ; then
 fi
 
 BUILD_NUMBER=${BUILD_NUMBER:-0}
-COMMIT=${COMMIT:-$(git rev-parse HEAD)}
-BRANCH=${BRANCH:-$(git rev-parse --abbrev-ref HEAD)}
+BUILD_COMMIT=${BUILD_COMMIT:-$(git rev-parse HEAD)}
+BUILD_BRANCH=${BUILD_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}
 
 build

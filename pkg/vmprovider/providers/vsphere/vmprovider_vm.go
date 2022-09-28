@@ -8,11 +8,15 @@ import (
 	"fmt"
 	"sync"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
+	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -93,6 +97,33 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 	}
 
 	return virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
+}
+
+func (vs *vSphereVMProvider) PublishVirtualMachine(ctx goctx.Context,
+	vm *vmopv1alpha1.VirtualMachine, vmPub *vmopv1alpha1.VirtualMachinePublishRequest,
+	cl *imgregv1a1.ContentLibrary) (string, error) {
+	vmCtx := context.VirtualMachineContext{
+		Context: ctx,
+		// Update logger info
+		Logger: log.WithValues("vmName", vm.NamespacedName()).
+			WithValues("clName", fmt.Sprintf("%s/%s", cl.Namespace, cl.Name)).
+			WithValues("vmPubName", fmt.Sprintf("%s/%s", vmPub.Namespace, vmPub.Name)),
+		VM: vm,
+	}
+
+	client, err := vs.GetClient(ctx)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to get vCenter client")
+	}
+
+	vmCtx.Logger.V(5).Info("Creating an OVF from VM")
+	itemID, err := virtualmachine.CreateOVF(vmCtx, client.RestClient(), vmPub, cl)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to create OVF from VM")
+	}
+
+	vmCtx.Logger.Info("Created an OVF from VM", "itemID", itemID)
+	return itemID, nil
 }
 
 func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(

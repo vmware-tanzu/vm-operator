@@ -25,6 +25,7 @@ const (
 	UnifiedTKGFSS                 = "FSS_WCP_Unified_TKG"
 	VMClassAsConfigFSS            = "FSS_WCP_VM_CLASS_AS_CONFIG"
 	VMClassAsConfigDaynDateFSS    = "FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE"
+	VMImageRegistryFSS            = "FSS_WCP_VM_IMAGE_REGISTRY"
 	MaxCreateVMsOnProviderEnv     = "MAX_CREATE_VMS_ON_PROVIDER"
 	DefaultMaxCreateVMsOnProvider = 80
 
@@ -101,6 +102,10 @@ var IsVMClassAsConfigFSSEnabled = func() bool {
 
 var IsVMClassAsConfigFSSDaynDateEnabled = func() bool {
 	return os.Getenv(VMClassAsConfigDaynDateFSS) == trueString
+}
+
+var IsWCPVMImageRegistryEnabled = func() bool {
+	return os.Getenv(VMImageRegistryFSS) == trueString
 }
 
 // MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler threads that can be used to create VMs on the provider

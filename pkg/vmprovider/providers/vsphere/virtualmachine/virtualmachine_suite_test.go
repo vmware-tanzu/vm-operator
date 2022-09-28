@@ -15,6 +15,7 @@ func vcSimTests() {
 	Describe("ClusterComputeResource", ccrTests)
 	Describe("Delete", deleteTests)
 	Describe("Power State", powerStateTests)
+	Describe("Publish", publishTests)
 }
 
 var suite = builder.NewTestSuite()

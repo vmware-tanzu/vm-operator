@@ -5,9 +5,8 @@ package controllers
 
 import (
 	"github.com/pkg/errors"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentsource"
 	"github.com/vmware-tanzu/vm-operator/controllers/infracluster"
@@ -16,10 +15,13 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineimage"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 // AddToManager adds all controllers to the provided manager.
@@ -44,6 +46,11 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	}
 	if err := virtualmachineimage.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachineImage controller")
+	}
+	if lib.IsWCPVMImageRegistryEnabled() {
+		if err := virtualmachinepublishrequest.AddToManager(ctx, mgr); err != nil {
+			return errors.Wrap(err, "failed to initialize VirtualMachinePublishRequest controller")
+		}
 	}
 	if err := virtualmachineservice.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachineService controller")

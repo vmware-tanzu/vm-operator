@@ -21,6 +21,7 @@ import (
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
+	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -47,6 +48,7 @@ func New(opts Options) (Manager, error) {
 	_ = cnsv1alpha1.AddToScheme(opts.Scheme)
 	_ = netopv1alpha1.AddToScheme(opts.Scheme)
 	_ = topologyv1.AddToScheme(opts.Scheme)
+	_ = imgregv1a1.AddToScheme(opts.Scheme)
 	// +kubebuilder:scaffold:scheme
 
 	// controller-runtime Client creates an Informer for each resource that we watch.

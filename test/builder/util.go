@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
 	"github.com/google/uuid"
@@ -446,6 +447,40 @@ func DummyPersistentVolumeClaim() *corev1.PersistentVolumeClaim {
 				},
 			},
 			StorageClassName: &storageClass,
+		},
+	}
+}
+
+func DummyVirtualMachinePublishRequest(name, namespace, sourceName, itemName, clName string) *vmopv1.VirtualMachinePublishRequest {
+	return &vmopv1.VirtualMachinePublishRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vmopv1.VirtualMachinePublishRequestSpec{
+			Source: vmopv1.VirtualMachinePublishRequestSource{
+				Name: sourceName,
+			},
+			Target: vmopv1.VirtualMachinePublishRequestTarget{
+				Item: vmopv1.VirtualMachinePublishRequestTargetItem{
+					Name: itemName,
+				},
+				Location: vmopv1.VirtualMachinePublishRequestTargetLocation{
+					Name: clName,
+				},
+			},
+		},
+	}
+}
+
+func DummyContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrary {
+	return &imgregv1a1.ContentLibrary{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: imgregv1a1.ContentLibrarySpec{
+			UUID: uuid,
 		},
 	}
 }

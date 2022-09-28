@@ -13,6 +13,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 
+	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
@@ -38,5 +39,6 @@ func NewScheme() *runtime.Scheme {
 	_ = cnsv1alpha1.AddToScheme(scheme)
 	_ = netopv1alpha1.AddToScheme(scheme)
 	_ = topologyv1.AddToScheme(scheme)
+	_ = imgregv1a1.AddToScheme(scheme)
 	return scheme
 }

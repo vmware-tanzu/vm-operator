@@ -11,6 +11,8 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
+	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
@@ -22,8 +24,10 @@ import (
 // expected to evolve as more tests get added in the future.
 
 type funcs struct {
-	CreateOrUpdateVirtualMachineFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
-	DeleteVirtualMachineFn            func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
+	CreateOrUpdateVirtualMachineFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
+	DeleteVirtualMachineFn         func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
+	PublishVirtualMachineFn        func(ctx context.Context, vm *v1alpha1.VirtualMachine, vmPub *v1alpha1.VirtualMachinePublishRequest,
+		cl *imgregv1a1.ContentLibrary) (string, error)
 	GetVirtualMachineGuestHeartbeatFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 	GetVirtualMachineWebMKSTicketFn   func(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
 
@@ -78,6 +82,17 @@ func (s *VMProvider) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.Virt
 	}
 	s.deleteFromVMMap(vm)
 	return nil
+}
+
+func (s *VMProvider) PublishVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmPub *v1alpha1.VirtualMachinePublishRequest,
+	cl *imgregv1a1.ContentLibrary) (string, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.PublishVirtualMachineFn != nil {
+		return s.PublishVirtualMachineFn(ctx, vm, vmPub, cl)
+	}
+	return "", nil
 }
 
 func (s *VMProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error) {

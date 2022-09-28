@@ -7,12 +7,16 @@ import (
 	"context"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
+	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 )
 
 // VirtualMachineProviderInterface is a plugable interface for VM Providers.
 type VirtualMachineProviderInterface interface {
 	CreateOrUpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
+	PublishVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmPub *v1alpha1.VirtualMachinePublishRequest,
+		cl *imgregv1a1.ContentLibrary) (string, error)
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 	GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
 

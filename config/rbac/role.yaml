@@ -115,6 +115,20 @@ rules:
   - get
   - list
 - apiGroups:
+  - imageregistry.vmware.com
+  resources:
+  - contentlibraries
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - imageregistry.vmware.com
+  resources:
+  - contentlibraries/status
+  verbs:
+  - get
+- apiGroups:
   - netoperator.vmware.com
   resources:
   - networkinterfaces
@@ -256,6 +270,26 @@ rules:
   - vmoperator.vmware.com
   resources:
   - virtualmachineimages/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachinepublishrequests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachinepublishrequests/status
   verbs:
   - get
   - patch

@@ -41,6 +41,9 @@ FSS_WCP_FAULTDOMAINS_VALUE=${FSS_WCP_FAULTDOMAINS_VALUE:-false}
 # VM Service Public Cloud: Bring Your Own Image (BYOI)
 FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE=${FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE:-false}
 
+# Image Registry: we use this FSS for VM publish.
+FSS_WCP_VM_IMAGE_REGISTRY_VALUE=${FSS_WCP_VM_IMAGE_REGISTRY_VALUE:-false}
+
 # Change directories to the parent directory of the one in which this
 # script is located.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -170,6 +173,11 @@ patchWcpDeploymentYaml() {
     sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE>\"?,\"$FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE\",g" "artifacts/wcp-deployment.yaml"
     if grep -q "<FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE>" artifacts/wcp-deployment.yaml; then
         echo "Failed to subst FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE in artifacts/wcp-deployment.yaml"
+        exit 1
+    fi
+    sed -i'' -E "s,\"?<FSS_WCP_VM_IMAGE_REGISTRY_VALUE>\"?,\"$FSS_WCP_VM_IMAGE_REGISTRY_VALUE\",g" "artifacts/wcp-deployment.yaml"
+    if grep -q "<FSS_WCP_VM_IMAGE_REGISTRY_VALUE>" artifacts/wcp-deployment.yaml; then
+        echo "Failed to subst FSS_WCP_VM_IMAGE_REGISTRY_VALUE in artifacts/wcp-deployment.yaml"
         exit 1
     fi
     if  [[ -n ${INSECURE_TLS:-} ]]; then

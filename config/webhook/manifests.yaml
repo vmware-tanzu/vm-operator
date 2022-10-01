@@ -103,6 +103,27 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /default-validate-vmoperator-vmware-com-v1alpha1-virtualmachinepublishrequest
+  failurePolicy: Fail
+  name: default.validating.virtualmachinepublishrequest.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachinepublishrequests
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /default-validate-vmoperator-vmware-com-v1alpha1-virtualmachineservice
   failurePolicy: Fail
   name: default.validating.virtualmachineservice.vmoperator.vmware.com

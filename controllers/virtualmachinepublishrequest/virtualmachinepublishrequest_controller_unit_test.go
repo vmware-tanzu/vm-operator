@@ -140,6 +140,61 @@ func unitTestsReconcile() {
 
 						return result.State
 					}).Should(Equal(vmpublish.StateSuccess))
+
+					Expect(vmpub.Status.SourceRef.Name).To(Equal(vm.Name))
+					Expect(vmpub.Status.TargetRef.Item.Name).To(Equal("dummy-item"))
+					Expect(vmpub.Status.TargetRef.Location).To(Equal(vmpub.Spec.Target.Location))
+				})
+
+				When(".spec.source.name is empty", func() {
+					BeforeEach(func() {
+						vm.Name = vmpub.Name
+						vmpub.Spec.Source.Name = ""
+					})
+
+					It("requeue and sets VM Publish request status to Success", func() {
+						err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).ToNot(HaveOccurred())
+
+						// Eventually vmpub result should be updated to success.
+						Eventually(func() string {
+							exist, result := reconciler.VMPubCatalog.GetPubRequestState(string(vmpub.UID))
+							if !exist {
+								return ""
+							}
+
+							return result.State
+						}).Should(Equal(vmpublish.StateSuccess))
+
+						Expect(vmpub.Status.SourceRef.Name).To(Equal(vm.Name))
+						Expect(vmpub.Status.TargetRef.Item.Name).To(Equal("dummy-item"))
+						Expect(vmpub.Status.TargetRef.Location).To(Equal(vmpub.Spec.Target.Location))
+					})
+				})
+
+				When(".spec.target.item.name is empty", func() {
+					BeforeEach(func() {
+						vmpub.Spec.Target.Item.Name = ""
+					})
+
+					It("requeue and sets VM Publish request status to Success", func() {
+						err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).ToNot(HaveOccurred())
+
+						// Eventually vmpub result should be updated to success.
+						Eventually(func() string {
+							exist, result := reconciler.VMPubCatalog.GetPubRequestState(string(vmpub.UID))
+							if !exist {
+								return ""
+							}
+
+							return result.State
+						}).Should(Equal(vmpublish.StateSuccess))
+
+						Expect(vmpub.Status.SourceRef.Name).To(Equal(vm.Name))
+						Expect(vmpub.Status.TargetRef.Item.Name).To(Equal("dummy-vmpub-image"))
+						Expect(vmpub.Status.TargetRef.Location).To(Equal(vmpub.Spec.Target.Location))
+					})
 				})
 			})
 
@@ -164,6 +219,10 @@ func unitTestsReconcile() {
 						}
 						return result.State
 					}).Should(Equal(vmpublish.StateError))
+
+					Expect(vmpub.Status.SourceRef.Name).To(Equal(vm.Name))
+					Expect(vmpub.Status.TargetRef.Item.Name).To(Equal("dummy-item"))
+					Expect(vmpub.Status.TargetRef.Location).To(Equal(vmpub.Spec.Target.Location))
 				})
 			})
 		})

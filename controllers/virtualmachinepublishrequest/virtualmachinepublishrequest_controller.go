@@ -135,12 +135,40 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 	return ctrl.Result{RequeueAfter: requeueDelay(vmPublishCtx)}, nil
 }
 
-// checkIsSourceValid function checks if the source VM is valid. It is invalid if the VM k8s resource
-// doesn't exist, or is not in Created phase.
+func (r *Reconciler) updateSourceAndTargetRef(ctx *context.VirtualMachinePublishRequestContext) {
+	vmPubReq := ctx.VMPublishRequest
+	if vmPubReq.Status.SourceRef == nil {
+		vmName := vmPubReq.Spec.Source.Name
+		if vmName == "" {
+			// set default source VM to this VirtualMachinePublishRequest's name.
+			vmName = vmPubReq.Name
+		}
+		vmPubReq.Status.SourceRef = &vmopv1alpha1.VirtualMachinePublishRequestSource{
+			Name: vmName,
+		}
+	}
+
+	if vmPubReq.Status.TargetRef == nil {
+		targetItemName := vmPubReq.Spec.Target.Item.Name
+		if targetItemName == "" {
+			targetItemName = fmt.Sprintf("%s-image", vmPubReq.Name)
+		}
+
+		vmPubReq.Status.TargetRef = &vmopv1alpha1.VirtualMachinePublishRequestTarget{
+			Item: vmopv1alpha1.VirtualMachinePublishRequestTargetItem{
+				Name: targetItemName,
+			},
+			Location: vmPubReq.Spec.Target.Location,
+		}
+	}
+}
+
+// checkIsSourceValid function checks if the source VM is valid.
+// It is invalid if the VM k8s resource doesn't exist, or is not in Created phase.
 func (r *Reconciler) checkIsSourceValid(ctx *context.VirtualMachinePublishRequestContext) error {
 	vmPubReq := ctx.VMPublishRequest
 	vm := &vmopv1alpha1.VirtualMachine{}
-	objKey := client.ObjectKey{Name: vmPubReq.Spec.Source.Name, Namespace: vmPubReq.Namespace}
+	objKey := client.ObjectKey{Name: vmPubReq.Status.SourceRef.Name, Namespace: vmPubReq.Namespace}
 	err := r.Get(ctx, objKey, vm)
 	if err != nil {
 		r.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
@@ -163,9 +191,9 @@ func (r *Reconciler) checkIsSourceValid(ctx *context.VirtualMachinePublishReques
 // or another vmpub request with the same name is in progress.
 func (r *Reconciler) checkIsTargetValid(ctx *context.VirtualMachinePublishRequestContext) error {
 	vmPubReq := ctx.VMPublishRequest
+	targetLocationName := vmPubReq.Spec.Target.Location.Name
 	contentLibrary := &imgregv1a1.ContentLibrary{}
-	targetName := vmPubReq.Spec.Target.Location.Name
-	objKey := client.ObjectKey{Name: targetName, Namespace: vmPubReq.Namespace}
+	objKey := client.ObjectKey{Name: targetLocationName, Namespace: vmPubReq.Namespace}
 	if err := r.Get(ctx, objKey, contentLibrary); err != nil {
 		r.Logger.Error(err, "failed to get ContentLibrary", "cl", objKey)
 		if apiErrors.IsNotFound(err) {
@@ -224,6 +252,8 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachinePublishRequestCo
 	if vmPublishReq.Status.StartTime.IsZero() {
 		vmPublishReq.Status.StartTime = metav1.Now()
 	}
+
+	r.updateSourceAndTargetRef(ctx)
 
 	if r.checkPublishRequestProcessStatus(ctx) {
 		return nil

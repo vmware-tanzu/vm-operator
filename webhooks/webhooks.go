@@ -11,6 +11,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/webhooks/persistentvolumeclaim"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinepublishrequest"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/webhooks/webconsolerequest"
@@ -26,6 +27,9 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) er
 	}
 	if err := virtualmachineclass.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachineClass webhooks")
+	}
+	if err := virtualmachinepublishrequest.AddToManager(ctx, mgr); err != nil {
+		return errors.Wrap(err, "failed to initialize VirtualMachinePublishRequest webhooks")
 	}
 	if err := virtualmachineservice.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachineService webhooks")

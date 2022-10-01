@@ -81,11 +81,9 @@ spec:
                 properties:
                   item:
                     description: "Item contains information about the name of the
-                      object to which the VM is published, as well as whether or not
-                      to overwrite an existing object with the same name. \n Please
-                      note this value is optional and if omitted, the controller will
-                      use spec.source.name + \"-image\" as the name of the published
-                      item."
+                      object to which the VM is published. \n Please note this value
+                      is optional and if omitted, the controller will use spec.source.name
+                      + \"-image\" as the name of the published item."
                     properties:
                       description:
                         description: Description is the description to assign to the
@@ -93,7 +91,11 @@ spec:
                         type: string
                       name:
                         description: "Name is the name of the published object. \n
-                          If omitted then the controller will use spec.source.name
+                          If the spec.target.location.apiVersion equals imageregistry.vmware.com/v1alpha1
+                          and the spec.target.location.kind equals ContentLibrary,
+                          then this should be the name that will show up in vCenter
+                          Content Library, not the custom resource name in the namespace.
+                          \n If omitted then the controller will use spec.source.name
                           + \"-image\"."
                         type: string
                     type: object
@@ -136,6 +138,11 @@ spec:
             description: VirtualMachinePublishRequestStatus defines the observed state
               of a VirtualMachinePublishRequest.
             properties:
+              attempts:
+                description: Attempts represents the number of times the request to
+                  publish the VM has been attempted.
+                format: int64
+                type: integer
               completionTime:
                 description: "CompletionTime represents time when the request was
                   completed. It is not guaranteed to be set in happens-before order
@@ -196,6 +203,11 @@ spec:
                   This field will not be set until the VirtualMachineImage resource
                   is realized."
                 type: string
+              lastAttemptTime:
+                description: LastAttemptTime represents the time when the latest request
+                  was sent.
+                format: date-time
+                type: string
               ready:
                 description: "Ready is set to true only when the VM has been published
                   successfully and the new VirtualMachineImage resource is ready.
@@ -204,6 +216,24 @@ spec:
                   have a Status=True. The conditions present will be: \n * SourceValid
                   * TargetValid * Uploaded * ImageAvailable * Complete"
                 type: boolean
+              sourceRef:
+                description: SourceRef is the reference to the source of the publication
+                  request, ex. a VirtualMachine resource.
+                properties:
+                  apiVersion:
+                    default: vmoperator.vmware.com/v1alpha1
+                    description: APIVersion is the API version of the referenced object.
+                    type: string
+                  kind:
+                    default: VirtualMachine
+                    description: Kind is the kind of referenced object.
+                    type: string
+                  name:
+                    description: "Name is the name of the referenced object. \n If
+                      omitted this value defaults to the name of the VirtualMachinePublishRequest
+                      resource."
+                    type: string
+                type: object
               startTime:
                 description: StartTime represents time when the request was acknowledged
                   by the controller. It is not guaranteed to be set in happens-before
@@ -211,6 +241,53 @@ spec:
                   and is in UTC.
                 format: date-time
                 type: string
+              targetRef:
+                description: TargetRef is the reference to the target of the publication
+                  request, ex. item information and a ContentLibrary resource.
+                properties:
+                  item:
+                    description: "Item contains information about the name of the
+                      object to which the VM is published. \n Please note this value
+                      is optional and if omitted, the controller will use spec.source.name
+                      + \"-image\" as the name of the published item."
+                    properties:
+                      description:
+                        description: Description is the description to assign to the
+                          published object.
+                        type: string
+                      name:
+                        description: "Name is the name of the published object. \n
+                          If the spec.target.location.apiVersion equals imageregistry.vmware.com/v1alpha1
+                          and the spec.target.location.kind equals ContentLibrary,
+                          then this should be the name that will show up in vCenter
+                          Content Library, not the custom resource name in the namespace.
+                          \n If omitted then the controller will use spec.source.name
+                          + \"-image\"."
+                        type: string
+                    type: object
+                  location:
+                    description: Location contains information about the location
+                      to which to publish the VM.
+                    properties:
+                      apiVersion:
+                        default: imageregistry.vmware.com/v1alpha1
+                        description: APIVersion is the API version of the referenced
+                          object.
+                        type: string
+                      kind:
+                        default: ContentLibrary
+                        description: Kind is the kind of referenced object.
+                        type: string
+                      name:
+                        description: "Name is the name of the referenced object. \n
+                          Please note an error will be returned if this field is not
+                          set in a namespace that lacks a default publication target.
+                          \n A default publication target is a resource with an API
+                          version equal to spec.target.location.apiVersion, a kind
+                          equal to spec.target.location.kind, and has the label \"imageregistry.vmware.com/default\"."
+                        type: string
+                    type: object
+                type: object
             type: object
         type: object
     served: true

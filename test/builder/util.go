@@ -459,14 +459,18 @@ func DummyVirtualMachinePublishRequest(name, namespace, sourceName, itemName, cl
 		},
 		Spec: vmopv1.VirtualMachinePublishRequestSpec{
 			Source: vmopv1.VirtualMachinePublishRequestSource{
-				Name: sourceName,
+				Name:       sourceName,
+				APIVersion: "vmoperator.vmware.com/v1alpha1",
+				Kind:       "VirtualMachine",
 			},
 			Target: vmopv1.VirtualMachinePublishRequestTarget{
 				Item: vmopv1.VirtualMachinePublishRequestTargetItem{
 					Name: itemName,
 				},
 				Location: vmopv1.VirtualMachinePublishRequestTargetLocation{
-					Name: clName,
+					Name:       clName,
+					APIVersion: "imageregistry.vmware.com/v1alpha1",
+					Kind:       "ContentLibrary",
 				},
 			},
 		},
@@ -480,7 +484,8 @@ func DummyContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrar
 			Namespace: namespace,
 		},
 		Spec: imgregv1a1.ContentLibrarySpec{
-			UUID: uuid,
+			UUID:     uuid,
+			Writable: true,
 		},
 	}
 }

@@ -4,6 +4,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -68,8 +69,8 @@ type VirtualMachineImageSpec struct {
 	// ImageID is a unique identifier exposed by the provider of this VirtualMachineImage.
 	ImageID string `json:"imageID"`
 
-	// ProviderRef is a reference to a content provider object that describes a provider.
-	ProviderRef ContentProviderReference `json:"providerRef"`
+	// ProviderRef is a reference to the source ContentLibraryItem/ClusterContentLibraryItem resource.
+	ProviderRef corev1.TypedLocalObjectReference `json:"providerRef"`
 
 	// ProductInfo describes the attributes of the VirtualMachineImage relating to the product contained in the
 	// image.
@@ -115,6 +116,9 @@ type VirtualMachineImageStatus struct {
 	// is supported or image is supported by VMService
 	// +optional
 	Conditions []Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+
+	// ContentLibraryRef is a reference to the source ContentLibrary/ClusterContentLibrary resource.
+	ContentLibraryRef corev1.TypedLocalObjectReference `json:"contentLibraryRef"`
 }
 
 func (vmImage *VirtualMachineImage) GetConditions() Conditions {
@@ -126,10 +130,10 @@ func (vmImage *VirtualMachineImage) SetConditions(conditions Conditions) {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Cluster,shortName=vmimage
+// +kubebuilder:resource:scope=Cluster,shortName=vmi;vmimage
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="ContentSourceName",type="string",JSONPath=".spec.providerRef.name"
+// +kubebuilder:printcolumn:name="ContentLibraryName",type="string",JSONPath=".status.contentLibraryRef.name"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
 // +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
 // +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"
@@ -157,6 +161,49 @@ type VirtualMachineImageList struct {
 	Items           []VirtualMachineImage `json:"items"`
 }
 
+func (clusterVirtualMachineImage *ClusterVirtualMachineImage) GetConditions() Conditions {
+	return clusterVirtualMachineImage.Status.Conditions
+}
+
+func (clusterVirtualMachineImage *ClusterVirtualMachineImage) SetConditions(conditions Conditions) {
+	clusterVirtualMachineImage.Status.Conditions = conditions
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster,shortName=cvmi;cvmimage;clustervmimage
+// +kubebuilder:storageversion
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="ContentLibraryName",type="string",JSONPath=".status.contentLibraryRef.name"
+// +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
+// +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
+// +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"
+// +kubebuilder:printcolumn:name="ImageSupported",type="boolean",priority=1,JSONPath=".status.imageSupported"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+
+// ClusterVirtualMachineImage is the schema for the clustervirtualmachineimage API
+// A ClusterVirtualMachineImage represents the desired specification and the observed status of a
+// ClusterVirtualMachineImage instance.
+type ClusterVirtualMachineImage struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   VirtualMachineImageSpec   `json:"spec,omitempty"`
+	Status VirtualMachineImageStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+
+// ClusterVirtualMachineImageList contains a list of ClusterVirtualMachineImage.
+type ClusterVirtualMachineImageList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ClusterVirtualMachineImage `json:"items"`
+}
+
 func init() {
-	RegisterTypeWithScheme(&VirtualMachineImage{}, &VirtualMachineImageList{})
+	RegisterTypeWithScheme(
+		&VirtualMachineImage{},
+		&VirtualMachineImageList{},
+		&ClusterVirtualMachineImage{},
+		&ClusterVirtualMachineImageList{})
 }

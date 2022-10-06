@@ -45,7 +45,7 @@ type ConditionType string
 type Condition struct {
 	// Type of condition in CamelCase or in foo.example.com/CamelCase.
 	// Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
-	// can be useful (see .node.status.conditions), the ability to deconflict is important.
+	// can be useful (see .node.status.conditions), the ability to disambiguate is important.
 	// +required
 	Type ConditionType `json:"type"`
 

@@ -7,7 +7,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ContentLibraryProviderSpec defines the desired state of ContentLibraryProvider
+// ContentLibraryProviderSpec defines the desired state of ContentLibraryProvider.
 type ContentLibraryProviderSpec struct {
 	// UUID describes the UUID of a vSphere content library. It is the unique identifier for a
 	// vSphere content library.
@@ -15,7 +15,7 @@ type ContentLibraryProviderSpec struct {
 }
 
 // ContentLibraryProviderStatus defines the observed state of ContentLibraryProvider
-// Can include fields indicating when was the last time VM images were updated from a library
+// Can include fields indicating when was the last time VM images were updated from a library.
 type ContentLibraryProviderStatus struct {
 }
 
@@ -23,7 +23,7 @@ type ContentLibraryProviderStatus struct {
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="Content Library UUID",type="string",JSONPath=".spec.uuid",description="UUID of the vSphere content library"
 
-// ContentLibraryProvider is the Schema for the contentlibraryproviders API
+// ContentLibraryProvider is the Schema for the contentlibraryproviders API.
 type ContentLibraryProvider struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -34,7 +34,7 @@ type ContentLibraryProvider struct {
 
 // +kubebuilder:object:root=true
 
-// ContentLibraryProviderList contains a list of ContentLibraryProvider
+// ContentLibraryProviderList contains a list of ContentLibraryProvider.
 type ContentLibraryProviderList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

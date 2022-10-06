@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-// See govmomi.vim25.types.VirtualMachinePowerState
+// See govmomi.vim25.types.VirtualMachinePowerState.
 const (
 	VirtualMachinePoweredOff VirtualMachinePowerState = "poweredOff"
 	VirtualMachinePoweredOn  VirtualMachinePowerState = "poweredOn"
@@ -25,20 +25,20 @@ type VirtualMachinePowerState string
 type VMStatusPhase string
 
 const (
-	// The Creating phase indicates that the VirtualMachine is being created by the backing infrastructure provider.
+	// Creating phase indicates that the VirtualMachine is being created by the backing infrastructure provider.
 	Creating VMStatusPhase = "Creating"
 
-	// The Created phase indicates that the VirtualMachine has been already been created by the backing infrastructure
+	// Created phase indicates that the VirtualMachine has been already been created by the backing infrastructure
 	// provider.
 	Created VMStatusPhase = "Created"
 
-	// The Deleting phase indicates that the VirtualMachine is being deleted by the backing infrastructure provider.
+	// Deleting phase indicates that the VirtualMachine is being deleted by the backing infrastructure provider.
 	Deleting VMStatusPhase = "Deleting"
 
-	// The Deleted phase indicates that the VirtualMachine has been deleted by the backing infrastructure provider.
+	// Deleted phase indicates that the VirtualMachine has been deleted by the backing infrastructure provider.
 	Deleted VMStatusPhase = "Deleted"
 
-	// The Unknown phase indicates that the VirtualMachine status cannot be determined from the backing infrastructure
+	// Unknown phase indicates that the VirtualMachine status cannot be determined from the backing infrastructure
 	// provider.
 	Unknown VMStatusPhase = "Unknown"
 )
@@ -66,7 +66,7 @@ const (
 // VirtualMachinePort is unused and can be considered deprecated.
 type VirtualMachinePort struct {
 	Port     int             `json:"port"`
-	Ip       string          `json:"ip"`
+	Ip       string          `json:"ip"` //nolint:revive,stylecheck
 	Name     string          `json:"name"`
 	Protocol corev1.Protocol `json:"protocol"`
 }
@@ -275,10 +275,10 @@ type TCPSocketAction struct {
 	Host string `json:"host,omitempty"`
 }
 
-// The guest heartbeat status.
+// GuestHeartbeatStatus is the status type for a GuestHeartbeat.
 type GuestHeartbeatStatus string
 
-// See govmomi.vim25.types.ManagedEntityStatus
+// See govmomi.vim25.types.ManagedEntityStatus.
 const (
 	// VMware Tools are not installed or not running.
 	GrayHeartbeatStatus GuestHeartbeatStatus = "gray"
@@ -300,7 +300,7 @@ type GuestHeartbeatAction struct {
 	ThresholdStatus GuestHeartbeatStatus `json:"thresholdStatus,omitempty"`
 }
 
-// VirtualMachineSpec defines the desired state of a VirtualMachine
+// VirtualMachineSpec defines the desired state of a VirtualMachine.
 type VirtualMachineSpec struct {
 	// ImageName describes the name of a VirtualMachineImage that is to be used as the base Operating System image of
 	// the desired VirtualMachine instances.  The VirtualMachineImage resources can be introspected to discover identifying
@@ -321,7 +321,7 @@ type VirtualMachineSpec struct {
 
 	// VmMetadata describes any optional metadata that should be passed to the Guest OS.
 	// +optional
-	VmMetadata *VirtualMachineMetadata `json:"vmMetadata,omitempty"`
+	VmMetadata *VirtualMachineMetadata `json:"vmMetadata,omitempty"` //nolint:revive,stylecheck
 
 	// StorageClass describes the name of a StorageClass that should be used to configure storage-related attributes of the VirtualMachine
 	// instance.
@@ -356,7 +356,7 @@ type VirtualMachineSpec struct {
 	AdvancedOptions *VirtualMachineAdvancedOptions `json:"advancedOptions,omitempty"`
 }
 
-// AdvancedOptions describes a set of optional, advanced options for configuring a VirtualMachine
+// VirtualMachineAdvancedOptions describes a set of optional, advanced options for configuring a VirtualMachine.
 type VirtualMachineAdvancedOptions struct {
 	// DefaultProvisioningOptions specifies the provisioning type to be used by default for VirtualMachine volumes exclusively
 	// owned by this VirtualMachine. This does not apply to PersistentVolumeClaim volumes that are created and managed externally.
@@ -390,14 +390,14 @@ type VirtualMachineVolumeStatus struct {
 	Attached bool `json:"attached"`
 
 	// DiskUuid represents the underlying virtual disk UUID and is present when attachment succeeds.
-	DiskUuid string `json:"diskUUID"`
+	DiskUuid string `json:"diskUUID"` //nolint:revive,stylecheck
 
 	// Error represents the last error seen when attaching or detaching a volume.  Error will be empty if attachment succeeds.
 	Error string `json:"error"`
 }
 
 // NetworkInterfaceStatus defines the observed state of network interfaces attached to the VirtualMachine
-// as seen by the Guest OS and VMware tools
+// as seen by the Guest OS and VMware tools.
 type NetworkInterfaceStatus struct {
 	// Connected represents whether the network interface is connected or not.
 	Connected bool `json:"connected"`
@@ -407,7 +407,7 @@ type NetworkInterfaceStatus struct {
 
 	// IpAddresses represents zero, one or more IP addresses assigned to the network interface in CIDR notation.
 	// For eg, "192.0.2.1/16".
-	IpAddresses []string `json:"ipAddresses,omitempty"`
+	IpAddresses []string `json:"ipAddresses,omitempty"` //nolint:revive,stylecheck
 }
 
 // VirtualMachineStatus defines the observed state of a VirtualMachine instance.
@@ -432,7 +432,7 @@ type VirtualMachineStatus struct {
 	// Multiple IPs can be available for the VirtualMachine. Refer to networkInterfaces in the VirtualMachine
 	// status for additional IPs
 	// +optional
-	VmIp string `json:"vmIp,omitempty"`
+	VmIp string `json:"vmIp,omitempty"` //nolint:revive,stylecheck
 
 	// UniqueID describes a unique identifier that is provided by the underlying infrastructure provider, such as
 	// vSphere.

@@ -73,7 +73,7 @@ type VirtualMachineClassHardware struct {
 
 // VirtualMachineResourceSpec describes a virtual hardware policy specification.
 type VirtualMachineResourceSpec struct {
-	Cpu    resource.Quantity `json:"cpu,omitempty"`
+	Cpu    resource.Quantity `json:"cpu,omitempty"` //nolint:stylecheck,revive
 	Memory resource.Quantity `json:"memory,omitempty"`
 }
 
@@ -89,7 +89,7 @@ type VirtualMachineClassPolicies struct {
 	Resources VirtualMachineClassResources `json:"resources,omitempty"`
 }
 
-// VirtualMachineClassSpec defines the desired state of VirtualMachineClass
+// VirtualMachineClassSpec defines the desired state of VirtualMachineClass.
 type VirtualMachineClassSpec struct {
 	// Hardware describes the configuration of the VirtualMachineClass attributes related to virtual hardware.  The
 	// configuration specified in this field is used to customize the virtual hardware characteristics of any VirtualMachine

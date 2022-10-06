@@ -58,13 +58,13 @@ const (
 )
 
 const (
-	// VirtualMachineToolsCondition exposes the status of VMware Tools running in the guest OS, when available
+	// VirtualMachineToolsCondition exposes the status of VMware Tools running in the guest OS, when available.
 	VirtualMachineToolsCondition ConditionType = "VirtualMachineTools"
 
-	// VirtualMachineToolsNotRunningReason (Severity=Error) documents that VMware Tools is not running
+	// VirtualMachineToolsNotRunningReason (Severity=Error) documents that VMware Tools is not running.
 	VirtualMachineToolsNotRunningReason = "VirtualMachineToolsNotRunning"
 
-	// VirtualMachineToolsRunningReason (Severity=Info) documents that VMware Tools is running
+	// VirtualMachineToolsRunningReason (Severity=Info) documents that VMware Tools is running.
 	VirtualMachineToolsRunningReason = "VirtualMachineToolsRunning"
 )
 
@@ -81,13 +81,13 @@ const (
 	DeletedReason = "Deleted"
 )
 
-// Conditions related to the VirtualMachineImages
+// Conditions related to the VirtualMachineImages.
 const (
 	// Deprecated
 	// VirtualMachineImageOSTypeSupportedCondition denotes that the OS type in the VirtualMachineImage object is
 	// supported by VMService. A VirtualMachineImageOsTypeSupportedCondition is marked true:
 	// - If OS Type is of Linux Family
-	// - If OS Type is supported by hosts in the cluster
+	// - If OS Type is supported by hosts in the cluster.
 	VirtualMachineImageOSTypeSupportedCondition ConditionType = "VirtualMachineImageOSTypeSupported"
 
 	// VirtualMachineImageV1Alpha1CompatibleCondition denotes image compatibility with VMService. VMService expects
@@ -95,7 +95,7 @@ const (
 	VirtualMachineImageV1Alpha1CompatibleCondition ConditionType = "VirtualMachineImageV1Alpha1Compatible"
 )
 
-// Condition.Reason for Conditions related to VirtualMachineImages
+// Condition.Reason for Conditions related to VirtualMachineImages.
 const (
 	// Deprecated
 	// VirtualMachineImageOSTypeNotSupportedReason (Severity=Error) documents that OS Type is VirtualMachineImage is

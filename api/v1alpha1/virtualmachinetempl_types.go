@@ -4,7 +4,7 @@
 package v1alpha1
 
 // NetworkDeviceStatus defines the network interface IP configuration including
-// gateway, subnetmask and IP address as seen by OVF properties
+// gateway, subnetmask and IP address as seen by OVF properties.
 type NetworkDeviceStatus struct {
 	// Gateway4 is the gateway for the IPv4 address family for this device.
 	// +optional

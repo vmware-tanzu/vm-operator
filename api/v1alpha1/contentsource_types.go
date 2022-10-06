@@ -7,7 +7,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ContentProviderInterface contains the info to locate a content provider resource
+// ContentProviderReference contains the info to locate a content provider resource.
 type ContentProviderReference struct {
 	// API version of the referent.
 	APIVersion string `json:"apiVersion,omitempty"`
@@ -19,13 +19,13 @@ type ContentProviderReference struct {
 	Namespace string `json:"namespace,omitempty"`
 }
 
-// ContentSourceSpec defines the desired state of ContentSource
+// ContentSourceSpec defines the desired state of ContentSource.
 type ContentSourceSpec struct {
 	// ProviderRef is a reference to a content provider object that describes a provider.
 	ProviderRef ContentProviderReference `json:"providerRef,omitempty"`
 }
 
-// ContentSourceStatus defines the observed state of ContentSource
+// ContentSourceStatus defines the observed state of ContentSource.
 type ContentSourceStatus struct {
 }
 
@@ -44,7 +44,7 @@ type ContentSource struct {
 
 // +kubebuilder:object:root=true
 
-// ContentSourceList contains a list of ContentSource
+// ContentSourceList contains a list of ContentSource.
 type ContentSourceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

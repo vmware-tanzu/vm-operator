@@ -55,7 +55,7 @@ type OvfProperty struct {
 	Default *string `json:"default,omitempty"`
 }
 
-// VirtualMachineImageSpec defines the desired state of VirtualMachineImage
+// VirtualMachineImageSpec defines the desired state of VirtualMachineImage.
 type VirtualMachineImageSpec struct {
 	// Type describes the type of the VirtualMachineImage. Currently, the only supported image is "OVF"
 	Type string `json:"type"`
@@ -90,13 +90,13 @@ type VirtualMachineImageSpec struct {
 	HardwareVersion int32 `json:"hwVersion,omitempty"`
 }
 
-// VirtualMachineImageStatus defines the observed state of VirtualMachineImage
+// VirtualMachineImageStatus defines the observed state of VirtualMachineImage.
 type VirtualMachineImageStatus struct {
 	// Deprecated
-	Uuid string `json:"uuid,omitempty"`
+	Uuid string `json:"uuid,omitempty"` //nolint:revive,stylecheck
 
 	// Deprecated
-	InternalId string `json:"internalId"`
+	InternalId string `json:"internalId"` //nolint:revive,stylecheck
 
 	// Deprecated
 	PowerState string `json:"powerState,omitempty"`
@@ -150,7 +150,7 @@ type VirtualMachineImage struct {
 
 // +kubebuilder:object:root=true
 
-// VirtualMachineImageList contains a list of VirtualMachineImage
+// VirtualMachineImageList contains a list of VirtualMachineImage.
 type VirtualMachineImageList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

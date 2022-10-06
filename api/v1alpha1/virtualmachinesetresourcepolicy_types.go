@@ -22,7 +22,7 @@ type ResourcePoolSpec struct {
 	Limits VirtualMachineResourceSpec `json:"limits,omitempty"`
 }
 
-// Folder defines a Folder
+// FolderSpec defines a Folder.
 type FolderSpec struct {
 	// Name describes the name of the Folder
 	// +optional
@@ -36,21 +36,21 @@ type ClusterModuleSpec struct {
 	GroupName string `json:"groupname"`
 }
 
-// VirtualMachineSetResourcePolicySpec defines the desired state of VirtualMachineSetResourcePolicy
+// VirtualMachineSetResourcePolicySpec defines the desired state of VirtualMachineSetResourcePolicy.
 type VirtualMachineSetResourcePolicySpec struct {
 	ResourcePool   ResourcePoolSpec    `json:"resourcepool,omitempty"`
 	Folder         FolderSpec          `json:"folder,omitempty"`
 	ClusterModules []ClusterModuleSpec `json:"clustermodules,omitempty"`
 }
 
-// VirtualMachineSetResourcePolicyStatus defines the observed state of VirtualMachineSetResourcePolicy
+// VirtualMachineSetResourcePolicyStatus defines the observed state of VirtualMachineSetResourcePolicy.
 type VirtualMachineSetResourcePolicyStatus struct {
 	ClusterModules []ClusterModuleStatus `json:"clustermodules,omitempty"`
 }
 
 type ClusterModuleStatus struct {
 	GroupName   string `json:"groupname"`
-	ModuleUuid  string `json:"moduleUUID"`
+	ModuleUuid  string `json:"moduleUUID"` //nolint:revive,stylecheck
 	ClusterMoID string `json:"clusterMoID"`
 }
 

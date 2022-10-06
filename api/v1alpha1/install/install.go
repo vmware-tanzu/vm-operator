@@ -6,12 +6,13 @@
 package install
 
 import (
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+
+	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 )
 
-// Install registers the API group and adds types to a scheme
+// Install registers the API group and adds types to a scheme.
 func Install(scheme *runtime.Scheme) {
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 }

@@ -1,0 +1,68 @@
+run:
+  deadline: 5m
+  skip-files:
+   - ".*generated.*\\.go"
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/vmware-tanzu
+  importas:
+    no-unaliased: true
+    alias:
+    - pkg: k8s.io/api/core/v1
+      alias: corev1
+    - pkg: k8s.io/apimachinery/pkg/apis/meta/v1
+      alias: metav1
+
+linters:
+  disable-all: true
+  enable:
+  - asciicheck
+  - bodyclose
+  - deadcode
+  - depguard
+  - dogsled
+  - errcheck
+  - exportloopref
+  - goconst
+  - gocritic
+  - gocyclo
+  - godot
+  - gofmt
+  - goimports
+  - goprintffuncname
+  - gosec
+  - gosimple
+  - govet
+  - importas
+  - ineffassign
+  - nakedret
+  - nilerr
+  - nolintlint
+  - prealloc
+  - revive
+  - rowserrcheck
+  - staticcheck
+  - structcheck
+  - stylecheck
+  - typecheck
+  - unconvert
+  - unparam
+  - varcheck
+
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0
+  # Disable the default golangci exclusions so no issues are skipped.
+  # This will help reviewers to focus on reviewing the most relevant changes in
+  # the PRs and avoid nitpicking.
+  exclude-use-default: false
+  exclude:
+  # TODO: Remove the following exclusions over time once we have fixed those.
+  - "ST1000: at least one file in a package should have a package comment"
+  # List of regexps of issue texts to exclude, empty list by default.
+  exclude-rules:
+  - linters:
+    - revive
+    text: ".*should have comment.* or be unexported"
+  

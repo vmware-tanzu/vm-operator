@@ -7,7 +7,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ClassReference contains info to locate a Kind VirtualMachineClass object
+// ClassReference contains info to locate a Kind VirtualMachineClass object.
 type ClassReference struct {
 	// API version of the referent.
 	APIVersion string `json:"apiVersion,omitempty"`
@@ -22,7 +22,7 @@ type ClassReference struct {
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // VirtualMachineClassBinding is a binding object responsible for
-// defining a VirtualMachineClass and a Namespace associated with it
+// defining a VirtualMachineClass and a Namespace associated with it.
 type VirtualMachineClassBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -33,7 +33,7 @@ type VirtualMachineClassBinding struct {
 
 // +kubebuilder:object:root=true
 
-// VirtualMachineClassBindingList contains a list of VirtualMachineClassBinding
+// VirtualMachineClassBindingList contains a list of VirtualMachineClassBinding.
 type VirtualMachineClassBindingList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

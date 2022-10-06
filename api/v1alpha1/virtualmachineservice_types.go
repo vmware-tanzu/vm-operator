@@ -7,10 +7,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// VirtualMachineServiceType string describes ingress methods for a service
+// VirtualMachineServiceType string describes ingress methods for a service.
 type VirtualMachineServiceType string
 
-// These types correspond to a subset of the core Service Types
+// These types correspond to a subset of the core Service Types.
 const (
 	// VirtualMachineServiceTypeClusterIP means a service will only be accessible inside the
 	// cluster, via the cluster IP.
@@ -122,7 +122,7 @@ type VirtualMachineServiceSpec struct {
 	ExternalName string `json:"externalName,omitempty"`
 }
 
-// VirtualMachineServiceStatus defines the observed state of VirtualMachineService
+// VirtualMachineServiceStatus defines the observed state of VirtualMachineService.
 type VirtualMachineServiceStatus struct {
 	// LoadBalancer contains the current status of the load balancer,
 	// if one is present.

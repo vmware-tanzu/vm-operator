@@ -5,8 +5,10 @@ package vsphere
 
 import (
 	goctx "context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
 	"strings"
 	"sync/atomic"
 
@@ -19,13 +21,13 @@ import (
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 )
@@ -37,10 +39,11 @@ const (
 var log = logf.Log.WithName(VsphereVMProviderName)
 
 type vSphereVMProvider struct {
-	sessions      session.Manager
-	k8sClient     ctrlruntime.Client
-	eventRecorder record.Recorder
-	minCPUFreq    uint64
+	sessions          session.Manager
+	k8sClient         ctrlruntime.Client
+	eventRecorder     record.Recorder
+	globalExtraConfig map[string]string
+	minCPUFreq        uint64
 }
 
 func NewVSphereVMProviderFromClient(
@@ -48,10 +51,33 @@ func NewVSphereVMProviderFromClient(
 	recorder record.Recorder) vmprovider.VirtualMachineProviderInterface {
 
 	return &vSphereVMProvider{
-		sessions:      session.NewManager(client),
-		k8sClient:     client,
-		eventRecorder: recorder,
+		sessions:          session.NewManager(client),
+		k8sClient:         client,
+		eventRecorder:     recorder,
+		globalExtraConfig: getExtraConfig(),
 	}
+}
+
+func getExtraConfig() map[string]string {
+	ec := map[string]string{
+		constants.EnableDiskUUIDExtraConfigKey:       constants.ExtraConfigTrue,
+		constants.GOSCIgnoreToolsCheckExtraConfigKey: constants.ExtraConfigTrue,
+	}
+
+	if jsonEC := os.Getenv("JSON_EXTRA_CONFIG"); jsonEC != "" {
+		extraConfig := make(map[string]string)
+
+		if err := json.Unmarshal([]byte(jsonEC), &extraConfig); err != nil {
+			// This is only set in testing so make errors fatal.
+			panic(fmt.Sprintf("invalid JSON_EXTRA_CONFIG envvar: %q %v", jsonEC, err))
+		}
+
+		for k, v := range extraConfig {
+			ec[k] = v
+		}
+	}
+
+	return ec
 }
 
 func (vs *vSphereVMProvider) GetClient(ctx goctx.Context) (*vcclient.Client, error) {
@@ -264,71 +290,4 @@ func ResVMToVirtualMachineImage(ctx goctx.Context, vm *object.VirtualMachine) (*
 			PowerState: string(o.Summary.Runtime.PowerState),
 		},
 	}, nil
-}
-
-func (vs *vSphereVMProvider) reverseVMZoneLookup(vmCtx context.VirtualMachineContext) error {
-	if vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] != "" {
-		return nil
-	}
-
-	availabilityZones, err := topology.GetAvailabilityZones(vmCtx, vs.k8sClient)
-	if err != nil {
-		return err
-	}
-
-	if len(availabilityZones) == 0 {
-		return fmt.Errorf("no AvailabilityZones")
-	}
-
-	zone, err := vs.vmToZoneLookup(vmCtx, availabilityZones)
-	if err != nil {
-		return err
-	}
-
-	if vmCtx.VM.Labels == nil {
-		vmCtx.VM.Labels = map[string]string{}
-	}
-	vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey] = zone
-	return nil
-}
-
-func (vs *vSphereVMProvider) vmToZoneLookup(
-	vmCtx context.VirtualMachineContext,
-	availabilityZones []topologyv1.AvailabilityZone) (string, error) {
-
-	client, err := vs.GetClient(vmCtx)
-	if err != nil {
-		return "", err
-	}
-
-	vcVM, err := vcenter.GetVirtualMachine(vmCtx, vs.k8sClient, client.Finder(), nil)
-	if err != nil {
-		return "", err
-	}
-
-	rp, err := vcVM.ResourcePool(vmCtx)
-	if err != nil {
-		return "", err
-	}
-
-	cluster, err := rp.Owner(vmCtx)
-	if err != nil {
-		return "", err
-	}
-
-	clusterMoID := cluster.Reference().Value
-
-	for _, az := range availabilityZones {
-		if az.Spec.ClusterComputeResourceMoId == clusterMoID {
-			return az.Name, nil
-		}
-
-		for _, moID := range az.Spec.ClusterComputeResourceMoIDs {
-			if moID == clusterMoID {
-				return az.Name, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("failed to find zone for cluster MoID %s", clusterMoID)
 }

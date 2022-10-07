@@ -668,7 +668,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		It("No DeviceGroups set in class config spec", func() {
-			session.UpdateConfigSpecDeviceGroups(config, classConfigSpec, configSpec)
+			session.UpdateConfigSpecDeviceGroups(config, configSpec, classConfigSpec)
 			Expect(configSpec.DeviceGroups).To(BeNil())
 		})
 
@@ -681,7 +681,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				},
 			}
 
-			session.UpdateConfigSpecDeviceGroups(config, classConfigSpec, configSpec)
+			session.UpdateConfigSpecDeviceGroups(config, configSpec, classConfigSpec)
 			Expect(configSpec.DeviceGroups).NotTo(BeNil())
 			Expect(configSpec.DeviceGroups.DeviceGroup).To(HaveLen(1))
 			deviceGroup := configSpec.DeviceGroups.DeviceGroup[0].GetVirtualMachineVirtualDeviceGroupsDeviceGroup()
@@ -705,7 +705,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				},
 			}
 
-			session.UpdateConfigSpecDeviceGroups(config, classConfigSpec, configSpec)
+			session.UpdateConfigSpecDeviceGroups(config, configSpec, classConfigSpec)
 			Expect(configSpec.DeviceGroups).NotTo(BeNil())
 			Expect(configSpec.DeviceGroups.DeviceGroup).To(HaveLen(1))
 			deviceGroup := configSpec.DeviceGroups.DeviceGroup[0].GetVirtualMachineVirtualDeviceGroupsDeviceGroup()

@@ -9,7 +9,6 @@ import (
 
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
@@ -99,13 +98,6 @@ func (sm *Manager) GetSession(
 	sm.sessions[sessionKey] = newSession
 
 	return newSession, nil
-}
-
-func (sm *Manager) GetSessionForVM(vmCtx context.VirtualMachineContext) (*Session, error) {
-	return sm.GetSession(
-		vmCtx,
-		vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey],
-		vmCtx.VM.Namespace)
 }
 
 func (sm *Manager) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {

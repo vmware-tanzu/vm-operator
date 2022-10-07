@@ -20,7 +20,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -31,7 +30,7 @@ type VMCreateArgs struct {
 	VMClass             *vmopv1alpha1.VirtualMachineClass
 	VMImage             *vmopv1alpha1.VirtualMachineImage
 	ResourcePolicy      *vmopv1alpha1.VirtualMachineSetResourcePolicy
-	VMMetadata          vmprovider.VMMetadata
+	VMMetadata          VMMetadata
 	ContentLibraryUUID  string
 	StorageClassesToIDs map[string]string
 	StorageProvisioning string

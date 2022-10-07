@@ -19,10 +19,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/storage"
@@ -30,7 +30,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
 
-type vmCreateArgs = session.VMCreateArgs // Until we sort out what the Session becomes
+// TODO: Until we sort out what the Session becomes.
+type vmCreateArgs = session.VMCreateArgs
+type vmUpdateArgs = session.VMUpdateArgs
+type vmMetadata = session.VMMetadata
 
 var (
 	createCountLock          sync.Mutex
@@ -71,7 +74,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 		}
 	}
 
-	return vs.updateVirtualMachine(vmCtx, vcVM)
+	return vs.updateVirtualMachine(vmCtx, vcVM, client)
 }
 
 func (vs *vSphereVMProvider) DeleteVirtualMachine(
@@ -193,7 +196,7 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 		}
 
 		// Set a few Status fields that we easily have on hand here. We will immediately call
-		// UpdateVirtualMachine() next which will set it all.
+		// updateVirtualMachine() next which will set it all.
 		vmCtx.VM.Status.Phase = vmopv1alpha1.Created
 		vmCtx.VM.Status.UniqueID = vcVM.Reference().Value
 	}
@@ -203,47 +206,33 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 
 func (vs *vSphereVMProvider) updateVirtualMachine(
 	vmCtx context.VirtualMachineContext,
-	vcVM *object.VirtualMachine) error {
+	vcVM *object.VirtualMachine,
+	vcClient *vcclient.Client) error {
+
+	vmCtx.Logger.V(4).Info("Updating VirtualMachine")
+
+	updateArgs, err := vs.vmUpdateGetArgs(vmCtx)
+	if err != nil {
+		return err
+	}
 
 	{
-		// Hack
-		vmCtx.Logger.V(4).Info("Updating VirtualMachine")
+		// Hack - create just enough of the Session that's needed for update
 
-		if lib.IsWcpFaultDomainsFSSEnabled() {
-			if err := vs.reverseVMZoneLookup(vmCtx); err != nil {
-				return err
-			}
-		}
-
-		ses, err := vs.sessions.GetSessionForVM(vmCtx)
+		cluster, err := virtualmachine.GetVMClusterComputeResource(vmCtx, vcVM)
 		if err != nil {
 			return err
 		}
 
-		createArgs, err := vs.vmCreateGetPrereqs(vmCtx)
-		if err != nil {
-			return err
+		ses := &session.Session{
+			K8sClient: vs.k8sClient,
+			Client:    vcClient,
+			Finder:    vcClient.Finder(),
+			Cluster:   cluster,
 		}
+		ses.NetworkProvider = network.NewProvider(ses.K8sClient, ses.Client.VimClient(), ses.Finder, ses.Cluster)
 
-		// VM update path utilizes the VM class config spec
-		createArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
-			vmCtx.VM.Name,
-			&createArgs.VMClass.Spec,
-			createArgs.MinCPUFreq,
-			createArgs.ClassConfigSpec)
-
-		vmConfigArgs := vmprovider.VMConfigArgs{
-			VMClass:            *createArgs.VMClass,
-			VMImage:            createArgs.VMImage,
-			ResourcePolicy:     createArgs.ResourcePolicy,
-			VMMetadata:         createArgs.VMMetadata,
-			StorageProfileID:   createArgs.StorageClassesToIDs[vmCtx.VM.Spec.StorageClass],
-			ContentLibraryUUID: createArgs.ContentLibraryUUID,
-			ConfigSpec:         createArgs.ConfigSpec,
-			MinCPUFreq:         createArgs.MinCPUFreq,
-		}
-
-		err = ses.UpdateVirtualMachine(vmCtx, vcVM, vmConfigArgs)
+		err = ses.UpdateVirtualMachine(vmCtx, vcVM, updateArgs)
 		if err != nil {
 			return err
 		}
@@ -467,7 +456,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 		return nil, err
 	}
 
-	vmMetadata, err := GetVMMetadata(vmCtx, vs.k8sClient)
+	vmMD, err := GetVMMetadata(vmCtx, vs.k8sClient)
 	if err != nil {
 		return nil, err
 	}
@@ -476,7 +465,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 	createArgs.VMClass = vmClass
 	createArgs.VMImage = vmImage
 	createArgs.ContentLibraryUUID = clUUID
-	createArgs.VMMetadata = vmMetadata
+	createArgs.VMMetadata = vmMD
 
 	// TODO: Perhaps a condition type for each resource is better so all missing one(s)
 	// 	     can be reported at once (and will help for the best-effort update changes).
@@ -501,15 +490,11 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 
 	if lib.IsVMClassAsConfigFSSEnabled() {
 		if cs := createArgs.VMClass.Spec.ConfigSpec; cs != nil {
-			if cs.XML != "" {
-				// TODO: Have a single func that unmarshals & excludes
-				classConfigSpec, err := util.UnmarshalConfigSpecFromBase64XML([]byte(cs.XML))
-				if err != nil {
-					return nil, err
-				}
-				util.ProcessVMClassConfigSpecExclusions(classConfigSpec)
-				createArgs.ClassConfigSpec = classConfigSpec
+			classConfigSpec, err := GetVMClassConfigSpecFromXML(cs.XML)
+			if err != nil {
+				return nil, err
 			}
+			createArgs.ClassConfigSpec = classConfigSpec
 		}
 	}
 
@@ -607,4 +592,71 @@ func (vs *vSphereVMProvider) vmCreateValidateArgs(
 	}
 
 	return nil
+}
+
+func (vs *vSphereVMProvider) vmUpdateGetArgs(
+	vmCtx context.VirtualMachineContext) (*vmUpdateArgs, error) {
+
+	vmClass, err := GetVirtualMachineClass(vmCtx, vs.k8sClient)
+	if err != nil {
+		return nil, err
+	}
+
+	vmImage, _, err := GetVMImageAndContentLibraryUUID(vmCtx, vs.k8sClient)
+	if err != nil {
+		return nil, err
+	}
+
+	resourcePolicy, err := GetVMSetResourcePolicy(vmCtx, vs.k8sClient)
+	if err != nil {
+		return nil, err
+	}
+
+	vmMD, err := GetVMMetadata(vmCtx, vs.k8sClient)
+	if err != nil {
+		return nil, err
+	}
+
+	updateArgs := &vmUpdateArgs{}
+	updateArgs.VMClass = vmClass
+	updateArgs.VMImage = vmImage
+	updateArgs.VMMetadata = vmMD
+	updateArgs.ResourcePolicy = resourcePolicy
+
+	if resourcePolicy != nil {
+		updateArgs.ResourcePolicy = resourcePolicy
+
+		rp := resourcePolicy.Spec.ResourcePool
+		if !rp.Reservations.Cpu.IsZero() || !rp.Limits.Cpu.IsZero() {
+			freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
+			if err != nil {
+				return nil, err
+			}
+			updateArgs.MinCPUFreq = freq
+		}
+	}
+
+	extraConfig := make(map[string]string, len(vs.globalExtraConfig))
+	for k, v := range vs.globalExtraConfig {
+		extraConfig[k] = v
+	}
+	updateArgs.ExtraConfig = extraConfig
+
+	if lib.IsVMClassAsConfigFSSEnabled() {
+		if cs := updateArgs.VMClass.Spec.ConfigSpec; cs != nil {
+			classConfigSpec, err := GetVMClassConfigSpecFromXML(cs.XML)
+			if err != nil {
+				return nil, err
+			}
+			updateArgs.ClassConfigSpec = classConfigSpec
+		}
+	}
+
+	updateArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
+		vmCtx.VM.Name,
+		&updateArgs.VMClass.Spec,
+		updateArgs.MinCPUFreq,
+		updateArgs.ClassConfigSpec)
+
+	return updateArgs, nil
 }

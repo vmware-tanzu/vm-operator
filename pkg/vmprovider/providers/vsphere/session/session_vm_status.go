@@ -145,7 +145,24 @@ func (s *Session) updateVMStatus(
 	}
 
 	if lib.IsWcpFaultDomainsFSSEnabled() {
-		vm.Status.Zone = vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+		zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+
+		if zoneName == "" {
+			var err error
+			zoneName, err = topology.LookupZoneForClusterMoID(vmCtx, s.K8sClient, s.Cluster.Reference().Value)
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				if vm.Labels == nil {
+					vm.Labels = map[string]string{}
+				}
+				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+			}
+		}
+
+		if zoneName != "" {
+			vm.Status.Zone = zoneName
+		}
 	}
 
 	return k8serrors.NewAggregate(errs)

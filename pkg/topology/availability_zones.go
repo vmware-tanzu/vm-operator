@@ -48,6 +48,36 @@ var (
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=availabilityzones,verbs=get;list;watch
 // +kubebuilder:rbac:groups=topology.tanzu.vmware.com,resources=availabilityzones/status,verbs=get;list;watch
 
+// LookupZoneForClusterMoID returns the zone for the given Cluster MoID.
+func LookupZoneForClusterMoID(
+	ctx context.Context,
+	client ctrlclient.Client,
+	clusterMoID string) (string, error) {
+
+	availabilityZones, err := GetAvailabilityZones(ctx, client)
+	if err != nil {
+		return "", err
+	}
+
+	if len(availabilityZones) == 0 {
+		return "", fmt.Errorf("no AvailabilityZones")
+	}
+
+	for _, az := range availabilityZones {
+		if az.Spec.ClusterComputeResourceMoId == clusterMoID {
+			return az.Name, nil
+		}
+
+		for _, moID := range az.Spec.ClusterComputeResourceMoIDs {
+			if moID == clusterMoID {
+				return az.Name, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("failed to find zone for cluster MoID %s", clusterMoID)
+}
+
 // GetNamespaceFolderAndRPMoID returns the Folder and ResourcePool MoID for the zone and namespace.
 func GetNamespaceFolderAndRPMoID(
 	ctx context.Context,

@@ -20,7 +20,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
@@ -29,6 +28,27 @@ import (
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
+
+type VMMetadata struct {
+	Data      map[string]string
+	Transport v1alpha1.VirtualMachineMetadataTransport
+}
+
+// VMUpdateArgs contains the arguments needed to update a VM on VC.
+type VMUpdateArgs struct {
+	VMClass        *v1alpha1.VirtualMachineClass
+	VMImage        *v1alpha1.VirtualMachineImage
+	ResourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy
+	MinCPUFreq     uint64
+	ExtraConfig    map[string]string
+	VMMetadata     VMMetadata
+
+	ConfigSpec      *vimTypes.VirtualMachineConfigSpec
+	ClassConfigSpec *vimTypes.VirtualMachineConfigSpec
+
+	NetIfList  network.InterfaceInfoList
+	DNSServers []string
+}
 
 func ethCardMatch(newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCard) bool {
 	if lib.IsVMClassAsConfigFSSEnabled() {
@@ -412,11 +432,12 @@ func UpdateConfigSpecFirmware(
 	}
 }
 
-// UpdateConfigSpecDeviceGroups sets the desired config spec device groups to reconcile by differencing the current VM config and
-// the class config spec device groups.
+// UpdateConfigSpecDeviceGroups sets the desired config spec device groups to reconcile by differencing the
+// current VM config and the class config spec device groups.
 func UpdateConfigSpecDeviceGroups(
 	config *vimTypes.VirtualMachineConfigInfo,
-	classConfigSpec, configSpec *vimTypes.VirtualMachineConfigSpec) {
+	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec) {
+
 	if classConfigSpec.DeviceGroups != nil {
 		if config.DeviceGroups == nil || !reflect.DeepEqual(classConfigSpec.DeviceGroups.DeviceGroup, config.DeviceGroups.DeviceGroup) {
 			configSpec.DeviceGroups = classConfigSpec.DeviceGroups
@@ -424,12 +445,10 @@ func UpdateConfigSpecDeviceGroups(
 	}
 }
 
-// TODO: Fix parameter explosion.
 func updateConfigSpec(
 	vmCtx context.VirtualMachineContext,
 	config *vimTypes.VirtualMachineConfigInfo,
-	updateArgs VMUpdateArgs,
-	globalExtraConfig map[string]string) *vimTypes.VirtualMachineConfigSpec {
+	updateArgs *VMUpdateArgs) *vimTypes.VirtualMachineConfigSpec {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
 	vmImage := updateArgs.VMImage
@@ -438,9 +457,10 @@ func updateConfigSpec(
 	UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
 	UpdateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, updateArgs.MinCPUFreq)
 	UpdateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
-	UpdateConfigSpecExtraConfig(config, configSpec, updateArgs.ConfigSpec, vmImage, &vmClassSpec, vmCtx.VM, globalExtraConfig)
+	UpdateConfigSpecExtraConfig(config, configSpec, updateArgs.ConfigSpec, vmImage, &vmClassSpec, vmCtx.VM, updateArgs.ExtraConfig)
 	UpdateConfigSpecChangeBlockTracking(config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
+	UpdateConfigSpecDeviceGroups(config, configSpec, updateArgs.ConfigSpec)
 
 	return configSpec
 }
@@ -448,17 +468,14 @@ func updateConfigSpec(
 func (s *Session) prePowerOnVMConfigSpec(
 	vmCtx context.VirtualMachineContext,
 	config *vimTypes.VirtualMachineConfigInfo,
-	updateArgs VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, error) {
+	updateArgs *VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, error) {
 
-	configSpec := updateConfigSpec(
-		vmCtx,
-		config,
-		updateArgs,
-		s.extraConfig)
+	configSpec := updateConfigSpec(vmCtx, config, updateArgs)
 
 	virtualDevices := object.VirtualDeviceList(config.Hardware.Device)
 	currentDisks := virtualDevices.SelectByType((*vimTypes.VirtualDisk)(nil))
 	currentEthCards := virtualDevices.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
+	currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
 
 	diskDeviceChanges, err := updateVirtualDiskDeviceChanges(vmCtx, currentDisks)
 	if err != nil {
@@ -471,10 +488,7 @@ func (s *Session) prePowerOnVMConfigSpec(
 	if err != nil {
 		return nil, err
 	}
-
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
-
-	currentPciDevices := virtualDevices.SelectByType((*vimTypes.VirtualPCIPassthrough)(nil))
 
 	var pciPassthruFromConfigSpec []*vimTypes.VirtualPCIPassthrough
 	if configSpecDevs := util.DevicesFromConfigSpec(updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
@@ -497,9 +511,6 @@ func (s *Session) prePowerOnVMConfigSpec(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, pciDeviceChanges...)
 
-	// Update device groups
-	UpdateConfigSpecDeviceGroups(config, updateArgs.ConfigSpec, configSpec)
-
 	return configSpec, nil
 }
 
@@ -507,7 +518,7 @@ func (s *Session) prePowerOnVMReconfigure(
 	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
 	config *vimTypes.VirtualMachineConfigInfo,
-	updateArgs VMUpdateArgs) error {
+	updateArgs *VMUpdateArgs) error {
 
 	configSpec, err := s.prePowerOnVMConfigSpec(vmCtx, config, updateArgs)
 	if err != nil {
@@ -555,7 +566,7 @@ func (s *Session) ensureNetworkInterfaces(
 	for i := range vmCtx.VM.Spec.NetworkInterfaces {
 		vif := vmCtx.VM.Spec.NetworkInterfaces[i]
 
-		info, err := s.networkProvider.EnsureNetworkInterface(vmCtx, &vif)
+		info, err := s.NetworkProvider.EnsureNetworkInterface(vmCtx, &vif)
 		if err != nil {
 			return nil, err
 		}
@@ -617,19 +628,13 @@ func (s *Session) ensureCNSVolumes(vmCtx context.VirtualMachineContext) error {
 	return nil
 }
 
-type VMUpdateArgs struct {
-	vmprovider.VMConfigArgs
-	NetIfList  network.InterfaceInfoList
-	DNSServers []string
-}
-
 func (s *Session) prepareVMForPowerOn(
 	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
 	cfg *vimTypes.VirtualMachineConfigInfo,
-	vmConfigArgs vmprovider.VMConfigArgs) error {
+	updateArgs *VMUpdateArgs) error {
 
-	netIfList, err := s.ensureNetworkInterfaces(vmCtx, vmConfigArgs.ConfigSpec)
+	netIfList, err := s.ensureNetworkInterfaces(vmCtx, updateArgs.ConfigSpec)
 	if err != nil {
 		return err
 	}
@@ -640,18 +645,15 @@ func (s *Session) prepareVMForPowerOn(
 		// Prior code only logged?!?
 	}
 
-	updateArgs := VMUpdateArgs{
-		VMConfigArgs: vmConfigArgs,
-		NetIfList:    netIfList,
-		DNSServers:   dnsServers,
-	}
+	updateArgs.NetIfList = netIfList
+	updateArgs.DNSServers = dnsServers
 
 	err = s.prePowerOnVMReconfigure(vmCtx, resVM, cfg, updateArgs)
 	if err != nil {
 		return err
 	}
 
-	err = s.customize(vmCtx, resVM, cfg, updateArgs)
+	err = s.customize(vmCtx, resVM, cfg, *updateArgs)
 	if err != nil {
 		return err
 	}
@@ -707,7 +709,7 @@ func (s *Session) attachClusterModule(
 	}
 
 	// Find ClusterModule UUID from the ResourcePolicy.
-	_, moduleUUID := clustermodules.FindClusterModuleUUID(clusterModuleName, s.Cluster().Reference(), resourcePolicy)
+	_, moduleUUID := clustermodules.FindClusterModuleUUID(clusterModuleName, s.Cluster.Reference(), resourcePolicy)
 	if moduleUUID == "" {
 		return fmt.Errorf("ClusterModule %s not found", clusterModuleName)
 	}
@@ -718,7 +720,7 @@ func (s *Session) attachClusterModule(
 func (s *Session) UpdateVirtualMachine(
 	vmCtx context.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	vmConfigArgs vmprovider.VMConfigArgs) (err error) {
+	updateArgs *VMUpdateArgs) (err error) {
 
 	resVM := res.NewVMFromObject(vcVM)
 
@@ -761,7 +763,7 @@ func (s *Session) UpdateVirtualMachine(
 		}
 
 		if isOff {
-			err := s.prepareVMForPowerOn(vmCtx, resVM, config, vmConfigArgs)
+			err := s.prepareVMForPowerOn(vmCtx, resVM, config, updateArgs)
 			if err != nil {
 				return err
 			}
@@ -771,7 +773,7 @@ func (s *Session) UpdateVirtualMachine(
 				return err
 			}
 		} else {
-			err := s.poweredOnVMReconfigure(vmCtx, resVM, config, vmConfigArgs.ConfigSpec)
+			err := s.poweredOnVMReconfigure(vmCtx, resVM, config, updateArgs.ConfigSpec)
 			if err != nil {
 				return err
 			}
@@ -779,5 +781,5 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	// TODO: Find a better place for this?
-	return s.attachClusterModule(vmCtx, resVM, vmConfigArgs.ResourcePolicy)
+	return s.attachClusterModule(vmCtx, resVM, updateArgs.ResourcePolicy)
 }

@@ -170,16 +170,18 @@ var _ = Describe("RemoveDevicesFromConfigSpec", func() {
 	})
 })
 
-var _ = Describe("ProcessVMClassConfigSpecExclusions", func() {
+var _ = Describe("SanitizeVMClassConfigSpec", func() {
 	var (
 		configSpec *vimTypes.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
 		configSpec = &vimTypes.VirtualMachineConfigSpec{
-			Name:       "dummy-VM",
-			Annotation: "test-annotation",
-			Files:      &vimTypes.VirtualMachineFileInfo{},
+			Name:         "dummy-VM",
+			Annotation:   "test-annotation",
+			Uuid:         "uuid",
+			InstanceUuid: "instanceUUID",
+			Files:        &vimTypes.VirtualMachineFileInfo{},
 			VmProfile: []vimTypes.BaseVirtualMachineProfileSpec{
 				&vimTypes.VirtualMachineDefinedProfileSpec{
 					ProfileId: "dummy-id",
@@ -236,18 +238,20 @@ var _ = Describe("ProcessVMClassConfigSpecExclusions", func() {
 		}
 	})
 
-	When("provided a config spec with a disk, disk controllers, files, vmprofile", func() {
-		It("config spec has all exclusions removed", func() {
-			util.ProcessVMClassConfigSpecExclusions(configSpec)
-			Expect(configSpec.Name).To(Equal("dummy-VM"))
-			Expect(configSpec.Annotation).ToNot(BeEmpty())
-			Expect(configSpec.Annotation).To(Equal("test-annotation"))
-			Expect(configSpec.Files).To(BeNil())
-			Expect(configSpec.VmProfile).To(BeEmpty())
-			Expect(configSpec.DeviceChange).To(HaveLen(1))
-			dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
-			_, ok := dSpec.Device.(*vimTypes.VirtualE1000)
-			Expect(ok).To(BeTrue())
-		})
+	It("returns expected sanitized ConfigSpec", func() {
+		util.SanitizeVMClassConfigSpec(configSpec)
+
+		Expect(configSpec.Name).To(Equal("dummy-VM"))
+		Expect(configSpec.Annotation).ToNot(BeEmpty())
+		Expect(configSpec.Annotation).To(Equal("test-annotation"))
+		Expect(configSpec.Uuid).To(BeEmpty())
+		Expect(configSpec.InstanceUuid).To(BeEmpty())
+		Expect(configSpec.Files).To(BeNil())
+		Expect(configSpec.VmProfile).To(BeEmpty())
+
+		Expect(configSpec.DeviceChange).To(HaveLen(1))
+		dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+		_, ok := dSpec.Device.(*vimTypes.VirtualE1000)
+		Expect(ok).To(BeTrue())
 	})
 })

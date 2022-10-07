@@ -166,7 +166,7 @@ func IsEthernetCard(dev vimTypes.BaseVirtualDevice) bool {
 	}
 }
 
-func isDiskorDiskController(dev vimTypes.BaseVirtualDevice) bool {
+func isDiskOrDiskController(dev vimTypes.BaseVirtualDevice) bool {
 	switch dev.(type) {
 	case *vimTypes.VirtualDisk, *vimTypes.VirtualIDEController, *vimTypes.VirtualNVMEController, *vimTypes.VirtualSATAController, *vimTypes.VirtualSCSIController:
 		return true

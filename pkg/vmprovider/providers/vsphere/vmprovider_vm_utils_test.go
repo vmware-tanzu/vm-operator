@@ -18,9 +18,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -332,7 +332,7 @@ func vmUtilTests() {
 			It("return an error when ConfigMap does not exist", func() {
 				md, err := vsphere.GetVMMetadata(vmCtx, k8sClient)
 				Expect(err).To(HaveOccurred())
-				Expect(md).To(Equal(vmprovider.VMMetadata{}))
+				Expect(md).To(Equal(session.VMMetadata{}))
 			})
 
 			When("ConfigMap exists", func() {
@@ -359,7 +359,7 @@ func vmUtilTests() {
 			It("returns an error when Secret does not exist", func() {
 				md, err := vsphere.GetVMMetadata(vmCtx, k8sClient)
 				Expect(err).To(HaveOccurred())
-				Expect(md).To(Equal(vmprovider.VMMetadata{}))
+				Expect(md).To(Equal(session.VMMetadata{}))
 			})
 
 			When("Secret exists", func() {

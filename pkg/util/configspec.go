@@ -100,21 +100,19 @@ func DevicesFromConfigSpec(
 	return devices
 }
 
-// ProcessVMClassConfigSpecExclusions discards config spec entries related to
-// - disks,
-// - disk controllers,
-// - files and
-// - storage profiles
-// as VM Service does not support specifying these options via the config spec at the moment.
-func ProcessVMClassConfigSpecExclusions(configSpec *vimTypes.VirtualMachineConfigSpec) {
-	if configSpec != nil {
-		// remove disk and disk controllers
-		RemoveDevicesFromConfigSpec(configSpec, isDiskorDiskController)
-		// nil files as they usually ref files in disk
-		configSpec.Files = nil
-		// empty vmProfile as storage profiles are disk specific
-		configSpec.VmProfile = []vimTypes.BaseVirtualMachineProfileSpec{}
-	}
+// SanitizeVMClassConfigSpec clears fields in the class ConfigSpec that are
+// not allowed or supported.
+func SanitizeVMClassConfigSpec(configSpec *vimTypes.VirtualMachineConfigSpec) {
+	// These are unique for each VM.
+	configSpec.Uuid = ""
+	configSpec.InstanceUuid = ""
+
+	// Empty Files as they usually ref files in disk
+	configSpec.Files = nil
+	// Empty VmProfiles as storage profiles are disk specific
+	configSpec.VmProfile = []vimTypes.BaseVirtualMachineProfileSpec{}
+
+	RemoveDevicesFromConfigSpec(configSpec, isDiskOrDiskController)
 }
 
 // RemoveDevicesFromConfigSpec removes devices from config spec device changes based on the matcher function.

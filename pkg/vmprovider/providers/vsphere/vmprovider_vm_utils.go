@@ -9,12 +9,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 )
@@ -183,19 +184,19 @@ func GetVMImageAndContentLibraryUUID(
 
 func GetVMMetadata(
 	vmCtx context.VirtualMachineContext,
-	k8sClient ctrlclient.Client) (vmprovider.VMMetadata, error) {
+	k8sClient ctrlclient.Client) (vmMetadata, error) {
 
 	metadata := vmCtx.VM.Spec.VmMetadata
-	vmMetadata := vmprovider.VMMetadata{}
+	vmMD := vmMetadata{}
 
 	if metadata == nil {
-		return vmMetadata, nil
+		return vmMD, nil
 	}
 
 	// The VM's MetaData ConfigMapName and SecretName are mutually exclusive. Validation webhook checks
 	// this during create/update but double check it here.
 	if metadata.ConfigMapName != "" && metadata.SecretName != "" {
-		return vmMetadata, errors.New("invalid VM Metadata: both ConfigMapName and SecretName are specified")
+		return vmMD, errors.New("invalid VM Metadata: both ConfigMapName and SecretName are specified")
 	}
 
 	if metadata.ConfigMapName != "" {
@@ -203,27 +204,27 @@ func GetVMMetadata(
 		err := k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: metadata.ConfigMapName, Namespace: vmCtx.VM.Namespace}, cm)
 		if err != nil {
 			// TODO: Condition
-			return vmMetadata, errors.Wrap(err, "Failed to get VM Metadata ConfigMap")
+			return vmMD, errors.Wrap(err, "Failed to get VM Metadata ConfigMap")
 		}
 
-		vmMetadata.Transport = metadata.Transport
-		vmMetadata.Data = cm.Data
+		vmMD.Transport = metadata.Transport
+		vmMD.Data = cm.Data
 	} else if metadata.SecretName != "" {
 		secret := &corev1.Secret{}
 		err := k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: metadata.SecretName, Namespace: vmCtx.VM.Namespace}, secret)
 		if err != nil {
 			// TODO: Condition
-			return vmMetadata, errors.Wrap(err, "Failed to get VM Metadata Secret")
+			return vmMD, errors.Wrap(err, "Failed to get VM Metadata Secret")
 		}
 
-		vmMetadata.Transport = metadata.Transport
-		vmMetadata.Data = make(map[string]string)
+		vmMD.Transport = metadata.Transport
+		vmMD.Data = make(map[string]string)
 		for k, v := range secret.Data {
-			vmMetadata.Data[k] = string(v)
+			vmMD.Data[k] = string(v)
 		}
 	}
 
-	return vmMetadata, nil
+	return vmMD, nil
 }
 
 func GetVMSetResourcePolicy(
@@ -293,4 +294,19 @@ func AddInstanceStorageVolumes(
 	vmCtx.VM.Spec.Volumes = append(vmCtx.VM.Spec.Volumes, volumes...)
 
 	return nil
+}
+
+func GetVMClassConfigSpecFromXML(configSpecXML string) (*types.VirtualMachineConfigSpec, error) {
+	if configSpecXML == "" {
+		return nil, nil
+	}
+
+	classConfigSpec, err := util.UnmarshalConfigSpecFromBase64XML([]byte(configSpecXML))
+	if err != nil {
+		return nil, err
+	}
+
+	util.SanitizeVMClassConfigSpec(classConfigSpec)
+
+	return classConfigSpec, nil
 }

@@ -20,7 +20,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
@@ -74,7 +73,7 @@ var _ = Describe("Customization via ConfigSpec", func() {
 
 	Context("GetOvfEnvCustSpec", func() {
 		BeforeEach(func() {
-			updateArgs.VMMetadata = vmprovider.VMMetadata{
+			updateArgs.VMMetadata = session.VMMetadata{
 				Data:      make(map[string]string),
 				Transport: vmopv1alpha1.VirtualMachineMetadataOvfEnvTransport,
 			}
@@ -114,7 +113,7 @@ var _ = Describe("Customization via ConfigSpec", func() {
 
 	Context("GetExtraConfigCustSpec", func() {
 		BeforeEach(func() {
-			updateArgs.VMMetadata = vmprovider.VMMetadata{
+			updateArgs.VMMetadata = session.VMMetadata{
 				Data:      make(map[string]string),
 				Transport: vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
 			}
@@ -481,7 +480,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 					},
 				},
 			}
-			updateArgs.VMMetadata = vmprovider.VMMetadata{
+			updateArgs.VMMetadata = session.VMMetadata{
 				Data: make(map[string]string),
 			}
 		})
@@ -587,7 +586,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Logger:  logf.Log.WithValues("vmName", vm.NamespacedName()),
 			VM:      vm,
 		}
-		updateArgs.VMMetadata = vmprovider.VMMetadata{
+		updateArgs.VMMetadata = session.VMMetadata{
 			Data: make(map[string]string),
 		}
 		It("should return the original text when no available network", func() {

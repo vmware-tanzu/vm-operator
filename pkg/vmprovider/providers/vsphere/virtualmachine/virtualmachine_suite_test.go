@@ -12,6 +12,7 @@ import (
 )
 
 func vcSimTests() {
+	Describe("ClusterComputeResource", ccrTests)
 	Describe("Delete", deleteTests)
 	Describe("Power State", powerStateTests)
 }

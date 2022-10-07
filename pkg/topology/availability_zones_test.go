@@ -62,7 +62,8 @@ var _ = Describe("Availability Zones", func() {
 					Name: fmt.Sprintf("az-%d", i),
 				},
 				Spec: topologyv1.AvailabilityZoneSpec{
-					Namespaces: map[string]topologyv1.NamespaceInfo{},
+					ClusterComputeResourceMoIDs: []string{fmt.Sprintf("cluster-%d", i)},
+					Namespaces:                  map[string]topologyv1.NamespaceInfo{},
 				},
 			}
 			if wcpFaultDomainsFssEnabled {
@@ -406,6 +407,25 @@ var _ = Describe("Availability Zones", func() {
 					})
 				})
 			})
+		})
+	})
+
+	Context("LookupZoneForClusterMoID", func() {
+		BeforeEach(func() {
+			numberOfAvailabilityZones = 3
+			wcpFaultDomainsFssEnabled = true
+		})
+
+		It("returns error when cluster is not found", func() {
+			_, err := topology.LookupZoneForClusterMoID(ctx, client, "cluster-42")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to find zone for cluster MoID "))
+		})
+
+		It("returns expected zone name", func() {
+			zoneName, err := topology.LookupZoneForClusterMoID(ctx, client, "cluster-2")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(zoneName).To(Equal("az-2"))
 		})
 	})
 })

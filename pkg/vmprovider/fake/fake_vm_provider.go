@@ -34,6 +34,7 @@ type funcs struct {
 	ListItemsFromContentLibraryFn              func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
 	GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
+	SyncClusterVirtualMachineImageFn func(ctx context.Context, itemID string, cvmi *v1alpha1.ClusterVirtualMachineImage) error
 
 	UpdateVcPNIDFn  func(ctx context.Context, vcPNID, vcPort string) error
 	ResetVcClientFn func(ctx context.Context)
@@ -203,6 +204,17 @@ func (s *VMProvider) GetVirtualMachineImageFromContentLibrary(ctx context.Contex
 
 	// No-op for now.
 	return nil, nil
+}
+
+func (s *VMProvider) SyncClusterVirtualMachineImage(ctx context.Context, itemID string, cvmi *v1alpha1.ClusterVirtualMachineImage) error {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.SyncClusterVirtualMachineImageFn != nil {
+		return s.SyncClusterVirtualMachineImageFn(ctx, itemID, cvmi)
+	}
+
+	return nil
 }
 
 func (s *VMProvider) addToVMMap(vm *v1alpha1.VirtualMachine) {

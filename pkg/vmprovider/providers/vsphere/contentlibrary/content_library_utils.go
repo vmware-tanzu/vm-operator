@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package contentlibrary
@@ -25,6 +25,26 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
+
+var vmxRe = regexp.MustCompile(`vmx-(\d+)`)
+
+// ParseVirtualHardwareVersion parses the virtual hardware version
+// For eg. "vmx-15" returns 15.
+func ParseVirtualHardwareVersion(vmxVersion string) int32 {
+	// obj matches the full string and the submatch (\d+)
+	// and return a []string with values
+	obj := vmxRe.FindStringSubmatch(vmxVersion)
+	if len(obj) != 2 {
+		return 0
+	}
+
+	version, err := strconv.ParseInt(obj[1], 10, 32)
+	if err != nil {
+		return 0
+	}
+
+	return int32(version)
+}
 
 // LibItemToVirtualMachineImage converts a given library item and its attributes to return a
 // VirtualMachineImage that represents a k8s-native view of the item.
@@ -61,86 +81,69 @@ func LibItemToVirtualMachineImage(
 		},
 	}
 
-	if item.Type == library.ItemTypeOVF {
-		if ovfEnvelope.VirtualSystem != nil {
-			productInfo := v1alpha1.VirtualMachineImageProductInfo{}
-			osInfo := v1alpha1.VirtualMachineImageOSInfo{}
+	if item.Type == library.ItemTypeOVF && ovfEnvelope.VirtualSystem != nil {
+		updateImageSpecWithOvfVirtualSystem(&image.Spec, ovfEnvelope.VirtualSystem)
 
-			// Use info from the first product section in the VM image, if one exists.
-			if product := ovfEnvelope.VirtualSystem.Product; len(product) > 0 {
-				p := product[0]
-				productInfo.Vendor = p.Vendor
-				productInfo.Product = p.Product
-				productInfo.Version = p.Version
-				productInfo.FullVersion = p.FullVersion
-			}
-
-			// Use operating system info from the first os section in the VM image, if one exists.
-			if os := ovfEnvelope.VirtualSystem.OperatingSystem; len(os) > 0 {
-				o := os[0]
-				if o.Version != nil {
-					osInfo.Version = *o.Version
-				}
-				if o.OSType != nil {
-					osInfo.Type = *o.OSType
-				}
-			}
-
-			// Use hardware section info from the VM image, if one exists.
-			var hwVersion int32
-			if virtualHwSection := ovfEnvelope.VirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
-				hw := virtualHwSection[0]
-				if hw.System != nil && hw.System.VirtualSystemType != nil {
-					hwVersion = ParseVirtualHardwareVersion(*hw.System.VirtualSystemType)
-				}
-			}
-
-			ovfSystemProps := GetVmwareSystemPropertiesFromOvf(ovfEnvelope)
-
-			for k, v := range ovfSystemProps {
-				image.Annotations[k] = v
-			}
-			image.Spec.ProductInfo = productInfo
-			image.Spec.OSInfo = osInfo
-			image.Spec.OVFEnv = GetUserConfigurablePropertiesFromOvf(ovfEnvelope)
-			image.Spec.HardwareVersion = hwVersion
-
-			// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
-			image.Status.ImageSupported = pointer.BoolPtr(isImageSupported(image, ovfEnvelope, ovfSystemProps))
+		ovfSystemProps := getVmwareSystemPropertiesFromOvf(ovfEnvelope.VirtualSystem)
+		for k, v := range ovfSystemProps {
+			image.Annotations[k] = v
 		}
+
+		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
+		image.Status.ImageSupported = pointer.BoolPtr(isImageSupported(image, ovfEnvelope.VirtualSystem, ovfSystemProps))
 	}
 
 	return image
 }
 
-// ParseVirtualHardwareVersion parses the virtual hardware version
-// For eg. "vmx-15" returns 15.
-func ParseVirtualHardwareVersion(vmxVersion string) int32 {
-	patternStr := `vmx-(\d+)`
-	re, err := regexp.Compile(patternStr)
-	if err != nil {
-		return 0
-	}
-	// obj matches the full string and the submatch (\d+)
-	// and return a []string with values
-	obj := re.FindStringSubmatch(vmxVersion)
-	if len(obj) != 2 {
-		return 0
+func updateImageSpecWithOvfVirtualSystem(imageSpec *v1alpha1.VirtualMachineImageSpec, ovfVirtualSystem *ovf.VirtualSystem) {
+	if ovfVirtualSystem == nil {
+		return
 	}
 
-	version, err := strconv.ParseInt(obj[1], 10, 32)
-	if err != nil {
-		return 0
+	productInfo := v1alpha1.VirtualMachineImageProductInfo{}
+	osInfo := v1alpha1.VirtualMachineImageOSInfo{}
+
+	// Use info from the first product section in the VM image, if one exists.
+	if product := ovfVirtualSystem.Product; len(product) > 0 {
+		p := product[0]
+		productInfo.Vendor = p.Vendor
+		productInfo.Product = p.Product
+		productInfo.Version = p.Version
+		productInfo.FullVersion = p.FullVersion
 	}
 
-	return int32(version)
+	// Use operating system info from the first os section in the VM image, if one exists.
+	if os := ovfVirtualSystem.OperatingSystem; len(os) > 0 {
+		o := os[0]
+		if o.Version != nil {
+			osInfo.Version = *o.Version
+		}
+		if o.OSType != nil {
+			osInfo.Type = *o.OSType
+		}
+	}
+
+	// Use hardware section info from the VM image, if one exists.
+	var hwVersion int32
+	if virtualHwSection := ovfVirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
+		hw := virtualHwSection[0]
+		if hw.System != nil && hw.System.VirtualSystemType != nil {
+			hwVersion = ParseVirtualHardwareVersion(*hw.System.VirtualSystemType)
+		}
+	}
+
+	imageSpec.ProductInfo = productInfo
+	imageSpec.OSInfo = osInfo
+	imageSpec.OVFEnv = getUserConfigurablePropertiesFromOvf(ovfVirtualSystem)
+	imageSpec.HardwareVersion = hwVersion
 }
 
-func GetUserConfigurablePropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]v1alpha1.OvfProperty {
+func getUserConfigurablePropertiesFromOvf(ovfVirtualSystem *ovf.VirtualSystem) map[string]v1alpha1.OvfProperty {
 	properties := make(map[string]v1alpha1.OvfProperty)
 
-	if ovfEnvelope.VirtualSystem != nil {
-		for _, product := range ovfEnvelope.VirtualSystem.Product {
+	if ovfVirtualSystem != nil {
+		for _, product := range ovfVirtualSystem.Product {
 			for _, prop := range product.Property {
 				// Only show user configurable properties
 				if prop.UserConfigurable != nil && *prop.UserConfigurable {
@@ -156,14 +159,15 @@ func GetUserConfigurablePropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]
 			}
 		}
 	}
+
 	return properties
 }
 
-func GetVmwareSystemPropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]string {
+func getVmwareSystemPropertiesFromOvf(ovfVirtualSystem *ovf.VirtualSystem) map[string]string {
 	properties := make(map[string]string)
 
-	if ovfEnvelope.VirtualSystem != nil {
-		for _, product := range ovfEnvelope.VirtualSystem.Product {
+	if ovfVirtualSystem != nil {
+		for _, product := range ovfVirtualSystem.Product {
 			for _, prop := range product.Property {
 				if strings.HasPrefix(prop.Key, "vmware-system") {
 					if prop.Default != nil {
@@ -173,6 +177,7 @@ func GetVmwareSystemPropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]stri
 			}
 		}
 	}
+
 	return properties
 }
 
@@ -193,15 +198,20 @@ func libItemVersionAnnotation(item *library.Item) string {
 	return fmt.Sprintf("%s:%s:%d", item.ID, item.Version, constants.VMImageCLVersionAnnotationVersion)
 }
 
+type ImageConditionWrapper interface {
+	conditions.Setter
+	conditions.Getter
+}
+
 // isImageSupported returns true IFF:
 //
 // - the image is marked as compatible in the OVF or is a TKG node image
 // - the WCP_UNIFIED_TKG FSS is enabled
 //
 // Otherwise, the image is marked as unsupported.
-func isImageSupported(image *v1alpha1.VirtualMachineImage, ovfEnvelope *ovf.Envelope, ovfSystemProps map[string]string) bool {
+func isImageSupported(image ImageConditionWrapper, ovfVirtualSystem *ovf.VirtualSystem, ovfSystemProps map[string]string) bool {
 	switch {
-	case isOVFV1Alpha1Compatible(ovfEnvelope) || isATKGImage(ovfSystemProps):
+	case isOVFV1Alpha1Compatible(ovfVirtualSystem) || isATKGImage(ovfSystemProps):
 		conditions.MarkTrue(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
 	case lib.IsUnifiedTKGFSSEnabled():
 		return true
@@ -219,9 +229,9 @@ func isImageSupported(image *v1alpha1.VirtualMachineImage, ovfEnvelope *ovf.Enve
 
 // isOVFV1Alpha1Compatible checks the image if it has VMOperatorV1Alpha1ExtraConfigKey set to VMOperatorV1Alpha1ConfigReady
 // in the ExtraConfig.
-func isOVFV1Alpha1Compatible(ovfEnvelope *ovf.Envelope) bool {
-	if ovfEnvelope.VirtualSystem != nil {
-		for _, virtualHardware := range ovfEnvelope.VirtualSystem.VirtualHardware {
+func isOVFV1Alpha1Compatible(ovfVirtualSystem *ovf.VirtualSystem) bool {
+	if ovfVirtualSystem != nil {
+		for _, virtualHardware := range ovfVirtualSystem.VirtualHardware {
 			for _, config := range virtualHardware.ExtraConfig {
 				if config.Key == constants.VMOperatorV1Alpha1ExtraConfigKey && config.Value == constants.VMOperatorV1Alpha1ConfigReady {
 					return true

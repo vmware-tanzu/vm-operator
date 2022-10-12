@@ -32,4 +32,6 @@ type VirtualMachineProviderInterface interface {
 	ListItemsFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
 	GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
+
+	SyncClusterVirtualMachineImage(ctx context.Context, itemID string, cvmi *v1alpha1.ClusterVirtualMachineImage) error
 }

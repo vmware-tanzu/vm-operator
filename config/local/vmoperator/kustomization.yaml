@@ -19,6 +19,7 @@ images:
 resources:
 - ../../default
 - ../../crd/external-crds/cnsnodevmattachment-crd.yaml
+- ../../crd/external-crds/imageregistry.vmware.com_clustercontentlibraryitems.yaml
 - ../../crd/external-crds/netoperator.vmware.com_networkinterfaces.yaml
 - ../../crd/external-crds/netoperator.vmware.com_vmxnet3networkinterfaces.yaml
 

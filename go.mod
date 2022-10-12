@@ -19,7 +19,7 @@ require (
 	github.com/prometheus/client_golang v1.12.2-0.20220421062905-4dcf02ec7b3c
 	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20221031183931-2c9dbccbd0c8
 	github.com/vmware/govmomi v0.28.1-0.20220628215734-1f67efe15a2e
-	gitlab.eng.vmware.com/core-build/image-registry-operator-api v0.0.0-20220928173853-0feea69d4714
+	gitlab.eng.vmware.com/core-build/image-registry-operator-api v0.0.0-20221017194205-fd9d456612a2
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
 	golang.org/x/text v0.3.7
 	gomodules.xyz/jsonpatch/v2 v2.2.0
@@ -61,7 +61,7 @@ require (
 	golang.org/x/oauth2 v0.0.0-20220223155221-ee480838109b // indirect
 	golang.org/x/sys v0.0.0-20220328115105-d36c6a25d886 // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
-	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect
+	golang.org/x/time v0.0.0-20220210224613-90d013bbcef8 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20210831024726-fe130286e0e2 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect

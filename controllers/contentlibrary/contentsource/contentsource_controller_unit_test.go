@@ -15,7 +15,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/contentsource"
+	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentsource"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )

@@ -437,6 +437,8 @@ func (r *Reconciler) ReconcileDelete(ctx goctx.Context, contentSource *vmopv1alp
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentlibraryproviders,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentlibraryproviders/status,verbs=get
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsourcebindings,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages/status,verbs=get;update;patch
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (ctrl.Result, error) {
 	r.Logger.Info("Received reconcile request", "name", request.Name)

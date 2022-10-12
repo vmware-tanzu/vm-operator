@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package contentlibrary
@@ -13,6 +13,7 @@ import (
 
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/pointer"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -39,6 +40,8 @@ type Provider interface {
 		itemID string,
 		clUUID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
+
+	SyncClusterVirtualMachineImage(ctx context.Context, itemID string, cvmi *v1alpha1.ClusterVirtualMachineImage) error
 }
 
 type provider struct {
@@ -288,6 +291,49 @@ func (cs *provider) VirtualMachineImageResourceForLibrary(ctx context.Context,
 	}
 
 	return LibItemToVirtualMachineImage(item, ovfEnvelope), nil
+}
+
+func (cs *provider) SyncClusterVirtualMachineImage(ctx context.Context,
+	itemID string, cvmi *v1alpha1.ClusterVirtualMachineImage) error {
+
+	logger := log.WithValues("itemID", itemID)
+	item, err := cs.libMgr.GetLibraryItem(ctx, itemID)
+	if err != nil {
+		return err
+	}
+
+	if item.Type != library.ItemTypeOVF {
+		logger.Info("Skip syncing up non-OVF library item for ClusterVirtualMachineImage",
+			"cvmiName", cvmi.Name, "itemType", item.Type)
+		return nil
+	}
+
+	ovfEnvelope, err := cs.RetrieveOvfEnvelopeFromLibraryItem(ctx, item)
+	if err != nil {
+		logger.Error(err, "error extracting the OVF envelope from the library item", "itemName", item.Name)
+		return err
+	}
+	if ovfEnvelope == nil {
+		logger.Error(err, "no valid OVF envelope found, skipping library item", "itemName", item.Name)
+		return nil
+	}
+
+	if ovfEnvelope.VirtualSystem != nil {
+		updateImageSpecWithOvfVirtualSystem(&cvmi.Spec, ovfEnvelope.VirtualSystem)
+
+		ovfSystemProps := getVmwareSystemPropertiesFromOvf(ovfEnvelope.VirtualSystem)
+		if cvmi.Annotations == nil {
+			cvmi.Annotations = make(map[string]string)
+		}
+		for k, v := range ovfSystemProps {
+			cvmi.Annotations[k] = v
+		}
+
+		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
+		cvmi.Status.ImageSupported = pointer.BoolPtr(isImageSupported(cvmi, ovfEnvelope.VirtualSystem, ovfSystemProps))
+	}
+
+	return nil
 }
 
 // generateDownloadURLForLibraryItem downloads the file from content library in 3 steps:

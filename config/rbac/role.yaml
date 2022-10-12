@@ -117,6 +117,20 @@ rules:
 - apiGroups:
   - imageregistry.vmware.com
   resources:
+  - clustercontentlibraryitems
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - imageregistry.vmware.com
+  resources:
+  - clustercontentlibraryitems/status
+  verbs:
+  - get
+- apiGroups:
+  - imageregistry.vmware.com
+  resources:
   - contentlibraries
   verbs:
   - get
@@ -165,6 +179,26 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - clustervirtualmachineimages
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - clustervirtualmachineimages/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - vmoperator.vmware.com
   resources:

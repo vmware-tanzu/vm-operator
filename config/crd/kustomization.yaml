@@ -2,6 +2,10 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
+- bases/vmoperator.vmware.com_clustervirtualmachineimages.yaml
+- bases/vmoperator.vmware.com_contentsources.yaml
+- bases/vmoperator.vmware.com_contentsourcebindings.yaml
+- bases/vmoperator.vmware.com_contentlibraryproviders.yaml
 - bases/vmoperator.vmware.com_virtualmachines.yaml
 - bases/vmoperator.vmware.com_virtualmachineclasses.yaml
 - bases/vmoperator.vmware.com_virtualmachineclassbindings.yaml
@@ -9,9 +13,6 @@ resources:
 - bases/vmoperator.vmware.com_virtualmachineservices.yaml
 - bases/vmoperator.vmware.com_virtualmachineimages.yaml
 - bases/vmoperator.vmware.com_virtualmachinepublishrequests.yaml
-- bases/vmoperator.vmware.com_contentsources.yaml
-- bases/vmoperator.vmware.com_contentsourcebindings.yaml
-- bases/vmoperator.vmware.com_contentlibraryproviders.yaml
 - bases/vmoperator.vmware.com_webconsolerequests.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 

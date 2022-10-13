@@ -69,8 +69,8 @@ type VirtualMachineImageSpec struct {
 	// ImageID is a unique identifier exposed by the provider of this VirtualMachineImage.
 	ImageID string `json:"imageID"`
 
-	// ProviderRef is a reference to the source ContentLibraryItem/ClusterContentLibraryItem resource.
-	ProviderRef corev1.TypedLocalObjectReference `json:"providerRef"`
+	// ProviderRef is a reference to a content provider object that describes a provider.
+	ProviderRef ContentProviderReference `json:"providerRef"`
 
 	// ProductInfo describes the attributes of the VirtualMachineImage relating to the product contained in the
 	// image.
@@ -133,6 +133,7 @@ func (vmImage *VirtualMachineImage) SetConditions(conditions Conditions) {
 // +kubebuilder:resource:scope=Cluster,shortName=vmi;vmimage
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="ContentSourceName",type="string",JSONPath=".spec.providerRef.name"
 // +kubebuilder:printcolumn:name="ContentLibraryName",type="string",JSONPath=".status.contentLibraryRef.name"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
 // +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"
@@ -173,6 +174,7 @@ func (clusterVirtualMachineImage *ClusterVirtualMachineImage) SetConditions(cond
 // +kubebuilder:resource:scope=Cluster,shortName=cvmi;cvmimage;clustervmimage
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="ContentSourceName",type="string",JSONPath=".spec.providerRef.name"
 // +kubebuilder:printcolumn:name="ContentLibraryName",type="string",JSONPath=".status.contentLibraryRef.name"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
 // +kubebuilder:printcolumn:name="OsType",type="string",JSONPath=".spec.osInfo.type"

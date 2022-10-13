@@ -25,6 +25,7 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 )
@@ -55,6 +56,13 @@ func New(opts Options) (Manager, error) {
 	// This can cause VM operator pod to be OOM killed. To avoid that, we by-pass
 	// the cache for ConfigMaps and Secrets so they are looked up from API sever directly.
 	cacheDisabledObjects := []client.Object{&corev1.ConfigMap{}, &corev1.Secret{}}
+
+	// Look up VirtualMachinePublishRequest resources from API server directly to avoid get stale objects from cache,
+	// We kind of rely on the up-to-date status when sending publish VM requests during reconciling VMPublishRequests.
+	// Update stale object will be rejected by API server and result in unnecessary reconciles.
+	if lib.IsWCPVMImageRegistryEnabled() {
+		cacheDisabledObjects = append(cacheDisabledObjects, &vmopv1.VirtualMachinePublishRequest{})
+	}
 
 	// Build the controller manager.
 	mgr, err := ctrlmgr.New(opts.KubeConfig, ctrlmgr.Options{

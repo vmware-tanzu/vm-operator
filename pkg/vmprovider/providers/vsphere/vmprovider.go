@@ -13,8 +13,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/pkg/errors"
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,6 +37,9 @@ import (
 
 const (
 	VsphereVMProviderName = "vsphere"
+
+	// taskHistoryCollectorPageSize represents the max count to read from task manager in one iteration.
+	taskHistoryCollectorPageSize = 10
 )
 
 var log = logf.Log.WithName(VsphereVMProviderName)
@@ -338,4 +343,40 @@ func ResVMToVirtualMachineImage(ctx goctx.Context, vm *object.VirtualMachine) (*
 			PowerState: string(o.Summary.Runtime.PowerState),
 		},
 	}, nil
+}
+
+func (vs *vSphereVMProvider) GetTasksByActID(ctx goctx.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
+	vcClient, err := vs.getVcClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	taskManager := task.NewManager(vcClient.VimClient())
+	filterSpec := types.TaskFilterSpec{
+		ActivationId: []string{actID},
+	}
+
+	collector, err := taskManager.CreateCollectorForTasks(ctx, filterSpec)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to create collector for tasks")
+	}
+	defer func() {
+		retErr = collector.Destroy(ctx)
+	}()
+
+	taskList := make([]types.TaskInfo, 0)
+	for {
+		nextTasks, err := collector.ReadNextTasks(ctx, taskHistoryCollectorPageSize)
+		if err != nil {
+			log.Error(err, "failed to read next tasks")
+			return nil, err
+		}
+		if len(nextTasks) == 0 {
+			break
+		}
+		taskList = append(taskList, nextTasks...)
+	}
+
+	log.V(5).Info("found tasks", "actID", actID, "tasks", taskList)
+	return taskList, nil
 }

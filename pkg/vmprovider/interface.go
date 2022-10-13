@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 )
@@ -15,8 +16,8 @@ import (
 type VirtualMachineProviderInterface interface {
 	CreateOrUpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
-	PublishVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine, vmPub *v1alpha1.VirtualMachinePublishRequest,
-		cl *imgregv1a1.ContentLibrary) (string, error)
+	PublishVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
+		vmPub *v1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
 	GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
 
@@ -34,4 +35,5 @@ type VirtualMachineProviderInterface interface {
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
 
 	SyncClusterVirtualMachineImage(ctx context.Context, itemID string, cvmi *v1alpha1.ClusterVirtualMachineImage) error
+	GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimTypes.TaskInfo, retErr error)
 }

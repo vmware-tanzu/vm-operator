@@ -60,7 +60,7 @@ func publishTests() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(t.Wait(ctx)).To(Succeed())
 
-		itemID, err := virtualmachine.CreateOVF(vmCtx, ctx.RestClient, vmPub, cl)
+		itemID, err := virtualmachine.CreateOVF(vmCtx, ctx.RestClient, vmPub, cl, "")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(itemID).NotTo(BeNil())
 	})
@@ -70,7 +70,7 @@ func publishTests() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(state).To(Equal(types.VirtualMachinePowerStatePoweredOn))
 
-		itemID, err := virtualmachine.CreateOVF(vmCtx, ctx.RestClient, vmPub, cl)
+		itemID, err := virtualmachine.CreateOVF(vmCtx, ctx.RestClient, vmPub, cl, "")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(itemID).NotTo(BeNil())
 	})
@@ -81,7 +81,7 @@ func publishTests() {
 	XIt("returns error if target content library does not exist", func() {
 		vmPubCtx.ContentLibrary.Spec.UUID = "12345"
 
-		itemID, err := virtualmachine.CreateOVF(vmCtx, ctx.RestClient, vmPub, cl)
+		itemID, err := virtualmachine.CreateOVF(vmCtx, ctx.RestClient, vmPub, cl, "")
 		Expect(err).To(HaveOccurred())
 		Expect(itemID).To(BeEmpty())
 	})
@@ -90,7 +90,7 @@ func publishTests() {
 	XIt("returns error if target content library item already exists", func() {
 		vmPubCtx.VMPublishRequest.Spec.Target.Item.Name = ctx.ContentLibraryImageName
 
-		itemID, err := virtualmachine.CreateOVF(vmCtx, ctx.RestClient, vmPub, cl)
+		itemID, err := virtualmachine.CreateOVF(vmCtx, ctx.RestClient, vmPub, cl, "")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(itemID).NotTo(BeNil())
 	})

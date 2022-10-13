@@ -18,10 +18,13 @@ import (
 
 const (
 	SourceVirtualMachineType = "VirtualMachine"
+
+	// vAPICtxActIDHttpHeader represents the http header in vAPI to pass down the activation ID.
+	vAPICtxActIDHttpHeader = "vapi-ctx-actid"
 )
 
 func CreateOVF(vmCtx context.VirtualMachineContext, client *rest.Client,
-	vmPubReq *vmopv1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary) (string, error) {
+	vmPubReq *vmopv1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
 	createSpec := vcenter.CreateSpec{
 		Name:        vmPubReq.Spec.Target.Item.Name,
 		Description: vmPubReq.Spec.Target.Item.Description,
@@ -43,8 +46,10 @@ func CreateOVF(vmCtx context.VirtualMachineContext, client *rest.Client,
 		Target: target,
 	}
 
+	vmCtx.Logger.Info("creating OVF from VM", "spec", ovf, "actid", actID)
+
 	// Use vmpublish uid as the act id passed down to the content library service, so that we can track
 	// the task status by the act id.
-	ctxHeader := client.WithHeader(vmCtx, http.Header{"vapi-ctx-actid": []string{string(vmPubReq.UID)}})
+	ctxHeader := client.WithHeader(vmCtx, http.Header{vAPICtxActIDHttpHeader: []string{actID}})
 	return vcenter.NewManager(client).CreateOVF(ctxHeader, ovf)
 }

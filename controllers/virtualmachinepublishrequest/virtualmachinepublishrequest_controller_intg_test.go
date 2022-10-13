@@ -4,14 +4,12 @@
 package virtualmachinepublishrequest_test
 
 import (
-	"context"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 
@@ -32,7 +30,7 @@ func virtualMachinePublishRequestReconcile() {
 		cl    *imgregv1a1.ContentLibrary
 	)
 
-	getVirtualMachinePublishRequest := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1alpha1.VirtualMachinePublishRequest {
+	getVirtualMachinePublishRequest := func(ctx *builder.IntegrationTestContext, objKey client.ObjectKey) *vmopv1alpha1.VirtualMachinePublishRequest {
 		vmpub := &vmopv1alpha1.VirtualMachinePublishRequest{}
 		if err := ctx.Client.Get(ctx, objKey, vmpub); err != nil {
 			return nil
@@ -87,19 +85,12 @@ func virtualMachinePublishRequestReconcile() {
 			},
 		}
 
-		intgFakeVMProvider.Lock()
-		defer intgFakeVMProvider.Unlock()
-		intgFakeVMProvider.PublishVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine,
-			vmPub *vmopv1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary) (string, error) {
-			return "dummy-id", nil
-		}
+		intgFakeVMProvider.Reset()
 	})
 
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-
-		intgFakeVMProvider.Reset()
 	})
 
 	Context("Reconcile", func() {
@@ -120,7 +111,7 @@ func virtualMachinePublishRequestReconcile() {
 
 		It("resource successfully created", func() {
 			Eventually(func() bool {
-				obj := getVirtualMachinePublishRequest(ctx, types.NamespacedName{Name: vmpub.Name, Namespace: vmpub.Namespace})
+				obj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
 				if obj != nil && obj.IsTargetValid() && obj.IsSourceValid() {
 					return true
 				}

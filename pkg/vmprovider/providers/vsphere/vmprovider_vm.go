@@ -11,7 +11,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -99,12 +98,8 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 	return virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
 }
 
-func (vs *vSphereVMProvider) PublishVirtualMachine(
-	ctx goctx.Context,
-	vm *vmopv1alpha1.VirtualMachine,
-	vmPub *vmopv1alpha1.VirtualMachinePublishRequest,
-	cl *imgregv1a1.ContentLibrary) (string, error) {
-
+func (vs *vSphereVMProvider) PublishVirtualMachine(ctx goctx.Context, vm *vmopv1alpha1.VirtualMachine,
+	vmPub *vmopv1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
 	vmCtx := context.VirtualMachineContext{
 		Context: ctx,
 		// Update logger info
@@ -119,13 +114,10 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 		return "", errors.Wrapf(err, "failed to get vCenter client")
 	}
 
-	vmCtx.Logger.V(5).Info("Creating an OVF from VM")
-	itemID, err := virtualmachine.CreateOVF(vmCtx, client.RestClient(), vmPub, cl)
+	itemID, err := virtualmachine.CreateOVF(vmCtx, client.RestClient(), vmPub, cl, actID)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to create OVF from VM")
+		return "", err
 	}
-
-	vmCtx.Logger.Info("Created an OVF from VM", "itemID", itemID)
 	return itemID, nil
 }
 

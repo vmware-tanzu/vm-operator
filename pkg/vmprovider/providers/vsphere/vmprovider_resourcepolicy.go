@@ -22,7 +22,7 @@ func (vs *vSphereVMProvider) IsVirtualMachineSetResourcePolicyReady(
 	azName string,
 	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
 
-	client, err := vs.GetClient(ctx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -71,7 +71,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 		return err
 	}
 
-	client, err := vs.GetClient(ctx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 		return err
 	}
 
-	client, err := vs.GetClient(ctx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}

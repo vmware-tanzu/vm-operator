@@ -35,9 +35,8 @@ type funcs struct {
 	GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
 
-	UpdateVcPNIDFn                  func(ctx context.Context, vcPNID, vcPort string) error
-	ClearSessionsAndClientFn        func(ctx context.Context)
-	DeleteNamespaceSessionInCacheFn func(ctx context.Context, namespace string)
+	UpdateVcPNIDFn  func(ctx context.Context, vcPNID, vcPort string) error
+	ResetVcClientFn func(ctx context.Context)
 
 	CreateOrUpdateVirtualMachineSetResourcePolicyFn func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
 	IsVirtualMachineSetResourcePolicyReadyFn        func(ctx context.Context, azName string, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
@@ -172,24 +171,13 @@ func (s *VMProvider) UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) er
 	return nil
 }
 
-func (s *VMProvider) ClearSessionsAndClient(ctx context.Context) {
+func (s *VMProvider) ResetVcClient(ctx context.Context) {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.ClearSessionsAndClientFn != nil {
-		s.ClearSessionsAndClientFn(ctx)
+	if s.ResetVcClientFn != nil {
+		s.ResetVcClientFn(ctx)
 	}
-}
-
-func (s *VMProvider) DeleteNamespaceSessionInCache(ctx context.Context, namespace string) error {
-	s.Lock()
-	defer s.Unlock()
-
-	if s.DeleteNamespaceSessionInCacheFn != nil {
-		s.DeleteNamespaceSessionInCacheFn(ctx, namespace)
-	}
-
-	return nil
 }
 
 func (s *VMProvider) ListItemsFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error) {

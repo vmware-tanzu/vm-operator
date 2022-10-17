@@ -11,8 +11,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	vimtypes "github.com/vmware/govmomi/vim25/types"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/credentials"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -22,7 +20,6 @@ func configTests() {
 
 	var (
 		ctx        *builder.TestContextForVCSim
-		nsInfo     builder.WorkloadNamespaceInfo
 		testConfig builder.VCSimTestConfig
 	)
 
@@ -32,7 +29,6 @@ func configTests() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig)
-		nsInfo = ctx.CreateWorkloadNamespace()
 	})
 
 	AfterEach(func() {
@@ -64,57 +60,6 @@ func configTests() {
 				It("returns a good provider config", func() {
 					_, err := config.GetProviderConfig(ctx, ctx.Client)
 					Expect(err).ToNot(HaveOccurred())
-				})
-			})
-		})
-	})
-
-	Describe("GetProviderConfigForNamespace", func() {
-
-		Context("when a good provider config exists and zone/namespace info exists", func() {
-			It("provider config has RP and VM folder from zone/namespace", func() {
-				providerConfig, err := config.GetProviderConfigForNamespace(ctx, ctx.Client, "", nsInfo.Namespace)
-				Expect(err).ToNot(HaveOccurred())
-
-				Expect(providerConfig.Folder).To(Equal(nsInfo.Folder.Reference().Value))
-				_, err = ctx.Finder.ObjectReference(ctx,
-					vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: providerConfig.ResourcePool})
-				Expect(err).ToNot(HaveOccurred())
-			})
-		})
-
-		Context("when a good provider config exists and zone/namespace info does not exist", func() {
-			It("should return an error", func() {
-				providerConfig, err := config.GetProviderConfigForNamespace(ctx, ctx.Client, "", "invalid-namespace")
-				Expect(err).To(HaveOccurred())
-				Expect(providerConfig).To(BeNil())
-			})
-		})
-
-		Context("namespace does not exist", func() {
-			It("returns error", func() {
-				providerConfig, err := config.GetProviderConfigForNamespace(ctx, ctx.Client, "", "invalid-namespace")
-				Expect(err).To(MatchError("availability zone \"\" missing info for namespace invalid-namespace"))
-				Expect(providerConfig).To(BeNil())
-			})
-		})
-
-		Context("FaultDomains FSS is enabled", func() {
-			BeforeEach(func() {
-				testConfig.WithFaultDomains = true
-			})
-
-			Context("when a good provider config exists and zone/namespace info exists", func() {
-				It("provider config has RP and VM folder from zone/namespace", func() {
-					for _, zoneName := range ctx.ZoneNames {
-						providerConfig, err := config.GetProviderConfigForNamespace(ctx, ctx.Client, zoneName, nsInfo.Namespace)
-						Expect(err).ToNot(HaveOccurred())
-
-						Expect(providerConfig.Folder).To(Equal(nsInfo.Folder.Reference().Value))
-						_, err = ctx.Finder.ObjectReference(ctx,
-							vimtypes.ManagedObjectReference{Type: "ResourcePool", Value: providerConfig.ResourcePool})
-						Expect(err).ToNot(HaveOccurred())
-					}
 				})
 			})
 		})

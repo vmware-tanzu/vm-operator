@@ -64,26 +64,6 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		return err
 	}
 
-	// Kind of busted. Short resync period kind of saves this.
-	err = c.Watch(&source.Kind{Type: &corev1.Namespace{}}, &handler.EnqueueRequestForObject{},
-		predicate.Funcs{
-			CreateFunc: func(e event.CreateEvent) bool {
-				return false
-			},
-			UpdateFunc: func(e event.UpdateEvent) bool {
-				return false
-			},
-			DeleteFunc: func(e event.DeleteEvent) bool {
-				return true
-			},
-			GenericFunc: func(e event.GenericEvent) bool {
-				return false
-			},
-		})
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -175,17 +155,13 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result
 		return ctrl.Result{}, r.reconcileWcpClusterConfig(ctx, req)
 	}
 
-	if req.Namespace == "" {
-		return ctrl.Result{}, r.reconcileNamespace(ctx, req)
-	}
-
 	r.Logger.Error(nil, "Reconciling unexpected object", "req", req.NamespacedName)
 	return ctrl.Result{}, nil
 }
 
 func (r *Reconciler) reconcileVcCreds(ctx goctx.Context, req ctrl.Request) {
 	r.Logger.Info("Reconciling updated VM Operator credentials", "secret", req.NamespacedName)
-	r.vmProvider.ClearSessionsAndClient(ctx)
+	r.vmProvider.ResetVcClient(ctx)
 }
 
 func (r *Reconciler) reconcileWcpClusterConfig(ctx goctx.Context, req ctrl.Request) error {
@@ -207,19 +183,4 @@ func (r *Reconciler) reconcileWcpClusterConfig(ctx goctx.Context, req ctrl.Reque
 	}
 
 	return r.vmProvider.UpdateVcPNID(ctx, clusterConfig.VcPNID, clusterConfig.VcPort)
-}
-
-func (r *Reconciler) reconcileNamespace(ctx goctx.Context, req ctrl.Request) error {
-	r.Logger.V(1).Info("Reconciling namespace", "namespace", req.NamespacedName.Name)
-
-	ns := &corev1.Namespace{}
-	if err := r.Get(ctx, req.NamespacedName, ns); err != nil {
-		if !apiErrors.IsNotFound(err) {
-			return err
-		}
-
-		return r.vmProvider.DeleteNamespaceSessionInCache(ctx, req.NamespacedName.Name)
-	}
-
-	return nil
 }

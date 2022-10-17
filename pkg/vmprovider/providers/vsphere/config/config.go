@@ -5,7 +5,6 @@ package config
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/credentials"
 )
 
@@ -73,24 +71,18 @@ func ConfigMapToProviderConfig(
 	configMap *corev1.ConfigMap,
 	vcCreds *credentials.VSphereVMProviderCredentials) (*VSphereVMProviderConfig, error) {
 
-	dataMap := make(map[string]string)
-
-	for key, value := range configMap.Data {
-		dataMap[key] = value
-	}
-
-	vcPNID, ok := dataMap[vcPNIDKey]
+	vcPNID, ok := configMap.Data[vcPNIDKey]
 	if !ok {
 		return nil, errors.New("missing configMap data field VcPNID")
 	}
 
-	vcPort, ok := dataMap[vcPortKey]
+	vcPort, ok := configMap.Data[vcPortKey]
 	if !ok {
 		vcPort = DefaultVCPort
 	}
 
 	scRequired := false
-	if s, ok := dataMap[scRequiredKey]; ok {
+	if s, ok := configMap.Data[scRequiredKey]; ok {
 		var err error
 		scRequired, err = strconv.ParseBool(s)
 		if err != nil {
@@ -99,7 +91,7 @@ func ConfigMapToProviderConfig(
 	}
 
 	useInventory := false
-	if u, ok := dataMap[useInventoryKey]; ok {
+	if u, ok := configMap.Data[useInventoryKey]; ok {
 		var err error
 		useInventory, err = strconv.ParseBool(u)
 		if err != nil {
@@ -109,7 +101,7 @@ func ConfigMapToProviderConfig(
 
 	// Default to validating TLS.
 	insecureSkipTLSVerify := false
-	if v, ok := dataMap[insecureSkipTLSVerifyKey]; ok {
+	if v, ok := configMap.Data[insecureSkipTLSVerifyKey]; ok {
 		var err error
 		insecureSkipTLSVerify, err = strconv.ParseBool(v)
 		if err != nil {
@@ -118,7 +110,7 @@ func ConfigMapToProviderConfig(
 	}
 
 	var caFilePath string
-	if ca, ok := dataMap[caFilePathKey]; !insecureSkipTLSVerify && ok {
+	if ca, ok := configMap.Data[caFilePathKey]; !insecureSkipTLSVerify && ok {
 		// The value will be /etc/vmware/wcp/tls/vmca.pem. While this is from our provider ConfigMap
 		// it must match the volume path in our Deployment.
 		caFilePath = ca
@@ -128,11 +120,11 @@ func ConfigMapToProviderConfig(
 		VcPNID:                      vcPNID,
 		VcPort:                      vcPort,
 		VcCreds:                     vcCreds,
-		Datacenter:                  dataMap[datacenterKey],
-		ResourcePool:                dataMap[resourcePoolKey],
-		Folder:                      dataMap[folderKey],
-		Datastore:                   dataMap[datastoreKey],
-		Network:                     dataMap[networkNameKey],
+		Datacenter:                  configMap.Data[datacenterKey],
+		ResourcePool:                configMap.Data[resourcePoolKey],
+		Folder:                      configMap.Data[folderKey],
+		Datastore:                   configMap.Data[datastoreKey],
+		Network:                     configMap.Data[networkNameKey],
 		StorageClassRequired:        scRequired,
 		UseInventoryAsContentSource: useInventory,
 		InsecureSkipTLSVerify:       insecureSkipTLSVerify,
@@ -225,50 +217,6 @@ func GetProviderConfig(
 	}
 
 	return providerConfig, nil
-}
-
-// GetProviderConfigForNamespace returns a provider config constructed from vSphere Provider ConfigMap in the
-// VM operator namespace, with per zone and namespace fields populated.
-func GetProviderConfigForNamespace(
-	ctx context.Context,
-	client ctrlruntime.Client,
-	zone, namespace string) (*VSphereVMProviderConfig, error) {
-
-	providerConfig, err := GetProviderConfig(ctx, client)
-	if err != nil {
-		return nil, err
-	}
-
-	err = updateProviderConfigForZoneAndNamespace(ctx, client, zone, namespace, providerConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	return providerConfig, nil
-}
-
-// updateProviderConfigForZoneAndNamespace updates provider config for the specified zone and namespace.
-func updateProviderConfigForZoneAndNamespace(
-	ctx context.Context,
-	client ctrlruntime.Client,
-	zone, namespace string,
-	providerConfig *VSphereVMProviderConfig) error {
-
-	folderMoID, rpMoID, err := topology.GetNamespaceFolderAndRPMoID(ctx, client, zone, namespace)
-	if err != nil {
-		return err
-	}
-
-	if folderMoID == "" || rpMoID == "" {
-		// These are required to init a new Session.
-		return fmt.Errorf("namespace %s is missing Folder and ResourcePool config. Folder: %s, ResourcePool: %s",
-			namespace, folderMoID, rpMoID)
-	}
-
-	providerConfig.ResourcePool = rpMoID
-	providerConfig.Folder = folderMoID
-
-	return nil
 }
 
 func setConfigMapData(configMap *corev1.ConfigMap, config *VSphereVMProviderConfig, vcCredsSecretName string) {

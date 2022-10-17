@@ -26,8 +26,7 @@ type VirtualMachineProviderInterface interface {
 
 	// "Infra" related
 	UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error
-	ClearSessionsAndClient(ctx context.Context)
-	DeleteNamespaceSessionInCache(ctx context.Context, namespace string) error
+	ResetVcClient(ctx context.Context)
 	ComputeCPUMinFrequency(ctx context.Context) error
 
 	ListItemsFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)

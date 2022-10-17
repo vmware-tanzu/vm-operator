@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
@@ -27,8 +28,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
+	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 )
 
@@ -39,11 +40,13 @@ const (
 var log = logf.Log.WithName(VsphereVMProviderName)
 
 type vSphereVMProvider struct {
-	sessions          session.Manager
 	k8sClient         ctrlruntime.Client
 	eventRecorder     record.Recorder
 	globalExtraConfig map[string]string
 	minCPUFreq        uint64
+
+	vcClientLock sync.Mutex
+	vcClient     *vcclient.Client
 }
 
 func NewVSphereVMProviderFromClient(
@@ -51,7 +54,6 @@ func NewVSphereVMProviderFromClient(
 	recorder record.Recorder) vmprovider.VirtualMachineProviderInterface {
 
 	return &vSphereVMProvider{
-		sessions:          session.NewManager(client),
 		k8sClient:         client,
 		eventRecorder:     recorder,
 		globalExtraConfig: getExtraConfig(),
@@ -80,26 +82,65 @@ func getExtraConfig() map[string]string {
 	return ec
 }
 
-func (vs *vSphereVMProvider) GetClient(ctx goctx.Context) (*vcclient.Client, error) {
-	return vs.sessions.GetClient(ctx)
+func (vs *vSphereVMProvider) getVcClient(ctx goctx.Context) (*vcclient.Client, error) {
+	vs.vcClientLock.Lock()
+	defer vs.vcClientLock.Unlock()
+
+	if vs.vcClient != nil {
+		return vs.vcClient, nil
+	}
+
+	config, err := vcconfig.GetProviderConfig(ctx, vs.k8sClient)
+	if err != nil {
+		return nil, err
+	}
+
+	vcClient, err := vcclient.NewClient(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	vs.vcClient = vcClient
+	return vcClient, nil
 }
 
-func (vs *vSphereVMProvider) DeleteNamespaceSessionInCache(
-	ctx goctx.Context,
-	namespace string) error {
+func (vs *vSphereVMProvider) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {
+	updated, err := vcconfig.UpdateVcInConfigMap(ctx, vs.k8sClient, vcPNID, vcPort)
+	if err != nil || !updated {
+		return err
+	}
 
-	log.V(4).Info("removing namespace from session cache", "namespace", namespace)
-	return vs.sessions.DeleteSession(ctx, namespace)
+	// Our controller-runtime client does not cache ConfigMaps & Secrets, so the next time
+	// getVcClient() is called, it will fetch newly updated CM.
+	vs.clearAndLogoutVcClient(ctx)
+	return nil
+}
+
+func (vs *vSphereVMProvider) ResetVcClient(ctx goctx.Context) {
+	vs.clearAndLogoutVcClient(ctx)
+}
+
+func (vs *vSphereVMProvider) clearAndLogoutVcClient(ctx goctx.Context) {
+	vs.vcClientLock.Lock()
+	vcClient := vs.vcClient
+	vs.vcClient = nil
+	vs.vcClientLock.Unlock()
+
+	if vcClient != nil {
+		vcClient.Logout(ctx)
+	}
 }
 
 // ListItemsFromContentLibrary list items from a content library.
-func (vs *vSphereVMProvider) ListItemsFromContentLibrary(ctx goctx.Context,
+func (vs *vSphereVMProvider) ListItemsFromContentLibrary(
+	ctx goctx.Context,
 	contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error) {
+
 	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary",
 		"name", contentLibrary.Name,
 		"UUID", contentLibrary.Spec.UUID)
 
-	client, err := vs.sessions.GetClient(ctx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +159,7 @@ func (vs *vSphereVMProvider) GetVirtualMachineImageFromContentLibrary(
 		"name", contentLibrary.Name,
 		"UUID", contentLibrary.Spec.UUID)
 
-	client, err := vs.sessions.GetClient(ctx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -143,16 +184,8 @@ func (vs *vSphereVMProvider) getOpID(vm *v1alpha1.VirtualMachine, operation stri
 	return strings.Join([]string{"vmoperator", vm.Name, operation, string(id)}, "-")
 }
 
-func (vs *vSphereVMProvider) UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error {
-	return vs.sessions.UpdateVcPNID(ctx, vcPNID, vcPort)
-}
-
-func (vs *vSphereVMProvider) ClearSessionsAndClient(ctx goctx.Context) {
-	vs.sessions.ClearSessionsAndClient(ctx)
-}
-
 func (vs *vSphereVMProvider) getVM(vmCtx context.VirtualMachineContext) (*object.VirtualMachine, error) {
-	client, err := vs.GetClient(vmCtx)
+	client, err := vs.getVcClient(vmCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +234,7 @@ func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx goctx.Context) (uint64, 
 		return 0, err
 	}
 
-	client, err := vs.GetClient(ctx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return 0, err
 	}

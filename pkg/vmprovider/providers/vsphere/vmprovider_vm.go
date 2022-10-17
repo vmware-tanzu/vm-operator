@@ -55,7 +55,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 		VM:      vm,
 	}
 
-	client, err := vs.GetClient(vmCtx)
+	client, err := vs.getVcClient(vmCtx)
 	if err != nil {
 		return err
 	}
@@ -99,9 +99,12 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 	return virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
 }
 
-func (vs *vSphereVMProvider) PublishVirtualMachine(ctx goctx.Context,
-	vm *vmopv1alpha1.VirtualMachine, vmPub *vmopv1alpha1.VirtualMachinePublishRequest,
+func (vs *vSphereVMProvider) PublishVirtualMachine(
+	ctx goctx.Context,
+	vm *vmopv1alpha1.VirtualMachine,
+	vmPub *vmopv1alpha1.VirtualMachinePublishRequest,
 	cl *imgregv1a1.ContentLibrary) (string, error) {
+
 	vmCtx := context.VirtualMachineContext{
 		Context: ctx,
 		// Update logger info
@@ -111,7 +114,7 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(ctx goctx.Context,
 		VM: vm,
 	}
 
-	client, err := vs.GetClient(ctx)
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to get vCenter client")
 	}

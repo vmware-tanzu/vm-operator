@@ -488,7 +488,10 @@ func parseWebhookConfig(path string) (
 	mutatingWebhookConfig admissionregv1.MutatingWebhookConfiguration,
 	validatingWebhookConfig admissionregv1.ValidatingWebhookConfiguration) {
 
-	const separator = "\n---\n"
+	// A recent update to controller-tools means manifests are no longer
+	// generated with a leading newline character, so this check must now
+	// simply be a ---\n.
+	const separator = "---\n"
 
 	// READ the validating webhook file.
 	yamlIn, err := ioutil.ReadFile(filepath.Clean(path))

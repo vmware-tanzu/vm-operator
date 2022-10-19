@@ -37,7 +37,8 @@ type funcs struct {
 	ListItemsFromContentLibraryFn              func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
 	GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
-	SyncVirtualMachineImageFn func(ctx context.Context, itemID string, vmi client.Object) error
+	SyncVirtualMachineImageFn       func(ctx context.Context, itemID string, vmi client.Object) error
+	DoesItemExistInContentLibraryFn func(ctx context.Context, contentLibrary *imgregv1a1.ContentLibrary, itemName string) (bool, error)
 
 	UpdateVcPNIDFn  func(ctx context.Context, vcPNID, vcPort string) error
 	ResetVcClientFn func(ctx context.Context)
@@ -231,6 +232,17 @@ func (s *VMProvider) SyncVirtualMachineImage(ctx context.Context, itemID string,
 	return nil
 }
 
+func (s *VMProvider) DoesItemExistInContentLibrary(ctx context.Context, contentLibrary *imgregv1a1.ContentLibrary, itemName string) (bool, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.DoesItemExistInContentLibraryFn != nil {
+		return s.DoesItemExistInContentLibraryFn(ctx, contentLibrary, itemName)
+	}
+
+	return false, nil
+}
+
 func (s *VMProvider) GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimTypes.TaskInfo, retErr error) {
 	s.Lock()
 	defer s.Unlock()
@@ -299,6 +311,10 @@ func (s *VMProvider) GetVMPublishRequestResult(vmPub *v1alpha1.VirtualMachinePub
 	return s.vmPubMap[actID]
 }
 
+func (s *VMProvider) GetVMPublishRequestResultWithActIDLocked(actID string) vimTypes.TaskInfoState {
+	return s.vmPubMap[actID]
+}
+
 func (s *VMProvider) IsPublishVMCalled() bool {
 	s.Lock()
 	defer s.Unlock()
@@ -310,6 +326,7 @@ func NewVMProvider() *VMProvider {
 	provider := VMProvider{
 		vmMap:             map[client.ObjectKey]*v1alpha1.VirtualMachine{},
 		resourcePolicyMap: map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy{},
+		vmPubMap:          map[string]vimTypes.TaskInfoState{},
 	}
 	return &provider
 }

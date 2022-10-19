@@ -60,14 +60,14 @@ func intgTestsValidateCreate() {
 		}
 		ctx = newIntgValidatingWebhookContext()
 
-		err = ctx.Client.Create(ctx, ctx.vm)
-		Expect(err).ToNot(HaveOccurred())
-
-		err = ctx.Client.Create(ctx, ctx.cl)
-		Expect(err).ToNot(HaveOccurred())
+		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+		Expect(ctx.Client.Create(ctx, ctx.cl)).To(Succeed())
 	})
 
 	AfterEach(func() {
+		Expect(ctx.Client.Delete(ctx, ctx.vm)).To(Succeed())
+		Expect(ctx.Client.Delete(ctx, ctx.cl)).To(Succeed())
+
 		lib.IsWCPVMImageRegistryEnabled = ctx.oldIsWCPVMImageRegistryEnabledFunc
 		err = nil
 		ctx = nil
@@ -105,14 +105,9 @@ func intgTestsValidateUpdate() {
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
 
-		err = ctx.Client.Create(ctx, ctx.vm)
-		Expect(err).ToNot(HaveOccurred())
-
-		err = ctx.Client.Create(ctx, ctx.cl)
-		Expect(err).ToNot(HaveOccurred())
-
-		err = ctx.Client.Create(ctx, ctx.vmPub)
-		Expect(err).ToNot(HaveOccurred())
+		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+		Expect(ctx.Client.Create(ctx, ctx.cl)).To(Succeed())
+		Expect(ctx.Client.Create(ctx, ctx.vmPub)).To(Succeed())
 	})
 
 	JustBeforeEach(func() {
@@ -120,6 +115,10 @@ func intgTestsValidateUpdate() {
 	})
 
 	AfterEach(func() {
+		Expect(ctx.Client.Delete(ctx, ctx.vm)).To(Succeed())
+		Expect(ctx.Client.Delete(ctx, ctx.cl)).To(Succeed())
+		Expect(ctx.Client.Delete(ctx, ctx.vmPub)).To(Succeed())
+
 		err = nil
 		ctx = nil
 	})
@@ -152,14 +151,9 @@ func intgTestsValidateDelete() {
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
 
-		err = ctx.Client.Create(ctx, ctx.vm)
-		Expect(err).ToNot(HaveOccurred())
-
-		err = ctx.Client.Create(ctx, ctx.cl)
-		Expect(err).ToNot(HaveOccurred())
-
-		err = ctx.Client.Create(ctx, ctx.vmPub)
-		Expect(err).ToNot(HaveOccurred())
+		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+		Expect(ctx.Client.Create(ctx, ctx.cl)).To(Succeed())
+		Expect(ctx.Client.Create(ctx, ctx.vmPub)).To(Succeed())
 	})
 
 	JustBeforeEach(func() {
@@ -167,6 +161,9 @@ func intgTestsValidateDelete() {
 	})
 
 	AfterEach(func() {
+		Expect(ctx.Client.Delete(ctx, ctx.vm)).To(Succeed())
+		Expect(ctx.Client.Delete(ctx, ctx.cl)).To(Succeed())
+
 		err = nil
 		ctx = nil
 	})

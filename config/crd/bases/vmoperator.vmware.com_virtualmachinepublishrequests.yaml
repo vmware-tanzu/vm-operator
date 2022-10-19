@@ -132,6 +132,7 @@ spec:
                   the request resource is eligible for deletion immediately after
                   it finishes."
                 format: int64
+                minimum: 0
                 type: integer
             type: object
           status:

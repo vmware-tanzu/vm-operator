@@ -8,9 +8,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -50,40 +53,14 @@ func unitTestsReconcile() {
 				Name:      "dummy-vm",
 				Namespace: "dummy-ns",
 			},
-		}
-
-		vmpub = &vmopv1alpha1.VirtualMachinePublishRequest{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-vmpub",
-				Namespace: vm.Namespace,
-			},
-			Spec: vmopv1alpha1.VirtualMachinePublishRequestSpec{
-				Source: vmopv1alpha1.VirtualMachinePublishRequestSource{
-					Name: vm.Name,
-				},
-				Target: vmopv1alpha1.VirtualMachinePublishRequestTarget{
-					Item: vmopv1alpha1.VirtualMachinePublishRequestTargetItem{
-						Name: "dummy-item",
-					},
-					Location: vmopv1alpha1.VirtualMachinePublishRequestTargetLocation{
-						Name: "dummy-cl",
-					},
-				},
+			Status: vmopv1alpha1.VirtualMachineStatus{
+				UniqueID: "dummy-id",
+				Phase:    vmopv1alpha1.Created,
 			},
 		}
 
-		cl = &imgregv1a1.ContentLibrary{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-cl",
-				Namespace: vm.Namespace,
-			},
-			Spec: imgregv1a1.ContentLibrarySpec{
-				UUID: "dummy-id",
-			},
-			Status: imgregv1a1.ContentLibraryStatus{
-				Name: "dummy-name",
-			},
-		}
+		vmpub = builder.DummyVirtualMachinePublishRequest("dummy-vmpub", vm.Namespace, vm.Name, "dummy-item", "dummy-cl")
+		cl = builder.DummyContentLibrary("dummy-cl", vm.Namespace, "dummy-id")
 	})
 
 	JustBeforeEach(func() {
@@ -113,6 +90,12 @@ func unitTestsReconcile() {
 		reconciler = nil
 	})
 
+	getVirtualMachinePublishRequest := func() *vmopv1alpha1.VirtualMachinePublishRequest {
+		newVMPub := &vmopv1alpha1.VirtualMachinePublishRequest{}
+		Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmpub), newVMPub)).To(Succeed())
+		return newVMPub
+	}
+
 	Context("ReconcileNormal", func() {
 		BeforeEach(func() {
 			initObjects = append(initObjects, cl, vm, vmpub)
@@ -134,6 +117,83 @@ func unitTestsReconcile() {
 				Consistently(func() types.TaskInfoState {
 					return fakeVMProvider.GetVMPublishRequestResult(vmpub)
 				}).Should(BeEmpty())
+			})
+		})
+
+		When("Source VM isn't valid", func() {
+			BeforeEach(func() {
+				initObjects = []client.Object{cl, vmpub}
+			})
+
+			It("returns success to avoid requeue if source VM doesn't exist", func() {
+				_, err := reconciler.ReconcileNormal(vmpubCtx)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Update SourceValid condition.
+				newVMPub := getVirtualMachinePublishRequest()
+				Expect(newVMPub.IsSourceValid()).To(BeFalse())
+			})
+
+			When("Source VM has empty uniqueID", func() {
+				BeforeEach(func() {
+					vm.Status.UniqueID = ""
+					initObjects = append(initObjects, vm)
+				})
+
+				It("returns error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).To(HaveOccurred())
+
+					// Update SourceValid condition.
+					newVMPub := getVirtualMachinePublishRequest()
+					Expect(newVMPub.IsSourceValid()).To(BeFalse())
+				})
+			})
+		})
+
+		When("Target isn't valid", func() {
+			BeforeEach(func() {
+				initObjects = []client.Object{vm, vmpub}
+			})
+
+			It("returns success to avoid requeue if content library doesn't exist", func() {
+				_, err := reconciler.ReconcileNormal(vmpubCtx)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Update TargetValid condition.
+				newVMPub := getVirtualMachinePublishRequest()
+				Expect(newVMPub.IsTargetValid()).To(BeFalse())
+			})
+
+			It("returns error if content library is not writable", func() {
+				cl.Spec.Writable = false
+				Expect(ctx.Client.Create(ctx, cl)).To(Succeed())
+
+				_, err := reconciler.ReconcileNormal(vmpubCtx)
+				Expect(err).To(HaveOccurred())
+
+				// Update TargetValid condition.
+				newVMPub := getVirtualMachinePublishRequest()
+				Expect(newVMPub.IsTargetValid()).To(BeFalse())
+			})
+
+			When("item with same name already exists in the content library", func() {
+				JustBeforeEach(func() {
+					Expect(ctx.Client.Create(ctx, cl)).To(Succeed())
+					fakeVMProvider.DoesItemExistInContentLibraryFn = func(ctx goctx.Context,
+						contentLibrary *imgregv1a1.ContentLibrary, itemName string) (bool, error) {
+						return true, nil
+					}
+				})
+
+				It("returns error", func() {
+					_, err := reconciler.ReconcileNormal(vmpubCtx)
+					Expect(err).To(HaveOccurred())
+
+					// Update TargetValid condition.
+					newVMPub := getVirtualMachinePublishRequest()
+					Expect(newVMPub.IsTargetValid()).To(BeFalse())
+				})
 			})
 		})
 
@@ -215,9 +275,9 @@ func unitTestsReconcile() {
 					}
 				})
 
-				It("requeue and sets VM Publish status to error", func() {
+				It("returns success but sets VM Publish status to error", func() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
-					Expect(err).ToNot(HaveOccurred())
+					Expect(err).NotTo(HaveOccurred())
 
 					// Eventually vmpub result should be updated to error.
 					Eventually(func() bool {
@@ -254,6 +314,10 @@ func unitTestsReconcile() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).To(HaveOccurred())
 
+					newVMPub := getVirtualMachinePublishRequest()
+					Expect(newVMPub.IsUploaded()).To(BeFalse())
+					Expect(newVMPub.IsImageAvailable()).To(BeFalse())
+
 					Eventually(func() bool {
 						return fakeVMProvider.IsPublishVMCalled()
 					}).Should(BeTrue())
@@ -266,25 +330,76 @@ func unitTestsReconcile() {
 			})
 
 			When("Previous request succeeded", func() {
+				var (
+					itemID = uuid.New().String()
+				)
+
 				JustBeforeEach(func() {
 					fakeVMProvider.GetTasksByActIDFn = func(ctx goctx.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
 						task := types.TaskInfo{
 							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
 							State:         types.TaskInfoStateSuccess,
 							QueueTime:     time.Now().Add(time.Minute),
-							Result:        "dummy-item",
+							Result: types.ManagedObjectReference{Type: "ContentLibraryItem",
+								Value: fmt.Sprintf("clibitem-%s", itemID)},
 						}
 						return []types.TaskInfo{task}, nil
 					}
 				})
 
-				It("Should not send a second publish VM request and return success", func() {
-					_, err := reconciler.ReconcileNormal(vmpubCtx)
-					Expect(err).NotTo(HaveOccurred())
+				When("VirtualMachineImage is available", func() {
+					JustBeforeEach(func() {
+						vmi := builder.DummyVirtualMachineImage("dummy-image")
+						vmi.Namespace = vmpub.Namespace
+						vmi.Spec.ImageID = itemID
+						Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
+					})
 
-					Consistently(func() bool {
-						return fakeVMProvider.IsPublishVMCalled()
-					}).Should(BeFalse())
+					It("Complete condition is true, not send a second publish VM request and return success", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).NotTo(HaveOccurred())
+
+						Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
+
+						newVMPub := getVirtualMachinePublishRequest()
+						Expect(newVMPub.IsUploaded()).To(BeTrue())
+						Expect(newVMPub.IsImageAvailable()).To(BeTrue())
+						Expect(newVMPub.Status.ImageName).To(Equal("dummy-image"))
+						Expect(newVMPub.IsComplete()).To(BeTrue())
+						Expect(newVMPub.Status.Ready).To(BeTrue())
+					})
+
+					When("TTLSecondsAfterFinished is set", func() {
+						JustBeforeEach(func() {
+							ttl := int64(0)
+							vmpub.Spec.TTLSecondsAfterFinished = &ttl
+						})
+
+						It("Should delete VirtualMachinePublishRequest resource", func() {
+							_, err := reconciler.ReconcileNormal(vmpubCtx)
+							Expect(err).NotTo(HaveOccurred())
+
+							Eventually(func() bool {
+								newVMPub := &vmopv1alpha1.VirtualMachinePublishRequest{}
+								err := ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmpub), newVMPub)
+								return apiErrors.IsNotFound(err)
+							}).Should(BeTrue())
+						})
+					})
+				})
+
+				When("VirtualMachineImage is unavailable", func() {
+					It("ImageAvailable condition is false, not send a second publish VM request and return success", func() {
+						_, err := reconciler.ReconcileNormal(vmpubCtx)
+						Expect(err).NotTo(HaveOccurred())
+
+						newVMPub := getVirtualMachinePublishRequest()
+						Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
+						Expect(newVMPub.IsUploaded()).To(BeTrue())
+						Expect(newVMPub.IsImageAvailable()).To(BeFalse())
+						Expect(newVMPub.IsComplete()).To(BeFalse())
+						Expect(newVMPub.Status.Ready).To(BeFalse())
+					})
 				})
 			})
 
@@ -304,6 +419,9 @@ func unitTestsReconcile() {
 				It("Should send a second publish VM request and return error", func() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).To(HaveOccurred())
+
+					newVMPub := getVirtualMachinePublishRequest()
+					Expect(newVMPub.IsUploaded()).To(BeFalse())
 
 					Eventually(func() bool {
 						return fakeVMProvider.IsPublishVMCalled()
@@ -332,6 +450,9 @@ func unitTestsReconcile() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).NotTo(HaveOccurred())
 
+					newVMPub := getVirtualMachinePublishRequest()
+					Expect(newVMPub.IsUploaded()).To(BeFalse())
+
 					Consistently(func() bool {
 						return fakeVMProvider.IsPublishVMCalled()
 					}).Should(BeFalse())
@@ -353,6 +474,9 @@ func unitTestsReconcile() {
 				It("Should return early and requeue", func() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).NotTo(HaveOccurred())
+
+					newVMPub := getVirtualMachinePublishRequest()
+					Expect(newVMPub.IsUploaded()).To(BeFalse())
 
 					Consistently(func() bool {
 						return fakeVMProvider.IsPublishVMCalled()

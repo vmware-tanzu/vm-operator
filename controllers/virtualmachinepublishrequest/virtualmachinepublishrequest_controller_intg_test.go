@@ -4,6 +4,11 @@
 package virtualmachinepublishrequest_test
 
 import (
+	"context"
+	"fmt"
+	"sync/atomic"
+	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -11,10 +16,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	"github.com/google/uuid"
+	"github.com/vmware/govmomi/vim25/types"
 
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -53,39 +62,9 @@ func virtualMachinePublishRequestReconcile() {
 			},
 		}
 
-		vmpub = &vmopv1alpha1.VirtualMachinePublishRequest{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-vmpub",
-				Namespace: ctx.Namespace,
-			},
-			Spec: vmopv1alpha1.VirtualMachinePublishRequestSpec{
-				Source: vmopv1alpha1.VirtualMachinePublishRequestSource{
-					Name:       vm.Name,
-					Kind:       vm.Kind,
-					APIVersion: vm.APIVersion,
-				},
-				Target: vmopv1alpha1.VirtualMachinePublishRequestTarget{
-					Item: vmopv1alpha1.VirtualMachinePublishRequestTargetItem{
-						Name: "dummy-item",
-					},
-					Location: vmopv1alpha1.VirtualMachinePublishRequestTargetLocation{
-						Name: "dummy-cl",
-					},
-				},
-			},
-		}
-
-		cl = &imgregv1a1.ContentLibrary{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-cl",
-				Namespace: ctx.Namespace,
-			},
-			Spec: imgregv1a1.ContentLibrarySpec{
-				UUID: "dummy-cl",
-			},
-		}
-
-		intgFakeVMProvider.Reset()
+		vmpub = builder.DummyVirtualMachinePublishRequest("dummy-vmpub", ctx.Namespace, vm.Name,
+			"dummy-item", "dummy-cl")
+		cl = builder.DummyContentLibrary("dummy-cl", ctx.Namespace, "dummy-cl")
 	})
 
 	AfterEach(func() {
@@ -94,10 +73,79 @@ func virtualMachinePublishRequestReconcile() {
 	})
 
 	Context("Reconcile", func() {
+		var (
+			itemID string
+		)
+
 		BeforeEach(func() {
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+			vmObj := &vmopv1alpha1.VirtualMachine{}
+			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), vmObj)).To(Succeed())
+			vmObj.Status = vmopv1alpha1.VirtualMachineStatus{
+				Phase:    vmopv1alpha1.Created,
+				UniqueID: "dummy-unique-id",
+			}
+			Expect(ctx.Client.Status().Update(ctx, vmObj)).To(Succeed())
+
 			Expect(ctx.Client.Create(ctx, cl)).To(Succeed())
 			Expect(ctx.Client.Create(ctx, vmpub)).To(Succeed())
+
+			defaultRequeueDelay := int64(virtualmachinepublishrequest.DefaultRequeueDelaySeconds)
+			atomic.StoreInt64(&defaultRequeueDelay, 1)
+			virtualmachinepublishrequest.DefaultRequeueDelaySeconds = int(atomic.LoadInt64(&defaultRequeueDelay))
+
+			itemID = uuid.New().String()
+			intgFakeVMProvider.Lock()
+			intgFakeVMProvider.PublishVirtualMachineFn = func(_ context.Context, vm *vmopv1alpha1.VirtualMachine,
+				vmPub *vmopv1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
+				intgFakeVMProvider.AddToVMPublishMap(actID, types.TaskInfoStateQueued)
+				time.Sleep(1 * time.Second)
+				intgFakeVMProvider.AddToVMPublishMap(actID, types.TaskInfoStateRunning)
+				time.Sleep(1 * time.Second)
+				intgFakeVMProvider.AddToVMPublishMap(actID, types.TaskInfoStateSuccess)
+
+				return "dummy-id", nil
+			}
+
+			intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
+				state := intgFakeVMProvider.GetVMPublishRequestResultWithActIDLocked(actID)
+				task := types.TaskInfo{
+					DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+					State:         state,
+				}
+
+				if state == types.TaskInfoStateSuccess {
+					task.Result = types.ManagedObjectReference{Type: "ContentLibraryItem", Value: fmt.Sprintf("clibitem-%s", itemID)}
+				}
+
+				return []types.TaskInfo{task}, nil
+			}
+			intgFakeVMProvider.Unlock()
+
+			go func() {
+				// create ContentLibraryItem and VirtualMachineImage once the task succeeds.
+				for {
+					obj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
+					if state := intgFakeVMProvider.GetVMPublishRequestResult(obj); state == types.TaskInfoStateSuccess {
+						clitem := &imgregv1a1.ContentLibraryItem{}
+						err := ctx.Client.Get(ctx, client.ObjectKey{Name: "dummy-clitem", Namespace: ctx.Namespace}, clitem)
+						if k8serrors.IsNotFound(err) {
+							clitem = utils.DummyContentLibraryItem("dummy-clitem", ctx.Namespace)
+							Expect(ctx.Client.Create(ctx, clitem)).To(Succeed())
+
+							vmi := builder.DummyVirtualMachineImage("dummy-image")
+							vmi.Namespace = ctx.Namespace
+							vmi.Spec.ImageID = itemID
+							Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
+							vmi.Status.ImageName = vmpub.Spec.Target.Item.Name
+							Expect(ctx.Client.Status().Update(ctx, vmi)).To(Succeed())
+
+							return
+						}
+					}
+					time.Sleep(time.Second)
+				}
+			}()
 		})
 
 		AfterEach(func() {
@@ -107,16 +155,20 @@ func virtualMachinePublishRequestReconcile() {
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 			err = ctx.Client.Delete(ctx, cl)
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+
+			intgFakeVMProvider.Reset()
 		})
 
-		It("resource successfully created", func() {
+		It("VirtualMachinePublishRequest completed", func() {
+			obj := &vmopv1alpha1.VirtualMachinePublishRequest{}
 			Eventually(func() bool {
-				obj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-				if obj != nil && obj.IsTargetValid() && obj.IsSourceValid() {
-					return true
-				}
-				return false
+				obj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
+				return obj != nil && obj.IsComplete()
 			}).Should(BeTrue())
+
+			Expect(obj.Status.Ready).To(BeTrue())
+			Expect(obj.Status.ImageName).To(Equal("dummy-image"))
+			Expect(obj.Status.CompletionTime).NotTo(BeZero())
 		})
 	})
 }

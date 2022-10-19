@@ -125,3 +125,53 @@ const (
 	// is not in ready state.
 	VirtualMachineImageProviderNotReadyReason = "VirtualMachineImageProviderNotReady"
 )
+
+// Condition.Reason for Conditions related to VirtualMachinePublishRequest.
+const (
+	// SourceVirtualMachineNotExistReason documents that the source VM of
+	// the VirtualMachinePublishRequest doesn't exist.
+	SourceVirtualMachineNotExistReason = "SourceVirtualMachineNotExist"
+
+	// SourceVirtualMachineNotCreatedReason documents that the source VM of
+	// the VirtualMachinePublishRequest hasn't been created.
+	SourceVirtualMachineNotCreatedReason = "SourceVirtualMachineNotCreated"
+
+	// TargetContentLibraryNotExistReason documents that the target content
+	// library of the VirtualMachinePublishRequest doesn't exist.
+	TargetContentLibraryNotExistReason = "TargetContentLibraryNotExist"
+
+	// TargetContentLibraryNotWritableReason documents that the target content
+	// library of the VirtualMachinePublishRequest isn't writable.
+	TargetContentLibraryNotWritableReason = "TargetContentLibraryNotWritable"
+
+	// TargetItemAlreadyExistsReason documents that in the target content
+	// library, there is already an item, which has the same name with the
+	// VirtualMachinePublishRequest's target item.
+	TargetItemAlreadyExistsReason = "TargetItemAlreadyExists"
+
+	// TargetVirtualMachineImageNotFoundReason documents that the expected
+	// VirtualMachineImage resource which is corresponding to VirtualMachinePublishRequest
+	// target item is not found in the cluster.
+	TargetVirtualMachineImageNotFoundReason = "VirtualMachineImageNotFound"
+
+	// UploadTaskQueuedReason documents that the VM publish task is in queued status.
+	UploadTaskQueuedReason = "Queued"
+
+	// UploadingReason documents that the VM publish task is in running status
+	// and the published item is uploading to the target location.
+	UploadingReason = "Uploading"
+
+	// UploadFailureReason documents that uploading published item to the
+	// target location failed.
+	UploadFailureReason = "UploadFailure"
+
+	// HasNotBeenUploadedReason documents that the VirtualMachinePublishRequest
+	// hasn't completed because the published item hasn't been uploaded
+	// to the target location.
+	HasNotBeenUploadedReason = "HasNotBeenUploaded"
+
+	// ImageUnavailableReason documents that the VirtualMachinePublishRequest
+	// hasn't been completed because the expected VirtualMachineImage resource
+	// hasn't been available yet.
+	ImageUnavailableReason = "ImageUnavailable"
+)

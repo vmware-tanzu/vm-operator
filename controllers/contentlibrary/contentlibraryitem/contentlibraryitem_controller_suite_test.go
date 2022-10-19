@@ -28,8 +28,7 @@ var suite = builder.NewTestSuiteForControllerWithFSS(
 )
 
 func TestContentLibraryItem(t *testing.T) {
-	_ = intgTests
-	suite.Register(t, "ContentLibraryItem controller suite", nil, unitTests)
+	suite.Register(t, "ContentLibraryItem controller suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

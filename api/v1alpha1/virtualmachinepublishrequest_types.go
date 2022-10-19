@@ -196,6 +196,7 @@ type VirtualMachinePublishRequestSpec struct {
 	// resource is eligible for deletion immediately after it finishes.
 	//
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	TTLSecondsAfterFinished *int64 `json:"ttlSecondsAfterFinished,omitempty"`
 }
 
@@ -369,7 +370,7 @@ func (vmpr *VirtualMachinePublishRequest) markCondition(
 	}
 	if reason == "" && status == corev1.ConditionTrue {
 		reason = VirtualMachinePublishRequestConditionSuccess
-	} else {
+	} else if reason == "" {
 		reason = string(status)
 	}
 

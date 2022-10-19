@@ -436,9 +436,9 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 			Expect(crd).ToNot(BeNil())
 			scope := string(crd.Spec.Scope)
 			if enabled && scope == "Cluster" {
-				s.UpdateCRDScope(VMICRDName, "Namespaced")
+				s.UpdateCRDScope(crd, "Namespaced")
 			} else if !enabled && scope == "Namespaced" {
-				s.UpdateCRDScope(VMICRDName, "Cluster")
+				s.UpdateCRDScope(crd, "Cluster")
 			}
 		}
 	})
@@ -521,26 +521,24 @@ func (s *TestSuite) GetInstalledCRD(crdName string) *apiextensionsv1.CustomResou
 	return nil
 }
 
-func (s *TestSuite) UpdateCRDScope(crdName, newScope string) {
-	oldCrd := s.GetInstalledCRD(crdName)
-	Expect(oldCrd).ToNot(BeNil())
-
+func (s *TestSuite) UpdateCRDScope(oldCrd *apiextensionsv1.CustomResourceDefinition, newScope string) {
 	// crd.spec.scope is immutable, uninstall first
 	err := envtest.UninstallCRDs(s.envTest.Config, envtest.CRDInstallOptions{
 		CRDs: []*apiextensionsv1.CustomResourceDefinition{oldCrd},
 	})
 	Expect(err).ShouldNot(HaveOccurred())
 
-	newCrd := &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        crdName,
-			Annotations: oldCrd.Annotations,
-		},
-		Spec: oldCrd.Spec,
-	}
-	newCrd.Spec.Scope = apiextensionsv1.ResourceScope(newScope)
 	crds := make([]*apiextensionsv1.CustomResourceDefinition, 0)
+	crdName := oldCrd.Name
 	Eventually(func() error {
+		newCrd := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        crdName,
+				Annotations: oldCrd.Annotations,
+			},
+			Spec: oldCrd.Spec,
+		}
+		newCrd.Spec.Scope = apiextensionsv1.ResourceScope(newScope)
 		crds, err = envtest.InstallCRDs(s.envTest.Config, envtest.CRDInstallOptions{
 			CRDs: []*apiextensionsv1.CustomResourceDefinition{newCrd},
 		})

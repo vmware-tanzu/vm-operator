@@ -118,7 +118,8 @@ type VirtualMachineImageStatus struct {
 	Conditions []Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
 	// ContentLibraryRef is a reference to the source ContentLibrary/ClusterContentLibrary resource.
-	ContentLibraryRef corev1.TypedLocalObjectReference `json:"contentLibraryRef"`
+	// +optional
+	ContentLibraryRef corev1.TypedLocalObjectReference `json:"contentLibraryRef,omitempty"`
 }
 
 func (vmImage *VirtualMachineImage) GetConditions() Conditions {

@@ -11,7 +11,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
@@ -59,8 +58,8 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 		return err
 	}
 
-	vcVM, err := vcenter.GetVirtualMachine(vmCtx, vs.k8sClient, client.Finder(), nil)
-	if err != nil && !apierrors.IsNotFound(err) {
+	vcVM, err := vs.getVM(vmCtx, client, false)
+	if err != nil {
 		return err
 	}
 
@@ -90,9 +89,17 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 		VM:      vm,
 	}
 
-	vcVM, err := vs.getVM(vmCtx)
+	client, err := vs.getVcClient(vmCtx)
 	if err != nil {
 		return err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, false)
+	if err != nil {
+		return err
+	} else if vcVM == nil {
+		// VM does not exist.
+		return nil
 	}
 
 	return virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
@@ -131,7 +138,12 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 		VM:      vm,
 	}
 
-	vcVM, err := vs.getVM(vmCtx)
+	client, err := vs.getVcClient(vmCtx)
+	if err != nil {
+		return "", err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, true)
 	if err != nil {
 		return "", err
 	}
@@ -155,7 +167,12 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 		VM:      vm,
 	}
 
-	vcVM, err := vs.getVM(vmCtx)
+	client, err := vs.getVcClient(vmCtx)
+	if err != nil {
+		return "", err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, true)
 	if err != nil {
 		return "", err
 	}

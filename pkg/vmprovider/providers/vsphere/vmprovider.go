@@ -205,13 +205,21 @@ func (vs *vSphereVMProvider) getOpID(vm *v1alpha1.VirtualMachine, operation stri
 	return strings.Join([]string{"vmoperator", vm.Name, operation, string(id)}, "-")
 }
 
-func (vs *vSphereVMProvider) getVM(vmCtx context.VirtualMachineContext) (*object.VirtualMachine, error) {
-	client, err := vs.getVcClient(vmCtx)
+func (vs *vSphereVMProvider) getVM(
+	vmCtx context.VirtualMachineContext,
+	client *vcclient.Client,
+	notFoundReturnErr bool) (*object.VirtualMachine, error) {
+
+	vcVM, err := vcenter.GetVirtualMachine(vmCtx, vs.k8sClient, client.VimClient(), client.Datacenter(), client.Finder())
 	if err != nil {
 		return nil, err
 	}
 
-	return vcenter.GetVirtualMachine(vmCtx, vs.k8sClient, client.Finder(), nil)
+	if vcVM == nil && notFoundReturnErr {
+		return nil, fmt.Errorf("VirtualMachine %q was not found on VC", vmCtx.VM.Name)
+	}
+
+	return vcVM, nil
 }
 
 func (vs *vSphereVMProvider) getOrComputeCPUMinFrequency(ctx goctx.Context) (uint64, error) {

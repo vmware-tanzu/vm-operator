@@ -99,6 +99,7 @@ type TestContextForVCSim struct {
 
 	PodNamespace string
 	VCClient     *govmomi.Client
+	Datacenter   *object.Datacenter
 	Finder       *find.Finder
 	RestClient   *rest.Client
 	Recorder     record.Recorder
@@ -377,6 +378,11 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 
 	c.Finder = find.NewFinder(vcClient.Client)
 
+	dc, err := c.Finder.DefaultDatacenter(c)
+	Expect(err).ToNot(HaveOccurred())
+	c.Datacenter = dc
+	c.Finder.SetDatacenter(dc)
+
 	folder, err := c.Finder.DefaultFolder(c)
 	Expect(err).ToNot(HaveOccurred())
 	c.folder = folder
@@ -574,14 +580,11 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 
 	Expect(c.Client.Create(c, secret)).To(Succeed())
 
-	dc, err := c.Finder.DefaultDatacenter(c)
-	Expect(err).ToNot(HaveOccurred())
-
 	data := map[string]string{}
 	data["VcPNID"] = c.server.URL.Hostname()
 	data["VcPort"] = c.server.URL.Port()
 	data["VcCredsSecretName"] = secret.Name
-	data["Datacenter"] = dc.Reference().Value
+	data["Datacenter"] = c.Datacenter.Reference().Value
 	data["CAFilePath"] = c.tlsServerCertPath
 	data["InsecureSkipTLSVerify"] = "false"
 

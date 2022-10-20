@@ -277,7 +277,7 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineContext) (reterr
 			r.Recorder.EmitEvent(ctx.VM, "Delete", reterr, false)
 		}()
 
-		if err := r.VMProvider.DeleteVirtualMachine(ctx, ctx.VM); client.IgnoreNotFound(err) != nil {
+		if err := r.VMProvider.DeleteVirtualMachine(ctx, ctx.VM); err != nil {
 			ctx.Logger.Error(err, "Failed to delete VirtualMachine")
 			return err
 		}

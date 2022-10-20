@@ -122,7 +122,7 @@ func findChildFolder(
 	parentFolder *object.Folder,
 	childName string) (*object.Folder, error) {
 
-	objRef, err := object.NewSearchIndex(parentFolder.Client()).FindChild(ctx, parentFolder, childName)
+	objRef, err := object.NewSearchIndex(parentFolder.Client()).FindChild(ctx, parentFolder.Reference(), childName)
 	if err != nil {
 		return nil, err
 	} else if objRef == nil {

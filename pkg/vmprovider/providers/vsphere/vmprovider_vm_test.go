@@ -18,7 +18,6 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
@@ -1285,10 +1284,9 @@ func vmTests() {
 				Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
 			})
 
-			It("returns NotFound when VM does not exist", func() {
+			It("returns success when VM does not exist", func() {
 				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
-				err := vmProvider.DeleteVirtualMachine(ctx, vm)
-				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 			})
 
 			Context("When fault domains is enabled", func() {
@@ -1305,13 +1303,11 @@ func vmTests() {
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
-
 					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
-					err = vmProvider.DeleteVirtualMachine(ctx, vm)
-					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+					Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 				})
 
-				It("Reverse lookups existing VM into correct zone", func() {
+				It("Deletes existing VM when zone info is missing", func() {
 					_, err := createOrUpdateAndGetVcVM(ctx, vm)
 					Expect(err).ToNot(HaveOccurred())
 

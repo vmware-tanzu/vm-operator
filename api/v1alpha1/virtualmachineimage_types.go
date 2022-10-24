@@ -119,7 +119,7 @@ type VirtualMachineImageStatus struct {
 
 	// ContentLibraryRef is a reference to the source ContentLibrary/ClusterContentLibrary resource.
 	// +optional
-	ContentLibraryRef corev1.TypedLocalObjectReference `json:"contentLibraryRef,omitempty"`
+	ContentLibraryRef *corev1.TypedLocalObjectReference `json:"contentLibraryRef,omitempty"`
 }
 
 func (vmImage *VirtualMachineImage) GetConditions() Conditions {

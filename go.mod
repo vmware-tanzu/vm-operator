@@ -18,7 +18,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.2-0.20220421062905-4dcf02ec7b3c
 	github.com/vmware-tanzu/vm-operator-api v0.1.4-0.20221031183931-2c9dbccbd0c8
-	github.com/vmware/govmomi v0.28.1-0.20220628215734-1f67efe15a2e
+	github.com/vmware/govmomi v0.28.1-0.20221031151047-a7accc01ea80
 	gitlab.eng.vmware.com/core-build/image-registry-operator-api v0.0.0-20221017194205-fd9d456612a2
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
 	golang.org/x/text v0.3.7

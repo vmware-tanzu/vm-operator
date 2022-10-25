@@ -247,8 +247,7 @@ func getZonalPlacementRecommendations(
 	} else {
 		var err error
 
-		// TODO: Once DRS PlaceVmsXCluster() adds flag for needing the host, pass that along here.
-		recs, err = ClusterPlaceVMForCreate(vmCtx, vcClient, candidateRPMoRefs, configSpec)
+		recs, err = ClusterPlaceVMForCreate(vmCtx, vcClient, candidateRPMoRefs, configSpec, needsHost)
 		if err != nil {
 			vmCtx.Logger.Error(err, "PlaceVmsXCluster failed")
 			return nil

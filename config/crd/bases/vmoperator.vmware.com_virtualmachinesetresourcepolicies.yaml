@@ -35,7 +35,7 @@ spec:
             type: object
           spec:
             description: VirtualMachineSetResourcePolicySpec defines the desired state
-              of VirtualMachineSetResourcePolicy
+              of VirtualMachineSetResourcePolicy.
             properties:
               clustermodules:
                 items:
@@ -53,7 +53,7 @@ spec:
                   type: object
                 type: array
               folder:
-                description: Folder defines a Folder
+                description: FolderSpec defines a Folder.
                 properties:
                   name:
                     description: Name describes the name of the Folder
@@ -104,7 +104,7 @@ spec:
             type: object
           status:
             description: VirtualMachineSetResourcePolicyStatus defines the observed
-              state of VirtualMachineSetResourcePolicy
+              state of VirtualMachineSetResourcePolicy.
             properties:
               clustermodules:
                 items:

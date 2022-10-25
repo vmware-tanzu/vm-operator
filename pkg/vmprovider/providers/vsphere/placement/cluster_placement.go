@@ -42,9 +42,14 @@ func clusterPlacementActionToRecommendation(action types.ClusterClusterInitialPl
 		return nil
 	}
 
+	var hostMoRef *types.ManagedObjectReference
+	if action.TargetHost.Value != "" {
+		hostMoRef = &action.TargetHost
+	}
+
 	return &Recommendation{
 		PoolMoRef: *action.Pool,
-		HostMoRef: &action.TargetHost,
+		HostMoRef: hostMoRef,
 	}
 }
 
@@ -150,7 +155,8 @@ func ClusterPlaceVMForCreate(
 	vmCtx context.VirtualMachineContext,
 	vcClient *vim25.Client,
 	resourcePoolsMoRefs []types.ManagedObjectReference,
-	configSpec *types.VirtualMachineConfigSpec) ([]Recommendation, error) {
+	configSpec *types.VirtualMachineConfigSpec,
+	needsHost bool) ([]Recommendation, error) {
 
 	// Work around PlaceVmsXCluster bug that crashes vpxd when ConfigSpec.Files is nil.
 	cs := *configSpec
@@ -163,7 +169,10 @@ func ClusterPlaceVMForCreate(
 				ConfigSpec: cs,
 			},
 		},
+		HostRecommRequired: &needsHost,
 	}
+
+	vmCtx.Logger.V(6).Info("PlaceVmxCluster request", "placementSpec", placementSpec)
 
 	resp, err := object.NewRootFolder(vcClient).PlaceVmsXCluster(vmCtx, placementSpec)
 	if err != nil {

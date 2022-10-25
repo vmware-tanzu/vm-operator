@@ -125,6 +125,7 @@ func vcSimPlacement() {
 				Expect(result).ToNot(BeNil())
 				Expect(result.ZonePlacement).To(BeTrue())
 				Expect(result.ZoneName).To(Equal(zoneName))
+				Expect(result.HostMoRef).To(BeNil())
 				Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
 
 				// Current contract is the caller must look this up based on the pre-assigned zone but
@@ -152,6 +153,7 @@ func vcSimPlacement() {
 			Expect(result.ZonePlacement).To(BeTrue())
 			Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 			Expect(result.PoolMoRef.Value).ToNot(BeEmpty())
+			Expect(result.HostMoRef).To(BeNil())
 
 			nsRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, "")
 			Expect(nsRP).ToNot(BeNil())
@@ -170,6 +172,7 @@ func vcSimPlacement() {
 				Expect(result.ZonePlacement).To(BeTrue())
 				Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 				Expect(result.PoolMoRef.Value).ToNot(BeEmpty())
+				Expect(result.HostMoRef).To(BeNil())
 
 				nsRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, "")
 				Expect(nsRP).ToNot(BeNil())

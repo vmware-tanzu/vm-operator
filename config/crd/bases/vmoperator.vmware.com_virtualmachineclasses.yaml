@@ -58,7 +58,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: VirtualMachineClassSpec defines the desired state of VirtualMachineClass
+            description: VirtualMachineClassSpec defines the desired state of VirtualMachineClass.
             properties:
               configSpec:
                 description: ConfigSpec may specify additional virtual machine configuration

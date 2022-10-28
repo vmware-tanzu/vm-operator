@@ -35,6 +35,10 @@ const (
 	// VirtualMachineImageNotFoundReason (Severity=Error) documents that the VirtualMachineImage specified in the VirtualMachineSpec
 	// is not available.
 	VirtualMachineImageNotFoundReason = "VirtualMachineImageNotFound"
+
+	// VirtualMachineImageNotReadyReason (Severity=Error) documents that the VirtualMachineImage specified in the VirtualMachineSpec
+	// is not ready.
+	VirtualMachineImageNotReadyReason = "VirtualMachineImageNotReady"
 )
 
 const (
@@ -93,6 +97,13 @@ const (
 	// VirtualMachineImageV1Alpha1CompatibleCondition denotes image compatibility with VMService. VMService expects
 	// VirtualMachineImage to be prepared by VMware specifically for VMService v1alpha1.
 	VirtualMachineImageV1Alpha1CompatibleCondition ConditionType = "VirtualMachineImageV1Alpha1Compatible"
+
+	// VirtualMachineImageSyncedCondition denotes that the image is synced with the vSphere content library item
+	// that contains the source of this image's information.
+	VirtualMachineImageSyncedCondition ConditionType = "VirtualMachineImageSynced"
+
+	// VirtualMachineImageProviderReadyCondition denotes readiness of the VirtualMachineImage provider.
+	VirtualMachineImageProviderReadyCondition ConditionType = "VirtualMachineImageProviderReady"
 )
 
 // Condition.Reason for Conditions related to VirtualMachineImages.
@@ -102,7 +113,15 @@ const (
 	// not supported.
 	VirtualMachineImageOSTypeNotSupportedReason = "VirtualMachineImageOSTypeNotSupported"
 
-	// VirtualMachineImageV1Alpha1NotCompatibleReason (Severity=Error) documents that the VirtualMachine Image
+	// VirtualMachineImageV1Alpha1NotCompatibleReason (Severity=Error) documents that the VirtualMachineImage
 	// is not prepared for VMService consumption.
 	VirtualMachineImageV1Alpha1NotCompatibleReason = "VirtualMachineImageV1Alpha1NotCompatible"
+
+	// VirtualMachineImageNotSyncedReason (Severity=Error) documents that the VirtualMachineImage is not synced with
+	// the vSphere content library item that contains the source of this image's information.
+	VirtualMachineImageNotSyncedReason = "VirtualMachineImageNotSynced"
+
+	// VirtualMachineImageProviderNotReadyReason (Severity=Error) documents that the VirtualMachineImage provider
+	// is not in ready state.
+	VirtualMachineImageProviderNotReadyReason = "VirtualMachineImageProviderNotReady"
 )

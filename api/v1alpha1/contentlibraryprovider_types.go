@@ -21,7 +21,7 @@ type ContentLibraryProviderStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
-// +kubebuilder:printcolumn:name="Content Library UUID",type="string",JSONPath=".spec.uuid",description="UUID of the vSphere content library"
+// +kubebuilder:printcolumn:name="Content-Library-UUID",type="string",JSONPath=".spec.uuid",description="UUID of the vSphere content library"
 
 // ContentLibraryProvider is the Schema for the contentlibraryproviders API.
 type ContentLibraryProvider struct {

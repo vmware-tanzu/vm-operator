@@ -480,7 +480,7 @@ func (vm *VirtualMachine) SetConditions(conditions Conditions) {
 // +kubebuilder:resource:scope=Namespaced,shortName=vm
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="PowerState",type="string",JSONPath=".status.powerState"
+// +kubebuilder:printcolumn:name="Power-State",type="string",JSONPath=".status.powerState"
 // +kubebuilder:printcolumn:name="Class",type="string",priority=1,JSONPath=".spec.className"
 // +kubebuilder:printcolumn:name="Image",type="string",priority=1,JSONPath=".spec.imageName"
 // +kubebuilder:printcolumn:name="Primary-IP",type="string",priority=1,JSONPath=".status.vmIp"

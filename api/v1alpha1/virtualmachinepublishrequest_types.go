@@ -195,7 +195,7 @@ type VirtualMachinePublishRequestSpec struct {
 }
 
 // VirtualMachinePublishRequestStatus defines the observed state of a
-//  VirtualMachinePublishRequest.
+// VirtualMachinePublishRequest.
 type VirtualMachinePublishRequestStatus struct {
 	// CompletionTime represents time when the request was completed. It is not
 	// guaranteed to be set in happens-before order across separate operations.

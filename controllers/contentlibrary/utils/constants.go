@@ -8,4 +8,6 @@ const (
 	ImageFieldNamePrefix          = "vmi"
 	ClusterContentLibraryKind     = "ClusterContentLibrary"
 	ClusterContentLibraryItemKind = "ClusterContentLibraryItem"
+	ContentLibraryKind            = "ContentLibrary"
+	ContentLibraryItemKind        = "ContentLibraryItem"
 )

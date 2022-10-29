@@ -8,6 +8,8 @@ import (
 
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
@@ -34,7 +36,7 @@ type VirtualMachineProviderInterface interface {
 	ListItemsFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
 	GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
+	SyncVirtualMachineImage(ctx context.Context, itemID string, vmi client.Object) error
 
-	SyncClusterVirtualMachineImage(ctx context.Context, itemID string, cvmi *v1alpha1.ClusterVirtualMachineImage) error
 	GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimTypes.TaskInfo, retErr error)
 }

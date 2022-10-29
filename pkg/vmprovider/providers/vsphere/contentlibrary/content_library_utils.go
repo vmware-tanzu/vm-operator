@@ -21,6 +21,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -210,22 +211,30 @@ type ImageConditionWrapper interface {
 // - the WCP_UNIFIED_TKG FSS is enabled
 //
 // Otherwise, the image is marked as unsupported.
-func isImageSupported(image ImageConditionWrapper, ovfVirtualSystem *ovf.VirtualSystem, ovfSystemProps map[string]string) bool {
+func isImageSupported(image client.Object, ovfVirtualSystem *ovf.VirtualSystem, ovfSystemProps map[string]string) bool {
+	var genericImage ImageConditionWrapper
+	switch image := image.(type) {
+	case *v1alpha1.ClusterVirtualMachineImage:
+		genericImage = image
+	case *v1alpha1.VirtualMachineImage:
+		genericImage = image
+	}
+
 	switch {
 	case isOVFV1Alpha1Compatible(ovfVirtualSystem) || isATKGImage(ovfSystemProps):
-		conditions.MarkTrue(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
+		conditions.MarkTrue(genericImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
 	case lib.IsUnifiedTKGFSSEnabled():
 		return true
 	default:
 		conditions.MarkFalse(
-			image,
+			genericImage,
 			v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
 			v1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
 			v1alpha1.ConditionSeverityError,
 			"VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1",
 		)
 	}
-	return conditions.IsTrue(image, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
+	return conditions.IsTrue(genericImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
 }
 
 // isOVFV1Alpha1Compatible checks the image if it has VMOperatorV1Alpha1ExtraConfigKey set to VMOperatorV1Alpha1ConfigReady

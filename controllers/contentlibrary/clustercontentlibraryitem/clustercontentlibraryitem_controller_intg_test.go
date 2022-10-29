@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
@@ -33,13 +33,13 @@ func cclItemReconcile() {
 
 	waitForClusterVirtualMachineImageReady := func(ctx *builder.IntegrationTestContext) {
 		curCVMI := vmopv1a1.ClusterVirtualMachineImage{}
-		expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, intgFakeVMProvider.SyncClusterVirtualMachineImageFn)
+		expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, intgFakeVMProvider.SyncVirtualMachineImageFn)
 		Eventually(func() bool {
-			cvmiName := utils.GetTestCVMINameFrom(cclItem.Name)
-			if err := ctx.Client.Get(ctx, types.NamespacedName{Name: cvmiName}, &curCVMI); err != nil {
+			cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
+			if err := ctx.Client.Get(ctx, client.ObjectKey{Name: cvmiName}, &curCVMI); err != nil {
 				return false
 			}
-			utils.PopulateRuntimeFieldsTo(expectedCVMI, curCVMI)
+			utils.PopulateRuntimeFieldsTo(expectedCVMI, &curCVMI)
 			return reflect.DeepEqual(curCVMI.OwnerReferences, expectedCVMI.OwnerReferences) &&
 				reflect.DeepEqual(curCVMI.Spec, expectedCVMI.Spec) &&
 				reflect.DeepEqual(curCVMI.Status, expectedCVMI.Status)
@@ -54,9 +54,10 @@ func cclItemReconcile() {
 		ctx = suite.NewIntegrationTestContext()
 		intgFakeVMProvider.Lock()
 		defer intgFakeVMProvider.Unlock()
-		intgFakeVMProvider.SyncClusterVirtualMachineImageFn = func(ctx context.Context,
-			itemID string, cvmi *vmopv1a1.ClusterVirtualMachineImage) error {
+		intgFakeVMProvider.SyncVirtualMachineImageFn = func(ctx context.Context,
+			itemID string, cvmiObj client.Object) error {
 			// Change a random spec and status field to verify the provider function is called.
+			cvmi := cvmiObj.(*vmopv1a1.ClusterVirtualMachineImage)
 			cvmi.Spec.HardwareVersion = 123
 			cvmi.Status.ImageSupported = &[]bool{true}[0]
 			return nil

@@ -14,6 +14,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -33,6 +34,7 @@ type Provider interface {
 	GetLibraryItem(ctx context.Context, clUUID, itemName string) (*library.Item, error)
 	ListLibraryItems(ctx context.Context, libraryUUID string) ([]string, error)
 	RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item *library.Item) (*ovf.Envelope, error)
+	SyncVirtualMachineImage(ctx context.Context, itemID string, vmi client.Object) error
 
 	// TODO: Testing only. Remove these from this file.
 	CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error
@@ -41,8 +43,6 @@ type Provider interface {
 		itemID string,
 		clUUID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
-
-	SyncClusterVirtualMachineImage(ctx context.Context, itemID string, cvmi *v1alpha1.ClusterVirtualMachineImage) error
 }
 
 type provider struct {
@@ -294,49 +294,6 @@ func (cs *provider) VirtualMachineImageResourceForLibrary(ctx context.Context,
 	return LibItemToVirtualMachineImage(item, ovfEnvelope), nil
 }
 
-func (cs *provider) SyncClusterVirtualMachineImage(ctx context.Context,
-	itemID string, cvmi *v1alpha1.ClusterVirtualMachineImage) error {
-
-	logger := log.WithValues("itemID", itemID)
-	item, err := cs.libMgr.GetLibraryItem(ctx, itemID)
-	if err != nil {
-		return err
-	}
-
-	if item.Type != library.ItemTypeOVF {
-		logger.Info("Skip syncing up non-OVF library item for ClusterVirtualMachineImage",
-			"cvmiName", cvmi.Name, "itemType", item.Type)
-		return nil
-	}
-
-	ovfEnvelope, err := cs.RetrieveOvfEnvelopeFromLibraryItem(ctx, item)
-	if err != nil {
-		logger.Error(err, "error extracting the OVF envelope from the library item", "itemName", item.Name)
-		return err
-	}
-	if ovfEnvelope == nil {
-		logger.Error(err, "no valid OVF envelope found, skipping library item", "itemName", item.Name)
-		return nil
-	}
-
-	if ovfEnvelope.VirtualSystem != nil {
-		updateImageSpecWithOvfVirtualSystem(&cvmi.Spec, ovfEnvelope.VirtualSystem)
-
-		ovfSystemProps := getVmwareSystemPropertiesFromOvf(ovfEnvelope.VirtualSystem)
-		if cvmi.Annotations == nil {
-			cvmi.Annotations = make(map[string]string)
-		}
-		for k, v := range ovfSystemProps {
-			cvmi.Annotations[k] = v
-		}
-
-		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
-		cvmi.Status.ImageSupported = pointer.BoolPtr(isImageSupported(cvmi, ovfEnvelope.VirtualSystem, ovfSystemProps))
-	}
-
-	return nil
-}
-
 // generateDownloadURLForLibraryItem downloads the file from content library in 3 steps:
 // 1. list the available files and downloads only the ovf files based on filename suffix
 // 2. prepare the download session and fetch the url to be used for download
@@ -413,4 +370,57 @@ func (cs *provider) generateDownloadURLForLibraryItem(
 	}
 
 	return url.Parse(fileURL)
+}
+
+func (cs *provider) SyncVirtualMachineImage(ctx context.Context, itemID string, vmi client.Object) error {
+	logger := log.WithValues("itemID", itemID)
+	item, err := cs.libMgr.GetLibraryItem(ctx, itemID)
+	if err != nil {
+		return err
+	}
+
+	if item.Type != library.ItemTypeOVF {
+		logger.Info("Skip syncing up non-OVF library item for VirtualMachineImage/ClusterVirtualMachineImage",
+			"vmiName", vmi.GetName(), "itemType", item.Type)
+		return nil
+	}
+
+	ovfEnvelope, err := cs.RetrieveOvfEnvelopeFromLibraryItem(ctx, item)
+	if err != nil {
+		logger.Error(err, "error extracting the OVF envelope from the library item", "itemName", item.Name)
+		return err
+	}
+	if ovfEnvelope == nil {
+		logger.Error(err, "no valid OVF envelope found, skipping library item", "itemName", item.Name)
+		return nil
+	}
+
+	var spec *v1alpha1.VirtualMachineImageSpec
+	var status *v1alpha1.VirtualMachineImageStatus
+	switch vmi := vmi.(type) {
+	case *v1alpha1.VirtualMachineImage:
+		spec = &vmi.Spec
+		status = &vmi.Status
+	case *v1alpha1.ClusterVirtualMachineImage:
+		spec = &vmi.Spec
+		status = &vmi.Status
+	}
+
+	if ovfEnvelope.VirtualSystem != nil {
+		updateImageSpecWithOvfVirtualSystem(spec, ovfEnvelope.VirtualSystem)
+
+		ovfSystemProps := getVmwareSystemPropertiesFromOvf(ovfEnvelope.VirtualSystem)
+		annotations := vmi.GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+			vmi.SetAnnotations(annotations)
+		}
+		for k, v := range ovfSystemProps {
+			annotations[k] = v
+		}
+		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
+		status.ImageSupported = pointer.BoolPtr(isImageSupported(vmi, ovfEnvelope.VirtualSystem, ovfSystemProps))
+	}
+
+	return nil
 }

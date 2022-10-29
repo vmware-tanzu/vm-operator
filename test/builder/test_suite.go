@@ -25,6 +25,7 @@ import (
 
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/rest"
@@ -39,8 +40,13 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/util/remote"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	ctrlCtx "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
+)
+
+const (
+	VMICRDName = "virtualmachineimages.vmoperator.vmware.com"
 )
 
 // Reconciler is a base type for builder's reconcilers
@@ -85,6 +91,8 @@ type TestSuite struct {
 	mutatorFn   builder.MutatorFunc
 	pki         pkiToolchain
 	webhookYaml []byte
+
+	fssMap map[string]bool
 }
 
 func (s *TestSuite) isWebhookTest() bool {
@@ -129,6 +137,12 @@ func NewFunctionalTestSuite(addToManagerFunc func(ctx *ctrlCtx.ControllerManager
 
 // NewTestSuiteForController returns a new test suite used for controller integration test
 func NewTestSuiteForController(addToManagerFn pkgmgr.AddToManagerFunc, initProvidersFn pkgmgr.InitializeProvidersFunc) *TestSuite {
+	return NewTestSuiteForControllerWithFSS(addToManagerFn, initProvidersFn, map[string]bool{})
+}
+
+// NewTestSuiteForControllerWithFSS returns a new test suite used for controller integration test with FSS set.
+func NewTestSuiteForControllerWithFSS(addToManagerFn pkgmgr.AddToManagerFunc,
+	initProvidersFn pkgmgr.InitializeProvidersFunc, fssMap map[string]bool) *TestSuite {
 
 	if addToManagerFn == nil {
 		panic("addToManagerFn is nil")
@@ -142,6 +156,7 @@ func NewTestSuiteForController(addToManagerFn pkgmgr.AddToManagerFunc, initProvi
 		integrationTest: true,
 		addToManagerFn:  addToManagerFn,
 		initProvidersFn: initProvidersFn,
+		fssMap:          fssMap,
 	}
 	testSuite.init(getCrdPaths())
 
@@ -415,6 +430,19 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 		Expect(s.config).ToNot(BeNil())
 	})
 
+	By("updating CRD scope", func() {
+		if enabled, ok := s.fssMap[lib.VMImageRegistryFSS]; ok {
+			crd := s.GetInstalledCRD(VMICRDName)
+			Expect(crd).ToNot(BeNil())
+			scope := string(crd.Spec.Scope)
+			if enabled && scope == "Cluster" {
+				s.UpdateCRDScope(VMICRDName, "Namespaced")
+			} else if !enabled && scope == "Namespaced" {
+				s.UpdateCRDScope(VMICRDName, "Cluster")
+			}
+		}
+	})
+
 	// If one or more webhooks are being tested then go ahead and generate a
 	// PKI toolchain to use with the webhook server.
 	if s.isWebhookTest() {
@@ -481,6 +509,44 @@ func (s *TestSuite) afterSuiteForIntegrationTesting() {
 	By("tearing down the test environment", func() {
 		Expect(s.envTest.Stop()).To(Succeed())
 	})
+}
+
+func (s *TestSuite) GetInstalledCRD(crdName string) *apiextensionsv1.CustomResourceDefinition {
+	for _, crd := range s.envTest.CRDs {
+		if crd.Name == crdName {
+			return crd
+		}
+	}
+
+	return nil
+}
+
+func (s *TestSuite) UpdateCRDScope(crdName, newScope string) {
+	oldCrd := s.GetInstalledCRD(crdName)
+	Expect(oldCrd).ToNot(BeNil())
+
+	// crd.spec.scope is immutable, uninstall first
+	err := envtest.UninstallCRDs(s.envTest.Config, envtest.CRDInstallOptions{
+		CRDs: []*apiextensionsv1.CustomResourceDefinition{oldCrd},
+	})
+	Expect(err).ShouldNot(HaveOccurred())
+
+	newCrd := &apiextensionsv1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        crdName,
+			Annotations: oldCrd.Annotations,
+		},
+		Spec: oldCrd.Spec,
+	}
+	newCrd.Spec.Scope = apiextensionsv1.ResourceScope(newScope)
+	crds := make([]*apiextensionsv1.CustomResourceDefinition, 0)
+	Eventually(func() error {
+		crds, err = envtest.InstallCRDs(s.envTest.Config, envtest.CRDInstallOptions{
+			CRDs: []*apiextensionsv1.CustomResourceDefinition{newCrd},
+		})
+		return err
+	}).ShouldNot(HaveOccurred())
+	s.envTest.CRDs = append(s.envTest.CRDs, crds...)
 }
 
 func parseWebhookConfig(path string) (

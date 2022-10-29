@@ -9,6 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/clustercontentlibraryitem"
+	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentlibraryitem"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentsource"
 	"github.com/vmware-tanzu/vm-operator/controllers/infracluster"
 	"github.com/vmware-tanzu/vm-operator/controllers/infraprovider"
@@ -26,9 +27,6 @@ import (
 
 // AddToManager adds all controllers to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
-	if err := contentsource.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize ContentSource controller")
-	}
 	if err := infracluster.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize InfraCluster controller")
 	}
@@ -60,8 +58,15 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		if err := clustercontentlibraryitem.AddToManager(ctx, mgr); err != nil {
 			return errors.Wrap(err, "failed to initialize ClusterContentLibraryItem controller")
 		}
+		if err := contentlibraryitem.AddToManager(ctx, mgr); err != nil {
+			return errors.Wrap(err, "failed to initialize ContentLibraryItem controller")
+		}
 		if err := virtualmachinepublishrequest.AddToManager(ctx, mgr); err != nil {
 			return errors.Wrap(err, "failed to initialize VirtualMachinePublishRequest controller")
+		}
+	} else {
+		if err := contentsource.AddToManager(ctx, mgr); err != nil {
+			return errors.Wrap(err, "failed to initialize ContentSource controller")
 		}
 	}
 	return nil

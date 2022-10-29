@@ -163,6 +163,7 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 	if opRes == controllerutil.OperationResultCreated {
 		cvmi.Status = *savedStatus
 		if err := r.Status().Update(ctx, cvmi); err != nil {
+			logger.Error(err, "failed to update ClusterVirtualMachineImage status")
 			return err
 		}
 	}
@@ -176,7 +177,7 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 	return nil
 }
 
-// setUpWithCCLItem sets up the ClusterVirtualMachineImage fields that
+// setUpCVMIFromCCLItem sets up the ClusterVirtualMachineImage fields that
 // are retrievable from the given ClusterContentLibraryItem resource.
 func (r *Reconciler) setUpCVMIFromCCLItem(cvmi *vmopv1a1.ClusterVirtualMachineImage,
 	cclItem *imgregv1a1.ClusterContentLibraryItem) error {
@@ -212,7 +213,7 @@ func (r *Reconciler) syncImageContent(ctx goctx.Context,
 		return nil
 	}
 
-	err := r.VMProvider.SyncClusterVirtualMachineImage(ctx, cclItem.Spec.UUID, cvmi)
+	err := r.VMProvider.SyncVirtualMachineImage(ctx, cclItem.Spec.UUID, cvmi)
 	if err != nil {
 		conditions.MarkFalse(cvmi,
 			vmopv1a1.VirtualMachineImageSyncedCondition,

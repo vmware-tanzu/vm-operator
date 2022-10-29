@@ -177,19 +177,17 @@ func (vs *vSphereVMProvider) GetVirtualMachineImageFromContentLibrary(
 		currentCLImages)
 }
 
-// SyncClusterVirtualMachineImage syncs the given ClusterVirtualMachineImage object
-// by fetching the OVF item from the given library item ID.
-func (vs *vSphereVMProvider) SyncClusterVirtualMachineImage(ctx goctx.Context,
-	itemID string, cvmi *v1alpha1.ClusterVirtualMachineImage) error {
-
-	log.V(4).Info("Syncing ClusterVirtualMachineImage", "imageName", cvmi.Name, "itemID", itemID)
+// SyncVirtualMachineImage gets images from content libraries.
+// TODO: Get from cache, so we don't need to sync for every images, especially when it is attached to multiple namespaces.
+func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx goctx.Context, itemID string, vmi ctrlruntime.Object) error {
+	log.V(4).Info("Syncing VirtualMachineImage", "imageName", vmi.GetName(), "itemID", itemID)
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
 		return err
 	}
 
-	return client.ContentLibClient().SyncClusterVirtualMachineImage(ctx, itemID, cvmi)
+	return client.ContentLibClient().SyncVirtualMachineImage(ctx, itemID, vmi)
 }
 
 func (vs *vSphereVMProvider) getOpID(vm *v1alpha1.VirtualMachine, operation string) string {

@@ -56,8 +56,9 @@ func unitTestsReconcile() {
 			ctx.VMProvider,
 		)
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
-		fakeVMProvider.SyncClusterVirtualMachineImageFn = func(_ context.Context, _ string,
-			cvmi *vmopv1a1.ClusterVirtualMachineImage) error {
+		fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _ string,
+			cvmiObj client.Object) error {
+			cvmi := cvmiObj.(*vmopv1a1.ClusterVirtualMachineImage)
 			// Change a random spec and status field to verify the provider function is called.
 			cvmi.Spec.HardwareVersion = 123
 			cvmi.Status.ImageSupported = &[]bool{true}[0]
@@ -121,8 +122,8 @@ func unitTestsReconcile() {
 					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
 					Expect(cvmiList.Items).To(HaveLen(1))
 					createdCVMI := cvmiList.Items[0]
-					expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, fakeVMProvider.SyncClusterVirtualMachineImageFn)
-					utils.PopulateRuntimeFieldsTo(expectedCVMI, createdCVMI)
+					expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, fakeVMProvider.SyncVirtualMachineImageFn)
+					utils.PopulateRuntimeFieldsTo(expectedCVMI, &createdCVMI)
 
 					Expect(createdCVMI.Name).To(Equal(expectedCVMI.Name))
 					Expect(createdCVMI.OwnerReferences).To(Equal(expectedCVMI.OwnerReferences))
@@ -134,7 +135,7 @@ func unitTestsReconcile() {
 			When("ClusterVirtualMachineImage resource is created but not up-to-date", func() {
 
 				BeforeEach(func() {
-					cvmiName := utils.GetTestCVMINameFrom(cclItem.Name)
+					cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
 					existingCVMI := &vmopv1a1.ClusterVirtualMachineImage{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: cvmiName,
@@ -154,8 +155,8 @@ func unitTestsReconcile() {
 					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
 					Expect(cvmiList.Items).To(HaveLen(1))
 					updatedCVMI := cvmiList.Items[0]
-					expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, fakeVMProvider.SyncClusterVirtualMachineImageFn)
-					utils.PopulateRuntimeFieldsTo(expectedCVMI, updatedCVMI)
+					expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, fakeVMProvider.SyncVirtualMachineImageFn)
+					utils.PopulateRuntimeFieldsTo(expectedCVMI, &updatedCVMI)
 
 					Expect(updatedCVMI.Name).To(Equal(expectedCVMI.Name))
 					Expect(updatedCVMI.OwnerReferences).To(Equal(expectedCVMI.OwnerReferences))
@@ -169,7 +170,7 @@ func unitTestsReconcile() {
 				BeforeEach(func() {
 					// The following fields are set from the VMProvider by downloading the library item.
 					// These fields should remain as is if the VMProvider update is skipped below.
-					upToDateCVMI := utils.GetExpectedCVMIFrom(*cclItem, fakeVMProvider.SyncClusterVirtualMachineImageFn)
+					upToDateCVMI := utils.GetExpectedCVMIFrom(*cclItem, fakeVMProvider.SyncVirtualMachineImageFn)
 					upToDateCVMI.Spec.HardwareVersion = 0
 					upToDateCVMI.Status.ImageSupported = nil
 					initObjects = append(initObjects, upToDateCVMI)
@@ -183,8 +184,8 @@ func unitTestsReconcile() {
 					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
 					Expect(cvmiList.Items).To(HaveLen(1))
 					currentCVMI := cvmiList.Items[0]
-					expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, fakeVMProvider.SyncClusterVirtualMachineImageFn)
-					utils.PopulateRuntimeFieldsTo(expectedCVMI, currentCVMI)
+					expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, fakeVMProvider.SyncVirtualMachineImageFn)
+					utils.PopulateRuntimeFieldsTo(expectedCVMI, &currentCVMI)
 
 					Expect(currentCVMI.Name).To(Equal(expectedCVMI.Name))
 					Expect(currentCVMI.OwnerReferences).To(Equal(expectedCVMI.OwnerReferences))

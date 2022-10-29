@@ -143,6 +143,20 @@ rules:
   verbs:
   - get
 - apiGroups:
+  - imageregistry.vmware.com
+  resources:
+  - contentlibraryitems
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - imageregistry.vmware.com
+  resources:
+  - contentlibraryitems/status
+  verbs:
+  - get
+- apiGroups:
   - netoperator.vmware.com
   resources:
   - networkinterfaces

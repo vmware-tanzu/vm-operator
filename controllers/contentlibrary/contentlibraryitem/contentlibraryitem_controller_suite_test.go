@@ -1,7 +1,7 @@
-// Copyright (c) 2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package contentsource_test
+package contentlibraryitem_test
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentsource"
+	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentlibraryitem"
 	ctrlContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
@@ -19,16 +19,16 @@ import (
 var intgFakeVMProvider = providerfake.NewVMProvider()
 
 var suite = builder.NewTestSuiteForControllerWithFSS(
-	contentsource.AddToManager,
+	contentlibraryitem.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProvider = intgFakeVMProvider
 		return nil
 	},
-	map[string]bool{lib.VMImageRegistryFSS: false},
+	map[string]bool{lib.VMImageRegistryFSS: true},
 )
 
-func TestContentSource(t *testing.T) {
-	suite.Register(t, "ContentSource controller suite", intgTests, unitTests)
+func TestContentLibraryItem(t *testing.T) {
+	suite.Register(t, "ContentLibraryItem controller suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

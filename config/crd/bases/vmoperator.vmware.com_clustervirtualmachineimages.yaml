@@ -21,22 +21,25 @@ spec:
   versions:
   - additionalPrinterColumns:
     - jsonPath: .spec.providerRef.name
-      name: ContentSourceName
+      name: Provider-Name
       type: string
     - jsonPath: .status.contentLibraryRef.name
-      name: ContentLibraryName
+      name: Content-Library-Name
+      type: string
+    - jsonPath: .status.imageName
+      name: Image-Name
       type: string
     - jsonPath: .spec.productInfo.version
       name: Version
       type: string
     - jsonPath: .spec.osInfo.type
-      name: OsType
+      name: Os-Type
       type: string
     - jsonPath: .spec.type
       name: Format
       type: string
     - jsonPath: .status.imageSupported
-      name: ImageSupported
+      name: Image-Supported
       priority: 1
       type: boolean
     - jsonPath: .metadata.creationTimestamp
@@ -235,6 +238,11 @@ spec:
                 - name
                 type: object
                 x-kubernetes-map-type: atomic
+              contentVersion:
+                description: ContentVersion describes the observed content version
+                  of this VirtualMachineImage that was last successfully synced with
+                  the vSphere content library item.
+                type: string
               imageName:
                 description: ImageName describes the display name of this VirtualMachineImage.
                 type: string

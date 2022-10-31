@@ -18,7 +18,7 @@ spec:
   - additionalPrinterColumns:
     - description: UUID of the vSphere content library
       jsonPath: .spec.uuid
-      name: Content Library UUID
+      name: Content-Library-UUID
       type: string
     name: v1alpha1
     schema:

@@ -28,11 +28,11 @@ spec:
       name: Age
       type: date
     - jsonPath: .spec.hardware.devices.vgpuDevices[*].profileName
-      name: VGPUDevicesProfileNames
+      name: VGPU-Devices-Profile-Names
       priority: 1
       type: string
     - jsonPath: .spec.hardware.devices.dynamicDirectPathIODevices[*].deviceID
-      name: PassthroughDeviceIDs
+      name: Passthrough-DeviceIDs
       priority: 1
       type: string
     name: v1alpha1

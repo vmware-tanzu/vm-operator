@@ -105,8 +105,16 @@ spec:
                       description: Default describes the default value of the ovf
                         key.
                       type: string
+                    description:
+                      description: Description contains the value of the OVF property's
+                        optional "Description" element.
+                      type: string
                     key:
                       description: Key describes the key of the ovf property.
+                      type: string
+                    label:
+                      description: Label contains the value of the OVF property's
+                        optional "Label" element.
                       type: string
                     type:
                       description: Type describes the type of the ovf property.

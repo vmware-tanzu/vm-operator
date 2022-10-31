@@ -66,16 +66,24 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 			defaultValue           = "dummy-value"
 		)
 
-		It("returns a VirtualMachineImage with expected annotations and ovfEnv", func() {
-			ts := time.Now()
-			item := &library.Item{
+		var (
+			ts          time.Time
+			item        *library.Item
+			ovfEnvelope *ovf.Envelope
+			image       *vmopv1alpha1.VirtualMachineImage
+		)
+
+		BeforeEach(func() {
+			ts = time.Now()
+
+			item = &library.Item{
 				Name:         "fakeItem",
 				Type:         "ovf",
 				LibraryID:    "fakeID",
 				CreationTime: &ts,
 			}
 
-			ovfEnvelope := &ovf.Envelope{
+			ovfEnvelope = &ovf.Envelope{
 				VirtualSystem: &ovf.VirtualSystem{
 					Product: []ovf.ProductSection{
 						{
@@ -106,8 +114,19 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 					},
 				},
 			}
+		})
 
-			image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
+		AfterEach(func() {
+			item = nil
+			ovfEnvelope = nil
+			image = nil
+		})
+
+		JustBeforeEach(func() {
+			image = contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
+		})
+
+		It("returns a VirtualMachineImage with expected annotations and ovfEnv", func() {
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 
@@ -126,6 +145,42 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 			Expect(image.Spec.OVFEnv[userConfigurableKey].Key).Should(Equal(userConfigurableKey))
 			Expect(image.Spec.OVFEnv[userConfigurableKey].Type).Should(Equal(ovfStringType))
 			Expect(image.Spec.OVFEnv[userConfigurableKey].Default).Should(Equal(pointer.String(defaultValue)))
+		})
+
+		When("There is no description or label", func() {
+			It("should return an empty Description and Label", func() {
+				Expect(image.Spec.OVFEnv[userConfigurableKey].Description).Should(BeEmpty())
+				Expect(image.Spec.OVFEnv[userConfigurableKey].Label).Should(BeEmpty())
+			})
+		})
+
+		When("There is a description", func() {
+			BeforeEach(func() {
+				ovfEnvelope.VirtualSystem.Product[0].Property[1].Description = pointer.StringPtr("description")
+			})
+			It("should return the Description", func() {
+				Expect(image.Spec.OVFEnv[userConfigurableKey].Description).Should(Equal("description"))
+			})
+		})
+
+		When("There is a label", func() {
+			BeforeEach(func() {
+				ovfEnvelope.VirtualSystem.Product[0].Property[1].Label = pointer.StringPtr("label")
+			})
+			It("should return the Label", func() {
+				Expect(image.Spec.OVFEnv[userConfigurableKey].Label).Should(Equal("label"))
+			})
+		})
+
+		When("There is a description and a label", func() {
+			BeforeEach(func() {
+				ovfEnvelope.VirtualSystem.Product[0].Property[1].Description = pointer.StringPtr("description")
+				ovfEnvelope.VirtualSystem.Product[0].Property[1].Label = pointer.StringPtr("label")
+			})
+			It("should return the Description and the Label", func() {
+				Expect(image.Spec.OVFEnv[userConfigurableKey].Description).Should(Equal("description"))
+				Expect(image.Spec.OVFEnv[userConfigurableKey].Label).Should(Equal("label"))
+			})
 		})
 	})
 

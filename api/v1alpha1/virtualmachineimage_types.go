@@ -54,6 +54,18 @@ type OvfProperty struct {
 	// Default describes the default value of the ovf key.
 	// +optional
 	Default *string `json:"default,omitempty"`
+
+	// Description contains the value of the OVF property's optional
+	// "Description" element.
+	//
+	// +optional
+	Description string `json:"description,omitempty"`
+
+	// Label contains the value of the OVF property's optional
+	// "Label" element.
+	//
+	// +optional
+	Label string `json:"label,omitempty"`
 }
 
 // VirtualMachineImageSpec defines the desired state of VirtualMachineImage.

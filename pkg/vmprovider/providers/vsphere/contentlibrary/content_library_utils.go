@@ -145,9 +145,11 @@ func GetUserConfigurablePropertiesFromOvf(ovfEnvelope *ovf.Envelope) map[string]
 				// Only show user configurable properties
 				if prop.UserConfigurable != nil && *prop.UserConfigurable {
 					property := v1alpha1.OvfProperty{
-						Key:     prop.Key,
-						Type:    prop.Type,
-						Default: prop.Default,
+						Key:         prop.Key,
+						Type:        prop.Type,
+						Default:     prop.Default,
+						Description: pointer.StringPtrDerefOr(prop.Description, ""),
+						Label:       pointer.StringPtrDerefOr(prop.Label, ""),
 					}
 					properties[prop.Key] = property
 				}

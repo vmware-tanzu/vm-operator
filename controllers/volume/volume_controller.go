@@ -513,15 +513,18 @@ func (r *Reconciler) processAttachments(
 	ctx *context.VolumeContext,
 	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment,
 	orphanedAttachments []cnsv1alpha1.CnsNodeVmAttachment) error {
+
 	var volumeStatus []vmopv1alpha1.VirtualMachineVolumeStatus
 	var createErrs []error
+	var hasPendingAttachment bool
 
-	// Use Spec.Volumes order when attaching as a best effort to preserve spec order. There
-	// is no guarantee order will be preserved however, as the CNS attachment controller may
-	// not receive/process the requests in order. The nuclear option would be for us to only
-	// have one pending volume attachment outstanding per VM at a time.
-	// Create() errors below may also result in attachments being out of the original spec
-	// order.
+	// When creating a VM, try to attach the volumes in the VM Spec.Volumes order since that is a reasonable
+	// expectation and the customization like cloud-init may assume that order. There isn't quite a good way
+	// to determine from here if the VM is being created so use the power state to infer it. This is mostly
+	// best-effort, and a hack in the current world since the CnsNodeVmAttachment really should not exist in
+	// the first place.
+	onlyAllowOnePendingAttachment := ctx.VM.Status.PowerState == "" || ctx.VM.Status.PowerState == vmopv1alpha1.VirtualMachinePoweredOff
+
 	for _, volume := range ctx.VM.Spec.Volumes {
 		if volume.PersistentVolumeClaim == nil {
 			// Don't process VsphereVolumes here. Note that we don't have Volume status
@@ -537,6 +540,16 @@ func (r *Reconciler) processAttachments(
 			// Also, the CNS attachment controller doesn't reconcile Spec changes once the volume
 			// is attached.
 			volumeStatus = append(volumeStatus, attachmentToVolumeStatus(volume.Name, attachment))
+			hasPendingAttachment = hasPendingAttachment || !attachment.Status.Attached
+			continue
+		}
+
+		// If we're allowing only one pending attachment, we cannot create the next CnsNodeVmAttachment
+		// until the previous ones are attached. This is really only effective when the VM is first being
+		// created, since the volumes could be added anywhere or the same ones reordered in the Spec.Volumes.
+		if onlyAllowOnePendingAttachment && hasPendingAttachment {
+			// Do not create another CnsNodeVmAttachment while one is already pending, but continue
+			// so we build up the Volume Status for any existing volumes.
 			continue
 		}
 
@@ -547,6 +560,9 @@ func (r *Reconciler) processAttachments(
 			// reconcile after the CNS attachment controller updates it.
 			volumeStatus = append(volumeStatus, vmopv1alpha1.VirtualMachineVolumeStatus{Name: volume.Name})
 		}
+
+		// Always true even if the creation failed above to try to keep volumes attached in order.
+		hasPendingAttachment = true
 	}
 
 	// Fix up the Volume Status so that attachments that are no longer referenced in the Spec but
@@ -566,6 +582,7 @@ func (r *Reconciler) createCNSAttachment(
 	ctx *context.VolumeContext,
 	attachmentName string,
 	volume vmopv1alpha1.VirtualMachineVolume) error {
+
 	attachment := &cnsv1alpha1.CnsNodeVmAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      attachmentName,
@@ -600,6 +617,7 @@ func (r *Reconciler) createCNSAttachment(
 func (r *Reconciler) preserveOrphanedAttachmentStatus(
 	ctx *context.VolumeContext,
 	orphanedAttachments []cnsv1alpha1.CnsNodeVmAttachment) []vmopv1alpha1.VirtualMachineVolumeStatus {
+
 	uuidAttachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(orphanedAttachments))
 	for _, attachment := range orphanedAttachments {
 		if uuid := attachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID]; uuid != "" {
@@ -624,6 +642,7 @@ func (r *Reconciler) preserveOrphanedAttachmentStatus(
 func (r *Reconciler) attachmentsToDelete(
 	ctx *context.VolumeContext,
 	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment) []cnsv1alpha1.CnsNodeVmAttachment {
+
 	expectedAttachments := make(map[string]bool, len(ctx.VM.Spec.Volumes))
 	for _, volume := range ctx.VM.Spec.Volumes {
 		// Only process CNS volumes here.

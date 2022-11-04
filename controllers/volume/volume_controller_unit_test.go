@@ -62,7 +62,6 @@ func unitTestsReconcile() {
 		vmVolumeWithVsphere *vmopv1alpha1.VirtualMachineVolume
 		vmVolumeWithPVC1    *vmopv1alpha1.VirtualMachineVolume
 		vmVolumeWithPVC2    *vmopv1alpha1.VirtualMachineVolume
-		attachment          *cnsv1alpha1.CnsNodeVmAttachment
 
 		vmVolForInstPVC1 *vmopv1alpha1.VirtualMachineVolume
 	)
@@ -136,7 +135,6 @@ func unitTestsReconcile() {
 		ctx = nil
 		initObjects = nil
 		volCtx = nil
-		attachment = nil
 		reconciler = nil
 	})
 
@@ -230,7 +228,6 @@ func unitTestsReconcile() {
 				Expect(err.Error()).To(ContainSubstring("insufficient quota"))
 				expectPVCsStatus(volCtx, ctx, true, false, 0)
 			})
-
 		})
 
 		When("VM does not have BiosUUID", func() {
@@ -245,8 +242,7 @@ func unitTestsReconcile() {
 				Expect(err).ToNot(HaveOccurred())
 
 				By("Did not create CnsNodeVmAttachment", func() {
-					attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
-					Expect(attachment).To(BeNil())
+					Expect(getCNSAttachmentForVolumeName(vm, vmVol.Name)).To(BeNil())
 					Expect(vm.Status.Volumes).To(BeEmpty())
 				})
 			})
@@ -265,7 +261,7 @@ func unitTestsReconcile() {
 			BeforeEach(func() {
 				vmVol = *vmVolumeWithPVC1
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
-				attachment = cnsAttachmentForVMVolume(vm, vmVol)
+				attachment := cnsAttachmentForVMVolume(vm, vmVol)
 
 				otherAttachment := cnsAttachmentForVMVolume(vm, *vmVolumeWithPVC2)
 				otherAttachment.Spec.NodeUUID = "some-other-uuid"
@@ -282,6 +278,9 @@ func unitTestsReconcile() {
 
 				By("Ignores the CnsNodeVmAttachment for other VM", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
+
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+					Expect(attachment).ToNot(BeNil())
 					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
 				})
 			})
@@ -301,6 +300,172 @@ func unitTestsReconcile() {
 			})
 		})
 
+		When("VM Spec.Volumes contains CNS volumes and VM isn't powered on", func() {
+			var vmVol1, vmVol2 vmopv1alpha1.VirtualMachineVolume
+
+			BeforeEach(func() {
+				vmVol1 = *vmVolumeWithPVC1
+				vmVol2 = *vmVolumeWithPVC2
+				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol1, vmVol2)
+
+				vm.Status.PowerState = vmopv1alpha1.VirtualMachinePoweredOff
+			})
+
+			It("only allows one pending attachment at a time", func() {
+				Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+				By("Created first CnsNodeVmAttachment", func() {
+					attachments := &cnsv1alpha1.CnsNodeVmAttachmentList{}
+					Expect(ctx.Client.List(ctx, attachments, client.InNamespace(vm.Namespace))).To(Succeed())
+					Expect(attachments.Items).To(HaveLen(1))
+
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol1.Name)
+					Expect(attachment).ToNot(BeNil())
+					assertAttachmentSpecFromVMVol(vm, vmVol1, attachment)
+
+					By("Expected VM Status.Volumes", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+						assertVMVolStatusFromAttachment(vmVol1, attachment, vm.Status.Volumes[0])
+					})
+
+					// Mark as attached to let next volume proceed.
+					attachment.Status.Attached = true
+					Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
+				})
+
+				Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+				By("First Volume is marked as attached", func() {
+					Expect(vm.Status.Volumes).To(HaveLen(2))
+
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol1.Name)
+					Expect(attachment).ToNot(BeNil())
+					Expect(attachment.Status.Attached).To(BeTrue())
+					assertVMVolStatusFromAttachment(vmVol1, attachment, vm.Status.Volumes[0])
+				})
+
+				By("Created second CnsNodeVmAttachment", func() {
+					attachments := &cnsv1alpha1.CnsNodeVmAttachmentList{}
+					Expect(ctx.Client.List(ctx, attachments, client.InNamespace(vm.Namespace))).To(Succeed())
+					Expect(attachments.Items).To(HaveLen(2))
+
+					Expect(getCNSAttachmentForVolumeName(vm, vmVol1.Name)).ToNot(BeNil())
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol2.Name)
+					Expect(attachment).ToNot(BeNil())
+					assertAttachmentSpecFromVMVol(vm, vmVol2, attachment)
+
+					By("Expected VM Status.Volumes", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(2))
+						assertVMVolStatusFromAttachment(vmVol2, attachment, vm.Status.Volumes[1])
+					})
+
+					attachment.Status.Attached = true
+					Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
+				})
+
+				Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+				By("Second Volume is mark as attached", func() {
+					Expect(vm.Status.Volumes).To(HaveLen(2))
+
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol2.Name)
+					Expect(attachment).ToNot(BeNil())
+					Expect(attachment.Status.Attached).To(BeTrue())
+					assertVMVolStatusFromAttachment(vmVol2, attachment, vm.Status.Volumes[1])
+				})
+			})
+
+			It("only allows one pending attachment at a time when attachment has an error", func() {
+				Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+				By("Created first CnsNodeVmAttachment", func() {
+					attachments := &cnsv1alpha1.CnsNodeVmAttachmentList{}
+					Expect(ctx.Client.List(ctx, attachments, client.InNamespace(vm.Namespace))).To(Succeed())
+					Expect(attachments.Items).To(HaveLen(1))
+
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol1.Name)
+					Expect(attachment).ToNot(BeNil())
+					assertAttachmentSpecFromVMVol(vm, vmVol1, attachment)
+
+					By("Expected VM Status.Volumes", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(1))
+						assertVMVolStatusFromAttachment(vmVol1, attachment, vm.Status.Volumes[0])
+					})
+
+					// Mark as failure and ensure the second volume isn't created.
+					attachment.Status.Error = "failure"
+					Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
+				})
+
+				Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+				By("First Volume is marked with error", func() {
+					Expect(vm.Status.Volumes).To(HaveLen(1))
+
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol1.Name)
+					Expect(attachment).ToNot(BeNil())
+					assertVMVolStatusFromAttachment(vmVol1, attachment, vm.Status.Volumes[0])
+				})
+
+				By("Does not create second CnsNodeVmAttachment", func() {
+					attachments := &cnsv1alpha1.CnsNodeVmAttachmentList{}
+					Expect(ctx.Client.List(ctx, attachments, client.InNamespace(vm.Namespace))).To(Succeed())
+					Expect(attachments.Items).To(HaveLen(1))
+
+					Expect(getCNSAttachmentForVolumeName(vm, vmVol1.Name)).ToNot(BeNil())
+					Expect(getCNSAttachmentForVolumeName(vm, vmVol2.Name)).To(BeNil())
+				})
+
+				By("Simulate attach of first volume", func() {
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol1.Name)
+					Expect(attachment).ToNot(BeNil())
+					attachment.Status.Attached = true
+					attachment.Status.Error = ""
+					Expect(ctx.Client.Status().Update(ctx, attachment)).To(Succeed())
+				})
+
+				Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+				By("First Volume is marked as attached", func() {
+					Expect(vm.Status.Volumes).To(HaveLen(2))
+
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol1.Name)
+					Expect(attachment).ToNot(BeNil())
+					Expect(attachment.Status.Attached).To(BeTrue())
+					assertVMVolStatusFromAttachment(vmVol1, attachment, vm.Status.Volumes[0])
+				})
+
+				By("Created second CnsNodeVmAttachment", func() {
+					attachments := &cnsv1alpha1.CnsNodeVmAttachmentList{}
+					Expect(ctx.Client.List(ctx, attachments, client.InNamespace(vm.Namespace))).To(Succeed())
+					Expect(attachments.Items).To(HaveLen(2))
+
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol2.Name)
+					Expect(attachment).ToNot(BeNil())
+					assertAttachmentSpecFromVMVol(vm, vmVol2, attachment)
+
+					By("Expected VM Status.Volumes", func() {
+						Expect(vm.Status.Volumes).To(HaveLen(2))
+						assertVMVolStatusFromAttachment(vmVol2, attachment, vm.Status.Volumes[1])
+					})
+				})
+
+				Expect(reconciler.ReconcileNormal(volCtx)).To(Succeed())
+
+				By("Expected VM Status.Volumes", func() {
+					Expect(vm.Status.Volumes).To(HaveLen(2))
+
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol1.Name)
+					Expect(attachment).ToNot(BeNil())
+					assertVMVolStatusFromAttachment(vmVol1, attachment, vm.Status.Volumes[0])
+
+					attachment = getCNSAttachmentForVolumeName(vm, vmVol2.Name)
+					Expect(attachment).ToNot(BeNil())
+					assertVMVolStatusFromAttachment(vmVol2, attachment, vm.Status.Volumes[1])
+				})
+			})
+		})
+
 		When("VM Spec.Volumes has CNS volume", func() {
 			BeforeEach(func() {
 				vmVol = *vmVolumeWithPVC1
@@ -311,8 +476,9 @@ func unitTestsReconcile() {
 				err := reconciler.ReconcileNormal(volCtx)
 				Expect(err).ToNot(HaveOccurred())
 
+				attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+
 				By("Created expected CnsNodeVmAttachment", func() {
-					attachment = getCNSAttachmentForVolumeName(vm, vmVol.Name)
 					Expect(attachment).ToNot(BeNil())
 					assertAttachmentSpecFromVMVol(vm, vmVol, attachment)
 				})
@@ -331,7 +497,7 @@ func unitTestsReconcile() {
 				vmVol = *vmVolumeWithPVC1
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
 
-				attachment = cnsAttachmentForVMVolume(vm, vmVol)
+				attachment := cnsAttachmentForVMVolume(vm, vmVol)
 				attachment.Status.Attached = true
 				attachment.Status.AttachmentMetadata = map[string]string{
 					volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
@@ -346,6 +512,9 @@ func unitTestsReconcile() {
 
 				By("Expected VM Status.Volumes", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
+
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+					Expect(attachment).ToNot(BeNil())
 					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
 				})
 			})
@@ -367,7 +536,7 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 				vmVol = *vmVolumeWithPVC1
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
 
-				attachment = cnsAttachmentForVMVolume(vm, vmVol)
+				attachment := cnsAttachmentForVMVolume(vm, vmVol)
 				attachment.Status.Attached = true
 				attachment.Status.AttachmentMetadata = map[string]string{
 					volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
@@ -382,6 +551,9 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 
 				By("Expected VM Status.Volumes with sanitized error", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
+
+					attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+					Expect(attachment).ToNot(BeNil())
 					attachment.Status.Error = "failed to attach cns volume"
 					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
 				})
@@ -389,6 +561,8 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 		})
 
 		When("VM has orphaned CNS volume in Status.Volumes", func() {
+			var attachment *cnsv1alpha1.CnsNodeVmAttachment
+
 			BeforeEach(func() {
 				vmVol = *vmVolumeWithPVC1
 				vm.Status.Volumes = append(vm.Status.Volumes, vmopv1alpha1.VirtualMachineVolumeStatus{
@@ -407,12 +581,14 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 			It("returns success", func() {
 				err := reconciler.ReconcileNormal(volCtx)
 				Expect(err).ToNot(HaveOccurred())
-
 				Expect(vm.Spec.Volumes).To(BeEmpty())
 
 				By("Orphaned CNS volume preserved in Status.Volumes", func() {
 					Expect(vm.Status.Volumes).To(HaveLen(1))
 					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+
+					// Not in VM Spec so should be deleted.
+					Expect(getCNSAttachmentForVolumeName(vm, vmVol.Name)).To(BeNil())
 				})
 			})
 		})
@@ -425,6 +601,7 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 				vmVol1 = *vmVolumeWithPVC1
 				vmVol2 = *vmVolumeWithPVC2
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol1, vmVol2)
+				vm.Status.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
 			})
 
 			// We sort by DiskUUID, but the CnsNodeVmAttachment haven't been "attached" yet,
@@ -549,13 +726,13 @@ func expectPVCsStatus(ctx *volContext.VolumeContext, testCtx *builder.UnitTestCo
 	}
 
 	pvcList, err := getInstanceStoragePVCs(ctx, testCtx)
-	Expect(err).To(BeNil())
+	Expect(err).ToNot(HaveOccurred())
 	Expect(pvcList).To(HaveLen(pvcsCount))
 }
 
 func adjustPVCCreationTimestamp(ctx *volContext.VolumeContext, testCtx *builder.UnitTestContextForController) {
 	pvcList, err := getInstanceStoragePVCs(ctx, testCtx)
-	Expect(err).To(BeNil())
+	Expect(err).ToNot(HaveOccurred())
 
 	for _, pvc := range pvcList {
 		pvc := pvc
@@ -617,6 +794,7 @@ func assertAttachmentSpecFromVMVol(
 	vm *vmopv1alpha1.VirtualMachine,
 	vmVol vmopv1alpha1.VirtualMachineVolume,
 	attachment *cnsv1alpha1.CnsNodeVmAttachment) {
+
 	ExpectWithOffset(1, attachment.Spec.NodeUUID).To(Equal(vm.Status.BiosUUID))
 	ExpectWithOffset(1, attachment.Spec.VolumeName).To(Equal(vmVol.PersistentVolumeClaim.ClaimName))
 

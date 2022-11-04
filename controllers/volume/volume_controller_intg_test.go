@@ -86,7 +86,7 @@ func intgTests() {
 			},
 			Spec: vmopv1alpha1.VirtualMachineSpec{
 				ImageName:  "dummy-image",
-				PowerState: vmopv1alpha1.VirtualMachinePoweredOn,
+				PowerState: vmopv1alpha1.VirtualMachinePoweredOff,
 			},
 		}
 		vmKey = types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
@@ -412,9 +412,29 @@ func intgTests() {
 				Expect(attachment.Spec.NodeUUID).To(Equal(dummyBiosUUID))
 				Expect(attachment.Spec.VolumeName).To(Equal(vmVolume1.PersistentVolumeClaim.ClaimName))
 
-				// Add our own finalizer on so it hangs around after the delete below.
+				// Add our own finalizer so it hangs around after the delete below.
 				attachment.Finalizers = append(attachment.Finalizers, "test-finalizer")
 				Expect(ctx.Client.Update(ctx, attachment)).To(Succeed())
+			})
+
+			By("CnsNodeVmAttachment should not be created for volume2", func() {
+				Consistently(func() *cnsv1alpha1.CnsNodeVmAttachment {
+					return getCnsNodeVMAttachment(vm, vmVolume2)
+				}, "3s").Should(BeNil())
+
+				Eventually(func() []vmopv1alpha1.VirtualMachineVolumeStatus {
+					if vm := getVirtualMachine(vmKey); vm != nil {
+						return vm.Status.Volumes
+					}
+					return nil
+				}).Should(HaveLen(1))
+			})
+
+			By("Simulate VM being powered on", func() {
+				vm := getVirtualMachine(vmKey)
+				Expect(vm).ToNot(BeNil())
+				vm.Status.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+				Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
 			})
 
 			By("CnsNodeVmAttachment should be created for volume2", func() {
@@ -495,11 +515,11 @@ func intgTests() {
 
 			By("VM Status.Volumes should still have entries for volume1 and volume2", func() {
 				// I'm not sure if we have a better way to check for this.
-				Consistently(func() int {
+				Consistently(func() []vmopv1alpha1.VirtualMachineVolumeStatus {
 					vm = getVirtualMachine(vmKey)
 					Expect(vm).ToNot(BeNil())
-					return len(vm.Status.Volumes)
-				}).Should(Equal(2))
+					return vm.Status.Volumes
+				}, "3s").Should(HaveLen(2))
 			})
 		})
 	})

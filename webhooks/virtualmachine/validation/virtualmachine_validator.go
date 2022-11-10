@@ -28,6 +28,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
+	clutils "github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
@@ -49,7 +50,7 @@ const (
 
 	readinessProbeNoActions                   = "must specify an action"
 	readinessProbeOnlyOneAction               = "only one action can be specified"
-	updatesNotAllowedWhenPowerOn              = "updates to this filed is not allowed when VM power is on"
+	updatesNotAllowedWhenPowerOn              = "updates to this field is not allowed when VM power is on"
 	virtualMachineImageNotSupported           = "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image"
 	storageClassNotAssignedFmt                = "Storage policy is not associated with the namespace %s"
 	storageClassNotFoundFmt                   = "Storage policy is not associated with the namespace %s"
@@ -208,8 +209,9 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 	var allErrs field.ErrorList
 
 	imageNamePath := field.NewPath("spec", "imageName")
+	imageName := vm.Spec.ImageName
 
-	if vm.Spec.ImageName == "" {
+	if imageName == "" {
 		return append(allErrs, field.Required(imageNamePath, ""))
 	}
 
@@ -222,13 +224,27 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 		return allErrs
 	}
 
-	image := vmopv1.VirtualMachineImage{}
-	imageName := vm.Spec.ImageName
-	if err := v.client.Get(ctx, client.ObjectKey{Name: imageName}, &image); err != nil {
-		return append(allErrs, field.Invalid(imageNamePath, imageName, err.Error()))
-	}
 	// With the effort of UnifiedTKG, image-support-check isn't needed when UnifiedTKG FSS enabled.
-	if !lib.IsUnifiedTKGFSSEnabled() {
+	if lib.IsUnifiedTKGFSSEnabled() {
+		return allErrs
+	}
+
+	if lib.IsWCPVMImageRegistryEnabled() {
+		_, imageStatus, err := clutils.GetVMImageSpecStatus(ctx, v.client, imageName, vm.Namespace)
+		if err != nil {
+			return append(allErrs, field.Invalid(imageNamePath, imageName, err.Error()))
+		}
+
+		if imageStatus.ImageSupported != nil && !*imageStatus.ImageSupported {
+			allErrs = append(allErrs, field.Invalid(imageNamePath, imageName, virtualMachineImageNotSupported))
+		}
+
+	} else {
+		image := vmopv1.VirtualMachineImage{}
+		if err := v.client.Get(ctx, client.ObjectKey{Name: imageName}, &image); err != nil {
+			return append(allErrs, field.Invalid(imageNamePath, imageName, err.Error()))
+		}
+
 		if image.Status.ImageSupported != nil && !*image.Status.ImageSupported {
 			allErrs = append(allErrs, field.Invalid(imageNamePath, imageName, virtualMachineImageNotSupported))
 		}
@@ -388,17 +404,37 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 		}
 	}
 
-	if hasPVC {
-		imageNamePath := field.NewPath("spec", "imageName")
-		image := vmopv1.VirtualMachineImage{}
-		if err := v.client.Get(ctx, client.ObjectKey{Name: vm.Spec.ImageName}, &image); err != nil {
-			allErrs = append(allErrs, field.Invalid(imageNamePath, vm.Spec.ImageName,
+	if !hasPVC {
+		return allErrs
+	}
+
+	imageNamePath := field.NewPath("spec", "imageName")
+	imageName := vm.Spec.ImageName
+	var imageHardwareVersion int32
+
+	if lib.IsWCPVMImageRegistryEnabled() {
+		imageSpec, _, err := clutils.GetVMImageSpecStatus(ctx, v.client, imageName, vm.Namespace)
+		if err != nil {
+			return append(allErrs, field.Invalid(imageNamePath, imageName,
 				fmt.Sprintf("error validating image hardware version for PVC: %s", err.Error())))
-		} else if image.Spec.HardwareVersion != 0 && image.Spec.HardwareVersion < constants.MinSupportedHWVersionForPVC {
-			// Check that the VirtualMachineImage's hardware version is at least the minimum supported virtual hardware version
-			allErrs = append(allErrs, field.Invalid(imageNamePath, vm.Spec.ImageName,
-				fmt.Sprintf(pvcHardwareVersionNotSupportedFmt, image.Spec.HardwareVersion, constants.MinSupportedHWVersionForPVC)))
 		}
+
+		imageHardwareVersion = imageSpec.HardwareVersion
+
+	} else {
+		image := vmopv1.VirtualMachineImage{}
+		if err := v.client.Get(ctx, client.ObjectKey{Name: imageName}, &image); err != nil {
+			return append(allErrs, field.Invalid(imageNamePath, imageName,
+				fmt.Sprintf("error validating image hardware version for PVC: %s", err.Error())))
+		}
+
+		imageHardwareVersion = image.Spec.HardwareVersion
+	}
+
+	// Check that the VirtualMachineImage's hardware version is at least the minimum supported virtual hardware version.
+	if imageHardwareVersion != 0 && imageHardwareVersion < constants.MinSupportedHWVersionForPVC {
+		allErrs = append(allErrs, field.Invalid(imageNamePath, imageName,
+			fmt.Sprintf(pvcHardwareVersionNotSupportedFmt, imageHardwareVersion, constants.MinSupportedHWVersionForPVC)))
 	}
 
 	return allErrs

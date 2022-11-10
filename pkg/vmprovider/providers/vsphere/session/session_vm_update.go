@@ -38,7 +38,7 @@ type VMMetadata struct {
 // VMUpdateArgs contains the arguments needed to update a VM on VC.
 type VMUpdateArgs struct {
 	VMClass        *v1alpha1.VirtualMachineClass
-	VMImage        *v1alpha1.VirtualMachineImage
+	VMImageStatus  *v1alpha1.VirtualMachineImageStatus
 	ResourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy
 	MinCPUFreq     uint64
 	ExtraConfig    map[string]string
@@ -297,7 +297,7 @@ func UpdateConfigSpecExtraConfig(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec,
 	classConfigSpec *vimTypes.VirtualMachineConfigSpec,
-	vmImage *v1alpha1.VirtualMachineImage,
+	vmImageStatus *v1alpha1.VirtualMachineImageStatus,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	vm *v1alpha1.VirtualMachine,
 	globalExtraConfig map[string]string) {
@@ -309,7 +309,7 @@ func UpdateConfigSpecExtraConfig(
 			return text
 		}
 		b := strings.Builder{}
-		if err := t.Execute(&b, vmImage.Status); err != nil {
+		if err := t.Execute(&b, vmImageStatus); err != nil {
 			return text
 		}
 		return b.String()
@@ -352,7 +352,7 @@ func UpdateConfigSpecExtraConfig(
 	// and disables networking configurations by cloud-init. Therefore, only set the extraConfig key to enabled
 	// when the vmMetadata is nil or when the transport requested is not CloudInit.
 	if vm.Spec.VmMetadata == nil || vm.Spec.VmMetadata.Transport != v1alpha1.VirtualMachineMetadataCloudInitTransport {
-		if conditions.IsTrue(vmImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) {
+		if conditions.IsTrueFromConditions(vmImageStatus.Conditions, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) {
 			ecMap := ExtraConfigToMap(config.ExtraConfig)
 			if ecMap[constants.VMOperatorV1Alpha1ExtraConfigKey] == constants.VMOperatorV1Alpha1ConfigReady {
 				// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
@@ -452,13 +452,12 @@ func updateConfigSpec(
 	updateArgs *VMUpdateArgs) *vimTypes.VirtualMachineConfigSpec {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
-	vmImage := updateArgs.VMImage
 	vmClassSpec := updateArgs.VMClass.Spec
 
 	UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
 	UpdateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, updateArgs.MinCPUFreq)
 	UpdateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
-	UpdateConfigSpecExtraConfig(config, configSpec, updateArgs.ConfigSpec, vmImage, &vmClassSpec, vmCtx.VM, updateArgs.ExtraConfig)
+	UpdateConfigSpecExtraConfig(config, configSpec, updateArgs.ConfigSpec, updateArgs.VMImageStatus, &vmClassSpec, vmCtx.VM, updateArgs.ExtraConfig)
 	UpdateConfigSpecChangeBlockTracking(config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 	UpdateConfigSpecDeviceGroups(config, configSpec, updateArgs.ConfigSpec)

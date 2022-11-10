@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation_test
@@ -13,6 +13,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -24,8 +25,11 @@ func intgTests() {
 
 type intgValidatingWebhookContext struct {
 	builder.IntegrationTestContext
-	vm      *vmopv1.VirtualMachine
-	vmImage *vmopv1.VirtualMachineImage
+	vm             *vmopv1.VirtualMachine
+	vmImage        *vmopv1.VirtualMachineImage
+	clusterVMImage *vmopv1.ClusterVirtualMachineImage
+
+	oldIsWCPVMImageRegistryEnabledFunc func() bool
 }
 
 func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
@@ -34,8 +38,9 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 	}
 
 	ctx.vm = builder.DummyVirtualMachine()
-	ctx.vmImage = builder.DummyVirtualMachineImage(ctx.vm.Spec.ImageName)
 	ctx.vm.Namespace = ctx.Namespace
+	ctx.vmImage = builder.DummyVirtualMachineImage(ctx.vm.Spec.ImageName)
+	ctx.clusterVMImage = builder.DummyClusterVirtualMachineImage("dummy-cluster-vm-image")
 
 	return ctx
 }
@@ -47,11 +52,16 @@ func intgTestsValidateCreate() {
 
 	type createArgs struct {
 		invalidImageName bool
+		clusterImage     bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		if args.invalidImageName {
 			ctx.vm.Spec.ImageName = ""
+		}
+		if args.clusterImage {
+			ctx.vm.Spec.ImageName = ctx.clusterVMImage.Name
+			lib.IsWCPVMImageRegistryEnabled = func() bool { return true }
 		}
 
 		err := ctx.Client.Create(ctx, ctx.vm)
@@ -67,32 +77,43 @@ func intgTestsValidateCreate() {
 
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
-		// Setting up a VirtualMachineImage for the VM
+		// Setting up a VirtualMachineImage for the VM.
 		err := ctx.Client.Create(ctx, ctx.vmImage)
 		Expect(err).ToNot(HaveOccurred())
 		err = ctx.Client.Status().Update(ctx, ctx.vmImage)
 		Expect(err).ToNot(HaveOccurred())
+		// Setting up a ClusterVirtualMachineImage for the VM.
+		err = ctx.Client.Create(ctx, ctx.clusterVMImage)
+		Expect(err).ToNot(HaveOccurred())
+		err = ctx.Client.Status().Update(ctx, ctx.clusterVMImage)
+		Expect(err).ToNot(HaveOccurred())
+		// Saving the existing value of lib.IsWCPVMImageRegistryEnabled to restore it later.
+		ctx.oldIsWCPVMImageRegistryEnabledFunc = lib.IsWCPVMImageRegistryEnabled
 	})
 
 	AfterEach(func() {
 		_ = ctx.Client.Delete(ctx, ctx.vmImage)
+		_ = ctx.Client.Delete(ctx, ctx.clusterVMImage)
+		lib.IsWCPVMImageRegistryEnabled = ctx.oldIsWCPVMImageRegistryEnabledFunc
 		ctx = nil
 	})
 
 	specPath := field.NewPath("spec")
 	DescribeTable("create table", validateCreate,
 		Entry("should work", createArgs{}, true, "", nil),
+		Entry("should work for cluster vm image", createArgs{clusterImage: true}, true, "", nil),
 		Entry("should not work for invalid image name", createArgs{invalidImageName: true}, false,
 			field.Required(specPath.Child("imageName"), "").Error(), nil),
 	)
 }
 
 func intgTestsValidateUpdate() {
+	const (
+		immutableFieldMsg = "field is immutable"
+	)
 	var (
 		err error
 		ctx *intgValidatingWebhookContext
-
-		immutableFieldMsg = "field is immutable"
 	)
 
 	BeforeEach(func() {
@@ -151,7 +172,7 @@ func intgTestsValidateUpdate() {
 			})
 			It("rejects the request", func() {
 				portPath := field.NewPath("spec", "ports")
-				expectedReason := field.Forbidden(portPath, "updates to this filed is not allowed when VM power is on").Error()
+				expectedReason := field.Forbidden(portPath, "updates to this field is not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -166,7 +187,7 @@ func intgTestsValidateUpdate() {
 
 			It("rejects the request", func() {
 				metadataPath := field.NewPath("spec", "vmMetadata")
-				expectedReason := field.Forbidden(metadataPath, "updates to this filed is not allowed when VM power is on").Error()
+				expectedReason := field.Forbidden(metadataPath, "updates to this field is not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -181,7 +202,7 @@ func intgTestsValidateUpdate() {
 
 			It("rejects the request", func() {
 				networkPath := field.NewPath("spec", "networkInterfaces")
-				expectedReason := field.Forbidden(networkPath, "updates to this filed is not allowed when VM power is on").Error()
+				expectedReason := field.Forbidden(networkPath, "updates to this field is not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})
@@ -200,7 +221,7 @@ func intgTestsValidateUpdate() {
 
 				It("rejects the request", func() {
 					vSphereVolumePath := field.NewPath("spec", "volumes").Key("VsphereVolume")
-					expectedReason := field.Forbidden(vSphereVolumePath, "updates to this filed is not allowed when VM power is on").Error()
+					expectedReason := field.Forbidden(vSphereVolumePath, "updates to this field is not allowed when VM power is on").Error()
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(expectedReason))
 				})
@@ -238,7 +259,7 @@ func intgTestsValidateUpdate() {
 
 			It("rejects the request", func() {
 				fieldPath := field.NewPath("spec", "advancedOptions", "defaultVolumeProvisioningOptions")
-				expectedReason := field.Forbidden(fieldPath, "updates to this filed is not allowed when VM power is on").Error()
+				expectedReason := field.Forbidden(fieldPath, "updates to this field is not allowed when VM power is on").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})

@@ -28,7 +28,7 @@ import (
 // VMCreateArgs contains the arguments needed to create a VM on VC.
 type VMCreateArgs struct {
 	VMClass             *vmopv1alpha1.VirtualMachineClass
-	VMImage             *vmopv1alpha1.VirtualMachineImage
+	VMImageStatus       *vmopv1alpha1.VirtualMachineImageStatus
 	ResourcePolicy      *vmopv1alpha1.VirtualMachineSetResourcePolicy
 	VMMetadata          VMMetadata
 	ContentLibraryUUID  string
@@ -134,7 +134,7 @@ func (s *Session) cloneVMFromContentLibrary(
 	item, err := s.Client.ContentLibClient().GetLibraryItem(
 		vmCtx,
 		createArgs.ContentLibraryUUID,
-		createArgs.VMImage.Status.ImageName)
+		createArgs.VMImageStatus.ImageName)
 	if err != nil {
 		return nil, err
 	}

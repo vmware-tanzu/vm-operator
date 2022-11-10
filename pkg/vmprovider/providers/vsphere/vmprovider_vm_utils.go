@@ -6,16 +6,21 @@ package vsphere
 import (
 	"fmt"
 
-	"github.com/google/uuid"
-	"github.com/pkg/errors"
-	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
+	"github.com/vmware/govmomi/vim25/types"
+
+	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
+
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
+	clutils "github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
@@ -79,12 +84,25 @@ func GetVirtualMachineClass(
 	return vmClass, nil
 }
 
-func GetVMImageAndContentLibraryUUID(
+func GetVMImageStatusAndContentLibraryUUID(
 	vmCtx context.VirtualMachineContext,
-	k8sClient ctrlclient.Client) (*vmopv1alpha1.VirtualMachineImage, string, error) {
+	k8sClient ctrlclient.Client) (*vmopv1alpha1.VirtualMachineImageStatus, string, error) {
 
 	imageName := vmCtx.VM.Spec.ImageName
+	if lib.IsWCPVMImageRegistryEnabled() {
+		vmImageStatus, err := resolveVMImageStatus(vmCtx, k8sClient, imageName)
+		if err != nil {
+			return nil, "", err
+		}
+		uuid, err := resolveContentLibraryUUID(vmCtx, k8sClient, vmImageStatus)
+		if err != nil {
+			return nil, "", err
+		}
+		return vmImageStatus, uuid, nil
+	}
 
+	// The following code path is reachable only when the WCP-VM-Image-Registry FSS is disabled.
+	// In which case the vmopv1alpha1.VirtualMachineImage resource remains in cluster scope.
 	vmImage := &vmopv1alpha1.VirtualMachineImage{}
 	if err := k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: imageName}, vmImage); err != nil {
 		msg := fmt.Sprintf("Failed to get VirtualMachineImage: %s", imageName)
@@ -105,7 +123,7 @@ func GetVMImageAndContentLibraryUUID(
 	}
 	if clProviderName == "" {
 		if SkipVMImageCLProviderCheck {
-			return vmImage, "", nil
+			return &vmImage.Status, "", nil
 		}
 
 		msg := fmt.Sprintf("VirtualMachineImage %s does not have a ContentLibraryProvider OwnerReference", imageName)
@@ -180,7 +198,7 @@ func GetVMImageAndContentLibraryUUID(
 		return nil, "", errors.New(msg)
 	}
 
-	return vmImage, clUUID, nil
+	return &vmImage.Status, clUUID, nil
 }
 
 func GetVMMetadata(
@@ -310,4 +328,98 @@ func GetVMClassConfigSpecFromXML(configSpecXML string) (*types.VirtualMachineCon
 	util.SanitizeVMClassConfigSpec(classConfigSpec)
 
 	return classConfigSpec, nil
+}
+
+// resolveVMImageStatus returns a VirtualMachineImageStatus from the given image name.
+// It updates the VM condition if the image is not found or not in expected condition.
+func resolveVMImageStatus(
+	vmCtx context.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	imageName string) (*vmopv1alpha1.VirtualMachineImageStatus, error) {
+
+	_, imageStatus, err := clutils.GetVMImageSpecStatus(vmCtx, k8sClient, imageName, vmCtx.VM.Namespace)
+	if err != nil {
+		imageNotFoundMsg := fmt.Sprintf("Failed to get the VM's image: %s", imageName)
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+			vmopv1alpha1.VirtualMachineImageNotFoundReason,
+			vmopv1alpha1.ConditionSeverityError,
+			imageNotFoundMsg,
+		)
+		return nil, errors.Wrap(err, imageNotFoundMsg)
+	}
+
+	// Do not return the VM image status if the current image condition is not satisfied.
+	imageNotReadyMsg := ""
+	if !conditions.IsTrueFromConditions(imageStatus.Conditions, vmopv1alpha1.VirtualMachineImageProviderReadyCondition) {
+		imageNotReadyMsg = fmt.Sprintf("VM's image provider is not ready: %s", imageName)
+	} else if !conditions.IsTrueFromConditions(imageStatus.Conditions, vmopv1alpha1.VirtualMachineImageSyncedCondition) {
+		imageNotReadyMsg = fmt.Sprintf("VM's image content version is not synced: %s", imageName)
+	}
+
+	if imageNotReadyMsg != "" {
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+			vmopv1alpha1.VirtualMachineImageNotReadyReason,
+			vmopv1alpha1.ConditionSeverityError,
+			imageNotReadyMsg,
+		)
+		return nil, errors.New(imageNotReadyMsg)
+	}
+
+	return imageStatus, nil
+}
+
+// resolveContentLibraryUUID returns the content library UUID from the given image status reference.
+// It updated the VM condition if the referred content library object is not found.
+func resolveContentLibraryUUID(
+	vmCtx context.VirtualMachineContext,
+	k8sClient ctrlclient.Client,
+	imageStatus *vmopv1alpha1.VirtualMachineImageStatus) (string, error) {
+
+	if imageStatus.ContentLibraryRef == nil {
+		msg := "VM's image status doesn't have a ContentLibraryRef"
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+			vmopv1alpha1.ContentLibraryProviderNotFoundReason,
+			vmopv1alpha1.ConditionSeverityError,
+			msg,
+		)
+		return "", errors.New(msg)
+	}
+
+	libraryName := imageStatus.ContentLibraryRef.Name
+	libraryUUID := ""
+	var err error
+	switch imageStatus.ContentLibraryRef.Kind {
+	case "ContentLibrary":
+		// Get the UUID from content library under VM's namespace.
+		cl := &imgregv1a1.ContentLibrary{}
+		if err = k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Namespace: vmCtx.VM.Namespace, Name: libraryName}, cl); err == nil {
+			libraryUUID = cl.Spec.UUID
+		}
+
+	case "ClusterContentLibrary":
+		// Get the UUID from cluster content library.
+		ccl := &imgregv1a1.ClusterContentLibrary{}
+		if err = k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: libraryName}, ccl); err == nil {
+			libraryUUID = ccl.Spec.UUID
+		}
+
+	default:
+		err = errors.Errorf("VM's image status has an invalid ContentLibraryRef kind: %s", imageStatus.ContentLibraryRef.Kind)
+	}
+
+	if err != nil {
+		msg := fmt.Sprintf("Failed to get content library reference from VM image: %v", err)
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
+			vmopv1alpha1.ContentLibraryProviderNotFoundReason,
+			vmopv1alpha1.ConditionSeverityError,
+			msg,
+		)
+		return "", errors.Wrap(err, msg)
+	}
+
+	return libraryUUID, nil
 }

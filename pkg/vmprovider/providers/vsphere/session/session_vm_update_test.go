@@ -264,7 +264,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				config,
 				configSpec,
 				classConfigSpec,
-				vmImage,
+				&vmImage.Status,
 				vmClassSpec,
 				vm,
 				globalExtraConfig)

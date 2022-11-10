@@ -54,6 +54,22 @@ func Has(from Getter, t vmopv1alpha1.ConditionType) bool {
 	return Get(from, t) != nil
 }
 
+// IsTrueFromConditions returns true if the condition with the given type is True.
+// This is helpful to check the condition without passing a specific resource object.
+func IsTrueFromConditions(conditions vmopv1alpha1.Conditions, t vmopv1alpha1.ConditionType) bool {
+	if conditions == nil {
+		return false
+	}
+
+	var c vmopv1alpha1.Condition
+	for _, condition := range conditions {
+		if condition.Type == t {
+			c = condition
+		}
+	}
+	return c.Status == corev1.ConditionTrue
+}
+
 // IsTrue is true if the condition with the given type is True, otherwise it return false
 // if the condition is not True or if the condition does not exist (is nil).
 func IsTrue(from Getter, t vmopv1alpha1.ConditionType) bool {

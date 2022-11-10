@@ -489,7 +489,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 		return nil, err
 	}
 
-	vmImage, clUUID, err := GetVMImageAndContentLibraryUUID(vmCtx, vs.k8sClient)
+	vmImageStatus, clUUID, err := GetVMImageStatusAndContentLibraryUUID(vmCtx, vs.k8sClient)
 	if err != nil {
 		return nil, err
 	}
@@ -506,7 +506,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 
 	createArgs := &vmCreateArgs{}
 	createArgs.VMClass = vmClass
-	createArgs.VMImage = vmImage
+	createArgs.VMImageStatus = vmImageStatus
 	createArgs.ContentLibraryUUID = clUUID
 	createArgs.VMMetadata = vmMD
 
@@ -645,7 +645,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		return nil, err
 	}
 
-	vmImage, _, err := GetVMImageAndContentLibraryUUID(vmCtx, vs.k8sClient)
+	vmImageStatus, _, err := GetVMImageStatusAndContentLibraryUUID(vmCtx, vs.k8sClient)
 	if err != nil {
 		return nil, err
 	}
@@ -662,7 +662,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 
 	updateArgs := &vmUpdateArgs{}
 	updateArgs.VMClass = vmClass
-	updateArgs.VMImage = vmImage
+	updateArgs.VMImageStatus = vmImageStatus
 	updateArgs.VMMetadata = vmMD
 	updateArgs.ResourcePolicy = resourcePolicy
 

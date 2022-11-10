@@ -359,6 +359,25 @@ func DummyVirtualMachineImage(imageName string) *vmopv1.VirtualMachineImage {
 	}
 }
 
+func DummyClusterVirtualMachineImage(imageName string) *vmopv1.ClusterVirtualMachineImage {
+	return &vmopv1.ClusterVirtualMachineImage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: imageName,
+		},
+		Spec: vmopv1.VirtualMachineImageSpec{
+			ProductInfo: vmopv1.VirtualMachineImageProductInfo{
+				FullVersion: DummyDistroVersion,
+			},
+			OSInfo: vmopv1.VirtualMachineImageOSInfo{
+				Type: DummyOSType,
+			},
+		},
+		Status: vmopv1.VirtualMachineImageStatus{
+			ImageName: imageName,
+		},
+	}
+}
+
 func DummyStorageClass() *storagev1.StorageClass {
 	return &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
@@ -487,6 +506,17 @@ func DummyContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrar
 		Spec: imgregv1a1.ContentLibrarySpec{
 			UUID:     uuid,
 			Writable: true,
+		},
+	}
+}
+
+func DummyClusterContentLibrary(name, uuid string) *imgregv1a1.ClusterContentLibrary {
+	return &imgregv1a1.ClusterContentLibrary{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: imgregv1a1.ClusterContentLibrarySpec{
+			UUID: uuid,
 		},
 	}
 }

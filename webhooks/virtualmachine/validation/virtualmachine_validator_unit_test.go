@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
@@ -30,7 +31,11 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-const updateSuffix = "-updated"
+const (
+	updateSuffix            = "-updated"
+	dummyNamespaceImageName = "dummy-namespace-image"
+	dummyClusterImageName   = "dummy-cluster-image"
+)
 
 func unitTests() {
 	Describe("Invoking ValidateCreate", unitTestsValidateCreate)
@@ -40,20 +45,17 @@ func unitTests() {
 
 type unitValidatingWebhookContext struct {
 	builder.UnitTestContextForValidatingWebhook
-	vm      *vmopv1.VirtualMachine
-	oldVM   *vmopv1.VirtualMachine
-	vmImage *vmopv1.VirtualMachineImage
+	vm, oldVM          *vmopv1.VirtualMachine
+	vmImage, nsVMImage *vmopv1.VirtualMachineImage
+	clusterVMIMage     *vmopv1.ClusterVirtualMachineImage
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
 	vm := builder.DummyVirtualMachine()
 	vm.Name = "dummy-vm-for-webhook-validation"
+	vm.Namespace = "dummy-vm-namespace-for-webhook-validation"
 	obj, err := builder.ToUnstructured(vm)
 	Expect(err).ToNot(HaveOccurred())
-
-	vmImage := builder.DummyVirtualMachineImage(vm.Spec.ImageName)
-	vmImage1 := builder.DummyVirtualMachineImage(vm.Spec.ImageName + updateSuffix)
-	zone := builder.DummyAvailabilityZone()
 
 	var oldVM *vmopv1.VirtualMachine
 	var oldObj *unstructured.Unstructured
@@ -64,11 +66,22 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 		Expect(err).ToNot(HaveOccurred())
 	}
 
+	vmImage := builder.DummyVirtualMachineImage(vm.Spec.ImageName)
+	vmImage1 := builder.DummyVirtualMachineImage(vm.Spec.ImageName + updateSuffix)
+	zone := builder.DummyAvailabilityZone()
+	nsVMImage := builder.DummyVirtualMachineImage(dummyNamespaceImageName)
+	nsVMImage.Namespace = vm.Namespace
+	clusterVMImage := builder.DummyClusterVirtualMachineImage(dummyClusterImageName)
+
+	initObjects := []client.Object{vmImage, vmImage1, zone, nsVMImage, clusterVMImage}
+
 	return &unitValidatingWebhookContext{
-		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, vmImage, vmImage1, zone),
+		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, initObjects...),
 		vm:                                  vm,
 		oldVM:                               oldVM,
 		vmImage:                             vmImage,
+		nsVMImage:                           nsVMImage,
+		clusterVMIMage:                      clusterVMImage,
 	}
 }
 
@@ -99,8 +112,10 @@ func setReadinessProbe(validPortProbe bool) *vmopv1.Probe {
 //nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
-		ctx                 *unitValidatingWebhookContext
-		oldFaultDomainsFunc func() bool
+		ctx                  *unitValidatingWebhookContext
+		oldFaultDomainsFunc  func() bool
+		oldUnifiedTKGFunc    func() bool
+		oldImageRegistryFunc func() bool
 	)
 
 	const (
@@ -110,6 +125,8 @@ func unitTestsValidateCreate() {
 	type createArgs struct {
 		invalidImageName                     bool
 		imageNotFound                        bool
+		namespaceImage                       bool
+		clusterImage                         bool
 		invalidClassName                     bool
 		invalidNetworkType                   bool
 		invalidNetworkCardType               bool
@@ -144,6 +161,7 @@ func unitTestsValidateCreate() {
 		isEmptyAvailabilityZone              bool
 		isServiceUser                        bool
 		addInstanceStorageVolumes            bool
+		isWCPVMImageRegistryEnabled          bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -158,9 +176,19 @@ func unitTestsValidateCreate() {
 		if args.imageNotFound {
 			ctx.vm.Spec.ImageName = "image-does-not-exist"
 		}
+		if args.namespaceImage {
+			ctx.vm.Spec.ImageName = ctx.nsVMImage.Name
+		}
+		if args.clusterImage {
+			ctx.vm.Spec.ImageName = ctx.clusterVMIMage.Name
+		}
 		if args.imageNonCompatible {
 			ctx.vmImage.Status.ImageSupported = &[]bool{false}[0]
-			Expect(ctx.Client.Status().Update(ctx, ctx.vmImage)).ToNot(HaveOccurred())
+			Expect(ctx.Client.Status().Update(ctx, ctx.vmImage)).To(Succeed())
+			ctx.nsVMImage.Status.ImageSupported = &[]bool{false}[0]
+			Expect(ctx.Client.Status().Update(ctx, ctx.nsVMImage)).To(Succeed())
+			ctx.clusterVMIMage.Status.ImageSupported = &[]bool{false}[0]
+			Expect(ctx.Client.Status().Update(ctx, ctx.clusterVMIMage)).To(Succeed())
 		}
 		if args.imageSupportCheckSkipAnnotation {
 			ctx.vm.Annotations[constants.VMOperatorImageSupportedCheckKey] = constants.VMOperatorImageSupportedCheckDisable
@@ -207,6 +235,10 @@ func unitTestsValidateCreate() {
 		if args.invalidPVCHwVersion {
 			ctx.vmImage.Spec.HardwareVersion = 12
 			Expect(ctx.Client.Update(ctx, ctx.vmImage)).ToNot(HaveOccurred())
+			ctx.nsVMImage.Spec.HardwareVersion = 12
+			Expect(ctx.Client.Update(ctx, ctx.nsVMImage)).ToNot(HaveOccurred())
+			ctx.clusterVMIMage.Spec.HardwareVersion = 12
+			Expect(ctx.Client.Update(ctx, ctx.clusterVMIMage)).ToNot(HaveOccurred())
 		}
 		if args.emptyMetadataResource {
 			ctx.vm.Spec.VmMetadata.ConfigMapName = ""
@@ -282,6 +314,9 @@ func unitTestsValidateCreate() {
 		lib.IsUnifiedTKGFSSEnabled = func() bool {
 			return args.isUnifiedTKGFSSEnabled
 		}
+		lib.IsWCPVMImageRegistryEnabled = func() bool {
+			return args.isWCPVMImageRegistryEnabled
+		}
 		if args.isNoAvailabilityZones {
 			// Delete the dummy AZ.
 			Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
@@ -315,10 +350,14 @@ func unitTestsValidateCreate() {
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
 		oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
+		oldUnifiedTKGFunc = lib.IsUnifiedTKGFSSEnabled
+		oldImageRegistryFunc = lib.IsWCPVMImageRegistryEnabled
 	})
 
 	AfterEach(func() {
 		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
+		lib.IsUnifiedTKGFSSEnabled = oldUnifiedTKGFunc
+		lib.IsWCPVMImageRegistryEnabled = oldImageRegistryFunc
 		ctx = nil
 	})
 
@@ -332,7 +371,11 @@ func unitTestsValidateCreate() {
 			field.Required(specPath.Child("className"), "").Error(), nil),
 		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false,
 			field.Required(specPath.Child("imageName"), "").Error(), nil),
-		Entry("should deny image that does not exist", createArgs{imageNotFound: true}, false,
+		Entry("should deny image that does not exist, when ImageRegistry FSS is disabled", createArgs{imageNotFound: true}, false,
+			field.Invalid(specPath.Child("imageName"), "image-does-not-exist", "").Error(), nil),
+		Entry("should allow namespace image that exists, when ImageRegistry FSS is enabled", createArgs{isWCPVMImageRegistryEnabled: true, namespaceImage: true}, true, nil, nil),
+		Entry("should allow cluster image that exists, when ImageRegistry FSS is enabled", createArgs{isWCPVMImageRegistryEnabled: true, clusterImage: true}, true, nil, nil),
+		Entry("should deny neither cluster nor namespace image exists, when ImageRegistry FSS is enabled", createArgs{isWCPVMImageRegistryEnabled: true, imageNotFound: true}, false,
 			field.Invalid(specPath.Child("imageName"), "image-does-not-exist", "").Error(), nil),
 		Entry("should fail when Readiness probe has multiple actions", createArgs{invalidReadinessProbe: true}, false,
 			field.Forbidden(specPath.Child("readinessProbe"), "only one action can be specified").Error(), nil),
@@ -360,8 +403,12 @@ func unitTestsValidateCreate() {
 			field.Required(volPath.Index(0).Child("persistentVolumeClaim", "claimName"), "").Error(), nil),
 		Entry("should deny invalid PVC read only", createArgs{invalidPVCReadOnly: true}, false,
 			field.NotSupported(volPath.Index(0).Child("persistentVolumeClaim", "readOnly"), true, []string{"false"}).Error(), nil),
-		Entry("should deny invalid PVC hardware version", createArgs{invalidPVCHwVersion: true}, false,
+		Entry("should deny invalid PVC hardware version, when ImageRegistry FSS is disabled", createArgs{invalidPVCHwVersion: true}, false,
 			field.Invalid(field.NewPath("spec", "imageName"), builder.DummyImageName, fmt.Sprintf("VirtualMachineImage has an unsupported hardware version %d for PersistentVolumes. Minimum supported hardware version %d", 12, constants.MinSupportedHWVersionForPVC)).Error(), nil),
+		Entry("should deny invalid PVC hardware version with a namespace image, when ImageRegistry FSS is enabled", createArgs{invalidPVCHwVersion: true, namespaceImage: true, isWCPVMImageRegistryEnabled: true}, false,
+			field.Invalid(field.NewPath("spec", "imageName"), dummyNamespaceImageName, fmt.Sprintf("VirtualMachineImage has an unsupported hardware version %d for PersistentVolumes. Minimum supported hardware version %d", 12, constants.MinSupportedHWVersionForPVC)).Error(), nil),
+		Entry("should deny invalid PVC hardware version with a cluster image, when ImageRegistry FSS is enabled", createArgs{invalidPVCHwVersion: true, clusterImage: true, isWCPVMImageRegistryEnabled: true}, false,
+			field.Invalid(field.NewPath("spec", "imageName"), dummyClusterImageName, fmt.Sprintf("VirtualMachineImage has an unsupported hardware version %d for PersistentVolumes. Minimum supported hardware version %d", 12, constants.MinSupportedHWVersionForPVC)).Error(), nil),
 		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false,
 			field.Invalid(volPath.Index(0).Child("vsphereVolume", "capacity", "ephemeral-storage"), resource.MustParse("1Ki"), "value must be a multiple of MB").Error(), nil),
 
@@ -376,13 +423,17 @@ func unitTestsValidateCreate() {
 		Entry("should deny when multiple vmMetadata resources are specified", createArgs{multipleMetadataResources: true}, false, "spec.vmMetadata.configMapName and spec.vmMetadata.secretName cannot be specified simultaneously", nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
 
-		Entry("should fail when image is not compatible and UnifiedTKG FSS disabled", createArgs{imageNonCompatible: true}, false,
+		Entry("should deny when image is not compatible and UnifiedTKG FSS disabled, and when ImageRegistry FSS is disabled", createArgs{imageNonCompatible: true, isWCPVMImageRegistryEnabled: false}, false,
 			field.Invalid(specPath.Child("imageName"), builder.DummyImageName, "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
+		Entry("should deny when a namespace image is not compatible and UnifiedTKG FSS disabled, when ImageRegistry FSS is enabled", createArgs{imageNonCompatible: true, namespaceImage: true, isWCPVMImageRegistryEnabled: true}, false,
+			field.Invalid(specPath.Child("imageName"), dummyNamespaceImageName, "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
+		Entry("should deny when a cluster image is not compatible and UnifiedTKG FSS disabled, when ImageRegistry FSS is enabled", createArgs{imageNonCompatible: true, clusterImage: true, isWCPVMImageRegistryEnabled: true}, false,
+			field.Invalid(specPath.Child("imageName"), dummyClusterImageName, "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
 		Entry("should allow despite incompatible image when UnifiedTKG FSS disabled and VMOperatorImageSupportedCheckKey is enabled", createArgs{imageSupportCheckSkipAnnotation: true, imageNonCompatible: true}, true, nil, nil),
 		Entry("should allow despite incompatible image when UnifiedTKG FSS enabled", createArgs{isUnifiedTKGFSSEnabled: true, imageNonCompatible: true}, true, nil, nil),
 		Entry("should allow despite incompatible image when VirtualMachineMetadataTransport is CloudInit", createArgs{imageNonCompatibleCloudInitTransport: true}, true, nil, nil),
 
-		Entry("should fail when restricted network env is set in provider config map and TCP port in readiness probe is not 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, false,
+		Entry("should deny when restricted network env is set in provider config map and TCP port in readiness probe is not 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, false,
 			field.NotSupported(specPath.Child("readinessProbe", "tcpSocket", "port"), 443, []string{"6443"}).Error(), nil),
 		Entry("should allow when restricted network env is set in provider config map and TCP port in readiness probe is 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: true}, true, nil, nil),
 		Entry("should allow when restricted network env is not set in provider config map and TCP port in readiness probe is not 6443", createArgs{isNonRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, true, nil, nil),

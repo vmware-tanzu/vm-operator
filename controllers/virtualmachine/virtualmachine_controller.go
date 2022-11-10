@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine
@@ -26,6 +26,7 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
@@ -58,14 +59,18 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		proberManager,
 	)
 
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
 		Watches(&source.Kind{Type: &vmopv1alpha1.VirtualMachineClassBinding{}},
-			handler.EnqueueRequestsFromMapFunc(classBindingToVMMapperFn(ctx, r.Client))).
-		Watches(&source.Kind{Type: &vmopv1alpha1.ContentSourceBinding{}},
-			handler.EnqueueRequestsFromMapFunc(csBindingToVMMapperFn(ctx, r.Client))).
-		Complete(r)
+			handler.EnqueueRequestsFromMapFunc(classBindingToVMMapperFn(ctx, r.Client)))
+
+	if !lib.IsWCPVMImageRegistryEnabled() {
+		builder = builder.Watches(&source.Kind{Type: &vmopv1alpha1.ContentSourceBinding{}},
+			handler.EnqueueRequestsFromMapFunc(csBindingToVMMapperFn(ctx, r.Client)))
+	}
+
+	return builder.Complete(r)
 }
 
 // csBindingToVMMapperFn returns a mapper function that can be used to queue reconcile request

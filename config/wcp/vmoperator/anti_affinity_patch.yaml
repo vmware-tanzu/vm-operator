@@ -20,7 +20,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
- name: hostvalidator
+ name: web-console-validator
  namespace: system
 spec:
  template:
@@ -33,5 +33,5 @@ spec:
              - key: name
                operator: In
                values:
-               - hostvalidator
+               - web-console-validator
            topologyKey: "kubernetes.io/hostname"

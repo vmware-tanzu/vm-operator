@@ -21,6 +21,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -99,6 +100,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 
 	var fieldErrs field.ErrorList
 	fieldErrs = append(fieldErrs, v.validateImmutableFields(wcr, oldwcr)...)
+	fieldErrs = append(fieldErrs, v.validateUUIDLabel(wcr, oldwcr)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -174,4 +176,19 @@ func (v validator) webConsoleRequestFromUnstructured(obj runtime.Unstructured) (
 		return nil, err
 	}
 	return wcr, nil
+}
+
+func (v validator) validateUUIDLabel(wcr, oldwcr *vmopv1.WebConsoleRequest) field.ErrorList {
+	var allErrs field.ErrorList
+
+	oldUUIDLabelVal := oldwcr.Labels[webconsolerequest.UUIDLabelKey]
+	if oldUUIDLabelVal == "" {
+		return allErrs
+	}
+
+	newUUIDLabelVal := wcr.Labels[webconsolerequest.UUIDLabelKey]
+	labelsPath := field.NewPath("metadata", "labels")
+	allErrs = append(allErrs, validation.ValidateImmutableField(newUUIDLabelVal, oldUUIDLabelVal, labelsPath.Key(webconsolerequest.UUIDLabelKey))...)
+
+	return allErrs
 }

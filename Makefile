@@ -20,8 +20,8 @@ export PATH := $(abspath $(BIN_DIR)):$(abspath $(TOOLS_BIN_DIR)):$(PATH)
 export KUBEBUILDER_ASSETS := $(abspath $(TOOLS_BIN_DIR))
 
 # Binaries
-MANAGER           := $(BIN_DIR)/manager
-HOSTVALIDATOR     := $(BIN_DIR)/hostvalidator
+MANAGER                  := $(BIN_DIR)/manager
+WEB_CONSOLE_VALIDATOR     := $(BIN_DIR)/web-console-validator
 
 # Tooling binaries
 CONTROLLER_GEN     := $(TOOLS_BIN_DIR)/controller-gen
@@ -81,7 +81,7 @@ BUILDINFO_LDFLAGS = "\
 -extldflags -static -w -s "
 
 .PHONY: all
-all: prereqs test manager hostvalidator ## Tests and builds the manager and hostvalidator binaries.
+all: prereqs test manager web-console-validator ## Tests and builds the manager and web-console-validator binaries.
 
 prereqs:
 	@mkdir -p bin $(ARTIFACTS_DIR)
@@ -131,13 +131,13 @@ $(MANAGER): go.mod prereqs generate
 .PHONY: manager
 manager: prereqs generate lint-go manager-only ## Build manager binary
 
-.PHONY: hostvalidator-only
-hostvalidator-only: $(HOSTVALIDATOR) ## Build hostvalidator binary only
-$(HOSTVALIDATOR): go.mod prereqs generate
-	go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) cmd/hostvalidator/main.go
+.PHONY: web-console-validator-only
+web-console-validator-only: $(WEB_CONSOLE_VALIDATOR) ## Build web-console-validator binary only
+$(WEB_CONSOLE_VALIDATOR): go.mod prereqs generate
+	go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) cmd/web-console-validator/main.go
 
-.PHONY: hostvalidator
-hostvalidator: prereqs generate lint-go hostvalidator-only ## Build hostvalidator binary
+.PHONY: web-console-validator
+web-console-validator: prereqs generate lint-go web-console-validator-only ## Build web-console-validator binary
 
 ## --------------------------------------
 ## Tooling Binaries

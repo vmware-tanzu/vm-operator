@@ -3,7 +3,7 @@
   value: --server-port=9868
 - op: replace
   path: /spec/template/spec/containers/0/args/1
-  value: --server-path=/hostvalidation
+  value: --server-path=/validate
 - op: replace
   path: /spec/template/spec/containers/0/ports/0/containerPort
   value: 9868

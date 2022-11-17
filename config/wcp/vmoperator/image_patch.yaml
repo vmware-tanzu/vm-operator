@@ -19,12 +19,12 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hostvalidator
+  name: web-console-validator
   namespace: system
 spec:
   template:
     spec:
       containers:
-      - name: hostvalidator
+      - name: web-console-validator
         image: vmware/vmop:0.0.1
         imagePullPolicy: IfNotPresent

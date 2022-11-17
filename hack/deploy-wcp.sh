@@ -200,7 +200,7 @@ deploy() {
     PATH="/opt/homebrew/bin:/usr/local/opt/gnu-getopt/bin:/usr/local/bin:$PATH" \
       $WCP_LOAD_K8S_MASTER \
         --component vmop \
-        --binary bin/wcp/manager,bin/wcp/hostvalidator \
+        --binary bin/wcp/manager,bin/wcp/web-console-validator \
         --vc-ip "$VCSA_IP" \
         --vc-user root \
         --vc-password "$VCSA_PASSWORD" \

@@ -117,6 +117,7 @@ func webConsoleRequestReconcile() {
 			}).Should(BeTrue(), "waiting for webconsolerequest to be")
 			Expect(wcr.Status.Response).ToNot(BeEmpty())
 			Expect(wcr.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
+			Expect(wcr.Labels).To(HaveKeyWithValue(webconsolerequest.UUIDLabelKey, string(wcr.UID)))
 		})
 	})
 }

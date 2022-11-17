@@ -7,7 +7,7 @@ configurations:
 resources:
 - ../crd
 - ../manager
-- ../hostvalidator
+- ../web-console-validator
 - ../rbac
 - ../webhook
 - ../certmanager
@@ -84,13 +84,13 @@ vars:
     name: serving-cert # this name should match the one in certificate.yaml
   fieldref:
     fieldpath: spec.secretName
-- name: HOSTVALIDATOR_CONTAINER_PORT
+- name: WEB_CONSOLE_VALIDATOR_CONTAINER_PORT
   objref:
     apiVersion: apps/v1
     kind: Deployment
-    name: hostvalidator
+    name: web-console-validator
   fieldref:
-    # Note that this assumes "hostvalidator" is containers[0] and port is ports[0]
+    # Note that this assumes "web-console-validator" is containers[0] and port is ports[0]
     fieldpath: spec.template.spec.containers[0].ports[0].containerPort
 
 replacements:

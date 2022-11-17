@@ -9,4 +9,4 @@ set -o pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 make tools
-make manager hostvalidator
+make manager web-console-validator

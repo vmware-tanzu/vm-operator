@@ -30,7 +30,7 @@ patches:
     group: apps
     version: v1
     kind: Deployment
-    name: vmware-system-vmop-hostvalidator
+    name: vmware-system-vmop-web-console-validator
     namespace: vmware-system-vmop
   path: remove-node-selector-patch.yaml
 

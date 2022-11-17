@@ -55,7 +55,7 @@ COPY ./ ./
 
 # Build
 RUN make manager-only
-RUN make hostvalidator-only
+RUN make web-console-validator-only
 
 
 ## --------------------------------------
@@ -105,6 +105,6 @@ LABEL buildNumber=$BUILD_NUMBER commit=$BUILD_COMMIT branch=$BUILD_BRANCH versio
 
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
-COPY --from=builder /workspace/bin/hostvalidator .
+COPY --from=builder /workspace/bin/web-console-validator .
 USER nobody
 ENTRYPOINT ["/manager"]

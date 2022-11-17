@@ -30,6 +30,7 @@ import (
 
 const (
 	DefaultExpiryTime = time.Second * 120
+	UUIDLabelKey      = "vmoperator.vmware.com/webconsolerequest-uuid"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -170,6 +171,13 @@ func (r *Reconciler) ReconcileNormal(ctx *context.WebConsoleRequestContext) erro
 
 	ctx.WebConsoleRequest.Status.Response = ticket
 	ctx.WebConsoleRequest.Status.ExpiryTime = metav1.NewTime(metav1.Now().Add(DefaultExpiryTime))
+
+	// Add UUID as a Label to the current WebConsoleRequest resource after acquiring the ticket.
+	// This will be used when validating the connection request from users to the web-console URL.
+	if ctx.WebConsoleRequest.Labels == nil {
+		ctx.WebConsoleRequest.Labels = make(map[string]string)
+	}
+	ctx.WebConsoleRequest.Labels[UUIDLabelKey] = string(ctx.WebConsoleRequest.UID)
 
 	err = r.ReconcileOwnerReferences(ctx)
 	if err != nil {

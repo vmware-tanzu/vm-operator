@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -37,6 +38,9 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	privateKey, publicKeyPem := builder.WebConsoleRequestKeyPair()
 
 	wcr := builder.DummyWebConsoleRequest("some-namespace", "some-name", "some-vm-name", publicKeyPem)
+	wcr.Labels = map[string]string{
+		webconsolerequest.UUIDLabelKey: "some-uuid",
+	}
 	obj, err := builder.ToUnstructured(wcr)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -127,6 +131,7 @@ func unitTestsValidateUpdate() {
 	type updateArgs struct {
 		updateVirtualMachineName bool
 		updatePublicKey          bool
+		updateUUIDLabel          bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -138,6 +143,10 @@ func unitTestsValidateUpdate() {
 
 		if args.updatePublicKey {
 			ctx.wcr.Spec.PublicKey = "new-public-key"
+		}
+
+		if args.updateUUIDLabel {
+			ctx.wcr.Labels[webconsolerequest.UUIDLabelKey] = "new-uuid"
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured((ctx.wcr))
@@ -164,6 +173,7 @@ func unitTestsValidateUpdate() {
 		Entry("should allow", updateArgs{}, true, nil, nil),
 		Entry("should deny VirtualmachineName change", updateArgs{updateVirtualMachineName: true}, false, "spec.virtualMachineName: Invalid value: \"new-vm-name\": field is immutable", nil),
 		Entry("should deny PublicKey change", updateArgs{updatePublicKey: true}, false, "spec.publicKey: Invalid value: \"new-public-key\": field is immutable", nil),
+		Entry("should deny UUID label change", updateArgs{updateUUIDLabel: true}, false, "metadata.labels[vmoperator.vmware.com/webconsolerequest-uuid]: Invalid value: \"new-uuid\": field is immutable", nil),
 	)
 
 	When("the update is performed while object deletion", func() {

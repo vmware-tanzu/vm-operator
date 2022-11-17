@@ -109,6 +109,8 @@ func unitTestsReconcile() {
 
 				Expect(wcrCtx.WebConsoleRequest.Status.Response).ToNot(BeEmpty())
 				Expect(wcrCtx.WebConsoleRequest.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
+				// Checking the label key only because UID will not be set to a resource during unit test.
+				Expect(wcrCtx.WebConsoleRequest.Labels).To(HaveKey(webconsolerequest.UUIDLabelKey))
 			})
 		})
 	})

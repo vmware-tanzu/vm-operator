@@ -1,27 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hostvalidator
+  name: web-console-validator
   namespace: system
   labels:
-    app: hostvalidator
+    app: web-console-validator
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: hostvalidator
+      app: web-console-validator
   template:
     metadata:
       labels:
-        app: hostvalidator
+        app: web-console-validator
     spec:
       containers:
-      - name: hostvalidator
+      - name: web-console-validator
         command:
-        - /hostvalidator
+        - /web-console-validator
         args:
         - "--server-port=9868"
-        - "--server-path=/hostvalidation"
+        - "--server-path=/validate"
         image: controller:latest
         imagePullPolicy: IfNotPresent
         resources:
@@ -61,13 +61,13 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app: hostvalidator
-  name: hostvalidator
+    app: web-console-validator
+  name: web-console-validator
   namespace: system
 spec:
   ports:
   - name: http
     port: 80
-    targetPort: $(HOSTVALIDATOR_CONTAINER_PORT)
+    targetPort: $(WEB_CONSOLE_VALIDATOR_CONTAINER_PORT)
   selector:
-    app: hostvalidator
+    app: web-console-validator

@@ -16,7 +16,7 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"

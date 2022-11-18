@@ -21,7 +21,8 @@ import (
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
 	"github.com/google/uuid"
-	vmopv1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 const (

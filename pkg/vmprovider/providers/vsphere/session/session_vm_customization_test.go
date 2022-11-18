@@ -15,9 +15,10 @@ import (
 	"k8s.io/utils/pointer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"gopkg.in/yaml.v2"
+
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"

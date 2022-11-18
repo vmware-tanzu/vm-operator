@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 func TestNewConditionsGroup(t *testing.T) {

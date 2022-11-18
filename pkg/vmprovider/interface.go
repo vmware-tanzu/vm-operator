@@ -6,8 +6,9 @@ package vmprovider
 import (
 	"context"
 
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
+
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 )

@@ -9,7 +9,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
-	"github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )

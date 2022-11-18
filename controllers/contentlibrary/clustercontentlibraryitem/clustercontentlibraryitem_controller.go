@@ -17,7 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/go-logr/logr"
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 

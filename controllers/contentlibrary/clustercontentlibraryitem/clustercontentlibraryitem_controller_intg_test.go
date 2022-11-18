@@ -13,7 +13,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 

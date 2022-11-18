@@ -14,7 +14,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 const (

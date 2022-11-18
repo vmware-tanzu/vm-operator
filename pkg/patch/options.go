@@ -13,7 +13,7 @@ limitations under the License.
 
 package patch
 
-import vmopv1alpha1 "github.com/vmware-tanzu/vm-operator-api/api/v1alpha1"
+import vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 // Option is some configuration that modifies options for a patch request.
 type Option interface {

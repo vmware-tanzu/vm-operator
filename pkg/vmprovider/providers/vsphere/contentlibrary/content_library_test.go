@@ -4,7 +4,6 @@
 package contentlibrary_test
 
 import (
-	"io/ioutil"
 	"os"
 	"strings"
 
@@ -132,7 +131,7 @@ func clTests() {
 			})
 
 			It("does not return error", func() {
-				ovf, err := ioutil.TempFile("", "fake-*.ovf")
+				ovf, err := os.CreateTemp("", "fake-*.ovf")
 				Expect(err).NotTo(HaveOccurred())
 				ovfPath = ovf.Name()
 

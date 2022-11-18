@@ -9,9 +9,9 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"io/ioutil"
 	"math/big"
 	"net"
+	"os"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -50,14 +50,14 @@ func GenerateSelfSignedCert() (string, string) {
 	template.IPAddresses = []net.IP{net.ParseIP("127.0.0.1")}
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
 	Expect(err).NotTo(HaveOccurred())
-	certOut, err := ioutil.TempFile("", "cert.pem")
+	certOut, err := os.CreateTemp("", "cert.pem")
 	Expect(err).NotTo(HaveOccurred())
 	err = pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
 	Expect(err).NotTo(HaveOccurred())
 	err = certOut.Close()
 	Expect(err).NotTo(HaveOccurred())
 
-	keyOut, err := ioutil.TempFile("", "key.pem")
+	keyOut, err := os.CreateTemp("", "key.pem")
 	Expect(err).NotTo(HaveOccurred())
 	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
 	Expect(err).NotTo(HaveOccurred())

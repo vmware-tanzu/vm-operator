@@ -322,7 +322,8 @@ var _ = Describe("NewClient", func() {
 })
 
 // Most of the other VM Operator tests run without TLS verification. Start up a separate simulator with a fresh TLS key/cert
-//  and ensure the client can connect to it.
+//
+//	and ensure the client can connect to it.
 var _ = Describe("Tests for client TLS", func() {
 	Context("when the client recognizes the certificate presented by the VC", func() {
 		It("successfully connects to the VC", func() {

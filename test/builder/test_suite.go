@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"path"
@@ -193,7 +192,7 @@ func newTestSuiteForWebhook(
 	}
 
 	// Create a temp directory for the certs needed for testing webhooks.
-	certDir, err := ioutil.TempDir(os.TempDir(), "")
+	certDir, err := os.MkdirTemp(os.TempDir(), "")
 	if err != nil {
 		panic(errors.Wrap(err, "failed to create temp dir for certs"))
 	}
@@ -423,8 +422,8 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 			s.pki, err = generatePKIToolchain()
 			Expect(err).ToNot(HaveOccurred())
 			// Write the CA pub key and cert pub and private keys to the cert dir.
-			Expect(ioutil.WriteFile(path.Join(s.certDir, "tls.crt"), s.pki.publicKeyPEM, 0400)).To(Succeed())
-			Expect(ioutil.WriteFile(path.Join(s.certDir, "tls.key"), s.pki.privateKeyPEM, 0400)).To(Succeed())
+			Expect(os.WriteFile(path.Join(s.certDir, "tls.crt"), s.pki.publicKeyPEM, 0400)).To(Succeed())
+			Expect(os.WriteFile(path.Join(s.certDir, "tls.key"), s.pki.privateKeyPEM, 0400)).To(Succeed())
 		})
 	}
 
@@ -494,7 +493,7 @@ func parseWebhookConfig(path string) (
 	const separator = "---\n"
 
 	// READ the validating webhook file.
-	yamlIn, err := ioutil.ReadFile(filepath.Clean(path))
+	yamlIn, err := os.ReadFile(filepath.Clean(path))
 	Expect(err).ShouldNot(HaveOccurred())
 	Expect(yamlIn).ShouldNot(BeEmpty())
 

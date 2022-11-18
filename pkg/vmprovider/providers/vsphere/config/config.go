@@ -66,8 +66,7 @@ const (
 )
 
 // ConfigMapToProviderConfig converts the VM provider ConfigMap to a VSphereVMProviderConfig.
-//nolint: revive // Ignore linter error about stuttering.
-func ConfigMapToProviderConfig(
+func ConfigMapToProviderConfig( //nolint: revive // Ignore linter error about stuttering.
 	configMap *corev1.ConfigMap,
 	vcCreds *credentials.VSphereVMProviderCredentials) (*VSphereVMProviderConfig, error) {
 

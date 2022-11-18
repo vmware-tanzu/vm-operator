@@ -216,7 +216,6 @@ generate-manifests: $(CONTROLLER_GEN) ## Generate manifests e.g. CRD, RBAC etc.
 		paths=github.com/vmware-tanzu/vm-operator-api/api/... \
 		crd:trivialVersions=true \
 		crd:crdVersions=v1 \
-		crd:preserveUnknownFields=false \
 		output:crd:dir=$(CRD_ROOT) \
 		output:none
 	$(CONTROLLER_GEN) \

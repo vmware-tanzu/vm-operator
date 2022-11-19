@@ -13,8 +13,6 @@ for Tanzu Kubernetes Grid (TKG) clusters. It uses a declarative model in which c
 VirtualMachine, VirtualMachineClass and VirtualMachineImage are reconciled by controllers which then drive the 
 vSphere APIs to ensure that the desired state matches the actual state. 
 
-The API for VM Operator is in a separate project [here](https://github.com/vmware-tanzu/vm-operator)
-
 Having demonstrated its value in vSphere with Tanzu, we are committed to making VM Operator available as its own service
 so that it can be used in conjunction with other Kubernetes services that need to manage VMs.
 

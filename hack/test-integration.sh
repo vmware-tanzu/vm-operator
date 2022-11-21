@@ -51,7 +51,19 @@ fi
 # shellcheck disable=SC2046
 CGO_ENABLED=1 go test -v -race -count=1 "${ENV_GOFLAGS[@]}" \
            $(join_packages_for_tests "${TEST_PKGS[@]}") \
-           "${GINKGO_FLAGS[@]}" \
+           ${GINKGO_FLAGS[@]+"${GINKGO_FLAGS[@]}"} \
            -- \
            -enable-integration-tests \
-           -enable-unit-tests=false
+           -enable-unit-tests=false || \
+  TEST_CMD_EXIT_CODE="${?}"
+
+# TEST_CMD_EXIT_CODE may be set to 2 if there are any tests marked as
+# pending/skipped. This pattern is used by developers to leave test
+# code in place that is flaky or needs some attention, but does not
+# warrant total removal. Therefore if the TEST_CMD_EXIT_CODE is 2, it
+# still counts as a successful exit code.
+{ [ "${TEST_CMD_EXIT_CODE:-0}" -eq "2" ] && TEST_CMD_EXIT_CODE=0; } || true
+
+# Just in case the test report did not catch a test failure, ensure
+# this program exits with the TEST_CMD_EXIT_CODE if it is non-zero.
+exit "${TEST_CMD_EXIT_CODE:-0}"

@@ -39,7 +39,7 @@ verify_kustomize_version() {
       mkdir -p "${BIN_ROOT}"
     fi
     archive_name="kustomize-v${kustomize_version}.tar.gz"
-    curl -sLo "${BIN_ROOT}/${archive_name}" https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${kustomize_version}/kustomize_v${kustomize_version}_${goos}_${goarch}.tar.gz
+    curl -sLo "${BIN_ROOT}/${archive_name}" "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${kustomize_version}/kustomize_v${kustomize_version}_${goos}_${goarch}.tar.gz"
     tar -zvxf "${BIN_ROOT}/${archive_name}" -C "${BIN_ROOT}/"
     chmod +x "${BIN_ROOT}/kustomize"
     rm "${BIN_ROOT}/${archive_name}"

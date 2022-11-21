@@ -20,8 +20,8 @@ export PATH := $(abspath $(BIN_DIR)):$(abspath $(TOOLS_BIN_DIR)):$(PATH)
 export KUBEBUILDER_ASSETS := $(abspath $(TOOLS_BIN_DIR))
 
 # Binaries
-MANAGER                  := $(BIN_DIR)/manager
-WEB_CONSOLE_VALIDATOR     := $(BIN_DIR)/web-console-validator
+MANAGER                := $(BIN_DIR)/manager
+WEB_CONSOLE_VALIDATOR  := $(BIN_DIR)/web-console-validator
 
 # Tooling binaries
 CONTROLLER_GEN     := $(TOOLS_BIN_DIR)/controller-gen
@@ -102,13 +102,15 @@ test-nocover: prereqs generate lint-go ## Run Tests (without code coverage)
 	hack/test-unit.sh
 
 .PHONY: test
-test: prereqs generate lint-go ## Run tests
+test: prereqs generate lint-go $(GOCOVMERGE) ## Run tests
 	@rm -f $(COVERAGE_FILE)
-	build/stage-unit-tests.sh $(COVERAGE_FILE)
+	hack/test-unit.sh $(COVERAGE_FILE)
 
 .PHONY: test-integration
-test-integration: prereqs generate lint-go ## Run integration tests
-	KUBECONFIG=$(KUBECONFIG) build/stage-integration-tests.sh $(INT_COV_FILE)
+test-integration: prereqs generate lint-go
+test-integration: $(GOCOVMERGE) $(ETCD) $(KUBE_APISERVER)
+test-integration: ## Run integration tests
+	KUBECONFIG=$(KUBECONFIG) hack/test-integration.sh $(INT_COV_FILE)
 
 .PHONY: coverage
 coverage: test ## Show unit test code coverage (opens a browser)

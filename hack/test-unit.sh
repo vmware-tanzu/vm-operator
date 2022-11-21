@@ -58,7 +58,7 @@ fi
 # shellcheck disable=SC2046
 CGO_ENABLED=1 go test -v -race -count=1 "${ENV_GOFLAGS[@]}" \
     $(join_packages_for_tests "${TEST_PKGS[@]}") \
-    "${GINKGO_FLAGS[@]}" \
+    ${GINKGO_FLAGS[@]+"${GINKGO_FLAGS[@]}"} \
     -- \
     -enable-unit-tests=true \
     -enable-integration-tests=false
@@ -67,7 +67,7 @@ CGO_ENABLED=1 go test -v -race -count=1 "${ENV_GOFLAGS[@]}" \
 # shellcheck disable=SC2046
 go test -v -count=1 "${NO_RACE_ENV_GOFLAGS[@]}" \
     $(join_packages_for_tests "${NO_RACE_TEST_PKGS[@]}") \
-    "${GINKGO_FLAGS[@]}" \
+    ${GINKGO_FLAGS[@]+"${GINKGO_FLAGS[@]}"} \
     -- \
     -enable-unit-tests=true \
     -enable-integration-tests=false

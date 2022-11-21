@@ -32,6 +32,8 @@ var _ = Describe("Test Session Utils", func() {
 						Expect(vAppConfigSpec.Property[i].Info.Value).To(Equal(expected.Property[i].Info.Value))
 						Expect(vAppConfigSpec.Property[i].ArrayUpdateSpec.Operation).To(Equal(vimTypes.ArrayUpdateOperationEdit))
 					}
+					Expect(vAppConfigSpec.OvfEnvironmentTransport).To(HaveLen(1))
+					Expect(vAppConfigSpec.OvfEnvironmentTransport[0]).To(Equal(session.OvfEnvironmentTransportGuestInfo))
 				}
 			},
 			Entry("return nil for absent vm and input props",

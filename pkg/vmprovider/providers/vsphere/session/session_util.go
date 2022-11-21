@@ -11,6 +11,12 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 )
 
+const (
+	// OvfEnvironmentTransportGuestInfo is the OVF transport type that uses
+	// GuestInfo. The other valid type is "iso".
+	OvfEnvironmentTransportGuestInfo = "com.vmware.guestInfo"
+)
+
 func ExtraConfigToMap(input []vimTypes.BaseOptionValue) (output map[string]string) {
 	output = make(map[string]string)
 	for _, opt := range input {
@@ -68,7 +74,12 @@ func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppP
 		return nil
 	}
 
-	return &vimTypes.VmConfigSpec{Property: outProps}
+	return &vimTypes.VmConfigSpec{
+		Property: outProps,
+		// Ensure the transport is guestInfo in case the VM does not have
+		// a CD-ROM device required to use the ISO transport.
+		OvfEnvironmentTransport: []string{OvfEnvironmentTransportGuestInfo},
+	}
 }
 
 func EncodeGzipBase64(s string) (string, error) {

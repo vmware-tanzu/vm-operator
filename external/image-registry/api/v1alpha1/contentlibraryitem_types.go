@@ -1,4 +1,5 @@
 // Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
 
@@ -9,12 +10,33 @@ import (
 // ContentLibraryItemType is a constant for the type of a content library item in vCenter.
 type ContentLibraryItemType string
 
+// CertVerificationStatus is a constant for the certificate verification status of a content library item in vCenter.
+type CertVerificationStatus string
+
 const (
 	// ContentLibraryItemTypeOvf indicates an OVF content library item in vCenter.
 	ContentLibraryItemTypeOvf = ContentLibraryItemType("Ovf")
 
 	// ContentLibraryItemTypeIso indicates an ISO content library item in vCenter.
 	ContentLibraryItemTypeIso = ContentLibraryItemType("Iso")
+
+	// CertVerificationStatusNotAvailable indicates the certificate verification status is not available.
+	CertVerificationStatusNotAvailable = CertVerificationStatus("NOT_AVAILABLE")
+
+	// CertVerificationStatusVerified indicates the library item has been fully validated during importing or file syncing.
+	CertVerificationStatusVerified = CertVerificationStatus("VERIFIED")
+
+	// CertVerificationStatusInternal indicates the library item is cloned/created through vCenter.
+	CertVerificationStatusInternal = CertVerificationStatus("INTERNAL")
+
+	// CertVerificationStatusVerificationFailure indicates certificate or manifest validation failed on the library item.
+	CertVerificationStatusVerificationFailure = CertVerificationStatus("VERIFICATION_FAILURE")
+
+	// CertVerificationStatusVerificationInProgress indicates the library item certificate verification is in progress.
+	CertVerificationStatusVerificationInProgress = CertVerificationStatus("VERIFICATION_IN_PROGRESS")
+
+	// CertVerificationStatusUntrusted indicates the certificate used to sign the library item is not trusted.
+	CertVerificationStatusUntrusted = CertVerificationStatus("UNTRUSTED")
 )
 
 // ContentLibraryReference contains the information to locate the content library resource.
@@ -26,6 +48,15 @@ type ContentLibraryReference struct {
 	// Namespace of the resource being referenced. If empty, cluster scoped resource is assumed.
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
+}
+
+type CertificateVerificationInfo struct {
+	// Status shows the certificate verification status of the library item.
+	Status CertVerificationStatus `json:"status"`
+
+	// CertChain shows the signing certificate in base64 encoding if the library item is signed.
+	// +optional
+	CertChain []string `json:"certChain,omitempty"`
 }
 
 // ContentLibraryItemSpec defines the desired state of a ContentLibraryItem.
@@ -72,6 +103,14 @@ type ContentLibraryItemStatus struct {
 	// +required
 	// +kubebuilder:default=false
 	Cached bool `json:"cached"`
+
+	// SecurityCompliance shows the security compliance of the library item.
+	// +optional
+	SecurityCompliance *bool `json:"securityCompliance,omitempty"`
+
+	// CertificateVerificationInfo shows the certificate verification status and the signing certificate.
+	// +optional
+	CertificateVerificationInfo *CertificateVerificationInfo `json:"certificateVerificationInfo,omitempty"`
 
 	// Ready denotes that the library item is ready to be used.
 	// +required

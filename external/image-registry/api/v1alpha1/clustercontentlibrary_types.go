@@ -1,5 +1,7 @@
 // Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
+// Package v1alpha1 contains the v1alpha1 version of the image-registry-operator APIs.
 package v1alpha1
 
 import (
@@ -45,6 +47,11 @@ type ClusterContentLibraryStatus struct {
 	// This field is populated only if the library is of the "Subscribed" type.
 	// +optional
 	SubscriptionInfo *SubscriptionInfo `json:"subscriptionInfo,omitempty"`
+
+	// SecurityPolicyID defines the security policy applied to this library.
+	// Setting this field will make the library secure.
+	// +optional
+	SecurityPolicyID string `json:"securityPolicyID,omitempty"`
 
 	// CreationTime indicates the date and time when this library was created.
 	// +required

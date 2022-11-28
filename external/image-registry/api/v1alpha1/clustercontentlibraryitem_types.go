@@ -1,5 +1,7 @@
 // Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
+// Package v1alpha1 contains the v1alpha1 version of the image-registry-operator APIs.
 package v1alpha1
 
 import (
@@ -50,6 +52,14 @@ type ClusterContentLibraryItemStatus struct {
 	// +required
 	// +kubebuilder:default=false
 	Cached bool `json:"cached"`
+
+	// SecurityCompliance shows the security compliance of the library item.
+	// +optional
+	SecurityCompliance *bool `json:"securityCompliance"`
+
+	// CertificateVerificationInfo shows the certificate verification status and the signing certificate.
+	// +optional
+	CertificateVerificationInfo *CertificateVerificationInfo `json:"certificateVerificationInfo,omitempty"`
 
 	// Ready denotes that the library item is ready to be used.
 	// +required

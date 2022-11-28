@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
+
 # Check if generated files are up to date
-# Used in the precommit Jenkins job
 
 set -o errexit
 set -o nounset
@@ -12,13 +12,26 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 make generate
 
-git_status=$(git status config hack pkg --porcelain)
-if [ -z "${git_status}" ]; then
-    echo "Generated files are up to date!"
+if git diff --exit-code; then
+  printf '\nCongratulations! Generated assets are up-to-date!\n'
 else
-    echo "Error: You may haven't check in your generated files!" \
-        "You can refer to this thread to see why we need to check in generated files." \
-        "Following files are modified after re-generating" \
-        "${git_status}" 1>&2
-    exit 1
+  exit_code="${?}"
+
+  # Please note the following heredoc uses leading tabs to allow
+  # the contents to be indented with the if/fi statement. For
+  # more information on indenting heredocs, please see the section
+  # entitled "Mutli-line message, with tabs suppressed" from The
+  # Linux Documentation Project (TLDP) at
+  # https://tldp.org/LDP/abs/html/here-docs.html.
+  cat <<-EOF
+	Please update generated assets before opening a pull request or
+	pushing new changes. To generate the assets, please run the
+	following command from the root of the project:
+
+	    make generate
+
+	Thank you!
+	EOF
+
+  exit "${exit_code}"
 fi

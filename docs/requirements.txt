@@ -1,0 +1,3 @@
+mkdocs >= 1.4.2
+mkdocs-bootswatch >= 1.1
+jinja2 == 3.0.0

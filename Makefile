@@ -3,13 +3,29 @@ SHELL := /usr/bin/env bash
 
 .DEFAULT_GOAL := help
 
-# Active module mode, as we use go modules to manage dependencies
+# The list of goals that do not require Golang.
+NON_GO_GOALS := lint-markdown lint-shell
+
+# If one of the goals that require golang is present and the
+# Go binary is not in the path, then print an error message
+# and exit.
+ifneq (,$(filter-out $(NON_GO_GOALS),$(MAKECMDGOALS)))
+ifeq (,$(strip $(shell command -v go 2>/dev/null || true)))
+
+$(error Golang binary not detected in path)
+
+else # (,$(strip $(shell command -v go 2>/dev/null || true)))
+
+# Active module mode, as we use go modules to manage dependencies.
 export GO111MODULE := on
 
 # Default the GOOS and GOARCH values to be the same as the platform on which
 # this Makefile is being executed.
 export GOOS ?= $(shell go env GOHOSTOS)
 export GOARCH ?= $(shell go env GOHOSTARCH)
+
+endif # ifneq (,$(filter-out $(NON_GO_GOALS),$(MAKECMDGOALS)))
+endif # ifeq (,$(strip $(shell command -v go 2>/dev/null || true)))
 
 # Directories
 BIN_DIR       := bin
@@ -29,7 +45,8 @@ GOLANGCI_LINT      := $(TOOLS_BIN_DIR)/golangci-lint
 KUSTOMIZE          := $(TOOLS_BIN_DIR)/kustomize
 GO_JUNIT_REPORT    := $(TOOLS_BIN_DIR)/go-junit-report
 GOCOVMERGE         := $(TOOLS_BIN_DIR)/gocovmerge
-GOCOVER_COBERTURA  := $(TOOLS_BIN_DIR)/gocover-cobertura
+GOCOV              := $(TOOLS_BIN_DIR)/gocov
+GOCOV_XML          := $(TOOLS_BIN_DIR)/gocov-xml
 GINKGO             := $(TOOLS_BIN_DIR)/ginkgo
 KUBE_APISERVER     := $(TOOLS_BIN_DIR)/kube-apiserver
 KUBEBUILDER        := $(TOOLS_BIN_DIR)/kubebuilder
@@ -98,27 +115,34 @@ help: ## Display this help
 ## --------------------------------------
 
 .PHONY: test-nocover
-test-nocover: prereqs generate lint-go ## Run Tests (without code coverage)
+test-nocover: ## Run Tests (without code coverage)
 	hack/test-unit.sh
 
 .PHONY: test
-test: prereqs generate lint-go $(GOCOVMERGE) ## Run tests
+test: | $(GOCOVMERGE)
+test: ## Run tests
 	@rm -f $(COVERAGE_FILE)
 	hack/test-unit.sh $(COVERAGE_FILE)
 
 .PHONY: test-integration
-test-integration: prereqs generate lint-go
-test-integration: $(GOCOVMERGE) $(ETCD) $(KUBE_APISERVER)
+test-integration: | $(ETCD) $(KUBE_APISERVER)
 test-integration: ## Run integration tests
 	KUBECONFIG=$(KUBECONFIG) hack/test-integration.sh $(INT_COV_FILE)
+
+.PHONY: coverage
+coverage-merge: | $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)
+coverage-merge: ## Merge the coverage from unit and integration tests
+	$(GOCOVMERGE) $(COVERAGE_FILE) $(INT_COV_FILE) >$(FULL_COV_FILE)
+	gocov convert "$(FULL_COV_FILE)" | gocov-xml >"$(FULL_COV_FILE:.out=.xml)"
 
 .PHONY: coverage
 coverage: test ## Show unit test code coverage (opens a browser)
 	go tool cover -html=$(COVERAGE_FILE)
 
 .PHONY: coverage-full
-coverage-full: test test-integration | $(GOCOVMERGE) ## Show combined code coverage for unit and integration tests (opens a browser)
-	$(GOCOVMERGE) $(COVERAGE_FILE) $(INT_COV_FILE) >$(FULL_COV_FILE)
+coverage-full: test test-integration
+coverage-full: ## Show combined code coverage for unit and integration tests (opens a browser)
+	$(MAKE) coverage-merge
 	go tool cover -html=$(FULL_COV_FILE)
 
 ## --------------------------------------
@@ -127,7 +151,7 @@ coverage-full: test test-integration | $(GOCOVMERGE) ## Show combined code cover
 
 .PHONY: manager-only
 manager-only: $(MANAGER) ## Build manager binary only
-$(MANAGER): go.mod prereqs generate
+$(MANAGER):
 	go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) .
 
 .PHONY: manager
@@ -135,7 +159,7 @@ manager: prereqs generate lint-go manager-only ## Build manager binary
 
 .PHONY: web-console-validator-only
 web-console-validator-only: $(WEB_CONSOLE_VALIDATOR) ## Build web-console-validator binary only
-$(WEB_CONSOLE_VALIDATOR): go.mod prereqs generate
+$(WEB_CONSOLE_VALIDATOR):
 	go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) cmd/web-console-validator/main.go
 
 .PHONY: web-console-validator
@@ -148,7 +172,7 @@ web-console-validator: prereqs generate lint-go web-console-validator-only ## Bu
 TOOLING_BINARIES := $(CONTROLLER_GEN) $(GOLANGCI_LINT) $(KUSTOMIZE) \
                     $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) \
                     $(ETCD) $(GINKGO) $(GO_JUNIT_REPORT) \
-                    $(GOCOVMERGE) $(GOCOVER_COBERTURA)
+                    $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)
 tools: $(TOOLING_BINARIES) ## Build tooling binaries
 .PHONY: $(TOOLING_BINARIES)
 $(TOOLING_BINARIES):
@@ -166,7 +190,8 @@ lint: ## Run all the lint targets
 
 GOLANGCI_LINT_FLAGS ?= --fast=true
 .PHONY: lint-go
-lint-go: $(GOLANGCI_LINT) ## Lint codebase
+lint-go: | $(GOLANGCI_LINT)
+lint-go: ## Lint codebase
 	$(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_FLAGS)
 
 .PHONY: lint-go-full
@@ -192,14 +217,19 @@ fix: lint-go ## Tries to fix errors reported by lint-go-full target
 .PHONY: modules
 modules: ## Validates the modules
 	go mod tidy
+	cd hack/tools && go mod tidy
+	cd api && go mod tidy
 
 .PHONY: modules-vendor
 modules-vendor: ## Vendors the modules
 	go mod vendor
+	cd api && go mod tidy
 
 .PHONY: modules-download
 modules-download: ## Downloads and caches the modules
 	go mod download
+	cd hack/tools && go mod download
+	cd api && go mod download
 
 .PHONY: generate
 generate: ## Generate code
@@ -207,13 +237,15 @@ generate: ## Generate code
 	$(MAKE) generate-manifests
 
 .PHONY: generate-go
-generate-go: ## Runs Go related generate targets
-ifneq (0,$(GENERATE_CODE))
-	go generate ./...
-endif
+generate-go: | $(CONTROLLER_GEN)
+generate-go: ## Generate deepcopy
+	$(CONTROLLER_GEN) \
+		paths=github.com/vmware-tanzu/vm-operator/api/... \
+		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
 
 .PHONY: generate-manifests
-generate-manifests: $(CONTROLLER_GEN) ## Generate manifests e.g. CRD, RBAC etc.
+generate-manifests: | $(CONTROLLER_GEN)
+generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/api/... \
 		crd:crdVersions=v1 \

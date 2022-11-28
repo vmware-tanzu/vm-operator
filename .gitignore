@@ -1,5 +1,14 @@
 .DS_Store
 
+# Test output
+cover.out
+cover.out.norace
+cover.xml
+integration-cover.out
+integration-cover.xml
+merged-cover.out
+merged-cover.xml
+
 # Build artifacts
 bin/
 out/

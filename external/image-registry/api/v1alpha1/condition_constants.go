@@ -20,5 +20,5 @@ const (
 // Condition.Reasons related to ClusterContentLibraryItem or ContentLibraryItem API objects.
 const (
 	ClusterContentLibraryRefValidationFailedReason = "ClusterContentLibraryRefValidationFailed"
-	ContentLibraryRefValidationFailedReason = "ContentLibraryRefValidationFailed"
+	ContentLibraryRefValidationFailedReason        = "ContentLibraryRefValidationFailed"
 )

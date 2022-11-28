@@ -1,0 +1,216 @@
+name: ci
+
+env:
+  GO_VERSION: 1.19.3
+
+on:
+  pull_request:
+    branches:
+    - main
+  push:
+    branches:
+    - main
+
+jobs:
+
+  lint-markdown:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Lint Markdown
+      run: make lint-markdown
+
+  lint-shell:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Lint Shell
+      run: make lint-shell
+
+  verify-go-modules:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Install Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        cache-dependency-path: '**/go.sum'
+    - name: Run go mod tidy
+      run: make modules
+    - name: Verify go modules have not changed
+      run: git diff --exit-code
+    - name: Run go mod download
+      run: make modules-download
+
+  verify-codegen:
+    needs:
+    - verify-go-modules
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Install Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        cache-dependency-path: '**/go.sum'
+    - name: Verify codegen
+      run: make verify-codegen
+
+  lint-go:
+    needs:
+    - verify-go-modules
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Install Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        cache-dependency-path: '**/go.sum'
+    - name: Setup the cache for golangci-lint
+      uses: actions/cache@v3
+      with:
+        key: golangci-lint-${{ runner.os }}-go${{ env.GO_VERSION }}-${{ hashFiles('go.sum', 'hack/tools/go.sum') }}
+        path: |
+          ~/.cache/golangci-lint
+          hack/tools/bin/golangci-lint
+    - name: Lint Go
+      run: make lint-go-full
+
+  build-manager:
+    needs:
+    - verify-go-modules
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Install Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        cache-dependency-path: '**/go.sum'
+    - name: Build Manager
+      run: make manager-only
+
+  build-web-console-validator:
+    needs:
+    - verify-go-modules
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Install Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        cache-dependency-path: '**/go.sum'
+    - name: Build Web Console Validator
+      run: make web-console-validator-only
+
+  unit-test:
+    needs:
+    - verify-go-modules
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Install Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        cache-dependency-path: '**/go.sum'
+    - name: Unit Test
+      run: make test
+    - name: Store test coverage
+      uses: actions/upload-artifact@v3
+      with:
+        name: unit-test-coverage
+        path: cover.out
+
+  integration-test:
+    needs:
+    - verify-go-modules
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Install Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        cache-dependency-path: '**/go.sum'
+    - name: Integration Test
+      run: make test-integration
+    - name: Store test coverage
+      uses: actions/upload-artifact@v3
+      with:
+        name: integration-test-coverage
+        path: integration-cover.out
+
+  code-coverage:
+    needs:
+    - unit-test
+    - integration-test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Install Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        cache-dependency-path: '**/go.sum'
+    - name: Fetch unit test coverage
+      uses: actions/download-artifact@v3
+      with:
+        name: unit-test-coverage
+    - name: Fetch integration test coverage
+      uses: actions/download-artifact@v3
+      with:
+        name: integration-test-coverage
+    - name: Merge test coverage
+      run: make coverage-merge
+    - name: Produce code coverage report
+      uses: irongut/CodeCoverageSummary@v1.3.0
+      with:
+        filename: merged-cover.xml
+        badge: true
+        fail_below_min: true
+        format: markdown
+        hide_branch_rate: false
+        hide_complexity: true
+        indicators: true
+        output: both
+        thresholds: '60 80'
+    - name: Delete the stored test coverage
+      uses: geekyeggo/delete-artifact@v2
+      with:
+        name: |
+          unit-test-coverage
+          integration-test-coverage
+    - name: Store code coverage report
+      uses: actions/upload-artifact@v3
+      if: github.event_name != 'pull_request'
+      with:
+        name: code-coverage-report
+        path: code-coverage-results.md
+    - name: Update PR with code coverage report
+      uses: marocchino/sticky-pull-request-comment@v2
+      if: github.event_name == 'pull_request'
+      with:
+        recreate: true
+        path: code-coverage-results.md

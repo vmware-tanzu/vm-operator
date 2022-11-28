@@ -16,15 +16,17 @@ function join_packages_for_tests { local IFS=" "; echo "$*"; }
 # script is located.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-COVERAGE_FILE="${1-}"
-NO_RACE_COVERAGE_FILE="${PWD}/no_race_unit_cover.out"
+COVERAGE_FILE="${1:-}"
+if [ -n "${COVERAGE_FILE}" ]; then
+  COVERAGE_FILE_NORACE="${COVERAGE_FILE}.norace"
+fi
 
 COVER_PKGS=(
   "./controllers/..."
   "./pkg/..."
   "./webhooks/..."
 )
-COV_OPTS=$(join_packages_for_cover "${COVER_PKGS[@]}")
+COVER_OPTS=$(join_packages_for_cover "${COVER_PKGS[@]}")
 
 TEST_PKGS=(
   "./controllers/..."
@@ -33,49 +35,60 @@ TEST_PKGS=(
 )
 
 # Packages that cannot be tested with "-race" due to dependency races
-NO_RACE_TEST_PKGS=(
+TEST_PKGS_NORACE=(
   "./pkg/vmprovider/providers/vsphere/client"
 )
 
-ENV_GOFLAGS=()
-NO_RACE_ENV_GOFLAGS=()
+GINKGO_FLAGS=()
+GO_TEST_FLAGS=("-v")
+
+if [ -n "${JOB_NAME:-}" ]; then
+  # Disable color output on Jenkins.
+  GINKGO_FLAGS+=("-ginkgo.noColor")
+fi
+
+# GitHub actions store the test cache, so do not force tests
+# to re-run when running as part of a GitHub action.
+if [ -z "${GITHUB_ACTION:-}" ]; then
+  GO_TEST_FLAGS+=("-count=1")
+fi
 
 # The first argument is the name of the coverage file to use.
-if [[ -n ${COVERAGE_FILE} ]]; then
-    ENV_GOFLAGS+=("-coverprofile=${COVERAGE_FILE}" "-coverpkg=${COV_OPTS}" "-covermode=atomic")
-    NO_RACE_ENV_GOFLAGS+=("-coverprofile=${NO_RACE_COVERAGE_FILE}" "-coverpkg=${COV_OPTS}" "-covermode=atomic")
+if [ -n "${COVERAGE_FILE}" ]; then
+  GO_TEST_FLAGS+=("-coverpkg=${COVER_OPTS}" "-covermode=atomic")
+  GO_TEST_FLAGS_NORACE=("${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}")
+  GO_TEST_FLAGS+=("-coverprofile=${COVERAGE_FILE}")
+  GO_TEST_FLAGS_NORACE+=("-coverprofile=${COVERAGE_FILE_NORACE}")
+else
+  GO_TEST_FLAGS_NORACE=("${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}")
 fi
 
-GINKGO_FLAGS=()
-
-if [[ -n ${JOB_NAME:-} ]]; then
-    # Disable color output on Jenkins.
-    GINKGO_FLAGS+=("-ginkgo.noColor")
-fi
+GO_TEST_FLAGS+=("-race")
 
 # Run unit tests
 # go test: -race requires cgo
 # shellcheck disable=SC2046
-CGO_ENABLED=1 go test -v -race -count=1 "${ENV_GOFLAGS[@]}" \
-    $(join_packages_for_tests "${TEST_PKGS[@]}") \
-    ${GINKGO_FLAGS[@]+"${GINKGO_FLAGS[@]}"} \
-    -- \
-    -enable-unit-tests=true \
-    -enable-integration-tests=false
+CGO_ENABLED=1 \
+go test "${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}" \
+  $(join_packages_for_tests "${TEST_PKGS[@]}") \
+  "${GINKGO_FLAGS[@]+"${GINKGO_FLAGS[@]}"}" \
+  -- \
+  -enable-unit-tests=true \
+  -enable-integration-tests=false
 
 # Run certain unit tests without -race
 # shellcheck disable=SC2046
-go test -v -count=1 "${NO_RACE_ENV_GOFLAGS[@]}" \
-    $(join_packages_for_tests "${NO_RACE_TEST_PKGS[@]}") \
-    ${GINKGO_FLAGS[@]+"${GINKGO_FLAGS[@]}"} \
-    -- \
-    -enable-unit-tests=true \
-    -enable-integration-tests=false
+go test "${GO_TEST_FLAGS_NORACE[@]+"${GO_TEST_FLAGS_NORACE[@]}"}" \
+  $(join_packages_for_tests "${TEST_PKGS_NORACE[@]}") \
+  "${GINKGO_FLAGS[@]+"${GINKGO_FLAGS[@]}"}" \
+  -- \
+  -enable-unit-tests=true \
+  -enable-integration-tests=false
 
-# Merge the coverage files.
-if [[ -n ${COVERAGE_FILE} ]]; then
-    TMP_COVERAGE_FILE=$(mktemp)
-    mv "${COVERAGE_FILE}" "${TMP_COVERAGE_FILE}"
-    gocovmerge "${TMP_COVERAGE_FILE}" "${NO_RACE_COVERAGE_FILE}" > "${COVERAGE_FILE}"
-    rm -f "${TMP_COVERAGE_FILE}" "${NO_RACE_COVERAGE_FILE}"
+# Merge the race/norace code coverage files.
+if [ -n "${COVERAGE_FILE:-}" ]; then
+  TMP_COVERAGE_FILE="$(mktemp)"
+  mv "${COVERAGE_FILE}" "${TMP_COVERAGE_FILE}"
+  gocovmerge "${TMP_COVERAGE_FILE}" "${COVERAGE_FILE_NORACE}" >"${COVERAGE_FILE}"
+  rm -f "${TMP_COVERAGE_FILE}" "${COVERAGE_FILE_NORACE}"
 fi

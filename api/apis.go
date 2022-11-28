@@ -1,8 +1,5 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-
-// Generate deepcopy for apis
-// go:generate go run k8s.io/code-generator/cmd/deepcopy-gen -O zz_generated.deepcopy -i ./...
 
 // Package apis contains Kubernetes API groups.
 package apis

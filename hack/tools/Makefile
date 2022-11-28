@@ -9,12 +9,6 @@ SHELL := /usr/bin/env bash
 # Active module mode, as we use go modules to manage dependencies
 export GO111MODULE := on
 
-# Directories.
-BIN_DIR := bin
-# The SETUP_ENVTEST download directory. setup-envtest will install binaries here,
-# but it is easiest if we copy them to our BIN_DIR.
-ENVTEST_DOWNLOAD_DIR = $(shell $(SETUP_ENVTEST) use -p path $(K8S_VERSION))
-
 # Versions.
 KUBEBUILDER_VERSION=3.3.0
 K8S_VERSION=1.24.1
@@ -22,6 +16,13 @@ KIND_VERSION=0.11.1
 
 HOST_OS=$(shell go env GOOS)
 HOST_ARCH=$(shell go env GOARCH)
+
+# Directories.
+BIN_DIR := bin
+
+# The SETUP_ENVTEST download directory. setup-envtest will install binaries here,
+# but it is easiest if we copy them to our BIN_DIR.
+ENVTEST_DOWNLOAD_DIR = $(shell $(SETUP_ENVTEST) use -p path $(K8S_VERSION))
 
 # Binaries.
 CONTROLLER_GEN    := $(BIN_DIR)/controller-gen
@@ -37,6 +38,8 @@ ETCD              := $(BIN_DIR)/etcd
 KUBE_APISERVER    := $(BIN_DIR)/kube-apiserver
 KUBECTL           := $(BIN_DIR)/kubectl
 KIND              := $(BIN_DIR)/kind
+GOCOV             := $(BIN_DIR)/gocov
+GOCOV_XML         := $(BIN_DIR)/gocov-xml
 
 ## --------------------------------------
 ## Help
@@ -72,7 +75,7 @@ $(KUSTOMIZE):
 .PHONY: $(GO_JUNIT_REPORT)
 go-junit-report: $(GO_JUNIT_REPORT) ## Install go-junit-report
 $(GO_JUNIT_REPORT): go.mod
-	go build -tags=tools -o $@ github.com/jstemmer/go-junit-report
+	go build -tags=tools -o $@ github.com/jstemmer/go-junit-report/v2
 
 .PHONY: $(GINKGO)
 ginkgo: $(GINKGO) ## Install ginkgo
@@ -88,6 +91,16 @@ $(GOCOVMERGE): go.mod
 gocover-cobertura: $(GOCOVER_COBERTURA) ## Install gocover-cobertura
 $(GOCOVER_COBERTURA): go.mod
 	go build -tags=tools -o $@ github.com/t-yuki/gocover-cobertura
+
+.PHONY: $(GOCOV)
+gocov: $(GOCOV) ## Install gocov
+$(GOCOV): go.mod
+	go build -tags=tools -o $@ github.com/axw/gocov/gocov
+
+.PHONY: $(GOCOV_XML)
+gocov-xml: $(GOCOV_XML) ## Install gocov-xml
+$(GOCOV_XML): go.mod
+	go build -tags=tools -o $@ github.com/AlekSi/gocov-xml
 
 .PHONY: $(KUBEBUILDER)
 kubebuilder: $(KUBEBUILDER) ## Install kubebuilder

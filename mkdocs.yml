@@ -1,0 +1,40 @@
+site_name: VM Operator
+site_url: https://github.com/vmware-tanzu/vm-operator
+repo_url: https://github.com/vmware-tanzu/vm-operator
+edit_uri: blob/main/docs/
+docs_dir: docs
+site_dir: .site
+theme:
+  name: yeti
+  custom_dir: docs/www/themes/yeti
+extra_css:
+- www/css/vm-operator.css
+- www/css/vm-operator-font.css
+- www/css/anchor.css
+- www/css/hX.css
+- www/css/first-of-type.css
+- www/css/hide-rtd-footer.css
+- www/css/dropdown.css
+extra_javascript:
+- www/js/anchor.js
+markdown_extensions:
+- admonition
+nav:
+- Home: index.md
+- User Guide:
+  - Platforms:
+    - Overview: user-guide/platforms.md
+    - Supervisor: user-guide/platforms/supervisor.md
+  - Examples:
+    - Demo: user-guide/examples/demo.md
+  - Help:
+    - Troubleshooting: user-guide/help/troubleshooting.md
+    - Usage: user-guide/help/usage.md
+- Developers Guide:
+  - Project Guidelines: dev-guide/project-guidelines.md
+  - Build Reference: dev-guide/build-reference.md
+  - Release Process: dev-guide/release-process.md
+- About:
+  - Contributing: about/contributing.md
+  - License: about/license.md
+  - Release Notes: about/release-notes.md

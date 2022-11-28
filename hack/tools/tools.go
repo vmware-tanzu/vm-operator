@@ -1,3 +1,4 @@
+//go:build tools
 // +build tools
 
 /*
@@ -20,8 +21,10 @@ limitations under the License.
 package tools
 
 import (
+	_ "github.com/AlekSi/gocov-xml"
+	_ "github.com/axw/gocov/gocov"
 	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
-	_ "github.com/jstemmer/go-junit-report"
+	_ "github.com/jstemmer/go-junit-report/v2"
 	_ "github.com/onsi/ginkgo/ginkgo"
 	_ "github.com/t-yuki/gocover-cobertura"
 	_ "github.com/wadey/gocovmerge"

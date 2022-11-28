@@ -23,7 +23,7 @@ COVER_PKGS=(
   "./pkg/..."
   "./webhooks/..."
 )
-COV_OPTS=$(join_packages_for_cover "${COVER_PKGS[@]}")
+COVER_OPTS=$(join_packages_for_cover "${COVER_PKGS[@]}")
 
 # Packages tested with the new test framework.
 TEST_PKGS=(
@@ -32,29 +32,35 @@ TEST_PKGS=(
   "./webhooks/..."
 )
 
-ENV_GOFLAGS=()
+GINKGO_FLAGS=()
+GO_TEST_FLAGS=("-v" "-race")
 
-# The first argument is the name of the coverage file to use.
-if [[ -n ${COVERAGE_FILE} ]]; then
-    ENV_GOFLAGS+=("-coverprofile=${COVERAGE_FILE}" "-coverpkg=${COV_OPTS}")
+if [ -n "${JOB_NAME:-}" ]; then
+  # Disable color output on Jenkins.
+  GINKGO_FLAGS+=("-ginkgo.noColor")
 fi
 
-GINKGO_FLAGS=()
+# GitHub actions store the test cache, so do not force tests
+# to re-run when running as part of a GitHub action.
+if [ -z "${GITHUB_ACTION:-}" ]; then
+  GO_TEST_FLAGS+=("-count=1")
+fi
 
-if [[ -n ${JOB_NAME:-} ]]; then
-    # Disable color output on Jenkins.
-    GINKGO_FLAGS+=("-ginkgo.noColor")
+# The first argument is the name of the coverage file to use.
+if [ -n "${COVERAGE_FILE}" ]; then
+  GO_TEST_FLAGS+=("-coverprofile=${COVERAGE_FILE}" "-coverpkg=${COVER_OPTS}")
 fi
 
 # Run integration tests
 # go test: -race requires cgo
 # shellcheck disable=SC2046
-CGO_ENABLED=1 go test -v -race -count=1 "${ENV_GOFLAGS[@]}" \
-           $(join_packages_for_tests "${TEST_PKGS[@]}") \
-           ${GINKGO_FLAGS[@]+"${GINKGO_FLAGS[@]}"} \
-           -- \
-           -enable-integration-tests \
-           -enable-unit-tests=false || \
+CGO_ENABLED=1 \
+go test "${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}" \
+  $(join_packages_for_tests "${TEST_PKGS[@]}") \
+  "${GINKGO_FLAGS[@]+"${GINKGO_FLAGS[@]}"}" \
+  -- \
+  -enable-unit-tests=false \
+  -enable-integration-tests=true || \
   TEST_CMD_EXIT_CODE="${?}"
 
 # TEST_CMD_EXIT_CODE may be set to 2 if there are any tests marked as

@@ -22,6 +22,9 @@ markdown_extensions:
 nav:
 - Home: index.md
 - User Guide:
+  - APIs:
+    - Overview: user-guide/apis.md
+    - v1alpha1: user-guide/apis/v1alpha1.md
   - Platforms:
     - Overview: user-guide/platforms.md
     - Supervisor: user-guide/platforms/supervisor.md

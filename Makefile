@@ -40,6 +40,7 @@ MANAGER                := $(BIN_DIR)/manager
 WEB_CONSOLE_VALIDATOR  := $(BIN_DIR)/web-console-validator
 
 # Tooling binaries
+CRD_REF_DOCS       := $(TOOLS_BIN_DIR)/crd-ref-docs
 CONTROLLER_GEN     := $(TOOLS_BIN_DIR)/controller-gen
 GOLANGCI_LINT      := $(TOOLS_BIN_DIR)/golangci-lint
 KUSTOMIZE          := $(TOOLS_BIN_DIR)/kustomize
@@ -169,7 +170,8 @@ web-console-validator: prereqs generate lint-go web-console-validator-only ## Bu
 ## Tooling Binaries
 ## --------------------------------------
 
-TOOLING_BINARIES := $(CONTROLLER_GEN) $(GOLANGCI_LINT) $(KUSTOMIZE) \
+TOOLING_BINARIES := $(CRD_REF_DOCS) $(CONTROLLER_GEN) $(GOLANGCI_LINT) \
+                    $(KUSTOMIZE) \
                     $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) \
                     $(ETCD) $(GINKGO) $(GO_JUNIT_REPORT) \
                     $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)
@@ -235,6 +237,7 @@ modules-download: ## Downloads and caches the modules
 generate: ## Generate code
 	$(MAKE) generate-go
 	$(MAKE) generate-manifests
+	$(MAKE) generate-api-docs
 
 .PHONY: generate-go
 generate-go: | $(CONTROLLER_GEN)
@@ -261,6 +264,19 @@ generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 		paths=./webhooks/... \
 		output:rbac:dir=$(RBAC_ROOT) \
 		rbac:roleName=manager-role
+
+.PHONY: generate-api-docs
+generate-api-docs: | $(CRD_REF_DOCS)
+generate-api-docs: ## Generate API documentation
+	@mkdir -p ./docs/user-guide/apis
+	$(CRD_REF_DOCS) \
+	  --renderer=markdown \
+	  --source-path=./api/v1alpha1 \
+	  --config=./.crd-ref-docs/config.yaml \
+	  --templates-dir=./.crd-ref-docs/template \
+	  --output-path=./docs/user-guide/apis
+	mv ./docs/user-guide/apis/out.md ./docs/user-guide/apis/v1alpha1.md
+
 
 ## --------------------------------------
 ## Kustomize

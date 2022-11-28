@@ -25,6 +25,7 @@ BIN_DIR := bin
 ENVTEST_DOWNLOAD_DIR = $(shell $(SETUP_ENVTEST) use -p path $(K8S_VERSION))
 
 # Binaries.
+CRD_REF_DOCS      := $(BIN_DIR)/crd-ref-docs
 CONTROLLER_GEN    := $(BIN_DIR)/controller-gen
 SETUP_ENVTEST     := $(BIN_DIR)/setup-envtest
 GOLANGCI_LINT     := $(BIN_DIR)/golangci-lint
@@ -51,6 +52,11 @@ help: ## Display this help
 ## --------------------------------------
 ## Binaries
 ## --------------------------------------
+
+.PHONY: $(CRD_REF_DOCS)
+crd-ref-docs: $(CRD_REF_DOCS) ## Install crd-ref-docs
+$(CRD_REF_DOCS):
+	go build -tags=tools -o $@ github.com/elastic/crd-ref-docs
 
 .PHONY: $(CONTROLLER_GEN)
 controller-gen: $(CONTROLLER_GEN) ## Install controller-gen

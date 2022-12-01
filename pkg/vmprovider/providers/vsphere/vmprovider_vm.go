@@ -664,7 +664,10 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	updateArgs.VMClass = vmClass
 	updateArgs.VMImageStatus = vmImageStatus
 	updateArgs.VMMetadata = vmMD
-	updateArgs.ResourcePolicy = resourcePolicy
+
+	// We're always ready - again - at this point since we've fetched the above objects. We really should
+	// not be touching this condition after creation but that is for another day.
+	conditions.MarkTrue(vmCtx.VM, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
 
 	if resourcePolicy != nil {
 		updateArgs.ResourcePolicy = resourcePolicy

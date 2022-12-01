@@ -25,6 +25,7 @@ import (
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -640,6 +641,40 @@ func vmTests() {
 				})
 
 				// TODO: More assertions!
+			})
+
+			Context("Conditions", func() {
+				readyCondition := *conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+
+				It("Sets expected PrereqReady condition", func() {
+					_, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					c := conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+					Expect(c).ToNot(BeNil())
+					Expect(*c).To(conditions.MatchCondition(readyCondition))
+
+					// Use the class binding removal to toggle the condition state.
+					Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1alpha1.VirtualMachineClassBinding{})).To(Succeed())
+
+					_, err = createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).To(HaveOccurred())
+
+					c = conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+					Expect(c).ToNot(BeNil())
+					Expect(c.Status).To(Equal(corev1.ConditionFalse))
+
+					// Recreate the class binding to put things back.
+					vmClassBinding := builder.DummyVirtualMachineClassBinding(vm.Spec.ClassName, vm.Namespace)
+					Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
+
+					_, err = createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					c = conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+					Expect(c).ToNot(BeNil())
+					Expect(*c).To(conditions.MatchCondition(readyCondition))
+				})
 			})
 
 			Context("Without Storage Class", func() {

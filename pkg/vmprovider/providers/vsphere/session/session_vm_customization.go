@@ -402,24 +402,59 @@ func TemplateVMMetadata(vmCtx context.VirtualMachineContext, updateArgs VMUpdate
 		return expectedCidrNotation, nil
 	}
 
-	// Format an IP address with network length(eg. /24) or decimal notation(eg. 255.255.255.0)
-	// if input netmask not valid, throw an error and template string won't be parsed
-	v1alpha1FormatIP := func(IP string, netmask string) (string, error) {
-		if net.ParseIP(IP) == nil {
-			return "", errors.New("input IP address not valid")
-		}
-		var userIP string
-		if strings.HasPrefix(netmask, "/") {
-			userIP = IP + netmask
-		} else {
-			userIP = network.ToCidrNotation(IP, netmask)
-		}
-		// validate IP and netmask's combination
-		_, _, err := net.ParseCIDR(userIP)
+	// Format an IP address with network length(eg. /24) or decimal
+	// notation (eg. 255.255.255.0). Format an IP/CIDR with updated mask.
+	// An empty mask causes just the IP to be returned.
+	v1alpha1FormatIP := func(s string, mask string) (string, error) {
+
+		// Get the IP address for the input string.
+		ip, _, err := net.ParseCIDR(s)
 		if err != nil {
-			return "", err
+			ip = net.ParseIP(s)
+			if ip == nil {
+				return "", fmt.Errorf("input IP address not valid")
+			}
 		}
-		return userIP, nil
+		// Store the IP as a string back into s.
+		s = ip.String()
+
+		// If no mask was provided then return just the IP.
+		if mask == "" {
+			return s, nil
+		}
+
+		// The provided mask is a network length.
+		if strings.HasPrefix(mask, "/") {
+			s += mask
+			if _, _, err := net.ParseCIDR(s); err != nil {
+				return "", err
+			}
+			return s, nil
+		}
+
+		// The provided mask is subnet mask.
+		maskIP := net.ParseIP(mask)
+		if maskIP == nil {
+			return "", fmt.Errorf("mask is an invalid IP")
+		}
+
+		maskIPBytes := maskIP.To4()
+		if len(maskIPBytes) == 0 {
+			maskIPBytes = maskIP.To16()
+		}
+
+		ipNet := net.IPNet{
+			IP:   ip,
+			Mask: net.IPMask(maskIPBytes),
+		}
+		s = ipNet.String()
+
+		// Validate the ipNet is an IP/CIDR
+		if _, _, err := net.ParseCIDR(s); err != nil {
+			return "", fmt.Errorf("invalid ip net: %s", s)
+		}
+
+		return s, nil
 	}
 
 	// Format the first occurred count of nameservers with specific delimiter

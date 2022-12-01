@@ -11,12 +11,14 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	"gopkg.in/yaml.v2"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	kyaml "sigs.k8s.io/yaml"
 
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-	"gopkg.in/yaml.v2"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
@@ -449,21 +451,23 @@ var _ = Describe("TemplateVMMetadata", func() {
 			gateway2    = "192.168.10.1"
 			nameserver1 = "8.8.8.8"
 			nameserver2 = "1.1.1.1"
+			vm          *vmopv1alpha1.VirtualMachine
+			vmCtx       context.VirtualMachineContext
 		)
 
-		vm := &vmopv1alpha1.VirtualMachine{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dummy-vm",
-				Namespace: "dummy-ns",
-			},
-		}
-		vmCtx := context.VirtualMachineContext{
-			Context: goctx.Background(),
-			Logger:  logf.Log.WithValues("vmName", vm.NamespacedName()),
-			VM:      vm,
-		}
-
 		BeforeEach(func() {
+			vm = &vmopv1alpha1.VirtualMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "dummy-vm",
+					Namespace: "dummy-ns",
+				},
+			}
+			vmCtx = context.VirtualMachineContext{
+				Context: goctx.Background(),
+				Logger:  logf.Log.WithValues("vmName", vm.NamespacedName()),
+				VM:      vm,
+			}
+
 			updateArgs.DNSServers = []string{nameserver1, nameserver2}
 			updateArgs.NetIfList = []network.InterfaceInfo{
 				{
@@ -498,16 +502,16 @@ var _ = Describe("TemplateVMMetadata", func() {
 
 		It("should resolve them correctly while specifying valid templates", func() {
 
-			updateArgs.VMMetadata.Data["first_ip"] = "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"
-			updateArgs.VMMetadata.Data["second_ip"] = "{{ (index (index .V1alpha1.Net.Devices 1).IPAddresses 0) }}"
+			updateArgs.VMMetadata.Data["first_cidrIp"] = "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"
+			updateArgs.VMMetadata.Data["second_cidrIp"] = "{{ (index (index .V1alpha1.Net.Devices 1).IPAddresses 0) }}"
 			updateArgs.VMMetadata.Data["first_gateway"] = "{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}"
 			updateArgs.VMMetadata.Data["second_gateway"] = "{{ (index .V1alpha1.Net.Devices 1).Gateway4 }}"
 			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .V1alpha1.Net.Nameservers 0) }}"
 			updateArgs.VMMetadata.Data["name"] = "{{ .V1alpha1.VM.Name }}"
 
 			session.TemplateVMMetadata(vmCtx, updateArgs)
-			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("first_ip", IP1))
-			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("second_ip", IP2))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("first_cidrIp", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("second_cidrIp", IP2))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("first_gateway", gateway1))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("second_gateway", gateway2))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameserver", nameserver1))
@@ -515,23 +519,31 @@ var _ = Describe("TemplateVMMetadata", func() {
 		})
 
 		It("should resolve them correctly while using support template queries", func() {
-			updateArgs.VMMetadata.Data["ip1"] = "{{ " + constants.V1alpha1FirstIP + " }}"
-			updateArgs.VMMetadata.Data["ip2"] = "{{ " + constants.V1alpha1FirstIPFromNIC + " 1 }}"
+			updateArgs.VMMetadata.Data["cidr_ip1"] = "{{ " + constants.V1alpha1FirstIP + " }}"
+			updateArgs.VMMetadata.Data["cidr_ip2"] = "{{ " + constants.V1alpha1FirstIPFromNIC + " 1 }}"
+			updateArgs.VMMetadata.Data["cidr_ip3"] = "{{ (" + constants.V1alpha1IP + " \"192.168.1.37\") }}"
+			updateArgs.VMMetadata.Data["cidr_ip4"] = "{{ (" + constants.V1alpha1FormatIP + " \"192.168.1.37\" \"/24\") }}"
+			updateArgs.VMMetadata.Data["cidr_ip5"] = "{{ (" + constants.V1alpha1FormatIP + " \"192.168.1.37\" \"255.255.255.0\") }}"
+			updateArgs.VMMetadata.Data["cidr_ip6"] = "{{ (" + constants.V1alpha1FormatIP + " \"192.168.1.37/28\" \"255.255.255.0\") }}"
+			updateArgs.VMMetadata.Data["cidr_ip7"] = "{{ (" + constants.V1alpha1FormatIP + " \"192.168.1.37/28\" \"/24\") }}"
+			updateArgs.VMMetadata.Data["ip1"] = "{{ " + constants.V1alpha1FormatIP + " " + constants.V1alpha1FirstIP + " \"\" }}"
+			updateArgs.VMMetadata.Data["ip2"] = "{{ " + constants.V1alpha1FormatIP + " \"192.168.1.37/28\" \"\" }}"
 			updateArgs.VMMetadata.Data["ips_1"] = "{{ " + constants.V1alpha1IPsFromNIC + " 0 }}"
-			updateArgs.VMMetadata.Data["cidr_ip1"] = "{{ (" + constants.V1alpha1IP + " \"192.168.1.37\") }}"
-			updateArgs.VMMetadata.Data["cidr_ip2"] = "{{ (" + constants.V1alpha1FormatIP + " \"192.168.1.37\" \"/24\") }}"
-			updateArgs.VMMetadata.Data["cidr_ip3"] = "{{ (" + constants.V1alpha1FormatIP + " \"192.168.1.37\" \"255.255.255.0\") }}"
 			updateArgs.VMMetadata.Data["subnetmask"] = "{{ " + constants.V1alpha1SubnetMask + " \"192.168.1.37/26\" }}"
 			updateArgs.VMMetadata.Data["formatted_nameserver1"] = "{{ " + constants.V1alpha1FormatNameservers + " 1 \"-\"}}"
 			updateArgs.VMMetadata.Data["formatted_nameserver2"] = "{{ " + constants.V1alpha1FormatNameservers + " -1 \"-\"}}"
 			session.TemplateVMMetadata(vmCtx, updateArgs)
 
-			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip1", IP1))
-			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip2", IP2))
-			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ips_1", fmt.Sprint([]string{IP1})))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip1", IP1))
-			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip2", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip2", IP2))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip3", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip4", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip5", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip6", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip7", IP1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip1", ip1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip2", ip1))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ips_1", fmt.Sprint([]string{IP1})))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("subnetmask", "255.255.255.192"))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("formatted_nameserver1", nameserver1))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("formatted_nameserver2", nameserver1+"-"+nameserver2))
@@ -570,6 +582,79 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("skip_data3", "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("skip_data4", "skip {{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"))
 		})
+
+		Context("from Kubernetes resources", func() {
+
+			Context("from ConfigMap", func() {
+				var (
+					obj     *corev1.ConfigMap
+					objYAML string
+				)
+
+				BeforeEach(func() {
+					obj = &corev1.ConfigMap{}
+				})
+
+				JustBeforeEach(func() {
+					Expect(kyaml.Unmarshal([]byte(objYAML), obj)).To(Succeed())
+					for k, v := range obj.Data {
+						updateArgs.VMMetadata.Data[k] = v
+					}
+					session.TemplateVMMetadata(vmCtx, updateArgs)
+				})
+
+				Context("with single-quoted values", func() {
+					BeforeEach(func() {
+						objYAML = testConfigMapYAML1
+					})
+					It("should work", func() {
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("hostname", vmCtx.VM.Name))
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_gateway", gateway1))
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_ip", ip1))
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameservers", nameserver1))
+					})
+				})
+				Context("with double-quoted values and escaped double-quotes", func() {
+					BeforeEach(func() {
+						objYAML = testConfigMapYAML2
+					})
+					It("should work", func() {
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("hostname", vmCtx.VM.Name))
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_gateway", gateway1))
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_ip", ip1))
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameservers", nameserver1))
+					})
+				})
+			})
+
+			Context("from Secret", func() {
+				var (
+					obj     *corev1.Secret
+					objYAML string
+				)
+
+				BeforeEach(func() {
+					obj = &corev1.Secret{}
+					objYAML = testSecretYAML1
+				})
+
+				JustBeforeEach(func() {
+					Expect(kyaml.Unmarshal([]byte(objYAML), obj)).To(Succeed())
+				})
+
+				It("should work", func() {
+					for k, v := range obj.Data {
+						updateArgs.VMMetadata.Data[k] = string(v)
+					}
+					session.TemplateVMMetadata(vmCtx, updateArgs)
+
+					Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("hostname", vmCtx.VM.Name))
+					Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_gateway", gateway1))
+					Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_ip", ip1))
+					Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameservers", nameserver1))
+				})
+			})
+		})
 	})
 
 	Context("update VmConfigArgs with empty updateArgs", func() {
@@ -606,3 +691,43 @@ var _ = Describe("TemplateVMMetadata", func() {
 
 	})
 })
+
+const testConfigMapYAML1 = `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-config-map
+  namespace: my-namespace
+data:
+  hostname: '{{ .V1alpha1.VM.Name }}'
+  management_gateway: '{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}'
+  management_ip: '{{ V1alpha1_FormatIP V1alpha1_FirstIP "" }}'
+  nameservers: '{{ (index .V1alpha1.Net.Nameservers 0) }}'
+`
+
+const testConfigMapYAML2 = `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-config-map
+  namespace: my-namespace
+data:
+  hostname: "{{ .V1alpha1.VM.Name }}"
+  management_gateway: "{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}"
+  management_ip: "{{ V1alpha1_FormatIP V1alpha1_FirstIP \"\" }}"
+  nameservers: "{{ (index .V1alpha1.Net.Nameservers 0) }}"
+`
+
+//nolint:gosec
+const testSecretYAML1 = `
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-secret
+  namespace: my-namespace
+data:
+  hostname: e3sgLlYxYWxwaGExLlZNLk5hbWUgfX0=
+  management_gateway: e3sgKGluZGV4IC5WMWFscGhhMS5OZXQuRGV2aWNlcyAwKS5HYXRld2F5NCB9fQ==
+  management_ip: e3sgVjFhbHBoYTFfRm9ybWF0SVAgVjFhbHBoYTFfRmlyc3RJUCAiIiB9fQ==
+  nameservers: e3sgKGluZGV4IC5WMWFscGhhMS5OZXQuTmFtZXNlcnZlcnMgMCkgfX0=
+`

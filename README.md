@@ -21,7 +21,7 @@ so that it can be used in conjunction with other Kubernetes services that need t
 If you are passionate about VMs in Kubernetes, are interested in learning about our roadmap or have
 ideas about the project, we'd love to hear from you!
 
-Please see our [Quick Start Guide](docs/quick-start-guide.md) for details on building and testing the project
+Please see the [documentation](https://vm-operator.rtfd.io) for more information.
 
 ## Community
 - Find us on Slack at [#ug-vmware](https://kubernetes.slack.com/messages/ug-vmware)

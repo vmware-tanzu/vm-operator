@@ -208,9 +208,9 @@ jobs:
       with:
         name: code-coverage-report
         path: code-coverage-results.md
-    - name: Update PR with code coverage report
-      uses: marocchino/sticky-pull-request-comment@v2
-      if: github.event_name == 'pull_request'
-      with:
-        recreate: true
-        path: code-coverage-results.md
+    # - name: Update PR with code coverage report
+    #   uses: marocchino/sticky-pull-request-comment@v2
+    #   if: github.event_name == 'pull_request'
+    #   with:
+    #     recreate: true
+    #     path: code-coverage-results.md

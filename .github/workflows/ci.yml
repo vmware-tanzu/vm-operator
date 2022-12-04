@@ -202,15 +202,17 @@ jobs:
         name: |
           unit-test-coverage
           integration-test-coverage
-    - name: Store code coverage report
+    - name: Save pull request ID
+      if: github.event_name == 'pull_request'
+      env:
+        PR_NUMBER: ${{ github.event.number }}
+      run: |
+        echo "${PR_NUMBER}" >pull_request_id
+    - name: Store code coverage results
+      if: github.event_name == 'pull_request'
       uses: actions/upload-artifact@v3
-      if: github.event_name != 'pull_request'
       with:
-        name: code-coverage-report
-        path: code-coverage-results.md
-    # - name: Update PR with code coverage report
-    #   uses: marocchino/sticky-pull-request-comment@v2
-    #   if: github.event_name == 'pull_request'
-    #   with:
-    #     recreate: true
-    #     path: code-coverage-results.md
+        name: code-coverage-results
+        path: |
+          code-coverage-results.md
+          pull_request_id

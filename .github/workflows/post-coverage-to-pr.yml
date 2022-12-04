@@ -1,0 +1,53 @@
+name: post-coverage-to-pr
+
+on:
+  workflow_run:
+    workflows:
+    - ci
+    types:
+    - completed
+
+jobs:
+  code-coverage:
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Fetch code coverage results
+      id: fetch-code-coverage-results
+      uses: actions/download-artifact@v3
+      with:
+        script: |
+          let allArtifacts = await github.rest.actions.listWorkflowRunArtifacts({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            run_id: context.payload.workflow_run.id,
+          });
+          let matchedArtifacts = allArtifacts.data.artifacts.filter((artifact) => {
+            return artifact.name == "code-coverage-results"
+          });
+          if (matchedArtifacts.length == 0) {
+            core.setOutput('pull_request_id', '');
+            return
+          }
+          let download = await github.rest.actions.downloadArtifact({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            artifact_id: matchedArtifacts[0].id,
+            archive_format: 'zip',
+          });
+          let fs = require('fs');
+          fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/code-coverage-results.zip`, Buffer.from(download.data));
+          let pull_request_id = fs.readFileSync('./pull_request_id');
+          core.setOutput('pull_request_id', pull_request_id);
+
+    - name: Unzip code coverage results
+      if: steps.fetch-code-coverage-results.outputs.pull_request_id != ''
+      run: unzip code-coverage-results.zip
+
+    - name: Update PR with code coverage results
+      uses: marocchino/sticky-pull-request-comment@v2
+      if: steps.fetch-code-coverage-results.outputs.pull_request_id != ''
+      with:
+        number: ${{ steps.fetch-code-coverage-results.outputs.pull_request_id }}
+        recreate: true
+        path: code-coverage-results.md

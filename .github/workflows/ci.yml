@@ -196,21 +196,32 @@ jobs:
         indicators: true
         output: both
         thresholds: '60 80'
-    - name: Delete the stored test coverage
-      uses: geekyeggo/delete-artifact@v2
-      with:
-        name: |
-          unit-test-coverage
-          integration-test-coverage
-    - name: Store code coverage report
-      uses: actions/upload-artifact@v3
-      if: github.event_name != 'pull_request'
-      with:
-        name: code-coverage-report
-        path: code-coverage-results.md
-    # - name: Update PR with code coverage report
-    #   uses: marocchino/sticky-pull-request-comment@v2
-    #   if: github.event_name == 'pull_request'
+
+    #
+    # Commenting this out for now to ensure it is possible to re-run this job
+    # without having to re-run the unit and integration test jobs. We should
+    # probably think about re-enabling this step if at some point the size of
+    # artifacts we store per-PR grows too large.
+    #
+    # - name: Delete the stored test coverage
+    #   if: github.event_name != 'pull_request'
+    #   uses: geekyeggo/delete-artifact@v2
     #   with:
-    #     recreate: true
-    #     path: code-coverage-results.md
+    #     name: |
+    #       unit-test-coverage
+    #       integration-test-coverage
+
+    - name: Save pull request ID
+      if: github.event_name == 'pull_request'
+      env:
+        PR_NUMBER: ${{ github.event.number }}
+      run: |
+        echo "${PR_NUMBER}" >pull_request_id
+    - name: Store code coverage results
+      if: github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v3
+      with:
+        name: code-coverage-results
+        path: |
+          code-coverage-results.md
+          pull_request_id

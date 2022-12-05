@@ -20,6 +20,7 @@ func CreateConfigSpec(
 	name string,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	minFreq uint64,
+	imageFirmware string,
 	vmClassConfigSpec *vimtypes.VirtualMachineConfigSpec) *vimtypes.VirtualMachineConfigSpec {
 
 	var configSpec *vimtypes.VirtualMachineConfigSpec
@@ -80,6 +81,11 @@ func CreateConfigSpec(
 		configSpec.MemoryAllocation.Limit = &lim
 	}
 
+	// Use firmware type from the image if config spec doesn't have it.
+	if configSpec.Firmware == "" && imageFirmware != "" {
+		configSpec.Firmware = imageFirmware
+	}
+
 	return configSpec
 }
 
@@ -90,9 +96,10 @@ func CreateConfigSpecForPlacement(
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	minFreq uint64,
 	storageClassesToIDs map[string]string,
+	imageFirmware string,
 	vmClassConfigSpec *vimtypes.VirtualMachineConfigSpec) *vimtypes.VirtualMachineConfigSpec {
 
-	configSpec := CreateConfigSpec(vmCtx.VM.Name, vmClassSpec, minFreq, vmClassConfigSpec)
+	configSpec := CreateConfigSpec(vmCtx.VM.Name, vmClassSpec, minFreq, imageFirmware, vmClassConfigSpec)
 
 	// Add a dummy disk for placement: PlaceVmsXCluster expects there to always be at least one disk.
 	// Until we're in a position to have the OVF envelope here, add a dummy disk satisfy it.

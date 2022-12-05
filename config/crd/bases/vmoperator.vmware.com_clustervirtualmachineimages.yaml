@@ -251,6 +251,10 @@ spec:
                   of this VirtualMachineImage that was last successfully synced with
                   the vSphere content library item.
                 type: string
+              firmware:
+                description: 'Firmware describe the firmware type used by this VirtualMachineImage.
+                  eg: bios, efi.'
+                type: string
               imageName:
                 description: ImageName describes the display name of this VirtualMachineImage.
                 type: string

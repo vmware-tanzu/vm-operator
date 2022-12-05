@@ -27,6 +27,7 @@ var _ = Describe("CreateConfigSpec", func() {
 	var (
 		vmClassSpec     *vmopv1.VirtualMachineClassSpec
 		minCPUFreq      uint64
+		firmware        string
 		configSpec      *vimtypes.VirtualMachineConfigSpec
 		classConfigSpec *vimtypes.VirtualMachineConfigSpec
 		err             error
@@ -36,6 +37,7 @@ var _ = Describe("CreateConfigSpec", func() {
 		vmClass := builder.DummyVirtualMachineClass()
 		vmClassSpec = &vmClass.Spec
 		minCPUFreq = 2500
+		firmware = "efi"
 	})
 
 	It("Basic ConfigSpec assertions", func() {
@@ -43,6 +45,7 @@ var _ = Describe("CreateConfigSpec", func() {
 			vmName,
 			vmClassSpec,
 			minCPUFreq,
+			firmware,
 			nil)
 		Expect(configSpec).ToNot(BeNil())
 		Expect(err).To(BeNil())
@@ -52,6 +55,7 @@ var _ = Describe("CreateConfigSpec", func() {
 		Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
 		Expect(configSpec.CpuAllocation).ToNot(BeNil())
 		Expect(configSpec.MemoryAllocation).ToNot(BeNil())
+		Expect(configSpec.Firmware).To(Equal(firmware))
 	})
 
 	Context("Use VM Class ConfigSpec", func() {
@@ -79,6 +83,7 @@ var _ = Describe("CreateConfigSpec", func() {
 				vmName,
 				vmClassSpec,
 				minCPUFreq,
+				firmware,
 				classConfigSpec)
 			Expect(configSpec).ToNot(BeNil())
 		})
@@ -91,6 +96,7 @@ var _ = Describe("CreateConfigSpec", func() {
 			Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
 			Expect(configSpec.CpuAllocation).ToNot(BeNil())
 			Expect(configSpec.MemoryAllocation).ToNot(BeNil())
+			Expect(configSpec.Firmware).To(Equal(firmware))
 			Expect(configSpec.DeviceChange).To(HaveLen(1))
 			dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
 			_, ok := dSpec.Device.(*vimtypes.VirtualE1000)
@@ -106,6 +112,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		vmCtx               context.VirtualMachineContext
 		vmClassSpec         *vmopv1.VirtualMachineClassSpec
 		minCPUFreq          uint64
+		firmware            string
 		storageClassesToIDs map[string]string
 		configSpec          *vimtypes.VirtualMachineConfigSpec
 		classConfigSpec     *vimtypes.VirtualMachineConfigSpec
@@ -115,6 +122,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		vmClass := builder.DummyVirtualMachineClass()
 		vmClassSpec = &vmClass.Spec
 		minCPUFreq = 2500
+		firmware = "efi"
 		storageClassesToIDs = map[string]string{}
 
 		vm := builder.DummyVirtualMachine()
@@ -131,6 +139,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			vmClassSpec,
 			minCPUFreq,
 			storageClassesToIDs,
+			firmware,
 			classConfigSpec)
 		Expect(configSpec).ToNot(BeNil())
 	})
@@ -186,6 +195,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
 			Expect(configSpec.CpuAllocation).ToNot(BeNil())
 			Expect(configSpec.MemoryAllocation).ToNot(BeNil())
+			Expect(configSpec.Firmware).To(Equal(firmware))
 			Expect(configSpec.DeviceChange).To(HaveLen(2))
 			dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
 			_, ok := dSpec.Device.(*vimtypes.VirtualPCIPassthrough)

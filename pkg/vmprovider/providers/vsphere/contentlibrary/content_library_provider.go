@@ -430,6 +430,11 @@ func (cs *provider) SyncVirtualMachineImage(ctx context.Context, itemID string, 
 		}
 		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
 		status.ImageSupported = pointer.BoolPtr(isImageSupported(vmi, ovfEnvelope.VirtualSystem, ovfSystemProps))
+
+		// Set Status Firmware from the envelope's virtual hardware section
+		if virtualHwSection := ovfEnvelope.VirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
+			status.Firmware = getFirmwareType(virtualHwSection[0])
+		}
 	}
 
 	return nil

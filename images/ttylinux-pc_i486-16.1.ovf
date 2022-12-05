@@ -83,6 +83,7 @@
         <rasd:ResourceSubType>vmware.vmci</rasd:ResourceSubType>
         <rasd:ResourceType>1</rasd:ResourceType>
       </Item>
+      <vmw:Config ovf:required="false" vmw:key="firmware" vmw:value="efi"/>
       <vmw:Config ovf:required="false" vmw:key="powerOpInfo.powerOffType" vmw:value="soft"/>
       <vmw:Config ovf:required="false" vmw:key="powerOpInfo.resetType" vmw:value="soft"/>
       <vmw:Config ovf:required="false" vmw:key="powerOpInfo.suspendType" vmw:value="soft"/>

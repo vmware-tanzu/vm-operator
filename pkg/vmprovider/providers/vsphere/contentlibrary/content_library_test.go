@@ -86,6 +86,7 @@ func clTests() {
 					Expect(image.Name).To(Equal(ctx.ContentLibraryImageName))
 					Expect(image.Spec.Type).To(Equal("ovf"))
 					Expect(image.Status.ImageName).To(Equal(ctx.ContentLibraryImageName))
+					Expect(image.Status.Firmware).To(Equal("efi"))
 				})
 
 				It("Returns cached VirtualMachineImage from map", func() {

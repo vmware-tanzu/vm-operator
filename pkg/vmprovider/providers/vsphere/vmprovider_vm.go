@@ -590,6 +590,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		vmCtx.VM.Name,
 		&createArgs.VMClass.Spec,
 		createArgs.MinCPUFreq,
+		createArgs.VMImageStatus.Firmware,
 		vmClassConfigSpec)
 
 	createArgs.PlacementConfigSpec = virtualmachine.CreateConfigSpecForPlacement(
@@ -597,6 +598,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		&createArgs.VMClass.Spec,
 		createArgs.MinCPUFreq,
 		createArgs.StorageClassesToIDs,
+		createArgs.VMImageStatus.Firmware,
 		vmClassConfigSpec)
 }
 
@@ -702,6 +704,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		vmCtx.VM.Name,
 		&updateArgs.VMClass.Spec,
 		updateArgs.MinCPUFreq,
+		updateArgs.VMImageStatus.Firmware,
 		updateArgs.ClassConfigSpec)
 
 	return updateArgs, nil

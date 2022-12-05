@@ -93,6 +93,11 @@ func LibItemToVirtualMachineImage(
 
 		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
 		image.Status.ImageSupported = pointer.BoolPtr(isImageSupported(image, ovfEnvelope.VirtualSystem, ovfSystemProps))
+
+		// Set Status Firmware from the envelope's virtual hardware section
+		if virtualHwSection := ovfEnvelope.VirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
+			image.Status.Firmware = getFirmwareType(virtualHwSection[0])
+		}
 	}
 
 	return image
@@ -198,6 +203,16 @@ func readerFromURL(ctx context.Context, c *rest.Client, url *url.URL) (io.ReadCl
 // libItemVersionAnnotation returns the version annotation value for the item.
 func libItemVersionAnnotation(item *library.Item) string {
 	return fmt.Sprintf("%s:%s:%d", item.ID, item.Version, constants.VMImageCLVersionAnnotationVersion)
+}
+
+// getFirmwareType returns the firmware type (eg: "efi", "bios") present in the virtual hardware section of the OVF.
+func getFirmwareType(hardware ovf.VirtualHardwareSection) string {
+	for _, cfg := range hardware.Config {
+		if cfg.Key == "firmware" {
+			return cfg.Value
+		}
+	}
+	return ""
 }
 
 type ImageConditionWrapper interface {

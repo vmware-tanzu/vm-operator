@@ -33,6 +33,7 @@ type Provider interface {
 	GetLibraryItems(ctx context.Context, clUUID string) ([]library.Item, error)
 	GetLibraryItem(ctx context.Context, clUUID, itemName string) (*library.Item, error)
 	ListLibraryItems(ctx context.Context, libraryUUID string) ([]string, error)
+	GetLibraryItemIDsByName(ctx context.Context, libraryUUID, itemName string) ([]string, error)
 	RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item *library.Item) (*ovf.Envelope, error)
 	SyncVirtualMachineImage(ctx context.Context, itemID string, vmi client.Object) error
 
@@ -140,6 +141,15 @@ func (cs *provider) GetLibraryItem(ctx context.Context, libraryUUID, itemName st
 	}
 
 	return item, nil
+}
+
+func (cs *provider) GetLibraryItemIDsByName(ctx context.Context, libraryUUID, itemName string) ([]string, error) {
+	itemIDs, err := cs.libMgr.FindLibraryItems(ctx, library.FindItem{LibraryID: libraryUUID, Name: itemName})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to find image: %s", itemName)
+	}
+
+	return itemIDs, nil
 }
 
 // RetrieveOvfEnvelopeFromLibraryItem downloads the supported file from content library.

@@ -37,6 +37,7 @@ type VirtualMachineProviderInterface interface {
 	GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
 	SyncVirtualMachineImage(ctx context.Context, itemID string, vmi client.Object) error
+	DoesItemExistInContentLibrary(ctx context.Context, contentLibrary *imgregv1a1.ContentLibrary, itemName string) (bool, error)
 
 	GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimTypes.TaskInfo, retErr error)
 }

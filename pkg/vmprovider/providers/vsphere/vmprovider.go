@@ -23,6 +23,8 @@ import (
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -188,6 +190,25 @@ func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx goctx.Context, itemID s
 	}
 
 	return client.ContentLibClient().SyncVirtualMachineImage(ctx, itemID, vmi)
+}
+
+// DoesItemExistInContentLibrary gets item from a content library by a specific item name.
+func (vs *vSphereVMProvider) DoesItemExistInContentLibrary(ctx goctx.Context,
+	contentLibrary *imgregv1a1.ContentLibrary, itemName string) (bool, error) {
+	log.V(4).Info("Get item from ContentLibrary",
+		"name", contentLibrary.Name,
+		"UUID", contentLibrary.Spec.UUID, "item name", itemName)
+
+	client, err := vs.getVcClient(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	itemIDs, err := client.ContentLibClient().GetLibraryItemIDsByName(ctx, contentLibrary.Spec.UUID, itemName)
+	if err != nil {
+		return false, err
+	}
+	return len(itemIDs) != 0, nil
 }
 
 func (vs *vSphereVMProvider) getOpID(vm *v1alpha1.VirtualMachine, operation string) string {
@@ -368,7 +389,10 @@ func (vs *vSphereVMProvider) GetTasksByActID(ctx goctx.Context, actID string) (t
 		return nil, errors.Wrapf(err, "failed to create collector for tasks")
 	}
 	defer func() {
-		retErr = collector.Destroy(ctx)
+		err = collector.Destroy(ctx)
+		if retErr == nil {
+			retErr = err
+		}
 	}()
 
 	taskList := make([]types.TaskInfo, 0)

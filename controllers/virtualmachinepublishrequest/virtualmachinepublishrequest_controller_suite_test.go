@@ -12,18 +12,20 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
 	ctrlContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var intgFakeVMProvider = providerfake.NewVMProvider()
 
-var suite = builder.NewTestSuiteForController(
+var suite = builder.NewTestSuiteForControllerWithFSS(
 	virtualmachinepublishrequest.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProvider = intgFakeVMProvider
 		return nil
 	},
+	map[string]bool{lib.VMImageRegistryFSS: true},
 )
 
 func TestVirtualMachinePublishRequest(t *testing.T) {

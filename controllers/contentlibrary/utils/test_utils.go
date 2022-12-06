@@ -40,6 +40,7 @@ func DummyClusterContentLibraryItem(name string) *imgregv1a1.ClusterContentLibra
 					Status: corev1.ConditionTrue,
 				},
 			},
+			SecurityCompliance: &[]bool{true}[0],
 		},
 	}
 
@@ -73,6 +74,7 @@ func DummyContentLibraryItem(name, namespace string) *imgregv1a1.ContentLibraryI
 					Status: corev1.ConditionTrue,
 				},
 			},
+			SecurityCompliance: &[]bool{true}[0],
 		},
 	}
 

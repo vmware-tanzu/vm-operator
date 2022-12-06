@@ -46,6 +46,17 @@ func cclItemReconcile() {
 		}).Should(BeTrue(), "waiting for ClusterVirtualMachineImage to be created and synced")
 	}
 
+	waitForClusterVirtualMachineImageDeleted := func(ctx *builder.IntegrationTestContext) {
+		curCVMI := vmopv1a1.ClusterVirtualMachineImage{}
+		Eventually(func() bool {
+			cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
+			if err := ctx.Client.Get(ctx, client.ObjectKey{Name: cvmiName}, &curCVMI); err != nil {
+				return true
+			}
+			return false
+		}).Should(BeTrue())
+	}
+
 	BeforeEach(func() {
 		// The name for cclItem must have the expected prefix to be parsed by the controller.
 		cclItemName := fmt.Sprintf("%s-%s", utils.ItemFieldNamePrefix, "dummy")
@@ -124,6 +135,19 @@ func cclItemReconcile() {
 
 			It("should sync and update the existing ClusterVirtualMachineImage", func() {
 				waitForClusterVirtualMachineImageReady(ctx)
+			})
+		})
+
+		When("ClusterContentLibraryItem's security compliance is not true", func() {
+
+			JustBeforeEach(func() {
+				waitForClusterVirtualMachineImageReady(ctx)
+				cclItem.Status.SecurityCompliance = &[]bool{false}[0]
+				Expect(ctx.Client.Status().Update(ctx, cclItem)).To(Succeed())
+			})
+
+			It("should delete ClusterVirtualMachineImage", func() {
+				waitForClusterVirtualMachineImageDeleted(ctx)
 			})
 		})
 	})

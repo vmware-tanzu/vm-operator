@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.9.2
+    controller-gen.kubebuilder.io/version: v0.10.0
   creationTimestamp: null
   name: clustercontentlibraryitems.imageregistry.vmware.com
 spec:
@@ -72,6 +72,23 @@ spec:
                 description: Cached indicates if the library item files are on disk
                   in vCenter.
                 type: boolean
+              certificateVerificationInfo:
+                description: CertificateVerificationInfo shows the certificate verification
+                  status and the signing certificate.
+                properties:
+                  certChain:
+                    description: CertChain shows the signing certificate in base64
+                      encoding if the library item is signed.
+                    items:
+                      type: string
+                    type: array
+                  status:
+                    description: Status shows the certificate verification status
+                      of the library item.
+                    type: string
+                required:
+                - status
+                type: object
               clusterContentLibraryRef:
                 description: ClusterContentLibraryRef is the name of the ClusterContentLibrary
                   resource that this item belongs to.
@@ -156,6 +173,10 @@ spec:
               ready:
                 default: false
                 description: Ready denotes that the library item is ready to be used.
+                type: boolean
+              securityCompliance:
+                description: SecurityCompliance shows the security compliance of the
+                  library item.
                 type: boolean
               size:
                 description: Size indicates the library item size in bytes

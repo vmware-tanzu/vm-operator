@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -121,6 +122,22 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 	cvmi := &vmopv1a1.ClusterVirtualMachineImage{}
 	cvmi.Name = cvmiName
 	logger = logger.WithValues("cvmiName", cvmi.Name)
+
+	cclItemSecurityCompliance := cclItem.Status.SecurityCompliance
+
+	// If the ClusterContentLibraryItem's security compliance field is not set or is false, delete corresponding cvmi if exists
+	if cclItemSecurityCompliance == nil || !*cclItemSecurityCompliance {
+		logger.Info("ClusterContentLibraryItem's security compliance is not true, deleting corresponding cvmi if exists")
+		if err := r.Client.Delete(ctx, cvmi); err != nil {
+			if k8serrors.IsNotFound(err) {
+				logger.Info("Corresponding cvmi not found, skipping delete")
+				return nil
+			}
+			return err
+		}
+		logger.Info("Deleted corresponding cvmi")
+		return nil
+	}
 
 	var syncErr error
 	var savedStatus *vmopv1a1.VirtualMachineImageStatus

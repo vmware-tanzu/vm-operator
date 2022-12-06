@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vmprovider
@@ -6,6 +6,7 @@ package vmprovider
 import (
 	"context"
 
+	"github.com/vmware/govmomi/vapi/library"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,7 +38,8 @@ type VirtualMachineProviderInterface interface {
 	GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
 	SyncVirtualMachineImage(ctx context.Context, itemID string, vmi client.Object) error
-	DoesItemExistInContentLibrary(ctx context.Context, contentLibrary *imgregv1a1.ContentLibrary, itemName string) (bool, error)
+	GetItemFromLibraryByName(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
+	UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error
 
 	GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimTypes.TaskInfo, retErr error)
 }

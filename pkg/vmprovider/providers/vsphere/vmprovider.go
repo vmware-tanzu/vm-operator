@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere
@@ -16,14 +16,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/task"
+	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
@@ -192,23 +191,30 @@ func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx goctx.Context, itemID s
 	return client.ContentLibClient().SyncVirtualMachineImage(ctx, itemID, vmi)
 }
 
-// DoesItemExistInContentLibrary gets item from a content library by a specific item name.
-func (vs *vSphereVMProvider) DoesItemExistInContentLibrary(ctx goctx.Context,
-	contentLibrary *imgregv1a1.ContentLibrary, itemName string) (bool, error) {
+// GetItemFromLibraryByName get the library item from specified content library by its name.
+// Do not return error if the item doesn't exist in the content library.
+func (vs *vSphereVMProvider) GetItemFromLibraryByName(ctx goctx.Context,
+	contentLibrary, itemName string) (*library.Item, error) {
 	log.V(4).Info("Get item from ContentLibrary",
-		"name", contentLibrary.Name,
-		"UUID", contentLibrary.Spec.UUID, "item name", itemName)
+		"UUID", contentLibrary, "item name", itemName)
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
-	itemIDs, err := client.ContentLibClient().GetLibraryItemIDsByName(ctx, contentLibrary.Spec.UUID, itemName)
+	return client.ContentLibClient().GetLibraryItem(ctx, contentLibrary, itemName, false)
+}
+
+func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx goctx.Context, itemID, newName string, newDescription *string) error {
+	log.V(4).Info("Update Content Library Item", "itemID", itemID)
+
+	client, err := vs.getVcClient(ctx)
 	if err != nil {
-		return false, err
+		return err
 	}
-	return len(itemIDs) != 0, nil
+
+	return client.ContentLibClient().UpdateLibraryItem(ctx, itemID, newName, newDescription)
 }
 
 func (vs *vSphereVMProvider) getOpID(vm *v1alpha1.VirtualMachine, operation string) string {

@@ -507,6 +507,14 @@ func DummyContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrar
 			UUID:     uuid,
 			Writable: true,
 		},
+		Status: imgregv1a1.ContentLibraryStatus{
+			Conditions: []imgregv1a1.Condition{
+				{
+					Type:   imgregv1a1.ReadyCondition,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
 	}
 }
 

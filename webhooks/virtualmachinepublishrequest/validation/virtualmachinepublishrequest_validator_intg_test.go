@@ -8,9 +8,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
-	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -24,8 +21,6 @@ func intgTests() {
 type intgValidatingWebhookContext struct {
 	builder.IntegrationTestContext
 	vmPub *vmopv1.VirtualMachinePublishRequest
-	vm    *vmopv1.VirtualMachine
-	cl    *imgregv1a1.ContentLibrary
 
 	oldIsWCPVMImageRegistryEnabledFunc func() bool
 }
@@ -40,8 +35,6 @@ func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
 	vm := builder.DummyVirtualMachine()
 	vm.Name = "dummy-vm"
 	vm.Namespace = ctx.Namespace
-	ctx.vm = vm
-	ctx.cl = builder.DummyContentLibrary("dummy-cl", ctx.Namespace, "dummy-id")
 
 	ctx.oldIsWCPVMImageRegistryEnabledFunc = lib.IsWCPVMImageRegistryEnabled
 
@@ -59,15 +52,9 @@ func intgTestsValidateCreate() {
 			return true
 		}
 		ctx = newIntgValidatingWebhookContext()
-
-		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
-		Expect(ctx.Client.Create(ctx, ctx.cl)).To(Succeed())
 	})
 
 	AfterEach(func() {
-		Expect(ctx.Client.Delete(ctx, ctx.vm)).To(Succeed())
-		Expect(ctx.Client.Delete(ctx, ctx.cl)).To(Succeed())
-
 		lib.IsWCPVMImageRegistryEnabled = ctx.oldIsWCPVMImageRegistryEnabledFunc
 		err = nil
 		ctx = nil
@@ -109,13 +96,7 @@ func intgTestsValidateUpdate() {
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
 
-		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
-		Expect(ctx.Client.Create(ctx, ctx.cl)).To(Succeed())
-
-		// Use Eventually to create vmPub In case VM or CL is not available yet.
-		Eventually(func() error {
-			return ctx.Client.Create(ctx, ctx.vmPub)
-		}).Should(Succeed())
+		Expect(ctx.Client.Create(ctx, ctx.vmPub)).To(Succeed())
 	})
 
 	JustBeforeEach(func() {
@@ -123,8 +104,6 @@ func intgTestsValidateUpdate() {
 	})
 
 	AfterEach(func() {
-		Expect(ctx.Client.Delete(ctx, ctx.vm)).To(Succeed())
-		Expect(ctx.Client.Delete(ctx, ctx.cl)).To(Succeed())
 		Expect(ctx.Client.Delete(ctx, ctx.vmPub)).To(Succeed())
 
 		err = nil
@@ -159,12 +138,7 @@ func intgTestsValidateDelete() {
 	BeforeEach(func() {
 		ctx = newIntgValidatingWebhookContext()
 
-		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
-		Expect(ctx.Client.Create(ctx, ctx.cl)).To(Succeed())
-
-		Eventually(func() error {
-			return ctx.Client.Create(ctx, ctx.vmPub)
-		}).Should(Succeed())
+		Expect(ctx.Client.Create(ctx, ctx.vmPub)).To(Succeed())
 	})
 
 	JustBeforeEach(func() {
@@ -172,9 +146,6 @@ func intgTestsValidateDelete() {
 	})
 
 	AfterEach(func() {
-		Expect(ctx.Client.Delete(ctx, ctx.vm)).To(Succeed())
-		Expect(ctx.Client.Delete(ctx, ctx.cl)).To(Succeed())
-
 		err = nil
 		ctx = nil
 	})

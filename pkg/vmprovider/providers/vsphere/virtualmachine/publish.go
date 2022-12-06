@@ -4,6 +4,7 @@
 package virtualmachine
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/vmware/govmomi/vapi/rest"
@@ -21,13 +22,18 @@ const (
 
 	// vAPICtxActIDHttpHeader represents the http header in vAPI to pass down the activation ID.
 	vAPICtxActIDHttpHeader = "vapi-ctx-actid"
+
+	itemDescriptionFormat = "virtualmachinepublishrequest.vmoperator.vmware.com: %s\n"
 )
 
 func CreateOVF(vmCtx context.VirtualMachineContext, client *rest.Client,
 	vmPubReq *vmopv1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
+	// Use VM Operator specific description so that we can link published items
+	// to the vmPub if anything unexpected happened.
+	descriptionPrefix := fmt.Sprintf(itemDescriptionFormat, string(vmPubReq.UID))
 	createSpec := vcenter.CreateSpec{
 		Name:        vmPubReq.Status.TargetRef.Item.Name,
-		Description: vmPubReq.Status.TargetRef.Item.Description,
+		Description: descriptionPrefix + vmPubReq.Status.TargetRef.Item.Description,
 	}
 
 	vm := vmCtx.VM

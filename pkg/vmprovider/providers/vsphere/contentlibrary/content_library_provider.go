@@ -31,9 +31,10 @@ import (
 
 type Provider interface {
 	GetLibraryItems(ctx context.Context, clUUID string) ([]library.Item, error)
-	GetLibraryItem(ctx context.Context, clUUID, itemName string) (*library.Item, error)
+	GetLibraryItem(ctx context.Context, libraryUUID, itemName string,
+		notFoundReturnErr bool) (*library.Item, error)
 	ListLibraryItems(ctx context.Context, libraryUUID string) ([]string, error)
-	GetLibraryItemIDsByName(ctx context.Context, libraryUUID, itemName string) ([]string, error)
+	UpdateLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error
 	RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item *library.Item) (*ovf.Envelope, error)
 	SyncVirtualMachineImage(ctx context.Context, itemID string, vmi client.Object) error
 
@@ -122,14 +123,18 @@ func (cs *provider) GetLibraryItems(ctx context.Context, libraryUUID string) ([]
 	return items, k8serrors.NewAggregate(resErrs)
 }
 
-func (cs *provider) GetLibraryItem(ctx context.Context, libraryUUID, itemName string) (*library.Item, error) {
+func (cs *provider) GetLibraryItem(ctx context.Context, libraryUUID, itemName string,
+	notFoundReturnErr bool) (*library.Item, error) {
 	itemIDs, err := cs.libMgr.FindLibraryItems(ctx, library.FindItem{LibraryID: libraryUUID, Name: itemName})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find image: %s", itemName)
 	}
 
 	if len(itemIDs) == 0 {
-		return nil, errors.Errorf("no library item named: %s", itemName)
+		if notFoundReturnErr {
+			return nil, errors.Errorf("no library item named: %s", itemName)
+		}
+		return nil, nil
 	}
 	if len(itemIDs) != 1 {
 		return nil, errors.Errorf("multiple library items named: %s", itemName)
@@ -141,15 +146,6 @@ func (cs *provider) GetLibraryItem(ctx context.Context, libraryUUID, itemName st
 	}
 
 	return item, nil
-}
-
-func (cs *provider) GetLibraryItemIDsByName(ctx context.Context, libraryUUID, itemName string) ([]string, error) {
-	itemIDs, err := cs.libMgr.FindLibraryItems(ctx, library.FindItem{LibraryID: libraryUUID, Name: itemName})
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to find image: %s", itemName)
-	}
-
-	return itemIDs, nil
 }
 
 // RetrieveOvfEnvelopeFromLibraryItem downloads the supported file from content library.
@@ -194,6 +190,27 @@ func (cs *provider) RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item
 	}
 
 	return envelope, nil
+}
+
+// UpdateLibraryItem updates the content library item's name and description.
+func (cs *provider) UpdateLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error {
+	log.Info("Updating Library Item", "itemID", itemID,
+		"newName", newName, "newDescription", newDescription)
+
+	item, err := cs.libMgr.GetLibraryItem(ctx, itemID)
+	if err != nil {
+		log.Error(err, "error getting library item")
+		return err
+	}
+
+	if newName != "" {
+		item.Name = newName
+	}
+	if newDescription != nil {
+		item.Description = newDescription
+	}
+
+	return cs.libMgr.UpdateLibraryItem(ctx, item)
 }
 
 // Only used in testing.

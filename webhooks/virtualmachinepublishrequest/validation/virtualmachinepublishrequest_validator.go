@@ -4,14 +4,12 @@
 package validation
 
 import (
-	"fmt"
 	"net/http"
 	"reflect"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 
 	"github.com/pkg/errors"
-	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -132,31 +130,6 @@ func (v validator) validateSource(ctx *context.WebhookRequestContext, vmpub *vmo
 			vmpub.Spec.Source.Kind, []string{reflect.TypeOf(vmopv1.VirtualMachine{}).Name(), ""}))
 	}
 
-	if len(allErrs) != 0 {
-		return allErrs
-	}
-
-	vmName := vmpub.Spec.Source.Name
-	defaultSourceVM := false
-	if vmName == "" {
-		vmName = vmpub.Name
-		defaultSourceVM = true
-	}
-
-	vm := &vmopv1.VirtualMachine{}
-	if err := v.client.Get(ctx.Context, client.ObjectKey{Name: vmName, Namespace: vmpub.Namespace}, vm); err != nil {
-		if apiErrors.IsNotFound(err) && !defaultSourceVM {
-			return append(allErrs, field.NotFound(sourcePath.Child("name"), vmName))
-		}
-
-		// Build error messages
-		errMsg := err.Error()
-		if vmpub.Spec.Source.Name == "" {
-			errMsg = fmt.Sprintf("failed to get the default source VM with vmpub request name: %s, %s", vmName, errMsg)
-		}
-		return append(allErrs, field.Invalid(sourcePath.Child("name"), vmpub.Spec.Source.Name, errMsg))
-	}
-
 	return allErrs
 }
 
@@ -179,25 +152,6 @@ func (v validator) validateTargetLocation(ctx *context.WebhookRequestContext, vm
 	if vmpub.Spec.Target.Location.Kind != reflect.TypeOf(imgregv1a1.ContentLibrary{}).Name() {
 		allErrs = append(allErrs, field.NotSupported(targetLocationPath.Child("kind"),
 			vmpub.Spec.Target.Location.Kind, []string{reflect.TypeOf(imgregv1a1.ContentLibrary{}).Name(), ""}))
-	}
-
-	if len(allErrs) != 0 {
-		return allErrs
-	}
-
-	// Validate the target location content library should be writable.
-	cl := &imgregv1a1.ContentLibrary{}
-	if err := v.client.Get(ctx.Context, client.ObjectKey{Name: targetLocationName,
-		Namespace: vmpub.Namespace}, cl); err != nil {
-		if apiErrors.IsNotFound(err) {
-			return append(allErrs, field.NotFound(targetLocationNamePath, targetLocationName))
-		}
-		return append(allErrs, field.Invalid(targetLocationNamePath, targetLocationName, err.Error()))
-	}
-
-	if !cl.Spec.Writable {
-		allErrs = append(allErrs, field.Invalid(targetLocationNamePath, targetLocationName,
-			fmt.Sprintf("target location %s is not writable", targetLocationName)))
 	}
 
 	return allErrs

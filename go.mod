@@ -21,7 +21,7 @@ require (
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
-	github.com/vmware/govmomi v0.28.1-0.20221215183112-aca02acc48b0
+	github.com/vmware/govmomi v0.28.1-0.20230217201423-807d88f40f24
 	golang.org/x/text v0.3.7
 	gomodules.xyz/jsonpatch/v2 v2.2.0
 	google.golang.org/grpc v1.40.0

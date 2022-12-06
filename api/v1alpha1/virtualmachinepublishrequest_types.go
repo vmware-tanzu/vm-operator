@@ -4,17 +4,10 @@
 package v1alpha1
 
 import (
-	"time"
-
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
-	// VirtualMachinePublishRequestConditionSuccess is the Success value for
-	// conditions related to a VirtualMachinePublishRequest resource.
-	VirtualMachinePublishRequestConditionSuccess = "Success"
-
 	// VirtualMachinePublishRequestConditionSourceValid is the Type for a
 	// VirtualMachinePublishRequest resource's status condition.
 	//
@@ -51,6 +44,67 @@ const (
 	// The condition's status is set to true only when all other conditions
 	// present on the resource have a truthy status.
 	VirtualMachinePublishRequestConditionComplete = "Complete"
+)
+
+// Condition.Reason for Conditions related to VirtualMachinePublishRequest.
+const (
+	// SourceVirtualMachineNotExistReason documents that the source VM of
+	// the VirtualMachinePublishRequest doesn't exist.
+	SourceVirtualMachineNotExistReason = "SourceVirtualMachineNotExist"
+
+	// SourceVirtualMachineNotCreatedReason documents that the source VM of
+	// the VirtualMachinePublishRequest hasn't been created.
+	SourceVirtualMachineNotCreatedReason = "SourceVirtualMachineNotCreated"
+
+	// TargetContentLibraryNotExistReason documents that the target content
+	// library of the VirtualMachinePublishRequest doesn't exist.
+	TargetContentLibraryNotExistReason = "TargetContentLibraryNotExist"
+
+	// TargetContentLibraryNotWritableReason documents that the target content
+	// library of the VirtualMachinePublishRequest isn't writable.
+	TargetContentLibraryNotWritableReason = "TargetContentLibraryNotWritable"
+
+	// TargetContentLibraryNotReadyReason documents that the target content
+	// library of the VirtualMachinePublishRequest isn't ready.
+	TargetContentLibraryNotReadyReason = "TargetContentLibraryNotReady"
+
+	// TargetItemAlreadyExistsReason documents that an item with the same name
+	// as the VirtualMachinePublishRequest's target item name exists in
+	// the target content library.
+	TargetItemAlreadyExistsReason = "TargetItemAlreadyExists"
+
+	// TargetVirtualMachineImageNotFoundReason documents that the expected
+	// VirtualMachineImage resource corresponding to the VirtualMachinePublishRequest's
+	// target item is not found in the namespace.
+	TargetVirtualMachineImageNotFoundReason = "VirtualMachineImageNotFound"
+
+	// UploadTaskNotStartedReason documents that the VM publish task hasn't started.
+	UploadTaskNotStartedReason = "NotStarted"
+
+	// UploadTaskQueuedReason documents that the VM publish task is in queued status.
+	UploadTaskQueuedReason = "Queued"
+
+	// UploadingReason documents that the VM publish task is in running status
+	// and the published item is being uploaded to the target location.
+	UploadingReason = "Uploading"
+
+	// UploadItemIDInvalidReason documents that the VM publish task result
+	// returns an invalid Item id.
+	UploadItemIDInvalidReason = "ItemIDInvalid"
+
+	// UploadFailureReason documents that uploading published item to the
+	// target location failed.
+	UploadFailureReason = "UploadFailure"
+
+	// HasNotBeenUploadedReason documents that the VirtualMachinePublishRequest
+	// hasn't completed because the published item hasn't been uploaded
+	// to the target location.
+	HasNotBeenUploadedReason = "HasNotBeenUploaded"
+
+	// ImageUnavailableReason documents that the VirtualMachinePublishRequest
+	// hasn't been completed because the expected VirtualMachineImage resource
+	// isn't available yet.
+	ImageUnavailableReason = "ImageUnavailable"
 )
 
 // VirtualMachinePublishRequestSource is the source of a publication request,
@@ -278,264 +332,12 @@ type VirtualMachinePublishRequestStatus struct {
 	Conditions []Condition `json:"conditions,omitempty"`
 }
 
-func (vmpr VirtualMachinePublishRequest) getCondition(
-	conditionType ConditionType,
-) *Condition {
-
-	for i := range vmpr.Status.Conditions {
-		c := &vmpr.Status.Conditions[i]
-		if c.Type == conditionType {
-			return c
-		}
-	}
-
-	return nil
+func (vmpr *VirtualMachinePublishRequest) GetConditions() Conditions {
+	return vmpr.Status.Conditions
 }
 
-// IsSourceValid returns true if there is a status condition of Type=SourceValid
-// and Status=True.
-func (vmpr VirtualMachinePublishRequest) IsSourceValid() bool {
-	c := vmpr.getCondition(VirtualMachinePublishRequestConditionSourceValid)
-	if c != nil && c.Status == corev1.ConditionTrue {
-		return true
-	}
-	return false
-}
-
-// IsTargetValid returns true if there is a status condition of
-// Type=TargetValid and Status=True.
-func (vmpr VirtualMachinePublishRequest) IsTargetValid() bool {
-	c := vmpr.getCondition(VirtualMachinePublishRequestConditionTargetValid)
-	if c != nil && c.Status == corev1.ConditionTrue {
-		return true
-	}
-	return false
-}
-
-// IsComplete returns true if there is a status condition of Type=Complete
-// and Status=True and the resource's status.completionTime is non-zero.
-//
-// It is recommended to use the MarkComplete function in order to mark
-// a VirtualMachinePublishRequest as complete since the function ensures
-// the status.completionTime field is properly set.
-//
-// This condition is set only when the operation has failed or the
-// VirtualMachineImage resource has been realized.
-func (vmpr VirtualMachinePublishRequest) IsComplete() bool {
-	c := vmpr.getCondition(VirtualMachinePublishRequestConditionComplete)
-	if c != nil && c.Status == corev1.ConditionTrue {
-		return !vmpr.Status.CompletionTime.IsZero()
-	}
-	return false
-}
-
-// IsImageAvailable returns true if there is a status condition of
-// Type=ImageAvailable and Status=True.
-func (vmpr VirtualMachinePublishRequest) IsImageAvailable() bool {
-	c := vmpr.getCondition(VirtualMachinePublishRequestConditionImageAvailable)
-	if c != nil && c.Status == corev1.ConditionTrue {
-		return true
-	}
-	return false
-}
-
-// IsUploaded returns true if there is a status condition of Type=Uploaded
-// and Status=True.
-//
-// This condition is set when the publication has finished uploading the
-// VM to the image registry and is waiting on the VirtualMachineImage
-// resource to be realized.
-func (vmpr VirtualMachinePublishRequest) IsUploaded() bool {
-	c := vmpr.getCondition(VirtualMachinePublishRequestConditionUploaded)
-	if c != nil && c.Status == corev1.ConditionTrue {
-		return true
-	}
-	return false
-}
-
-func (vmpr *VirtualMachinePublishRequest) markCondition(
-	conditionType ConditionType,
-	status corev1.ConditionStatus,
-	args ...string,
-) {
-	var (
-		message string
-		reason  string
-	)
-	if len(args) > 0 {
-		reason = args[0]
-	}
-	if len(args) > 1 {
-		message = args[1]
-	}
-	if reason == "" && status == corev1.ConditionTrue {
-		reason = VirtualMachinePublishRequestConditionSuccess
-	} else if reason == "" {
-		reason = string(status)
-	}
-
-	c := vmpr.getCondition(conditionType)
-	if c != nil {
-		c.Message = message
-		c.Reason = reason
-		c.Status = status
-		// Only update the LastTransitionTime if something actually changed.
-		if c.Message != message || c.Reason != reason || c.Status != status {
-			c.LastTransitionTime = metav1.NewTime(time.Now().UTC())
-		}
-		return
-	}
-	vmpr.Status.Conditions = append(
-		vmpr.Status.Conditions,
-		Condition{
-			Type:               conditionType,
-			Message:            message,
-			Reason:             reason,
-			Status:             status,
-			LastTransitionTime: metav1.NewTime(time.Now().UTC()),
-		},
-	)
-}
-
-// MarkComplete adds or updates the status condition Type=Complete
-// sets the condition's Status field to the provided value.
-//
-// This function also updates the status.completionTime field to
-// the current time in UTC. Please note this field is updated every
-// time this function is called. If this function is called with a
-// status of anything other than True, the value of status.completionTIme
-// is zeroed.
-//
-// This function also sets status.ready=true IFF the provided status
-// is True and all other conditions present in the resource have a
-// status=True.
-//
-// The variadic parameter args may be used to set the condition's
-// reason and message. If len(args) > 0 then args[0] is used as the
-// reason. If len(args) > 1 then args[1] is used as the message.
-//
-// If no reason is provided and status=True, then reason is set to
-// to "Success," otherwise string(status).
-//
-// If no message is provided then it is set to an empty string.
-func (vmpr *VirtualMachinePublishRequest) MarkComplete(
-	status corev1.ConditionStatus,
-	args ...string,
-) {
-	switch status {
-	case corev1.ConditionTrue:
-		vmpr.Status.CompletionTime = metav1.NewTime(time.Now().UTC())
-	case corev1.ConditionFalse, corev1.ConditionUnknown:
-		vmpr.Status.CompletionTime = metav1.Time{}
-	}
-
-	vmpr.markCondition(
-		VirtualMachinePublishRequestConditionComplete,
-		status,
-		args...,
-	)
-
-	// At this point, if all conditions have a Status=True then
-	// the VirtualMachinePublishRequest resource should be marked
-	// ready.
-	for _, c := range vmpr.Status.Conditions {
-		if c.Status != corev1.ConditionTrue {
-			vmpr.Status.Ready = false
-			return
-		}
-	}
-	vmpr.Status.Ready = true
-}
-
-// MarkSourceValid adds or updates a status condition of
-// Type=SourceValid and sets the condition's Status field to the
-// provided value.
-//
-// The variadic parameter args may be used to set the condition's
-// reason and message. If len(args) > 0 then args[0] is used as the
-// reason. If len(args) > 1 then args[1] is used as the message.
-//
-// If no reason is provided and status=True, then reason is set to
-// to "Success," otherwise string(status).
-//
-// If no message is provided then it is set to an empty string.
-func (vmpr *VirtualMachinePublishRequest) MarkSourceValid(
-	status corev1.ConditionStatus,
-	args ...string,
-) {
-	vmpr.markCondition(
-		VirtualMachinePublishRequestConditionSourceValid,
-		status,
-		args...,
-	)
-}
-
-// MarkTargetValid adds or updates a status condition of
-// Type=TargetValid and sets the condition's Status field to the
-// provided value.
-//
-// The variadic parameter args may be used to set the condition's
-// reason and message. If len(args) > 0 then args[0] is used as the
-// reason. If len(args) > 1 then args[1] is used as the message.
-//
-// If no reason is provided and status=True, then reason is set to
-// to "Success," otherwise string(status).
-//
-// If no message is provided then it is set to an empty string.
-func (vmpr *VirtualMachinePublishRequest) MarkTargetValid(
-	status corev1.ConditionStatus,
-	args ...string,
-) {
-	vmpr.markCondition(
-		VirtualMachinePublishRequestConditionTargetValid,
-		status,
-		args...,
-	)
-}
-
-// MarkImageAvailable adds or updates a status condition of
-// Type=ImageAvailable and sets the condition's Status field to the
-// provided value.
-//
-// The variadic parameter args may be used to set the condition's
-// reason and message. If len(args) > 0 then args[0] is used as the
-// reason. If len(args) > 1 then args[1] is used as the message.
-//
-// If no reason is provided and status=True, then reason is set to
-// to "Success," otherwise string(status).
-//
-// If no message is provided then it is set to an empty string.
-func (vmpr *VirtualMachinePublishRequest) MarkImageAvailable(
-	status corev1.ConditionStatus,
-	args ...string,
-) {
-	vmpr.markCondition(
-		VirtualMachinePublishRequestConditionImageAvailable,
-		status,
-		args...,
-	)
-}
-
-// MarkUploaded adds or updates a status condition of Type=Uploaded and
-// sets the condition's Status field to the provided value.
-//
-// The variadic parameter args may be used to set the condition's
-// reason and message. If len(args) > 0 then args[0] is used as the
-// reason. If len(args) > 1 then args[1] is used as the message.
-//
-// If no reason is provided and status=True, then reason is set to
-// to "Success," otherwise string(status).
-//
-// If no message is provided then it is set to an empty string.
-func (vmpr *VirtualMachinePublishRequest) MarkUploaded(
-	status corev1.ConditionStatus,
-	args ...string,
-) {
-	vmpr.markCondition(
-		VirtualMachinePublishRequestConditionUploaded,
-		status,
-		args...,
-	)
+func (vmpr *VirtualMachinePublishRequest) SetConditions(conditions Conditions) {
+	vmpr.Status.Conditions = conditions
 }
 
 // +kubebuilder:object:root=true

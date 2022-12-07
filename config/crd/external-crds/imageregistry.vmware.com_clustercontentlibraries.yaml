@@ -5,39 +5,36 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.10.0
   creationTimestamp: null
-  name: contentlibraryitems.imageregistry.vmware.com
+  name: clustercontentlibraries.imageregistry.vmware.com
 spec:
   group: imageregistry.vmware.com
   names:
-    kind: ContentLibraryItem
-    listKind: ContentLibraryItemList
-    plural: contentlibraryitems
+    kind: ClusterContentLibrary
+    listKind: ClusterContentLibraryList
+    plural: clustercontentlibraries
     shortNames:
-    - clitem
-    singular: contentlibraryitem
-  scope: Namespaced
+    - ccl
+    singular: clustercontentlibrary
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.name
       name: vSphereName
       type: string
-    - jsonPath: .status.contentLibraryRef.name
-      name: ContentLibraryRef
-      type: string
     - jsonPath: .status.type
       name: Type
       type: string
-    - jsonPath: .status.ready
-      name: Ready
-      type: boolean
+    - jsonPath: .status.storageBacking.type
+      name: StorageType
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ContentLibraryItem is the schema for the content library item
-          API.
+        description: ClusterContentLibrary is the schema for the cluster scoped content
+          library API. Currently, ClusterContentLibrary is immutable to end users.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -52,43 +49,23 @@ spec:
           metadata:
             type: object
           spec:
-            description: ContentLibraryItemSpec defines the desired state of a ContentLibraryItem.
+            description: ClusterContentLibrarySpec defines the desired state of a
+              ClusterContentLibrary.
             properties:
               uuid:
                 description: UUID is the identifier which uniquely identifies the
-                  library item in vCenter. This field is immutable.
+                  library in vCenter. This field is immutable.
                 type: string
             required:
             - uuid
             type: object
           status:
-            description: ContentLibraryItemStatus defines the observed state of ContentLibraryItem.
+            description: ClusterContentLibraryStatus defines the observed state of
+              ClusterContentLibrary.
             properties:
-              cached:
-                default: false
-                description: Cached indicates if the library item files are on disk
-                  in vCenter.
-                type: boolean
-              certificateVerificationInfo:
-                description: CertificateVerificationInfo shows the certificate verification
-                  status and the signing certificate.
-                properties:
-                  certChain:
-                    description: CertChain shows the signing certificate in base64
-                      encoding if the library item is signed.
-                    items:
-                      type: string
-                    type: array
-                  status:
-                    description: Status shows the certificate verification status
-                      of the library item.
-                    type: string
-                required:
-                - status
-                type: object
               conditions:
                 description: Conditions describes the current condition information
-                  of the ContentLibraryItem.
+                  of the ClusterContentLibrary.
                 items:
                   description: Condition defines an observation of an Image Registry
                     Operator API resource operational state.
@@ -131,78 +108,105 @@ spec:
                   - type
                   type: object
                 type: array
-              contentLibraryRef:
-                description: ContentLibraryRef refers to the ContentLibrary custom
-                  resource that this item belongs to.
-                properties:
-                  name:
-                    description: Name is the name of resource being referenced.
-                    type: string
-                  namespace:
-                    description: Namespace of the resource being referenced. If empty,
-                      cluster scoped resource is assumed.
-                    type: string
-                required:
-                - name
-                type: object
-              contentVersion:
-                description: ContentVersion indicates the version of the library item
-                  content. This integer value is incremented when the files comprising
-                  the content library item are changed in vCenter.
-                type: string
               creationTime:
                 description: CreationTime indicates the date and time when this library
-                  item was created.
+                  was created.
                 type: string
               description:
                 description: Description is a human-readable description for this
-                  library item.
+                  library.
                 type: string
               lastModifiedTime:
                 description: LastModifiedTime indicates the date and time when this
-                  library item was last updated. This field is updated when the library
-                  item properties are changed or the file content is changed.
+                  library was last updated. This field is updated only when the library
+                  properties are changed. This field is not updated when a library
+                  item is added, modified or deleted or its content is changed.
                 type: string
               lastSyncTime:
                 description: LastSyncTime indicates the date and time when this library
-                  item was last synchronized. This field applies only to subscribed
-                  library items.
-                type: string
-              metadataVersion:
-                description: MetadataVersion indicates the version of the library
-                  item metadata. This integer value is incremented when the library
-                  item properties such as name or description are changed in vCenter.
+                  was last synchronized. This field applies only if the library is
+                  of the "Subscribed" Type.
                 type: string
               name:
-                description: Name specifies the name of the content library item in
-                  vCenter specified by the user.
+                description: Name specifies the name of the content library in vCenter.
                 type: string
-              ready:
-                default: false
-                description: Ready denotes that the library item is ready to be used.
-                type: boolean
-              securityCompliance:
-                description: SecurityCompliance shows the security compliance of the
-                  library item.
-                type: boolean
-              size:
-                description: Size indicates the library item size in bytes
-                format: int32
-                type: integer
+              publishInfo:
+                description: Published indicates how the library is published so that
+                  it can be subscribed to by a remote subscribed library.
+                properties:
+                  publishURL:
+                    description: PublishURL is the URL to which the library metadata
+                      is published by the vSphere Content Library Service. This value
+                      can be used to set the SubscriptionInfo.subscriptionURL property
+                      when creating a subscribed library.
+                    type: string
+                  published:
+                    description: Published indicates if the local library is published.
+                    type: boolean
+                required:
+                - publishURL
+                - published
+                type: object
+              securityPolicyID:
+                description: SecurityPolicyID defines the security policy applied
+                  to this library. Setting this field will make the library secure.
+                type: string
+              storageBacking:
+                description: StorageBacking indicates the default storage backing
+                  available for this library in vCenter.
+                properties:
+                  datastoreID:
+                    description: DatastoreID indicates the identifier of the datastore
+                      used to store the content in the library for the "Datastore"
+                      storageType in vCenter.
+                    type: string
+                  type:
+                    description: Type indicates the type of storage where the content
+                      would be stored. Possible values are "Datastore" and "Other".
+                    type: string
+                required:
+                - type
+                type: object
+              subscriptionInfo:
+                description: SubscriptionInfo defines how the subscribed library synchronizes
+                  to a remote source. This field is populated only if the library
+                  is of the "Subscribed" type.
+                properties:
+                  automaticSyncEnabled:
+                    description: AutomaticSyncEnabled indicates whether the library
+                      should participate in automatic library synchronization.
+                    type: boolean
+                  onDemand:
+                    description: OnDemand indicates whether a library item’s content
+                      will be synchronized only on demand.
+                    type: boolean
+                  subscriptionURL:
+                    description: SubscriptionURL is the URL of the endpoint where
+                      the metadata for the remotely published library is being served.
+                      The value from PublishInfo.PublishURL of the published library
+                      should be used while creating a subscribed library.
+                    type: string
+                required:
+                - automaticSyncEnabled
+                - onDemand
+                - subscriptionURL
+                type: object
               type:
-                description: Type string indicates the type of the library item in
-                  vCenter. Possible types are "Ovf" and "Iso".
+                description: Type indicates the type of a library in vCenter. Possible
+                  types are "Local" and "Subscribed".
+                type: string
+              version:
+                description: Version is a number that can identify metadata changes.
+                  This integer value is incremented when the library properties such
+                  as name or description are changed in vCenter.
                 type: string
             required:
-            - cached
-            - contentLibraryRef
-            - contentVersion
             - creationTime
             - lastModifiedTime
-            - metadataVersion
             - name
-            - ready
+            - storageBacking
             - type
+            - version
             type: object
         type: object
     served: true

@@ -77,6 +77,50 @@ func unitTestsReconcile() {
 
 	Context("ReconcileNormal", func() {
 
+		When("ClusterContentLibraryItem does not have the `securityCompliance` field to be true", func() {
+
+			BeforeEach(func() {
+				cclItem.Status.SecurityCompliance = &[]bool{false}[0]
+			})
+
+			When("No existing ClusterVirtualMachineImage found", func() {
+
+				It("should skip delete ClusterVirtualMachineImage", func() {
+					err := reconciler.ReconcileNormal(ctx, cclItem)
+					Expect(err).ToNot(HaveOccurred())
+
+					cvmiList := &vmopv1a1.ClusterVirtualMachineImageList{}
+					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
+					Expect(cvmiList.Items).To(HaveLen(0))
+				})
+			})
+
+			When("Existing ClusterVirtualMachineImage found", func() {
+
+				BeforeEach(func() {
+					cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
+					existingCVMI := &vmopv1a1.ClusterVirtualMachineImage{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: cvmiName,
+						},
+						Status: vmopv1a1.VirtualMachineImageStatus{
+							ContentVersion: "dummy-old",
+						},
+					}
+					initObjects = append(initObjects, existingCVMI)
+				})
+
+				It("should delete the ClusterVirtualMachineImage", func() {
+					err := reconciler.ReconcileNormal(ctx, cclItem)
+					Expect(err).ToNot(HaveOccurred())
+
+					cvmiList := &vmopv1a1.ClusterVirtualMachineImageList{}
+					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
+					Expect(cvmiList.Items).To(HaveLen(0))
+				})
+			})
+		})
+
 		When("ClusterContentLibraryItem is Not Ready", func() {
 
 			BeforeEach(func() {

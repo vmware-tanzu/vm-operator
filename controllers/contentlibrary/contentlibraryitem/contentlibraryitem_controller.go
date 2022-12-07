@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -125,6 +126,22 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 		},
 	}
 	logger = logger.WithValues("vmiName", vmi.Name, "vmiNamespace", vmi.Namespace)
+
+	clItemSecurityCompliance := clItem.Status.SecurityCompliance
+
+	// If the ContentLibraryItem's security compliance field is not set or is false, delete the vmi if already exists
+	if clItemSecurityCompliance == nil || !*clItemSecurityCompliance {
+		logger.Info("ContentLibraryItem's security status is not true, deleting corresponding vmi if exists")
+		if err := r.Client.Delete(ctx, vmi); err != nil {
+			if k8serrors.IsNotFound(err) {
+				logger.Info("Corresponding vmi not found, skipping delete")
+				return nil
+			}
+			return err
+		}
+		logger.Info("Deleted Corresponding vmi")
+		return nil
+	}
 
 	var syncErr error
 	var savedStatus *vmopv1alpha1.VirtualMachineImageStatus

@@ -55,10 +55,11 @@ KUBECTL            := $(TOOLS_BIN_DIR)/kubectl
 ETCD               := $(TOOLS_BIN_DIR)/etcd
 
 # Allow overriding manifest generation destination directory
-MANIFEST_ROOT ?= config
-CRD_ROOT      ?= $(MANIFEST_ROOT)/crd/bases
-WEBHOOK_ROOT  ?= $(MANIFEST_ROOT)/webhook
-RBAC_ROOT     ?= $(MANIFEST_ROOT)/rbac
+MANIFEST_ROOT     ?= config
+CRD_ROOT          ?= $(MANIFEST_ROOT)/crd/bases
+EXTERNAL_CRD_ROOT ?= $(MANIFEST_ROOT)/crd/external-crds
+WEBHOOK_ROOT      ?= $(MANIFEST_ROOT)/webhook
+RBAC_ROOT         ?= $(MANIFEST_ROOT)/rbac
 
 # Image URL to use all building/pushing image targets
 IMAGE ?= vmoperator-controller
@@ -237,6 +238,7 @@ modules-download: ## Downloads and caches the modules
 generate: ## Generate code
 	$(MAKE) generate-go
 	$(MAKE) generate-manifests
+	$(MAKE) generate-external-manifests
 	$(MAKE) generate-api-docs
 
 .PHONY: generate-go
@@ -264,6 +266,15 @@ generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 		paths=./webhooks/... \
 		output:rbac:dir=$(RBAC_ROOT) \
 		rbac:roleName=manager-role
+
+.PHONY: generate-external-manifests
+generate-external-manifests: | $(CONTROLLER_GEN)
+generate-external-manifests: ## Generate manifests for the external types for testing
+	$(CONTROLLER_GEN) \
+		paths=./external/image-registry/api/v1alpha1/... \
+		crd:crdVersions=v1 \
+		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
+		output:none
 
 .PHONY: generate-api-docs
 generate-api-docs: | $(CRD_REF_DOCS)

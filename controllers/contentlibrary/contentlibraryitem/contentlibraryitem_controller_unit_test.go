@@ -75,6 +75,51 @@ func unitTestsReconcile() {
 	})
 
 	Context("ReconcileNormal", func() {
+		When("ContentLibraryItem does not have the `securityCompliance` field to be true", func() {
+
+			BeforeEach(func() {
+				clItem.Status.SecurityCompliance = &[]bool{false}[0]
+			})
+
+			When("No existing VirtualMachineImage found", func() {
+
+				It("should skip delete VirtualMachineImage", func() {
+					err := reconciler.ReconcileNormal(ctx, clItem)
+					Expect(err).ToNot(HaveOccurred())
+
+					vmiList := &vmopv1a1.VirtualMachineImageList{}
+					Expect(ctx.Client.List(ctx, vmiList)).To(Succeed())
+					Expect(vmiList.Items).To(HaveLen(0))
+				})
+			})
+
+			When("Existing VirtualMachineImage found", func() {
+
+				BeforeEach(func() {
+					vmiName := utils.GetTestVMINameFrom(clItem.Name)
+					existingVMI := &vmopv1a1.VirtualMachineImage{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      vmiName,
+							Namespace: clItem.Namespace,
+						},
+						Status: vmopv1a1.VirtualMachineImageStatus{
+							ContentVersion: "dummy-old",
+						},
+					}
+					initObjects = append(initObjects, existingVMI)
+				})
+
+				It("should delete the VirtualMachineImage", func() {
+					err := reconciler.ReconcileNormal(ctx, clItem)
+					Expect(err).ToNot(HaveOccurred())
+
+					vmiList := &vmopv1a1.VirtualMachineImageList{}
+					Expect(ctx.Client.List(ctx, vmiList)).To(Succeed())
+					Expect(vmiList.Items).To(HaveLen(0))
+				})
+			})
+		})
+
 		When("ContentLibraryItem is Not Ready", func() {
 			BeforeEach(func() {
 				clItem.Status.Conditions = []imgregv1a1.Condition{

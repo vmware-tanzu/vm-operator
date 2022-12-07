@@ -44,6 +44,17 @@ func clItemReconcile() {
 		}).Should(BeTrue(), "waiting for VirtualMachineImage to be created and synced")
 	}
 
+	waitForVirtualMachineImageDeleted := func(ctx *builder.IntegrationTestContext) {
+		curVMI := vmopv1a1.VirtualMachineImage{}
+		Eventually(func() bool {
+			vmiName := utils.GetTestVMINameFrom(clItem.Name)
+			if err := ctx.Client.Get(ctx, client.ObjectKey{Name: vmiName}, &curVMI); err != nil {
+				return true
+			}
+			return false
+		}).Should(BeTrue())
+	}
+
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
 
@@ -122,6 +133,19 @@ func clItemReconcile() {
 
 			It("should sync and update the existing VirtualMachineImage", func() {
 				waitForVirtualMachineImageReady(ctx)
+			})
+		})
+
+		When("ContentLibraryItem's security compliance is not true", func() {
+
+			JustBeforeEach(func() {
+				waitForVirtualMachineImageReady(ctx)
+				clItem.Status.SecurityCompliance = &[]bool{false}[0]
+				Expect(ctx.Client.Status().Update(ctx, clItem)).To(Succeed())
+			})
+
+			It("should delete VirtualMachineImage", func() {
+				waitForVirtualMachineImageDeleted(ctx)
 			})
 		})
 	})

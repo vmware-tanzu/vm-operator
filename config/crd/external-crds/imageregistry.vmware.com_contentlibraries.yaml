@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.9.2
+    controller-gen.kubebuilder.io/version: v0.10.0
   creationTimestamp: null
   name: contentlibraries.imageregistry.vmware.com
 spec:
@@ -24,7 +24,7 @@ spec:
     - jsonPath: .status.type
       name: Type
       type: string
-    - jsonPath: .status.writable
+    - jsonPath: .spec.writable
       name: Writable
       type: boolean
     - jsonPath: .status.storageBacking.type
@@ -153,6 +153,10 @@ spec:
                 - publishURL
                 - published
                 type: object
+              securityPolicyID:
+                description: SecurityPolicyID defines the security policy applied
+                  to this library. Setting this field will make the library secure.
+                type: string
               storageBacking:
                 description: StorageBacking indicates the default storage backing
                   available for this library in vCenter.

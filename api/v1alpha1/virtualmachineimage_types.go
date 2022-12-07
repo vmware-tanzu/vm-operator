@@ -109,7 +109,7 @@ type VirtualMachineImageStatus struct {
 	Uuid string `json:"uuid,omitempty"` //nolint:revive,stylecheck
 
 	// Deprecated
-	InternalId string `json:"internalId"` //nolint:revive,stylecheck
+	InternalId string `json:"internalId,omitempty"` //nolint:revive,stylecheck
 
 	// Deprecated
 	PowerState string `json:"powerState,omitempty"`

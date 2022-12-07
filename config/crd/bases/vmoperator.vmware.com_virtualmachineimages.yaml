@@ -269,8 +269,6 @@ spec:
               uuid:
                 description: Deprecated
                 type: string
-            required:
-            - internalId
             type: object
         type: object
     served: true

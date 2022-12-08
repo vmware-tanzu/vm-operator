@@ -136,7 +136,12 @@ type VirtualMachineImageStatus struct {
 	// ContentVersion describes the observed content version of this VirtualMachineImage that was last successfully
 	// synced with the vSphere content library item.
 	// +optional
-	ContentVersion string `json:"contentVersion"`
+	ContentVersion string `json:"contentVersion,omitempty"`
+
+	// Firmware describe the firmware type used by this VirtualMachineImage.
+	// eg: bios, efi.
+	// +optional
+	Firmware string `json:"firmware,omitempty"`
 }
 
 func (vmImage *VirtualMachineImage) GetConditions() Conditions {

@@ -766,6 +766,7 @@ _Appears in:_
 | `conditions` _[Condition](#condition) array_ | Conditions describes the current condition information of the VirtualMachineImage object. e.g. if the OS type is supported or image is supported by VMService |
 | `contentLibraryRef` _[TypedLocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#typedlocalobjectreference-v1-core)_ | ContentLibraryRef is a reference to the source ContentLibrary/ClusterContentLibrary resource. |
 | `contentVersion` _string_ | ContentVersion describes the observed content version of this VirtualMachineImage that was last successfully synced with the vSphere content library item. |
+| `firmware` _string_ | Firmware describe the firmware type used by this VirtualMachineImage. eg: bios, efi. |
 
 ### VirtualMachineMetadata
 

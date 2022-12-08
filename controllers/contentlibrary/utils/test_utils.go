@@ -17,6 +17,9 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 )
 
+// ContentLibraryServiceTypeLabelKey is used to differentiate a TKG resource from a VM service resource.
+const ContentLibraryServiceTypeLabelKey = "type.services.vmware.com/tkg"
+
 func DummyClusterContentLibraryItem(name string) *imgregv1a1.ClusterContentLibraryItem {
 	cclItem := &imgregv1a1.ClusterContentLibraryItem{
 		TypeMeta: metav1.TypeMeta{
@@ -25,6 +28,10 @@ func DummyClusterContentLibraryItem(name string) *imgregv1a1.ClusterContentLibra
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
+			Labels: map[string]string{
+				ContentLibraryServiceTypeLabelKey: "",
+				"dummy-not-service-label":         "",
+			},
 		},
 		Spec: imgregv1a1.ClusterContentLibraryItemSpec{
 			UUID: "dummy-ccl-item-uuid",
@@ -85,12 +92,25 @@ func GetTestVMINameFrom(clItemName string) string {
 	return strings.Replace(clItemName, ItemFieldNamePrefix, ImageFieldNamePrefix, 1)
 }
 
+func GetServiceTypeLabels(labels map[string]string) map[string]string {
+	generatedLabels := make(map[string]string)
+
+	// Only watch for service type labels
+	for label := range labels {
+		if strings.HasPrefix(label, "type.services.vmware.com/") {
+			generatedLabels[label] = ""
+		}
+	}
+	return generatedLabels
+}
+
 func GetExpectedCVMIFrom(cclItem imgregv1a1.ClusterContentLibraryItem,
 	providerFunc func(context.Context, string, crtlclient.Object) error) *vmopv1a1.ClusterVirtualMachineImage {
 
 	cvmi := &vmopv1a1.ClusterVirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GetTestVMINameFrom(cclItem.Name),
+			Name:   GetTestVMINameFrom(cclItem.Name),
+			Labels: GetServiceTypeLabels(cclItem.Labels),
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion:         cclItem.APIVersion,

@@ -43,6 +43,8 @@ func publishTests() {
 		cl = builder.DummyContentLibrary("dummy-cl", "dummy-ns", ctx.ContentLibraryID)
 		vmPub = builder.DummyVirtualMachinePublishRequest("dummy-vmpub", "dummy-ns",
 			vcVM.Name(), "dummy-item-name", "dummy-cl")
+		vmPub.Status.SourceRef = &vmPub.Spec.Source
+		vmPub.Status.TargetRef = &vmPub.Spec.Target
 		vmCtx = context.VirtualMachineContext{
 			Context: ctx,
 			Logger:  suite.GetLogger().WithValues("vmName", vcVM.Name()),

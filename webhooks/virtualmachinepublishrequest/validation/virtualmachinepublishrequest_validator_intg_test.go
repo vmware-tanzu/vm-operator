@@ -74,11 +74,10 @@ func intgTestsValidateCreate() {
 	})
 
 	When("WCP_VM_Image_Registry is enabled: create is performed", func() {
-		BeforeEach(func() {
-			err = ctx.Client.Create(ctx, ctx.vmPub)
-		})
 		It("should allow the request", func() {
-			Expect(err).ToNot(HaveOccurred())
+			Eventually(func() error {
+				return ctx.Client.Create(ctx, ctx.vmPub)
+			}).Should(Succeed())
 		})
 	})
 
@@ -91,7 +90,12 @@ func intgTestsValidateCreate() {
 		})
 
 		It("should deny the request", func() {
-			Expect(err).To(HaveOccurred())
+			Eventually(func() string {
+				if err = ctx.Client.Create(ctx, ctx.vmPub); err != nil {
+					return err.Error()
+				}
+				return ""
+			}).Should(ContainSubstring("WCP_VM_Image_Registry feature not enabled"))
 		})
 	})
 }
@@ -107,7 +111,11 @@ func intgTestsValidateUpdate() {
 
 		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 		Expect(ctx.Client.Create(ctx, ctx.cl)).To(Succeed())
-		Expect(ctx.Client.Create(ctx, ctx.vmPub)).To(Succeed())
+
+		// Use Eventually to create vmPub In case VM or CL is not available yet.
+		Eventually(func() error {
+			return ctx.Client.Create(ctx, ctx.vmPub)
+		}).Should(Succeed())
 	})
 
 	JustBeforeEach(func() {
@@ -153,7 +161,10 @@ func intgTestsValidateDelete() {
 
 		Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 		Expect(ctx.Client.Create(ctx, ctx.cl)).To(Succeed())
-		Expect(ctx.Client.Create(ctx, ctx.vmPub)).To(Succeed())
+
+		Eventually(func() error {
+			return ctx.Client.Create(ctx, ctx.vmPub)
+		}).Should(Succeed())
 	})
 
 	JustBeforeEach(func() {

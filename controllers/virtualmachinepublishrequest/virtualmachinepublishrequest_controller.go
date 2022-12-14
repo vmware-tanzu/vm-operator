@@ -198,12 +198,13 @@ func (r *Reconciler) updateSourceAndTargetRef(ctx *context.VirtualMachinePublish
 	if vmPubReq.Status.TargetRef == nil {
 		targetItemName := vmPubReq.Spec.Target.Item.Name
 		if targetItemName == "" {
-			targetItemName = fmt.Sprintf("%s-image", vmPubReq.Name)
+			targetItemName = fmt.Sprintf("%s-image", vmPubReq.Status.SourceRef.Name)
 		}
 
 		vmPubReq.Status.TargetRef = &vmopv1alpha1.VirtualMachinePublishRequestTarget{
 			Item: vmopv1alpha1.VirtualMachinePublishRequestTargetItem{
-				Name: targetItemName,
+				Name:        targetItemName,
+				Description: vmPubReq.Spec.Target.Item.Description,
 			},
 			Location: vmPubReq.Spec.Target.Location,
 		}
@@ -325,7 +326,7 @@ func (r *Reconciler) checkIsTargetValid(ctx *context.VirtualMachinePublishReques
 	vmPubReq := ctx.VMPublishRequest
 	contentLibrary := &imgregv1a1.ContentLibrary{}
 	targetLocationName := vmPubReq.Spec.Target.Location.Name
-	targetItemName := vmPubReq.Spec.Target.Item.Name
+	targetItemName := vmPubReq.Status.TargetRef.Item.Name
 	objKey := client.ObjectKey{Name: targetLocationName, Namespace: vmPubReq.Namespace}
 	if err := r.Get(ctx, objKey, contentLibrary); err != nil {
 		ctx.Logger.Error(err, "failed to get ContentLibrary", "cl", objKey)

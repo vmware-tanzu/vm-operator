@@ -202,6 +202,17 @@ func (r *Reconciler) setUpCVMIFromCCLItem(cvmi *vmopv1a1.ClusterVirtualMachineIm
 		return err
 	}
 
+	if cvmi.Labels == nil {
+		cvmi.Labels = make(map[string]string)
+	}
+
+	// Only watch for service type labels from ClusterContentLibraryItem
+	for label := range cclItem.Labels {
+		if strings.HasPrefix(label, "type.services.vmware.com/") {
+			cvmi.Labels[label] = ""
+		}
+	}
+
 	// Do not initialize the Spec or Status directly as it might overwrite the existing fields.
 	cvmi.Spec.Type = string(cclItem.Status.Type)
 	cvmi.Spec.ImageID = cclItem.Spec.UUID

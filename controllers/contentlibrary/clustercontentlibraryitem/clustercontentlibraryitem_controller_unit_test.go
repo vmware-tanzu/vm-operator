@@ -170,6 +170,7 @@ func unitTestsReconcile() {
 					utils.PopulateRuntimeFieldsTo(expectedCVMI, &createdCVMI)
 
 					Expect(createdCVMI.Name).To(Equal(expectedCVMI.Name))
+					Expect(createdCVMI.Labels).To(Equal(expectedCVMI.Labels))
 					Expect(createdCVMI.OwnerReferences).To(Equal(expectedCVMI.OwnerReferences))
 					Expect(createdCVMI.Spec).To(Equal(expectedCVMI.Spec))
 					Expect(createdCVMI.Status).To(Equal(expectedCVMI.Status))
@@ -203,6 +204,7 @@ func unitTestsReconcile() {
 					utils.PopulateRuntimeFieldsTo(expectedCVMI, &updatedCVMI)
 
 					Expect(updatedCVMI.Name).To(Equal(expectedCVMI.Name))
+					Expect(updatedCVMI.Labels).To(Equal(expectedCVMI.Labels))
 					Expect(updatedCVMI.OwnerReferences).To(Equal(expectedCVMI.OwnerReferences))
 					Expect(updatedCVMI.Spec).To(Equal(expectedCVMI.Spec))
 					Expect(updatedCVMI.Status).To(Equal(expectedCVMI.Status))
@@ -232,6 +234,7 @@ func unitTestsReconcile() {
 					utils.PopulateRuntimeFieldsTo(expectedCVMI, &currentCVMI)
 
 					Expect(currentCVMI.Name).To(Equal(expectedCVMI.Name))
+					Expect(currentCVMI.Labels).To(Equal(expectedCVMI.Labels))
 					Expect(currentCVMI.OwnerReferences).To(Equal(expectedCVMI.OwnerReferences))
 					Expect(currentCVMI.Spec.HardwareVersion).To(BeZero())
 					Expect(currentCVMI.Status.ImageSupported).To(BeNil())

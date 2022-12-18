@@ -61,14 +61,12 @@ spec:
             description: VirtualMachineClassSpec defines the desired state of VirtualMachineClass.
             properties:
               configSpec:
-                description: ConfigSpec may specify additional virtual machine configuration
-                  settings including hardware specifications for a VirtualMachine
-                properties:
-                  xml:
-                    description: XML contains a vim.vm.ConfigSpec object that has
-                      been serialized to XML and base64-encoded.
-                    type: string
+                description: "ConfigSpec describes additional configuration information
+                  for a VirtualMachine. \n The contents of this field are the VirtualMachineConfigSpec
+                  data object (https://bit.ly/3HDtiRu) marshaled to JSON using the
+                  discriminator field \"_typeName\" to preserve type information."
                 type: object
+                x-kubernetes-preserve-unknown-fields: true
               description:
                 description: Description describes the configuration of the VirtualMachineClass
                   which is not related to virtual hardware or infrastructure policy.

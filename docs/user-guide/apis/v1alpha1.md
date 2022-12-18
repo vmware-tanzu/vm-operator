@@ -679,21 +679,9 @@ _Appears in:_
 | `hardware` _[VirtualMachineClassHardware](#virtualmachineclasshardware)_ | Hardware describes the configuration of the VirtualMachineClass attributes related to virtual hardware.  The configuration specified in this field is used to customize the virtual hardware characteristics of any VirtualMachine associated with this VirtualMachineClass. |
 | `policies` _[VirtualMachineClassPolicies](#virtualmachineclasspolicies)_ | Policies describes the configuration of the VirtualMachineClass attributes related to virtual infrastructure policy.  The configuration specified in this field is used to customize various policies related to infrastructure resource consumption. |
 | `description` _string_ | Description describes the configuration of the VirtualMachineClass which is not related to virtual hardware or infrastructure policy. This field is used to address remaining specs about this VirtualMachineClass. |
-| `configSpec` _[VirtualMachineConfigSpec](#virtualmachineconfigspec)_ | ConfigSpec may specify additional virtual machine configuration settings including hardware specifications for a VirtualMachine |
+| `configSpec` _RawExtension_ | ConfigSpec describes additional configuration information for a VirtualMachine. 
+ The contents of this field are the VirtualMachineConfigSpec data object (https://bit.ly/3HDtiRu) marshaled to JSON using the discriminator field "_typeName" to preserve type information. |
 
-
-### VirtualMachineConfigSpec
-
-
-
-VirtualMachineConfigSpec contains additional virtual machine configuration settings including hardware specifications for the VirtualMachine. We only support XML for now, but that may change in the future.
-
-_Appears in:_
-- [VirtualMachineClassSpec](#virtualmachineclassspec)
-
-| Field | Description |
-| --- | --- |
-| `xml` _string_ | XML contains a vim.vm.ConfigSpec object that has been serialized to XML and base64-encoded. |
 
 ### VirtualMachineImageOSInfo
 

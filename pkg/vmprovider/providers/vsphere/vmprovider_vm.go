@@ -533,7 +533,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 
 	if lib.IsVMClassAsConfigFSSEnabled() {
 		if cs := createArgs.VMClass.Spec.ConfigSpec; cs != nil {
-			classConfigSpec, err := GetVMClassConfigSpecFromXML(cs.XML)
+			classConfigSpec, err := GetVMClassConfigSpec(cs)
 			if err != nil {
 				return nil, err
 			}
@@ -692,7 +692,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 
 	if lib.IsVMClassAsConfigFSSEnabled() {
 		if cs := updateArgs.VMClass.Spec.ConfigSpec; cs != nil {
-			classConfigSpec, err := GetVMClassConfigSpecFromXML(cs.XML)
+			classConfigSpec, err := GetVMClassConfigSpec(cs)
 			if err != nil {
 				return nil, err
 			}

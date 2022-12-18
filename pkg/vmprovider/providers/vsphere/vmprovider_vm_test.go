@@ -4,7 +4,7 @@
 package vsphere_test
 
 import (
-	"encoding/base64"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -15,11 +15,13 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/cluster"
+	gdj "github.com/vmware/govmomi/vim25/json"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -27,7 +29,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
@@ -159,14 +160,16 @@ func vmTests() {
 			JustBeforeEach(func() {
 
 				if configSpec != nil {
-					bytes, err := util.MarshalConfigSpecToXML(configSpec)
-					Expect(err).ToNot(HaveOccurred())
+					var w bytes.Buffer
+					enc := gdj.NewEncoder(&w)
+					enc.SetDiscriminator("_typeName", "_value", "")
+					Expect(enc.Encode(configSpec)).To(Succeed())
 
 					// Update the VM Class with the XML.
 					vmClass := &vmopv1alpha1.VirtualMachineClass{}
 					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
-					vmClass.Spec.ConfigSpec = &vmopv1alpha1.VirtualMachineConfigSpec{
-						XML: base64.StdEncoding.EncodeToString(bytes),
+					vmClass.Spec.ConfigSpec = &runtime.RawExtension{
+						Raw: w.Bytes(),
 					}
 					Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
 				}

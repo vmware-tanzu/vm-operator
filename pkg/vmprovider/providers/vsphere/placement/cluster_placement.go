@@ -38,18 +38,9 @@ func relocateSpecToRecommendation(relocateSpec *types.VirtualMachineRelocateSpec
 }
 
 func clusterPlacementActionToRecommendation(action types.ClusterClusterInitialPlacementAction) *Recommendation {
-	if action.Pool == nil {
-		return nil
-	}
-
-	var hostMoRef *types.ManagedObjectReference
-	if action.TargetHost.Value != "" {
-		hostMoRef = &action.TargetHost
-	}
-
 	return &Recommendation{
-		PoolMoRef: *action.Pool,
-		HostMoRef: hostMoRef,
+		PoolMoRef: action.Pool,
+		HostMoRef: action.TargetHost,
 	}
 }
 

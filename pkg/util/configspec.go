@@ -8,6 +8,7 @@ import (
 	"reflect"
 
 	"github.com/vmware/govmomi/vim25"
+	gdj "github.com/vmware/govmomi/vim25/json"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
 )
@@ -78,6 +79,38 @@ func UnmarshalConfigSpecFromBase64XML(
 		return nil, err
 	}
 	return UnmarshalConfigSpecFromXML(data)
+}
+
+// MarshalConfigSpecToJSON returns a byte slice of the provided ConfigSpec
+// marshaled to a JSON string.
+func MarshalConfigSpecToJSON(
+	configSpec *vimTypes.VirtualMachineConfigSpec) ([]byte, error) {
+
+	var w bytes.Buffer
+	enc := gdj.NewEncoder(&w)
+	enc.SetDiscriminator("_typeName", "_value", "")
+	if err := enc.Encode(configSpec); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+
+// UnmarshalConfigSpecFromJSON returns a ConfigSpec object from a byte-slice of
+// the ConfigSpec marshaled as a JSON string.
+func UnmarshalConfigSpecFromJSON(
+	data []byte) (*vimTypes.VirtualMachineConfigSpec, error) {
+
+	var configSpec vimTypes.VirtualMachineConfigSpec
+
+	dec := gdj.NewDecoder(bytes.NewReader(data))
+	dec.SetDiscriminator(
+		"_typeName", "_value", "",
+		gdj.DiscriminatorToTypeFunc(vimTypes.TypeFunc()),
+	)
+	if err := dec.Decode(&configSpec); err != nil {
+		return nil, err
+	}
+	return &configSpec, nil
 }
 
 // DevicesFromConfigSpec returns a slice of devices from the ConfigSpec's

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/google/uuid"
@@ -315,18 +316,15 @@ func AddInstanceStorageVolumes(
 	return nil
 }
 
-func GetVMClassConfigSpecFromXML(configSpecXML string) (*types.VirtualMachineConfigSpec, error) {
-	if configSpecXML == "" {
+func GetVMClassConfigSpec(raw *runtime.RawExtension) (*types.VirtualMachineConfigSpec, error) {
+	if raw == nil {
 		return nil, nil
 	}
-
-	classConfigSpec, err := util.UnmarshalConfigSpecFromBase64XML([]byte(configSpecXML))
+	classConfigSpec, err := util.UnmarshalConfigSpecFromJSON(raw.Raw)
 	if err != nil {
 		return nil, err
 	}
-
 	util.SanitizeVMClassConfigSpec(classConfigSpec)
-
 	return classConfigSpec, nil
 }
 

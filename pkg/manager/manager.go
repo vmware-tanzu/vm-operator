@@ -87,7 +87,6 @@ func New(opts Options) (Manager, error) {
 		MaxConcurrentReconciles: opts.MaxConcurrentReconciles,
 		Logger:                  opts.Logger.WithName(opts.PodName),
 		Recorder:                record.New(mgr.GetEventRecorderFor(fmt.Sprintf("%s/%s", opts.PodNamespace, opts.PodName))),
-		Scheme:                  opts.Scheme,
 		ContainerNode:           opts.ContainerNode,
 		SyncPeriod:              opts.SyncPeriod,
 	}

@@ -46,7 +46,6 @@ func unitTestsCM() {
 			ctx = suite.NewUnitTestContextForController(initObjects...)
 			reconciler = providerconfigmap.NewReconciler(
 				ctx.Client,
-				ctx.Scheme,
 				ctx.Logger,
 				ctx.VMProvider,
 			)

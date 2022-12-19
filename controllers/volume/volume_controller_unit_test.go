@@ -122,7 +122,6 @@ func unitTestsReconcile() {
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
-			ctx.Scheme,
 			ctx.VMProvider,
 		)
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)

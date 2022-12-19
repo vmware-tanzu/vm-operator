@@ -70,6 +70,7 @@ func unitTestsReconcile() {
 			ctx.Recorder,
 			ctx.VMProvider,
 			fakeProbeManagerIf,
+			16,
 		)
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 		fakeProbeManager = fakeProbeManagerIf.(*proberfake.ProberManager)

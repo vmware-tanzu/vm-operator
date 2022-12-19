@@ -57,6 +57,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		ctx.VMProvider,
 		proberManager,
+		ctx.MaxConcurrentReconciles/(100/lib.MaxConcurrentCreateVMsOnProvider()),
 	)
 
 	builder := ctrl.NewControllerManagedBy(mgr).
@@ -169,26 +170,29 @@ func NewReconciler(
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider vmprovider.VirtualMachineProviderInterface,
-	prober prober.Manager) *Reconciler {
+	prober prober.Manager,
+	maxDeployThreads int) *Reconciler {
 
 	return &Reconciler{
-		Client:     client,
-		Logger:     logger,
-		Recorder:   recorder,
-		VMProvider: vmProvider,
-		Prober:     prober,
-		vmMetrics:  metrics.NewVMMetrics(),
+		Client:           client,
+		Logger:           logger,
+		Recorder:         recorder,
+		VMProvider:       vmProvider,
+		Prober:           prober,
+		vmMetrics:        metrics.NewVMMetrics(),
+		maxDeployThreads: maxDeployThreads,
 	}
 }
 
 // Reconciler reconciles a VirtualMachine object.
 type Reconciler struct {
 	client.Client
-	Logger     logr.Logger
-	Recorder   record.Recorder
-	VMProvider vmprovider.VirtualMachineProviderInterface
-	Prober     prober.Manager
-	vmMetrics  *metrics.VMMetrics
+	Logger           logr.Logger
+	Recorder         record.Recorder
+	VMProvider       vmprovider.VirtualMachineProviderInterface
+	Prober           prober.Manager
+	vmMetrics        *metrics.VMMetrics
+	maxDeployThreads int
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;create;update;patch;delete
@@ -210,7 +214,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 	}
 
 	vmCtx := &context.VirtualMachineContext{
-		Context: ctx,
+		Context: goctx.WithValue(ctx, context.MaxDeployThreadsContextKey, r.maxDeployThreads),
 		Logger:  ctrl.Log.WithName("VirtualMachine").WithValues("name", vm.NamespacedName()),
 		VM:      vm,
 	}

@@ -38,9 +38,8 @@ type vmUpdateArgs = session.VMUpdateArgs
 type vmMetadata = session.VMMetadata
 
 var (
-	createCountLock          sync.Mutex
-	concurrentCreateCount    int
-	maxConcurrentCreateCount = 16 // TODO: If we don't get to CL DeployVOF task stuff, add back some % from max reconciles
+	createCountLock       sync.Mutex
+	concurrentCreateCount int
 )
 
 func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
@@ -215,7 +214,12 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 
 	// BMV: This is about where we used to do this check but it prb make more sense
 	// to do earlier, as to limit wasted work.
-	allowed, createDeferFn := vs.vmCreateConcurrentAllowed(vmCtx)
+	maxDeployThreads, ok := vmCtx.Value(context.MaxDeployThreadsContextKey).(int)
+	if !ok {
+		return nil, fmt.Errorf("MaxDeployThreadsContextKey missing from context")
+	}
+
+	allowed, createDeferFn := vs.vmCreateConcurrentAllowed(vmCtx, maxDeployThreads)
 	if !allowed {
 		return nil, nil
 	}
@@ -425,9 +429,12 @@ func (vs *vSphereVMProvider) vmCreateIsReady(
 	return nil
 }
 
-func (vs *vSphereVMProvider) vmCreateConcurrentAllowed(vmCtx context.VirtualMachineContext) (bool, func()) {
+func (vs *vSphereVMProvider) vmCreateConcurrentAllowed(
+	vmCtx context.VirtualMachineContext,
+	maxDeployThreads int) (bool, func()) {
+
 	createCountLock.Lock()
-	if concurrentCreateCount >= maxConcurrentCreateCount {
+	if concurrentCreateCount >= maxDeployThreads {
 		createCountLock.Unlock()
 		vmCtx.Logger.Info("Too many create VirtualMachine already occurring. Re-queueing request")
 		return false, nil

@@ -86,9 +86,11 @@ func virtualMachinePublishRequestReconcile() {
 				UniqueID: "dummy-unique-id",
 			}
 			Expect(ctx.Client.Status().Update(ctx, vmObj)).To(Succeed())
-
 			Expect(ctx.Client.Create(ctx, cl)).To(Succeed())
-			Expect(ctx.Client.Create(ctx, vmpub)).To(Succeed())
+
+			Eventually(func() error {
+				return ctx.Client.Create(ctx, vmpub)
+			}).Should(Succeed())
 
 			defaultRequeueDelay := int64(virtualmachinepublishrequest.DefaultRequeueDelaySeconds)
 			atomic.StoreInt64(&defaultRequeueDelay, 1)

@@ -26,8 +26,8 @@ const (
 func CreateOVF(vmCtx context.VirtualMachineContext, client *rest.Client,
 	vmPubReq *vmopv1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
 	createSpec := vcenter.CreateSpec{
-		Name:        vmPubReq.Spec.Target.Item.Name,
-		Description: vmPubReq.Spec.Target.Item.Description,
+		Name:        vmPubReq.Status.TargetRef.Item.Name,
+		Description: vmPubReq.Status.TargetRef.Item.Description,
 	}
 
 	vm := vmCtx.VM

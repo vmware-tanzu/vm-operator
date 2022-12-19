@@ -260,7 +260,7 @@ func unitTestsReconcile() {
 
 						By("Should set sourceRef/targetRef")
 						Expect(vmpub.Status.SourceRef.Name).To(Equal(vm.Name))
-						Expect(vmpub.Status.TargetRef.Item.Name).To(Equal("dummy-vmpub-image"))
+						Expect(vmpub.Status.TargetRef.Item.Name).To(Equal("dummy-vm-image"))
 						Expect(vmpub.Status.TargetRef.Location).To(Equal(vmpub.Spec.Target.Location))
 					})
 				})

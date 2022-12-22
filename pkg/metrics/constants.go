@@ -16,9 +16,13 @@ const (
 	specLabel            = "spec"
 	statusLabel          = "status"
 
-	// VMImage related metrics labels.
+	// VMImage related metrics labels (from legacy content source).
 	imageIDLabel      = "image_id"
 	imageNameLabel    = "image_name"
 	providerNameLabel = "provider_name"
 	providerKindLabel = "provider_kind"
+
+	// VMImage related metrics labels (from image registry service).
+	vmiNameLabel      = "vmi_name"
+	vmiNamespaceLabel = "vmi_namespace"
 )

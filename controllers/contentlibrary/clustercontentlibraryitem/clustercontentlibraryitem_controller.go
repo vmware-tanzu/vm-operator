@@ -26,6 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
@@ -66,6 +67,7 @@ func NewReconciler(
 		Logger:     logger,
 		Recorder:   recorder,
 		VMProvider: vmProvider,
+		Metrics:    metrics.NewContentLibraryItemMetrics(),
 	}
 }
 
@@ -76,6 +78,7 @@ type Reconciler struct {
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider vmprovider.VirtualMachineProviderInterface
+	Metrics    *metrics.ContentLibraryItemMetrics
 }
 
 // +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=clustercontentlibraryitems,verbs=get;list;watch
@@ -102,7 +105,14 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 // ReconcileDelete reconciles a deletion for a ClusterContentLibraryItem resource.
 func (r *Reconciler) ReconcileDelete(cclItem *imgregv1a1.ClusterContentLibraryItem) error {
 	logger := r.Logger.WithValues("cclItemName", cclItem.Name)
-	logger.Info("Reconciling ClusterContentLibraryItem delete, no-op")
+
+	cvmiName, nameErr := utils.GetImageFieldNameFromItem(cclItem.Name)
+	if nameErr != nil {
+		logger.Error(nameErr, "Unsupported ClusterContentLibraryItem, skip reconciling")
+		return nil
+	}
+
+	r.Metrics.DeleteMetrics(logger, cvmiName, "")
 
 	// NoOp. The ClusterVirtualMachineImages are automatically deleted because of OwnerReference.
 
@@ -119,6 +129,7 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 		logger.Error(nameErr, "Unsupported ClusterContentLibraryItem, skip reconciling")
 		return nil
 	}
+
 	cvmi := &vmopv1a1.ClusterVirtualMachineImage{}
 	cvmi.Name = cvmiName
 	logger = logger.WithValues("cvmiName", cvmi.Name)
@@ -135,6 +146,8 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 			}
 			return err
 		}
+
+		r.Metrics.DeleteMetrics(logger, cvmi.Name, "")
 		logger.Info("Deleted corresponding cvmi")
 		return nil
 	}
@@ -176,12 +189,18 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 		return createOrPatchErr
 	}
 
+	// Registry metrics based on the corresponding error captured.
+	defer func() {
+		r.Metrics.RegisterVMIResourceResolve(logger, cvmi.Name, "", createOrPatchErr == nil)
+		r.Metrics.RegisterVMIContentSync(logger, cvmi.Name, "", syncErr == nil)
+	}()
+
 	// CreateOrPatch/CreateOrUpdate doesn't patch sub-resource for creation.
 	if opRes == controllerutil.OperationResultCreated {
 		cvmi.Status = *savedStatus
-		if err := r.Status().Update(ctx, cvmi); err != nil {
-			logger.Error(err, "failed to update ClusterVirtualMachineImage status")
-			return err
+		if createOrPatchErr = r.Status().Update(ctx, cvmi); createOrPatchErr != nil {
+			logger.Error(createOrPatchErr, "failed to update ClusterVirtualMachineImage status")
+			return createOrPatchErr
 		}
 	}
 

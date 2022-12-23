@@ -33,6 +33,7 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -132,6 +133,7 @@ func NewReconciler(
 		Logger:     logger,
 		Recorder:   recorder,
 		VMProvider: vmProvider,
+		Metrics:    metrics.NewVMPublishMetrics(),
 	}
 }
 
@@ -141,6 +143,7 @@ type Reconciler struct {
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider vmprovider.VirtualMachineProviderInterface
+	Metrics    *metrics.VMPublishMetrics
 }
 
 func requeueDelay(ctx *context.VirtualMachinePublishRequestContext) time.Duration {
@@ -166,6 +169,10 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 	vmPublishReq := &vmopv1alpha1.VirtualMachinePublishRequest{}
 	err := r.Get(ctx, req.NamespacedName, vmPublishReq)
 	if err != nil {
+		// Delete registered metrics if the resource is not found.
+		if apiErrors.IsNotFound(err) {
+			r.Metrics.DeleteMetrics(r.Logger, req.Name, req.Namespace)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -594,9 +601,31 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachinePublishRequestCo
 	ctx.Logger.Info("Reconciling VirtualMachinePublishRequest")
 	vmPublishReq := ctx.VMPublishRequest
 
+	// Register VM publish request metrics based on the reconcile result.
+	var isComplete, isDeleted bool
+	defer func() {
+		if isDeleted {
+			r.Metrics.DeleteMetrics(ctx.Logger, vmPublishReq.Name, vmPublishReq.Namespace)
+			return
+		}
+
+		var res metrics.PublishResult
+		switch {
+		case isComplete:
+			res = metrics.PublishSucceeded
+		case reterr != nil:
+			res = metrics.PublishFailed
+		default:
+			res = metrics.PublishInProgress
+		}
+
+		r.Metrics.RegisterVMPublishRequest(r.Logger, vmPublishReq.Name, vmPublishReq.Namespace, res)
+	}()
+
 	// In case the .spec.ttlSecondsAfterFinished is not set, we can return early and no need to do any reconcile.
-	if vmPublishReq.IsComplete() {
-		requeueAfter, _, err := r.removeVMPubResourceFromCluster(ctx)
+	if isComplete = vmPublishReq.IsComplete(); isComplete {
+		requeueAfter, deleted, err := r.removeVMPubResourceFromCluster(ctx)
+		isDeleted = deleted
 		return ctrl.Result{RequeueAfter: requeueAfter}, err
 	}
 
@@ -651,19 +680,21 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachinePublishRequestCo
 		return ctrl.Result{}, err
 	}
 
-	if r.checkIsComplete(ctx) {
+	if isComplete = r.checkIsComplete(ctx); isComplete {
 		// remove VirtualMachinePublishRequest from the cluster if ttlSecondsAfterFinished is set.
 		requeueAfter, deleted, err := r.removeVMPubResourceFromCluster(ctx)
 		if deleted {
 			skipPatch = true
 		}
+		isDeleted = deleted
 		return ctrl.Result{RequeueAfter: requeueAfter}, err
 	}
 
 	return ctrl.Result{RequeueAfter: requeueDelay(ctx)}, nil
 }
 
-func (r *Reconciler) ReconcileDelete(_ *context.VirtualMachinePublishRequestContext) (ctrl.Result, error) {
+func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachinePublishRequestContext) (ctrl.Result, error) {
+	r.Metrics.DeleteMetrics(ctx.Logger, ctx.VMPublishRequest.Name, ctx.VMPublishRequest.Namespace)
 	// no op
 	return ctrl.Result{}, nil
 }

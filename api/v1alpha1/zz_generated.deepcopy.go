@@ -9,6 +9,7 @@
 package v1alpha1
 
 import (
+	"encoding/json"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -1003,8 +1004,8 @@ func (in *VirtualMachineClassSpec) DeepCopyInto(out *VirtualMachineClassSpec) {
 	in.Policies.DeepCopyInto(&out.Policies)
 	if in.ConfigSpec != nil {
 		in, out := &in.ConfigSpec, &out.ConfigSpec
-		*out = new(runtime.RawExtension)
-		(*in).DeepCopyInto(*out)
+		*out = make(json.RawMessage, len(*in))
+		copy(*out, *in)
 	}
 }
 

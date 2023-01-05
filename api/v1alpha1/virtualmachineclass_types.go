@@ -1,12 +1,13 @@
-// Copyright (c) 2019 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
 
 import (
+	"encoding/json"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // VGPUDevice contains the configuration corresponding to a vGPU device.
@@ -105,7 +106,10 @@ type VirtualMachineClassSpec struct {
 	// field "_typeName" to preserve type information.
 	//
 	// +optional
-	ConfigSpec *runtime.RawExtension `json:"configSpec,omitempty"`
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:validation:Type=object
+	// +kubebuilder:pruning:PreserveUnknownFields
+	ConfigSpec json.RawMessage `json:"configSpec,omitempty"`
 }
 
 // VirtualMachineClassStatus defines the observed state of VirtualMachineClass.  VirtualMachineClasses are immutable,

@@ -1,13 +1,13 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere
 
 import (
+	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/google/uuid"
@@ -316,11 +316,11 @@ func AddInstanceStorageVolumes(
 	return nil
 }
 
-func GetVMClassConfigSpec(raw *runtime.RawExtension) (*types.VirtualMachineConfigSpec, error) {
-	if raw == nil {
+func GetVMClassConfigSpec(raw json.RawMessage) (*types.VirtualMachineConfigSpec, error) {
+	if len(raw) == 0 {
 		return nil, nil
 	}
-	classConfigSpec, err := util.UnmarshalConfigSpecFromJSON(raw.Raw)
+	classConfigSpec, err := util.UnmarshalConfigSpecFromJSON(raw)
 	if err != nil {
 		return nil, err
 	}

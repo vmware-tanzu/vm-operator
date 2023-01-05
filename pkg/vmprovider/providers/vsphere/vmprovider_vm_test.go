@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere_test
@@ -21,7 +21,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -168,9 +167,7 @@ func vmTests() {
 					// Update the VM Class with the XML.
 					vmClass := &vmopv1alpha1.VirtualMachineClass{}
 					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
-					vmClass.Spec.ConfigSpec = &runtime.RawExtension{
-						Raw: w.Bytes(),
-					}
+					vmClass.Spec.ConfigSpec = w.Bytes()
 					Expect(ctx.Client.Update(ctx, vmClass)).To(Succeed())
 				}
 

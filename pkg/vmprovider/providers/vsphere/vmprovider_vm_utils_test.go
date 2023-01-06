@@ -39,7 +39,7 @@ func vmUtilTests() {
 		vm := builder.DummyBasicVirtualMachine("test-vm", "dummy-ns")
 
 		vmCtx = context.VirtualMachineContext{
-			Context: goctx.Background(),
+			Context: goctx.WithValue(goctx.Background(), context.MaxDeployThreadsContextKey, 16),
 			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
 			VM:      vm,
 		}

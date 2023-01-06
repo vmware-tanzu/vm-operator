@@ -5,6 +5,7 @@ package vsphere_test
 
 import (
 	"bytes"
+	goctx "context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -27,6 +28,7 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -55,6 +57,7 @@ func vmTests() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
+		ctx.Context = goctx.WithValue(ctx.Context, context.MaxDeployThreadsContextKey, 16)
 		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx.Client, ctx.Recorder)
 		nsInfo = ctx.CreateWorkloadNamespace()
 	})

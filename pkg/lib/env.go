@@ -108,9 +108,9 @@ var IsWCPVMImageRegistryEnabled = func() bool {
 	return os.Getenv(VMImageRegistryFSS) == trueString
 }
 
-// MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler threads that can be used to create VMs on the provider
-// concurrently. The default is 80.
-// TODO: Remove the env lookup once we have tuned this value from system tests.
+// MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler
+// threads that can be used to create VMs on the provider concurrently. The
+// default is 80.
 var MaxConcurrentCreateVMsOnProvider = func() int {
 	v := os.Getenv(MaxCreateVMsOnProviderEnv)
 	if v == "" {

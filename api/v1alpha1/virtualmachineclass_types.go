@@ -100,7 +100,6 @@ type VirtualMachineClassSpec struct {
 
 	// ConfigSpec describes additional configuration information for a
 	// VirtualMachine.
-	//
 	// The contents of this field are the VirtualMachineConfigSpec data object
 	// (https://bit.ly/3HDtiRu) marshaled to JSON using the discriminator
 	// field "_typeName" to preserve type information.

@@ -279,14 +279,13 @@ generate-external-manifests: ## Generate manifests for the external types for te
 .PHONY: generate-api-docs
 generate-api-docs: | $(CRD_REF_DOCS)
 generate-api-docs: ## Generate API documentation
-	@mkdir -p ./docs/user-guide/apis
 	$(CRD_REF_DOCS) \
 	  --renderer=markdown \
 	  --source-path=./api/v1alpha1 \
 	  --config=./.crd-ref-docs/config.yaml \
 	  --templates-dir=./.crd-ref-docs/template \
-	  --output-path=./docs/user-guide/apis
-	mv ./docs/user-guide/apis/out.md ./docs/user-guide/apis/v1alpha1.md
+	  --output-path=./docs/apis
+	mv ./docs/apis/out.md ./docs/apis/v1alpha1.md
 
 
 ## --------------------------------------

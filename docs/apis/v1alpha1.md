@@ -679,8 +679,7 @@ _Appears in:_
 | `hardware` _[VirtualMachineClassHardware](#virtualmachineclasshardware)_ | Hardware describes the configuration of the VirtualMachineClass attributes related to virtual hardware.  The configuration specified in this field is used to customize the virtual hardware characteristics of any VirtualMachine associated with this VirtualMachineClass. |
 | `policies` _[VirtualMachineClassPolicies](#virtualmachineclasspolicies)_ | Policies describes the configuration of the VirtualMachineClass attributes related to virtual infrastructure policy.  The configuration specified in this field is used to customize various policies related to infrastructure resource consumption. |
 | `description` _string_ | Description describes the configuration of the VirtualMachineClass which is not related to virtual hardware or infrastructure policy. This field is used to address remaining specs about this VirtualMachineClass. |
-| `configSpec` _integer array_ | ConfigSpec describes additional configuration information for a VirtualMachine. 
- The contents of this field are the VirtualMachineConfigSpec data object (https://bit.ly/3HDtiRu) marshaled to JSON using the discriminator field "_typeName" to preserve type information. |
+| `configSpec` _[json.RawMessage](https://pkg.go.dev/encoding/json#RawMessage)_ | ConfigSpec describes additional configuration information for a VirtualMachine. The contents of this field are the VirtualMachineConfigSpec data object (https://bit.ly/3HDtiRu) marshaled to JSON using the discriminator field "_typeName" to preserve type information. |
 
 
 ### VirtualMachineImageOSInfo

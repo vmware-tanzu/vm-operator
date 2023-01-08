@@ -22,9 +22,6 @@ markdown_extensions:
 nav:
 - Home: index.md
 - User Guide:
-  - APIs:
-    - Overview: user-guide/apis.md
-    - v1alpha1: user-guide/apis/v1alpha1.md
   - Platforms:
     - Overview: user-guide/platforms.md
     - Supervisor: user-guide/platforms/supervisor.md
@@ -37,6 +34,9 @@ nav:
   - Project Guidelines: dev-guide/project-guidelines.md
   - Build Reference: dev-guide/build-reference.md
   - Release Process: dev-guide/release-process.md
+- API Reference:
+  - Overview: apis/overview.md
+  - v1alpha1: apis/v1alpha1.md
 - About:
   - Contributing: about/contributing.md
   - License: about/license.md

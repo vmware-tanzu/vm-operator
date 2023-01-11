@@ -9,11 +9,6 @@ spec:
       containers:
       - name: manager
         env:
-        - name: FSS_WCP_VMSERVICE
-          value: "false"
-          # will be deprecated, story is tracking it
-        - name: FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI
-          value: "false"
         - name: FSS_WCP_Unified_TKG
           value: "false"
         - name: FSS_WCP_VMSERVICE_V1ALPHA2
@@ -27,8 +22,6 @@ spec:
         - name: FSS_WCP_VM_CLASS_AS_CONFIG
           value: "false"
         - name: FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE
-          value: "false"
-        - name: FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI
           value: "false"
         - name: FSS_WCP_VM_IMAGE_REGISTRY
           value: "false"

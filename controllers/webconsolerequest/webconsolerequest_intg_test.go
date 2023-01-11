@@ -5,7 +5,6 @@ package webconsolerequest_test
 
 import (
 	"context"
-	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -18,7 +17,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -31,9 +29,6 @@ func webConsoleRequestReconcile() {
 		ctx *builder.IntegrationTestContext
 		wcr *v1alpha1.WebConsoleRequest
 		vm  *v1alpha1.VirtualMachine
-
-		publicCloudBYOIFSSVal    uint32
-		oldPublicCloudBYOIFSSVal uint32
 	)
 
 	getWebConsoleRequest := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *v1alpha1.WebConsoleRequest {
@@ -42,10 +37,6 @@ func webConsoleRequestReconcile() {
 			return nil
 		}
 		return wcr
-	}
-
-	lib.IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
-		return atomic.LoadUint32(&publicCloudBYOIFSSVal) != 0
 	}
 
 	BeforeEach(func() {
@@ -75,9 +66,6 @@ func webConsoleRequestReconcile() {
 			},
 		}
 
-		oldPublicCloudBYOIFSSVal = publicCloudBYOIFSSVal
-		atomic.StoreUint32(&publicCloudBYOIFSSVal, 1)
-
 		fakeVMProvider.Lock()
 		defer fakeVMProvider.Unlock()
 		fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error) {
@@ -88,9 +76,6 @@ func webConsoleRequestReconcile() {
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-
-		atomic.StoreUint32(&publicCloudBYOIFSSVal, oldPublicCloudBYOIFSSVal)
-
 		fakeVMProvider.Reset()
 	})
 

@@ -24,7 +24,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -62,9 +61,6 @@ func (v validator) For() schema.GroupVersionKind {
 }
 
 func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
-	if !lib.IsVMServicePublicCloudBYOIFSSEnabled() {
-		return common.BuildValidationResponse(ctx, []string{"web console feature not enabled"}, nil)
-	}
 
 	wcr, err := v.webConsoleRequestFromUnstructured(ctx.Obj)
 	if err != nil {

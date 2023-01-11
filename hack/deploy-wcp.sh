@@ -11,12 +11,6 @@ set -x
 
 SSHCommonArgs=("-o PubkeyAuthentication=no" "-o UserKnownHostsFile=/dev/null" "-o StrictHostKeyChecking=no")
 
-# VM service FSS
-FSS_WCP_VMSERVICE_VALUE=${FSS_WCP_VMSERVICE_VALUE:-false}
-
-# VM service UnifiedTKG BYOI FSS
-FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE=${FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE:-false}
-
 # WCP Unified TKG FSS
 FSS_WCP_Unified_TKG_VALUE=${FSS_WCP_Unified_TKG_VALUE:-false}
 
@@ -37,9 +31,6 @@ FSS_WCP_INSTANCE_STORAGE_VALUE=${FSS_WCP_INSTANCE_STORAGE_VALUE:-false}
 
 # VM service Fault Domain
 FSS_WCP_FAULTDOMAINS_VALUE=${FSS_WCP_FAULTDOMAINS_VALUE:-false}
-
-# VM Service Public Cloud: Bring Your Own Image (BYOI)
-FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE=${FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE:-false}
 
 # Image Registry: we use this FSS for VM publish.
 FSS_WCP_VM_IMAGE_REGISTRY_VALUE=${FSS_WCP_VM_IMAGE_REGISTRY_VALUE:-false}
@@ -93,12 +84,10 @@ verifyEnvironmentVariables() {
 
         VCSA_DATASTORE=${VCSA_DATASTORE:-nfs0-1}
 
-        if [[ ${FSS_WCP_VMSERVICE_VALUE:-} != "true" ]]; then
-            if [[ -z ${VCSA_CONTENT_SOURCE:-} ]]; then
-                error "Error: The VCSA_CONTENT_SOURCE environment variable must be set" \
-                      "to point to the ID of a valid VCSA Content Library"
-                exit 1
-            fi
+        if [[ -z ${VCSA_CONTENT_SOURCE:-} ]]; then
+            error "Error: The VCSA_CONTENT_SOURCE environment variable must be set" \
+                    "to point to the ID of a valid VCSA Content Library"
+            exit 1
         fi
 
         if [[ -z ${VCSA_WORKER_DNS:-} ]]; then
@@ -125,17 +114,7 @@ patchWcpDeploymentYaml() {
         sed -i'' "s,<content_source>,$VCSA_CONTENT_SOURCE,g" "artifacts/wcp-deployment.yaml"
     fi
 
-    sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_VALUE>\"?,\"$FSS_WCP_VMSERVICE_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_VMSERVICE_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst <FSS_WCP_VMSERVICE_VALUE> in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE>\"?,\"$FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst <FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE> in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-        sed -i'' -E "s,\"?<FSS_WCP_Unified_TKG_VALUE>\"?,\"$FSS_WCP_Unified_TKG_VALUE\",g" "artifacts/wcp-deployment.yaml"
+    sed -i'' -E "s,\"?<FSS_WCP_Unified_TKG_VALUE>\"?,\"$FSS_WCP_Unified_TKG_VALUE\",g" "artifacts/wcp-deployment.yaml"
     if grep -q "<FSS_WCP_Unified_TKG_VALUE>" artifacts/wcp-deployment.yaml; then
         echo "Failed to subst <FSS_WCP_Unified_TKG_VALUE> in artifacts/wcp-deployment.yaml"
         exit 1
@@ -168,11 +147,6 @@ patchWcpDeploymentYaml() {
     sed -i'' -E "s,\"?<FSS_WCP_INSTANCE_STORAGE_VALUE>\"?,\"$FSS_WCP_INSTANCE_STORAGE_VALUE\",g" "artifacts/wcp-deployment.yaml"
     if grep -q "<FSS_WCP_INSTANCE_STORAGE_VALUE>" artifacts/wcp-deployment.yaml; then
         echo "Failed to subst FSS_WCP_INSTANCE_STORAGE_VALUE in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE>\"?,\"$FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE in artifacts/wcp-deployment.yaml"
         exit 1
     fi
     sed -i'' -E "s,\"?<FSS_WCP_VM_IMAGE_REGISTRY_VALUE>\"?,\"$FSS_WCP_VM_IMAGE_REGISTRY_VALUE\",g" "artifacts/wcp-deployment.yaml"

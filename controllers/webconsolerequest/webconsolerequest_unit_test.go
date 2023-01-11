@@ -17,7 +17,6 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -36,8 +35,6 @@ func unitTestsReconcile() {
 		wcrCtx     *vmopContext.WebConsoleRequestContext
 		wcr        *v1alpha1.WebConsoleRequest
 		vm         *v1alpha1.VirtualMachine
-
-		oldIsPublicCloudBYOIFSSEnabledFunc func() bool
 	)
 
 	BeforeEach(func() {
@@ -74,11 +71,6 @@ func unitTestsReconcile() {
 			WebConsoleRequest: wcr,
 			VM:                vm,
 		}
-
-		oldIsPublicCloudBYOIFSSEnabledFunc = lib.IsVMServicePublicCloudBYOIFSSEnabled
-		lib.IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
-			return true
-		}
 	})
 
 	AfterEach(func() {
@@ -87,8 +79,6 @@ func unitTestsReconcile() {
 		initObjects = nil
 		reconciler = nil
 		fakeVMProvider.Reset()
-
-		lib.IsVMServicePublicCloudBYOIFSSEnabled = oldIsPublicCloudBYOIFSSEnabledFunc
 	})
 
 	Context("ReconcileNormal", func() {

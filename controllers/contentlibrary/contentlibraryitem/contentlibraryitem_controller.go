@@ -26,6 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
@@ -66,6 +67,7 @@ func NewReconciler(
 		Logger:     logger,
 		Recorder:   recorder,
 		VMProvider: vmProvider,
+		Metrics:    metrics.NewContentLibraryItemMetrics(),
 	}
 }
 
@@ -76,6 +78,7 @@ type Reconciler struct {
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider vmprovider.VirtualMachineProviderInterface
+	Metrics    *metrics.ContentLibraryItemMetrics
 }
 
 // +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=contentlibraryitems,verbs=get;list;watch
@@ -103,6 +106,16 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 
 // ReconcileDelete reconciles a deletion for a ContentLibraryItem resource.
 func (r *Reconciler) ReconcileDelete(clItem *imgregv1a1.ContentLibraryItem) error {
+	logger := r.Logger.WithValues("clItemName", clItem.Name, "namespace", clItem.Namespace)
+
+	vmiName, nameErr := utils.GetImageFieldNameFromItem(clItem.Name)
+	if nameErr != nil {
+		logger.Error(nameErr, "Unsupported ContentLibraryItem, skip reconciling")
+		return nil
+	}
+
+	r.Metrics.DeleteMetrics(logger, vmiName, clItem.Namespace)
+
 	// NoOp. The VirtualMachineImages are automatically deleted because of OwnerReference.
 
 	return nil
@@ -125,6 +138,7 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 			Namespace: clItem.Namespace,
 		},
 	}
+
 	logger = logger.WithValues("vmiName", vmi.Name, "vmiNamespace", vmi.Namespace)
 
 	clItemSecurityCompliance := clItem.Status.SecurityCompliance
@@ -139,6 +153,8 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 			}
 			return err
 		}
+
+		r.Metrics.DeleteMetrics(logger, vmi.Name, vmi.Namespace)
 		logger.Info("Deleted Corresponding vmi")
 		return nil
 	}
@@ -174,6 +190,12 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 		return nil
 	})
 
+	// Registry metrics based on the corresponding error captured.
+	defer func() {
+		r.Metrics.RegisterVMIResourceResolve(logger, vmi.Name, vmi.Namespace, createOrPatchErr == nil)
+		r.Metrics.RegisterVMIContentSync(logger, vmi.Name, vmi.Namespace, syncErr == nil)
+	}()
+
 	logger = logger.WithValues("operationResult", opRes)
 	if createOrPatchErr != nil {
 		logger.Error(createOrPatchErr, "failed to create or patch VirtualMachineImage resource")
@@ -183,9 +205,9 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 	// CreateOrPatch/CreateOrUpdate doesn't patch sub-resource for creation.
 	if opRes == controllerutil.OperationResultCreated {
 		vmi.Status = *savedStatus
-		if err := r.Status().Update(ctx, vmi); err != nil {
-			logger.Error(err, "failed to update VirtualMachineImage status")
-			return err
+		if createOrPatchErr = r.Status().Update(ctx, vmi); createOrPatchErr != nil {
+			logger.Error(createOrPatchErr, "failed to update VirtualMachineImage status")
+			return createOrPatchErr
 		}
 	}
 

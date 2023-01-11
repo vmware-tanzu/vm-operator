@@ -13,18 +13,6 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
-    name: FSS_WCP_VMSERVICE
-    value: "<FSS_WCP_VMSERVICE_VALUE>"
-
-- op: add
-  path: /spec/template/spec/containers/0/env/-
-  value:
-    name: FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI
-    value: "<FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI_VALUE>"
-
-- op: add
-  path: /spec/template/spec/containers/0/env/-
-  value:
     name: FSS_WCP_Unified_TKG
     value: "<FSS_WCP_Unified_TKG_VALUE>"
 
@@ -63,12 +51,6 @@
   value:
     name: FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE
     value: "<FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE>"
-
-- op: add
-  path: /spec/template/spec/containers/0/env/-
-  value:
-    name: FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI
-    value: "<FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI_VALUE>"
 
 - op: add
   path: /spec/template/spec/containers/0/env/-

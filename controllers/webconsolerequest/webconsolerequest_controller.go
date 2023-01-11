@@ -22,7 +22,6 @@ import (
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -82,10 +81,6 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	if !lib.IsVMServicePublicCloudBYOIFSSEnabled() {
-		return ctrl.Result{}, nil
-	}
-
 	webconsolerequest := &vmopv1alpha1.WebConsoleRequest{}
 	err := r.Get(ctx, req.NamespacedName, webconsolerequest)
 	if err != nil {

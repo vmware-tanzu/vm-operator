@@ -17,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -63,23 +62,17 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 
 func unitTestsValidateCreate() {
 	var (
-		ctx                                *unitValidatingWebhookContext
-		oldIsPublicCloudBYOIFSSEnabledFunc func() bool
+		ctx *unitValidatingWebhookContext
 	)
 
 	type createArgs struct {
-		publicCloudBYOIFSSDisabled bool
-		emptyVirtualMachineName    bool
-		emptyPublicKey             bool
-		invalidPublicKey           bool
+		emptyVirtualMachineName bool
+		emptyPublicKey          bool
+		invalidPublicKey        bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
 		var err error
-
-		lib.IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
-			return !args.publicCloudBYOIFSSDisabled
-		}
 
 		if args.emptyVirtualMachineName {
 			ctx.wcr.Spec.VirtualMachineName = ""
@@ -106,15 +99,12 @@ func unitTestsValidateCreate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
-		oldIsPublicCloudBYOIFSSEnabledFunc = lib.IsVMServicePublicCloudBYOIFSSEnabled
 	})
 	AfterEach(func() {
 		ctx = nil
-		lib.IsVMServicePublicCloudBYOIFSSEnabled = oldIsPublicCloudBYOIFSSEnabledFunc
 	})
 
 	DescribeTable("create table", validateCreate,
-		Entry("should deny when fss disabled", createArgs{publicCloudBYOIFSSDisabled: true}, false, "web console feature not enabled", nil),
 		Entry("should allow valid", createArgs{}, true, nil, nil),
 		Entry("should deny empty virtualmachinename", createArgs{emptyVirtualMachineName: true}, false, "spec.virtualMachineName: Required value", nil),
 		Entry("should deny empty publickey", createArgs{emptyPublicKey: true}, false, "spec.publicKey: Required value", nil),

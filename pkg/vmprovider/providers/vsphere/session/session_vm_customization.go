@@ -20,7 +20,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
@@ -246,9 +245,7 @@ func (s *Session) customize(
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs) error {
 
-	if lib.IsVMServicePublicCloudBYOIFSSEnabled() {
-		TemplateVMMetadata(vmCtx, updateArgs)
-	}
+	TemplateVMMetadata(vmCtx, updateArgs)
 
 	transport := updateArgs.VMMetadata.Transport
 

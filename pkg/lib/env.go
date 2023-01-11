@@ -17,11 +17,8 @@ const (
 	TrueString                    = "true"
 	VmopNamespaceEnv              = "POD_NAMESPACE"
 	WcpFaultDomainsFSS            = "FSS_WCP_FAULTDOMAINS"
-	VMServiceFSS                  = "FSS_WCP_VMSERVICE"
 	VMServiceV1Alpha2FSS          = "FSS_WCP_VMSERVICE_V1ALPHA2"
 	InstanceStorageFSS            = "FSS_WCP_INSTANCE_STORAGE"
-	UnifiedTKGBYOIFSS             = "FSS_WCP_VMSERVICE_UNIFIEDTKG_BYOI"
-	VMServicePublicCloudBYOIFSS   = "FSS_WCP_VMSERVICE_PUBLIC_CLOUD_BYOI"
 	UnifiedTKGFSS                 = "FSS_WCP_Unified_TKG"
 	VMClassAsConfigFSS            = "FSS_WCP_VM_CLASS_AS_CONFIG"
 	VMClassAsConfigDaynDateFSS    = "FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE"
@@ -84,16 +81,8 @@ var IsInstanceStorageFSSEnabled = func() bool {
 	return os.Getenv(InstanceStorageFSS) == trueString
 }
 
-var IsUnifiedTKGBYOIFSSEnabled = func() bool {
-	return os.Getenv(UnifiedTKGBYOIFSS) == trueString
-}
-
 var IsUnifiedTKGFSSEnabled = func() bool {
 	return os.Getenv(UnifiedTKGFSS) == trueString
-}
-
-var IsVMServicePublicCloudBYOIFSSEnabled = func() bool {
-	return os.Getenv(VMServicePublicCloudBYOIFSS) == trueString
 }
 
 var IsVMClassAsConfigFSSEnabled = func() bool {

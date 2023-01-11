@@ -167,15 +167,13 @@ func unitTestsValidateUpdate() {
 		ctx = nil
 	})
 
-	Context("WCP_VMService FSS is enabled", func() {
-		DescribeTable("update VM Class spec", validateUpdate,
-			Entry("should allow", updateArgs{}, true, nil, nil),
-			Entry("should allow hw cpu change", updateArgs{changeHwCPU: true}, true, nil, nil),
-			Entry("should allow hw memory change", updateArgs{changeHwMemory: true}, true, nil, nil),
-			Entry("should allow policy cpu change", updateArgs{changeCPU: true}, true, nil, nil),
-			Entry("should allow policy memory change", updateArgs{changeMemory: true}, true, nil, nil),
-		)
-	})
+	DescribeTable("update VM Class spec", validateUpdate,
+		Entry("should allow", updateArgs{}, true, nil, nil),
+		Entry("should allow hw cpu change", updateArgs{changeHwCPU: true}, true, nil, nil),
+		Entry("should allow hw memory change", updateArgs{changeHwMemory: true}, true, nil, nil),
+		Entry("should allow policy cpu change", updateArgs{changeCPU: true}, true, nil, nil),
+		Entry("should allow policy memory change", updateArgs{changeMemory: true}, true, nil, nil),
+	)
 
 	DescribeTable("update table", validateUpdate,
 		Entry("should allow", updateArgs{}, true, nil, nil),

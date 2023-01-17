@@ -672,23 +672,19 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	updateArgs := &vmUpdateArgs{}
 	updateArgs.VMClass = vmClass
 	updateArgs.VMImageStatus = vmImageStatus
+	updateArgs.ResourcePolicy = resourcePolicy
 	updateArgs.VMMetadata = vmMD
 
 	// We're always ready - again - at this point since we've fetched the above objects. We really should
 	// not be touching this condition after creation but that is for another day.
 	conditions.MarkTrue(vmCtx.VM, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
 
-	if resourcePolicy != nil {
-		updateArgs.ResourcePolicy = resourcePolicy
-
-		rp := resourcePolicy.Spec.ResourcePool
-		if !rp.Reservations.Cpu.IsZero() || !rp.Limits.Cpu.IsZero() {
-			freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
-			if err != nil {
-				return nil, err
-			}
-			updateArgs.MinCPUFreq = freq
+	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
+		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
+		if err != nil {
+			return nil, err
 		}
+		updateArgs.MinCPUFreq = freq
 	}
 
 	extraConfig := make(map[string]string, len(vs.globalExtraConfig))

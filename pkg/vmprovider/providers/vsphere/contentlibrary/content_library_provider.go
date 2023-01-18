@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package contentlibrary
@@ -13,8 +13,6 @@ import (
 
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/utils/pointer"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -36,7 +34,7 @@ type Provider interface {
 	ListLibraryItems(ctx context.Context, libraryUUID string) ([]string, error)
 	UpdateLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error
 	RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item *library.Item) (*ovf.Envelope, error)
-	SyncVirtualMachineImage(ctx context.Context, itemID string, vmi client.Object) error
+	RetrieveOvfEnvelopeByLibraryItemID(ctx context.Context, itemID string) (*ovf.Envelope, error)
 
 	// TODO: Testing only. Remove these from this file.
 	CreateLibraryItem(ctx context.Context, libraryItem library.Item, path string) error
@@ -146,6 +144,22 @@ func (cs *provider) GetLibraryItem(ctx context.Context, libraryUUID, itemName st
 	}
 
 	return item, nil
+}
+
+// RetrieveOvfEnvelopeByLibraryItemID retrieves the OVF Envelope by the given library item ID.
+func (cs *provider) RetrieveOvfEnvelopeByLibraryItemID(ctx context.Context, itemID string) (*ovf.Envelope, error) {
+	libItem, err := cs.libMgr.GetLibraryItem(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+
+	if libItem == nil || libItem.Type != library.ItemTypeOVF {
+		log.Error(nil, "empty or non OVF library item type, skipping", "itemID", itemID)
+		// No need to return the error here to avoid unnecessary reconciliation.
+		return nil, nil
+	}
+
+	return cs.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem)
 }
 
 // RetrieveOvfEnvelopeFromLibraryItem downloads the supported file from content library.
@@ -397,62 +411,4 @@ func (cs *provider) generateDownloadURLForLibraryItem(
 	}
 
 	return url.Parse(fileURL)
-}
-
-func (cs *provider) SyncVirtualMachineImage(ctx context.Context, itemID string, vmi client.Object) error {
-	logger := log.WithValues("itemID", itemID)
-	item, err := cs.libMgr.GetLibraryItem(ctx, itemID)
-	if err != nil {
-		return err
-	}
-
-	if item.Type != library.ItemTypeOVF {
-		logger.Info("Skip syncing up non-OVF library item for VirtualMachineImage/ClusterVirtualMachineImage",
-			"vmiName", vmi.GetName(), "itemType", item.Type)
-		return nil
-	}
-
-	ovfEnvelope, err := cs.RetrieveOvfEnvelopeFromLibraryItem(ctx, item)
-	if err != nil {
-		logger.Error(err, "error extracting the OVF envelope from the library item", "itemName", item.Name)
-		return err
-	}
-	if ovfEnvelope == nil {
-		logger.Error(err, "no valid OVF envelope found, skipping library item", "itemName", item.Name)
-		return nil
-	}
-
-	var spec *v1alpha1.VirtualMachineImageSpec
-	var status *v1alpha1.VirtualMachineImageStatus
-	switch vmi := vmi.(type) {
-	case *v1alpha1.VirtualMachineImage:
-		spec = &vmi.Spec
-		status = &vmi.Status
-	case *v1alpha1.ClusterVirtualMachineImage:
-		spec = &vmi.Spec
-		status = &vmi.Status
-	}
-
-	if ovfEnvelope.VirtualSystem != nil {
-		updateImageSpecWithOvfVirtualSystem(spec, ovfEnvelope.VirtualSystem)
-
-		ovfSystemProps := getVmwareSystemPropertiesFromOvf(ovfEnvelope.VirtualSystem)
-		annotations := vmi.GetAnnotations()
-		if annotations == nil {
-			annotations = make(map[string]string)
-			vmi.SetAnnotations(annotations)
-		}
-		for k, v := range ovfSystemProps {
-			annotations[k] = v
-		}
-		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
-		status.ImageSupported = pointer.BoolPtr(isImageSupported(vmi, ovfEnvelope.VirtualSystem, ovfSystemProps))
-
-		// Set Status Firmware from the envelope's virtual hardware section
-		if virtualHwSection := ovfEnvelope.VirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
-			status.Firmware = getFirmwareType(virtualHwSection[0])
-		}
-	}
-
-	return nil
 }

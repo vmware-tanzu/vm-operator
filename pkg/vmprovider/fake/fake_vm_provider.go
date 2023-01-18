@@ -38,9 +38,9 @@ type funcs struct {
 	ListItemsFromContentLibraryFn              func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
 	GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
-	SyncVirtualMachineImageFn  func(ctx context.Context, itemID string, vmi client.Object) error
 	GetItemFromLibraryByNameFn func(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
 	UpdateContentLibraryItemFn func(ctx context.Context, itemID, newName string, newDescription *string) error
+	SyncVirtualMachineImageFn  func(ctx context.Context, cli, vmi client.Object) error
 
 	UpdateVcPNIDFn  func(ctx context.Context, vcPNID, vcPort string) error
 	ResetVcClientFn func(ctx context.Context)
@@ -223,12 +223,12 @@ func (s *VMProvider) GetVirtualMachineImageFromContentLibrary(ctx context.Contex
 	return nil, nil
 }
 
-func (s *VMProvider) SyncVirtualMachineImage(ctx context.Context, itemID string, vmi client.Object) error {
+func (s *VMProvider) SyncVirtualMachineImage(ctx context.Context, cli, vmi client.Object) error {
 	s.Lock()
 	defer s.Unlock()
 
 	if s.SyncVirtualMachineImageFn != nil {
-		return s.SyncVirtualMachineImageFn(ctx, itemID, vmi)
+		return s.SyncVirtualMachineImageFn(ctx, cli, vmi)
 	}
 
 	return nil

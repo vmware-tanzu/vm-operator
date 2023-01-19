@@ -34,6 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -636,9 +637,36 @@ func vmTests() {
 					Expect(o.Summary.Runtime.PowerState).To(Equal(types.VirtualMachinePowerStatePoweredOn))
 				})
 
+				vmClass := &vmopv1alpha1.VirtualMachineClass{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
+				vmClassRes := vmClass.Spec.Policies.Resources
+
+				By("has expected CpuAllocation", func() {
+					Expect(o.Config.CpuAllocation).ToNot(BeNil())
+
+					// The vcsim ESX hardcoded CPU frequency that is not exported by govmomi.
+					const freq = 2294
+
+					reservation := o.Config.CpuAllocation.Reservation
+					Expect(reservation).ToNot(BeNil())
+					Expect(*reservation).To(Equal(virtualmachine.CPUQuantityToMhz(vmClassRes.Requests.Cpu, freq)))
+					limit := o.Config.CpuAllocation.Limit
+					Expect(limit).ToNot(BeNil())
+					Expect(*limit).To(Equal(virtualmachine.CPUQuantityToMhz(vmClassRes.Limits.Cpu, freq)))
+				})
+
+				By("has expected MemoryAllocation", func() {
+					Expect(o.Config.MemoryAllocation).ToNot(BeNil())
+
+					reservation := o.Config.MemoryAllocation.Reservation
+					Expect(reservation).ToNot(BeNil())
+					Expect(*reservation).To(Equal(virtualmachine.MemoryQuantityToMb(vmClassRes.Requests.Memory)))
+					limit := o.Config.MemoryAllocation.Limit
+					Expect(limit).ToNot(BeNil())
+					Expect(*limit).To(Equal(virtualmachine.MemoryQuantityToMb(vmClassRes.Limits.Memory)))
+				})
+
 				By("has expected hardware config", func() {
-					vmClass := &vmopv1alpha1.VirtualMachineClass{}
-					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
 					Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 					Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 				})
@@ -1244,7 +1272,6 @@ func vmTests() {
 			JustBeforeEach(func() {
 				resourcePolicyName := "test-policy"
 				resourcePolicy = getVirtualMachineSetResourcePolicy(resourcePolicyName, nsInfo.Namespace)
-				resourcePolicy.Spec.ResourcePool.Limits.Cpu = resource.MustParse("1000")
 				Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
 				Expect(ctx.Client.Create(ctx, resourcePolicy)).To(Succeed())
 

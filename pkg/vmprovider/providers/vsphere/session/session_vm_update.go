@@ -234,21 +234,21 @@ func UpdateConfigSpecCPUAllocation(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec *vimTypes.VirtualMachineConfigSpec,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
-	minCPUFeq uint64) {
+	minCPUFreq uint64) {
 
 	cpuAllocation := config.CpuAllocation
 	var cpuReservation *int64
 	var cpuLimit *int64
 
 	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
-		rsv := virtualmachine.CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minCPUFeq)
+		rsv := virtualmachine.CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minCPUFreq)
 		if cpuAllocation == nil || cpuAllocation.Reservation == nil || *cpuAllocation.Reservation != rsv {
 			cpuReservation = &rsv
 		}
 	}
 
 	if !vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
-		lim := virtualmachine.CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minCPUFeq)
+		lim := virtualmachine.CPUQuantityToMhz(vmClassSpec.Policies.Resources.Limits.Cpu, minCPUFreq)
 		if cpuAllocation == nil || cpuAllocation.Limit == nil || *cpuAllocation.Limit != lim {
 			cpuLimit = &lim
 		}

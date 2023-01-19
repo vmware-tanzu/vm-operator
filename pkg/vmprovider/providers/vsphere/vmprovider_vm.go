@@ -6,7 +6,9 @@ package vsphere
 import (
 	goctx "context"
 	"fmt"
+	"strings"
 	"sync"
+	"text/template"
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
@@ -36,6 +38,10 @@ import (
 type vmCreateArgs = session.VMCreateArgs
 type vmUpdateArgs = session.VMUpdateArgs
 type vmMetadata = session.VMMetadata
+
+const (
+	FirstBootDoneAnnotation = "virtualmachine.vmoperator.vmware.com/first-boot-done"
+)
 
 var (
 	createCountLock       sync.Mutex
@@ -257,12 +263,6 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	vcClient *vcclient.Client) error {
 
 	vmCtx.Logger.V(4).Info("Updating VirtualMachine")
-
-	updateArgs, err := vs.vmUpdateGetArgs(vmCtx)
-	if err != nil {
-		return err
-	}
-
 	{
 		// Hack - create just enough of the Session that's needed for update
 
@@ -279,7 +279,11 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		}
 		ses.NetworkProvider = network.NewProvider(ses.K8sClient, ses.Client.VimClient(), ses.Finder, ses.Cluster)
 
-		err = ses.UpdateVirtualMachine(vmCtx, vcVM, updateArgs)
+		getUpdateArgsFn := func() (*vmUpdateArgs, error) {
+			return vs.vmUpdateGetArgs(vmCtx)
+		}
+
+		err = ses.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgsFn)
 		if err != nil {
 			return err
 		}
@@ -654,11 +658,6 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		return nil, err
 	}
 
-	vmImageStatus, _, err := GetVMImageStatusAndContentLibraryUUID(vmCtx, vs.k8sClient)
-	if err != nil {
-		return nil, err
-	}
-
 	resourcePolicy, err := GetVMSetResourcePolicy(vmCtx, vs.k8sClient)
 	if err != nil {
 		return nil, err
@@ -671,7 +670,6 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 
 	updateArgs := &vmUpdateArgs{}
 	updateArgs.VMClass = vmClass
-	updateArgs.VMImageStatus = vmImageStatus
 	updateArgs.ResourcePolicy = resourcePolicy
 	updateArgs.VMMetadata = vmMD
 
@@ -687,12 +685,6 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		updateArgs.MinCPUFreq = freq
 	}
 
-	extraConfig := make(map[string]string, len(vs.globalExtraConfig))
-	for k, v := range vs.globalExtraConfig {
-		extraConfig[k] = v
-	}
-	updateArgs.ExtraConfig = extraConfig
-
 	if lib.IsVMClassAsConfigFSSEnabled() {
 		if cs := updateArgs.VMClass.Spec.ConfigSpec; cs != nil {
 			classConfigSpec, err := GetVMClassConfigSpec(cs)
@@ -703,12 +695,57 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		}
 	}
 
+	imageFirmware := ""
+	// Only get VM image when this is the VM first boot.
+	if isVMFirstBoot(vmCtx) {
+		vmImageStatus, _, err := GetVMImageStatusAndContentLibraryUUID(vmCtx, vs.k8sClient)
+		if err != nil {
+			return nil, err
+		}
+		imageFirmware = vmImageStatus.Firmware
+
+		// The only use of this is for the global JSON_EXTRA_CONFIG to set the image name.
+		// The global extra config should only be set during first boot.
+		renderTemplateFn := func(name, text string) string {
+			t, err := template.New(name).Parse(text)
+			if err != nil {
+				return text
+			}
+			b := strings.Builder{}
+			if err := t.Execute(&b, vmImageStatus); err != nil {
+				return text
+			}
+			return b.String()
+		}
+		extraConfig := make(map[string]string, len(vs.globalExtraConfig))
+		for k, v := range vs.globalExtraConfig {
+			extraConfig[k] = renderTemplateFn(k, v)
+		}
+
+		// Enabling the defer-cloud-init extraConfig key for V1Alpha1Compatible images defers cloud-init from running on first boot
+		// and disables networking configurations by cloud-init. Therefore, only set the extraConfig key to enabled
+		// when the vmMetadata is nil or when the transport requested is not CloudInit.
+		if conditions.IsTrueFromConditions(vmImageStatus.Conditions,
+			vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) {
+			updateArgs.VirtualMachineImageV1Alpha1Compatible = true
+		}
+		updateArgs.ExtraConfig = extraConfig
+	}
+
 	updateArgs.ConfigSpec = virtualmachine.CreateConfigSpec(
 		vmCtx.VM.Name,
 		&updateArgs.VMClass.Spec,
 		updateArgs.MinCPUFreq,
-		updateArgs.VMImageStatus.Firmware,
+		imageFirmware,
 		updateArgs.ClassConfigSpec)
 
 	return updateArgs, nil
+}
+
+func isVMFirstBoot(vmCtx context.VirtualMachineContext) bool {
+	if _, ok := vmCtx.VM.Annotations[FirstBootDoneAnnotation]; ok {
+		return false
+	}
+
+	return true
 }

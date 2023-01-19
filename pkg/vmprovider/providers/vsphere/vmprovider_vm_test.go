@@ -674,37 +674,99 @@ func vmTests() {
 				// TODO: More assertions!
 			})
 
-			Context("Conditions", func() {
+			Context("Prereq args and Conditions", func() {
 				readyCondition := *conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition)
 
-				It("Sets expected PrereqReady condition", func() {
-					_, err := createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).ToNot(HaveOccurred())
+				Context("VM is poweredOn", func() {
+					It("Returns success even if the prereq args are missing", func() {
+						_, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
 
-					c := conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
-					Expect(c).ToNot(BeNil())
-					Expect(*c).To(conditions.MatchCondition(readyCondition))
+						c := conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+						Expect(c).ToNot(BeNil())
+						Expect(*c).To(conditions.MatchCondition(readyCondition))
 
-					// Use the class binding removal to toggle the condition state.
-					Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1alpha1.VirtualMachineClassBinding{})).To(Succeed())
+						Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1alpha1.VirtualMachineClassBinding{})).To(Succeed())
 
-					_, err = createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).To(HaveOccurred())
+						_, err = createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).NotTo(HaveOccurred())
 
-					c = conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
-					Expect(c).ToNot(BeNil())
-					Expect(c.Status).To(Equal(corev1.ConditionFalse))
+						c = conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+						Expect(c).ToNot(BeNil())
+						Expect(*c).To(conditions.MatchCondition(readyCondition))
+					})
+				})
 
-					// Recreate the class binding to put things back.
-					vmClassBinding := builder.DummyVirtualMachineClassBinding(vm.Spec.ClassName, vm.Namespace)
-					Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
+				Context("VM is in poweredOff to poweredOn transition", func() {
+					It("Returns success if VM image is missing and this VM is not first boot", func() {
+						_, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
 
-					_, err = createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).ToNot(HaveOccurred())
+						vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOff
+						_, err = createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
 
-					c = conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
-					Expect(c).ToNot(BeNil())
-					Expect(*c).To(conditions.MatchCondition(readyCondition))
+						Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1alpha1.VirtualMachineImage{})).To(Succeed())
+
+						vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+						_, err = createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).NotTo(HaveOccurred())
+
+						c := conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+						Expect(c).ToNot(BeNil())
+						Expect(*c).To(conditions.MatchCondition(readyCondition))
+					})
+
+					It("Returns error if VM image is missing and this VM is first boot", func() {
+						vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOff
+						_, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1alpha1.VirtualMachineImage{})).To(Succeed())
+
+						vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+						_, err = createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).To(HaveOccurred())
+
+						c := conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(corev1.ConditionFalse))
+					})
+
+					It("Sets expected PrereqReady condition", func() {
+						_, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOff
+						_, err = createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						c := conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+						Expect(c).ToNot(BeNil())
+						Expect(*c).To(conditions.MatchCondition(readyCondition))
+
+						// Use the class binding removal to toggle the condition state.
+						Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1alpha1.VirtualMachineClassBinding{})).To(Succeed())
+
+						vm.Spec.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+						_, err = createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).To(HaveOccurred())
+
+						c = conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+						Expect(c).ToNot(BeNil())
+						Expect(c.Status).To(Equal(corev1.ConditionFalse))
+
+						// Recreate the class binding to put things back.
+						vmClassBinding := builder.DummyVirtualMachineClassBinding(vm.Spec.ClassName, vm.Namespace)
+						Expect(ctx.Client.Create(ctx, vmClassBinding)).To(Succeed())
+
+						_, err = createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						c = conditions.Get(vm, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+						Expect(c).ToNot(BeNil())
+						Expect(*c).To(conditions.MatchCondition(readyCondition))
+					})
 				})
 			})
 

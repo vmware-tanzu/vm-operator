@@ -6,18 +6,15 @@ package session
 import (
 	"fmt"
 	"reflect"
-	"strings"
-	"text/template"
 
-	vimTypes "github.com/vmware/govmomi/vim25/types"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 
 	"github.com/vmware/govmomi/object"
+	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -30,6 +27,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
 
+const (
+	FirstBootDoneAnnotation = "virtualmachine.vmoperator.vmware.com/first-boot-done"
+)
+
 type VMMetadata struct {
 	Data      map[string]string
 	Transport v1alpha1.VirtualMachineMetadataTransport
@@ -38,7 +39,6 @@ type VMMetadata struct {
 // VMUpdateArgs contains the arguments needed to update a VM on VC.
 type VMUpdateArgs struct {
 	VMClass        *v1alpha1.VirtualMachineClass
-	VMImageStatus  *v1alpha1.VirtualMachineImageStatus
 	ResourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy
 	MinCPUFreq     uint64
 	ExtraConfig    map[string]string
@@ -49,6 +49,10 @@ type VMUpdateArgs struct {
 
 	NetIfList  network.InterfaceInfoList
 	DNSServers []string
+
+	// hack. Remove after VMSVC-1261.
+	// indicating if this VM image used is VM service v1alpha1 compatible.
+	VirtualMachineImageV1Alpha1Compatible bool
 }
 
 func ethCardMatch(newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCard) bool {
@@ -297,27 +301,14 @@ func UpdateConfigSpecExtraConfig(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec,
 	classConfigSpec *vimTypes.VirtualMachineConfigSpec,
-	vmImageStatus *v1alpha1.VirtualMachineImageStatus,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	vm *v1alpha1.VirtualMachine,
-	globalExtraConfig map[string]string) {
-
-	// The only use of this is for the global JSON_EXTRA_CONFIG to set the image name.
-	renderTemplateFn := func(name, text string) string {
-		t, err := template.New(name).Parse(text)
-		if err != nil {
-			return text
-		}
-		b := strings.Builder{}
-		if err := t.Execute(&b, vmImageStatus); err != nil {
-			return text
-		}
-		return b.String()
-	}
+	globalExtraConfig map[string]string,
+	imageV1Alpha1Compatible bool) {
 
 	extraConfig := make(map[string]string)
 	for k, v := range globalExtraConfig {
-		extraConfig[k] = renderTemplateFn(k, v)
+		extraConfig[k] = v
 	}
 
 	virtualDevices := vmClassSpec.Hardware.Devices
@@ -351,14 +342,16 @@ func UpdateConfigSpecExtraConfig(
 	// Enabling the defer-cloud-init extraConfig key for V1Alpha1Compatible images defers cloud-init from running on first boot
 	// and disables networking configurations by cloud-init. Therefore, only set the extraConfig key to enabled
 	// when the vmMetadata is nil or when the transport requested is not CloudInit.
+	// VMSVC-1261: we may always set this extra config key to remove image from VM customization.
+	// If a VM is deployed from an incompatible image,
+	// it will do nothing and won't cause any issues, but can introduce confusion.
 	if vm.Spec.VmMetadata == nil || vm.Spec.VmMetadata.Transport != v1alpha1.VirtualMachineMetadataCloudInitTransport {
-		if conditions.IsTrueFromConditions(vmImageStatus.Conditions, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) {
-			ecMap := ExtraConfigToMap(config.ExtraConfig)
-			if ecMap[constants.VMOperatorV1Alpha1ExtraConfigKey] == constants.VMOperatorV1Alpha1ConfigReady {
-				// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
-				configSpec.ExtraConfig = append(configSpec.ExtraConfig,
-					&vimTypes.OptionValue{Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigEnabled})
-			}
+		ecMap := ExtraConfigToMap(config.ExtraConfig)
+		if ecMap[constants.VMOperatorV1Alpha1ExtraConfigKey] == constants.VMOperatorV1Alpha1ConfigReady &&
+			imageV1Alpha1Compatible {
+			// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.
+			configSpec.ExtraConfig = append(configSpec.ExtraConfig,
+				&vimTypes.OptionValue{Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigEnabled})
 		}
 	}
 
@@ -379,12 +372,15 @@ func UpdateConfigSpecChangeBlockTracking(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec,
 	vmSpec v1alpha1.VirtualMachineSpec) {
-	// When VM_Class_as_Config_DaynDate is enabled, class config spec cbt if set overrides the VM spec advanced options cbt.
-	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && classConfigSpec.ChangeTrackingEnabled != nil {
-		if !apiEquality.Semantic.DeepEqual(config.ChangeTrackingEnabled, classConfigSpec.ChangeTrackingEnabled) {
-			configSpec.ChangeTrackingEnabled = classConfigSpec.ChangeTrackingEnabled
+	// When VM_Class_as_Config_DaynDate is enabled, class config spec cbt if
+	// set overrides the VM spec advanced options cbt.
+	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && classConfigSpec != nil {
+		if classConfigSpec.ChangeTrackingEnabled != nil {
+			if !apiEquality.Semantic.DeepEqual(config.ChangeTrackingEnabled, classConfigSpec.ChangeTrackingEnabled) {
+				configSpec.ChangeTrackingEnabled = classConfigSpec.ChangeTrackingEnabled
+			}
+			return
 		}
-		return
 	}
 
 	if vmSpec.AdvancedOptions == nil || vmSpec.AdvancedOptions.ChangeBlockTracking == nil {
@@ -457,7 +453,8 @@ func updateConfigSpec(
 	UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
 	UpdateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, updateArgs.MinCPUFreq)
 	UpdateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
-	UpdateConfigSpecExtraConfig(config, configSpec, updateArgs.ConfigSpec, updateArgs.VMImageStatus, &vmClassSpec, vmCtx.VM, updateArgs.ExtraConfig)
+	UpdateConfigSpecExtraConfig(config, configSpec, updateArgs.ConfigSpec, &vmClassSpec,
+		vmCtx.VM, updateArgs.ExtraConfig, updateArgs.VirtualMachineImageV1Alpha1Compatible)
 	UpdateConfigSpecChangeBlockTracking(config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 	UpdateConfigSpecDeviceGroups(config, configSpec, updateArgs.ConfigSpec)
@@ -669,11 +666,10 @@ func (s *Session) prepareVMForPowerOn(
 func (s *Session) poweredOnVMReconfigure(
 	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
-	config *vimTypes.VirtualMachineConfigInfo,
-	classConfigSpec *vimTypes.VirtualMachineConfigSpec) error {
+	config *vimTypes.VirtualMachineConfigInfo) error {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
-	UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmCtx.VM.Spec)
+	UpdateConfigSpecChangeBlockTracking(config, configSpec, nil, vmCtx.VM.Spec)
 
 	defaultConfigSpec := &vimTypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
@@ -720,7 +716,7 @@ func (s *Session) attachClusterModule(
 func (s *Session) UpdateVirtualMachine(
 	vmCtx context.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
-	updateArgs *VMUpdateArgs) (err error) {
+	getUpdateArgsFn func() (*VMUpdateArgs, error)) (err error) {
 
 	resVM := res.NewVMFromObject(vcVM)
 
@@ -763,7 +759,17 @@ func (s *Session) UpdateVirtualMachine(
 		}
 
 		if isOff {
-			err := s.prepareVMForPowerOn(vmCtx, resVM, config, updateArgs)
+			updateArgs, err := getUpdateArgsFn()
+			if err != nil {
+				return err
+			}
+
+			// TODO: Find a better place for this?
+			if err := s.attachClusterModule(vmCtx, resVM, updateArgs.ResourcePolicy); err != nil {
+				return err
+			}
+
+			err = s.prepareVMForPowerOn(vmCtx, resVM, config, updateArgs)
 			if err != nil {
 				return err
 			}
@@ -772,14 +778,15 @@ func (s *Session) UpdateVirtualMachine(
 			if err != nil {
 				return err
 			}
+			vmCtx.VM.Annotations[FirstBootDoneAnnotation] = "true"
 		} else {
-			err := s.poweredOnVMReconfigure(vmCtx, resVM, config, updateArgs.ConfigSpec)
+			// don't pass classConfigSpec to poweredOnVMReconfigure when VM is already powered on
+			// since we don't have to get VM class at this point.
+			err = s.poweredOnVMReconfigure(vmCtx, resVM, config)
 			if err != nil {
 				return err
 			}
 		}
 	}
-
-	// TODO: Find a better place for this?
-	return s.attachClusterModule(vmCtx, resVM, updateArgs.ResourcePolicy)
+	return nil
 }

@@ -18,7 +18,6 @@ import (
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
@@ -240,15 +239,14 @@ var _ = Describe("Update ConfigSpec", func() {
 	})
 
 	Context("ExtraConfig", func() {
-		var vmImage *vmopv1alpha1.VirtualMachineImage
 		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
 		var classConfigSpec *vimTypes.VirtualMachineConfigSpec
 		var vm *vmopv1alpha1.VirtualMachine
 		var globalExtraConfig map[string]string
 		var ecMap map[string]string
+		var imageV1Alpha1Compatible bool
 
 		BeforeEach(func() {
-			vmImage = &vmopv1alpha1.VirtualMachineImage{}
 			vmClassSpec = &vmopv1alpha1.VirtualMachineClassSpec{}
 			vm = &vmopv1alpha1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{
@@ -264,10 +262,10 @@ var _ = Describe("Update ConfigSpec", func() {
 				config,
 				configSpec,
 				classConfigSpec,
-				&vmImage.Status,
 				vmClassSpec,
 				vm,
-				globalExtraConfig)
+				globalExtraConfig,
+				imageV1Alpha1Compatible)
 
 			ecMap = make(map[string]string)
 			for _, ec := range configSpec.ExtraConfig {
@@ -285,11 +283,11 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		Context("Updates configSpec.ExtraConfig", func() {
 			BeforeEach(func() {
-				conditions.MarkTrue(vmImage, vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
 				config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{
 					Key: constants.VMOperatorV1Alpha1ExtraConfigKey, Value: constants.VMOperatorV1Alpha1ConfigReady})
 				globalExtraConfig["guestinfo.test"] = "test"
 				globalExtraConfig["global"] = "test"
+				imageV1Alpha1Compatible = true
 			})
 
 			It("Expected configSpec.ExtraConfig", func() {
@@ -310,7 +308,7 @@ var _ = Describe("Update ConfigSpec", func() {
 						ConfigMapName: "dummy-config",
 					}
 				})
-				It("defer cloud-init extra config is not enabled", func() {
+				It("defer cloud-init extra config is enabled", func() {
 					Expect(ecMap).To(HaveKeyWithValue("guestinfo.vmservice.defer-cloud-init", "enabled"))
 				})
 			})

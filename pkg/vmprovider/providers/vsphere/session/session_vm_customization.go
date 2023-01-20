@@ -92,7 +92,7 @@ func GetCloudInitMetadata(vm *v1alpha1.VirtualMachine,
 
 func GetCloudInitPrepCustSpec(
 	cloudInitMetadata string,
-	updateArgs VMUpdateArgs) (*vimTypes.CustomizationSpec, error) {
+	updateArgs VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, *vimTypes.CustomizationSpec, error) {
 
 	userdata := updateArgs.VMMetadata.Data["user-data"]
 
@@ -100,17 +100,24 @@ func GetCloudInitPrepCustSpec(
 		// Ensure the data is normalized first to plain-text.
 		plainText, err := util.TryToDecodeBase64Gzip([]byte(userdata))
 		if err != nil {
-			return nil, fmt.Errorf("decoding cloud-init prep userdata failed %v", err)
+			return nil, nil, fmt.Errorf("decoding cloud-init prep userdata failed %v", err)
 		}
 		userdata = plainText
 	}
 
-	return &vimTypes.CustomizationSpec{
-		Identity: &internal.CustomizationCloudinitPrep{
-			Metadata: cloudInitMetadata,
-			Userdata: userdata,
+	return &vimTypes.VirtualMachineConfigSpec{
+			VAppConfig: &vimTypes.VmConfigSpec{
+				// Ensure the transport is guestInfo in case the VM does not have
+				// a CD-ROM device required to use the ISO transport.
+				OvfEnvironmentTransport: []string{OvfEnvironmentTransportGuestInfo},
+			},
 		},
-	}, nil
+		&vimTypes.CustomizationSpec{
+			Identity: &internal.CustomizationCloudinitPrep{
+				Metadata: cloudInitMetadata,
+				Userdata: userdata,
+			},
+		}, nil
 }
 
 func GetCloudInitGuestInfoCustSpec(
@@ -225,7 +232,7 @@ func customizeCloudInit(
 
 	switch vmCtx.VM.Annotations[constants.CloudInitTypeAnnotation] {
 	case constants.CloudInitTypeValueCloudInitPrep:
-		custSpec, err = GetCloudInitPrepCustSpec(cloudInitMetadata, updateArgs)
+		configSpec, custSpec, err = GetCloudInitPrepCustSpec(cloudInitMetadata, updateArgs)
 	case constants.CloudInitTypeValueGuestInfo, "":
 		fallthrough
 	default:

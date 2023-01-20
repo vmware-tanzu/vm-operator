@@ -378,16 +378,27 @@ var _ = Describe("Cloud-Init Customization", func() {
 
 	Context("GetCloudInitPrepCustSpec", func() {
 		var (
-			err      error
 			custSpec *vimTypes.CustomizationSpec
 		)
 		JustBeforeEach(func() {
-			custSpec, err = session.GetCloudInitPrepCustSpec(cloudInitMetadata, updateArgs)
+			var (
+				err        error
+				configSpec *vimTypes.VirtualMachineConfigSpec
+			)
+			configSpec, custSpec, err = session.GetCloudInitPrepCustSpec(cloudInitMetadata, updateArgs)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Validate that Cloud-Init Prep always uses the GuestInfo transport
+			// for the CI Prep's meta and user data.
+			Expect(configSpec).ToNot(BeNil())
+			Expect(configSpec.VAppConfig).ToNot(BeNil())
+			Expect(configSpec.VAppConfig.GetVmConfigSpec()).ToNot(BeNil())
+			Expect(configSpec.VAppConfig.GetVmConfigSpec().OvfEnvironmentTransport).To(HaveLen(1))
+			Expect(configSpec.VAppConfig.GetVmConfigSpec().OvfEnvironmentTransport[0]).To(Equal(session.OvfEnvironmentTransportGuestInfo))
 		})
 
 		Context("No userdata", func() {
 			It("Cust spec to only have metadata", func() {
-				Expect(err).ToNot(HaveOccurred())
 				Expect(custSpec).ToNot(BeNil())
 				cloudinitPrepSpec := custSpec.Identity.(*internal.CustomizationCloudinitPrep)
 				Expect(cloudinitPrepSpec.Metadata).To(Equal(cloudInitMetadata))
@@ -400,7 +411,6 @@ var _ = Describe("Cloud-Init Customization", func() {
 				updateArgs.VMMetadata.Data["user-data"] = "cloud-init-userdata"
 			})
 			It("Cust spec to have metadata and userdata", func() {
-				Expect(err).ToNot(HaveOccurred())
 				Expect(custSpec).ToNot(BeNil())
 				cloudinitPrepSpec := custSpec.Identity.(*internal.CustomizationCloudinitPrep)
 				Expect(cloudinitPrepSpec.Metadata).To(Equal(cloudInitMetadata))
@@ -413,7 +423,6 @@ var _ = Describe("Cloud-Init Customization", func() {
 				updateArgs.VMMetadata.Data["user-data"] = base64.StdEncoding.EncodeToString([]byte(cloudInitUserdata))
 			})
 			It("Cust spec to have metadata and userdata", func() {
-				Expect(err).ToNot(HaveOccurred())
 				Expect(custSpec).ToNot(BeNil())
 				cloudinitPrepSpec := custSpec.Identity.(*internal.CustomizationCloudinitPrep)
 				Expect(cloudinitPrepSpec.Metadata).To(Equal(cloudInitMetadata))
@@ -428,7 +437,6 @@ var _ = Describe("Cloud-Init Customization", func() {
 				updateArgs.VMMetadata.Data["user-data"] = data
 			})
 			It("Cust spec to have metadata and userdata", func() {
-				Expect(err).ToNot(HaveOccurred())
 				Expect(custSpec).ToNot(BeNil())
 				cloudinitPrepSpec := custSpec.Identity.(*internal.CustomizationCloudinitPrep)
 				Expect(cloudinitPrepSpec.Metadata).To(Equal(cloudInitMetadata))

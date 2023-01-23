@@ -56,7 +56,7 @@ type VMUpdateArgs struct {
 }
 
 func ethCardMatch(newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCard) bool {
-	if lib.IsVMClassAsConfigFSSEnabled() {
+	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
 		if reflect.TypeOf(curBaseEthCard) != reflect.TypeOf(newBaseEthCard) {
 			return false
 		}
@@ -542,7 +542,7 @@ func (s *Session) ensureNetworkInterfaces(
 	deviceKey := int32(-100)
 
 	var networkDevices []vimTypes.BaseVirtualDevice
-	if lib.IsVMClassAsConfigFSSEnabled() && configSpec != nil {
+	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && configSpec != nil {
 		networkDevices = util.SelectDevicesByTypes(
 			util.DevicesFromConfigSpec(configSpec),
 			&vimTypes.VirtualE1000{},
@@ -568,7 +568,7 @@ func (s *Session) ensureNetworkInterfaces(
 			return nil, err
 		}
 
-		if lib.IsVMClassAsConfigFSSEnabled() {
+		if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
 			// If VM Class-as-a-Config is supported, we use the network device from the Class.
 			// If the VM class doesn't specify enough number of network devices, we fall back to default behavior.
 			if i < len(networkDevices) {

@@ -131,7 +131,7 @@ func vmTests() {
 			return vcVM, nil
 		}
 
-		Context("VMClassAsConfig FSS is enabled", func() {
+		Context("VMClassAsConfigDaynDate FSS is enabled", func() {
 
 			var (
 				vcVM       *object.VirtualMachine
@@ -140,7 +140,7 @@ func vmTests() {
 			)
 
 			BeforeEach(func() {
-				testConfig.WithVMClassAsConfig = true
+				testConfig.WithVMClassAsConfigDaynDate = true
 
 				ethCard = types.VirtualEthernetCard{
 					VirtualDevice: types.VirtualDevice{
@@ -282,9 +282,27 @@ func vmTests() {
 				})
 			})
 
+			Context("No VM Class config spec", func() {
+				BeforeEach(func() {
+					configSpec = nil
+				})
+
+				It("still creates VM", func() {
+					Expect(vm.Status.Phase).To(Equal(vmopv1alpha1.Created))
+
+					vmClass := &vmopv1alpha1.VirtualMachineClass{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
+					Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+				})
+			})
+
 			Context("VM Class Config specifies an ethCard, a GPU and a DDPIO device", func() {
 				BeforeEach(func() {
-					// Create the ConfigSpec with an ethernet card, a GPU and a DDPIO device
+					// Create the ConfigSpec with an ethernet card, a GPU and a DDPIO device.
 					configSpec = &types.VirtualMachineConfigSpec{
 						Name: "dummy-VM",
 						DeviceChange: []types.BaseVirtualDeviceConfigSpec{
@@ -324,7 +342,7 @@ func vmTests() {
 					}
 				})
 
-				It("Reconfigures the VM with a NIC, GPU specified in ConfigSpec and DDPIO device is dropped", func() {
+				It("Reconfigures the VM with a NIC, GPU and DDPIO device specified in ConfigSpec", func() {
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
@@ -352,254 +370,152 @@ func vmTests() {
 					Expect(ethDevice.MacAddress).NotTo(Equal(ethCard.MacAddress))
 
 					p := devList.SelectByType(&types.VirtualPCIPassthrough{})
-					Expect(p).To(HaveLen(1))
+					Expect(p).To(HaveLen(2))
 					pciDev1 := p[0].GetVirtualDevice()
-					pciBacking, ok1 := pciDev1.Backing.(*types.VirtualPCIPassthroughVmiopBackingInfo)
+					pciBacking1, ok1 := pciDev1.Backing.(*types.VirtualPCIPassthroughVmiopBackingInfo)
 					Expect(ok1).Should(BeTrue())
-					Expect(pciBacking.Vgpu).To(Equal("SampleProfile2"))
+					Expect(pciBacking1.Vgpu).To(Equal("SampleProfile2"))
+					pciDev2 := p[1].GetVirtualDevice()
+					pciBacking2, ok2 := pciDev2.Backing.(*types.VirtualPCIPassthroughDynamicBackingInfo)
+					Expect(ok2).Should(BeTrue())
+					Expect(pciBacking2.AllowedDevice).To(HaveLen(1))
+					Expect(pciBacking2.AllowedDevice[0].VendorId).To(Equal(int32(52)))
+					Expect(pciBacking2.AllowedDevice[0].DeviceId).To(Equal(int32(53)))
+					Expect(pciBacking2.CustomLabel).To(Equal("SampleLabel2"))
+
+					vmClass := &vmopv1alpha1.VirtualMachineClass{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
+
+					// cpu and memory check from vm class
+					Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
+					Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 				})
 			})
 
-			Context("When VMClassAsConfigDaynDate FSS is enabled", func() {
+			Context("VM Class Config specifies disks, disk controllers, other miscellaneous devices", func() {
 				BeforeEach(func() {
-					testConfig.WithVMClassAsConfigDaynDate = true
-				})
-
-				Context("No VM Class config spec", func() {
-					BeforeEach(func() {
-						configSpec = nil
-					})
-
-					It("still creates VM", func() {
-						Expect(vm.Status.Phase).To(Equal(vmopv1alpha1.Created))
-
-						vmClass := &vmopv1alpha1.VirtualMachineClass{}
-						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
-
-						var o mo.VirtualMachine
-						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-						Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-						Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
-					})
-				})
-
-				Context("VM Class Config specifies an ethCard, a GPU and a DDPIO device", func() {
-					BeforeEach(func() {
-						// Create the ConfigSpec with an ethernet card, a GPU and a DDPIO device.
-						configSpec = &types.VirtualMachineConfigSpec{
-							Name: "dummy-VM",
-							DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualE1000{
-										VirtualEthernetCard: ethCard,
-									},
-								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualPCIPassthrough{
-										VirtualDevice: types.VirtualDevice{
-											Backing: &types.VirtualPCIPassthroughVmiopBackingInfo{
-												Vgpu: "SampleProfile2",
-											},
+					// Create the ConfigSpec with disks, disk controller and
+					// some miscellaneous devices -- pointing device, video card etc.
+					// This works fine with vcsim and helps with testing adding misc devices -- the simulator can
+					// still reconfigure the VM with default device types like pointing devices, keyboard, video card etc..
+					// But vSphere has some restrictions with reconfiguring a VM with new default device types via config spec
+					// and usually ignored.
+					configSpec = &types.VirtualMachineConfigSpec{
+						Name: "dummy-VM",
+						DeviceChange: []types.BaseVirtualDeviceConfigSpec{
+							&types.VirtualDeviceConfigSpec{
+								Operation: types.VirtualDeviceConfigSpecOperationAdd,
+								Device: &types.VirtualPointingDevice{
+									VirtualDevice: types.VirtualDevice{
+										Backing: &types.VirtualPointingDeviceDeviceBackingInfo{
+											HostPointingDevice: "autodetect",
 										},
+										Key:           700,
+										ControllerKey: 300,
 									},
 								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualPCIPassthrough{
+							},
+							&types.VirtualDeviceConfigSpec{
+								Operation: types.VirtualDeviceConfigSpecOperationAdd,
+								Device: &types.VirtualPS2Controller{
+									VirtualController: types.VirtualController{
+										Device: []int32{700},
 										VirtualDevice: types.VirtualDevice{
-											Backing: &types.VirtualPCIPassthroughDynamicBackingInfo{
-												AllowedDevice: []types.VirtualPCIPassthroughAllowedDevice{
-													{
-														VendorId: 52,
-														DeviceId: 53,
-													},
-												},
-												CustomLabel: "SampleLabel2",
-											},
+											Key: 300,
 										},
 									},
 								},
 							},
-						}
-					})
-
-					It("Reconfigures the VM with a NIC, GPU and DDPIO device specified in ConfigSpec", func() {
-						var o mo.VirtualMachine
-						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-
-						devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-						l := devList.SelectByType(&types.VirtualEthernetCard{})
-						Expect(l).To(HaveLen(1))
-
-						dev := l[0].GetVirtualDevice()
-						backing, ok := dev.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
-						Expect(ok).Should(BeTrue())
-						_, dvpg := getDVPG(ctx, dvpgName)
-						Expect(backing.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
-
-						ethDevice, ok := l[0].(*types.VirtualE1000)
-						Expect(ok).To(BeTrue())
-
-						Expect(ethDevice.AddressType).To(Equal(ethCard.AddressType))
-						Expect(dev.DeviceInfo).To(Equal(ethCard.VirtualDevice.DeviceInfo))
-						Expect(dev.DeviceGroupInfo).To(Equal(ethCard.VirtualDevice.DeviceGroupInfo))
-						Expect(dev.SlotInfo).To(Equal(ethCard.VirtualDevice.SlotInfo))
-						Expect(dev.ControllerKey).To(Equal(ethCard.VirtualDevice.ControllerKey))
-
-						// Mac Address should not match with the class from ConfigSpec. It will be updated
-						// from the backing generated by the network provider.
-						Expect(ethDevice.MacAddress).NotTo(Equal(ethCard.MacAddress))
-
-						p := devList.SelectByType(&types.VirtualPCIPassthrough{})
-						Expect(p).To(HaveLen(2))
-						pciDev1 := p[0].GetVirtualDevice()
-						pciBacking, ok1 := pciDev1.Backing.(*types.VirtualPCIPassthroughVmiopBackingInfo)
-						Expect(ok1).Should(BeTrue())
-						Expect(pciBacking.Vgpu).To(Equal("SampleProfile2"))
-						pciDev2 := p[1].GetVirtualDevice()
-						pciBacking1, ok2 := pciDev2.Backing.(*types.VirtualPCIPassthroughDynamicBackingInfo)
-						Expect(ok2).Should(BeTrue())
-						Expect(pciBacking1.AllowedDevice).To(HaveLen(1))
-						Expect(pciBacking1.AllowedDevice[0].VendorId).To(Equal(int32(52)))
-						Expect(pciBacking1.AllowedDevice[0].DeviceId).To(Equal(int32(53)))
-						Expect(pciBacking1.CustomLabel).To(Equal("SampleLabel2"))
-
-						vmClass := &vmopv1alpha1.VirtualMachineClass{}
-						Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
-
-						// cpu and memory check from vm class
-						Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-						Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
-					})
-				})
-
-				Context("VM Class Config specifies disks, disk controllers, other miscellaneous devices", func() {
-					BeforeEach(func() {
-						// Create the ConfigSpec with disks, disk controller and
-						// some miscellaneous devices -- pointing device, video card etc.
-						// This works fine with vcsim and helps with testing adding misc devices -- the simulator can
-						// still reconfigure the VM with default device types like pointing devices, keyboard, video card etc..
-						// But vSphere has some restrictions with reconfiguring a VM with new default device types via config spec
-						// and usually ignored.
-						configSpec = &types.VirtualMachineConfigSpec{
-							Name: "dummy-VM",
-							DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualPointingDevice{
+							&types.VirtualDeviceConfigSpec{
+								Operation: types.VirtualDeviceConfigSpecOperationAdd,
+								Device: &types.VirtualMachineVideoCard{
+									UseAutoDetect: &[]bool{false}[0],
+									NumDisplays:   1,
+									VirtualDevice: types.VirtualDevice{
+										Key:           500,
+										ControllerKey: 100,
+									},
+								},
+							},
+							&types.VirtualDeviceConfigSpec{
+								Operation: types.VirtualDeviceConfigSpecOperationAdd,
+								Device: &types.VirtualPCIController{
+									VirtualController: types.VirtualController{
+										Device: []int32{500},
 										VirtualDevice: types.VirtualDevice{
-											Backing: &types.VirtualPointingDeviceDeviceBackingInfo{
-												HostPointingDevice: "autodetect",
-											},
-											Key:           700,
-											ControllerKey: 300,
-										},
-									},
-								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualPS2Controller{
-										VirtualController: types.VirtualController{
-											Device: []int32{700},
-											VirtualDevice: types.VirtualDevice{
-												Key: 300,
-											},
-										},
-									},
-								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualMachineVideoCard{
-										UseAutoDetect: &[]bool{false}[0],
-										NumDisplays:   1,
-										VirtualDevice: types.VirtualDevice{
-											Key:           500,
-											ControllerKey: 100,
-										},
-									},
-								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualPCIController{
-										VirtualController: types.VirtualController{
-											Device: []int32{500},
-											VirtualDevice: types.VirtualDevice{
-												Key: 100,
-											},
-										},
-									},
-								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualDisk{
-										CapacityInBytes: 1024,
-										VirtualDevice: types.VirtualDevice{
-											Key: -42,
-											Backing: &types.VirtualDiskFlatVer2BackingInfo{
-												ThinProvisioned: pointer.Bool(true),
-											},
-										},
-									},
-								},
-								&types.VirtualDeviceConfigSpec{
-									Operation: types.VirtualDeviceConfigSpecOperationAdd,
-									Device: &types.VirtualSCSIController{
-										VirtualController: types.VirtualController{
-											Device: []int32{-42},
+											Key: 100,
 										},
 									},
 								},
 							},
-						}
-					})
+							&types.VirtualDeviceConfigSpec{
+								Operation: types.VirtualDeviceConfigSpecOperationAdd,
+								Device: &types.VirtualDisk{
+									CapacityInBytes: 1024,
+									VirtualDevice: types.VirtualDevice{
+										Key: -42,
+										Backing: &types.VirtualDiskFlatVer2BackingInfo{
+											ThinProvisioned: pointer.Bool(true),
+										},
+									},
+								},
+							},
+							&types.VirtualDeviceConfigSpec{
+								Operation: types.VirtualDeviceConfigSpecOperationAdd,
+								Device: &types.VirtualSCSIController{
+									VirtualController: types.VirtualController{
+										Device: []int32{-42},
+									},
+								},
+							},
+						},
+					}
+				})
 
-					It("Reconfigures the VM with all misc devices in ConfigSpec expect disk and disk controllers", func() {
-						var o mo.VirtualMachine
-						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				It("Reconfigures the VM with all misc devices in ConfigSpec expect disk and disk controllers", func() {
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
-						devList := object.VirtualDeviceList(o.Config.Hardware.Device)
-						// VM already has a default pointing device and the spec adds one more
-						// more info about the default device is unknown to assert on
-						pointingDev := devList.SelectByType(&types.VirtualPointingDevice{})
-						Expect(pointingDev).To(HaveLen(2))
-						dev := pointingDev[0].GetVirtualDevice()
-						backing, ok := dev.Backing.(*types.VirtualPointingDeviceDeviceBackingInfo)
-						Expect(ok).Should(BeTrue())
-						Expect(backing.HostPointingDevice).To(Equal("autodetect"))
-						Expect(dev.Key).To(Equal(int32(700)))
-						Expect(dev.ControllerKey).To(Equal(int32(300)))
+					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
+					// VM already has a default pointing device and the spec adds one more
+					// more info about the default device is unknown to assert on
+					pointingDev := devList.SelectByType(&types.VirtualPointingDevice{})
+					Expect(pointingDev).To(HaveLen(2))
+					dev := pointingDev[0].GetVirtualDevice()
+					backing, ok := dev.Backing.(*types.VirtualPointingDeviceDeviceBackingInfo)
+					Expect(ok).Should(BeTrue())
+					Expect(backing.HostPointingDevice).To(Equal("autodetect"))
+					Expect(dev.Key).To(Equal(int32(700)))
+					Expect(dev.ControllerKey).To(Equal(int32(300)))
 
-						ps2cont := devList.SelectByType(&types.VirtualPS2Controller{})
-						Expect(ps2cont).To(HaveLen(1))
-						dev = ps2cont[0].GetVirtualDevice()
-						Expect(dev.Key).To(Equal(int32(300)))
+					ps2cont := devList.SelectByType(&types.VirtualPS2Controller{})
+					Expect(ps2cont).To(HaveLen(1))
+					dev = ps2cont[0].GetVirtualDevice()
+					Expect(dev.Key).To(Equal(int32(300)))
 
-						pcicont := devList.SelectByType(&types.VirtualPCIController{})
-						Expect(pcicont).To(HaveLen(1))
-						dev = pcicont[0].GetVirtualDevice()
-						Expect(dev.Key).To(Equal(int32(100)))
+					pcicont := devList.SelectByType(&types.VirtualPCIController{})
+					Expect(pcicont).To(HaveLen(1))
+					dev = pcicont[0].GetVirtualDevice()
+					Expect(dev.Key).To(Equal(int32(100)))
 
-						// VM already has a default video card and the spec adds one more
-						// more info about the default device is unknown to assert on
-						video := devList.SelectByType(&types.VirtualMachineVideoCard{})
-						Expect(video).To(HaveLen(2))
-						dev = video[0].GetVirtualDevice()
-						Expect(dev.Key).To(Equal(int32(500)))
-						Expect(dev.ControllerKey).To(Equal(int32(100)))
+					// VM already has a default video card and the spec adds one more
+					// more info about the default device is unknown to assert on
+					video := devList.SelectByType(&types.VirtualMachineVideoCard{})
+					Expect(video).To(HaveLen(2))
+					dev = video[0].GetVirtualDevice()
+					Expect(dev.Key).To(Equal(int32(500)))
+					Expect(dev.ControllerKey).To(Equal(int32(100)))
 
-						// disk and disk controllers from config spec should not get added,
-						// since they get processed out in CreateConfigSpec
-						diskcont := devList.SelectByType(&types.VirtualSCSIController{})
-						Expect(diskcont).To(HaveLen(0))
+					// disk and disk controllers from config spec should not get added,
+					// since they get processed out in CreateConfigSpec
+					diskcont := devList.SelectByType(&types.VirtualSCSIController{})
+					Expect(diskcont).To(HaveLen(0))
 
-						// only preexisting disk should be present on VM -- len: 1
-						disk := devList.SelectByType(&types.VirtualDisk{})
-						Expect(disk).To(HaveLen(1))
-						dev = disk[0].GetVirtualDevice()
-						Expect(dev.Key).ToNot(Equal(int32(-42)))
-					})
+					// only preexisting disk should be present on VM -- len: 1
+					disk := devList.SelectByType(&types.VirtualDisk{})
+					Expect(disk).To(HaveLen(1))
+					dev = disk[0].GetVirtualDevice()
+					Expect(dev.Key).ToNot(Equal(int32(-42)))
 				})
 			})
 		})

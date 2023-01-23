@@ -542,7 +542,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 		}
 	}
 
-	if lib.IsVMClassAsConfigFSSEnabled() {
+	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
 		if cs := createArgs.VMClass.Spec.ConfigSpec; cs != nil {
 			classConfigSpec, err := GetVMClassConfigSpec(cs)
 			if err != nil {
@@ -685,7 +685,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		updateArgs.MinCPUFreq = freq
 	}
 
-	if lib.IsVMClassAsConfigFSSEnabled() {
+	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
 		if cs := updateArgs.VMClass.Spec.ConfigSpec; cs != nil {
 			classConfigSpec, err := GetVMClassConfigSpec(cs)
 			if err != nil {

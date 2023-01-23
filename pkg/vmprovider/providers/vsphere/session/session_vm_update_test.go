@@ -869,8 +869,8 @@ var _ = Describe("Update ConfigSpec", func() {
 			var oldVMClassAsConfigFunc func() bool
 
 			BeforeEach(func() {
-				oldVMClassAsConfigFunc = lib.IsVMClassAsConfigFSSEnabled
-				lib.IsVMClassAsConfigFSSEnabled = func() bool {
+				oldVMClassAsConfigFunc = lib.IsVMClassAsConfigFSSDaynDateEnabled
+				lib.IsVMClassAsConfigFSSDaynDateEnabled = func() bool {
 					return true
 				}
 				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
@@ -885,7 +885,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 
 			AfterEach(func() {
-				lib.IsVMClassAsConfigFSSEnabled = oldVMClassAsConfigFunc
+				lib.IsVMClassAsConfigFSSDaynDateEnabled = oldVMClassAsConfigFunc
 			})
 
 			It("returns remove and add device changes", func() {

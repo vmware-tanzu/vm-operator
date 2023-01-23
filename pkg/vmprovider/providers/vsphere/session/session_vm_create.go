@@ -69,7 +69,7 @@ func (s *Session) deployVMFromCL(
 		deploymentSpec.DefaultDatastoreID = createArgs.DatastoreMoID
 	}
 
-	if lib.IsVMClassAsConfigFSSEnabled() && createArgs.ConfigSpec != nil {
+	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && createArgs.ConfigSpec != nil {
 		configSpecXML, err := util.MarshalConfigSpecToXML(createArgs.ConfigSpec)
 		if err != nil {
 			return nil, err

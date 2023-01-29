@@ -225,3 +225,13 @@ jobs:
         path: |
           code-coverage-results.md
           pull_request_id
+
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      # https://github.com/marketplace/actions/pr-labeler-based-on-multiple-rules
+      - uses: srvaroa/labeler@v0.9
+        with:
+          config_path: .github/configs/labeler.yml
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"

@@ -62,7 +62,8 @@ const (
 	ContentSourceKey         = "ContentSource"
 
 	NetworkConfigMapName = "vmoperator-network-config"
-	NameserversKey       = "nameservers" // Key in the NetworkConfigMapName.
+	NameserversKey       = "nameservers"    // Key in the NetworkConfigMapName.
+	SearchSuffixesKey    = "searchsuffixes" // Key in the NetworkConfigMapName.
 )
 
 // ConfigMapToProviderConfig converts the VM provider ConfigMap to a VSphereVMProviderConfig.
@@ -145,34 +146,43 @@ func configMapToProviderCredentials(
 	return credentials.GetProviderCredentials(client, configMap.Namespace, secretName)
 }
 
-func GetNameserversFromConfigMap(client ctrlruntime.Client) ([]string, error) {
+func GetDNSInformationFromConfigMap(client ctrlruntime.Client) ([]string, []string, error) {
 	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	configMap := &corev1.ConfigMap{}
 	configMapKey := ctrlruntime.ObjectKey{Name: NetworkConfigMapName, Namespace: vmopNamespace}
 	if err := client.Get(context.Background(), configMapKey, configMap); err != nil {
-		return nil, errors.Wrapf(err, "cannot retrieve %v ConfigMap", NetworkConfigMapName)
+		return nil, nil, err
 	}
 
-	nameservers, ok := configMap.Data[NameserversKey]
+	var (
+		nameservers    []string
+		searchSuffixes []string = nil
+	)
+
+	nsStr, ok := configMap.Data[NameserversKey]
 	if !ok {
-		return nil, errors.Wrapf(err, "invalid %v ConfigMap, missing key nameservers", NetworkConfigMapName)
+		return nil, nil, errors.Wrapf(err, "invalid %v ConfigMap, missing key nameservers", NetworkConfigMapName)
 	}
 
-	nameserverList := strings.Fields(nameservers)
-	if len(nameserverList) == 0 {
-		return nil, errors.Errorf("No nameservers in %v ConfigMap", NetworkConfigMapName)
+	nameservers = strings.Fields(nsStr)
+	if len(nameservers) == 0 {
+		return nil, nil, errors.Errorf("No nameservers in %v ConfigMap", NetworkConfigMapName)
 	}
 
-	if len(nameserverList) == 1 && nameserverList[0] == "<worker_dns>" {
-		return nil, errors.Errorf("No valid nameservers in %v ConfigMap. It still contains <worker_dns> key", NetworkConfigMapName)
+	if len(nameservers) == 1 && nameservers[0] == "<worker_dns>" {
+		return nil, nil, errors.Errorf("No valid nameservers in %v ConfigMap. It still contains <worker_dns> key", NetworkConfigMapName)
+	}
+
+	if ssStr, ok := configMap.Data[SearchSuffixesKey]; ok {
+		searchSuffixes = strings.Fields(ssStr)
 	}
 
 	// do we need to validate that these look like valid ipv4 addresses?
-	return nameserverList, nil
+	return nameservers, searchSuffixes, nil
 }
 
 // getProviderConfigMap returns the provider ConfigMap.

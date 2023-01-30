@@ -8,6 +8,8 @@ import (
 	"reflect"
 
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
+	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
@@ -47,8 +49,9 @@ type VMUpdateArgs struct {
 	ConfigSpec      *vimTypes.VirtualMachineConfigSpec
 	ClassConfigSpec *vimTypes.VirtualMachineConfigSpec
 
-	NetIfList  network.InterfaceInfoList
-	DNSServers []string
+	NetIfList      network.InterfaceInfoList
+	DNSServers     []string
+	SearchSuffixes []string
 
 	// hack. Remove after VMSVC-1261.
 	// indicating if this VM image used is VM service v1alpha1 compatible.
@@ -636,14 +639,21 @@ func (s *Session) prepareVMForPowerOn(
 		return err
 	}
 
-	dnsServers, err := config.GetNameserversFromConfigMap(s.K8sClient)
-	if err != nil {
-		vmCtx.Logger.Error(err, "Unable to get DNS server list from ConfigMap")
-		// Prior code only logged?!?
-	}
-
 	updateArgs.NetIfList = netIfList
-	updateArgs.DNSServers = dnsServers
+
+	if err := MutateUpdateArgsWithDNSInformation(
+		vmCtx.VM.Labels,
+		updateArgs,
+		s.K8sClient); err != nil {
+
+		// Due to an internal pipeline not properly creating the ConfigMap, this
+		// error is swallowed if it's a 404.
+		if apierrs.IsNotFound(err) {
+			vmCtx.Logger.Error(err, "VM Op ConfigMap not found")
+		} else {
+			return err
+		}
+	}
 
 	err = s.prePowerOnVMReconfigure(vmCtx, resVM, cfg, updateArgs)
 	if err != nil {
@@ -660,6 +670,44 @@ func (s *Session) prepareVMForPowerOn(
 		return err
 	}
 
+	return nil
+}
+
+const (
+	// CAPWClusterRoleLabelKey is the key for the label applied to a VM that was
+	// created by CAPW.
+	CAPWClusterRoleLabelKey = "capw.vmware.com/cluster.role" //nolint:gosec
+
+	// CAPVClusterRoleLabelKey is the key for the label applied to a VM that was
+	// created by CAPV.
+	CAPVClusterRoleLabelKey = "capv.vmware.com/cluster.role"
+)
+
+func MutateUpdateArgsWithDNSInformation(
+	vmLabels map[string]string,
+	updateArgs *VMUpdateArgs,
+	client ctrl.Client) error {
+
+	nameservers, searchSuffixes, err := config.GetDNSInformationFromConfigMap(client)
+	if err != nil {
+		return err
+	}
+
+	updateArgs.DNSServers = nameservers
+
+	// Propagate the DNS search suffixes from the config map if this is a TKGs
+	// node. Please note that this will only be used by guests for VMs created
+	// by TKGs that use Cloud-Init. Guest OS Customization (GOSC) has no means
+	// to set the DNS search suffix.
+	_, ok := vmLabels[CAPWClusterRoleLabelKey]
+	if !ok {
+		_, ok = vmLabels[CAPVClusterRoleLabelKey]
+	}
+	if !ok {
+		return nil
+	}
+
+	updateArgs.SearchSuffixes = searchSuffixes
 	return nil
 }
 

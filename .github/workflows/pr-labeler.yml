@@ -1,0 +1,38 @@
+name: pr-labeler
+on:
+- pull_request_target
+
+jobs:
+  add-labels:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+    # This action originates from https://github.com/srvaroa/labeler. We are
+    # using this action instead of the GitHub labeler action as the former
+    # supports adding labels based on the number of changed, lines-of-code.
+    # However, while the GitHub labeler action supports excluding files, the
+    # action we are using does not. It would be nice if the GitHub labeler
+    # action supported LoC labeling or if this action supported exclusions.
+    # There are issues filed for both:
+    #
+    # * GitHub labeler LoC support:
+    #   https://github.com/actions/labeler/issues/486
+    #
+    # * srvaroa labeler action exclusion support:
+    #   https://github.com/srvaroa/labeler/issues/33
+    #
+    # For now we will use the srvaroa labeler action to afford ourselves the
+    # support for LoC-based labels. If/when GitHub supports LoC, we will switch
+    # to that and ignore the following, generated content:
+    #
+    # - "*_generated.go"       # generated Go sources
+    # - "config/crd/bases/.*"  # generated CRDs
+    # - "docs/apis/v*.md"      # generated API documentation,
+    #                          # ex. docs/apis/v1alpha1.md
+    - uses: srvaroa/labeler@v0.9
+      with:
+        config_path: .github/configs/labeler.yml
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"

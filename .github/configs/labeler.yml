@@ -1,17 +1,20 @@
 version: 1
 labels:
-  - label: "xsmall-diff"
+  - label: "size/XS"
     size-below: 10
-  - label: "small-diff"
+  - label: "size/S"
     size-above: 9
+    size-below: 30
+  - label: "size/M"
+    size-above: 29
     size-below: 100
-  - label: "medium-diff"
+  - label: "size/L"
     size-above: 99
     size-below: 500
-  - label: "large-diff"
+  - label: "size/XL"
     size-above: 499
     size-below: 1000
-  - label: "xlarge-diff"
+  - label: "size/XXL"
     size-above: 999
-  - label: "testing-required-internal-e2e"
+  - label: "testing-needed-e2e-fast"
     size-above: 99

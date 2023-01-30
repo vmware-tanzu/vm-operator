@@ -1,0 +1,20 @@
+version: 1
+labels:
+  - label: "size/XS"
+    size-below: 10
+  - label: "size/S"
+    size-above: 9
+    size-below: 30
+  - label: "size/M"
+    size-above: 29
+    size-below: 100
+  - label: "size/L"
+    size-above: 99
+    size-below: 500
+  - label: "size/XL"
+    size-above: 499
+    size-below: 1000
+  - label: "size/XXL"
+    size-above: 999
+  - label: "testing-needed-e2e-fast"
+    size-above: 99

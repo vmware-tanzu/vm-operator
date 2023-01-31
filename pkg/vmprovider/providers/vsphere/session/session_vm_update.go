@@ -577,10 +577,13 @@ func (s *Session) ensureNetworkInterfaces(
 			if i < len(networkDevices) {
 				ethCardFromNetProvider := info.Device.(vimTypes.BaseVirtualEthernetCard)
 
+				if mac := ethCardFromNetProvider.GetVirtualEthernetCard().MacAddress; mac != "" {
+					networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress = mac
+					networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().AddressType = string(vimTypes.VirtualEthernetCardMacTypeManual)
+				}
+
 				networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().ExternalId =
 					ethCardFromNetProvider.GetVirtualEthernetCard().ExternalId
-				networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().MacAddress =
-					ethCardFromNetProvider.GetVirtualEthernetCard().MacAddress
 				// If the device from VM class has a DVX backing, this should still work if the backing as well
 				// as the DVX backing are set. VPXD checks for DVX backing before checking for normal device backings.
 				networkDevices[i].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard().Backing =

@@ -219,6 +219,7 @@ var _ = Describe("CloudInitmetadata", func() {
 					Gateway4:  "192.168.1.1",
 					Nameservers: network.NetplanEthernetNameserver{
 						Addresses: []string{"8.8.8.8", "1.1.1.1"},
+						Search:    []string{"vmware.com", "example.com"},
 					},
 				},
 			},

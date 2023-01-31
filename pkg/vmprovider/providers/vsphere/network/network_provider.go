@@ -103,9 +103,13 @@ type NetplanEthernetMatch struct {
 }
 type NetplanEthernetNameserver struct {
 	Addresses []string `yaml:"addresses,omitempty"`
+	Search    []string `yaml:"search,omitempty"`
 }
 
-func (l InterfaceInfoList) GetNetplan(currentEthCards object.VirtualDeviceList, dnsServers []string) Netplan {
+func (l InterfaceInfoList) GetNetplan(
+	currentEthCards object.VirtualDeviceList,
+	dnsServers, searchSuffixes []string) Netplan {
+
 	ethernets := make(map[string]NetplanEthernet)
 
 	for index, info := range l {
@@ -124,6 +128,7 @@ func (l InterfaceInfoList) GetNetplan(currentEthCards object.VirtualDeviceList, 
 
 		// Inject nameserver settings for each ethernet.
 		netplanEthernet.Nameservers.Addresses = dnsServers
+		netplanEthernet.Nameservers.Search = searchSuffixes
 		name := fmt.Sprintf("eth%d", index)
 		netplanEthernet.SetName = name
 		ethernets[name] = netplanEthernet

@@ -220,7 +220,8 @@ func customizeCloudInit(
 		return nil, nil, err
 	}
 
-	netplan := updateArgs.NetIfList.GetNetplan(ethCards, updateArgs.DNSServers)
+	netplan := updateArgs.NetIfList.GetNetplan(
+		ethCards, updateArgs.DNSServers, updateArgs.SearchSuffixes)
 
 	cloudInitMetadata, err := GetCloudInitMetadata(vmCtx.VM, netplan, updateArgs.VMMetadata.Data)
 	if err != nil {

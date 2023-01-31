@@ -1,0 +1,33 @@
+name: testing-needed
+
+on:
+  pull_request:
+    types:
+    - synchronize
+    - opened
+    - reopened
+    - labeled
+    - unlabeled
+
+jobs:
+  check-label:
+    strategy:
+      matrix:
+        # the types of tests that are expressed as labels, ex. for the test
+        # type "e2e-fast", the labels would be testing-needed-e2e-fast and
+        # testing-done-e2e-fast
+        test-type:
+        - e2e-fast
+        - e2e-full
+    runs-on: ubuntu-latest
+    steps:
+    - name: do-not-merge
+      # the step will run if one of the labels is present and the corresponding
+      # label indicating testing is done is not present, ex. the label
+      # testing-needed-e2e-fast is present without also testing-done-e2e-fast
+      if: |
+        contains(github.event.*.labels.*.name, format('testing-needed-{0}', matrix.test-type)) &&
+        !contains(github.event.*.labels.*.name, format('testing-done-{0}', matrix.test-type))
+      run: |
+        echo "Pull request is labeled as 'testing-needed-${{ matrix.test-type }}'"
+        exit 1

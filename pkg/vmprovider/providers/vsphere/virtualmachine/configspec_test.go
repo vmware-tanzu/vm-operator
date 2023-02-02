@@ -91,7 +91,7 @@ var _ = Describe("CreateConfigSpec", func() {
 		It("Returns expected config spec", func() {
 			Expect(configSpec.Name).To(Equal(vmName))
 			Expect(configSpec.Annotation).ToNot(BeEmpty())
-			Expect(configSpec.Annotation).ToNot(Equal("test-annotation"))
+			Expect(configSpec.Annotation).To(Equal("test-annotation"))
 			Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.Hardware.Cpus))
 			Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
 			Expect(configSpec.CpuAllocation).ToNot(BeNil())
@@ -190,7 +190,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 		It("Placement ConfigSpec contains expected field set sans ethernet device from class config spec", func() {
 			Expect(configSpec.Annotation).ToNot(BeEmpty())
-			Expect(configSpec.Annotation).ToNot(Equal("test-annotation"))
+			Expect(configSpec.Annotation).To(Equal(classConfigSpec.Annotation))
 			Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.Hardware.Cpus))
 			Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
 			Expect(configSpec.CpuAllocation).ToNot(BeNil())

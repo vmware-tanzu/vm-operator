@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session
@@ -402,20 +402,29 @@ func UpdateHardwareConfigSpec(
 	configSpec *vimTypes.VirtualMachineConfigSpec,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec) {
 
-	// TODO: Looks like a different default annotation gets set by VC.
-	if config.Annotation != constants.VCVMAnnotation {
-		configSpec.Annotation = constants.VCVMAnnotation
-	}
 	if nCPUs := int32(vmClassSpec.Hardware.Cpus); config.Hardware.NumCPU != nCPUs {
 		configSpec.NumCPUs = nCPUs
 	}
 	if memMB := virtualmachine.MemoryQuantityToMb(vmClassSpec.Hardware.Memory); int64(config.Hardware.MemoryMB) != memMB {
 		configSpec.MemoryMB = memMB
 	}
+}
+
+func UpdateConfigSpecAnnotation(
+	config *vimTypes.VirtualMachineConfigInfo,
+	configSpec *vimTypes.VirtualMachineConfigSpec) {
+	if config.Annotation != constants.VCVMAnnotation {
+		configSpec.Annotation = constants.VCVMAnnotation
+	}
+}
+
+func UpdateConfigSpecManagedBy(
+	config *vimTypes.VirtualMachineConfigInfo,
+	configSpec *vimTypes.VirtualMachineConfigSpec) {
 	if config.ManagedBy == nil {
 		configSpec.ManagedBy = &vimTypes.ManagedByInfo{
-			ExtensionKey: "com.vmware.vcenter.wcp",
-			Type:         "VirtualMachine",
+			ExtensionKey: constants.ManagedByExtensionKey,
+			Type:         constants.ManagedByExtensionType,
 		}
 	}
 }
@@ -445,6 +454,8 @@ func UpdateConfigSpecDeviceGroups(
 	}
 }
 
+// updateConfigSpec overlays the VM Class spec with the provided ConfigSpec to form a desired
+// ConfigSpec that will be used to reconfigure the VM.
 func updateConfigSpec(
 	vmCtx context.VirtualMachineContext,
 	config *vimTypes.VirtualMachineConfigInfo,
@@ -453,9 +464,19 @@ func updateConfigSpec(
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
 	vmClassSpec := updateArgs.VMClass.Spec
 
-	UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
-	UpdateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, updateArgs.MinCPUFreq)
-	UpdateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
+	// Before VM Class as Config, VMs were deployed from the OVA, and are then
+	// reconfigured to match the desired CPU and memory reservation.  Maintain that
+	// behavior.  With the FSS enabled, VMs will be _created_ with desired HW spec, and we
+	// will not modify the hardware of the VM post creation.  So, don't populate the
+	// Hardware config and CPU/Memory reservation.
+	if !lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+		UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
+		UpdateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, updateArgs.MinCPUFreq)
+		UpdateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
+	}
+
+	UpdateConfigSpecAnnotation(config, configSpec)
+	UpdateConfigSpecManagedBy(config, configSpec)
 	UpdateConfigSpecExtraConfig(config, configSpec, updateArgs.ConfigSpec, &vmClassSpec,
 		vmCtx.VM, updateArgs.ExtraConfig, updateArgs.VirtualMachineImageV1Alpha1Compatible)
 	UpdateConfigSpecChangeBlockTracking(config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)

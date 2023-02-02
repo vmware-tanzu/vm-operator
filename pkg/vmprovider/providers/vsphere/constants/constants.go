@@ -1,4 +1,4 @@
-// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package constants
@@ -15,6 +15,11 @@ const (
 
 	// VCVMAnnotation Annotation placed on the VM.
 	VCVMAnnotation = "Virtual Machine managed by the vSphere Virtual Machine service"
+
+	// ManagedByExtensionKey and ManagedByExtensionType represent the ManagedBy field on the VM.
+	// Historically, this field was used to differentiate VM Service managed VMs from traditional ones.
+	ManagedByExtensionKey  = "com.vmware.vcenter.wcp"
+	ManagedByExtensionType = "VirtualMachine"
 
 	// VMOperatorImageSupportedCheckKey Annotation key to skip validation checks of GuestOS Type
 	// TODO: Rename and move to vmoperator-api.

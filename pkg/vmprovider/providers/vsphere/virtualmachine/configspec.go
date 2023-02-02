@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine
@@ -16,44 +16,47 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 )
 
+// CreateConfigSpec returns a ConfigSpec that is created by overlaying the base
+// ConfigSpec with VM Class spec and other arguments.
 func CreateConfigSpec(
 	name string,
 	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
 	minFreq uint64,
 	imageFirmware string,
-	vmClassConfigSpec *vimtypes.VirtualMachineConfigSpec) *vimtypes.VirtualMachineConfigSpec {
+	baseConfigSpec *vimtypes.VirtualMachineConfigSpec) *vimtypes.VirtualMachineConfigSpec {
 
-	var configSpec *vimtypes.VirtualMachineConfigSpec
-	if vmClassConfigSpec != nil {
-		// Use VMClass ConfigSpec as the initial ConfigSpec.
-		t := *vmClassConfigSpec
-		configSpec = &t
-	} else {
-		configSpec = &vimtypes.VirtualMachineConfigSpec{}
+	var configSpec vimtypes.VirtualMachineConfigSpec
+	if baseConfigSpec != nil {
+		configSpec = *baseConfigSpec
 	}
 
 	configSpec.Name = name
-	configSpec.Annotation = constants.VCVMAnnotation
+	if configSpec.Annotation == "" {
+		// If the class ConfigSpec doesn't specify any annotations, set the default one.
+		configSpec.Annotation = constants.VCVMAnnotation
+	}
+
 	// CPU and Memory configurations specified in the VM Class spec.hardware
 	// takes precedence over values in the config spec
-	// TODO: might need revisiting to conform on a single way of consuming cpu and memory.
-	//  we prefer the vm class CR to have consistent values to reduce confusion.
 	configSpec.NumCPUs = int32(vmClassSpec.Hardware.Cpus)
 	configSpec.MemoryMB = MemoryQuantityToMb(vmClassSpec.Hardware.Memory)
 
-	// TODO: add constants for this key.
 	configSpec.ManagedBy = &vimtypes.ManagedByInfo{
-		ExtensionKey: "com.vmware.vcenter.wcp",
-		Type:         "VirtualMachine",
+		ExtensionKey: constants.ManagedByExtensionKey,
+		Type:         constants.ManagedByExtensionType,
 	}
 
-	configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
-		Shares: &vimtypes.SharesInfo{
-			Level: vimtypes.SharesLevelNormal,
-		},
-	}
+	// Populate the CPU reservation and limits in the ConfigSpec if VAPI fields specify any.
+	// VM Class VAPI does not support Limits, so they will never be non nil.
+	// TODO: Remove limits: issues/56
+	if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() ||
+		!vmClassSpec.Policies.Resources.Limits.Cpu.IsZero() {
+		configSpec.CpuAllocation = &vimtypes.ResourceAllocationInfo{
+			Shares: &vimtypes.SharesInfo{
+				Level: vimtypes.SharesLevelNormal,
+			},
+		}
 
-	if minFreq != 0 {
 		if !vmClassSpec.Policies.Resources.Requests.Cpu.IsZero() {
 			rsv := CPUQuantityToMhz(vmClassSpec.Policies.Resources.Requests.Cpu, minFreq)
 			configSpec.CpuAllocation.Reservation = &rsv
@@ -65,20 +68,25 @@ func CreateConfigSpec(
 		}
 	}
 
-	configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
-		Shares: &vimtypes.SharesInfo{
-			Level: vimtypes.SharesLevelNormal,
-		},
-	}
+	// Populate the memory reservation and limits in the ConfigSpec if VAPI fields specify any.
+	// TODO: Remove limits: issues/56
+	if !vmClassSpec.Policies.Resources.Requests.Memory.IsZero() ||
+		!vmClassSpec.Policies.Resources.Limits.Memory.IsZero() {
+		configSpec.MemoryAllocation = &vimtypes.ResourceAllocationInfo{
+			Shares: &vimtypes.SharesInfo{
+				Level: vimtypes.SharesLevelNormal,
+			},
+		}
 
-	if !vmClassSpec.Policies.Resources.Requests.Memory.IsZero() {
-		rsv := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Requests.Memory)
-		configSpec.MemoryAllocation.Reservation = &rsv
-	}
+		if !vmClassSpec.Policies.Resources.Requests.Memory.IsZero() {
+			rsv := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Requests.Memory)
+			configSpec.MemoryAllocation.Reservation = &rsv
+		}
 
-	if !vmClassSpec.Policies.Resources.Limits.Memory.IsZero() {
-		lim := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
-		configSpec.MemoryAllocation.Limit = &lim
+		if !vmClassSpec.Policies.Resources.Limits.Memory.IsZero() {
+			lim := MemoryQuantityToMb(vmClassSpec.Policies.Resources.Limits.Memory)
+			configSpec.MemoryAllocation.Limit = &lim
+		}
 	}
 
 	// Use firmware type from the image if config spec doesn't have it.
@@ -86,7 +94,7 @@ func CreateConfigSpec(
 		configSpec.Firmware = imageFirmware
 	}
 
-	return configSpec
+	return &configSpec
 }
 
 // CreateConfigSpecForPlacement creates a ConfigSpec to use for placement. Once CL deploy can accept

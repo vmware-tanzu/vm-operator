@@ -73,20 +73,22 @@ func vmTests() {
 
 	Context("Create/Update/Delete VirtualMachine", func() {
 		var (
-			vm *vmopv1alpha1.VirtualMachine
+			vm      *vmopv1alpha1.VirtualMachine
+			vmClass *vmopv1alpha1.VirtualMachineClass
 		)
 
 		BeforeEach(func() {
 			testConfig.WithContentLibrary = true
+			vmClass = builder.DummyVirtualMachineClass()
 			vm = builder.DummyBasicVirtualMachine("test-vm", "")
 		})
 
 		AfterEach(func() {
+			vmClass = nil
 			vm = nil
 		})
 
 		JustBeforeEach(func() {
-			vmClass := builder.DummyVirtualMachineClass()
 			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 
 			vmClassBinding := builder.DummyVirtualMachineClassBinding(vmClass.Name, nsInfo.Namespace)
@@ -212,6 +214,97 @@ func vmTests() {
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 					Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 					Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+				})
+			})
+
+			Context("ConfigSpec specifies hardware spec", func() {
+				BeforeEach(func() {
+					configSpec = &types.VirtualMachineConfigSpec{
+						Name:     "dummy-VM",
+						NumCPUs:  7,
+						MemoryMB: 5102,
+					}
+				})
+
+				It("CPU and memory from ConfigSpec are ignored", func() {
+					Expect(vm.Status.Phase).To(Equal(vmopv1alpha1.Created))
+
+					vmClass := &vmopv1alpha1.VirtualMachineClass{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
+					Expect(o.Summary.Config.NumCpu).To(Not(BeEquivalentTo(configSpec.NumCPUs)))
+					Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+					Expect(o.Summary.Config.MemorySizeMB).To(Not(BeEquivalentTo(configSpec.MemoryMB)))
+				})
+			})
+
+			Context("VM Class spec CPU reservations are zero and ConfigSpec specifies CPU reservation", func() {
+				BeforeEach(func() {
+					vmClass.Spec.Policies.Resources.Requests.Cpu = resource.MustParse("0")
+					vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("0")
+
+					// Specify a CPU reservation via ConfigSpec
+					rsv := int64(6)
+					configSpec = &types.VirtualMachineConfigSpec{
+						Name: "dummy-VM",
+						CpuAllocation: &types.ResourceAllocationInfo{
+							Reservation: &rsv,
+						},
+					}
+				})
+
+				It("VM gets CPU reservation from ConfigSpec", func() {
+					Expect(vm.Status.Phase).To(Equal(vmopv1alpha1.Created))
+
+					vmClass := &vmopv1alpha1.VirtualMachineClass{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+					// Freq used by vcsim
+					const freq = 2294
+
+					reservation := o.Config.CpuAllocation.Reservation
+					vmClassCPURes := virtualmachine.CPUQuantityToMhz(vmClass.Spec.Policies.Resources.Requests.Memory, freq)
+					Expect(reservation).ToNot(BeNil())
+					Expect(reservation).To(Not(BeEquivalentTo(vmClassCPURes)))
+					Expect(reservation).To(Equal(configSpec.CpuAllocation.Reservation))
+				})
+			})
+
+			Context("VM Class spec Memory reservations are zero and ConfigSpec specifies memory reservation", func() {
+				BeforeEach(func() {
+					vmClass.Spec.Policies.Resources.Requests.Memory = resource.MustParse("0Mi")
+					vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("0Mi")
+
+					// Specify a Memory reservation via ConfigSpec
+					rsv := int64(5120)
+					configSpec = &types.VirtualMachineConfigSpec{
+						Name: "dummy-VM",
+						MemoryAllocation: &types.ResourceAllocationInfo{
+							Reservation: &rsv,
+						},
+					}
+				})
+
+				It("VM gets memory reservation from ConfigSpec", func() {
+					Expect(vm.Status.Phase).To(Equal(vmopv1alpha1.Created))
+
+					vmClass := &vmopv1alpha1.VirtualMachineClass{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+					reservation := o.Config.MemoryAllocation.Reservation
+					vmClassMemoryRes := virtualmachine.MemoryQuantityToMb(vmClass.Spec.Policies.Resources.Requests.Memory)
+					Expect(reservation).ToNot(BeNil())
+					Expect(*reservation).To(Not(Equal(vmClassMemoryRes)))
+					Expect(reservation).To(Equal(configSpec.MemoryAllocation.Reservation))
 				})
 			})
 

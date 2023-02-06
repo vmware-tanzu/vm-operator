@@ -200,11 +200,6 @@ var _ = Describe("Update ConfigSpec", func() {
 			session.UpdateHardwareConfigSpec(config, configSpec, vmClassSpec)
 		})
 
-		It("config spec is empty", func() {
-			Expect(configSpec.Annotation).ToNot(BeEmpty())
-			Expect(configSpec.ManagedBy).ToNot(BeNil())
-		})
-
 		Context("Updates Hardware", func() {
 			BeforeEach(func() {
 				vmClassSpec.Hardware.Cpus = 42

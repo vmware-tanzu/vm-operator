@@ -235,9 +235,9 @@ func vmTests() {
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 					Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-					Expect(o.Summary.Config.NumCpu).To(Not(BeEquivalentTo(configSpec.NumCPUs)))
+					Expect(o.Summary.Config.NumCpu).ToNot(BeEquivalentTo(configSpec.NumCPUs))
 					Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
-					Expect(o.Summary.Config.MemorySizeMB).To(Not(BeEquivalentTo(configSpec.MemoryMB)))
+					Expect(o.Summary.Config.MemorySizeMB).ToNot(BeEquivalentTo(configSpec.MemoryMB))
 				})
 			})
 
@@ -271,7 +271,7 @@ func vmTests() {
 					reservation := o.Config.CpuAllocation.Reservation
 					vmClassCPURes := virtualmachine.CPUQuantityToMhz(vmClass.Spec.Policies.Resources.Requests.Memory, freq)
 					Expect(reservation).ToNot(BeNil())
-					Expect(reservation).To(Not(BeEquivalentTo(vmClassCPURes)))
+					Expect(reservation).ToNot(BeEquivalentTo(vmClassCPURes))
 					Expect(reservation).To(Equal(configSpec.CpuAllocation.Reservation))
 				})
 			})
@@ -303,7 +303,7 @@ func vmTests() {
 					reservation := o.Config.MemoryAllocation.Reservation
 					vmClassMemoryRes := virtualmachine.MemoryQuantityToMb(vmClass.Spec.Policies.Resources.Requests.Memory)
 					Expect(reservation).ToNot(BeNil())
-					Expect(*reservation).To(Not(Equal(vmClassMemoryRes)))
+					Expect(*reservation).ToNot(Equal(vmClassMemoryRes))
 					Expect(reservation).To(Equal(configSpec.MemoryAllocation.Reservation))
 				})
 			})
@@ -393,6 +393,80 @@ func vmTests() {
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 					Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 					Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+				})
+			})
+
+			Context("VM Class Spec and ConfigSpec both contain GPU and DirectPath devices", func() {
+				BeforeEach(func() {
+					vmClass.Spec.Hardware.Devices = vmopv1alpha1.VirtualDevices{
+						VGPUDevices: []vmopv1alpha1.VGPUDevice{
+							{
+								ProfileName: "profile-from-class",
+							},
+						},
+						DynamicDirectPathIODevices: []vmopv1alpha1.DynamicDirectPathIODevice{
+							{
+								VendorID:    50,
+								DeviceID:    51,
+								CustomLabel: "label-from-class",
+							},
+						},
+					}
+
+					// Create the ConfigSpec with a GPU and a DDPIO device.
+					configSpec = &types.VirtualMachineConfigSpec{
+						Name: "dummy-VM",
+						DeviceChange: []types.BaseVirtualDeviceConfigSpec{
+							&types.VirtualDeviceConfigSpec{
+								Operation: types.VirtualDeviceConfigSpecOperationAdd,
+								Device: &types.VirtualPCIPassthrough{
+									VirtualDevice: types.VirtualDevice{
+										Backing: &types.VirtualPCIPassthroughVmiopBackingInfo{
+											Vgpu: "profile-from-configspec",
+										},
+									},
+								},
+							},
+							&types.VirtualDeviceConfigSpec{
+								Operation: types.VirtualDeviceConfigSpecOperationAdd,
+								Device: &types.VirtualPCIPassthrough{
+									VirtualDevice: types.VirtualDevice{
+										Backing: &types.VirtualPCIPassthroughDynamicBackingInfo{
+											AllowedDevice: []types.VirtualPCIPassthroughAllowedDevice{
+												{
+													VendorId: 52,
+													DeviceId: 53,
+												},
+											},
+											CustomLabel: "label-from-configspec",
+										},
+									},
+								},
+							},
+						},
+					}
+				})
+
+				It("GPU and DirectPath devices from VM Class Spec.Devices are ignored", func() {
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
+					p := devList.SelectByType(&types.VirtualPCIPassthrough{})
+					Expect(p).To(HaveLen(2))
+
+					pciDev1 := p[0].GetVirtualDevice()
+					pciBacking1, ok1 := pciDev1.Backing.(*types.VirtualPCIPassthroughVmiopBackingInfo)
+					Expect(ok1).Should(BeTrue())
+					Expect(pciBacking1.Vgpu).To(Equal("profile-from-configspec"))
+
+					pciDev2 := p[1].GetVirtualDevice()
+					pciBacking2, ok2 := pciDev2.Backing.(*types.VirtualPCIPassthroughDynamicBackingInfo)
+					Expect(ok2).Should(BeTrue())
+					Expect(pciBacking2.AllowedDevice).To(HaveLen(1))
+					Expect(pciBacking2.AllowedDevice[0].VendorId).To(Equal(int32(52)))
+					Expect(pciBacking2.AllowedDevice[0].DeviceId).To(Equal(int32(53)))
+					Expect(pciBacking2.CustomLabel).To(Equal("label-from-configspec"))
 				})
 			})
 

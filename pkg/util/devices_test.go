@@ -101,29 +101,6 @@ var _ = Describe("IsDeviceVGPU", func() {
 	})
 })
 
-var _ = Describe("SelectVGPUs", func() {
-	Context("selecting a vGPU", func() {
-		It("will return only the selected device type", func() {
-			devOut := util.SelectVGPUs(
-				[]vimTypes.BaseVirtualDevice{
-					newPCIPassthroughDevice(""),
-					&vimTypes.VirtualVmxnet3{},
-					newPCIPassthroughDevice("profile1"),
-					&vimTypes.VirtualSriovEthernetCard{},
-					newPCIPassthroughDevice(""),
-					newPCIPassthroughDevice("profile2"),
-				},
-			)
-			Expect(devOut).To(BeAssignableToTypeOf([]*vimTypes.VirtualPCIPassthrough{}))
-			Expect(devOut).To(HaveLen(2))
-			Expect(devOut[0].Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughVmiopBackingInfo{}))
-			Expect(devOut[0]).To(BeEquivalentTo(newPCIPassthroughDevice("profile1")))
-			Expect(devOut[1].Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughVmiopBackingInfo{}))
-			Expect(devOut[1]).To(BeEquivalentTo(newPCIPassthroughDevice("profile2")))
-		})
-	})
-})
-
 var _ = Describe("IsDeviceDynamicDirectPathIO", func() {
 	Context("a VGPU", func() {
 		It("will return false", func() {

@@ -125,17 +125,6 @@ func IsDeviceVGPU(dev vimTypes.BaseVirtualDevice) bool {
 	return false
 }
 
-// SelectVGPUs returns a slice of vGPUs.
-func SelectVGPUs(
-	devices []vimTypes.BaseVirtualDevice,
-) []*vimTypes.VirtualPCIPassthrough {
-
-	return SelectDevicesByDeviceAndBackingType[
-		*vimTypes.VirtualPCIPassthrough,
-		*vimTypes.VirtualPCIPassthroughVmiopBackingInfo,
-	](devices)
-}
-
 // IsDeviceDynamicDirectPathIO returns true if the provided device is a
 // dynamic direct path I/O device..
 func IsDeviceDynamicDirectPathIO(dev vimTypes.BaseVirtualDevice) bool {

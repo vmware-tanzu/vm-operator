@@ -130,7 +130,7 @@ func CreateConfigSpecForPlacement(
 		},
 	})
 
-	for _, dev := range CreatePCIDevices(vmClassSpec.Hardware.Devices, nil) {
+	for _, dev := range CreatePCIDevicesFromVMClass(vmClassSpec.Hardware.Devices) {
 		configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
 			Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
 			Device:    dev,

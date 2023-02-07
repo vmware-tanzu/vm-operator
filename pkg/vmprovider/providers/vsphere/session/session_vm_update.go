@@ -850,6 +850,9 @@ func (s *Session) UpdateVirtualMachine(
 			if err != nil {
 				return err
 			}
+			if vmCtx.VM.Annotations == nil {
+				vmCtx.VM.Annotations = map[string]string{}
+			}
 			vmCtx.VM.Annotations[FirstBootDoneAnnotation] = "true"
 		} else {
 			// don't pass classConfigSpec to poweredOnVMReconfigure when VM is already powered on

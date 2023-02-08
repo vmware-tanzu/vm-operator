@@ -511,22 +511,17 @@ func (s *Session) prePowerOnVMConfigSpec(
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
-	var pciPassthruFromConfigSpec []*vimTypes.VirtualPCIPassthrough
+	var expectedPCIDevices []vimTypes.BaseVirtualDevice
 	if configSpecDevs := util.DevicesFromConfigSpec(updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
 		if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
-			pciPassthruFromConfigSpec = util.SelectVirtualPCIPassthrough(configSpecDevs)
+			pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(configSpecDevs)
+			expectedPCIDevices = virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
 		} else {
-			// Only support vGPUs as passthrough devices from the class config spec
-			// until VM_Class_as_Config_DaynDate FSS is enabled
-			pciPassthruFromConfigSpec = util.SelectVGPUs(configSpecDevs)
+			expectedPCIDevices = virtualmachine.CreatePCIDevicesFromVMClass(updateArgs.VMClass.Spec.Hardware.Devices)
 		}
 	}
 
-	expectedPciDevices := virtualmachine.CreatePCIDevices(
-		updateArgs.VMClass.Spec.Hardware.Devices,
-		pciPassthruFromConfigSpec)
-
-	pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPciDevices, currentPciDevices)
+	pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPCIDevices, currentPciDevices)
 	if err != nil {
 		return nil, err
 	}

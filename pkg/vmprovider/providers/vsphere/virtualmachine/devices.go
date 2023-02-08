@@ -28,14 +28,25 @@ func CreatePCIPassThroughDevice(deviceKey int32, backingInfo vimTypes.BaseVirtua
 	return device
 }
 
-func CreatePCIDevices(
-	pciDevicesFromVMClass v1alpha1.VirtualDevices,
-	pciDevsFromConfigSpec []*vimTypes.VirtualPCIPassthrough) []vimTypes.BaseVirtualDevice {
+// CreatePCIDevicesFromConfigSpec creates vim25 VirtualDevices from the specified list of PCI devices from the VM Class ConfigSpec.
+func CreatePCIDevicesFromConfigSpec(pciDevsFromConfigSpec []*vimTypes.VirtualPCIPassthrough) []vimTypes.BaseVirtualDevice {
+	devices := make([]vimTypes.BaseVirtualDevice, 0, len(pciDevsFromConfigSpec))
 
-	devices := make([]vimTypes.BaseVirtualDevice, 0,
-		len(pciDevicesFromVMClass.VGPUDevices)+
-			len(pciDevicesFromVMClass.DynamicDirectPathIODevices)+
-			len(pciDevsFromConfigSpec))
+	deviceKey := pciDevicesStartDeviceKey
+
+	for i := range pciDevsFromConfigSpec {
+		dev := pciDevsFromConfigSpec[i]
+		dev.Key = deviceKey
+		devices = append(devices, dev)
+		deviceKey--
+	}
+
+	return devices
+}
+
+// CreatePCIDevicesFromVMClass creates vim25 VirtualDevices from the specified list of PCI devices from VM Class spec.
+func CreatePCIDevicesFromVMClass(pciDevicesFromVMClass v1alpha1.VirtualDevices) []vimTypes.BaseVirtualDevice {
+	devices := make([]vimTypes.BaseVirtualDevice, 0, len(pciDevicesFromVMClass.VGPUDevices)+len(pciDevicesFromVMClass.DynamicDirectPathIODevices))
 
 	deviceKey := pciDevicesStartDeviceKey
 
@@ -58,14 +69,6 @@ func CreatePCIDevices(
 			CustomLabel:   dynamicDirectPath.CustomLabel,
 		}
 		dev := CreatePCIPassThroughDevice(deviceKey, backingInfo)
-		devices = append(devices, dev)
-		deviceKey--
-	}
-
-	// Append PCI devices from the VM Class ConfigSpec.
-	for i := range pciDevsFromConfigSpec {
-		dev := pciDevsFromConfigSpec[i]
-		dev.Key = deviceKey
 		devices = append(devices, dev)
 		deviceKey--
 	}

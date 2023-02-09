@@ -122,7 +122,7 @@ func (l InterfaceInfoList) GetNetplan(
 
 			// NetOp (VDS) never assigns MacAddress to the NetworkInterface status, therefore
 			// netplanEthernet.Match.MacAddress will be empty.
-			// At this point, it is assumed that VirtuaLMachine.Config.Hardware.Device has MacAddress generated.
+			// At this point, it is assumed that VirtualMachine.Config.Hardware.Device has MacAddress generated.
 			netplanEthernet.Match.MacAddress = NormalizeNetplanMac(curNic.GetVirtualEthernetCard().MacAddress)
 		}
 

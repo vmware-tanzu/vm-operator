@@ -70,6 +70,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 	r := NewReconciler(
 		mgr.GetClient(),
+		mgr.GetAPIReader(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		ctx.VMProvider,
@@ -124,12 +125,14 @@ func vmiToVMPubMapperFn(ctx *context.ControllerManagerContext, c client.Client) 
 
 func NewReconciler(
 	client client.Client,
+	apiReader client.Reader,
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
 
 	return &Reconciler{
 		Client:     client,
+		apiReader:  apiReader,
 		Logger:     logger,
 		Recorder:   recorder,
 		VMProvider: vmProvider,
@@ -140,6 +143,7 @@ func NewReconciler(
 // Reconciler reconciles a VirtualMachinePublishRequest object.
 type Reconciler struct {
 	client.Client
+	apiReader  client.Reader
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider vmprovider.VirtualMachineProviderInterface
@@ -167,7 +171,11 @@ func requeueDelay(ctx *context.VirtualMachinePublishRequestContext) time.Duratio
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	vmPublishReq := &vmopv1alpha1.VirtualMachinePublishRequest{}
-	err := r.Get(ctx, req.NamespacedName, vmPublishReq)
+	// Get the VirtualMachinePublishRequest directly from the API server - bypassing the cache of the
+	// regular client - to avoid potentially stale objects from cache. We rely on the up-to-date Status
+	// when sending publish VM requests during reconciliation.
+	// Update() of stale object will be rejected by API server and result in unnecessary reconciles.
+	err := r.apiReader.Get(ctx, req.NamespacedName, vmPublishReq)
 	if err != nil {
 		// Delete registered metrics if the resource is not found.
 		if apiErrors.IsNotFound(err) {

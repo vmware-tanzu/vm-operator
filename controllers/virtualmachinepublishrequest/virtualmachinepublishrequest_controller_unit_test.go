@@ -67,6 +67,7 @@ func unitTestsReconcile() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		reconciler = virtualmachinepublishrequest.NewReconciler(
 			ctx.Client,
+			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
 			ctx.VMProvider,

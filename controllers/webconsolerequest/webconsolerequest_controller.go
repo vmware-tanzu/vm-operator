@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package webconsolerequest
@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,6 +31,9 @@ import (
 const (
 	DefaultExpiryTime = time.Second * 120
 	UUIDLabelKey      = "vmoperator.vmware.com/webconsolerequest-uuid"
+
+	ProxyAddrServiceName      = "kube-apiserver-lb-svc"
+	ProxyAddrServiceNamespace = "kube-system"
 )
 
 // AddToManager adds this package's controller to the provided manager.
@@ -79,6 +83,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=webconsolerequests,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=webconsolerequests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=services/status,verbs=get
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	webconsolerequest := &vmopv1alpha1.WebConsoleRequest{}
@@ -143,9 +149,10 @@ func (r *Reconciler) ReconcileEarlyNormal(ctx *context.WebConsoleRequestContext)
 		return true, nil
 	}
 
-	if ctx.WebConsoleRequest.Status.Response != "" {
-		// If the response is already set, no need to reconcile anymore
-		ctx.Logger.Info("Response already set, skip reconciling")
+	if ctx.WebConsoleRequest.Status.Response != "" &&
+		ctx.WebConsoleRequest.Status.ProxyAddr != "" {
+		// If the response and proxy address are already set, no need to reconcile anymore
+		ctx.Logger.Info("Response and proxy address already set, skip reconciling")
 		return true, nil
 	}
 
@@ -167,8 +174,21 @@ func (r *Reconciler) ReconcileNormal(ctx *context.WebConsoleRequestContext) erro
 	ctx.WebConsoleRequest.Status.Response = ticket
 	ctx.WebConsoleRequest.Status.ExpiryTime = metav1.NewTime(metav1.Now().Add(DefaultExpiryTime))
 
+	// Retrieve the proxy address from the load balancer service ingress IP.
+	proxySvc := &corev1.Service{}
+	proxySvcObjectKey := client.ObjectKey{Name: ProxyAddrServiceName, Namespace: ProxyAddrServiceNamespace}
+	err = r.Get(ctx, proxySvcObjectKey, proxySvc)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get proxy address service  %s", proxySvcObjectKey)
+	}
+	if len(proxySvc.Status.LoadBalancer.Ingress) == 0 {
+		return errors.Errorf("no ingress found for proxy address service %s", proxySvcObjectKey)
+	}
+
+	ctx.WebConsoleRequest.Status.ProxyAddr = proxySvc.Status.LoadBalancer.Ingress[0].IP
+
 	// Add UUID as a Label to the current WebConsoleRequest resource after acquiring the ticket.
-	// This will be used when validating the connection request from users to the web-console URL.
+	// This will be used when validating the connection request from users to the web console URL.
 	if ctx.WebConsoleRequest.Labels == nil {
 		ctx.WebConsoleRequest.Labels = make(map[string]string)
 	}

@@ -1,4 +1,4 @@
-// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -21,6 +21,30 @@ type WebConsoleRequestStatus struct {
 	Response string `json:"response,omitempty"`
 	// ExpiryTime is when the ticket referenced in Response will expire.
 	ExpiryTime metav1.Time `json:"expiryTime,omitempty"`
+	// ProxyAddr describes the host address and optional port used to access
+	// the VM's web console.
+	// The value could be a DNS entry, IPv4, or IPv6 address, followed by an
+	// optional port. For example, valid values include:
+	//
+	//     DNS
+	//         * host.com
+	//         * host.com:6443
+	//
+	//     IPv4
+	//         * 1.2.3.4
+	//         * 1.2.3.4:6443
+	//
+	//     IPv6
+	//         * 1234:1234:1234:1234:1234:1234:1234:1234
+	//         * [1234:1234:1234:1234:1234:1234:1234:1234]:6443
+	//         * 1234:1234:1234:0000:0000:0000:1234:1234
+	//         * 1234:1234:1234::::1234:1234
+	//         * [1234:1234:1234::::1234:1234]:6443
+	//
+	// In other words, the field may be set to any value that is parsable
+	// by Go's https://pkg.go.dev/net#ResolveIPAddr and
+	// https://pkg.go.dev/net#ParseIP functions.
+	ProxyAddr string `json:"proxyAddr,omitempty"`
 }
 
 // +kubebuilder:object:root=true

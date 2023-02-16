@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -35,6 +36,7 @@ func unitTestsReconcile() {
 		wcrCtx     *vmopContext.WebConsoleRequestContext
 		wcr        *v1alpha1.WebConsoleRequest
 		vm         *v1alpha1.VirtualMachine
+		proxySvc   *corev1.Service
 	)
 
 	BeforeEach(func() {
@@ -51,6 +53,22 @@ func unitTestsReconcile() {
 			Spec: v1alpha1.WebConsoleRequestSpec{
 				VirtualMachineName: vm.Name,
 				PublicKey:          "",
+			},
+		}
+
+		proxySvc = &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      webconsolerequest.ProxyAddrServiceName,
+				Namespace: webconsolerequest.ProxyAddrServiceNamespace,
+			},
+			Status: corev1.ServiceStatus{
+				LoadBalancer: corev1.LoadBalancerStatus{
+					Ingress: []corev1.LoadBalancerIngress{
+						{
+							IP: "dummy-proxy-ip",
+						},
+					},
+				},
 			},
 		}
 	})
@@ -83,7 +101,7 @@ func unitTestsReconcile() {
 
 	Context("ReconcileNormal", func() {
 		BeforeEach(func() {
-			initObjects = append(initObjects, wcr, vm)
+			initObjects = append(initObjects, wcr, vm, proxySvc)
 		})
 
 		JustBeforeEach(func() {
@@ -97,6 +115,7 @@ func unitTestsReconcile() {
 				err := reconciler.ReconcileNormal(wcrCtx)
 				Expect(err).ToNot(HaveOccurred())
 
+				Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal("dummy-proxy-ip"))
 				Expect(wcrCtx.WebConsoleRequest.Status.Response).ToNot(BeEmpty())
 				Expect(wcrCtx.WebConsoleRequest.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
 				// Checking the label key only because UID will not be set to a resource during unit test.

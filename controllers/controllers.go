@@ -33,9 +33,6 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	if err := infraprovider.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize InfraProvider controller")
 	}
-	if err := providerconfigmap.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize ProviderConfigMap controller")
-	}
 	if err := virtualmachine.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachine controller")
 	}
@@ -67,6 +64,12 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	} else {
 		if err := contentsource.AddToManager(ctx, mgr); err != nil {
 			return errors.Wrap(err, "failed to initialize ContentSource controller")
+		}
+		// We only update TKG related ContentSource/ContentLibraryProvider/ContentSourceBinding resources
+		// in provider configmap reconcile. These resources will be removed when the FSS is enabled,
+		// add provider configmap controller to the manager only when the FSS is disabled.
+		if err := providerconfigmap.AddToManager(ctx, mgr); err != nil {
+			return errors.Wrap(err, "failed to initialize ProviderConfigMap controller")
 		}
 	}
 	return nil

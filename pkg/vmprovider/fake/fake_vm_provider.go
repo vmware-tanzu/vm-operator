@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package fake
@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/vmware/govmomi/vapi/library"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,8 +38,9 @@ type funcs struct {
 	ListItemsFromContentLibraryFn              func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
 	GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
-	SyncVirtualMachineImageFn       func(ctx context.Context, itemID string, vmi client.Object) error
-	DoesItemExistInContentLibraryFn func(ctx context.Context, contentLibrary *imgregv1a1.ContentLibrary, itemName string) (bool, error)
+	SyncVirtualMachineImageFn  func(ctx context.Context, itemID string, vmi client.Object) error
+	GetItemFromLibraryByNameFn func(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
+	UpdateContentLibraryItemFn func(ctx context.Context, itemID, newName string, newDescription *string) error
 
 	UpdateVcPNIDFn  func(ctx context.Context, vcPNID, vcPort string) error
 	ResetVcClientFn func(ctx context.Context)
@@ -232,15 +234,26 @@ func (s *VMProvider) SyncVirtualMachineImage(ctx context.Context, itemID string,
 	return nil
 }
 
-func (s *VMProvider) DoesItemExistInContentLibrary(ctx context.Context, contentLibrary *imgregv1a1.ContentLibrary, itemName string) (bool, error) {
+func (s *VMProvider) GetItemFromLibraryByName(ctx context.Context,
+	contentLibrary, itemName string) (*library.Item, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.DoesItemExistInContentLibraryFn != nil {
-		return s.DoesItemExistInContentLibraryFn(ctx, contentLibrary, itemName)
+	if s.GetItemFromLibraryByNameFn != nil {
+		return s.GetItemFromLibraryByNameFn(ctx, contentLibrary, itemName)
 	}
 
-	return false, nil
+	return nil, nil
+}
+
+func (s *VMProvider) UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.UpdateContentLibraryItemFn != nil {
+		return s.UpdateContentLibraryItemFn(ctx, itemID, newName, newDescription)
+	}
+	return nil
 }
 
 func (s *VMProvider) GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimTypes.TaskInfo, retErr error) {

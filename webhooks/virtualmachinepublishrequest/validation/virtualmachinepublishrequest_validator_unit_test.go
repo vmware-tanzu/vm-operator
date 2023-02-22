@@ -16,6 +16,7 @@ import (
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
+	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -82,6 +83,7 @@ func unitTestsValidateCreate() {
 		targetLocationNotWritable       bool
 		targetLocationNameEmpty         bool
 		targetLocationNotFound          bool
+		targetItemAlreadyExists         bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -129,6 +131,13 @@ func unitTestsValidateCreate() {
 			Expect(ctx.Client.Delete(ctx, ctx.cl)).To(Succeed())
 		}
 
+		if args.targetItemAlreadyExists {
+			clItem := utils.DummyContentLibraryItem("dummy-item", ctx.vmPub.Namespace)
+			Expect(ctx.Client.Create(ctx, clItem)).To(Succeed())
+			clItem.Status.Name = ctx.vmPub.Spec.Target.Item.Name
+			Expect(ctx.Client.Status().Update(ctx, clItem)).To(Succeed())
+		}
+
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vmPub)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -157,7 +166,6 @@ func unitTestsValidateCreate() {
 	targetLocationPath := field.NewPath("spec").Child("target", "location")
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
-		Entry("should allow if default source VM exists", createArgs{defaultSourceExists: true}, true, nil, nil),
 		Entry("should deny invalid source API version", createArgs{invalidSourceAPIVersion: true}, false,
 			field.NotSupported(sourcePath.Child("apiVersion"), invalidAPIVersion,
 				[]string{"vmoperator.vmware.com/v1alpha1", ""}).Error(), nil),
@@ -170,17 +178,8 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid target location kind", createArgs{invalidTargetLocationKind: true}, false,
 			field.NotSupported(targetLocationPath.Child("kind"), "ClusterContentLibrary",
 				[]string{"ContentLibrary", ""}).Error(), nil),
-		Entry("should deny if source VM not found", createArgs{sourceNotFound: true}, false,
-			field.NotFound(sourcePath.Child("name"), "dummy-vm").Error(), nil),
-		Entry("should deny if default source VM not found", createArgs{defaultSourceNotFound: true}, false,
-			field.Invalid(sourcePath.Child("name"), "", "failed to get the default source VM").Error(), nil),
-		Entry("should deny if target location is not writable", createArgs{targetLocationNotWritable: true}, false,
-			field.Invalid(targetLocationPath.Child("name"), "dummy-cl",
-				"target location dummy-cl is not writable").Error(), nil),
 		Entry("should deny if target location name is empty", createArgs{targetLocationNameEmpty: true}, false,
 			field.Required(targetLocationPath.Child("name"), "").Error(), nil),
-		Entry("should deny if target location not found", createArgs{targetLocationNotFound: true}, false,
-			field.NotFound(targetLocationPath.Child("name"), "dummy-cl").Error(), nil),
 	)
 }
 

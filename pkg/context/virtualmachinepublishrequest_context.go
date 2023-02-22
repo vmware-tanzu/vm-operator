@@ -21,6 +21,7 @@ type VirtualMachinePublishRequestContext struct {
 	VMPublishRequest *vmopv1.VirtualMachinePublishRequest
 	VM               *vmopv1.VirtualMachine
 	ContentLibrary   *imgregv1a1.ContentLibrary
+	ItemID           string
 }
 
 func (v *VirtualMachinePublishRequestContext) String() string {

@@ -134,7 +134,7 @@ func (s *Session) cloneVMFromContentLibrary(
 	item, err := s.Client.ContentLibClient().GetLibraryItem(
 		vmCtx,
 		createArgs.ContentLibraryUUID,
-		createArgs.VMImageStatus.ImageName)
+		createArgs.VMImageStatus.ImageName, true)
 	if err != nil {
 		return nil, err
 	}

@@ -60,8 +60,18 @@ func clTests() {
 				Expect(items).To(BeEmpty())
 			})
 
+			It("Does not return error when item name is invalid when notFoundReturnErr is set to false", func() {
+				item, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, "dummy-name", true)
+				Expect(err).To(HaveOccurred())
+				Expect(item).To(BeNil())
+
+				item, err = clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, "dummy-name", false)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(item).To(BeNil())
+			})
+
 			It("Gets items and returns OVF", func() {
-				item, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, ctx.ContentLibraryImageName)
+				item, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, ctx.ContentLibraryImageName, true)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(item).ToNot(BeNil())
 
@@ -107,6 +117,10 @@ func clTests() {
 			})
 		})
 
+		Context("when items are not present in library", func() {
+
+		})
+
 		Context("when invalid item id is passed", func() {
 			It("returns an error creating a download session", func() {
 				libItem := &library.Item{
@@ -149,7 +163,7 @@ func clTests() {
 				err = clProvider.CreateLibraryItem(ctx, libItem, ovfPath)
 				Expect(err).NotTo(HaveOccurred())
 
-				libItem2, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, libItemName)
+				libItem2, err := clProvider.GetLibraryItem(ctx, ctx.ContentLibraryID, libItemName, true)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(libItem2).ToNot(BeNil())
 				Expect(libItem2.Name).To(Equal(libItem.Name))

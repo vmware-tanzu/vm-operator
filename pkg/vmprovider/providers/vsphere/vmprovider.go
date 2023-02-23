@@ -12,9 +12,11 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/ovf"
 	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -25,15 +27,18 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	vcconfig "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
 )
 
@@ -42,15 +47,26 @@ const (
 
 	// taskHistoryCollectorPageSize represents the max count to read from task manager in one iteration.
 	taskHistoryCollectorPageSize = 10
+
+	ovfCacheMaxItem                 = 100
+	ovfCacheItemExpiration          = 30 * time.Minute
+	ovfCacheExpirationCheckInterval = 5 * time.Minute
 )
 
 var log = logf.Log.WithName(VsphereVMProviderName)
+
+type VersionedOVFEnvelope struct {
+	OvfEnvelope    *ovf.Envelope
+	ContentVersion string
+}
 
 type vSphereVMProvider struct {
 	k8sClient         ctrlruntime.Client
 	eventRecorder     record.Recorder
 	globalExtraConfig map[string]string
 	minCPUFreq        uint64
+	ovfCache          *util.Cache[VersionedOVFEnvelope]
+	ovfCacheLockPool  *util.LockPool[string, *sync.RWMutex]
 
 	vcClientLock sync.Mutex
 	vcClient     *vcclient.Client
@@ -59,12 +75,39 @@ type vSphereVMProvider struct {
 func NewVSphereVMProviderFromClient(
 	client ctrlruntime.Client,
 	recorder record.Recorder) vmprovider.VirtualMachineProviderInterface {
+	ovfCache, ovfLockPool := InitOvfCacheAndLockPool(
+		ovfCacheItemExpiration, ovfCacheExpirationCheckInterval, ovfCacheMaxItem)
 
 	return &vSphereVMProvider{
 		k8sClient:         client,
 		eventRecorder:     recorder,
 		globalExtraConfig: getExtraConfig(),
+		ovfCache:          ovfCache,
+		ovfCacheLockPool:  ovfLockPool,
 	}
+}
+
+// InitOvfCacheAndLockPool initializes the ovf cache and lock pool that are used
+// to cache the ovf envelope and lock the ovf envelope when it is being downloaded.
+func InitOvfCacheAndLockPool(expireAfter, checkExpireInterval time.Duration, maxItems int) (
+	*util.Cache[VersionedOVFEnvelope], *util.LockPool[string, *sync.RWMutex]) {
+	ovfCache := util.NewCache[VersionedOVFEnvelope](expireAfter, checkExpireInterval, maxItems)
+	ovfLockPool := &util.LockPool[string, *sync.RWMutex]{}
+
+	// Clean up the lock pool when the ovf cache item expires.
+	expiredChan := ovfCache.ExpiredChan()
+	go func() {
+		for k := range expiredChan {
+			l := ovfLockPool.Get(k)
+			// This could still delete an in-use lock if it's retrieved from the pool but not locked yet.
+			// If it's already locked, this will wait until it's unlocked to delete it from the pool.
+			l.Lock()
+			ovfLockPool.Delete(k)
+			l.Unlock()
+		}
+	}()
+
+	return ovfCache, ovfLockPool
 }
 
 func getExtraConfig() map[string]string {
@@ -178,17 +221,74 @@ func (vs *vSphereVMProvider) GetVirtualMachineImageFromContentLibrary(
 		currentCLImages)
 }
 
-// SyncVirtualMachineImage gets images from content libraries.
-// TODO: Get from cache, so we don't need to sync for every images, especially when it is attached to multiple namespaces.
-func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx goctx.Context, itemID string, vmi ctrlruntime.Object) error {
-	log.V(4).Info("Syncing VirtualMachineImage", "imageName", vmi.GetName(), "itemID", itemID)
+// SyncVirtualMachineImage syncs the vmi object with the OVF Envelope retrieved from the cli object.
+func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx goctx.Context, cli, vmi ctrlruntime.Object) error {
+	var itemID, contentVersion string
+	switch cli := cli.(type) {
+	case *imgregv1a1.ContentLibraryItem:
+		itemID = cli.Spec.UUID
+		contentVersion = cli.Status.ContentVersion
+	case *imgregv1a1.ClusterContentLibraryItem:
+		itemID = cli.Spec.UUID
+		contentVersion = cli.Status.ContentVersion
+	default:
+		return errors.Errorf("unexpected content library item type %T", cli)
+	}
 
-	client, err := vs.getVcClient(ctx)
+	ovfEnvelope, err := vs.getOvfEnvelope(ctx, itemID, contentVersion)
 	if err != nil {
 		return err
 	}
 
-	return client.ContentLibClient().SyncVirtualMachineImage(ctx, itemID, vmi)
+	logger := log.V(4).WithValues("vmiName", vmi.GetName(), "cliName", cli.GetName())
+	if ovfEnvelope == nil {
+		logger.Error(nil, "skip syncing VMI as corresponding OVF envelope is nil")
+		return nil
+	}
+
+	contentlibrary.UpdateVmiWithOvfEnvelope(vmi, *ovfEnvelope)
+	return nil
+}
+
+// getOvfEnvelope gets the OVF envelope from the cache if it exists and matches version.
+// If not, it downloads the OVF envelope from vCenter and stores it in the cache.
+func (vs *vSphereVMProvider) getOvfEnvelope(
+	ctx goctx.Context, itemID, contentVersion string) (*ovf.Envelope, error) {
+	logger := log.V(4).WithValues("itemID", itemID, "contentVersion", contentVersion)
+
+	// Lock the current item to prevent concurrent downloads of the same OVF.
+	// This is done before the get from cache below to prevent stale result.
+	curItemLock := vs.ovfCacheLockPool.Get(itemID)
+	curItemLock.Lock()
+	defer curItemLock.Unlock()
+
+	isHitFunc := func(cacheItem VersionedOVFEnvelope) bool {
+		return cacheItem.ContentVersion == contentVersion
+	}
+	cacheItem, found := vs.ovfCache.Get(itemID, isHitFunc)
+	if found {
+		logger.Info("Cache item hit, using cached OVF")
+	} else {
+		logger.Info("Cache item miss, downloading OVF from vCenter")
+		client, err := vs.getVcClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		ovfEnvelope, err := client.ContentLibClient().RetrieveOvfEnvelopeByLibraryItemID(ctx, itemID)
+		if err != nil || ovfEnvelope == nil {
+			return nil, err
+		}
+
+		cacheItem = VersionedOVFEnvelope{
+			ContentVersion: contentVersion,
+			OvfEnvelope:    ovfEnvelope,
+		}
+		putResult := vs.ovfCache.Put(itemID, cacheItem)
+		logger.Info("Cache item put", "itemID", itemID, "putResult", putResult)
+	}
+
+	return cacheItem.OvfEnvelope, nil
 }
 
 // GetItemFromLibraryByName get the library item from specified content library by its name.

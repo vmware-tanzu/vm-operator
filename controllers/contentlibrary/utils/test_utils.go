@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package utils
@@ -105,7 +105,7 @@ func GetServiceTypeLabels(labels map[string]string) map[string]string {
 }
 
 func GetExpectedCVMIFrom(cclItem imgregv1a1.ClusterContentLibraryItem,
-	providerFunc func(context.Context, string, crtlclient.Object) error) *vmopv1a1.ClusterVirtualMachineImage {
+	providerFunc func(context.Context, crtlclient.Object, crtlclient.Object) error) *vmopv1a1.ClusterVirtualMachineImage {
 
 	cvmi := &vmopv1a1.ClusterVirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
@@ -152,14 +152,14 @@ func GetExpectedCVMIFrom(cclItem imgregv1a1.ClusterContentLibraryItem,
 	}
 
 	if providerFunc != nil {
-		_ = providerFunc(nil, "", cvmi)
+		_ = providerFunc(nil, nil, cvmi)
 	}
 
 	return cvmi
 }
 
 func GetExpectedVMIFrom(clItem imgregv1a1.ContentLibraryItem,
-	providerFunc func(context.Context, string, crtlclient.Object) error) *vmopv1a1.VirtualMachineImage {
+	providerFunc func(context.Context, crtlclient.Object, crtlclient.Object) error) *vmopv1a1.VirtualMachineImage {
 
 	vmi := &vmopv1a1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
@@ -206,7 +206,7 @@ func GetExpectedVMIFrom(clItem imgregv1a1.ContentLibraryItem,
 	}
 
 	if providerFunc != nil {
-		_ = providerFunc(nil, "", vmi)
+		_ = providerFunc(nil, nil, vmi)
 	}
 
 	return vmi

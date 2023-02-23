@@ -37,9 +37,9 @@ type VirtualMachineProviderInterface interface {
 	ListItemsFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
 	GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
 		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
-	SyncVirtualMachineImage(ctx context.Context, itemID string, vmi client.Object) error
 	GetItemFromLibraryByName(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
 	UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error
+	SyncVirtualMachineImage(ctx context.Context, cli, vmi client.Object) error
 
 	GetTasksByActID(ctx context.Context, actID string) (tasksInfo []vimTypes.TaskInfo, retErr error)
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package clustercontentlibraryitem_test
@@ -65,8 +65,8 @@ func cclItemReconcile() {
 		ctx = suite.NewIntegrationTestContext()
 		intgFakeVMProvider.Lock()
 		defer intgFakeVMProvider.Unlock()
-		intgFakeVMProvider.SyncVirtualMachineImageFn = func(ctx context.Context,
-			itemID string, cvmiObj client.Object) error {
+		intgFakeVMProvider.SyncVirtualMachineImageFn = func(
+			_ context.Context, _, cvmiObj client.Object) error {
 			// Change a random spec and status field to verify the provider function is called.
 			cvmi := cvmiObj.(*vmopv1a1.ClusterVirtualMachineImage)
 			cvmi.Spec.HardwareVersion = 123

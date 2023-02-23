@@ -103,6 +103,41 @@ func LibItemToVirtualMachineImage(
 	return image
 }
 
+// UpdateVmiWithOvfEnvelope updates the given vmi object with the content of given OVF envelope.
+func UpdateVmiWithOvfEnvelope(vmi client.Object, ovfEnvelope ovf.Envelope) {
+	var spec *v1alpha1.VirtualMachineImageSpec
+	var status *v1alpha1.VirtualMachineImageStatus
+	switch vmi := vmi.(type) {
+	case *v1alpha1.VirtualMachineImage:
+		spec = &vmi.Spec
+		status = &vmi.Status
+	case *v1alpha1.ClusterVirtualMachineImage:
+		spec = &vmi.Spec
+		status = &vmi.Status
+	}
+
+	if ovfEnvelope.VirtualSystem != nil {
+		updateImageSpecWithOvfVirtualSystem(spec, ovfEnvelope.VirtualSystem)
+
+		ovfSystemProps := getVmwareSystemPropertiesFromOvf(ovfEnvelope.VirtualSystem)
+		annotations := vmi.GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+			vmi.SetAnnotations(annotations)
+		}
+		for k, v := range ovfSystemProps {
+			annotations[k] = v
+		}
+		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
+		status.ImageSupported = pointer.BoolPtr(isImageSupported(vmi, ovfEnvelope.VirtualSystem, ovfSystemProps))
+
+		// Set Status Firmware from the envelope's virtual hardware section
+		if virtualHwSection := ovfEnvelope.VirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
+			status.Firmware = getFirmwareType(virtualHwSection[0])
+		}
+	}
+}
+
 func updateImageSpecWithOvfVirtualSystem(imageSpec *v1alpha1.VirtualMachineImageSpec, ovfVirtualSystem *ovf.VirtualSystem) {
 	if ovfVirtualSystem == nil {
 		return

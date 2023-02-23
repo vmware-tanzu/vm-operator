@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package contentlibraryitem
@@ -255,10 +255,7 @@ func (r *Reconciler) syncImageContent(ctx goctx.Context,
 		return nil
 	}
 
-	// TODO: .
-	// We should use cache here to avoid downloading from VC for every single VM image under every namespaces and
-	// cluster VMI with the same item ID.
-	err := r.VMProvider.SyncVirtualMachineImage(ctx, clItem.Spec.UUID, vmi)
+	err := r.VMProvider.SyncVirtualMachineImage(ctx, clItem, vmi)
 	if err != nil {
 		conditions.MarkFalse(vmi,
 			vmopv1alpha1.VirtualMachineImageSyncedCondition,

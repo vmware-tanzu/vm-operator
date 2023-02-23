@@ -33,26 +33,32 @@ import (
 	"github.com/vmware/govmomi/vapi/vcenter"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	// Blank import to make govmomi client aware of these bindings.
 	_ "github.com/vmware/govmomi/pbm/simulator"
 	_ "github.com/vmware/govmomi/vapi/cluster/simulator"
 	_ "github.com/vmware/govmomi/vapi/simulator"
 
+	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
+)
+
+type NetworkEnv string
+
+const (
+	NetworkEnvVDS  = NetworkEnv("vds")
+	NetworkEnvNSXT = NetworkEnv("nsx-t")
+
+	NsxTLogicalSwitchUUID = "nsxt-dummy-ls-uuid"
 )
 
 // VCSimTestConfig configures the vcsim environment.
@@ -89,6 +95,9 @@ type VCSimTestConfig struct {
 
 	// WithVMClassAsConfigDaynDate enables the WCP_VM_CLASS_AS_CONFIG_DAYNDATE FSS.
 	WithVMClassAsConfigDaynDate bool
+
+	// WithNetworkEnv is the network environment type.
+	WithNetworkEnv NetworkEnv
 }
 
 type TestContextForVCSim struct {
@@ -116,6 +125,9 @@ type TestContextForVCSim struct {
 	// When WithoutStorageClass is false:
 	StorageClassName string
 	StorageProfileID string
+
+	networkEnv NetworkEnv
+	NetworkRef object.NetworkReference
 
 	model             *simulator.Model
 	server            *simulator.Server
@@ -412,6 +424,21 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 				DomainName: "vmop.vmware.com",
 			}
 		}
+	}
+
+	// For now just use a DVPG we get for free from vcsim. We can create our own later if needed.
+	c.NetworkRef, err = c.Finder.Network(c, "DC0_DVPG0")
+	Expect(err).ToNot(HaveOccurred())
+	c.networkEnv = config.WithNetworkEnv
+
+	switch c.networkEnv {
+	case NetworkEnvVDS:
+		// Nothing more needed for VDS.
+	case NetworkEnvNSXT:
+		dvpg, ok := simulator.Map.Get(c.NetworkRef.Reference()).(*simulator.DistributedVirtualPortgroup)
+		Expect(ok).To(BeTrue())
+		dvpg.Config.LogicalSwitchUuid = NsxTLogicalSwitchUUID
+		dvpg.Config.BackingType = "nsx"
 	}
 }
 

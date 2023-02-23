@@ -19,6 +19,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
@@ -367,7 +368,7 @@ func (np *netOpNetworkProvider) getNetworkRef(ctx goctx.Context, networkType, ne
 	case VdsNetworkType:
 		return np.networkForPortGroupID(networkID)
 	case NsxtNetworkType:
-		return searchNsxtNetworkReference(ctx, np.finder, np.cluster, networkID)
+		return searchNsxtNetworkReference(ctx, np.cluster, networkID)
 	default:
 		return nil, fmt.Errorf("unsupported NetOP network type %s", networkType)
 	}
@@ -603,7 +604,7 @@ func (np *nsxtNetworkProvider) createEthernetCard(
 		return nil, err
 	}
 
-	networkRef, err := searchNsxtNetworkReference(vmCtx, np.finder, np.cluster, vnetIf.Status.ProviderStatus.NsxLogicalSwitchID)
+	networkRef, err := searchNsxtNetworkReference(vmCtx, np.cluster, vnetIf.Status.ProviderStatus.NsxLogicalSwitchID)
 	if err != nil {
 		// Log message used by VMC LINT. Refer to before making changes
 		vmCtx.Logger.Error(err, "Failed to search for nsx-t network associated with vnetIf", "vnetIf", vnetIf)
@@ -727,108 +728,51 @@ func (np *nsxtNetworkProvider) getNetplanEthernet(vnetIf *ncpv1alpha1.VirtualNet
 	return eth
 }
 
-// matchOpaqueNetwork takes the network ID, returns whether the opaque network matches the networkID.
-func matchOpaqueNetwork(ctx goctx.Context, network object.NetworkReference, networkID string) bool {
-	obj, ok := network.(*object.OpaqueNetwork)
-	if !ok {
-		return false
-	}
-
-	var opaqueNet mo.OpaqueNetwork
-	if err := obj.Properties(ctx, obj.Reference(), []string{"summary"}, &opaqueNet); err != nil {
-		return false
-	}
-
-	summary, _ := opaqueNet.Summary.(*vimtypes.OpaqueNetworkSummary)
-	return summary.OpaqueNetworkId == networkID
-}
-
-// matchDistributedPortGroup takes the network ID, returns whether the distributed port group matches the networkID.
-func matchDistributedPortGroup(
-	ctx goctx.Context,
-	network object.NetworkReference,
-	networkID string,
-	hostMoIDs []vimtypes.ManagedObjectReference) bool {
-
-	obj, ok := network.(*object.DistributedVirtualPortgroup)
-	if !ok {
-		return false
-	}
-
-	var configInfo []vimtypes.ObjectContent
-	err := obj.Properties(ctx, obj.Reference(), []string{"config.logicalSwitchUuid", "host"}, &configInfo)
-	if err != nil {
-		return false
-	}
-
-	if len(configInfo) > 0 {
-		// Check "logicalSwitchUuid" property
-		lsIDMatch := false
-		for _, dynamicProperty := range configInfo[0].PropSet {
-			if dynamicProperty.Name == "config.logicalSwitchUuid" && dynamicProperty.Val == networkID {
-				lsIDMatch = true
-				break
-			}
-		}
-
-		// logicalSwitchUuid did not match
-		if !lsIDMatch {
-			return false
-		}
-
-		foundAllHosts := false
-		for _, dynamicProperty := range configInfo[0].PropSet {
-			// In the case of a single NSX Overlay Transport Zone for all the clusters and DVS's,
-			// multiple DVPGs(associated with different DVS's) will have the same "logicalSwitchUuid".
-			// So matching "logicalSwitchUuid" is necessary condition, but not sufficient.
-			// Checking if the DPVG has all the hosts in the cluster, along with the above would be sufficient
-			if dynamicProperty.Name == "host" {
-				if hosts, ok := dynamicProperty.Val.(vimtypes.ArrayOfManagedObjectReference); ok {
-					foundAllHosts = true
-					dvsHostSet := make(map[string]bool, len(hosts.ManagedObjectReference))
-					for _, dvsHost := range hosts.ManagedObjectReference {
-						dvsHostSet[dvsHost.Value] = true
-					}
-
-					for _, hostMoRef := range hostMoIDs {
-						if _, ok := dvsHostSet[hostMoRef.Value]; !ok {
-							foundAllHosts = false
-							break
-						}
-					}
-				}
-			}
-		}
-
-		// Implicit that lsID Matches at this point
-		return foundAllHosts
-	}
-	return false
-}
-
 // searchNsxtNetworkReference takes in nsx-t logical switch UUID and returns the reference of the network.
-func searchNsxtNetworkReference(ctx goctx.Context, finder *find.Finder, cluster *object.ClusterComputeResource, networkID string) (object.NetworkReference, error) {
-	networks, err := finder.NetworkList(ctx, "*")
+func searchNsxtNetworkReference(
+	ctx goctx.Context,
+	ccr *object.ClusterComputeResource,
+	networkID string) (object.NetworkReference, error) {
+
+	var obj mo.ClusterComputeResource
+	if err := ccr.Properties(ctx, ccr.Reference(), []string{"network"}, &obj); err != nil {
+		return nil, err
+	}
+
+	var dvpgsMoRefs []vimtypes.ManagedObjectReference
+	for _, n := range obj.Network {
+		if n.Type == "DistributedVirtualPortgroup" {
+			dvpgsMoRefs = append(dvpgsMoRefs, n.Reference())
+		}
+	}
+
+	if len(dvpgsMoRefs) == 0 {
+		return nil, fmt.Errorf("ClusterComputeResource %s has no DVPGs", ccr.Reference().Value)
+	}
+
+	var dvpgs []mo.DistributedVirtualPortgroup
+	err := property.DefaultCollector(ccr.Client()).Retrieve(ctx, dvpgsMoRefs, []string{"config.logicalSwitchUuid"}, &dvpgs)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get the list of ESX host moRef objects for this cluster
-	// TODO: ps: []string{"host"} instead of nil?
-	var computeResource mo.ComputeResource
-	if err := cluster.Properties(ctx, cluster.Reference(), nil, &computeResource); err != nil {
-		return nil, err
+	var dvpgMoRefs []vimtypes.ManagedObjectReference
+	for _, dvpg := range dvpgs {
+		if dvpg.Config.LogicalSwitchUuid == networkID {
+			dvpgMoRefs = append(dvpgMoRefs, dvpg.Reference())
+		}
 	}
 
-	for _, network := range networks {
-		if matchDistributedPortGroup(ctx, network, networkID, computeResource.Host) {
-			return network, nil
-		}
-		if matchOpaqueNetwork(ctx, network, networkID) {
-			return network, nil
-		}
+	switch len(dvpgMoRefs) {
+	case 1:
+		return object.NewDistributedVirtualPortgroup(ccr.Client(), dvpgMoRefs[0]), nil
+	case 0:
+		return nil, fmt.Errorf("no DVPG with NSX-T network ID %q found", networkID)
+	default:
+		// The LogicalSwitchUuid is supposed to be unique per CCR, so this is likely an NCP
+		// misconfiguration, and we don't know which one to pick.
+		return nil, fmt.Errorf("multiple DVPGs (%d) with NSX-T network ID %q found", len(dvpgMoRefs), networkID)
 	}
-	return nil, fmt.Errorf("opaque network with ID '%s' not found", networkID)
 }
 
 // ToCidrNotation takes ip and mask as ip addresses and returns a cidr notation.

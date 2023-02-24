@@ -4,6 +4,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"math/rand"
 	"net/http"
@@ -29,6 +30,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	ctrlsig "sigs.k8s.io/controller-runtime/pkg/manager/signals"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -58,9 +60,6 @@ const (
 	serverKeyName = "tls.key"
 	// serverCertName is the name of the serving certificate.
 	serverCertName = "tls.crt"
-
-	// Minimum version of TLS supported by the webhook server.
-	webhookTLSMinVersion = "1.2"
 )
 
 func init() {
@@ -269,8 +268,6 @@ func main() {
 			return err
 		}
 
-		// Reject TLS < specified min version in the webhook requests.
-		mgr.GetWebhookServer().TLSMinVersion = webhookTLSMinVersion
 		return webhooks.AddToManager(ctx, mgr)
 	}
 
@@ -283,8 +280,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	setupLog.Info("setting up webhook server TLS config")
+	webhookServer := mgr.GetWebhookServer()
+	configureWebhookTLS(webhookServer)
+
 	setupLog.Info("adding readiness check to controller manager")
-	if err := mgr.AddReadyzCheck("webhook", mgr.GetWebhookServer().StartedChecker()); err != nil {
+	if err := mgr.AddReadyzCheck("webhook", webhookServer.StartedChecker()); err != nil {
 		setupLog.Error(err, "unable to create readiness check")
 		os.Exit(1)
 	}
@@ -294,6 +295,22 @@ func main() {
 	if err := mgr.Start(sigHandler); err != nil {
 		setupLog.Error(err, "problem running controller manager")
 		os.Exit(1)
+	}
+}
+
+func configureWebhookTLS(server *webhook.Server) {
+	tlsCfgFunc := func(cfg *tls.Config) {
+		cfg.MinVersion = tls.VersionTLS12
+		cfg.CipherSuites = []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		}
+	}
+
+	server.TLSOpts = []func(*tls.Config){
+		tlsCfgFunc,
 	}
 }
 

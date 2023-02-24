@@ -29,7 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/rest"
-	klog "k8s.io/klog/v2"
+	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -224,7 +224,8 @@ func (s *TestSuite) init(crdPaths []string) {
 
 	if s.flags.IntegrationTestsEnabled {
 		s.envTest = envtest.Environment{
-			CRDDirectoryPaths: crdPaths,
+			CRDDirectoryPaths:     crdPaths,
+			BinaryAssetsDirectory: filepath.Join(testutil.GetRootDirOrDie(), "hack", "tools", "bin"),
 		}
 	}
 }

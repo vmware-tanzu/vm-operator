@@ -5,6 +5,7 @@ package virtualmachinesetresourcepolicy_test
 
 import (
 	"context"
+	"sync/atomic"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -63,12 +64,14 @@ func intgTests() {
 	}
 
 	Context("Reconcile", func() {
-		var called bool
+		var called atomic.Bool
 
 		BeforeEach(func() {
+			called.Store(false)
+
 			intgFakeVMProvider.Lock()
 			intgFakeVMProvider.CreateOrUpdateVirtualMachineSetResourcePolicyFn = func(_ context.Context, _ *vmopv1alpha1.VirtualMachineSetResourcePolicy) error {
-				called = true
+				called.Store(true)
 				return nil
 			}
 			intgFakeVMProvider.Unlock()
@@ -82,7 +85,7 @@ func intgTests() {
 			})
 
 			By("Create policy should be called", func() {
-				Eventually(called).Should(BeTrue())
+				Eventually(called.Load).Should(BeTrue())
 			})
 
 			By("Deleting the VirtualMachineSetResourcePolicy", func() {

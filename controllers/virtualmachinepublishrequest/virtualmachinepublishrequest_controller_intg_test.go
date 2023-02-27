@@ -48,6 +48,15 @@ func virtualMachinePublishRequestReconcile() {
 		return vmpubObj
 	}
 
+	waitForVirtualMachinePublishRequestFinalizer := func(ctx *builder.IntegrationTestContext, objKey client.ObjectKey) {
+		Eventually(func() []string {
+			if vmpub := getVirtualMachinePublishRequest(ctx, objKey); vmpub != nil {
+				return vmpub.GetFinalizers()
+			}
+			return nil
+		}).Should(ContainElement(finalizerName), "waiting for VirtualMachinePublishRequest finalizer")
+	}
+
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
 
@@ -78,151 +87,172 @@ func virtualMachinePublishRequestReconcile() {
 			itemID string
 		)
 
-		BeforeEach(func() {
-			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
-			vmObj := &vmopv1alpha1.VirtualMachine{}
-			Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), vmObj)).To(Succeed())
-			vmObj.Status = vmopv1alpha1.VirtualMachineStatus{
-				Phase:    vmopv1alpha1.Created,
-				UniqueID: "dummy-unique-id",
-			}
-			Expect(ctx.Client.Status().Update(ctx, vmObj)).To(Succeed())
-			Expect(ctx.Client.Create(ctx, cl)).To(Succeed())
+		Context("Successfully reconcile a VirtualMachinepublishRequest", func() {
+			BeforeEach(func() {
+				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+				vmObj := &vmopv1alpha1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), vmObj)).To(Succeed())
+				vmObj.Status = vmopv1alpha1.VirtualMachineStatus{
+					Phase:    vmopv1alpha1.Created,
+					UniqueID: "dummy-unique-id",
+				}
+				Expect(ctx.Client.Status().Update(ctx, vmObj)).To(Succeed())
+				Expect(ctx.Client.Create(ctx, cl)).To(Succeed())
 
-			cl.Status.Conditions = []imgregv1a1.Condition{
-				{
-					Type:   imgregv1a1.ReadyCondition,
-					Status: corev1.ConditionTrue,
-				},
-			}
-			Expect(ctx.Client.Status().Update(ctx, cl)).To(Succeed())
+				cl.Status.Conditions = []imgregv1a1.Condition{
+					{
+						Type:   imgregv1a1.ReadyCondition,
+						Status: corev1.ConditionTrue,
+					},
+				}
+				Expect(ctx.Client.Status().Update(ctx, cl)).To(Succeed())
 
+				Expect(ctx.Client.Create(ctx, vmpub)).To(Succeed())
+
+				itemID = uuid.New().String()
+				go func() {
+					// create ContentLibraryItem and VirtualMachineImage once the task succeeds.
+					for {
+						obj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
+						if state := intgFakeVMProvider.GetVMPublishRequestResult(obj); state == types.TaskInfoStateSuccess {
+							clitem := &imgregv1a1.ContentLibraryItem{}
+							err := ctx.Client.Get(ctx, client.ObjectKey{Name: "dummy-clitem", Namespace: ctx.Namespace}, clitem)
+							if k8serrors.IsNotFound(err) {
+								clitem = utils.DummyContentLibraryItem("dummy-clitem", ctx.Namespace)
+								Expect(ctx.Client.Create(ctx, clitem)).To(Succeed())
+
+								vmi := builder.DummyVirtualMachineImage("dummy-image")
+								vmi.Namespace = ctx.Namespace
+								vmi.Spec.ImageID = itemID
+								Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
+								vmi.Status.ImageName = vmpub.Spec.Target.Item.Name
+								Expect(ctx.Client.Status().Update(ctx, vmi)).To(Succeed())
+
+								return
+							}
+						}
+						time.Sleep(time.Second)
+					}
+				}()
+			})
+
+			AfterEach(func() {
+				err := ctx.Client.Delete(ctx, vmpub)
+				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+				err = ctx.Client.Delete(ctx, vm)
+				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+				err = ctx.Client.Delete(ctx, cl)
+				Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
+
+				intgFakeVMProvider.Reset()
+			})
+
+			It("VirtualMachinePublishRequest completed", func() {
+				// Wait for initial reconcile.
+				waitForVirtualMachinePublishRequestFinalizer(ctx, client.ObjectKeyFromObject(vmpub))
+
+				By("VM publish task is queued", func() {
+					intgFakeVMProvider.Lock()
+					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
+						task := types.TaskInfo{
+							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							State:         types.TaskInfoStateQueued,
+						}
+						return []types.TaskInfo{task}, nil
+					}
+					intgFakeVMProvider.Unlock()
+
+					// Force trigger a reconcile.
+					vmPubObj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
+					vmPubObj.Annotations = map[string]string{"dummy": "dummy-1"}
+					Expect(ctx.Client.Update(ctx, vmPubObj)).To(Succeed())
+
+					Eventually(func() bool {
+						vmPubObj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
+						for _, condition := range vmPubObj.Status.Conditions {
+							if condition.Type == vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded {
+								return condition.Status == corev1.ConditionFalse &&
+									condition.Reason == vmopv1alpha1.UploadTaskQueuedReason &&
+									vmPubObj.Status.Attempts == 1
+							}
+						}
+						return false
+					}).Should(BeTrue())
+				})
+
+				By("VM publish task is running", func() {
+					intgFakeVMProvider.Lock()
+					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
+						task := types.TaskInfo{
+							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							State:         types.TaskInfoStateRunning,
+						}
+						return []types.TaskInfo{task}, nil
+					}
+					intgFakeVMProvider.Unlock()
+
+					// Force trigger a reconcile.
+					vmPubObj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
+					vmPubObj.Annotations = map[string]string{"dummy": "dummy-2"}
+					Expect(ctx.Client.Update(ctx, vmPubObj)).To(Succeed())
+
+					Eventually(func() bool {
+						vmPubObj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
+						for _, condition := range vmPubObj.Status.Conditions {
+							if condition.Type == vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded {
+								return condition.Status == corev1.ConditionFalse &&
+									condition.Reason == vmopv1alpha1.UploadingReason &&
+									vmPubObj.Status.Attempts == 1
+							}
+						}
+						return false
+					}).Should(BeTrue())
+				})
+
+				By("VM publish task succeeded", func() {
+					intgFakeVMProvider.Lock()
+					intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
+						task := types.TaskInfo{
+							DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
+							State:         types.TaskInfoStateSuccess,
+							Result:        types.ManagedObjectReference{Type: "ContentLibraryItem", Value: fmt.Sprintf("clibitem-%s", itemID)},
+						}
+						return []types.TaskInfo{task}, nil
+					}
+					intgFakeVMProvider.Unlock()
+
+					// Force trigger a reconcile.
+					vmPubObj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
+					vmPubObj.Annotations = map[string]string{"dummy": "dummy-3"}
+					Expect(ctx.Client.Update(ctx, vmPubObj)).To(Succeed())
+
+					obj := &vmopv1alpha1.VirtualMachinePublishRequest{}
+					Eventually(func() bool {
+						obj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
+						return obj != nil && conditions.IsTrue(obj,
+							vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)
+					}).Should(BeTrue())
+
+					Expect(obj.Status.Ready).To(BeTrue())
+					Expect(obj.Status.ImageName).To(Equal("dummy-image"))
+					Expect(obj.Status.CompletionTime).NotTo(BeZero())
+				})
+			})
+		})
+
+		It("Reconciles after VirtualMachinePublishRequest deletion", func() {
 			Expect(ctx.Client.Create(ctx, vmpub)).To(Succeed())
+			// Wait for initial reconcile.
+			waitForVirtualMachinePublishRequestFinalizer(ctx, client.ObjectKeyFromObject(vmpub))
 
-			itemID = uuid.New().String()
-			go func() {
-				// create ContentLibraryItem and VirtualMachineImage once the task succeeds.
-				for {
-					obj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-					if state := intgFakeVMProvider.GetVMPublishRequestResult(obj); state == types.TaskInfoStateSuccess {
-						clitem := &imgregv1a1.ContentLibraryItem{}
-						err := ctx.Client.Get(ctx, client.ObjectKey{Name: "dummy-clitem", Namespace: ctx.Namespace}, clitem)
-						if k8serrors.IsNotFound(err) {
-							clitem = utils.DummyContentLibraryItem("dummy-clitem", ctx.Namespace)
-							Expect(ctx.Client.Create(ctx, clitem)).To(Succeed())
-
-							vmi := builder.DummyVirtualMachineImage("dummy-image")
-							vmi.Namespace = ctx.Namespace
-							vmi.Spec.ImageID = itemID
-							Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
-							vmi.Status.ImageName = vmpub.Spec.Target.Item.Name
-							Expect(ctx.Client.Status().Update(ctx, vmi)).To(Succeed())
-
-							return
-						}
+			Expect(ctx.Client.Delete(ctx, vmpub)).To(Succeed())
+			By("Finalizer should be removed after deletion", func() {
+				Eventually(func() []string {
+					if vmpub := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub)); vmpub != nil {
+						return vmpub.GetFinalizers()
 					}
-					time.Sleep(time.Second)
-				}
-			}()
-		})
-
-		AfterEach(func() {
-			err := ctx.Client.Delete(ctx, vmpub)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
-			err = ctx.Client.Delete(ctx, vm)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
-			err = ctx.Client.Delete(ctx, cl)
-			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
-
-			intgFakeVMProvider.Reset()
-		})
-
-		It("VirtualMachinePublishRequest completed", func() {
-			By("VM publish task is queued", func() {
-				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
-					task := types.TaskInfo{
-						DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
-						State:         types.TaskInfoStateQueued,
-					}
-					return []types.TaskInfo{task}, nil
-				}
-				intgFakeVMProvider.Unlock()
-
-				// Force trigger a reconcile.
-				vmPubObj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-				vmPubObj.Annotations = map[string]string{"dummy": "dummy-1"}
-				Expect(ctx.Client.Update(ctx, vmPubObj)).To(Succeed())
-
-				Eventually(func() bool {
-					vmPubObj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-					for _, condition := range vmPubObj.Status.Conditions {
-						if condition.Type == vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded {
-							return condition.Status == corev1.ConditionFalse &&
-								condition.Reason == vmopv1alpha1.UploadTaskQueuedReason &&
-								vmPubObj.Status.Attempts == 1
-						}
-					}
-					return false
-				}).Should(BeTrue())
-			})
-
-			By("VM publish task is running", func() {
-				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
-					task := types.TaskInfo{
-						DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
-						State:         types.TaskInfoStateRunning,
-					}
-					return []types.TaskInfo{task}, nil
-				}
-				intgFakeVMProvider.Unlock()
-
-				// Force trigger a reconcile.
-				vmPubObj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-				vmPubObj.Annotations = map[string]string{"dummy": "dummy-2"}
-				Expect(ctx.Client.Update(ctx, vmPubObj)).To(Succeed())
-
-				Eventually(func() bool {
-					vmPubObj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-					for _, condition := range vmPubObj.Status.Conditions {
-						if condition.Type == vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded {
-							return condition.Status == corev1.ConditionFalse &&
-								condition.Reason == vmopv1alpha1.UploadingReason &&
-								vmPubObj.Status.Attempts == 1
-						}
-					}
-					return false
-				}).Should(BeTrue())
-			})
-
-			By("VM publish task succeeded", func() {
-				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.GetTasksByActIDFn = func(_ context.Context, actID string) (tasksInfo []types.TaskInfo, retErr error) {
-					task := types.TaskInfo{
-						DescriptionId: virtualmachinepublishrequest.TaskDescriptionID,
-						State:         types.TaskInfoStateSuccess,
-						Result:        types.ManagedObjectReference{Type: "ContentLibraryItem", Value: fmt.Sprintf("clibitem-%s", itemID)},
-					}
-					return []types.TaskInfo{task}, nil
-				}
-				intgFakeVMProvider.Unlock()
-
-				// Force trigger a reconcile.
-				vmPubObj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-				vmPubObj.Annotations = map[string]string{"dummy": "dummy-3"}
-				Expect(ctx.Client.Update(ctx, vmPubObj)).To(Succeed())
-
-				obj := &vmopv1alpha1.VirtualMachinePublishRequest{}
-				Eventually(func() bool {
-					obj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-					return obj != nil && conditions.IsTrue(obj,
-						vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)
-				}).Should(BeTrue())
-
-				Expect(obj.Status.Ready).To(BeTrue())
-				Expect(obj.Status.ImageName).To(Equal("dummy-image"))
-				Expect(obj.Status.CompletionTime).NotTo(BeZero())
+					return nil
+				}).ShouldNot(ContainElement(finalizerName))
 			})
 		})
 	})

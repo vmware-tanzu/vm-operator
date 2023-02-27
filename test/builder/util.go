@@ -474,8 +474,9 @@ func DummyPersistentVolumeClaim() *corev1.PersistentVolumeClaim {
 func DummyVirtualMachinePublishRequest(name, namespace, sourceName, itemName, clName string) *vmopv1.VirtualMachinePublishRequest {
 	return &vmopv1.VirtualMachinePublishRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:       name,
+			Namespace:  namespace,
+			Finalizers: []string{"virtualmachinepublishrequest.vmoperator.vmware.com"},
 		},
 		Spec: vmopv1.VirtualMachinePublishRequestSpec{
 			Source: vmopv1.VirtualMachinePublishRequestSource{

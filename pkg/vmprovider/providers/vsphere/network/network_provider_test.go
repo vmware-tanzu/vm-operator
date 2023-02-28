@@ -578,7 +578,7 @@ var _ = Describe("NetworkProvider", func() {
 
 				It("should return an error", func() {
 					_, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
-					Expect(err).To(MatchError(fmt.Sprintf("opaque network with ID '%s' not found", doesNotExist)))
+					Expect(err).To(MatchError(fmt.Sprintf("no DVPG with NSX-T network ID %q found", doesNotExist)))
 				})
 			})
 

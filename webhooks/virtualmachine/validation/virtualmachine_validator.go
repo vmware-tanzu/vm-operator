@@ -51,7 +51,6 @@ const (
 	readinessProbeNoActions                   = "must specify an action"
 	readinessProbeOnlyOneAction               = "only one action can be specified"
 	updatesNotAllowedWhenPowerOn              = "updates to this field is not allowed when VM power is on"
-	virtualMachineImageNotSupported           = "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image"
 	storageClassNotAssignedFmt                = "Storage policy is not associated with the namespace %s"
 	storageClassNotFoundFmt                   = "Storage policy is not associated with the namespace %s"
 	pvcHardwareVersionNotSupportedFmt         = "VirtualMachineImage has an unsupported hardware version %d for PersistentVolumes. Minimum supported hardware version %d"
@@ -212,42 +211,7 @@ func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.
 	imageName := vm.Spec.ImageName
 
 	if imageName == "" {
-		return append(allErrs, field.Required(imageNamePath, ""))
-	}
-
-	vmoperatorImageSupportedCheck := vm.Annotations[constants.VMOperatorImageSupportedCheckKey]
-	if vmoperatorImageSupportedCheck == constants.VMOperatorImageSupportedCheckDisable {
-		return allErrs
-	}
-
-	if vm.Spec.VmMetadata != nil && vm.Spec.VmMetadata.Transport == vmopv1.VirtualMachineMetadataCloudInitTransport {
-		return allErrs
-	}
-
-	// With the effort of UnifiedTKG, image-support-check isn't needed when UnifiedTKG FSS enabled.
-	if lib.IsUnifiedTKGFSSEnabled() {
-		return allErrs
-	}
-
-	if lib.IsWCPVMImageRegistryEnabled() {
-		_, imageStatus, err := clutils.GetVMImageSpecStatus(ctx, v.client, imageName, vm.Namespace)
-		if err != nil {
-			return append(allErrs, field.Invalid(imageNamePath, imageName, err.Error()))
-		}
-
-		if imageStatus.ImageSupported != nil && !*imageStatus.ImageSupported {
-			allErrs = append(allErrs, field.Invalid(imageNamePath, imageName, virtualMachineImageNotSupported))
-		}
-
-	} else {
-		image := vmopv1.VirtualMachineImage{}
-		if err := v.client.Get(ctx, client.ObjectKey{Name: imageName}, &image); err != nil {
-			return append(allErrs, field.Invalid(imageNamePath, imageName, err.Error()))
-		}
-
-		if image.Status.ImageSupported != nil && !*image.Status.ImageSupported {
-			allErrs = append(allErrs, field.Invalid(imageNamePath, imageName, virtualMachineImageNotSupported))
-		}
+		allErrs = append(allErrs, field.Required(imageNamePath, ""))
 	}
 
 	return allErrs

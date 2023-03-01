@@ -44,7 +44,6 @@ CRD_REF_DOCS       := $(TOOLS_BIN_DIR)/crd-ref-docs
 CONTROLLER_GEN     := $(TOOLS_BIN_DIR)/controller-gen
 GOLANGCI_LINT      := $(TOOLS_BIN_DIR)/golangci-lint
 KUSTOMIZE          := $(TOOLS_BIN_DIR)/kustomize
-GO_JUNIT_REPORT    := $(TOOLS_BIN_DIR)/go-junit-report
 GOCOVMERGE         := $(TOOLS_BIN_DIR)/gocovmerge
 GOCOV              := $(TOOLS_BIN_DIR)/gocov
 GOCOV_XML          := $(TOOLS_BIN_DIR)/gocov-xml
@@ -173,9 +172,8 @@ web-console-validator: prereqs generate lint-go web-console-validator-only ## Bu
 
 TOOLING_BINARIES := $(CRD_REF_DOCS) $(CONTROLLER_GEN) $(GOLANGCI_LINT) \
                     $(KUSTOMIZE) \
-                    $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) \
-                    $(ETCD) $(GINKGO) $(GO_JUNIT_REPORT) \
-                    $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)
+                    $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) $(ETCD) \
+                    $(GINKGO) $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)
 tools: $(TOOLING_BINARIES) ## Build tooling binaries
 .PHONY: $(TOOLING_BINARIES)
 $(TOOLING_BINARIES):

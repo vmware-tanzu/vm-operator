@@ -160,7 +160,7 @@ func GetDNSInformationFromConfigMap(client ctrlruntime.Client) ([]string, []stri
 
 	var (
 		nameservers    []string
-		searchSuffixes []string = nil
+		searchSuffixes []string
 	)
 
 	nsStr, ok := configMap.Data[NameserversKey]

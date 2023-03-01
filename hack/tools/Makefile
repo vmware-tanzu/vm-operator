@@ -30,10 +30,8 @@ CONTROLLER_GEN    := $(BIN_DIR)/controller-gen
 SETUP_ENVTEST     := $(BIN_DIR)/setup-envtest
 GOLANGCI_LINT     := $(BIN_DIR)/golangci-lint
 KUSTOMIZE         := $(BIN_DIR)/kustomize
-GO_JUNIT_REPORT   := $(BIN_DIR)/go-junit-report
 GINKGO            := $(BIN_DIR)/ginkgo
 GOCOVMERGE        := $(BIN_DIR)/gocovmerge
-GOCOVER_COBERTURA := $(BIN_DIR)/gocover-cobertura
 KUBEBUILDER       := $(BIN_DIR)/kubebuilder
 ETCD              := $(BIN_DIR)/etcd
 KUBE_APISERVER    := $(BIN_DIR)/kube-apiserver
@@ -56,57 +54,47 @@ help: ## Display this help
 .PHONY: $(CRD_REF_DOCS)
 crd-ref-docs: $(CRD_REF_DOCS) ## Install crd-ref-docs
 $(CRD_REF_DOCS):
-	go build -tags=tools -o $@ github.com/elastic/crd-ref-docs
+	go build -tags=vmop_tools -o $@ github.com/elastic/crd-ref-docs
 
 .PHONY: $(CONTROLLER_GEN)
 controller-gen: $(CONTROLLER_GEN) ## Install controller-gen
 $(CONTROLLER_GEN): go.mod
-	go build -tags=tools -o $@ sigs.k8s.io/controller-tools/cmd/controller-gen
+	go build -tags=vmop_tools -o $@ sigs.k8s.io/controller-tools/cmd/controller-gen
 
 .PHONY:$(SETUP_ENVTEST)
 setup-envtest: $(SETUP_ENVTEST) ## Install setup-envtest
 $(SETUP_ENVTEST): go.mod
-	go build -tags=tools -o $@ sigs.k8s.io/controller-runtime/tools/setup-envtest
+	go build -tags=vmop_tools -o $@ sigs.k8s.io/controller-runtime/tools/setup-envtest
 
 .PHONY: $(GOLANGCI_LINT)
 golangci-lint: $(GOLANGCI_LINT) ## Install golangci-lint
 $(GOLANGCI_LINT):
-	go build -tags=tools -o $@ github.com/golangci/golangci-lint/cmd/golangci-lint
+	go build -tags=vmop_tools -o $@ github.com/golangci/golangci-lint/cmd/golangci-lint
 
 .PHONY: $(KUSTOMIZE)
 kustomize: $(KUSTOMIZE) ## Install kustomize
 $(KUSTOMIZE):
 	../ensure-kustomize.sh
 
-.PHONY: $(GO_JUNIT_REPORT)
-go-junit-report: $(GO_JUNIT_REPORT) ## Install go-junit-report
-$(GO_JUNIT_REPORT): go.mod
-	go build -tags=tools -o $@ github.com/jstemmer/go-junit-report/v2
-
 .PHONY: $(GINKGO)
 ginkgo: $(GINKGO) ## Install ginkgo
 $(GINKGO): go.mod
-	go build -tags=tools -o $@ github.com/onsi/ginkgo/ginkgo
+	go build -tags=vmop_tools -o $@ github.com/onsi/ginkgo/ginkgo
 
 .PHONY: $(GOCOVMERGE)
 gocovmerge: $(GOCOVMERGE) ## Install gocovmerge
 $(GOCOVMERGE): go.mod
-	go build -tags=tools -o $@ github.com/wadey/gocovmerge
-
-.PHONY: $(GOCOVER_COBERTURA)
-gocover-cobertura: $(GOCOVER_COBERTURA) ## Install gocover-cobertura
-$(GOCOVER_COBERTURA): go.mod
-	go build -tags=tools -o $@ github.com/t-yuki/gocover-cobertura
+	go build -tags=vmop_tools -o $@ github.com/wadey/gocovmerge
 
 .PHONY: $(GOCOV)
 gocov: $(GOCOV) ## Install gocov
 $(GOCOV): go.mod
-	go build -tags=tools -o $@ github.com/axw/gocov/gocov
+	go build -tags=vmop_tools -o $@ github.com/axw/gocov/gocov
 
 .PHONY: $(GOCOV_XML)
 gocov-xml: $(GOCOV_XML) ## Install gocov-xml
 $(GOCOV_XML): go.mod
-	go build -tags=tools -o $@ github.com/AlekSi/gocov-xml
+	go build -tags=vmop_tools -o $@ github.com/AlekSi/gocov-xml
 
 .PHONY: $(KUBEBUILDER)
 kubebuilder: $(KUBEBUILDER) ## Install kubebuilder

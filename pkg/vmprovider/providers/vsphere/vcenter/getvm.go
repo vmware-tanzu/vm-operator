@@ -62,7 +62,7 @@ func findVMByMoID(
 	return vm, nil
 }
 
-//nolint:deadcode
+//nolint:unused
 func findVMByUUID(
 	vmCtx context.VirtualMachineContext,
 	vimClient *vim25.Client,

@@ -17,7 +17,7 @@ import (
 	klog "k8s.io/klog/v2"
 )
 
-// GetRootDir returns the root directory of this git repo
+// GetRootDir returns the root directory of this git repo.
 func GetRootDir() (string, error) {
 	_, s, _, ok := runtime.Caller(0)
 	if !ok {
@@ -31,7 +31,7 @@ func GetRootDir() (string, error) {
 	return s[:i], nil
 }
 
-// GetRootDirOrDie returns the root directory of this git repo or dies
+// GetRootDirOrDie returns the root directory of this git repo or dies.
 func GetRootDirOrDie() string {
 	rootDir, err := GetRootDir()
 	if err != nil {

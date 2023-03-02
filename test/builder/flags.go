@@ -10,7 +10,7 @@ import (
 )
 
 // testFlags contains the configurations we'd like to get from the command line,
-// that could be used to tune tests behavior
+// that could be used to tune tests behavior.
 type testFlags struct {
 	// rootDir is the root directory of the checked-out project and is set with
 	// the -root-dir flag.

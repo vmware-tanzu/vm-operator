@@ -49,10 +49,10 @@ const (
 	VMICRDName = "virtualmachineimages.vmoperator.vmware.com"
 )
 
-// Reconciler is a base type for builder's reconcilers
+// Reconciler is a base type for builder's reconcilers.
 type Reconciler interface{}
 
-// NewReconcilerFunc is a base type for functions that return a reconciler
+// NewReconcilerFunc is a base type for functions that return a reconciler.
 type NewReconcilerFunc func() Reconciler
 
 func init() {
@@ -62,7 +62,7 @@ func init() {
 }
 
 // TestSuite is used for unit and integration testing builder. Each TestSuite
-// contains one independent test environment and a controller manager
+// contains one independent test environment and a controller manager.
 type TestSuite struct {
 	context.Context
 
@@ -116,7 +116,7 @@ func getCrdPaths(crdPaths ...string) []string {
 	)
 }
 
-// NewTestSuite returns a new test suite used for unit and/or integration test
+// NewTestSuite returns a new test suite used for unit and/or integration test.
 func NewTestSuite() *TestSuite {
 	return NewTestSuiteForController(
 		pkgmgr.AddToManagerNoopFn,
@@ -135,7 +135,7 @@ func NewFunctionalTestSuite(addToManagerFunc func(ctx *ctrlCtx.ControllerManager
 	)
 }
 
-// NewTestSuiteForController returns a new test suite used for controller integration test
+// NewTestSuiteForController returns a new test suite used for controller integration test.
 func NewTestSuiteForController(addToManagerFn pkgmgr.AddToManagerFunc, initProvidersFn pkgmgr.InitializeProvidersFunc) *TestSuite {
 	return NewTestSuiteForControllerWithFSS(addToManagerFn, initProvidersFn, map[string]bool{})
 }
@@ -316,7 +316,7 @@ func (s *TestSuite) AfterSuite() {
 	}
 }
 
-// Create a new Manager with default values
+// Create a new Manager with default values.
 func (s *TestSuite) createManager() {
 	var err error
 
@@ -341,14 +341,14 @@ func (s *TestSuite) initializeManager() {
 	}
 }
 
-// Set a flag to indicate that the manager is running or not
+// Set a flag to indicate that the manager is running or not.
 func (s *TestSuite) setManagerRunning(isRunning bool) {
 	s.managerRunningMutex.Lock()
 	s.managerRunning = isRunning
 	s.managerRunningMutex.Unlock()
 }
 
-// Returns true if the manager is running, false otherwise
+// Returns true if the manager is running, false otherwise.
 func (s *TestSuite) getManagerRunning() bool {
 	s.managerRunningMutex.Lock()
 	result := s.managerRunning
@@ -356,7 +356,7 @@ func (s *TestSuite) getManagerRunning() bool {
 	return result
 }
 
-// Starts the manager and sets managerRunning
+// Starts the manager and sets managerRunning.
 func (s *TestSuite) startManager() {
 	ctx, cancel := context.WithCancel(s.Context)
 	s.cancelFuncMutex.Lock()
@@ -372,7 +372,7 @@ func (s *TestSuite) startManager() {
 	}()
 }
 
-// Applies configuration to the Manager after it has started
+// Applies configuration to the Manager after it has started.
 func (s *TestSuite) postConfigureManager() {
 	// If there's a configured certificate directory then it means one or more
 	// webhooks are being tested. Go ahead and install the webhooks and wait

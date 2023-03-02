@@ -16,7 +16,7 @@ import (
 )
 
 // IntegrationTestContext is used for integration testing. Each
-// IntegrationTestContext contains one separate namespace
+// IntegrationTestContext contains one separate namespace.
 type IntegrationTestContext struct {
 	context.Context
 	Client       client.Client
@@ -24,7 +24,7 @@ type IntegrationTestContext struct {
 	PodNamespace string
 }
 
-// AfterEach should be invoked by ginkgo.AfterEach to destroy the test namespace
+// AfterEach should be invoked by ginkgo.AfterEach to destroy the test namespace.
 func (ctx *IntegrationTestContext) AfterEach() {
 	By("Destroying temporary namespace", func() {
 		namespace := &corev1.Namespace{
@@ -43,7 +43,7 @@ func (ctx *IntegrationTestContext) AfterEach() {
 //
 // This function returns a TestSuite context
 // The resources created by this function may be cleaned up by calling AfterEach
-// with the IntegrationTestContext returned by this function
+// with the IntegrationTestContext returned by this function.
 func (s *TestSuite) NewIntegrationTestContext() *IntegrationTestContext {
 	ctx := &IntegrationTestContext{
 		Context:      context.Background(),

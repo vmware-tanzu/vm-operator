@@ -23,7 +23,7 @@ type UnitTestContext struct {
 	Scheme *runtime.Scheme
 }
 
-// NewUnitTestContext returns a new UnitTestContext
+// NewUnitTestContext returns a new UnitTestContext.
 func NewUnitTestContext(initObjects ...client.Object) *UnitTestContext {
 	fakeClient := NewFakeClient(initObjects...)
 	return &UnitTestContext{
@@ -33,7 +33,7 @@ func NewUnitTestContext(initObjects ...client.Object) *UnitTestContext {
 	}
 }
 
-// AfterEach should be invoked by ginkgo.AfterEach to cleanup
+// AfterEach should be invoked by ginkgo.AfterEach to cleanup.
 func (ctx *UnitTestContext) AfterEach() {
 	// Nothing yet to do.
 }
@@ -85,7 +85,7 @@ func NewUnitTestContextForController(initObjects []client.Object) *UnitTestConte
 	return ctx
 }
 
-// AfterEach should be invoked by ginkgo.AfterEach to cleanup
+// AfterEach should be invoked by ginkgo.AfterEach to cleanup.
 func (ctx *UnitTestContextForController) AfterEach() {
 	// Nothing yet to do.
 }

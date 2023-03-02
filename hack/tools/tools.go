@@ -1,5 +1,5 @@
-//go:build tools
-// +build tools
+//go:build vmop_tools
+// +build vmop_tools
 
 /*
 Copyright 2019 The Kubernetes Authors.
@@ -25,9 +25,7 @@ import (
 	_ "github.com/axw/gocov/gocov"
 	_ "github.com/elastic/crd-ref-docs"
 	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
-	_ "github.com/jstemmer/go-junit-report/v2"
 	_ "github.com/onsi/ginkgo/ginkgo"
-	_ "github.com/t-yuki/gocover-cobertura"
 	_ "github.com/wadey/gocovmerge"
 	_ "k8s.io/code-generator"
 	_ "sigs.k8s.io/controller-runtime/tools/setup-envtest"

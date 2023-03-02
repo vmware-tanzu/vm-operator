@@ -25,7 +25,6 @@ linters:
   enable:
   - asciicheck
   - bodyclose
-  - deadcode
   - depguard
   - dogsled
   - errcheck
@@ -50,12 +49,11 @@ linters:
   - revive
   - rowserrcheck
   - staticcheck
-  - structcheck
   - stylecheck
   - typecheck
   - unconvert
   - unparam
-  - varcheck
+  - unused
 
 issues:
   max-same-issues: 0
@@ -70,13 +68,14 @@ issues:
   exclude-rules:
   - linters:
     - revive
-    text: ".*should have comment.* or be unexported"
+    text: ".*should have (a package )?comment.*"
   - linters:
-    - whitespace
-    - godot
-    path: test/
-  # Dot imports for gomega or ginkgo are allowed
-  # within test files.
+    - revive
+    text: "^exported: comment on exported const"
+  - linters:
+    - gosec
+    text: "G114: Use of net/http serve function that has no support for setting timeouts"
+  # Dot imports for gomega or ginkgo are allowed within test files.
   - path: test/
     text: should not use dot imports
   # All of our webhooks follow the pattern of passing the webhook context which contains fields like the Client.

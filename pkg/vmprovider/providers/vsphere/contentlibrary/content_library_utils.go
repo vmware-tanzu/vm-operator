@@ -92,7 +92,7 @@ func LibItemToVirtualMachineImage(
 		}
 
 		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
-		image.Status.ImageSupported = pointer.BoolPtr(isImageSupported(image, ovfEnvelope.VirtualSystem, ovfSystemProps))
+		image.Status.ImageSupported = pointer.Bool(isImageSupported(image, ovfEnvelope.VirtualSystem, ovfSystemProps))
 
 		// Set Status Firmware from the envelope's virtual hardware section
 		if virtualHwSection := ovfEnvelope.VirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
@@ -129,7 +129,7 @@ func UpdateVmiWithOvfEnvelope(vmi client.Object, ovfEnvelope ovf.Envelope) {
 			annotations[k] = v
 		}
 		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
-		status.ImageSupported = pointer.BoolPtr(isImageSupported(vmi, ovfEnvelope.VirtualSystem, ovfSystemProps))
+		status.ImageSupported = pointer.Bool(isImageSupported(vmi, ovfEnvelope.VirtualSystem, ovfSystemProps))
 
 		// Set Status Firmware from the envelope's virtual hardware section
 		if virtualHwSection := ovfEnvelope.VirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
@@ -193,8 +193,8 @@ func getUserConfigurablePropertiesFromOvf(ovfVirtualSystem *ovf.VirtualSystem) m
 						Key:         prop.Key,
 						Type:        prop.Type,
 						Default:     prop.Default,
-						Description: pointer.StringPtrDerefOr(prop.Description, ""),
-						Label:       pointer.StringPtrDerefOr(prop.Label, ""),
+						Description: pointer.StringDeref(prop.Description, ""),
+						Label:       pointer.StringDeref(prop.Label, ""),
 					}
 					properties[prop.Key] = property
 				}

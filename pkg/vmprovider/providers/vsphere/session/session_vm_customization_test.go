@@ -97,7 +97,7 @@ var _ = Describe("Customization via ConfigSpec", func() {
 						{
 							Id:               "foo",
 							Value:            "should-change",
-							UserConfigurable: pointer.BoolPtr(true),
+							UserConfigurable: pointer.Bool(true),
 						},
 					},
 				}

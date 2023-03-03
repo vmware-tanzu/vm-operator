@@ -207,7 +207,7 @@ func validatePorts(vmService *vmopv1.VirtualMachineService, specPath *field.Path
 		allErrs = append(allErrs, field.Required(portsPath, ""))
 	}
 
-	allPortNames := sets.String{}
+	allPortNames := sets.Set[string]{}
 	for i := range vmService.Spec.Ports {
 		portPath := portsPath.Index(i)
 		allErrs = append(allErrs, validateServicePort(&vmService.Spec.Ports[i], len(vmService.Spec.Ports) > 1, &allPortNames, portPath)...)
@@ -228,7 +228,7 @@ func validatePorts(vmService *vmopv1.VirtualMachineService, specPath *field.Path
 	return allErrs
 }
 
-func validateServicePort(sp *vmopv1.VirtualMachineServicePort, requireName bool, allNames *sets.String, fldPath *field.Path) field.ErrorList {
+func validateServicePort(sp *vmopv1.VirtualMachineServicePort, requireName bool, allNames *sets.Set[string], fldPath *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if requireName && len(sp.Name) == 0 {

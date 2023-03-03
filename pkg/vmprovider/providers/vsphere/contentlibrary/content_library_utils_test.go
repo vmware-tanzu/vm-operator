@@ -101,7 +101,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 									Key:              userConfigurableKey,
 									Type:             ovfStringType,
 									Default:          pointer.String(defaultValue),
-									UserConfigurable: pointer.BoolPtr(true),
+									UserConfigurable: pointer.Bool(true),
 								},
 								{
 									Key:              notUserConfigurableKey,
@@ -156,7 +156,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 
 		When("There is a description", func() {
 			BeforeEach(func() {
-				ovfEnvelope.VirtualSystem.Product[0].Property[1].Description = pointer.StringPtr("description")
+				ovfEnvelope.VirtualSystem.Product[0].Property[1].Description = pointer.String("description")
 			})
 			It("should return the Description", func() {
 				Expect(image.Spec.OVFEnv[userConfigurableKey].Description).Should(Equal("description"))
@@ -165,7 +165,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 
 		When("There is a label", func() {
 			BeforeEach(func() {
-				ovfEnvelope.VirtualSystem.Product[0].Property[1].Label = pointer.StringPtr("label")
+				ovfEnvelope.VirtualSystem.Product[0].Property[1].Label = pointer.String("label")
 			})
 			It("should return the Label", func() {
 				Expect(image.Spec.OVFEnv[userConfigurableKey].Label).Should(Equal("label"))
@@ -174,8 +174,8 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 
 		When("There is a description and a label", func() {
 			BeforeEach(func() {
-				ovfEnvelope.VirtualSystem.Product[0].Property[1].Description = pointer.StringPtr("description")
-				ovfEnvelope.VirtualSystem.Product[0].Property[1].Label = pointer.StringPtr("label")
+				ovfEnvelope.VirtualSystem.Product[0].Property[1].Description = pointer.String("description")
+				ovfEnvelope.VirtualSystem.Product[0].Property[1].Label = pointer.String("label")
 			})
 			It("should return the Description and the Label", func() {
 				Expect(image.Spec.OVFEnv[userConfigurableKey].Description).Should(Equal("description"))
@@ -230,7 +230,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 								Property: []ovf.Property{
 									{
 										Key:     "someKey",
-										Default: pointer.StringPtr("someRandom"),
+										Default: pointer.String("someRandom"),
 									},
 								},
 							},
@@ -275,7 +275,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 								Property: []ovf.Property{
 									{
 										Key:     tkgKey,
-										Default: pointer.StringPtr("someRandom"),
+										Default: pointer.String("someRandom"),
 									},
 								},
 							},
@@ -301,7 +301,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 								Property: []ovf.Property{
 									{
 										Key:     "someKey",
-										Default: pointer.StringPtr("someRandom"),
+										Default: pointer.String("someRandom"),
 									},
 								},
 							},

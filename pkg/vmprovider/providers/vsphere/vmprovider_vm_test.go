@@ -160,7 +160,7 @@ func vmTests() {
 					AddressType: string(types.VirtualEthernetCardMacTypeGenerated),
 					MacAddress:  "00:0c:29:93:d7:27",
 					ResourceAllocation: &types.VirtualEthernetCardResourceAllocation{
-						Reservation: pointer.Int64Ptr(42),
+						Reservation: pointer.Int64(42),
 					},
 				}
 			})

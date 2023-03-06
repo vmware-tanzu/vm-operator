@@ -152,7 +152,6 @@ func unitTestsValidateCreate() {
 		isNonRestrictedNetworkEnv         bool
 		isNoAvailabilityZones             bool
 		isWCPFaultDomainsFSSEnabled       bool
-		isUnifiedTKGFSSEnabled            bool
 		isInvalidAvailabilityZone         bool
 		isEmptyAvailabilityZone           bool
 		isServiceUser                     bool

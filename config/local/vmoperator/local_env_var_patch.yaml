@@ -27,3 +27,5 @@ spec:
           value: "false"
         - name: NETWORK_PROVIDER
           value: "NAMED"
+        - name: FSS_WCP_NAMESPACED_CLASS_AND_WINDOWS_SUPPORT
+          value: "false"

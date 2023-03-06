@@ -64,3 +64,8 @@
     name: NETWORK_PROVIDER
     value: "<NETWORK_PROVIDER_VALUE>"
 
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_NAMESPACED_CLASS_AND_WINDOWS_SUPPORT
+    value: "<FSS_WCP_NAMESPACED_CLASS_AND_WINDOWS_SUPPORT_VALUE>"

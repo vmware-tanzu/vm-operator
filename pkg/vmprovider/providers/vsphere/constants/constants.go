@@ -21,11 +21,6 @@ const (
 	ManagedByExtensionKey  = "com.vmware.vcenter.wcp"
 	ManagedByExtensionType = "VirtualMachine"
 
-	// VMOperatorImageSupportedCheckKey Annotation key to skip validation checks of GuestOS Type
-	// TODO: Rename and move to vmoperator-api.
-	VMOperatorImageSupportedCheckKey     = pkg.VMOperatorKey + "/image-supported-check"
-	VMOperatorImageSupportedCheckDisable = "disable"
-
 	// VSphereCustomizationBypassKey Annotation to skip applying VMware Tools Guest Customization.
 	VSphereCustomizationBypassKey     = pkg.VMOperatorKey + "/vsphere-customization"
 	VSphereCustomizationBypassDisable = "disable"

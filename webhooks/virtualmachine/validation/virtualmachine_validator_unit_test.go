@@ -114,7 +114,6 @@ func unitTestsValidateCreate() {
 	var (
 		ctx                  *unitValidatingWebhookContext
 		oldFaultDomainsFunc  func() bool
-		oldUnifiedTKGFunc    func() bool
 		oldImageRegistryFunc func() bool
 	)
 
@@ -123,45 +122,42 @@ func unitTestsValidateCreate() {
 	)
 
 	type createArgs struct {
-		invalidImageName                     bool
-		imageNotFound                        bool
-		namespaceImage                       bool
-		clusterImage                         bool
-		invalidClassName                     bool
-		invalidNetworkType                   bool
-		invalidNetworkCardType               bool
-		multipleNetIfToSameNetwork           bool
-		emptyVolumeName                      bool
-		invalidVolumeName                    bool
-		dupVolumeName                        bool
-		invalidVolumeSource                  bool
-		multipleVolumeSource                 bool
-		invalidPVCName                       bool
-		invalidPVCReadOnly                   bool
-		invalidPVCHwVersion                  bool
-		emptyMetadataResource                bool
-		multipleMetadataResources            bool
-		invalidVsphereVolumeSource           bool
-		invalidVMVolumeProvOpts              bool
-		invalidStorageClass                  bool
-		notFoundStorageClass                 bool
-		validStorageClass                    bool
-		imageNonCompatible                   bool
-		imageSupportCheckSkipAnnotation      bool
-		imageNonCompatibleCloudInitTransport bool
-		invalidReadinessNoProbe              bool
-		invalidReadinessProbe                bool
-		isRestrictedNetworkEnv               bool
-		isRestrictedNetworkValidProbePort    bool
-		isNonRestrictedNetworkEnv            bool
-		isNoAvailabilityZones                bool
-		isWCPFaultDomainsFSSEnabled          bool
-		isUnifiedTKGFSSEnabled               bool
-		isInvalidAvailabilityZone            bool
-		isEmptyAvailabilityZone              bool
-		isServiceUser                        bool
-		addInstanceStorageVolumes            bool
-		isWCPVMImageRegistryEnabled          bool
+		invalidImageName                  bool
+		imageNotFound                     bool
+		namespaceImage                    bool
+		clusterImage                      bool
+		invalidClassName                  bool
+		invalidNetworkType                bool
+		invalidNetworkCardType            bool
+		multipleNetIfToSameNetwork        bool
+		emptyVolumeName                   bool
+		invalidVolumeName                 bool
+		dupVolumeName                     bool
+		invalidVolumeSource               bool
+		multipleVolumeSource              bool
+		invalidPVCName                    bool
+		invalidPVCReadOnly                bool
+		invalidPVCHwVersion               bool
+		emptyMetadataResource             bool
+		multipleMetadataResources         bool
+		invalidVsphereVolumeSource        bool
+		invalidVMVolumeProvOpts           bool
+		invalidStorageClass               bool
+		notFoundStorageClass              bool
+		validStorageClass                 bool
+		invalidReadinessNoProbe           bool
+		invalidReadinessProbe             bool
+		isRestrictedNetworkEnv            bool
+		isRestrictedNetworkValidProbePort bool
+		isNonRestrictedNetworkEnv         bool
+		isNoAvailabilityZones             bool
+		isWCPFaultDomainsFSSEnabled       bool
+		isUnifiedTKGFSSEnabled            bool
+		isInvalidAvailabilityZone         bool
+		isEmptyAvailabilityZone           bool
+		isServiceUser                     bool
+		addInstanceStorageVolumes         bool
+		isWCPVMImageRegistryEnabled       bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -181,20 +177,6 @@ func unitTestsValidateCreate() {
 		}
 		if args.clusterImage {
 			ctx.vm.Spec.ImageName = ctx.clusterVMIMage.Name
-		}
-		if args.imageNonCompatible {
-			ctx.vmImage.Status.ImageSupported = &[]bool{false}[0]
-			Expect(ctx.Client.Status().Update(ctx, ctx.vmImage)).To(Succeed())
-			ctx.nsVMImage.Status.ImageSupported = &[]bool{false}[0]
-			Expect(ctx.Client.Status().Update(ctx, ctx.nsVMImage)).To(Succeed())
-			ctx.clusterVMIMage.Status.ImageSupported = &[]bool{false}[0]
-			Expect(ctx.Client.Status().Update(ctx, ctx.clusterVMIMage)).To(Succeed())
-		}
-		if args.imageSupportCheckSkipAnnotation {
-			ctx.vm.Annotations[constants.VMOperatorImageSupportedCheckKey] = constants.VMOperatorImageSupportedCheckDisable
-		}
-		if args.imageNonCompatibleCloudInitTransport {
-			ctx.vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataCloudInitTransport
 		}
 		if args.invalidNetworkType {
 			ctx.vm.Spec.NetworkInterfaces[0].NetworkName = bogusNetworkName
@@ -311,9 +293,6 @@ func unitTestsValidateCreate() {
 		lib.IsWcpFaultDomainsFSSEnabled = func() bool {
 			return args.isWCPFaultDomainsFSSEnabled
 		}
-		lib.IsUnifiedTKGFSSEnabled = func() bool {
-			return args.isUnifiedTKGFSSEnabled
-		}
 		lib.IsWCPVMImageRegistryEnabled = func() bool {
 			return args.isWCPVMImageRegistryEnabled
 		}
@@ -350,13 +329,11 @@ func unitTestsValidateCreate() {
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
 		oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
-		oldUnifiedTKGFunc = lib.IsUnifiedTKGFSSEnabled
 		oldImageRegistryFunc = lib.IsWCPVMImageRegistryEnabled
 	})
 
 	AfterEach(func() {
 		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
-		lib.IsUnifiedTKGFSSEnabled = oldUnifiedTKGFunc
 		lib.IsWCPVMImageRegistryEnabled = oldImageRegistryFunc
 		ctx = nil
 	})
@@ -422,16 +399,6 @@ func unitTestsValidateCreate() {
 		Entry("should allow empty vmMetadata resource Names", createArgs{emptyMetadataResource: true}, true, nil, nil),
 		Entry("should deny when multiple vmMetadata resources are specified", createArgs{multipleMetadataResources: true}, false, "spec.vmMetadata.configMapName and spec.vmMetadata.secretName cannot be specified simultaneously", nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),
-
-		Entry("should deny when image is not compatible and UnifiedTKG FSS disabled, and when ImageRegistry FSS is disabled", createArgs{imageNonCompatible: true, isWCPVMImageRegistryEnabled: false}, false,
-			field.Invalid(specPath.Child("imageName"), builder.DummyImageName, "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
-		Entry("should deny when a namespace image is not compatible and UnifiedTKG FSS disabled, when ImageRegistry FSS is enabled", createArgs{imageNonCompatible: true, namespaceImage: true, isWCPVMImageRegistryEnabled: true}, false,
-			field.Invalid(specPath.Child("imageName"), dummyNamespaceImageName, "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
-		Entry("should deny when a cluster image is not compatible and UnifiedTKG FSS disabled, when ImageRegistry FSS is enabled", createArgs{imageNonCompatible: true, clusterImage: true, isWCPVMImageRegistryEnabled: true}, false,
-			field.Invalid(specPath.Child("imageName"), dummyClusterImageName, "VirtualMachineImage is not compatible with v1alpha1 or is not a TKG Image").Error(), nil),
-		Entry("should allow despite incompatible image when UnifiedTKG FSS disabled and VMOperatorImageSupportedCheckKey is enabled", createArgs{imageSupportCheckSkipAnnotation: true, imageNonCompatible: true}, true, nil, nil),
-		Entry("should allow despite incompatible image when UnifiedTKG FSS enabled", createArgs{isUnifiedTKGFSSEnabled: true, imageNonCompatible: true}, true, nil, nil),
-		Entry("should allow despite incompatible image when VirtualMachineMetadataTransport is CloudInit", createArgs{imageNonCompatibleCloudInitTransport: true}, true, nil, nil),
 
 		Entry("should deny when restricted network env is set in provider config map and TCP port in readiness probe is not 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, false,
 			field.NotSupported(specPath.Child("readinessProbe", "tcpSocket", "port"), 443, []string{"6443"}).Error(), nil),

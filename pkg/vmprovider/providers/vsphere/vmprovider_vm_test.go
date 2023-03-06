@@ -760,6 +760,48 @@ func vmTests() {
 				// TODO: More assertions!
 			})
 
+			Context("VM Class with PCI passthrough devices", func() {
+				BeforeEach(func() {
+					vmClass.Spec.Hardware.Devices = vmopv1alpha1.VirtualDevices{
+						VGPUDevices: []vmopv1alpha1.VGPUDevice{
+							{
+								ProfileName: "profile-from-class-without-class-as-config-fss",
+							},
+						},
+						DynamicDirectPathIODevices: []vmopv1alpha1.DynamicDirectPathIODevice{
+							{
+								VendorID:    59,
+								DeviceID:    60,
+								CustomLabel: "label-from-class-without-class-as-config-fss",
+							},
+						},
+					}
+				})
+
+				It("VM should have expected PCI devices from VM Class", func() {
+					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+					Expect(err).ToNot(HaveOccurred())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
+					p := devList.SelectByType(&types.VirtualPCIPassthrough{})
+					Expect(p).To(HaveLen(2))
+					pciDev1 := p[0].GetVirtualDevice()
+					pciBacking1, ok1 := pciDev1.Backing.(*types.VirtualPCIPassthroughVmiopBackingInfo)
+					Expect(ok1).Should(BeTrue())
+					Expect(pciBacking1.Vgpu).To(Equal("profile-from-class-without-class-as-config-fss"))
+					pciDev2 := p[1].GetVirtualDevice()
+					pciBacking2, ok2 := pciDev2.Backing.(*types.VirtualPCIPassthroughDynamicBackingInfo)
+					Expect(ok2).Should(BeTrue())
+					Expect(pciBacking2.AllowedDevice).To(HaveLen(1))
+					Expect(pciBacking2.AllowedDevice[0].VendorId).To(Equal(int32(59)))
+					Expect(pciBacking2.AllowedDevice[0].DeviceId).To(Equal(int32(60)))
+					Expect(pciBacking2.CustomLabel).To(Equal("label-from-class-without-class-as-config-fss"))
+				})
+			})
+
 			Context("Prereq args and Conditions", func() {
 				readyCondition := *conditions.TrueCondition(vmopv1alpha1.VirtualMachinePrereqReadyCondition)
 

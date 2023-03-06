@@ -3,9 +3,6 @@ name: testing-needed
 on:
   pull_request:
     types:
-    - synchronize
-    - opened
-    - reopened
     - labeled
     - unlabeled
 

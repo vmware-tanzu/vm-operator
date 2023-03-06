@@ -35,4 +35,6 @@ jobs:
       with:
         config_path: .github/configs/labeler.yml
       env:
-        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        # A non GITHUB_TOKEN is used to enable triggering the testing-needed
+        # workflow when related labels are added from the current workflow.
+        GITHUB_TOKEN: "${{ secrets.PR_LABELER_TOKEN }}"

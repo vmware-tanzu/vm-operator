@@ -145,8 +145,8 @@ func makeVMServiceOwnerRef(vmService *vmopv1alpha1.VirtualMachineService) metav1
 	return metav1.OwnerReference{
 		UID:                vmService.UID,
 		Name:               vmService.Name,
-		Controller:         pointer.BoolPtr(false),
-		BlockOwnerDeletion: pointer.BoolPtr(true),
+		Controller:         pointer.Bool(false),
+		BlockOwnerDeletion: pointer.Bool(true),
 		Kind:               virtualMachineServiceKind,
 		APIVersion:         virtualMachineServiceAPIVersion,
 	}

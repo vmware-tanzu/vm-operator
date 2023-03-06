@@ -249,7 +249,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Reservation: pointer.Int64Ptr(virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
+					Reservation: pointer.Int64(virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Cpu = r
 			})
@@ -263,7 +263,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Limit: pointer.Int64Ptr(virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
+					Limit: pointer.Int64(virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Cpu = r
 			})
@@ -277,7 +277,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Limit: pointer.Int64Ptr(10 * virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
+					Limit: pointer.Int64(10 * virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Cpu = r
 			})
@@ -294,7 +294,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.CpuAllocation = &vimTypes.ResourceAllocationInfo{
-					Reservation: pointer.Int64Ptr(10 * virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
+					Reservation: pointer.Int64(10 * virtualmachine.CPUQuantityToMhz(r, minCPUFreq)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Cpu = r
 			})
@@ -327,7 +327,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
-					Reservation: pointer.Int64Ptr(virtualmachine.MemoryQuantityToMb(r)),
+					Reservation: pointer.Int64(virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Memory = r
 			})
@@ -341,7 +341,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
-					Limit: pointer.Int64Ptr(virtualmachine.MemoryQuantityToMb(r)),
+					Limit: pointer.Int64(virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Memory = r
 			})
@@ -355,7 +355,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
-					Limit: pointer.Int64Ptr(10 * virtualmachine.MemoryQuantityToMb(r)),
+					Limit: pointer.Int64(10 * virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Limits.Memory = r
 			})
@@ -372,7 +372,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			BeforeEach(func() {
 				r := resource.MustParse("100Mi")
 				config.MemoryAllocation = &vimTypes.ResourceAllocationInfo{
-					Reservation: pointer.Int64Ptr(10 * virtualmachine.MemoryQuantityToMb(r)),
+					Reservation: pointer.Int64(10 * virtualmachine.MemoryQuantityToMb(r)),
 				}
 				vmClassSpec.Policies.Resources.Requests.Memory = r
 			})
@@ -697,8 +697,8 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		It("configSpec cbt set to true", func() {
-			config.ChangeTrackingEnabled = pointer.BoolPtr(true)
-			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(false)
+			config.ChangeTrackingEnabled = pointer.Bool(true)
+			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.Bool(false)
 
 			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
@@ -706,8 +706,8 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		It("configSpec cbt set to false", func() {
-			config.ChangeTrackingEnabled = pointer.BoolPtr(false)
-			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(true)
+			config.ChangeTrackingEnabled = pointer.Bool(false)
+			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.Bool(true)
 
 			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
@@ -715,18 +715,18 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		It("configSpec cbt matches", func() {
-			config.ChangeTrackingEnabled = pointer.BoolPtr(true)
-			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(true)
+			config.ChangeTrackingEnabled = pointer.Bool(true)
+			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.Bool(true)
 
 			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
 		It("classConfigSpec not nil and is ignored", func() {
-			config.ChangeTrackingEnabled = pointer.BoolPtr(false)
-			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(true)
+			config.ChangeTrackingEnabled = pointer.Bool(false)
+			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.Bool(true)
 			classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
-				ChangeTrackingEnabled: pointer.BoolPtr(false),
+				ChangeTrackingEnabled: pointer.Bool(false),
 			}
 
 			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
@@ -741,8 +741,8 @@ var _ = Describe("Update ConfigSpec", func() {
 				lib.IsVMClassAsConfigFSSDaynDateEnabled = func() bool {
 					return true
 				}
-				config.ChangeTrackingEnabled = pointer.BoolPtr(false)
-				vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.BoolPtr(true)
+				config.ChangeTrackingEnabled = pointer.Bool(false)
+				vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.Bool(true)
 			})
 
 			AfterEach(func() {
@@ -751,7 +751,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			It("classConfigSpec not nil and same as configInfo", func() {
 				classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
-					ChangeTrackingEnabled: pointer.BoolPtr(false),
+					ChangeTrackingEnabled: pointer.Bool(false),
 				}
 
 				session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
@@ -760,7 +760,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			It("classConfigSpec not nil, different from configInfo, overrides vm spec cbt", func() {
 				classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
-					ChangeTrackingEnabled: pointer.BoolPtr(true),
+					ChangeTrackingEnabled: pointer.Bool(true),
 				}
 
 				session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)

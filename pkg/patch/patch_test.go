@@ -637,7 +637,7 @@ func intgTests() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("Updating the object spec")
-					obj.Spec.Replicas = pointer.Int32Ptr(10)
+					obj.Spec.Replicas = pointer.Int32(10)
 
 					By("Patching the object")
 					Expect(patcher.Patch(ctx, obj, WithStatusObservedGeneration{})).To(Succeed())
@@ -669,7 +669,7 @@ func intgTests() {
 					Expect(err).NotTo(HaveOccurred())
 
 					By("Updating the object spec")
-					obj.Spec.Replicas = pointer.Int32Ptr(10)
+					obj.Spec.Replicas = pointer.Int32(10)
 
 					By("Updating the object status")
 					obj.Status.AvailableReplicas = 6

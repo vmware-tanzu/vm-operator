@@ -173,7 +173,7 @@ func (s *Session) createCloneSpec(
 
 	cloneSpec := &vimTypes.VirtualMachineCloneSpec{
 		Config: createArgs.ConfigSpec,
-		Memory: pointer.BoolPtr(false), // No full memory clones.
+		Memory: pointer.Bool(false), // No full memory clones.
 	}
 
 	virtualDevices, err := srcVM.Device(vmCtx)

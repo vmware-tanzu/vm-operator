@@ -164,7 +164,7 @@ func unitTestsReconcile() {
 				Expect(ownerRefs).To(HaveLen(1))
 				ownerRef := ownerRefs[0]
 				Expect(ownerRef.Name).To(Equal(vmService.Name))
-				Expect(ownerRef.Controller).To(Equal(pointer.BoolPtr(true)))
+				Expect(ownerRef.Controller).To(Equal(pointer.Bool(true)))
 			})
 
 			It("With Expected Spec", func() {
@@ -470,7 +470,7 @@ func unitTestsReconcile() {
 				Expect(ownerRefs).To(HaveLen(1))
 				ownerRef := ownerRefs[0]
 				Expect(ownerRef.Name).To(Equal(vmService.Name))
-				Expect(ownerRef.Controller).To(Equal(pointer.BoolPtr(true)))
+				Expect(ownerRef.Controller).To(Equal(pointer.Bool(true)))
 			})
 
 			It("With Expected Annotations and Labels", func() {

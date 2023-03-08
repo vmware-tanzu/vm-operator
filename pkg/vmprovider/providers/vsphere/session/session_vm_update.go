@@ -512,13 +512,13 @@ func (s *Session) prePowerOnVMConfigSpec(
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
 	var expectedPCIDevices []vimTypes.BaseVirtualDevice
-	if configSpecDevs := util.DevicesFromConfigSpec(updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
-		if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+		if configSpecDevs := util.DevicesFromConfigSpec(updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
 			pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(configSpecDevs)
 			expectedPCIDevices = virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
-		} else {
-			expectedPCIDevices = virtualmachine.CreatePCIDevicesFromVMClass(updateArgs.VMClass.Spec.Hardware.Devices)
 		}
+	} else {
+		expectedPCIDevices = virtualmachine.CreatePCIDevicesFromVMClass(updateArgs.VMClass.Spec.Hardware.Devices)
 	}
 
 	pciDeviceChanges, err := UpdatePCIDeviceChanges(expectedPCIDevices, currentPciDevices)

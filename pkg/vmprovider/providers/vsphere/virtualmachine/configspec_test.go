@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine_test
@@ -6,15 +6,11 @@ package virtualmachine_test
 import (
 	goctx "context"
 
-	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
@@ -128,7 +124,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		vm := builder.DummyVirtualMachine()
 		vmCtx = context.VirtualMachineContext{
 			Context: goctx.Background(),
-			Logger:  logr.New(logf.NullLogSink{}),
+			Logger:  suite.GetLogger().WithValues("vmName", vm.GetName()),
 			VM:      vm,
 		}
 	})
@@ -168,43 +164,106 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 		})
 	})
 
-	Context("When class config spec is not nil", func() {
+	Context("when DaynDate FSS is enabled", func() {
+		var oldDaynDateFSSFn func() bool
+
 		BeforeEach(func() {
-			classConfigSpec = &vimtypes.VirtualMachineConfigSpec{
-				Name:       "dummy-VM",
-				Annotation: "test-annotation",
-				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
-					&vimtypes.VirtualDeviceConfigSpec{
-						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-						Device: &vimtypes.VirtualPCIPassthrough{
-							VirtualDevice: vimtypes.VirtualDevice{
-								Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
-									Vgpu: "SampleProfile2",
+			oldDaynDateFSSFn = lib.IsVMClassAsConfigFSSDaynDateEnabled
+			lib.IsVMClassAsConfigFSSDaynDateEnabled = func() bool { return true }
+		})
+
+		AfterEach(func() {
+			lib.IsVMClassAsConfigFSSDaynDateEnabled = oldDaynDateFSSFn
+		})
+
+		Context("When class config spec is not nil", func() {
+			BeforeEach(func() {
+				classConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+					Name:       "dummy-VM",
+					Annotation: "test-annotation",
+					DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.VirtualPCIPassthrough{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+										Vgpu: "SampleProfile2",
+									},
 								},
 							},
 						},
 					},
-				},
-			}
-		})
+				}
+			})
 
-		It("Placement ConfigSpec contains expected field set sans ethernet device from class config spec", func() {
-			Expect(configSpec.Annotation).ToNot(BeEmpty())
-			Expect(configSpec.Annotation).To(Equal(classConfigSpec.Annotation))
-			Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.Hardware.Cpus))
-			Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
-			Expect(configSpec.CpuAllocation).ToNot(BeNil())
-			Expect(configSpec.MemoryAllocation).ToNot(BeNil())
-			Expect(configSpec.Firmware).To(Equal(firmware))
-			Expect(configSpec.DeviceChange).To(HaveLen(2))
-			dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
-			_, ok := dSpec.Device.(*vimtypes.VirtualPCIPassthrough)
-			Expect(ok).To(BeTrue())
-			dSpec1 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
-			_, ok = dSpec1.Device.(*vimtypes.VirtualDisk)
-			Expect(ok).To(BeTrue())
+			AfterEach(func() {
+				classConfigSpec = nil
+			})
+
+			It("Placement ConfigSpec contains expected field set sans ethernet device from class config spec", func() {
+				Expect(configSpec.Annotation).ToNot(BeEmpty())
+				Expect(configSpec.Annotation).To(Equal(classConfigSpec.Annotation))
+				Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.Hardware.Cpus))
+				Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
+				Expect(configSpec.CpuAllocation).ToNot(BeNil())
+				Expect(configSpec.MemoryAllocation).ToNot(BeNil())
+				Expect(configSpec.Firmware).To(Equal(firmware))
+				Expect(configSpec.DeviceChange).To(HaveLen(2))
+				dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+				_, ok := dSpec.Device.(*vimtypes.VirtualPCIPassthrough)
+				Expect(ok).To(BeTrue())
+				dSpec1 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
+				_, ok = dSpec1.Device.(*vimtypes.VirtualDisk)
+				Expect(ok).To(BeTrue())
+			})
 		})
 	})
+
+	Context("when Class specifies GPUs in Hardware", func() {
+		BeforeEach(func() {
+			vmClassSpec.Hardware.Devices.VGPUDevices = []vmopv1.VGPUDevice{{
+				ProfileName: "createplacementspec-profile",
+			}}
+
+			vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices = []vmopv1.DynamicDirectPathIODevice{{
+				VendorID:    20,
+				DeviceID:    30,
+				CustomLabel: "createplacementspec-label",
+			}}
+		})
+
+		AfterEach(func() {
+			vmClassSpec.Hardware.Devices.VGPUDevices = nil
+			vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices = nil
+		})
+
+		It("Placement ConfigSpec contains the GPU from the VM Class", func() {
+			Expect(configSpec.DeviceChange).To(HaveLen(3)) // one dummy disk + 2 Pass through devices
+
+			dspec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+			_, ok := dspec.Device.(*vimtypes.VirtualDisk)
+			Expect(ok).To(BeTrue())
+
+			dSpec1 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
+			dev1, ok := dSpec1.Device.(*vimtypes.VirtualPCIPassthrough)
+			Expect(ok).To(BeTrue())
+			pciDev1 := dev1.GetVirtualDevice()
+			pciBacking1, ok1 := pciDev1.Backing.(*vimtypes.VirtualPCIPassthroughVmiopBackingInfo)
+			Expect(ok1).To(BeTrue())
+			Expect(pciBacking1.Vgpu).To(Equal(vmClassSpec.Hardware.Devices.VGPUDevices[0].ProfileName))
+
+			dSpec2 := configSpec.DeviceChange[2].GetVirtualDeviceConfigSpec()
+			dev2, ok2 := dSpec2.Device.(*vimtypes.VirtualPCIPassthrough)
+			Expect(ok2).To(BeTrue())
+			pciDev2 := dev2.GetVirtualDevice()
+			pciBacking2, ok2 := pciDev2.Backing.(*vimtypes.VirtualPCIPassthroughDynamicBackingInfo)
+			Expect(ok2).To(BeTrue())
+			Expect(pciBacking2.AllowedDevice[0].DeviceId).To(BeEquivalentTo(vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices[0].DeviceID))
+			Expect(pciBacking2.AllowedDevice[0].VendorId).To(BeEquivalentTo(vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices[0].VendorID))
+			Expect(pciBacking2.CustomLabel).To(Equal(vmClassSpec.Hardware.Devices.DynamicDirectPathIODevices[0].CustomLabel))
+		})
+	})
+
 })
 
 func assertInstanceStorageDeviceChange(

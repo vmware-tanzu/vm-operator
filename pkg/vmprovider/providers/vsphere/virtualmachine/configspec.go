@@ -130,11 +130,15 @@ func CreateConfigSpecForPlacement(
 		},
 	})
 
-	for _, dev := range CreatePCIDevicesFromVMClass(vmClassSpec.Hardware.Devices) {
-		configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
-			Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
-			Device:    dev,
-		})
+	// With DaynDate FSS, PCI devices are specified via ConfigSpec.  Ignore such devices from the
+	// VM Class Hardware to avoid duplicate devices being added to the placement spec.
+	if !lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+		for _, dev := range CreatePCIDevicesFromVMClass(vmClassSpec.Hardware.Devices) {
+			configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
+				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+				Device:    dev,
+			})
+		}
 	}
 
 	if lib.IsInstanceStorageFSSEnabled() {

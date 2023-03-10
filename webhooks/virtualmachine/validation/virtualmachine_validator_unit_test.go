@@ -26,7 +26,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -137,7 +136,6 @@ func unitTestsValidateCreate() {
 		multipleVolumeSource              bool
 		invalidPVCName                    bool
 		invalidPVCReadOnly                bool
-		invalidPVCHwVersion               bool
 		emptyMetadataResource             bool
 		multipleMetadataResources         bool
 		invalidVsphereVolumeSource        bool
@@ -212,14 +210,6 @@ func unitTestsValidateCreate() {
 		}
 		if args.invalidPVCReadOnly {
 			ctx.vm.Spec.Volumes[0].PersistentVolumeClaim.ReadOnly = true
-		}
-		if args.invalidPVCHwVersion {
-			ctx.vmImage.Spec.HardwareVersion = 12
-			Expect(ctx.Client.Update(ctx, ctx.vmImage)).ToNot(HaveOccurred())
-			ctx.nsVMImage.Spec.HardwareVersion = 12
-			Expect(ctx.Client.Update(ctx, ctx.nsVMImage)).ToNot(HaveOccurred())
-			ctx.clusterVMIMage.Spec.HardwareVersion = 12
-			Expect(ctx.Client.Update(ctx, ctx.clusterVMIMage)).ToNot(HaveOccurred())
 		}
 		if args.emptyMetadataResource {
 			ctx.vm.Spec.VmMetadata.ConfigMapName = ""
@@ -347,12 +337,8 @@ func unitTestsValidateCreate() {
 			field.Required(specPath.Child("className"), "").Error(), nil),
 		Entry("should deny invalid image name", createArgs{invalidImageName: true}, false,
 			field.Required(specPath.Child("imageName"), "").Error(), nil),
-		Entry("should deny image that does not exist, when ImageRegistry FSS is disabled", createArgs{imageNotFound: true}, false,
-			field.Invalid(specPath.Child("imageName"), "image-does-not-exist", "").Error(), nil),
 		Entry("should allow namespace image that exists, when ImageRegistry FSS is enabled", createArgs{isWCPVMImageRegistryEnabled: true, namespaceImage: true}, true, nil, nil),
 		Entry("should allow cluster image that exists, when ImageRegistry FSS is enabled", createArgs{isWCPVMImageRegistryEnabled: true, clusterImage: true}, true, nil, nil),
-		Entry("should deny neither cluster nor namespace image exists, when ImageRegistry FSS is enabled", createArgs{isWCPVMImageRegistryEnabled: true, imageNotFound: true}, false,
-			field.Invalid(specPath.Child("imageName"), "image-does-not-exist", "").Error(), nil),
 		Entry("should fail when Readiness probe has multiple actions", createArgs{invalidReadinessProbe: true}, false,
 			field.Forbidden(specPath.Child("readinessProbe"), "only one action can be specified").Error(), nil),
 		Entry("should fail when Readiness probe has no actions", createArgs{invalidReadinessNoProbe: true}, false,
@@ -379,12 +365,6 @@ func unitTestsValidateCreate() {
 			field.Required(volPath.Index(0).Child("persistentVolumeClaim", "claimName"), "").Error(), nil),
 		Entry("should deny invalid PVC read only", createArgs{invalidPVCReadOnly: true}, false,
 			field.NotSupported(volPath.Index(0).Child("persistentVolumeClaim", "readOnly"), true, []string{"false"}).Error(), nil),
-		Entry("should deny invalid PVC hardware version, when ImageRegistry FSS is disabled", createArgs{invalidPVCHwVersion: true}, false,
-			field.Invalid(field.NewPath("spec", "imageName"), builder.DummyImageName, fmt.Sprintf("VirtualMachineImage has an unsupported hardware version %d for PersistentVolumes. Minimum supported hardware version %d", 12, constants.MinSupportedHWVersionForPVC)).Error(), nil),
-		Entry("should deny invalid PVC hardware version with a namespace image, when ImageRegistry FSS is enabled", createArgs{invalidPVCHwVersion: true, namespaceImage: true, isWCPVMImageRegistryEnabled: true}, false,
-			field.Invalid(field.NewPath("spec", "imageName"), dummyNamespaceImageName, fmt.Sprintf("VirtualMachineImage has an unsupported hardware version %d for PersistentVolumes. Minimum supported hardware version %d", 12, constants.MinSupportedHWVersionForPVC)).Error(), nil),
-		Entry("should deny invalid PVC hardware version with a cluster image, when ImageRegistry FSS is enabled", createArgs{invalidPVCHwVersion: true, clusterImage: true, isWCPVMImageRegistryEnabled: true}, false,
-			field.Invalid(field.NewPath("spec", "imageName"), dummyClusterImageName, fmt.Sprintf("VirtualMachineImage has an unsupported hardware version %d for PersistentVolumes. Minimum supported hardware version %d", 12, constants.MinSupportedHWVersionForPVC)).Error(), nil),
 		Entry("should deny invalid vsphere volume source spec", createArgs{invalidVsphereVolumeSource: true}, false,
 			field.Invalid(volPath.Index(0).Child("vsphereVolume", "capacity", "ephemeral-storage"), resource.MustParse("1Ki"), "value must be a multiple of MB").Error(), nil),
 

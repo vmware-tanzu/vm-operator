@@ -1562,6 +1562,18 @@ func vmTests() {
 			})
 		})
 
+		Context("VM hardware version", func() {
+			JustBeforeEach(func() {
+				Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
+			})
+
+			It("return version", func() {
+				version, err := vmProvider.GetVirtualMachineHardwareVersion(ctx, vm)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(version).To(Equal(int32(9)))
+			})
+		})
+
 		Context("ResVMToVirtualMachineImage", func() {
 			JustBeforeEach(func() {
 				Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())

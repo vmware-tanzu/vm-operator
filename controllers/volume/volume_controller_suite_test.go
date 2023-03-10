@@ -8,14 +8,21 @@ import (
 
 	. "github.com/onsi/ginkgo"
 
+	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
+
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
-	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
+	ctrlContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+var intgFakeVMProvider = providerfake.NewVMProvider()
 var suite = builder.NewTestSuiteForController(
 	volume.AddToManager,
-	pkgmgr.InitializeProvidersNoopFn,
+	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
+		ctx.VMProvider = intgFakeVMProvider
+		return nil
+	},
 )
 
 func TestVolume(t *testing.T) {

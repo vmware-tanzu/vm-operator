@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -134,21 +133,14 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 	cvmi.Name = cvmiName
 	logger = logger.WithValues("cvmiName", cvmi.Name)
 
-	cclItemSecurityCompliance := cclItem.Status.SecurityCompliance
-
 	// If the ClusterContentLibraryItem's security compliance field is not set or is false, delete corresponding cvmi if exists
-	if cclItemSecurityCompliance == nil || !*cclItemSecurityCompliance {
-		logger.Info("ClusterContentLibraryItem's security compliance is not true, deleting corresponding cvmi if exists")
+	if securityCompliance := cclItem.Status.SecurityCompliance; securityCompliance == nil || !*securityCompliance {
 		if err := r.Client.Delete(ctx, cvmi); err != nil {
-			if k8serrors.IsNotFound(err) {
-				logger.Info("Corresponding cvmi not found, skipping delete")
-				return nil
-			}
-			return err
+			return client.IgnoreNotFound(err)
 		}
 
 		r.Metrics.DeleteMetrics(logger, cvmi.Name, "")
-		logger.Info("Deleted corresponding cvmi")
+		logger.Info("Deleted corresponding ClusterVirtualMachineImage", "securityCompliance", securityCompliance)
 		return nil
 	}
 
@@ -178,22 +170,21 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 			return err
 		}
 
-		syncErr = r.syncImageContent(ctx, cvmi, cclItem)
+		syncErr = r.syncImageContent(ctx, logger, cvmi, cclItem)
 		// Do not return syncErr here as we still want to patch the updated fields we get above.
 		return nil
 	})
 
 	logger = logger.WithValues("operationResult", opRes)
+	defer func() {
+		// createOrPatchErr can be updated below.
+		r.Metrics.RegisterVMIResourceResolve(logger, cvmi.Name, "", createOrPatchErr == nil)
+	}()
+
 	if createOrPatchErr != nil {
 		logger.Error(createOrPatchErr, "Failed to create or patch ClusterVirtualMachineImage resource")
 		return createOrPatchErr
 	}
-
-	// Registry metrics based on the corresponding error captured.
-	defer func() {
-		r.Metrics.RegisterVMIResourceResolve(logger, cvmi.Name, "", createOrPatchErr == nil)
-		r.Metrics.RegisterVMIContentSync(logger, cvmi.Name, "", syncErr == nil)
-	}()
 
 	// CreateOrPatch/CreateOrUpdate doesn't patch sub-resource for creation.
 	if opRes == controllerutil.OperationResultCreated {
@@ -253,8 +244,12 @@ func (r *Reconciler) setUpCVMIFromCCLItem(cvmi *vmopv1a1.ClusterVirtualMachineIm
 
 // syncImageContent syncs the ClusterVirtualMachineImage content from the provider.
 // It skips syncing if the image content is already up-to-date.
-func (r *Reconciler) syncImageContent(ctx goctx.Context,
-	cvmi *vmopv1a1.ClusterVirtualMachineImage, cclItem *imgregv1a1.ClusterContentLibraryItem) error {
+func (r *Reconciler) syncImageContent(
+	ctx goctx.Context,
+	logger logr.Logger,
+	cvmi *vmopv1a1.ClusterVirtualMachineImage,
+	cclItem *imgregv1a1.ClusterContentLibraryItem) error {
+
 	latestVersion := cclItem.Status.ContentVersion
 	if cvmi.Status.ContentVersion == latestVersion {
 		return nil
@@ -273,5 +268,6 @@ func (r *Reconciler) syncImageContent(ctx goctx.Context,
 	}
 
 	r.Recorder.EmitEvent(cvmi, "Update", err, false)
+	r.Metrics.RegisterVMIContentSync(logger, cvmi.Name, "", err == nil)
 	return err
 }

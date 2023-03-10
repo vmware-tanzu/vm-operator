@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -139,23 +138,16 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 		},
 	}
 
-	logger = logger.WithValues("vmiName", vmi.Name, "vmiNamespace", vmi.Namespace)
-
-	clItemSecurityCompliance := clItem.Status.SecurityCompliance
+	logger = logger.WithValues("vmiName", vmi.Name)
 
 	// If the ContentLibraryItem's security compliance field is not set or is false, delete the vmi if already exists
-	if clItemSecurityCompliance == nil || !*clItemSecurityCompliance {
-		logger.Info("ContentLibraryItem's security status is not true, deleting corresponding vmi if exists")
+	if securityCompliance := clItem.Status.SecurityCompliance; securityCompliance == nil || !*securityCompliance {
 		if err := r.Client.Delete(ctx, vmi); err != nil {
-			if k8serrors.IsNotFound(err) {
-				logger.Info("Corresponding vmi not found, skipping delete")
-				return nil
-			}
-			return err
+			return client.IgnoreNotFound(err)
 		}
 
 		r.Metrics.DeleteMetrics(logger, vmi.Name, vmi.Namespace)
-		logger.Info("Deleted Corresponding vmi")
+		logger.Info("Deleted corresponding VirtualMachineImage", "securityCompliance", securityCompliance)
 		return nil
 	}
 
@@ -185,18 +177,18 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 			return err
 		}
 
-		syncErr = r.syncImageContent(ctx, vmi, clItem)
+		syncErr = r.syncImageContent(ctx, logger, vmi, clItem)
 		// Do not return syncErr here as we still want to patch the updated fields we get above.
 		return nil
 	})
 
-	// Registry metrics based on the corresponding error captured.
+	logger = logger.WithValues("operationResult", opRes)
+
 	defer func() {
+		// createOrPatchErr can be updated below.
 		r.Metrics.RegisterVMIResourceResolve(logger, vmi.Name, vmi.Namespace, createOrPatchErr == nil)
-		r.Metrics.RegisterVMIContentSync(logger, vmi.Name, vmi.Namespace, syncErr == nil)
 	}()
 
-	logger = logger.WithValues("operationResult", opRes)
 	if createOrPatchErr != nil {
 		logger.Error(createOrPatchErr, "failed to create or patch VirtualMachineImage resource")
 		return createOrPatchErr
@@ -248,8 +240,12 @@ func (r *Reconciler) setUpVMIFromCLItem(vmi *vmopv1alpha1.VirtualMachineImage,
 
 // syncImageContent syncs the VirtualMachineImage content from the provider.
 // It skips syncing if the image content is already up-to-date.
-func (r *Reconciler) syncImageContent(ctx goctx.Context,
-	vmi *vmopv1alpha1.VirtualMachineImage, clItem *imgregv1a1.ContentLibraryItem) error {
+func (r *Reconciler) syncImageContent(
+	ctx goctx.Context,
+	logger logr.Logger,
+	vmi *vmopv1alpha1.VirtualMachineImage,
+	clItem *imgregv1a1.ContentLibraryItem) error {
+
 	latestVersion := clItem.Status.ContentVersion
 	if vmi.Status.ContentVersion == latestVersion {
 		return nil
@@ -268,5 +264,6 @@ func (r *Reconciler) syncImageContent(ctx goctx.Context,
 	}
 
 	r.Recorder.EmitEvent(vmi, "Update", err, false)
+	r.Metrics.RegisterVMIContentSync(logger, vmi.Name, vmi.Namespace, err == nil)
 	return err
 }

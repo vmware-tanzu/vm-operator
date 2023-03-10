@@ -22,6 +22,9 @@ type VirtualMachinePublishRequestContext struct {
 	VM               *vmopv1.VirtualMachine
 	ContentLibrary   *imgregv1a1.ContentLibrary
 	ItemID           string
+	// SkipPatch indicates whether we should skip patching the object after reconcile
+	// because Status is updated separately in the publishing case due to CL API limitations.
+	SkipPatch bool
 }
 
 func (v *VirtualMachinePublishRequestContext) String() string {

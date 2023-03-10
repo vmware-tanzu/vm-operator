@@ -20,6 +20,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -41,6 +42,7 @@ import (
 )
 
 const (
+	finalizerName     = "virtualmachinepublishrequest.vmoperator.vmware.com"
 	TaskDescriptionID = "com.vmware.ovfs.LibraryItem.capture"
 
 	// waitForTaskTimeout represents the timeout to wait for task existence in task manager.
@@ -203,10 +205,6 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 	// Update() of stale object will be rejected by API server and result in unnecessary reconciles.
 	err := r.apiReader.Get(ctx, req.NamespacedName, vmPublishReq)
 	if err != nil {
-		// Delete registered metrics if the resource is not found.
-		if apiErrors.IsNotFound(err) {
-			r.Metrics.DeleteMetrics(r.Logger, req.Name, req.Namespace)
-		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -215,6 +213,26 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 		Logger:           ctrl.Log.WithName("VirtualMachinePublishRequest").WithValues("name", req.NamespacedName),
 		VMPublishRequest: vmPublishReq,
 	}
+
+	patchHelper, err := patch.NewHelper(vmPublishReq, r.Client)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrapf(err, "failed to init patch helper for %s", fmt.Sprintf("%s/%s", vmPublishReq.Namespace, vmPublishReq.Name))
+	}
+
+	// the patch is skipped when the VirtualMachinePublishRequest.Status().Update
+	// is called during publishVirtualMachine().
+	defer func() {
+		if vmPublishCtx.SkipPatch {
+			return
+		}
+
+		if err := patchHelper.Patch(ctx, vmPublishReq); err != nil {
+			if reterr == nil {
+				reterr = err
+			}
+			vmPublishCtx.Logger.Error(err, "patch failed")
+		}
+	}()
 
 	if !vmPublishReq.DeletionTimestamp.IsZero() {
 		return r.ReconcileDelete(vmPublishCtx)
@@ -253,25 +271,22 @@ func (r *Reconciler) updateSourceAndTargetRef(ctx *context.VirtualMachinePublish
 }
 
 // publishVirtualMachine checks if source VM and target is valid. Publish a VM if all requirements are met.
-// Returns
-// - A boolean value represents if the following Patch should be skipped.
-// - error.
-func (r *Reconciler) publishVirtualMachine(ctx *context.VirtualMachinePublishRequestContext) (bool, error) {
+func (r *Reconciler) publishVirtualMachine(ctx *context.VirtualMachinePublishRequestContext) error {
 	vmPublishReq := ctx.VMPublishRequest
 	// Check if the source and target is valid
 	if err := r.checkIsSourceValid(ctx); err != nil {
 		ctx.Logger.Error(err, "failed to check if source is valid")
-		return false, err
+		return err
 	}
 
 	if err := r.checkIsTargetValid(ctx); err != nil {
 		ctx.Logger.Error(err, "failed to check if target is valid")
-		return false, err
+		return err
 	}
 
 	// In case we mark Upload condition to true when checking target, return early.
 	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded) {
-		return false, nil
+		return nil
 	}
 
 	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionSourceValid) &&
@@ -287,9 +302,10 @@ func (r *Reconciler) publishVirtualMachine(ctx *context.VirtualMachinePublishReq
 		// Patch a stale object won't fail even when the resourceVersion doesn't match. In this case, we
 		// may set .status.attempts to a same number multiple times using Patch.
 		// Use Update instead and skip Patch in the ReconcileNormal defer function.
+		ctx.SkipPatch = true
 		if err := r.Client.Status().Update(ctx, vmPublishReq); err != nil {
 			ctx.Logger.Error(err, "update VirtualMachinePublishRequest status failed")
-			return true, err
+			return err
 		}
 
 		go func() {
@@ -302,10 +318,10 @@ func (r *Reconciler) publishVirtualMachine(ctx *context.VirtualMachinePublishReq
 			}
 			r.Recorder.EmitEvent(vmPublishReq, "Publish", pubErr, false)
 		}()
-		return true, nil
+		return nil
 	}
 
-	return false, nil
+	return nil
 }
 
 func (r *Reconciler) removeVMPubResourceFromCluster(ctx *context.VirtualMachinePublishRequestContext) (requeueAfter time.Duration,
@@ -814,11 +830,20 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachinePublishRequestCo
 	ctx.Logger.Info("Reconciling VirtualMachinePublishRequest")
 	vmPublishReq := ctx.VMPublishRequest
 
+	if !controllerutil.ContainsFinalizer(vmPublishReq, finalizerName) {
+		// The finalizer must be present before proceeding in order to ensure that the VirtualMachinePublishRequest will
+		// be cleaned up. Return immediately after here to let the patcher helper update the
+		// object, and then we'll proceed on the next reconciliation.
+		controllerutil.AddFinalizer(vmPublishReq, finalizerName)
+		return
+	}
+
 	// Register VM publish request metrics based on the reconcile result.
 	var isComplete, isDeleted bool
 	defer func() {
 		if isDeleted {
-			r.Metrics.DeleteMetrics(ctx.Logger, vmPublishReq.Name, vmPublishReq.Namespace)
+			// If the vmPub is deleted, return immediately.
+			// We don't need to call DeleteMetrics here, we will run this in ReconcileDelete().
 			return
 		}
 
@@ -843,25 +868,6 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachinePublishRequestCo
 		return ctrl.Result{RequeueAfter: requeueAfter}, err
 	}
 
-	skipPatch := false
-	patchHelper, err := patch.NewHelper(vmPublishReq, r.Client)
-	if err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "failed to init patch helper for %s", fmt.Sprintf("%s/%s", vmPublishReq.Namespace, vmPublishReq.Name))
-	}
-
-	defer func() {
-		if skipPatch {
-			return
-		}
-
-		if err := patchHelper.Patch(ctx, vmPublishReq); err != nil {
-			if reterr == nil {
-				reterr = err
-			}
-			ctx.Logger.Error(err, "patch failed")
-		}
-	}()
-
 	if vmPublishReq.Status.StartTime.IsZero() {
 		vmPublishReq.Status.StartTime = metav1.Now()
 	}
@@ -874,7 +880,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachinePublishRequestCo
 	}
 
 	if shouldPublish {
-		skipPatch, err = r.publishVirtualMachine(ctx)
+		err = r.publishVirtualMachine(ctx)
 		if err != nil {
 			ctx.Logger.Error(err, "failed to publish VirtualMachine")
 			return ctrl.Result{}, errors.Wrapf(err, "failed to publish VirtualMachine")
@@ -897,9 +903,6 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachinePublishRequestCo
 	if isComplete = r.checkIsComplete(ctx); isComplete {
 		// remove VirtualMachinePublishRequest from the cluster if ttlSecondsAfterFinished is set.
 		requeueAfter, deleted, err := r.removeVMPubResourceFromCluster(ctx)
-		if deleted {
-			skipPatch = true
-		}
 		isDeleted = deleted
 		return ctrl.Result{RequeueAfter: requeueAfter}, err
 	}
@@ -908,7 +911,10 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachinePublishRequestCo
 }
 
 func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachinePublishRequestContext) (ctrl.Result, error) {
-	r.Metrics.DeleteMetrics(ctx.Logger, ctx.VMPublishRequest.Name, ctx.VMPublishRequest.Namespace)
-	// no op
+	if controllerutil.ContainsFinalizer(ctx.VMPublishRequest, finalizerName) {
+		r.Metrics.DeleteMetrics(ctx.Logger, ctx.VMPublishRequest.Name, ctx.VMPublishRequest.Namespace)
+		controllerutil.RemoveFinalizer(ctx.VMPublishRequest, finalizerName)
+	}
+
 	return ctrl.Result{}, nil
 }

@@ -37,6 +37,8 @@ func unitTests() {
 	Describe("Invoking VirtualMachinePublishRequest Reconcile", unitTestsReconcile)
 }
 
+const finalizerName = "virtualmachinepublishrequest.vmoperator.vmware.com"
+
 func unitTestsReconcile() {
 	var (
 		initObjects []client.Object
@@ -95,15 +97,31 @@ func unitTestsReconcile() {
 		reconciler = nil
 	})
 
-	getVirtualMachinePublishRequest := func() *vmopv1alpha1.VirtualMachinePublishRequest {
-		newVMPub := &vmopv1alpha1.VirtualMachinePublishRequest{}
-		Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmpub), newVMPub)).To(Succeed())
-		return newVMPub
-	}
-
 	Context("ReconcileNormal", func() {
 		BeforeEach(func() {
 			initObjects = append(initObjects, cl, vm, vmpub)
+		})
+
+		When("object does not have finalizer set", func() {
+			BeforeEach(func() {
+				vmpub.Finalizers = nil
+			})
+
+			It("will set finalizer", func() {
+				_, err := reconciler.ReconcileNormal(vmpubCtx)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vmpubCtx.VMPublishRequest.GetFinalizers()).To(ContainElement(finalizerName))
+			})
+		})
+
+		It("will have finalizer set upon successful reconciliation and can be called multiple times", func() {
+			_, err := reconciler.ReconcileNormal(vmpubCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(vmpubCtx.VMPublishRequest.GetFinalizers()).To(ContainElement(finalizerName))
+
+			_, err = reconciler.ReconcileNormal(vmpubCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(vmpubCtx.VMPublishRequest.GetFinalizers()).To(ContainElement(finalizerName))
 		})
 
 		When("VMPubRequest update failed", func() {
@@ -135,8 +153,7 @@ func unitTestsReconcile() {
 				Expect(err).To(HaveOccurred())
 
 				// Update SourceValid condition.
-				newVMPub := getVirtualMachinePublishRequest()
-				Expect(conditions.IsTrue(newVMPub,
+				Expect(conditions.IsTrue(vmpub,
 					vmopv1alpha1.VirtualMachinePublishRequestConditionSourceValid)).To(BeFalse())
 			})
 
@@ -151,8 +168,7 @@ func unitTestsReconcile() {
 					Expect(err).To(HaveOccurred())
 
 					// Update SourceValid condition.
-					newVMPub := getVirtualMachinePublishRequest()
-					Expect(conditions.IsTrue(newVMPub,
+					Expect(conditions.IsTrue(vmpub,
 						vmopv1alpha1.VirtualMachinePublishRequestConditionSourceValid)).To(BeFalse())
 				})
 			})
@@ -168,8 +184,7 @@ func unitTestsReconcile() {
 				Expect(err).To(HaveOccurred())
 
 				// Update TargetValid condition.
-				newVMPub := getVirtualMachinePublishRequest()
-				Expect(conditions.IsTrue(newVMPub,
+				Expect(conditions.IsTrue(vmpub,
 					vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
 			})
 
@@ -181,8 +196,7 @@ func unitTestsReconcile() {
 				Expect(err).To(HaveOccurred())
 
 				// Update TargetValid condition.
-				newVMPub := getVirtualMachinePublishRequest()
-				Expect(conditions.IsTrue(newVMPub,
+				Expect(conditions.IsTrue(vmpub,
 					vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
 			})
 
@@ -199,8 +213,7 @@ func unitTestsReconcile() {
 				Expect(err).To(HaveOccurred())
 
 				// Update TargetValid condition.
-				newVMPub := getVirtualMachinePublishRequest()
-				Expect(conditions.IsTrue(newVMPub,
+				Expect(conditions.IsTrue(vmpub,
 					vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
 			})
 
@@ -218,8 +231,7 @@ func unitTestsReconcile() {
 					Expect(err).NotTo(HaveOccurred())
 
 					// Update TargetValid condition.
-					newVMPub := getVirtualMachinePublishRequest()
-					Expect(conditions.IsTrue(newVMPub,
+					Expect(conditions.IsTrue(vmpub,
 						vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
 				})
 			})
@@ -344,10 +356,9 @@ func unitTestsReconcile() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					newVMPub := getVirtualMachinePublishRequest()
-					Expect(conditions.IsTrue(newVMPub,
+					Expect(conditions.IsTrue(vmpub,
 						vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
-					Expect(conditions.IsTrue(newVMPub,
+					Expect(conditions.IsTrue(vmpub,
 						vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeFalse())
 
 					Eventually(func() bool {
@@ -395,8 +406,7 @@ func unitTestsReconcile() {
 
 						Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
 
-						newVMPub := getVirtualMachinePublishRequest()
-						uploadCondition := getCondition(newVMPub, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)
+						uploadCondition := getCondition(vmpub, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)
 						Expect(uploadCondition).ToNot(BeNil())
 						Expect(uploadCondition.Status).To(Equal(corev1.ConditionFalse))
 						Expect(uploadCondition.Reason).To(Equal(vmopv1alpha1.UploadItemIDInvalidReason))
@@ -410,8 +420,7 @@ func unitTestsReconcile() {
 
 						Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
 
-						newVMPub := getVirtualMachinePublishRequest()
-						uploadCondition := getCondition(newVMPub, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)
+						uploadCondition := getCondition(vmpub, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)
 						Expect(uploadCondition.Status).To(Equal(corev1.ConditionFalse))
 						Expect(uploadCondition.Reason).To(Equal(vmopv1alpha1.UploadItemIDInvalidReason))
 					})
@@ -423,8 +432,7 @@ func unitTestsReconcile() {
 
 						Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
 
-						newVMPub := getVirtualMachinePublishRequest()
-						uploadCondition := getCondition(newVMPub, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)
+						uploadCondition := getCondition(vmpub, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)
 						Expect(uploadCondition).ToNot(BeNil())
 						Expect(uploadCondition.Status).To(Equal(corev1.ConditionFalse))
 						Expect(uploadCondition.Reason).To(Equal(vmopv1alpha1.UploadItemIDInvalidReason))
@@ -478,15 +486,14 @@ func unitTestsReconcile() {
 
 							Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
 
-							newVMPub := getVirtualMachinePublishRequest()
-							Expect(conditions.IsTrue(newVMPub,
+							Expect(conditions.IsTrue(vmpub,
 								vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
-							Expect(conditions.IsTrue(newVMPub,
+							Expect(conditions.IsTrue(vmpub,
 								vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeTrue())
-							Expect(newVMPub.Status.ImageName).To(Equal("dummy-image"))
-							Expect(conditions.IsTrue(newVMPub,
+							Expect(vmpub.Status.ImageName).To(Equal("dummy-image"))
+							Expect(conditions.IsTrue(vmpub,
 								vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
-							Expect(newVMPub.Status.Ready).To(BeTrue())
+							Expect(vmpub.Status.Ready).To(BeTrue())
 						})
 
 						It("Update item description failed once", func() {
@@ -501,15 +508,14 @@ func unitTestsReconcile() {
 							Expect(err).To(HaveOccurred())
 
 							By("ImageAvailable is true and Complete is false")
-							newVMPub := getVirtualMachinePublishRequest()
 							Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
-							Expect(conditions.IsTrue(newVMPub,
+							Expect(conditions.IsTrue(vmpub,
 								vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
-							Expect(conditions.IsTrue(newVMPub,
+							Expect(conditions.IsTrue(vmpub,
 								vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeTrue())
-							Expect(conditions.IsTrue(newVMPub,
+							Expect(conditions.IsTrue(vmpub,
 								vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)).To(BeFalse())
-							Expect(newVMPub.Status.Ready).To(BeFalse())
+							Expect(vmpub.Status.Ready).To(BeFalse())
 
 							// requeue reconcile and update item description succeeded.
 							fakeVMProvider.Lock()
@@ -520,10 +526,9 @@ func unitTestsReconcile() {
 							Expect(err).NotTo(HaveOccurred())
 
 							By("Complete is true")
-							newVMPub = getVirtualMachinePublishRequest()
-							Expect(conditions.IsTrue(newVMPub,
+							Expect(conditions.IsTrue(vmpub,
 								vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
-							Expect(newVMPub.Status.Ready).To(BeTrue())
+							Expect(vmpub.Status.Ready).To(BeTrue())
 						})
 
 						When("TTLSecondsAfterFinished is set", func() {
@@ -539,7 +544,7 @@ func unitTestsReconcile() {
 								Eventually(func() bool {
 									newVMPub := &vmopv1alpha1.VirtualMachinePublishRequest{}
 									err := ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmpub), newVMPub)
-									return apiErrors.IsNotFound(err)
+									return apiErrors.IsNotFound(err) || !newVMPub.DeletionTimestamp.IsZero()
 								}).Should(BeTrue())
 							})
 						})
@@ -550,15 +555,14 @@ func unitTestsReconcile() {
 							_, err := reconciler.ReconcileNormal(vmpubCtx)
 							Expect(err).NotTo(HaveOccurred())
 
-							newVMPub := getVirtualMachinePublishRequest()
 							Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
-							Expect(conditions.IsTrue(newVMPub,
+							Expect(conditions.IsTrue(vmpub,
 								vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
-							Expect(conditions.IsTrue(newVMPub,
+							Expect(conditions.IsTrue(vmpub,
 								vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeFalse())
-							Expect(conditions.IsTrue(newVMPub,
+							Expect(conditions.IsTrue(vmpub,
 								vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)).To(BeFalse())
-							Expect(newVMPub.Status.Ready).To(BeFalse())
+							Expect(vmpub.Status.Ready).To(BeFalse())
 						})
 					})
 				})
@@ -581,8 +585,7 @@ func unitTestsReconcile() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					newVMPub := getVirtualMachinePublishRequest()
-					Expect(conditions.IsTrue(newVMPub,
+					Expect(conditions.IsTrue(vmpub,
 						vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
 
 					Eventually(func() bool {
@@ -612,8 +615,7 @@ func unitTestsReconcile() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					newVMPub := getVirtualMachinePublishRequest()
-					Expect(conditions.IsTrue(newVMPub,
+					Expect(conditions.IsTrue(vmpub,
 						vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
 
 					Consistently(func() bool {
@@ -638,8 +640,7 @@ func unitTestsReconcile() {
 					_, err := reconciler.ReconcileNormal(vmpubCtx)
 					Expect(err).NotTo(HaveOccurred())
 
-					newVMPub := getVirtualMachinePublishRequest()
-					Expect(conditions.IsTrue(newVMPub,
+					Expect(conditions.IsTrue(vmpub,
 						vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
 
 					Consistently(func() bool {
@@ -670,10 +671,9 @@ func unitTestsReconcile() {
 					Expect(err).NotTo(HaveOccurred())
 
 					// Update TargetValid condition.
-					newVMPub := getVirtualMachinePublishRequest()
-					Expect(conditions.IsTrue(newVMPub,
+					Expect(conditions.IsTrue(vmpub,
 						vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
-					Expect(conditions.IsTrue(newVMPub,
+					Expect(conditions.IsTrue(vmpub,
 						vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
 				})
 			})

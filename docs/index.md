@@ -19,24 +19,19 @@ spec:
   storageClass: iscsi
 ```
 
-### Demo
+## User Guide
+ 
+The user guide provides information on:
 
-View the [demo](./user-guide/examples/demo.md) for more information on ways to use VM Operator to manage VMs.
+* [Bootstrap Providers](./user-guide/bootstrap.md) -- how to bootstrap the VM's guest
+* [Supported Platforms](./user-guide/platforms.md) -- where/how VM Operator can be deployed
 
-## Getting Help
-
-Having issues? No worries, let's figure it out together.
-
-### Debug
-
-`// TODO(akutz)`
-
-### Supported Platforms
+## Supported Platforms
 
 This section lists the platforms on which VM Operator is supported:
 
 * [Supervisor](./user-guide/platforms/supervisor.md)
 
-### GitHub and Slack
+## Getting Help
 
-If a little extra help is needed, please don't hesitate to use [GitHub issues](https://github.com/vmware-tanzu/vm-operator/issues).
+Having issues? No worries, let's figure it out together. Please don't hesitate to use [GitHub issues](https://github.com/vmware-tanzu/vm-operator/issues).

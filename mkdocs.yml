@@ -22,11 +22,10 @@ markdown_extensions:
 nav:
 - Home: index.md
 - User Guide:
+  - Bootstrap: user-guide/bootstrap.md
   - Platforms:
     - Overview: user-guide/platforms.md
     - Supervisor: user-guide/platforms/supervisor.md
-  - Examples:
-    - Demo: user-guide/examples/demo.md
   - Help:
     - Troubleshooting: user-guide/help/troubleshooting.md
     - Usage: user-guide/help/usage.md

@@ -23,6 +23,7 @@ const (
 	VMClassAsConfigFSS            = "FSS_WCP_VM_CLASS_AS_CONFIG"
 	VMClassAsConfigDaynDateFSS    = "FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE"
 	VMImageRegistryFSS            = "FSS_WCP_VM_IMAGE_REGISTRY"
+	NamespacedClassAndWindowsFSS  = "FSS_WCP_NAMESPACED_CLASS_AND_WINDOWS_SUPPORT"
 	MaxCreateVMsOnProviderEnv     = "MAX_CREATE_VMS_ON_PROVIDER"
 	DefaultMaxCreateVMsOnProvider = 80
 
@@ -95,6 +96,10 @@ var IsVMClassAsConfigFSSDaynDateEnabled = func() bool {
 
 var IsWCPVMImageRegistryEnabled = func() bool {
 	return os.Getenv(VMImageRegistryFSS) == trueString
+}
+
+var IsNamespacedClassAndWindowsFSSEnabled = func() bool {
+	return os.Getenv(NamespacedClassAndWindowsFSS) == trueString
 }
 
 // MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler

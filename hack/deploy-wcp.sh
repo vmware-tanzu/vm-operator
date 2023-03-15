@@ -1,195 +1,282 @@
 #!/usr/bin/env bash
-# Deploy VMOP and install required CRDs in the given WCP supervisor cluster
-#
-# Usage:
-# $ deploy-wcp.sh
 
 set -o errexit
 set -o nounset
 set -o pipefail
-set -x
 
-SSHCommonArgs=("-o PubkeyAuthentication=no" "-o UserKnownHostsFile=/dev/null" "-o StrictHostKeyChecking=no")
+USAGE="
+Usage: ${0} [[-s SV_IP,SV_IP,SV_IP [-S SV_PASSWORD]] | [-v VC_IP [-V VC_SSH_PASSWORD]] | [-T testbedInfo.json]] [-c cluster] image.tar
 
-# WCP Unified TKG FSS
-FSS_WCP_Unified_TKG_VALUE=${FSS_WCP_Unified_TKG_VALUE:-false}
+Loads the VM Operator container image to the Supervisor control plane VMs,
+and restarts the deployments. The Supervisor control plane VM credential
+and IPs must be either provided directly, or obtained indirectly from VC.
 
-# VM service v1alpha2 FSS
-FSS_WCP_VMSERVICE_V1ALPHA2_VALUE=${FSS_WCP_VMSERVICE_V1ALPHA2_VALUE:-false}
+If you have testbedInfo.json file - either a local file or the URL - that
+can be specified with the -T argument. This script will then use that file
+to log into VC and obtain the necessary Supervisor info.
 
-# Using VDS Networking
-VSPHERE_NETWORKING_VALUE=${VSPHERE_NETWORKING_VALUE:-false}
+If you know the Supervisor CP IPs, they can be specified as a comma
+separated list to the -s argument. The root password can be specified with
+the -S argument; otherwise it is assumed that public key authentication
+has already been configured.
 
-# VM service VM Class as Config
-FSS_WCP_VM_CLASS_AS_CONFIG_VALUE=${FSS_WCP_VM_CLASS_AS_CONFIG_VALUE:-false}
+If you know the VC IP, that can be specified with the -v argument. The root
+password can be specified with the -V argument; otherwise it is assumed that
+public key authentication has already been configured.
 
-# VM service VM Class as Config Day and Date
-FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE=${FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE:-false}
+With either the -T or -v arguments, the first Supervisor cluster is selected
+by default. To select a specific cluster, use the -c argument.
 
-# VM service Instance Storage
-FSS_WCP_INSTANCE_STORAGE_VALUE=${FSS_WCP_INSTANCE_STORAGE_VALUE:-false}
+FLAGS:
+  -s Supervisor CP IPs
+  -S Supervisor CP ssh password
+  -v vCenter IP
+  -V vCenter ssh password
+  -T testbedInfo.json file or URL
+  -c Supervisor cluster, eg 'domain-c8'
+"
 
-# VM service Fault Domain
-FSS_WCP_FAULTDOMAINS_VALUE=${FSS_WCP_FAULTDOMAINS_VALUE:-false}
+#########################################
 
-# Image Registry: we use this FSS for VM publish.
-FSS_WCP_VM_IMAGE_REGISTRY_VALUE=${FSS_WCP_VM_IMAGE_REGISTRY_VALUE:-false}
+# VIP host key will change as Supervisor leader migrates
+COMMON_SSH_OPTS=("-o StrictHostKeyChecking=no" "-o UserKnownHostsFile=/dev/null")
 
-# VM Class migration to namespace FSS
-FSS_WCP_NAMESPACED_CLASS_AND_WINDOWS_SUPPORT_VALUE=${FSS_WCP_NAMESPACED_CLASS_AND_WINDOWS_SUPPORT_VALUE:-false}
+# Easiest tag to just assume. Maybe revist if we combine "docker build", "docker save",
+# and this script into one.
+IMAGE_REF="docker.io/library/vmoperator-controller:latest"
 
-# Change directories to the parent directory of the one in which this
-# script is located.
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+SV_VIP=
+SV_USERNAME="root"
+SV_PASSWORD=
+SV_IPS_CSL=
+SV_IPS=()
 
-error() {
+VC_IP=
+#VC_USERNAME=
+#VC_PASSWORD=
+VC_SSH_USERNAME="root"
+VC_SSH_PASSWORD=
+
+TESTBED_INFO=
+SV_CLUSTER=
+
+#########################################
+
+function log() {
+    echo "${@}"
+}
+
+function error() {
     echo "${@}" 1>&2
 }
 
-verifyEnvironmentVariables() {
-    if [[ -z ${WCP_LOAD_K8S_MASTER:-} ]]; then
-        error "Error: The WCP_LOAD_K8S_MASTER environment variable must be set" \
-             "to point to a copy of load-k8s-master"
-        exit 1
-    fi
+function fatal() {
+    error "${@}" && exit 1
+}
 
-    if [[ ! -x $WCP_LOAD_K8S_MASTER ]]; then
-        error "Error: Could not find the load-k8s-master script. Please " \
-             "verify the environment variable WCP_LOAD_K8S_MASTER is set " \
-             "properly. The load-k8s-master script is found at " \
-             "bora/vpx/wcp/support/load-k8s-master in a bora repo."
-        exit 1
-    fi
+function vc_ssh_cmd() {
+    local cmd=$1
 
-    if [[ -z ${VCSA_IP:-} ]]; then
-        error "Error: The VCSA_IP environment variable must be set" \
-             "to point to a valid VCSA"
-        exit 1
-    fi
-
-    if [[ -z ${VCSA_PASSWORD:-} ]]; then
-        # Often the VCSA_PASSWORD is set to a default. The below sets a
-        # common default so the user of this script does not need to set it.
-        VCSA_PASSWORD="vmware"
-    fi
-
-    if [[ -z ${SKIP_YAML:-} ]] ; then
-        output=$(SSHPASS="$VCSA_PASSWORD" sshpass -e ssh "${SSHCommonArgs[@]}" \
-                root@"$VCSA_IP" "/usr/lib/vmware-wcp/decryptK8Pwd.py" 2>&1)
-        WCP_SA_IP=$(echo "$output" | grep -oEI "IP: (\\S)+" | cut -d" " -f2)
-        WCP_SA_PASSWORD=$(echo "$output" | grep -oEI "PWD: (\\S)+" | cut -d" " -f2)
-
-        if [[ -z ${VCSA_DATACENTER:-} ]]; then
-            error "Error: The VCSA_DATACENTER environment variable must be set" \
-                "to point to a valid VCSA Datacenter"
-            exit 1
-        fi
-
-        VCSA_DATASTORE=${VCSA_DATASTORE:-nfs0-1}
-
-        if [[ -z ${VCSA_CONTENT_SOURCE:-} ]]; then
-            error "Error: The VCSA_CONTENT_SOURCE environment variable must be set" \
-                    "to point to the ID of a valid VCSA Content Library"
-            exit 1
-        fi
-
-        if [[ -z ${VCSA_WORKER_DNS:-} ]]; then
-            cmd="grep WORKER_DNS /var/lib/node.cfg | cut -d'=' -f2 | sed -e 's/^[[:space:]]*//'"
-            output=$(SSHPASS="$WCP_SA_PASSWORD" sshpass -e ssh "${SSHCommonArgs[@]}" \
-                        "root@$WCP_SA_IP" "$cmd")
-            if [[ -z $output ]]; then
-                error "You did not specify env VCSA_WORKER_DNS and we couldn't fetch it from the SV cluster."
-                error "Run the following on your SV node: $cmd"
-                exit 1
-            fi
-            VCSA_WORKER_DNS=$output
-        fi
+    if [[ -n $VC_SSH_PASSWORD ]] ; then
+        SSHPASS="$VC_SSH_PASSWORD" sshpass -e ssh "${COMMON_SSH_OPTS[@]}" "$VC_SSH_USERNAME@$VC_IP" "$cmd"
+    else
+        ssh "${COMMON_SSH_OPTS[@]}" -o PasswordAuthentication=no "$VC_SSH_USERNAME@$VC_IP" "$cmd"
     fi
 }
 
-patchWcpDeploymentYaml() {
-    if [[ ${SKIP_YAML:-} != "configmap" ]]; then
-        sed -i'' "s,<vc_pnid>,$VCSA_IP,g" "artifacts/wcp-deployment.yaml"
-        sed -i'' "s,<cluster>,$VCSA_CLUSTER,g" "artifacts/wcp-deployment.yaml"
-        sed -i'' "s,<datacenter>,$VCSA_DATACENTER,g" "artifacts/wcp-deployment.yaml"
-        sed -i'' "s, Datastore: .*, Datastore: $VCSA_DATASTORE," "artifacts/wcp-deployment.yaml"
-        sed -i'' "s,<worker_dns>,$VCSA_WORKER_DNS," "artifacts/wcp-deployment.yaml"
-        sed -i'' "s,<content_source>,$VCSA_CONTENT_SOURCE,g" "artifacts/wcp-deployment.yaml"
-    fi
+function sv_cp_ssh_cmd() {
+    local ip=$1 cmd=$2
 
-    sed -i'' -E "s,\"?<FSS_WCP_Unified_TKG_VALUE>\"?,\"$FSS_WCP_Unified_TKG_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_Unified_TKG_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst <FSS_WCP_Unified_TKG_VALUE> in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<FSS_WCP_VMSERVICE_V1ALPHA2_VALUE>\"?,\"$FSS_WCP_VMSERVICE_V1ALPHA2_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_VMSERVICE_V1ALPHA2_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst <FSS_WCP_VMSERVICE_V1ALPHA2_VALUE> in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<VSPHERE_NETWORKING_VALUE>\"?,\"$VSPHERE_NETWORKING_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<VSPHERE_NETWORKING_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst VSPHERE_NETWORKING_VALUE in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<FSS_WCP_VM_CLASS_AS_CONFIG_VALUE>\"?,\"$FSS_WCP_VM_CLASS_AS_CONFIG_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_VM_CLASS_AS_CONFIG_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst FSS_WCP_VM_CLASS_AS_CONFIG_VALUE in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE>\"?,\"$FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE_VALUE in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<FSS_WCP_FAULTDOMAINS_VALUE>\"?,\"$FSS_WCP_FAULTDOMAINS_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_FAULTDOMAINS_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst FSS_WCP_FAULTDOMAINS_VALUE in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<FSS_WCP_INSTANCE_STORAGE_VALUE>\"?,\"$FSS_WCP_INSTANCE_STORAGE_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_INSTANCE_STORAGE_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst FSS_WCP_INSTANCE_STORAGE_VALUE in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<FSS_WCP_VM_IMAGE_REGISTRY_VALUE>\"?,\"$FSS_WCP_VM_IMAGE_REGISTRY_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_VM_IMAGE_REGISTRY_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst FSS_WCP_VM_IMAGE_REGISTRY_VALUE in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    sed -i'' -E "s,\"?<FSS_WCP_NAMESPACED_CLASS_AND_WINDOWS_SUPPORT_VALUE>\"?,\"$FSS_WCP_VM_IMAGE_REGISTRY_VALUE\",g" "artifacts/wcp-deployment.yaml"
-    if grep -q "<FSS_WCP_NAMESPACED_CLASS_AND_WINDOWS_SUPPORT_VALUE>" artifacts/wcp-deployment.yaml; then
-        echo "Failed to subst FSS_WCP_NAMESPACED_CLASS_AND_WINDOWS_SUPPORT_VALUE in artifacts/wcp-deployment.yaml"
-        exit 1
-    fi
-    if  [[ -n ${INSECURE_TLS:-} ]]; then
-        sed -i'' -E "s,InsecureSkipTLSVerify: \"?false\"?,InsecureSkipTLSVerify: \"$INSECURE_TLS\",g" "artifacts/wcp-deployment.yaml"
+    if [[ -n $SV_PASSWORD ]] ; then
+        SSHPASS="$SV_PASSWORD" sshpass -e ssh "${COMMON_SSH_OPTS[@]}" "$SV_USERNAME@$ip" "$cmd"
+    else
+        ssh "${COMMON_SSH_OPTS[@]}" -o PasswordAuthentication=no "$SV_USERNAME@$ip" "$cmd"
     fi
 }
 
-deploy() {
-    local yamlArgs=""
+function sv_cp_scp_cmd() {
+    local ip=$1 file=$2
 
-    if [[ ${SKIP_YAML:-} != "all" ]]; then
-        patchWcpDeploymentYaml
-        yamlArgs+="--yamlToCopy artifacts/wcp-deployment.yaml,/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/30-vmop/vmop.yaml"
-        if [[ ${SKIP_YAML:-} != "vmclasses" ]]; then
-            yamlArgs+=" --yamlToCopy artifacts/default-vmclasses.yaml,/usr/lib/vmware-wcp/objects/PodVM-GuestCluster/40-vmclasses/default-vmclasses.yaml"
+    if [[ -n $SV_PASSWORD ]] ; then
+        SSHPASS="$SV_PASSWORD" sshpass -e scp -C "${COMMON_SSH_OPTS[@]}" "$file" "$SV_USERNAME@$ip:~"
+    else
+        scp -C "${COMMON_SSH_OPTS[@]}" -o PasswordAuthentication=no "$file" "$SV_USERNAME@$ip:~"
+    fi
+}
+
+function process_testbedInfoJson() {
+    local tbInfo vc
+
+    if [[ $1 =~ ^http(s)?://.*$ ]] ; then
+        tbInfo=$(curl -s "$1")
+    else
+        tbInfo=$(cat "$1")
+    fi
+
+    if [[ -z $tbInfo ]] ; then
+        fatal "Empty testbedInfo.json?"
+    fi
+
+    vc=$(jq '.vc[0]?' <<< "$tbInfo")
+    # FFS: there are different formats.
+    if [[ -n $vc ]] ; then
+        # VDS
+        VC_IP=$(jq -r .ip <<< "$vc")
+        #VC_USERNAME=$(jq -r .vimUsername <<< "$vc")
+        #VC_PASSWORD=$(jq -r .vimPassword <<< "$vc")
+        VC_SSH_USERNAME=$(jq -r .username <<<" $vc")
+        VC_SSH_PASSWORD=$(jq -r .password <<< "$vc")
+    else
+        # NSX-T
+        vc=$(jq -c '.vc["1"]' <<< "$tbInfo")
+
+        VC_IP=$(jq -r .ip <<< "$vc")
+        #VC_USERNAME=$(jq -r .username <<< "$vc")
+        #VC_PASSWORD=$(jq -r .password <<< "$vc")
+        VC_SSH_USERNAME="root"
+        VC_SSH_PASSWORD=$(jq -r .root_password <<< "$vc")
+    fi
+
+    # TODO: For some envs we need to use the jumphost to reach the SV.
+}
+
+function sv_get_vip_and_password() {
+    local k8sPwd sv pattern
+
+    log "Getting Supervisor VIP and password from VC..."
+
+    k8sPwd=$(vc_ssh_cmd "/usr/lib/vmware-wcp/decryptK8Pwd.py")
+
+    if [[ -z $SV_CLUSTER ]] ; then
+        pattern='^Cluster:'
+    else
+        pattern="^Cluster: ${SV_CLUSTER}:"
+    fi
+
+    sv=$(grep -m1 -A3 -e "$pattern" <<< "$k8sPwd" || true)
+    if [[ -z $sv ]] ; then
+        fatal "No Supervisor cluster found"
+    fi
+
+    SV_VIP=$(echo "$sv" | awk '/^IP:/ {print $2}')
+    SV_PASSWORD=$(echo "$sv" | awk '/^PWD:/ {print $2}')
+
+    log "Supervisor VIP: $SV_VIP Password: $SV_PASSWORD"
+}
+
+function sv_get_cp_ips() {
+    local cmd
+
+    # We don't populate the Nodes' ExternalIP field so get it this way.
+    cmd="kubectl get cm -n kube-system wcp-network-config -o jsonpath='{.data.api_servers_management_ips}'"
+
+    sv_cp_ssh_cmd "$SV_VIP" "$cmd"
+}
+
+function sv_copy_and_load_image() {
+    local svip=$1 image=$2
+
+    sv_cp_scp_cmd "$svip" "$image"
+    sv_cp_ssh_cmd "$svip" "ctr -n=k8s.io images import '$image'"
+    #sv_cp_ssh_cmd "$svip" "ctr -n k8s.io images ls | grep vmop"
+
+    log "$svip: copied and loaded image"
+}
+
+function sv_update_deployment_image() {
+    local image=$1 ip cmd
+
+    ip=${SV_VIP:-${SV_IPS[0]}}
+
+    cmd="kubectl set image -n vmware-system-vmop deployment/vmware-system-vmop-controller-manager manager='$image' && \
+         kubectl set image -n vmware-system-vmop deployment/vmware-system-vmop-web-console-validator web-console-validator='$image'"
+
+    sv_cp_ssh_cmd "$ip" "$cmd"
+}
+
+function sv_restart_vmop_deployment() {
+    local ip
+
+    ip=${SV_VIP:-${SV_IPS[0]}}
+
+    # First time "set image" will bounce them but whatever, just always do this.
+    sv_cp_ssh_cmd "$ip" "kubectl rollout restart deployment -n vmware-system-vmop"
+}
+
+#########################################
+
+while getopts ":hc:s:S:v:V:T:" opt ; do
+    case $opt in
+        h)
+            echo "$USAGE"
+            exit 0
+            ;;
+        c)
+            SV_CLUSTER=$OPTARG
+            ;;
+        s)
+            SV_IPS_CSL=$OPTARG
+            ;;
+        S)
+            SV_PASSWORD=$OPTARG
+            ;;
+        v)
+            VC_IP=$OPTARG
+            ;;
+        V)
+            VC_SSH_PASSWORD=$OPTARG
+            ;;
+        T)
+            TESTBED_INFO=$OPTARG
+            ;;
+        *)
+            fatal "$USAGE"
+            ;;
+    esac
+done
+
+shift $((OPTIND-1))
+
+if [[ $# -ne 1 ]] ; then
+    fatal "$USAGE"
+fi
+
+IMAGE=$1
+
+if [[ ! -r $IMAGE ]] ; then
+    fatal "Container image $IMAGE does not exist"
+fi
+
+if [[ -z $SV_IPS_CSL ]] ; then
+    if [[ -z $VC_IP ]] ; then
+        if [[ -z $TESTBED_INFO ]] ; then
+            fatal "No testbedInfo.json: either vCenter or Supervisor CP IPs is required"
         fi
+
+        process_testbedInfoJson "$TESTBED_INFO"
     fi
 
-    # shellcheck disable=SC2086
-    PATH="/opt/homebrew/bin:/usr/local/opt/gnu-getopt/bin:/usr/local/bin:$PATH" \
-      $WCP_LOAD_K8S_MASTER \
-        --component vmop \
-        --binary bin/wcp/manager,bin/wcp/web-console-validator \
-        --vc-ip "$VCSA_IP" \
-        --vc-user root \
-        --vc-password "$VCSA_PASSWORD" \
-        $yamlArgs
-}
+    sv_get_vip_and_password
+    SV_IPS_CSL=$(sv_get_cp_ips)
+fi
 
-verifyEnvironmentVariables
-deploy
+mapfile -t SV_IPS <<< "$(echo "$SV_IPS_CSL" | tr "," "\n")"
+if [[ ${#SV_IPS[@]} -eq 0 ]] ; then
+    fatal "Could not parse Supervisor IPs list: $SV_IPS_CSL"
+fi
+
+log "Supervisor CP IPs: ${SV_IPS[*]}"
+
+# TODO: Our image is ~30MB compressed, which isn't too bad to upload 3
+# times but could use the first SV CP as the source for the other 2.
+pids=()
+for ip in "${SV_IPS[@]}" ; do
+    sv_copy_and_load_image "$ip" "$IMAGE" &
+    pids+=($!)
+done
+wait "${pids[@]}"
+
+sv_update_deployment_image "$IMAGE_REF"
+sv_restart_vmop_deployment
 
 # vim: tabstop=4 shiftwidth=4 expandtab softtabstop=4 filetype=sh

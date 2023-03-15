@@ -17,6 +17,7 @@ artifacts/
 *-tests-report.xml
 default-vmclasses.yaml
 infrastructure-components.yaml
+*.tar
 
 # Binaries for programs and plugins
 *.exe

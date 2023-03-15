@@ -153,7 +153,7 @@ coverage-full: ## Show combined code coverage for unit and integration tests (op
 .PHONY: manager-only
 manager-only: $(MANAGER) ## Build manager binary only
 $(MANAGER):
-	go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) .
+	CGO_ENABLED=0 go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) .
 
 .PHONY: manager
 manager: prereqs generate lint-go manager-only ## Build manager binary
@@ -161,7 +161,7 @@ manager: prereqs generate lint-go manager-only ## Build manager binary
 .PHONY: web-console-validator-only
 web-console-validator-only: $(WEB_CONSOLE_VALIDATOR) ## Build web-console-validator binary only
 $(WEB_CONSOLE_VALIDATOR):
-	go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) cmd/web-console-validator/main.go
+	CGO_ENABLED=0 go build -o $@ -ldflags $(BUILDINFO_LDFLAGS) cmd/web-console-validator/main.go
 
 .PHONY: web-console-validator
 web-console-validator: prereqs generate lint-go web-console-validator-only ## Build web-console-validator binary

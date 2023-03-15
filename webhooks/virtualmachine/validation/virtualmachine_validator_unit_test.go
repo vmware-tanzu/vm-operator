@@ -1,10 +1,11 @@
-// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation_test
 
 import (
 	"fmt"
+	"os"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -51,6 +52,10 @@ type unitValidatingWebhookContext struct {
 }
 
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
+
+	// Enable the named network provider by default.
+	Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
+
 	vm := builder.DummyVirtualMachine()
 	vm.Name = "dummy-vm-for-webhook-validation"
 	vm.Namespace = "dummy-vm-namespace-for-webhook-validation"
@@ -109,6 +114,41 @@ func setReadinessProbe(validPortProbe bool) *vmopv1.Probe {
 	}
 }
 
+func initNamedNetworkProviderConfig(
+	ctx *unitValidatingWebhookContext,
+	enabled, used bool) func() {
+
+	if !used {
+		return func() {}
+	}
+
+	oldValue := os.Getenv(lib.NetworkProviderType)
+	deferredFn := func() {
+		Expect(os.Setenv(lib.NetworkProviderType, oldValue)).To(Succeed())
+	}
+	if enabled {
+		Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
+	} else {
+		Expect(os.Setenv(lib.NetworkProviderType, "")).To(Succeed())
+	}
+	if used {
+		ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
+		ctx.vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{
+			{
+				NetworkName: "VM Network",
+				NetworkType: "",
+			},
+		}
+	}
+	return deferredFn
+}
+
+var errInvalidNetworkProviderTypeNamed = field.Invalid(
+	field.NewPath("spec", "networkInterfaces").Index(0).Child("networkType"),
+	"",
+	"not supported in production",
+)
+
 //nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
@@ -157,6 +197,8 @@ func unitTestsValidateCreate() {
 		isServiceUser                     bool
 		addInstanceStorageVolumes         bool
 		isWCPVMImageRegistryEnabled       bool
+		isNamedNetworkProviderUsed        bool
+		isNamedNetworkProviderEnabled     bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -312,6 +354,14 @@ func unitTestsValidateCreate() {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 		}
 
+		// Named network provider
+		undoNamedNetProvider := initNamedNetworkProviderConfig(
+			ctx,
+			args.isNamedNetworkProviderEnabled,
+			args.isNamedNetworkProviderUsed,
+		)
+		defer undoNamedNetProvider()
+
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -421,6 +471,9 @@ func unitTestsValidateCreate() {
 		Entry("should deny when there are instance storage volumes and user is SSO user", createArgs{addInstanceStorageVolumes: true}, false,
 			field.Forbidden(volPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),
 		Entry("should allow when there are instance storage volumes and user is service user", createArgs{addInstanceStorageVolumes: true, isServiceUser: true}, true, nil, nil),
+
+		Entry("should allow empty network type when named networking enabled", createArgs{isNamedNetworkProviderUsed: true, isNamedNetworkProviderEnabled: true}, true, nil, nil),
+		Entry("should disallow empty network type when named networking disabled", createArgs{isNamedNetworkProviderUsed: true, isNamedNetworkProviderEnabled: false}, false, errInvalidNetworkProviderTypeNamed.Error(), nil),
 	)
 }
 
@@ -439,6 +492,8 @@ func unitTestsValidateUpdate() {
 		changeInstanceStorageVolumeName bool
 		isServiceUser                   bool
 		addInstanceStorageVolume        bool
+		isNamedNetworkProviderUsed      bool
+		isNamedNetworkProviderEnabled   bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -477,6 +532,14 @@ func unitTestsValidateUpdate() {
 			instanceStorageVolumes[0].Name += updateSuffix
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
 		}
+
+		// Named network provider
+		undoNamedNetProvider := initNamedNetworkProviderConfig(
+			ctx,
+			args.isNamedNetworkProviderEnabled,
+			args.isNamedNetworkProviderUsed,
+		)
+		defer undoNamedNetProvider()
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
@@ -519,6 +582,9 @@ func unitTestsValidateUpdate() {
 			field.Forbidden(volumesPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),
 		Entry("should allow adding new instance storage volume, when user type is service user", updateArgs{addInstanceStorageVolume: true, isServiceUser: true}, true, nil, nil),
 		Entry("should allow instance storage volume name change, when user type is service user", updateArgs{changeInstanceStorageVolumeName: true, isServiceUser: true}, true, nil, nil),
+
+		Entry("should allow empty network type when named networking enabled", updateArgs{isNamedNetworkProviderUsed: true, isNamedNetworkProviderEnabled: true}, true, nil, nil),
+		Entry("should disallow empty network type when named networking disabled", updateArgs{isNamedNetworkProviderUsed: true, isNamedNetworkProviderEnabled: false}, false, errInvalidNetworkProviderTypeNamed.Error(), nil),
 	)
 
 	When("the update is performed while object deletion", func() {

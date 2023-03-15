@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -45,15 +47,18 @@ func vmTests() {
 	)
 
 	var (
-		initObjects []client.Object
-		testConfig  builder.VCSimTestConfig
-		ctx         *builder.TestContextForVCSim
-		vmProvider  vmprovider.VirtualMachineProviderInterface
-		nsInfo      builder.WorkloadNamespaceInfo
+		initObjects            []client.Object
+		testConfig             builder.VCSimTestConfig
+		ctx                    *builder.TestContextForVCSim
+		vmProvider             vmprovider.VirtualMachineProviderInterface
+		nsInfo                 builder.WorkloadNamespaceInfo
+		oldNetworkProviderType string
 	)
 
 	BeforeEach(func() {
 		testConfig = builder.VCSimTestConfig{}
+		oldNetworkProviderType = os.Getenv(lib.NetworkProviderType)
+		Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
 	})
 
 	JustBeforeEach(func() {
@@ -69,6 +74,7 @@ func vmTests() {
 		initObjects = nil
 		vmProvider = nil
 		nsInfo = builder.WorkloadNamespaceInfo{}
+		Expect(os.Setenv(lib.NetworkProviderType, oldNetworkProviderType)).To(Succeed())
 	})
 
 	Context("Create/Update/Delete VirtualMachine", func() {

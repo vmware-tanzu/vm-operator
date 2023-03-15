@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package lib
@@ -47,9 +47,13 @@ const (
 	// DefaultInstanceStorageSeedRequeueDuration is the default seed requeue duration for instance storage.
 	DefaultInstanceStorageSeedRequeueDuration = 10 * time.Second
 
-	// NetworkProviderType is the cluster network provider type. It can be VSPHERE_NETWORK, NSX-T or NAMED.
-	// NAMED is only used in a local test environment.
-	NetworkProviderType = "NETWORK_PROVIDER"
+	// NetworkProviderType is the cluster network provider type. Valid values
+	// include: NAMED, NSXT, VSPHERE_NETWORK. Please note that NAMED is only
+	// used for testing and is not supported in production environments.
+	NetworkProviderType      = "NETWORK_PROVIDER"
+	NetworkProviderTypeNamed = "NAMED"
+	NetworkProviderTypeNSXT  = "NSXT"
+	NetworkProviderTypeVDS   = "VSPHERE_NETWORK"
 )
 
 // SetVMOpNamespaceEnv sets the VM Operator pod's namespace in the environment.
@@ -68,6 +72,10 @@ func GetVMOpNamespaceFromEnv() (string, error) {
 		return "", fmt.Errorf("VM Operator namespace envvar %s is not set", VmopNamespaceEnv)
 	}
 	return vmopNamespace, nil
+}
+
+var IsNamedNetworkProviderEnabled = func() bool {
+	return os.Getenv(NetworkProviderType) == NetworkProviderTypeNamed
 }
 
 var IsWcpFaultDomainsFSSEnabled = func() bool {

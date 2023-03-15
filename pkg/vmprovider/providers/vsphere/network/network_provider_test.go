@@ -1,10 +1,11 @@
-// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package network_test
 
 import (
 	"fmt"
+	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -16,12 +17,12 @@ import (
 
 	"github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
-
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
+
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -90,41 +91,67 @@ var _ = Describe("NetworkProvider", func() {
 	})
 
 	Context("Named Network Provider", func() {
-		BeforeEach(func() {
-			vm.Spec.NetworkInterfaces[0].NetworkName = "DC0_DVPG0"
-		})
+
+		var (
+			oldNetworkProviderType      string
+			namedNetworkProviderEnabled bool
+		)
 
 		JustBeforeEach(func() {
+			oldNetworkProviderType = os.Getenv(lib.NetworkProviderType)
+			if namedNetworkProviderEnabled {
+				Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
+			}
 			np = network.NewProvider(ctx.Client, ctx.VCClient.Client, ctx.Finder, nil)
 		})
 
-		Context("ensure interface", func() {
+		AfterEach(func() {
+			Expect(os.Setenv(lib.NetworkProviderType, oldNetworkProviderType)).To(Succeed())
+		})
 
-			It("create expected virtual device", func() {
-				info, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
-				Expect(err).ToNot(HaveOccurred())
-				Expect(info).NotTo(BeNil())
+		Context("Disabled", func() {
+			Context("ensure interface", func() {
+				It("should be fail with ErrNamedNetworkProviderNotSupported", func() {
+					_, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(Equal(network.ErrNamedNetworkProviderNotSupported))
+				})
+			})
+		})
 
-				Expect(info.Device).NotTo(BeNil())
-				backing := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard().Backing
-				Expect(backing).NotTo(BeNil())
-				backingInfo, ok := backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
-				Expect(ok).To(BeTrue())
-				Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
+		Context("Enabled", func() {
+			BeforeEach(func() {
+				namedNetworkProviderEnabled = true
+				vm.Spec.NetworkInterfaces[0].NetworkName = "DC0_DVPG0"
 			})
 
-			It("create expected interface customization", func() {
-				info, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
-				Expect(err).ToNot(HaveOccurred())
-				Expect(info.Customization).ToNot(BeNil())
-				Expect(info.Customization.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
-			})
+			Context("ensure interface", func() {
+				It("create expected virtual device", func() {
+					info, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
+					Expect(err).ToNot(HaveOccurred())
+					Expect(info).NotTo(BeNil())
 
-			It("should return an error if network does not exist", func() {
-				vmCtx.VM.Spec.NetworkInterfaces[0].NetworkName = doesNotExist
-				_, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
-				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(fmt.Sprintf("unable to find network \"%s\": network '%s' not found", doesNotExist, doesNotExist)))
+					Expect(info.Device).NotTo(BeNil())
+					backing := info.Device.(types.BaseVirtualEthernetCard).GetVirtualEthernetCard().Backing
+					Expect(backing).NotTo(BeNil())
+					backingInfo, ok := backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+					Expect(ok).To(BeTrue())
+					Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
+				})
+
+				It("create expected interface customization", func() {
+					info, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
+					Expect(err).ToNot(HaveOccurred())
+					Expect(info.Customization).ToNot(BeNil())
+					Expect(info.Customization.Adapter.Ip).To(BeAssignableToTypeOf(&types.CustomizationDhcpIpGenerator{}))
+				})
+
+				It("should return an error if network does not exist", func() {
+					vmCtx.VM.Spec.NetworkInterfaces[0].NetworkName = doesNotExist
+					_, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
+					Expect(err).To(HaveOccurred())
+					Expect(err).To(MatchError(fmt.Sprintf("unable to find network \"%s\": network '%s' not found", doesNotExist, doesNotExist)))
+				})
 			})
 		})
 	})

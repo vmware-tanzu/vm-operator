@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package mutation
@@ -28,11 +28,8 @@ import (
 )
 
 const (
-	webHookName = "default"
-
-	NSXTYPE   = "NSXT"
-	VDSTYPE   = "VSPHERE_NETWORK"
-	NAMEDTYPE = "NAMED"
+	webHookName         = "default"
+	defaultNamedNetwork = "VM Network"
 )
 
 // +kubebuilder:webhook:path=/default-mutate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=true,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,verbs=create;update,versions=v1alpha1,name=default.mutating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -141,42 +138,41 @@ func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client clien
 		return false
 	}
 
-	networkProviderType := os.Getenv(lib.NetworkProviderType)
-	networkType := ""
-	networkName := ""
-	switch networkProviderType {
-	case NSXTYPE:
-		networkType = network.NsxtNetworkType
-	case VDSTYPE:
-		networkType = network.VdsNetworkType
-	case NAMEDTYPE:
-		// gce2e/local setup only
-		// Use named network provider
-		name, _ := getVSphereProviderConfigMap(ctx, client)
-		if name == "" {
-			networkName = "VM Network"
-		} else {
-			networkName = name
+	netName, netType := "", ""
+	switch os.Getenv(lib.NetworkProviderType) {
+	case lib.NetworkProviderTypeNSXT:
+		netType = network.NsxtNetworkType
+	case lib.NetworkProviderTypeVDS:
+		netType = network.VdsNetworkType
+	case lib.NetworkProviderTypeNamed:
+		if netName, _ = getProviderConfigMap(ctx, client); netName == "" {
+			netName = defaultNamedNetwork
 		}
 	default:
 		return false
 	}
-	defaultNif := vmopv1.VirtualMachineNetworkInterface{
-		NetworkType: networkType,
-		NetworkName: networkName,
+	vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{
+		{
+			NetworkName: netName,
+			NetworkType: netType,
+		},
 	}
-	vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{defaultNif}
 	return true
 }
 
-// Only used in gce2e tests.
-func getVSphereProviderConfigMap(ctx *context.WebhookRequestContext, c client.Client) (string, error) {
-	configMapKey := client.ObjectKey{Name: config.ProviderConfigMapName, Namespace: ctx.Namespace}
-	configMap := corev1.ConfigMap{}
-	if err := c.Get(ctx, configMapKey, &configMap); err != nil {
+// getProviderConfigMap is used in e2e tests.
+func getProviderConfigMap(
+	ctx *context.WebhookRequestContext, c client.Client) (string, error) {
+
+	var obj corev1.ConfigMap
+	if err := c.Get(
+		ctx,
+		client.ObjectKey{
+			Name:      config.ProviderConfigMapName,
+			Namespace: ctx.Namespace,
+		},
+		&obj); err != nil {
 		return "", err
 	}
-
-	data := configMap.Data
-	return data["Network"], nil
+	return obj.Data["Network"], nil
 }

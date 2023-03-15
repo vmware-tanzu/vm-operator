@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package mutation_test
@@ -11,11 +11,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
 )
 
 func intgTests() {
@@ -48,7 +46,7 @@ func intgTestsMutating() {
 		ctx = newIntgMutatingWebhookContext()
 		vm = ctx.vm.DeepCopy()
 		vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{}
-		Expect(os.Setenv(lib.NetworkProviderType, mutation.VDSTYPE)).Should(Succeed())
+		Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeVDS)).Should(Succeed())
 	})
 	AfterEach(func() {
 		ctx = nil

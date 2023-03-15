@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package mutation_test
@@ -17,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -133,7 +132,7 @@ func unitTestsMutating() {
 
 	Describe("AddDefaultNetworkInterface", func() {
 		BeforeEach(func() {
-			Expect(os.Setenv(lib.NetworkProviderType, mutation.VDSTYPE)).Should(Succeed())
+			Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeVDS)).Should(Succeed())
 		})
 
 		AfterEach(func() {
@@ -159,7 +158,7 @@ func unitTestsMutating() {
 
 			When("NSX-T network", func() {
 				It("Should add default network interface with type NSX-T", func() {
-					Expect(os.Setenv(lib.NetworkProviderType, mutation.NSXTYPE)).Should(Succeed())
+					Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNSXT)).Should(Succeed())
 
 					Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
 					Expect(ctx.vm.Spec.NetworkInterfaces).Should(HaveLen(1))
@@ -172,7 +171,7 @@ func unitTestsMutating() {
 
 				BeforeEach(func() {
 					networkName = "VM Network"
-					Expect(os.Setenv(lib.NetworkProviderType, mutation.NAMEDTYPE)).Should(Succeed())
+					Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).Should(Succeed())
 				})
 
 				AfterEach(func() {

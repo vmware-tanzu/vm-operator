@@ -4,6 +4,8 @@
 package validation_test
 
 import (
+	"os"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -12,7 +14,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -33,6 +34,9 @@ type intgValidatingWebhookContext struct {
 }
 
 func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
+	// Enable the named network provider by default.
+	Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
+
 	ctx := &intgValidatingWebhookContext{
 		IntegrationTestContext: *suite.NewIntegrationTestContext(),
 	}

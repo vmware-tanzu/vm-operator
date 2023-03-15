@@ -9,7 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers/simplelb"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
@@ -29,13 +29,13 @@ const (
 
 // LoadbalancerProvider sets up Loadbalancer for different type of Loadbalancer.
 type LoadbalancerProvider interface {
-	EnsureLoadBalancer(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) error
+	EnsureLoadBalancer(ctx context.Context, vmService *vmopv1.VirtualMachineService) error
 
 	// GetServiceLabels returns the labels, if any, to place on a Service.
 	// This is applicable when VirtualMachineService is translated to a
 	// Service and we would like to apply the provider specific labels
 	// on the corresponding Service.
-	GetServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error)
+	GetServiceLabels(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error)
 
 	// GetToBeRemovedServiceLabels returns the labels, if any, to be
 	// removed from a Service.
@@ -46,13 +46,13 @@ type LoadbalancerProvider interface {
 	// labels to the Service so to correctly sync the addition/removal of
 	// labels on the Service object without touching the existing ones,
 	// we need to have clearly defined ownership
-	GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error)
+	GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error)
 
 	// GetServiceAnnotations returns the annotations, if any, to place on a Service.
 	// This is applicable when VirtualMachineService is translated to a
 	// Service and we would like to apply the provider specific annotations
 	// on the corresponding Service.
-	GetServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error)
+	GetServiceAnnotations(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error)
 
 	// GetToBeRemovedServiceAnnotations returns the annotations, if any, to be
 	// removed from a Service.
@@ -63,7 +63,7 @@ type LoadbalancerProvider interface {
 	// annotations to the Service so to correctly sync the addition/removal of
 	// annotations on the Service object without touching the existing ones,
 	// we need to have clearly defined ownership
-	GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error)
+	GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error)
 }
 
 func GetLoadbalancerProviderByType(mgr manager.Manager, providerType string) (LoadbalancerProvider, error) {
@@ -78,23 +78,23 @@ func GetLoadbalancerProviderByType(mgr manager.Manager, providerType string) (Lo
 
 type NoopLoadbalancerProvider struct{}
 
-func (NoopLoadbalancerProvider) EnsureLoadBalancer(context.Context, *vmopv1alpha1.VirtualMachineService) error {
+func (NoopLoadbalancerProvider) EnsureLoadBalancer(context.Context, *vmopv1.VirtualMachineService) error {
 	return nil
 }
 
-func (NoopLoadbalancerProvider) GetServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (NoopLoadbalancerProvider) GetServiceLabels(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
-func (NoopLoadbalancerProvider) GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (NoopLoadbalancerProvider) GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
-func (NoopLoadbalancerProvider) GetServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (NoopLoadbalancerProvider) GetServiceAnnotations(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
-func (NoopLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (NoopLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error) {
 	return nil, nil
 }
 
@@ -106,13 +106,13 @@ func NsxtLoadBalancerProvider() *NsxtLoadbalancerProvider {
 	return &NsxtLoadbalancerProvider{}
 }
 
-func (nl *NsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) error {
+func (nl *NsxtLoadbalancerProvider) EnsureLoadBalancer(ctx context.Context, vmService *vmopv1.VirtualMachineService) error {
 	return nil
 }
 
 // GetServiceLabels provides the intended NSX-T specific labels on Service. The
 // responsibility is left to the caller to actually set them.
-func (nl *NsxtLoadbalancerProvider) GetServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (nl *NsxtLoadbalancerProvider) GetServiceLabels(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error) {
 	res := make(map[string]string)
 
 	// When externalTrafficPolicy is set to Local, skip kube-proxy for the
@@ -126,7 +126,7 @@ func (nl *NsxtLoadbalancerProvider) GetServiceLabels(ctx context.Context, vmServ
 
 // GetToBeRemovedServiceLabels provides the to be removed NSX-T specific labels on
 // Service. The responsibility is left to the caller to actually clear them.
-func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceLabels(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error) {
 	res := make(map[string]string)
 
 	// When there is no externalTrafficPolicy configured or it's not Local,
@@ -140,7 +140,7 @@ func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceLabels(ctx context.Cont
 
 // GetServiceAnnotations provides the intended NSX-T specific annotations on
 // Service. The responsibility is left to the caller to actually set them.
-func (nl *NsxtLoadbalancerProvider) GetServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (nl *NsxtLoadbalancerProvider) GetServiceAnnotations(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error) {
 	res := make(map[string]string)
 
 	if healthCheckNodePortString, ok := vmService.Annotations[utils.AnnotationServiceHealthCheckNodePortKey]; ok {
@@ -152,7 +152,7 @@ func (nl *NsxtLoadbalancerProvider) GetServiceAnnotations(ctx context.Context, v
 
 // GetToBeRemovedServiceAnnotations provides the to be removed NSX-T specific annotations on
 // Service. The responsibility is left to the caller to actually clear them.
-func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmopv1alpha1.VirtualMachineService) (map[string]string, error) {
+func (nl *NsxtLoadbalancerProvider) GetToBeRemovedServiceAnnotations(ctx context.Context, vmService *vmopv1.VirtualMachineService) (map[string]string, error) {
 	res := make(map[string]string)
 
 	// When healthCheckNodePort is NOT present, the corresponding NSX-T

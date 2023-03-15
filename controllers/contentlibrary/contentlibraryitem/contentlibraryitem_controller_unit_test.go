@@ -14,9 +14,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentlibraryitem"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -56,7 +56,7 @@ func unitTestsReconcile() {
 		)
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 		fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, vmi client.Object) error {
-			vmiObj := vmi.(*vmopv1a1.VirtualMachineImage)
+			vmiObj := vmi.(*vmopv1.VirtualMachineImage)
 			// Change a random spec and status field to verify the provider function is called.
 			vmiObj.Spec.HardwareVersion = 123
 			vmiObj.Status.ImageSupported = &[]bool{true}[0]
@@ -86,7 +86,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(ctx, clItem)
 					Expect(err).ToNot(HaveOccurred())
 
-					vmiList := &vmopv1a1.VirtualMachineImageList{}
+					vmiList := &vmopv1.VirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, vmiList)).To(Succeed())
 					Expect(vmiList.Items).To(HaveLen(0))
 				})
@@ -96,12 +96,12 @@ func unitTestsReconcile() {
 
 				BeforeEach(func() {
 					vmiName := utils.GetTestVMINameFrom(clItem.Name)
-					existingVMI := &vmopv1a1.VirtualMachineImage{
+					existingVMI := &vmopv1.VirtualMachineImage{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      vmiName,
 							Namespace: clItem.Namespace,
 						},
-						Status: vmopv1a1.VirtualMachineImageStatus{
+						Status: vmopv1.VirtualMachineImageStatus{
 							ContentVersion: "dummy-old",
 						},
 					}
@@ -112,7 +112,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(ctx, clItem)
 					Expect(err).ToNot(HaveOccurred())
 
-					vmiList := &vmopv1a1.VirtualMachineImageList{}
+					vmiList := &vmopv1.VirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, vmiList)).To(Succeed())
 					Expect(vmiList.Items).To(HaveLen(0))
 				})
@@ -133,11 +133,11 @@ func unitTestsReconcile() {
 				err := reconciler.ReconcileNormal(ctx, clItem)
 				Expect(err).ToNot(HaveOccurred())
 
-				vmiList := &vmopv1a1.VirtualMachineImageList{}
+				vmiList := &vmopv1.VirtualMachineImageList{}
 				Expect(ctx.Client.List(ctx, vmiList, client.InNamespace(clItem.Namespace))).To(Succeed())
 				Expect(vmiList.Items).To(HaveLen(1))
 				unreadyVMI := vmiList.Items[0]
-				providerCondition := conditions.Get(&unreadyVMI, vmopv1a1.VirtualMachineImageProviderReadyCondition)
+				providerCondition := conditions.Get(&unreadyVMI, vmopv1.VirtualMachineImageProviderReadyCondition)
 				Expect(providerCondition).ToNot(BeNil())
 				Expect(providerCondition.Status).To(Equal(corev1.ConditionFalse))
 			})
@@ -150,7 +150,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(ctx, clItem)
 					Expect(err).ToNot(HaveOccurred())
 
-					vmiList := &vmopv1a1.VirtualMachineImageList{}
+					vmiList := &vmopv1.VirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, vmiList, client.InNamespace(clItem.Namespace))).To(Succeed())
 					Expect(vmiList.Items).To(HaveLen(1))
 					createdVMI := vmiList.Items[0]
@@ -167,12 +167,12 @@ func unitTestsReconcile() {
 			When("VirtualMachineImage resource is created but not up-to-date", func() {
 				BeforeEach(func() {
 					vmiName := utils.GetTestVMINameFrom(clItem.Name)
-					existingVMI := &vmopv1a1.VirtualMachineImage{
+					existingVMI := &vmopv1.VirtualMachineImage{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      vmiName,
 							Namespace: clItem.Namespace,
 						},
-						Status: vmopv1a1.VirtualMachineImageStatus{
+						Status: vmopv1.VirtualMachineImageStatus{
 							ContentVersion: "dummy-old",
 						},
 					}
@@ -183,7 +183,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(ctx, clItem)
 					Expect(err).ToNot(HaveOccurred())
 
-					vmiList := &vmopv1a1.VirtualMachineImageList{}
+					vmiList := &vmopv1.VirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, vmiList, client.InNamespace(clItem.Namespace))).To(Succeed())
 					Expect(vmiList.Items).To(HaveLen(1))
 					updatedVMI := vmiList.Items[0]
@@ -211,7 +211,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(ctx, clItem)
 					Expect(err).ToNot(HaveOccurred())
 
-					vmiList := &vmopv1a1.VirtualMachineImageList{}
+					vmiList := &vmopv1.VirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, vmiList, client.InNamespace(clItem.Namespace))).To(Succeed())
 					Expect(vmiList.Items).To(HaveLen(1))
 					currentVMI := vmiList.Items[0]

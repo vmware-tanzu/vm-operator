@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 // Getter interface defines methods that a Cluster API object should implement in order to
@@ -30,12 +30,12 @@ type Getter interface {
 	client.Object
 
 	// GetConditions returns the list of conditions for a cluster API object.
-	GetConditions() vmopv1alpha1.Conditions
+	GetConditions() vmopv1.Conditions
 }
 
 // Get returns the condition with the given type, if the condition does not exists,
 // it returns nil.
-func Get(from Getter, t vmopv1alpha1.ConditionType) *vmopv1alpha1.Condition {
+func Get(from Getter, t vmopv1.ConditionType) *vmopv1.Condition {
 	conditions := from.GetConditions()
 	if conditions == nil {
 		return nil
@@ -50,18 +50,18 @@ func Get(from Getter, t vmopv1alpha1.ConditionType) *vmopv1alpha1.Condition {
 }
 
 // Has returns true if a condition with the given type exists.
-func Has(from Getter, t vmopv1alpha1.ConditionType) bool {
+func Has(from Getter, t vmopv1.ConditionType) bool {
 	return Get(from, t) != nil
 }
 
 // IsTrueFromConditions returns true if the condition with the given type is True.
 // This is helpful to check the condition without passing a specific resource object.
-func IsTrueFromConditions(conditions vmopv1alpha1.Conditions, t vmopv1alpha1.ConditionType) bool {
+func IsTrueFromConditions(conditions vmopv1.Conditions, t vmopv1.ConditionType) bool {
 	if conditions == nil {
 		return false
 	}
 
-	var c vmopv1alpha1.Condition
+	var c vmopv1.Condition
 	for _, condition := range conditions {
 		if condition.Type == t {
 			c = condition
@@ -72,7 +72,7 @@ func IsTrueFromConditions(conditions vmopv1alpha1.Conditions, t vmopv1alpha1.Con
 
 // IsTrue is true if the condition with the given type is True, otherwise it return false
 // if the condition is not True or if the condition does not exist (is nil).
-func IsTrue(from Getter, t vmopv1alpha1.ConditionType) bool {
+func IsTrue(from Getter, t vmopv1.ConditionType) bool {
 	if c := Get(from, t); c != nil {
 		return c.Status == corev1.ConditionTrue
 	}
@@ -81,7 +81,7 @@ func IsTrue(from Getter, t vmopv1alpha1.ConditionType) bool {
 
 // IsFalse is true if the condition with the given type is False, otherwise it return false
 // if the condition is not False or if the condition does not exist (is nil).
-func IsFalse(from Getter, t vmopv1alpha1.ConditionType) bool {
+func IsFalse(from Getter, t vmopv1.ConditionType) bool {
 	if c := Get(from, t); c != nil {
 		return c.Status == corev1.ConditionFalse
 	}
@@ -90,7 +90,7 @@ func IsFalse(from Getter, t vmopv1alpha1.ConditionType) bool {
 
 // IsUnknown is true if the condition with the given type is Unknown or if the condition
 // does not exist (is nil).
-func IsUnknown(from Getter, t vmopv1alpha1.ConditionType) bool {
+func IsUnknown(from Getter, t vmopv1.ConditionType) bool {
 	if c := Get(from, t); c != nil {
 		return c.Status == corev1.ConditionUnknown
 	}
@@ -98,7 +98,7 @@ func IsUnknown(from Getter, t vmopv1alpha1.ConditionType) bool {
 }
 
 // GetReason returns a nil safe string of Reason for the condition with the given type.
-func GetReason(from Getter, t vmopv1alpha1.ConditionType) string {
+func GetReason(from Getter, t vmopv1.ConditionType) string {
 	if c := Get(from, t); c != nil {
 		return c.Reason
 	}
@@ -106,7 +106,7 @@ func GetReason(from Getter, t vmopv1alpha1.ConditionType) string {
 }
 
 // GetMessage returns a nil safe string of Message.
-func GetMessage(from Getter, t vmopv1alpha1.ConditionType) string {
+func GetMessage(from Getter, t vmopv1.ConditionType) string {
 	if c := Get(from, t); c != nil {
 		return c.Message
 	}
@@ -115,7 +115,7 @@ func GetMessage(from Getter, t vmopv1alpha1.ConditionType) string {
 
 // GetSeverity returns the condition Severity or nil if the condition
 // does not exist (is nil).
-func GetSeverity(from Getter, t vmopv1alpha1.ConditionType) *vmopv1alpha1.ConditionSeverity {
+func GetSeverity(from Getter, t vmopv1.ConditionType) *vmopv1.ConditionSeverity {
 	if c := Get(from, t); c != nil {
 		return &c.Severity
 	}
@@ -124,7 +124,7 @@ func GetSeverity(from Getter, t vmopv1alpha1.ConditionType) *vmopv1alpha1.Condit
 
 // GetLastTransitionTime returns the condition Severity or nil if the condition
 // does not exist (is nil).
-func GetLastTransitionTime(from Getter, t vmopv1alpha1.ConditionType) *metav1.Time {
+func GetLastTransitionTime(from Getter, t vmopv1.ConditionType) *metav1.Time {
 	if c := Get(from, t); c != nil {
 		return &c.LastTransitionTime
 	}
@@ -133,7 +133,7 @@ func GetLastTransitionTime(from Getter, t vmopv1alpha1.ConditionType) *metav1.Ti
 
 // summary returns a Ready condition with the summary of all the conditions existing
 // on an object. If the object does not have other conditions, no summary condition is generated.
-func summary(from Getter, options ...MergeOption) *vmopv1alpha1.Condition {
+func summary(from Getter, options ...MergeOption) *vmopv1.Condition {
 	conditions := from.GetConditions()
 
 	mergeOpt := &mergeOptions{}
@@ -146,7 +146,7 @@ func summary(from Getter, options ...MergeOption) *vmopv1alpha1.Condition {
 	conditionsInScope := make([]localizedCondition, 0, len(conditions))
 	for i := range conditions {
 		c := conditions[i]
-		if c.Type == vmopv1alpha1.ReadyCondition {
+		if c.Type == vmopv1.ReadyCondition {
 			continue
 		}
 
@@ -199,14 +199,14 @@ func summary(from Getter, options ...MergeOption) *vmopv1alpha1.Condition {
 		}
 	}
 
-	return merge(conditionsInScope, vmopv1alpha1.ReadyCondition, mergeOpt)
+	return merge(conditionsInScope, vmopv1.ReadyCondition, mergeOpt)
 }
 
 // mirrorOptions allows to set options for the mirror operation.
 type mirrorOptions struct {
 	fallbackTo       *bool
 	fallbackReason   string
-	fallbackSeverity vmopv1alpha1.ConditionSeverity
+	fallbackSeverity vmopv1.ConditionSeverity
 	fallbackMessage  string
 }
 
@@ -215,7 +215,7 @@ type MirrorOptions func(*mirrorOptions)
 
 // WithFallbackValue specify a fallback value to use in case the mirrored condition does not exists;
 // in case the fallbackValue is false, given values for reason, severity and message will be used.
-func WithFallbackValue(fallbackValue bool, reason string, severity vmopv1alpha1.ConditionSeverity, message string) MirrorOptions {
+func WithFallbackValue(fallbackValue bool, reason string, severity vmopv1.ConditionSeverity, message string) MirrorOptions {
 	return func(c *mirrorOptions) {
 		c.fallbackTo = &fallbackValue
 		c.fallbackReason = reason
@@ -226,13 +226,13 @@ func WithFallbackValue(fallbackValue bool, reason string, severity vmopv1alpha1.
 
 // mirror mirrors the Ready condition from a dependent object into the target condition;
 // if the Ready condition does not exists in the source object, no target conditions is generated.
-func mirror(from Getter, targetCondition vmopv1alpha1.ConditionType, options ...MirrorOptions) *vmopv1alpha1.Condition {
+func mirror(from Getter, targetCondition vmopv1.ConditionType, options ...MirrorOptions) *vmopv1.Condition {
 	mirrorOpt := &mirrorOptions{}
 	for _, o := range options {
 		o(mirrorOpt)
 	}
 
-	condition := Get(from, vmopv1alpha1.ReadyCondition)
+	condition := Get(from, vmopv1.ReadyCondition)
 
 	if mirrorOpt.fallbackTo != nil && condition == nil {
 		switch *mirrorOpt.fallbackTo {
@@ -253,10 +253,10 @@ func mirror(from Getter, targetCondition vmopv1alpha1.ConditionType, options ...
 // Aggregates all the the Ready condition from a list of dependent objects into the target object;
 // if the Ready condition does not exists in one of the source object, the object is excluded from
 // the aggregation; if none of the source object have ready condition, no target conditions is generated.
-func aggregate(from []Getter, targetCondition vmopv1alpha1.ConditionType, options ...MergeOption) *vmopv1alpha1.Condition {
+func aggregate(from []Getter, targetCondition vmopv1.ConditionType, options ...MergeOption) *vmopv1.Condition {
 	conditionsInScope := make([]localizedCondition, 0, len(from))
 	for i := range from {
-		condition := Get(from[i], vmopv1alpha1.ReadyCondition)
+		condition := Get(from[i], vmopv1.ReadyCondition)
 
 		conditionsInScope = append(conditionsInScope, localizedCondition{
 			Condition: condition,

@@ -11,7 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 var (
@@ -50,7 +50,7 @@ func NewContentSourceMetrics() *ContentSourceMetrics {
 
 // RegisterVMImageCreateOrUpdate registers the metrics for the given VMImage.
 // If success is true, it sets the value to 1 else to 0.
-func (csm *ContentSourceMetrics) RegisterVMImageCreateOrUpdate(logger logr.Logger, vmImage vmopv1alpha1.VirtualMachineImage, success bool) {
+func (csm *ContentSourceMetrics) RegisterVMImageCreateOrUpdate(logger logr.Logger, vmImage vmopv1.VirtualMachineImage, success bool) {
 	logger.V(5).Info("Adding metrics for a VMImage CR create or update operation")
 	vmImageLabels := getVMImageLabels(vmImage)
 	csm.vmImage.With(vmImageLabels).Set(func() float64 {
@@ -63,7 +63,7 @@ func (csm *ContentSourceMetrics) RegisterVMImageCreateOrUpdate(logger logr.Logge
 
 // RegisterVMImageDelete registers the metrics for the given VMImage delete operation.
 // If success is true, it deletes the metric; otherwise, it sets the value to -1.
-func (csm *ContentSourceMetrics) RegisterVMImageDelete(logger logr.Logger, vmImage vmopv1alpha1.VirtualMachineImage, success bool) {
+func (csm *ContentSourceMetrics) RegisterVMImageDelete(logger logr.Logger, vmImage vmopv1.VirtualMachineImage, success bool) {
 	logger.V(5).Info("Adding metrics for a VMImage CR delete operation")
 	labels := getVMImageLabels(vmImage)
 	if success {
@@ -75,7 +75,7 @@ func (csm *ContentSourceMetrics) RegisterVMImageDelete(logger logr.Logger, vmIma
 }
 
 // DeleteMetrics deletes the related metrics from the given ContentProviderReference.
-func (csm *ContentSourceMetrics) DeleteMetrics(logger logr.Logger, providerRef vmopv1alpha1.ContentProviderReference) {
+func (csm *ContentSourceMetrics) DeleteMetrics(logger logr.Logger, providerRef vmopv1.ContentProviderReference) {
 	logger.V(5).Info("Deleting all VMImage metrics from the given provider name and kind")
 	labels := prometheus.Labels{
 		providerNameLabel: providerRef.Name,
@@ -85,7 +85,7 @@ func (csm *ContentSourceMetrics) DeleteMetrics(logger logr.Logger, providerRef v
 }
 
 // getVMImageLabels is a helper function to return all the required labels for the given VMImage.
-func getVMImageLabels(vmImage vmopv1alpha1.VirtualMachineImage) prometheus.Labels {
+func getVMImageLabels(vmImage vmopv1.VirtualMachineImage) prometheus.Labels {
 	return prometheus.Labels{
 		// Using .Status.ImageName as .Name could be modified in the duplicate VM image name case.
 		imageNameLabel:    vmImage.Status.ImageName,

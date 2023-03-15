@@ -13,10 +13,9 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
@@ -28,17 +27,17 @@ import (
 // expected to evolve as more tests get added in the future.
 
 type funcs struct {
-	CreateOrUpdateVirtualMachineFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
-	DeleteVirtualMachineFn         func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
-	PublishVirtualMachineFn        func(ctx context.Context, vm *v1alpha1.VirtualMachine,
-		vmPub *v1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
-	GetVirtualMachineGuestHeartbeatFn  func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
-	GetVirtualMachineWebMKSTicketFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
-	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (int32, error)
+	CreateOrUpdateVirtualMachineFn func(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	DeleteVirtualMachineFn         func(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	PublishVirtualMachineFn        func(ctx context.Context, vm *vmopv1.VirtualMachine,
+		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
+	GetVirtualMachineGuestHeartbeatFn  func(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
+	GetVirtualMachineWebMKSTicketFn    func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error)
+	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (int32, error)
 
-	ListItemsFromContentLibraryFn              func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
-	GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
-		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
+	ListItemsFromContentLibraryFn              func(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider) ([]string, error)
+	GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider, itemID string,
+		currentCLImages map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error)
 	GetItemFromLibraryByNameFn func(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
 	UpdateContentLibraryItemFn func(ctx context.Context, itemID, newName string, newDescription *string) error
 	SyncVirtualMachineImageFn  func(ctx context.Context, cli, vmi client.Object) error
@@ -46,9 +45,9 @@ type funcs struct {
 	UpdateVcPNIDFn  func(ctx context.Context, vcPNID, vcPort string) error
 	ResetVcClientFn func(ctx context.Context)
 
-	CreateOrUpdateVirtualMachineSetResourcePolicyFn func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
-	IsVirtualMachineSetResourcePolicyReadyFn        func(ctx context.Context, azName string, rp *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
-	DeleteVirtualMachineSetResourcePolicyFn         func(ctx context.Context, rp *v1alpha1.VirtualMachineSetResourcePolicy) error
+	CreateOrUpdateVirtualMachineSetResourcePolicyFn func(ctx context.Context, rp *vmopv1.VirtualMachineSetResourcePolicy) error
+	IsVirtualMachineSetResourcePolicyReadyFn        func(ctx context.Context, azName string, rp *vmopv1.VirtualMachineSetResourcePolicy) (bool, error)
+	DeleteVirtualMachineSetResourcePolicyFn         func(ctx context.Context, rp *vmopv1.VirtualMachineSetResourcePolicy) error
 	ComputeCPUMinFrequencyFn                        func(ctx context.Context) error
 
 	GetTasksByActIDFn func(ctx context.Context, actID string) (tasksInfo []vimTypes.TaskInfo, retErr error)
@@ -57,8 +56,8 @@ type funcs struct {
 type VMProvider struct {
 	sync.Mutex
 	funcs
-	vmMap             map[client.ObjectKey]*v1alpha1.VirtualMachine
-	resourcePolicyMap map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy
+	vmMap             map[client.ObjectKey]*vmopv1.VirtualMachine
+	resourcePolicyMap map[client.ObjectKey]*vmopv1.VirtualMachineSetResourcePolicy
 	vmPubMap          map[string]vimTypes.TaskInfoState
 
 	isPublishVMCalled bool
@@ -71,24 +70,24 @@ func (s *VMProvider) Reset() {
 	defer s.Unlock()
 
 	s.funcs = funcs{}
-	s.vmMap = make(map[client.ObjectKey]*v1alpha1.VirtualMachine)
-	s.resourcePolicyMap = make(map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy)
+	s.vmMap = make(map[client.ObjectKey]*vmopv1.VirtualMachine)
+	s.resourcePolicyMap = make(map[client.ObjectKey]*vmopv1.VirtualMachineSetResourcePolicy)
 	s.vmPubMap = make(map[string]vimTypes.TaskInfoState)
 	s.isPublishVMCalled = false
 }
 
-func (s *VMProvider) CreateOrUpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
+func (s *VMProvider) CreateOrUpdateVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 	s.Lock()
 	defer s.Unlock()
 	if s.CreateOrUpdateVirtualMachineFn != nil {
 		return s.CreateOrUpdateVirtualMachineFn(ctx, vm)
 	}
 	s.addToVMMap(vm)
-	vm.Status.Phase = v1alpha1.Created
+	vm.Status.Phase = vmopv1.Created
 	return nil
 }
 
-func (s *VMProvider) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error {
+func (s *VMProvider) DeleteVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 	s.Lock()
 	defer s.Unlock()
 	if s.DeleteVirtualMachineFn != nil {
@@ -98,8 +97,8 @@ func (s *VMProvider) DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.Virt
 	return nil
 }
 
-func (s *VMProvider) PublishVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-	vmPub *v1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
+func (s *VMProvider) PublishVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine,
+	vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -113,7 +112,7 @@ func (s *VMProvider) PublishVirtualMachine(ctx context.Context, vm *v1alpha1.Vir
 	return "dummy-id", nil
 }
 
-func (s *VMProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error) {
+func (s *VMProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
 	s.Lock()
 	defer s.Unlock()
 	if s.GetVirtualMachineGuestHeartbeatFn != nil {
@@ -122,7 +121,7 @@ func (s *VMProvider) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1
 	return "", nil
 }
 
-func (s *VMProvider) GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error) {
+func (s *VMProvider) GetVirtualMachineWebMKSTicket(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
 	s.Lock()
 	defer s.Unlock()
 	if s.GetVirtualMachineWebMKSTicketFn != nil {
@@ -131,7 +130,7 @@ func (s *VMProvider) GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1al
 	return "", nil
 }
 
-func (s *VMProvider) GetVirtualMachineHardwareVersion(ctx context.Context, vm *v1alpha1.VirtualMachine) (int32, error) {
+func (s *VMProvider) GetVirtualMachineHardwareVersion(ctx context.Context, vm *vmopv1.VirtualMachine) (int32, error) {
 	s.Lock()
 	defer s.Unlock()
 	if s.GetVirtualMachineHardwareVersionFn != nil {
@@ -140,7 +139,7 @@ func (s *VMProvider) GetVirtualMachineHardwareVersion(ctx context.Context, vm *v
 	return 13, nil
 }
 
-func (s *VMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+func (s *VMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 	s.Lock()
 	defer s.Unlock()
 
@@ -152,7 +151,7 @@ func (s *VMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.C
 	return nil
 }
 
-func (s *VMProvider) IsVirtualMachineSetResourcePolicyReady(ctx context.Context, azName string, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+func (s *VMProvider) IsVirtualMachineSetResourcePolicyReady(ctx context.Context, azName string, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (bool, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -168,7 +167,7 @@ func (s *VMProvider) IsVirtualMachineSetResourcePolicyReady(ctx context.Context,
 	return found, nil
 }
 
-func (s *VMProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+func (s *VMProvider) DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 	s.Lock()
 	defer s.Unlock()
 
@@ -208,7 +207,7 @@ func (s *VMProvider) ResetVcClient(ctx context.Context) {
 	}
 }
 
-func (s *VMProvider) ListItemsFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error) {
+func (s *VMProvider) ListItemsFromContentLibrary(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider) ([]string, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -220,8 +219,8 @@ func (s *VMProvider) ListItemsFromContentLibrary(ctx context.Context, contentLib
 	return []string{}, nil
 }
 
-func (s *VMProvider) GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
-	currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error) {
+func (s *VMProvider) GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider, itemID string,
+	currentCLImages map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -289,7 +288,7 @@ func (s *VMProvider) GetTasksByActID(ctx context.Context, actID string) (tasksIn
 	return []vimTypes.TaskInfo{task1}, nil
 }
 
-func (s *VMProvider) addToVMMap(vm *v1alpha1.VirtualMachine) {
+func (s *VMProvider) addToVMMap(vm *vmopv1.VirtualMachine) {
 	objectKey := client.ObjectKey{
 		Namespace: vm.Namespace,
 		Name:      vm.Name,
@@ -297,7 +296,7 @@ func (s *VMProvider) addToVMMap(vm *v1alpha1.VirtualMachine) {
 	s.vmMap[objectKey] = vm
 }
 
-func (s *VMProvider) deleteFromVMMap(vm *v1alpha1.VirtualMachine) {
+func (s *VMProvider) deleteFromVMMap(vm *vmopv1.VirtualMachine) {
 	objectKey := client.ObjectKey{
 		Namespace: vm.Namespace,
 		Name:      vm.Name,
@@ -305,7 +304,7 @@ func (s *VMProvider) deleteFromVMMap(vm *v1alpha1.VirtualMachine) {
 	delete(s.vmMap, objectKey)
 }
 
-func (s *VMProvider) addToResourcePolicyMap(rp *v1alpha1.VirtualMachineSetResourcePolicy) {
+func (s *VMProvider) addToResourcePolicyMap(rp *vmopv1.VirtualMachineSetResourcePolicy) {
 	objectKey := client.ObjectKey{
 		Namespace: rp.Namespace,
 		Name:      rp.Name,
@@ -314,7 +313,7 @@ func (s *VMProvider) addToResourcePolicyMap(rp *v1alpha1.VirtualMachineSetResour
 	s.resourcePolicyMap[objectKey] = rp
 }
 
-func (s *VMProvider) deleteFromResourcePolicyMap(rp *v1alpha1.VirtualMachineSetResourcePolicy) {
+func (s *VMProvider) deleteFromResourcePolicyMap(rp *vmopv1.VirtualMachineSetResourcePolicy) {
 	objectKey := client.ObjectKey{
 		Namespace: rp.Namespace,
 		Name:      rp.Name,
@@ -326,7 +325,7 @@ func (s *VMProvider) AddToVMPublishMap(actID string, result vimTypes.TaskInfoSta
 	s.vmPubMap[actID] = result
 }
 
-func (s *VMProvider) GetVMPublishRequestResult(vmPub *v1alpha1.VirtualMachinePublishRequest) vimTypes.TaskInfoState {
+func (s *VMProvider) GetVMPublishRequestResult(vmPub *vmopv1.VirtualMachinePublishRequest) vimTypes.TaskInfoState {
 	s.Lock()
 	defer s.Unlock()
 
@@ -347,8 +346,8 @@ func (s *VMProvider) IsPublishVMCalled() bool {
 
 func NewVMProvider() *VMProvider {
 	provider := VMProvider{
-		vmMap:             map[client.ObjectKey]*v1alpha1.VirtualMachine{},
-		resourcePolicyMap: map[client.ObjectKey]*v1alpha1.VirtualMachineSetResourcePolicy{},
+		vmMap:             map[client.ObjectKey]*vmopv1.VirtualMachine{},
+		resourcePolicyMap: map[client.ObjectKey]*vmopv1.VirtualMachineSetResourcePolicy{},
 		vmPubMap:          map[string]vimTypes.TaskInfoState{},
 	}
 	return &provider

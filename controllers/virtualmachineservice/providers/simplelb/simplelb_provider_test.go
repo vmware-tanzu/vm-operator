@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -43,13 +43,13 @@ var _ = Describe("", func() {
 		testSvc = "test-svc"
 		lbVMIP  = "11.12.13.14"
 	)
-	vmService := &vmopv1alpha1.VirtualMachineService{
+	vmService := &vmopv1.VirtualMachineService{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testNs,
 			Name:      testSvc,
 		},
-		Spec: vmopv1alpha1.VirtualMachineServiceSpec{
-			Ports: []vmopv1alpha1.VirtualMachineServicePort{{
+		Spec: vmopv1.VirtualMachineServiceSpec{
+			Ports: []vmopv1.VirtualMachineServicePort{{
 				Name:       "apiserver",
 				Port:       6443,
 				Protocol:   "TCP",
@@ -58,7 +58,7 @@ var _ = Describe("", func() {
 		},
 	}
 	vmKey := types.NamespacedName{Namespace: testNs, Name: testSvc + "-lb"}
-	vm := &vmopv1alpha1.VirtualMachine{}
+	vm := &vmopv1.VirtualMachine{}
 	client := builder.NewFakeClient(vmService)
 	controlPlane := &fakeControlPlane{}
 	simpleLbProvider := Provider{
@@ -66,19 +66,19 @@ var _ = Describe("", func() {
 		controlPlane: controlPlane,
 		log:          logr.Discard(),
 	}
-	vmImage := &vmopv1alpha1.VirtualMachineImage{
+	vmImage := &vmopv1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "loadbalancer-vm-",
 		},
 	}
 
-	vmClass := &vmopv1alpha1.VirtualMachineClass{
+	vmClass := &vmopv1.VirtualMachineClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "best-effort-small",
 		},
 	}
 
-	vmClassBinding := &vmopv1alpha1.VirtualMachineClassBinding{
+	vmClassBinding := &vmopv1.VirtualMachineClassBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "best-effort-small",
 			Namespace: testNs,
@@ -87,20 +87,20 @@ var _ = Describe("", func() {
 
 	BeforeEach(func() {
 		// ensure vm class and vm class binding exists.
-		classList := &vmopv1alpha1.VirtualMachineClassList{}
+		classList := &vmopv1.VirtualMachineClassList{}
 		Expect(client.List(context.TODO(), classList)).To(Succeed())
 		if len(classList.Items) == 0 {
 			Expect(client.Create(context.TODO(), vmClass)).To(Succeed())
 		}
 
-		bindingList := &vmopv1alpha1.VirtualMachineClassBindingList{}
+		bindingList := &vmopv1.VirtualMachineClassBindingList{}
 		Expect(client.List(context.TODO(), bindingList)).To(Succeed())
 		if len(bindingList.Items) == 0 {
 			Expect(client.Create(context.TODO(), vmClassBinding)).To(Succeed())
 		}
 
 		// ensure vm image exists.
-		imageList := &vmopv1alpha1.VirtualMachineImageList{}
+		imageList := &vmopv1.VirtualMachineImageList{}
 		Expect(client.List(context.TODO(), imageList)).To(Succeed())
 		if len(imageList.Items) == 0 {
 			Expect(client.Create(context.TODO(), vmImage)).To(Succeed())

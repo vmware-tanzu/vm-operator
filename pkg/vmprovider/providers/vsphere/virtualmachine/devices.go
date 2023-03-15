@@ -7,8 +7,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/utils/pointer"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
 
@@ -45,7 +44,7 @@ func CreatePCIDevicesFromConfigSpec(pciDevsFromConfigSpec []*vimTypes.VirtualPCI
 }
 
 // CreatePCIDevicesFromVMClass creates vim25 VirtualDevices from the specified list of PCI devices from VM Class spec.
-func CreatePCIDevicesFromVMClass(pciDevicesFromVMClass v1alpha1.VirtualDevices) []vimTypes.BaseVirtualDevice {
+func CreatePCIDevicesFromVMClass(pciDevicesFromVMClass vmopv1.VirtualDevices) []vimTypes.BaseVirtualDevice {
 	devices := make([]vimTypes.BaseVirtualDevice, 0, len(pciDevicesFromVMClass.VGPUDevices)+len(pciDevicesFromVMClass.DynamicDirectPathIODevices))
 
 	deviceKey := pciDevicesStartDeviceKey
@@ -76,7 +75,7 @@ func CreatePCIDevicesFromVMClass(pciDevicesFromVMClass v1alpha1.VirtualDevices) 
 	return devices
 }
 
-func CreateInstanceStorageDiskDevices(isVolumes []v1alpha1.VirtualMachineVolume) []vimTypes.BaseVirtualDevice {
+func CreateInstanceStorageDiskDevices(isVolumes []vmopv1.VirtualMachineVolume) []vimTypes.BaseVirtualDevice {
 	devices := make([]vimTypes.BaseVirtualDevice, 0, len(isVolumes))
 	deviceKey := instanceStorageStartDeviceKey
 

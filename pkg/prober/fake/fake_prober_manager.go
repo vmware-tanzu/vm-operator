@@ -7,14 +7,13 @@ import (
 	"context"
 	"sync"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 )
 
 type funcs struct {
-	AddToProberManagerFn      func(vm *vmoperatorv1alpha1.VirtualMachine)
-	RemoveFromProberManagerFn func(vm *vmoperatorv1alpha1.VirtualMachine)
+	AddToProberManagerFn      func(vm *vmopv1.VirtualMachine)
+	RemoveFromProberManagerFn func(vm *vmopv1.VirtualMachine)
 }
 
 type ProberManager struct {
@@ -34,7 +33,7 @@ func (m *ProberManager) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m *ProberManager) AddToProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
+func (m *ProberManager) AddToProberManager(vm *vmopv1.VirtualMachine) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -44,7 +43,7 @@ func (m *ProberManager) AddToProberManager(vm *vmoperatorv1alpha1.VirtualMachine
 	}
 }
 
-func (m *ProberManager) RemoveFromProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
+func (m *ProberManager) RemoveFromProberManager(vm *vmopv1.VirtualMachine) {
 	m.Lock()
 	defer m.Unlock()
 

@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -22,19 +22,19 @@ func intgTests() {
 	var (
 		ctx *builder.IntegrationTestContext
 
-		resourcePolicy    *vmopv1alpha1.VirtualMachineSetResourcePolicy
+		resourcePolicy    *vmopv1.VirtualMachineSetResourcePolicy
 		resourcePolicyKey client.ObjectKey
 	)
 
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
 
-		resourcePolicy = &vmopv1alpha1.VirtualMachineSetResourcePolicy{
+		resourcePolicy = &vmopv1.VirtualMachineSetResourcePolicy{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: ctx.Namespace,
 				Name:      "dummy-vm-policy",
 			},
-			Spec: vmopv1alpha1.VirtualMachineSetResourcePolicySpec{},
+			Spec: vmopv1.VirtualMachineSetResourcePolicySpec{},
 		}
 
 		resourcePolicyKey = client.ObjectKey{Namespace: resourcePolicy.Namespace, Name: resourcePolicy.Name}
@@ -46,8 +46,8 @@ func intgTests() {
 		intgFakeVMProvider.Reset()
 	})
 
-	getResourcePolicy := func(ctx *builder.IntegrationTestContext, objKey client.ObjectKey) *vmopv1alpha1.VirtualMachineSetResourcePolicy {
-		rp := &vmopv1alpha1.VirtualMachineSetResourcePolicy{}
+	getResourcePolicy := func(ctx *builder.IntegrationTestContext, objKey client.ObjectKey) *vmopv1.VirtualMachineSetResourcePolicy {
+		rp := &vmopv1.VirtualMachineSetResourcePolicy{}
 		if err := ctx.Client.Get(ctx, objKey, rp); err != nil {
 			return nil
 		}
@@ -70,7 +70,7 @@ func intgTests() {
 			called.Store(false)
 
 			intgFakeVMProvider.Lock()
-			intgFakeVMProvider.CreateOrUpdateVirtualMachineSetResourcePolicyFn = func(_ context.Context, _ *vmopv1alpha1.VirtualMachineSetResourcePolicy) error {
+			intgFakeVMProvider.CreateOrUpdateVirtualMachineSetResourcePolicyFn = func(_ context.Context, _ *vmopv1.VirtualMachineSetResourcePolicy) error {
 				called.Store(true)
 				return nil
 			}

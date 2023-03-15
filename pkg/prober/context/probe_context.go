@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 )
@@ -18,9 +18,9 @@ type ProbeContext struct {
 	context.Context
 	Logger      logr.Logger
 	PatchHelper *patch.Helper
-	VM          *vmopv1alpha1.VirtualMachine
+	VM          *vmopv1.VirtualMachine
 	ProbeType   string
-	ProbeSpec   *vmopv1alpha1.Probe
+	ProbeSpec   *vmopv1.Probe
 }
 
 // String returns probe type.

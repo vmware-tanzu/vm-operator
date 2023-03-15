@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentsource"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
@@ -33,26 +33,26 @@ func reconcileProviderRef() {
 		fakeVMProvider *providerfake.VMProvider
 		initObjects    []client.Object
 
-		cs v1alpha1.ContentSource
-		cl v1alpha1.ContentLibraryProvider
+		cs vmopv1.ContentSource
+		cl vmopv1.ContentLibraryProvider
 	)
 
 	BeforeEach(func() {
-		cl = v1alpha1.ContentLibraryProvider{
+		cl = vmopv1.ContentLibraryProvider{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-cl",
 			},
-			Spec: v1alpha1.ContentLibraryProviderSpec{
+			Spec: vmopv1.ContentLibraryProviderSpec{
 				UUID: "dummy-cl-uuid",
 			},
 		}
 
-		cs = v1alpha1.ContentSource{
+		cs = vmopv1.ContentSource{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-cs",
 			},
-			Spec: v1alpha1.ContentSourceSpec{
-				ProviderRef: v1alpha1.ContentProviderReference{
+			Spec: vmopv1.ContentSourceSpec{
+				ProviderRef: vmopv1.ContentProviderReference{
 					Name: cl.Name,
 					Kind: "ContentLibraryProvider",
 				},
@@ -91,7 +91,7 @@ func reconcileProviderRef() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(clProvider).NotTo(BeNil())
 
-				clAfterReconcile := &v1alpha1.ContentLibraryProvider{}
+				clAfterReconcile := &vmopv1.ContentLibraryProvider{}
 				clKey := client.ObjectKey{Name: cl.ObjectMeta.Name}
 				err = ctx.Client.Get(ctx, clKey, clAfterReconcile)
 				Expect(err).NotTo(HaveOccurred())
@@ -113,7 +113,7 @@ func unitTestIsImageOwnedByContentLibrary() {
 			Name: "dummy-name-2",
 		},
 	}
-	img := v1alpha1.VirtualMachineImage{
+	img := vmopv1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "dummy-image",
 			OwnerReferences: ownerRefs,
@@ -159,14 +159,14 @@ func unitTestsCRUDImage() {
 		fakeVMProvider *providerfake.VMProvider
 		initObjects    []client.Object
 
-		cs v1alpha1.ContentSource
-		cl v1alpha1.ContentLibraryProvider
+		cs vmopv1.ContentSource
+		cl vmopv1.ContentLibraryProvider
 	)
 
 	BeforeEach(func() {
-		cl = v1alpha1.ContentLibraryProvider{
+		cl = vmopv1.ContentLibraryProvider{
 			TypeMeta: metav1.TypeMeta{
-				APIVersion: "vmoperator.vmware.com/v1alpha1",
+				APIVersion: "vmoperator.vmware.com/vmopv1",
 				Kind:       "ContentLibraryProvider",
 			},
 			ObjectMeta: metav1.ObjectMeta{
@@ -174,16 +174,16 @@ func unitTestsCRUDImage() {
 			},
 		}
 
-		cs = v1alpha1.ContentSource{
+		cs = vmopv1.ContentSource{
 			TypeMeta: metav1.TypeMeta{
-				APIVersion: "vmoperator.vmware.com/v1alpha1",
+				APIVersion: "vmoperator.vmware.com/vmopv1",
 				Kind:       "ContentSource",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-cs",
 			},
-			Spec: v1alpha1.ContentSourceSpec{
-				ProviderRef: v1alpha1.ContentProviderReference{
+			Spec: vmopv1.ContentSourceSpec{
+				ProviderRef: vmopv1.ContentProviderReference{
 					Name:      cl.Name,
 					Namespace: cl.Namespace,
 				},
@@ -213,53 +213,53 @@ func unitTestsCRUDImage() {
 
 	Context("SyncImagesFromContentProvider", func() {
 		Context("VirtualMachineImage already exists", func() {
-			var existingImg, providerImg, providerConvertedImg *v1alpha1.VirtualMachineImage
+			var existingImg, providerImg, providerConvertedImg *vmopv1.VirtualMachineImage
 
 			BeforeEach(func() {
-				existingImg = &v1alpha1.VirtualMachineImage{
+				existingImg = &vmopv1.VirtualMachineImage{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "dummy-image",
 						Annotations: map[string]string{
 							"dummy-key": "dummy-value",
 						},
 					},
-					Spec: v1alpha1.VirtualMachineImageSpec{
+					Spec: vmopv1.VirtualMachineImageSpec{
 						Type: "dummy-type-1",
 					},
 				}
 
-				providerImg = &v1alpha1.VirtualMachineImage{
+				providerImg = &vmopv1.VirtualMachineImage{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "dummy-image",
 					},
-					Spec: v1alpha1.VirtualMachineImageSpec{
+					Spec: vmopv1.VirtualMachineImageSpec{
 						Type:    "dummy-type-2",
 						ImageID: "dummy-id-2",
 					},
-					Status: v1alpha1.VirtualMachineImageStatus{
+					Status: vmopv1.VirtualMachineImageStatus{
 						ImageName: "dummy-image",
 					},
 				}
 
-				providerConvertedImg = &v1alpha1.VirtualMachineImage{
+				providerConvertedImg = &vmopv1.VirtualMachineImage{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "dummy-image",
 						OwnerReferences: []metav1.OwnerReference{{
-							APIVersion: "vmoperator.vmware.com/v1alpha1",
+							APIVersion: "vmoperator.vmware.com/vmopv1",
 							Kind:       "ContentLibraryProvider",
 							Name:       "dummy-cl",
 						}},
 					},
-					Spec: v1alpha1.VirtualMachineImageSpec{
+					Spec: vmopv1.VirtualMachineImageSpec{
 						Type:    "dummy-type-2",
 						ImageID: "dummy-id-2",
-						ProviderRef: v1alpha1.ContentProviderReference{
-							APIVersion: "vmoperator.vmware.com/v1alpha1",
+						ProviderRef: vmopv1.ContentProviderReference{
+							APIVersion: "vmoperator.vmware.com/vmopv1",
 							Kind:       "ContentLibraryProvider",
 							Name:       "dummy-cl",
 						},
 					},
-					Status: v1alpha1.VirtualMachineImageStatus{
+					Status: vmopv1.VirtualMachineImageStatus{
 						ImageName: "dummy-image",
 					},
 				}
@@ -270,24 +270,24 @@ func unitTestsCRUDImage() {
 			Context("When upgrading from not supporting duplicate vm image names", func() {
 				BeforeEach(func() {
 					existingImg.OwnerReferences = []metav1.OwnerReference{{
-						APIVersion: "vmoperator.vmware.com/v1alpha1",
+						APIVersion: "vmoperator.vmware.com/vmopv1",
 						Kind:       "ContentLibraryProvider",
 						Name:       "dummy-cl",
 					}}
-					existingImg.Spec.ProviderRef = v1alpha1.ContentProviderReference{
+					existingImg.Spec.ProviderRef = vmopv1.ContentProviderReference{
 						Name: "dummy-cl",
 					}
 					existingImg.Status.ImageName = "dummy-image"
 				})
 
 				It("Should delete all VirtualMachineImage resources with old versions", func() {
-					fakeVMProvider.ListItemsFromContentLibraryFn = func(_ context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error) {
+					fakeVMProvider.ListItemsFromContentLibraryFn = func(_ context.Context, contentLibrary *vmopv1.ContentLibraryProvider) ([]string, error) {
 						return []string{}, nil
 					}
 
 					err := reconciler.SyncImagesFromContentProvider(ctx.Context, &cl)
 					Expect(err).NotTo(HaveOccurred())
-					imgs := &v1alpha1.VirtualMachineImageList{}
+					imgs := &vmopv1.VirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, imgs)).To(Succeed())
 					Expect(imgs.Items).To(BeEmpty())
 				})
@@ -296,11 +296,11 @@ func unitTestsCRUDImage() {
 			Context("content library contains a valid VM image", func() {
 				JustBeforeEach(func() {
 					fakeVMProvider.Lock()
-					fakeVMProvider.ListItemsFromContentLibraryFn = func(_ context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error) {
+					fakeVMProvider.ListItemsFromContentLibraryFn = func(_ context.Context, contentLibrary *vmopv1.ContentLibraryProvider) ([]string, error) {
 						return []string{providerImg.Spec.ImageID}, nil
 					}
-					fakeVMProvider.GetVirtualMachineImageFromContentLibraryFn = func(_ context.Context, _ *v1alpha1.ContentLibraryProvider, _ string,
-						_ map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error) {
+					fakeVMProvider.GetVirtualMachineImageFromContentLibraryFn = func(_ context.Context, _ *vmopv1.ContentLibraryProvider, _ string,
+						_ map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error) {
 						return providerImg.DeepCopy(), nil
 					}
 					fakeVMProvider.Unlock()
@@ -316,12 +316,12 @@ func unitTestsCRUDImage() {
 				Context("another library with a duplicate image name is added", func() {
 					BeforeEach(func() {
 						existingImg.OwnerReferences = []metav1.OwnerReference{{
-							APIVersion: "vmoperator.vmware.com/v1alpha1",
+							APIVersion: "vmoperator.vmware.com/vmopv1",
 							Kind:       "ContentLibraryProvider",
 							Name:       "dummy-cl-2",
 						}}
 						existingImg.Spec.ImageID = "dummy-id-1"
-						existingImg.Spec.ProviderRef = v1alpha1.ContentProviderReference{
+						existingImg.Spec.ProviderRef = vmopv1.ContentProviderReference{
 							Name: "dummy-cl-2",
 						}
 						existingImg.Status.ImageName = "dummy-image"
@@ -331,7 +331,7 @@ func unitTestsCRUDImage() {
 						err := reconciler.SyncImagesFromContentProvider(ctx.Context, &cl)
 						Expect(err).NotTo(HaveOccurred())
 
-						imgList := &v1alpha1.VirtualMachineImageList{}
+						imgList := &vmopv1.VirtualMachineImageList{}
 						Expect(ctx.Client.List(ctx, imgList)).To(Succeed())
 						Expect(len(imgList.Items)).To(Equal(2))
 						if reflect.DeepEqual(imgList.Items[0].OwnerReferences, existingImg.OwnerReferences) {
@@ -358,7 +358,7 @@ func unitTestsCRUDImage() {
 						err := reconciler.SyncImagesFromContentProvider(ctx.Context, &cl)
 						Expect(err).NotTo(HaveOccurred())
 
-						imgList := &v1alpha1.VirtualMachineImageList{}
+						imgList := &vmopv1.VirtualMachineImageList{}
 						Expect(ctx.Client.List(ctx, imgList)).To(Succeed())
 						Expect(len(imgList.Items)).To(Equal(1))
 
@@ -374,7 +374,7 @@ func unitTestsCRUDImage() {
 				When("the existing image doesn't have Image ID and ProviderRef in Spec", func() {
 					BeforeEach(func() {
 						existingImg.OwnerReferences = []metav1.OwnerReference{{
-							APIVersion: "vmoperator.vmware.com/v1alpha1",
+							APIVersion: "vmoperator.vmware.com/vmopv1",
 							Kind:       "ContentLibraryProvider",
 							Name:       "dummy-cl",
 						}}
@@ -384,7 +384,7 @@ func unitTestsCRUDImage() {
 						err := reconciler.SyncImagesFromContentProvider(ctx.Context, &cl)
 						Expect(err).NotTo(HaveOccurred())
 
-						imgList := &v1alpha1.VirtualMachineImageList{}
+						imgList := &vmopv1.VirtualMachineImageList{}
 						Expect(ctx.Client.List(ctx, imgList)).To(Succeed())
 						Expect(len(imgList.Items)).To(Equal(1))
 
@@ -401,8 +401,8 @@ func unitTestsCRUDImage() {
 					It("calls provider with the current image in map", func() {
 						var called bool
 						fakeVMProvider.Lock()
-						fakeVMProvider.GetVirtualMachineImageFromContentLibraryFn = func(_ context.Context, _ *v1alpha1.ContentLibraryProvider, _ string,
-							_ map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error) {
+						fakeVMProvider.GetVirtualMachineImageFromContentLibraryFn = func(_ context.Context, _ *vmopv1.ContentLibraryProvider, _ string,
+							_ map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error) {
 							called = true
 							return providerImg.DeepCopy(), nil
 						}
@@ -418,12 +418,12 @@ func unitTestsCRUDImage() {
 					BeforeEach(func() {
 						existingImg.Name = "dummy-image-existing"
 						existingImg.OwnerReferences = []metav1.OwnerReference{{
-							APIVersion: "vmoperator.vmware.com/v1alpha1",
+							APIVersion: "vmoperator.vmware.com/vmopv1",
 							Kind:       "ContentLibraryProvider",
 							Name:       "dummy-cl",
 						}}
 						existingImg.Spec.ImageID = "dummy-id-1"
-						existingImg.Spec.ProviderRef = v1alpha1.ContentProviderReference{
+						existingImg.Spec.ProviderRef = vmopv1.ContentProviderReference{
 							Name: "dummy-cl",
 						}
 						existingImg.Status.ImageName = "dummy-image-existing"
@@ -433,7 +433,7 @@ func unitTestsCRUDImage() {
 						err := reconciler.SyncImagesFromContentProvider(ctx.Context, &cl)
 						Expect(err).NotTo(HaveOccurred())
 
-						imgList := &v1alpha1.VirtualMachineImageList{}
+						imgList := &vmopv1.VirtualMachineImageList{}
 						Expect(ctx.Client.List(ctx, imgList)).To(Succeed())
 						Expect(len(imgList.Items)).To(Equal(1))
 						Expect(imgList.Items[0].Name).To(Equal(providerConvertedImg.Name))
@@ -449,12 +449,12 @@ func unitTestsCRUDImage() {
 
 	Context("DeleteImage", func() {
 		var (
-			images []v1alpha1.VirtualMachineImage
-			image  v1alpha1.VirtualMachineImage
+			images []vmopv1.VirtualMachineImage
+			image  vmopv1.VirtualMachineImage
 		)
 
 		BeforeEach(func() {
-			image = v1alpha1.VirtualMachineImage{
+			image = vmopv1.VirtualMachineImage{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "dummy-vm-image",
 				},
@@ -476,15 +476,15 @@ func unitTestsCRUDImage() {
 	Context("ProcessItemFromContentLibrary", func() {
 		var (
 			itemID          = "dummy-id"
-			currentCLImages = map[string]v1alpha1.VirtualMachineImage{}
-			vmImage         *v1alpha1.VirtualMachineImage
+			currentCLImages = map[string]vmopv1.VirtualMachineImage{}
+			vmImage         *vmopv1.VirtualMachineImage
 		)
 
 		Context("Failed to get VirtualMachineImage from content library", func() {
 			It("Returns error", func() {
 				fakeVMProvider.GetVirtualMachineImageFromContentLibraryFn = func(_ context.Context,
-					_ *v1alpha1.ContentLibraryProvider, _ string,
-					_ map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error) {
+					_ *vmopv1.ContentLibraryProvider, _ string,
+					_ map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error) {
 					return nil, fmt.Errorf("failed to get virtual machine image")
 				}
 				err := reconciler.ProcessItemFromContentLibrary(ctx, ctx.Logger, &cl, itemID, currentCLImages)
@@ -495,21 +495,21 @@ func unitTestsCRUDImage() {
 
 		Context("Get VirtualMachineImage from content library successfully", func() {
 			JustBeforeEach(func() {
-				vmImage = &v1alpha1.VirtualMachineImage{
+				vmImage = &vmopv1.VirtualMachineImage{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "dummy-image",
 					},
-					Spec: v1alpha1.VirtualMachineImageSpec{
+					Spec: vmopv1.VirtualMachineImageSpec{
 						Type: "dummy-type-1",
 					},
-					Status: v1alpha1.VirtualMachineImageStatus{
+					Status: vmopv1.VirtualMachineImageStatus{
 						ImageName: "dummy-image",
 					},
 				}
 
 				fakeVMProvider.GetVirtualMachineImageFromContentLibraryFn = func(_ context.Context,
-					_ *v1alpha1.ContentLibraryProvider, _ string,
-					_ map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error) {
+					_ *vmopv1.ContentLibraryProvider, _ string,
+					_ map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error) {
 					vmImage.Annotations = map[string]string{
 						"dummy-key": "dummy-value",
 					}
@@ -524,7 +524,7 @@ func unitTestsCRUDImage() {
 			})
 
 			When("Another image with the same name exists", func() {
-				var existingImg *v1alpha1.VirtualMachineImage
+				var existingImg *vmopv1.VirtualMachineImage
 				JustBeforeEach(func() {
 					existingImg = vmImage.DeepCopy()
 					Expect(ctx.Client.Create(ctx, existingImg)).To(Succeed())
@@ -539,7 +539,7 @@ func unitTestsCRUDImage() {
 						err := reconciler.ProcessItemFromContentLibrary(ctx, ctx.Logger, &cl, itemID, currentCLImages)
 						Expect(err).ShouldNot(HaveOccurred())
 
-						imgs := v1alpha1.VirtualMachineImageList{}
+						imgs := vmopv1.VirtualMachineImageList{}
 						Expect(ctx.Client.List(ctx, &imgs)).To(Succeed())
 						Expect(imgs.Items).Should(HaveLen(2))
 						if imgs.Items[0].Name == vmImage.Name {
@@ -554,14 +554,14 @@ func unitTestsCRUDImage() {
 
 				When("Existing image is from the same CL", func() {
 					It("Update a new VirtualMachineImage if VirtualMachineImage exists", func() {
-						img := &v1alpha1.VirtualMachineImage{}
+						img := &vmopv1.VirtualMachineImage{}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmImage), img)).To(Succeed())
 						currentCLImages[vmImage.Status.ImageName] = *img
 
 						err := reconciler.ProcessItemFromContentLibrary(ctx, ctx.Logger, &cl, itemID, currentCLImages)
 						Expect(err).ShouldNot(HaveOccurred())
 
-						img = &v1alpha1.VirtualMachineImage{}
+						img = &vmopv1.VirtualMachineImage{}
 						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmImage), img)).To(Succeed())
 						Expect(img.Annotations).NotTo(BeEmpty())
 						Expect(img.Status.ImageName).To(Equal(vmImage.Name))
@@ -573,15 +573,15 @@ func unitTestsCRUDImage() {
 
 	Context("Get VM image name", func() {
 		var (
-			img v1alpha1.VirtualMachineImage
+			img vmopv1.VirtualMachineImage
 		)
 
 		BeforeEach(func() {
-			img = v1alpha1.VirtualMachineImage{
+			img = vmopv1.VirtualMachineImage{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "dummy-image",
 				},
-				Status: v1alpha1.VirtualMachineImageStatus{
+				Status: vmopv1.VirtualMachineImageStatus{
 					ImageName: "dummy-image-1",
 				},
 			}

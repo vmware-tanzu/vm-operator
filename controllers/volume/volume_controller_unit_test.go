@@ -19,8 +19,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	volContext "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -58,57 +57,57 @@ func unitTestsReconcile() {
 		reconciler     *volume.Reconciler
 		fakeVMProvider *providerfake.VMProvider
 		volCtx         *volContext.VolumeContext
-		vm             *vmopv1alpha1.VirtualMachine
+		vm             *vmopv1.VirtualMachine
 
-		vmVol               vmopv1alpha1.VirtualMachineVolume
-		vmVolumeWithVsphere *vmopv1alpha1.VirtualMachineVolume
-		vmVolumeWithPVC1    *vmopv1alpha1.VirtualMachineVolume
-		vmVolumeWithPVC2    *vmopv1alpha1.VirtualMachineVolume
+		vmVol               vmopv1.VirtualMachineVolume
+		vmVolumeWithVsphere *vmopv1.VirtualMachineVolume
+		vmVolumeWithPVC1    *vmopv1.VirtualMachineVolume
+		vmVolumeWithPVC2    *vmopv1.VirtualMachineVolume
 
-		vmVolForInstPVC1 *vmopv1alpha1.VirtualMachineVolume
+		vmVolForInstPVC1 *vmopv1.VirtualMachineVolume
 	)
 
 	BeforeEach(func() {
-		vmVolumeWithVsphere = &vmopv1alpha1.VirtualMachineVolume{
+		vmVolumeWithVsphere = &vmopv1.VirtualMachineVolume{
 			Name:          "vsphere-volume",
-			VsphereVolume: &vmopv1alpha1.VsphereVolumeSource{},
+			VsphereVolume: &vmopv1.VsphereVolumeSource{},
 		}
 
-		vmVolumeWithPVC1 = &vmopv1alpha1.VirtualMachineVolume{
+		vmVolumeWithPVC1 = &vmopv1.VirtualMachineVolume{
 			Name: "cns-volume-1",
-			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: "pvc-volume-1",
 				},
 			},
 		}
 
-		vmVolumeWithPVC2 = &vmopv1alpha1.VirtualMachineVolume{
+		vmVolumeWithPVC2 = &vmopv1.VirtualMachineVolume{
 			Name: "cns-volume-2",
-			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: "pvc-volume-2",
 				},
 			},
 		}
 
-		vm = &vmopv1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
 				Namespace: "dummy-ns",
 			},
-			Status: vmopv1alpha1.VirtualMachineStatus{
+			Status: vmopv1.VirtualMachineStatus{
 				BiosUUID: dummyBiosUUID,
 			},
 		}
 
-		vmVolForInstPVC1 = &vmopv1alpha1.VirtualMachineVolume{
+		vmVolForInstPVC1 = &vmopv1.VirtualMachineVolume{
 			Name: "instance-pvc-1",
-			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: "instance-pvc-1",
 				},
-				InstanceVolumeClaim: &vmopv1alpha1.InstanceVolumeClaimVolumeSource{
+				InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
 					StorageClass: dummyInstanceStorageClassName,
 					Size:         resource.MustParse("256Gi"),
 				},
@@ -141,7 +140,7 @@ func unitTestsReconcile() {
 		reconciler = nil
 	})
 
-	getCNSAttachmentForVolumeName := func(vm *vmopv1alpha1.VirtualMachine, volumeName string) *cnsv1alpha1.CnsNodeVmAttachment {
+	getCNSAttachmentForVolumeName := func(vm *vmopv1.VirtualMachine, volumeName string) *cnsv1alpha1.CnsNodeVmAttachment {
 		objectKey := client.ObjectKey{Name: volume.CNSAttachmentNameForVolume(vm, volumeName), Namespace: vm.Namespace}
 		attachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 
@@ -304,14 +303,14 @@ func unitTestsReconcile() {
 		})
 
 		When("VM Spec.Volumes contains CNS volumes and VM isn't powered on", func() {
-			var vmVol1, vmVol2 vmopv1alpha1.VirtualMachineVolume
+			var vmVol1, vmVol2 vmopv1.VirtualMachineVolume
 
 			BeforeEach(func() {
 				vmVol1 = *vmVolumeWithPVC1
 				vmVol2 = *vmVolumeWithPVC2
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol1, vmVol2)
 
-				vm.Status.PowerState = vmopv1alpha1.VirtualMachinePoweredOff
+				vm.Status.PowerState = vmopv1.VirtualMachinePoweredOff
 			})
 
 			It("only allows one pending attachment at a time", func() {
@@ -477,7 +476,7 @@ func unitTestsReconcile() {
 
 			It("returns error when failed to get VM hardware version", func() {
 				fakeVMProvider.Lock()
-				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1alpha1.VirtualMachine) (int32, error) {
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (int32, error) {
 					return 0, errors.New("dummy-error")
 				}
 				fakeVMProvider.Unlock()
@@ -493,7 +492,7 @@ func unitTestsReconcile() {
 
 			It("returns error when VM hardware version is smaller than minimal requirement", func() {
 				fakeVMProvider.Lock()
-				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1alpha1.VirtualMachine) (int32, error) {
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (int32, error) {
 					return 11, nil
 				}
 				fakeVMProvider.Unlock()
@@ -509,7 +508,7 @@ func unitTestsReconcile() {
 
 			It("returns success when failed to parse VM hardware version", func() {
 				fakeVMProvider.Lock()
-				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1alpha1.VirtualMachine) (int32, error) {
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1.VirtualMachine) (int32, error) {
 					return 0, nil
 				}
 				fakeVMProvider.Unlock()
@@ -630,7 +629,7 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 
 			BeforeEach(func() {
 				vmVol = *vmVolumeWithPVC1
-				vm.Status.Volumes = append(vm.Status.Volumes, vmopv1alpha1.VirtualMachineVolumeStatus{
+				vm.Status.Volumes = append(vm.Status.Volumes, vmopv1.VirtualMachineVolumeStatus{
 					Name:     vmVol.Name,
 					DiskUuid: dummyDiskUUID,
 				})
@@ -659,14 +658,14 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 		})
 
 		When("VM Status.Volumes is sorted as expected", func() {
-			var vmVol1 vmopv1alpha1.VirtualMachineVolume
-			var vmVol2 vmopv1alpha1.VirtualMachineVolume
+			var vmVol1 vmopv1.VirtualMachineVolume
+			var vmVol2 vmopv1.VirtualMachineVolume
 
 			BeforeEach(func() {
 				vmVol1 = *vmVolumeWithPVC1
 				vmVol2 = *vmVolumeWithPVC2
 				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol1, vmVol2)
-				vm.Status.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+				vm.Status.PowerState = vmopv1.VirtualMachinePoweredOn
 			})
 
 			// We sort by DiskUUID, but the CnsNodeVmAttachment haven't been "attached" yet,
@@ -750,8 +749,8 @@ FaultMessage: ([]types.LocalizableMessage) \u003cnil\u003e\\n }\\n },\\n Type: (
 }
 
 func cnsAttachmentForVMVolume(
-	vm *vmopv1alpha1.VirtualMachine,
-	vmVol vmopv1alpha1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVmAttachment {
+	vm *vmopv1.VirtualMachine,
+	vmVol vmopv1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVmAttachment {
 	t := true
 	return &cnsv1alpha1.CnsNodeVmAttachment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -856,8 +855,8 @@ func patchInstanceStoragePVCs(ctx *volContext.VolumeContext, testCtx *builder.Un
 }
 
 func assertAttachmentSpecFromVMVol(
-	vm *vmopv1alpha1.VirtualMachine,
-	vmVol vmopv1alpha1.VirtualMachineVolume,
+	vm *vmopv1.VirtualMachine,
+	vmVol vmopv1.VirtualMachineVolume,
 	attachment *cnsv1alpha1.CnsNodeVmAttachment) {
 
 	ExpectWithOffset(1, attachment.Spec.NodeUUID).To(Equal(vm.Status.BiosUUID))
@@ -872,9 +871,9 @@ func assertAttachmentSpecFromVMVol(
 }
 
 func assertVMVolStatusFromAttachment(
-	vmVol vmopv1alpha1.VirtualMachineVolume,
+	vmVol vmopv1.VirtualMachineVolume,
 	attachment *cnsv1alpha1.CnsNodeVmAttachment,
-	vmVolStatus vmopv1alpha1.VirtualMachineVolumeStatus) {
+	vmVolStatus vmopv1.VirtualMachineVolumeStatus) {
 	diskUUID := attachment.Status.AttachmentMetadata[volume.AttributeFirstClassDiskUUID]
 
 	ExpectWithOffset(1, vmVolStatus.Name).To(Equal(vmVol.Name))

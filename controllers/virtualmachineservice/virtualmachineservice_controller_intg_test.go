@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -27,7 +27,7 @@ func intgTests() {
 
 		selector      map[string]string
 		vmIP1, vmIP2  string
-		vmServicePort vmopv1alpha1.VirtualMachineServicePort
+		vmServicePort vmopv1.VirtualMachineServicePort
 		vmServiceName string
 	)
 
@@ -37,7 +37,7 @@ func intgTests() {
 		selector = map[string]string{"vmservice-intg-test": "selector"}
 		vmIP1, vmIP2 = "10.100.101.1", "10.100.101.2"
 
-		vmServicePort = vmopv1alpha1.VirtualMachineServicePort{
+		vmServicePort = vmopv1.VirtualMachineServicePort{
 			Name:       "port1",
 			Protocol:   "TCP",
 			Port:       42,
@@ -49,7 +49,7 @@ func intgTests() {
 		By("Object cleanup", func() {
 			objMeta := metav1.ObjectMeta{Name: vmServiceName, Namespace: ctx.Namespace}
 
-			vmService := &vmopv1alpha1.VirtualMachineService{ObjectMeta: objMeta}
+			vmService := &vmopv1.VirtualMachineService{ObjectMeta: objMeta}
 			err := ctx.Client.Delete(ctx, vmService)
 			Expect(client.IgnoreNotFound(err)).ToNot(HaveOccurred())
 
@@ -76,27 +76,27 @@ func intgTests() {
 				dummyAnnotationKey, dummyAnnotationVal := "dummy-annotation-key", "dummy-annotation-val"
 				dummyLabelKey, dummyLabelVal := "dummy-label-key", "dummy-label-val"
 
-				notReadyVM := &vmopv1alpha1.VirtualMachine{}
+				notReadyVM := &vmopv1.VirtualMachine{}
 				By("Create not ready VM with selected labels", func() {
-					notReadyVM = &vmopv1alpha1.VirtualMachine{
+					notReadyVM = &vmopv1.VirtualMachine{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "not-ready-vm",
 							Namespace: ctx.Namespace,
 							Labels:    selector,
 						},
-						Spec: vmopv1alpha1.VirtualMachineSpec{
-							PowerState:     vmopv1alpha1.VirtualMachinePoweredOn,
-							ReadinessProbe: &vmopv1alpha1.Probe{},
+						Spec: vmopv1.VirtualMachineSpec{
+							PowerState:     vmopv1.VirtualMachinePoweredOn,
+							ReadinessProbe: &vmopv1.Probe{},
 						},
 					}
 					Expect(ctx.Client.Create(ctx, notReadyVM)).To(Succeed())
 					notReadyVM.Status.VmIp = vmIP1
-					conditions.MarkFalse(notReadyVM, vmopv1alpha1.ReadyCondition, "not ready",
-						vmopv1alpha1.ConditionSeverityError, "VM should be skipped")
+					conditions.MarkFalse(notReadyVM, vmopv1.ReadyCondition, "not ready",
+						vmopv1.ConditionSeverityError, "VM should be skipped")
 					Expect(ctx.Client.Status().Update(ctx, notReadyVM))
 				})
 
-				vmService := &vmopv1alpha1.VirtualMachineService{
+				vmService := &vmopv1.VirtualMachineService{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      vmServiceName,
 						Namespace: ctx.Namespace,
@@ -107,9 +107,9 @@ func intgTests() {
 							dummyLabelKey: dummyLabelVal,
 						},
 					},
-					Spec: vmopv1alpha1.VirtualMachineServiceSpec{
-						Type:     vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer,
-						Ports:    []vmopv1alpha1.VirtualMachineServicePort{vmServicePort},
+					Spec: vmopv1.VirtualMachineServiceSpec{
+						Type:     vmopv1.VirtualMachineServiceTypeLoadBalancer,
+						Ports:    []vmopv1.VirtualMachineServicePort{vmServicePort},
 						Selector: selector,
 					},
 				}
@@ -122,7 +122,7 @@ func intgTests() {
 
 				By("VirtualMachineService finalizer should get set")
 				Eventually(func() []string {
-					vmService := &vmopv1alpha1.VirtualMachineService{}
+					vmService := &vmopv1.VirtualMachineService{}
 					if err := ctx.Client.Get(ctx, objKey, vmService); err == nil {
 						return vmService.GetFinalizers()
 					}
@@ -172,23 +172,23 @@ func intgTests() {
 					})
 				})
 
-				readyVM := &vmopv1alpha1.VirtualMachine{}
+				readyVM := &vmopv1.VirtualMachine{}
 				By("Create ready VM with selected labels,", func() {
-					readyVM = &vmopv1alpha1.VirtualMachine{
+					readyVM = &vmopv1.VirtualMachine{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "ready-vm",
 							Namespace: ctx.Namespace,
 							Labels:    selector,
 						},
-						Spec: vmopv1alpha1.VirtualMachineSpec{
-							PowerState:     vmopv1alpha1.VirtualMachinePoweredOn,
-							ReadinessProbe: &vmopv1alpha1.Probe{},
+						Spec: vmopv1.VirtualMachineSpec{
+							PowerState:     vmopv1.VirtualMachinePoweredOn,
+							ReadinessProbe: &vmopv1.Probe{},
 						},
 					}
 					Expect(ctx.Client.Create(ctx, readyVM)).To(Succeed())
 
 					readyVM.Status.VmIp = vmIP2
-					conditions.MarkTrue(readyVM, vmopv1alpha1.ReadyCondition)
+					conditions.MarkTrue(readyVM, vmopv1.ReadyCondition)
 					Expect(ctx.Client.Status().Update(ctx, readyVM)).To(Succeed())
 				})
 
@@ -267,7 +267,7 @@ func intgTests() {
 					Expect(ctx.Client.Delete(ctx, vmService)).To(Succeed())
 
 					Eventually(func() []string {
-						vmService := &vmopv1alpha1.VirtualMachineService{}
+						vmService := &vmopv1.VirtualMachineService{}
 						if err := ctx.Client.Get(ctx, objKey, vmService); err == nil {
 							return vmService.GetFinalizers()
 						}
@@ -284,33 +284,33 @@ func intgTests() {
 
 			// The VM mapping function needs to be fixed for this to work.
 			XIt("Simulate workflow", func() {
-				readyVM := &vmopv1alpha1.VirtualMachine{}
+				readyVM := &vmopv1.VirtualMachine{}
 				By("Create ready VM with selected labels", func() {
-					readyVM = &vmopv1alpha1.VirtualMachine{
+					readyVM = &vmopv1.VirtualMachine{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "not-ready-vm",
 							Namespace: ctx.Namespace,
 							Labels:    selector,
 						},
-						Spec: vmopv1alpha1.VirtualMachineSpec{
-							PowerState:     vmopv1alpha1.VirtualMachinePoweredOn,
-							ReadinessProbe: &vmopv1alpha1.Probe{},
+						Spec: vmopv1.VirtualMachineSpec{
+							PowerState:     vmopv1.VirtualMachinePoweredOn,
+							ReadinessProbe: &vmopv1.Probe{},
 						},
 					}
 					Expect(ctx.Client.Create(ctx, readyVM)).To(Succeed())
 					readyVM.Status.VmIp = vmIP1
-					conditions.MarkTrue(readyVM, vmopv1alpha1.ReadyCondition)
+					conditions.MarkTrue(readyVM, vmopv1.ReadyCondition)
 					Expect(ctx.Client.Status().Update(ctx, readyVM))
 				})
 
-				vmService := &vmopv1alpha1.VirtualMachineService{
+				vmService := &vmopv1.VirtualMachineService{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      vmServiceName,
 						Namespace: ctx.Namespace,
 					},
-					Spec: vmopv1alpha1.VirtualMachineServiceSpec{
-						Type:     vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer,
-						Ports:    []vmopv1alpha1.VirtualMachineServicePort{vmServicePort},
+					Spec: vmopv1.VirtualMachineServiceSpec{
+						Type:     vmopv1.VirtualMachineServiceTypeLoadBalancer,
+						Ports:    []vmopv1.VirtualMachineServicePort{vmServicePort},
 						Selector: selector,
 					},
 				}

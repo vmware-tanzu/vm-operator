@@ -12,8 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	crtlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 )
 
@@ -105,9 +104,9 @@ func GetServiceTypeLabels(labels map[string]string) map[string]string {
 }
 
 func GetExpectedCVMIFrom(cclItem imgregv1a1.ClusterContentLibraryItem,
-	providerFunc func(context.Context, crtlclient.Object, crtlclient.Object) error) *vmopv1a1.ClusterVirtualMachineImage {
+	providerFunc func(context.Context, crtlclient.Object, crtlclient.Object) error) *vmopv1.ClusterVirtualMachineImage {
 
-	cvmi := &vmopv1a1.ClusterVirtualMachineImage{
+	cvmi := &vmopv1.ClusterVirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   GetTestVMINameFrom(cclItem.Name),
 			Labels: GetServiceTypeLabels(cclItem.Labels),
@@ -121,16 +120,16 @@ func GetExpectedCVMIFrom(cclItem imgregv1a1.ClusterContentLibraryItem,
 				},
 			},
 		},
-		Spec: vmopv1a1.VirtualMachineImageSpec{
+		Spec: vmopv1.VirtualMachineImageSpec{
 			Type:    string(cclItem.Status.Type),
 			ImageID: cclItem.Spec.UUID,
-			ProviderRef: vmopv1a1.ContentProviderReference{
+			ProviderRef: vmopv1.ContentProviderReference{
 				APIVersion: cclItem.APIVersion,
 				Kind:       cclItem.Kind,
 				Name:       cclItem.Name,
 			},
 		},
-		Status: vmopv1a1.VirtualMachineImageStatus{
+		Status: vmopv1.VirtualMachineImageStatus{
 			ImageName:      cclItem.Status.Name,
 			ContentVersion: cclItem.Status.ContentVersion,
 			ContentLibraryRef: &corev1.TypedLocalObjectReference{
@@ -138,13 +137,13 @@ func GetExpectedCVMIFrom(cclItem imgregv1a1.ClusterContentLibraryItem,
 				Kind:     ClusterContentLibraryKind,
 				Name:     cclItem.Status.ClusterContentLibraryRef,
 			},
-			Conditions: []vmopv1a1.Condition{
+			Conditions: []vmopv1.Condition{
 				{
-					Type:   vmopv1a1.VirtualMachineImageProviderReadyCondition,
+					Type:   vmopv1.VirtualMachineImageProviderReadyCondition,
 					Status: corev1.ConditionTrue,
 				},
 				{
-					Type:   vmopv1a1.VirtualMachineImageSyncedCondition,
+					Type:   vmopv1.VirtualMachineImageSyncedCondition,
 					Status: corev1.ConditionTrue,
 				},
 			},
@@ -159,9 +158,9 @@ func GetExpectedCVMIFrom(cclItem imgregv1a1.ClusterContentLibraryItem,
 }
 
 func GetExpectedVMIFrom(clItem imgregv1a1.ContentLibraryItem,
-	providerFunc func(context.Context, crtlclient.Object, crtlclient.Object) error) *vmopv1a1.VirtualMachineImage {
+	providerFunc func(context.Context, crtlclient.Object, crtlclient.Object) error) *vmopv1.VirtualMachineImage {
 
-	vmi := &vmopv1a1.VirtualMachineImage{
+	vmi := &vmopv1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      GetTestVMINameFrom(clItem.Name),
 			Namespace: clItem.Namespace,
@@ -175,16 +174,16 @@ func GetExpectedVMIFrom(clItem imgregv1a1.ContentLibraryItem,
 				},
 			},
 		},
-		Spec: vmopv1a1.VirtualMachineImageSpec{
+		Spec: vmopv1.VirtualMachineImageSpec{
 			Type:    string(clItem.Status.Type),
 			ImageID: clItem.Spec.UUID,
-			ProviderRef: vmopv1a1.ContentProviderReference{
+			ProviderRef: vmopv1.ContentProviderReference{
 				APIVersion: clItem.APIVersion,
 				Kind:       clItem.Kind,
 				Name:       clItem.Name,
 			},
 		},
-		Status: vmopv1a1.VirtualMachineImageStatus{
+		Status: vmopv1.VirtualMachineImageStatus{
 			ImageName:      clItem.Status.Name,
 			ContentVersion: clItem.Status.ContentVersion,
 			ContentLibraryRef: &corev1.TypedLocalObjectReference{
@@ -192,13 +191,13 @@ func GetExpectedVMIFrom(clItem imgregv1a1.ContentLibraryItem,
 				Kind:     ContentLibraryKind,
 				Name:     clItem.Status.ContentLibraryRef.Name,
 			},
-			Conditions: []vmopv1a1.Condition{
+			Conditions: []vmopv1.Condition{
 				{
-					Type:   vmopv1a1.VirtualMachineImageProviderReadyCondition,
+					Type:   vmopv1.VirtualMachineImageProviderReadyCondition,
 					Status: corev1.ConditionTrue,
 				},
 				{
-					Type:   vmopv1a1.VirtualMachineImageSyncedCondition,
+					Type:   vmopv1.VirtualMachineImageSyncedCondition,
 					Status: corev1.ConditionTrue,
 				},
 			},
@@ -213,25 +212,25 @@ func GetExpectedVMIFrom(clItem imgregv1a1.ContentLibraryItem,
 }
 
 func PopulateRuntimeFieldsTo(vmi, appliedVMI crtlclient.Object) {
-	status := &vmopv1a1.VirtualMachineImageStatus{}
-	appliedStatus := &vmopv1a1.VirtualMachineImageStatus{}
+	status := &vmopv1.VirtualMachineImageStatus{}
+	appliedStatus := &vmopv1.VirtualMachineImageStatus{}
 
 	switch vmi := vmi.(type) {
-	case *vmopv1a1.ClusterVirtualMachineImage:
+	case *vmopv1.ClusterVirtualMachineImage:
 		status = &vmi.Status
-		appliedStatus = &appliedVMI.(*vmopv1a1.ClusterVirtualMachineImage).Status
-	case *vmopv1a1.VirtualMachineImage:
+		appliedStatus = &appliedVMI.(*vmopv1.ClusterVirtualMachineImage).Status
+	case *vmopv1.VirtualMachineImage:
 		status = &vmi.Status
-		appliedStatus = &appliedVMI.(*vmopv1a1.VirtualMachineImage).Status
+		appliedStatus = &appliedVMI.(*vmopv1.VirtualMachineImage).Status
 	}
 
 	// Populate condition LastTransitionTime.
 	if appliedStatus.Conditions != nil {
-		transactionTimeMap := map[vmopv1a1.ConditionType]metav1.Time{}
+		transactionTimeMap := map[vmopv1.ConditionType]metav1.Time{}
 		for _, condition := range appliedStatus.Conditions {
 			transactionTimeMap[condition.Type] = condition.LastTransitionTime
 		}
-		updatedConditions := []vmopv1a1.Condition{}
+		updatedConditions := []vmopv1.Condition{}
 		for _, condition := range status.Conditions {
 			if transactionTime, ok := transactionTimeMap[condition.Type]; ok {
 				condition.LastTransitionTime = transactionTime

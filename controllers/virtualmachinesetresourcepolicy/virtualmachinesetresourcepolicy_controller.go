@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -29,7 +29,7 @@ const (
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &vmopv1alpha1.VirtualMachineSetResourcePolicy{}
+		controlledType     = &vmopv1.VirtualMachineSetResourcePolicy{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 	)
 
@@ -89,7 +89,7 @@ func (r *Reconciler) deleteResourcePolicy(ctx *context.VirtualMachineSetResource
 	resourcePolicy := ctx.ResourcePolicy
 
 	// Skip deleting a VirtualMachineSetResourcePolicy if it is referenced by a VirtualMachine.
-	vmsInNamespace := &vmopv1alpha1.VirtualMachineList{}
+	vmsInNamespace := &vmopv1.VirtualMachineList{}
 	if err := r.List(ctx, vmsInNamespace, client.InNamespace(resourcePolicy.Namespace)); err != nil {
 		ctx.Logger.Error(err, "Failed to list VMs in namespace", "namespace", resourcePolicy.Namespace)
 		return err
@@ -133,7 +133,7 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineSetResourcePolic
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicies/status,verbs=get;update;patch
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	rp := &vmopv1alpha1.VirtualMachineSetResourcePolicy{}
+	rp := &vmopv1.VirtualMachineSetResourcePolicy{}
 	if err := r.Get(ctx, req.NamespacedName, rp); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}

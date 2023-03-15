@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -35,24 +35,24 @@ func unitTestsReconcile() {
 		reconciler  *virtualmachinesetresourcepolicy.Reconciler
 
 		resourcePolicyCtx *context.VirtualMachineSetResourcePolicyContext
-		resourcePolicy    *vmopv1alpha1.VirtualMachineSetResourcePolicy
-		vm                *vmopv1alpha1.VirtualMachine
+		resourcePolicy    *vmopv1.VirtualMachineSetResourcePolicy
+		vm                *vmopv1.VirtualMachine
 	)
 
 	BeforeEach(func() {
-		resourcePolicy = &vmopv1alpha1.VirtualMachineSetResourcePolicy{
+		resourcePolicy = &vmopv1.VirtualMachineSetResourcePolicy{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-rp",
 				Namespace: "dummy-ns",
 			},
-			Spec: vmopv1alpha1.VirtualMachineSetResourcePolicySpec{},
+			Spec: vmopv1.VirtualMachineSetResourcePolicySpec{},
 		}
-		vm = &vmopv1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
 				Namespace: "dummy-ns",
 			},
-			Spec: vmopv1alpha1.VirtualMachineSpec{
+			Spec: vmopv1.VirtualMachineSpec{
 				ResourcePolicyName: "dummy-rp",
 			},
 		}

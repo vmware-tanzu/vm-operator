@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -70,7 +70,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 			ts          time.Time
 			item        *library.Item
 			ovfEnvelope *ovf.Envelope
-			image       *vmopv1alpha1.VirtualMachineImage
+			image       *vmopv1.VirtualMachineImage
 		)
 
 		BeforeEach(func() {
@@ -287,8 +287,8 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 				Expect(image).ToNot(BeNil())
 
 				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
-				expectedCondition := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
+				expectedCondition := vmopv1.Conditions{
+					*conditions.TrueCondition(vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition),
 				}
 				Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
 			})
@@ -313,10 +313,10 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 				Expect(image).ToNot(BeNil())
 				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(false)))
 
-				expectedCondition := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
-						vmopv1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
-						vmopv1alpha1.ConditionSeverityError,
+				expectedCondition := vmopv1.Conditions{
+					*conditions.FalseCondition(vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition,
+						vmopv1.VirtualMachineImageV1Alpha1NotCompatibleReason,
+						vmopv1.ConditionSeverityError,
 						"VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1"),
 				}
 				Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
@@ -341,8 +341,8 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
 				Expect(image).ToNot(BeNil())
 				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
-				expectedCondition := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition),
+				expectedCondition := vmopv1.Conditions{
+					*conditions.TrueCondition(vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition),
 				}
 				Expect(image.Status.Conditions).Should(conditions.MatchConditions(expectedCondition))
 			})

@@ -20,7 +20,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -192,10 +192,10 @@ var _ = Describe("Update ConfigSpec", func() {
 	// better integration tests.
 
 	Context("Basic Hardware", func() {
-		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
+		var vmClassSpec *vmopv1.VirtualMachineClassSpec
 
 		BeforeEach(func() {
-			vmClassSpec = &vmopv1alpha1.VirtualMachineClassSpec{}
+			vmClassSpec = &vmopv1.VirtualMachineClassSpec{}
 		})
 
 		JustBeforeEach(func() {
@@ -230,11 +230,11 @@ var _ = Describe("Update ConfigSpec", func() {
 	})
 
 	Context("CPU Allocation", func() {
-		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
+		var vmClassSpec *vmopv1.VirtualMachineClassSpec
 		var minCPUFreq uint64 = 1
 
 		BeforeEach(func() {
-			vmClassSpec = &vmopv1alpha1.VirtualMachineClassSpec{}
+			vmClassSpec = &vmopv1.VirtualMachineClassSpec{}
 		})
 
 		JustBeforeEach(func() {
@@ -309,10 +309,10 @@ var _ = Describe("Update ConfigSpec", func() {
 	})
 
 	Context("Memory Allocation", func() {
-		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
+		var vmClassSpec *vmopv1.VirtualMachineClassSpec
 
 		BeforeEach(func() {
-			vmClassSpec = &vmopv1alpha1.VirtualMachineClassSpec{}
+			vmClassSpec = &vmopv1.VirtualMachineClassSpec{}
 		})
 
 		JustBeforeEach(func() {
@@ -387,16 +387,16 @@ var _ = Describe("Update ConfigSpec", func() {
 	})
 
 	Context("ExtraConfig", func() {
-		var vmClassSpec *vmopv1alpha1.VirtualMachineClassSpec
+		var vmClassSpec *vmopv1.VirtualMachineClassSpec
 		var classConfigSpec *vimTypes.VirtualMachineConfigSpec
-		var vm *vmopv1alpha1.VirtualMachine
+		var vm *vmopv1.VirtualMachine
 		var globalExtraConfig map[string]string
 		var ecMap map[string]string
 		var imageV1Alpha1Compatible bool
 
 		BeforeEach(func() {
-			vmClassSpec = &vmopv1alpha1.VirtualMachineClassSpec{}
-			vm = &vmopv1alpha1.VirtualMachine{
+			vmClassSpec = &vmopv1.VirtualMachineClassSpec{}
+			vm = &vmopv1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: make(map[string]string),
 				},
@@ -451,8 +451,8 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			Context("When VM uses metadata transport types other than CloudInit", func() {
 				BeforeEach(func() {
-					vm.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
-						Transport:     vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
+					vm.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
+						Transport:     vmopv1.VirtualMachineMetadataExtraConfigTransport,
 						ConfigMapName: "dummy-config",
 					}
 				})
@@ -463,8 +463,8 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			Context("When VM uses CloudInit metadata transport type", func() {
 				BeforeEach(func() {
-					vm.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
-						Transport:     vmopv1alpha1.VirtualMachineMetadataCloudInitTransport,
+					vm.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
+						Transport:     vmopv1.VirtualMachineMetadataCloudInitTransport,
 						ConfigMapName: "dummy-config",
 					}
 				})
@@ -495,13 +495,13 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			Context("When InstanceStorage is configured on VM", func() {
 				BeforeEach(func() {
-					vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1alpha1.VirtualMachineVolume{
+					vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
 						Name: "pvc-volume-1",
-						PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 								ClaimName: "pvc-volume-1",
 							},
-							InstanceVolumeClaim: &vmopv1alpha1.InstanceVolumeClaimVolumeSource{
+							InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
 								StorageClass: "dummyStorageClass",
 								Size:         resource.MustParse("256Gi"),
 							},
@@ -525,7 +525,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			Context("when vGPU device is available", func() {
 				BeforeEach(func() {
-					vmClassSpec.Hardware.Devices = vmopv1alpha1.VirtualDevices{VGPUDevices: []vmopv1alpha1.VGPUDevice{
+					vmClassSpec.Hardware.Devices = vmopv1.VirtualDevices{VGPUDevices: []vmopv1.VGPUDevice{
 						{
 							ProfileName: "test-vgpu-profile",
 						},
@@ -555,7 +555,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			Context("when DDPIO device is available", func() {
 				BeforeEach(func() {
-					vmClassSpec.Hardware.Devices = vmopv1alpha1.VirtualDevices{DynamicDirectPathIODevices: []vmopv1alpha1.DynamicDirectPathIODevice{
+					vmClassSpec.Hardware.Devices = vmopv1.VirtualDevices{DynamicDirectPathIODevices: []vmopv1.DynamicDirectPathIODevice{
 						{
 							VendorID:    123,
 							DeviceID:    24,
@@ -676,12 +676,12 @@ var _ = Describe("Update ConfigSpec", func() {
 	})
 
 	Context("ChangeBlockTracking", func() {
-		var vmSpec vmopv1alpha1.VirtualMachineSpec
+		var vmSpec vmopv1.VirtualMachineSpec
 		var classConfigSpec *vimTypes.VirtualMachineConfigSpec
 
 		BeforeEach(func() {
-			vmSpec = vmopv1alpha1.VirtualMachineSpec{
-				AdvancedOptions: &vmopv1alpha1.VirtualMachineAdvancedOptions{},
+			vmSpec = vmopv1.VirtualMachineSpec{
+				AdvancedOptions: &vmopv1.VirtualMachineAdvancedOptions{},
 			}
 			config.ChangeTrackingEnabled = nil
 			classConfigSpec = nil
@@ -771,10 +771,10 @@ var _ = Describe("Update ConfigSpec", func() {
 	})
 
 	Context("Firmware", func() {
-		var vm *vmopv1alpha1.VirtualMachine
+		var vm *vmopv1.VirtualMachine
 
 		BeforeEach(func() {
-			vm = &vmopv1alpha1.VirtualMachine{
+			vm = &vmopv1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: make(map[string]string),
 				},
@@ -1110,22 +1110,22 @@ var _ = Describe("Update ConfigSpec", func() {
 	})
 
 	Context("Create vSphere PCI device", func() {
-		var vgpuDevices = []vmopv1alpha1.VGPUDevice{
+		var vgpuDevices = []vmopv1.VGPUDevice{
 			{
 				ProfileName: "SampleProfile",
 			},
 		}
-		var ddpioDevices = []vmopv1alpha1.DynamicDirectPathIODevice{
+		var ddpioDevices = []vmopv1.DynamicDirectPathIODevice{
 			{
 				VendorID:    42,
 				DeviceID:    43,
 				CustomLabel: "SampleLabel",
 			},
 		}
-		var pciDevices vmopv1alpha1.VirtualDevices
+		var pciDevices vmopv1.VirtualDevices
 		Context("For VM Class Spec vGPU device", func() {
 			BeforeEach(func() {
-				pciDevices = vmopv1alpha1.VirtualDevices{
+				pciDevices = vmopv1.VirtualDevices{
 					VGPUDevices: vgpuDevices,
 				}
 			})
@@ -1139,7 +1139,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 		Context("For VM Class Spec Dynamic DirectPath I/O device", func() {
 			BeforeEach(func() {
-				pciDevices = vmopv1alpha1.VirtualDevices{
+				pciDevices = vmopv1.VirtualDevices{
 					DynamicDirectPathIODevices: ddpioDevices,
 				}
 			})

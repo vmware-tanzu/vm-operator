@@ -13,10 +13,9 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -32,7 +31,7 @@ func cclItemReconcile() {
 	)
 
 	waitForClusterVirtualMachineImageReady := func(ctx *builder.IntegrationTestContext) {
-		curCVMI := vmopv1a1.ClusterVirtualMachineImage{}
+		curCVMI := vmopv1.ClusterVirtualMachineImage{}
 		expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, intgFakeVMProvider.SyncVirtualMachineImageFn)
 		Eventually(func() bool {
 			cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
@@ -47,7 +46,7 @@ func cclItemReconcile() {
 	}
 
 	waitForClusterVirtualMachineImageDeleted := func(ctx *builder.IntegrationTestContext) {
-		curCVMI := vmopv1a1.ClusterVirtualMachineImage{}
+		curCVMI := vmopv1.ClusterVirtualMachineImage{}
 		Eventually(func() bool {
 			cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
 			if err := ctx.Client.Get(ctx, client.ObjectKey{Name: cvmiName}, &curCVMI); err != nil {
@@ -68,7 +67,7 @@ func cclItemReconcile() {
 		intgFakeVMProvider.SyncVirtualMachineImageFn = func(
 			_ context.Context, _, cvmiObj client.Object) error {
 			// Change a random spec and status field to verify the provider function is called.
-			cvmi := cvmiObj.(*vmopv1a1.ClusterVirtualMachineImage)
+			cvmi := cvmiObj.(*vmopv1.ClusterVirtualMachineImage)
 			cvmi.Spec.HardwareVersion = 123
 			cvmi.Status.ImageSupported = &[]bool{true}[0]
 			return nil
@@ -106,9 +105,9 @@ func cclItemReconcile() {
 			}).Should(BeTrue())
 
 			// Manually delete CVMI as envTest doesn't delete it even if the OwnerReference is set up.
-			Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1a1.ClusterVirtualMachineImage{})).Should(Succeed())
+			Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1.ClusterVirtualMachineImage{})).Should(Succeed())
 			Eventually(func() bool {
-				cvmiList := &vmopv1a1.ClusterVirtualMachineImageList{}
+				cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
 				if err := ctx.Client.List(ctx, cvmiList); err != nil {
 					return false
 				}

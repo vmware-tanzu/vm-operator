@@ -20,7 +20,7 @@ import (
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
@@ -41,7 +41,7 @@ var _ = Describe("NetworkProvider", func() {
 		testConfig builder.VCSimTestConfig
 		ctx        *builder.TestContextForVCSim
 
-		vm    *v1alpha1.VirtualMachine
+		vm    *vmopv1.VirtualMachine
 		vmCtx context.VirtualMachineContext
 		np    network.Provider
 	)
@@ -61,13 +61,13 @@ var _ = Describe("NetworkProvider", func() {
 	BeforeEach(func() {
 		testConfig = builder.VCSimTestConfig{}
 
-		vm = &v1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "network-provider-test-vm",
 				Namespace: "network-provider-test-ns",
 			},
-			Spec: v1alpha1.VirtualMachineSpec{
-				NetworkInterfaces: []v1alpha1.VirtualMachineNetworkInterface{
+			Spec: vmopv1.VirtualMachineSpec{
+				NetworkInterfaces: []vmopv1.VirtualMachineNetworkInterface{
 					{},
 				},
 			},
@@ -318,7 +318,7 @@ var _ = Describe("NetworkProvider", func() {
 			Context("with NetworkInterfaceProvider Referenced in vmNif", func() {
 				BeforeEach(func() {
 					netIf.Name = dummyNetIfName
-					vm.Spec.NetworkInterfaces[0].ProviderRef = &v1alpha1.NetworkInterfaceProviderReference{
+					vm.Spec.NetworkInterfaces[0].ProviderRef = &vmopv1.NetworkInterfaceProviderReference{
 						APIGroup:   "netoperator.vmware.com",
 						APIVersion: "v1alpha1",
 						Kind:       "NetworkInterface",
@@ -358,7 +358,7 @@ var _ = Describe("NetworkProvider", func() {
 
 				Context("referencing unsupported GVK", func() {
 					BeforeEach(func() {
-						vm.Spec.NetworkInterfaces[0].ProviderRef = &v1alpha1.NetworkInterfaceProviderReference{
+						vm.Spec.NetworkInterfaces[0].ProviderRef = &vmopv1.NetworkInterfaceProviderReference{
 							APIGroup:   "unsupported-group",
 							APIVersion: "unsupported-version",
 							Kind:       "unsupported-kind",
@@ -383,7 +383,7 @@ var _ = Describe("NetworkProvider", func() {
 					netIf.Status.IPConfigs = nil
 
 					vm.Spec.NetworkInterfaces[0].NetworkType = network.NsxtNetworkType
-					vm.Spec.NetworkInterfaces[0].ProviderRef = &v1alpha1.NetworkInterfaceProviderReference{
+					vm.Spec.NetworkInterfaces[0].ProviderRef = &vmopv1.NetworkInterfaceProviderReference{
 						APIGroup:   "netoperator.vmware.com",
 						APIVersion: "v1alpha1",
 						Kind:       "NetworkInterface",

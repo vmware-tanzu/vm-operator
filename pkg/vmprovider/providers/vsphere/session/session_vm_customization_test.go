@@ -20,7 +20,7 @@ import (
 
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
@@ -78,7 +78,7 @@ var _ = Describe("Customization via ConfigSpec", func() {
 		BeforeEach(func() {
 			updateArgs.VMMetadata = session.VMMetadata{
 				Data:      make(map[string]string),
-				Transport: vmopv1alpha1.VirtualMachineMetadataOvfEnvTransport,
+				Transport: vmopv1.VirtualMachineMetadataOvfEnvTransport,
 			}
 		})
 		JustBeforeEach(func() {
@@ -118,7 +118,7 @@ var _ = Describe("Customization via ConfigSpec", func() {
 		BeforeEach(func() {
 			updateArgs.VMMetadata = session.VMMetadata{
 				Data:      make(map[string]string),
-				Transport: vmopv1alpha1.VirtualMachineMetadataExtraConfigTransport,
+				Transport: vmopv1.VirtualMachineMetadataExtraConfigTransport,
 			}
 		})
 		JustBeforeEach(func() {
@@ -216,7 +216,7 @@ var _ = Describe("Customization via Cust Spec", func() {
 
 var _ = Describe("CloudInitmetadata", func() {
 	var (
-		vm             *vmopv1alpha1.VirtualMachine
+		vm             *vmopv1.VirtualMachine
 		netplan        network.Netplan
 		metadataString string
 		err            error
@@ -224,7 +224,7 @@ var _ = Describe("CloudInitmetadata", func() {
 		publicKeys     string
 	)
 	BeforeEach(func() {
-		vm = &vmopv1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
 				Namespace: "dummy-ns",
@@ -484,12 +484,12 @@ var _ = Describe("TemplateVMMetadata", func() {
 			gateway2    = "192.168.10.1"
 			nameserver1 = "8.8.8.8"
 			nameserver2 = "1.1.1.1"
-			vm          *vmopv1alpha1.VirtualMachine
+			vm          *vmopv1.VirtualMachine
 			vmCtx       context.VirtualMachineContext
 		)
 
 		BeforeEach(func() {
-			vm = &vmopv1alpha1.VirtualMachine{
+			vm = &vmopv1.VirtualMachine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "dummy-vm",
 					Namespace: "dummy-ns",
@@ -694,7 +694,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 		var (
 			updateArgs session.VMUpdateArgs
 		)
-		vm := &vmopv1alpha1.VirtualMachine{
+		vm := &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
 				Namespace: "dummy-ns",

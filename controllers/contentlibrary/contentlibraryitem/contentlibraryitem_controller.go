@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
@@ -132,7 +132,7 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 		return nil
 	}
 
-	vmi := &vmopv1alpha1.VirtualMachineImage{
+	vmi := &vmopv1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vmiName,
 			Namespace: clItem.Namespace,
@@ -160,7 +160,7 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 	}
 
 	var syncErr error
-	var savedStatus *vmopv1alpha1.VirtualMachineImageStatus
+	var savedStatus *vmopv1.VirtualMachineImageStatus
 
 	opRes, createOrPatchErr := controllerutil.CreateOrPatch(ctx, r.Client, vmi, func() error {
 		defer func() {
@@ -168,12 +168,12 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 		}()
 
 		if utils.CheckItemReadyCondition(clItem.Status.Conditions) {
-			conditions.MarkTrue(vmi, vmopv1alpha1.VirtualMachineImageProviderReadyCondition)
+			conditions.MarkTrue(vmi, vmopv1.VirtualMachineImageProviderReadyCondition)
 		} else {
 			conditions.MarkFalse(vmi,
-				vmopv1alpha1.VirtualMachineImageProviderReadyCondition,
-				vmopv1alpha1.VirtualMachineImageProviderNotReadyReason,
-				vmopv1alpha1.ConditionSeverityError,
+				vmopv1.VirtualMachineImageProviderReadyCondition,
+				vmopv1.VirtualMachineImageProviderNotReadyReason,
+				vmopv1.ConditionSeverityError,
 				"Provider item is not in ready condition",
 			)
 			logger.Info("ContentLibraryItem is not ready yet, skipping further reconciliation")
@@ -222,7 +222,7 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 
 // setUpVMIFromCLItem sets up the VirtualMachineImage fields that
 // are retrievable from the given ContentLibraryItem resource.
-func (r *Reconciler) setUpVMIFromCLItem(vmi *vmopv1alpha1.VirtualMachineImage,
+func (r *Reconciler) setUpVMIFromCLItem(vmi *vmopv1.VirtualMachineImage,
 	clItem *imgregv1a1.ContentLibraryItem) error {
 	if err := controllerutil.SetControllerReference(clItem, vmi, r.Scheme()); err != nil {
 		return err
@@ -231,7 +231,7 @@ func (r *Reconciler) setUpVMIFromCLItem(vmi *vmopv1alpha1.VirtualMachineImage,
 	// Do not initialize the Spec or Status directly as it might overwrite the existing fields.
 	vmi.Spec.Type = string(clItem.Status.Type)
 	vmi.Spec.ImageID = clItem.Spec.UUID
-	vmi.Spec.ProviderRef = vmopv1alpha1.ContentProviderReference{
+	vmi.Spec.ProviderRef = vmopv1.ContentProviderReference{
 		APIVersion: clItem.APIVersion,
 		Kind:       clItem.Kind,
 		Name:       clItem.Name,
@@ -249,7 +249,7 @@ func (r *Reconciler) setUpVMIFromCLItem(vmi *vmopv1alpha1.VirtualMachineImage,
 // syncImageContent syncs the VirtualMachineImage content from the provider.
 // It skips syncing if the image content is already up-to-date.
 func (r *Reconciler) syncImageContent(ctx goctx.Context,
-	vmi *vmopv1alpha1.VirtualMachineImage, clItem *imgregv1a1.ContentLibraryItem) error {
+	vmi *vmopv1.VirtualMachineImage, clItem *imgregv1a1.ContentLibraryItem) error {
 	latestVersion := clItem.Status.ContentVersion
 	if vmi.Status.ContentVersion == latestVersion {
 		return nil
@@ -258,12 +258,12 @@ func (r *Reconciler) syncImageContent(ctx goctx.Context,
 	err := r.VMProvider.SyncVirtualMachineImage(ctx, clItem, vmi)
 	if err != nil {
 		conditions.MarkFalse(vmi,
-			vmopv1alpha1.VirtualMachineImageSyncedCondition,
-			vmopv1alpha1.VirtualMachineImageNotSyncedReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachineImageSyncedCondition,
+			vmopv1.VirtualMachineImageNotSyncedReason,
+			vmopv1.ConditionSeverityError,
 			"Failed to sync to the latest content version from provider")
 	} else {
-		conditions.MarkTrue(vmi, vmopv1alpha1.VirtualMachineImageSyncedCondition)
+		conditions.MarkTrue(vmi, vmopv1.VirtualMachineImageSyncedCondition)
 		vmi.Status.ContentVersion = latestVersion
 	}
 

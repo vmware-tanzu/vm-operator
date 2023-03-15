@@ -9,8 +9,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
@@ -19,7 +18,7 @@ import (
 func FindClusterModuleUUID(
 	groupName string,
 	clusterRef types.ManagedObjectReference,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (int, string) {
+	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (int, string) {
 
 	// Prior to the stretched cluster work, the status did not contain the VC cluster the module was
 	// created for, but we still need to return existing modules when the FSS is not enabled.
@@ -42,7 +41,7 @@ func ClaimClusterModuleUUID(
 	clusterModProvider Provider,
 	groupName string,
 	clusterRef types.ManagedObjectReference,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (int, string, error) {
+	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (int, string, error) {
 
 	var errs []error
 

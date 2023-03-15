@@ -6,7 +6,7 @@ package probe
 import (
 	"fmt"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
@@ -21,13 +21,13 @@ func NewGuestHeartbeatProber(vmProviderProber vmProviderProber) Probe {
 	}
 }
 
-func heartbeatValue(value vmopv1alpha1.GuestHeartbeatStatus) int {
+func heartbeatValue(value vmopv1.GuestHeartbeatStatus) int {
 	switch value {
-	case vmopv1alpha1.GreenHeartbeatStatus:
+	case vmopv1.GreenHeartbeatStatus:
 		return 1
-	case vmopv1alpha1.YellowHeartbeatStatus:
+	case vmopv1.YellowHeartbeatStatus:
 		return 0
-	default: // vmopv1alpha1.RedHeartbeatStatus, vmopv1alpha1.GrayHeartbeatStatus
+	default: // vmopv1.RedHeartbeatStatus, vmopv1.GrayHeartbeatStatus
 		return -1
 	}
 }

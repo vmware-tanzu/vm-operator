@@ -14,7 +14,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -58,7 +58,7 @@ func (w *readinessWorker) GetQueue() workqueue.DelayingInterface {
 }
 
 // CreateProbeContext creates a probe context for readiness probe.
-func (w *readinessWorker) CreateProbeContext(vm *vmopv1alpha1.VirtualMachine) (*context.ProbeContext, error) {
+func (w *readinessWorker) CreateProbeContext(vm *vmopv1.VirtualMachine) (*context.ProbeContext, error) {
 	patchHelper, err := patch.NewHelper(vm, w.client)
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func (w *readinessWorker) ProcessProbeResult(ctx *context.ProbeContext, res prob
 	conditions.Set(vm, condition)
 
 	err := ctx.PatchHelper.Patch(ctx, vm, patch.WithOwnedConditions{
-		Conditions: []vmopv1alpha1.ConditionType{vmopv1alpha1.ReadyCondition},
+		Conditions: []vmopv1.ConditionType{vmopv1.ReadyCondition},
 	})
 	if err != nil {
 		return errors.Wrapf(err, "patched failed")
@@ -115,7 +115,7 @@ func (w *readinessWorker) DoProbe(ctx *context.ProbeContext) error {
 }
 
 // getProbe returns a specific type of probe method.
-func (w *readinessWorker) getProbe(probeSpec *vmopv1alpha1.Probe) probe.Probe {
+func (w *readinessWorker) getProbe(probeSpec *vmopv1.Probe) probe.Probe {
 	if probeSpec.TCPSocket != nil {
 		return w.prober.TCPProbe
 	}
@@ -136,7 +136,7 @@ func (w *readinessWorker) runProbe(ctx *context.ProbeContext) (probe.Result, err
 }
 
 // getCondition returns condition based on VM probe results.
-func (w *readinessWorker) getCondition(res probe.Result, err error) *vmopv1alpha1.Condition {
+func (w *readinessWorker) getCondition(res probe.Result, err error) *vmopv1.Condition {
 	msg := ""
 	if err != nil {
 		msg = err.Error()
@@ -144,10 +144,10 @@ func (w *readinessWorker) getCondition(res probe.Result, err error) *vmopv1alpha
 
 	switch res {
 	case probe.Success:
-		return conditions.TrueCondition(vmopv1alpha1.ReadyCondition)
+		return conditions.TrueCondition(vmopv1.ReadyCondition)
 	case probe.Failure:
-		return conditions.FalseCondition(vmopv1alpha1.ReadyCondition, notReadyReason, vmopv1alpha1.ConditionSeverityInfo, msg)
+		return conditions.FalseCondition(vmopv1.ReadyCondition, notReadyReason, vmopv1.ConditionSeverityInfo, msg)
 	default: // probe.Unknown
-		return conditions.UnknownCondition(vmopv1alpha1.ReadyCondition, unknownReason, msg)
+		return conditions.UnknownCondition(vmopv1.ReadyCondition, unknownReason, msg)
 	}
 }

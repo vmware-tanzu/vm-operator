@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -26,25 +26,25 @@ func intgTests() {
 	var (
 		ctx *builder.IntegrationTestContext
 
-		vm    *vmopv1alpha1.VirtualMachine
+		vm    *vmopv1.VirtualMachine
 		vmKey types.NamespacedName
 	)
 
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
 
-		vm = &vmopv1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: ctx.Namespace,
 				Name:      "dummy-vm",
 			},
-			Spec: vmopv1alpha1.VirtualMachineSpec{
+			Spec: vmopv1.VirtualMachineSpec{
 				ImageName:    "dummy-image",
 				ClassName:    "dummy-class",
-				PowerState:   vmopv1alpha1.VirtualMachinePoweredOn,
+				PowerState:   vmopv1.VirtualMachinePoweredOn,
 				StorageClass: "dummy-storageclass",
-				VmMetadata: &vmopv1alpha1.VirtualMachineMetadata{
-					Transport:     vmopv1alpha1.VirtualMachineMetadataOvfEnvTransport,
+				VmMetadata: &vmopv1.VirtualMachineMetadata{
+					Transport:     vmopv1.VirtualMachineMetadataOvfEnvTransport,
 					ConfigMapName: "dummy-configmap",
 				},
 			},
@@ -58,8 +58,8 @@ func intgTests() {
 		intgFakeVMProvider.Reset()
 	})
 
-	getVirtualMachine := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1alpha1.VirtualMachine {
-		vm := &vmopv1alpha1.VirtualMachine{}
+	getVirtualMachine := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1.VirtualMachine {
+		vm := &vmopv1.VirtualMachine{}
 		if err := ctx.Client.Get(ctx, objKey, vm); err != nil {
 			return nil
 		}
@@ -80,7 +80,7 @@ func intgTests() {
 
 		BeforeEach(func() {
 			intgFakeVMProvider.Lock()
-			intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
+			intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 				// Used below just to check for something in the Status is updated.
 				vm.Status.InstanceUUID = dummyInstanceUUID
 				return nil
@@ -91,7 +91,7 @@ func intgTests() {
 		AfterEach(func() {
 			By("Delete VirtualMachine", func() {
 				if err := ctx.Client.Delete(ctx, vm); err == nil {
-					vm := &vmopv1alpha1.VirtualMachine{}
+					vm := &vmopv1.VirtualMachine{}
 					// If VM is still around because of finalizer, try to cleanup for next test.
 					if err := ctx.Client.Get(ctx, vmKey, vm); err == nil && len(vm.Finalizers) > 0 {
 						vm.Finalizers = nil
@@ -107,7 +107,7 @@ func intgTests() {
 			It("Reconcile returns early and the finalizer never gets added", func() {
 				// Set the Pause annotation on the VM
 				vm.Annotations = map[string]string{
-					vmopv1alpha1.PauseAnnotation: "",
+					vmopv1.PauseAnnotation: "",
 				}
 
 				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
@@ -161,8 +161,8 @@ func intgTests() {
 
 			BeforeEach(func() {
 				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
-					vm.Status.Phase = vmopv1alpha1.Creating
+				intgFakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					vm.Status.Phase = vmopv1.Creating
 					return errors.New(errMsg)
 				}
 				intgFakeVMProvider.Unlock()
@@ -174,12 +174,12 @@ func intgTests() {
 				waitForVirtualMachineFinalizer(ctx, vmKey)
 
 				By("Phase should be Creating", func() {
-					Eventually(func() vmopv1alpha1.VMStatusPhase {
+					Eventually(func() vmopv1.VMStatusPhase {
 						if vm := getVirtualMachine(ctx, vmKey); vm != nil {
 							return vm.Status.Phase
 						}
 						return ""
-					}).Should(Equal(vmopv1alpha1.Creating))
+					}).Should(Equal(vmopv1.Creating))
 				})
 			})
 		})
@@ -205,7 +205,7 @@ func intgTests() {
 
 			BeforeEach(func() {
 				intgFakeVMProvider.Lock()
-				intgFakeVMProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
+				intgFakeVMProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 					return errors.New(errMsg)
 				}
 				intgFakeVMProvider.Unlock()
@@ -218,12 +218,12 @@ func intgTests() {
 
 				Expect(ctx.Client.Delete(ctx, vm)).To(Succeed())
 				By("Phase should be Deleting", func() {
-					Eventually(func() vmopv1alpha1.VMStatusPhase {
+					Eventually(func() vmopv1.VMStatusPhase {
 						if vm := getVirtualMachine(ctx, vmKey); vm != nil {
 							return vm.Status.Phase
 						}
 						return ""
-					}).Should(Equal(vmopv1alpha1.Deleting))
+					}).Should(Equal(vmopv1.Deleting))
 				})
 
 				By("Finalizer should still be present", func() {

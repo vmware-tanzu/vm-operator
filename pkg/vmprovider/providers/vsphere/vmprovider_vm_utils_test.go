@@ -16,7 +16,7 @@ import (
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -57,8 +57,8 @@ func vmUtilTests() {
 	Context("GetVirtualMachineClass", func() {
 
 		var (
-			vmClass        *vmopv1alpha1.VirtualMachineClass
-			vmClassBinding *vmopv1alpha1.VirtualMachineClassBinding
+			vmClass        *vmopv1.VirtualMachineClass
+			vmClassBinding *vmopv1.VirtualMachineClassBinding
 		)
 
 		BeforeEach(func() {
@@ -74,25 +74,25 @@ func vmUtilTests() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
-				expectedCondition := vmopv1alpha1.Conditions{
+				expectedCondition := vmopv1.Conditions{
 					*conditions.FalseCondition(
-						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-						vmopv1alpha1.VirtualMachineClassNotFoundReason,
-						vmopv1alpha1.ConditionSeverityError,
+						vmopv1.VirtualMachinePrereqReadyCondition,
+						vmopv1.VirtualMachineClassNotFoundReason,
+						vmopv1.ConditionSeverityError,
 						expectedErrMsg),
 				}
 				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 			})
 		})
 
-		validateNoVMClassBindingCondition := func(vm *vmopv1alpha1.VirtualMachine) {
+		validateNoVMClassBindingCondition := func(vm *vmopv1.VirtualMachine) {
 			msg := fmt.Sprintf("Namespace %s does not have access to VirtualMachineClass %s", vm.Namespace, vm.Spec.ClassName)
 
-			expectedCondition := vmopv1alpha1.Conditions{
+			expectedCondition := vmopv1.Conditions{
 				*conditions.FalseCondition(
-					vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-					vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
-					vmopv1alpha1.ConditionSeverityError,
+					vmopv1.VirtualMachinePrereqReadyCondition,
+					vmopv1.VirtualMachineClassBindingNotFoundReason,
+					vmopv1.ConditionSeverityError,
 					msg),
 			}
 			Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
@@ -150,15 +150,15 @@ func vmUtilTests() {
 		When("WCPVMImageRegistry FSS is disabled", func() {
 
 			var (
-				contentSource        *vmopv1alpha1.ContentSource
-				clProvider           *vmopv1alpha1.ContentLibraryProvider
-				contentSourceBinding *vmopv1alpha1.ContentSourceBinding
-				vmImage              *vmopv1alpha1.VirtualMachineImage
+				contentSource        *vmopv1.ContentSource
+				clProvider           *vmopv1.ContentLibraryProvider
+				contentSourceBinding *vmopv1.ContentSourceBinding
+				vmImage              *vmopv1.VirtualMachineImage
 			)
 
 			BeforeEach(func() {
 				contentSource, clProvider, contentSourceBinding = builder.DummyContentSourceProviderAndBinding("dummy-cl-uuid", vmCtx.VM.Namespace)
-				vmImage = &vmopv1alpha1.VirtualMachineImage{
+				vmImage = &vmopv1.VirtualMachineImage{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "dummy-image",
 						OwnerReferences: []metav1.OwnerReference{{
@@ -183,11 +183,11 @@ func vmUtilTests() {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
-					expectedCondition := vmopv1alpha1.Conditions{
+					expectedCondition := vmopv1.Conditions{
 						*conditions.FalseCondition(
-							vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-							vmopv1alpha1.VirtualMachineImageNotFoundReason,
-							vmopv1alpha1.ConditionSeverityError,
+							vmopv1.VirtualMachinePrereqReadyCondition,
+							vmopv1.VirtualMachineImageNotFoundReason,
+							vmopv1.ConditionSeverityError,
 							expectedErrMsg),
 					}
 					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
@@ -206,26 +206,26 @@ func vmUtilTests() {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
-					expectedCondition := vmopv1alpha1.Conditions{
+					expectedCondition := vmopv1.Conditions{
 						*conditions.FalseCondition(
-							vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-							vmopv1alpha1.ContentLibraryProviderNotFoundReason,
-							vmopv1alpha1.ConditionSeverityError,
+							vmopv1.VirtualMachinePrereqReadyCondition,
+							vmopv1.ContentLibraryProviderNotFoundReason,
+							vmopv1.ConditionSeverityError,
 							expectedErrMsg),
 					}
 					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 				})
 			})
 
-			validateNoContentSourceBindingCondition := func(vm *vmopv1alpha1.VirtualMachine, clUUID string) {
+			validateNoContentSourceBindingCondition := func(vm *vmopv1.VirtualMachine, clUUID string) {
 				msg := fmt.Sprintf("Namespace %s does not have access to ContentSource %s for VirtualMachineImage %s",
 					vm.Namespace, clUUID, vm.Spec.ImageName)
 
-				expectedCondition := vmopv1alpha1.Conditions{
+				expectedCondition := vmopv1.Conditions{
 					*conditions.FalseCondition(
-						vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-						vmopv1alpha1.ContentSourceBindingNotFoundReason,
-						vmopv1alpha1.ConditionSeverityError,
+						vmopv1.VirtualMachinePrereqReadyCondition,
+						vmopv1.ContentSourceBindingNotFoundReason,
+						vmopv1.ConditionSeverityError,
 						msg),
 				}
 
@@ -288,9 +288,9 @@ func vmUtilTests() {
 
 			var (
 				cl             *imgregv1a1.ContentLibrary
-				nsVMImage      *vmopv1alpha1.VirtualMachineImage
+				nsVMImage      *vmopv1.VirtualMachineImage
 				clusterCL      *imgregv1a1.ClusterContentLibrary
-				clusterVMImage *vmopv1alpha1.ClusterVirtualMachineImage
+				clusterVMImage *vmopv1.ClusterVirtualMachineImage
 			)
 
 			BeforeEach(func() {
@@ -322,11 +322,11 @@ func vmUtilTests() {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
-					expectedCondition := vmopv1alpha1.Conditions{
+					expectedCondition := vmopv1.Conditions{
 						*conditions.FalseCondition(
-							vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-							vmopv1alpha1.VirtualMachineImageNotFoundReason,
-							vmopv1alpha1.ConditionSeverityError,
+							vmopv1.VirtualMachinePrereqReadyCondition,
+							vmopv1.VirtualMachineImageNotFoundReason,
+							vmopv1.ConditionSeverityError,
 							expectedErrMsg),
 					}
 					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
@@ -336,8 +336,8 @@ func vmUtilTests() {
 			When("VM image exists but the provider is not ready", func() {
 
 				BeforeEach(func() {
-					conditions.MarkTrue(nsVMImage, vmopv1alpha1.VirtualMachineImageProviderReadyCondition)
-					conditions.MarkFalse(nsVMImage, vmopv1alpha1.VirtualMachineImageProviderReadyCondition, "", "", "")
+					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
+					conditions.MarkFalse(nsVMImage, vmopv1.VirtualMachineImageProviderReadyCondition, "", "", "")
 					initObjects = append(initObjects, cl, nsVMImage)
 					vmCtx.VM.Spec.ImageName = nsVMImage.Name
 				})
@@ -348,11 +348,11 @@ func vmUtilTests() {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
-					expectedCondition := vmopv1alpha1.Conditions{
+					expectedCondition := vmopv1.Conditions{
 						*conditions.FalseCondition(
-							vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-							vmopv1alpha1.VirtualMachineImageNotReadyReason,
-							vmopv1alpha1.ConditionSeverityError,
+							vmopv1.VirtualMachinePrereqReadyCondition,
+							vmopv1.VirtualMachineImageNotReadyReason,
+							vmopv1.ConditionSeverityError,
 							expectedErrMsg),
 					}
 					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
@@ -364,8 +364,8 @@ func vmUtilTests() {
 				BeforeEach(func() {
 					// Switch to cluster scoped VM image as we used namespace scoped VM image in the previous test.
 					// So that we don't have to write additional test cases to cover both namespace and cluster images.
-					conditions.MarkTrue(clusterVMImage, vmopv1alpha1.VirtualMachineImageProviderReadyCondition)
-					conditions.MarkFalse(clusterVMImage, vmopv1alpha1.VirtualMachineImageSyncedCondition, "", "", "")
+					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
+					conditions.MarkFalse(clusterVMImage, vmopv1.VirtualMachineImageSyncedCondition, "", "", "")
 					initObjects = append(initObjects, clusterCL, clusterVMImage)
 					vmCtx.VM.Spec.ImageName = clusterVMImage.Name
 				})
@@ -376,11 +376,11 @@ func vmUtilTests() {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
-					expectedCondition := vmopv1alpha1.Conditions{
+					expectedCondition := vmopv1.Conditions{
 						*conditions.FalseCondition(
-							vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-							vmopv1alpha1.VirtualMachineImageNotReadyReason,
-							vmopv1alpha1.ConditionSeverityError,
+							vmopv1.VirtualMachinePrereqReadyCondition,
+							vmopv1.VirtualMachineImageNotReadyReason,
+							vmopv1.ConditionSeverityError,
 							expectedErrMsg),
 					}
 					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
@@ -389,8 +389,8 @@ func vmUtilTests() {
 
 			When("Namespace scoped VirtualMachineImage exists and ready", func() {
 				BeforeEach(func() {
-					conditions.MarkTrue(nsVMImage, vmopv1alpha1.VirtualMachineImageProviderReadyCondition)
-					conditions.MarkTrue(nsVMImage, vmopv1alpha1.VirtualMachineImageSyncedCondition)
+					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
+					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageSyncedCondition)
 					initObjects = append(initObjects, cl, nsVMImage)
 					vmCtx.VM.Spec.ImageName = nsVMImage.Name
 				})
@@ -405,8 +405,8 @@ func vmUtilTests() {
 
 			When("ClusterVirtualMachineImage exists and ready", func() {
 				BeforeEach(func() {
-					conditions.MarkTrue(clusterVMImage, vmopv1alpha1.VirtualMachineImageProviderReadyCondition)
-					conditions.MarkTrue(clusterVMImage, vmopv1alpha1.VirtualMachineImageSyncedCondition)
+					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
+					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageSyncedCondition)
 					initObjects = append(initObjects, clusterCL, clusterVMImage)
 					vmCtx.VM.Spec.ImageName = clusterVMImage.Name
 				})
@@ -452,7 +452,7 @@ func vmUtilTests() {
 
 		When("both ConfigMap and Secret are specified", func() {
 			BeforeEach(func() {
-				vmCtx.VM.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
+				vmCtx.VM.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
 					ConfigMapName: vmMetaDataConfigMap.Name,
 					SecretName:    vmMetaDataSecret.Name,
 					Transport:     "transport",
@@ -468,7 +468,7 @@ func vmUtilTests() {
 
 		When("VM Metadata is specified via a ConfigMap", func() {
 			BeforeEach(func() {
-				vmCtx.VM.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
+				vmCtx.VM.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
 					ConfigMapName: vmMetaDataConfigMap.Name,
 					Transport:     "transport",
 				}
@@ -495,7 +495,7 @@ func vmUtilTests() {
 
 		When("VM Metadata is specified via a Secret", func() {
 			BeforeEach(func() {
-				vmCtx.VM.Spec.VmMetadata = &vmopv1alpha1.VirtualMachineMetadata{
+				vmCtx.VM.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
 					SecretName: vmMetaDataSecret.Name,
 					Transport:  "transport",
 				}
@@ -524,18 +524,18 @@ func vmUtilTests() {
 	Context("GetVMSetResourcePolicy", func() {
 
 		var (
-			vmResourcePolicy *vmopv1alpha1.VirtualMachineSetResourcePolicy
+			vmResourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
 		)
 
 		BeforeEach(func() {
-			vmResourcePolicy = &vmopv1alpha1.VirtualMachineSetResourcePolicy{
+			vmResourcePolicy = &vmopv1.VirtualMachineSetResourcePolicy{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "dummy-vm-rp",
 					Namespace: vmCtx.VM.Namespace,
 				},
-				Spec: vmopv1alpha1.VirtualMachineSetResourcePolicySpec{
-					ResourcePool: vmopv1alpha1.ResourcePoolSpec{Name: "fooRP"},
-					Folder:       vmopv1alpha1.FolderSpec{Name: "fooFolder"},
+				Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
+					ResourcePool: vmopv1.ResourcePoolSpec{Name: "fooRP"},
+					Folder:       vmopv1.FolderSpec{Name: "fooFolder"},
 				},
 			}
 		})
@@ -571,13 +571,13 @@ func vmUtilTests() {
 	Context("AddInstanceStorageVolumes", func() {
 
 		var (
-			vmClass            *vmopv1alpha1.VirtualMachineClass
+			vmClass            *vmopv1.VirtualMachineClass
 			instanceStorageFSS uint32
 		)
 
 		expectInstanceStorageVolumes := func(
-			vm *vmopv1alpha1.VirtualMachine,
-			isStorage vmopv1alpha1.InstanceStorage) {
+			vm *vmopv1.VirtualMachine,
+			isStorage vmopv1.InstanceStorage) {
 
 			ExpectWithOffset(1, isStorage.Volumes).ToNot(BeEmpty())
 			isVolumes := instancestorage.FilterVolumes(vm)

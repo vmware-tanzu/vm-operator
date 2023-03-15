@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
@@ -37,7 +37,7 @@ const (
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &vmopv1alpha1.ContentSource{}
+		controlledType     = &vmopv1.ContentSource{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
@@ -54,7 +54,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
-		Owns(&vmopv1alpha1.ContentLibraryProvider{}).
+		Owns(&vmopv1.ContentLibraryProvider{}).
 		Complete(r)
 }
 
@@ -83,7 +83,7 @@ type Reconciler struct {
 
 // CreateImage creates thr VirtualMachineImage. If a VirtualMachineImage with the same name alreay exists,
 // use GenerateName to give this image a new name.
-func (r *Reconciler) CreateImage(ctx goctx.Context, image vmopv1alpha1.VirtualMachineImage) error {
+func (r *Reconciler) CreateImage(ctx goctx.Context, image vmopv1.VirtualMachineImage) error {
 	// Preserve the status information. This is due to a change in
 	// controller-runtime's change to Create/Update calls that nils out
 	// empty fields. The copy here is to reintroduce the status later when
@@ -121,7 +121,7 @@ func (r *Reconciler) CreateImage(ctx goctx.Context, image vmopv1alpha1.VirtualMa
 }
 
 // DeleteImage deletes a VirtualMachineImage. Ignore the NotFound error.
-func (r *Reconciler) DeleteImage(ctx goctx.Context, image vmopv1alpha1.VirtualMachineImage) error {
+func (r *Reconciler) DeleteImage(ctx goctx.Context, image vmopv1.VirtualMachineImage) error {
 	r.Logger.V(4).Info("Deleting image", "name", image.Name)
 	if err := client.IgnoreNotFound(r.Delete(ctx, &image)); err != nil {
 		r.Logger.Error(err, "failed to delete VirtualMachineImage", "name", image.Name)
@@ -132,7 +132,7 @@ func (r *Reconciler) DeleteImage(ctx goctx.Context, image vmopv1alpha1.VirtualMa
 }
 
 // UpdateImage checks a VirtualMachineImage non-status and status resource and update it if needed.
-func (r *Reconciler) UpdateImage(ctx goctx.Context, currentImage, expectedImage vmopv1alpha1.VirtualMachineImage) error {
+func (r *Reconciler) UpdateImage(ctx goctx.Context, currentImage, expectedImage vmopv1.VirtualMachineImage) error {
 	r.Logger.V(4).Info("Updating image", "name", expectedImage.Name)
 
 	beforeUpdate := currentImage.DeepCopy()
@@ -163,7 +163,7 @@ func (r *Reconciler) UpdateImage(ctx goctx.Context, currentImage, expectedImage 
 }
 
 // IsImageOwnedByContentLibrary checks whether a VirtualMachineImage is owned by a content library with given UUID.
-func IsImageOwnedByContentLibrary(img vmopv1alpha1.VirtualMachineImage, clUUID string) bool {
+func IsImageOwnedByContentLibrary(img vmopv1.VirtualMachineImage, clUUID string) bool {
 	// If an image has empty OwnerRefs, then this image is created before VM Service.
 	// This case only happens during upgrade from Non-VM service to Non-VM service, or
 	// Non-VM service to VM service.
@@ -183,7 +183,7 @@ func IsImageOwnedByContentLibrary(img vmopv1alpha1.VirtualMachineImage, clUUID s
 
 // GetVMImageName returns the display name of the image defined in the template.
 // Note that this is different from the name of the VirtualMachineImage Kubernetes object.
-func GetVMImageName(img vmopv1alpha1.VirtualMachineImage) string {
+func GetVMImageName(img vmopv1.VirtualMachineImage) string {
 	name := img.Status.ImageName
 	// This happens if a vm image is created before duplicate vm image name is supported.
 	if name == "" {
@@ -194,8 +194,8 @@ func GetVMImageName(img vmopv1alpha1.VirtualMachineImage) string {
 
 func (r *Reconciler) ProcessItemFromContentLibrary(ctx goctx.Context,
 	logger logr.Logger,
-	clProvider *vmopv1alpha1.ContentLibraryProvider,
-	itemID string, currentCLImages map[string]vmopv1alpha1.VirtualMachineImage) (reterr error) {
+	clProvider *vmopv1.ContentLibraryProvider,
+	itemID string, currentCLImages map[string]vmopv1.VirtualMachineImage) (reterr error) {
 	logger.V(4).Info("Processing image item", "itemID", itemID)
 
 	providerImage, err := r.VMProvider.GetVirtualMachineImageFromContentLibrary(ctx, clProvider, itemID, currentCLImages)
@@ -212,7 +212,7 @@ func (r *Reconciler) ProcessItemFromContentLibrary(ctx goctx.Context,
 			UID:        clProvider.UID,
 		}
 		providerImage.OwnerReferences = []metav1.OwnerReference{clOwnerRef}
-		providerImage.Spec.ProviderRef = vmopv1alpha1.ContentProviderReference{
+		providerImage.Spec.ProviderRef = vmopv1.ContentProviderReference{
 			APIVersion: clProvider.APIVersion,
 			Kind:       clProvider.Kind,
 			Name:       clProvider.Name,
@@ -244,12 +244,12 @@ func (r *Reconciler) ProcessItemFromContentLibrary(ctx goctx.Context,
 
 // SyncImagesFromContentProvider fetches the VM images from a given content provider. Also sets the owner ref in the images.
 func (r *Reconciler) SyncImagesFromContentProvider(
-	ctx goctx.Context, clProvider *vmopv1alpha1.ContentLibraryProvider) error {
+	ctx goctx.Context, clProvider *vmopv1.ContentLibraryProvider) error {
 	logger := r.Logger.WithValues("clProviderName", clProvider.Name, "clProviderUUID", clProvider.Spec.UUID)
 	logger.V(4).Info("listing images from content library")
 
 	// List the existing images from the supervisor cluster.
-	k8sManagedImageList := &vmopv1alpha1.VirtualMachineImageList{}
+	k8sManagedImageList := &vmopv1.VirtualMachineImageList{}
 	if err := r.List(ctx, k8sManagedImageList); err != nil {
 		return errors.Wrap(err, "failed to list VirtualMachineImages from control plane")
 	}
@@ -261,7 +261,7 @@ func (r *Reconciler) SyncImagesFromContentProvider(
 	// We'd like to preserve existing images to avoid any potential problems caused by this changes after upgrade.
 	// So we need a common field to match the existing k8s managed images and provider images.
 	// Also, use imageName as the key can help us identify a VMImage which has been renamed.
-	currentCLImages := map[string]vmopv1alpha1.VirtualMachineImage{}
+	currentCLImages := map[string]vmopv1.VirtualMachineImage{}
 	for _, image := range k8sManagedImages {
 		// Only process the VirtualMachineImage resources that are owned by the content source.
 		if !IsImageOwnedByContentLibrary(image, clProvider.Name) {
@@ -309,7 +309,7 @@ func (r *Reconciler) SyncImagesFromContentProvider(
 // ReconcileProviderRef reconciles a ContentSource's provider reference. Verifies that the content provider pointed by
 // the provider ref exists on the infrastructure.
 func (r *Reconciler) ReconcileProviderRef(ctx goctx.Context,
-	contentSource *vmopv1alpha1.ContentSource) (*vmopv1alpha1.ContentLibraryProvider, error) {
+	contentSource *vmopv1.ContentSource) (*vmopv1.ContentLibraryProvider, error) {
 	logger := r.Logger.WithValues("contentSourceName", contentSource.Name)
 
 	logger.Info("Reconciling content provider reference")
@@ -325,7 +325,7 @@ func (r *Reconciler) ReconcileProviderRef(ctx goctx.Context,
 		return nil, nil
 	}
 
-	contentLibrary := &vmopv1alpha1.ContentLibraryProvider{}
+	contentLibrary := &vmopv1.ContentLibraryProvider{}
 	if err := r.Get(ctx, client.ObjectKey{Name: providerRef.Name, Namespace: providerRef.Namespace}, contentLibrary); err != nil {
 		logger.Error(err, "failed to get ContentLibraryProvider resource", "providerRef", providerRef)
 		return nil, err
@@ -359,7 +359,7 @@ func (r *Reconciler) ReconcileProviderRef(ctx goctx.Context,
 }
 
 // ReconcileDeleteProviderRef reconciles a delete for a provider reference. Currently, no op.
-func (r *Reconciler) ReconcileDeleteProviderRef(ctx goctx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+func (r *Reconciler) ReconcileDeleteProviderRef(ctx goctx.Context, contentSource *vmopv1.ContentSource) error {
 	logger := r.Logger.WithValues("contentSourceName", contentSource.Name)
 
 	providerRef := contentSource.Spec.ProviderRef
@@ -375,7 +375,7 @@ func (r *Reconciler) ReconcileDeleteProviderRef(ctx goctx.Context, contentSource
 }
 
 // ReconcileNormal reconciles a content source. Calls into the provider to reconcile the content provider.
-func (r *Reconciler) ReconcileNormal(ctx goctx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+func (r *Reconciler) ReconcileNormal(ctx goctx.Context, contentSource *vmopv1.ContentSource) error {
 	logger := r.Logger.WithValues("name", contentSource.Name)
 
 	logger.Info("Reconciling ContentSource CreateOrUpdate")
@@ -408,7 +408,7 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, contentSource *vmopv1alp
 }
 
 // ReconcileDelete reconciles a content source delete. We use a finalizer here to clean up any state if needed.
-func (r *Reconciler) ReconcileDelete(ctx goctx.Context, contentSource *vmopv1alpha1.ContentSource) error {
+func (r *Reconciler) ReconcileDelete(ctx goctx.Context, contentSource *vmopv1.ContentSource) error {
 	logger := r.Logger.WithValues("name", contentSource.Name)
 
 	defer func() {
@@ -443,7 +443,7 @@ func (r *Reconciler) ReconcileDelete(ctx goctx.Context, contentSource *vmopv1alp
 func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (ctrl.Result, error) {
 	r.Logger.Info("Received reconcile request", "name", request.Name)
 
-	instance := &vmopv1alpha1.ContentSource{}
+	instance := &vmopv1.ContentSource{}
 	if err := r.Get(ctx, request.NamespacedName, instance); err != nil {
 		if apiErrors.IsNotFound(err) {
 			return ctrl.Result{}, nil

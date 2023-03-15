@@ -29,7 +29,7 @@ import (
 	"github.com/vmware/govmomi/vapi/library"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
@@ -68,7 +68,7 @@ var (
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &vmopv1alpha1.VirtualMachinePublishRequest{}
+		controlledType     = &vmopv1.VirtualMachinePublishRequest{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
@@ -86,7 +86,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
-		Watches(&source.Kind{Type: &vmopv1alpha1.VirtualMachineImage{}},
+		Watches(&source.Kind{Type: &vmopv1.VirtualMachineImage{}},
 			handler.EnqueueRequestsFromMapFunc(vmiToVMPubMapperFn(ctx, r.Client))).
 		Complete(r)
 }
@@ -99,13 +99,13 @@ func vmiToVMPubMapperFn(ctx *context.ControllerManagerContext, c client.Client) 
 	// For a given VirtualMachineImage, return reconcile requests
 	// for those VirtualMachinePublishRequests with corresponding VirtualMachinesImage as the target item.
 	return func(o client.Object) []reconcile.Request {
-		vmi := o.(*vmopv1alpha1.VirtualMachineImage)
+		vmi := o.(*vmopv1.VirtualMachineImage)
 		logger := ctx.Logger.WithValues("name", vmi.Name, "namespace", vmi.Namespace)
 
 		logger.V(4).Info("Reconciling all VirtualMachinePublishRequests referencing a target item name same " +
 			"with this VirtualMachineImage display name")
 
-		vmPubList := &vmopv1alpha1.VirtualMachinePublishRequestList{}
+		vmPubList := &vmopv1.VirtualMachinePublishRequestList{}
 		if err := c.List(ctx, vmPubList, client.InNamespace(vmi.Namespace)); err != nil {
 			logger.Error(err, "Failed to list VirtualMachinePublishRequests for reconciliation due to VirtualMachineImage watch")
 			return nil
@@ -163,22 +163,22 @@ func requeueResult(ctx *context.VirtualMachinePublishRequestContext) ctrl.Result
 	// no need to requeue to trigger another reconcile if:
 	// - target item already exists
 	// - failed to parse item ID from a successful task result
-	if conditions.GetReason(vmPubReq, vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid) ==
-		vmopv1alpha1.TargetItemAlreadyExistsReason {
+	if conditions.GetReason(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionTargetValid) ==
+		vmopv1.TargetItemAlreadyExistsReason {
 		return ctrl.Result{}
 	}
 
-	if conditions.GetReason(vmPubReq, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded) ==
-		vmopv1alpha1.UploadItemIDInvalidReason {
+	if conditions.GetReason(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded) ==
+		vmopv1.UploadItemIDInvalidReason {
 		return ctrl.Result{}
 	}
 
 	// In case the item is uploaded but VMI is not available, or,
 	// the export task is not submitted to the vCenter task manager,
 	// requeue after a short wait time (10 seconds) since we expect these issues to be resolved quickly.
-	if conditions.GetReason(vmPubReq, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded) ==
-		vmopv1alpha1.UploadTaskNotStartedReason ||
-		conditions.IsTrue(vmPubReq, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded) {
+	if conditions.GetReason(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded) ==
+		vmopv1.UploadTaskNotStartedReason ||
+		conditions.IsTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
 		return ctrl.Result{RequeueAfter: 10 * time.Second}
 	}
 
@@ -198,7 +198,7 @@ func requeueResult(ctx *context.VirtualMachinePublishRequestContext) ctrl.Result
 // +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=contentlibraries/status,verbs=get;
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	vmPublishReq := &vmopv1alpha1.VirtualMachinePublishRequest{}
+	vmPublishReq := &vmopv1.VirtualMachinePublishRequest{}
 	// Get the VirtualMachinePublishRequest directly from the API server - bypassing the cache of the
 	// regular client - to avoid potentially stale objects from cache. We rely on the up-to-date Status
 	// when sending publish VM requests during reconciliation.
@@ -249,7 +249,7 @@ func (r *Reconciler) updateSourceAndTargetRef(ctx *context.VirtualMachinePublish
 			// set default source VM to this VirtualMachinePublishRequest's name.
 			vmName = vmPubReq.Name
 		}
-		vmPubReq.Status.SourceRef = &vmopv1alpha1.VirtualMachinePublishRequestSource{
+		vmPubReq.Status.SourceRef = &vmopv1.VirtualMachinePublishRequestSource{
 			Name: vmName,
 		}
 	}
@@ -260,8 +260,8 @@ func (r *Reconciler) updateSourceAndTargetRef(ctx *context.VirtualMachinePublish
 			targetItemName = fmt.Sprintf("%s-image", vmPubReq.Status.SourceRef.Name)
 		}
 
-		vmPubReq.Status.TargetRef = &vmopv1alpha1.VirtualMachinePublishRequestTarget{
-			Item: vmopv1alpha1.VirtualMachinePublishRequestTargetItem{
+		vmPubReq.Status.TargetRef = &vmopv1.VirtualMachinePublishRequestTarget{
+			Item: vmopv1.VirtualMachinePublishRequestTargetItem{
 				Name:        targetItemName,
 				Description: vmPubReq.Spec.Target.Item.Description,
 			},
@@ -285,12 +285,12 @@ func (r *Reconciler) publishVirtualMachine(ctx *context.VirtualMachinePublishReq
 	}
 
 	// In case we mark Upload condition to true when checking target, return early.
-	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded) {
+	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
 		return nil
 	}
 
-	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionSourceValid) &&
-		conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid) {
+	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionSourceValid) &&
+		conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionTargetValid) {
 		vmPublishReq.Status.Attempts++
 		vmPublishReq.Status.LastAttemptTime = metav1.Now()
 
@@ -356,16 +356,16 @@ func (r *Reconciler) removeVMPubResourceFromCluster(ctx *context.VirtualMachineP
 // doesn't exist, or is not in Created phase.
 func (r *Reconciler) checkIsSourceValid(ctx *context.VirtualMachinePublishRequestContext) error {
 	vmPubReq := ctx.VMPublishRequest
-	vm := &vmopv1alpha1.VirtualMachine{}
+	vm := &vmopv1.VirtualMachine{}
 	objKey := client.ObjectKey{Name: vmPubReq.Status.SourceRef.Name, Namespace: vmPubReq.Namespace}
 	err := r.Get(ctx, objKey, vm)
 	if err != nil {
 		ctx.Logger.Error(err, "failed to get VirtualMachine", "vm", objKey)
 		if apiErrors.IsNotFound(err) {
 			conditions.MarkFalse(vmPubReq,
-				vmopv1alpha1.VirtualMachinePublishRequestConditionSourceValid,
-				vmopv1alpha1.SourceVirtualMachineNotExistReason,
-				vmopv1alpha1.ConditionSeverityError, err.Error())
+				vmopv1.VirtualMachinePublishRequestConditionSourceValid,
+				vmopv1.SourceVirtualMachineNotExistReason,
+				vmopv1.ConditionSeverityError, err.Error())
 		}
 		return err
 	}
@@ -374,13 +374,13 @@ func (r *Reconciler) checkIsSourceValid(ctx *context.VirtualMachinePublishReques
 	if vm.Status.UniqueID == "" {
 		err = fmt.Errorf("VM hasn't been created and has no uniqueID, phase: %s", vm.Status.Phase)
 		conditions.MarkFalse(vmPubReq,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionSourceValid,
-			vmopv1alpha1.SourceVirtualMachineNotCreatedReason,
-			vmopv1alpha1.ConditionSeverityError, err.Error())
+			vmopv1.VirtualMachinePublishRequestConditionSourceValid,
+			vmopv1.SourceVirtualMachineNotCreatedReason,
+			vmopv1.ConditionSeverityError, err.Error())
 		return err
 	}
 
-	conditions.MarkTrue(vmPubReq, vmopv1alpha1.VirtualMachinePublishRequestConditionSourceValid)
+	conditions.MarkTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionSourceValid)
 	return nil
 }
 
@@ -396,9 +396,9 @@ func (r *Reconciler) checkIsTargetValid(ctx *context.VirtualMachinePublishReques
 		ctx.Logger.Error(err, "failed to get ContentLibrary", "cl", objKey)
 		if apiErrors.IsNotFound(err) {
 			conditions.MarkFalse(vmPubReq,
-				vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid,
-				vmopv1alpha1.TargetContentLibraryNotExistReason,
-				vmopv1alpha1.ConditionSeverityError, err.Error())
+				vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+				vmopv1.TargetContentLibraryNotExistReason,
+				vmopv1.ConditionSeverityError, err.Error())
 		}
 		return err
 	}
@@ -406,9 +406,9 @@ func (r *Reconciler) checkIsTargetValid(ctx *context.VirtualMachinePublishReques
 	if !contentLibrary.Spec.Writable {
 		err := fmt.Errorf("target location %s is not writable", contentLibrary.Status.Name)
 		conditions.MarkFalse(vmPubReq,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid,
-			vmopv1alpha1.TargetContentLibraryNotWritableReason,
-			vmopv1alpha1.ConditionSeverityError, err.Error())
+			vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+			vmopv1.TargetContentLibraryNotWritableReason,
+			vmopv1.ConditionSeverityError, err.Error())
 		return err
 	}
 
@@ -424,9 +424,9 @@ func (r *Reconciler) checkIsTargetValid(ctx *context.VirtualMachinePublishReques
 	if !isReady {
 		err := fmt.Errorf("target location %s is not ready", contentLibrary.Status.Name)
 		conditions.MarkFalse(vmPubReq,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid,
-			vmopv1alpha1.TargetContentLibraryNotReadyReason,
-			vmopv1alpha1.ConditionSeverityError, err.Error())
+			vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+			vmopv1.TargetContentLibraryNotReadyReason,
+			vmopv1.ConditionSeverityError, err.Error())
 		return err
 	}
 
@@ -448,8 +448,8 @@ func (r *Reconciler) checkIsTargetValid(ctx *context.VirtualMachinePublishReques
 		if vmPubReq.Status.Attempts > 0 {
 			if r.isItemCorrelatedWithVMPub(ctx, item) {
 				ctx.Logger.Info("existing target item is published by this VMPubReq")
-				conditions.MarkTrue(vmPubReq, vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)
-				conditions.MarkTrue(vmPubReq, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)
+				conditions.MarkTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionTargetValid)
+				conditions.MarkTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionUploaded)
 				ctx.ItemID = item.ID
 				return nil
 			}
@@ -458,25 +458,25 @@ func (r *Reconciler) checkIsTargetValid(ctx *context.VirtualMachinePublishReques
 		// If duplicate item name exists, give up at this point.
 		// no need to requeue to cause another reconcile. return nil.
 		conditions.MarkFalse(vmPubReq,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid,
-			vmopv1alpha1.TargetItemAlreadyExistsReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePublishRequestConditionTargetValid,
+			vmopv1.TargetItemAlreadyExistsReason,
+			vmopv1.ConditionSeverityError,
 			fmt.Sprintf("item with name %s already exists in the content library %s", targetItemName,
 				contentLibrary.Status.Name))
 		return nil
 	}
 
-	conditions.MarkTrue(vmPubReq, vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)
+	conditions.MarkTrue(vmPubReq, vmopv1.VirtualMachinePublishRequestConditionTargetValid)
 	return nil
 }
 
 // checkIsImageAvailable checks if the published VirtualMachineImage resource is available in the cluster.
 func (r *Reconciler) checkIsImageAvailable(ctx *context.VirtualMachinePublishRequestContext) error {
-	if !conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded) {
+	if !conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
 		return nil
 	}
 
-	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable) {
+	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionImageAvailable) {
 		return nil
 	}
 
@@ -489,7 +489,7 @@ func (r *Reconciler) checkIsImageAvailable(ctx *context.VirtualMachinePublishReq
 		ctx.ItemID = id
 	}
 
-	vmiList := &vmopv1alpha1.VirtualMachineImageList{}
+	vmiList := &vmopv1.VirtualMachineImageList{}
 	if err := r.Client.List(ctx, vmiList, client.InNamespace(ctx.VMPublishRequest.Namespace)); err != nil {
 		ctx.Logger.Error(err, "failed to list VirtualMachineImage")
 		return err
@@ -500,7 +500,7 @@ func (r *Reconciler) checkIsImageAvailable(ctx *context.VirtualMachinePublishReq
 		if vmi.Spec.ImageID == ctx.ItemID {
 			found = true
 			ctx.VMPublishRequest.Status.ImageName = vmi.Name
-			conditions.MarkTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable)
+			conditions.MarkTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionImageAvailable)
 			ctx.Logger.Info("VirtualMachineImage is available", "vmiName", vmi.Name)
 			break
 		}
@@ -508,9 +508,9 @@ func (r *Reconciler) checkIsImageAvailable(ctx *context.VirtualMachinePublishReq
 
 	if !found {
 		conditions.MarkFalse(ctx.VMPublishRequest,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable,
-			vmopv1alpha1.TargetVirtualMachineImageNotFoundReason,
-			vmopv1alpha1.ConditionSeverityWarning, "VirtualMachineImage not found")
+			vmopv1.VirtualMachinePublishRequestConditionImageAvailable,
+			vmopv1.TargetVirtualMachineImageNotFoundReason,
+			vmopv1.ConditionSeverityWarning, "VirtualMachineImage not found")
 	}
 
 	return nil
@@ -519,29 +519,29 @@ func (r *Reconciler) checkIsImageAvailable(ctx *context.VirtualMachinePublishReq
 // checkIsComplete checks if condition Complete can be marked to true.
 // The condition's status is set to true only when all other conditions present on the resource have a truthy status.
 func (r *Reconciler) checkIsComplete(ctx *context.VirtualMachinePublishRequestContext) bool {
-	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionComplete) {
+	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionComplete) {
 		return true
 	}
 
-	if !conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded) {
+	if !conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
 		conditions.MarkFalse(ctx.VMPublishRequest,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionComplete,
-			vmopv1alpha1.HasNotBeenUploadedReason,
-			vmopv1alpha1.ConditionSeverityWarning,
+			vmopv1.VirtualMachinePublishRequestConditionComplete,
+			vmopv1.HasNotBeenUploadedReason,
+			vmopv1.ConditionSeverityWarning,
 			"item hasn't been uploaded yet")
 		return false
 	}
 
-	if !conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable) {
+	if !conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionImageAvailable) {
 		conditions.MarkFalse(ctx.VMPublishRequest,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionComplete,
-			vmopv1alpha1.ImageUnavailableReason,
-			vmopv1alpha1.ConditionSeverityWarning,
+			vmopv1.VirtualMachinePublishRequestConditionComplete,
+			vmopv1.ImageUnavailableReason,
+			vmopv1.ConditionSeverityWarning,
 			"VirtualMachineImage is not available")
 		return false
 	}
 
-	conditions.MarkTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)
+	conditions.MarkTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionComplete)
 	ctx.VMPublishRequest.Status.Ready = true
 	ctx.VMPublishRequest.Status.CompletionTime = metav1.Now()
 	ctx.Logger.Info("VM publish request completed", "time", ctx.VMPublishRequest.Status.CompletionTime)
@@ -593,7 +593,7 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *context.VirtualMac
 		return true, nil
 	}
 
-	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded) {
+	if conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionUploaded) {
 		return false, nil
 	}
 
@@ -634,9 +634,9 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *context.VirtualMac
 		// CreateOvf request has been sent but the task com.vmware.ovfs.LibraryItem.capture hasn't been
 		// submitted to the task manager yet. retry taskManager query at later reconcile.
 		conditions.MarkFalse(ctx.VMPublishRequest,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded,
-			vmopv1alpha1.UploadTaskNotStartedReason,
-			vmopv1alpha1.ConditionSeverityInfo, "VM Publish task hasn't started.")
+			vmopv1.VirtualMachinePublishRequestConditionUploaded,
+			vmopv1.UploadTaskNotStartedReason,
+			vmopv1.ConditionSeverityInfo, "VM Publish task hasn't started.")
 		return false, nil
 	}
 
@@ -644,18 +644,18 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *context.VirtualMac
 	case vimtypes.TaskInfoStateQueued:
 		logger.V(5).Info("VM Publish task is queued but hasn't started")
 		conditions.MarkFalse(ctx.VMPublishRequest,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded,
-			vmopv1alpha1.UploadTaskQueuedReason,
-			vmopv1alpha1.ConditionSeverityInfo, "VM Publish task is queued.")
+			vmopv1.VirtualMachinePublishRequestConditionUploaded,
+			vmopv1.UploadTaskQueuedReason,
+			vmopv1.ConditionSeverityInfo, "VM Publish task is queued.")
 		return false, nil
 	case vimtypes.TaskInfoStateRunning:
 		// CreateOVF is still in progress
 		// TODO: Add task Progress info.
 		logger.V(5).Info("VM Publish is still in progress", "progress", task.Progress)
 		conditions.MarkFalse(ctx.VMPublishRequest,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded,
-			vmopv1alpha1.UploadingReason,
-			vmopv1alpha1.ConditionSeverityInfo, "Uploading item to content library.")
+			vmopv1.VirtualMachinePublishRequestConditionUploaded,
+			vmopv1.UploadingReason,
+			vmopv1.ConditionSeverityInfo, "Uploading item to content library.")
 		return false, nil
 	case vimtypes.TaskInfoStateSuccess:
 		// Publish request succeeds. Update Uploaded condition.
@@ -671,9 +671,9 @@ func (r *Reconciler) checkPubReqStatusAndShouldRepublish(ctx *context.VirtualMac
 		logger.Error(err, "VM Publish failed, will retry this operation", "actID",
 			task.ActivationId, "descriptionID", task.DescriptionId)
 		conditions.MarkFalse(ctx.VMPublishRequest,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded,
-			vmopv1alpha1.UploadFailureReason,
-			vmopv1alpha1.ConditionSeverityError, errMsg)
+			vmopv1.VirtualMachinePublishRequestConditionUploaded,
+			vmopv1.UploadFailureReason,
+			vmopv1.ConditionSeverityError, errMsg)
 		return true, nil
 	}
 
@@ -687,15 +687,15 @@ func (r *Reconciler) processUploadedItem(ctx *context.VirtualMachinePublishReque
 		// Ideally, this should never happen.
 		ctx.Logger.Error(err, "failed to get uploaded item UUID")
 		conditions.MarkFalse(ctx.VMPublishRequest,
-			vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded,
-			vmopv1alpha1.UploadItemIDInvalidReason,
-			vmopv1alpha1.ConditionSeverityError, ItemParseErrorMessage)
+			vmopv1.VirtualMachinePublishRequestConditionUploaded,
+			vmopv1.UploadItemIDInvalidReason,
+			vmopv1.ConditionSeverityError, ItemParseErrorMessage)
 		r.Recorder.Warn(ctx.VMPublishRequest, "PublishFailure", ItemParseErrorMessage)
 		return
 	}
 
 	ctx.ItemID = itemID
-	conditions.MarkTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)
+	conditions.MarkTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionUploaded)
 }
 
 // getUploadedItemID returns the uploaded content library item ID.
@@ -776,7 +776,7 @@ func (r *Reconciler) findCorrelatedItemIDByName(ctx *context.VirtualMachinePubli
 
 // updatePublishedItemDescription updates item description, which removes vmPub UUID from it.
 func (r *Reconciler) updatePublishedItemDescription(ctx *context.VirtualMachinePublishRequestContext) error {
-	if !conditions.IsTrue(ctx.VMPublishRequest, vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable) {
+	if !conditions.IsTrue(ctx.VMPublishRequest, vmopv1.VirtualMachinePublishRequestConditionImageAvailable) {
 		return nil
 	}
 
@@ -805,7 +805,7 @@ func (r *Reconciler) updatePublishedItemDescription(ctx *context.VirtualMachineP
 // VC doesn't prevent duplicate activation IDs for different requests, but we can have problems
 // when doing the query, i.e. not returned all the tasks.
 // So we need a unique string, which is also under track to be the actID for a later query.
-func getPublishRequestActID(vmPub *vmopv1alpha1.VirtualMachinePublishRequest) string {
+func getPublishRequestActID(vmPub *vmopv1.VirtualMachinePublishRequest) string {
 	return fmt.Sprintf("%s-%d", string(vmPub.UID), vmPub.Status.Attempts)
 }
 
@@ -862,7 +862,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachinePublishRequestCo
 
 	// In case the .spec.ttlSecondsAfterFinished is not set, we can return early and no need to do any reconcile.
 	if isComplete = conditions.IsTrue(vmPublishReq,
-		vmopv1alpha1.VirtualMachinePublishRequestConditionComplete); isComplete {
+		vmopv1.VirtualMachinePublishRequestConditionComplete); isComplete {
 		requeueAfter, deleted, err := r.removeVMPubResourceFromCluster(ctx)
 		isDeleted = deleted
 		return ctrl.Result{RequeueAfter: requeueAfter}, err

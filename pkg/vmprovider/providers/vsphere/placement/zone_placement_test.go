@@ -10,7 +10,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
@@ -71,7 +71,7 @@ func vcSimPlacement() {
 		nsInfo      builder.WorkloadNamespaceInfo
 		testConfig  builder.VCSimTestConfig
 
-		vm         *vmopv1alpha1.VirtualMachine
+		vm         *vmopv1.VirtualMachine
 		vmCtx      context.VirtualMachineContext
 		configSpec *types.VirtualMachineConfigSpec
 	)

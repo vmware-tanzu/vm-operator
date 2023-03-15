@@ -45,7 +45,7 @@ import (
 	_ "github.com/vmware/govmomi/vapi/cluster/simulator"
 	_ "github.com/vmware/govmomi/vapi/simulator"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -273,13 +273,13 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 	}
 
 	if clID := c.ContentLibraryID; clID != "" {
-		csBinding := &vmopv1alpha1.ContentSourceBinding{
+		csBinding := &vmopv1.ContentSourceBinding{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clID,
 				Namespace: ns.Name,
 			},
-			ContentSourceRef: vmopv1alpha1.ContentSourceReference{
-				APIVersion: vmopv1alpha1.SchemeGroupVersion.Group,
+			ContentSourceRef: vmopv1.ContentSourceReference{
+				APIVersion: vmopv1.SchemeGroupVersion.Group,
 				Kind:       "ContentSource",
 				Name:       clID,
 			},
@@ -465,22 +465,22 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	Expect(clID).ToNot(BeEmpty())
 	c.ContentLibraryID = clID
 
-	clProvider := &vmopv1alpha1.ContentLibraryProvider{
+	clProvider := &vmopv1.ContentLibraryProvider{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: clID,
 		},
-		Spec: vmopv1alpha1.ContentLibraryProviderSpec{
+		Spec: vmopv1.ContentLibraryProviderSpec{
 			UUID: clID,
 		},
 	}
 	Expect(c.Client.Create(c, clProvider)).To(Succeed())
 
-	cs := &vmopv1alpha1.ContentSource{
+	cs := &vmopv1.ContentSource{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: clID,
 		},
-		Spec: vmopv1alpha1.ContentSourceSpec{
-			ProviderRef: vmopv1alpha1.ContentProviderReference{
+		Spec: vmopv1.ContentSourceSpec{
+			ProviderRef: vmopv1.ContentProviderReference{
 				Name: clProvider.Name,
 				Kind: "ContentLibraryProvider",
 			},
@@ -534,7 +534,7 @@ func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName
 
 	// Create the expected VirtualMachineImage for the template.
 	vmImage := DummyVirtualMachineImage(templateName)
-	cl := &vmopv1alpha1.ContentLibraryProvider{}
+	cl := &vmopv1.ContentLibraryProvider{}
 	Expect(c.Client.Get(c, client.ObjectKey{Name: clID}, cl)).To(Succeed())
 	Expect(controllerutil.SetOwnerReference(cl, vmImage, c.Client.Scheme())).To(Succeed())
 	Expect(c.Client.Create(c, vmImage)).To(Succeed())
@@ -720,7 +720,7 @@ func (c *TestContextForVCSim) GetAZClusterComputes(azName string) []*object.Clus
 
 func (c *TestContextForVCSim) CreateVirtualMachineSetResourcePolicy(
 	name string,
-	nsInfo WorkloadNamespaceInfo) (*vmopv1alpha1.VirtualMachineSetResourcePolicy, *object.Folder) {
+	nsInfo WorkloadNamespaceInfo) (*vmopv1.VirtualMachineSetResourcePolicy, *object.Folder) {
 
 	resourcePolicy := DummyVirtualMachineSetResourcePolicy2(name, nsInfo.Namespace)
 	Expect(c.Client.Create(c, resourcePolicy)).To(Succeed())

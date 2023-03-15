@@ -15,7 +15,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 type VirtualMachine struct {
@@ -138,16 +138,16 @@ func (vm *VirtualMachine) UniqueID(ctx context.Context) (string, error) {
 	return vm.ReferenceValue(), nil
 }
 
-func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState v1alpha1.VirtualMachinePowerState) error {
+func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState vmopv1.VirtualMachinePowerState) error {
 	vm.logger.V(5).Info("SetPowerState", "desiredState", desiredPowerState)
 
 	var powerTask *object.Task
 	var err error
 
 	switch desiredPowerState {
-	case v1alpha1.VirtualMachinePoweredOn:
+	case vmopv1.VirtualMachinePoweredOn:
 		powerTask, err = vm.vcVirtualMachine.PowerOn(ctx)
-	case v1alpha1.VirtualMachinePoweredOff:
+	case vmopv1.VirtualMachinePoweredOff:
 		powerTask, err = vm.vcVirtualMachine.PowerOff(ctx)
 	default:
 		err = fmt.Errorf("invalid desired power state %s", desiredPowerState)

@@ -11,14 +11,12 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/vmware/govmomi/task"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"gopkg.in/yaml.v2"
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 
-	"github.com/vmware/govmomi/task"
-
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -96,7 +94,7 @@ type CloudInitMetadata struct {
 	PublicKeys    string          `yaml:"public-keys,omitempty"`
 }
 
-func GetCloudInitMetadata(vm *v1alpha1.VirtualMachine,
+func GetCloudInitMetadata(vm *vmopv1.VirtualMachine,
 	netplan network.Netplan,
 	data map[string]string) (string, error) {
 
@@ -288,17 +286,17 @@ func (s *Session) customize(
 	var err error
 
 	switch transport {
-	case v1alpha1.VirtualMachineMetadataCloudInitTransport:
+	case vmopv1.VirtualMachineMetadataCloudInitTransport:
 		configSpec, custSpec, err = customizeCloudInit(vmCtx, resVM, config, updateArgs)
-	case v1alpha1.VirtualMachineMetadataOvfEnvTransport:
+	case vmopv1.VirtualMachineMetadataOvfEnvTransport:
 		configSpec = GetOvfEnvCustSpec(config, updateArgs)
 		custSpec = GetLinuxPrepCustSpec(vmCtx.VM.Name, updateArgs)
-	case v1alpha1.VirtualMachineMetadataVAppConfigTransport:
+	case vmopv1.VirtualMachineMetadataVAppConfigTransport:
 		configSpec = GetOvfEnvCustSpec(config, updateArgs)
-	case v1alpha1.VirtualMachineMetadataExtraConfigTransport:
+	case vmopv1.VirtualMachineMetadataExtraConfigTransport:
 		configSpec = GetExtraConfigCustSpec(config, updateArgs)
 		custSpec = GetLinuxPrepCustSpec(vmCtx.VM.Name, updateArgs)
-	case v1alpha1.VirtualMachineMetadataSysprepTransport:
+	case vmopv1.VirtualMachineMetadataSysprepTransport:
 		// This is to simply comply with the spirit of the feature switch.
 		// In reality, the webhook will prevent "Sysprep" from being used unless
 		// the FSS is enabled.
@@ -350,13 +348,13 @@ func (s *Session) customize(
 	return nil
 }
 
-func NicInfoToDevicesStatus(updateArgs VMUpdateArgs) []v1alpha1.NetworkDeviceStatus {
-	networkDevicesStatus := make([]v1alpha1.NetworkDeviceStatus, 0, len(updateArgs.NetIfList))
+func NicInfoToDevicesStatus(updateArgs VMUpdateArgs) []vmopv1.NetworkDeviceStatus {
+	networkDevicesStatus := make([]vmopv1.NetworkDeviceStatus, 0, len(updateArgs.NetIfList))
 
 	// TODO: Add MacAddress field when the it's present in updateArgs.NetIfList
 	for _, info := range updateArgs.NetIfList {
 		ipConfig := info.IPConfiguration
-		networkDevice := v1alpha1.NetworkDeviceStatus{
+		networkDevice := vmopv1.NetworkDeviceStatus{
 			Gateway4:    ipConfig.Gateway,
 			IPAddresses: []string{network.ToCidrNotation(ipConfig.IP, ipConfig.SubnetMask)},
 		}
@@ -369,15 +367,15 @@ func NicInfoToDevicesStatus(updateArgs VMUpdateArgs) []v1alpha1.NetworkDeviceSta
 func TemplateVMMetadata(vmCtx context.VirtualMachineContext, updateArgs VMUpdateArgs) {
 	networkDevicesStatus := NicInfoToDevicesStatus(updateArgs)
 
-	networkStatus := v1alpha1.NetworkStatus{
+	networkStatus := vmopv1.NetworkStatus{
 		Devices:     networkDevicesStatus,
 		Nameservers: updateArgs.DNSServers,
 	}
 
 	templateData := struct {
-		V1alpha1 v1alpha1.VirtualMachineTemplate
+		V1alpha1 vmopv1.VirtualMachineTemplate
 	}{
-		V1alpha1: v1alpha1.VirtualMachineTemplate{
+		V1alpha1: vmopv1.VirtualMachineTemplate{
 			Net: networkStatus,
 			VM:  vmCtx.VM,
 		},

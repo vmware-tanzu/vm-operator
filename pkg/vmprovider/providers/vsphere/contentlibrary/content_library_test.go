@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -105,7 +105,7 @@ func clTests() {
 
 					Expect(image.Name).To(Equal(ctx.ContentLibraryImageName))
 					image.Spec.Type = "dummy-type-to-test-cache"
-					currentCLImages := map[string]vmopv1alpha1.VirtualMachineImage{
+					currentCLImages := map[string]vmopv1.VirtualMachineImage{
 						image.Status.ImageName: *image,
 					}
 

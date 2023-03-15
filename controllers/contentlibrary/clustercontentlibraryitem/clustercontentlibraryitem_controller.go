@@ -19,10 +19,9 @@ import (
 
 	"github.com/go-logr/logr"
 
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -130,7 +129,7 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 		return nil
 	}
 
-	cvmi := &vmopv1a1.ClusterVirtualMachineImage{}
+	cvmi := &vmopv1.ClusterVirtualMachineImage{}
 	cvmi.Name = cvmiName
 	logger = logger.WithValues("cvmiName", cvmi.Name)
 
@@ -153,7 +152,7 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 	}
 
 	var syncErr error
-	var savedStatus *vmopv1a1.VirtualMachineImageStatus
+	var savedStatus *vmopv1.VirtualMachineImageStatus
 
 	opRes, createOrPatchErr := controllerutil.CreateOrPatch(ctx, r.Client, cvmi, func() error {
 		defer func() {
@@ -161,12 +160,12 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 		}()
 
 		if utils.CheckItemReadyCondition(cclItem.Status.Conditions) {
-			conditions.MarkTrue(cvmi, vmopv1a1.VirtualMachineImageProviderReadyCondition)
+			conditions.MarkTrue(cvmi, vmopv1.VirtualMachineImageProviderReadyCondition)
 		} else {
 			conditions.MarkFalse(cvmi,
-				vmopv1a1.VirtualMachineImageProviderReadyCondition,
-				vmopv1a1.VirtualMachineImageProviderNotReadyReason,
-				vmopv1a1.ConditionSeverityError,
+				vmopv1.VirtualMachineImageProviderReadyCondition,
+				vmopv1.VirtualMachineImageProviderNotReadyReason,
+				vmopv1.ConditionSeverityError,
 				"Provider item is not in ready condition",
 			)
 			logger.Info("ClusterContentLibraryItem is not ready yet, skipping further reconciliation")
@@ -215,7 +214,7 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 
 // setUpCVMIFromCCLItem sets up the ClusterVirtualMachineImage fields that
 // are retrievable from the given ClusterContentLibraryItem resource.
-func (r *Reconciler) setUpCVMIFromCCLItem(cvmi *vmopv1a1.ClusterVirtualMachineImage,
+func (r *Reconciler) setUpCVMIFromCCLItem(cvmi *vmopv1.ClusterVirtualMachineImage,
 	cclItem *imgregv1a1.ClusterContentLibraryItem) error {
 	if err := controllerutil.SetControllerReference(cclItem, cvmi, r.Scheme()); err != nil {
 		return err
@@ -235,7 +234,7 @@ func (r *Reconciler) setUpCVMIFromCCLItem(cvmi *vmopv1a1.ClusterVirtualMachineIm
 	// Do not initialize the Spec or Status directly as it might overwrite the existing fields.
 	cvmi.Spec.Type = string(cclItem.Status.Type)
 	cvmi.Spec.ImageID = cclItem.Spec.UUID
-	cvmi.Spec.ProviderRef = vmopv1a1.ContentProviderReference{
+	cvmi.Spec.ProviderRef = vmopv1.ContentProviderReference{
 		APIVersion: cclItem.APIVersion,
 		Kind:       cclItem.Kind,
 		Name:       cclItem.Name,
@@ -254,7 +253,7 @@ func (r *Reconciler) setUpCVMIFromCCLItem(cvmi *vmopv1a1.ClusterVirtualMachineIm
 // syncImageContent syncs the ClusterVirtualMachineImage content from the provider.
 // It skips syncing if the image content is already up-to-date.
 func (r *Reconciler) syncImageContent(ctx goctx.Context,
-	cvmi *vmopv1a1.ClusterVirtualMachineImage, cclItem *imgregv1a1.ClusterContentLibraryItem) error {
+	cvmi *vmopv1.ClusterVirtualMachineImage, cclItem *imgregv1a1.ClusterContentLibraryItem) error {
 	latestVersion := cclItem.Status.ContentVersion
 	if cvmi.Status.ContentVersion == latestVersion {
 		return nil
@@ -263,12 +262,12 @@ func (r *Reconciler) syncImageContent(ctx goctx.Context,
 	err := r.VMProvider.SyncVirtualMachineImage(ctx, cclItem, cvmi)
 	if err != nil {
 		conditions.MarkFalse(cvmi,
-			vmopv1a1.VirtualMachineImageSyncedCondition,
-			vmopv1a1.VirtualMachineImageNotSyncedReason,
-			vmopv1a1.ConditionSeverityError,
+			vmopv1.VirtualMachineImageSyncedCondition,
+			vmopv1.VirtualMachineImageNotSyncedReason,
+			vmopv1.ConditionSeverityError,
 			"Failed to sync to the latest content version from provider")
 	} else {
-		conditions.MarkTrue(cvmi, vmopv1a1.VirtualMachineImageSyncedCondition)
+		conditions.MarkTrue(cvmi, vmopv1.VirtualMachineImageSyncedCondition)
 		cvmi.Status.ContentVersion = latestVersion
 	}
 

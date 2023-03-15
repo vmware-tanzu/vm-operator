@@ -18,8 +18,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/worker"
@@ -43,8 +42,8 @@ const (
 // Manager represents a prober manager interface.
 type Manager interface {
 	ctrlmgr.Runnable
-	AddToProberManager(vm *vmoperatorv1alpha1.VirtualMachine)
-	RemoveFromProberManager(vm *vmoperatorv1alpha1.VirtualMachine)
+	AddToProberManager(vm *vmopv1.VirtualMachine)
+	RemoveFromProberManager(vm *vmopv1.VirtualMachine)
 }
 
 // manager represents the probe manager, which implements the ManagerInterface.
@@ -61,7 +60,7 @@ type manager struct {
 	// if the time duration set in the AddAfter is not zero. vmReadinessProbeList can be used to avoid
 	// adding VMs to the readiness queue when this VM is already in the heap but not in the queue.
 	readinessMutex       sync.Mutex
-	vmReadinessProbeList map[string]*vmoperatorv1alpha1.Probe
+	vmReadinessProbeList map[string]*vmopv1.Probe
 }
 
 // NewManger initializes a prober manager.
@@ -72,7 +71,7 @@ func NewManger(client client.Client, record vmoprecord.Recorder, vmProvider vmpr
 		prober:               probe.NewProber(vmProvider),
 		log:                  ctrl.Log.WithName(proberManagerName),
 		recorder:             record,
-		vmReadinessProbeList: make(map[string]*vmoperatorv1alpha1.Probe),
+		vmReadinessProbeList: make(map[string]*vmopv1.Probe),
 	}
 	return probeManager
 }
@@ -91,7 +90,7 @@ func AddToManager(mgr ctrlmgr.Manager, vmProvider vmprovider.VirtualMachineProvi
 }
 
 // AddToProberManager adds a VM to the prober manager.
-func (m *manager) AddToProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
+func (m *manager) AddToProberManager(vm *vmopv1.VirtualMachine) {
 	vmName := vm.NamespacedName()
 	m.log.V(4).Info("Add to prober manager", "vm", vmName)
 
@@ -115,7 +114,7 @@ func (m *manager) AddToProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
 }
 
 // RemoveFromProberManager removes a VM from the prober manager.
-func (m *manager) RemoveFromProberManager(vm *vmoperatorv1alpha1.VirtualMachine) {
+func (m *manager) RemoveFromProberManager(vm *vmopv1.VirtualMachine) {
 	vmName := vm.NamespacedName()
 	m.log.V(4).Info("Remove from prober manager", "vm", vmName)
 
@@ -168,7 +167,7 @@ func (m *manager) processItemFromQueue(w worker.Worker) bool {
 
 	item := itemIf.(client.ObjectKey)
 
-	vm := &vmoperatorv1alpha1.VirtualMachine{}
+	vm := &vmopv1.VirtualMachine{}
 	if err := m.client.Get(goctx.Background(), item, vm); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false
@@ -203,7 +202,7 @@ func (m *manager) processItemFromQueue(w worker.Worker) bool {
 // processVMProbe processes the Probe specified in VM spec.
 func (m *manager) processVMProbe(w worker.Worker, ctx *context.ProbeContext) error {
 	vm := ctx.VM
-	if vm.Status.PowerState != vmoperatorv1alpha1.VirtualMachinePoweredOn {
+	if vm.Status.PowerState != vmopv1.VirtualMachinePoweredOn {
 		// If a vm is not powered on, we don't run probes against it and translate probe result to failure.
 		// Populate the Condition and update the VM status.
 		ctx.Logger.V(4).Info("the VirtualMachine is not powered on")

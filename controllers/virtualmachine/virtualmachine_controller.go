@@ -23,7 +23,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -39,7 +39,7 @@ const finalizerName = "virtualmachine.vmoperator.vmware.com"
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &vmopv1alpha1.VirtualMachine{}
+		controlledType     = &vmopv1.VirtualMachine{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
@@ -63,11 +63,11 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
-		Watches(&source.Kind{Type: &vmopv1alpha1.VirtualMachineClassBinding{}},
+		Watches(&source.Kind{Type: &vmopv1.VirtualMachineClassBinding{}},
 			handler.EnqueueRequestsFromMapFunc(classBindingToVMMapperFn(ctx, r.Client)))
 
 	if !lib.IsWCPVMImageRegistryEnabled() {
-		builder = builder.Watches(&source.Kind{Type: &vmopv1alpha1.ContentSourceBinding{}},
+		builder = builder.Watches(&source.Kind{Type: &vmopv1.ContentSourceBinding{}},
 			handler.EnqueueRequestsFromMapFunc(csBindingToVMMapperFn(ctx, r.Client)))
 	}
 
@@ -78,12 +78,12 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 // for the VirtualMachines in response to an event on the ContentSourceBinding resource.
 func csBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Reader) func(o client.Object) []reconcile.Request {
 	return func(o client.Object) []reconcile.Request {
-		binding := o.(*vmopv1alpha1.ContentSourceBinding)
+		binding := o.(*vmopv1.ContentSourceBinding)
 		logger := ctx.Logger.WithValues("name", binding.Name, "namespace", binding.Namespace)
 
 		logger.V(4).Info("Reconciling all VMs using images from a ContentSource because of a ContentSourceBinding watch")
 
-		contentSource := &vmopv1alpha1.ContentSource{}
+		contentSource := &vmopv1.ContentSource{}
 		if err := c.Get(ctx, client.ObjectKey{Name: binding.ContentSourceRef.Name}, contentSource); err != nil {
 			logger.Error(err, "Failed to get ContentSource for VM reconciliation due to ContentSourceBinding watch")
 			return nil
@@ -91,14 +91,14 @@ func csBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Reade
 
 		providerRef := contentSource.Spec.ProviderRef
 		// Assume that only supported type is ContentLibraryProvider.
-		clProviderFromBinding := vmopv1alpha1.ContentLibraryProvider{}
+		clProviderFromBinding := vmopv1.ContentLibraryProvider{}
 		if err := c.Get(ctx, client.ObjectKey{Name: providerRef.Name}, &clProviderFromBinding); err != nil {
 			logger.Error(err, "Failed to get ContentLibraryProvider for VM reconciliation due to ContentSourceBinding watch")
 			return nil
 		}
 
 		// Filter images that have an OwnerReference to this ContentLibraryProvider.
-		imageList := &vmopv1alpha1.VirtualMachineImageList{}
+		imageList := &vmopv1.VirtualMachineImageList{}
 		if err := c.List(ctx, imageList); err != nil {
 			logger.Error(err, "Failed to list VirtualMachineImages for VM reconciliation due to ContentSourceBinding watch")
 			return nil
@@ -114,7 +114,7 @@ func csBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Reade
 		}
 
 		// Filter VMs that reference the images from the content source.
-		vmList := &vmopv1alpha1.VirtualMachineList{}
+		vmList := &vmopv1.VirtualMachineList{}
 		if err := c.List(ctx, vmList, client.InNamespace(binding.Namespace)); err != nil {
 			logger.Error(err, "Failed to list VirtualMachines for reconciliation due to ContentSourceBinding watch")
 			return nil
@@ -139,13 +139,13 @@ func classBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Cl
 	// For a given VirtualMachineClassBinding, return reconcile requests
 	// for those VirtualMachines with corresponding VirtualMachinesClasses referenced
 	return func(o client.Object) []reconcile.Request {
-		classBinding := o.(*vmopv1alpha1.VirtualMachineClassBinding)
+		classBinding := o.(*vmopv1.VirtualMachineClassBinding)
 		logger := ctx.Logger.WithValues("name", classBinding.Name, "namespace", classBinding.Namespace)
 
 		logger.V(4).Info("Reconciling all VMs referencing a VM class because of a VirtualMachineClassBinding watch")
 
 		// Find all vms that match this vmclassbinding
-		vmList := &vmopv1alpha1.VirtualMachineList{}
+		vmList := &vmopv1.VirtualMachineList{}
 		if err := c.List(ctx, vmList, client.InNamespace(classBinding.Namespace)); err != nil {
 			logger.Error(err, "Failed to list VirtualMachines for reconciliation due to VirtualMachineClassBinding watch")
 			return nil
@@ -208,7 +208,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=contentsourcebindings,verbs=get;list;watch
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	vm := &vmopv1alpha1.VirtualMachine{}
+	vm := &vmopv1.VirtualMachine{}
 	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -223,7 +223,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 	// does not replace the VM being restored on the vCenter inventory.
 	//
 	// Do not requeue the reconcile here since removing the pause annotation will trigger a reconcile anyway.
-	if _, ok := vm.Annotations[vmopv1alpha1.PauseAnnotation]; ok {
+	if _, ok := vm.Annotations[vmopv1.PauseAnnotation]; ok {
 		vmCtx.Logger.Info("Skipping reconcile since Pause annotation is set on the VM")
 		return ctrl.Result{}, nil
 	}
@@ -265,11 +265,11 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 func requeueDelay(ctx *context.VirtualMachineContext) time.Duration {
 	// If the VM is in Creating phase, the reconciler has run out of threads to Create VMs on the provider. Do not queue
 	// immediately to avoid exponential backoff.
-	if ctx.VM.Status.Phase == vmopv1alpha1.Creating {
+	if ctx.VM.Status.Phase == vmopv1.Creating {
 		return 10 * time.Second
 	}
 
-	if ctx.VM.Status.VmIp == "" && ctx.VM.Status.PowerState == vmopv1alpha1.VirtualMachinePoweredOn {
+	if ctx.VM.Status.VmIp == "" && ctx.VM.Status.PowerState == vmopv1.VirtualMachinePoweredOn {
 		return 10 * time.Second
 	}
 
@@ -280,7 +280,7 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineContext) (reterr
 	ctx.Logger.Info("Reconciling VirtualMachine Deletion")
 
 	if controllerutil.ContainsFinalizer(ctx.VM, finalizerName) {
-		ctx.VM.Status.Phase = vmopv1alpha1.Deleting
+		ctx.VM.Status.Phase = vmopv1.Deleting
 
 		defer func() {
 			r.Recorder.EmitEvent(ctx.VM, "Delete", reterr, false)
@@ -291,7 +291,7 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineContext) (reterr
 			return err
 		}
 
-		ctx.VM.Status.Phase = vmopv1alpha1.Deleted
+		ctx.VM.Status.Phase = vmopv1.Deleted
 		controllerutil.RemoveFinalizer(ctx.VM, finalizerName)
 		ctx.Logger.Info("Provider Completed deleting Virtual Machine", "time", time.Now().Format(time.RFC3339))
 	}
@@ -316,7 +316,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 
 	ctx.Logger.Info("Reconciling VirtualMachine")
 
-	defer func(initialVMStatus *vmopv1alpha1.VirtualMachineStatus) {
+	defer func(initialVMStatus *vmopv1.VirtualMachineStatus) {
 		// Log the reconcile time using the CR creation time and the time the VM reached the desired state
 		if reterr == nil && !apiequality.Semantic.DeepEqual(initialVMStatus, &ctx.VM.Status) {
 			ctx.Logger.Info("Finished Reconciling VirtualMachine with updates to the CR",
@@ -341,7 +341,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 		return err
 	}
 
-	ctx.VM.Status.Phase = vmopv1alpha1.Created
+	ctx.VM.Status.Phase = vmopv1.Created
 	// Add this VM to prober manager if ReconcileNormal succeeds.
 	r.Prober.AddToProberManager(ctx.VM)
 

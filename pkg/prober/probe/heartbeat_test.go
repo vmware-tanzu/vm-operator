@@ -13,23 +13,23 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
 type fakeVMProviderProber struct {
-	status vmopv1alpha1.GuestHeartbeatStatus
+	status vmopv1.GuestHeartbeatStatus
 	err    error
 }
 
-func (tp fakeVMProviderProber) GetVirtualMachineGuestHeartbeat(_ goctx.Context, _ *vmopv1alpha1.VirtualMachine) (vmopv1alpha1.GuestHeartbeatStatus, error) {
+func (tp fakeVMProviderProber) GetVirtualMachineGuestHeartbeat(_ goctx.Context, _ *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
 	return tp.status, tp.err
 }
 
 var _ = Describe("Guest heartbeat probe", func() {
 	var (
-		vm                   *vmopv1alpha1.VirtualMachine
+		vm                   *vmopv1.VirtualMachine
 		fakeProvider         fakeVMProviderProber
 		testVMwareToolsProbe Probe
 
@@ -38,12 +38,12 @@ var _ = Describe("Guest heartbeat probe", func() {
 	)
 
 	BeforeEach(func() {
-		vm = &vmopv1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
 				Namespace: "dummy-ns",
 			},
-			Spec: vmopv1alpha1.VirtualMachineSpec{
+			Spec: vmopv1.VirtualMachineSpec{
 				ClassName:      "dummy-vmclass",
 				ReadinessProbe: getVirtualMachineReadinessHeartbeatProbe(),
 			},
@@ -106,10 +106,10 @@ var _ = Describe("Guest heartbeat probe", func() {
 		})
 
 		Context("Provider returns yellow status", func() {
-			BeforeEach(func() { fakeProvider.status = vmopv1alpha1.YellowHeartbeatStatus })
+			BeforeEach(func() { fakeProvider.status = vmopv1.YellowHeartbeatStatus })
 
 			Context("Threshold status is yellow", func() {
-				BeforeEach(func() { vm.Spec.ReadinessProbe.GuestHeartbeat.ThresholdStatus = vmopv1alpha1.YellowHeartbeatStatus })
+				BeforeEach(func() { vm.Spec.ReadinessProbe.GuestHeartbeat.ThresholdStatus = vmopv1.YellowHeartbeatStatus })
 
 				It("returns success", func() {
 					Expect(err).ToNot(HaveOccurred())
@@ -118,7 +118,7 @@ var _ = Describe("Guest heartbeat probe", func() {
 			})
 
 			Context("Threshold status is green", func() {
-				BeforeEach(func() { vm.Spec.ReadinessProbe.GuestHeartbeat.ThresholdStatus = vmopv1alpha1.GreenHeartbeatStatus })
+				BeforeEach(func() { vm.Spec.ReadinessProbe.GuestHeartbeat.ThresholdStatus = vmopv1.GreenHeartbeatStatus })
 
 				It("returns failure", func() {
 					Expect(res).To(Equal(Failure))
@@ -130,8 +130,8 @@ var _ = Describe("Guest heartbeat probe", func() {
 
 		Context("Provider returns green status", func() {
 			BeforeEach(func() {
-				fakeProvider.status = vmopv1alpha1.GreenHeartbeatStatus
-				vm.Spec.ReadinessProbe.GuestHeartbeat.ThresholdStatus = vmopv1alpha1.GreenHeartbeatStatus
+				fakeProvider.status = vmopv1.GreenHeartbeatStatus
+				vm.Spec.ReadinessProbe.GuestHeartbeat.ThresholdStatus = vmopv1.GreenHeartbeatStatus
 			})
 
 			It("returns success", func() {
@@ -142,10 +142,10 @@ var _ = Describe("Guest heartbeat probe", func() {
 	})
 })
 
-func getVirtualMachineReadinessHeartbeatProbe() *vmopv1alpha1.Probe {
-	return &vmopv1alpha1.Probe{
-		GuestHeartbeat: &vmopv1alpha1.GuestHeartbeatAction{
-			ThresholdStatus: vmopv1alpha1.GreenHeartbeatStatus, // Default.
+func getVirtualMachineReadinessHeartbeatProbe() *vmopv1.Probe {
+	return &vmopv1.Probe{
+		GuestHeartbeat: &vmopv1.GuestHeartbeatAction{
+			ThresholdStatus: vmopv1.GreenHeartbeatStatus, // Default.
 		},
 		PeriodSeconds: 1,
 	}

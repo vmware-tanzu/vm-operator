@@ -9,14 +9,14 @@ import (
 
 	"github.com/go-logr/logr"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 // VirtualMachineSetResourcePolicyContext is the context used for VirtualMachineControllers.
 type VirtualMachineSetResourcePolicyContext struct {
 	context.Context
 	Logger         logr.Logger
-	ResourcePolicy *vmopv1alpha1.VirtualMachineSetResourcePolicy
+	ResourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
 }
 
 func (v *VirtualMachineSetResourcePolicyContext) String() string {

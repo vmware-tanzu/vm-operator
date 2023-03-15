@@ -15,8 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -28,13 +27,13 @@ func intgTests() {
 func webConsoleRequestReconcile() {
 	var (
 		ctx      *builder.IntegrationTestContext
-		wcr      *v1alpha1.WebConsoleRequest
-		vm       *v1alpha1.VirtualMachine
+		wcr      *vmopv1.WebConsoleRequest
+		vm       *vmopv1.VirtualMachine
 		proxySvc *corev1.Service
 	)
 
-	getWebConsoleRequest := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *v1alpha1.WebConsoleRequest {
-		wcr := &v1alpha1.WebConsoleRequest{}
+	getWebConsoleRequest := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1.WebConsoleRequest {
+		wcr := &vmopv1.WebConsoleRequest{}
 		if err := ctx.Client.Get(ctx, objKey, wcr); err != nil {
 			return nil
 		}
@@ -44,25 +43,25 @@ func webConsoleRequestReconcile() {
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
 
-		vm = &v1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
 				Namespace: ctx.Namespace,
 			},
-			Spec: v1alpha1.VirtualMachineSpec{
+			Spec: vmopv1.VirtualMachineSpec{
 				ImageName:  "dummy-image",
-				PowerState: v1alpha1.VirtualMachinePoweredOn,
+				PowerState: vmopv1.VirtualMachinePoweredOn,
 			},
 		}
 
 		_, publicKeyPem := builder.WebConsoleRequestKeyPair()
 
-		wcr = &v1alpha1.WebConsoleRequest{
+		wcr = &vmopv1.WebConsoleRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-wcr",
 				Namespace: ctx.Namespace,
 			},
-			Spec: v1alpha1.WebConsoleRequestSpec{
+			Spec: vmopv1.WebConsoleRequestSpec{
 				VirtualMachineName: vm.Name,
 				PublicKey:          publicKeyPem,
 			},
@@ -85,7 +84,7 @@ func webConsoleRequestReconcile() {
 
 		fakeVMProvider.Lock()
 		defer fakeVMProvider.Unlock()
-		fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error) {
+		fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
 			return "some-fake-webmksticket", nil
 		}
 	})

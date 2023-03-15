@@ -16,7 +16,7 @@ import (
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	clutils "github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -34,30 +34,30 @@ var SkipVMImageCLProviderCheck = false
 
 func GetVirtualMachineClass(
 	vmCtx context.VirtualMachineContext,
-	k8sClient ctrlclient.Client) (*vmopv1alpha1.VirtualMachineClass, error) {
+	k8sClient ctrlclient.Client) (*vmopv1.VirtualMachineClass, error) {
 
 	className := vmCtx.VM.Spec.ClassName
 
-	vmClass := &vmopv1alpha1.VirtualMachineClass{}
+	vmClass := &vmopv1.VirtualMachineClass{}
 	if err := k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: className}, vmClass); err != nil {
 		msg := fmt.Sprintf("Failed to get VirtualMachineClass: %s", className)
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.VirtualMachineClassNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.VirtualMachineClassNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			msg)
 		return nil, errors.Wrap(err, msg)
 	}
 
 	namespace := vmCtx.VM.Namespace
 
-	classBindingList := &vmopv1alpha1.VirtualMachineClassBindingList{}
+	classBindingList := &vmopv1.VirtualMachineClassBindingList{}
 	if err := k8sClient.List(vmCtx, classBindingList, ctrlclient.InNamespace(namespace)); err != nil {
 		msg := fmt.Sprintf("Failed to list VirtualMachineClassBindings in namespace: %s", namespace)
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.VirtualMachineClassBindingNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			msg)
 		return nil, errors.Wrap(err, msg)
 	}
@@ -74,9 +74,9 @@ func GetVirtualMachineClass(
 	if !matchingClassBinding {
 		msg := fmt.Sprintf("Namespace %s does not have access to VirtualMachineClass %s", namespace, className)
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.VirtualMachineClassBindingNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.VirtualMachineClassBindingNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			msg)
 		err := fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", className, vmCtx.VM.Namespace)
 		return nil, err
@@ -87,7 +87,7 @@ func GetVirtualMachineClass(
 
 func GetVMImageStatusAndContentLibraryUUID(
 	vmCtx context.VirtualMachineContext,
-	k8sClient ctrlclient.Client) (*vmopv1alpha1.VirtualMachineImageStatus, string, error) {
+	k8sClient ctrlclient.Client) (*vmopv1.VirtualMachineImageStatus, string, error) {
 
 	imageName := vmCtx.VM.Spec.ImageName
 	if lib.IsWCPVMImageRegistryEnabled() {
@@ -103,14 +103,14 @@ func GetVMImageStatusAndContentLibraryUUID(
 	}
 
 	// The following code path is reachable only when the WCP-VM-Image-Registry FSS is disabled.
-	// In which case the vmopv1alpha1.VirtualMachineImage resource remains in cluster scope.
-	vmImage := &vmopv1alpha1.VirtualMachineImage{}
+	// In which case the vmopv1.VirtualMachineImage resource remains in cluster scope.
+	vmImage := &vmopv1.VirtualMachineImage{}
 	if err := k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: imageName}, vmImage); err != nil {
 		msg := fmt.Sprintf("Failed to get VirtualMachineImage: %s", imageName)
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.VirtualMachineImageNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.VirtualMachineImageNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			msg)
 		return nil, "", errors.Wrap(err, msg)
 	}
@@ -129,20 +129,20 @@ func GetVMImageStatusAndContentLibraryUUID(
 
 		msg := fmt.Sprintf("VirtualMachineImage %s does not have a ContentLibraryProvider OwnerReference", imageName)
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.ContentLibraryProviderNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.ContentLibraryProviderNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			msg)
 		return nil, "", errors.New(msg)
 	}
 
-	clProvider := &vmopv1alpha1.ContentLibraryProvider{}
+	clProvider := &vmopv1.ContentLibraryProvider{}
 	if err := k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: clProviderName}, clProvider); err != nil {
 		msg := fmt.Sprintf("Failed to get ContentLibraryProvider: %s", clProviderName)
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.ContentLibraryProviderNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.ContentLibraryProviderNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			msg)
 		return nil, "", errors.Wrap(err, msg)
 	}
@@ -160,20 +160,20 @@ func GetVMImageStatusAndContentLibraryUUID(
 	if contentSourceName == "" {
 		msg := fmt.Sprintf("ContentLibraryProvider %s does not have a ContentSource OwnerReference", clProvider.Name)
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.ContentSourceBindingNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.ContentSourceBindingNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			msg)
 		return nil, "", errors.New(msg)
 	}
 
-	csBindingList := &vmopv1alpha1.ContentSourceBindingList{}
+	csBindingList := &vmopv1.ContentSourceBindingList{}
 	if err := k8sClient.List(vmCtx, csBindingList, ctrlclient.InNamespace(vmCtx.VM.Namespace)); err != nil {
 		msg := fmt.Sprintf("Failed to list ContentSourceBindings in namespace: %s", vmCtx.VM.Namespace)
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.ContentSourceBindingNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.ContentSourceBindingNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			msg)
 		vmCtx.Logger.Error(err, msg)
 		return nil, "", errors.Wrap(err, msg)
@@ -192,9 +192,9 @@ func GetVMImageStatusAndContentLibraryUUID(
 		msg := fmt.Sprintf("Namespace %s does not have access to ContentSource %s for VirtualMachineImage %s",
 			vmCtx.VM.Namespace, clUUID, vmImage.Name)
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.ContentSourceBindingNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.ContentSourceBindingNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			msg)
 		return nil, "", errors.New(msg)
 	}
@@ -249,14 +249,14 @@ func GetVMMetadata(
 
 func GetVMSetResourcePolicy(
 	vmCtx context.VirtualMachineContext,
-	k8sClient ctrlclient.Client) (*vmopv1alpha1.VirtualMachineSetResourcePolicy, error) {
+	k8sClient ctrlclient.Client) (*vmopv1.VirtualMachineSetResourcePolicy, error) {
 
 	rpName := vmCtx.VM.Spec.ResourcePolicyName
 	if rpName == "" {
 		return nil, nil
 	}
 
-	resourcePolicy := &vmopv1alpha1.VirtualMachineSetResourcePolicy{}
+	resourcePolicy := &vmopv1.VirtualMachineSetResourcePolicy{}
 	if err := k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: rpName, Namespace: vmCtx.VM.Namespace}, resourcePolicy); err != nil {
 		vmCtx.Logger.Error(err, "Failed to get VirtualMachineSetResourcePolicy", "resourcePolicyName", rpName)
 		// TODO: Condition
@@ -270,7 +270,7 @@ func GetVMSetResourcePolicy(
 // volumes to the VM's Spec if it was not already done.
 func AddInstanceStorageVolumes(
 	vmCtx context.VirtualMachineContext,
-	vmClass *vmopv1alpha1.VirtualMachineClass) error {
+	vmClass *vmopv1.VirtualMachineClass) error {
 
 	if instancestorage.IsConfigured(vmCtx.VM) {
 		return nil
@@ -284,7 +284,7 @@ func AddInstanceStorageVolumes(
 		return nil
 	}
 
-	volumes := make([]vmopv1alpha1.VirtualMachineVolume, 0, len(instanceStorage.Volumes))
+	volumes := make([]vmopv1.VirtualMachineVolume, 0, len(instanceStorage.Volumes))
 
 	for _, isv := range instanceStorage.Volumes {
 		id, err := uuid.NewUUID()
@@ -294,14 +294,14 @@ func AddInstanceStorageVolumes(
 
 		name := constants.InstanceStoragePVCNamePrefix + id.String()
 
-		vmv := vmopv1alpha1.VirtualMachineVolume{
+		vmv := vmopv1.VirtualMachineVolume{
 			Name: name,
-			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: name,
 					ReadOnly:  false,
 				},
-				InstanceVolumeClaim: &vmopv1alpha1.InstanceVolumeClaimVolumeSource{
+				InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
 					StorageClass: instanceStorage.StorageClass,
 					Size:         isv.Size,
 				},
@@ -333,15 +333,15 @@ func GetVMClassConfigSpec(raw json.RawMessage) (*types.VirtualMachineConfigSpec,
 func resolveVMImageStatus(
 	vmCtx context.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
-	imageName string) (*vmopv1alpha1.VirtualMachineImageStatus, error) {
+	imageName string) (*vmopv1.VirtualMachineImageStatus, error) {
 
 	_, imageStatus, err := clutils.GetVMImageSpecStatus(vmCtx, k8sClient, imageName, vmCtx.VM.Namespace)
 	if err != nil {
 		imageNotFoundMsg := fmt.Sprintf("Failed to get the VM's image: %s", imageName)
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.VirtualMachineImageNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.VirtualMachineImageNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			imageNotFoundMsg,
 		)
 		return nil, errors.Wrap(err, imageNotFoundMsg)
@@ -349,17 +349,17 @@ func resolveVMImageStatus(
 
 	// Do not return the VM image status if the current image condition is not satisfied.
 	imageNotReadyMsg := ""
-	if !conditions.IsTrueFromConditions(imageStatus.Conditions, vmopv1alpha1.VirtualMachineImageProviderReadyCondition) {
+	if !conditions.IsTrueFromConditions(imageStatus.Conditions, vmopv1.VirtualMachineImageProviderReadyCondition) {
 		imageNotReadyMsg = fmt.Sprintf("VM's image provider is not ready: %s", imageName)
-	} else if !conditions.IsTrueFromConditions(imageStatus.Conditions, vmopv1alpha1.VirtualMachineImageSyncedCondition) {
+	} else if !conditions.IsTrueFromConditions(imageStatus.Conditions, vmopv1.VirtualMachineImageSyncedCondition) {
 		imageNotReadyMsg = fmt.Sprintf("VM's image content version is not synced: %s", imageName)
 	}
 
 	if imageNotReadyMsg != "" {
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.VirtualMachineImageNotReadyReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.VirtualMachineImageNotReadyReason,
+			vmopv1.ConditionSeverityError,
 			imageNotReadyMsg,
 		)
 		return nil, errors.New(imageNotReadyMsg)
@@ -373,14 +373,14 @@ func resolveVMImageStatus(
 func resolveContentLibraryUUID(
 	vmCtx context.VirtualMachineContext,
 	k8sClient ctrlclient.Client,
-	imageStatus *vmopv1alpha1.VirtualMachineImageStatus) (string, error) {
+	imageStatus *vmopv1.VirtualMachineImageStatus) (string, error) {
 
 	if imageStatus.ContentLibraryRef == nil {
 		msg := "VM's image status doesn't have a ContentLibraryRef"
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.ContentLibraryProviderNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.ContentLibraryProviderNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			msg,
 		)
 		return "", errors.New(msg)
@@ -411,9 +411,9 @@ func resolveContentLibraryUUID(
 	if err != nil {
 		msg := fmt.Sprintf("Failed to get content library reference from VM image: %v", err)
 		conditions.MarkFalse(vmCtx.VM,
-			vmopv1alpha1.VirtualMachinePrereqReadyCondition,
-			vmopv1alpha1.ContentLibraryProviderNotFoundReason,
-			vmopv1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachinePrereqReadyCondition,
+			vmopv1.ContentLibraryProviderNotFoundReason,
+			vmopv1.ConditionSeverityError,
 			msg,
 		)
 		return "", errors.Wrap(err, msg)

@@ -16,7 +16,7 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
@@ -41,9 +41,9 @@ func unitTestsReconcile() {
 		reconciler   *virtualmachineservice.ReconcileVirtualMachineService
 		vmServiceCtx *vmopContext.VirtualMachineServiceContext
 
-		vmService      *vmopv1alpha1.VirtualMachineService
-		vmServicePort1 vmopv1alpha1.VirtualMachineServicePort
-		vmServicePort2 vmopv1alpha1.VirtualMachineServicePort
+		vmService      *vmopv1.VirtualMachineService
+		vmServicePort1 vmopv1.VirtualMachineServicePort
+		vmServicePort2 vmopv1.VirtualMachineServicePort
 		lbSourceRanges []string
 		objKey         client.ObjectKey
 	)
@@ -64,15 +64,15 @@ func unitTestsReconcile() {
 	)
 
 	BeforeEach(func() {
-		vmService = &vmopv1alpha1.VirtualMachineService{
+		vmService = &vmopv1.VirtualMachineService{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        "dummy-vm-service",
 				Namespace:   "dummy-ns",
 				Labels:      map[string]string{},
 				Annotations: map[string]string{},
 			},
-			Spec: vmopv1alpha1.VirtualMachineServiceSpec{
-				Type:                     vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer,
+			Spec: vmopv1.VirtualMachineServiceSpec{
+				Type:                     vmopv1.VirtualMachineServiceTypeLoadBalancer,
 				Selector:                 map[string]string{},
 				ExternalName:             externalName,
 				ClusterIP:                clusterIP,
@@ -81,14 +81,14 @@ func unitTestsReconcile() {
 			},
 		}
 
-		vmServicePort1 = vmopv1alpha1.VirtualMachineServicePort{
+		vmServicePort1 = vmopv1.VirtualMachineServicePort{
 			Name:       "port1",
 			Protocol:   "TCP",
 			Port:       42,
 			TargetPort: 142,
 		}
 
-		vmServicePort2 = vmopv1alpha1.VirtualMachineServicePort{
+		vmServicePort2 = vmopv1.VirtualMachineServicePort{
 			Name:       "port2",
 			Protocol:   "UDP",
 			Port:       1042,
@@ -177,7 +177,7 @@ func unitTestsReconcile() {
 
 			Context("With Expected Spec.Ports", func() {
 				BeforeEach(func() {
-					vmService.Spec.Ports = []vmopv1alpha1.VirtualMachineServicePort{
+					vmService.Spec.Ports = []vmopv1.VirtualMachineServicePort{
 						vmServicePort1,
 						vmServicePort2,
 					}
@@ -350,7 +350,7 @@ func unitTestsReconcile() {
 
 			Context("Preserves existing NodePort", func() {
 				BeforeEach(func() {
-					vmService.Spec.Ports = []vmopv1alpha1.VirtualMachineServicePort{
+					vmService.Spec.Ports = []vmopv1.VirtualMachineServicePort{
 						vmServicePort1,
 					}
 				})
@@ -409,7 +409,7 @@ func unitTestsReconcile() {
 		Context("Creates expected Endpoints", func() {
 			var endpoints *corev1.Endpoints
 			var labelSelector map[string]string
-			var vm1, vm2, vm3 *vmopv1alpha1.VirtualMachine
+			var vm1, vm2, vm3 *vmopv1.VirtualMachine
 
 			BeforeEach(func() {
 				endpoints = &corev1.Endpoints{}
@@ -418,39 +418,39 @@ func unitTestsReconcile() {
 				vmService.Annotations[annotationName1] = "bar1"
 				vmService.Labels[labelName1] = "bar2"
 				vmService.Spec.Selector = labelSelector
-				vmService.Spec.Ports = []vmopv1alpha1.VirtualMachineServicePort{
+				vmService.Spec.Ports = []vmopv1.VirtualMachineServicePort{
 					vmServicePort1,
 				}
 
-				vm1 = &vmopv1alpha1.VirtualMachine{
+				vm1 = &vmopv1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "dummy-vm1",
 						Namespace: vmService.Namespace,
 						Labels:    labelSelector,
 					},
-					Status: vmopv1alpha1.VirtualMachineStatus{
+					Status: vmopv1.VirtualMachineStatus{
 						VmIp: "1.1.1.1",
 					},
 				}
 
-				vm2 = &vmopv1alpha1.VirtualMachine{
+				vm2 = &vmopv1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "dummy-vm2",
 						Namespace: vmService.Namespace,
 						Labels:    labelSelector,
 					},
-					Status: vmopv1alpha1.VirtualMachineStatus{
+					Status: vmopv1.VirtualMachineStatus{
 						VmIp: "2.2.2.2",
 					},
 				}
 
-				vm3 = &vmopv1alpha1.VirtualMachine{
+				vm3 = &vmopv1.VirtualMachine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "dummy-vm3",
 						Namespace: vmService.Namespace,
 						Labels:    map[string]string{},
 					},
-					Status: vmopv1alpha1.VirtualMachineStatus{
+					Status: vmopv1.VirtualMachineStatus{
 						VmIp: "3.3.3.3",
 					},
 				}
@@ -551,9 +551,9 @@ func unitTestsReconcile() {
 
 			Context("When VMs have Readiness Probe", func() {
 				BeforeEach(func() {
-					vm1.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
-					vm2.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
-					vm3.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
+					vm1.Spec.ReadinessProbe = &vmopv1.Probe{}
+					vm2.Spec.ReadinessProbe = &vmopv1.Probe{}
+					vm3.Spec.ReadinessProbe = &vmopv1.Probe{}
 
 					initObjects = append(initObjects, vm1, vm2, vm3)
 				})
@@ -573,7 +573,7 @@ func unitTestsReconcile() {
 
 				Context("Unready VM with false Ready condition", func() {
 					BeforeEach(func() {
-						conditions.MarkFalse(vm1, vmopv1alpha1.ReadyCondition, "reason", vmopv1alpha1.ConditionSeverityError, "")
+						conditions.MarkFalse(vm1, vmopv1.ReadyCondition, "reason", vmopv1.ConditionSeverityError, "")
 					})
 
 					It("With expected Subsets", func() {
@@ -592,7 +592,7 @@ func unitTestsReconcile() {
 
 				Context("Ready VM with true Ready condition", func() {
 					BeforeEach(func() {
-						conditions.MarkTrue(vm1, vmopv1alpha1.ReadyCondition)
+						conditions.MarkTrue(vm1, vmopv1.ReadyCondition)
 					})
 
 					It("With expected Subsets", func() {
@@ -613,11 +613,11 @@ func unitTestsReconcile() {
 			Context("Preserve VMs in Endpoints that have Probe but hasn't run yet", func() {
 				BeforeEach(func() {
 					vm1.UID = "abc"
-					vm1.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
+					vm1.Spec.ReadinessProbe = &vmopv1.Probe{}
 					vm2.UID = "xyz"
-					vm2.Spec.ReadinessProbe = &vmopv1alpha1.Probe{}
+					vm2.Spec.ReadinessProbe = &vmopv1.Probe{}
 					// Initial setup so that the first Reconcile will add the VM.
-					conditions.MarkTrue(vm1, vmopv1alpha1.ReadyCondition)
+					conditions.MarkTrue(vm1, vmopv1.ReadyCondition)
 					initObjects = append(initObjects, vm1, vm2)
 				})
 
@@ -705,8 +705,8 @@ func nsxtLBProviderTestsReconcile() {
 		reconciler   *virtualmachineservice.ReconcileVirtualMachineService
 		vmServiceCtx *vmopContext.VirtualMachineServiceContext
 
-		vmServicePort1 vmopv1alpha1.VirtualMachineServicePort
-		vmService      *vmopv1alpha1.VirtualMachineService
+		vmServicePort1 vmopv1.VirtualMachineServicePort
+		vmService      *vmopv1.VirtualMachineService
 		objKey         client.ObjectKey
 
 		lbSourceRanges = []string{"1.1.1.0/24", "2.2.0.0/16"}
@@ -719,28 +719,28 @@ func nsxtLBProviderTestsReconcile() {
 	)
 
 	BeforeEach(func() {
-		vmServicePort1 = vmopv1alpha1.VirtualMachineServicePort{
+		vmServicePort1 = vmopv1.VirtualMachineServicePort{
 			Name:       "port1",
 			Protocol:   "TCP",
 			Port:       42,
 			TargetPort: 142,
 		}
 
-		vmService = &vmopv1alpha1.VirtualMachineService{
+		vmService = &vmopv1.VirtualMachineService{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        "dummy-vm-service",
 				Namespace:   "dummy-ns",
 				Labels:      map[string]string{},
 				Annotations: map[string]string{},
 			},
-			Spec: vmopv1alpha1.VirtualMachineServiceSpec{
-				Type:                     vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer,
+			Spec: vmopv1.VirtualMachineServiceSpec{
+				Type:                     vmopv1.VirtualMachineServiceTypeLoadBalancer,
 				Selector:                 map[string]string{},
 				ExternalName:             externalName,
 				ClusterIP:                clusterIP,
 				LoadBalancerIP:           loadBalancerIP,
 				LoadBalancerSourceRanges: lbSourceRanges,
-				Ports:                    []vmopv1alpha1.VirtualMachineServicePort{vmServicePort1},
+				Ports:                    []vmopv1.VirtualMachineServicePort{vmServicePort1},
 			},
 		}
 
@@ -900,7 +900,7 @@ func expectEvent(ctx *builder.UnitTestContextForController, matcher types.Gomega
 
 func assertEPPortFromVMServicePort(
 	port corev1.EndpointPort,
-	vmServicePort vmopv1alpha1.VirtualMachineServicePort) {
+	vmServicePort vmopv1.VirtualMachineServicePort) {
 
 	ExpectWithOffset(1, port.Name).To(Equal(vmServicePort.Name))
 	ExpectWithOffset(1, port.Protocol).To(BeEquivalentTo(vmServicePort.Protocol))
@@ -909,7 +909,7 @@ func assertEPPortFromVMServicePort(
 
 func assertEPAddrFromVM(
 	addr corev1.EndpointAddress,
-	vm *vmopv1alpha1.VirtualMachine) {
+	vm *vmopv1.VirtualMachine) {
 
 	ExpectWithOffset(1, addr.IP).To(Equal(vm.Status.VmIp))
 	ExpectWithOffset(1, addr.TargetRef).ToNot(BeNil())

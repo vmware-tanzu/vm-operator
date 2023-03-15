@@ -12,7 +12,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 // GetResourcePoolByMoID returns the ResourcePool for the MoID.
@@ -85,7 +85,7 @@ func CreateOrUpdateChildResourcePool(
 	ctx goctx.Context,
 	vimClient *vim25.Client,
 	parentRPMoID string,
-	rpSpec *vmopv1alpha1.ResourcePoolSpec) (string, error) {
+	rpSpec *vmopv1.ResourcePoolSpec) (string, error) {
 
 	parentRP := object.NewResourcePool(vimClient,
 		types.ManagedObjectReference{Type: "ResourcePool", Value: parentRPMoID})

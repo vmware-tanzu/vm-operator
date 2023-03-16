@@ -20,17 +20,17 @@ When creating or modifying the project's `README.md` file or any of the document
 1. All links to internal resources should be relative.
 1. All links to markdown files should include the file extension.
 
-For example, the below link points to the `Supervisor` platform:
+For example, the below link points to the `Deploy a VM` page:
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-[/user-guide/platforms/supervisor.md](/user-guide/platforms/supervisor.md)
+[/user-guide/deployvm.md](/user-guide/deployvm.md)
 
 However, when the above link is followed when viewing this page directly from the Github repository instead of the generated site documentation, the link will return a 404.
 
 While it's recommended that users view the generated site documentation instead of the source Markdown directly, we can still fix it so that the above link will work regardless. To fix the link, simply make it relative and add the Markdown file extension:
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-[../user-guide/platforms/supervisor.md](../user-guide/platforms/supervisor.md)
+[../user-guide/deployvm.md](../user-guide/deployvm.md)
 
 Now the link will work regardless from where it's viewed.
 

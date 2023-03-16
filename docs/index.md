@@ -65,7 +65,7 @@ Deploying a VM and customizing its guest is easy with VM Operator:
 
     2. :wave: A [line-delimited](https://github.com/canonical/cloud-init/blob/main/cloudinit/sources/__init__.py#L931) list of public, SSH keys that will be added to the guest's default user.
 
-For those interested in learning more about the VM deployment and customization workflow, please see the [bootstrap documentation](./user-guide/bootstrap.md). 
+For those interested in learning more about the VM deployment and customization workflow, please see the [following documentation](./user-guide/deployvm.md).
 
 ## Bootstrap Providers
 

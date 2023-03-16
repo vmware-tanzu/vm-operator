@@ -34,6 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 )
@@ -55,6 +56,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		ctrl.Log.WithName("controllers").WithName("volume"),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		mgr.GetScheme(),
+		ctx.VMProvider,
 	)
 
 	c, err := controller.New(controllerName, mgr, controller.Options{
@@ -96,12 +98,14 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	scheme *runtime.Scheme) *Reconciler {
+	scheme *runtime.Scheme,
+	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
-		Client:   client,
-		logger:   logger,
-		recorder: recorder,
-		scheme:   scheme,
+		Client:     client,
+		logger:     logger,
+		recorder:   recorder,
+		scheme:     scheme,
+		VMProvider: vmProvider,
 	}
 }
 
@@ -109,9 +113,10 @@ var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
-	logger   logr.Logger
-	recorder record.Recorder
-	scheme   *runtime.Scheme
+	logger     logr.Logger
+	recorder   record.Recorder
+	scheme     *runtime.Scheme
+	VMProvider vmprovider.VirtualMachineProviderInterface
 }
 
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachines,verbs=get;list;watch;
@@ -551,6 +556,30 @@ func (r *Reconciler) processAttachments(
 			// Do not create another CnsNodeVmAttachment while one is already pending, but continue
 			// so we build up the Volume Status for any existing volumes.
 			continue
+		}
+
+		// If VM hardware version doesn't meet minimal requirement, don't create CNS attachment.
+		// We only fetch the hardware version when this is the first time to create the CNS attachment.
+		//
+		// This HW version check block is along with removing VMI hardware version check from VM validation webhook.
+		// We used to deny requests if a PVC is specified in the VM spec while VMI hardware version is not supported.
+		// In this case, no attachments can be created if VM hardware version doesn't meet the requirement.
+		// So if a VM has volume attached, we can safely assume that it has passed the hardware version check.
+		if len(volumeStatus) == 0 && len(attachments) == 0 {
+			hardwareVersion, err := r.VMProvider.GetVirtualMachineHardwareVersion(ctx, ctx.VM)
+			if err != nil {
+				return errors.Wrapf(err, "failed to get VM hardware version")
+			}
+
+			// If hardware version is 0, which means we failed to parse the version from VM, then just assume that it
+			// is above minimal requirement.
+			if hardwareVersion != 0 && hardwareVersion < constants.MinSupportedHWVersionForPVC {
+				retErr := fmt.Errorf("VirtualMachine has an unsupported "+
+					"hardware version %d for PersistentVolumes. Minimum supported hardware version %d",
+					hardwareVersion, constants.MinSupportedHWVersionForPVC)
+				r.recorder.EmitEvent(ctx.VM, "VolumeAttachment", retErr, true)
+				return retErr
+			}
 		}
 
 		if err := r.createCNSAttachment(ctx, attachmentName, volume); err != nil {

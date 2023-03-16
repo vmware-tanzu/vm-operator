@@ -32,8 +32,9 @@ type funcs struct {
 	DeleteVirtualMachineFn         func(ctx context.Context, vm *v1alpha1.VirtualMachine) error
 	PublishVirtualMachineFn        func(ctx context.Context, vm *v1alpha1.VirtualMachine,
 		vmPub *v1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
-	GetVirtualMachineGuestHeartbeatFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
-	GetVirtualMachineWebMKSTicketFn   func(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
+	GetVirtualMachineGuestHeartbeatFn  func(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
+	GetVirtualMachineWebMKSTicketFn    func(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
+	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *v1alpha1.VirtualMachine) (int32, error)
 
 	ListItemsFromContentLibraryFn              func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
 	GetVirtualMachineImageFromContentLibraryFn func(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
@@ -128,6 +129,15 @@ func (s *VMProvider) GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1al
 		return s.GetVirtualMachineWebMKSTicketFn(ctx, vm, pubKey)
 	}
 	return "", nil
+}
+
+func (s *VMProvider) GetVirtualMachineHardwareVersion(ctx context.Context, vm *v1alpha1.VirtualMachine) (int32, error) {
+	s.Lock()
+	defer s.Unlock()
+	if s.GetVirtualMachineHardwareVersionFn != nil {
+		return s.GetVirtualMachineHardwareVersionFn(ctx, vm)
+	}
+	return 13, nil
 }
 
 func (s *VMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {

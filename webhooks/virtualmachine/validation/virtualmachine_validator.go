@@ -28,7 +28,6 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
-	clutils "github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
@@ -36,7 +35,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
@@ -53,7 +51,6 @@ const (
 	updatesNotAllowedWhenPowerOn              = "updates to this field is not allowed when VM power is on"
 	storageClassNotAssignedFmt                = "Storage policy is not associated with the namespace %s"
 	storageClassNotFoundFmt                   = "Storage policy is not associated with the namespace %s"
-	pvcHardwareVersionNotSupportedFmt         = "VirtualMachineImage has an unsupported hardware version %d for PersistentVolumes. Minimum supported hardware version %d"
 	invalidVolumeSpecified                    = "only one of persistentVolumeClaim or vsphereVolume must be specified"
 	vSphereVolumeSizeNotMBMultiple            = "value must be a multiple of MB"
 	eagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning"
@@ -351,7 +348,6 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 
 	volumesPath := field.NewPath("spec", "volumes")
 	volumeNames := map[string]bool{}
-	hasPVC := false
 
 	for i, vol := range vm.Spec.Volumes {
 		curVolPath := volumesPath.Index(i)
@@ -373,44 +369,10 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 		}
 
 		if vol.PersistentVolumeClaim != nil {
-			hasPVC = true
 			allErrs = append(allErrs, v.validateVolumeWithPVC(ctx, vm, vol, curVolPath)...)
 		} else { // vol.VsphereVolume != nil
 			allErrs = append(allErrs, v.validateVsphereVolume(vol.VsphereVolume, curVolPath)...)
 		}
-	}
-
-	if !hasPVC {
-		return allErrs
-	}
-
-	imageNamePath := field.NewPath("spec", "imageName")
-	imageName := vm.Spec.ImageName
-	var imageHardwareVersion int32
-
-	if lib.IsWCPVMImageRegistryEnabled() {
-		imageSpec, _, err := clutils.GetVMImageSpecStatus(ctx, v.client, imageName, vm.Namespace)
-		if err != nil {
-			return append(allErrs, field.Invalid(imageNamePath, imageName,
-				fmt.Sprintf("error validating image hardware version for PVC: %s", err.Error())))
-		}
-
-		imageHardwareVersion = imageSpec.HardwareVersion
-
-	} else {
-		image := vmopv1.VirtualMachineImage{}
-		if err := v.client.Get(ctx, client.ObjectKey{Name: imageName}, &image); err != nil {
-			return append(allErrs, field.Invalid(imageNamePath, imageName,
-				fmt.Sprintf("error validating image hardware version for PVC: %s", err.Error())))
-		}
-
-		imageHardwareVersion = image.Spec.HardwareVersion
-	}
-
-	// Check that the VirtualMachineImage's hardware version is at least the minimum supported virtual hardware version.
-	if imageHardwareVersion != 0 && imageHardwareVersion < constants.MinSupportedHWVersionForPVC {
-		allErrs = append(allErrs, field.Invalid(imageNamePath, imageName,
-			fmt.Sprintf(pvcHardwareVersionNotSupportedFmt, imageHardwareVersion, constants.MinSupportedHWVersionForPVC)))
 	}
 
 	return allErrs

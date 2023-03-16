@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 
 	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
@@ -25,6 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
@@ -188,6 +190,33 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 	}
 
 	return ticket, nil
+}
+
+func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(ctx goctx.Context,
+	vm *vmopv1alpha1.VirtualMachine) (int32, error) {
+	vmCtx := context.VirtualMachineContext{
+		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "hardware-version")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
+	client, err := vs.getVcClient(vmCtx)
+	if err != nil {
+		return 0, err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, true)
+	if err != nil {
+		return 0, err
+	}
+
+	var o mo.VirtualMachine
+	err = vcVM.Properties(vmCtx, vcVM.Reference(), []string{"config.version"}, &o)
+	if err != nil {
+		return 0, err
+	}
+
+	return contentlibrary.ParseVirtualHardwareVersion(o.Config.Version), nil
 }
 
 func (vs *vSphereVMProvider) createVirtualMachine(

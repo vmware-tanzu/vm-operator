@@ -25,6 +25,7 @@ import (
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	volContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -54,9 +55,10 @@ func unitTestsReconcile() {
 		initObjects []client.Object
 		ctx         *builder.UnitTestContextForController
 
-		reconciler *volume.Reconciler
-		volCtx     *volContext.VolumeContext
-		vm         *vmopv1alpha1.VirtualMachine
+		reconciler     *volume.Reconciler
+		fakeVMProvider *providerfake.VMProvider
+		volCtx         *volContext.VolumeContext
+		vm             *vmopv1alpha1.VirtualMachine
 
 		vmVol               vmopv1alpha1.VirtualMachineVolume
 		vmVolumeWithVsphere *vmopv1alpha1.VirtualMachineVolume
@@ -121,7 +123,9 @@ func unitTestsReconcile() {
 			ctx.Logger,
 			ctx.Recorder,
 			ctx.Scheme,
+			ctx.VMProvider,
 		)
+		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 
 		volCtx = &volContext.VolumeContext{
 			Context: ctx,
@@ -462,6 +466,68 @@ func unitTestsReconcile() {
 					attachment = getCNSAttachmentForVolumeName(vm, vmVol2.Name)
 					Expect(attachment).ToNot(BeNil())
 					assertVMVolStatusFromAttachment(vmVol2, attachment, vm.Status.Volumes[1])
+				})
+			})
+		})
+
+		When("VM Spec.Volumes contains CNS volumes and need to get VM's hardware version", func() {
+			BeforeEach(func() {
+				vmVol = *vmVolumeWithPVC1
+				vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+			})
+
+			It("returns error when failed to get VM hardware version", func() {
+				fakeVMProvider.Lock()
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1alpha1.VirtualMachine) (int32, error) {
+					return 0, errors.New("dummy-error")
+				}
+				fakeVMProvider.Unlock()
+
+				err := reconciler.ReconcileNormal(volCtx)
+				Expect(err).To(HaveOccurred())
+
+				attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+
+				Expect(attachment).To(BeNil())
+				Expect(vm.Status.Volumes).To(BeEmpty())
+			})
+
+			It("returns error when VM hardware version is smaller than minimal requirement", func() {
+				fakeVMProvider.Lock()
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1alpha1.VirtualMachine) (int32, error) {
+					return 11, nil
+				}
+				fakeVMProvider.Unlock()
+
+				err := reconciler.ReconcileNormal(volCtx)
+				Expect(err).To(HaveOccurred())
+
+				attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+
+				Expect(attachment).To(BeNil())
+				Expect(vm.Status.Volumes).To(BeEmpty())
+			})
+
+			It("returns success when failed to parse VM hardware version", func() {
+				fakeVMProvider.Lock()
+				fakeVMProvider.GetVirtualMachineHardwareVersionFn = func(_ goctx.Context, _ *vmopv1alpha1.VirtualMachine) (int32, error) {
+					return 0, nil
+				}
+				fakeVMProvider.Unlock()
+
+				err := reconciler.ReconcileNormal(volCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+
+				By("Created expected CnsNodeVmAttachment", func() {
+					Expect(attachment).ToNot(BeNil())
+					assertAttachmentSpecFromVMVol(vm, vmVol, attachment)
+				})
+
+				By("Expected VM Status.Volumes", func() {
+					Expect(vm.Status.Volumes).To(HaveLen(1))
+					assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
 				})
 			})
 		})

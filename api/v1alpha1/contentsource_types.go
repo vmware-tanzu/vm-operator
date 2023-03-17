@@ -52,5 +52,5 @@ type ContentSourceList struct {
 }
 
 func init() {
-	RegisterTypeWithScheme(&ContentSource{}, &ContentSourceList{})
+	SchemeBuilder.Register(&ContentSource{}, &ContentSourceList{})
 }

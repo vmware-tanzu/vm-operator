@@ -27,6 +27,7 @@ ENVTEST_DOWNLOAD_DIR = $(shell $(SETUP_ENVTEST) use -p path $(K8S_VERSION))
 # Binaries.
 CRD_REF_DOCS      := $(BIN_DIR)/crd-ref-docs
 CONTROLLER_GEN    := $(BIN_DIR)/controller-gen
+CONVERSION_GEN    := $(BIN_DIR)/conversion-gen
 SETUP_ENVTEST     := $(BIN_DIR)/setup-envtest
 GOLANGCI_LINT     := $(BIN_DIR)/golangci-lint
 KUSTOMIZE         := $(BIN_DIR)/kustomize
@@ -60,6 +61,11 @@ $(CRD_REF_DOCS):
 controller-gen: $(CONTROLLER_GEN) ## Install controller-gen
 $(CONTROLLER_GEN): go.mod
 	go build -tags=vmop_tools -o $@ sigs.k8s.io/controller-tools/cmd/controller-gen
+
+.PHONY: $(CONVERSION_GEN)
+conversion-gen: $(CONVERSION_GEN) ## Install conversion-gen
+$(CONVERSION_GEN): go.mod
+	go build -tags=vmop_tools -o $@ k8s.io/code-generator/cmd/conversion-gen
 
 .PHONY:$(SETUP_ENVTEST)
 setup-envtest: $(SETUP_ENVTEST) ## Install setup-envtest

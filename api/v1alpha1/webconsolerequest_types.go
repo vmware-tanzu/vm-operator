@@ -75,5 +75,5 @@ type WebConsoleRequestList struct {
 }
 
 func init() {
-	RegisterTypeWithScheme(&WebConsoleRequest{}, &WebConsoleRequestList{})
+	SchemeBuilder.Register(&WebConsoleRequest{}, &WebConsoleRequestList{})
 }

@@ -192,6 +192,8 @@ spec:
                 enum:
                 - poweredOff
                 - poweredOn
+                - guestPoweredOff
+                - suspended
                 type: string
               readinessProbe:
                 description: ReadinessProbe describes a network probe that can be
@@ -474,6 +476,8 @@ spec:
                 enum:
                 - poweredOff
                 - poweredOn
+                - guestPoweredOff
+                - suspended
                 type: string
               uniqueID:
                 description: UniqueID describes a unique identifier that is provided

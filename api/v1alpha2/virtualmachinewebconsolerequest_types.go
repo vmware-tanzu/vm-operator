@@ -74,7 +74,7 @@ type VirtualMachineWebConsoleRequestList struct {
 }
 
 func init() {
-	RegisterTypeWithScheme(
+	SchemeBuilder.Register(
 		&VirtualMachineWebConsoleRequest{},
 		&VirtualMachineWebConsoleRequestList{},
 	)

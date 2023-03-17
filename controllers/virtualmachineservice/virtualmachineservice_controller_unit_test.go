@@ -105,7 +105,6 @@ func unitTestsReconcile() {
 		reconciler = virtualmachineservice.NewReconciler(
 			ctx.Client,
 			ctx.Logger,
-			ctx.Scheme,
 			ctx.Recorder,
 			providers.NoopLoadbalancerProvider{},
 		)
@@ -754,7 +753,6 @@ func nsxtLBProviderTestsReconcile() {
 		reconciler = virtualmachineservice.NewReconciler(
 			ctx.Client,
 			ctx.Logger,
-			ctx.Scheme,
 			ctx.Recorder,
 			lbProvider,
 		)

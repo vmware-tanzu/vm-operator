@@ -16,7 +16,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,7 +52,6 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 	r := NewReconciler(
 		mgr.GetClient(),
-		mgr.GetScheme(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
 		ctx.VMProvider,
 	)
@@ -136,12 +134,10 @@ func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod 
 
 func NewReconciler(
 	client client.Client,
-	scheme *runtime.Scheme,
 	logger logr.Logger,
 	vmProvider vmprovider.VirtualMachineProviderInterface) *ConfigMapReconciler {
 	return &ConfigMapReconciler{
 		Client:     client,
-		scheme:     scheme,
 		Logger:     logger,
 		vmProvider: vmProvider,
 	}
@@ -149,7 +145,6 @@ func NewReconciler(
 
 type ConfigMapReconciler struct {
 	client.Client
-	scheme     *runtime.Scheme
 	Logger     logr.Logger
 	vmProvider vmprovider.VirtualMachineProviderInterface
 }
@@ -180,7 +175,7 @@ func (r *ConfigMapReconciler) CreateOrUpdateContentSourceResources(ctx goctx.Con
 		},
 	}
 
-	gvk, err := apiutil.GVKForObject(clProvider, r.scheme)
+	gvk, err := apiutil.GVKForObject(clProvider, r.Client.Scheme())
 	if err != nil {
 		r.Logger.Error(err, "error extracting the scheme from the ContentLibraryProvider")
 		return err
@@ -224,7 +219,7 @@ func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clU
 		return err
 	}
 
-	gvk, err := apiutil.GVKForObject(cs, r.scheme)
+	gvk, err := apiutil.GVKForObject(cs, r.Client.Scheme())
 	if err != nil {
 		r.Logger.Error(err, "error extracting the scheme from the ContentSource")
 		return err
@@ -242,7 +237,7 @@ func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clU
 
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, csBinding, func() error {
 			// Set OwnerRef to the ContentSource so the bindings get cleaned up when the ContentSource is deleted.
-			if err := controllerutil.SetOwnerReference(cs, csBinding, r.scheme); err != nil {
+			if err := controllerutil.SetOwnerReference(cs, csBinding, r.Client.Scheme()); err != nil {
 				return err
 			}
 

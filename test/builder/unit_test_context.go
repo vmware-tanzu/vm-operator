@@ -73,7 +73,7 @@ type UnitTestContextForValidatingWebhook struct {
 // for unit testing controllers.
 func NewUnitTestContextForController(initObjects []client.Object) *UnitTestContextForController {
 	fakeClient := NewFakeClient(initObjects...)
-	fakeControllerManagerContext := fake.NewControllerManagerContext(fakeClient.Scheme())
+	fakeControllerManagerContext := fake.NewControllerManagerContext()
 	recorder, events := NewFakeRecorder()
 	fakeControllerManagerContext.Recorder = recorder
 	ctx := &UnitTestContextForController{
@@ -98,7 +98,7 @@ func NewUnitTestContextForValidatingWebhook(
 	initObjects ...client.Object) *UnitTestContextForValidatingWebhook {
 
 	fakeClient := NewFakeClient(initObjects...)
-	fakeManagerContext := fake.NewControllerManagerContext(fakeClient.Scheme())
+	fakeManagerContext := fake.NewControllerManagerContext()
 	fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
 	ctx := &UnitTestContextForValidatingWebhook{
@@ -133,7 +133,7 @@ func NewUnitTestContextForMutatingWebhook(
 	obj *unstructured.Unstructured) *UnitTestContextForMutatingWebhook {
 
 	fakeClient := NewFakeClient(DummyAvailabilityZone())
-	fakeManagerContext := fake.NewControllerManagerContext(fakeClient.Scheme())
+	fakeManagerContext := fake.NewControllerManagerContext()
 	fakeWebhookContext := fake.NewWebhookContext(fakeManagerContext)
 
 	ctx := &UnitTestContextForMutatingWebhook{

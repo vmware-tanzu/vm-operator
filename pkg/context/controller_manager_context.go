@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -46,9 +45,6 @@ type ControllerManagerContext struct {
 
 	// Recorder is used to record events.
 	Recorder record.Recorder
-
-	// Scheme is the controller manager's API scheme.
-	Scheme *runtime.Scheme
 
 	// MaxConcurrentReconciles is the maximum number of reconcile requests this
 	// controller will receive concurrently.

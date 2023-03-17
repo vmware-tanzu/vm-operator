@@ -13,7 +13,6 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -68,7 +67,6 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	r := NewReconciler(
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
-		mgr.GetScheme(),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		lbProvider,
 	)
@@ -88,14 +86,12 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
-	scheme *runtime.Scheme,
 	recorder record.Recorder,
 	lbProvider providers.LoadbalancerProvider,
 ) *ReconcileVirtualMachineService {
 	return &ReconcileVirtualMachineService{
 		Client:               client,
 		log:                  logger,
-		scheme:               scheme,
 		recorder:             recorder,
 		loadbalancerProvider: lbProvider,
 	}
@@ -107,7 +103,6 @@ var _ reconcile.Reconciler = &ReconcileVirtualMachineService{}
 type ReconcileVirtualMachineService struct {
 	client.Client
 	log                  logr.Logger
-	scheme               *runtime.Scheme
 	recorder             record.Recorder
 	loadbalancerProvider providers.LoadbalancerProvider
 }
@@ -387,7 +382,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *context.Virt
 	}
 
 	result, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
-		if err := controllerutil.SetControllerReference(vmService, service, r.scheme); err != nil {
+		if err := controllerutil.SetControllerReference(vmService, service, r.Client.Scheme()); err != nil {
 			return err
 		}
 
@@ -552,7 +547,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateEndpoints(ctx *context.Vi
 	}
 
 	result, err := controllerutil.CreateOrPatch(ctx, r.Client, endpoints, func() error {
-		if err := controllerutil.SetControllerReference(ctx.VMService, endpoints, r.scheme); err != nil {
+		if err := controllerutil.SetControllerReference(ctx.VMService, endpoints, r.Client.Scheme()); err != nil {
 			return err
 		}
 

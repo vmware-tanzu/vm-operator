@@ -16,7 +16,6 @@ import (
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -55,7 +54,6 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName("volume"),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
-		mgr.GetScheme(),
 		ctx.VMProvider,
 	)
 
@@ -98,13 +96,11 @@ func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
-	scheme *runtime.Scheme,
 	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
 		Client:     client,
 		logger:     logger,
 		recorder:   recorder,
-		scheme:     scheme,
 		VMProvider: vmProvider,
 	}
 }
@@ -115,7 +111,6 @@ type Reconciler struct {
 	client.Client
 	logger     logr.Logger
 	recorder   record.Recorder
-	scheme     *runtime.Scheme
 	VMProvider vmprovider.VirtualMachineProviderInterface
 }
 
@@ -424,7 +419,7 @@ func (r *Reconciler) createInstanceStoragePVC(
 		},
 	}
 
-	if err := controllerutil.SetControllerReference(ctx.VM, pvc, r.scheme); err != nil {
+	if err := controllerutil.SetControllerReference(ctx.VM, pvc, r.Client.Scheme()); err != nil {
 		// This is an unexpected error.
 		return errors.Wrap(err, "Cannot set controller reference on PersistentVolumeClaim")
 	}
@@ -623,7 +618,7 @@ func (r *Reconciler) createCNSAttachment(
 		},
 	}
 
-	if err := controllerutil.SetControllerReference(ctx.VM, attachment, r.scheme); err != nil {
+	if err := controllerutil.SetControllerReference(ctx.VM, attachment, r.Client.Scheme()); err != nil {
 		// This is an unexpected error.
 		return errors.Wrap(err, "Cannot set controller reference on CnsNodeVmAttachment")
 	}

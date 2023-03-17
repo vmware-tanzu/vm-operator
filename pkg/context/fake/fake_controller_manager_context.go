@@ -6,7 +6,6 @@ package fake
 import (
 	goctx "context"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	clientrecord "k8s.io/client-go/tools/record"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -17,11 +16,10 @@ import (
 
 // NewControllerManagerContext returns a fake ControllerManagerContext for unit
 // testing reconcilers and webhooks with a fake client.
-func NewControllerManagerContext(scheme *runtime.Scheme) *context.ControllerManagerContext {
+func NewControllerManagerContext() *context.ControllerManagerContext {
 	return &context.ControllerManagerContext{
 		Context:                 goctx.Background(),
 		Logger:                  ctrllog.Log.WithName(ControllerManagerName),
-		Scheme:                  scheme,
 		Namespace:               ControllerManagerNamespace,
 		Name:                    ControllerManagerName,
 		ServiceAccountName:      ServiceAccountName,

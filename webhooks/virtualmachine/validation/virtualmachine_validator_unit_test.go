@@ -142,6 +142,26 @@ func initNamedNetworkProviderConfig(
 	return deferredFn
 }
 
+func initSysprepTestConfig(ctx *unitValidatingWebhookContext, enabled, used bool) func() {
+	oldFSSValue := os.Getenv(lib.NamespacedClassAndWindowsFSS)
+	deferredFn := func() {
+		Expect(os.Setenv(lib.NamespacedClassAndWindowsFSS, oldFSSValue)).To(Succeed())
+	}
+	if enabled {
+		Expect(os.Setenv(lib.NamespacedClassAndWindowsFSS, "true")).To(Succeed())
+	} else {
+		Expect(os.Setenv(lib.NamespacedClassAndWindowsFSS, "")).To(Succeed())
+	}
+	if used {
+		if ctx.vm.Spec.VmMetadata == nil {
+			ctx.vm.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{}
+		}
+		ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
+		ctx.vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataSysprepTransport
+	}
+	return deferredFn
+}
+
 var errInvalidNetworkProviderTypeNamed = field.Invalid(
 	field.NewPath("spec", "networkInterfaces").Index(0).Child("networkType"),
 	"",
@@ -197,6 +217,8 @@ func unitTestsValidateCreate() {
 		isWCPVMImageRegistryEnabled       bool
 		isNamedNetworkProviderUsed        bool
 		isNamedNetworkProviderEnabled     bool
+		isSysprepFeatureEnabled           bool
+		isSysprepTransportUsed            bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -352,6 +374,11 @@ func unitTestsValidateCreate() {
 		)
 		defer undoNamedNetProvider()
 
+		// Sysprep
+		undoSysprepFSS := initSysprepTestConfig(
+			ctx, args.isSysprepFeatureEnabled, args.isSysprepTransportUsed)
+		defer undoSysprepFSS()
+
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -454,6 +481,10 @@ func unitTestsValidateCreate() {
 
 		Entry("should allow empty network type when named networking enabled", createArgs{isNamedNetworkProviderUsed: true, isNamedNetworkProviderEnabled: true}, true, nil, nil),
 		Entry("should disallow empty network type when named networking disabled", createArgs{isNamedNetworkProviderUsed: true, isNamedNetworkProviderEnabled: false}, false, errInvalidNetworkProviderTypeNamed.Error(), nil),
+		Entry("should allow sysprep when FSS is enabled", createArgs{isSysprepFeatureEnabled: true, isSysprepTransportUsed: true}, true, nil, nil),
+		Entry("should disallow sysprep when FSS is disabled", createArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: true}, false,
+			field.Invalid(specPath.Child("vmMetadata", "transport"), "Sysprep", "the Sysprep feature is not enabled").Error(), nil),
+		Entry("should not error if sysprep FSS is disabled when sysprep is not used", createArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: false}, true, nil, nil),
 	)
 }
 
@@ -474,6 +505,8 @@ func unitTestsValidateUpdate() {
 		addInstanceStorageVolume        bool
 		isNamedNetworkProviderUsed      bool
 		isNamedNetworkProviderEnabled   bool
+		isSysprepFeatureEnabled         bool
+		isSysprepTransportUsed          bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -521,6 +554,11 @@ func unitTestsValidateUpdate() {
 		)
 		defer undoNamedNetProvider()
 
+		// Sysprep
+		undoSysprepFSS := initSysprepTestConfig(
+			ctx, args.isSysprepFeatureEnabled, args.isSysprepTransportUsed)
+		defer undoSysprepFSS()
+
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
 		ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
@@ -565,6 +603,10 @@ func unitTestsValidateUpdate() {
 
 		Entry("should allow empty network type when named networking enabled", updateArgs{isNamedNetworkProviderUsed: true, isNamedNetworkProviderEnabled: true}, true, nil, nil),
 		Entry("should disallow empty network type when named networking disabled", updateArgs{isNamedNetworkProviderUsed: true, isNamedNetworkProviderEnabled: false}, false, errInvalidNetworkProviderTypeNamed.Error(), nil),
+		Entry("should allow sysprep when FSS is enabled", updateArgs{isSysprepFeatureEnabled: true, isSysprepTransportUsed: true}, true, nil, nil),
+		Entry("should disallow sysprep when FSS is disabled", updateArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: true}, false,
+			field.Invalid(field.NewPath("spec", "vmMetadata", "transport"), "Sysprep", "the Sysprep feature is not enabled").Error(), nil),
+		Entry("should not error if sysprep FSS is disabled when sysprep is not used", updateArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: false}, true, nil, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

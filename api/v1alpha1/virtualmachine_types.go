@@ -156,6 +156,14 @@ const (
 	//
 	// For more information, please refer to cloud-init's official documentation.
 	VirtualMachineMetadataCloudInitTransport VirtualMachineMetadataTransport = "CloudInit"
+
+	// VirtualMachineMetadataSysprepTransport indicates the data set in
+	// the VirtualMachineMetadata Transport Resource, i.e., a ConfigMap or Secret,
+	// in the "unattend" key is an XML, Sysprep answers file.
+	//
+	// For more information, please refer to Microsoft's documentation on
+	// "Answer files (unattend.xml)" and "Unattended Windows Setup Reference".
+	VirtualMachineMetadataSysprepTransport VirtualMachineMetadataTransport = "Sysprep"
 )
 
 // VirtualMachineMetadata defines any metadata that should be passed to the VirtualMachine instance.  A typical use

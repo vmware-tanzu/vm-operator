@@ -56,6 +56,7 @@ const (
 	eagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning"
 	addingModifyingInstanceVolumesNotAllowed  = "adding or modifying instance storage volume claim(s) is not allowed"
 	metadataTransportResourcesInvalid         = "%s and %s cannot be specified simultaneously"
+	featureNotEnabled                         = "the %s feature is not enabled"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha1,name=default.validating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -196,6 +197,15 @@ func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmop
 	if vm.Spec.VmMetadata.ConfigMapName != "" && vm.Spec.VmMetadata.SecretName != "" {
 		allErrs = append(allErrs, field.Invalid(mdPath.Child("configMapName"), vm.Spec.VmMetadata.ConfigMapName,
 			fmt.Sprintf(metadataTransportResourcesInvalid, mdPath.Child("configMapName"), mdPath.Child("secretName"))))
+	}
+
+	// Do not allow the Sysprep transport unless the FSS is enabled.
+	if !lib.IsNamespacedClassAndWindowsFSSEnabled() {
+		if v := vmopv1.VirtualMachineMetadataSysprepTransport; v == vm.Spec.VmMetadata.Transport {
+			allErrs = append(allErrs,
+				field.Invalid(mdPath.Child("transport"), v,
+					fmt.Sprintf(featureNotEnabled, "Sysprep")))
+		}
 	}
 
 	return allErrs

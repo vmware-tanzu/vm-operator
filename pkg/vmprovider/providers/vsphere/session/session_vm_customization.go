@@ -20,6 +20,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
@@ -60,6 +61,31 @@ func GetLinuxPrepCustSpec(vmName string, updateArgs VMUpdateArgs) *vimTypes.Cust
 		},
 		NicSettingMap: updateArgs.NetIfList.GetInterfaceCustomizations(),
 	}
+}
+
+func GetSysprepCustSpec(vmName string, updateArgs VMUpdateArgs) (*vimTypes.CustomizationSpec, error) {
+
+	data := updateArgs.VMMetadata.Data["unattend"]
+	if data == "" {
+		return nil, fmt.Errorf("missing sysprep unattend XML")
+	}
+
+	// Ensure the data is normalized first to plain-text.
+	plainText, err := util.TryToDecodeBase64Gzip([]byte(data))
+	if err != nil {
+		return nil, fmt.Errorf("decoding sysprep unattend XML failed %v", err)
+	}
+	data = plainText
+
+	return &vimTypes.CustomizationSpec{
+		Identity: &vimTypes.CustomizationSysprepText{
+			Value: data,
+		},
+		GlobalIPSettings: vimTypes.CustomizationGlobalIPSettings{
+			DnsServerList: updateArgs.DNSServers,
+		},
+		NicSettingMap: updateArgs.NetIfList.GetInterfaceCustomizations(),
+	}, nil
 }
 
 type CloudInitMetadata struct {
@@ -272,6 +298,14 @@ func (s *Session) customize(
 	case v1alpha1.VirtualMachineMetadataExtraConfigTransport:
 		configSpec = GetExtraConfigCustSpec(config, updateArgs)
 		custSpec = GetLinuxPrepCustSpec(vmCtx.VM.Name, updateArgs)
+	case v1alpha1.VirtualMachineMetadataSysprepTransport:
+		// This is to simply comply with the spirit of the feature switch.
+		// In reality, the webhook will prevent "Sysprep" from being used unless
+		// the FSS is enabled.
+		if lib.IsNamespacedClassAndWindowsFSSEnabled() {
+			configSpec = GetOvfEnvCustSpec(config, updateArgs)
+			custSpec, err = GetSysprepCustSpec(vmCtx.VM.Name, updateArgs)
+		}
 	default:
 		custSpec = GetLinuxPrepCustSpec(vmCtx.VM.Name, updateArgs)
 	}

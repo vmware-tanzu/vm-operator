@@ -81,6 +81,7 @@ There are a number of methods that may be used to bootstrap a virtual machine's 
 | Provider                    | Supported    | Network Config                | Linux | Windows | Description |
 |-----------------------------|:------------:|-------------------------------|:-----:|:-------:|-------------|
 | [Cloud-Init](#cloud-init)   |       ✓      | [Cloud-Init Network v2](https://cloudinit.readthedocs.io/en/latest/reference/network-config-format-v2.html) |   ✓   |     ✓    | The industry standard, multi-distro method for cross-platform, cloud instance initialization with modern, VM images |
+| [Sysprep](#sysprep)         |       ✓      | [Guest OS Customization](https://vdc-download.vmware.com/vmwb-repository/dcr-public/c476b64b-c93c-4b21-9d76-be14da0148f9/04ca12ad-59b9-4e1c-8232-fd3d4276e52c/SDK/vsphere-ws/docs/ReferenceGuide/vim.vm.customization.Specification.html) (GOSC) |       |     ✓    | Microsoft Sysprep is used by VMware to customize Windows images on first-boot |
 | [vAppConfig](#vappconfig)   |       ✓      | Bespoke                       |   ✓   |         | For images with bespoke, bootstrap engines driven by vAppConfig properties |
 | [OvfEnv](#ovfenv)           | _deprecated_ | [Guest OS Customization](https://vdc-download.vmware.com/vmwb-repository/dcr-public/c476b64b-c93c-4b21-9d76-be14da0148f9/04ca12ad-59b9-4e1c-8232-fd3d4276e52c/SDK/vsphere-ws/docs/ReferenceGuide/vim.vm.customization.Specification.html) (GOSC) |   ✓   |         | A combination of GOSC and Cloud-Init user-data |
 | [ExtraConfig](#extraconfig) | _deprecated_ | GOSC                          |   ✓   |         | For images with bespoke, bootstrap engines that rely on Guest Info data |
@@ -179,6 +180,116 @@ The data in the above `Secret` is called the Cloud-Init _Cloud Config_. For more
 !!! note "Windows and Cloud-Init"
 
     It is possible to use the Cloud-Init bootstrap provider to deploy a Windows image if it contains [Cloudbase-Init](https://cloudbase.it/cloudbase-init/), the Windows port of Cloud-Init.
+
+## Sysprep
+
+Microsoft originally designed Sysprep as a means to prepare a deployed system for use as a template. It was such a useful tool, that VMware utilized it as the means to customize a VM with a Windows guest. For example, the following YAML provisions a new VM, using Sysprep to:
+
+* supplies a product key
+* sets the admin password
+* configures first-boot
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachine
+metadata:
+  name:      my-vm
+  namespace: my-namespace
+spec:
+  className:    small
+  imageName:    windows11
+  storageClass: iscsi
+  vmMetadata:
+    transport: Sysprep
+    secretName: my-vm-bootstrap-data
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name:      my-vm-bootstrap-data
+  namespace: my-namespace
+stringData:
+  unattend: |
+    <?xml version="1.0" encoding="utf-8"?>
+    <unattend xmlns="urn:schemas-microsoft-com:unattend">
+      <settings pass="windowsPE">
+        <component name="Microsoft-Windows-Setup" processorArchitecture="amd64"
+          publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+          xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <UserData>
+            <AcceptEula>true</AcceptEula>
+            <FullName>akutz</FullName>
+            <Organization>VMware</Organization>
+            <ProductKey>
+              <Key>1234-5678-9abc-defg</Key>
+              <WillShowUI>Never</WillShowUI>
+            </ProductKey>
+          </UserData>
+        </component>
+      </settings>
+      <settings pass="specialize">
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+          publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+          xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <ComputerName>my-vm</ComputerName>
+        </component>
+      </settings>
+      <settings pass="oobeSystem">
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+          publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+          xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <UserAccounts>
+            <AdministratorPassword>
+              <Value>FakePassword</Value>
+              <PlainText>true</PlainText>
+            </AdministratorPassword>
+          </UserAccounts>
+          <OOBE>
+            <HideEULAPage>true</HideEULAPage>
+            <HideLocalAccountScreen>true</HideLocalAccountScreen>
+            <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+            <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+            <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+            <ProtectYourPC>3</ProtectYourPC>
+            <SkipMachineOOBE>true</SkipMachineOOBE>
+            <SkipUserOOBE>true</SkipUserOOBE>
+          </OOBE>
+          <TimeZone>Central Standard Time</TimeZone>
+        </component>
+      </settings>
+      <cpi:offlineImage cpi:source="" xmlns:cpi="urn:schemas-microsoft-com:cpi" />
+    </unattend>
+```
+
+### Minimal Config
+
+The following `Secret` resource may be used to bootstrap a Windows image with minimal information. Please note the image would have to be using a Volume License SKU as the product ID is not provided:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-vm-bootstrap-data
+  namespace: my-ns
+stringData:
+  unattend: |
+    <?xml version="1.0" encoding="utf-8"?>
+    <unattend xmlns="urn:schemas-microsoft-com:unattend">
+      <settings pass="oobeSystem">
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <OOBE>
+            <SkipMachineOOBE>true</SkipMachineOOBE>
+            <SkipUserOOBE>true</SkipUserOOBE>
+          </OOBE>
+        </component>
+      </settings>
+    </unattend>
+```
+
+For more information on Sysprep, please refer to Microsoft's [official documentation](https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/).
 
 #### vAppConfig
 

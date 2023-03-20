@@ -156,6 +156,7 @@ var _ = Describe("Customization via ConfigSpec", func() {
 
 var _ = Describe("Customization via Cust Spec", func() {
 	var (
+		err        error
 		updateArgs session.VMUpdateArgs
 		macaddress = "01-23-45-67-89-AB-CD-EF"
 		nameserver = "8.8.8.8"
@@ -168,9 +169,11 @@ var _ = Describe("Customization via Cust Spec", func() {
 	}
 
 	BeforeEach(func() {
-		updateArgs.DNSServers = []string{nameserver}
-		updateArgs.NetIfList = []network.InterfaceInfo{
-			{Customization: customizationAdaptorMapping},
+		updateArgs = session.VMUpdateArgs{
+			DNSServers: []string{nameserver},
+			NetIfList: []network.InterfaceInfo{
+				{Customization: customizationAdaptorMapping},
+			},
 		}
 	})
 
@@ -185,6 +188,27 @@ var _ = Describe("Customization via Cust Spec", func() {
 			linuxSpec := custSpec.Identity.(*vimTypes.CustomizationLinuxPrep)
 			hostName := linuxSpec.HostName.(*vimTypes.CustomizationFixedName).Name
 			Expect(hostName).To(Equal(vmName))
+		})
+	})
+
+	Context("GetSysprepCustSpec", func() {
+		const unattendXML = "dummy-unattend-xml"
+
+		BeforeEach(func() {
+			updateArgs.VMMetadata.Data = map[string]string{
+				"unattend": unattendXML,
+			}
+		})
+		JustBeforeEach(func() {
+			custSpec, err = session.GetSysprepCustSpec(vmName, updateArgs)
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should return sysprepText customization spec", func() {
+			Expect(custSpec).ToNot(BeNil())
+			Expect(custSpec.GlobalIPSettings.DnsServerList).To(Equal(updateArgs.DNSServers))
+			Expect(custSpec.NicSettingMap).To(Equal([]vimTypes.CustomizationAdapterMapping{*customizationAdaptorMapping}))
+			sysprepSpec := custSpec.Identity.(*vimTypes.CustomizationSysprepText)
+			Expect(sysprepSpec.Value).To(Equal(unattendXML))
 		})
 	})
 

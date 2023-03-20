@@ -226,16 +226,14 @@ func virtualMachinePublishRequestReconcile() {
 					vmPubObj.Annotations = map[string]string{"dummy": "dummy-3"}
 					Expect(ctx.Client.Update(ctx, vmPubObj)).To(Succeed())
 
-					obj := &vmopv1alpha1.VirtualMachinePublishRequest{}
-					Eventually(func() bool {
-						obj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-						return obj != nil && conditions.IsTrue(obj,
-							vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)
-					}).Should(BeTrue())
-
-					Expect(obj.Status.Ready).To(BeTrue())
-					Expect(obj.Status.ImageName).To(Equal("dummy-image"))
-					Expect(obj.Status.CompletionTime).NotTo(BeZero())
+					Eventually(func(g Gomega) {
+						obj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
+						g.Expect(obj).ToNot(BeNil())
+						g.Expect(conditions.IsTrue(obj, vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+						g.Expect(obj.Status.Ready).To(BeTrue())
+						g.Expect(obj.Status.ImageName).To(Equal("dummy-image"))
+						g.Expect(obj.Status.CompletionTime).NotTo(BeZero())
+					}).Should(Succeed())
 				})
 			})
 		})

@@ -15,6 +15,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/google/uuid"
 	"github.com/vmware/govmomi/vim25/types"
@@ -164,8 +165,11 @@ func virtualMachinePublishRequestReconcile() {
 
 					// Force trigger a reconcile.
 					vmPubObj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-					vmPubObj.Annotations = map[string]string{"dummy": "dummy-1"}
-					Expect(ctx.Client.Update(ctx, vmPubObj)).To(Succeed())
+					_, err := controllerutil.CreateOrPatch(ctx, ctx.Client, vmPubObj, func() error {
+						vmPubObj.Annotations = map[string]string{"dummy": "dummy-1"}
+						return nil
+					})
+					Expect(err).ShouldNot(HaveOccurred())
 
 					Eventually(func() bool {
 						vmPubObj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
@@ -193,8 +197,11 @@ func virtualMachinePublishRequestReconcile() {
 
 					// Force trigger a reconcile.
 					vmPubObj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-					vmPubObj.Annotations = map[string]string{"dummy": "dummy-2"}
-					Expect(ctx.Client.Update(ctx, vmPubObj)).To(Succeed())
+					_, err := controllerutil.CreateOrPatch(ctx, ctx.Client, vmPubObj, func() error {
+						vmPubObj.Annotations = map[string]string{"dummy": "dummy-2"}
+						return nil
+					})
+					Expect(err).ShouldNot(HaveOccurred())
 
 					Eventually(func() bool {
 						vmPubObj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
@@ -223,8 +230,11 @@ func virtualMachinePublishRequestReconcile() {
 
 					// Force trigger a reconcile.
 					vmPubObj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
-					vmPubObj.Annotations = map[string]string{"dummy": "dummy-3"}
-					Expect(ctx.Client.Update(ctx, vmPubObj)).To(Succeed())
+					_, err := controllerutil.CreateOrPatch(ctx, ctx.Client, vmPubObj, func() error {
+						vmPubObj.Annotations = map[string]string{"dummy": "dummy-3"}
+						return nil
+					})
+					Expect(err).ShouldNot(HaveOccurred())
 
 					Eventually(func(g Gomega) {
 						obj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))

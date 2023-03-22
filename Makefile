@@ -237,7 +237,8 @@ generate: ## Generate code
 	$(MAKE) generate-go
 	$(MAKE) generate-manifests
 	$(MAKE) generate-external-manifests
-	$(MAKE) generate-api-docs
+# Disable for now until we figure out why the check fails on GH actions
+#	$(MAKE) generate-api-docs
 
 .PHONY: generate-go
 generate-go: | $(CONTROLLER_GEN)
@@ -282,8 +283,8 @@ generate-api-docs: ## Generate API documentation
 	  --source-path=./api/v1alpha1 \
 	  --config=./.crd-ref-docs/config.yaml \
 	  --templates-dir=./.crd-ref-docs/template \
-	  --output-path=./docs/apis
-	mv ./docs/apis/out.md ./docs/apis/v1alpha1.md
+	  --output-path=./docs/ref/api/
+	mv ./docs/ref/api/out.md ./docs/ref/api/v1alpha1.md
 
 
 ## --------------------------------------

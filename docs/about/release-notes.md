@@ -1,5 +1,0 @@
-# Release Notes
-
----
-
-`// TODO(akutz)`

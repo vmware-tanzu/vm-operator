@@ -37,12 +37,42 @@ theme:
   features:
   - content.code.annotate
   - content.code.copy
+  - content.tabs.link
+  - navigation.tabs
+  - navigation.top
+  - navigation.sections
+  - navigation.expand
+  - navigation.tracking
+  - navigation.footer
+  - navigation.header
+  - navigation.path
+  - navigation.indexes
+  - toc.follow
 
 extra_css:
 - www/css/vm-operator.css
 - www/css/vm-operator-font.css
 
-#extra:
+plugins:
+- search:
+    separator: '[\s\u200b\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+- markdownextradata
+# - git-committers:
+#     enabled: !ENV [CI, false]
+#     repository: vmware-tanzu/vm-operator
+#     branch: main
+# - git-revision-date-localized:
+#     enabled: !ENV [CI, false]
+#     enable_creation_date: true
+# - optimize:
+#     enabled: !ENV [CI, false]
+# - minify:
+#     minify_html: !ENV [CI, false]
+
+extra:
+  config:
+    repo_url: https://github.com/vmware-tanzu/vm-operator
+    repo_url_raw: https://raw.githubusercontent.com/vmware-tanzu/vm-operator
   # TODO(akutz) Get this working with RTFD
   # version:
   #   default: latest
@@ -50,6 +80,8 @@ extra_css:
 
 markdown_extensions:
 - admonition
+- pymdownx.snippets:
+    check_paths: true
 - pymdownx.emoji:
     emoji_index: !!python/name:materialx.emoji.twemoji
     emoji_generator: !!python/name:materialx.emoji.to_svg
@@ -59,7 +91,11 @@ markdown_extensions:
 - pymdownx.inlinehilite
 - pymdownx.highlight:
     use_pygments: true
-- pymdownx.superfences
+- pymdownx.superfences:
+    custom_fences:
+    - name: mermaid
+      class: mermaid
+      format: !!python/name:pymdownx.superfences.fence_code_format
 - pymdownx.tabbed:
     alternate_style: true
 - pymdownx.details
@@ -68,23 +104,59 @@ markdown_extensions:
 - md_in_html
 
 nav:
-- Home: index.md
-- User Guide:
-  - Deploy a VM: user-guide/deployvm.md
-  # - Platforms:
-  #   - Overview: user-guide/platforms.md
-  #   - Supervisor: user-guide/platforms/supervisor.md
-  # - Help:
-  #   - Troubleshooting: user-guide/help/troubleshooting.md
-  #   - Usage: user-guide/help/usage.md
-- Developer Guide:
-  - Project Guidelines: dev-guide/project-guidelines.md
-  - Build Reference: dev-guide/build-reference.md
-  - Release Process: dev-guide/release-process.md
-- API Reference:
-  - Overview: apis/overview.md
-  - v1alpha1: apis/v1alpha1.md
-- About:
-  - Contributing: about/contributing.md
-  - License: about/license.md
-  - Release Notes: about/release-notes.md
+- Home: README.md
+- Getting Started:
+  - start/README.md
+  - Quickstart: start/quick.md
+  - Talk to Us: start/help.md
+  - Contribute:
+    - start/contrib/README.md
+    - Suggest a Change: start/contrib/suggest-change.md
+    - Report an Issue: start/contrib/report-issue.md
+    - Submit a Change: start/contrib/submit-change.md
+  - About:
+    - start/about/README.md
+    - Roadmap: start/about/roadmap.md
+    - Release Notes: start/about/release-notes.md
+    - License: start/about/license.md
+- Concepts:
+  - concepts/README.md
+  # - Components: concepts/components.md
+  # - API: concepts/api.md
+  - Workloads:
+    - concepts/workloads/README.md
+    - VirtualMachine: concepts/workloads/vm.md
+    - VirtualMachineClass: concepts/workloads/vm-class.md
+    - WebConsoleRequest: concepts/workloads/vm-web-console.md
+    - Guest Customization: concepts/workloads/guest.md
+  - Images:
+    - concepts/images/README.md
+    - VirtualMachineImage: concepts/images/vm-image.md
+    - Publish a VM Image: concepts/images/pub-vm-image.md
+  - Services & Networking:
+    - concepts/services-networking/README.md
+    - VirtualMachineService: concepts/services-networking/vm-service.md
+    - Guest Network Config: concepts/services-networking/guest-net-config.md
+- Tutorials:
+  - tutorials/README.md
+  - Deploy VM:
+    - tutorials/deploy-vm/README.md
+    - With Cloud-Init: tutorials/deploy-vm/cloudinit.md
+    - With vAppConfig: tutorials/deploy-vm/vappconfig.md
+  - Troubleshooting:
+    - tutorials/troubleshooting/README.md
+    - Get a Console Session: tutorials/troubleshooting/get-console-session.md
+- Reference:
+  - ref/README.md
+  - API:
+    - ref/api/README.md
+    - v1alpha1: ref/api/v1alpha1.md
+  - Configuration:
+    - ref/config/README.md
+    - Manager Pod: ref/config/manager.md
+  - Project:
+    - ref/proj/README.md
+    - Build from Source: ref/proj/build.md
+    - Create a Release: ref/proj/release.md
+    - Writing Documentation: ref/proj/docs.md
+

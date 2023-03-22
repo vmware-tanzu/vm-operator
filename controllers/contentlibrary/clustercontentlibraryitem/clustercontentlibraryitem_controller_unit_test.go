@@ -4,7 +4,7 @@
 package clustercontentlibraryitem_test
 
 import (
-	"context"
+	goctx "context"
 	"fmt"
 
 	. "github.com/onsi/ginkgo"
@@ -20,6 +20,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/clustercontentlibraryitem"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -43,6 +44,8 @@ func unitTestsReconcile() {
 		// The name for cclItem must have the expected prefix to be parsed by the controller.
 		cclItemName := fmt.Sprintf("%s-%s", utils.ItemFieldNamePrefix, "dummy")
 		cclItem = utils.DummyClusterContentLibraryItem(cclItemName)
+		// Adding the finalizer here to avoid ReconcileNormal returning early without resolving image resource.
+		cclItem.Finalizers = []string{utils.ClusterContentLibraryItemVmopFinalizer}
 		initObjects = []client.Object{cclItem}
 	})
 
@@ -56,7 +59,7 @@ func unitTestsReconcile() {
 		)
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 		fakeVMProvider.SyncVirtualMachineImageFn = func(
-			_ context.Context, _, cvmiObj client.Object) error {
+			_ goctx.Context, _, cvmiObj client.Object) error {
 			cvmi := cvmiObj.(*vmopv1.ClusterVirtualMachineImage)
 			// Change a random spec and status field to verify the provider function is called.
 			cvmi.Spec.HardwareVersion = 123
@@ -76,47 +79,24 @@ func unitTestsReconcile() {
 
 	Context("ReconcileNormal", func() {
 
-		When("ClusterContentLibraryItem does not have the `securityCompliance` field to be true", func() {
+		JustBeforeEach(func() {
+			cclItemCtx := &context.ClusterContentLibraryItemContext{
+				Context:      ctx,
+				Logger:       ctx.Logger,
+				CCLItem:      cclItem,
+				ImageObjName: utils.GetTestVMINameFrom(cclItem.Name),
+			}
+			Expect(reconciler.ReconcileNormal(cclItemCtx)).To(Succeed())
+		})
+
+		When("ClusterContentLibraryItem doesn't have the VMOP finalizer", func() {
 
 			BeforeEach(func() {
-				cclItem.Status.SecurityCompliance = &[]bool{false}[0]
+				cclItem.Finalizers = []string{}
 			})
 
-			When("No existing ClusterVirtualMachineImage found", func() {
-
-				It("should skip delete ClusterVirtualMachineImage", func() {
-					err := reconciler.ReconcileNormal(ctx, cclItem)
-					Expect(err).ToNot(HaveOccurred())
-
-					cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
-					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
-					Expect(cvmiList.Items).To(HaveLen(0))
-				})
-			})
-
-			When("Existing ClusterVirtualMachineImage found", func() {
-
-				BeforeEach(func() {
-					cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
-					existingCVMI := &vmopv1.ClusterVirtualMachineImage{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: cvmiName,
-						},
-						Status: vmopv1.VirtualMachineImageStatus{
-							ContentVersion: "dummy-old",
-						},
-					}
-					initObjects = append(initObjects, existingCVMI)
-				})
-
-				It("should delete the ClusterVirtualMachineImage", func() {
-					err := reconciler.ReconcileNormal(ctx, cclItem)
-					Expect(err).ToNot(HaveOccurred())
-
-					cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
-					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
-					Expect(cvmiList.Items).To(HaveLen(0))
-				})
+			It("should add the finalizer", func() {
+				Expect(cclItem.Finalizers).To(ContainElement(utils.ClusterContentLibraryItemVmopFinalizer))
 			})
 		})
 
@@ -132,41 +112,40 @@ func unitTestsReconcile() {
 			})
 
 			It("should mark ClusterVirtualMachineImage condition as provider not ready", func() {
-				err := reconciler.ReconcileNormal(ctx, cclItem)
-				Expect(err).ToNot(HaveOccurred())
-
-				cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
-				Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
-				Expect(cvmiList.Items).To(HaveLen(1))
-				unreadyCVMI := cvmiList.Items[0]
-				providerCondition := conditions.Get(&unreadyCVMI, vmopv1.VirtualMachineImageProviderReadyCondition)
-				Expect(providerCondition).ToNot(BeNil())
-				Expect(providerCondition.Status).To(Equal(corev1.ConditionFalse))
+				cvmi := getCVMIFromCCLItem(*ctx, cclItem)
+				condition := conditions.Get(cvmi, vmopv1.VirtualMachineImageProviderReadyCondition)
+				Expect(condition).ToNot(BeNil())
+				Expect(condition.Status).To(Equal(corev1.ConditionFalse))
+				Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderNotReadyReason))
 
 			})
 		})
 
-		When("ClusterContentLibraryItem is in Ready condition", func() {
+		When("ClusterContentLibraryItem is not security compliant", func() {
+
 			BeforeEach(func() {
-				cclItem.Status.Conditions = []imgregv1a1.Condition{
-					{
-						Type:   imgregv1a1.ReadyCondition,
-						Status: corev1.ConditionTrue,
-					},
-				}
+				cclItem.Status.SecurityCompliance = &[]bool{false}[0]
 			})
+
+			It("should mark ClusterVirtualMachineImage condition as provider security not compliant", func() {
+				cvmi := getCVMIFromCCLItem(*ctx, cclItem)
+				condition := conditions.Get(cvmi, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
+				Expect(condition).ToNot(BeNil())
+				Expect(condition.Status).To(Equal(corev1.ConditionFalse))
+				Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason))
+			})
+
+		})
+
+		// ClusterContentLibraryItem cclItem, which is created from DummyClusterContentLibraryItem() already has all conditions satisfied.
+		When("ClusterContentLibraryItem is ready and security complaint", func() {
 
 			When("ClusterVirtualMachineImage resource has not been created yet", func() {
 
 				It("should create a new ClusterVirtualMachineImage syncing up with ClusterContentLibraryItem", func() {
-					err := reconciler.ReconcileNormal(ctx, cclItem)
-					Expect(err).ToNot(HaveOccurred())
-					cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
-					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
-					Expect(cvmiList.Items).To(HaveLen(1))
-					createdCVMI := cvmiList.Items[0]
+					createdCVMI := getCVMIFromCCLItem(*ctx, cclItem)
 					expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, fakeVMProvider.SyncVirtualMachineImageFn)
-					utils.PopulateRuntimeFieldsTo(expectedCVMI, &createdCVMI)
+					utils.PopulateRuntimeFieldsTo(expectedCVMI, createdCVMI)
 
 					Expect(createdCVMI.Name).To(Equal(expectedCVMI.Name))
 					Expect(createdCVMI.Labels).To(Equal(expectedCVMI.Labels))
@@ -192,15 +171,9 @@ func unitTestsReconcile() {
 				})
 
 				It("should update the existing ClusterVirtualMachineImage with ClusterContentLibraryItem", func() {
-					err := reconciler.ReconcileNormal(ctx, cclItem)
-					Expect(err).ToNot(HaveOccurred())
-
-					cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
-					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
-					Expect(cvmiList.Items).To(HaveLen(1))
-					updatedCVMI := cvmiList.Items[0]
+					updatedCVMI := getCVMIFromCCLItem(*ctx, cclItem)
 					expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, fakeVMProvider.SyncVirtualMachineImageFn)
-					utils.PopulateRuntimeFieldsTo(expectedCVMI, &updatedCVMI)
+					utils.PopulateRuntimeFieldsTo(expectedCVMI, updatedCVMI)
 
 					Expect(updatedCVMI.Name).To(Equal(expectedCVMI.Name))
 					Expect(updatedCVMI.Labels).To(Equal(expectedCVMI.Labels))
@@ -222,15 +195,9 @@ func unitTestsReconcile() {
 				})
 
 				It("should skip updating the ClusterVirtualMachineImage with library item", func() {
-					err := reconciler.ReconcileNormal(ctx, cclItem)
-					Expect(err).ToNot(HaveOccurred())
-
-					cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
-					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
-					Expect(cvmiList.Items).To(HaveLen(1))
-					currentCVMI := cvmiList.Items[0]
+					currentCVMI := getCVMIFromCCLItem(*ctx, cclItem)
 					expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, fakeVMProvider.SyncVirtualMachineImageFn)
-					utils.PopulateRuntimeFieldsTo(expectedCVMI, &currentCVMI)
+					utils.PopulateRuntimeFieldsTo(expectedCVMI, currentCVMI)
 
 					Expect(currentCVMI.Name).To(Equal(expectedCVMI.Name))
 					Expect(currentCVMI.Labels).To(Equal(expectedCVMI.Labels))
@@ -241,4 +208,30 @@ func unitTestsReconcile() {
 			})
 		})
 	})
+
+	Context("ReconcileDelete", func() {
+
+		JustBeforeEach(func() {
+			cclItemCtx := &context.ClusterContentLibraryItemContext{
+				Context: ctx,
+				Logger:  ctx.Logger,
+				CCLItem: cclItem,
+			}
+			Expect(reconciler.ReconcileDelete(cclItemCtx)).To(Succeed())
+		})
+
+		It("should remove the finalizer from ClusterContentLibraryItem resource", func() {
+			Expect(cclItem.Finalizers).ToNot(ContainElement(utils.ClusterContentLibraryItemVmopFinalizer))
+		})
+	})
+}
+
+func getCVMIFromCCLItem(
+	ctx builder.UnitTestContextForController,
+	cclItem *imgregv1a1.ClusterContentLibraryItem) *vmopv1.ClusterVirtualMachineImage {
+
+	cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
+	cvmi := &vmopv1.ClusterVirtualMachineImage{}
+	Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: cvmiName}, cvmi)).To(Succeed())
+	return cvmi
 }

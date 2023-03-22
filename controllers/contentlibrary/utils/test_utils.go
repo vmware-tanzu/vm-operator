@@ -143,6 +143,10 @@ func GetExpectedCVMIFrom(cclItem imgregv1a1.ClusterContentLibraryItem,
 					Status: corev1.ConditionTrue,
 				},
 				{
+					Type:   vmopv1.VirtualMachineImageProviderSecurityComplianceCondition,
+					Status: corev1.ConditionTrue,
+				},
+				{
 					Type:   vmopv1.VirtualMachineImageSyncedCondition,
 					Status: corev1.ConditionTrue,
 				},
@@ -194,6 +198,10 @@ func GetExpectedVMIFrom(clItem imgregv1a1.ContentLibraryItem,
 			Conditions: []vmopv1.Condition{
 				{
 					Type:   vmopv1.VirtualMachineImageProviderReadyCondition,
+					Status: corev1.ConditionTrue,
+				},
+				{
+					Type:   vmopv1.VirtualMachineImageProviderSecurityComplianceCondition,
 					Status: corev1.ConditionTrue,
 				},
 				{

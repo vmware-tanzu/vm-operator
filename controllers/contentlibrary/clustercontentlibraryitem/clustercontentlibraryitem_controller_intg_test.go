@@ -6,8 +6,8 @@ package clustercontentlibraryitem_test
 import (
 	"context"
 	"fmt"
-	"reflect"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -30,35 +30,42 @@ func cclItemReconcile() {
 		cclItem *imgregv1a1.ClusterContentLibraryItem
 	)
 
+	waitForClusterContentLibraryItemCreation := func(ctx *builder.IntegrationTestContext) {
+		// TypeMeta and Status will be reset after the Create call below.
+		// Save and add them back later to avoid the update or comparison failure.
+		savedTypeMeta := cclItem.TypeMeta
+		savedStatus := *cclItem.Status.DeepCopy()
+		Expect(ctx.Client.Create(ctx, cclItem)).To(Succeed())
+
+		// Get the latest version of CCLItem to avoid status update conflict.
+		updatedCCLItem := imgregv1a1.ClusterContentLibraryItem{}
+		Eventually(func(g Gomega) {
+			g.Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(cclItem), &updatedCCLItem)).To(Succeed())
+			g.Expect(updatedCCLItem.Finalizers).To(ContainElement(utils.ClusterContentLibraryItemVmopFinalizer))
+		}).Should(Succeed(), "waiting for ClusterContentLibraryItem to be created and synced")
+		updatedCCLItem.Status = savedStatus
+		Expect(ctx.Client.Status().Update(ctx, &updatedCCLItem)).To(Succeed())
+
+		cclItem = &updatedCCLItem
+		cclItem.TypeMeta = savedTypeMeta
+	}
+
 	waitForClusterVirtualMachineImageReady := func(ctx *builder.IntegrationTestContext) {
 		curCVMI := vmopv1.ClusterVirtualMachineImage{}
 		expectedCVMI := utils.GetExpectedCVMIFrom(*cclItem, intgFakeVMProvider.SyncVirtualMachineImageFn)
-		Eventually(func() bool {
-			cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
-			if err := ctx.Client.Get(ctx, client.ObjectKey{Name: cvmiName}, &curCVMI); err != nil {
-				return false
-			}
+		Eventually(func(g Gomega) {
+			g.Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(expectedCVMI), &curCVMI)).To(Succeed())
 			utils.PopulateRuntimeFieldsTo(expectedCVMI, &curCVMI)
-			return reflect.DeepEqual(curCVMI.OwnerReferences, expectedCVMI.OwnerReferences) &&
-				reflect.DeepEqual(curCVMI.Spec, expectedCVMI.Spec) &&
-				reflect.DeepEqual(curCVMI.Status, expectedCVMI.Status)
-		}).Should(BeTrue(), "waiting for ClusterVirtualMachineImage to be created and synced")
-	}
-
-	waitForClusterVirtualMachineImageDeleted := func(ctx *builder.IntegrationTestContext) {
-		curCVMI := vmopv1.ClusterVirtualMachineImage{}
-		Eventually(func() bool {
-			cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
-			if err := ctx.Client.Get(ctx, client.ObjectKey{Name: cvmiName}, &curCVMI); err != nil {
-				return true
-			}
-			return false
-		}).Should(BeTrue())
+			g.Expect(curCVMI.OwnerReferences).To(Equal(expectedCVMI.OwnerReferences))
+			g.Expect(curCVMI.Spec).To(Equal(expectedCVMI.Spec))
+			g.Expect(curCVMI.Status).To(Equal(expectedCVMI.Status))
+		}).Should(Succeed(), "waiting for ClusterVirtualMachineImage to be created and synced")
 	}
 
 	BeforeEach(func() {
 		// The name for cclItem must have the expected prefix to be parsed by the controller.
-		cclItemName := fmt.Sprintf("%s-%s", utils.ItemFieldNamePrefix, "dummy")
+		// Using uuid here to avoid name conflict as envtest doesn't clean up the resources by ownerReference.
+		cclItemName := fmt.Sprintf("%s-%s", utils.ItemFieldNamePrefix, uuid.NewString())
 		cclItem = utils.DummyClusterContentLibraryItem(cclItemName)
 
 		ctx = suite.NewIntegrationTestContext()
@@ -84,35 +91,7 @@ func cclItemReconcile() {
 	Context("Reconcile ClusterContentLibraryItem", func() {
 
 		BeforeEach(func() {
-			// TypeMeta and Status will be reset after the Create call below.
-			// Save and add them back later to avoid the update or comparison failure.
-			savedTypeMeta := cclItem.TypeMeta
-			savedStatus := *cclItem.Status.DeepCopy()
-			Expect(ctx.Client.Create(ctx, cclItem)).To(Succeed())
-			cclItem.TypeMeta = savedTypeMeta
-			cclItem.Status = savedStatus
-			Expect(ctx.Client.Status().Update(ctx, cclItem)).To(Succeed())
-		})
-
-		AfterEach(func() {
-			Expect(ctx.Client.DeleteAllOf(ctx, &imgregv1a1.ClusterContentLibraryItem{})).Should(Succeed())
-			Eventually(func() bool {
-				cclItemList := &imgregv1a1.ClusterContentLibraryItemList{}
-				if err := ctx.Client.List(ctx, cclItemList); err != nil {
-					return false
-				}
-				return len(cclItemList.Items) == 0
-			}).Should(BeTrue())
-
-			// Manually delete CVMI as envTest doesn't delete it even if the OwnerReference is set up.
-			Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1.ClusterVirtualMachineImage{})).Should(Succeed())
-			Eventually(func() bool {
-				cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
-				if err := ctx.Client.List(ctx, cvmiList); err != nil {
-					return false
-				}
-				return len(cvmiList.Items) == 0
-			}).Should(BeTrue())
+			waitForClusterContentLibraryItemCreation(ctx)
 		})
 
 		When("ClusterVirtualMachineImage doesn't exist", func() {
@@ -125,28 +104,14 @@ func cclItemReconcile() {
 		When("ClusterVirtualMachineImage already exists", func() {
 
 			JustBeforeEach(func() {
-				// Wait until the CVMI gets created from BeforeEach() executed in Context block above.
+				// Wait until the CVMI gets created before triggering another reconciliation.
 				waitForClusterVirtualMachineImageReady(ctx)
-				// Update CCLItem tro trigger another reconciliation on the existing CVMI resource.
 				cclItem.Status.ContentVersion = "dummy-content-version-new"
 				Expect(ctx.Client.Status().Update(ctx, cclItem)).To(Succeed())
 			})
 
 			It("should sync and update the existing ClusterVirtualMachineImage", func() {
 				waitForClusterVirtualMachineImageReady(ctx)
-			})
-		})
-
-		When("ClusterContentLibraryItem's security compliance is not true", func() {
-
-			JustBeforeEach(func() {
-				waitForClusterVirtualMachineImageReady(ctx)
-				cclItem.Status.SecurityCompliance = &[]bool{false}[0]
-				Expect(ctx.Client.Status().Update(ctx, cclItem)).To(Succeed())
-			})
-
-			It("should delete ClusterVirtualMachineImage", func() {
-				waitForClusterVirtualMachineImageDeleted(ctx)
 			})
 		})
 	})

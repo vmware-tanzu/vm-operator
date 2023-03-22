@@ -119,8 +119,11 @@ rules:
   resources:
   - clustercontentlibraryitems
   verbs:
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - imageregistry.vmware.com
@@ -147,8 +150,11 @@ rules:
   resources:
   - contentlibraryitems
   verbs:
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - imageregistry.vmware.com

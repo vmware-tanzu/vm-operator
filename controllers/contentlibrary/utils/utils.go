@@ -24,15 +24,16 @@ func GetImageFieldNameFromItem(itemName string) (string, error) {
 		return "", fmt.Errorf("item name doesn't start with %q", ItemFieldNamePrefix)
 	}
 	itemNameSplit := strings.Split(itemName, "-")
-	if len(itemNameSplit) != 2 || itemNameSplit[1] == "" {
+	if len(itemNameSplit) < 2 {
 		return "", fmt.Errorf("item name doesn't have an identifier after %s-", ItemFieldNamePrefix)
 	}
 
-	return fmt.Sprintf("%s-%s", ImageFieldNamePrefix, itemNameSplit[1]), nil
+	uuid := strings.Join(itemNameSplit[1:], "-")
+	return fmt.Sprintf("%s-%s", ImageFieldNamePrefix, uuid), nil
 }
 
-// CheckItemReadyCondition checks if the given item conditions contain a Ready condition.
-func CheckItemReadyCondition(itemConditions imgregv1a1.Conditions) bool {
+// IsItemReady returns if the given item conditions contain a Ready condition with status True.
+func IsItemReady(itemConditions imgregv1a1.Conditions) bool {
 	var isReady bool
 	for _, condition := range itemConditions {
 		if condition.Type == imgregv1a1.ReadyCondition {

@@ -285,6 +285,13 @@ generate-api-docs: ## Generate API documentation
 	  --templates-dir=./.crd-ref-docs/template \
 	  --output-path=./docs/ref/api/
 	mv ./docs/ref/api/out.md ./docs/ref/api/v1alpha1.md
+	$(CRD_REF_DOCS) \
+	  --renderer=markdown \
+	  --source-path=./api/v1alpha2 \
+	  --config=./.crd-ref-docs/config.yaml \
+	  --templates-dir=./.crd-ref-docs/template \
+	  --output-path=./docs/ref/api/
+	mv ./docs/ref/api/out.md ./docs/ref/api/v1alpha2.md
 
 
 ## --------------------------------------

@@ -1,0 +1,40 @@
+apiVersion: vmoperator.vmware.com/v1alpha2
+kind: VirtualMachine
+metadata:
+  name: my-vm
+  namespace: my-namespace
+spec:
+  className: medium
+  imageName: ubuntu-jammy
+  network:
+    nameservers:
+    - 1.1.1.1
+    - 8.8.8.8
+    searchDomains:
+    - my.domain.local
+    - my-other.domain.local
+  bootstrap:
+    cloudInit: 
+      cloudConfig:
+        users:
+        - default
+        - name: akutz
+          primary_group: akutz
+          groups: users
+          ssh_authorized_keys:
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj...
+        runcmd:
+        - "ls /"
+        - [ "ls", "-a", "-l", "/" ]
+        write_files:
+        - path: /etc/my-plaintext
+          permissions: '0644'
+          owner: root:root
+          content: |
+            Hello, world.
+        - path: /etc/my-secret
+          permissions: '0644'
+          owner: root:root
+          content:
+            name: my-vm-bootstrap-secret
+            key: etc-my-secret

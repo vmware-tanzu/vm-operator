@@ -1,10 +1,5 @@
-# Project Guidelines
+# Submit a Change
 
-These are important.
-
----
-
-People contributing code to this project must adhere to the following rules. These standards are in place to keep code clean, consistent, and stable.
 
 ## Documentation
 
@@ -15,22 +10,23 @@ There are two types of documentation: source and markdown.
 All source code should be documented in accordance with the [Go's documentation rules](http://blog.golang.org/godoc-documenting-go-code).
 
 ### Markdown
+
 When creating or modifying the project's `README.md` file or any of the documentation in the `docs` directory, please keep the following rules in mind:
 
 1. All links to internal resources should be relative.
 1. All links to markdown files should include the file extension.
 
-For example, the below link points to the `Deploy a VM` page:
+For example, the below link points to the `Quickstart` page:
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-[/user-guide/deployvm.md](/user-guide/deployvm.md)
+[/start/quick.md](/start/quick.md)
 
 However, when the above link is followed when viewing this page directly from the Github repository instead of the generated site documentation, the link will return a 404.
 
 While it's recommended that users view the generated site documentation instead of the source Markdown directly, we can still fix it so that the above link will work regardless. To fix the link, simply make it relative and add the Markdown file extension:
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-[../user-guide/deployvm.md](../user-guide/deployvm.md)
+[../quick.md](../quick.md)
 
 Now the link will work regardless from where it's viewed.
 
@@ -139,7 +135,7 @@ The user can specify either '--format=yml|yaml|json' or
 structured data is marshaled prior to being emitted to the console.
 ```
 
-## Submitting Changes
+## Pull Requests
 
 All developers are required to follow the [GitHub Flow model](https://guides.github.com/introduction/flow/) when proposing new features or even submitting fixes.
 

@@ -532,8 +532,8 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `claimName` _string_ | ClaimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims |
-| `readOnly` _boolean_ | Will force the ReadOnly setting in VolumeMounts. Default false. |
+| `claimName` _string_ | claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims |
+| `readOnly` _boolean_ | readOnly Will force the ReadOnly setting in VolumeMounts. Default false. |
 | `instanceVolumeClaim` _[InstanceVolumeClaimVolumeSource](#instancevolumeclaimvolumesource)_ | InstanceVolumeClaim is set if the PVC is backed by instance storage. |
 
 ### Probe

@@ -1,10 +1,4 @@
-# Deploying a VM
-
-Be our guest, be our guest...
-
----
-
-## Overview
+# Deploy a VM With Cloud-Init
 
 This page reviews the different components, workflows, and decisions related to deploying a VM with VM Operator:
 
@@ -181,7 +175,7 @@ The data in the above `Secret` is called the Cloud-Init _Cloud Config_. For more
 
     It is possible to use the Cloud-Init bootstrap provider to deploy a Windows image if it contains [Cloudbase-Init](https://cloudbase.it/cloudbase-init/), the Windows port of Cloud-Init.
 
-## Sysprep
+#### Sysprep
 
 Microsoft originally designed Sysprep as a means to prepare a deployed system for use as a template. It was such a useful tool, that VMware utilized it as the means to customize a VM with a Windows guest. For example, the following YAML provisions a new VM, using Sysprep to:
 
@@ -264,7 +258,7 @@ stringData:
     </unattend>
 ```
 
-### Minimal Config
+##### Minimal Config
 
 The following `Secret` resource may be used to bootstrap a Windows image with minimal information. Please note the image would have to be using a Volume License SKU as the product ID is not provided:
 

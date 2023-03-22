@@ -85,6 +85,8 @@ It is possible to update parts of an existing `VirtualMachine` resource. Some fi
 
 Some of a VM's hardware resources are derived, and there are some that may be influenced directly by a user.
 
+// TODO ([github.com/vmware-tanzu/vm-operator#105](https://github.com/vmware-tanzu/vm-operator/issues/105))
+
 ### CPU and Memory
 
 ### Networking

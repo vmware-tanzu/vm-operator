@@ -1,8 +1,6 @@
 # Release Process
 
-How to release VM Operator
-
----
+// TODO ([github.com/vmware-tanzu/vm-operator#119](https://github.com/vmware-tanzu/vm-operator/issues/119))
 
 ## Project Stages
 

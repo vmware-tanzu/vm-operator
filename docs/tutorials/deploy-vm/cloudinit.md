@@ -1,5 +1,7 @@
 # Deploy a VM With Cloud-Init
 
+// TODO ([github.com/vmware-tanzu/vm-operator#122](https://github.com/vmware-tanzu/vm-operator/issues/122))
+
 This page reviews the different components, workflows, and decisions related to deploying a VM with VM Operator:
 
 ## The VirtualMachine API

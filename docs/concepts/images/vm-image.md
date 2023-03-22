@@ -1,5 +1,7 @@
 # VirtualMachineImage
 
+// TODO ([github.com/vmware-tanzu/vm-operator#109](https://github.com/vmware-tanzu/vm-operator/issues/109))
+
 ## Recommended Images
 
 There are no restrictions on the images that can be deployed by VM Operator. However, for users wanting to try things out for themselves, here are a few images the project's developers use on a daily basis:

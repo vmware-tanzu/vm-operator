@@ -1,8 +1,6 @@
 # Build Reference
 
-How to build VM Operator
-
----
+// TODO ([github.com/vmware-tanzu/vm-operator#118](https://github.com/vmware-tanzu/vm-operator/issues/118))
 
 ## Build with Docker
 

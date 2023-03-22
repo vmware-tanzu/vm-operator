@@ -251,7 +251,7 @@ generate-go: ## Generate deepcopy
 generate-manifests: | $(CONTROLLER_GEN)
 generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 	$(CONTROLLER_GEN) \
-		paths=github.com/vmware-tanzu/vm-operator/api/... \
+		paths=github.com/vmware-tanzu/vm-operator/api/v1alpha1/... \
 		crd:crdVersions=v1 \
 		output:crd:dir=$(CRD_ROOT) \
 		output:none

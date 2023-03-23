@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -25,30 +25,30 @@ func intgTests() {
 	var (
 		ctx *builder.IntegrationTestContext
 
-		cs     vmopv1alpha1.ContentSource
-		cl     vmopv1alpha1.ContentLibraryProvider
+		cs     vmopv1.ContentSource
+		cl     vmopv1.ContentLibraryProvider
 		csKey  types.NamespacedName
 		clKey  types.NamespacedName
 		imgKey types.NamespacedName
 
-		img       vmopv1alpha1.VirtualMachineImage
+		img       vmopv1.VirtualMachineImage
 		imageName = "dummy-image"
 	)
 
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
 
-		cl = vmopv1alpha1.ContentLibraryProvider{
+		cl = vmopv1.ContentLibraryProvider{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-cl",
 			},
 		}
-		cs = vmopv1alpha1.ContentSource{
+		cs = vmopv1.ContentSource{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-cs",
 			},
-			Spec: vmopv1alpha1.ContentSourceSpec{
-				ProviderRef: vmopv1alpha1.ContentProviderReference{
+			Spec: vmopv1.ContentSourceSpec{
+				ProviderRef: vmopv1.ContentProviderReference{
 					APIVersion: "vmoperator.vmware.com/v1alpha1",
 					Name:       cl.ObjectMeta.Name,
 					Kind:       "ContentLibraryProvider",
@@ -56,14 +56,14 @@ func intgTests() {
 			},
 		}
 
-		img = vmopv1alpha1.VirtualMachineImage{
+		img = vmopv1.VirtualMachineImage{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: imageName,
 			},
-			Spec: vmopv1alpha1.VirtualMachineImageSpec{
+			Spec: vmopv1.VirtualMachineImageSpec{
 				ImageID: "dummy-id",
 			},
-			Status: vmopv1alpha1.VirtualMachineImageStatus{
+			Status: vmopv1.VirtualMachineImageStatus{
 				ImageName: imageName,
 			},
 		}
@@ -79,8 +79,8 @@ func intgTests() {
 		intgFakeVMProvider.Reset()
 	})
 
-	getContentSource := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1alpha1.ContentSource {
-		cs := &vmopv1alpha1.ContentSource{}
+	getContentSource := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1.ContentSource {
+		cs := &vmopv1.ContentSource{}
 		if err := ctx.Client.Get(ctx, objKey, cs); err != nil {
 			return nil
 		}
@@ -100,13 +100,13 @@ func intgTests() {
 		err := ctx.Client.Delete(ctx, &cs)
 		Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 
-		Eventually(func() *vmopv1alpha1.ContentSource {
+		Eventually(func() *vmopv1.ContentSource {
 			return getContentSource(ctx, objKey)
 		}).Should(BeNil(), "waiting for ContentSource to be deleted")
 	}
 
-	getContentLibraryProvider := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1alpha1.ContentLibraryProvider {
-		cl := &vmopv1alpha1.ContentLibraryProvider{}
+	getContentLibraryProvider := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1.ContentLibraryProvider {
+		cl := &vmopv1.ContentLibraryProvider{}
 		if err := ctx.Client.Get(ctx, objKey, cl); err != nil {
 			return nil
 		}
@@ -123,8 +123,8 @@ func intgTests() {
 		}).Should(ContainElement(ownerRef), "waiting for ContentSource OwnerRef on the ContentLibraryProvider resource")
 	}
 
-	getVirtualMachineImage := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1alpha1.VirtualMachineImage {
-		img := &vmopv1alpha1.VirtualMachineImage{}
+	getVirtualMachineImage := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName) *vmopv1.VirtualMachineImage {
+		img := &vmopv1.VirtualMachineImage{}
 		if err := ctx.Client.Get(ctx, objKey, img); err != nil {
 			return nil
 		}
@@ -133,7 +133,7 @@ func intgTests() {
 	}
 
 	waitForVirtualMachineImage := func(ctx *builder.IntegrationTestContext, objKey types.NamespacedName,
-		expectedImg vmopv1alpha1.VirtualMachineImage) {
+		expectedImg vmopv1.VirtualMachineImage) {
 		EventuallyWithOffset(1, func() bool {
 			image := getVirtualMachineImage(ctx, objKey)
 			if image == nil {
@@ -145,8 +145,8 @@ func intgTests() {
 		}).Should(BeTrue())
 	}
 
-	populateExpectedImg := func(image vmopv1alpha1.VirtualMachineImage,
-		cl *vmopv1alpha1.ContentLibraryProvider) vmopv1alpha1.VirtualMachineImage {
+	populateExpectedImg := func(image vmopv1.VirtualMachineImage,
+		cl *vmopv1.ContentLibraryProvider) vmopv1.VirtualMachineImage {
 		expectedImg := image
 		expectedImg.OwnerReferences = []metav1.OwnerReference{{
 			APIVersion: "vmoperator.vmware.com/v1alpha1",
@@ -154,7 +154,7 @@ func intgTests() {
 			Name:       cl.Name,
 			UID:        cl.UID,
 		}}
-		expectedImg.Spec.ProviderRef = vmopv1alpha1.ContentProviderReference{
+		expectedImg.Spec.ProviderRef = vmopv1.ContentProviderReference{
 			APIVersion: "vmoperator.vmware.com/v1alpha1",
 			Kind:       "ContentLibraryProvider",
 			Name:       cl.Name,
@@ -167,13 +167,13 @@ func intgTests() {
 			BeforeEach(func() {
 				intgFakeVMProvider.Lock()
 				intgFakeVMProvider.ListItemsFromContentLibraryFn = func(_ context.Context,
-					_ *vmopv1alpha1.ContentLibraryProvider) ([]string, error) {
+					_ *vmopv1.ContentLibraryProvider) ([]string, error) {
 					// use DeepCopy to avoid race
 					return []string{img.Spec.ImageID}, nil
 				}
 				intgFakeVMProvider.GetVirtualMachineImageFromContentLibraryFn = func(_ context.Context,
-					_ *vmopv1alpha1.ContentLibraryProvider, itemID string,
-					_ map[string]vmopv1alpha1.VirtualMachineImage) (*vmopv1alpha1.VirtualMachineImage, error) {
+					_ *vmopv1.ContentLibraryProvider, itemID string,
+					_ map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error) {
 					return img.DeepCopy(), nil
 				}
 				intgFakeVMProvider.Unlock()
@@ -192,7 +192,7 @@ func intgTests() {
 				// Explicitly delete the VirtualMachineImage objects to avoid race.
 				// VirtualMachineImage objects have a OwnerRef pointing to ContentLibraryProvider,
 				// but they are not immediately deleted and can cause race.
-				Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1alpha1.VirtualMachineImage{})).Should(Succeed())
+				Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1.VirtualMachineImage{})).Should(Succeed())
 			})
 
 			It("Reconciles after ContentSource creation", func() {
@@ -230,26 +230,26 @@ func intgTests() {
 					expectedImg := populateExpectedImg(img, clObj)
 					waitForVirtualMachineImage(ctx, imgKey, expectedImg)
 
-					newImg := vmopv1alpha1.VirtualMachineImage{
+					newImg := vmopv1.VirtualMachineImage{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "new-dummy-name",
 						},
-						Spec: vmopv1alpha1.VirtualMachineImageSpec{
+						Spec: vmopv1.VirtualMachineImageSpec{
 							ImageID: "new-dummy-id",
 						},
-						Status: vmopv1alpha1.VirtualMachineImageStatus{
+						Status: vmopv1.VirtualMachineImageStatus{
 							ImageName: "new-dummy-name",
 						},
 					}
 					intgFakeVMProvider.Lock()
 					intgFakeVMProvider.ListItemsFromContentLibraryFn = func(_ context.Context,
-						_ *vmopv1alpha1.ContentLibraryProvider) ([]string, error) {
+						_ *vmopv1.ContentLibraryProvider) ([]string, error) {
 						// use DeepCopy to avoid race
 						return []string{newImg.Spec.ImageID}, nil
 					}
 					intgFakeVMProvider.GetVirtualMachineImageFromContentLibraryFn = func(_ context.Context,
-						_ *vmopv1alpha1.ContentLibraryProvider, _ string,
-						_ map[string]vmopv1alpha1.VirtualMachineImage) (*vmopv1alpha1.VirtualMachineImage, error) {
+						_ *vmopv1.ContentLibraryProvider, _ string,
+						_ map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error) {
 						return newImg.DeepCopy(), nil
 					}
 					intgFakeVMProvider.Unlock()
@@ -277,17 +277,17 @@ func intgTests() {
 			})
 
 			When("a new ContentSource with duplicate vm images is created", func() {
-				newCL := vmopv1alpha1.ContentLibraryProvider{
+				newCL := vmopv1.ContentLibraryProvider{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "dummy-cl-new",
 					},
 				}
-				newCS := vmopv1alpha1.ContentSource{
+				newCS := vmopv1.ContentSource{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "dummy-cs-new",
 					},
-					Spec: vmopv1alpha1.ContentSourceSpec{
-						ProviderRef: vmopv1alpha1.ContentProviderReference{
+					Spec: vmopv1.ContentSourceSpec{
+						ProviderRef: vmopv1.ContentProviderReference{
 							APIVersion: "vmoperator.vmware.com/v1alpha1",
 							Name:       newCL.ObjectMeta.Name,
 							Kind:       "ContentLibraryProvider",
@@ -317,7 +317,7 @@ func intgTests() {
 				})
 
 				It("should reconcile and generate a new VirtualMachineImage object", func() {
-					images := &vmopv1alpha1.VirtualMachineImageList{}
+					images := &vmopv1.VirtualMachineImageList{}
 					Eventually(func() int {
 						if err := ctx.Client.List(ctx, images); err != nil {
 							return 0

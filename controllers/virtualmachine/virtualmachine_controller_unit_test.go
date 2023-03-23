@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachine"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -41,19 +41,19 @@ func unitTestsReconcile() {
 		fakeProbeManager *proberfake.ProberManager
 		fakeVMProvider   *providerfake.VMProvider
 
-		vm    *vmopv1alpha1.VirtualMachine
+		vm    *vmopv1.VirtualMachine
 		vmCtx *vmopContext.VirtualMachineContext
 	)
 
 	BeforeEach(func() {
-		vm = &vmopv1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "dummy-vm",
 				Namespace:  "dummy-ns",
 				Labels:     map[string]string{},
 				Finalizers: []string{finalizer},
 			},
-			Spec: vmopv1alpha1.VirtualMachineSpec{
+			Spec: vmopv1.VirtualMachineSpec{
 				ClassName: "dummy-class",
 				ImageName: "dummy-image",
 			},
@@ -112,11 +112,11 @@ func unitTestsReconcile() {
 			err := reconciler.ReconcileNormal(vmCtx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(vmCtx.VM.GetFinalizers()).To(ContainElement(finalizer))
-			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Created))
+			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1.Created))
 		})
 
 		It("will return error when provider fails to CreateOrUpdate VM", func() {
-			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
+			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 				return errors.New(providerError)
 			}
 
@@ -137,7 +137,7 @@ func unitTestsReconcile() {
 		})
 
 		It("Should not call add to Prober Manager if CreateOrUpdate fails", func() {
-			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
+			fakeVMProvider.CreateOrUpdateVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 				return errors.New(providerError)
 			}
 
@@ -147,7 +147,7 @@ func unitTestsReconcile() {
 		})
 
 		It("Should call add to Prober Manager if ReconcileNormal succeeds", func() {
-			fakeProbeManager.AddToProberManagerFn = func(vm *vmopv1alpha1.VirtualMachine) {
+			fakeProbeManager.AddToProberManagerFn = func(vm *vmopv1.VirtualMachine) {
 				fakeProbeManager.IsAddToProberManagerCalled = true
 			}
 
@@ -172,24 +172,24 @@ func unitTestsReconcile() {
 			Expect(err).NotTo(HaveOccurred())
 
 			expectEvent(ctx, "DeleteSuccess")
-			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Deleted))
+			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1.Deleted))
 		})
 
 		It("will emit corresponding event during delete failure", func() {
 			// Simulate delete failure
-			fakeVMProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
+			fakeVMProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 				return errors.New(providerError)
 			}
 			err := reconciler.ReconcileDelete(vmCtx)
 			Expect(err).To(HaveOccurred())
 
 			expectEvent(ctx, "DeleteFailure")
-			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1alpha1.Deleting))
+			Expect(vmCtx.VM.Status.Phase).To(Equal(vmopv1.Deleting))
 		})
 
 		It("Should not remove from Prober Manager if ReconcileDelete fails", func() {
 			// Simulate delete failure
-			fakeVMProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1alpha1.VirtualMachine) error {
+			fakeVMProvider.DeleteVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
 				return errors.New(providerError)
 			}
 
@@ -199,7 +199,7 @@ func unitTestsReconcile() {
 		})
 
 		It("Should remove from Prober Manager if ReconcileDelete succeeds", func() {
-			fakeProbeManager.RemoveFromProberManagerFn = func(vm *vmopv1alpha1.VirtualMachine) {
+			fakeProbeManager.RemoveFromProberManagerFn = func(vm *vmopv1.VirtualMachine) {
 				fakeProbeManager.IsRemoveFromProberManagerCalled = true
 			}
 

@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
@@ -50,12 +50,12 @@ var _ = Describe("Network Interfaces VM Status", func() {
 var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 	Context("markVMToolsRunningStatusCondition", func() {
 		var (
-			vm        *vmopv1alpha1.VirtualMachine
+			vm        *vmopv1.VirtualMachine
 			guestInfo *vimTypes.GuestInfo
 		)
 
 		BeforeEach(func() {
-			vm = &vmopv1alpha1.VirtualMachine{}
+			vm = &vmopv1.VirtualMachine{}
 			guestInfo = &vimTypes.GuestInfo{
 				ToolsRunningStatus: "",
 			}
@@ -70,16 +70,16 @@ var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 				guestInfo = nil
 			})
 			It("sets condition unknown", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.UnknownCondition(vmopv1alpha1.VirtualMachineToolsCondition, "", ""),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.UnknownCondition(vmopv1.VirtualMachineToolsCondition, "", ""),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
 		})
 		Context("ToolsRunningStatus is empty", func() {
 			It("sets condition unknown", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.UnknownCondition(vmopv1alpha1.VirtualMachineToolsCondition, "", ""),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.UnknownCondition(vmopv1.VirtualMachineToolsCondition, "", ""),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -89,8 +89,8 @@ var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 				guestInfo.ToolsRunningStatus = string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsNotRunning)
 			})
 			It("sets condition to false", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.VirtualMachineToolsCondition, vmopv1alpha1.VirtualMachineToolsNotRunningReason, vmopv1alpha1.ConditionSeverityError, "VMware Tools is not running"),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.FalseCondition(vmopv1.VirtualMachineToolsCondition, vmopv1.VirtualMachineToolsNotRunningReason, vmopv1.ConditionSeverityError, "VMware Tools is not running"),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -100,8 +100,8 @@ var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 				guestInfo.ToolsRunningStatus = string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsRunning)
 			})
 			It("sets condition true", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.VirtualMachineToolsCondition),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.TrueCondition(vmopv1.VirtualMachineToolsCondition),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -111,8 +111,8 @@ var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 				guestInfo.ToolsRunningStatus = string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsExecutingScripts)
 			})
 			It("sets condition true", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.VirtualMachineToolsCondition),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.TrueCondition(vmopv1.VirtualMachineToolsCondition),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -122,8 +122,8 @@ var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 				guestInfo.ToolsRunningStatus = "blah"
 			})
 			It("sets condition unknown", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.UnknownCondition(vmopv1alpha1.VirtualMachineToolsCondition, "", "Unexpected VMware Tools running status"),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.UnknownCondition(vmopv1.VirtualMachineToolsCondition, "", "Unexpected VMware Tools running status"),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -134,12 +134,12 @@ var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 	Context("markCustomizationInfoCondition", func() {
 		var (
-			vm        *vmopv1alpha1.VirtualMachine
+			vm        *vmopv1.VirtualMachine
 			guestInfo *vimTypes.GuestInfo
 		)
 
 		BeforeEach(func() {
-			vm = &vmopv1alpha1.VirtualMachine{}
+			vm = &vmopv1.VirtualMachine{}
 			guestInfo = &vimTypes.GuestInfo{
 				CustomizationInfo: &vimTypes.GuestInfoCustomizationInfo{},
 			}
@@ -154,8 +154,8 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 				guestInfo = nil
 			})
 			It("sets condition unknown", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.UnknownCondition(vmopv1alpha1.GuestCustomizationCondition, "", ""),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.UnknownCondition(vmopv1.GuestCustomizationCondition, "", ""),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -165,8 +165,8 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 				guestInfo.CustomizationInfo = nil
 			})
 			It("sets condition unknown", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.UnknownCondition(vmopv1alpha1.GuestCustomizationCondition, "", ""),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.UnknownCondition(vmopv1.GuestCustomizationCondition, "", ""),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -176,8 +176,8 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 				guestInfo.CustomizationInfo.CustomizationStatus = string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE)
 			})
 			It("sets condition true", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.GuestCustomizationCondition),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.TrueCondition(vmopv1.GuestCustomizationCondition),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -187,8 +187,8 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 				guestInfo.CustomizationInfo.CustomizationStatus = string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING)
 			})
 			It("sets condition false", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, vmopv1alpha1.GuestCustomizationPendingReason, vmopv1alpha1.ConditionSeverityInfo, ""),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.FalseCondition(vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationPendingReason, vmopv1.ConditionSeverityInfo, ""),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -198,8 +198,8 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 				guestInfo.CustomizationInfo.CustomizationStatus = string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING)
 			})
 			It("sets condition false", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, vmopv1alpha1.GuestCustomizationRunningReason, vmopv1alpha1.ConditionSeverityInfo, ""),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.FalseCondition(vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationRunningReason, vmopv1.ConditionSeverityInfo, ""),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -209,8 +209,8 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 				guestInfo.CustomizationInfo.CustomizationStatus = string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED)
 			})
 			It("sets condition true", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.TrueCondition(vmopv1alpha1.GuestCustomizationCondition),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.TrueCondition(vmopv1.GuestCustomizationCondition),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -221,8 +221,8 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 				guestInfo.CustomizationInfo.ErrorMsg = "some error message"
 			})
 			It("sets condition false", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, vmopv1alpha1.GuestCustomizationFailedReason, vmopv1alpha1.ConditionSeverityError, guestInfo.CustomizationInfo.ErrorMsg),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.FalseCondition(vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationFailedReason, vmopv1.ConditionSeverityError, guestInfo.CustomizationInfo.ErrorMsg),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})
@@ -233,8 +233,8 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 				guestInfo.CustomizationInfo.ErrorMsg = "some error message"
 			})
 			It("sets condition false", func() {
-				expectedConditions := vmopv1alpha1.Conditions{
-					*conditions.FalseCondition(vmopv1alpha1.GuestCustomizationCondition, "", vmopv1alpha1.ConditionSeverityError, guestInfo.CustomizationInfo.ErrorMsg),
+				expectedConditions := vmopv1.Conditions{
+					*conditions.FalseCondition(vmopv1.GuestCustomizationCondition, "", vmopv1.ConditionSeverityError, guestInfo.CustomizationInfo.ErrorMsg),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
 			})

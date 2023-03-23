@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/providerconfigmap"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -72,7 +72,7 @@ func unitTestsCM() {
 					objKey := client.ObjectKey{Name: clUUID}
 
 					By("ContentSource should be created and have a ProviderRef for the CL")
-					cs := &vmopv1alpha1.ContentSource{}
+					cs := &vmopv1.ContentSource{}
 					err = ctx.Client.Get(ctx, objKey, cs)
 					Expect(err).NotTo(HaveOccurred())
 
@@ -80,7 +80,7 @@ func unitTestsCM() {
 					Expect(cs.Labels).To(HaveKeyWithValue(providerconfigmap.TKGContentSourceLabelKey, providerconfigmap.TKGContentSourceLabelValue))
 
 					By("ContentLibraryProvider should be created for the CL")
-					cl := &vmopv1alpha1.ContentLibraryProvider{}
+					cl := &vmopv1.ContentLibraryProvider{}
 					err = ctx.Client.Get(ctx, objKey, cl)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(cl.Spec.UUID).To(Equal(clUUID))
@@ -119,7 +119,7 @@ func unitTestsCM() {
 					err = reconciler.CreateContentSourceBindings(ctx, clUUID)
 					Expect(err).NotTo(HaveOccurred())
 
-					binding := &vmopv1alpha1.ContentSourceBinding{}
+					binding := &vmopv1.ContentSourceBinding{}
 					err = ctx.Client.Get(ctx, client.ObjectKey{Name: clUUID, Namespace: workloadNS.Name}, binding)
 					Expect(err).NotTo(HaveOccurred())
 				})

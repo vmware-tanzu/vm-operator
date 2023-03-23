@@ -10,7 +10,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
@@ -24,9 +24,9 @@ func publishTests() {
 	var (
 		ctx      *builder.TestContextForVCSim
 		vcVM     *object.VirtualMachine
-		vm       *vmopv1alpha1.VirtualMachine
+		vm       *vmopv1.VirtualMachine
 		cl       *imgregv1a1.ContentLibrary
-		vmPub    *vmopv1alpha1.VirtualMachinePublishRequest
+		vmPub    *vmopv1.VirtualMachinePublishRequest
 		vmCtx    context.VirtualMachineContext
 		vmPubCtx context.VirtualMachinePublishRequestContext
 	)

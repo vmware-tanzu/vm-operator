@@ -12,7 +12,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 )
@@ -111,7 +111,7 @@ func findVMByInventory(
 
 	// When the VM has a ResourcePolicy, the VM is placed in a child folder under the namespace's folder.
 	if policyName := vmCtx.VM.Spec.ResourcePolicyName; policyName != "" {
-		resourcePolicy := &v1alpha1.VirtualMachineSetResourcePolicy{}
+		resourcePolicy := &vmopv1.VirtualMachineSetResourcePolicy{}
 
 		key := ctrlclient.ObjectKey{Name: policyName, Namespace: vmCtx.VM.Namespace}
 		if err := k8sClient.Get(vmCtx, key, resourcePolicy); err != nil {

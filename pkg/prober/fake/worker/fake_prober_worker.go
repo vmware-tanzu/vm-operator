@@ -11,7 +11,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/probe"
@@ -46,7 +46,7 @@ func (w *FakeWorker) GetQueue() workqueue.DelayingInterface {
 	return w.queue
 }
 
-func (w *FakeWorker) CreateProbeContext(vm *vmopv1alpha1.VirtualMachine) (*context.ProbeContext, error) {
+func (w *FakeWorker) CreateProbeContext(vm *vmopv1.VirtualMachine) (*context.ProbeContext, error) {
 	return &context.ProbeContext{
 		Context:   goctx.Background(),
 		Logger:    ctrl.Log.WithName("fake-probe").WithValues("vmName", vm.NamespacedName()),

@@ -15,7 +15,7 @@ import (
 	"github.com/vmware/govmomi/vapi/vcenter"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -27,9 +27,9 @@ import (
 
 // VMCreateArgs contains the arguments needed to create a VM on VC.
 type VMCreateArgs struct {
-	VMClass             *vmopv1alpha1.VirtualMachineClass
-	VMImageStatus       *vmopv1alpha1.VirtualMachineImageStatus
-	ResourcePolicy      *vmopv1alpha1.VirtualMachineSetResourcePolicy
+	VMClass             *vmopv1.VirtualMachineClass
+	VMImageStatus       *vmopv1.VirtualMachineImageStatus
+	ResourcePolicy      *vmopv1.VirtualMachineSetResourcePolicy
 	VMMetadata          VMMetadata
 	ContentLibraryUUID  string
 	StorageClassesToIDs map[string]string

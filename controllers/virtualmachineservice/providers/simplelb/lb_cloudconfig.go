@@ -10,7 +10,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 const XdsNodePort = 31799
@@ -19,7 +19,7 @@ var envoyBootstrapConfigTemplate, _ = template.New("envoyBootstrapConfig").Parse
 
 type lbConfigParams struct {
 	NodeID      string
-	Ports       []vmopv1alpha1.VirtualMachineServicePort
+	Ports       []vmopv1.VirtualMachineServicePort
 	CPNodes     []string
 	XdsNodePort int
 }

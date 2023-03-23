@@ -17,14 +17,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
 var _ = Describe("TCP probe", func() {
 	var (
-		vm           *vmopv1alpha1.VirtualMachine
+		vm           *vmopv1.VirtualMachine
 		testTCPProbe Probe
 
 		testServer *httptest.Server
@@ -33,12 +33,12 @@ var _ = Describe("TCP probe", func() {
 	)
 
 	BeforeEach(func() {
-		vm = &vmopv1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
 				Namespace: "dummy-ns",
 			},
-			Spec: vmopv1alpha1.VirtualMachineSpec{
+			Spec: vmopv1.VirtualMachineSpec{
 				ClassName: "dummy-vmclass",
 			},
 		}
@@ -107,9 +107,9 @@ func setupTestServer() (*httptest.Server, string, int) {
 	return s, host, portInt
 }
 
-func getVirtualMachineReadinessTCPProbe(host string, port int) *vmopv1alpha1.Probe {
-	return &vmopv1alpha1.Probe{
-		TCPSocket: &vmopv1alpha1.TCPSocketAction{
+func getVirtualMachineReadinessTCPProbe(host string, port int) *vmopv1.Probe {
+	return &vmopv1.Probe{
+		TCPSocket: &vmopv1.TCPSocketAction{
 			Host: host,
 			Port: intstr.FromInt(port),
 		},

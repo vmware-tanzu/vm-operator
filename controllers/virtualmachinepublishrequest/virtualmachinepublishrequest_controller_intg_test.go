@@ -19,7 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/vmware/govmomi/vim25/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
@@ -35,13 +35,13 @@ func intgTests() {
 func virtualMachinePublishRequestReconcile() {
 	var (
 		ctx   *builder.IntegrationTestContext
-		vmpub *vmopv1alpha1.VirtualMachinePublishRequest
-		vm    *vmopv1alpha1.VirtualMachine
+		vmpub *vmopv1.VirtualMachinePublishRequest
+		vm    *vmopv1.VirtualMachine
 		cl    *imgregv1a1.ContentLibrary
 	)
 
-	getVirtualMachinePublishRequest := func(ctx *builder.IntegrationTestContext, objKey client.ObjectKey) *vmopv1alpha1.VirtualMachinePublishRequest {
-		vmpubObj := &vmopv1alpha1.VirtualMachinePublishRequest{}
+	getVirtualMachinePublishRequest := func(ctx *builder.IntegrationTestContext, objKey client.ObjectKey) *vmopv1.VirtualMachinePublishRequest {
+		vmpubObj := &vmopv1.VirtualMachinePublishRequest{}
 		if err := ctx.Client.Get(ctx, objKey, vmpubObj); err != nil {
 			return nil
 		}
@@ -60,15 +60,15 @@ func virtualMachinePublishRequestReconcile() {
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
 
-		vm = &vmopv1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
 				Namespace: ctx.Namespace,
 			},
-			Spec: vmopv1alpha1.VirtualMachineSpec{
+			Spec: vmopv1.VirtualMachineSpec{
 				ImageName:  "dummy-image",
 				ClassName:  "dummy-class",
-				PowerState: vmopv1alpha1.VirtualMachinePoweredOn,
+				PowerState: vmopv1.VirtualMachinePoweredOn,
 			},
 		}
 
@@ -90,10 +90,10 @@ func virtualMachinePublishRequestReconcile() {
 		Context("Successfully reconcile a VirtualMachinepublishRequest", func() {
 			BeforeEach(func() {
 				Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
-				vmObj := &vmopv1alpha1.VirtualMachine{}
+				vmObj := &vmopv1.VirtualMachine{}
 				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), vmObj)).To(Succeed())
-				vmObj.Status = vmopv1alpha1.VirtualMachineStatus{
-					Phase:    vmopv1alpha1.Created,
+				vmObj.Status = vmopv1.VirtualMachineStatus{
+					Phase:    vmopv1.Created,
 					UniqueID: "dummy-unique-id",
 				}
 				Expect(ctx.Client.Status().Update(ctx, vmObj)).To(Succeed())
@@ -170,9 +170,9 @@ func virtualMachinePublishRequestReconcile() {
 					Eventually(func() bool {
 						vmPubObj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
 						for _, condition := range vmPubObj.Status.Conditions {
-							if condition.Type == vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded {
+							if condition.Type == vmopv1.VirtualMachinePublishRequestConditionUploaded {
 								return condition.Status == corev1.ConditionFalse &&
-									condition.Reason == vmopv1alpha1.UploadTaskQueuedReason &&
+									condition.Reason == vmopv1.UploadTaskQueuedReason &&
 									vmPubObj.Status.Attempts == 1
 							}
 						}
@@ -199,9 +199,9 @@ func virtualMachinePublishRequestReconcile() {
 					Eventually(func() bool {
 						vmPubObj = getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
 						for _, condition := range vmPubObj.Status.Conditions {
-							if condition.Type == vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded {
+							if condition.Type == vmopv1.VirtualMachinePublishRequestConditionUploaded {
 								return condition.Status == corev1.ConditionFalse &&
-									condition.Reason == vmopv1alpha1.UploadingReason &&
+									condition.Reason == vmopv1.UploadingReason &&
 									vmPubObj.Status.Attempts == 1
 							}
 						}
@@ -229,7 +229,7 @@ func virtualMachinePublishRequestReconcile() {
 					Eventually(func(g Gomega) {
 						obj := getVirtualMachinePublishRequest(ctx, client.ObjectKeyFromObject(vmpub))
 						g.Expect(obj).ToNot(BeNil())
-						g.Expect(conditions.IsTrue(obj, vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+						g.Expect(conditions.IsTrue(obj, vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
 						g.Expect(obj.Status.Ready).To(BeTrue())
 						g.Expect(obj.Status.ImageName).To(Equal("dummy-image"))
 						g.Expect(obj.Status.CompletionTime).NotTo(BeZero())

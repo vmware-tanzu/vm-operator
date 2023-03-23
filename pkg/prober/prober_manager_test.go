@@ -16,7 +16,7 @@ import (
 	clientgorecord "k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 	fakeworker "github.com/vmware-tanzu/vm-operator/pkg/prober/fake/worker"
@@ -33,9 +33,9 @@ var _ = Describe("VirtualMachine probes", func() {
 		ctx         goctx.Context
 
 		testManager   *manager
-		vm            *vmopv1alpha1.VirtualMachine
+		vm            *vmopv1.VirtualMachine
 		vmKey         client.ObjectKey
-		vmProbe       *vmopv1alpha1.Probe
+		vmProbe       *vmopv1.Probe
 		periodSeconds int32
 
 		fakeClient   client.Client
@@ -45,19 +45,19 @@ var _ = Describe("VirtualMachine probes", func() {
 	)
 
 	BeforeEach(func() {
-		vm = &vmopv1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
 				Namespace: "dummy-ns",
 			},
-			Spec: vmopv1alpha1.VirtualMachineSpec{
+			Spec: vmopv1.VirtualMachineSpec{
 				ClassName: "dummy-vmclass",
 			},
 		}
 		vmKey = client.ObjectKey{Name: vm.Name, Namespace: vm.Namespace}
 		periodSeconds = 1
-		vmProbe = &vmopv1alpha1.Probe{
-			TCPSocket: &vmopv1alpha1.TCPSocketAction{
+		vmProbe = &vmopv1.Probe{
+			TCPSocket: &vmopv1.TCPSocketAction{
 				Port: intstr.FromInt(10001),
 			},
 			PeriodSeconds: periodSeconds,
@@ -125,7 +125,7 @@ var _ = Describe("VirtualMachine probes", func() {
 			})
 
 			It("Should set probe result as failed if the VM is powered off", func() {
-				vm.Status.PowerState = vmopv1alpha1.VirtualMachinePoweredOff
+				vm.Status.PowerState = vmopv1.VirtualMachinePoweredOff
 				Expect(fakeClient.Status().Update(ctx, vm)).To(Succeed())
 				fakeWorker.ProcessProbeResultFn = func(ctx *context.ProbeContext, res probe.Result, err error) error {
 					if res != probe.Failure {
@@ -143,7 +143,7 @@ var _ = Describe("VirtualMachine probes", func() {
 
 			When("VM is powered on", func() {
 				JustBeforeEach(func() {
-					vm.Status.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+					vm.Status.PowerState = vmopv1.VirtualMachinePoweredOn
 					Expect(fakeClient.Status().Update(ctx, vm)).To(Succeed())
 				})
 
@@ -196,7 +196,7 @@ var _ = Describe("VirtualMachine probes", func() {
 		})
 
 		JustBeforeEach(func() {
-			vm.Status.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+			vm.Status.PowerState = vmopv1.VirtualMachinePoweredOn
 			Expect(fakeClient.Status().Update(ctx, vm)).To(Succeed())
 
 			Expect(fakeClient.Get(ctx, vmKey, vm)).To(Succeed())
@@ -225,7 +225,7 @@ var _ = Describe("VirtualMachine probes", func() {
 		})
 
 		When("VM has already been added to the prober manager", func() {
-			var newVM *vmopv1alpha1.VirtualMachine
+			var newVM *vmopv1.VirtualMachine
 			JustBeforeEach(func() {
 				testManager.AddToProberManager(vm)
 				Expect(testManager.readinessQueue.Len()).To(Equal(1))
@@ -235,7 +235,7 @@ var _ = Describe("VirtualMachine probes", func() {
 				}
 				Expect(testManager.processItemFromQueue(fakeWorker)).To(BeFalse())
 
-				newVM = &vmopv1alpha1.VirtualMachine{}
+				newVM = &vmopv1.VirtualMachine{}
 				Expect(fakeClient.Get(ctx, vmKey, newVM)).To(Succeed())
 			})
 

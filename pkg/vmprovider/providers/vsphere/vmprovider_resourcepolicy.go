@@ -10,8 +10,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/vcenter"
@@ -21,7 +20,7 @@ import (
 func (vs *vSphereVMProvider) IsVirtualMachineSetResourcePolicyReady(
 	ctx context.Context,
 	azName string,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (bool, error) {
 
 	client, err := vs.getVcClient(ctx)
 	if err != nil {
@@ -65,7 +64,7 @@ func (vs *vSphereVMProvider) IsVirtualMachineSetResourcePolicyReady(
 // CreateOrUpdateVirtualMachineSetResourcePolicy creates if a VirtualMachineSetResourcePolicy doesn't exist, updates otherwise.
 func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 	ctx context.Context,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 
 	folderMoID, rpMoIDs, err := vs.getNamespaceFolderAndRPMoIDs(ctx, resourcePolicy.Namespace)
 	if err != nil {
@@ -106,7 +105,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachineSetResourcePolicy(
 // DeleteVirtualMachineSetResourcePolicy deletes the VirtualMachineSetPolicy.
 func (vs *vSphereVMProvider) DeleteVirtualMachineSetResourcePolicy(
 	ctx context.Context,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 
 	folderMoID, rpMoIDs, err := vs.getNamespaceFolderAndRPMoIDs(ctx, resourcePolicy.Namespace)
 	if err != nil {
@@ -143,7 +142,7 @@ func (vs *vSphereVMProvider) doClusterModulesExist(
 	ctx context.Context,
 	clusterModProvider clustermodules.Provider,
 	clusterRef vimtypes.ManagedObjectReference,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error) {
+	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (bool, error) {
 
 	for _, moduleSpec := range resourcePolicy.Spec.ClusterModules {
 		_, moduleID := clustermodules.FindClusterModuleUUID(moduleSpec.GroupName, clusterRef, resourcePolicy)
@@ -166,7 +165,7 @@ func (vs *vSphereVMProvider) createClusterModules(
 	ctx context.Context,
 	clusterModProvider clustermodules.Provider,
 	clusterRef vimtypes.ManagedObjectReference,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 
 	var errs []error
 
@@ -212,7 +211,7 @@ func (vs *vSphereVMProvider) createClusterModules(
 			resourcePolicy.Status.ClusterModules[idx].ModuleUuid = moduleID
 			resourcePolicy.Status.ClusterModules[idx].ClusterMoID = clusterRef.Value
 		} else {
-			status := v1alpha1.ClusterModuleStatus{
+			status := vmopv1.ClusterModuleStatus{
 				GroupName:   moduleSpec.GroupName,
 				ModuleUuid:  moduleID,
 				ClusterMoID: clusterRef.Value,
@@ -228,9 +227,9 @@ func (vs *vSphereVMProvider) createClusterModules(
 func (vs *vSphereVMProvider) deleteClusterModules(
 	ctx context.Context,
 	clusterModProvider clustermodules.Provider,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) []error {
+	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) []error {
 
-	var errModStatus []v1alpha1.ClusterModuleStatus
+	var errModStatus []vmopv1.ClusterModuleStatus
 	var errs []error
 
 	for _, moduleStatus := range resourcePolicy.Status.ClusterModules {

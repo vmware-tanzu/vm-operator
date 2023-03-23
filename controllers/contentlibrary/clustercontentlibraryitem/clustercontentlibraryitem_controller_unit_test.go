@@ -14,10 +14,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/clustercontentlibraryitem"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
@@ -58,7 +57,7 @@ func unitTestsReconcile() {
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 		fakeVMProvider.SyncVirtualMachineImageFn = func(
 			_ context.Context, _, cvmiObj client.Object) error {
-			cvmi := cvmiObj.(*vmopv1a1.ClusterVirtualMachineImage)
+			cvmi := cvmiObj.(*vmopv1.ClusterVirtualMachineImage)
 			// Change a random spec and status field to verify the provider function is called.
 			cvmi.Spec.HardwareVersion = 123
 			cvmi.Status.ImageSupported = &[]bool{true}[0]
@@ -89,7 +88,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(ctx, cclItem)
 					Expect(err).ToNot(HaveOccurred())
 
-					cvmiList := &vmopv1a1.ClusterVirtualMachineImageList{}
+					cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
 					Expect(cvmiList.Items).To(HaveLen(0))
 				})
@@ -99,11 +98,11 @@ func unitTestsReconcile() {
 
 				BeforeEach(func() {
 					cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
-					existingCVMI := &vmopv1a1.ClusterVirtualMachineImage{
+					existingCVMI := &vmopv1.ClusterVirtualMachineImage{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: cvmiName,
 						},
-						Status: vmopv1a1.VirtualMachineImageStatus{
+						Status: vmopv1.VirtualMachineImageStatus{
 							ContentVersion: "dummy-old",
 						},
 					}
@@ -114,7 +113,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(ctx, cclItem)
 					Expect(err).ToNot(HaveOccurred())
 
-					cvmiList := &vmopv1a1.ClusterVirtualMachineImageList{}
+					cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
 					Expect(cvmiList.Items).To(HaveLen(0))
 				})
@@ -136,11 +135,11 @@ func unitTestsReconcile() {
 				err := reconciler.ReconcileNormal(ctx, cclItem)
 				Expect(err).ToNot(HaveOccurred())
 
-				cvmiList := &vmopv1a1.ClusterVirtualMachineImageList{}
+				cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
 				Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
 				Expect(cvmiList.Items).To(HaveLen(1))
 				unreadyCVMI := cvmiList.Items[0]
-				providerCondition := conditions.Get(&unreadyCVMI, vmopv1a1.VirtualMachineImageProviderReadyCondition)
+				providerCondition := conditions.Get(&unreadyCVMI, vmopv1.VirtualMachineImageProviderReadyCondition)
 				Expect(providerCondition).ToNot(BeNil())
 				Expect(providerCondition.Status).To(Equal(corev1.ConditionFalse))
 
@@ -162,7 +161,7 @@ func unitTestsReconcile() {
 				It("should create a new ClusterVirtualMachineImage syncing up with ClusterContentLibraryItem", func() {
 					err := reconciler.ReconcileNormal(ctx, cclItem)
 					Expect(err).ToNot(HaveOccurred())
-					cvmiList := &vmopv1a1.ClusterVirtualMachineImageList{}
+					cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
 					Expect(cvmiList.Items).To(HaveLen(1))
 					createdCVMI := cvmiList.Items[0]
@@ -181,11 +180,11 @@ func unitTestsReconcile() {
 
 				BeforeEach(func() {
 					cvmiName := utils.GetTestVMINameFrom(cclItem.Name)
-					existingCVMI := &vmopv1a1.ClusterVirtualMachineImage{
+					existingCVMI := &vmopv1.ClusterVirtualMachineImage{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: cvmiName,
 						},
-						Status: vmopv1a1.VirtualMachineImageStatus{
+						Status: vmopv1.VirtualMachineImageStatus{
 							ContentVersion: "dummy-old",
 						},
 					}
@@ -196,7 +195,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(ctx, cclItem)
 					Expect(err).ToNot(HaveOccurred())
 
-					cvmiList := &vmopv1a1.ClusterVirtualMachineImageList{}
+					cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
 					Expect(cvmiList.Items).To(HaveLen(1))
 					updatedCVMI := cvmiList.Items[0]
@@ -226,7 +225,7 @@ func unitTestsReconcile() {
 					err := reconciler.ReconcileNormal(ctx, cclItem)
 					Expect(err).ToNot(HaveOccurred())
 
-					cvmiList := &vmopv1a1.ClusterVirtualMachineImageList{}
+					cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
 					Expect(ctx.Client.List(ctx, cvmiList)).To(Succeed())
 					Expect(cvmiList.Items).To(HaveLen(1))
 					currentCVMI := cvmiList.Items[0]

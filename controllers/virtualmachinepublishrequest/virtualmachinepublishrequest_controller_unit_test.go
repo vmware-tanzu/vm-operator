@@ -22,7 +22,7 @@ import (
 	"github.com/vmware/govmomi/vapi/library"
 	"github.com/vmware/govmomi/vim25/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
@@ -47,21 +47,21 @@ func unitTestsReconcile() {
 		reconciler     *virtualmachinepublishrequest.Reconciler
 		fakeVMProvider *providerfake.VMProvider
 
-		vm       *vmopv1alpha1.VirtualMachine
-		vmpub    *vmopv1alpha1.VirtualMachinePublishRequest
+		vm       *vmopv1.VirtualMachine
+		vmpub    *vmopv1.VirtualMachinePublishRequest
 		cl       *imgregv1a1.ContentLibrary
 		vmpubCtx *vmopContext.VirtualMachinePublishRequestContext
 	)
 
 	BeforeEach(func() {
-		vm = &vmopv1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dummy-vm",
 				Namespace: "dummy-ns",
 			},
-			Status: vmopv1alpha1.VirtualMachineStatus{
+			Status: vmopv1.VirtualMachineStatus{
 				UniqueID: "dummy-id",
-				Phase:    vmopv1alpha1.Created,
+				Phase:    vmopv1.Created,
 			},
 		}
 
@@ -154,7 +154,7 @@ func unitTestsReconcile() {
 
 				// Update SourceValid condition.
 				Expect(conditions.IsTrue(vmpub,
-					vmopv1alpha1.VirtualMachinePublishRequestConditionSourceValid)).To(BeFalse())
+					vmopv1.VirtualMachinePublishRequestConditionSourceValid)).To(BeFalse())
 			})
 
 			When("Source VM has empty uniqueID", func() {
@@ -169,7 +169,7 @@ func unitTestsReconcile() {
 
 					// Update SourceValid condition.
 					Expect(conditions.IsTrue(vmpub,
-						vmopv1alpha1.VirtualMachinePublishRequestConditionSourceValid)).To(BeFalse())
+						vmopv1.VirtualMachinePublishRequestConditionSourceValid)).To(BeFalse())
 				})
 			})
 		})
@@ -185,7 +185,7 @@ func unitTestsReconcile() {
 
 				// Update TargetValid condition.
 				Expect(conditions.IsTrue(vmpub,
-					vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
+					vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
 			})
 
 			It("returns error if content library is not writable", func() {
@@ -197,7 +197,7 @@ func unitTestsReconcile() {
 
 				// Update TargetValid condition.
 				Expect(conditions.IsTrue(vmpub,
-					vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
+					vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
 			})
 
 			It("returns error if content library is not ready", func() {
@@ -214,7 +214,7 @@ func unitTestsReconcile() {
 
 				// Update TargetValid condition.
 				Expect(conditions.IsTrue(vmpub,
-					vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
+					vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
 			})
 
 			When("item with same name already exists in the content library", func() {
@@ -232,7 +232,7 @@ func unitTestsReconcile() {
 
 					// Update TargetValid condition.
 					Expect(conditions.IsTrue(vmpub,
-						vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
+						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeFalse())
 				})
 			})
 		})
@@ -308,8 +308,8 @@ func unitTestsReconcile() {
 
 			When("Publish VM fails", func() {
 				JustBeforeEach(func() {
-					fakeVMProvider.PublishVirtualMachineFn = func(ctx goctx.Context, vm *vmopv1alpha1.VirtualMachine,
-						vmPub *vmopv1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
+					fakeVMProvider.PublishVirtualMachineFn = func(ctx goctx.Context, vm *vmopv1.VirtualMachine,
+						vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
 						fakeVMProvider.AddToVMPublishMap(actID, types.TaskInfoStateError)
 						return "", fmt.Errorf("dummy error")
 					}
@@ -357,9 +357,9 @@ func unitTestsReconcile() {
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(conditions.IsTrue(vmpub,
-						vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
+						vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
 					Expect(conditions.IsTrue(vmpub,
-						vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeFalse())
+						vmopv1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeFalse())
 
 					Eventually(func() bool {
 						return fakeVMProvider.IsPublishVMCalled()
@@ -390,8 +390,8 @@ func unitTestsReconcile() {
 						}
 					})
 
-					getCondition := func(obj *vmopv1alpha1.VirtualMachinePublishRequest,
-						condition vmopv1alpha1.ConditionType) *vmopv1alpha1.Condition {
+					getCondition := func(obj *vmopv1.VirtualMachinePublishRequest,
+						condition vmopv1.ConditionType) *vmopv1.Condition {
 						for _, cond := range obj.Status.Conditions {
 							if cond.Type == condition {
 								return &cond
@@ -406,10 +406,10 @@ func unitTestsReconcile() {
 
 						Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
 
-						uploadCondition := getCondition(vmpub, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)
+						uploadCondition := getCondition(vmpub, vmopv1.VirtualMachinePublishRequestConditionUploaded)
 						Expect(uploadCondition).ToNot(BeNil())
 						Expect(uploadCondition.Status).To(Equal(corev1.ConditionFalse))
-						Expect(uploadCondition.Reason).To(Equal(vmopv1alpha1.UploadItemIDInvalidReason))
+						Expect(uploadCondition.Reason).To(Equal(vmopv1.UploadItemIDInvalidReason))
 					})
 
 					It("result type invalid, Upload condition is false, not send a second publish VM request and return success", func() {
@@ -420,9 +420,9 @@ func unitTestsReconcile() {
 
 						Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
 
-						uploadCondition := getCondition(vmpub, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)
+						uploadCondition := getCondition(vmpub, vmopv1.VirtualMachinePublishRequestConditionUploaded)
 						Expect(uploadCondition.Status).To(Equal(corev1.ConditionFalse))
-						Expect(uploadCondition.Reason).To(Equal(vmopv1alpha1.UploadItemIDInvalidReason))
+						Expect(uploadCondition.Reason).To(Equal(vmopv1.UploadItemIDInvalidReason))
 					})
 
 					It("result value invalid, Upload condition is false, not send a second publish VM request and return success", func() {
@@ -432,10 +432,10 @@ func unitTestsReconcile() {
 
 						Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
 
-						uploadCondition := getCondition(vmpub, vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)
+						uploadCondition := getCondition(vmpub, vmopv1.VirtualMachinePublishRequestConditionUploaded)
 						Expect(uploadCondition).ToNot(BeNil())
 						Expect(uploadCondition.Status).To(Equal(corev1.ConditionFalse))
-						Expect(uploadCondition.Reason).To(Equal(vmopv1alpha1.UploadItemIDInvalidReason))
+						Expect(uploadCondition.Reason).To(Equal(vmopv1.UploadItemIDInvalidReason))
 					})
 				})
 
@@ -487,12 +487,12 @@ func unitTestsReconcile() {
 							Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
 
 							Expect(conditions.IsTrue(vmpub,
-								vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
+								vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
 							Expect(conditions.IsTrue(vmpub,
-								vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeTrue())
+								vmopv1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeTrue())
 							Expect(vmpub.Status.ImageName).To(Equal("dummy-image"))
 							Expect(conditions.IsTrue(vmpub,
-								vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+								vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
 							Expect(vmpub.Status.Ready).To(BeTrue())
 						})
 
@@ -510,11 +510,11 @@ func unitTestsReconcile() {
 							By("ImageAvailable is true and Complete is false")
 							Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
 							Expect(conditions.IsTrue(vmpub,
-								vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
+								vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
 							Expect(conditions.IsTrue(vmpub,
-								vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeTrue())
+								vmopv1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeTrue())
 							Expect(conditions.IsTrue(vmpub,
-								vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)).To(BeFalse())
+								vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeFalse())
 							Expect(vmpub.Status.Ready).To(BeFalse())
 
 							// requeue reconcile and update item description succeeded.
@@ -527,7 +527,7 @@ func unitTestsReconcile() {
 
 							By("Complete is true")
 							Expect(conditions.IsTrue(vmpub,
-								vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
+								vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeTrue())
 							Expect(vmpub.Status.Ready).To(BeTrue())
 						})
 
@@ -542,7 +542,7 @@ func unitTestsReconcile() {
 								Expect(err).NotTo(HaveOccurred())
 
 								Eventually(func() bool {
-									newVMPub := &vmopv1alpha1.VirtualMachinePublishRequest{}
+									newVMPub := &vmopv1.VirtualMachinePublishRequest{}
 									err := ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmpub), newVMPub)
 									return apiErrors.IsNotFound(err) || !newVMPub.DeletionTimestamp.IsZero()
 								}).Should(BeTrue())
@@ -557,11 +557,11 @@ func unitTestsReconcile() {
 
 							Expect(fakeVMProvider.IsPublishVMCalled()).To(BeFalse())
 							Expect(conditions.IsTrue(vmpub,
-								vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
+								vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
 							Expect(conditions.IsTrue(vmpub,
-								vmopv1alpha1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeFalse())
+								vmopv1.VirtualMachinePublishRequestConditionImageAvailable)).To(BeFalse())
 							Expect(conditions.IsTrue(vmpub,
-								vmopv1alpha1.VirtualMachinePublishRequestConditionComplete)).To(BeFalse())
+								vmopv1.VirtualMachinePublishRequestConditionComplete)).To(BeFalse())
 							Expect(vmpub.Status.Ready).To(BeFalse())
 						})
 					})
@@ -586,7 +586,7 @@ func unitTestsReconcile() {
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(conditions.IsTrue(vmpub,
-						vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
+						vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
 
 					Eventually(func() bool {
 						return fakeVMProvider.IsPublishVMCalled()
@@ -616,7 +616,7 @@ func unitTestsReconcile() {
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(conditions.IsTrue(vmpub,
-						vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
+						vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
 
 					Consistently(func() bool {
 						return fakeVMProvider.IsPublishVMCalled()
@@ -641,7 +641,7 @@ func unitTestsReconcile() {
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(conditions.IsTrue(vmpub,
-						vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
+						vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeFalse())
 
 					Consistently(func() bool {
 						return fakeVMProvider.IsPublishVMCalled()
@@ -672,9 +672,9 @@ func unitTestsReconcile() {
 
 					// Update TargetValid condition.
 					Expect(conditions.IsTrue(vmpub,
-						vmopv1alpha1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
+						vmopv1.VirtualMachinePublishRequestConditionTargetValid)).To(BeTrue())
 					Expect(conditions.IsTrue(vmpub,
-						vmopv1alpha1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
+						vmopv1.VirtualMachinePublishRequestConditionUploaded)).To(BeTrue())
 				})
 			})
 		})

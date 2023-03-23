@@ -14,8 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
@@ -34,23 +33,23 @@ func unitTestsReconcile() {
 
 		reconciler *webconsolerequest.Reconciler
 		wcrCtx     *vmopContext.WebConsoleRequestContext
-		wcr        *v1alpha1.WebConsoleRequest
-		vm         *v1alpha1.VirtualMachine
+		wcr        *vmopv1.WebConsoleRequest
+		vm         *vmopv1.VirtualMachine
 		proxySvc   *corev1.Service
 	)
 
 	BeforeEach(func() {
-		vm = &v1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-vm",
 			},
 		}
 
-		wcr = &v1alpha1.WebConsoleRequest{
+		wcr = &vmopv1.WebConsoleRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-wcr",
 			},
-			Spec: v1alpha1.WebConsoleRequestSpec{
+			Spec: vmopv1.WebConsoleRequestSpec{
 				VirtualMachineName: vm.Name,
 				PublicKey:          "",
 			},
@@ -105,7 +104,7 @@ func unitTestsReconcile() {
 		})
 
 		JustBeforeEach(func() {
-			fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error) {
+			fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
 				return "some-fake-webmksticket", nil
 			}
 		})

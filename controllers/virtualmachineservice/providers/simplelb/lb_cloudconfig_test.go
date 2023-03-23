@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 var _ = Describe("lbCloudConfig", func() {
@@ -22,13 +22,13 @@ var _ = Describe("lbCloudConfig", func() {
 		})
 
 		When("given properly initialized lbConfigParams", func() {
-			vmService := &vmoperatorv1alpha1.VirtualMachineService{
+			vmService := &vmopv1.VirtualMachineService{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "testnamespace",
 					Name:      "testname",
 				},
-				Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-					Ports: []vmoperatorv1alpha1.VirtualMachineServicePort{{
+				Spec: vmopv1.VirtualMachineServiceSpec{
+					Ports: []vmopv1.VirtualMachineServicePort{{
 						Name:       "apiserver",
 						Protocol:   "TCP",
 						Port:       6443,

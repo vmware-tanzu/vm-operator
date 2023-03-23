@@ -13,9 +13,9 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1a1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -31,7 +31,7 @@ func clItemReconcile() {
 	)
 
 	waitForVirtualMachineImageReady := func(ctx *builder.IntegrationTestContext) {
-		curVMI := vmopv1a1.VirtualMachineImage{}
+		curVMI := vmopv1.VirtualMachineImage{}
 		expectedVMI := utils.GetExpectedVMIFrom(*clItem, intgFakeVMProvider.SyncVirtualMachineImageFn)
 		Eventually(func() bool {
 			if err := ctx.Client.Get(ctx, client.ObjectKeyFromObject(expectedVMI), &curVMI); err != nil {
@@ -45,7 +45,7 @@ func clItemReconcile() {
 	}
 
 	waitForVirtualMachineImageDeleted := func(ctx *builder.IntegrationTestContext) {
-		curVMI := vmopv1a1.VirtualMachineImage{}
+		curVMI := vmopv1.VirtualMachineImage{}
 		Eventually(func() bool {
 			vmiName := utils.GetTestVMINameFrom(clItem.Name)
 			if err := ctx.Client.Get(ctx, client.ObjectKey{Name: vmiName}, &curVMI); err != nil {
@@ -62,7 +62,7 @@ func clItemReconcile() {
 		defer intgFakeVMProvider.Unlock()
 		intgFakeVMProvider.SyncVirtualMachineImageFn = func(
 			_ context.Context, _, vmiObj client.Object) error {
-			vmi := vmiObj.(*vmopv1a1.VirtualMachineImage)
+			vmi := vmiObj.(*vmopv1.VirtualMachineImage)
 			// Change a random spec and status field to verify the provider function is called.
 			vmi.Spec.HardwareVersion = 123
 			vmi.Status.ImageSupported = &[]bool{true}[0]
@@ -105,10 +105,10 @@ func clItemReconcile() {
 			}).Should(BeTrue())
 
 			// Manually delete VMI as envTest doesn't delete it even if the OwnerReference is set up.
-			Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1a1.VirtualMachineImage{},
+			Expect(ctx.Client.DeleteAllOf(ctx, &vmopv1.VirtualMachineImage{},
 				client.InNamespace(clItem.Namespace))).Should(Succeed())
 			Eventually(func() bool {
-				vmiList := &vmopv1a1.VirtualMachineImageList{}
+				vmiList := &vmopv1.VirtualMachineImageList{}
 				if err := ctx.Client.List(ctx, vmiList); err != nil {
 					return false
 				}

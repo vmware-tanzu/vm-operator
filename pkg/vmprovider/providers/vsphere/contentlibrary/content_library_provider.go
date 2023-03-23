@@ -21,8 +21,7 @@ import (
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
@@ -42,7 +41,7 @@ type Provider interface {
 	VirtualMachineImageResourceForLibrary(ctx context.Context,
 		itemID string,
 		clUUID string,
-		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
+		currentCLImages map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error)
 }
 
 type provider struct {
@@ -288,7 +287,7 @@ func (cs *provider) CreateLibraryItem(ctx context.Context, libraryItem library.I
 func (cs *provider) VirtualMachineImageResourceForLibrary(ctx context.Context,
 	itemID string,
 	clUUID string,
-	currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error) {
+	currentCLImages map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error) {
 	var ovfEnvelope *ovf.Envelope
 	var err error
 

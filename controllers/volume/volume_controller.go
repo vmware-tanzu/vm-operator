@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -66,14 +66,14 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	}
 
 	// Watch for changes to VirtualMachine.
-	err = c.Watch(&source.Kind{Type: &vmopv1alpha1.VirtualMachine{}}, &handler.EnqueueRequestForObject{})
+	err = c.Watch(&source.Kind{Type: &vmopv1.VirtualMachine{}}, &handler.EnqueueRequestForObject{})
 	if err != nil {
 		return err
 	}
 
 	// Watch for changes for CnsNodeVmAttachment, and enqueue VirtualMachine which is the owner of CnsNodeVmAttachment.
 	err = c.Watch(&source.Kind{Type: &cnsv1alpha1.CnsNodeVmAttachment{}}, &handler.EnqueueRequestForOwner{
-		OwnerType:    &vmopv1alpha1.VirtualMachine{},
+		OwnerType:    &vmopv1.VirtualMachine{},
 		IsController: true,
 	})
 	if err != nil {
@@ -82,7 +82,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 	// Watch for changes for PersistentVolumeClaim, and enqueue VirtualMachine which is the owner of PersistentVolumeClaim.
 	err = c.Watch(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, &handler.EnqueueRequestForOwner{
-		OwnerType:    &vmopv1alpha1.VirtualMachine{},
+		OwnerType:    &vmopv1.VirtualMachine{},
 		IsController: true,
 	})
 	if err != nil {
@@ -125,7 +125,7 @@ type Reconciler struct {
 // a separate controller to ensure volume attachments are processed promptly, since the VM
 // controller can block for a long time, consuming all of the workers.
 func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.Result, reterr error) {
-	vm := &vmopv1alpha1.VirtualMachine{}
+	vm := &vmopv1.VirtualMachine{}
 	if err := r.Get(ctx, request.NamespacedName, vm); err != nil {
 		if apiErrors.IsNotFound(err) {
 			return reconcile.Result{}, nil
@@ -144,7 +144,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.
 	// does not replace the VM being restored on the vCenter inventory.
 	//
 	// Do not requeue the reconcile here since removing the pause annotation will trigger a reconcile anyway.
-	if _, ok := volCtx.VM.Annotations[vmopv1alpha1.PauseAnnotation]; ok {
+	if _, ok := volCtx.VM.Annotations[vmopv1.PauseAnnotation]; ok {
 		volCtx.Logger.Info("Skipping reconcile since Pause annotation is set on the VM")
 		return ctrl.Result{}, nil
 	}
@@ -377,7 +377,7 @@ func (r *Reconciler) instanceStoragePlacementFailed(
 
 func (r *Reconciler) createMissingInstanceStoragePVCs(
 	ctx *context.VolumeContext,
-	isVolumes []vmopv1alpha1.VirtualMachineVolume,
+	isVolumes []vmopv1.VirtualMachineVolume,
 	existingVolumesMap map[string]struct{},
 	selectedNode string) []error {
 
@@ -394,7 +394,7 @@ func (r *Reconciler) createMissingInstanceStoragePVCs(
 
 func (r *Reconciler) createInstanceStoragePVC(
 	ctx *context.VolumeContext,
-	volume vmopv1alpha1.VirtualMachineVolume,
+	volume vmopv1.VirtualMachineVolume,
 	selectedNode string) error {
 
 	claim := volume.PersistentVolumeClaim.InstanceVolumeClaim
@@ -438,7 +438,7 @@ func (r *Reconciler) createInstanceStoragePVC(
 
 func (r *Reconciler) getInstanceStoragePVCs(
 	ctx *context.VolumeContext,
-	volumes []vmopv1alpha1.VirtualMachineVolume) ([]corev1.PersistentVolumeClaim, []error) {
+	volumes []vmopv1.VirtualMachineVolume) ([]corev1.PersistentVolumeClaim, []error) {
 
 	var errs []error
 	pvcList := make([]corev1.PersistentVolumeClaim, 0)
@@ -514,7 +514,7 @@ func (r *Reconciler) processAttachments(
 	attachments map[string]cnsv1alpha1.CnsNodeVmAttachment,
 	orphanedAttachments []cnsv1alpha1.CnsNodeVmAttachment) error {
 
-	var volumeStatus []vmopv1alpha1.VirtualMachineVolumeStatus
+	var volumeStatus []vmopv1.VirtualMachineVolumeStatus
 	var createErrs []error
 	var hasPendingAttachment bool
 
@@ -523,7 +523,7 @@ func (r *Reconciler) processAttachments(
 	// to determine from here if the VM is being created so use the power state to infer it. This is mostly
 	// best-effort, and a hack in the current world since the CnsNodeVmAttachment really should not exist in
 	// the first place.
-	onlyAllowOnePendingAttachment := ctx.VM.Status.PowerState == "" || ctx.VM.Status.PowerState == vmopv1alpha1.VirtualMachinePoweredOff
+	onlyAllowOnePendingAttachment := ctx.VM.Status.PowerState == "" || ctx.VM.Status.PowerState == vmopv1.VirtualMachinePoweredOff
 
 	for _, volume := range ctx.VM.Spec.Volumes {
 		if volume.PersistentVolumeClaim == nil {
@@ -582,7 +582,7 @@ func (r *Reconciler) processAttachments(
 		} else {
 			// Add a placeholder Status entry for this volume. We'll populate it fully on a later
 			// reconcile after the CNS attachment controller updates it.
-			volumeStatus = append(volumeStatus, vmopv1alpha1.VirtualMachineVolumeStatus{Name: volume.Name})
+			volumeStatus = append(volumeStatus, vmopv1.VirtualMachineVolumeStatus{Name: volume.Name})
 		}
 
 		// Always true even if the creation failed above to try to keep volumes attached in order.
@@ -605,7 +605,7 @@ func (r *Reconciler) processAttachments(
 func (r *Reconciler) createCNSAttachment(
 	ctx *context.VolumeContext,
 	attachmentName string,
-	volume vmopv1alpha1.VirtualMachineVolume) error {
+	volume vmopv1.VirtualMachineVolume) error {
 
 	attachment := &cnsv1alpha1.CnsNodeVmAttachment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -640,7 +640,7 @@ func (r *Reconciler) createCNSAttachment(
 // removed from the Spec in the Status until they are actually deleted.
 func (r *Reconciler) preserveOrphanedAttachmentStatus(
 	ctx *context.VolumeContext,
-	orphanedAttachments []cnsv1alpha1.CnsNodeVmAttachment) []vmopv1alpha1.VirtualMachineVolumeStatus {
+	orphanedAttachments []cnsv1alpha1.CnsNodeVmAttachment) []vmopv1.VirtualMachineVolumeStatus {
 
 	uuidAttachments := make(map[string]cnsv1alpha1.CnsNodeVmAttachment, len(orphanedAttachments))
 	for _, attachment := range orphanedAttachments {
@@ -653,7 +653,7 @@ func (r *Reconciler) preserveOrphanedAttachmentStatus(
 	// for this volume. This can lead to some odd results and we should rethink if we actually
 	// want this behavior. It can be nice though to show detaching volumes. It would be nice if
 	// the Volume status has a reference to the CnsNodeVmAttachment.
-	var volumeStatus []vmopv1alpha1.VirtualMachineVolumeStatus
+	var volumeStatus []vmopv1.VirtualMachineVolumeStatus
 	for _, volume := range ctx.VM.Status.Volumes {
 		if attachment, ok := uuidAttachments[volume.DiskUuid]; ok {
 			volumeStatus = append(volumeStatus, attachmentToVolumeStatus(volume.Name, attachment))
@@ -716,7 +716,7 @@ func (r *Reconciler) deleteOrphanedAttachments(ctx *context.VolumeContext, attac
 // Ideally, we would use GenerateName, but we lack the back-linkage to match
 // Volumes and CnsNodeVmAttachment up.
 // The VM webhook validate that this result will be a valid k8s name.
-func CNSAttachmentNameForVolume(vm *vmopv1alpha1.VirtualMachine, volumeName string) string {
+func CNSAttachmentNameForVolume(vm *vmopv1.VirtualMachine, volumeName string) string {
 	return vm.Name + "-" + volumeName
 }
 
@@ -735,8 +735,8 @@ func sanitizeCNSErrorMessage(msg string) string {
 
 func attachmentToVolumeStatus(
 	volumeName string,
-	attachment cnsv1alpha1.CnsNodeVmAttachment) vmopv1alpha1.VirtualMachineVolumeStatus {
-	return vmopv1alpha1.VirtualMachineVolumeStatus{
+	attachment cnsv1alpha1.CnsNodeVmAttachment) vmopv1.VirtualMachineVolumeStatus {
+	return vmopv1.VirtualMachineVolumeStatus{
 		Name:     volumeName, // Name of the volume as in the Spec
 		Attached: attachment.Status.Attached,
 		DiskUuid: attachment.Status.AttachmentMetadata[AttributeFirstClassDiskUUID],

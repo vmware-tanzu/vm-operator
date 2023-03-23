@@ -31,7 +31,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
@@ -152,14 +152,14 @@ type ConfigMapReconciler struct {
 func (r *ConfigMapReconciler) CreateOrUpdateContentSourceResources(ctx goctx.Context, clUUID string) error {
 	r.Logger.Info("Creating ContentLibraryProvider and ContentSource for TKG content library", "contentLibraryUUID", clUUID)
 
-	clProvider := &vmopv1alpha1.ContentLibraryProvider{
+	clProvider := &vmopv1.ContentLibraryProvider{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: clUUID,
 		},
 	}
 
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, clProvider, func() error {
-		clProvider.Spec = vmopv1alpha1.ContentLibraryProviderSpec{
+		clProvider.Spec = vmopv1.ContentLibraryProviderSpec{
 			UUID: clUUID,
 		}
 
@@ -169,7 +169,7 @@ func (r *ConfigMapReconciler) CreateOrUpdateContentSourceResources(ctx goctx.Con
 		return err
 	}
 
-	cs := &vmopv1alpha1.ContentSource{
+	cs := &vmopv1.ContentSource{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: clUUID,
 		},
@@ -186,8 +186,8 @@ func (r *ConfigMapReconciler) CreateOrUpdateContentSourceResources(ctx goctx.Con
 		cs.ObjectMeta.Labels = map[string]string{
 			TKGContentSourceLabelKey: TKGContentSourceLabelValue,
 		}
-		cs.Spec = vmopv1alpha1.ContentSourceSpec{
-			ProviderRef: vmopv1alpha1.ContentProviderReference{
+		cs.Spec = vmopv1.ContentSourceSpec{
+			ProviderRef: vmopv1.ContentProviderReference{
 				APIVersion: gvk.GroupVersion().String(),
 				Kind:       gvk.Kind,
 				Name:       clProvider.Name,
@@ -214,7 +214,7 @@ func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clU
 		return err
 	}
 
-	cs := &vmopv1alpha1.ContentSource{}
+	cs := &vmopv1.ContentSource{}
 	if err := r.Get(ctx, client.ObjectKey{Name: clUUID}, cs); err != nil {
 		return err
 	}
@@ -228,7 +228,7 @@ func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clU
 	resErr := make([]error, 0)
 	for _, ns := range nsList.Items {
 		r.Logger.Info("Creating ContentSourceBinding for TKG content library in namespace", "contentLibraryUUID", clUUID, "namespace", ns.Name)
-		csBinding := &vmopv1alpha1.ContentSourceBinding{
+		csBinding := &vmopv1.ContentSourceBinding{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clUUID,
 				Namespace: ns.Name,
@@ -241,7 +241,7 @@ func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clU
 				return err
 			}
 
-			csBinding.ContentSourceRef = vmopv1alpha1.ContentSourceReference{
+			csBinding.ContentSourceRef = vmopv1.ContentSourceReference{
 				APIVersion: gvk.GroupVersion().String(),
 				Kind:       gvk.Kind,
 				Name:       clUUID,
@@ -283,7 +283,7 @@ func (r *ConfigMapReconciler) ReconcileNormal(ctx goctx.Context, cm *corev1.Conf
 	r.Logger.Info("Reconciling VM provider ConfigMap", "name", cm.Name, "namespace", cm.Namespace)
 
 	// Filter out the ContentSources that should not exist
-	csList := &vmopv1alpha1.ContentSourceList{}
+	csList := &vmopv1.ContentSourceList{}
 	labels := map[string]string{TKGContentSourceLabelKey: TKGContentSourceLabelValue}
 
 	if err := r.List(ctx, csList, client.MatchingLabels(labels)); err != nil {

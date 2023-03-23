@@ -14,29 +14,29 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-func getVirtualMachineSetResourcePolicy(name, namespace string) *vmopv1alpha1.VirtualMachineSetResourcePolicy {
-	return &vmopv1alpha1.VirtualMachineSetResourcePolicy{
+func getVirtualMachineSetResourcePolicy(name, namespace string) *vmopv1.VirtualMachineSetResourcePolicy {
+	return &vmopv1.VirtualMachineSetResourcePolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-resourcepolicy", name),
 			Namespace: namespace,
 		},
-		Spec: vmopv1alpha1.VirtualMachineSetResourcePolicySpec{
-			ResourcePool: vmopv1alpha1.ResourcePoolSpec{
+		Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
+			ResourcePool: vmopv1.ResourcePoolSpec{
 				Name:         fmt.Sprintf("%s-resourcepool", name),
-				Reservations: vmopv1alpha1.VirtualMachineResourceSpec{},
-				Limits:       vmopv1alpha1.VirtualMachineResourceSpec{},
+				Reservations: vmopv1.VirtualMachineResourceSpec{},
+				Limits:       vmopv1.VirtualMachineResourceSpec{},
 			},
-			Folder: vmopv1alpha1.FolderSpec{
+			Folder: vmopv1.FolderSpec{
 				Name: fmt.Sprintf("%s-folder", name),
 			},
-			ClusterModules: []vmopv1alpha1.ClusterModuleSpec{
+			ClusterModules: []vmopv1.ClusterModuleSpec{
 				{
 					GroupName: "ControlPlane",
 				},
@@ -78,7 +78,7 @@ func resourcePolicyTests() {
 
 		Context("VirtualMachineSetResourcePolicy", func() {
 			var (
-				resourcePolicy *vmopv1alpha1.VirtualMachineSetResourcePolicy
+				resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
 			)
 
 			JustBeforeEach(func() {
@@ -130,7 +130,7 @@ func resourcePolicyTests() {
 
 			Context("for a resource policy with invalid cluster module", func() {
 				It("successfully able to delete the resource policy", func() {
-					resourcePolicy.Status.ClusterModules = append([]vmopv1alpha1.ClusterModuleStatus{
+					resourcePolicy.Status.ClusterModules = append([]vmopv1.ClusterModuleStatus{
 						{
 							GroupName:  "invalid-group",
 							ModuleUuid: "invalid-uuid",

@@ -26,9 +26,9 @@ import (
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -184,7 +184,7 @@ func (vs *vSphereVMProvider) clearAndLogoutVcClient(ctx goctx.Context) {
 // ListItemsFromContentLibrary list items from a content library.
 func (vs *vSphereVMProvider) ListItemsFromContentLibrary(
 	ctx goctx.Context,
-	contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error) {
+	contentLibrary *vmopv1.ContentLibraryProvider) ([]string, error) {
 
 	log.V(4).Info("Listing VirtualMachineImages from ContentLibrary",
 		"name", contentLibrary.Name,
@@ -201,9 +201,9 @@ func (vs *vSphereVMProvider) ListItemsFromContentLibrary(
 // GetVirtualMachineImageFromContentLibrary gets a VM image from a ContentLibrary.
 func (vs *vSphereVMProvider) GetVirtualMachineImageFromContentLibrary(
 	ctx goctx.Context,
-	contentLibrary *v1alpha1.ContentLibraryProvider,
+	contentLibrary *vmopv1.ContentLibraryProvider,
 	itemID string,
-	currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error) {
+	currentCLImages map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error) {
 
 	log.V(4).Info("Getting VirtualMachineImage from ContentLibrary",
 		"name", contentLibrary.Name,
@@ -317,7 +317,7 @@ func (vs *vSphereVMProvider) UpdateContentLibraryItem(ctx goctx.Context, itemID,
 	return client.ContentLibClient().UpdateLibraryItem(ctx, itemID, newName, newDescription)
 }
 
-func (vs *vSphereVMProvider) getOpID(vm *v1alpha1.VirtualMachine, operation string) string {
+func (vs *vSphereVMProvider) getOpID(vm *vmopv1.VirtualMachine, operation string) string {
 	const charset = "0123456789abcdef"
 
 	// TODO: Is this actually useful?
@@ -431,7 +431,7 @@ func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx goctx.Context) (uint64, 
 }
 
 // ResVMToVirtualMachineImage isn't currently used.
-func ResVMToVirtualMachineImage(ctx goctx.Context, vm *object.VirtualMachine) (*v1alpha1.VirtualMachineImage, error) {
+func ResVMToVirtualMachineImage(ctx goctx.Context, vm *object.VirtualMachine) (*vmopv1.VirtualMachineImage, error) {
 	var o mo.VirtualMachine
 	err := vm.Properties(ctx, vm.Reference(), []string{"summary", "config.createDate", "config.vAppConfig"}, &o)
 	if err != nil {
@@ -461,17 +461,17 @@ func ResVMToVirtualMachineImage(ctx goctx.Context, vm *object.VirtualMachine) (*
 		}
 	}
 
-	return &v1alpha1.VirtualMachineImage{
+	return &vmopv1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              o.Summary.Config.Name,
 			Annotations:       ovfProps,
 			CreationTimestamp: createTimestamp,
 		},
-		Spec: v1alpha1.VirtualMachineImageSpec{
+		Spec: vmopv1.VirtualMachineImageSpec{
 			Type:            "VM",
 			ImageSourceType: "Inventory",
 		},
-		Status: v1alpha1.VirtualMachineImageStatus{
+		Status: vmopv1.VirtualMachineImageStatus{
 			Uuid:       o.Summary.Config.Uuid,
 			InternalId: vm.Reference().Value,
 			PowerState: string(o.Summary.Runtime.PowerState),

@@ -12,7 +12,7 @@ import (
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
 )
 
@@ -27,7 +27,7 @@ func InitServer() error {
 	}
 
 	scheme := runtime.NewScheme()
-	if err = vmopv1alpha1.AddToScheme(scheme); err != nil {
+	if err = vmopv1.AddToScheme(scheme); err != nil {
 		return err
 	}
 
@@ -86,7 +86,7 @@ func isResourceFound(goCtx context.Context, uuid, namespace string) (bool, error
 	}
 
 	// TODO: Use an Informer to avoid hitting the API server for every request.
-	wcrObjectList := &vmopv1alpha1.WebConsoleRequestList{}
+	wcrObjectList := &vmopv1.WebConsoleRequestList{}
 	if err := K8sClient.List(goCtx, wcrObjectList, ctrlruntime.InNamespace(namespace), labelSelector); err != nil {
 		return false, err
 	}

@@ -8,8 +8,7 @@ import (
 
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
@@ -20,7 +19,7 @@ import (
 // ConfigSpec with VM Class spec and other arguments.
 func CreateConfigSpec(
 	name string,
-	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
+	vmClassSpec *vmopv1.VirtualMachineClassSpec,
 	minFreq uint64,
 	imageFirmware string,
 	baseConfigSpec *vimtypes.VirtualMachineConfigSpec) *vimtypes.VirtualMachineConfigSpec {
@@ -101,7 +100,7 @@ func CreateConfigSpec(
 // a ConfigSpec, this should largely - or ideally entirely - be folded into CreateConfigSpec() above.
 func CreateConfigSpecForPlacement(
 	vmCtx context.VirtualMachineContext,
-	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
+	vmClassSpec *vmopv1.VirtualMachineClassSpec,
 	minFreq uint64,
 	storageClassesToIDs map[string]string,
 	imageFirmware string,

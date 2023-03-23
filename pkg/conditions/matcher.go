@@ -22,18 +22,18 @@ import (
 	"github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
-// MatchConditions returns a custom matcher to check equality of vmopv1alpha1.Conditions.
-func MatchConditions(expected vmopv1alpha1.Conditions) types.GomegaMatcher {
+// MatchConditions returns a custom matcher to check equality of vmopv1.Conditions.
+func MatchConditions(expected vmopv1.Conditions) types.GomegaMatcher {
 	return &matchConditions{
 		expected: expected,
 	}
 }
 
 type matchConditions struct {
-	expected vmopv1alpha1.Conditions
+	expected vmopv1.Conditions
 }
 
 func (m matchConditions) Match(actual interface{}) (success bool, err error) {
@@ -53,19 +53,19 @@ func (m matchConditions) NegatedFailureMessage(actual interface{}) (message stri
 	return fmt.Sprintf("expected\n\t%#v\nto not match\n\t%#v\n", actual, m.expected)
 }
 
-// MatchCondition returns a custom matcher to check equality of vmopv1alpha1.Condition.
-func MatchCondition(expected vmopv1alpha1.Condition) types.GomegaMatcher {
+// MatchCondition returns a custom matcher to check equality of vmopv1.Condition.
+func MatchCondition(expected vmopv1.Condition) types.GomegaMatcher {
 	return &matchCondition{
 		expected: expected,
 	}
 }
 
 type matchCondition struct {
-	expected vmopv1alpha1.Condition
+	expected vmopv1.Condition
 }
 
 func (m matchCondition) Match(actual interface{}) (success bool, err error) {
-	actualCondition, ok := actual.(vmopv1alpha1.Condition)
+	actualCondition, ok := actual.(vmopv1.Condition)
 	if !ok {
 		return false, fmt.Errorf("actual should be of type Condition")
 	}

@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -39,7 +39,7 @@ const (
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &vmopv1alpha1.WebConsoleRequest{}
+		controlledType     = &vmopv1.WebConsoleRequest{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
@@ -87,7 +87,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=services/status,verbs=get
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	webconsolerequest := &vmopv1alpha1.WebConsoleRequest{}
+	webconsolerequest := &vmopv1.WebConsoleRequest{}
 	err := r.Get(ctx, req.NamespacedName, webconsolerequest)
 	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -97,7 +97,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 		Context:           ctx,
 		Logger:            ctrl.Log.WithName("WebConsoleRequest").WithValues("name", req.NamespacedName),
 		WebConsoleRequest: webconsolerequest,
-		VM:                &vmopv1alpha1.VirtualMachine{},
+		VM:                &vmopv1.VirtualMachine{},
 	}
 
 	done, err := r.ReconcileEarlyNormal(webConsoleRequestCtx)

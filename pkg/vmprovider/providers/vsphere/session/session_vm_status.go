@@ -11,8 +11,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -24,7 +23,7 @@ func ipCIDRNotation(ipAddress string, prefix int32) string {
 	return ipAddress + "/" + strconv.Itoa(int(prefix))
 }
 
-func NicInfoToNetworkIfStatus(nicInfo vimTypes.GuestNicInfo) v1alpha1.NetworkInterfaceStatus {
+func NicInfoToNetworkIfStatus(nicInfo vimTypes.GuestNicInfo) vmopv1.NetworkInterfaceStatus {
 	var ipAddresses []string
 	if nicInfo.IpConfig != nil {
 		ipAddresses = make([]string, 0, len(nicInfo.IpConfig.IpAddress))
@@ -32,59 +31,59 @@ func NicInfoToNetworkIfStatus(nicInfo vimTypes.GuestNicInfo) v1alpha1.NetworkInt
 			ipAddresses = append(ipAddresses, ipCIDRNotation(ipAddress.IpAddress, ipAddress.PrefixLength))
 		}
 	}
-	return v1alpha1.NetworkInterfaceStatus{
+	return vmopv1.NetworkInterfaceStatus{
 		Connected:   nicInfo.Connected,
 		MacAddress:  nicInfo.MacAddress,
 		IpAddresses: ipAddresses,
 	}
 }
 
-func MarkVMToolsRunningStatusCondition(vm *v1alpha1.VirtualMachine, guestInfo *vimTypes.GuestInfo) {
+func MarkVMToolsRunningStatusCondition(vm *vmopv1.VirtualMachine, guestInfo *vimTypes.GuestInfo) {
 	if guestInfo == nil || guestInfo.ToolsRunningStatus == "" {
-		conditions.MarkUnknown(vm, v1alpha1.VirtualMachineToolsCondition, "", "")
+		conditions.MarkUnknown(vm, vmopv1.VirtualMachineToolsCondition, "", "")
 		return
 	}
 
 	switch guestInfo.ToolsRunningStatus {
 	case string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsNotRunning):
 		msg := "VMware Tools is not running"
-		conditions.MarkFalse(vm, v1alpha1.VirtualMachineToolsCondition, v1alpha1.VirtualMachineToolsNotRunningReason,
-			v1alpha1.ConditionSeverityError, msg)
+		conditions.MarkFalse(vm, vmopv1.VirtualMachineToolsCondition, vmopv1.VirtualMachineToolsNotRunningReason,
+			vmopv1.ConditionSeverityError, msg)
 	case string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsRunning), string(vimTypes.VirtualMachineToolsRunningStatusGuestToolsExecutingScripts):
-		conditions.MarkTrue(vm, v1alpha1.VirtualMachineToolsCondition)
+		conditions.MarkTrue(vm, vmopv1.VirtualMachineToolsCondition)
 	default:
 		msg := "Unexpected VMware Tools running status"
-		conditions.MarkUnknown(vm, v1alpha1.VirtualMachineToolsCondition, "", msg)
+		conditions.MarkUnknown(vm, vmopv1.VirtualMachineToolsCondition, "", msg)
 	}
 }
 
-func MarkCustomizationInfoCondition(vm *v1alpha1.VirtualMachine, guestInfo *vimTypes.GuestInfo) {
+func MarkCustomizationInfoCondition(vm *vmopv1.VirtualMachine, guestInfo *vimTypes.GuestInfo) {
 	if guestInfo == nil || guestInfo.CustomizationInfo == nil {
-		conditions.MarkUnknown(vm, v1alpha1.GuestCustomizationCondition, "", "")
+		conditions.MarkUnknown(vm, vmopv1.GuestCustomizationCondition, "", "")
 		return
 	}
 
 	switch guestInfo.CustomizationInfo.CustomizationStatus {
 	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_IDLE), "":
-		conditions.MarkTrue(vm, v1alpha1.GuestCustomizationCondition)
+		conditions.MarkTrue(vm, vmopv1.GuestCustomizationCondition)
 	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_PENDING):
-		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, v1alpha1.GuestCustomizationPendingReason, v1alpha1.ConditionSeverityInfo, "")
+		conditions.MarkFalse(vm, vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationPendingReason, vmopv1.ConditionSeverityInfo, "")
 	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_RUNNING):
-		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, v1alpha1.GuestCustomizationRunningReason, v1alpha1.ConditionSeverityInfo, "")
+		conditions.MarkFalse(vm, vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationRunningReason, vmopv1.ConditionSeverityInfo, "")
 	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_SUCCEEDED):
-		conditions.MarkTrue(vm, v1alpha1.GuestCustomizationCondition)
+		conditions.MarkTrue(vm, vmopv1.GuestCustomizationCondition)
 	case string(vimTypes.GuestInfoCustomizationStatusTOOLSDEPLOYPKG_FAILED):
 		errorMsg := guestInfo.CustomizationInfo.ErrorMsg
 		if errorMsg == "" {
 			errorMsg = "vSphere VM Customization failed due to an unknown error."
 		}
-		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, v1alpha1.GuestCustomizationFailedReason, v1alpha1.ConditionSeverityError, errorMsg)
+		conditions.MarkFalse(vm, vmopv1.GuestCustomizationCondition, vmopv1.GuestCustomizationFailedReason, vmopv1.ConditionSeverityError, errorMsg)
 	default:
 		errorMsg := guestInfo.CustomizationInfo.ErrorMsg
 		if errorMsg == "" {
 			errorMsg = "Unexpected VM Customization status"
 		}
-		conditions.MarkFalse(vm, v1alpha1.GuestCustomizationCondition, "", v1alpha1.ConditionSeverityError, errorMsg)
+		conditions.MarkFalse(vm, vmopv1.GuestCustomizationCondition, "", vmopv1.ConditionSeverityError, errorMsg)
 	}
 }
 
@@ -104,8 +103,8 @@ func (s *Session) updateVMStatus(
 	vm := vmCtx.VM
 	summary := moVM.Summary
 
-	vm.Status.Phase = v1alpha1.Created
-	vm.Status.PowerState = v1alpha1.VirtualMachinePowerState(summary.Runtime.PowerState)
+	vm.Status.Phase = vmopv1.Created
+	vm.Status.PowerState = vmopv1.VirtualMachinePowerState(summary.Runtime.PowerState)
 	vm.Status.UniqueID = resVM.MoRef().Value
 	vm.Status.BiosUUID = summary.Config.Uuid
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
@@ -126,7 +125,7 @@ func (s *Session) updateVMStatus(
 
 	if guestInfo != nil {
 		vm.Status.VmIp = guestInfo.IpAddress
-		var networkIfStatuses []v1alpha1.NetworkInterfaceStatus
+		var networkIfStatuses []vmopv1.NetworkInterfaceStatus
 		for _, nicInfo := range guestInfo.Net {
 			networkIfStatuses = append(networkIfStatuses, NicInfoToNetworkIfStatus(nicInfo))
 		}

@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
@@ -44,7 +44,7 @@ const (
 
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	var (
-		controlledType     = &vmopv1alpha1.VirtualMachineService{}
+		controlledType     = &vmopv1.VirtualMachineService{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 
 		controllerNameShort = fmt.Sprintf("%s-controller", strings.ToLower(controlledTypeName))
@@ -75,10 +75,10 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		For(controlledType).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
 		Watches(&source.Kind{Type: &corev1.Service{}},
-			&handler.EnqueueRequestForOwner{OwnerType: &vmopv1alpha1.VirtualMachineService{}}).
+			&handler.EnqueueRequestForOwner{OwnerType: &vmopv1.VirtualMachineService{}}).
 		Watches(&source.Kind{Type: &corev1.Endpoints{}},
-			&handler.EnqueueRequestForOwner{OwnerType: &vmopv1alpha1.VirtualMachineService{}}).
-		Watches(&source.Kind{Type: &vmopv1alpha1.VirtualMachine{}},
+			&handler.EnqueueRequestForOwner{OwnerType: &vmopv1.VirtualMachineService{}}).
+		Watches(&source.Kind{Type: &vmopv1.VirtualMachine{}},
 			handler.EnqueueRequestsFromMapFunc(r.virtualMachineToVirtualMachineServiceMapper())).
 		Complete(r)
 }
@@ -116,7 +116,7 @@ type ReconcileVirtualMachineService struct {
 // +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ReconcileVirtualMachineService) Reconcile(ctx goctx.Context, request reconcile.Request) (_ reconcile.Result, reterr error) {
-	vmService := &vmopv1alpha1.VirtualMachineService{}
+	vmService := &vmopv1.VirtualMachineService{}
 	if err := r.Get(ctx, request.NamespacedName, vmService); err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
@@ -198,7 +198,7 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *context.Virtual
 
 	vmService := ctx.VMService
 
-	if vmService.Spec.Type == vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer {
+	if vmService.Spec.Type == vmopv1.VirtualMachineServiceTypeLoadBalancer {
 		// Get LoadBalancer to attach
 		err := r.loadbalancerProvider.EnsureLoadBalancer(ctx, vmService)
 		if err != nil {
@@ -274,7 +274,7 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *context.Virtual
 // VM is currently an Endpoint for, because otherwise the VM won't be removed in a timely manner.
 func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMapper() func(o client.Object) []reconcile.Request {
 	return func(o client.Object) []reconcile.Request {
-		vm := o.(*vmopv1alpha1.VirtualMachine)
+		vm := o.(*vmopv1.VirtualMachine)
 
 		// Find all VMServices that match this VM.
 		vmServiceList, err := r.getVirtualMachineServicesSelectingVirtualMachine(goctx.Background(), vm)
@@ -460,8 +460,8 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *context.Virt
 
 func (r *ReconcileVirtualMachineService) getVirtualMachinesSelectedByVMService(
 	ctx goctx.Context,
-	vmService *vmopv1alpha1.VirtualMachineService) (*vmopv1alpha1.VirtualMachineList, error) {
-	vmList := &vmopv1alpha1.VirtualMachineList{}
+	vmService *vmopv1.VirtualMachineService) (*vmopv1.VirtualMachineList, error) {
+	vmList := &vmopv1.VirtualMachineList{}
 	err := r.List(ctx, vmList, client.InNamespace(vmService.Namespace), client.MatchingLabels(vmService.Spec.Selector))
 	return vmList, err
 }
@@ -491,10 +491,10 @@ func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(
 // Consider this as a candidate for profiling. SPOILER: It already is an issue.
 func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtualMachine(
 	ctx goctx.Context,
-	lookupVM *vmopv1alpha1.VirtualMachine) ([]*vmopv1alpha1.VirtualMachineService, error) {
-	var matchingVMServices []*vmopv1alpha1.VirtualMachineService
+	lookupVM *vmopv1.VirtualMachine) ([]*vmopv1.VirtualMachineService, error) {
+	var matchingVMServices []*vmopv1.VirtualMachineService
 
-	matchFunc := func(vmService *vmopv1alpha1.VirtualMachineService) error {
+	matchFunc := func(vmService *vmopv1.VirtualMachineService) error {
 		vmList, err := r.getVirtualMachinesSelectedByVMService(ctx, vmService)
 		if err != nil {
 			return err
@@ -511,7 +511,7 @@ func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtu
 		return nil
 	}
 
-	vmServiceList := &vmopv1alpha1.VirtualMachineServiceList{}
+	vmServiceList := &vmopv1.VirtualMachineServiceList{}
 	err := r.List(ctx, vmServiceList, client.InNamespace(lookupVM.Namespace))
 	if err != nil {
 		return nil, err
@@ -573,7 +573,7 @@ func (r *ReconcileVirtualMachineService) createOrUpdateEndpoints(ctx *context.Vi
 	return nil
 }
 
-func findVMPortNum(vm *vmopv1alpha1.VirtualMachine, port intstr.IntOrString, portProto corev1.Protocol) (int, error) {
+func findVMPortNum(vm *vmopv1.VirtualMachine, port intstr.IntOrString, portProto corev1.Protocol) (int, error) {
 	switch port.Type {
 	case intstr.String:
 		// NOTE: The VM Spec.Ports is deprecated.
@@ -627,7 +627,7 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 		ready := true
 
 		if vm.Spec.ReadinessProbe != nil {
-			if condition := conditions.Get(&vm, vmopv1alpha1.ReadyCondition); condition == nil {
+			if condition := conditions.Get(&vm, vmopv1.ReadyCondition); condition == nil {
 				if vmInSubsetsMap == nil {
 					vmInSubsetsMap = r.getVMsReferencedByServiceEndpoints(ctx, service)
 				}
@@ -694,10 +694,10 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 func (r *ReconcileVirtualMachineService) updateVMService(ctx *context.VirtualMachineServiceContext, service *corev1.Service) error {
 	vmService := ctx.VMService
 
-	if vmService.Spec.Type == vmopv1alpha1.VirtualMachineServiceTypeLoadBalancer {
-		vmService.Status.LoadBalancer.Ingress = make([]vmopv1alpha1.LoadBalancerIngress, len(service.Status.LoadBalancer.Ingress))
+	if vmService.Spec.Type == vmopv1.VirtualMachineServiceTypeLoadBalancer {
+		vmService.Status.LoadBalancer.Ingress = make([]vmopv1.LoadBalancerIngress, len(service.Status.LoadBalancer.Ingress))
 		for idx, ingress := range service.Status.LoadBalancer.Ingress {
-			vmIngress := vmopv1alpha1.LoadBalancerIngress{
+			vmIngress := vmopv1.LoadBalancerIngress{
 				IP:       ingress.IP,
 				Hostname: ingress.Hostname,
 			}

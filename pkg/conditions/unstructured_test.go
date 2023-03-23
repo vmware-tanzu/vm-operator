@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 func TestUnstructuredGetConditions(t *testing.T) {
@@ -33,10 +33,10 @@ func TestUnstructuredGetConditions(t *testing.T) {
 
 	scheme := runtime.NewScheme()
 	g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
-	g.Expect(vmopv1alpha1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
 
 	// GetConditions should return conditions from an unstructured object
-	c := &vmopv1alpha1.VirtualMachine{}
+	c := &vmopv1.VirtualMachine{}
 	c.SetConditions(conditionList(true1))
 	u := &unstructured.Unstructured{}
 	g.Expect(scheme.Convert(c, u, nil)).To(Succeed())
@@ -44,7 +44,7 @@ func TestUnstructuredGetConditions(t *testing.T) {
 	g.Expect(UnstructuredGetter(u).GetConditions()).To(haveSameConditionsOf(conditionList(true1)))
 
 	// GetConditions should return nil for an unstructured object with empty conditions
-	c = &vmopv1alpha1.VirtualMachine{}
+	c = &vmopv1.VirtualMachine{}
 	u = &unstructured.Unstructured{}
 	g.Expect(scheme.Convert(c, u, nil)).To(Succeed())
 
@@ -82,9 +82,9 @@ func TestUnstructuredSetConditions(t *testing.T) {
 	// gets an unstructured with empty conditions
 	scheme := runtime.NewScheme()
 	g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
-	g.Expect(vmopv1alpha1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(vmopv1.AddToScheme(scheme)).To(Succeed())
 
-	c := &vmopv1alpha1.VirtualMachine{}
+	c := &vmopv1.VirtualMachine{}
 	u := &unstructured.Unstructured{}
 	g.Expect(scheme.Convert(c, u, nil)).To(Succeed())
 

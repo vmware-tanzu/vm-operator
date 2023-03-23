@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -28,11 +28,11 @@ func unitTestsReconcile() {
 
 		reconciler *virtualmachineclass.Reconciler
 		vmClassCtx *vmopContext.VirtualMachineClassContext
-		vmClass    *vmopv1alpha1.VirtualMachineClass
+		vmClass    *vmopv1.VirtualMachineClass
 	)
 
 	BeforeEach(func() {
-		vmClass = &vmopv1alpha1.VirtualMachineClass{
+		vmClass = &vmopv1.VirtualMachineClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "dummy-vmclass",
 			},

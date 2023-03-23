@@ -12,8 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober/context"
 )
 
@@ -59,7 +58,7 @@ func (pr tcpProber) Probe(ctx *context.ProbeContext) (Result, error) {
 	return Success, nil
 }
 
-func findPort(vm *vmoperatorv1alpha1.VirtualMachine, portName intstr.IntOrString, portProto corev1.Protocol) (int, error) {
+func findPort(vm *vmopv1.VirtualMachine, portName intstr.IntOrString, portProto corev1.Protocol) (int, error) {
 	switch portName.Type {
 	case intstr.String:
 		name := portName.StrVal

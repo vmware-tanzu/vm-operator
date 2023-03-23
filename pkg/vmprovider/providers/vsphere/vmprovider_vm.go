@@ -15,7 +15,7 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
@@ -52,7 +52,7 @@ var (
 
 func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 	ctx goctx.Context,
-	vm *vmopv1alpha1.VirtualMachine) error {
+	vm *vmopv1.VirtualMachine) error {
 
 	vmCtx := context.VirtualMachineContext{
 		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "createOrUpdateVM")),
@@ -88,7 +88,7 @@ func (vs *vSphereVMProvider) CreateOrUpdateVirtualMachine(
 
 func (vs *vSphereVMProvider) DeleteVirtualMachine(
 	ctx goctx.Context,
-	vm *vmopv1alpha1.VirtualMachine) error {
+	vm *vmopv1.VirtualMachine) error {
 
 	vmCtx := context.VirtualMachineContext{
 		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "deleteVM")),
@@ -112,8 +112,8 @@ func (vs *vSphereVMProvider) DeleteVirtualMachine(
 	return virtualmachine.DeleteVirtualMachine(vmCtx, vcVM)
 }
 
-func (vs *vSphereVMProvider) PublishVirtualMachine(ctx goctx.Context, vm *vmopv1alpha1.VirtualMachine,
-	vmPub *vmopv1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
+func (vs *vSphereVMProvider) PublishVirtualMachine(ctx goctx.Context, vm *vmopv1.VirtualMachine,
+	vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
 	vmCtx := context.VirtualMachineContext{
 		Context: ctx,
 		// Update logger info
@@ -137,7 +137,7 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(ctx goctx.Context, vm *vmopv1
 
 func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 	ctx goctx.Context,
-	vm *vmopv1alpha1.VirtualMachine) (vmopv1alpha1.GuestHeartbeatStatus, error) {
+	vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
 
 	vmCtx := context.VirtualMachineContext{
 		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "heartbeat")),
@@ -165,7 +165,7 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 
 func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 	ctx goctx.Context,
-	vm *vmopv1alpha1.VirtualMachine,
+	vm *vmopv1.VirtualMachine,
 	pubKey string) (string, error) {
 
 	vmCtx := context.VirtualMachineContext{
@@ -192,8 +192,10 @@ func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 	return ticket, nil
 }
 
-func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(ctx goctx.Context,
-	vm *vmopv1alpha1.VirtualMachine) (int32, error) {
+func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
+	ctx goctx.Context,
+	vm *vmopv1.VirtualMachine) (int32, error) {
+
 	vmCtx := context.VirtualMachineContext{
 		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "hardware-version")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
@@ -230,7 +232,7 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 
 	// Historically this is about the point when we say we're creating but there
 	// are still several steps before then.
-	vmCtx.VM.Status.Phase = vmopv1alpha1.Creating
+	vmCtx.VM.Status.Phase = vmopv1.Creating
 
 	err = vs.vmCreateDoPlacement(vmCtx, vcClient, createArgs)
 	if err != nil {
@@ -279,7 +281,7 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 
 		// Set a few Status fields that we easily have on hand here. We will immediately call
 		// updateVirtualMachine() next which will set it all.
-		vmCtx.VM.Status.Phase = vmopv1alpha1.Created
+		vmCtx.VM.Status.Phase = vmopv1.Created
 		vmCtx.VM.Status.UniqueID = vcVM.Reference().Value
 	}
 
@@ -554,7 +556,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 	// 	     can be reported at once (and will help for the best-effort update changes).
 	// This is about where historically we set this condition but there are still a lot
 	// more checks to go.
-	conditions.MarkTrue(vmCtx.VM, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachinePrereqReadyCondition)
 
 	if resourcePolicy != nil {
 		rp := resourcePolicy.Spec.ResourcePool
@@ -704,7 +706,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 
 	// We're always ready - again - at this point since we've fetched the above objects. We really should
 	// not be touching this condition after creation but that is for another day.
-	conditions.MarkTrue(vmCtx.VM, vmopv1alpha1.VirtualMachinePrereqReadyCondition)
+	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachinePrereqReadyCondition)
 
 	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
 		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
@@ -755,7 +757,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		// and disables networking configurations by cloud-init. Therefore, only set the extraConfig key to enabled
 		// when the vmMetadata is nil or when the transport requested is not CloudInit.
 		if conditions.IsTrueFromConditions(vmImageStatus.Conditions,
-			vmopv1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition) {
+			vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition) {
 			updateArgs.VirtualMachineImageV1Alpha1Compatible = true
 		}
 		updateArgs.ExtraConfig = extraConfig

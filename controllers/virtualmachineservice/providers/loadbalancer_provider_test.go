@@ -12,9 +12,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/utils"
-
-	vmoperatorv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 )
 
 const (
@@ -24,7 +23,7 @@ const (
 var _ = Describe("Loadbalancer Provider", func() {
 	var (
 		ctx        context.Context
-		vmService  *vmoperatorv1alpha1.VirtualMachineService
+		vmService  *vmopv1.VirtualMachineService
 		lbProvider LoadbalancerProvider
 	)
 
@@ -77,14 +76,14 @@ var _ = Describe("Loadbalancer Provider", func() {
 
 	Context("GetServiceAnnotations when VMService has healthCheckNodePort defined", func() {
 		BeforeEach(func() {
-			vmService = &vmoperatorv1alpha1.VirtualMachineService{
+			vmService = &vmopv1.VirtualMachineService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "dummy-vmservice",
 					Namespace:   dummyNamespace,
 					Annotations: make(map[string]string),
 				},
-				Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-					Type:         vmoperatorv1alpha1.VirtualMachineServiceTypeClusterIP,
+				Spec: vmopv1.VirtualMachineServiceSpec{
+					Type:         vmopv1.VirtualMachineServiceTypeClusterIP,
 					ClusterIP:    "TEST",
 					ExternalName: "TEST",
 				},
@@ -104,14 +103,14 @@ var _ = Describe("Loadbalancer Provider", func() {
 
 	Context("GetToBeRemovedServiceAnnotations when VMService does not have healthCheckNodePort defined", func() {
 		BeforeEach(func() {
-			vmService = &vmoperatorv1alpha1.VirtualMachineService{
+			vmService = &vmopv1.VirtualMachineService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "dummy-vmservice",
 					Namespace:   dummyNamespace,
 					Annotations: make(map[string]string),
 				},
-				Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-					Type:         vmoperatorv1alpha1.VirtualMachineServiceTypeClusterIP,
+				Spec: vmopv1.VirtualMachineServiceSpec{
+					Type:         vmopv1.VirtualMachineServiceTypeClusterIP,
 					ClusterIP:    "TEST",
 					ExternalName: "TEST",
 				},
@@ -129,14 +128,14 @@ var _ = Describe("Loadbalancer Provider", func() {
 
 	Context("GetServiceLabels when VMService have externalTrafficPolicy annotation defined", func() {
 		BeforeEach(func() {
-			vmService = &vmoperatorv1alpha1.VirtualMachineService{
+			vmService = &vmopv1.VirtualMachineService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "dummy-vmservice",
 					Namespace:   dummyNamespace,
 					Annotations: make(map[string]string),
 				},
-				Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-					Type:         vmoperatorv1alpha1.VirtualMachineServiceTypeClusterIP,
+				Spec: vmopv1.VirtualMachineServiceSpec{
+					Type:         vmopv1.VirtualMachineServiceTypeClusterIP,
 					ClusterIP:    "TEST",
 					ExternalName: "TEST",
 				},
@@ -181,14 +180,14 @@ var _ = Describe("Loadbalancer Provider", func() {
 		)
 
 		BeforeEach(func() {
-			vmService = &vmoperatorv1alpha1.VirtualMachineService{
+			vmService = &vmopv1.VirtualMachineService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "dummy-vmservice",
 					Namespace:   dummyNamespace,
 					Annotations: make(map[string]string),
 				},
-				Spec: vmoperatorv1alpha1.VirtualMachineServiceSpec{
-					Type:         vmoperatorv1alpha1.VirtualMachineServiceTypeClusterIP,
+				Spec: vmopv1.VirtualMachineServiceSpec{
+					Type:         vmopv1.VirtualMachineServiceTypeClusterIP,
 					ClusterIP:    "TEST",
 					ExternalName: "TEST",
 				},

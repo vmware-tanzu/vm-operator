@@ -19,7 +19,7 @@ import (
 
 	"github.com/google/uuid"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
@@ -34,10 +34,10 @@ func intgTests() {
 	var (
 		ctx *builder.IntegrationTestContext
 
-		vm                    *vmopv1alpha1.VirtualMachine
+		vm                    *vmopv1.VirtualMachine
 		vmKey                 types.NamespacedName
-		vmVolume1             vmopv1alpha1.VirtualMachineVolume
-		vmVolume2             vmopv1alpha1.VirtualMachineVolume
+		vmVolume1             vmopv1.VirtualMachineVolume
+		vmVolume2             vmopv1.VirtualMachineVolume
 		dummyBiosUUID         string
 		dummyDiskUUID1        string
 		dummyDiskUUID2        string
@@ -61,32 +61,32 @@ func intgTests() {
 		dummyDiskUUID1 = uuid.New().String()
 		dummyDiskUUID2 = uuid.New().String()
 
-		vmVolume1 = vmopv1alpha1.VirtualMachineVolume{
+		vmVolume1 = vmopv1.VirtualMachineVolume{
 			Name: "cns-volume-1",
-			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: "pvc-volume-1",
 				},
 			},
 		}
 
-		vmVolume2 = vmopv1alpha1.VirtualMachineVolume{
+		vmVolume2 = vmopv1.VirtualMachineVolume{
 			Name: "cns-volume-2",
-			PersistentVolumeClaim: &vmopv1alpha1.PersistentVolumeClaimVolumeSource{
+			PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
 				PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: "pvc-volume-2",
 				},
 			},
 		}
 
-		vm = &vmopv1alpha1.VirtualMachine{
+		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: ctx.Namespace,
 				Name:      "dummy-vm",
 			},
-			Spec: vmopv1alpha1.VirtualMachineSpec{
+			Spec: vmopv1.VirtualMachineSpec{
 				ImageName:  "dummy-image",
-				PowerState: vmopv1alpha1.VirtualMachinePoweredOff,
+				PowerState: vmopv1.VirtualMachinePoweredOff,
 			},
 		}
 		vmKey = types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}
@@ -100,15 +100,15 @@ func intgTests() {
 		ctx = nil
 	})
 
-	getVirtualMachine := func(objKey types.NamespacedName) *vmopv1alpha1.VirtualMachine {
-		vm := &vmopv1alpha1.VirtualMachine{}
+	getVirtualMachine := func(objKey types.NamespacedName) *vmopv1.VirtualMachine {
+		vm := &vmopv1.VirtualMachine{}
 		if err := ctx.Client.Get(ctx, objKey, vm); err != nil {
 			return nil
 		}
 		return vm
 	}
 
-	getCnsNodeVMAttachment := func(vm *vmopv1alpha1.VirtualMachine, vmVol vmopv1alpha1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVmAttachment {
+	getCnsNodeVMAttachment := func(vm *vmopv1.VirtualMachine, vmVol vmopv1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVmAttachment {
 		objectKey := client.ObjectKey{Name: volume.CNSAttachmentNameForVolume(vm, vmVol.Name), Namespace: vm.Namespace}
 		attachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 		if err := ctx.Client.Get(ctx, objectKey, attachment); err == nil {
@@ -345,8 +345,8 @@ func intgTests() {
 			})
 
 			By("VM Status.Volume should have entry for volume", func() {
-				var vm *vmopv1alpha1.VirtualMachine
-				Eventually(func() []vmopv1alpha1.VirtualMachineVolumeStatus {
+				var vm *vmopv1.VirtualMachine
+				Eventually(func() []vmopv1.VirtualMachineVolumeStatus {
 					vm = getVirtualMachine(vmKey)
 					if vm != nil {
 						return vm.Status.Volumes
@@ -373,7 +373,7 @@ func intgTests() {
 			})
 
 			By("VM Status.Volume should reflect attached volume", func() {
-				var vm *vmopv1alpha1.VirtualMachine
+				var vm *vmopv1.VirtualMachine
 				Eventually(func() bool {
 					vm = getVirtualMachine(vmKey)
 					if vm == nil || len(vm.Status.Volumes) != 1 {
@@ -422,7 +422,7 @@ func intgTests() {
 					return getCnsNodeVMAttachment(vm, vmVolume2)
 				}, "3s").Should(BeNil())
 
-				Eventually(func() []vmopv1alpha1.VirtualMachineVolumeStatus {
+				Eventually(func() []vmopv1.VirtualMachineVolumeStatus {
 					if vm := getVirtualMachine(vmKey); vm != nil {
 						return vm.Status.Volumes
 					}
@@ -433,7 +433,7 @@ func intgTests() {
 			By("Simulate VM being powered on", func() {
 				vm := getVirtualMachine(vmKey)
 				Expect(vm).ToNot(BeNil())
-				vm.Status.PowerState = vmopv1alpha1.VirtualMachinePoweredOn
+				vm.Status.PowerState = vmopv1.VirtualMachinePoweredOn
 				Expect(ctx.Client.Status().Update(ctx, vm)).To(Succeed())
 			})
 
@@ -449,7 +449,7 @@ func intgTests() {
 			})
 
 			By("VM Status.Volume should have entry for volume1 and volume2", func() {
-				Eventually(func() []vmopv1alpha1.VirtualMachineVolumeStatus {
+				Eventually(func() []vmopv1.VirtualMachineVolumeStatus {
 					vm = getVirtualMachine(vmKey)
 					if vm != nil {
 						return vm.Status.Volumes
@@ -499,7 +499,7 @@ func intgTests() {
 			By("Remove CNS volume1 from VM Spec.Volumes", func() {
 				vm = getVirtualMachine(vmKey)
 				Expect(vm).ToNot(BeNil())
-				vm.Spec.Volumes = []vmopv1alpha1.VirtualMachineVolume{vmVolume2}
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{vmVolume2}
 				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
 			})
 
@@ -515,7 +515,7 @@ func intgTests() {
 
 			By("VM Status.Volumes should still have entries for volume1 and volume2", func() {
 				// I'm not sure if we have a better way to check for this.
-				Consistently(func() []vmopv1alpha1.VirtualMachineVolumeStatus {
+				Consistently(func() []vmopv1.VirtualMachineVolumeStatus {
 					vm = getVirtualMachine(vmKey)
 					Expect(vm).ToNot(BeNil())
 					return vm.Status.Volumes

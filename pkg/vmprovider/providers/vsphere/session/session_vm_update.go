@@ -14,8 +14,7 @@ import (
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -35,13 +34,13 @@ const (
 
 type VMMetadata struct {
 	Data      map[string]string
-	Transport v1alpha1.VirtualMachineMetadataTransport
+	Transport vmopv1.VirtualMachineMetadataTransport
 }
 
 // VMUpdateArgs contains the arguments needed to update a VM on VC.
 type VMUpdateArgs struct {
-	VMClass        *v1alpha1.VirtualMachineClass
-	ResourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy
+	VMClass        *vmopv1.VirtualMachineClass
+	ResourcePolicy *vmopv1.VirtualMachineSetResourcePolicy
 	MinCPUFreq     uint64
 	ExtraConfig    map[string]string
 	VMMetadata     VMMetadata
@@ -240,7 +239,7 @@ func UpdatePCIDeviceChanges(
 func UpdateConfigSpecCPUAllocation(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec *vimTypes.VirtualMachineConfigSpec,
-	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
+	vmClassSpec *vmopv1.VirtualMachineClassSpec,
 	minCPUFreq uint64) {
 
 	cpuAllocation := config.CpuAllocation
@@ -272,7 +271,7 @@ func UpdateConfigSpecCPUAllocation(
 func UpdateConfigSpecMemoryAllocation(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec *vimTypes.VirtualMachineConfigSpec,
-	vmClassSpec *v1alpha1.VirtualMachineClassSpec) {
+	vmClassSpec *vmopv1.VirtualMachineClassSpec) {
 
 	memAllocation := config.MemoryAllocation
 	var memoryReservation *int64
@@ -304,8 +303,8 @@ func UpdateConfigSpecExtraConfig(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec,
 	classConfigSpec *vimTypes.VirtualMachineConfigSpec,
-	vmClassSpec *v1alpha1.VirtualMachineClassSpec,
-	vm *v1alpha1.VirtualMachine,
+	vmClassSpec *vmopv1.VirtualMachineClassSpec,
+	vm *vmopv1.VirtualMachine,
 	globalExtraConfig map[string]string,
 	imageV1Alpha1Compatible bool) {
 
@@ -348,7 +347,7 @@ func UpdateConfigSpecExtraConfig(
 	// VMSVC-1261: we may always set this extra config key to remove image from VM customization.
 	// If a VM is deployed from an incompatible image,
 	// it will do nothing and won't cause any issues, but can introduce confusion.
-	if vm.Spec.VmMetadata == nil || vm.Spec.VmMetadata.Transport != v1alpha1.VirtualMachineMetadataCloudInitTransport {
+	if vm.Spec.VmMetadata == nil || vm.Spec.VmMetadata.Transport != vmopv1.VirtualMachineMetadataCloudInitTransport {
 		ecMap := ExtraConfigToMap(config.ExtraConfig)
 		if ecMap[constants.VMOperatorV1Alpha1ExtraConfigKey] == constants.VMOperatorV1Alpha1ConfigReady &&
 			imageV1Alpha1Compatible {
@@ -360,7 +359,7 @@ func UpdateConfigSpecExtraConfig(
 
 }
 
-func setMMIOExtraConfig(vm *v1alpha1.VirtualMachine, extraConfig map[string]string) {
+func setMMIOExtraConfig(vm *vmopv1.VirtualMachine, extraConfig map[string]string) {
 	mmioSize := vm.Annotations[constants.PCIPassthruMMIOOverrideAnnotation]
 	if mmioSize == "" {
 		mmioSize = constants.PCIPassthruMMIOSizeDefault
@@ -374,7 +373,7 @@ func setMMIOExtraConfig(vm *v1alpha1.VirtualMachine, extraConfig map[string]stri
 func UpdateConfigSpecChangeBlockTracking(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec,
-	vmSpec v1alpha1.VirtualMachineSpec) {
+	vmSpec vmopv1.VirtualMachineSpec) {
 	// When VM_Class_as_Config_DaynDate is enabled, class config spec cbt if
 	// set overrides the VM spec advanced options cbt.
 	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && classConfigSpec != nil {
@@ -400,7 +399,7 @@ func UpdateConfigSpecChangeBlockTracking(
 func UpdateHardwareConfigSpec(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec *vimTypes.VirtualMachineConfigSpec,
-	vmClassSpec *v1alpha1.VirtualMachineClassSpec) {
+	vmClassSpec *vmopv1.VirtualMachineClassSpec) {
 
 	if nCPUs := int32(vmClassSpec.Hardware.Cpus); config.Hardware.NumCPU != nCPUs {
 		configSpec.NumCPUs = nCPUs
@@ -432,7 +431,7 @@ func UpdateConfigSpecManagedBy(
 func UpdateConfigSpecFirmware(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec *vimTypes.VirtualMachineConfigSpec,
-	vm *v1alpha1.VirtualMachine) {
+	vm *vmopv1.VirtualMachine) {
 
 	if val, ok := vm.Annotations[constants.FirmwareOverrideAnnotation]; ok {
 		if (val == "efi" || val == "bios") && config.Firmware != val {
@@ -763,7 +762,7 @@ func (s *Session) poweredOnVMReconfigure(
 func (s *Session) attachClusterModule(
 	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
-	resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error {
+	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {
 
 	// The clusterModule is required be able to enforce the vm-vm anti-affinity policy.
 	clusterModuleName := vmCtx.VM.Annotations[pkg.ClusterModuleNameKey]
@@ -805,9 +804,9 @@ func (s *Session) UpdateVirtualMachine(
 	isOff := moVM.Runtime.PowerState == vimTypes.VirtualMachinePowerStatePoweredOff
 
 	switch vmCtx.VM.Spec.PowerState {
-	case v1alpha1.VirtualMachinePoweredOff:
+	case vmopv1.VirtualMachinePoweredOff:
 		if !isOff {
-			err := resVM.SetPowerState(vmCtx, v1alpha1.VirtualMachinePoweredOff)
+			err := resVM.SetPowerState(vmCtx, vmopv1.VirtualMachinePoweredOff)
 			if err != nil {
 				return err
 			}
@@ -817,7 +816,7 @@ func (s *Session) UpdateVirtualMachine(
 		// we'll defer that until the pre power on (and until more people complain
 		// that the UI appears wrong).
 
-	case v1alpha1.VirtualMachinePoweredOn:
+	case vmopv1.VirtualMachinePoweredOn:
 		config := moVM.Config
 
 		// See govmomi VirtualMachine::Device() explanation for this check.
@@ -841,7 +840,7 @@ func (s *Session) UpdateVirtualMachine(
 				return err
 			}
 
-			err = resVM.SetPowerState(vmCtx, v1alpha1.VirtualMachinePoweredOn)
+			err = resVM.SetPowerState(vmCtx, vmopv1.VirtualMachinePoweredOn)
 			if err != nil {
 				return err
 			}

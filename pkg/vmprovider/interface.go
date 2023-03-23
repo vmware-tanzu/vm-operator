@@ -11,33 +11,33 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 )
 
 // VirtualMachineProviderInterface is a plugable interface for VM Providers.
 type VirtualMachineProviderInterface interface {
-	CreateOrUpdateVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
-	DeleteVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine) error
-	PublishVirtualMachine(ctx context.Context, vm *v1alpha1.VirtualMachine,
-		vmPub *v1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
-	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha1.VirtualMachine) (v1alpha1.GuestHeartbeatStatus, error)
-	GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1alpha1.VirtualMachine, pubKey string) (string, error)
-	GetVirtualMachineHardwareVersion(ctx context.Context, vm *v1alpha1.VirtualMachine) (int32, error)
+	CreateOrUpdateVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	DeleteVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error
+	PublishVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine,
+		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
+	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
+	GetVirtualMachineWebMKSTicket(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error)
+	GetVirtualMachineHardwareVersion(ctx context.Context, vm *vmopv1.VirtualMachine) (int32, error)
 
-	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
-	IsVirtualMachineSetResourcePolicyReady(ctx context.Context, availabilityZoneName string, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) (bool, error)
-	DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *v1alpha1.VirtualMachineSetResourcePolicy) error
+	CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error
+	IsVirtualMachineSetResourcePolicyReady(ctx context.Context, availabilityZoneName string, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (bool, error)
+	DeleteVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error
 
 	// "Infra" related
 	UpdateVcPNID(ctx context.Context, vcPNID, vcPort string) error
 	ResetVcClient(ctx context.Context)
 	ComputeCPUMinFrequency(ctx context.Context) error
 
-	ListItemsFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider) ([]string, error)
-	GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *v1alpha1.ContentLibraryProvider, itemID string,
-		currentCLImages map[string]v1alpha1.VirtualMachineImage) (*v1alpha1.VirtualMachineImage, error)
+	ListItemsFromContentLibrary(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider) ([]string, error)
+	GetVirtualMachineImageFromContentLibrary(ctx context.Context, contentLibrary *vmopv1.ContentLibraryProvider, itemID string,
+		currentCLImages map[string]vmopv1.VirtualMachineImage) (*vmopv1.VirtualMachineImage, error)
 	GetItemFromLibraryByName(ctx context.Context, contentLibrary, itemName string) (*library.Item, error)
 	UpdateContentLibraryItem(ctx context.Context, itemID, newName string, newDescription *string) error
 	SyncVirtualMachineImage(ctx context.Context, cli, vmi client.Object) error

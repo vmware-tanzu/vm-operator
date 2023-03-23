@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/providerconfigmap"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -50,13 +50,13 @@ func intgTestsCM() {
 
 	Context("Reconcile", func() {
 		clExists := func(clName string) bool {
-			clObj := &vmopv1alpha1.ContentLibraryProvider{}
+			clObj := &vmopv1.ContentLibraryProvider{}
 			return ctx.Client.Get(ctx, client.ObjectKey{Name: clName}, clObj) == nil
 		}
 
 		// Verifies that a ContentSource exists, has a matching label and has a ProviderRef set to the content library..
 		csExists := func(csName, clName string) bool {
-			csObj := &vmopv1alpha1.ContentSource{}
+			csObj := &vmopv1.ContentSource{}
 			if err := ctx.Client.Get(ctx, client.ObjectKey{Name: csName}, csObj); err != nil {
 				return false
 			}
@@ -76,7 +76,7 @@ func intgTestsCM() {
 
 		When("ConfigMap is created without ContentSource key", func() {
 			It("no ContentSource is created", func() {
-				csList := &vmopv1alpha1.ContentSourceList{}
+				csList := &vmopv1.ContentSourceList{}
 				err := ctx.Client.List(ctx, csList)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(csList.Items).To(HaveLen(0))
@@ -96,7 +96,7 @@ func intgTestsCM() {
 
 				// Validate that no ContentSources exist in the system namespace.
 				Consistently(func() bool {
-					bindingList := &vmopv1alpha1.ContentSourceBindingList{}
+					bindingList := &vmopv1.ContentSourceBindingList{}
 					Expect(ctx.Client.List(ctx, bindingList, client.InNamespace(ctx.PodNamespace))).To(Succeed())
 					return len(bindingList.Items) == 0
 				}).Should(BeTrue())
@@ -135,7 +135,7 @@ func intgTestsCM() {
 		Context("VMService FSS is enabled", func() {
 			verifyContentSourceBinding := func(namespace string) {
 				Eventually(func() bool {
-					bindingList := &vmopv1alpha1.ContentSourceBindingList{}
+					bindingList := &vmopv1.ContentSourceBindingList{}
 					err := ctx.Client.List(ctx, bindingList, client.InNamespace(namespace))
 					return err == nil && len(bindingList.Items) == 1 && bindingList.Items[0].ContentSourceRef.Kind == contentSourceKind &&
 						bindingList.Items[0].ContentSourceRef.Name == clUUID
@@ -209,7 +209,7 @@ func intgTestsCM() {
 							verifyContentSourceBinding(workloadNs.Name)
 
 							// Delete the contentSourceBinding to mock a failed workflow
-							binding := &vmopv1alpha1.ContentSourceBinding{}
+							binding := &vmopv1.ContentSourceBinding{}
 							Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: clUUID, Namespace: workloadNs.Name}, binding)).To(Succeed())
 							Expect(ctx.Client.Delete(ctx, binding)).To(Succeed())
 

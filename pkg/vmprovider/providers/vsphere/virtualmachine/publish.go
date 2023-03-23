@@ -10,7 +10,7 @@ import (
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/vcenter"
 
-	vmopv1alpha1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 
@@ -27,7 +27,7 @@ const (
 )
 
 func CreateOVF(vmCtx context.VirtualMachineContext, client *rest.Client,
-	vmPubReq *vmopv1alpha1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
+	vmPubReq *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error) {
 	// Use VM Operator specific description so that we can link published items
 	// to the vmPub if anything unexpected happened.
 	descriptionPrefix := fmt.Sprintf(itemDescriptionFormat, string(vmPubReq.UID))

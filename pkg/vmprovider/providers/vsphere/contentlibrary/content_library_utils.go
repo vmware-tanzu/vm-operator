@@ -17,12 +17,11 @@ import (
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
@@ -52,7 +51,7 @@ func ParseVirtualHardwareVersion(vmxVersion string) int32 {
 // VirtualMachineImage that represents a k8s-native view of the item.
 func LibItemToVirtualMachineImage(
 	item *library.Item,
-	ovfEnvelope *ovf.Envelope) *v1alpha1.VirtualMachineImage {
+	ovfEnvelope *ovf.Envelope) *vmopv1.VirtualMachineImage {
 
 	var ts metav1.Time
 	if item.CreationTime != nil {
@@ -63,7 +62,7 @@ func LibItemToVirtualMachineImage(
 	// is changed as to what is set, the VMImageCLVersionAnnotationVersion very, very likely needs to be
 	// incremented so that the VMImageCLVersionAnnotation annotations changes so the updated is actually
 	// updated. This is a hack to reduce repeated ContentLibrary tasks.
-	image := &v1alpha1.VirtualMachineImage{
+	image := &vmopv1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              item.Name,
 			CreationTimestamp: ts,
@@ -71,12 +70,12 @@ func LibItemToVirtualMachineImage(
 				constants.VMImageCLVersionAnnotation: libItemVersionAnnotation(item),
 			},
 		},
-		Spec: v1alpha1.VirtualMachineImageSpec{
+		Spec: vmopv1.VirtualMachineImageSpec{
 			Type:            item.Type,
 			ImageSourceType: "Content Library",
 			ImageID:         item.ID,
 		},
-		Status: v1alpha1.VirtualMachineImageStatus{
+		Status: vmopv1.VirtualMachineImageStatus{
 			Uuid:       item.ID,
 			InternalId: item.Name,
 			ImageName:  item.Name,
@@ -105,13 +104,13 @@ func LibItemToVirtualMachineImage(
 
 // UpdateVmiWithOvfEnvelope updates the given vmi object with the content of given OVF envelope.
 func UpdateVmiWithOvfEnvelope(vmi client.Object, ovfEnvelope ovf.Envelope) {
-	var spec *v1alpha1.VirtualMachineImageSpec
-	var status *v1alpha1.VirtualMachineImageStatus
+	var spec *vmopv1.VirtualMachineImageSpec
+	var status *vmopv1.VirtualMachineImageStatus
 	switch vmi := vmi.(type) {
-	case *v1alpha1.VirtualMachineImage:
+	case *vmopv1.VirtualMachineImage:
 		spec = &vmi.Spec
 		status = &vmi.Status
-	case *v1alpha1.ClusterVirtualMachineImage:
+	case *vmopv1.ClusterVirtualMachineImage:
 		spec = &vmi.Spec
 		status = &vmi.Status
 	}
@@ -138,13 +137,13 @@ func UpdateVmiWithOvfEnvelope(vmi client.Object, ovfEnvelope ovf.Envelope) {
 	}
 }
 
-func updateImageSpecWithOvfVirtualSystem(imageSpec *v1alpha1.VirtualMachineImageSpec, ovfVirtualSystem *ovf.VirtualSystem) {
+func updateImageSpecWithOvfVirtualSystem(imageSpec *vmopv1.VirtualMachineImageSpec, ovfVirtualSystem *ovf.VirtualSystem) {
 	if ovfVirtualSystem == nil {
 		return
 	}
 
-	productInfo := v1alpha1.VirtualMachineImageProductInfo{}
-	osInfo := v1alpha1.VirtualMachineImageOSInfo{}
+	productInfo := vmopv1.VirtualMachineImageProductInfo{}
+	osInfo := vmopv1.VirtualMachineImageOSInfo{}
 
 	// Use info from the first product section in the VM image, if one exists.
 	if product := ovfVirtualSystem.Product; len(product) > 0 {
@@ -181,15 +180,15 @@ func updateImageSpecWithOvfVirtualSystem(imageSpec *v1alpha1.VirtualMachineImage
 	imageSpec.HardwareVersion = hwVersion
 }
 
-func getUserConfigurablePropertiesFromOvf(ovfVirtualSystem *ovf.VirtualSystem) map[string]v1alpha1.OvfProperty {
-	properties := make(map[string]v1alpha1.OvfProperty)
+func getUserConfigurablePropertiesFromOvf(ovfVirtualSystem *ovf.VirtualSystem) map[string]vmopv1.OvfProperty {
+	properties := make(map[string]vmopv1.OvfProperty)
 
 	if ovfVirtualSystem != nil {
 		for _, product := range ovfVirtualSystem.Product {
 			for _, prop := range product.Property {
 				// Only show user configurable properties
 				if prop.UserConfigurable != nil && *prop.UserConfigurable {
-					property := v1alpha1.OvfProperty{
+					property := vmopv1.OvfProperty{
 						Key:         prop.Key,
 						Type:        prop.Type,
 						Default:     prop.Default,
@@ -264,27 +263,27 @@ type ImageConditionWrapper interface {
 func isImageSupported(image client.Object, ovfVirtualSystem *ovf.VirtualSystem, ovfSystemProps map[string]string) bool {
 	var genericImage ImageConditionWrapper
 	switch image := image.(type) {
-	case *v1alpha1.ClusterVirtualMachineImage:
+	case *vmopv1.ClusterVirtualMachineImage:
 		genericImage = image
-	case *v1alpha1.VirtualMachineImage:
+	case *vmopv1.VirtualMachineImage:
 		genericImage = image
 	}
 
 	switch {
 	case isOVFV1Alpha1Compatible(ovfVirtualSystem) || isATKGImage(ovfSystemProps):
-		conditions.MarkTrue(genericImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
+		conditions.MarkTrue(genericImage, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)
 	case lib.IsUnifiedTKGFSSEnabled():
 		return true
 	default:
 		conditions.MarkFalse(
 			genericImage,
-			v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition,
-			v1alpha1.VirtualMachineImageV1Alpha1NotCompatibleReason,
-			v1alpha1.ConditionSeverityError,
+			vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition,
+			vmopv1.VirtualMachineImageV1Alpha1NotCompatibleReason,
+			vmopv1.ConditionSeverityError,
 			"VirtualMachineImage is either not a TKG image or is not compatible with VMService v1alpha1",
 		)
 	}
-	return conditions.IsTrue(genericImage, v1alpha1.VirtualMachineImageV1Alpha1CompatibleCondition)
+	return conditions.IsTrue(genericImage, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)
 }
 
 // isOVFV1Alpha1Compatible checks the image if it has VMOperatorV1Alpha1ExtraConfigKey set to VMOperatorV1Alpha1ConfigReady

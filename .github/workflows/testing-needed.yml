@@ -1,15 +1,71 @@
 name: testing-needed
 
 on:
-  pull_request:
+  pull_request_target:
     types:
-    - synchronize
-    - opened
-    - reopened
-    - labeled
-    - unlabeled
+      - synchronize
+      - opened
+      - reopened
+      - labeled
+      - unlabeled
 
 jobs:
+  verify-change:
+    runs-on: ubuntu-latest
+    outputs:
+      label_names: ${{ steps.update-label.outputs.label_names }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          # The pull_request_target event runs in the context of the BASE of the pull request.
+          # We need to checkout the HEAD of the pull request to be able to check the diff.
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Check diff
+        id: check-diff
+        run: |
+          loc=$(git diff --shortstat HEAD ${{ github.sha }} | awk '{print $4+$6}')
+          echo "Lines of change: $loc"
+          echo "lines_of_change=$loc" >> $GITHUB_OUTPUT
+      - name: Update label
+        id: update-label
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # TODO: Add testing-needed-e2e-full label once the pipeline supports running e2e-full tests.
+          script: |
+            if (${{ steps.check-diff.outputs.lines_of_change > 99 }}) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['testing-needed-e2e-fast']
+              })
+            } else {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: 'testing-needed-e2e-fast'
+                })
+              } catch (e) {
+                if (e.status !== 404) {
+                  throw e
+                }
+              }
+            }
+
+            const labels = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            })
+            const label_names = labels.data.map(label => label.name)
+            core.info('Current label names: ' + label_names)
+            core.setOutput('label_names', label_names)
+
   check-label:
     strategy:
       matrix:
@@ -17,17 +73,20 @@ jobs:
         # type "e2e-fast", the labels would be testing-needed-e2e-fast and
         # testing-done-e2e-fast
         test-type:
-        - e2e-fast
-        - e2e-full
+          - e2e-fast
+          - e2e-full
     runs-on: ubuntu-latest
+    needs: verify-change
     steps:
-    - name: do-not-merge
-      # the step will run if one of the labels is present and the corresponding
-      # label indicating testing is done is not present, ex. the label
-      # testing-needed-e2e-fast is present without also testing-done-e2e-fast
-      if: |
-        contains(github.event.*.labels.*.name, format('testing-needed-{0}', matrix.test-type)) &&
-        !contains(github.event.*.labels.*.name, format('testing-done-{0}', matrix.test-type))
-      run: |
-        echo "Pull request is labeled as 'testing-needed-${{ matrix.test-type }}'"
-        exit 1
+      - name: do-not-merge
+        env:
+          LABEL_NAMES: ${{ needs.verify-change.outputs.label_names }}
+        # the step will run if one of the labels is present and the corresponding
+        # label indicating testing is done is not present, ex. the label
+        # testing-needed-e2e-fast is present without also testing-done-e2e-fast
+        if: |
+          contains(env.LABEL_NAMES, format('testing-needed-{0}', matrix.test-type)) &&
+          !contains(env.LABEL_NAMES, format('testing-done-{0}', matrix.test-type))
+        run: |
+          echo "Pull request is labeled as 'testing-needed-${{ matrix.test-type }}'"
+          exit 1

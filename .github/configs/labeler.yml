@@ -16,5 +16,3 @@ labels:
     size-below: 1000
   - label: "size/XXL"
     size-above: 999
-  - label: "testing-needed-e2e-fast"
-    size-above: 99

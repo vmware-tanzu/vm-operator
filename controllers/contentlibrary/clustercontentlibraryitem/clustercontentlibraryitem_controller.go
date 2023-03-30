@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -80,77 +80,74 @@ type Reconciler struct {
 	Metrics    *metrics.ContentLibraryItemMetrics
 }
 
-// +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=clustercontentlibraryitems,verbs=get;list;watch
+// +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=clustercontentlibraryitems,verbs=get;list;watch;update;patch;delete
 // +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=clustercontentlibraryitems/status,verbs=get
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages/status,verbs=get;update;patch
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	logger := r.Logger.WithValues("cclItemName", req.Name)
+	logger.Info("Reconciling ClusterContentLibraryItem")
+
 	cclItem := &imgregv1a1.ClusterContentLibraryItem{}
 	if err := r.Get(ctx, req.NamespacedName, cclItem); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	cvmiName, nameErr := utils.GetImageFieldNameFromItem(cclItem.Name)
+	if nameErr != nil {
+		logger.Error(nameErr, "Unsupported ClusterContentLibraryItem name, skip reconciling")
+		return ctrl.Result{}, nil
+	}
+	logger = logger.WithValues("cvmiName", cvmiName)
+
+	cclItemCtx := &context.ClusterContentLibraryItemContext{
+		Context:      ctx,
+		Logger:       logger,
+		CCLItem:      cclItem,
+		ImageObjName: cvmiName,
+	}
+
 	if !cclItem.DeletionTimestamp.IsZero() {
-		err := r.ReconcileDelete(cclItem)
+		err := r.ReconcileDelete(cclItemCtx)
 		return ctrl.Result{}, err
 	}
 
 	// Create or update the ClusterVirtualMachineImage resource accordingly.
-	err := r.ReconcileNormal(ctx, cclItem)
+	err := r.ReconcileNormal(cclItemCtx)
 	return ctrl.Result{}, err
 }
 
 // ReconcileDelete reconciles a deletion for a ClusterContentLibraryItem resource.
-func (r *Reconciler) ReconcileDelete(cclItem *imgregv1a1.ClusterContentLibraryItem) error {
-	logger := r.Logger.WithValues("cclItemName", cclItem.Name)
-
-	cvmiName, nameErr := utils.GetImageFieldNameFromItem(cclItem.Name)
-	if nameErr != nil {
-		logger.Error(nameErr, "Unsupported ClusterContentLibraryItem, skip reconciling")
-		return nil
+func (r *Reconciler) ReconcileDelete(ctx *context.ClusterContentLibraryItemContext) error {
+	if controllerutil.ContainsFinalizer(ctx.CCLItem, utils.ClusterContentLibraryItemVmopFinalizer) {
+		r.Metrics.DeleteMetrics(ctx.Logger, ctx.ImageObjName, "")
+		controllerutil.RemoveFinalizer(ctx.CCLItem, utils.ClusterContentLibraryItemVmopFinalizer)
+		return r.Update(ctx, ctx.CCLItem)
 	}
-
-	r.Metrics.DeleteMetrics(logger, cvmiName, "")
-
-	// NoOp. The ClusterVirtualMachineImages are automatically deleted because of OwnerReference.
 
 	return nil
 }
 
 // ReconcileNormal reconciles a ClusterContentLibraryItem resource by creating or
 // updating the corresponding ClusterVirtualMachineImage resource.
-func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.ClusterContentLibraryItem) error {
-	logger := r.Logger.WithValues("cclItemName", cclItem.Name)
-
-	cvmiName, nameErr := utils.GetImageFieldNameFromItem(cclItem.Name)
-	if nameErr != nil {
-		logger.Error(nameErr, "Unsupported ClusterContentLibraryItem, skip reconciling")
-		return nil
+func (r *Reconciler) ReconcileNormal(ctx *context.ClusterContentLibraryItemContext) error {
+	if !controllerutil.ContainsFinalizer(ctx.CCLItem, utils.ClusterContentLibraryItemVmopFinalizer) {
+		// The finalizer must be present before proceeding in order to ensure ReconcileDelete() will be called.
+		// Return immediately after here to update the object and then we'll proceed on the next reconciliation.
+		controllerutil.AddFinalizer(ctx.CCLItem, utils.ClusterContentLibraryItemVmopFinalizer)
+		return r.Update(ctx, ctx.CCLItem)
 	}
 
-	cvmi := &vmopv1.ClusterVirtualMachineImage{}
-	cvmi.Name = cvmiName
-	logger = logger.WithValues("cvmiName", cvmi.Name)
-
-	cclItemSecurityCompliance := cclItem.Status.SecurityCompliance
-
-	// If the ClusterContentLibraryItem's security compliance field is not set or is false, delete corresponding cvmi if exists
-	if cclItemSecurityCompliance == nil || !*cclItemSecurityCompliance {
-		logger.Info("ClusterContentLibraryItem's security compliance is not true, deleting corresponding cvmi if exists")
-		if err := r.Client.Delete(ctx, cvmi); err != nil {
-			if k8serrors.IsNotFound(err) {
-				logger.Info("Corresponding cvmi not found, skipping delete")
-				return nil
-			}
-			return err
-		}
-
-		r.Metrics.DeleteMetrics(logger, cvmi.Name, "")
-		logger.Info("Deleted corresponding cvmi")
-		return nil
+	// Do not set additional fields here as they will be overwritten in CreateOrPatch below.
+	cvmi := &vmopv1.ClusterVirtualMachineImage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: ctx.ImageObjName,
+		},
 	}
+	ctx.CVMI = cvmi
 
+	var didSync bool
 	var syncErr error
 	var savedStatus *vmopv1.VirtualMachineImageStatus
 
@@ -159,63 +156,66 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, cclItem *imgregv1a1.Clus
 			savedStatus = cvmi.Status.DeepCopy()
 		}()
 
-		if utils.CheckItemReadyCondition(cclItem.Status.Conditions) {
-			conditions.MarkTrue(cvmi, vmopv1.VirtualMachineImageProviderReadyCondition)
-		} else {
+		if err := r.setUpCVMIFromCCLItem(ctx); err != nil {
+			ctx.Logger.Error(err, "Failed to set up ClusterVirtualMachineImage from ClusterContentLibraryItem")
+			return err
+		}
+
+		// Check if the item is ready and skip the image content sync if not.
+		if !utils.IsItemReady(ctx.CCLItem.Status.Conditions) {
 			conditions.MarkFalse(cvmi,
 				vmopv1.VirtualMachineImageProviderReadyCondition,
 				vmopv1.VirtualMachineImageProviderNotReadyReason,
 				vmopv1.ConditionSeverityError,
 				"Provider item is not in ready condition",
 			)
-			logger.Info("ClusterContentLibraryItem is not ready yet, skipping further reconciliation")
-			return nil
+			ctx.Logger.Info("ClusterContentLibraryItem is not ready yet, skipping image content sync")
+		} else {
+			conditions.MarkTrue(cvmi, vmopv1.VirtualMachineImageProviderReadyCondition)
+			syncErr = r.syncImageContent(ctx)
+			didSync = true
 		}
 
-		if err := r.setUpCVMIFromCCLItem(cvmi, cclItem); err != nil {
-			logger.Error(err, "Failed to set up ClusterVirtualMachineImage from ClusterContentLibraryItem")
-			return err
-		}
-
-		syncErr = r.syncImageContent(ctx, cvmi, cclItem)
 		// Do not return syncErr here as we still want to patch the updated fields we get above.
 		return nil
 	})
 
-	logger = logger.WithValues("operationResult", opRes)
-	if createOrPatchErr != nil {
-		logger.Error(createOrPatchErr, "Failed to create or patch ClusterVirtualMachineImage resource")
-		return createOrPatchErr
-	}
+	ctx.Logger = ctx.Logger.WithValues("operationResult", opRes)
 
 	// Registry metrics based on the corresponding error captured.
 	defer func() {
-		r.Metrics.RegisterVMIResourceResolve(logger, cvmi.Name, "", createOrPatchErr == nil)
-		r.Metrics.RegisterVMIContentSync(logger, cvmi.Name, "", syncErr == nil)
+		r.Metrics.RegisterVMIResourceResolve(ctx.Logger, cvmi.Name, "", createOrPatchErr == nil)
+		r.Metrics.RegisterVMIContentSync(ctx.Logger, cvmi.Name, "", (didSync && syncErr == nil))
 	}()
+
+	if createOrPatchErr != nil {
+		ctx.Logger.Error(createOrPatchErr, "Failed to create or patch ClusterVirtualMachineImage resource")
+		return createOrPatchErr
+	}
 
 	// CreateOrPatch/CreateOrUpdate doesn't patch sub-resource for creation.
 	if opRes == controllerutil.OperationResultCreated {
 		cvmi.Status = *savedStatus
 		if createOrPatchErr = r.Status().Update(ctx, cvmi); createOrPatchErr != nil {
-			logger.Error(createOrPatchErr, "failed to update ClusterVirtualMachineImage status")
+			ctx.Logger.Error(createOrPatchErr, "Failed to update ClusterVirtualMachineImage status")
 			return createOrPatchErr
 		}
 	}
 
 	if syncErr != nil {
-		logger.Error(syncErr, "Failed to sync ClusterVirtualMachineImage to the latest content version")
+		ctx.Logger.Error(syncErr, "Failed to sync ClusterVirtualMachineImage to the latest content version")
 		return syncErr
 	}
 
-	logger.Info("Successfully reconciled ClusterVirtualMachineImage", "contentVersion", savedStatus.ContentVersion)
+	ctx.Logger.Info("Successfully reconciled ClusterVirtualMachineImage", "contentVersion", savedStatus.ContentVersion)
 	return nil
 }
 
 // setUpCVMIFromCCLItem sets up the ClusterVirtualMachineImage fields that
 // are retrievable from the given ClusterContentLibraryItem resource.
-func (r *Reconciler) setUpCVMIFromCCLItem(cvmi *vmopv1.ClusterVirtualMachineImage,
-	cclItem *imgregv1a1.ClusterContentLibraryItem) error {
+func (r *Reconciler) setUpCVMIFromCCLItem(ctx *context.ClusterContentLibraryItemContext) error {
+	cclItem := ctx.CCLItem
+	cvmi := ctx.CVMI
 	if err := controllerutil.SetControllerReference(cclItem, cvmi, r.Scheme()); err != nil {
 		return err
 	}
@@ -247,13 +247,27 @@ func (r *Reconciler) setUpCVMIFromCCLItem(cvmi *vmopv1.ClusterVirtualMachineImag
 		Name:     cclItem.Status.ClusterContentLibraryRef,
 	}
 
+	// Update image condition based on the security compliance of the provider item.
+	cclItemSecurityCompliance := ctx.CCLItem.Status.SecurityCompliance
+	if cclItemSecurityCompliance == nil || !*cclItemSecurityCompliance {
+		conditions.MarkFalse(cvmi,
+			vmopv1.VirtualMachineImageProviderSecurityComplianceCondition,
+			vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason,
+			vmopv1.ConditionSeverityError,
+			"Provider item is not security compliant",
+		)
+	} else {
+		conditions.MarkTrue(cvmi, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
+	}
+
 	return nil
 }
 
 // syncImageContent syncs the ClusterVirtualMachineImage content from the provider.
 // It skips syncing if the image content is already up-to-date.
-func (r *Reconciler) syncImageContent(ctx goctx.Context,
-	cvmi *vmopv1.ClusterVirtualMachineImage, cclItem *imgregv1a1.ClusterContentLibraryItem) error {
+func (r *Reconciler) syncImageContent(ctx *context.ClusterContentLibraryItemContext) error {
+	cclItem := ctx.CCLItem
+	cvmi := ctx.CVMI
 	latestVersion := cclItem.Status.ContentVersion
 	if cvmi.Status.ContentVersion == latestVersion {
 		return nil

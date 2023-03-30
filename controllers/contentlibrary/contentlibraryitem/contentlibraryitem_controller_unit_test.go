@@ -4,7 +4,7 @@
 package contentlibraryitem_test
 
 import (
-	"context"
+	goctx "context"
 	"fmt"
 
 	. "github.com/onsi/ginkgo"
@@ -20,6 +20,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentlibraryitem"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -43,6 +44,8 @@ func unitTestsReconcile() {
 		// The name for clItem must have the expected prefix to be parsed by the controller.
 		clItemName := fmt.Sprintf("%s-%s", utils.ItemFieldNamePrefix, "dummy")
 		clItem = utils.DummyContentLibraryItem(clItemName, "dummy-ns")
+		// Adding the finalizer here to avoid ReconcileNormal returning early without resolving image resource.
+		clItem.Finalizers = []string{utils.ContentLibraryItemVmopFinalizer}
 		initObjects = []client.Object{clItem}
 	})
 
@@ -55,7 +58,7 @@ func unitTestsReconcile() {
 			ctx.VMProvider,
 		)
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
-		fakeVMProvider.SyncVirtualMachineImageFn = func(_ context.Context, _, vmi client.Object) error {
+		fakeVMProvider.SyncVirtualMachineImageFn = func(_ goctx.Context, _, vmi client.Object) error {
 			vmiObj := vmi.(*vmopv1.VirtualMachineImage)
 			// Change a random spec and status field to verify the provider function is called.
 			vmiObj.Spec.HardwareVersion = 123
@@ -74,48 +77,25 @@ func unitTestsReconcile() {
 	})
 
 	Context("ReconcileNormal", func() {
-		When("ContentLibraryItem does not have the `securityCompliance` field to be true", func() {
+
+		JustBeforeEach(func() {
+			clItemCtx := &context.ContentLibraryItemContext{
+				Context:      ctx,
+				Logger:       ctx.Logger,
+				CLItem:       clItem,
+				ImageObjName: utils.GetTestVMINameFrom(clItem.Name),
+			}
+			Expect(reconciler.ReconcileNormal(clItemCtx)).To(Succeed())
+		})
+
+		When("ContentLibraryItem doesn't have the VMOP finalizer", func() {
 
 			BeforeEach(func() {
-				clItem.Status.SecurityCompliance = &[]bool{false}[0]
+				clItem.Finalizers = []string{}
 			})
 
-			When("No existing VirtualMachineImage found", func() {
-
-				It("should skip delete VirtualMachineImage", func() {
-					err := reconciler.ReconcileNormal(ctx, clItem)
-					Expect(err).ToNot(HaveOccurred())
-
-					vmiList := &vmopv1.VirtualMachineImageList{}
-					Expect(ctx.Client.List(ctx, vmiList)).To(Succeed())
-					Expect(vmiList.Items).To(HaveLen(0))
-				})
-			})
-
-			When("Existing VirtualMachineImage found", func() {
-
-				BeforeEach(func() {
-					vmiName := utils.GetTestVMINameFrom(clItem.Name)
-					existingVMI := &vmopv1.VirtualMachineImage{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      vmiName,
-							Namespace: clItem.Namespace,
-						},
-						Status: vmopv1.VirtualMachineImageStatus{
-							ContentVersion: "dummy-old",
-						},
-					}
-					initObjects = append(initObjects, existingVMI)
-				})
-
-				It("should delete the VirtualMachineImage", func() {
-					err := reconciler.ReconcileNormal(ctx, clItem)
-					Expect(err).ToNot(HaveOccurred())
-
-					vmiList := &vmopv1.VirtualMachineImageList{}
-					Expect(ctx.Client.List(ctx, vmiList)).To(Succeed())
-					Expect(vmiList.Items).To(HaveLen(0))
-				})
+			It("should add the finalizer", func() {
+				Expect(clItem.Finalizers).To(ContainElement(utils.ContentLibraryItemVmopFinalizer))
 			})
 		})
 
@@ -130,32 +110,36 @@ func unitTestsReconcile() {
 			})
 
 			It("should mark VirtualMachineImage condition as provider not ready", func() {
-				err := reconciler.ReconcileNormal(ctx, clItem)
-				Expect(err).ToNot(HaveOccurred())
-
-				vmiList := &vmopv1.VirtualMachineImageList{}
-				Expect(ctx.Client.List(ctx, vmiList, client.InNamespace(clItem.Namespace))).To(Succeed())
-				Expect(vmiList.Items).To(HaveLen(1))
-				unreadyVMI := vmiList.Items[0]
-				providerCondition := conditions.Get(&unreadyVMI, vmopv1.VirtualMachineImageProviderReadyCondition)
+				unreadyVMI := getVMIFromCLItem(*ctx, clItem)
+				providerCondition := conditions.Get(unreadyVMI, vmopv1.VirtualMachineImageProviderReadyCondition)
 				Expect(providerCondition).ToNot(BeNil())
 				Expect(providerCondition.Status).To(Equal(corev1.ConditionFalse))
+				Expect(providerCondition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderNotReadyReason))
 			})
 		})
 
-		// ContentLibraryItem clItem, which is created from DummyContentLibraryItem() already has Ready condition set.
-		When("ContentLibraryItem is in Ready condition", func() {
+		When("ContentLibraryItem is not security compliant", func() {
+
+			BeforeEach(func() {
+				clItem.Status.SecurityCompliance = &[]bool{false}[0]
+			})
+
+			It("should mark VirtualMachineImage condition as provider security not compliant", func() {
+				vmi := getVMIFromCLItem(*ctx, clItem)
+				condition := conditions.Get(vmi, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
+				Expect(condition).ToNot(BeNil())
+				Expect(condition.Status).To(Equal(corev1.ConditionFalse))
+				Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason))
+			})
+		})
+
+		// ContentLibraryItem clItem, which is created from DummyContentLibraryItem() already has all conditions satisfied.
+		When("ContentLibraryItem is ready and security compliant", func() {
 			When("VirtualMachineImage resource has not been created yet", func() {
 				It("should create a new VirtualMachineImage syncing up with ContentLibraryItem", func() {
-					err := reconciler.ReconcileNormal(ctx, clItem)
-					Expect(err).ToNot(HaveOccurred())
-
-					vmiList := &vmopv1.VirtualMachineImageList{}
-					Expect(ctx.Client.List(ctx, vmiList, client.InNamespace(clItem.Namespace))).To(Succeed())
-					Expect(vmiList.Items).To(HaveLen(1))
-					createdVMI := vmiList.Items[0]
+					createdVMI := getVMIFromCLItem(*ctx, clItem)
 					expectedVMI := utils.GetExpectedVMIFrom(*clItem, fakeVMProvider.SyncVirtualMachineImageFn)
-					utils.PopulateRuntimeFieldsTo(expectedVMI, &createdVMI)
+					utils.PopulateRuntimeFieldsTo(expectedVMI, createdVMI)
 
 					Expect(createdVMI.Name).To(Equal(expectedVMI.Name))
 					Expect(createdVMI.OwnerReferences).To(Equal(expectedVMI.OwnerReferences))
@@ -180,15 +164,9 @@ func unitTestsReconcile() {
 				})
 
 				It("should update the existing VirtualMachineImage with ContentLibraryItem", func() {
-					err := reconciler.ReconcileNormal(ctx, clItem)
-					Expect(err).ToNot(HaveOccurred())
-
-					vmiList := &vmopv1.VirtualMachineImageList{}
-					Expect(ctx.Client.List(ctx, vmiList, client.InNamespace(clItem.Namespace))).To(Succeed())
-					Expect(vmiList.Items).To(HaveLen(1))
-					updatedVMI := vmiList.Items[0]
+					updatedVMI := getVMIFromCLItem(*ctx, clItem)
 					expectedVMI := utils.GetExpectedVMIFrom(*clItem, fakeVMProvider.SyncVirtualMachineImageFn)
-					utils.PopulateRuntimeFieldsTo(expectedVMI, &updatedVMI)
+					utils.PopulateRuntimeFieldsTo(expectedVMI, updatedVMI)
 
 					Expect(updatedVMI.Name).To(Equal(expectedVMI.Name))
 					Expect(updatedVMI.OwnerReferences).To(Equal(expectedVMI.OwnerReferences))
@@ -208,15 +186,9 @@ func unitTestsReconcile() {
 				})
 
 				It("should skip updating the VirtualMachineImage with library item", func() {
-					err := reconciler.ReconcileNormal(ctx, clItem)
-					Expect(err).ToNot(HaveOccurred())
-
-					vmiList := &vmopv1.VirtualMachineImageList{}
-					Expect(ctx.Client.List(ctx, vmiList, client.InNamespace(clItem.Namespace))).To(Succeed())
-					Expect(vmiList.Items).To(HaveLen(1))
-					currentVMI := vmiList.Items[0]
+					currentVMI := getVMIFromCLItem(*ctx, clItem)
 					expectedVMI := utils.GetExpectedVMIFrom(*clItem, fakeVMProvider.SyncVirtualMachineImageFn)
-					utils.PopulateRuntimeFieldsTo(expectedVMI, &currentVMI)
+					utils.PopulateRuntimeFieldsTo(expectedVMI, currentVMI)
 
 					Expect(currentVMI.Name).To(Equal(expectedVMI.Name))
 					Expect(currentVMI.OwnerReferences).To(Equal(expectedVMI.OwnerReferences))
@@ -226,4 +198,31 @@ func unitTestsReconcile() {
 			})
 		})
 	})
+
+	Context("ReconcileDelete", func() {
+
+		JustBeforeEach(func() {
+			clItemCtx := &context.ContentLibraryItemContext{
+				Context: ctx,
+				Logger:  ctx.Logger,
+				CLItem:  clItem,
+			}
+			Expect(reconciler.ReconcileDelete(clItemCtx)).To(Succeed())
+		})
+
+		It("should remove the finalizer from ContentLibraryItem resource", func() {
+			Expect(clItem.Finalizers).ToNot(ContainElement(utils.ContentLibraryItemVmopFinalizer))
+		})
+	})
+}
+
+func getVMIFromCLItem(
+	ctx builder.UnitTestContextForController,
+	clItem *imgregv1a1.ContentLibraryItem) *vmopv1.VirtualMachineImage {
+
+	vmiName := utils.GetTestVMINameFrom(clItem.Name)
+	vmi := &vmopv1.VirtualMachineImage{}
+	Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vmiName, Namespace: clItem.Namespace}, vmi)).To(Succeed())
+
+	return vmi
 }

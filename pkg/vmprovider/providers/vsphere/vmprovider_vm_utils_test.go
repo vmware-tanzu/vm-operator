@@ -316,10 +316,9 @@ func vmUtilTests() {
 			When("Neither cluster or namespace scoped VM image exists", func() {
 
 				It("returns error and sets condition", func() {
-					expectedErrMsg := fmt.Sprintf("Failed to get the VM's image: %s", vmCtx.VM.Spec.ImageName)
-
 					_, _, err := vsphere.GetVMImageStatusAndContentLibraryUUID(vmCtx, k8sClient)
 					Expect(err).To(HaveOccurred())
+					expectedErrMsg := fmt.Sprintf("Failed to get the VM's image: %s", vmCtx.VM.Spec.ImageName)
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
 					expectedCondition := vmopv1.Conditions{
@@ -336,16 +335,46 @@ func vmUtilTests() {
 			When("VM image exists but the provider is not ready", func() {
 
 				BeforeEach(func() {
-					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
 					conditions.MarkFalse(nsVMImage, vmopv1.VirtualMachineImageProviderReadyCondition, "", "", "")
+					// Set other conditions true to verify the specific message in the MatchConditions function.
+					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
+					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageSyncedCondition)
 					initObjects = append(initObjects, cl, nsVMImage)
 					vmCtx.VM.Spec.ImageName = nsVMImage.Name
 				})
 
 				It("returns error and sets VM condition", func() {
-					expectedErrMsg := fmt.Sprintf("VM's image provider is not ready: %s", vmCtx.VM.Spec.ImageName)
 					_, _, err := vsphere.GetVMImageStatusAndContentLibraryUUID(vmCtx, k8sClient)
 					Expect(err).To(HaveOccurred())
+					expectedErrMsg := fmt.Sprintf("VM's image provider is not ready: %s", vmCtx.VM.Spec.ImageName)
+					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+
+					expectedCondition := vmopv1.Conditions{
+						*conditions.FalseCondition(
+							vmopv1.VirtualMachinePrereqReadyCondition,
+							vmopv1.VirtualMachineImageNotReadyReason,
+							vmopv1.ConditionSeverityError,
+							expectedErrMsg),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+				})
+			})
+
+			When("VM image exists but the provider is not security complaint", func() {
+
+				BeforeEach(func() {
+					conditions.MarkFalse(nsVMImage, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition, "", "", "")
+					// Set other conditions true to verify the specific message in the MatchConditions function.
+					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
+					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageSyncedCondition)
+					initObjects = append(initObjects, cl, nsVMImage)
+					vmCtx.VM.Spec.ImageName = nsVMImage.Name
+				})
+
+				It("returns error and sets VM condition", func() {
+					_, _, err := vsphere.GetVMImageStatusAndContentLibraryUUID(vmCtx, k8sClient)
+					Expect(err).To(HaveOccurred())
+					expectedErrMsg := fmt.Sprintf("VM's image provider is not security compliant: %s", vmCtx.VM.Spec.ImageName)
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
 					expectedCondition := vmopv1.Conditions{
@@ -364,16 +393,18 @@ func vmUtilTests() {
 				BeforeEach(func() {
 					// Switch to cluster scoped VM image as we used namespace scoped VM image in the previous test.
 					// So that we don't have to write additional test cases to cover both namespace and cluster images.
-					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
 					conditions.MarkFalse(clusterVMImage, vmopv1.VirtualMachineImageSyncedCondition, "", "", "")
+					// Set other conditions true to verify the specific message in the MatchConditions function.
+					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
+					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
 					initObjects = append(initObjects, clusterCL, clusterVMImage)
 					vmCtx.VM.Spec.ImageName = clusterVMImage.Name
 				})
 
 				It("returns error and sets VM condition", func() {
-					expectedErrMsg := fmt.Sprintf("VM's image content version is not synced: %s", vmCtx.VM.Spec.ImageName)
 					_, _, err := vsphere.GetVMImageStatusAndContentLibraryUUID(vmCtx, k8sClient)
 					Expect(err).To(HaveOccurred())
+					expectedErrMsg := fmt.Sprintf("VM's image content version is not synced: %s", vmCtx.VM.Spec.ImageName)
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
 					expectedCondition := vmopv1.Conditions{
@@ -390,6 +421,7 @@ func vmUtilTests() {
 			When("Namespace scoped VirtualMachineImage exists and ready", func() {
 				BeforeEach(func() {
 					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
+					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
 					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageSyncedCondition)
 					initObjects = append(initObjects, cl, nsVMImage)
 					vmCtx.VM.Spec.ImageName = nsVMImage.Name
@@ -406,6 +438,7 @@ func vmUtilTests() {
 			When("ClusterVirtualMachineImage exists and ready", func() {
 				BeforeEach(func() {
 					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
+					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
 					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageSyncedCondition)
 					initObjects = append(initObjects, clusterCL, clusterVMImage)
 					vmCtx.VM.Spec.ImageName = clusterVMImage.Name

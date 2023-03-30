@@ -6,6 +6,7 @@ package vsphere
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -348,14 +349,19 @@ func resolveVMImageStatus(
 	}
 
 	// Do not return the VM image status if the current image condition is not satisfied.
-	imageNotReadyMsg := ""
+	imageNotReadyMsgs := []string{}
 	if !conditions.IsTrueFromConditions(imageStatus.Conditions, vmopv1.VirtualMachineImageProviderReadyCondition) {
-		imageNotReadyMsg = fmt.Sprintf("VM's image provider is not ready: %s", imageName)
-	} else if !conditions.IsTrueFromConditions(imageStatus.Conditions, vmopv1.VirtualMachineImageSyncedCondition) {
-		imageNotReadyMsg = fmt.Sprintf("VM's image content version is not synced: %s", imageName)
+		imageNotReadyMsgs = append(imageNotReadyMsgs, fmt.Sprintf("VM's image provider is not ready: %s", imageName))
+	}
+	if !conditions.IsTrueFromConditions(imageStatus.Conditions, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition) {
+		imageNotReadyMsgs = append(imageNotReadyMsgs, fmt.Sprintf("VM's image provider is not security compliant: %s", imageName))
+	}
+	if !conditions.IsTrueFromConditions(imageStatus.Conditions, vmopv1.VirtualMachineImageSyncedCondition) {
+		imageNotReadyMsgs = append(imageNotReadyMsgs, fmt.Sprintf("VM's image content version is not synced: %s", imageName))
 	}
 
-	if imageNotReadyMsg != "" {
+	if len(imageNotReadyMsgs) > 0 {
+		imageNotReadyMsg := strings.Join(imageNotReadyMsgs, "; ")
 		conditions.MarkFalse(vmCtx.VM,
 			vmopv1.VirtualMachinePrereqReadyCondition,
 			vmopv1.VirtualMachineImageNotReadyReason,

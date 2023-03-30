@@ -10,4 +10,7 @@ const (
 	ClusterContentLibraryItemKind = "ClusterContentLibraryItem"
 	ContentLibraryKind            = "ContentLibrary"
 	ContentLibraryItemKind        = "ContentLibraryItem"
+
+	ContentLibraryItemVmopFinalizer        = "contentlibraryitem.vmoperator.vmware.com"
+	ClusterContentLibraryItemVmopFinalizer = "clustercontentlibraryitem.vmoperator.vmware.com"
 )

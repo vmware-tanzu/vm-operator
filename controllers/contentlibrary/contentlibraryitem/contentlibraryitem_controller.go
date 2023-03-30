@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -81,84 +80,75 @@ type Reconciler struct {
 	Metrics    *metrics.ContentLibraryItemMetrics
 }
 
-// +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=contentlibraryitems,verbs=get;list;watch
+// +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=contentlibraryitems,verbs=get;list;watch;update;patch;delete
 // +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=contentlibraryitems/status,verbs=get
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages/status,verbs=get;update;patch
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	r.Logger.Info("Reconciling ContentLibraryItem", "CLItemName", req.NamespacedName)
+	logger := r.Logger.WithValues("clItemName", req.Name, "namespace", req.Namespace)
+	logger.Info("Reconciling ContentLibraryItem")
 
 	clItem := &imgregv1a1.ContentLibraryItem{}
 	if err := r.Get(ctx, req.NamespacedName, clItem); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	vmiName, nameErr := utils.GetImageFieldNameFromItem(clItem.Name)
+	if nameErr != nil {
+		logger.Error(nameErr, "Unsupported ContentLibraryItem name, skip reconciling")
+		return ctrl.Result{}, nil
+	}
+	logger = logger.WithValues("vmiName", vmiName)
+
+	clItemCtx := &context.ContentLibraryItemContext{
+		Context:      ctx,
+		Logger:       logger,
+		CLItem:       clItem,
+		ImageObjName: vmiName,
+	}
+
 	if !clItem.DeletionTimestamp.IsZero() {
-		err := r.ReconcileDelete(clItem)
+		err := r.ReconcileDelete(clItemCtx)
 		return ctrl.Result{}, err
 	}
 
 	// Create or update the VirtualMachineImage resource accordingly.
-	err := r.ReconcileNormal(ctx, clItem)
+	err := r.ReconcileNormal(clItemCtx)
 	return ctrl.Result{}, err
 }
 
 // ReconcileDelete reconciles a deletion for a ContentLibraryItem resource.
-func (r *Reconciler) ReconcileDelete(clItem *imgregv1a1.ContentLibraryItem) error {
-	logger := r.Logger.WithValues("clItemName", clItem.Name, "namespace", clItem.Namespace)
-
-	vmiName, nameErr := utils.GetImageFieldNameFromItem(clItem.Name)
-	if nameErr != nil {
-		logger.Error(nameErr, "Unsupported ContentLibraryItem, skip reconciling")
-		return nil
+func (r *Reconciler) ReconcileDelete(ctx *context.ContentLibraryItemContext) error {
+	if controllerutil.ContainsFinalizer(ctx.CLItem, utils.ContentLibraryItemVmopFinalizer) {
+		r.Metrics.DeleteMetrics(ctx.Logger, ctx.ImageObjName, ctx.CLItem.Namespace)
+		controllerutil.RemoveFinalizer(ctx.CLItem, utils.ContentLibraryItemVmopFinalizer)
+		return r.Update(ctx, ctx.CLItem)
 	}
-
-	r.Metrics.DeleteMetrics(logger, vmiName, clItem.Namespace)
-
-	// NoOp. The VirtualMachineImages are automatically deleted because of OwnerReference.
 
 	return nil
 }
 
 // ReconcileNormal reconciles a ContentLibraryItem resource by creating or
 // updating the corresponding VirtualMachineImage resource.
-func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.ContentLibraryItem) error {
-	logger := r.Logger.WithValues("clItemName", clItem.Name, "namespace", clItem.Namespace)
-
-	vmiName, nameErr := utils.GetImageFieldNameFromItem(clItem.Name)
-	if nameErr != nil {
-		logger.Error(nameErr, "Unsupported ContentLibraryItem, skip reconciling")
-		return nil
+func (r *Reconciler) ReconcileNormal(ctx *context.ContentLibraryItemContext) error {
+	if !controllerutil.ContainsFinalizer(ctx.CLItem, utils.ContentLibraryItemVmopFinalizer) {
+		// The finalizer must be present before proceeding in order to ensure ReconcileDelete() will be called.
+		// Return immediately after here to update the object and then we'll proceed on the next reconciliation.
+		controllerutil.AddFinalizer(ctx.CLItem, utils.ContentLibraryItemVmopFinalizer)
+		return r.Update(ctx, ctx.CLItem)
 	}
 
+	// Do not set additional fields here as they will be overwritten in CreateOrPatch below.
 	vmi := &vmopv1.VirtualMachineImage{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      vmiName,
-			Namespace: clItem.Namespace,
+			Name:      ctx.ImageObjName,
+			Namespace: ctx.CLItem.Namespace,
 		},
 	}
+	ctx.VMI = vmi
 
-	logger = logger.WithValues("vmiName", vmi.Name, "vmiNamespace", vmi.Namespace)
-
-	clItemSecurityCompliance := clItem.Status.SecurityCompliance
-
-	// If the ContentLibraryItem's security compliance field is not set or is false, delete the vmi if already exists
-	if clItemSecurityCompliance == nil || !*clItemSecurityCompliance {
-		logger.Info("ContentLibraryItem's security status is not true, deleting corresponding vmi if exists")
-		if err := r.Client.Delete(ctx, vmi); err != nil {
-			if k8serrors.IsNotFound(err) {
-				logger.Info("Corresponding vmi not found, skipping delete")
-				return nil
-			}
-			return err
-		}
-
-		r.Metrics.DeleteMetrics(logger, vmi.Name, vmi.Namespace)
-		logger.Info("Deleted Corresponding vmi")
-		return nil
-	}
-
+	var didSync bool
 	var syncErr error
 	var savedStatus *vmopv1.VirtualMachineImageStatus
 
@@ -167,38 +157,40 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 			savedStatus = vmi.Status.DeepCopy()
 		}()
 
-		if utils.CheckItemReadyCondition(clItem.Status.Conditions) {
-			conditions.MarkTrue(vmi, vmopv1.VirtualMachineImageProviderReadyCondition)
-		} else {
+		if err := r.setUpVMIFromCLItem(ctx); err != nil {
+			ctx.Logger.Error(err, "Failed to set up VirtualMachineImage from ContentLibraryItem")
+			return err
+		}
+
+		// Check if the item is ready and skip the image content sync if not.
+		if !utils.IsItemReady(ctx.CLItem.Status.Conditions) {
 			conditions.MarkFalse(vmi,
 				vmopv1.VirtualMachineImageProviderReadyCondition,
 				vmopv1.VirtualMachineImageProviderNotReadyReason,
 				vmopv1.ConditionSeverityError,
 				"Provider item is not in ready condition",
 			)
-			logger.Info("ContentLibraryItem is not ready yet, skipping further reconciliation")
-			return nil
+			ctx.Logger.Info("ContentLibraryItem is not ready yet, skipping image content sync")
+		} else {
+			conditions.MarkTrue(vmi, vmopv1.VirtualMachineImageProviderReadyCondition)
+			syncErr = r.syncImageContent(ctx)
+			didSync = true
 		}
 
-		if err := r.setUpVMIFromCLItem(vmi, clItem); err != nil {
-			logger.Error(err, "failed to set up VirtualMachineImage from ContentLibraryItem")
-			return err
-		}
-
-		syncErr = r.syncImageContent(ctx, vmi, clItem)
 		// Do not return syncErr here as we still want to patch the updated fields we get above.
 		return nil
 	})
 
+	ctx.Logger = ctx.Logger.WithValues("operationResult", opRes)
+
 	// Registry metrics based on the corresponding error captured.
 	defer func() {
-		r.Metrics.RegisterVMIResourceResolve(logger, vmi.Name, vmi.Namespace, createOrPatchErr == nil)
-		r.Metrics.RegisterVMIContentSync(logger, vmi.Name, vmi.Namespace, syncErr == nil)
+		r.Metrics.RegisterVMIResourceResolve(ctx.Logger, vmi.Name, vmi.Namespace, createOrPatchErr == nil)
+		r.Metrics.RegisterVMIContentSync(ctx.Logger, vmi.Name, vmi.Namespace, (didSync && syncErr == nil))
 	}()
 
-	logger = logger.WithValues("operationResult", opRes)
 	if createOrPatchErr != nil {
-		logger.Error(createOrPatchErr, "failed to create or patch VirtualMachineImage resource")
+		ctx.Logger.Error(createOrPatchErr, "failed to create or patch VirtualMachineImage resource")
 		return createOrPatchErr
 	}
 
@@ -206,24 +198,25 @@ func (r *Reconciler) ReconcileNormal(ctx goctx.Context, clItem *imgregv1a1.Conte
 	if opRes == controllerutil.OperationResultCreated {
 		vmi.Status = *savedStatus
 		if createOrPatchErr = r.Status().Update(ctx, vmi); createOrPatchErr != nil {
-			logger.Error(createOrPatchErr, "failed to update VirtualMachineImage status")
+			ctx.Logger.Error(createOrPatchErr, "Failed to update VirtualMachineImage status")
 			return createOrPatchErr
 		}
 	}
 
 	if syncErr != nil {
-		logger.Error(syncErr, "failed to sync VirtualMachineImage to the latest content version")
+		ctx.Logger.Error(syncErr, "Failed to sync VirtualMachineImage to the latest content version")
 		return syncErr
 	}
 
-	logger.Info("Successfully reconciled VirtualMachineImage", "contentVersion", savedStatus.ContentVersion)
+	ctx.Logger.Info("Successfully reconciled VirtualMachineImage", "contentVersion", savedStatus.ContentVersion)
 	return nil
 }
 
 // setUpVMIFromCLItem sets up the VirtualMachineImage fields that
 // are retrievable from the given ContentLibraryItem resource.
-func (r *Reconciler) setUpVMIFromCLItem(vmi *vmopv1.VirtualMachineImage,
-	clItem *imgregv1a1.ContentLibraryItem) error {
+func (r *Reconciler) setUpVMIFromCLItem(ctx *context.ContentLibraryItemContext) error {
+	clItem := ctx.CLItem
+	vmi := ctx.VMI
 	if err := controllerutil.SetControllerReference(clItem, vmi, r.Scheme()); err != nil {
 		return err
 	}
@@ -243,13 +236,27 @@ func (r *Reconciler) setUpVMIFromCLItem(vmi *vmopv1.VirtualMachineImage,
 		Name:     clItem.Status.ContentLibraryRef.Name,
 	}
 
+	// Update image condition based on the security compliance of the provider item.
+	clItemSecurityCompliance := ctx.CLItem.Status.SecurityCompliance
+	if clItemSecurityCompliance == nil || !*clItemSecurityCompliance {
+		conditions.MarkFalse(vmi,
+			vmopv1.VirtualMachineImageProviderSecurityComplianceCondition,
+			vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason,
+			vmopv1.ConditionSeverityError,
+			"Provider item is not security compliant",
+		)
+	} else {
+		conditions.MarkTrue(vmi, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
+	}
+
 	return nil
 }
 
 // syncImageContent syncs the VirtualMachineImage content from the provider.
 // It skips syncing if the image content is already up-to-date.
-func (r *Reconciler) syncImageContent(ctx goctx.Context,
-	vmi *vmopv1.VirtualMachineImage, clItem *imgregv1a1.ContentLibraryItem) error {
+func (r *Reconciler) syncImageContent(ctx *context.ContentLibraryItemContext) error {
+	clItem := ctx.CLItem
+	vmi := ctx.VMI
 	latestVersion := clItem.Status.ContentVersion
 	if vmi.Status.ContentVersion == latestVersion {
 		return nil

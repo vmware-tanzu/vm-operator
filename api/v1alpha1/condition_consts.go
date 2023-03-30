@@ -104,6 +104,9 @@ const (
 
 	// VirtualMachineImageProviderReadyCondition denotes readiness of the VirtualMachineImage provider.
 	VirtualMachineImageProviderReadyCondition ConditionType = "VirtualMachineImageProviderReady"
+
+	// VirtualMachineImageProviderSecurityComplianceCondition denotes security compliance of the library item provider.
+	VirtualMachineImageProviderSecurityComplianceCondition ConditionType = "VirtualMachineImageProviderSecurityCompliance"
 )
 
 // Condition.Reason for Conditions related to VirtualMachineImages.
@@ -124,4 +127,8 @@ const (
 	// VirtualMachineImageProviderNotReadyReason (Severity=Error) documents that the VirtualMachineImage provider
 	// is not in ready state.
 	VirtualMachineImageProviderNotReadyReason = "VirtualMachineImageProviderNotReady"
+
+	// VirtualMachineImageProviderSecurityNotCompliantReason (Severity=Error) documents that the
+	// VirtualMachineImage provider doesn't meet security compliance requirements.
+	VirtualMachineImageProviderSecurityNotCompliantReason = "VirtualMachineImageProviderSecurityNotCompliant"
 )

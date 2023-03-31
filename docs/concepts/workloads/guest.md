@@ -281,18 +281,18 @@ The following resources may be used to deploy a VM and bootstrap the guest's net
         users:
         - default
         - name: akutz
-            primary_group: akutz
-            groups: users
-            ssh_authorized_keys:
-            - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj...
+          primary_group: akutz
+          groups: users
+          ssh_authorized_keys:
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj...
         runcmd:
         - "ls /"
         - [ "ls", "-a", "-l", "/" ]
         write_files:
         - path: /etc/my-plaintext
-            permissions: '0644'
-            owner: root:root
-            content: |
+          permissions: '0644'
+          owner: root:root
+          content: |
             Hello, world.
         ```
 

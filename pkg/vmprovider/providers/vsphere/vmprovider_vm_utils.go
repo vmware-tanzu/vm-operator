@@ -38,9 +38,14 @@ func GetVirtualMachineClass(
 	k8sClient ctrlclient.Client) (*vmopv1.VirtualMachineClass, error) {
 
 	className := vmCtx.VM.Spec.ClassName
+	key := ctrlclient.ObjectKey{Name: className}
+	if lib.IsNamespacedClassAndWindowsFSSEnabled() {
+		// namespace scoped VM classes
+		key.Namespace = vmCtx.VM.Namespace
+	}
 
 	vmClass := &vmopv1.VirtualMachineClass{}
-	if err := k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: className}, vmClass); err != nil {
+	if err := k8sClient.Get(vmCtx, key, vmClass); err != nil {
 		msg := fmt.Sprintf("Failed to get VirtualMachineClass: %s", className)
 		conditions.MarkFalse(vmCtx.VM,
 			vmopv1.VirtualMachinePrereqReadyCondition,
@@ -48,6 +53,14 @@ func GetVirtualMachineClass(
 			vmopv1.ConditionSeverityError,
 			msg)
 		return nil, errors.Wrap(err, msg)
+	}
+
+	if lib.IsNamespacedClassAndWindowsFSSEnabled() {
+		// After WCP_Namespaced_Class_And_Windows_Support is enabled, VirtualMachineClass is migrated
+		// from cluster scoped to namespace scoped. VirtualMachineClassBinding CRD will be removed
+		// and doesn't make any sense anymore.
+		// We can immediately return the VM class here and skip checking VM class bindings.
+		return vmClass, nil
 	}
 
 	namespace := vmCtx.VM.Namespace

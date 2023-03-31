@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine
@@ -62,13 +62,19 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
-		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
-		Watches(&source.Kind{Type: &vmopv1.VirtualMachineClassBinding{}},
-			handler.EnqueueRequestsFromMapFunc(classBindingToVMMapperFn(ctx, r.Client)))
+		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles})
 
 	if !lib.IsWCPVMImageRegistryEnabled() {
 		builder = builder.Watches(&source.Kind{Type: &vmopv1.ContentSourceBinding{}},
 			handler.EnqueueRequestsFromMapFunc(csBindingToVMMapperFn(ctx, r.Client)))
+	}
+
+	if !lib.IsNamespacedClassAndWindowsFSSEnabled() {
+		builder = builder.Watches(&source.Kind{Type: &vmopv1.VirtualMachineClassBinding{}},
+			handler.EnqueueRequestsFromMapFunc(classBindingToVMMapperFn(ctx, r.Client)))
+	} else {
+		builder = builder.Watches(&source.Kind{Type: &vmopv1.VirtualMachineClass{}},
+			handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client)))
 	}
 
 	return builder.Complete(r)
@@ -161,6 +167,39 @@ func classBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Cl
 		}
 
 		logger.V(4).Info("Returning VM reconcile requests due to VirtualMachineClassBinding watch", "requests", reconcileRequests)
+		return reconcileRequests
+	}
+}
+
+// classToVMMapperFn returns a mapper function that can be used to queue reconcile request
+// for the VirtualMachines in response to an event on the VirtualMachineClass resource when
+// WCP_Namespaced_Class_And_Windows_Support is enabled.
+func classToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(o client.Object) []reconcile.Request {
+	// For a given VirtualMachineClass, return reconcile requests
+	// for those VirtualMachines with corresponding VirtualMachinesClasses referenced
+	return func(o client.Object) []reconcile.Request {
+		class := o.(*vmopv1.VirtualMachineClass)
+		logger := ctx.Logger.WithValues("name", class.Name, "namespace", class.Namespace)
+
+		logger.V(4).Info("Reconciling all VMs referencing a VM class because of a VirtualMachineClass watch")
+
+		// Find all vms that match this vmclass
+		vmList := &vmopv1.VirtualMachineList{}
+		if err := c.List(ctx, vmList, client.InNamespace(class.Namespace)); err != nil {
+			logger.Error(err, "Failed to list VirtualMachines for reconciliation due to VirtualMachineClass watch")
+			return nil
+		}
+
+		// Populate reconcile requests for vms matching the classbinding reference
+		var reconcileRequests []reconcile.Request
+		for _, vm := range vmList.Items {
+			if vm.Spec.ClassName == class.Name {
+				key := client.ObjectKey{Namespace: vm.Namespace, Name: vm.Name}
+				reconcileRequests = append(reconcileRequests, reconcile.Request{NamespacedName: key})
+			}
+		}
+
+		logger.Info("Returning VM reconcile requests due to VirtualMachineClass watch", "requests", reconcileRequests)
 		return reconcileRequests
 	}
 }

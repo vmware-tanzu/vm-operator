@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere_test
@@ -55,84 +55,146 @@ func vmUtilTests() {
 	})
 
 	Context("GetVirtualMachineClass", func() {
+		oldNamespacedClassAndWindowsEnabledFunc := lib.IsNamespacedClassAndWindowsFSSEnabled
 
-		var (
-			vmClass        *vmopv1.VirtualMachineClass
-			vmClassBinding *vmopv1.VirtualMachineClassBinding
-		)
+		When("WCP_Namespaced_Class_And_Windows_Support FSS is disabled", func() {
+			var (
+				vmClass        *vmopv1.VirtualMachineClass
+				vmClassBinding *vmopv1.VirtualMachineClassBinding
+			)
 
-		BeforeEach(func() {
-			vmClass, vmClassBinding = builder.DummyVirtualMachineClassAndBinding("dummy-vm-class", vmCtx.VM.Namespace)
-			vmCtx.VM.Spec.ClassName = vmClass.Name
-		})
+			BeforeEach(func() {
+				vmClass, vmClassBinding = builder.DummyVirtualMachineClassAndBinding("dummy-vm-class", vmCtx.VM.Namespace)
+				vmCtx.VM.Spec.ClassName = vmClass.Name
 
-		Context("VirtualMachineClass custom resource doesn't exist", func() {
-			It("Returns error and sets condition when VM Class does not exist", func() {
-				expectedErrMsg := fmt.Sprintf("Failed to get VirtualMachineClass: %s", vmCtx.VM.Spec.ClassName)
+				lib.IsNamespacedClassAndWindowsFSSEnabled = func() bool {
+					return false
+				}
+			})
 
-				_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+			AfterEach(func() {
+				lib.IsNamespacedClassAndWindowsFSSEnabled = oldNamespacedClassAndWindowsEnabledFunc
+			})
+
+			Context("VirtualMachineClass custom resource doesn't exist", func() {
+				It("Returns error and sets condition when VM Class does not exist", func() {
+					expectedErrMsg := fmt.Sprintf("Failed to get VirtualMachineClass: %s", vmCtx.VM.Spec.ClassName)
+
+					_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+
+					expectedCondition := vmopv1.Conditions{
+						*conditions.FalseCondition(
+							vmopv1.VirtualMachinePrereqReadyCondition,
+							vmopv1.VirtualMachineClassNotFoundReason,
+							vmopv1.ConditionSeverityError,
+							expectedErrMsg),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+				})
+			})
+
+			validateNoVMClassBindingCondition := func(vm *vmopv1.VirtualMachine) {
+				msg := fmt.Sprintf("Namespace %s does not have access to VirtualMachineClass %s", vm.Namespace, vm.Spec.ClassName)
 
 				expectedCondition := vmopv1.Conditions{
 					*conditions.FalseCondition(
 						vmopv1.VirtualMachinePrereqReadyCondition,
-						vmopv1.VirtualMachineClassNotFoundReason,
+						vmopv1.VirtualMachineClassBindingNotFoundReason,
 						vmopv1.ConditionSeverityError,
-						expectedErrMsg),
+						msg),
 				}
 				Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+			}
+
+			Context("VirtualMachineClass custom resource exists", func() {
+				BeforeEach(func() {
+					initObjects = append(initObjects, vmClass)
+				})
+
+				Context("No VirtualMachineClassBinding exists in namespace", func() {
+					It("return an error and sets VirtualMachinePreReqReady Condition to false", func() {
+						expectedErr := fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vmCtx.VM.Spec.ClassName, vmCtx.VM.Namespace)
+
+						_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(expectedErr))
+						validateNoVMClassBindingCondition(vmCtx.VM)
+					})
+				})
+
+				Context("VirtualMachineBinding is not present for VM Class", func() {
+					BeforeEach(func() {
+						vmClassBinding.ClassRef.Name = "blah-blah-binding"
+						initObjects = append(initObjects, vmClassBinding)
+					})
+
+					It("returns an error and sets the VirtualMachinePrereqReady Condition to false", func() {
+						expectedErr := fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vmCtx.VM.Spec.ClassName, vmCtx.VM.Namespace)
+
+						_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(MatchError(expectedErr))
+						validateNoVMClassBindingCondition(vmCtx.VM)
+					})
+				})
+
+				Context("VirtualMachineBinding is present for VM Class", func() {
+					BeforeEach(func() {
+						initObjects = append(initObjects, vmClassBinding)
+					})
+
+					It("returns success", func() {
+						class, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(class).ToNot(BeNil())
+					})
+				})
 			})
 		})
 
-		validateNoVMClassBindingCondition := func(vm *vmopv1.VirtualMachine) {
-			msg := fmt.Sprintf("Namespace %s does not have access to VirtualMachineClass %s", vm.Namespace, vm.Spec.ClassName)
+		When("WCP_Namespaced_Class_And_Windows_Support FSS is enabled", func() {
+			var (
+				vmClass *vmopv1.VirtualMachineClass
+			)
 
-			expectedCondition := vmopv1.Conditions{
-				*conditions.FalseCondition(
-					vmopv1.VirtualMachinePrereqReadyCondition,
-					vmopv1.VirtualMachineClassBindingNotFoundReason,
-					vmopv1.ConditionSeverityError,
-					msg),
-			}
-			Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
-		}
-
-		Context("VirtualMachineClass custom resource exists", func() {
 			BeforeEach(func() {
-				initObjects = append(initObjects, vmClass)
+				vmClass = builder.DummyVirtualMachineClass()
+				vmClass.Namespace = vmCtx.VM.Namespace
+				vmCtx.VM.Spec.ClassName = vmClass.Name
+
+				lib.IsNamespacedClassAndWindowsFSSEnabled = func() bool {
+					return true
+				}
 			})
 
-			Context("No VirtualMachineClassBinding exists in namespace", func() {
-				It("return an error and sets VirtualMachinePreReqReady Condition to false", func() {
-					expectedErr := fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vmCtx.VM.Spec.ClassName, vmCtx.VM.Namespace)
+			AfterEach(func() {
+				lib.IsNamespacedClassAndWindowsFSSEnabled = oldNamespacedClassAndWindowsEnabledFunc
+			})
+
+			Context("VirtualMachineClass custom resource doesn't exist", func() {
+				It("Returns error and sets condition when VM Class does not exist", func() {
+					expectedErrMsg := fmt.Sprintf("Failed to get VirtualMachineClass: %s", vmCtx.VM.Spec.ClassName)
 
 					_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(expectedErr))
-					validateNoVMClassBindingCondition(vmCtx.VM)
+					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+
+					expectedCondition := vmopv1.Conditions{
+						*conditions.FalseCondition(
+							vmopv1.VirtualMachinePrereqReadyCondition,
+							vmopv1.VirtualMachineClassNotFoundReason,
+							vmopv1.ConditionSeverityError,
+							expectedErrMsg),
+					}
+					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 				})
 			})
 
-			Context("VirtualMachineBinding is not present for VM Class", func() {
+			Context("VirtualMachineClass custom resource exists", func() {
 				BeforeEach(func() {
-					vmClassBinding.ClassRef.Name = "blah-blah-binding"
-					initObjects = append(initObjects, vmClassBinding)
-				})
-
-				It("returns an error and sets the VirtualMachinePrereqReady Condition to false", func() {
-					expectedErr := fmt.Errorf("VirtualMachineClassBinding does not exist for VM Class %s in namespace %s", vmCtx.VM.Spec.ClassName, vmCtx.VM.Namespace)
-
-					_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
-					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(expectedErr))
-					validateNoVMClassBindingCondition(vmCtx.VM)
-				})
-			})
-
-			Context("VirtualMachineBinding is present for VM Class", func() {
-				BeforeEach(func() {
-					initObjects = append(initObjects, vmClassBinding)
+					initObjects = append(initObjects, vmClass)
 				})
 
 				It("returns success", func() {

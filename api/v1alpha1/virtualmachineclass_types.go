@@ -149,5 +149,5 @@ type VirtualMachineClassList struct {
 }
 
 func init() {
-	RegisterTypeWithScheme(&VirtualMachineClass{}, &VirtualMachineClassList{})
+	SchemeBuilder.Register(&VirtualMachineClass{}, &VirtualMachineClassList{})
 }

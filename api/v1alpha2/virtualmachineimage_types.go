@@ -226,7 +226,7 @@ type ClusterVirtualMachineImageList struct {
 }
 
 func init() {
-	RegisterTypeWithScheme(
+	SchemeBuilder.Register(
 		&VirtualMachineImage{},
 		&VirtualMachineImageList{},
 		&ClusterVirtualMachineImage{},

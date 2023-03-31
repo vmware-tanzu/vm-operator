@@ -18,7 +18,7 @@ const (
 
 // VirtualMachinePowerState represents the power state of a VirtualMachine.
 // The value values are "poweredOn", and "poweredOff".
-// +kubebuilder:validation:Enum=poweredOff;poweredOn
+// +kubebuilder:validation:Enum=poweredOff;poweredOn;guestPoweredOff;suspended
 type VirtualMachinePowerState string
 
 // VMStatusPhase is used to indicate the phase of a VirtualMachine's lifecycle.
@@ -520,5 +520,5 @@ type VirtualMachineList struct {
 }
 
 func init() {
-	RegisterTypeWithScheme(&VirtualMachine{}, &VirtualMachineList{})
+	SchemeBuilder.Register(&VirtualMachine{}, &VirtualMachineList{})
 }

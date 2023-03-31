@@ -42,6 +42,7 @@ WEB_CONSOLE_VALIDATOR  := $(BIN_DIR)/web-console-validator
 # Tooling binaries
 CRD_REF_DOCS       := $(TOOLS_BIN_DIR)/crd-ref-docs
 CONTROLLER_GEN     := $(TOOLS_BIN_DIR)/controller-gen
+CONVERSION_GEN     := $(TOOLS_BIN_DIR)/conversion-gen
 GOLANGCI_LINT      := $(TOOLS_BIN_DIR)/golangci-lint
 KUSTOMIZE          := $(TOOLS_BIN_DIR)/kustomize
 GOCOVMERGE         := $(TOOLS_BIN_DIR)/gocovmerge
@@ -170,8 +171,8 @@ web-console-validator: prereqs generate lint-go web-console-validator-only ## Bu
 ## Tooling Binaries
 ## --------------------------------------
 
-TOOLING_BINARIES := $(CRD_REF_DOCS) $(CONTROLLER_GEN) $(GOLANGCI_LINT) \
-                    $(KUSTOMIZE) \
+TOOLING_BINARIES := $(CRD_REF_DOCS) $(CONTROLLER_GEN) $(CONVERSION_GEN) \
+                    $(GOLANGCI_LINT) $(KUSTOMIZE) \
                     $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) $(ETCD) \
                     $(GINKGO) $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)
 tools: $(TOOLING_BINARIES) ## Build tooling binaries
@@ -274,6 +275,13 @@ generate-external-manifests: ## Generate manifests for the external types for te
 		crd:crdVersions=v1 \
 		output:crd:dir=$(EXTERNAL_CRD_ROOT) \
 		output:none
+
+.PHONY: generate-go-conversions
+generate-go-conversions: $(CONVERSION_GEN) ## Generate conversions go code
+	$(CONVERSION_GEN) \
+		--input-dirs=./api/v1alpha1 \
+		--output-file-base=zz_generated.conversion \
+		--go-header-file=./hack/boilerplate/boilerplate.generatego.txt
 
 .PHONY: generate-api-docs
 generate-api-docs: | $(CRD_REF_DOCS)

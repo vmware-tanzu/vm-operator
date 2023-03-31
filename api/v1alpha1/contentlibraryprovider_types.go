@@ -42,5 +42,5 @@ type ContentLibraryProviderList struct {
 }
 
 func init() {
-	RegisterTypeWithScheme(&ContentLibraryProvider{}, &ContentLibraryProviderList{})
+	SchemeBuilder.Register(&ContentLibraryProvider{}, &ContentLibraryProviderList{})
 }

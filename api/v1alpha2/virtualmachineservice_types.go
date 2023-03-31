@@ -167,7 +167,7 @@ type VirtualMachineServiceList struct {
 }
 
 func init() {
-	RegisterTypeWithScheme(
+	SchemeBuilder.Register(
 		&VirtualMachineService{},
 		&VirtualMachineServiceList{},
 	)

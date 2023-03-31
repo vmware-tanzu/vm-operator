@@ -69,5 +69,5 @@ type VirtualMachineSetResourcePolicyList struct {
 }
 
 func init() {
-	RegisterTypeWithScheme(&VirtualMachineSetResourcePolicy{}, &VirtualMachineSetResourcePolicyList{})
+	SchemeBuilder.Register(&VirtualMachineSetResourcePolicy{}, &VirtualMachineSetResourcePolicyList{})
 }

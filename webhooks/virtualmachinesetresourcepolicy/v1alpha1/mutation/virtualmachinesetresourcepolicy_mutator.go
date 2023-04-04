@@ -52,7 +52,6 @@ type mutator struct {
 	converter runtime.UnstructuredConverter
 }
 
-//nolint
 func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 	vmRP, err := m.vmRPFromUnstructured(ctx.Obj)
 	if err != nil {

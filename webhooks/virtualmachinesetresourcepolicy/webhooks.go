@@ -4,21 +4,12 @@
 package virtualmachinesetresourcepolicy
 
 import (
-	"github.com/pkg/errors"
-
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesetresourcepolicy/mutation"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesetresourcepolicy/validation"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesetresourcepolicy/v1alpha1"
 )
 
 func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
-	if err := validation.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize validation webhook")
-	}
-	if err := mutation.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize mutation webhook")
-	}
-	return nil
+	return v1alpha1.AddToManager(ctx, mgr)
 }

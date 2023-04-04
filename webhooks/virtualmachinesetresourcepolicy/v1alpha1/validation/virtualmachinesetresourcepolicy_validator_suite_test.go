@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
-	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesetresourcepolicy/validation"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinesetresourcepolicy/v1alpha1/validation"
 )
 
 // suite is used for unit and integration testing this webhook.

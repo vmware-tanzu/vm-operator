@@ -31,6 +31,34 @@ const (
 	VirtualMachineImageCapabilityLabel = "capability.image." + GroupName + "/"
 )
 
+// Condition types for VirtualMachineImages.
+const (
+	// VirtualMachineImageSyncedCondition documents that the image is synced with the vSphere content library item
+	// that contains the source of this image's information.
+	VirtualMachineImageSyncedCondition = "VirtualMachineImageSynced"
+
+	// VirtualMachineImageProviderReadyCondition denotes readiness of the VirtualMachineImage provider.
+	VirtualMachineImageProviderReadyCondition = "VirtualMachineImageProviderReady"
+
+	// VirtualMachineImageProviderSecurityComplianceCondition denotes security compliance of the library item provider.
+	VirtualMachineImageProviderSecurityComplianceCondition = "VirtualMachineImageProviderSecurityCompliance"
+)
+
+// Condition reasons for VirtualMachineImages.
+const (
+	// VirtualMachineImageNotSyncedReason documents that the VirtualMachineImage is not synced with
+	// the vSphere content library item that contains the source of this image's information.
+	VirtualMachineImageNotSyncedReason = "VirtualMachineImageNotSynced"
+
+	// VirtualMachineImageProviderNotReadyReason documents that the VirtualMachineImage provider
+	// is not in ready state.
+	VirtualMachineImageProviderNotReadyReason = "VirtualMachineImageProviderNotReady"
+
+	// VirtualMachineImageProviderSecurityNotCompliantReason documents that the
+	// VirtualMachineImage provider doesn't meet security compliance requirements.
+	VirtualMachineImageProviderSecurityNotCompliantReason = "VirtualMachineImageProviderSecurityNotCompliant"
+)
+
 // VirtualMachineImageProductInfo describes product information for an image.
 type VirtualMachineImageProductInfo struct {
 	// Product is a general descriptor for the image.
@@ -158,6 +186,12 @@ type VirtualMachineImageStatus struct {
 	// ProductInfo describes the observed product information for this image.
 	// +optional
 	ProductInfo VirtualMachineImageProductInfo `json:"productInfo,omitempty"`
+
+	// ProviderContentVersion describes the content version from the provider item
+	// that this image corresponds to. If the provider of this image is a Content
+	// Library, this will be the version of the corresponding Content Library item.
+	// +optional
+	ProviderContentVersion string `json:"providerContentVersion,omitempty"`
 
 	// Conditions describes the observed conditions for this image.
 	//

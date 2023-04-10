@@ -408,12 +408,13 @@ func unitTestsReconcile() {
 
 		Context("Creates expected Endpoints", func() {
 			var endpoints *corev1.Endpoints
-			var labelSelector map[string]string
+			var labelSelector, vmLabels map[string]string
 			var vm1, vm2, vm3 *vmopv1.VirtualMachine
 
 			BeforeEach(func() {
 				endpoints = &corev1.Endpoints{}
 				labelSelector = map[string]string{"my-app": "dummy-label"}
+				vmLabels = map[string]string{"my-app": "dummy-label", "other": "label"}
 
 				vmService.Annotations[annotationName1] = "bar1"
 				vmService.Labels[labelName1] = "bar2"
@@ -426,7 +427,7 @@ func unitTestsReconcile() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "dummy-vm1",
 						Namespace: vmService.Namespace,
-						Labels:    labelSelector,
+						Labels:    vmLabels,
 					},
 					Status: vmopv1.VirtualMachineStatus{
 						VmIp: "1.1.1.1",
@@ -437,7 +438,7 @@ func unitTestsReconcile() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "dummy-vm2",
 						Namespace: vmService.Namespace,
-						Labels:    labelSelector,
+						Labels:    vmLabels,
 					},
 					Status: vmopv1.VirtualMachineStatus{
 						VmIp: "2.2.2.2",
@@ -648,6 +649,69 @@ func unitTestsReconcile() {
 					assertEPAddrFromVM(subset.Addresses[0], vm1)
 					Expect(subset.NotReadyAddresses).To(HaveLen(1))
 					assertEPAddrFromVM(subset.NotReadyAddresses[0], vm2)
+				})
+			})
+		})
+
+		Context("Selectorless VirtualMachineService", func() {
+			var vm1 *vmopv1.VirtualMachine
+			var labelSelector, vmLabels map[string]string
+
+			BeforeEach(func() {
+				labelSelector = map[string]string{"my-app": "dummy-label"}
+				vmLabels = map[string]string{"my-app": "dummy-label", "other": "label"}
+
+				vmService.Annotations[annotationName1] = "bar1"
+				vmService.Labels[labelName1] = "bar2"
+				vmService.Spec.Ports = []vmopv1.VirtualMachineServicePort{
+					vmServicePort1,
+				}
+
+				vm1 = &vmopv1.VirtualMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "dummy-vm1",
+						Namespace: vmService.Namespace,
+						Labels:    vmLabels,
+					},
+					Status: vmopv1.VirtualMachineStatus{
+						VmIp: "1.1.1.1",
+					},
+				}
+
+				initObjects = append(initObjects, vm1)
+			})
+
+			JustBeforeEach(func() {
+				err := reconciler.ReconcileNormal(vmServiceCtx)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(ctx.Events).Should(Receive(ContainSubstring(virtualmachineservice.OpCreate)))
+			})
+
+			It("Creates Service but not Endpoints", func() {
+				service := &corev1.Service{}
+				Expect(ctx.Client.Get(ctx, objKey, service)).To(Succeed())
+
+				endpoints := &corev1.Endpoints{}
+				err := ctx.Client.Get(ctx, objKey, endpoints)
+				Expect(err).To(HaveOccurred())
+				Expect(errors.IsNotFound(err)).To(BeTrue())
+			})
+
+			Context("When VirtualMachineService becomes selectorless", func() {
+				BeforeEach(func() {
+					vmService.Spec.Selector = labelSelector
+				})
+
+				/* This is to match the k8s Service behavior when it changes to selectorless. */
+				It("Does not delete existing Endpoints", func() {
+					endpoints := &corev1.Endpoints{}
+					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+
+					vmServiceCtx.VMService.Spec.Selector = nil
+					Expect(reconciler.ReconcileNormal(vmServiceCtx)).To(Succeed())
+					Expect(ctx.Client.Get(ctx, objKey, endpoints)).To(Succeed())
+					Expect(endpoints.Subsets).ToNot(BeEmpty())
 				})
 			})
 		})

@@ -13,6 +13,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -276,19 +277,16 @@ func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMa
 	return func(o client.Object) []reconcile.Request {
 		vm := o.(*vmopv1.VirtualMachine)
 
-		// Find all VMServices that match this VM.
-		vmServiceList, err := r.getVirtualMachineServicesSelectingVirtualMachine(goctx.Background(), vm)
+		reconcileRequests, err := r.getVirtualMachineServicesSelectingVirtualMachine(goctx.Background(), vm)
 		if err != nil {
 			return nil
 		}
 
-		logger := r.log.WithValues("VirtualMachine", types.NamespacedName{Namespace: vm.Namespace, Name: vm.Name})
-
-		var reconcileRequests []reconcile.Request
-		for _, vmService := range vmServiceList {
-			key := types.NamespacedName{Namespace: vmService.Namespace, Name: vmService.Name}
-			logger.V(4).Info("Generating reconcile request for VM Service due to event on VMs", "VirtualMachineService", key)
-			reconcileRequests = append(reconcileRequests, reconcile.Request{NamespacedName: key})
+		if len(reconcileRequests) != 0 && r.log.V(4).Enabled() {
+			logger := r.log.WithValues("VirtualMachine", client.ObjectKey{Namespace: vm.Namespace, Name: vm.Name})
+			for _, r := range reconcileRequests {
+				logger.V(4).Info("Generating reconcile request for VM Service due to event on VM", "VirtualMachineService", r.NamespacedName)
+			}
 		}
 
 		return reconcileRequests
@@ -459,10 +457,14 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *context.Virt
 }
 
 func (r *ReconcileVirtualMachineService) getVirtualMachinesSelectedByVMService(
-	ctx goctx.Context,
-	vmService *vmopv1.VirtualMachineService) (*vmopv1.VirtualMachineList, error) {
+	ctx *context.VirtualMachineServiceContext) (*vmopv1.VirtualMachineList, error) {
+
+	if len(ctx.VMService.Spec.Selector) == 0 {
+		return nil, nil
+	}
+
 	vmList := &vmopv1.VirtualMachineList{}
-	err := r.List(ctx, vmList, client.InNamespace(vmService.Namespace), client.MatchingLabels(vmService.Spec.Selector))
+	err := r.List(ctx, vmList, client.InNamespace(ctx.VMService.Namespace), client.MatchingLabels(ctx.VMService.Spec.Selector))
 	return vmList, err
 }
 
@@ -471,7 +473,7 @@ func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(
 	ctx *context.VirtualMachineServiceContext,
 	service *corev1.Service) map[types.UID]struct{} {
 	endpoints := &corev1.Endpoints{}
-	if err := r.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, endpoints); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Name: service.Name, Namespace: service.Namespace}, endpoints); err != nil {
 		ctx.Logger.Error(err, "Failed to get Endpoints")
 		return nil
 	}
@@ -487,28 +489,12 @@ func (r *ReconcileVirtualMachineService) getVMsReferencedByServiceEndpoints(
 	return vmToSubsetsMap
 }
 
-// TODO: This mapping function has the potential to be a performance and scaling issue.
-// Consider this as a candidate for profiling. SPOILER: It already is an issue.
 func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtualMachine(
 	ctx goctx.Context,
-	lookupVM *vmopv1.VirtualMachine) ([]*vmopv1.VirtualMachineService, error) {
-	var matchingVMServices []*vmopv1.VirtualMachineService
+	lookupVM *vmopv1.VirtualMachine) ([]reconcile.Request, error) {
 
-	matchFunc := func(vmService *vmopv1.VirtualMachineService) error {
-		vmList, err := r.getVirtualMachinesSelectedByVMService(ctx, vmService)
-		if err != nil {
-			return err
-		}
-
-		for _, vm := range vmList.Items {
-			if vm.Name == lookupVM.Name && vm.Namespace == lookupVM.Namespace {
-				matchingVMServices = append(matchingVMServices, vmService)
-				// Only one match is needed to add vmService, so return now.
-				return nil
-			}
-		}
-
-		return nil
+	if len(lookupVM.Labels) == 0 {
+		return nil, nil
 	}
 
 	vmServiceList := &vmopv1.VirtualMachineServiceList{}
@@ -517,11 +503,17 @@ func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtu
 		return nil, err
 	}
 
+	var matchingVMServices []reconcile.Request
+	vmLabels := labels.Set(lookupVM.Labels)
+
 	for _, vmService := range vmServiceList.Items {
-		vms := vmService
-		err := matchFunc(&vms)
-		if err != nil {
-			return nil, err
+		if len(vmService.Spec.Selector) != 0 {
+			sel := labels.SelectorFromValidatedSet(vmService.Spec.Selector)
+			if sel.Matches(vmLabels) {
+				matchingVMServices = append(matchingVMServices, reconcile.Request{
+					NamespacedName: client.ObjectKey{Namespace: vmService.Namespace, Name: vmService.Name},
+				})
+			}
 		}
 	}
 
@@ -532,6 +524,11 @@ func (r *ReconcileVirtualMachineService) getVirtualMachineServicesSelectingVirtu
 func (r *ReconcileVirtualMachineService) createOrUpdateEndpoints(ctx *context.VirtualMachineServiceContext, service *corev1.Service) error {
 	ctx.Logger.V(5).Info("Updating VirtualMachineService Endpoints")
 	defer ctx.Logger.V(5).Info("Finished updating VirtualMachineService Endpoints")
+
+	if len(ctx.VMService.Spec.Selector) == 0 {
+		ctx.Logger.V(5).Info("Selectorless VirtualMachineService so skipping Endpoints reconciliation")
+		return nil
+	}
 
 	unpackedSubsets, err := r.generateSubsetsForService(ctx, service)
 	if err != nil {
@@ -594,7 +591,7 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 	ctx *context.VirtualMachineServiceContext,
 	service *corev1.Service) ([]corev1.EndpointSubset, error) {
 
-	vmList, err := r.getVirtualMachinesSelectedByVMService(ctx, ctx.VMService)
+	vmList, err := r.getVirtualMachinesSelectedByVMService(ctx)
 	if err != nil {
 		return nil, err
 	}

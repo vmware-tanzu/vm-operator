@@ -8,7 +8,7 @@ This page outlines how to write documentation for VM Operator.
 
 ## Project Docs
 
-The project documentation lives in the [./docs]({{ config.repo_url}}/tree/main/docs) directory and is written in Markdown. This section reviews the project documentation structure and examples for writing high-quality documentation.
+The project documentation lives in the [./docs](${{ config.repo_url }}/tree/main/docs) directory and is written in Markdown. This section reviews the project documentation structure and examples for writing high-quality documentation.
 
 ### Structure
 
@@ -39,7 +39,7 @@ docs
 
 * Every section should have a `README.md` that summarizes the contents of the section. It does not matter if the section has a single topic in it, if there's a section, then it must have a `README.md`. Besides good organization, there is another reason this is important that will be reviewed later.
 
-* The documentation will not appear unless added to the `nav` section in the project's [`mkdocs.yml`]({{ config.repo_url}}/tree/main/mkdocs.yml) file, ex.:
+* The documentation will not appear unless added to the `nav` section in the project's [`mkdocs.yml`](${{ config.repo_url }}/tree/main/mkdocs.yml) file, ex.:
 
     ```yaml title="mkdocs.yml"
     nav:

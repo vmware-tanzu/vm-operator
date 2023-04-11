@@ -113,8 +113,8 @@ type VirtualMachineNetworkInterface struct {
 }
 
 // VirtualMachineMetadataTransport is used to indicate the transport used by VirtualMachineMetadata
-// Valid values are "ExtraConfig", "OvfEnv", "vAppConfig" and "CloudInit".
-// +kubebuilder:validation:Enum=ExtraConfig;OvfEnv;vAppConfig;CloudInit
+// Valid values are "ExtraConfig", "OvfEnv", "vAppConfig", "CloudInit", and "Sysprep".
+// +kubebuilder:validation:Enum=ExtraConfig;OvfEnv;vAppConfig;CloudInit;Sysprep
 type VirtualMachineMetadataTransport string
 
 const (

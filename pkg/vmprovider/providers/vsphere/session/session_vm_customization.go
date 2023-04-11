@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session
@@ -239,13 +239,9 @@ func customizeCloudInit(
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, *vimTypes.CustomizationSpec, error) {
 
-	ethCards, err := resVM.GetNetworkDevices(vmCtx)
-	if err != nil {
-		return nil, nil, err
-	}
-
+	firstNicMacAddr := getFirstNicMacAddr(vmCtx, resVM)
 	netplan := updateArgs.NetIfList.GetNetplan(
-		ethCards, updateArgs.DNSServers, updateArgs.SearchSuffixes)
+		firstNicMacAddr, updateArgs.DNSServers, updateArgs.SearchSuffixes)
 
 	cloudInitMetadata, err := GetCloudInitMetadata(vmCtx.VM, netplan, updateArgs.VMMetadata.Data)
 	if err != nil {
@@ -277,7 +273,7 @@ func (s *Session) customize(
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs) error {
 
-	TemplateVMMetadata(vmCtx, updateArgs)
+	TemplateVMMetadata(vmCtx, resVM, updateArgs)
 
 	transport := updateArgs.VMMetadata.Transport
 
@@ -348,24 +344,62 @@ func (s *Session) customize(
 	return nil
 }
 
-func NicInfoToDevicesStatus(updateArgs VMUpdateArgs) []vmopv1.NetworkDeviceStatus {
+func getFirstNicMacAddr(vmCtx context.VirtualMachineContext, resVM *res.VirtualMachine) string {
+	ethCards, err := resVM.GetNetworkDevices(vmCtx)
+	if err != nil {
+		return ""
+	}
+
+	if len(ethCards) > 0 {
+		curNic := ethCards[0].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+		return curNic.GetVirtualEthernetCard().MacAddress
+	}
+
+	return ""
+}
+
+// NicInfoToDevicesStatus returns a list of NetworkDeviceStatus constructed from the NetIfList and resVM.
+func NicInfoToDevicesStatus(
+	vmCtx context.VirtualMachineContext,
+	resVM *res.VirtualMachine,
+	updateArgs VMUpdateArgs) []vmopv1.NetworkDeviceStatus {
+
 	networkDevicesStatus := make([]vmopv1.NetworkDeviceStatus, 0, len(updateArgs.NetIfList))
 
-	// TODO: Add MacAddress field when the it's present in updateArgs.NetIfList
+	// In a VDS cluster, networkIf resource doesn't have the MAC address to set in Customization.MacAddress.
+	// As a workaround, we obtain the MAC address from the first NIC, which is also used in customizeCloudInit.
+	// It is assumed that VirtualMachine.Config.Hardware.Device has MacAddress generated already.
+	firstNicMacAddr := getFirstNicMacAddr(vmCtx, resVM)
+
 	for _, info := range updateArgs.NetIfList {
 		ipConfig := info.IPConfiguration
 		networkDevice := vmopv1.NetworkDeviceStatus{
 			Gateway4:    ipConfig.Gateway,
 			IPAddresses: []string{network.ToCidrNotation(ipConfig.IP, ipConfig.SubnetMask)},
 		}
+
+		macAddr := ""
+		if info.Customization != nil && info.Customization.MacAddress != "" {
+			macAddr = info.Customization.MacAddress
+		} else {
+			macAddr = firstNicMacAddr
+		}
+		// When using Sysprep, the MAC address must be in the format of "-".
+		// CloudInit normalizes it again to ":" when adding it to the netplan.
+		networkDevice.MacAddress = strings.ReplaceAll(macAddr, ":", "-")
+
 		networkDevicesStatus = append(networkDevicesStatus, networkDevice)
 	}
 	return networkDevicesStatus
 }
 
 // TemplateVMMetadata can convert templated expressions to dynamic configuration data.
-func TemplateVMMetadata(vmCtx context.VirtualMachineContext, updateArgs VMUpdateArgs) {
-	networkDevicesStatus := NicInfoToDevicesStatus(updateArgs)
+func TemplateVMMetadata(
+	vmCtx context.VirtualMachineContext,
+	resVM *res.VirtualMachine,
+	updateArgs VMUpdateArgs) {
+
+	networkDevicesStatus := NicInfoToDevicesStatus(vmCtx, resVM, updateArgs)
 
 	networkStatus := vmopv1.NetworkStatus{
 		Devices:     networkDevicesStatus,
@@ -390,6 +424,14 @@ func TemplateVMMetadata(vmCtx context.VirtualMachineContext, updateArgs VMUpdate
 			return "", errors.New("no available network device, check with VI admin")
 		}
 		return networkDevicesStatus[0].IPAddresses[0], nil
+	}
+
+	// Get the first NIC's MAC address.
+	v1alpha1FirstNicMacAddr := func() (string, error) {
+		if len(networkDevicesStatus) == 0 {
+			return "", errors.New("no available network device, check with VI admin")
+		}
+		return networkDevicesStatus[0].MacAddress, nil
 	}
 
 	// Get the first IP address from the ith NIC.
@@ -512,6 +554,7 @@ func TemplateVMMetadata(vmCtx context.VirtualMachineContext, updateArgs VMUpdate
 	funcMap := template.FuncMap{
 		constants.V1alpha1FirstIPFromNIC:    v1alpha1FirstIPFromNIC,
 		constants.V1alpha1FirstIP:           v1alpha1FirstIP,
+		constants.V1alpha1FirstNicMacAddr:   v1alpha1FirstNicMacAddr,
 		constants.V1alpha1IPsFromNIC:        v1alpha1IPsFromNIC,
 		constants.V1alpha1FormatIP:          v1alpha1FormatIP,
 		constants.V1alpha1IP:                v1alpha1IP,

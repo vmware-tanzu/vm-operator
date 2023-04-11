@@ -56,7 +56,10 @@ extra_css:
 plugins:
 - search:
     separator: '[\s\u200b\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
-- markdownextradata
+- markdownextradata:
+    jinja_options:
+      variable_start_string: "${{"
+      variable_end_string: "}}"
 # - git-committers:
 #     enabled: !ENV [CI, false]
 #     repository: vmware-tanzu/vm-operator

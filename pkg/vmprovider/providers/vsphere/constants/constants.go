@@ -102,6 +102,8 @@ const (
 
 	// V1alpha1FirstIP is an alias for versioned templating function V1alpha1_FirstIP.
 	V1alpha1FirstIP = "V1alpha1_FirstIP"
+	// V1alpha1FirstNicMacAddr is an alias for versioned templating function V1alpha1_FirstNicMacAddr.
+	V1alpha1FirstNicMacAddr = "V1alpha1_FirstNicMacAddr"
 	// V1alpha1FirstIPFromNIC is an alias for versioned templating function V1alpha1_FirstIPFromNIC.
 	V1alpha1FirstIPFromNIC = "V1alpha1_FirstIPFromNIC"
 	// V1alpha1IPsFromNIC is an alias for versioned templating function V1alpha1_IPsFromNIC.

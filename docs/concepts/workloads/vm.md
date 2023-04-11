@@ -25,7 +25,7 @@ The following is an example of a `VirtualMachine` resource that bootstraps a Pho
 To create the VM shown above, run the following command (replacing `<NAMESPACE>` with the name of the [`Namespace`](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/) in which to create the VM):
 
 ```shell
-kubectl apply -n <NAMESPACE> -f {{ config.repo_url_raw }}/main/docs/concepts/workloads/vm-example.yaml
+kubectl apply -n <NAMESPACE> -f ${{ config.repo_url_raw }}/main/docs/concepts/workloads/vm-example.yaml
 ```
 
 ## Working with VMs

@@ -180,7 +180,6 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			overrideConditionsSeverity(imageStatus.Conditions)
 
 			// Do not exist in v1a2.
-			imageStatus.ContentVersion = ""
 			imageStatus.ContentLibraryRef = nil
 			imageStatus.ImageSupported = nil
 

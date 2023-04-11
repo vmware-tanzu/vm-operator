@@ -104,9 +104,9 @@ func Convert_v1alpha1_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageS
 	in *VirtualMachineImageStatus, out *v1alpha2.VirtualMachineImageStatus, s apiconversion.Scope) error {
 
 	out.Name = in.ImageName
+	out.ProviderContentVersion = in.ContentVersion
 	// in.ImageSupported
 	// in.ContentLibraryRef
-	// in.ContentVersion
 
 	// Deprecated:
 	// in.Uuid
@@ -120,8 +120,8 @@ func Convert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageS
 	in *v1alpha2.VirtualMachineImageStatus, out *VirtualMachineImageStatus, s apiconversion.Scope) error {
 
 	out.ImageName = in.Name
+	out.ContentVersion = in.ProviderContentVersion
 	// out.ContentLibraryRef =
-	// out.ContentVersion =
 
 	// in.Capabilities
 

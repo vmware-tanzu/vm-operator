@@ -348,7 +348,7 @@ kind-cluster-info-dump: ## Collect diagnostic information from the kind cluster.
 .PHONY: kind-cluster
 kind-cluster: ## Create a kind cluster of name $(KIND_CLUSTER_NAME) for integration (if it does not exist yet)
 	@$(MAKE) --no-print-directory kind-cluster-info 2>/dev/null || \
-	kind create cluster --name "$(KIND_CLUSTER_NAME)" --image harbor-repo.vmware.com/dockerhub-proxy-cache/kindest/node:v1.22.4
+	kind create cluster --name "$(KIND_CLUSTER_NAME)" --image harbor-repo.vmware.com/dockerhub-proxy-cache/kindest/node:v1.24.12
 
 .PHONY: delete-kind-cluster
 delete-kind-cluster: ## Delete the kind cluster created for integration tests

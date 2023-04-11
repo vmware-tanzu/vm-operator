@@ -75,6 +75,6 @@ if [[ $# -eq 2 ]]; then
       exit 1
     fi
     echo "Cannot create default VM Classes. Trying again."
-    sleep "5s"
+    sleep 5
   done
 fi

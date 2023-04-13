@@ -564,13 +564,14 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 		createArgs.ResourcePolicy = resourcePolicy
 		createArgs.ChildFolderName = resourcePolicy.Spec.Folder.Name
 		createArgs.ChildResourcePoolName = rp.Name
-		if !rp.Reservations.Cpu.IsZero() || !rp.Limits.Cpu.IsZero() {
-			freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
-			if err != nil {
-				return nil, err
-			}
-			createArgs.MinCPUFreq = freq
+	}
+
+	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
+		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)
+		if err != nil {
+			return nil, err
 		}
+		createArgs.MinCPUFreq = freq
 	}
 
 	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {

@@ -177,6 +177,58 @@ The data in the above `Secret` is called the Cloud-Init _Cloud Config_. For more
 
     It is possible to use the Cloud-Init bootstrap provider to deploy a Windows image if it contains [Cloudbase-Init](https://cloudbase.it/cloudbase-init/), the Windows port of Cloud-Init.
 
+##### Validating User Data
+
+The following Dockerfile can be used to validate the user data:
+
+```dockerfile
+FROM ubuntu:latest
+
+RUN apt-get update -y && \
+    apt-get install -y cloud-init
+
+ENTRYPOINT [ "cloud-init", "schema", "--config-file", "/cloud-config.yaml" ]
+```
+
+Let's imagine we build the following image from the above Dockerfile:
+
+```shell
+docker build -t civ .
+```
+
+Now, imagine the following cloud config file exists as "my-config.yaml":
+
+```yaml
+#cloud-config
+ssh_pwauth: true
+users:
+    - default
+    - name: vmware
+      sudo: ALL=(ALL) NOPASSWD:ALL
+      lock_passwd: false
+      passwd: '$1$salt$SOC44fVbA/ZxeIwD5yw1u1'
+      shell: /bin/bash
+write_files:
+    - content: |
+      "VMSVC Says Hello World"
+      path: /helloworld
+```
+
+Let's run the validator on the above file:
+
+```shell
+$ docker run -it --rm -v $(pwd)/my-config.yaml:/cloud-config.yaml:ro civ
+Error:
+Cloud config schema errors: format-l13.c7: File /cloud-config.yaml is not valid yaml. while scanning a simple key
+  in "<byte string>", line 13, column 7:
+          "VMSVC Says Hello World"
+          ^
+could not find expected ':'
+  in "<byte string>", line 14, column 7:
+          path: /helloworld
+          ^
+```
+
 #### Sysprep
 
 Microsoft originally designed Sysprep as a means to prepare a deployed system for use as a template. It was such a useful tool, that VMware utilized it as the means to customize a VM with a Windows guest. For example, the following YAML provisions a new VM, using Sysprep to:

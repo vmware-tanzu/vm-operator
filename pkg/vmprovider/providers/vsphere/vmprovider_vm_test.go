@@ -247,6 +247,43 @@ func vmTests() {
 				})
 			})
 
+			Context("VM Class spec CPU reservation & limits are non-zero and ConfigSpec specifies CPU reservation", func() {
+				BeforeEach(func() {
+					vmClass.Spec.Policies.Resources.Requests.Cpu = resource.MustParse("2")
+					vmClass.Spec.Policies.Resources.Limits.Cpu = resource.MustParse("2")
+
+					// Specify a CPU reservation via ConfigSpec
+					rsv := int64(6)
+					configSpec = &types.VirtualMachineConfigSpec{
+						CpuAllocation: &types.ResourceAllocationInfo{
+							Reservation: &rsv,
+						},
+					}
+				})
+
+				It("VM gets CPU reservation from VM Class spec", func() {
+					Expect(vm.Status.Phase).To(Equal(vmopv1.Created))
+
+					vmClass := &vmopv1.VirtualMachineClass{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+					// Freq used by vcsim
+					const freq = 2294
+
+					reservation := o.Config.CpuAllocation.Reservation
+					vmClassCPURes := virtualmachine.CPUQuantityToMhz(vmClass.Spec.Policies.Resources.Requests.Cpu, freq)
+					Expect(reservation).ToNot(BeNil())
+					Expect(*reservation).To(Equal(vmClassCPURes))
+					Expect(*reservation).ToNot(Equal(*configSpec.CpuAllocation.Reservation))
+					limit := o.Config.CpuAllocation.Limit
+					Expect(limit).ToNot(BeNil())
+					Expect(*limit).To(Equal(virtualmachine.CPUQuantityToMhz(vmClass.Spec.Policies.Resources.Limits.Cpu, freq)))
+				})
+			})
+
 			Context("VM Class spec CPU reservations are zero and ConfigSpec specifies CPU reservation", func() {
 				BeforeEach(func() {
 					vmClass.Spec.Policies.Resources.Requests.Cpu = resource.MustParse("0")
@@ -275,10 +312,44 @@ func vmTests() {
 					const freq = 2294
 
 					reservation := o.Config.CpuAllocation.Reservation
-					vmClassCPURes := virtualmachine.CPUQuantityToMhz(vmClass.Spec.Policies.Resources.Requests.Memory, freq)
+					vmClassCPURes := virtualmachine.CPUQuantityToMhz(vmClass.Spec.Policies.Resources.Requests.Cpu, freq)
 					Expect(reservation).ToNot(BeNil())
-					Expect(reservation).ToNot(BeEquivalentTo(vmClassCPURes))
-					Expect(reservation).To(Equal(configSpec.CpuAllocation.Reservation))
+					Expect(*reservation).ToNot(Equal(vmClassCPURes))
+					Expect(*reservation).To(Equal(*configSpec.CpuAllocation.Reservation))
+				})
+			})
+
+			Context("VM Class spec Memory reservation & limits are non-zero and ConfigSpec specifies memory reservation", func() {
+				BeforeEach(func() {
+					vmClass.Spec.Policies.Resources.Requests.Memory = resource.MustParse("4Mi")
+					vmClass.Spec.Policies.Resources.Limits.Memory = resource.MustParse("4Mi")
+
+					// Specify a Memory reservation via ConfigSpec
+					rsv := int64(5120)
+					configSpec = &types.VirtualMachineConfigSpec{
+						MemoryAllocation: &types.ResourceAllocationInfo{
+							Reservation: &rsv,
+						},
+					}
+				})
+
+				It("VM gets memory reservation from VM Class spec", func() {
+					Expect(vm.Status.Phase).To(Equal(vmopv1.Created))
+
+					vmClass := &vmopv1.VirtualMachineClass{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+					reservation := o.Config.MemoryAllocation.Reservation
+					vmClassMemoryRes := virtualmachine.MemoryQuantityToMb(vmClass.Spec.Policies.Resources.Requests.Memory)
+					Expect(reservation).ToNot(BeNil())
+					Expect(*reservation).To(Equal(vmClassMemoryRes))
+					Expect(*reservation).ToNot(Equal(*configSpec.MemoryAllocation.Reservation))
+					limit := o.Config.MemoryAllocation.Limit
+					Expect(limit).ToNot(BeNil())
+					Expect(*limit).To(Equal(virtualmachine.MemoryQuantityToMb(vmClass.Spec.Policies.Resources.Limits.Memory)))
 				})
 			})
 
@@ -310,7 +381,7 @@ func vmTests() {
 					vmClassMemoryRes := virtualmachine.MemoryQuantityToMb(vmClass.Spec.Policies.Resources.Requests.Memory)
 					Expect(reservation).ToNot(BeNil())
 					Expect(*reservation).ToNot(Equal(vmClassMemoryRes))
-					Expect(reservation).To(Equal(configSpec.MemoryAllocation.Reservation))
+					Expect(*reservation).To(Equal(*configSpec.MemoryAllocation.Reservation))
 				})
 			})
 
@@ -381,24 +452,6 @@ func vmTests() {
 					Expect(ok).Should(BeTrue())
 					_, dvpg := getDVPG(ctx, dvpgName)
 					Expect(backing.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
-				})
-			})
-
-			Context("No VM Class config spec", func() {
-				BeforeEach(func() {
-					configSpec = nil
-				})
-
-				It("still creates VM", func() {
-					Expect(vm.Status.Phase).To(Equal(vmopv1.Created))
-
-					vmClass := &vmopv1.VirtualMachineClass{}
-					Expect(ctx.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassName}, vmClass)).To(Succeed())
-
-					var o mo.VirtualMachine
-					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-					Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
-					Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 				})
 			})
 

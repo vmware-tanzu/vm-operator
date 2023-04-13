@@ -26,6 +26,7 @@ func intgTests() {
 		ctx *builder.IntegrationTestContext
 
 		selector      map[string]string
+		vmLabels      map[string]string
 		vmIP1, vmIP2  string
 		vmServicePort vmopv1.VirtualMachineServicePort
 		vmServiceName string
@@ -35,6 +36,7 @@ func intgTests() {
 		ctx = suite.NewIntegrationTestContext()
 
 		selector = map[string]string{"vmservice-intg-test": "selector"}
+		vmLabels = map[string]string{"vmservice-intg-test": "selector", "other": "label"}
 		vmIP1, vmIP2 = "10.100.101.1", "10.100.101.2"
 
 		vmServicePort = vmopv1.VirtualMachineServicePort{
@@ -82,7 +84,7 @@ func intgTests() {
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "not-ready-vm",
 							Namespace: ctx.Namespace,
-							Labels:    selector,
+							Labels:    vmLabels,
 						},
 						Spec: vmopv1.VirtualMachineSpec{
 							PowerState:     vmopv1.VirtualMachinePoweredOn,
@@ -178,7 +180,7 @@ func intgTests() {
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "ready-vm",
 							Namespace: ctx.Namespace,
-							Labels:    selector,
+							Labels:    vmLabels,
 						},
 						Spec: vmopv1.VirtualMachineSpec{
 							PowerState:     vmopv1.VirtualMachinePoweredOn,
@@ -290,7 +292,7 @@ func intgTests() {
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "not-ready-vm",
 							Namespace: ctx.Namespace,
-							Labels:    selector,
+							Labels:    vmLabels,
 						},
 						Spec: vmopv1.VirtualMachineSpec{
 							PowerState:     vmopv1.VirtualMachinePoweredOn,

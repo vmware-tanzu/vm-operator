@@ -10,6 +10,10 @@ type NetworkDeviceStatus struct {
 	// +optional
 	Gateway4 string
 
+	// MacAddress is the MAC address of the network device.
+	// +optional
+	MacAddress string
+
 	// IpAddresses represents one or more IP addresses assigned to the network
 	// device in CIDR notation, ex. "192.0.2.1/16".
 	// +optional

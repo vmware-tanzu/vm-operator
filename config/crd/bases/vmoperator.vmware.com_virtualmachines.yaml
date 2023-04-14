@@ -288,6 +288,7 @@ spec:
                     - OvfEnv
                     - vAppConfig
                     - CloudInit
+                    - Sysprep
                     type: string
                 type: object
               volumes:

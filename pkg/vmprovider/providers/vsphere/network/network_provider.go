@@ -108,7 +108,7 @@ type NetplanEthernetNameserver struct {
 }
 
 func (l InterfaceInfoList) GetNetplan(
-	currentEthCards object.VirtualDeviceList,
+	firstNicMacAddr string,
 	dnsServers, searchSuffixes []string) Netplan {
 
 	ethernets := make(map[string]NetplanEthernet)
@@ -116,15 +116,14 @@ func (l InterfaceInfoList) GetNetplan(
 	for index, info := range l {
 		netplanEthernet := info.NetplanEthernet
 
-		if netplanEthernet.Match.MacAddress == "" && len(currentEthCards) == 1 {
-			curNic := currentEthCards[0].(vimtypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+		if netplanEthernet.Match.MacAddress == "" {
 			// This assumes we don't have multiple NICs in the same backing network. This is kind of, sort
 			// of enforced by the webhook, but we lack a guaranteed way to match up the NICs.
 
 			// NetOp (VDS) never assigns MacAddress to the NetworkInterface status, therefore
 			// netplanEthernet.Match.MacAddress will be empty.
 			// At this point, it is assumed that VirtualMachine.Config.Hardware.Device has MacAddress generated.
-			netplanEthernet.Match.MacAddress = NormalizeNetplanMac(curNic.GetVirtualEthernetCard().MacAddress)
+			netplanEthernet.Match.MacAddress = NormalizeNetplanMac(firstNicMacAddr)
 		}
 
 		// Inject nameserver settings for each ethernet.

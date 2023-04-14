@@ -1,7 +1,5 @@
 # Customizing a Guest
 
-// TODO ([github.com/vmware-tanzu/vm-operator#107](https://github.com/vmware-tanzu/vm-operator/issues/107))
-
 The ability to deploy a virtual machine with Kubernetes is nice, but one of the values of VM Operator is its support for popular bootstrap providers such as Cloud-Init, Sysprep, and vAppConfig. This page reviews these bootstrap providers to help inform when to select one over the other.
 
 ## Bootstrap Providers
@@ -113,110 +111,195 @@ The data in the above `Secret` is called the Cloud-Init _Cloud Config_. For more
 
 ### Sysprep
 
-Microsoft originally designed Sysprep as a means to prepare a deployed system for use as a template. It was such a useful tool, that VMware utilized it as the means to customize a VM with a Windows guest. For example, the following YAML provisions a new VM, using Sysprep to:
-
-* supplies a product key
-* sets the admin password
-* configures first-boot
-
-```yaml
-apiVersion: vmoperator.vmware.com/v1alpha1
-kind: VirtualMachine
-metadata:
-  name:      my-vm
-  namespace: my-namespace
-spec:
-  className:    small
-  imageName:    windows11
-  storageClass: iscsi
-  vmMetadata:
-    transport: Sysprep
-    secretName: my-vm-bootstrap-data
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name:      my-vm-bootstrap-data
-  namespace: my-namespace
-stringData:
-  unattend: |
-    <?xml version="1.0" encoding="utf-8"?>
-    <unattend xmlns="urn:schemas-microsoft-com:unattend">
-      <settings pass="windowsPE">
-        <component name="Microsoft-Windows-Setup" processorArchitecture="amd64"
-          publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
-          xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
-          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-          <UserData>
-            <AcceptEula>true</AcceptEula>
-            <FullName>akutz</FullName>
-            <Organization>VMware</Organization>
-            <ProductKey>
-              <Key>1234-5678-9abc-defg</Key>
-              <WillShowUI>Never</WillShowUI>
-            </ProductKey>
-          </UserData>
-        </component>
-      </settings>
-      <settings pass="specialize">
-        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
-          publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
-          xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
-          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-          <ComputerName>my-vm</ComputerName>
-        </component>
-      </settings>
-      <settings pass="oobeSystem">
-        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
-          publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
-          xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
-          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-          <UserAccounts>
-            <AdministratorPassword>
-              <Value>FakePassword</Value>
-              <PlainText>true</PlainText>
-            </AdministratorPassword>
-          </UserAccounts>
-          <OOBE>
-            <HideEULAPage>true</HideEULAPage>
-            <HideLocalAccountScreen>true</HideLocalAccountScreen>
-            <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
-            <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
-            <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
-            <ProtectYourPC>3</ProtectYourPC>
-            <SkipMachineOOBE>true</SkipMachineOOBE>
-            <SkipUserOOBE>true</SkipUserOOBE>
-          </OOBE>
-          <TimeZone>Central Standard Time</TimeZone>
-        </component>
-      </settings>
-      <cpi:offlineImage cpi:source="" xmlns:cpi="urn:schemas-microsoft-com:cpi" />
-    </unattend>
-```
+Microsoft originally designed Sysprep as a means to prepare a deployed system for use as a template. It was such a useful tool, that VMware utilized it as the means to customize a VM with a Windows guest.
 
 #### Minimal Config
 
-The following `Secret` resource may be used to bootstrap a Windows image with minimal information. Please note the image would have to be using a Volume License SKU as the product ID is not provided:
+The following YAML may be used to bootstrap a Windows image with minimal information. For proper network configuration and Guest OS Customization (GOSC) completion, Sysprep unattend data requires a template for providing network info and `RunSynchronousCommand` to record GOSC status. Both components are essential for Windows Vista and later versions.
 
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: my-vm-bootstrap-data
-  namespace: my-ns
-stringData:
-  unattend: |
-    <?xml version="1.0" encoding="utf-8"?>
-    <unattend xmlns="urn:schemas-microsoft-com:unattend">
-      <settings pass="oobeSystem">
-        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-          <OOBE>
-            <SkipMachineOOBE>true</SkipMachineOOBE>
-            <SkipUserOOBE>true</SkipUserOOBE>
-          </OOBE>
-        </component>
-      </settings>
-    </unattend>
+!!! note "Product Key"
+
+    Please note the image would have to be using a Volume License SKU as the product ID is not provided in the following Sysprep configuration. See the "Activate Windows" section below for more information.
+
+=== "VirtualMachine"
+
+    ``` yaml
+    apiVersion: vmoperator.vmware.com/v1alpha1
+    kind: VirtualMachine
+    metadata:
+      name:      my-vm
+      namespace: my-namespace
+    spec:
+      className:    small
+      imageName:    windows11
+      storageClass: iscsi
+      vmMetadata:
+        transport: Sysprep
+        secretName: my-vm-bootstrap-data
+    ```
+
+=== "SysprepConfig"
+
+    ``` yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: my-vm-bootstrap-data
+      namespace: my-ns
+    stringData:
+      unattend: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <unattend xmlns="urn:schemas-microsoft-com:unattend">
+          <settings pass="specialize">
+            <component name="Microsoft-Windows-TCPIP" processorArchitecture="amd64"
+              publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+              xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+              <Interfaces>
+                <Interface wcm:action="add">
+                  <Ipv4Settings>
+                    <DhcpEnabled>false</DhcpEnabled>
+                  </Ipv4Settings>
+                  <Ipv6Settings>
+                    <DhcpEnabled>false</DhcpEnabled>
+                  </Ipv6Settings>
+                  <Identifier>{{ V1alpha1_FirstNicMacAddr }}</Identifier>
+                  <UnicastIpAddresses>
+                    <IpAddress wcm:action="add" wcm:keyValue="1">{{ V1alpha1_FirstIP }}</IpAddress>
+                  </UnicastIpAddresses>
+                  <Routes>
+                    <Route wcm:action="add">
+                      <Identifier>0</Identifier>
+                      <Metric>10</Metric>
+                      <NextHopAddress>{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}</NextHopAddress>
+                      <Prefix>{{ V1alpha1_SubnetMask V1alpha1_FirstIP }}</Prefix>
+                    </Route>
+                  </Routes>
+                </Interface>
+              </Interfaces>
+            </component>
+            <component name="Microsoft-Windows-DNS-Client" processorArchitecture="amd64"
+              publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+              xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+              <Interfaces>
+                <Interface wcm:action="add">
+                  <Identifier>{{ V1alpha1_FirstNicMacAddr }}</Identifier>
+                  <DNSServerSearchOrder> {{ range .V1alpha1.Net.Nameservers }} <IpAddress
+                      wcm:action="add"
+                      wcm:keyValue="{{.}}"></IpAddress> {{ end }} </DNSServerSearchOrder>
+                </Interface>
+              </Interfaces>
+            </component>
+            <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64"
+              publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+              xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+              <RunSynchronous>
+                <RunSynchronousCommand wcm:action="add">
+                  <Path>C:\sysprep\guestcustutil.exe restoreMountedDevices</Path>
+                  <Order>1</Order>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                  <Path>C:\sysprep\guestcustutil.exe flagComplete</Path>
+                  <Order>2</Order>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                  <Path>C:\sysprep\guestcustutil.exe deleteContainingFolder</Path>
+                  <Order>3</Order>
+                </RunSynchronousCommand>
+              </RunSynchronous>
+            </component>
+          </settings>
+        </unattend>
+    ```
+
+#### Activate Windows
+
+The following XML can be used to supply a product key to activate Windows:
+
+```xml
+<settings pass="windowsPE">
+  <component name="Microsoft-Windows-Setup" processorArchitecture="amd64"
+    publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+    xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <UserData>
+      <AcceptEula>true</AcceptEula>
+      <FullName>akutz</FullName>
+      <Organization>VMware</Organization>
+      <ProductKey>
+        <Key>1234-5678-9abc-defg</Key>
+        <WillShowUI>Never</WillShowUI>
+      </ProductKey>
+    </UserData>
+  </component>
+</settings>
+```
+
+#### User Accounts
+
+The following XML can be used to update Administrator password and create a new local user account:
+
+```xml
+<settings pass="oobeSystem">
+  <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+    publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+    xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <UserAccounts>
+      <AdministratorPassword>
+        <Value>FakePassword</Value>
+        <PlainText>true</PlainText>
+      </AdministratorPassword>
+      <LocalAccounts>
+        <LocalAccount wcm:action="add">
+          <Name>sdiliyaer</Name>
+          <Password>
+            <Value>vmware</Value>
+            <PlainText>true</PlainText>
+          </Password>
+          <Group>Administrators</Group>
+          <DisplayName>sdiliyaer</DisplayName>
+          <Description>Local administrator account</Description>
+        </LocalAccount>
+      </LocalAccounts>
+    </UserAccounts>
+  </component>
+</settings>
+```
+
+#### Automate OOBE
+
+The following XML can be used to prevent appearing the Windows OOBE screen:
+
+```xml
+<settings pass="oobeSystem">
+  <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64"
+    publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <InputLocale>0409:00000409</InputLocale>
+    <SystemLocale>en-US</SystemLocale>
+    <UserLocale>en-US</UserLocale>
+    <UILanguage>en-US</UILanguage>
+  </component>
+  <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+    publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+    xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <OOBE>
+      <HideEULAPage>true</HideEULAPage>
+      <HideLocalAccountScreen>true</HideLocalAccountScreen>
+      <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+      <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+      <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+      <ProtectYourPC>3</ProtectYourPC>
+      <SkipMachineOOBE>true</SkipMachineOOBE>
+      <SkipUserOOBE>true</SkipUserOOBE>
+    </OOBE>
+    <TimeZone>Central Standard Time</TimeZone>
+  </component>
+</settings>
 ```
 
 For more information on Sysprep, please refer to Microsoft's [official documentation](https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/).
@@ -224,6 +307,53 @@ For more information on Sysprep, please refer to Microsoft's [official documenta
 ### vAppConfig
 
 The vAppConfig bootstrap method is useful for legacy, VM images that rely on bespoke, boot-time processes that leverage vAppConfig properties for customizing a guest.
+
+To illustrate, the following YAML can be utilized to deploy a VirtualMachine and bootstrap OVF properties that define the network information:
+
+=== "VirtualMachine"
+
+    ``` yaml
+    apiVersion: vmoperator.vmware.com/v1alpha1
+    kind: VirtualMachine
+    metadata:
+      name:      my-vm
+      namespace: my-namespace
+    spec:
+      className:    small
+      imageName:    my-vm-image
+      storageClass: my-storage-class
+      vmMetadata:
+        transport: vAppConfig
+        secretName: my-vm-bootstrap-template
+    ```
+
+=== "vAppConfig"
+
+    ``` yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: my-vm-bootstrap-template
+      namespace: my-namespace
+    stringData:
+      nameservers: "{{ (index .V1alpha1.Net.Nameservers 0) }}"
+      hostname: "{{ .V1alpha1.VM.Name }} "
+      management_ip: "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"
+      management_gateway: "{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}"
+    ```
+
+#### Supporting Template Functions
+
+| Function Name               | Signature                                 | Description                                                                                                                                                                                                                                         |
+|-----------------------------|-------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| V1alpha1_FirstIP            | `func () string`                          | Get the first non-loopback IP with CIDR from first NIC.                                                                                                                                                                                              |
+| V1alpha1_FirstIPFromNIC     | `func (index int) string`                 | Get non-loopback IP address with CIDR from the ith NIC. If index is out of bound, template string won't be parsed.                                                                                                                                    |
+| V1alpha1_FormatIP           | `func (IP string, netmask string) string` | 1. Format an IP address with network length. A netmask can be either the length, ex. /24, or the decimal notation, ex. 255.255.255.0. 2. Format an IP address with CIDR: if input netmask is empty string, return IP sans CIDR. If input netmask is not valid, return empty string. If input netmask is different with CIDR, replace and return IP with new CIDR. |
+| V1alpha1_FormatNameservers  | `func (count int, delimiter string) string` | Format the first occurred count of nameservers with specific delimiter. A negative number for count would mean all nameservers.                                                                                                                       |
+| V1alpha1_IP                 | `func(IP string) string`                   | Format a static IP address with default netmask CIDR. If IP is not valid, template string won't be parsed.                                                                                                                                           |
+| V1alpha1_IPsFromNIC         | `func (index int) []string`               | List all IPs with CIDR from the ith NIC. If index is out of bound, template string won't be parsed.                                                                                                                                                  |
+| V1alpha1_SubnetMask         | `func(cidr string) (string, error)`        | Get subnet mask from a CIDR notation IP address and prefix length. If IP address and prefix length are not valid, throw an error and template string won't be parsed.                                                                                  |
+| V1alpha1_FirstNicMacAddr   | `func() (string, error)`                  | Get the first NIC's MAC address.                                                                                                                                                                                                                    |
 
 ## Deprecated
 

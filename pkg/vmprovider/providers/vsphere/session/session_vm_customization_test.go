@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session_test
@@ -7,6 +7,7 @@ import (
 	goctx "context"
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -26,7 +27,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
+	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var _ = Describe("Customization utils", func() {
@@ -474,18 +477,22 @@ var _ = Describe("Cloud-Init Customization", func() {
 var _ = Describe("TemplateVMMetadata", func() {
 	Context("update VmConfigArgs", func() {
 		var (
-			updateArgs  session.VMUpdateArgs
-			ip1         = "192.168.1.37"
-			ip2         = "192.168.10.48"
-			subnetMask  = "255.255.255.0"
-			IP1         = "192.168.1.37/24"
-			IP2         = "192.168.10.48/24"
-			gateway1    = "192.168.1.1"
-			gateway2    = "192.168.10.1"
-			nameserver1 = "8.8.8.8"
-			nameserver2 = "1.1.1.1"
-			vm          *vmopv1.VirtualMachine
-			vmCtx       context.VirtualMachineContext
+			updateArgs      session.VMUpdateArgs
+			ip1             = "192.168.1.37"
+			ip2             = "192.168.10.48"
+			subnetMask      = "255.255.255.0"
+			IP1             = "192.168.1.37/24"
+			IP2             = "192.168.10.48/24"
+			gateway1        = "192.168.1.1"
+			gateway2        = "192.168.10.1"
+			nameserver1     = "8.8.8.8"
+			nameserver2     = "1.1.1.1"
+			existingMacAddr = "00-00-00-00-00-00"
+			firstNicMacAddr string
+			vm              *vmopv1.VirtualMachine
+			vmCtx           context.VirtualMachineContext
+			ctx             *builder.TestContextForVCSim
+			resVM           *res.VirtualMachine
 		)
 
 		BeforeEach(func() {
@@ -500,6 +507,19 @@ var _ = Describe("TemplateVMMetadata", func() {
 				Logger:  logf.Log.WithValues("vmName", vm.NamespacedName()),
 				VM:      vm,
 			}
+			ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+			objVM, err := ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
+			Expect(err).ToNot(HaveOccurred())
+			resVM = res.NewVMFromObject(objVM)
+
+			// Get the first NIC's MAC address of the above VM.
+			deviceList, err := objVM.Device(vmCtx)
+			Expect(err).ToNot(HaveOccurred())
+			ethCards := deviceList.SelectByType((*vimTypes.VirtualEthernetCard)(nil))
+			Expect(ethCards).ToNot(BeEmpty())
+			nic := ethCards[0].(vimTypes.BaseVirtualEthernetCard).GetVirtualEthernetCard()
+			firstNicMacAddr = nic.GetVirtualEthernetCard().MacAddress
+			firstNicMacAddr = strings.ReplaceAll(firstNicMacAddr, ":", "-")
 
 			updateArgs.DNSServers = []string{nameserver1, nameserver2}
 			updateArgs.NetIfList = []network.InterfaceInfo{
@@ -509,12 +529,16 @@ var _ = Describe("TemplateVMMetadata", func() {
 						IP:         ip1,
 						SubnetMask: subnetMask,
 					},
+					// No customization is set here to test getting the first Nic's MAC address.
 				},
 				{
 					IPConfiguration: network.IPConfig{
 						Gateway:    gateway2,
 						IP:         ip2,
 						SubnetMask: subnetMask,
+					},
+					Customization: &vimTypes.CustomizationAdapterMapping{
+						MacAddress: existingMacAddr,
 					},
 				},
 			}
@@ -525,12 +549,14 @@ var _ = Describe("TemplateVMMetadata", func() {
 
 		It("should return populated NicInfoToNetworkIfStatusEx correctly", func() {
 			IPs := []string{IP1}
-			networkDevicesStatus := session.NicInfoToDevicesStatus(updateArgs)
+			networkDevicesStatus := session.NicInfoToDevicesStatus(vmCtx, resVM, updateArgs)
 			Expect(networkDevicesStatus[0].IPAddresses).To(Equal(IPs))
 			Expect(networkDevicesStatus[0].IPAddresses[0]).To(Equal(IP1))
 			Expect(networkDevicesStatus[0].Gateway4).To(Equal(gateway1))
+			Expect(networkDevicesStatus[0].MacAddress).To(Equal(firstNicMacAddr))
 			Expect(networkDevicesStatus[1].IPAddresses[0]).To(Equal(IP2))
 			Expect(networkDevicesStatus[1].Gateway4).To(Equal(gateway2))
+			Expect(networkDevicesStatus[1].MacAddress).To(Equal(existingMacAddr))
 		})
 
 		It("should resolve them correctly while specifying valid templates", func() {
@@ -541,14 +567,16 @@ var _ = Describe("TemplateVMMetadata", func() {
 			updateArgs.VMMetadata.Data["second_gateway"] = "{{ (index .V1alpha1.Net.Devices 1).Gateway4 }}"
 			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .V1alpha1.Net.Nameservers 0) }}"
 			updateArgs.VMMetadata.Data["name"] = "{{ .V1alpha1.VM.Name }}"
+			updateArgs.VMMetadata.Data["existingMacAddr"] = "{{ (index .V1alpha1.Net.Devices 1).MacAddress }}"
 
-			session.TemplateVMMetadata(vmCtx, updateArgs)
+			session.TemplateVMMetadata(vmCtx, resVM, updateArgs)
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("first_cidrIp", IP1))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("second_cidrIp", IP2))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("first_gateway", gateway1))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("second_gateway", gateway2))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameserver", nameserver1))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("name", "dummy-vm"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("existingMacAddr", existingMacAddr))
 		})
 
 		It("should resolve them correctly while using support template queries", func() {
@@ -563,9 +591,10 @@ var _ = Describe("TemplateVMMetadata", func() {
 			updateArgs.VMMetadata.Data["ip2"] = "{{ " + constants.V1alpha1FormatIP + " \"192.168.1.37/28\" \"\" }}"
 			updateArgs.VMMetadata.Data["ips_1"] = "{{ " + constants.V1alpha1IPsFromNIC + " 0 }}"
 			updateArgs.VMMetadata.Data["subnetmask"] = "{{ " + constants.V1alpha1SubnetMask + " \"192.168.1.37/26\" }}"
+			updateArgs.VMMetadata.Data["firstNicMacAddr"] = "{{ " + constants.V1alpha1FirstNicMacAddr + " }}"
 			updateArgs.VMMetadata.Data["formatted_nameserver1"] = "{{ " + constants.V1alpha1FormatNameservers + " 1 \"-\"}}"
 			updateArgs.VMMetadata.Data["formatted_nameserver2"] = "{{ " + constants.V1alpha1FormatNameservers + " -1 \"-\"}}"
-			session.TemplateVMMetadata(vmCtx, updateArgs)
+			session.TemplateVMMetadata(vmCtx, resVM, updateArgs)
 
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip1", IP1))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("cidr_ip2", IP2))
@@ -578,6 +607,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip2", ip1))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ips_1", fmt.Sprint([]string{IP1})))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("subnetmask", "255.255.255.192"))
+			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("firstNicMacAddr", firstNicMacAddr))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("formatted_nameserver1", nameserver1))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("formatted_nameserver2", nameserver1+"-"+nameserver2))
 		})
@@ -591,7 +621,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 			updateArgs.VMMetadata.Data["gateway"] = "{{ (index .V1alpha1.Net.NetworkInterfaces ).Gateway }}"
 			updateArgs.VMMetadata.Data["nameserver"] = "{{ (index .V1alpha1.Net.NameServers 0) }}"
 
-			session.TemplateVMMetadata(vmCtx, updateArgs)
+			session.TemplateVMMetadata(vmCtx, resVM, updateArgs)
 
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip1", "{{ "+constants.V1alpha1IP+" \"192.1.0\" }}"))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip2", "{{ "+constants.V1alpha1FirstIPFromNIC+" 5 }}"))
@@ -608,7 +638,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 			updateArgs.VMMetadata.Data["skip_data3"] = "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) \\}\\}"
 			updateArgs.VMMetadata.Data["skip_data4"] = "skip \\{\\{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) \\}\\}"
 
-			session.TemplateVMMetadata(vmCtx, updateArgs)
+			session.TemplateVMMetadata(vmCtx, resVM, updateArgs)
 
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("skip_data1", "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("skip_data2", "{{ (index (index .V1alpha1.Net.Devices 0).IPAddresses 0) }}"))
@@ -633,7 +663,7 @@ var _ = Describe("TemplateVMMetadata", func() {
 					for k, v := range obj.Data {
 						updateArgs.VMMetadata.Data[k] = v
 					}
-					session.TemplateVMMetadata(vmCtx, updateArgs)
+					session.TemplateVMMetadata(vmCtx, resVM, updateArgs)
 				})
 
 				Context("with single-quoted values", func() {
@@ -645,6 +675,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_gateway", gateway1))
 						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_ip", ip1))
 						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameservers", nameserver1))
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("subnetMask", subnetMask))
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nicMacAddr", firstNicMacAddr))
 					})
 				})
 				Context("with double-quoted values and escaped double-quotes", func() {
@@ -656,6 +688,8 @@ var _ = Describe("TemplateVMMetadata", func() {
 						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_gateway", gateway1))
 						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_ip", ip1))
 						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameservers", nameserver1))
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("subnetMask", subnetMask))
+						Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nicMacAddr", firstNicMacAddr))
 					})
 				})
 			})
@@ -679,12 +713,14 @@ var _ = Describe("TemplateVMMetadata", func() {
 					for k, v := range obj.Data {
 						updateArgs.VMMetadata.Data[k] = string(v)
 					}
-					session.TemplateVMMetadata(vmCtx, updateArgs)
+					session.TemplateVMMetadata(vmCtx, resVM, updateArgs)
 
 					Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("hostname", vmCtx.VM.Name))
 					Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_gateway", gateway1))
 					Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("management_ip", ip1))
 					Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nameservers", nameserver1))
+					Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("subnetMask", subnetMask))
+					Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("nicMacAddr", firstNicMacAddr))
 				})
 			})
 		})
@@ -705,16 +741,22 @@ var _ = Describe("TemplateVMMetadata", func() {
 			Logger:  logf.Log.WithValues("vmName", vm.NamespacedName()),
 			VM:      vm,
 		}
+		ctx := suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+		objVM, err := ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
+		Expect(err).ToNot(HaveOccurred())
+		resVM := res.NewVMFromObject(objVM)
+
 		updateArgs.VMMetadata = session.VMMetadata{
 			Data: make(map[string]string),
 		}
+
 		It("should return the original text when no available network", func() {
 			updateArgs.VMMetadata.Data["ip1"] = "{{ " + constants.V1alpha1FirstIP + " }}"
 			updateArgs.VMMetadata.Data["ip2"] = "{{ " + constants.V1alpha1FirstIPFromNIC + " 0 }}"
 			updateArgs.VMMetadata.Data["ip3"] = "{{ " + constants.V1alpha1IPsFromNIC + " 0 }}"
 			updateArgs.VMMetadata.Data["formatted_nameserver1"] = "{{ " + constants.V1alpha1FormatNameservers + " 1 \"-\"}}"
 
-			session.TemplateVMMetadata(vmCtx, updateArgs)
+			session.TemplateVMMetadata(vmCtx, resVM, updateArgs)
 
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip1", "{{ "+constants.V1alpha1FirstIP+" }}"))
 			Expect(updateArgs.VMMetadata.Data).To(HaveKeyWithValue("ip2", "{{ "+constants.V1alpha1FirstIPFromNIC+" 0 }}"))
@@ -736,6 +778,8 @@ data:
   management_gateway: '{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}'
   management_ip: '{{ V1alpha1_FormatIP V1alpha1_FirstIP "" }}'
   nameservers: '{{ (index .V1alpha1.Net.Nameservers 0) }}'
+  subnetMask: '{{ V1alpha1_SubnetMask V1alpha1_FirstIP }}'
+  nicMacAddr: '{{ V1alpha1_FirstNicMacAddr }}'
 `
 
 const testConfigMapYAML2 = `
@@ -749,6 +793,8 @@ data:
   management_gateway: "{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}"
   management_ip: "{{ V1alpha1_FormatIP V1alpha1_FirstIP \"\" }}"
   nameservers: "{{ (index .V1alpha1.Net.Nameservers 0) }}"
+  subnetMask: "{{ V1alpha1_SubnetMask V1alpha1_FirstIP }}"
+  nicMacAddr: "{{ V1alpha1_FirstNicMacAddr }}"
 `
 
 //nolint:gosec
@@ -763,4 +809,6 @@ data:
   management_gateway: e3sgKGluZGV4IC5WMWFscGhhMS5OZXQuRGV2aWNlcyAwKS5HYXRld2F5NCB9fQ==
   management_ip: e3sgVjFhbHBoYTFfRm9ybWF0SVAgVjFhbHBoYTFfRmlyc3RJUCAiIiB9fQ==
   nameservers: e3sgKGluZGV4IC5WMWFscGhhMS5OZXQuTmFtZXNlcnZlcnMgMCkgfX0=
+  subnetMask: e3sgVjFhbHBoYTFfU3VibmV0TWFzayBWMWFscGhhMV9GaXJzdElQIH19
+  nicMacAddr: e3sgVjFhbHBoYTFfRmlyc3ROaWNNYWNBZGRyIH19
 `

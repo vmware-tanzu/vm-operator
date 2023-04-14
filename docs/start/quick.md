@@ -28,7 +28,7 @@ Once you are logged into the Supervisor with, a new VM may be realized using the
 Create the new VM with the following command:
 
 ```shell
-kubectl apply -n my-namespace -f {{ config.repo_url_raw }}/main/docs/concepts/workloads/vm-example.yaml
+kubectl apply -n my-namespace -f ${{ config.repo_url_raw }}/main/docs/concepts/workloads/vm-example.yaml
 ```
 
 And that's it! Use `kubectl` to watch the VM until it is powered on with an IP address, at which point you have successfully deployed a workload on Kubernetes with VM Operator.

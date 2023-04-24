@@ -5,4 +5,4 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     cert-manager.io/inject-ca-from: $(WEBHOOK_CERTIFICATE_NAMESPACE)/$(WEBHOOK_CERTIFICATE_NAME)
-  name: virtualmachineimages.vmoperator.vmware.com
+  name: virtualmachinepublishrequests.vmoperator.vmware.com

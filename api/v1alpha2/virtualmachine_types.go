@@ -244,7 +244,9 @@ type VirtualMachineAdvancedSpec struct {
 
 	// DefaultVolumeProvisioningMode specifies the default provisioning mode for
 	// persistent volumes managed by this VM.
-	DefaultVolumeProvisioningMode string `json:"defaultVolumeProvisioningMode,omitempty"`
+	//
+	// +optional
+	DefaultVolumeProvisioningMode VirtualMachineVolumeProvisioningMode `json:"defaultVolumeProvisioningMode,omitempty"`
 
 	// ChangeBlockTracking is a flag that enables incremental backup support
 	// for this VM, a feature utilized by external backup systems such as

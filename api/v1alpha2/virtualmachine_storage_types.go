@@ -5,6 +5,19 @@ package v1alpha2
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+)
+
+// VirtualMachineVolumeProvisioningMode is the type used to express the
+// desired or observed provisioning mode for a virtual machine disk.
+//
+// +kubebuilder:validation:Enum=Thin;Thick;ThickEagerZero
+type VirtualMachineVolumeProvisioningMode string
+
+const (
+	VirtualMachineVolumeProvisioningModeThin           VirtualMachineVolumeProvisioningMode = "Thin"
+	VirtualMachineVolumeProvisioningModeThick          VirtualMachineVolumeProvisioningMode = "Thick"
+	VirtualMachineVolumeProvisioningModeThickEagerZero VirtualMachineVolumeProvisioningMode = "ThickEagerZero"
 )
 
 // VirtualMachineVolume represents a named volume in a VM.
@@ -28,27 +41,28 @@ type VirtualMachineVolumeSource struct {
 	// https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims.
 	//
 	// +optional
-	PersistentVolumeClaim *corev1.PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
+	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
 }
 
-// VirtualMachineVolumeProvisioningOptions specifies the provisioning options
-// for a VirtualMachineVolume.
-type VirtualMachineVolumeProvisioningOptions struct {
-	// ThinProvision indicates whether to allocate space on demand for the
-	// volume.
-	//
-	// +optional
-	ThinProvision *bool `json:"thinProvision,omitempty"`
+// PersistentVolumeClaimVolumeSource is a composite for the Kubernetes
+// corev1.PersistentVolumeClaimVolumeSource and instance storage options.
+type PersistentVolumeClaimVolumeSource struct {
+	corev1.PersistentVolumeClaimVolumeSource `json:",inline" yaml:",inline"`
 
-	// EagerZero indicates whether to write zeroes to the volume, wiping clean
-	// any previous contents. Please note this causes a volume's capacity to be
-	// allocated all at once.
-	//
-	// Please note this option may not be used concurrently with
-	// ThinProvisioned.
-	//
+	// InstanceVolumeClaim is set if the PVC is backed by instance storage.
 	// +optional
-	EagerZero *bool `json:"eagerZero,omitempty"`
+	InstanceVolumeClaim *InstanceVolumeClaimVolumeSource `json:"instanceVolumeClaim,omitempty"`
+}
+
+// InstanceVolumeClaimVolumeSource contains information about the instance
+// storage volume claimed as a PVC.
+type InstanceVolumeClaimVolumeSource struct {
+	// StorageClass is the name of the Kubernetes StorageClass that provides
+	// the backing storage for this instance storage volume.
+	StorageClass string `json:"storageClass"`
+
+	// Size is the size of the requested instance storage volume.
+	Size resource.Quantity `json:"size"`
 }
 
 // VirtualMachineVolumeStatus defines the observed state of a

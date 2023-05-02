@@ -81,7 +81,7 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 	// 	  	 and back.
 	return []interface{}{
 		func(vmSpec *v1alpha1.VirtualMachineSpec, c fuzz.Continue) {
-			c.FuzzNoCustom(vmSpec)
+			c.Fuzz(vmSpec)
 
 			// TODO: Need to save serialized object to support lossless conversions. As is, these are
 			// 		 too different & complicated to have much fuzzing value.
@@ -89,21 +89,24 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 			vmSpec.VmMetadata = nil
 
 			for i := range vmSpec.Volumes {
-				if claim := vmSpec.Volumes[i].PersistentVolumeClaim; claim != nil {
-					// TODO: Need corresponding field in v1a2.
-					claim.InstanceVolumeClaim = nil
-				}
 				// Not present in v1a2.
 				vmSpec.Volumes[i].VsphereVolume = nil
 			}
 
-			vmSpec.AdvancedOptions = &v1alpha1.VirtualMachineAdvancedOptions{}
+			if vmSpec.AdvancedOptions != nil {
+				if provOpts := vmSpec.AdvancedOptions.DefaultVolumeProvisioningOptions; provOpts != nil {
+					if provOpts.ThinProvisioned != nil {
+						// Both cannot be set.
+						provOpts.EagerZeroed = nil
+					}
+				}
+			}
 
 			// This is effectively deprecated.
 			vmSpec.Ports = nil
 		},
 		func(vmSpec *nextver.VirtualMachineSpec, c fuzz.Continue) {
-			c.FuzzNoCustom(vmSpec)
+			c.Fuzz(vmSpec)
 
 			// TODO: Need to save serialized object to support lossless conversions. As is, these are
 			// 		 too different & complicated to have much fuzzing value.
@@ -113,21 +116,18 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 			vmSpec.ReadinessGates = nil
 			vmSpec.ReadinessProbe.GuestInfo = nil
 			vmSpec.Advanced.BootDiskCapacity = resource.Quantity{}
-			vmSpec.Advanced.DefaultVolumeProvisioningMode = "" // TODO: Need v1a2 enums
 		},
 		func(vmStatus *v1alpha1.VirtualMachineStatus, c fuzz.Continue) {
-			c.FuzzNoCustom(vmStatus)
+			c.Fuzz(vmStatus)
 			overrideConditionsSeverity(vmStatus.Conditions)
 
-			if len(vmStatus.NetworkInterfaces) != 0 {
-				vmStatus.NetworkInterfaces = nil
-			}
+			vmStatus.NetworkInterfaces = nil
 
 			// Do not exist in v1a2.
 			vmStatus.Phase = ""
 		},
 		func(vmStatus *nextver.VirtualMachineStatus, c fuzz.Continue) {
-			c.FuzzNoCustom(vmStatus)
+			c.Fuzz(vmStatus)
 			overrideConditionsObservedGeneration(vmStatus.Conditions)
 
 			vmStatus.Image = nil
@@ -140,7 +140,7 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 func overrideVirtualMachineClassFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(classStatus *nextver.VirtualMachineClassStatus, c fuzz.Continue) {
-			c.FuzzNoCustom(classStatus)
+			c.Fuzz(classStatus)
 
 			// TODO: Need to save serialized object to support lossless conversions.
 			classStatus.Capabilities = nil
@@ -153,7 +153,7 @@ func overrideVirtualMachineClassFieldsFuncs(codecs runtimeserializer.CodecFactor
 func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(imageSpec *v1alpha1.VirtualMachineImageSpec, c fuzz.Continue) {
-			c.FuzzNoCustom(imageSpec)
+			c.Fuzz(imageSpec)
 
 			if imageSpec.OVFEnv != nil {
 				m := make(map[string]v1alpha1.OvfProperty, len(imageSpec.OVFEnv))
@@ -176,7 +176,7 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			imageSpec.ProviderRef.Namespace = ""
 		},
 		func(imageStatus *v1alpha1.VirtualMachineImageStatus, c fuzz.Continue) {
-			c.FuzzNoCustom(imageStatus)
+			c.Fuzz(imageStatus)
 			overrideConditionsSeverity(imageStatus.Conditions)
 
 			// Do not exist in v1a2.
@@ -189,12 +189,12 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			imageStatus.PowerState = ""
 		},
 		func(osInfo *nextver.VirtualMachineImageOSInfo, c fuzz.Continue) {
-			c.FuzzNoCustom(osInfo)
+			c.Fuzz(osInfo)
 			// TODO: Need to save serialized object to support lossless conversions.
 			osInfo.ID = ""
 		},
 		func(imageStatus *nextver.VirtualMachineImageStatus, c fuzz.Continue) {
-			c.FuzzNoCustom(imageStatus)
+			c.Fuzz(imageStatus)
 			overrideConditionsObservedGeneration(imageStatus.Conditions)
 			// TODO: Need to save serialized object to support lossless conversions.
 			imageStatus.Capabilities = nil
@@ -205,11 +205,11 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 func overrideVirtualMachinePublishRequestFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		func(publishStatus *v1alpha1.VirtualMachinePublishRequestStatus, c fuzz.Continue) {
-			c.FuzzNoCustom(publishStatus)
+			c.Fuzz(publishStatus)
 			overrideConditionsSeverity(publishStatus.Conditions)
 		},
 		func(publishStatus *nextver.VirtualMachinePublishRequestStatus, c fuzz.Continue) {
-			c.FuzzNoCustom(publishStatus)
+			c.Fuzz(publishStatus)
 			overrideConditionsObservedGeneration(publishStatus.Conditions)
 		},
 	}

@@ -6,6 +6,7 @@ package v1alpha1
 import (
 	"fmt"
 	"net"
+	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -19,10 +20,19 @@ import (
 func Convert_v1alpha1_VirtualMachineVolume_To_v1alpha2_VirtualMachineVolume(
 	in *VirtualMachineVolume, out *v1alpha2.VirtualMachineVolume, s apiconversion.Scope) error {
 
-	// TODO: v1a2 needs InstanceVolumeClaim.
 	if claim := in.PersistentVolumeClaim; claim != nil {
-		src := claim.PersistentVolumeClaimVolumeSource
-		out.PersistentVolumeClaim = &src
+		out.PersistentVolumeClaim = &v1alpha2.PersistentVolumeClaimVolumeSource{
+			PersistentVolumeClaimVolumeSource: claim.PersistentVolumeClaimVolumeSource,
+		}
+
+		if claim.InstanceVolumeClaim != nil {
+			out.PersistentVolumeClaim.InstanceVolumeClaim = &v1alpha2.InstanceVolumeClaimVolumeSource{}
+
+			if err := Convert_v1alpha1_InstanceVolumeClaimVolumeSource_To_v1alpha2_InstanceVolumeClaimVolumeSource(
+				claim.InstanceVolumeClaim, out.PersistentVolumeClaim.InstanceVolumeClaim, s); err != nil {
+				return err
+			}
+		}
 	}
 
 	// TODO: in.VsphereVolume
@@ -30,34 +40,59 @@ func Convert_v1alpha1_VirtualMachineVolume_To_v1alpha2_VirtualMachineVolume(
 	return autoConvert_v1alpha1_VirtualMachineVolume_To_v1alpha2_VirtualMachineVolume(in, out, s)
 }
 
+func convert_v1alpha1_VirtualMachinePowerState_To_v1alpha2_VirtualMachinePowerState(
+	in VirtualMachinePowerState) v1alpha2.VirtualMachinePowerState {
+
+	switch in {
+	case VirtualMachinePoweredOff:
+		return v1alpha2.VirtualMachinePowerStateOff
+	case VirtualMachinePoweredOn:
+		return v1alpha2.VirtualMachinePowerStateOn
+	case "guestPoweredOff":
+		return v1alpha2.VirtualMachinePowerStateGuestOff
+	case "suspended":
+		return v1alpha2.VirtualMachinePowerStateSuspended
+	}
+
+	return v1alpha2.VirtualMachinePowerState(in)
+}
+
+func convert_v1alpha2_VirtualMachinePowerState_To_v1alpha1_VirtualMachinePowerState(
+	in v1alpha2.VirtualMachinePowerState) VirtualMachinePowerState {
+
+	switch in {
+	case v1alpha2.VirtualMachinePowerStateOff:
+		return VirtualMachinePoweredOff
+	case v1alpha2.VirtualMachinePowerStateOn:
+		return VirtualMachinePoweredOn
+	case v1alpha2.VirtualMachinePowerStateGuestOff:
+		return "guestPoweredOff"
+	case v1alpha2.VirtualMachinePowerStateSuspended:
+		return "suspended"
+	}
+
+	return VirtualMachinePowerState(in)
+}
+
 func Convert_v1alpha2_VirtualMachineVolume_To_v1alpha1_VirtualMachineVolume(
 	in *v1alpha2.VirtualMachineVolume, out *VirtualMachineVolume, s apiconversion.Scope) error {
 
 	if claim := in.PersistentVolumeClaim; claim != nil {
 		out.PersistentVolumeClaim = &PersistentVolumeClaimVolumeSource{
-			PersistentVolumeClaimVolumeSource: *claim,
+			PersistentVolumeClaimVolumeSource: claim.PersistentVolumeClaimVolumeSource,
+		}
+
+		if claim.InstanceVolumeClaim != nil {
+			out.PersistentVolumeClaim.InstanceVolumeClaim = &InstanceVolumeClaimVolumeSource{}
+
+			if err := Convert_v1alpha2_InstanceVolumeClaimVolumeSource_To_v1alpha1_InstanceVolumeClaimVolumeSource(
+				claim.InstanceVolumeClaim, out.PersistentVolumeClaim.InstanceVolumeClaim, s); err != nil {
+				return err
+			}
 		}
 	}
 
 	return autoConvert_v1alpha2_VirtualMachineVolume_To_v1alpha1_VirtualMachineVolume(in, out, s)
-}
-
-func Convert_v1alpha1_VirtualMachineVolumeProvisioningOptions_To_v1alpha2_VirtualMachineVolumeProvisioningOptions(
-	in *VirtualMachineVolumeProvisioningOptions, out *v1alpha2.VirtualMachineVolumeProvisioningOptions, s apiconversion.Scope) error {
-
-	in.ThinProvisioned = out.ThinProvision
-	in.EagerZeroed = out.EagerZero
-
-	return autoConvert_v1alpha1_VirtualMachineVolumeProvisioningOptions_To_v1alpha2_VirtualMachineVolumeProvisioningOptions(in, out, s)
-}
-
-func Convert_v1alpha2_VirtualMachineVolumeProvisioningOptions_To_v1alpha1_VirtualMachineVolumeProvisioningOptions(
-	in *v1alpha2.VirtualMachineVolumeProvisioningOptions, out *VirtualMachineVolumeProvisioningOptions, s apiconversion.Scope) error {
-
-	out.ThinProvisioned = in.ThinProvision
-	out.EagerZeroed = in.EagerZero
-
-	return autoConvert_v1alpha2_VirtualMachineVolumeProvisioningOptions_To_v1alpha1_VirtualMachineVolumeProvisioningOptions(in, out, s)
 }
 
 func convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(
@@ -248,9 +283,15 @@ func convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha2_VirtualMachineAd
 		// out.BootDiskCapacity =
 
 		if opts := in.DefaultVolumeProvisioningOptions; opts != nil {
-			// opts.ThinProvisioned
-			// opts.EagerZeroed
-			out.DefaultVolumeProvisioningMode = "" // TODO: Define enum values
+			if opts.ThinProvisioned != nil {
+				if *opts.ThinProvisioned {
+					out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThin
+				} else {
+					out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThick
+				}
+			} else if opts.EagerZeroed != nil && *opts.EagerZeroed {
+				out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThickEagerZero
+			}
 		}
 
 		if in.ChangeBlockTracking != nil {
@@ -270,9 +311,23 @@ func convert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvan
 		out.ChangeBlockTracking = pointer.Bool(true)
 	}
 
-	if in.DefaultVolumeProvisioningMode != "" {
-		// TODO: Need ProvisioningMode enums
-		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{}
+	switch in.DefaultVolumeProvisioningMode {
+	case v1alpha2.VirtualMachineVolumeProvisioningModeThin:
+		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
+			ThinProvisioned: pointer.Bool(true),
+		}
+	case v1alpha2.VirtualMachineVolumeProvisioningModeThick:
+		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
+			ThinProvisioned: pointer.Bool(false),
+		}
+	case v1alpha2.VirtualMachineVolumeProvisioningModeThickEagerZero:
+		out.DefaultVolumeProvisioningOptions = &VirtualMachineVolumeProvisioningOptions{
+			EagerZeroed: pointer.Bool(true),
+		}
+	}
+
+	if reflect.DeepEqual(out, &VirtualMachineAdvancedOptions{}) {
+		return nil
 	}
 
 	return out
@@ -350,6 +405,7 @@ func convert_v1alpha2_NetworkStatus_To_v1alpha1_Network(
 func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	in *VirtualMachineSpec, out *v1alpha2.VirtualMachineSpec, s apiconversion.Scope) error {
 
+	out.PowerState = convert_v1alpha1_VirtualMachinePowerState_To_v1alpha2_VirtualMachinePowerState(in.PowerState)
 	out.Bootstrap = convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(in.VmMetadata)
 
 	for i, networkInterface := range in.NetworkInterfaces {
@@ -371,6 +427,7 @@ func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 func Convert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(
 	in *v1alpha2.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
 
+	out.PowerState = convert_v1alpha2_VirtualMachinePowerState_To_v1alpha1_VirtualMachinePowerState(in.PowerState)
 	out.VmMetadata = convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(in.Bootstrap)
 
 	for _, networkInterfaceSpec := range in.Network.Interfaces {
@@ -409,6 +466,7 @@ func Convert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha1_VirtualMachineVolum
 func Convert_v1alpha1_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 	in *VirtualMachineStatus, out *v1alpha2.VirtualMachineStatus, s apiconversion.Scope) error {
 
+	out.PowerState = convert_v1alpha1_VirtualMachinePowerState_To_v1alpha2_VirtualMachinePowerState(in.PowerState)
 	out.Network = convert_v1alpha1_Network_To_v1alpha2_NetworkStatus(in.VmIp, in.NetworkInterfaces)
 
 	// WARNING: in.Phase requires manual conversion: does not exist in peer-type
@@ -419,6 +477,7 @@ func Convert_v1alpha1_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	in *v1alpha2.VirtualMachineStatus, out *VirtualMachineStatus, s apiconversion.Scope) error {
 
+	out.PowerState = convert_v1alpha2_VirtualMachinePowerState_To_v1alpha1_VirtualMachinePowerState(in.PowerState)
 	out.VmIp, out.NetworkInterfaces = convert_v1alpha2_NetworkStatus_To_v1alpha1_Network(in.Network)
 
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type

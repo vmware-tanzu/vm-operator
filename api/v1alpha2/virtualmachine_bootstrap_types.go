@@ -114,7 +114,8 @@ type VirtualMachineBootstrapCloudInitSpec struct {
 	SSHAuthorizedKeys []string `json:"sshAuthorizedKeys,omitempty"`
 }
 
-// VirtualMachineBootstrapLinuxPrepSpec
+// VirtualMachineBootstrapLinuxPrepSpec describes the LinuxPrep configuration
+// used to bootstrap the VM.
 type VirtualMachineBootstrapLinuxPrepSpec struct {
 	// HardwareClockIsUTC specifies whether the hardware clock is in UTC or
 	// local time.
@@ -163,7 +164,8 @@ type VirtualMachineBootstrapSysprepSpec struct {
 	RawSysprep corev1.SecretKeySelector `json:"rawSysprep,omitempty"`
 }
 
-// VirtualMachineBootstrapVAppConfigSpec
+// VirtualMachineBootstrapVAppConfigSpec describes the vApp configuration
+// used to bootstrap the VM.
 type VirtualMachineBootstrapVAppConfigSpec struct {
 	// Properties is a list of vApp/OVF property key/value pairs.
 	//

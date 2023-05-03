@@ -565,7 +565,7 @@ type VirtualMachineNetworkInterfaceStatus struct {
 }
 
 // VirtualMachineNetworkIPStackStatus describes the observed state of a
-// a VM's IP stack.
+// VM's IP stack.
 type VirtualMachineNetworkIPStackStatus struct {
 	// DHCP describes the VM's observed, client-side, system-wide DHCP options.
 	//
@@ -611,7 +611,7 @@ type VirtualMachineNetworkStatus struct {
 	//
 	// If the bootstrap provider is CloudInit then this value is set to the
 	// value of the VM's "guestinfo.local-ipv4" property. Please see
-	// https://bit.ly/3A66vZg for more information on how this value is
+	// https://bit.ly/3NJB534 for more information on how this value is
 	// calculated.
 	//
 	// If the bootstrap provider is anything else then this field is set to the
@@ -625,7 +625,7 @@ type VirtualMachineNetworkStatus struct {
 	//
 	// If the bootstrap provider is CloudInit then this value is set to the
 	// value of the VM's "guestinfo.local-ipv6" property. Please see
-	// https://bit.ly/3A66vZg for more information on how this value is
+	// https://bit.ly/3NJB534 for more information on how this value is
 	// calculated.
 	//
 	// If the bootstrap provider is anything else then this field is set to the

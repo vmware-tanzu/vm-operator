@@ -615,7 +615,7 @@ type VirtualMachineNetworkStatus struct {
 	// calculated.
 	//
 	// If the bootstrap provider is anything else then this field is set to the
-	// the value of the infrastructure VM's "guest.ipAddress" field. Please see
+	// value of the infrastructure VM's "guest.ipAddress" field. Please see
 	// https://bit.ly/3Au0jM4 for more information.
 	//
 	// +optional
@@ -629,7 +629,7 @@ type VirtualMachineNetworkStatus struct {
 	// calculated.
 	//
 	// If the bootstrap provider is anything else then this field is set to the
-	// the value of the infrastructure VM's "guest.ipAddress" field. Please see
+	// value of the infrastructure VM's "guest.ipAddress" field. Please see
 	// https://bit.ly/3Au0jM4 for more information.
 	//
 	// +optional

@@ -41,7 +41,7 @@ func DummyClusterContentLibraryItem(name string) *imgregv1a1.ClusterContentLibra
 			ContentVersion: "dummy-content-version",
 			ContentLibraryRef: &imgregv1a1.NameAndKindRef{
 				Name: "dummy-ccl-name",
-				Kind: "ClusterContentLibrary",
+				Kind: ClusterContentLibraryKind,
 			},
 			Conditions: []imgregv1a1.Condition{
 				{
@@ -75,7 +75,7 @@ func DummyContentLibraryItem(name, namespace string) *imgregv1a1.ContentLibraryI
 			ContentVersion: "dummy-content-version",
 			ContentLibraryRef: &imgregv1a1.NameAndKindRef{
 				Name: "cl-dummy",
-				Kind: "ContentLibrary",
+				Kind: ContentLibraryKind,
 			},
 			Conditions: []imgregv1a1.Condition{
 				{

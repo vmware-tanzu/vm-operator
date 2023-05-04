@@ -243,8 +243,8 @@ func (r *Reconciler) setUpCVMIFromCCLItem(ctx *context.ClusterContentLibraryItem
 	cvmi.Status.ImageName = cclItem.Status.Name
 	cvmi.Status.ContentLibraryRef = &corev1.TypedLocalObjectReference{
 		APIGroup: &imgregv1a1.GroupVersion.Group,
-		Kind:     cclItem.Status.ContentLibraryRef.Kind,
-		Name:     cclItem.Status.ContentLibraryRef.Name,
+		Kind:     (*cclItem.Status.ContentLibraryRef).Kind,
+		Name:     (*cclItem.Status.ContentLibraryRef).Name,
 	}
 
 	// Update image condition based on the security compliance of the provider item.

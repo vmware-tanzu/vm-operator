@@ -232,8 +232,8 @@ func (r *Reconciler) setUpVMIFromCLItem(ctx *context.ContentLibraryItemContext) 
 	vmi.Status.ImageName = clItem.Status.Name
 	vmi.Status.ContentLibraryRef = &corev1.TypedLocalObjectReference{
 		APIGroup: &imgregv1a1.GroupVersion.Group,
-		Kind:     utils.ContentLibraryKind,
-		Name:     clItem.Status.ContentLibraryRef.Name,
+		Kind:     (*clItem.Status.ContentLibraryRef).Kind,
+		Name:     (*clItem.Status.ContentLibraryRef).Name,
 	}
 
 	// Update image condition based on the security compliance of the provider item.

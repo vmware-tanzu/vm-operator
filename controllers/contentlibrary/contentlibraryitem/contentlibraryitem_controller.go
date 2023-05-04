@@ -223,7 +223,7 @@ func (r *Reconciler) setUpVMIFromCLItem(ctx *context.ContentLibraryItemContext) 
 
 	// Do not initialize the Spec or Status directly as it might overwrite the existing fields.
 	vmi.Spec.Type = string(clItem.Status.Type)
-	vmi.Spec.ImageID = clItem.Spec.UUID
+	vmi.Spec.ImageID = string(clItem.Spec.UUID)
 	vmi.Spec.ProviderRef = vmopv1.ContentProviderReference{
 		APIVersion: clItem.APIVersion,
 		Kind:       clItem.Kind,

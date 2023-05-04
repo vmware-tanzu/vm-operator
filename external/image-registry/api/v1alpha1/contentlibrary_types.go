@@ -1,10 +1,11 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // ContentLibraryType is a constant type that indicates the type of a content library in vCenter.
@@ -12,10 +13,10 @@ type ContentLibraryType string
 
 const (
 	// ContentLibraryTypeLocal indicates a local content library in vCenter.
-	ContentLibraryTypeLocal = ContentLibraryType("Local")
+	ContentLibraryTypeLocal ContentLibraryType = "Local"
 
 	// ContentLibraryTypeSubscribed indicates a subscribed content library in vCenter.
-	ContentLibraryTypeSubscribed = ContentLibraryType("Subscribed")
+	ContentLibraryTypeSubscribed ContentLibraryType = "Subscribed"
 )
 
 // StorageBackingType is a constant type that indicates the type of the storage backing for a content library in vCenter.
@@ -23,17 +24,17 @@ type StorageBackingType string
 
 const (
 	// StorageBackingTypeDatastore indicates a datastore backed content library in vCenter.
-	StorageBackingTypeDatastore = StorageBackingType("Datastore")
+	StorageBackingTypeDatastore StorageBackingType = "Datastore"
 
 	// StorageBackingTypeOther indicates a remote file system backed content library in vCenter.
 	// Supports NFS and SMB remote file systems.
-	StorageBackingTypeOther = StorageBackingType("Other")
+	StorageBackingTypeOther StorageBackingType = "Other"
 )
 
 // StorageBacking describes the default storage backing which is available for the library.
 type StorageBacking struct {
 	// Type indicates the type of storage where the content would be stored.
-	// Possible values are "Datastore" and "Other".
+	// +kubebuilder:validation:Enum=Datastore;Other
 	// +required
 	Type StorageBackingType `json:"type"`
 
@@ -45,73 +46,77 @@ type StorageBacking struct {
 
 // SubscriptionInfo defines how the subscribed library synchronizes to a remote source.
 type SubscriptionInfo struct {
-	// SubscriptionURL is the URL of the endpoint where the metadata for the remotely published library is being served.
-	// The value from PublishInfo.PublishURL of the published library should be used while creating a subscribed library.
+	// URL of the endpoint where the metadata for the remotely published library is being served.
+	// The value from PublishInfo.URL of the published library should be used while creating a subscribed library.
 	// +required
-	SubscriptionURL string `json:"subscriptionURL"`
+	URL string `json:"URL"`
 
 	// OnDemand indicates whether a library item’s content will be synchronized only on demand.
 	// +required
 	OnDemand bool `json:"onDemand"`
 
-	// AutomaticSyncEnabled indicates whether the library should participate in automatic library synchronization.
+	// AutomaticSync indicates whether the library should participate in automatic library synchronization.
 	// +required
-	AutomaticSyncEnabled bool `json:"automaticSyncEnabled"`
+	AutomaticSync bool `json:"automaticSync"`
 }
 
 // PublishInfo defines how the library is published so that it can be subscribed to by a remote subscribed library.
 type PublishInfo struct {
-	// Published indicates if the local library is published.
+	// Published indicates if the local library is published so that it can be subscribed to by a remote subscribed library.
 	// +required
 	Published bool `json:"published"`
 
-	// PublishURL is the URL to which the library metadata is published by the vSphere Content Library Service.
-	// This value can be used to set the SubscriptionInfo.subscriptionURL property when creating a subscribed library.
+	// URL to which the library metadata is published by the vSphere Content Library Service.
+	// This value can be used to set the SubscriptionInfo.URL property when creating a subscribed library.
 	// +required
-	PublishURL string `json:"publishURL"`
+	URL string `json:"URL"`
 }
 
 // ContentLibrarySpec defines the desired state of a ContentLibrary.
 type ContentLibrarySpec struct {
 	// UUID is the identifier which uniquely identifies the library in vCenter. This field is immutable.
 	// +required
-	UUID string `json:"uuid"`
+	UUID types.UID `json:"uuid"`
 
-	// Writable flag indicates if the users can create new library items in this library.
+	// Writable flag indicates if users can create new library items in this library.
 	// +required
 	Writable bool `json:"writable"`
+
+	// AllowImport flag indicates if users can import OVF/OVA templates from remote HTTPS URLs
+	// as new content library items in this library.
+	// +optional
+	AllowImport bool `json:"allowImport,omitempty"`
 }
 
 // ContentLibraryStatus defines the observed state of ContentLibrary.
 type ContentLibraryStatus struct {
 	// Name specifies the name of the content library in vCenter.
-	// +required
-	Name string `json:"name"`
+	// +optional
+	Name string `json:"name,omitempty"`
 
 	// Description is a human-readable description for this library in vCenter.
 	// +optional
 	Description string `json:"description,omitempty"`
 
-	// Type indicates the type of a library in vCenter.
-	// Possible types are "Local" and "Subscribed".
-	// +required
-	Type ContentLibraryType `json:"type"`
+	// +kubebuilder:validation:Enum=Local;Subscribed
+	// +optional
+	Type ContentLibraryType `json:"type,omitempty"`
 
 	// StorageBacking indicates the default storage backing available for this library in vCenter.
-	// +required
-	StorageBacking StorageBacking `json:"storageBacking"`
+	// +optional
+	StorageBacking *StorageBacking `json:"storageBacking,omitempty"`
 
-	// Version is a number that can identify metadata changes. This integer value is incremented when the library
+	// Version is a number that can identify metadata changes. This value is incremented when the library
 	// properties such as name or description are changed in vCenter.
-	// +required
-	Version string `json:"version"`
+	// +optional
+	Version string `json:"version,omitempty"`
 
 	// Published indicates how the library is published so that it can be subscribed to by a remote subscribed library.
 	// +optional
 	PublishInfo *PublishInfo `json:"publishInfo,omitempty"`
 
 	// SubscriptionInfo defines how the subscribed library synchronizes to a remote source.
-	// This field is populated only if the library is of the "Subscribed" type.
+	// This field is populated only if Type=Subscribed.
 	// +optional
 	SubscriptionInfo *SubscriptionInfo `json:"subscriptionInfo,omitempty"`
 
@@ -120,20 +125,20 @@ type ContentLibraryStatus struct {
 	// +optional
 	SecurityPolicyID string `json:"securityPolicyID,omitempty"`
 
-	// CreationTime indicates the date and time when this library was created.
-	// +required
-	CreationTime string `json:"creationTime"`
+	// CreationTime indicates the date and time when this library was created in vCenter.
+	// +optional
+	CreationTime metav1.Time `json:"creationTime,omitempty"`
 
-	// LastModifiedTime indicates the date and time when this library was last updated.
+	// LastModifiedTime indicates the date and time when this library was last updated in vCenter.
 	// This field is updated only when the library properties are changed. This field is not updated when a library
 	// item is added, modified or deleted or its content is changed.
-	// +required
-	LastModifiedTime string `json:"lastModifiedTime"`
+	// +optional
+	LastModifiedTime metav1.Time `json:"lastModifiedTime,omitempty"`
 
-	// LastSyncTime indicates the date and time when this library was last synchronized.
+	// LastSyncTime indicates the date and time when this library was last synchronized in vCenter.
 	// This field applies only if the library is of the "Subscribed" Type.
 	// +optional
-	LastSyncTime string `json:"lastSyncTime,omitempty"`
+	LastSyncTime metav1.Time `json:"lastSyncTime,omitempty"`
 
 	// Conditions describes the current condition information of the ContentLibrary.
 	// +optional
@@ -176,6 +181,52 @@ type ContentLibraryList struct {
 	Items           []ContentLibrary `json:"items"`
 }
 
+// ClusterContentLibrarySpec defines the desired state of a ClusterContentLibrary.
+type ClusterContentLibrarySpec struct {
+	// UUID is the identifier which uniquely identifies the library in vCenter. This field is immutable.
+	// +required
+	UUID types.UID `json:"uuid"`
+}
+
+func (ccl *ClusterContentLibrary) GetConditions() Conditions {
+	return ccl.Status.Conditions
+}
+
+func (ccl *ClusterContentLibrary) SetConditions(conditions Conditions) {
+	ccl.Status.Conditions = conditions
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster,shortName=ccl
+// +kubebuilder:printcolumn:name="vSphereName",type="string",JSONPath=".status.name"
+// +kubebuilder:printcolumn:name="Type",type="string",JSONPath=".status.type"
+// +kubebuilder:printcolumn:name="StorageType",type="string",JSONPath=".status.storageBacking.type"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+
+// ClusterContentLibrary is the schema for the cluster scoped content library API.
+// Currently, ClusterContentLibrary is immutable to end users.
+type ClusterContentLibrary struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   ClusterContentLibrarySpec `json:"spec,omitempty"`
+	Status ContentLibraryStatus      `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+
+// ClusterContentLibraryList contains a list of ClusterContentLibrary.
+type ClusterContentLibraryList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ClusterContentLibrary `json:"items"`
+}
+
 func init() {
-	RegisterTypeWithScheme(&ContentLibrary{}, &ContentLibraryList{})
+	RegisterTypeWithScheme(
+		&ContentLibrary{},
+		&ContentLibraryList{},
+		&ClusterContentLibrary{},
+		&ClusterContentLibraryList{})
 }

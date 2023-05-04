@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine
@@ -43,7 +43,7 @@ func CreateOVF(vmCtx context.VirtualMachineContext, client *rest.Client,
 	}
 
 	target := vcenter.LibraryTarget{
-		LibraryID: cl.Spec.UUID,
+		LibraryID: string(cl.Spec.UUID),
 	}
 
 	ovf := vcenter.OVF{

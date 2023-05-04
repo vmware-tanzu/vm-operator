@@ -21,14 +21,23 @@ spec:
     - jsonPath: .status.name
       name: vSphereName
       type: string
-    - jsonPath: .status.clusterContentLibraryRef
+    - jsonPath: .status.contentLibraryRef.Name
       name: ClusterContentLibraryRef
       type: string
     - jsonPath: .status.type
       name: Type
       type: string
-    - jsonPath: .status.ready
+    - jsonPath: .status.conditions[?(.type=='Ready')].status
       name: Ready
+      type: string
+    - jsonPath: .status.cached
+      name: Cached
+      type: boolean
+    - jsonPath: .status.sizeInBytes
+      name: SizeInBytes
+      type: string
+    - jsonPath: .status.securityCompliance
+      name: SecurityCompliant
       type: boolean
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -37,8 +46,8 @@ spec:
     schema:
       openAPIV3Schema:
         description: ClusterContentLibraryItem is the schema for the content library
-          item API at the cluster scope. Currently, ClusterContentLibraryItem are
-          immutable to end users.
+          item API at the cluster scope. Currently, ClusterContentLibraryItem is immutable
+          to end users.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -53,8 +62,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: ClusterContentLibraryItemSpec defines the desired state of
-              a ClusterContentLibraryItem.
+            description: ContentLibraryItemSpec defines the desired state of a ContentLibraryItem.
             properties:
               uuid:
                 description: UUID is the identifier which uniquely identifies the
@@ -64,12 +72,11 @@ spec:
             - uuid
             type: object
           status:
-            description: ClusterContentLibraryItemStatus defines the observed state
-              of ClusterContentLibraryItem.
+            description: ContentLibraryItemStatus defines the observed state of ContentLibraryItem.
             properties:
               cached:
                 default: false
-                description: Cached indicates if the library item files are on disk
+                description: Cached indicates if the library item files are on storage
                   in vCenter.
                 type: boolean
               certificateVerificationInfo:
@@ -77,25 +84,26 @@ spec:
                   status and the signing certificate.
                 properties:
                   certChain:
-                    description: CertChain shows the signing certificate in base64
-                      encoding if the library item is signed.
+                    description: CertChain shows the signing certificate chain in
+                      base64 encoding if the library item is signed.
                     items:
                       type: string
                     type: array
                   status:
                     description: Status shows the certificate verification status
                       of the library item.
+                    enum:
+                    - NOT_AVAILABLE
+                    - VERIFIED
+                    - INTERNAL
+                    - VERIFICATION_FAILURE
+                    - VERIFICATION_IN_PROGRESS
+                    - UNTRUSTED
                     type: string
-                required:
-                - status
                 type: object
-              clusterContentLibraryRef:
-                description: ClusterContentLibraryRef is the name of the ClusterContentLibrary
-                  resource that this item belongs to.
-                type: string
               conditions:
                 description: Conditions describes the current condition information
-                  of the ClusterContentLibraryItem.
+                  of the ContentLibraryItem.
                 items:
                   description: Condition defines an observation of an Image Registry
                     Operator API resource operational state.
@@ -138,64 +146,110 @@ spec:
                   - type
                   type: object
                 type: array
+              contentLibraryRef:
+                description: ContentLibraryRef refers to the ContentLibrary custom
+                  resource that this item belongs to.
+                properties:
+                  kind:
+                    description: 'Kind is a string value representing the kind of
+                      resource to which this object refers. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                    type: string
+                  name:
+                    description: 'Name refers to a unique resource in the current
+                      namespace. More info: http://kubernetes.io/docs/user-guide/identifiers#names'
+                    type: string
+                required:
+                - name
+                type: object
               contentVersion:
                 description: ContentVersion indicates the version of the library item
-                  content. This value is incremented when the files comprising the
-                  content library item are changed in vCenter.
+                  content in vCenter. This value is incremented when the files comprising
+                  the content library item are changed in vCenter.
                 type: string
               creationTime:
                 description: CreationTime indicates the date and time when this library
-                  item was created.
+                  item was created in vCenter.
+                format: date-time
                 type: string
               description:
                 description: Description is a human-readable description for this
                   library item.
                 type: string
+              fileInfo:
+                description: FileInfo represents zero, one or more files belonging
+                  to the content library item in vCenter.
+                items:
+                  description: FileInfo represents the information of a file in a
+                    content library item in vCenter.
+                  properties:
+                    cached:
+                      default: false
+                      description: Cached indicates if the library item file is on
+                        storage in vCenter.
+                      type: boolean
+                    name:
+                      description: Name specifies the name of the file in vCenter.
+                      type: string
+                    sizeInBytes:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: SizeInBytes indicates the library item file size
+                        in bytes on storage in vCenter.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    version:
+                      description: Version indicates the version of the library item
+                        file in vCenter. This value is incremented when a new copy
+                        of the file is uploaded to vCenter.
+                      type: string
+                  required:
+                  - cached
+                  - name
+                  - sizeInBytes
+                  - version
+                  type: object
+                type: array
               lastModifiedTime:
                 description: LastModifiedTime indicates the date and time when this
-                  library item was last updated. This field is updated when the library
-                  item properties are changed or the file content is changed.
+                  library item was last updated in vCenter. This field is updated
+                  when the library item properties are changed or the file content
+                  is changed.
+                format: date-time
                 type: string
               lastSyncTime:
                 description: LastSyncTime indicates the date and time when this library
-                  item was last synchronized. This field applies only to subscribed
-                  library items.
+                  item was last synchronized in vCenter. This field applies only to
+                  the library items belonging to the library of Type=Subscribed.
+                format: date-time
                 type: string
               metadataVersion:
                 description: MetadataVersion indicates the version of the library
-                  item metadata. This value is incremented when the library item properties
-                  such as name or description are changed in vCenter.
+                  item metadata in vCenter. This value is incremented when the library
+                  item properties such as name or description are changed in vCenter.
                 type: string
               name:
-                description: ItemName specifies the name of the content library item
-                  in vCenter.
+                description: Name specifies the name of the content library item in
+                  vCenter specified by the user.
                 type: string
-              ready:
-                default: false
-                description: Ready denotes that the library item is ready to be used.
-                type: boolean
               securityCompliance:
                 description: SecurityCompliance shows the security compliance of the
                   library item.
                 type: boolean
-              size:
-                description: Size indicates the library item size in bytes
-                format: int32
-                type: integer
+              sizeInBytes:
+                anyOf:
+                - type: integer
+                - type: string
+                description: SizeInBytes indicates the library item size in bytes
+                  on storage in vCenter.
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
               type:
-                description: Type string indicates the type of the library item in
-                  vCenter. Possible types are "Ovf" and "Iso".
+                description: Type indicates the type of the library item in vCenter.
+                enum:
+                - OVF
+                - ISO
                 type: string
-            required:
-            - cached
-            - clusterContentLibraryRef
-            - contentVersion
-            - creationTime
-            - lastModifiedTime
-            - metadataVersion
-            - name
-            - ready
-            - type
             type: object
         type: object
     served: true

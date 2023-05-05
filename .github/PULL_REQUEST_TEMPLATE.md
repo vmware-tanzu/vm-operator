@@ -32,8 +32,6 @@ Fixes #
 
 <!-- Anything else you would like the reviewers to know about this PR. -->
 
-_Please confirm that if this PR changes any image versions, then that's the sole change this PR makes._
-
 
 **Please add a release note if necessary**:
 

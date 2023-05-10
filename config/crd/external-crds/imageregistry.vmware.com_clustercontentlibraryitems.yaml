@@ -21,7 +21,7 @@ spec:
     - jsonPath: .status.name
       name: vSphereName
       type: string
-    - jsonPath: .status.contentLibraryRef.Name
+    - jsonPath: .status.contentLibraryRef.name
       name: ClusterContentLibraryRef
       type: string
     - jsonPath: .status.type

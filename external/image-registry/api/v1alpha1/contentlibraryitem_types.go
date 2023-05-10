@@ -201,7 +201,7 @@ func (cclItem *ClusterContentLibraryItem) SetConditions(conditions Conditions) {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,shortName=cclitem
 // +kubebuilder:printcolumn:name="vSphereName",type="string",JSONPath=".status.name"
-// +kubebuilder:printcolumn:name="ClusterContentLibraryRef",type="string",JSONPath=".status.contentLibraryRef.Name"
+// +kubebuilder:printcolumn:name="ClusterContentLibraryRef",type="string",JSONPath=".status.contentLibraryRef.name"
 // +kubebuilder:printcolumn:name="Type",type="string",JSONPath=".status.type"
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="Cached",type="boolean",JSONPath=".status.cached"

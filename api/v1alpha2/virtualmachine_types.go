@@ -35,23 +35,23 @@ const (
 	// from within the guest OS, when available.
 	GuestCustomizationCondition = "GuestCustomization"
 
-	// GuestCustomizationIdleReason (Severity=Info) documents that guest
+	// GuestCustomizationIdleReason documents that guest
 	// customizations were not applied for the VirtualMachine.
 	GuestCustomizationIdleReason = "GuestCustomizationIdle"
 
-	// GuestCustomizationPendingReason (Severity=Info) documents that guest
+	// GuestCustomizationPendingReason documents that guest
 	// customization is still pending within the guest OS.
 	GuestCustomizationPendingReason = "GuestCustomizationPending"
 
-	// GuestCustomizationRunningReason (Severity=Info) documents that the guest
+	// GuestCustomizationRunningReason documents that the guest
 	// customization is now running on the guest OS.
 	GuestCustomizationRunningReason = "GuestCustomizationRunning"
 
-	// GuestCustomizationSucceededReason (Severity=Info) documents that the
+	// GuestCustomizationSucceededReason documents that the
 	// guest customization succeeded within the guest OS.
 	GuestCustomizationSucceededReason = "GuestCustomizationSucceeded"
 
-	// GuestCustomizationFailedReason (Severity=Error) documents that the guest
+	// GuestCustomizationFailedReason documents that the guest
 	// customization failed within the guest OS.
 	GuestCustomizationFailedReason = "GuestCustomizationFailed"
 )
@@ -61,11 +61,11 @@ const (
 	// in the guest OS, when available.
 	VirtualMachineToolsCondition = "VirtualMachineTools"
 
-	// VirtualMachineToolsNotRunningReason (Severity=Error) documents that
+	// VirtualMachineToolsNotRunningReason documents that
 	// VMware Tools is not running.
 	VirtualMachineToolsNotRunningReason = "VirtualMachineToolsNotRunning"
 
-	// VirtualMachineToolsRunningReason (Severity=Info) documents that VMware
+	// VirtualMachineToolsRunningReason documents that VMware
 	// Tools is running.
 	VirtualMachineToolsRunningReason = "VirtualMachineToolsRunning"
 )
@@ -337,7 +337,7 @@ type VirtualMachineStatus struct {
 // +kubebuilder:printcolumn:name="Class",type="string",priority=1,JSONPath=".status.class.name"
 // +kubebuilder:printcolumn:name="Image",type="string",priority=1,JSONPath=".status.image.name"
 // +kubebuilder:printcolumn:name="PowerState",type="string",JSONPath=".status.powerState"
-// +kubebuilder:printcolumn:name="Primary-IP",type="string",priority=1,JSONPath=".status.vmIp"
+// +kubebuilder:printcolumn:name="Primary-IP4",type="string",priority=1,JSONPath=".status.network.primaryIP4"
 
 // VirtualMachine is the schema for the virtualmachines API and represents the
 // desired state and observed status of a virtualmachines resource.

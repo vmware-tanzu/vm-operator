@@ -132,7 +132,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// nameservers.
 	//
 	// Please note this feature is available only with the following bootstrap
-	// providers: CloudInit, LinuxPrep, and Sysprep.
+	// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
 	//
 	// Please note that Linux allows only three nameservers
 	// (https://linux.die.net/man/5/resolv.conf).
@@ -152,7 +152,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// addresses with DNS.
 	//
 	// Please note this feature is available only with the following bootstrap
-	// providers: CloudInit, LinuxPrep, and Sysprep.
+	// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
 	//
 	// +optional
 	SearchDomains []string `json:"searchDomains,omitempty"`
@@ -186,7 +186,7 @@ type VirtualMachineNetworkSpec struct {
 	// If omitted then the name of the VM will be used.
 	//
 	// Please note this feature is available only with the following bootstrap
-	// providers: CloudInit, LinuxPrep, and Sysprep.
+	// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
 	//
 	// +optional
 	HostName string `json:"hostName,omitempty"`
@@ -321,7 +321,7 @@ type VirtualMachineNetworkSpec struct {
 	// nameservers.
 	//
 	// Please note this feature is available only with the following bootstrap
-	// providers: CloudInit, LinuxPrep, and Sysprep.
+	// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
 	//
 	// Please note that Linux allows only three nameservers
 	// (https://linux.die.net/man/5/resolv.conf).
@@ -347,7 +347,7 @@ type VirtualMachineNetworkSpec struct {
 	// addresses with DNS.
 	//
 	// Please note this feature is available only with the following bootstrap
-	// providers: CloudInit, LinuxPrep, and Sysprep.
+	// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
 	//
 	// Please note if the Interfaces field is non-empty then this field is
 	// ignored and should be specified on the elements in the Interfaces list.

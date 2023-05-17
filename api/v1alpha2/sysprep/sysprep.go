@@ -55,7 +55,7 @@ type GUIRunOnce struct {
 // GUIUnattended maps to the GuiUnattended key in the sysprep.xml answer file.
 type GUIUnattended struct {
 
-	// AutoLogon  determine whether or not the machine automatically logs on as
+	// AutoLogon determine whether or not the machine automatically logs on as
 	// Administrator.
 	//
 	// Please note if AutoLogin is true, then Password must be set or guest
@@ -106,22 +106,30 @@ type GUIUnattended struct {
 // and provides information needed to join a workgroup or domain.
 type Identification struct {
 
-	//
+	// DomainAdmin is the domain user account used for authentication if the
+	// virtual machine is joining a domain. The user does not need to be a
+	// domain administrator, but the account must have the privileges required
+	// to add computers to the domain.
 	//
 	// +optional
 	DomainAdmin string `json:"domainAdmin,omitempty"`
 
-	//
+	// DomainAdminPassword is the password for the domain user account used for
+	// authentication if the virtual machine is joining a domain.
 	//
 	// +optional
 	DomainAdminPassword corev1.SecretKeySelector `json:"domainAdminPassword,omitempty"`
 
-	//
+	// JoinDomain is the domain that the virtual machine should join. If this
+	// value is supplied, then DomainAdmin and DomainAdminPassword must also be
+	// supplied, and the JoinWorkgroup name must be empty.
 	//
 	// +optional
 	JoinDomain string `json:"joinDomain,omitempty"`
 
-	//
+	// JoinWorkgroup is the workgroup that the virtual machine should join. If
+	// this value is supplied, then the JoinDomain and the authentication fields
+	// (DomainAdmin and DomainAdminPassword) must be empty.
 	//
 	// +optional
 	JoinWorkgroup string `json:"joinWorkgroup,omitempty"`

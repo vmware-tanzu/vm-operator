@@ -413,14 +413,14 @@ func resolveContentLibraryUUID(
 		// Get the UUID from content library under VM's namespace.
 		cl := &imgregv1a1.ContentLibrary{}
 		if err = k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Namespace: vmCtx.VM.Namespace, Name: libraryName}, cl); err == nil {
-			libraryUUID = cl.Spec.UUID
+			libraryUUID = string(cl.Spec.UUID)
 		}
 
 	case "ClusterContentLibrary":
 		// Get the UUID from cluster content library.
 		ccl := &imgregv1a1.ClusterContentLibrary{}
 		if err = k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: libraryName}, ccl); err == nil {
-			libraryUUID = ccl.Spec.UUID
+			libraryUUID = string(ccl.Spec.UUID)
 		}
 
 	default:

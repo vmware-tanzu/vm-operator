@@ -54,12 +54,17 @@ spec:
           spec:
             description: ContentLibrarySpec defines the desired state of a ContentLibrary.
             properties:
+              allowImport:
+                description: AllowImport flag indicates if users can import OVF/OVA
+                  templates from remote HTTPS URLs as new content library items in
+                  this library.
+                type: boolean
               uuid:
                 description: UUID is the identifier which uniquely identifies the
                   library in vCenter. This field is immutable.
                 type: string
               writable:
-                description: Writable flag indicates if the users can create new library
+                description: Writable flag indicates if users can create new library
                   items in this library.
                 type: boolean
             required:
@@ -116,7 +121,8 @@ spec:
                 type: array
               creationTime:
                 description: CreationTime indicates the date and time when this library
-                  was created.
+                  was created in vCenter.
+                format: date-time
                 type: string
               description:
                 description: Description is a human-readable description for this
@@ -124,14 +130,17 @@ spec:
                 type: string
               lastModifiedTime:
                 description: LastModifiedTime indicates the date and time when this
-                  library was last updated. This field is updated only when the library
-                  properties are changed. This field is not updated when a library
-                  item is added, modified or deleted or its content is changed.
+                  library was last updated in vCenter. This field is updated only
+                  when the library properties are changed. This field is not updated
+                  when a library item is added, modified or deleted or its content
+                  is changed.
+                format: date-time
                 type: string
               lastSyncTime:
                 description: LastSyncTime indicates the date and time when this library
-                  was last synchronized. This field applies only if the library is
-                  of the "Subscribed" Type.
+                  was last synchronized in vCenter. This field applies only if the
+                  library is of the "Subscribed" Type.
+                format: date-time
                 type: string
               name:
                 description: Name specifies the name of the content library in vCenter.
@@ -140,17 +149,18 @@ spec:
                 description: Published indicates how the library is published so that
                   it can be subscribed to by a remote subscribed library.
                 properties:
-                  publishURL:
-                    description: PublishURL is the URL to which the library metadata
-                      is published by the vSphere Content Library Service. This value
-                      can be used to set the SubscriptionInfo.subscriptionURL property
-                      when creating a subscribed library.
+                  URL:
+                    description: URL to which the library metadata is published by
+                      the vSphere Content Library Service. This value can be used
+                      to set the SubscriptionInfo.URL property when creating a subscribed
+                      library.
                     type: string
                   published:
-                    description: Published indicates if the local library is published.
+                    description: Published indicates if the local library is published
+                      so that it can be subscribed to by a remote subscribed library.
                     type: boolean
                 required:
-                - publishURL
+                - URL
                 - published
                 type: object
               securityPolicyID:
@@ -168,51 +178,49 @@ spec:
                     type: string
                   type:
                     description: Type indicates the type of storage where the content
-                      would be stored. Possible values are "Datastore" and "Other".
+                      would be stored.
+                    enum:
+                    - Datastore
+                    - Other
                     type: string
                 required:
                 - type
                 type: object
               subscriptionInfo:
                 description: SubscriptionInfo defines how the subscribed library synchronizes
-                  to a remote source. This field is populated only if the library
-                  is of the "Subscribed" type.
+                  to a remote source. This field is populated only if Type=Subscribed.
                 properties:
-                  automaticSyncEnabled:
-                    description: AutomaticSyncEnabled indicates whether the library
-                      should participate in automatic library synchronization.
+                  URL:
+                    description: URL of the endpoint where the metadata for the remotely
+                      published library is being served. The value from PublishInfo.URL
+                      of the published library should be used while creating a subscribed
+                      library.
+                    type: string
+                  automaticSync:
+                    description: AutomaticSync indicates whether the library should
+                      participate in automatic library synchronization.
                     type: boolean
                   onDemand:
                     description: OnDemand indicates whether a library item’s content
                       will be synchronized only on demand.
                     type: boolean
-                  subscriptionURL:
-                    description: SubscriptionURL is the URL of the endpoint where
-                      the metadata for the remotely published library is being served.
-                      The value from PublishInfo.PublishURL of the published library
-                      should be used while creating a subscribed library.
-                    type: string
                 required:
-                - automaticSyncEnabled
+                - URL
+                - automaticSync
                 - onDemand
-                - subscriptionURL
                 type: object
               type:
-                description: Type indicates the type of a library in vCenter. Possible
-                  types are "Local" and "Subscribed".
+                description: ContentLibraryType is a constant type that indicates
+                  the type of a content library in vCenter.
+                enum:
+                - Local
+                - Subscribed
                 type: string
               version:
                 description: Version is a number that can identify metadata changes.
-                  This integer value is incremented when the library properties such
-                  as name or description are changed in vCenter.
+                  This value is incremented when the library properties such as name
+                  or description are changed in vCenter.
                 type: string
-            required:
-            - creationTime
-            - lastModifiedTime
-            - name
-            - storageBacking
-            - type
-            - version
             type: object
         type: object
     served: true

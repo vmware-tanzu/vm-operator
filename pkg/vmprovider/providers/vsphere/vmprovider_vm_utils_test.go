@@ -493,7 +493,7 @@ func vmUtilTests() {
 					imageStatus, uuid, err := vsphere.GetVMImageStatusAndContentLibraryUUID(vmCtx, k8sClient)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(imageStatus).ToNot(BeNil())
-					Expect(uuid).To(Equal(cl.Spec.UUID))
+					Expect(uuid).To(Equal(string(cl.Spec.UUID)))
 				})
 			})
 
@@ -510,7 +510,7 @@ func vmUtilTests() {
 					imageStatus, uuid, err := vsphere.GetVMImageStatusAndContentLibraryUUID(vmCtx, k8sClient)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(imageStatus).ToNot(BeNil())
-					Expect(uuid).To(Equal(clusterCL.Spec.UUID))
+					Expect(uuid).To(Equal(string(clusterCL.Spec.UUID)))
 				})
 			})
 		})

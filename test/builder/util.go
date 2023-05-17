@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder
@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
@@ -505,7 +506,7 @@ func DummyContentLibrary(name, namespace, uuid string) *imgregv1a1.ContentLibrar
 			Namespace: namespace,
 		},
 		Spec: imgregv1a1.ContentLibrarySpec{
-			UUID:     uuid,
+			UUID:     types.UID(uuid),
 			Writable: true,
 		},
 		Status: imgregv1a1.ContentLibraryStatus{
@@ -525,7 +526,7 @@ func DummyClusterContentLibrary(name, uuid string) *imgregv1a1.ClusterContentLib
 			Name: name,
 		},
 		Spec: imgregv1a1.ClusterContentLibrarySpec{
-			UUID: uuid,
+			UUID: types.UID(uuid),
 		},
 	}
 }

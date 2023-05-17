@@ -233,7 +233,7 @@ func (r *Reconciler) setUpCVMIFromCCLItem(ctx *context.ClusterContentLibraryItem
 
 	// Do not initialize the Spec or Status directly as it might overwrite the existing fields.
 	cvmi.Spec.Type = string(cclItem.Status.Type)
-	cvmi.Spec.ImageID = cclItem.Spec.UUID
+	cvmi.Spec.ImageID = string(cclItem.Spec.UUID)
 	cvmi.Spec.ProviderRef = vmopv1.ContentProviderReference{
 		APIVersion: cclItem.APIVersion,
 		Kind:       cclItem.Kind,
@@ -241,10 +241,12 @@ func (r *Reconciler) setUpCVMIFromCCLItem(ctx *context.ClusterContentLibraryItem
 	}
 
 	cvmi.Status.ImageName = cclItem.Status.Name
-	cvmi.Status.ContentLibraryRef = &corev1.TypedLocalObjectReference{
-		APIGroup: &imgregv1a1.GroupVersion.Group,
-		Kind:     utils.ClusterContentLibraryKind,
-		Name:     cclItem.Status.ClusterContentLibraryRef,
+	if cclItem.Status.ContentLibraryRef != nil {
+		cvmi.Status.ContentLibraryRef = &corev1.TypedLocalObjectReference{
+			APIGroup: &imgregv1a1.GroupVersion.Group,
+			Kind:     cclItem.Status.ContentLibraryRef.Kind,
+			Name:     cclItem.Status.ContentLibraryRef.Name,
+		}
 	}
 
 	// Update image condition based on the security compliance of the provider item.

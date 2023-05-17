@@ -431,7 +431,7 @@ func (r *Reconciler) checkIsTargetValid(ctx *context.VirtualMachinePublishReques
 	}
 
 	ctx.ContentLibrary = contentLibrary
-	item, err := r.VMProvider.GetItemFromLibraryByName(ctx, contentLibrary.Spec.UUID, targetItemName)
+	item, err := r.VMProvider.GetItemFromLibraryByName(ctx, string(contentLibrary.Spec.UUID), targetItemName)
 	if err != nil {
 		ctx.Logger.Error(err, "failed to find item", "cl", objKey, "item name", targetItemName)
 		return err
@@ -754,7 +754,7 @@ func (r *Reconciler) findCorrelatedItemIDByName(ctx *context.VirtualMachinePubli
 		ctx.ContentLibrary = contentLibrary
 	}
 
-	item, err := r.VMProvider.GetItemFromLibraryByName(ctx, ctx.ContentLibrary.Spec.UUID, targetItemName)
+	item, err := r.VMProvider.GetItemFromLibraryByName(ctx, string(ctx.ContentLibrary.Spec.UUID), targetItemName)
 	if err != nil {
 		ctx.Logger.Error(err, "failed to find item from VC by its name", "item name", targetItemName)
 		return "", err

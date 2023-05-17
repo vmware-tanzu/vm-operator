@@ -226,10 +226,10 @@ func (vs *vSphereVMProvider) SyncVirtualMachineImage(ctx goctx.Context, cli, vmi
 	var itemID, contentVersion string
 	switch cli := cli.(type) {
 	case *imgregv1a1.ContentLibraryItem:
-		itemID = cli.Spec.UUID
+		itemID = string(cli.Spec.UUID)
 		contentVersion = cli.Status.ContentVersion
 	case *imgregv1a1.ClusterContentLibraryItem:
-		itemID = cli.Spec.UUID
+		itemID = string(cli.Spec.UUID)
 		contentVersion = cli.Status.ContentVersion
 	default:
 		return errors.Errorf("unexpected content library item type %T", cli)

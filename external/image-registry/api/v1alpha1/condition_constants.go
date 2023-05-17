@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -22,4 +22,5 @@ const (
 const (
 	ClusterContentLibraryRefValidationFailedReason = "ClusterContentLibraryRefValidationFailed"
 	ContentLibraryRefValidationFailedReason        = "ContentLibraryRefValidationFailed"
+	ContentLibraryItemFileUnavailableReason        = "ContentLibraryItemFileUnavailable"
 )

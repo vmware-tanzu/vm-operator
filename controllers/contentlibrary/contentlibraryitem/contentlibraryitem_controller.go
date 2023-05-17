@@ -223,17 +223,19 @@ func (r *Reconciler) setUpVMIFromCLItem(ctx *context.ContentLibraryItemContext) 
 
 	// Do not initialize the Spec or Status directly as it might overwrite the existing fields.
 	vmi.Spec.Type = string(clItem.Status.Type)
-	vmi.Spec.ImageID = clItem.Spec.UUID
+	vmi.Spec.ImageID = string(clItem.Spec.UUID)
 	vmi.Spec.ProviderRef = vmopv1.ContentProviderReference{
 		APIVersion: clItem.APIVersion,
 		Kind:       clItem.Kind,
 		Name:       clItem.Name,
 	}
 	vmi.Status.ImageName = clItem.Status.Name
-	vmi.Status.ContentLibraryRef = &corev1.TypedLocalObjectReference{
-		APIGroup: &imgregv1a1.GroupVersion.Group,
-		Kind:     utils.ContentLibraryKind,
-		Name:     clItem.Status.ContentLibraryRef.Name,
+	if clItem.Status.ContentLibraryRef != nil {
+		vmi.Status.ContentLibraryRef = &corev1.TypedLocalObjectReference{
+			APIGroup: &imgregv1a1.GroupVersion.Group,
+			Kind:     clItem.Status.ContentLibraryRef.Kind,
+			Name:     clItem.Status.ContentLibraryRef.Name,
+		}
 	}
 
 	// Update image condition based on the security compliance of the provider item.

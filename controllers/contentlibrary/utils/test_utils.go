@@ -32,14 +32,17 @@ func DummyClusterContentLibraryItem(name string) *imgregv1a1.ClusterContentLibra
 				"dummy-not-service-label":         "",
 			},
 		},
-		Spec: imgregv1a1.ClusterContentLibraryItemSpec{
+		Spec: imgregv1a1.ContentLibraryItemSpec{
 			UUID: "dummy-ccl-item-uuid",
 		},
-		Status: imgregv1a1.ClusterContentLibraryItemStatus{
-			Type:                     imgregv1a1.ContentLibraryItemTypeOvf,
-			Name:                     "dummy-image-name",
-			ContentVersion:           "dummy-content-version",
-			ClusterContentLibraryRef: "dummy-ccl-name",
+		Status: imgregv1a1.ContentLibraryItemStatus{
+			Type:           imgregv1a1.ContentLibraryItemTypeOvf,
+			Name:           "dummy-image-name",
+			ContentVersion: "dummy-content-version",
+			ContentLibraryRef: &imgregv1a1.NameAndKindRef{
+				Kind: ClusterContentLibraryKind,
+				Name: "dummy-ccl-name",
+			},
 			Conditions: []imgregv1a1.Condition{
 				{
 					Type:   imgregv1a1.ReadyCondition,
@@ -70,9 +73,9 @@ func DummyContentLibraryItem(name, namespace string) *imgregv1a1.ContentLibraryI
 			Type:           imgregv1a1.ContentLibraryItemTypeOvf,
 			Name:           "dummy-image-name",
 			ContentVersion: "dummy-content-version",
-			ContentLibraryRef: imgregv1a1.ContentLibraryReference{
-				Name:      "cl-dummy",
-				Namespace: namespace,
+			ContentLibraryRef: &imgregv1a1.NameAndKindRef{
+				Kind: ContentLibraryKind,
+				Name: "cl-dummy",
 			},
 			Conditions: []imgregv1a1.Condition{
 				{
@@ -122,7 +125,7 @@ func GetExpectedCVMIFrom(cclItem imgregv1a1.ClusterContentLibraryItem,
 		},
 		Spec: vmopv1.VirtualMachineImageSpec{
 			Type:    string(cclItem.Status.Type),
-			ImageID: cclItem.Spec.UUID,
+			ImageID: string(cclItem.Spec.UUID),
 			ProviderRef: vmopv1.ContentProviderReference{
 				APIVersion: cclItem.APIVersion,
 				Kind:       cclItem.Kind,
@@ -134,8 +137,8 @@ func GetExpectedCVMIFrom(cclItem imgregv1a1.ClusterContentLibraryItem,
 			ContentVersion: cclItem.Status.ContentVersion,
 			ContentLibraryRef: &corev1.TypedLocalObjectReference{
 				APIGroup: &imgregv1a1.GroupVersion.Group,
-				Kind:     ClusterContentLibraryKind,
-				Name:     cclItem.Status.ClusterContentLibraryRef,
+				Kind:     cclItem.Status.ContentLibraryRef.Kind,
+				Name:     cclItem.Status.ContentLibraryRef.Name,
 			},
 			Conditions: []vmopv1.Condition{
 				{
@@ -180,7 +183,7 @@ func GetExpectedVMIFrom(clItem imgregv1a1.ContentLibraryItem,
 		},
 		Spec: vmopv1.VirtualMachineImageSpec{
 			Type:    string(clItem.Status.Type),
-			ImageID: clItem.Spec.UUID,
+			ImageID: string(clItem.Spec.UUID),
 			ProviderRef: vmopv1.ContentProviderReference{
 				APIVersion: clItem.APIVersion,
 				Kind:       clItem.Kind,
@@ -192,7 +195,7 @@ func GetExpectedVMIFrom(clItem imgregv1a1.ContentLibraryItem,
 			ContentVersion: clItem.Status.ContentVersion,
 			ContentLibraryRef: &corev1.TypedLocalObjectReference{
 				APIGroup: &imgregv1a1.GroupVersion.Group,
-				Kind:     ContentLibraryKind,
+				Kind:     clItem.Status.ContentLibraryRef.Kind,
 				Name:     clItem.Status.ContentLibraryRef.Name,
 			},
 			Conditions: []vmopv1.Condition{

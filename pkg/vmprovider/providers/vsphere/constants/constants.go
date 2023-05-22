@@ -56,7 +56,7 @@ const (
 	PCIPassthruMMIOSizeDefault        = "512"
 
 	// MinSupportedHWVersionForPVC is the supported virtual hardware version for persistent volumes.
-	MinSupportedHWVersionForPVC = 13
+	MinSupportedHWVersionForPVC = 15
 
 	// FirmwareOverrideAnnotation is the annotation key used for firmware override.
 	FirmwareOverrideAnnotation = pkg.VMOperatorKey + "/firmware"

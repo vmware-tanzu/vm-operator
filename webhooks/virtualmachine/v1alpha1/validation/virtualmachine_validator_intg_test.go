@@ -163,6 +163,18 @@ func intgTestsValidateUpdate() {
 		})
 	})
 
+	When("update is performed with changed minimum hardware version", func() {
+		BeforeEach(func() {
+			ctx.vm.Spec.MinHardwareVersion += 2
+		})
+		It("should deny the request", func() {
+			Expect(err).To(HaveOccurred())
+			expectedPath := field.NewPath("spec", "minHardwareVersion")
+			Expect(err.Error()).To(ContainSubstring(expectedPath.String()))
+			Expect(err.Error()).To(ContainSubstring(immutableFieldMsg))
+		})
+	})
+
 	Context("VirtualMachine update while VM is powered on", func() {
 		BeforeEach(func() {
 			ctx.vm.Spec.PowerState = "poweredOn"

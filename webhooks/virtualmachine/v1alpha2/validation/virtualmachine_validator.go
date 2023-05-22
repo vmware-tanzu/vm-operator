@@ -135,6 +135,7 @@ func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Resp
 //   - ClassName
 //   - StorageClass
 //   - ResourcePolicyName
+//   - Minimum VM Hardware Version
 //
 // Following fields can only be changed when the VM is powered off.
 //   - Bootstrap
@@ -738,13 +739,14 @@ func (v validator) validateUpdatesWhenPoweredOn(ctx *context.WebhookRequestConte
 	return allErrs
 }
 
-func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateImmutableFields(_ *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ImageName, oldVM.Spec.ImageName, specPath.Child("imageName"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ClassName, oldVM.Spec.ClassName, specPath.Child("className"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.StorageClass, oldVM.Spec.StorageClass, specPath.Child("storageClass"))...)
+	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.MinHardwareVersion, oldVM.Spec.MinHardwareVersion, specPath.Child("minHardwareVersion"))...)
 	// TODO: More checks.
 
 	// TODO: Allow privilege?

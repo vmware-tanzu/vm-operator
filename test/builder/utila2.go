@@ -139,11 +139,12 @@ func DummyVirtualMachineA2() *vmopv1.VirtualMachine {
 			Annotations:  map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSpec{
-			ImageName:    DummyImageName,
-			ClassName:    DummyClassName,
-			PowerState:   vmopv1.VirtualMachinePowerStateOn,
-			PowerOffMode: vmopv1.VirtualMachinePowerOpModeHard,
-			SuspendMode:  vmopv1.VirtualMachinePowerOpModeHard,
+			ImageName:          DummyImageName,
+			ClassName:          DummyClassName,
+			PowerState:         vmopv1.VirtualMachinePowerStateOn,
+			PowerOffMode:       vmopv1.VirtualMachinePowerOpModeHard,
+			SuspendMode:        vmopv1.VirtualMachinePowerOpModeHard,
+			MinHardwareVersion: 13,
 			Volumes: []vmopv1.VirtualMachineVolume{
 				{
 					Name: DummyVolumeName,

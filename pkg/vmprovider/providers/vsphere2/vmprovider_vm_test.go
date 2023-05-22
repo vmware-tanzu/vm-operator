@@ -852,6 +852,36 @@ func vmTests() {
 				})
 			})
 
+			Context("VM Class Config specifies a hardware version", func() {
+				BeforeEach(func() {
+					configSpec = &types.VirtualMachineConfigSpec{Version: "vmx-14"}
+				})
+
+				When("The minimum hardware version on the VMSpec is greater than VMClass", func() {
+					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 15
+					})
+
+					It("updates the VM to minimum hardware version from the Spec", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Version).To(Equal("vmx-15"))
+					})
+				})
+
+				When("The minimum hardware version on the VMSpec is less than VMClass", func() {
+					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 13
+					})
+
+					It("uses the hardware version from the VMClass", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Version).To(Equal("vmx-14"))
+					})
+				})
+			})
+
 			Context("VMClassAsConfig FSS is Enabled", func() {
 
 				BeforeEach(func() {

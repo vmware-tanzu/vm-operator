@@ -165,6 +165,45 @@ var _ = Describe("ConfigSpec Util", func() {
 			Expect(cmp.Diff(cs2, cs3)).To(BeEmpty())
 		})
 	})
+
+	Context("EnsureMinHardwareVersionInConfigSpec", func() {
+		When("minimum hardware version is unset", func() {
+			It("does not change the existing value of the configSpec's version", func() {
+				configSpec := &vimTypes.VirtualMachineConfigSpec{Version: "vmx-15"}
+				util.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
+
+				Expect(configSpec.Version).To(Equal("vmx-15"))
+			})
+
+			It("does not set the configSpec's version", func() {
+				configSpec := &vimTypes.VirtualMachineConfigSpec{}
+				util.EnsureMinHardwareVersionInConfigSpec(configSpec, 0)
+
+				Expect(configSpec.Version).To(BeEmpty())
+			})
+		})
+
+		It("overrides the hardware version if the existing version is lesser", func() {
+			configSpec := &vimTypes.VirtualMachineConfigSpec{Version: "vmx-15"}
+			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
+
+			Expect(configSpec.Version).To(Equal("vmx-17"))
+		})
+
+		It("sets the hardware version if the existing version is unset", func() {
+			configSpec := &vimTypes.VirtualMachineConfigSpec{}
+			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 16)
+
+			Expect(configSpec.Version).To(Equal("vmx-16"))
+		})
+
+		It("overrides the hardware version if the existing version is set incorrectly", func() {
+			configSpec := &vimTypes.VirtualMachineConfigSpec{Version: "foo"}
+			util.EnsureMinHardwareVersionInConfigSpec(configSpec, 17)
+
+			Expect(configSpec.Version).To(Equal("vmx-17"))
+		})
+	})
 })
 
 var _ = Describe("RemoveDevicesFromConfigSpec", func() {

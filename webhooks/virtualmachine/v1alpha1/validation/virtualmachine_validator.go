@@ -146,6 +146,7 @@ func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Resp
 //   - ClassName
 //   - StorageClass
 //   - ResourcePolicyName
+//   - Minimum VM Hardware Version
 
 // Following fields can only be updated when the VM is powered off.
 //   - Ports
@@ -715,6 +716,7 @@ func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, v
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ClassName, oldVM.Spec.ClassName, specPath.Child("className"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.StorageClass, oldVM.Spec.StorageClass, specPath.Child("storageClass"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ResourcePolicyName, oldVM.Spec.ResourcePolicyName, specPath.Child("resourcePolicyName"))...)
+	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.MinHardwareVersion, oldVM.Spec.MinHardwareVersion, specPath.Child("minHardwareVersion"))...)
 
 	return allErrs
 }

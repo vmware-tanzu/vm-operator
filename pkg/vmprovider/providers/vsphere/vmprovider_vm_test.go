@@ -854,6 +854,7 @@ func vmTests() {
 
 				Context("VM spec has a PVC", func() {
 					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 14
 						vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 							{
 								Name: "dummy-vol",
@@ -876,7 +877,40 @@ func vmTests() {
 					It("creates a VM with a hardware version minimum supported for PVCs", func() {
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						// The min version required for PVCs is honored even when the min h/w
+						// version is set to a different value.
+						Expect(o.Config.Version).NotTo(Equal("vmx-14"))
 						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", constants.MinSupportedHWVersionForPVC)))
+					})
+				})
+			})
+
+			Context("VM Class Config specifies a hardware version", func() {
+				BeforeEach(func() {
+					configSpec = &types.VirtualMachineConfigSpec{Version: "vmx-14"}
+				})
+
+				When("The minimum hardware version on the VMSpec is greater than VMClass", func() {
+					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 15
+					})
+
+					It("updates the VM to minimum hardware version from the Spec", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Version).To(Equal("vmx-15"))
+					})
+				})
+
+				When("The minimum hardware version on the VMSpec is less than VMClass", func() {
+					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 13
+					})
+
+					It("uses the hardware version from the VMClass", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Version).To(Equal("vmx-14"))
 					})
 				})
 			})

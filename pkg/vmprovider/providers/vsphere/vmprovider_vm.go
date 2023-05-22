@@ -26,7 +26,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
@@ -214,7 +213,7 @@ func (vs *vSphereVMProvider) GetVirtualMachineHardwareVersion(
 		return 0, err
 	}
 
-	return contentlibrary.ParseVirtualHardwareVersion(o.Config.Version), nil
+	return util.ParseVirtualHardwareVersion(o.Config.Version), nil
 }
 
 func (vs *vSphereVMProvider) createVirtualMachine(
@@ -675,6 +674,8 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 			createArgs.ConfigSpec.Version = fmt.Sprintf("vmx-%d", version)
 		}
 	}
+
+	util.EnsureMinHardwareVersionInConfigSpec(createArgs.ConfigSpec, vmCtx.VM.Spec.MinHardwareVersion)
 }
 
 func (vs *vSphereVMProvider) vmCreateValidateArgs(

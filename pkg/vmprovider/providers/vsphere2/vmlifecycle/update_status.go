@@ -21,6 +21,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/virtualmachine"
 )
 
@@ -74,6 +75,7 @@ func UpdateStatus(
 	vm.Status.BiosUUID = summary.Config.Uuid
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
 	vm.Status.Network = getGuestNetworkStatus(vmMO.Guest)
+	vm.Status.HardwareVersion = util.ParseVirtualHardwareVersion(summary.Config.HwVersion)
 
 	vm.Status.Host, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
 	if err != nil {

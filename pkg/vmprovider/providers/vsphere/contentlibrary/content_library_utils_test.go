@@ -16,29 +16,11 @@ import (
 	"k8s.io/utils/pointer"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
 )
-
-var _ = Describe("ParseVirtualHardwareVersion", func() {
-	It("empty hardware string", func() {
-		vmxHwVersionString := ""
-		Expect(contentlibrary.ParseVirtualHardwareVersion(vmxHwVersionString)).To(BeZero())
-	})
-
-	It("invalid hardware string", func() {
-		vmxHwVersionString := "blah"
-		Expect(contentlibrary.ParseVirtualHardwareVersion(vmxHwVersionString)).To(BeZero())
-	})
-
-	It("valid hardware version string eg. vmx-15", func() {
-		vmxHwVersionString := "vmx-15"
-		Expect(contentlibrary.ParseVirtualHardwareVersion(vmxHwVersionString)).To(Equal(int32(15)))
-	})
-})
 
 var _ = Describe("LibItemToVirtualMachineImage", func() {
 	const (

@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
+
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
 
 	"github.com/google/uuid"
@@ -239,11 +240,12 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 			Annotations:  map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSpec{
-			ImageName:    DummyImageName,
-			ClassName:    DummyClassName,
-			PowerState:   vmopv1.VirtualMachinePoweredOn,
-			PowerOffMode: vmopv1.VirtualMachinePowerOpModeHard,
-			SuspendMode:  vmopv1.VirtualMachinePowerOpModeHard,
+			ImageName:          DummyImageName,
+			ClassName:          DummyClassName,
+			PowerState:         vmopv1.VirtualMachinePoweredOn,
+			PowerOffMode:       vmopv1.VirtualMachinePowerOpModeHard,
+			SuspendMode:        vmopv1.VirtualMachinePowerOpModeHard,
+			MinHardwareVersion: 13,
 			NetworkInterfaces: []vmopv1.VirtualMachineNetworkInterface{
 				{
 					NetworkName: DummyNetworkName,

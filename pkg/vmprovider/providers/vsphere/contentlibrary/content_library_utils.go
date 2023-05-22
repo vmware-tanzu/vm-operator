@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/vmware/govmomi/ovf"
@@ -24,28 +22,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
-
-var vmxRe = regexp.MustCompile(`vmx-(\d+)`)
-
-// ParseVirtualHardwareVersion parses the virtual hardware version
-// For eg. "vmx-15" returns 15.
-func ParseVirtualHardwareVersion(vmxVersion string) int32 {
-	// obj matches the full string and the submatch (\d+)
-	// and return a []string with values
-	obj := vmxRe.FindStringSubmatch(vmxVersion)
-	if len(obj) != 2 {
-		return 0
-	}
-
-	version, err := strconv.ParseInt(obj[1], 10, 32)
-	if err != nil {
-		return 0
-	}
-
-	return int32(version)
-}
 
 // LibItemToVirtualMachineImage converts a given library item and its attributes to return a
 // VirtualMachineImage that represents a k8s-native view of the item.
@@ -170,7 +149,7 @@ func updateImageSpecWithOvfVirtualSystem(imageSpec *vmopv1.VirtualMachineImageSp
 	if virtualHwSection := ovfVirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
 		hw := virtualHwSection[0]
 		if hw.System != nil && hw.System.VirtualSystemType != nil {
-			hwVersion = ParseVirtualHardwareVersion(*hw.System.VirtualSystemType)
+			hwVersion = util.ParseVirtualHardwareVersion(*hw.System.VirtualSystemType)
 		}
 	}
 

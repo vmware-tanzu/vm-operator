@@ -296,7 +296,7 @@ func (s *Session) customize(
 		// This is to simply comply with the spirit of the feature switch.
 		// In reality, the webhook will prevent "Sysprep" from being used unless
 		// the FSS is enabled.
-		if lib.IsNamespacedClassAndWindowsFSSEnabled() {
+		if lib.IsWindowsSysprepFSSEnabled() {
 			configSpec = GetOvfEnvCustSpec(config, updateArgs)
 			custSpec, err = GetSysprepCustSpec(vmCtx.VM.Name, updateArgs)
 		}

@@ -200,7 +200,7 @@ func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmop
 	}
 
 	// Do not allow the Sysprep transport unless the FSS is enabled.
-	if !lib.IsNamespacedClassAndWindowsFSSEnabled() {
+	if !lib.IsWindowsSysprepFSSEnabled() {
 		if v := vmopv1.VirtualMachineMetadataSysprepTransport; v == vm.Spec.VmMetadata.Transport {
 			allErrs = append(allErrs,
 				field.Invalid(mdPath.Child("transport"), v,

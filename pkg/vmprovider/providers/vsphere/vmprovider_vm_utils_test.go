@@ -55,9 +55,9 @@ func vmUtilTests() {
 	})
 
 	Context("GetVirtualMachineClass", func() {
-		oldNamespacedClassAndWindowsEnabledFunc := lib.IsNamespacedClassAndWindowsFSSEnabled
+		oldNamespacedVMClassFSSEnabledFunc := lib.IsNamespacedVMClassFSSEnabled
 
-		When("WCP_Namespaced_Class_And_Windows_Support FSS is disabled", func() {
+		When("WCP_Namespaced_VM_Class FSS is disabled", func() {
 			var (
 				vmClass        *vmopv1.VirtualMachineClass
 				vmClassBinding *vmopv1.VirtualMachineClassBinding
@@ -67,13 +67,13 @@ func vmUtilTests() {
 				vmClass, vmClassBinding = builder.DummyVirtualMachineClassAndBinding("dummy-vm-class", vmCtx.VM.Namespace)
 				vmCtx.VM.Spec.ClassName = vmClass.Name
 
-				lib.IsNamespacedClassAndWindowsFSSEnabled = func() bool {
+				lib.IsNamespacedVMClassFSSEnabled = func() bool {
 					return false
 				}
 			})
 
 			AfterEach(func() {
-				lib.IsNamespacedClassAndWindowsFSSEnabled = oldNamespacedClassAndWindowsEnabledFunc
+				lib.IsNamespacedVMClassFSSEnabled = oldNamespacedVMClassFSSEnabledFunc
 			})
 
 			Context("VirtualMachineClass custom resource doesn't exist", func() {
@@ -154,7 +154,7 @@ func vmUtilTests() {
 			})
 		})
 
-		When("WCP_Namespaced_Class_And_Windows_Support FSS is enabled", func() {
+		When("WCP_Namespaced_VM_Class FSS is enabled", func() {
 			var (
 				vmClass *vmopv1.VirtualMachineClass
 			)
@@ -164,13 +164,13 @@ func vmUtilTests() {
 				vmClass.Namespace = vmCtx.VM.Namespace
 				vmCtx.VM.Spec.ClassName = vmClass.Name
 
-				lib.IsNamespacedClassAndWindowsFSSEnabled = func() bool {
+				lib.IsNamespacedVMClassFSSEnabled = func() bool {
 					return true
 				}
 			})
 
 			AfterEach(func() {
-				lib.IsNamespacedClassAndWindowsFSSEnabled = oldNamespacedClassAndWindowsEnabledFunc
+				lib.IsNamespacedVMClassFSSEnabled = oldNamespacedVMClassFSSEnabledFunc
 			})
 
 			Context("VirtualMachineClass custom resource doesn't exist", func() {

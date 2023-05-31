@@ -39,7 +39,7 @@ func GetVirtualMachineClass(
 
 	className := vmCtx.VM.Spec.ClassName
 	key := ctrlclient.ObjectKey{Name: className}
-	if lib.IsNamespacedClassAndWindowsFSSEnabled() {
+	if lib.IsNamespacedVMClassFSSEnabled() {
 		// namespace scoped VM classes
 		key.Namespace = vmCtx.VM.Namespace
 	}
@@ -55,8 +55,8 @@ func GetVirtualMachineClass(
 		return nil, errors.Wrap(err, msg)
 	}
 
-	if lib.IsNamespacedClassAndWindowsFSSEnabled() {
-		// After WCP_Namespaced_Class_And_Windows_Support is enabled, VirtualMachineClass is migrated
+	if lib.IsNamespacedVMClassFSSEnabled() {
+		// After WCP_Namespaced_VM_Class FSS is enabled, VirtualMachineClass is migrated
 		// from cluster scoped to namespace scoped. VirtualMachineClassBinding CRD will be removed
 		// and doesn't make any sense anymore.
 		// We can immediately return the VM class here and skip checking VM class bindings.

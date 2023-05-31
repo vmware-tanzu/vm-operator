@@ -69,7 +69,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 			handler.EnqueueRequestsFromMapFunc(csBindingToVMMapperFn(ctx, r.Client)))
 	}
 
-	if !lib.IsNamespacedClassAndWindowsFSSEnabled() {
+	if !lib.IsNamespacedVMClassFSSEnabled() {
 		builder = builder.Watches(&source.Kind{Type: &vmopv1.VirtualMachineClassBinding{}},
 			handler.EnqueueRequestsFromMapFunc(classBindingToVMMapperFn(ctx, r.Client)))
 	} else {
@@ -173,7 +173,7 @@ func classBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Cl
 
 // classToVMMapperFn returns a mapper function that can be used to queue reconcile request
 // for the VirtualMachines in response to an event on the VirtualMachineClass resource when
-// WCP_Namespaced_Class_And_Windows_Support is enabled.
+// WCP_Namespaced_VM_Class FSS is enabled.
 func classToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(o client.Object) []reconcile.Request {
 	// For a given VirtualMachineClass, return reconcile requests
 	// for those VirtualMachines with corresponding VirtualMachinesClasses referenced

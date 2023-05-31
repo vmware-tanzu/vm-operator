@@ -143,14 +143,14 @@ func initNamedNetworkProviderConfig(
 }
 
 func initSysprepTestConfig(ctx *unitValidatingWebhookContext, enabled, used bool) func() {
-	oldFSSValue := os.Getenv(lib.NamespacedClassAndWindowsFSS)
+	oldFSSValue := os.Getenv(lib.WindowsSysprepFSS)
 	deferredFn := func() {
-		Expect(os.Setenv(lib.NamespacedClassAndWindowsFSS, oldFSSValue)).To(Succeed())
+		Expect(os.Setenv(lib.WindowsSysprepFSS, oldFSSValue)).To(Succeed())
 	}
 	if enabled {
-		Expect(os.Setenv(lib.NamespacedClassAndWindowsFSS, "true")).To(Succeed())
+		Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
 	} else {
-		Expect(os.Setenv(lib.NamespacedClassAndWindowsFSS, "")).To(Succeed())
+		Expect(os.Setenv(lib.WindowsSysprepFSS, "")).To(Succeed())
 	}
 	if used {
 		if ctx.vm.Spec.VmMetadata == nil {

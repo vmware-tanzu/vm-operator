@@ -67,5 +67,11 @@
 - op: add
   path: /spec/template/spec/containers/0/env/-
   value:
-    name: FSS_WCP_NAMESPACED_CLASS_AND_WINDOWS_SUPPORT
-    value: "<FSS_WCP_NAMESPACED_CLASS_AND_WINDOWS_SUPPORT_VALUE>"
+    name: FSS_WCP_NAMESPACED_VM_CLASS
+    value: "<FSS_WCP_NAMESPACED_VM_CLASS_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_WINDOWS_SYSPREP
+    value: "<FSS_WCP_WINDOWS_SYSPREP_VALUE>"

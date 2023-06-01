@@ -834,11 +834,19 @@ func (s *Session) UpdateVirtualMachine(
 			return fmt.Errorf("VM config is not available, connectionState=%s", moVM.Runtime.ConnectionState)
 		}
 
-		if existingPowerState == vmopv1.VirtualMachinePoweredOn {
-			// don't pass classConfigSpec to poweredOnVMReconfigure when VM is
-			// already powered on since we don't have to get VM class at this
+		switch existingPowerState {
+		case vmopv1.VirtualMachinePoweredOn:
+			// Do not pass classConfigSpec to poweredOnVMReconfigure when VM is
+			// already powered on since we do not have to get VM class at this
 			// point.
 			return s.poweredOnVMReconfigure(vmCtx, resVM, config)
+		case vmopv1.VirtualMachineSuspended:
+			// A suspended VM cannot be reconfigured.
+			return resVM.SetPowerState(
+				vmCtx,
+				existingPowerState,
+				vmCtx.VM.Spec.PowerState,
+				vmCtx.VM.Spec.PowerOffMode)
 		}
 
 		updateArgs, err := getUpdateArgsFn()

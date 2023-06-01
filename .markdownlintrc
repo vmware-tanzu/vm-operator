@@ -14,6 +14,11 @@ MD033:
   - a
   - br
   - style
+  - table
+  - tbody
+  - tr
+  - td
+  - th
 
 # no-hard-tabs
 MD010:

@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package util
@@ -8,7 +8,6 @@ import (
 	"reflect"
 
 	"github.com/vmware/govmomi/vim25"
-	gdj "github.com/vmware/govmomi/vim25/json"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
 )
@@ -87,8 +86,7 @@ func MarshalConfigSpecToJSON(
 	configSpec *vimTypes.VirtualMachineConfigSpec) ([]byte, error) {
 
 	var w bytes.Buffer
-	enc := gdj.NewEncoder(&w)
-	enc.SetDiscriminator("_typeName", "_value", "")
+	enc := vimTypes.NewJSONEncoder(&w)
 	if err := enc.Encode(configSpec); err != nil {
 		return nil, err
 	}
@@ -102,11 +100,7 @@ func UnmarshalConfigSpecFromJSON(
 
 	var configSpec vimTypes.VirtualMachineConfigSpec
 
-	dec := gdj.NewDecoder(bytes.NewReader(data))
-	dec.SetDiscriminator(
-		"_typeName", "_value", "",
-		gdj.DiscriminatorToTypeFunc(vimTypes.TypeFunc()),
-	)
+	dec := vimTypes.NewJSONDecoder(bytes.NewReader(data))
 	if err := dec.Decode(&configSpec); err != nil {
 		return nil, err
 	}

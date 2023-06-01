@@ -1,4 +1,4 @@
-// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine_test
@@ -14,7 +14,6 @@ import (
 func vcSimTests() {
 	Describe("ClusterComputeResource", ccrTests)
 	Describe("Delete", deleteTests)
-	Describe("Power State", powerStateTests)
 	Describe("Publish", publishTests)
 }
 

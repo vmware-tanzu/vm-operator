@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package util_test
@@ -15,7 +15,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/vim25/json"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
 
@@ -137,11 +136,7 @@ var _ = Describe("ConfigSpec Util", func() {
 				Expect(f.Close()).To(Succeed())
 			}()
 
-			dec1 := json.NewDecoder(f)
-			dec1.SetDiscriminator(
-				"_typeName", "_value", "",
-				json.DiscriminatorToTypeFunc(vimTypes.TypeFunc()),
-			)
+			dec1 := vimTypes.NewJSONDecoder(f)
 
 			var ci1 vimTypes.VirtualMachineConfigInfo
 			Expect(dec1.Decode(&ci1)).To(Succeed())
@@ -152,17 +147,10 @@ var _ = Describe("ConfigSpec Util", func() {
 			Expect(cmp.Diff(cs1, cs2)).To(BeEmpty())
 
 			var w bytes.Buffer
-			enc1 := json.NewEncoder(&w)
-			enc1.SetIndent("", "  ")
-			enc1.SetDiscriminator("_typeName", "_value", "")
-
+			enc1 := vimTypes.NewJSONEncoder(&w)
 			Expect(enc1.Encode(cs1)).To(Succeed())
 
-			dec2 := json.NewDecoder(&w)
-			dec2.SetDiscriminator(
-				"_typeName", "_value", "",
-				json.DiscriminatorToTypeFunc(vimTypes.TypeFunc()),
-			)
+			dec2 := vimTypes.NewJSONDecoder(&w)
 
 			var cs3 vimTypes.VirtualMachineConfigSpec
 			Expect(dec2.Decode(&cs3)).To(Succeed())

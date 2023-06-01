@@ -214,4 +214,31 @@ func unitTestsMutating() {
 			})
 		})
 	})
+
+	Describe("SetDefaultPowerState", func() {
+
+		Context("When VM PowerState is empty", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.PowerState = ""
+			})
+
+			It("Should set PowerState to PoweredOn", func() {
+				Expect(mutation.SetDefaultPowerState(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+				Expect(ctx.vm.Spec.PowerState).Should(Equal(vmopv1.VirtualMachinePoweredOn))
+			})
+
+		})
+
+		Context("When VM PowerState is not empty", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
+			})
+
+			It("Should not mutate PowerState", func() {
+				oldVM := ctx.vm.DeepCopy()
+				Expect(mutation.SetDefaultPowerState(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeFalse())
+				Expect(ctx.vm.Spec.PowerState).Should(Equal(oldVM.Spec.PowerState))
+			})
+		})
+	})
 }

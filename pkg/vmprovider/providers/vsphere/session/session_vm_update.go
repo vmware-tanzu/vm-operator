@@ -801,15 +801,25 @@ func (s *Session) UpdateVirtualMachine(
 		}
 	}()
 
-	isOff := moVM.Runtime.PowerState == vimTypes.VirtualMachinePowerStatePoweredOff
+	// Translate the VM's current power state into the VM Op power state value.
+	var existingPowerState vmopv1.VirtualMachinePowerState
+	switch moVM.Runtime.PowerState {
+	case vimTypes.VirtualMachinePowerStatePoweredOn:
+		existingPowerState = vmopv1.VirtualMachinePoweredOn
+	case vimTypes.VirtualMachinePowerStatePoweredOff:
+		existingPowerState = vmopv1.VirtualMachinePoweredOff
+	case vimTypes.VirtualMachinePowerStateSuspended:
+		existingPowerState = vmopv1.VirtualMachineSuspended
+	}
 
 	switch vmCtx.VM.Spec.PowerState {
-	case vmopv1.VirtualMachinePoweredOff:
-		if !isOff {
-			err := resVM.SetPowerState(vmCtx, vmopv1.VirtualMachinePoweredOff)
-			if err != nil {
-				return err
-			}
+	case vmopv1.VirtualMachinePoweredOff,
+		vmopv1.VirtualMachineSuspended:
+		if existingPowerState == vmopv1.VirtualMachinePoweredOn {
+			return resVM.SetPowerState(vmCtx,
+				existingPowerState,
+				vmCtx.VM.Spec.PowerState,
+				vmCtx.VM.Spec.PowerOffMode)
 		}
 
 		// BMV: We'll likely want to reconfigure a powered off VM too, but right now
@@ -819,43 +829,44 @@ func (s *Session) UpdateVirtualMachine(
 	case vmopv1.VirtualMachinePoweredOn:
 		config := moVM.Config
 
-		// See govmomi VirtualMachine::Device() explanation for this check.
+		// See GoVmomi's VirtualMachine::Device() explanation for this check.
 		if config == nil {
 			return fmt.Errorf("VM config is not available, connectionState=%s", moVM.Runtime.ConnectionState)
 		}
 
-		if isOff {
-			updateArgs, err := getUpdateArgsFn()
-			if err != nil {
-				return err
-			}
-
-			// TODO: Find a better place for this?
-			if err := s.attachClusterModule(vmCtx, resVM, updateArgs.ResourcePolicy); err != nil {
-				return err
-			}
-
-			err = s.prepareVMForPowerOn(vmCtx, resVM, config, updateArgs)
-			if err != nil {
-				return err
-			}
-
-			err = resVM.SetPowerState(vmCtx, vmopv1.VirtualMachinePoweredOn)
-			if err != nil {
-				return err
-			}
-			if vmCtx.VM.Annotations == nil {
-				vmCtx.VM.Annotations = map[string]string{}
-			}
-			vmCtx.VM.Annotations[FirstBootDoneAnnotation] = "true"
-		} else {
-			// don't pass classConfigSpec to poweredOnVMReconfigure when VM is already powered on
-			// since we don't have to get VM class at this point.
-			err = s.poweredOnVMReconfigure(vmCtx, resVM, config)
-			if err != nil {
-				return err
-			}
+		if existingPowerState == vmopv1.VirtualMachinePoweredOn {
+			// don't pass classConfigSpec to poweredOnVMReconfigure when VM is
+			// already powered on since we don't have to get VM class at this
+			// point.
+			return s.poweredOnVMReconfigure(vmCtx, resVM, config)
 		}
+
+		updateArgs, err := getUpdateArgsFn()
+		if err != nil {
+			return err
+		}
+
+		// TODO: Find a better place for this?
+		if err := s.attachClusterModule(vmCtx, resVM, updateArgs.ResourcePolicy); err != nil {
+			return err
+		}
+
+		if err := s.prepareVMForPowerOn(vmCtx, resVM, config, updateArgs); err != nil {
+			return err
+		}
+
+		if err := resVM.SetPowerState(
+			vmCtx,
+			existingPowerState,
+			vmCtx.VM.Spec.PowerState,
+			vmCtx.VM.Spec.PowerOffMode); err != nil {
+			return err
+		}
+
+		if vmCtx.VM.Annotations == nil {
+			vmCtx.VM.Annotations = map[string]string{}
+		}
+		vmCtx.VM.Annotations[FirstBootDoneAnnotation] = "true"
 	}
 	return nil
 }

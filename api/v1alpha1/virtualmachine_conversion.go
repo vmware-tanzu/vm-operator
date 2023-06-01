@@ -48,9 +48,7 @@ func convert_v1alpha1_VirtualMachinePowerState_To_v1alpha2_VirtualMachinePowerSt
 		return v1alpha2.VirtualMachinePowerStateOff
 	case VirtualMachinePoweredOn:
 		return v1alpha2.VirtualMachinePowerStateOn
-	case "guestPoweredOff":
-		return v1alpha2.VirtualMachinePowerStateGuestOff
-	case "suspended":
+	case VirtualMachineSuspended:
 		return v1alpha2.VirtualMachinePowerStateSuspended
 	}
 
@@ -65,13 +63,41 @@ func convert_v1alpha2_VirtualMachinePowerState_To_v1alpha1_VirtualMachinePowerSt
 		return VirtualMachinePoweredOff
 	case v1alpha2.VirtualMachinePowerStateOn:
 		return VirtualMachinePoweredOn
-	case v1alpha2.VirtualMachinePowerStateGuestOff:
-		return "guestPoweredOff"
 	case v1alpha2.VirtualMachinePowerStateSuspended:
-		return "suspended"
+		return VirtualMachineSuspended
 	}
 
 	return VirtualMachinePowerState(in)
+}
+
+func convert_v1alpha1_VirtualMachinePowerOpMode_To_v1alpha2_VirtualMachinePowerOpMode(
+	in VirtualMachinePowerOpMode) v1alpha2.VirtualMachinePowerOpMode {
+
+	switch in {
+	case VirtualMachinePowerOpModeHard:
+		return v1alpha2.VirtualMachinePowerOpModeHard
+	case VirtualMachinePowerOpModeSoft:
+		return v1alpha2.VirtualMachinePowerOpModeSoft
+	case VirtualMachinePowerOpModeTrySoft:
+		return v1alpha2.VirtualMachinePowerOpModeTrySoft
+	}
+
+	return v1alpha2.VirtualMachinePowerOpMode(in)
+}
+
+func convert_v1alpha2_VirtualMachinePowerOpMode_To_v1alpha1_VirtualMachinePowerOpMode(
+	in v1alpha2.VirtualMachinePowerOpMode) VirtualMachinePowerOpMode {
+
+	switch in {
+	case v1alpha2.VirtualMachinePowerOpModeHard:
+		return VirtualMachinePowerOpModeHard
+	case v1alpha2.VirtualMachinePowerOpModeSoft:
+		return VirtualMachinePowerOpModeSoft
+	case v1alpha2.VirtualMachinePowerOpModeTrySoft:
+		return VirtualMachinePowerOpModeTrySoft
+	}
+
+	return VirtualMachinePowerOpMode(in)
 }
 
 func Convert_v1alpha2_VirtualMachineVolume_To_v1alpha1_VirtualMachineVolume(
@@ -406,6 +432,8 @@ func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	in *VirtualMachineSpec, out *v1alpha2.VirtualMachineSpec, s apiconversion.Scope) error {
 
 	out.PowerState = convert_v1alpha1_VirtualMachinePowerState_To_v1alpha2_VirtualMachinePowerState(in.PowerState)
+	out.PowerOffMode = convert_v1alpha1_VirtualMachinePowerOpMode_To_v1alpha2_VirtualMachinePowerOpMode(in.PowerOffMode)
+	out.SuspendMode = convert_v1alpha1_VirtualMachinePowerOpMode_To_v1alpha2_VirtualMachinePowerOpMode(in.SuspendMode)
 	out.Bootstrap = convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(in.VmMetadata)
 
 	for i, networkInterface := range in.NetworkInterfaces {
@@ -428,6 +456,8 @@ func Convert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(
 	in *v1alpha2.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
 
 	out.PowerState = convert_v1alpha2_VirtualMachinePowerState_To_v1alpha1_VirtualMachinePowerState(in.PowerState)
+	out.PowerOffMode = convert_v1alpha2_VirtualMachinePowerOpMode_To_v1alpha1_VirtualMachinePowerOpMode(in.PowerOffMode)
+	out.SuspendMode = convert_v1alpha2_VirtualMachinePowerOpMode_To_v1alpha1_VirtualMachinePowerOpMode(in.SuspendMode)
 	out.VmMetadata = convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(in.Bootstrap)
 
 	for _, networkInterfaceSpec := range in.Network.Interfaces {

@@ -70,6 +70,7 @@ kubectl get storageclass
 
 For more information on Storage Classes, please see the documentation for [`StorageClass`]([./vm-class.md](https://kubernetes.io/docs/concepts/storage/storage-classes/)).
 
+
 ## Updating a VM
 
 It is possible to update parts of an existing `VirtualMachine` resource. Some fields are completely immutable while some _can_ be modified depending on the VM's power state and whether or not the field has already been set to a non-empty value. The following table highlights what fields may or may not be updated and under what conditions:
@@ -92,3 +93,70 @@ Some of a VM's hardware resources are derived, and there are some that may be in
 ### Networking
 
 ### Storage
+
+## Power State
+
+The field `spec.powerState` controls the power state of a VM and may be set to one of the following values:
+
+| Power State | Description |
+|-------------|-------------|
+| `poweredOn` | Powers on a powered off VM or resumes a suspended VM |
+| `poweredOff` | Powers off a powered on or suspended VM (controlled by `spec.powerOffMode`) |
+| `suspended` | Suspends a powered on VM (controlled by `spec.suspendMode`) |
+
+
+### Default Power State on Create
+
+When updating a VM's power state, an empty string is not allowed -- the desired power state must be specified explicitly. However, on create, the VM's power state may be omitted. When this occurs, the power state defaults to `poweredOn`.
+
+
+### Transitions
+
+Please note that there are supported power state transitions, and if a power state is requested that is not a supported transition, an error will be returned from a validating webhook.
+
+<table>
+    <tbody>
+        <tr>
+            <th></th>
+            <th style="text-align:center;" colspan="3">Desired Power State</th>
+        </tr>
+        <tr>
+            <th style="text-align:center;">Observed Power State</th>
+            <td style="text-align:center;"><code>poweredOn</code></td>
+            <td style="text-align:center;"><code>poweredOff</code></td>
+            <td style="text-align:center;"><code>suspended</code></td>
+        </tr>
+        <tr>
+            <td style="text-align:center;"><code>poweredOn</code></td>
+            <td style="text-align:center;">✓</td>
+            <td style="text-align:center;">✓</td>
+            <td style="text-align:center;">✓</td>
+        </tr>
+        <tr>
+            <td style="text-align:center;"><code>poweredOff</code></td>
+            <td style="text-align:center;">✓</td>
+            <td style="text-align:center;">✓</td>
+            <td style="text-align:center;">✓ (when <code>spec.powerOffMode</code> is <code>hard</code>)</td>
+        </tr>
+        <tr>
+            <td style="text-align:center;"><code>suspended</code></td>
+            <td style="text-align:center;">✓</td>
+            <td style="text-align:center;"></td>
+            <td style="text-align:center;">✓</td>
+        </tr>
+    </tbody>
+</table>
+
+## Power Off and Suspend Mode
+
+The fields `spec.powerOffMode` and `spec.suspendMode` control how a VM is powered off and/or suspended:
+
+!!! note "Default Power Off & Suspend Mode"
+
+    Please note that the default mode for power off & suspend is changing in v1alpha2 to `TrySoft`. This should not impact users still managing resources using v1alpha1.
+
+| Mode | Description | Default |
+|-------------|-------------|:-----------------:|
+| `hard` | Halts or suspends the VM with no interaction with the guest | ✓ |
+| `soft` | The guest is shutdown or suspended gracefully (requires VM Tools) |
+| `trySoft` | Attempts a graceful shutdown/standby if VM Tools is present, otherwise falls back to a hard operation the VM has not achieved the desired power state after five minutes. |

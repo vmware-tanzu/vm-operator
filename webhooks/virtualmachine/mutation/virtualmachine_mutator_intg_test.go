@@ -106,5 +106,65 @@ func intgTestsMutating() {
 
 		})
 
+		Context("SetDefaultPowerState", func() {
+			When("Creating VirtualMachine", func() {
+				When("When VM PowerState is empty", func() {
+					BeforeEach(func() {
+						vm.Spec.PowerState = ""
+					})
+					It("Should set PowerState to PoweredOn", func() {
+						Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+						modified := &vmopv1.VirtualMachine{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), modified)).Should(Succeed())
+						Expect(modified.Spec.PowerState).Should(Equal(vmopv1.VirtualMachinePoweredOn))
+					})
+				})
+				When("When VM PowerState is not empty", func() {
+					BeforeEach(func() {
+						vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
+					})
+					It("Should not mutate PowerState", func() {
+						Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+						modified := &vmopv1.VirtualMachine{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), modified)).Should(Succeed())
+						Expect(modified.Spec.PowerState).Should(Equal(vmopv1.VirtualMachinePoweredOff))
+					})
+				})
+			})
+
+			When("Updating VirtualMachine", func() {
+				BeforeEach(func() {
+					vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
+					Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+				})
+				// This state is not technically possible in production. However,
+				// it is used to validate that the power state is not auto-set
+				// to poweredOn if empty during an empty. Since the logic for
+				// defaulting to poweredOn only works if empty (and on create),
+				// it's necessary to replicate the empty state here.
+				When("When VM PowerState is empty", func() {
+					It("Should not mutate PowerState", func() {
+						modified := &vmopv1.VirtualMachine{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), modified)).Should(Succeed())
+						modified.Spec.PowerState = ""
+						Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), modified)).Should(Succeed())
+						Expect(modified.Spec.PowerState).Should(BeEmpty())
+					})
+				})
+				When("When VM PowerState is not empty", func() {
+					It("Should not mutate PowerState", func() {
+						modified := &vmopv1.VirtualMachine{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), modified)).Should(Succeed())
+						modified.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
+						Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), modified)).Should(Succeed())
+						Expect(modified.Spec.PowerState).Should(Equal(vmopv1.VirtualMachinePoweredOff))
+					})
+				})
+			})
+
+		})
+
 	})
 }

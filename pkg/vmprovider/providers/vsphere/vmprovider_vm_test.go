@@ -17,7 +17,6 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vapi/cluster"
-	gdj "github.com/vmware/govmomi/vim25/json"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
@@ -27,7 +26,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -175,8 +173,7 @@ func vmTests() {
 
 				if configSpec != nil {
 					var w bytes.Buffer
-					enc := gdj.NewEncoder(&w)
-					enc.SetDiscriminator("_typeName", "_value", "")
+					enc := types.NewJSONEncoder(&w)
 					Expect(enc.Encode(configSpec)).To(Succeed())
 
 					// Update the VM Class with the XML.

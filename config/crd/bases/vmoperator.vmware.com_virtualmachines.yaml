@@ -186,13 +186,34 @@ spec:
                   - protocol
                   type: object
                 type: array
-              powerState:
-                description: PowerState describes the desired power state of a VirtualMachine.  Valid
-                  power states are "poweredOff" and "poweredOn".
+              powerOffMode:
+                default: hard
+                description: "PowerOffMode describes the desired behavior when powering
+                  off a VM. \n There are three, supported power off modes: hard, soft,
+                  and trySoft. The first mode, hard, is the equivalent of a physical
+                  system's power cord being ripped from the wall. The soft mode requires
+                  the VM's guest to have VM Tools installed and attempts to gracefully
+                  shutdown the VM. Its variant, trySoft, first attempts a graceful
+                  shutdown, and if that fails or the VM is not in a powered off state
+                  after five minutes, the VM is halted. \n If omitted, the mode defaults
+                  to hard."
                 enum:
-                - poweredOff
+                - hard
+                - soft
+                - trySoft
+                type: string
+              powerState:
+                description: "PowerState describes the desired power state of a VirtualMachine.
+                  \n Please note this field may be omitted when creating a new VM
+                  and will default to \"poweredOn.\" However, once the field is set
+                  to a non-empty value, it may no longer be set to an empty value.
+                  \n Additionally, setting this value to \"suspended\" is not supported
+                  when creating a new VM. The valid values when creating a new VM
+                  are \"poweredOn\" and \"poweredOff.\" An empty value is also allowed
+                  on create since this value defaults to \"poweredOn\" for new VMs."
+                enum:
                 - poweredOn
-                - guestPoweredOff
+                - poweredOff
                 - suspended
                 type: string
               readinessProbe:
@@ -256,6 +277,22 @@ spec:
                 description: StorageClass describes the name of a StorageClass that
                   should be used to configure storage-related attributes of the VirtualMachine
                   instance.
+                type: string
+              suspendMode:
+                default: hard
+                description: "SuspendMode describes the desired behavior when suspending
+                  a VM. \n There are three, supported suspend modes: hard, soft, and
+                  trySoft. The first mode, hard, is where vSphere suspends the VM
+                  to disk without any interaction inside of the guest. The soft mode
+                  requires the VM's guest to have VM Tools installed and attempts
+                  to gracefully suspend the VM. Its variant, trySoft, first attempts
+                  a graceful suspend, and if that fails or the VM is not in a put
+                  into standby by the guest after five minutes, the VM is suspended.
+                  \n If omitted, the mode defaults to hard."
+                enum:
+                - hard
+                - soft
+                - trySoft
                 type: string
               vmMetadata:
                 description: VmMetadata describes any optional metadata that should
@@ -373,7 +410,6 @@ spec:
             required:
             - className
             - imageName
-            - powerState
             type: object
           status:
             description: VirtualMachineStatus defines the observed state of a VirtualMachine
@@ -475,9 +511,8 @@ spec:
               powerState:
                 description: PowerState describes the current power state of the VirtualMachine.
                 enum:
-                - poweredOff
                 - poweredOn
-                - guestPoweredOff
+                - poweredOff
                 - suspended
                 type: string
               uniqueID:

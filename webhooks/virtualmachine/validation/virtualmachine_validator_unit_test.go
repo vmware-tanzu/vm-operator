@@ -219,6 +219,7 @@ func unitTestsValidateCreate() {
 		isNamedNetworkProviderEnabled     bool
 		isSysprepFeatureEnabled           bool
 		isSysprepTransportUsed            bool
+		powerState                        vmopv1.VirtualMachinePowerState
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -366,6 +367,8 @@ func unitTestsValidateCreate() {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 		}
 
+		ctx.vm.Spec.PowerState = args.powerState
+
 		// Named network provider
 		undoNamedNetProvider := initNamedNetworkProviderConfig(
 			ctx,
@@ -485,6 +488,9 @@ func unitTestsValidateCreate() {
 		Entry("should disallow sysprep when FSS is disabled", createArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: true}, false,
 			field.Invalid(specPath.Child("vmMetadata", "transport"), "Sysprep", "the Sysprep feature is not enabled").Error(), nil),
 		Entry("should not error if sysprep FSS is disabled when sysprep is not used", createArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: false}, true, nil, nil),
+
+		Entry("should disallow creating VM with suspended power state", createArgs{powerState: vmopv1.VirtualMachineSuspended}, false,
+			field.Invalid(specPath.Child("powerState"), vmopv1.VirtualMachineSuspended, "cannot set a new VM's power state to suspended").Error(), nil),
 	)
 }
 
@@ -507,6 +513,9 @@ func unitTestsValidateUpdate() {
 		isNamedNetworkProviderEnabled   bool
 		isSysprepFeatureEnabled         bool
 		isSysprepTransportUsed          bool
+		oldPowerState                   vmopv1.VirtualMachinePowerState
+		newPowerState                   vmopv1.VirtualMachinePowerState
+		newPowerStateEmptyAllowed       bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -544,6 +553,12 @@ func unitTestsValidateUpdate() {
 			ctx.oldVM.Spec.Volumes = append(ctx.oldVM.Spec.Volumes, instanceStorageVolumes...)
 			instanceStorageVolumes[0].Name += updateSuffix
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolumes...)
+		}
+		if args.oldPowerState != "" {
+			ctx.oldVM.Spec.PowerState = args.oldPowerState
+		}
+		if args.newPowerState != "" || args.newPowerStateEmptyAllowed {
+			ctx.vm.Spec.PowerState = args.newPowerState
 		}
 
 		// Named network provider
@@ -584,6 +599,7 @@ func unitTestsValidateUpdate() {
 
 	msg := "field is immutable"
 	volumesPath := field.NewPath("spec", "volumes")
+	powerStatePath := field.NewPath("spec", "powerState")
 
 	DescribeTable("update table", validateUpdate,
 		// Immutable Fields
@@ -607,6 +623,20 @@ func unitTestsValidateUpdate() {
 		Entry("should disallow sysprep when FSS is disabled", updateArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: true}, false,
 			field.Invalid(field.NewPath("spec", "vmMetadata", "transport"), "Sysprep", "the Sysprep feature is not enabled").Error(), nil),
 		Entry("should not error if sysprep FSS is disabled when sysprep is not used", updateArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: false}, true, nil, nil),
+
+		Entry("should disallow updating powered on VM with empty power state", updateArgs{oldPowerState: vmopv1.VirtualMachinePoweredOn, newPowerStateEmptyAllowed: true}, false,
+			field.Invalid(powerStatePath, "", "cannot set power state to empty string").Error(), nil),
+		Entry("should disallow updating powered off VM with empty power state", updateArgs{oldPowerState: vmopv1.VirtualMachinePoweredOff, newPowerStateEmptyAllowed: true}, false,
+			field.Invalid(powerStatePath, "", "cannot set power state to empty string").Error(), nil),
+		Entry("should disallow updating suspended VM with empty power state", updateArgs{oldPowerState: vmopv1.VirtualMachineSuspended, newPowerStateEmptyAllowed: true}, false,
+			field.Invalid(powerStatePath, "", "cannot set power state to empty string").Error(), nil),
+
+		Entry("should allow updating suspended VM to powered on", updateArgs{oldPowerState: vmopv1.VirtualMachineSuspended, newPowerState: vmopv1.VirtualMachinePoweredOn}, true,
+			nil, nil),
+		Entry("should allow updating suspended VM to powered off", updateArgs{oldPowerState: vmopv1.VirtualMachineSuspended, newPowerState: vmopv1.VirtualMachinePoweredOff}, true,
+			nil, nil),
+		Entry("should disallow updating powered off VM to suspended", updateArgs{oldPowerState: vmopv1.VirtualMachinePoweredOff, newPowerState: vmopv1.VirtualMachineSuspended}, false,
+			field.Invalid(powerStatePath, vmopv1.VirtualMachineSuspended, "cannot suspend a VM that is powered off").Error(), nil),
 	)
 
 	When("the update is performed while object deletion", func() {

@@ -60,7 +60,6 @@ type mutator struct {
 	converter runtime.UnstructuredConverter
 }
 
-//nolint
 func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 	if ctx.Op == admissionv1.Delete {
 		return admission.Allowed("")
@@ -78,6 +77,9 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 	switch ctx.Op {
 	case admissionv1.Create:
 		if AddDefaultNetworkInterface(ctx, m.client, modified) {
+			wasMutated = true
+		}
+		if SetDefaultPowerState(ctx, m.client, modified) {
 			wasMutated = true
 		}
 	case admissionv1.Update:
@@ -124,6 +126,20 @@ func (m mutator) vmFromUnstructured(obj runtime.Unstructured) (*vmopv1.VirtualMa
 		return nil, err
 	}
 	return vm, nil
+}
+
+// SetDefaultPowerState sets the default power state for a new VM.
+// Return true if the default power state was set, otherwise false.
+func SetDefaultPowerState(
+	ctx *context.WebhookRequestContext,
+	client client.Client,
+	vm *vmopv1.VirtualMachine) bool {
+
+	if vm.Spec.PowerState == "" {
+		vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOn
+		return true
+	}
+	return false
 }
 
 // AddDefaultNetworkInterface adds default network interface to a VM if the NoNetwork annotation is not set

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package resources
@@ -10,12 +10,12 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/task"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 )
 
 type VirtualMachine struct {
@@ -138,42 +138,32 @@ func (vm *VirtualMachine) UniqueID(ctx context.Context) (string, error) {
 	return vm.ReferenceValue(), nil
 }
 
-func (vm *VirtualMachine) SetPowerState(ctx context.Context, desiredPowerState vmopv1.VirtualMachinePowerState) error {
-	vm.logger.V(5).Info("SetPowerState", "desiredState", desiredPowerState)
+func (vm *VirtualMachine) SetPowerState(
+	ctx context.Context,
+	currentPowerState,
+	desiredPowerState vmopv1.VirtualMachinePowerState,
+	desiredPowerOffMode vmopv1.VirtualMachinePowerOpMode) error {
 
-	var powerTask *object.Task
-	var err error
+	_, err := vmutil.SetAndWaitOnPowerState(
+		ctx,
+		vm.VcVM().Client(),
+		mo.VirtualMachine{
+			ManagedEntity: mo.ManagedEntity{
+				ExtensibleManagedObject: mo.ExtensibleManagedObject{
+					Self: vm.VcVM().Reference(),
+				},
+			},
+			Summary: types.VirtualMachineSummary{
+				Runtime: types.VirtualMachineRuntimeInfo{
+					PowerState: vmutil.ParsePowerState(string(currentPowerState)),
+				},
+			},
+		},
+		false,
+		vmutil.ParsePowerState(string(desiredPowerState)),
+		vmutil.ParsePowerOpMode(string(desiredPowerOffMode)))
 
-	switch desiredPowerState {
-	case vmopv1.VirtualMachinePoweredOn:
-		powerTask, err = vm.vcVirtualMachine.PowerOn(ctx)
-	case vmopv1.VirtualMachinePoweredOff:
-		powerTask, err = vm.vcVirtualMachine.PowerOff(ctx)
-	default:
-		err = fmt.Errorf("invalid desired power state %s", desiredPowerState)
-	}
-
-	if err != nil {
-		vm.logger.Error(err, "Failed to change VM power state", "desiredState", desiredPowerState)
-		return err
-	}
-
-	if taskInfo, err := powerTask.WaitForResult(ctx, nil); err != nil {
-		if te, ok := err.(task.Error); ok {
-			// Ignore error if VM was already in desired state.
-			if ips, ok := te.Fault().(*types.InvalidPowerStateFault); ok && ips.ExistingState == ips.RequestedState {
-				return nil
-			}
-		}
-		if taskInfo != nil {
-			err = errors.Wrapf(err, "%s failed", taskInfo.Name)
-		}
-
-		vm.logger.Error(err, "VM change power state task failed", "state", desiredPowerState)
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // GetVirtualDevices returns the VMs VirtualDeviceList.

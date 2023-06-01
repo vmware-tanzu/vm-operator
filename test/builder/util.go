@@ -222,9 +222,11 @@ func DummyBasicVirtualMachine(name, namespace string) *vmopv1.VirtualMachine {
 			Annotations: map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSpec{
-			ImageName:  DummyImageName,
-			ClassName:  DummyClassName,
-			PowerState: vmopv1.VirtualMachinePoweredOn,
+			ImageName:    DummyImageName,
+			ClassName:    DummyClassName,
+			PowerState:   vmopv1.VirtualMachinePoweredOn,
+			PowerOffMode: vmopv1.VirtualMachinePowerOpModeHard,
+			SuspendMode:  vmopv1.VirtualMachinePowerOpModeHard,
 		},
 	}
 }
@@ -237,9 +239,11 @@ func DummyVirtualMachine() *vmopv1.VirtualMachine {
 			Annotations:  map[string]string{},
 		},
 		Spec: vmopv1.VirtualMachineSpec{
-			ImageName:  DummyImageName,
-			ClassName:  DummyClassName,
-			PowerState: vmopv1.VirtualMachinePoweredOn,
+			ImageName:    DummyImageName,
+			ClassName:    DummyClassName,
+			PowerState:   vmopv1.VirtualMachinePoweredOn,
+			PowerOffMode: vmopv1.VirtualMachinePowerOpModeHard,
+			SuspendMode:  vmopv1.VirtualMachinePowerOpModeHard,
 			NetworkInterfaces: []vmopv1.VirtualMachineNetworkInterface{
 				{
 					NetworkName: DummyNetworkName,

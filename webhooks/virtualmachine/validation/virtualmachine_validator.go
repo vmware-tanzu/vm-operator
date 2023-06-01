@@ -57,6 +57,9 @@ const (
 	addingModifyingInstanceVolumesNotAllowed  = "adding or modifying instance storage volume claim(s) is not allowed"
 	metadataTransportResourcesInvalid         = "%s and %s cannot be specified simultaneously"
 	featureNotEnabled                         = "the %s feature is not enabled"
+	invalidPowerStateOnCreateFmt              = "cannot set a new VM's power state to %s"
+	invalidPowerStateOnUpdateFmt              = "cannot %s a VM that is %s"
+	invalidPowerStateOnUpdateEmptyString      = "cannot set power state to empty string"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha1,name=default.validating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -110,6 +113,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
+	fieldErrs = append(fieldErrs, v.validatePowerStateOnCreate(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -155,20 +159,12 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	// Check if an immutable field has been modified.
 	fieldErrs = append(fieldErrs, v.validateImmutableFields(ctx, vm, oldVM)...)
 
-	currentPowerState := oldVM.Spec.PowerState
-	desiredPowerState := vm.Spec.PowerState
+	// First validate any updates to the desired state based on the current
+	// power state of the VM.
+	fieldErrs = append(fieldErrs, v.validatePowerStateOnUpdate(ctx, vm, oldVM)...)
 
-	// If a VM is powered off, all config changes are allowed.
-	// If a VM is requesting a power off, we can Reconfigure the VM _after_ we power it off - all changes are allowed.
-	// If a VM is requesting a power on, we can Reconfigure the VM _before_ we power it on - all changes are allowed.
-	// So, we only run these validations when the VM is powered on, and is not requesting a power state change.
-	if currentPowerState == vmopv1.VirtualMachinePoweredOn && desiredPowerState == vmopv1.VirtualMachinePoweredOn {
-		invalidFields := v.validateUpdatesWhenPoweredOn(ctx, vm, oldVM)
-		fieldErrs = append(fieldErrs, invalidFields...)
-	}
-
-	// Validations for allowed updates. Return validation responses here for conditional updates regardless
-	// of whether the update is allowed or not.
+	// Validations for allowed updates. Return validation responses here for
+	// conditional updates regardless of whether the update is allowed or not.
 	fieldErrs = append(fieldErrs, v.validateMetadata(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm)...)
@@ -469,6 +465,82 @@ func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm
 		} else if isRestrictedEnv && probe.TCPSocket.Port.IntValue() != allowedRestrictedNetworkTCPProbePort {
 			allErrs = append(allErrs, field.NotSupported(tcpSocketPath.Child("port"), probe.TCPSocket.Port.IntValue(),
 				[]string{strconv.Itoa(allowedRestrictedNetworkTCPProbePort)}))
+		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validatePowerStateOnCreate(
+	ctx *context.WebhookRequestContext,
+	newVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var (
+		allErrs       field.ErrorList
+		newPowerState = newVM.Spec.PowerState
+	)
+
+	if newPowerState == vmopv1.VirtualMachineSuspended {
+		allErrs = append(
+			allErrs,
+			field.Invalid(
+				field.NewPath("spec").Child("powerState"),
+				newPowerState,
+				fmt.Sprintf(invalidPowerStateOnCreateFmt, newPowerState)))
+	}
+
+	return allErrs
+}
+
+func (v validator) validatePowerStateOnUpdate(
+	ctx *context.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+	powerStatePath := field.NewPath("spec").Child("powerState")
+
+	// If a VM is powered off, all config changes are allowed except for setting
+	// the power state to shutdown or suspend.
+	// If a VM is requesting a power off, we can Reconfigure the VM _after_
+	// we power it off - all changes are allowed.
+	// If a VM is requesting a power on, we can Reconfigure the VM _before_
+	// we power it on - all changes are allowed.
+	newPowerState, oldPowerState := newVM.Spec.PowerState, oldVM.Spec.PowerState
+
+	if newPowerState == "" {
+		allErrs = append(
+			allErrs,
+			field.Invalid(
+				powerStatePath,
+				newPowerState,
+				invalidPowerStateOnUpdateEmptyString))
+		return allErrs
+	}
+
+	switch oldPowerState {
+	case vmopv1.VirtualMachinePoweredOn:
+		// The request is attempting to power on a VM that is already powered
+		// on. Validate fields that may or may not be mutable while a VM is in
+		// a powered on state.
+		if newPowerState == vmopv1.VirtualMachinePoweredOn {
+			invalidFields := v.validateUpdatesWhenPoweredOn(ctx, newVM, oldVM)
+			allErrs = append(allErrs, invalidFields...)
+		}
+
+	case vmopv1.VirtualMachinePoweredOff:
+		// Mark the power state as invalid if the request is attempting to
+		// suspend a VM that is powered off.
+		var msg string
+		if newPowerState == vmopv1.VirtualMachineSuspended {
+			msg = "suspend"
+		}
+		if msg != "" {
+			allErrs = append(
+				allErrs,
+				field.Invalid(
+					powerStatePath,
+					newPowerState,
+					fmt.Sprintf(invalidPowerStateOnUpdateFmt, msg, "powered off")))
 		}
 	}
 

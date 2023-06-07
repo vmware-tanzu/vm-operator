@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -60,6 +61,9 @@ const (
 	invalidPowerStateOnCreateFmt              = "cannot set a new VM's power state to %s"
 	invalidPowerStateOnUpdateFmt              = "cannot %s a VM that is %s"
 	invalidPowerStateOnUpdateEmptyString      = "cannot set power state to empty string"
+	invalidNextRestartTimeOnCreate            = "cannot restart VM on create"
+	invalidNextRestartTimeOnUpdate            = "must be formatted as RFC3339Nano"
+	invalidNextRestartTimeOnUpdateNow         = "mutation webhooks are required to restart VM"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha1,name=default.validating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -114,6 +118,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validatePowerStateOnCreate(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnCreate(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -172,6 +177,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateVMVolumeProvisioningOptions(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnUpdate(ctx, vm, oldVM)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -466,6 +472,55 @@ func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm
 			allErrs = append(allErrs, field.NotSupported(tcpSocketPath.Child("port"), probe.TCPSocket.Port.IntValue(),
 				[]string{strconv.Itoa(allowedRestrictedNetworkTCPProbePort)}))
 		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validateNextRestartTimeOnCreate(
+	ctx *context.WebhookRequestContext,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	if vm.Spec.NextRestartTime != "" {
+		allErrs = append(
+			allErrs,
+			field.Invalid(
+				field.NewPath("spec").Child("nextRestartTime"),
+				vm.Spec.NextRestartTime,
+				invalidNextRestartTimeOnCreate))
+	}
+
+	return allErrs
+}
+
+func (v validator) validateNextRestartTimeOnUpdate(
+	ctx *context.WebhookRequestContext,
+	newVM, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+
+	if newVM.Spec.NextRestartTime == oldVM.Spec.NextRestartTime {
+		return nil
+	}
+
+	var allErrs field.ErrorList
+
+	nextRestartTimePath := field.NewPath("spec").Child("nextRestartTime")
+
+	if strings.EqualFold(newVM.Spec.NextRestartTime, "now") {
+		allErrs = append(
+			allErrs,
+			field.Invalid(
+				nextRestartTimePath,
+				newVM.Spec.NextRestartTime,
+				invalidNextRestartTimeOnUpdateNow))
+	} else if _, err := time.Parse(time.RFC3339Nano, newVM.Spec.NextRestartTime); err != nil {
+		allErrs = append(
+			allErrs,
+			field.Invalid(
+				nextRestartTimePath,
+				newVM.Spec.NextRestartTime,
+				invalidNextRestartTimeOnUpdate))
 	}
 
 	return allErrs

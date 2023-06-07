@@ -6,11 +6,14 @@ package session
 import (
 	"fmt"
 	"reflect"
+	"time"
 
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/go-logr/logr"
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
@@ -19,6 +22,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
@@ -813,10 +817,18 @@ func (s *Session) UpdateVirtualMachine(
 	}
 
 	switch vmCtx.VM.Spec.PowerState {
-	case vmopv1.VirtualMachinePoweredOff,
-		vmopv1.VirtualMachineSuspended:
+	case vmopv1.VirtualMachinePoweredOff:
+		var powerOff bool
 		if existingPowerState == vmopv1.VirtualMachinePoweredOn {
-			return resVM.SetPowerState(vmCtx,
+			powerOff = true
+		} else if existingPowerState == vmopv1.VirtualMachineSuspended {
+			if vmCtx.VM.Spec.PowerOffMode == vmopv1.VirtualMachinePowerOpModeHard {
+				powerOff = true
+			}
+		}
+		if powerOff {
+			return resVM.SetPowerState(
+				logr.NewContext(vmCtx, vmCtx.Logger),
 				existingPowerState,
 				vmCtx.VM.Spec.PowerState,
 				vmCtx.VM.Spec.PowerOffMode)
@@ -825,6 +837,15 @@ func (s *Session) UpdateVirtualMachine(
 		// BMV: We'll likely want to reconfigure a powered off VM too, but right now
 		// we'll defer that until the pre power on (and until more people complain
 		// that the UI appears wrong).
+
+	case vmopv1.VirtualMachineSuspended:
+		if existingPowerState == vmopv1.VirtualMachinePoweredOn {
+			return resVM.SetPowerState(
+				logr.NewContext(vmCtx, vmCtx.Logger),
+				existingPowerState,
+				vmCtx.VM.Spec.PowerState,
+				vmCtx.VM.Spec.SuspendMode)
+		}
 
 	case vmopv1.VirtualMachinePoweredOn:
 		config := moVM.Config
@@ -836,17 +857,52 @@ func (s *Session) UpdateVirtualMachine(
 
 		switch existingPowerState {
 		case vmopv1.VirtualMachinePoweredOn:
+
+			// Check to see if a possible restart is required.
+			// Please note a VM may only be restarted if it is powered on.
+			if vmCtx.VM.Spec.NextRestartTime != "" {
+
+				// If non-empty, the value of spec.nextRestartTime is guaranteed
+				// to be a valid RFC3339Nano timestamp due to the webhooks,
+				// however, we still check for the error due to testing that may
+				// not involve webhooks.
+				nextRestartTime, err := time.Parse(
+					time.RFC3339Nano, vmCtx.VM.Spec.NextRestartTime)
+				if err != nil {
+					return fmt.Errorf(
+						"spec.nextRestartTime %q cannot be parsed with %q %w",
+						vmCtx.VM.Spec.NextRestartTime,
+						time.RFC3339Nano,
+						err)
+				}
+				result, err := vmutil.RestartAndWait(
+					logr.NewContext(vmCtx, vmCtx.Logger),
+					vcVM.Client(),
+					vmutil.ManagedObjectFromObject(vcVM),
+					false,
+					nextRestartTime,
+					vmutil.ParsePowerOpMode(string(vmCtx.VM.Spec.RestartMode)))
+				if err != nil {
+					return err
+				}
+				if result.AnyChange() {
+					lastRestartTime := metav1.NewTime(nextRestartTime)
+					vmCtx.VM.Status.LastRestartTime = &lastRestartTime
+				}
+			}
+
 			// Do not pass classConfigSpec to poweredOnVMReconfigure when VM is
 			// already powered on since we do not have to get VM class at this
 			// point.
 			return s.poweredOnVMReconfigure(vmCtx, resVM, config)
+
 		case vmopv1.VirtualMachineSuspended:
 			// A suspended VM cannot be reconfigured.
 			return resVM.SetPowerState(
-				vmCtx,
+				logr.NewContext(vmCtx, vmCtx.Logger),
 				existingPowerState,
 				vmCtx.VM.Spec.PowerState,
-				vmCtx.VM.Spec.PowerOffMode)
+				vmopv1.VirtualMachinePowerOpModeHard)
 		}
 
 		updateArgs, err := getUpdateArgsFn()
@@ -864,10 +920,10 @@ func (s *Session) UpdateVirtualMachine(
 		}
 
 		if err := resVM.SetPowerState(
-			vmCtx,
+			logr.NewContext(vmCtx, vmCtx.Logger),
 			existingPowerState,
 			vmCtx.VM.Spec.PowerState,
-			vmCtx.VM.Spec.PowerOffMode); err != nil {
+			vmopv1.VirtualMachinePowerOpModeHard); err != nil {
 			return err
 		}
 

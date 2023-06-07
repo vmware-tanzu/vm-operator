@@ -94,7 +94,9 @@ Some of a VM's hardware resources are derived, and there are some that may be in
 
 ### Storage
 
-## Power State
+## Power States
+
+### On, Off, & Suspend
 
 The field `spec.powerState` controls the power state of a VM and may be set to one of the following values:
 
@@ -103,6 +105,12 @@ The field `spec.powerState` controls the power state of a VM and may be set to o
 | `poweredOn` | Powers on a powered off VM or resumes a suspended VM |
 | `poweredOff` | Powers off a powered on or suspended VM (controlled by `spec.powerOffMode`) |
 | `suspended` | Suspends a powered on VM (controlled by `spec.suspendMode`) |
+
+### Restart
+
+It is possible to restart a powered on VM by setting `spec.nextRestartTime` to `now` (case-insensitive). A mutating webhook transforms `now` into an RFC3339Nano-formatted string. During the VM's reconciliation, the value of `spec.nextRestartTime` is compared to the last time the VM was restarted by VM Operator. If `spec.nextRestartTime` occurs _after_ the last time a restart occurred, then the VM is restarted in accordance with `spec.restartMode`.
+
+Please note that it is not possible to schedule future restarts by assigning an explicit RFC3339Nano-formatted string to `spec.nextRestartTime`. The only valid values for `spec.nextRestartTime` are an empty string when creating a VM and `now` (case-insensitive) when updating/patching an existing VM.
 
 
 ### Default Power State on Create
@@ -118,45 +126,51 @@ Please note that there are supported power state transitions, and if a power sta
     <tbody>
         <tr>
             <th></th>
-            <th style="text-align:center;" colspan="3">Desired Power State</th>
+            <th style="text-align:center;" colspan="4">Desired Power Operations</th>
         </tr>
         <tr>
             <th style="text-align:center;">Observed Power State</th>
-            <td style="text-align:center;"><code>poweredOn</code></td>
-            <td style="text-align:center;"><code>poweredOff</code></td>
-            <td style="text-align:center;"><code>suspended</code></td>
+            <th style="text-align:center;">Power On / Resume</th>
+            <th style="text-align:center;">Power Off</th>
+            <th style="text-align:center;">Suspend</th>
+            <th style="text-align:center;">Restart</th>
         </tr>
         <tr>
-            <td style="text-align:center;"><code>poweredOn</code></td>
+            <th style="text-align:center;"><code>poweredOn</code></th>
+            <td style="text-align:center;"><code>NA</code></td>
             <td style="text-align:center;">✓</td>
             <td style="text-align:center;">✓</td>
             <td style="text-align:center;">✓</td>
         </tr>
         <tr>
-            <td style="text-align:center;"><code>poweredOff</code></td>
+            <th style="text-align:center;"><code>poweredOff</code></th>
             <td style="text-align:center;">✓</td>
-            <td style="text-align:center;">✓</td>
-            <td style="text-align:center;">✓ (when <code>spec.powerOffMode</code> is <code>hard</code>)</td>
+            <td style="text-align:center;"><code>NA</code></td>
+            <td style="text-align:center;">✓<br /><em>if <code>spec.powerOffMode: hard</code></em></td>
+            <td style="text-align:center;">❌</td>
         </tr>
         <tr>
-            <td style="text-align:center;"><code>suspended</code></td>
+            <th style="text-align:center;"><code>suspended</code></th>
             <td style="text-align:center;">✓</td>
-            <td style="text-align:center;"></td>
-            <td style="text-align:center;">✓</td>
+            <td style="text-align:center;">❌</td>
+            <td style="text-align:center;"><code>NA</code></td>
+            <td style="text-align:center;">❌</td>
         </tr>
     </tbody>
 </table>
 
-## Power Off and Suspend Mode
 
-The fields `spec.powerOffMode` and `spec.suspendMode` control how a VM is powered off and/or suspended:
+## Power Op Mode
 
-!!! note "Default Power Off & Suspend Mode"
+The fields `spec.powerOffMode`, `spec.suspendMode`, and `spec.restartMode` control how a VM is powered off, suspended, and restarted:
 
-    Please note that the default mode for power off & suspend is changing in v1alpha2 to `TrySoft`. This should not impact users still managing resources using v1alpha1.
+!!! note "Default Power Op Mode"
+
+    Please note that the default power op mode is changing in v1alpha2 to `TrySoft`. This should not impact users still managing resources using v1alpha1.
 
 | Mode | Description | Default |
 |-------------|-------------|:-----------------:|
-| `hard` | Halts or suspends the VM with no interaction with the guest | ✓ |
-| `soft` | The guest is shutdown or suspended gracefully (requires VM Tools) |
-| `trySoft` | Attempts a graceful shutdown/standby if VM Tools is present, otherwise falls back to a hard operation the VM has not achieved the desired power state after five minutes. |
+| `hard` | Halts, suspends, or restarts the VM with no interaction with the guest | ✓ |
+| `soft` | The guest is shutdown, suspended, or restarted gracefully (requires VM Tools) |
+| `trySoft` | Attempts a graceful shutdown/standby/restart if VM Tools is present, otherwise falls back to a hard operation the VM has not achieved the desired power state after five minutes. |
+

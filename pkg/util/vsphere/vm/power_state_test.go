@@ -6,6 +6,7 @@ package vm_test
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -22,7 +23,27 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
+//nolint:gocyclo
 func powerStateTests() {
+	var (
+		mutateContextFn func(context.Context) context.Context
+		delayTask       = func(
+			ctx context.Context,
+			taskName string,
+			taskDelay, softTimeout time.Duration) context.Context {
+
+			simulator.TaskDelay.MethodDelay[taskName] = int(taskDelay.Milliseconds())
+			simulator.TaskDelay.MethodDelay["LockHandoff"] = 0 // don't lock vm during the delay
+			return context.WithValue(ctx, vmutilInternal.SoftTimeoutKey, softTimeout)
+		}
+	)
+
+	BeforeEach(func() {
+		mutateContextFn = func(ctx context.Context) context.Context {
+			return ctx
+		}
+	})
+
 	Context("ParsePowerOpMode", func() {
 		It("should return empty string for unknown power op", func() {
 			Expect(vmutil.ParsePowerOpMode("")).To(Equal(vmutil.PowerOpBehavior(0)))
@@ -79,50 +100,32 @@ func powerStateTests() {
 			mgdObj                            mo.VirtualMachine
 			obj                               *object.VirtualMachine
 			expectedErr                       error
-			expectedResult                    vmutil.SetPowerStateResult
-			fetchCurrentPowerState            bool
+			expectedResult                    vmutil.PowerOpResult
+			fetchProperties                   bool
 			powerOpBehavior                   vmutil.PowerOpBehavior
 			initialPowerState                 types.VirtualMachinePowerState
 			desiredPowerState                 types.VirtualMachinePowerState
 			skipPostSetPowerStateVerification bool
-			mutateContextFn                   func(context.Context) context.Context
-			delayTask                         = func(
-				ctx context.Context,
-				taskName string,
-				taskDelay, softTimeout time.Duration) context.Context {
-
-				simulator.TaskDelay.MethodDelay[taskName] = int(taskDelay.Milliseconds())
-				return context.WithValue(ctx, vmutilInternal.SoftTimeoutKey, softTimeout)
-			}
 		)
 
 		BeforeEach(func() {
 			ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
-			mgdObj = mo.VirtualMachine{
-				ManagedEntity: mo.ManagedEntity{
-					ExtensibleManagedObject: mo.ExtensibleManagedObject{
-						Self: types.ManagedObjectReference{
-							Type:  "VirtualMachine",
-							Value: "vm-44",
-						},
-					},
-				},
-			}
+			mgdObj = vmutil.ManagedObjectFromMoRef(types.ManagedObjectReference{
+				Type:  "VirtualMachine",
+				Value: "vm-44",
+			})
 			simulator.TaskDelay.MethodDelay = map[string]int{}
 			obj = object.NewVirtualMachine(ctx.VCClient.Client, mgdObj.Self)
 			expectedResult = 0                                          // default
 			expectedErr = nil                                           // default
-			fetchCurrentPowerState = true                               // default
+			fetchProperties = true                                      // default
 			initialPowerState = types.VirtualMachinePowerStatePoweredOn // default
-			mutateContextFn = func(ctx context.Context) context.Context {
-				return ctx
-			}
 		})
 
 		JustBeforeEach(func() {
 			var (
 				err                error
-				result             vmutil.SetPowerStateResult
+				result             vmutil.PowerOpResult
 				observedPowerState types.VirtualMachinePowerState
 			)
 
@@ -148,7 +151,7 @@ func powerStateTests() {
 				mutateContextFn(logr.NewContext(ctx, suite.GetLogger())),
 				ctx.VCClient.Client,
 				mgdObj,
-				fetchCurrentPowerState,
+				fetchProperties,
 				desiredPowerState,
 				powerOpBehavior)
 
@@ -182,18 +185,18 @@ func powerStateTests() {
 				powerOpBehavior = vmutil.PowerOpBehaviorHard
 				mgdObj.Self.Value = "does-not-exist"
 				initialPowerState = ""
-				expectedErr = errors.New("failed to retrieve power state ServerFaultCode: The object has already been deleted or has not been completely created")
+				expectedErr = errors.New("failed to retrieve properties ServerFaultCode: The object has already been deleted or has not been completely created")
 			})
 			Context("and the current power state is cached in the managed object", func() {
 				BeforeEach(func() {
 					mgdObj.Summary.Runtime.PowerState = types.VirtualMachinePowerStatePoweredOn
 				})
-				Context("and fetchCurrentPowerState is true", func() {
+				Context("and fetchProperties is true", func() {
 					It("a power op should return an error", func() {})
 				})
-				Context("and fetchCurrentPowerState is false", func() {
+				Context("and fetchProperties is false", func() {
 					BeforeEach(func() {
-						fetchCurrentPowerState = false
+						fetchProperties = false
 						expectedErr = errors.New("failed to invoke hard power op for poweredOff ServerFaultCode: managed object not found: VirtualMachine:does-not-exist")
 					})
 					It("a power op should return an error", func() {})
@@ -203,12 +206,12 @@ func powerStateTests() {
 				BeforeEach(func() {
 					mgdObj.Summary.Runtime.PowerState = ""
 				})
-				Context("and fetchCurrentPowerState is true", func() {
+				Context("and fetchProperties is true", func() {
 					It("a power op should return an error", func() {})
 				})
-				Context("and fetchCurrentPowerState is false", func() {
+				Context("and fetchProperties is false", func() {
 					BeforeEach(func() {
-						fetchCurrentPowerState = false
+						fetchProperties = false
 					})
 					It("a power op should return an error", func() {})
 				})
@@ -218,7 +221,7 @@ func powerStateTests() {
 		When("Powering on a VM", func() {
 			BeforeEach(func() {
 				desiredPowerState = types.VirtualMachinePowerStatePoweredOn
-				expectedResult = vmutil.SetPowerStateResultChanged
+				expectedResult = vmutil.PowerOpResultChanged
 			})
 			Context("that is powered off", func() {
 				BeforeEach(func() {
@@ -228,13 +231,13 @@ func powerStateTests() {
 					BeforeEach(func() {
 						mgdObj.Summary.Runtime.PowerState = initialPowerState
 					})
-					Context("and fetchCurrentPowerState is false", func() {
+					Context("and fetchProperties is false", func() {
 						BeforeEach(func() {
-							fetchCurrentPowerState = false
+							fetchProperties = false
 						})
 						It("should power on the VM", func() {})
 					})
-					Context("and fetchCurrentPowerState is true", func() {
+					Context("and fetchProperties is true", func() {
 						It("should power on the VM", func() {})
 					})
 				})
@@ -242,15 +245,15 @@ func powerStateTests() {
 					BeforeEach(func() {
 						mgdObj.Summary.Runtime.PowerState = desiredPowerState
 					})
-					Context("and fetchCurrentPowerState is false", func() {
+					Context("and fetchProperties is false", func() {
 						BeforeEach(func() {
-							fetchCurrentPowerState = false
-							expectedResult = vmutil.SetPowerStateResultNone
+							fetchProperties = false
+							expectedResult = vmutil.PowerOpResultNone
 							skipPostSetPowerStateVerification = true
 						})
 						It("should not power on the VM because it thinks it already is", func() {})
 					})
-					Context("and fetchCurrentPowerState is true", func() {
+					Context("and fetchProperties is true", func() {
 						It("should power on the VM", func() {})
 					})
 				})
@@ -269,13 +272,13 @@ func powerStateTests() {
 					BeforeEach(func() {
 						mgdObj.Summary.Runtime.PowerState = initialPowerState
 					})
-					Context("and fetchCurrentPowerState is false", func() {
+					Context("and fetchProperties is false", func() {
 						BeforeEach(func() {
-							fetchCurrentPowerState = false
+							fetchProperties = false
 						})
 						It("should resume the VM", func() {})
 					})
-					Context("and fetchCurrentPowerState is true", func() {
+					Context("and fetchProperties is true", func() {
 						It("should resume the VM", func() {})
 					})
 				})
@@ -283,15 +286,15 @@ func powerStateTests() {
 					BeforeEach(func() {
 						mgdObj.Summary.Runtime.PowerState = desiredPowerState
 					})
-					Context("and fetchCurrentPowerState is false", func() {
+					Context("and fetchProperties is false", func() {
 						BeforeEach(func() {
-							fetchCurrentPowerState = false
-							expectedResult = vmutil.SetPowerStateResultNone
+							fetchProperties = false
+							expectedResult = vmutil.PowerOpResultNone
 							skipPostSetPowerStateVerification = true
 						})
 						It("should not resume the VM because it thinks it already is", func() {})
 					})
-					Context("and fetchCurrentPowerState is true", func() {
+					Context("and fetchProperties is true", func() {
 						It("should resume on the VM", func() {})
 					})
 				})
@@ -315,19 +318,19 @@ func powerStateTests() {
 				Context("using hard off", func() {
 					BeforeEach(func() {
 						powerOpBehavior = vmutil.PowerOpBehaviorHard
-						expectedResult = vmutil.SetPowerStateResultChangedHard
+						expectedResult = vmutil.PowerOpResultChangedHard
 					})
 					Context("and the correct power state is cached in the managed object", func() {
 						BeforeEach(func() {
 							mgdObj.Summary.Runtime.PowerState = initialPowerState
 						})
-						Context("and fetchCurrentPowerState is false", func() {
+						Context("and fetchProperties is false", func() {
 							BeforeEach(func() {
-								fetchCurrentPowerState = false
+								fetchProperties = false
 							})
 							It("should power off the VM", func() {})
 						})
-						Context("and fetchCurrentPowerState is true", func() {
+						Context("and fetchProperties is true", func() {
 							It("should power off the VM", func() {})
 						})
 					})
@@ -335,15 +338,15 @@ func powerStateTests() {
 						BeforeEach(func() {
 							mgdObj.Summary.Runtime.PowerState = desiredPowerState
 						})
-						Context("and fetchCurrentPowerState is false", func() {
+						Context("and fetchProperties is false", func() {
 							BeforeEach(func() {
-								fetchCurrentPowerState = false
-								expectedResult = vmutil.SetPowerStateResultNone
+								fetchProperties = false
+								expectedResult = vmutil.PowerOpResultNone
 								skipPostSetPowerStateVerification = true
 							})
 							It("should not power off the VM because it thinks it already is", func() {})
 						})
-						Context("and fetchCurrentPowerState is true", func() {
+						Context("and fetchProperties is true", func() {
 							It("should power off the VM", func() {})
 						})
 					})
@@ -357,19 +360,19 @@ func powerStateTests() {
 				Context("using soft off", func() {
 					BeforeEach(func() {
 						powerOpBehavior = vmutil.PowerOpBehaviorSoft
-						expectedResult = vmutil.SetPowerStateResultChangedSoft
+						expectedResult = vmutil.PowerOpResultChangedSoft
 					})
 					Context("and the correct power state is cached in the managed object", func() {
 						BeforeEach(func() {
 							mgdObj.Summary.Runtime.PowerState = initialPowerState
 						})
-						Context("and fetchCurrentPowerState is false", func() {
+						Context("and fetchProperties is false", func() {
 							BeforeEach(func() {
-								fetchCurrentPowerState = false
+								fetchProperties = false
 							})
 							It("should power off the VM", func() {})
 						})
-						Context("and fetchCurrentPowerState is true", func() {
+						Context("and fetchProperties is true", func() {
 							It("should power off the VM", func() {})
 						})
 					})
@@ -377,15 +380,15 @@ func powerStateTests() {
 						BeforeEach(func() {
 							mgdObj.Summary.Runtime.PowerState = desiredPowerState
 						})
-						Context("and fetchCurrentPowerState is false", func() {
+						Context("and fetchProperties is false", func() {
 							BeforeEach(func() {
-								fetchCurrentPowerState = false
-								expectedResult = vmutil.SetPowerStateResultNone
+								fetchProperties = false
+								expectedResult = vmutil.PowerOpResultNone
 								skipPostSetPowerStateVerification = true
 							})
 							It("should not power off the VM because it thinks it already is", func() {})
 						})
-						Context("and fetchCurrentPowerState is true", func() {
+						Context("and fetchProperties is true", func() {
 							It("should power off the VM", func() {})
 						})
 					})
@@ -399,19 +402,19 @@ func powerStateTests() {
 				Context("using try soft off", func() {
 					BeforeEach(func() {
 						powerOpBehavior = vmutil.PowerOpBehaviorTrySoft
-						expectedResult = vmutil.SetPowerStateResultChangedSoft
+						expectedResult = vmutil.PowerOpResultChangedSoft
 					})
 					Context("and the correct power state is cached in the managed object", func() {
 						BeforeEach(func() {
 							mgdObj.Summary.Runtime.PowerState = initialPowerState
 						})
-						Context("and fetchCurrentPowerState is false", func() {
+						Context("and fetchProperties is false", func() {
 							BeforeEach(func() {
-								fetchCurrentPowerState = false
+								fetchProperties = false
 							})
 							It("should power off the VM", func() {})
 						})
-						Context("and fetchCurrentPowerState is true", func() {
+						Context("and fetchProperties is true", func() {
 							It("should power off the VM", func() {})
 						})
 					})
@@ -419,15 +422,15 @@ func powerStateTests() {
 						BeforeEach(func() {
 							mgdObj.Summary.Runtime.PowerState = desiredPowerState
 						})
-						Context("and fetchCurrentPowerState is false", func() {
+						Context("and fetchProperties is false", func() {
 							BeforeEach(func() {
-								fetchCurrentPowerState = false
-								expectedResult = vmutil.SetPowerStateResultNone
+								fetchProperties = false
+								expectedResult = vmutil.PowerOpResultNone
 								skipPostSetPowerStateVerification = true
 							})
 							It("should not power off the VM because it thinks it already is", func() {})
 						})
-						Context("and fetchCurrentPowerState is true", func() {
+						Context("and fetchProperties is true", func() {
 							It("should power off the VM", func() {})
 						})
 					})
@@ -439,8 +442,7 @@ func powerStateTests() {
 					})
 					Context("and waiting for the power state times out", func() {
 						BeforeEach(func() {
-							Skip("TODO(akutz) vC Sim ShutdownGuest delay not working as expected")
-							expectedResult = vmutil.SetPowerStateResultChangedHard
+							expectedResult = vmutil.PowerOpResultChangedHard
 							mutateContextFn = func(ctx context.Context) context.Context {
 								return delayTask(ctx, "ShutdownGuest", 1*time.Second, 500*time.Millisecond)
 							}
@@ -456,19 +458,19 @@ func powerStateTests() {
 				Context("using hard off", func() {
 					BeforeEach(func() {
 						powerOpBehavior = vmutil.PowerOpBehaviorHard
-						expectedResult = vmutil.SetPowerStateResultChangedHard
+						expectedResult = vmutil.PowerOpResultChangedHard
 					})
 					Context("and the correct power state is cached in the managed object", func() {
 						BeforeEach(func() {
 							mgdObj.Summary.Runtime.PowerState = initialPowerState
 						})
-						Context("and fetchCurrentPowerState is false", func() {
+						Context("and fetchProperties is false", func() {
 							BeforeEach(func() {
-								fetchCurrentPowerState = false
+								fetchProperties = false
 							})
 							It("should power off the VM", func() {})
 						})
-						Context("and fetchCurrentPowerState is true", func() {
+						Context("and fetchProperties is true", func() {
 							It("should power off the VM", func() {})
 						})
 					})
@@ -476,14 +478,14 @@ func powerStateTests() {
 						BeforeEach(func() {
 							mgdObj.Summary.Runtime.PowerState = desiredPowerState
 						})
-						Context("and fetchCurrentPowerState is false", func() {
+						Context("and fetchProperties is false", func() {
 							BeforeEach(func() {
-								fetchCurrentPowerState = false
-								expectedResult = vmutil.SetPowerStateResultNone
+								fetchProperties = false
+								expectedResult = vmutil.PowerOpResultNone
 							})
 							It("should not power off the VM because it thinks it already is", func() {})
 						})
-						Context("and fetchCurrentPowerState is true", func() {
+						Context("and fetchProperties is true", func() {
 							It("should power off the VM", func() {})
 						})
 					})
@@ -503,13 +505,13 @@ func powerStateTests() {
 						BeforeEach(func() {
 							mgdObj.Summary.Runtime.PowerState = initialPowerState
 						})
-						Context("and fetchCurrentPowerState is false", func() {
+						Context("and fetchProperties is false", func() {
 							BeforeEach(func() {
-								fetchCurrentPowerState = false
+								fetchProperties = false
 							})
 							It("should fail because a suspended VM cannot be powered off with ShutdownGuest", func() {})
 						})
-						Context("and fetchCurrentPowerState is true", func() {
+						Context("and fetchProperties is true", func() {
 							It("should fail because a suspended VM cannot be powered off with ShutdownGuest", func() {})
 						})
 					})
@@ -517,16 +519,16 @@ func powerStateTests() {
 						BeforeEach(func() {
 							mgdObj.Summary.Runtime.PowerState = desiredPowerState
 						})
-						Context("and fetchCurrentPowerState is false", func() {
+						Context("and fetchProperties is false", func() {
 							BeforeEach(func() {
-								fetchCurrentPowerState = false
+								fetchProperties = false
 								expectedErr = nil
-								expectedResult = vmutil.SetPowerStateResultNone
+								expectedResult = vmutil.PowerOpResultNone
 								skipPostSetPowerStateVerification = true
 							})
 							It("should not power off the VM because it thinks it already is", func() {})
 						})
-						Context("and fetchCurrentPowerState is true", func() {
+						Context("and fetchProperties is true", func() {
 							It("should fail because a suspended VM cannot be powered off with ShutdownGuest", func() {})
 						})
 					})
@@ -547,19 +549,19 @@ func powerStateTests() {
 			Context("using hard standby", func() {
 				BeforeEach(func() {
 					powerOpBehavior = vmutil.PowerOpBehaviorHard
-					expectedResult = vmutil.SetPowerStateResultChangedHard
+					expectedResult = vmutil.PowerOpResultChangedHard
 				})
 				Context("and the correct power state is cached in the managed object", func() {
 					BeforeEach(func() {
 						mgdObj.Summary.Runtime.PowerState = initialPowerState
 					})
-					Context("and fetchCurrentPowerState is false", func() {
+					Context("and fetchProperties is false", func() {
 						BeforeEach(func() {
-							fetchCurrentPowerState = false
+							fetchProperties = false
 						})
 						It("should suspend the VM", func() {})
 					})
-					Context("and fetchCurrentPowerState is true", func() {
+					Context("and fetchProperties is true", func() {
 						It("should suspend the VM", func() {})
 					})
 				})
@@ -567,15 +569,15 @@ func powerStateTests() {
 					BeforeEach(func() {
 						mgdObj.Summary.Runtime.PowerState = desiredPowerState
 					})
-					Context("and fetchCurrentPowerState is false", func() {
+					Context("and fetchProperties is false", func() {
 						BeforeEach(func() {
-							fetchCurrentPowerState = false
-							expectedResult = vmutil.SetPowerStateResultNone
+							fetchProperties = false
+							expectedResult = vmutil.PowerOpResultNone
 							skipPostSetPowerStateVerification = true
 						})
 						It("should not suspend the VM because it thinks it already is", func() {})
 					})
-					Context("and fetchCurrentPowerState is true", func() {
+					Context("and fetchProperties is true", func() {
 						It("should power off the VM", func() {})
 					})
 				})
@@ -589,19 +591,19 @@ func powerStateTests() {
 			Context("using soft standby", func() {
 				BeforeEach(func() {
 					powerOpBehavior = vmutil.PowerOpBehaviorSoft
-					expectedResult = vmutil.SetPowerStateResultChangedSoft
+					expectedResult = vmutil.PowerOpResultChangedSoft
 				})
 				Context("and the correct power state is cached in the managed object", func() {
 					BeforeEach(func() {
 						mgdObj.Summary.Runtime.PowerState = initialPowerState
 					})
-					Context("and fetchCurrentPowerState is false", func() {
+					Context("and fetchProperties is false", func() {
 						BeforeEach(func() {
-							fetchCurrentPowerState = false
+							fetchProperties = false
 						})
 						It("should suspend the VM", func() {})
 					})
-					Context("and fetchCurrentPowerState is true", func() {
+					Context("and fetchProperties is true", func() {
 						It("should suspend the VM", func() {})
 					})
 				})
@@ -609,15 +611,15 @@ func powerStateTests() {
 					BeforeEach(func() {
 						mgdObj.Summary.Runtime.PowerState = desiredPowerState
 					})
-					Context("and fetchCurrentPowerState is false", func() {
+					Context("and fetchProperties is false", func() {
 						BeforeEach(func() {
-							fetchCurrentPowerState = false
-							expectedResult = vmutil.SetPowerStateResultNone
+							fetchProperties = false
+							expectedResult = vmutil.PowerOpResultNone
 							skipPostSetPowerStateVerification = true
 						})
 						It("should not suspend the VM because it thinks it already is", func() {})
 					})
-					Context("and fetchCurrentPowerState is true", func() {
+					Context("and fetchProperties is true", func() {
 						It("should suspend the VM", func() {})
 					})
 				})
@@ -631,19 +633,19 @@ func powerStateTests() {
 			Context("using try soft standby", func() {
 				BeforeEach(func() {
 					powerOpBehavior = vmutil.PowerOpBehaviorTrySoft
-					expectedResult = vmutil.SetPowerStateResultChangedSoft
+					expectedResult = vmutil.PowerOpResultChangedSoft
 				})
 				Context("and the correct power state is cached in the managed object", func() {
 					BeforeEach(func() {
 						mgdObj.Summary.Runtime.PowerState = initialPowerState
 					})
-					Context("and fetchCurrentPowerState is false", func() {
+					Context("and fetchProperties is false", func() {
 						BeforeEach(func() {
-							fetchCurrentPowerState = false
+							fetchProperties = false
 						})
 						It("should suspend the VM", func() {})
 					})
-					Context("and fetchCurrentPowerState is true", func() {
+					Context("and fetchProperties is true", func() {
 						It("should suspend the VM", func() {})
 					})
 				})
@@ -651,15 +653,15 @@ func powerStateTests() {
 					BeforeEach(func() {
 						mgdObj.Summary.Runtime.PowerState = desiredPowerState
 					})
-					Context("and fetchCurrentPowerState is false", func() {
+					Context("and fetchProperties is false", func() {
 						BeforeEach(func() {
-							fetchCurrentPowerState = false
-							expectedResult = vmutil.SetPowerStateResultNone
+							fetchProperties = false
+							expectedResult = vmutil.PowerOpResultNone
 							skipPostSetPowerStateVerification = true
 						})
 						It("should not suspend the VM because it thinks it already is", func() {})
 					})
-					Context("and fetchCurrentPowerState is true", func() {
+					Context("and fetchProperties is true", func() {
 						It("should suspend the VM", func() {})
 					})
 				})
@@ -671,13 +673,356 @@ func powerStateTests() {
 				})
 				Context("and waiting for the power state times out", func() {
 					BeforeEach(func() {
-						Skip("TODO(akutz) vC Sim StandbyGuest delay not working as expected")
-						expectedResult = vmutil.SetPowerStateResultChangedHard
+						expectedResult = vmutil.PowerOpResultChangedHard
 						mutateContextFn = func(ctx context.Context) context.Context {
 							return delayTask(ctx, "StandbyGuest", 1*time.Second, 500*time.Millisecond)
 						}
 					})
 					It("should suspend the VM using a hard op", func() {})
+				})
+			})
+		})
+	})
+
+	Context("Restart", func() {
+		var (
+			ctx                    *builder.TestContextForVCSim
+			mgdObj                 mo.VirtualMachine
+			obj                    *object.VirtualMachine
+			expectedErr            error
+			expectedResult         vmutil.PowerOpResult
+			expectedPowerState     types.VirtualMachinePowerState
+			fetchProperties        bool
+			desiredLastRestartTime time.Time
+			powerOpBehavior        vmutil.PowerOpBehavior
+			initialPowerState      types.VirtualMachinePowerState
+			initialLastRestartTime *time.Time
+			mutateContextFn        func(context.Context) context.Context
+		)
+
+		getLastRestartTime := func(
+			ctx context.Context,
+			obj *object.VirtualMachine) *time.Time {
+
+			var vm mo.VirtualMachine
+			Expect(obj.Properties(
+				ctx,
+				obj.Reference(),
+				[]string{"config.extraConfig"},
+				&vm)).To(Succeed())
+			t, err := vmutil.GetLastRestartTimeFromExtraConfig(ctx, vm.Config.ExtraConfig)
+			Expect(err).ToNot(HaveOccurred())
+			return t
+		}
+
+		setAndAssertLastRestartTime := func(
+			ctx context.Context,
+			obj *object.VirtualMachine,
+			lastRestartTime time.Time) {
+
+			task, err := obj.Reconfigure(ctx, types.VirtualMachineConfigSpec{
+				ExtraConfig: []types.BaseOptionValue{
+					&types.OptionValue{
+						Key:   vmutil.ExtraConfigKeyLastRestartTime,
+						Value: strconv.FormatInt(lastRestartTime.UnixNano(), 10),
+					},
+				},
+			})
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(task.Wait(ctx)).To(Succeed())
+			observedLastRestartTime := getLastRestartTime(ctx, obj)
+			Expect(observedLastRestartTime.UnixNano()).To(Equal(lastRestartTime.UnixNano()))
+		}
+
+		BeforeEach(func() {
+			ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
+			mgdObj = vmutil.ManagedObjectFromMoRef(types.ManagedObjectReference{
+				Type:  "VirtualMachine",
+				Value: "vm-44",
+			})
+			simulator.TaskDelay.MethodDelay = map[string]int{}
+			obj = object.NewVirtualMachine(ctx.VCClient.Client, mgdObj.Self)
+			expectedPowerState = types.VirtualMachinePowerStatePoweredOn // default
+			expectedResult = 0                                           // default
+			expectedErr = nil                                            // default
+			fetchProperties = true                                       // default
+			initialPowerState = types.VirtualMachinePowerStatePoweredOn  // default
+			initialLastRestartTime = nil                                 // default
+			mutateContextFn = func(ctx context.Context) context.Context {
+				return ctx
+			}
+		})
+
+		JustBeforeEach(func() {
+			var (
+				err                error
+				result             vmutil.PowerOpResult
+				observedPowerState types.VirtualMachinePowerState
+			)
+
+			if obj != nil && initialLastRestartTime != nil {
+				// Assign an initial lastRestartTime to the VM's ExtraConfig
+				// and assert that it was set correctly.
+				setAndAssertLastRestartTime(ctx, obj, *initialLastRestartTime)
+			}
+
+			if obj != nil && initialPowerState != "" {
+				observedPowerState, err = obj.PowerState(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				if observedPowerState != initialPowerState {
+					switch initialPowerState {
+					case types.VirtualMachinePowerStatePoweredOff:
+						_, err = obj.PowerOff(ctx)
+					case types.VirtualMachinePowerStatePoweredOn:
+						_, err = obj.PowerOn(ctx)
+					case types.VirtualMachinePowerStateSuspended:
+						_, err = obj.Suspend(ctx)
+					}
+					Expect(err).ToNot(HaveOccurred())
+					Expect(obj.WaitForPowerState(ctx, initialPowerState)).To(Succeed())
+				}
+			}
+
+			// The actual test
+			result, err = vmutil.RestartAndWait(
+				mutateContextFn(logr.NewContext(ctx, suite.GetLogger())),
+				ctx.VCClient.Client,
+				mgdObj,
+				fetchProperties,
+				desiredLastRestartTime,
+				powerOpBehavior)
+
+			e, a := expectedErr, err
+			switch {
+			case e != nil && a != nil:
+				Expect(a.Error()).To(Equal(e.Error()))
+			case e == nil && a != nil:
+				Fail("unexpected error occurred: " + a.Error())
+			case e != nil && a == nil:
+				Fail("expected error did not occur: " + e.Error())
+			case e == nil && a == nil:
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal(expectedResult))
+				observedPowerState, err = obj.PowerState(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(observedPowerState).To(Equal(expectedPowerState))
+
+				if result != vmutil.PowerOpResultNone && initialLastRestartTime != nil {
+					observedLastRestartTime := getLastRestartTime(ctx, obj)
+					Expect(observedLastRestartTime).ToNot(BeNil())
+					suite.GetLogger().Info("comparing last restart times",
+						"initialLastRestartTime", initialLastRestartTime.Format(time.RFC3339Nano),
+						"initialLastRestartTimeEpoch", initialLastRestartTime.UnixNano(),
+						"observedLastRestartTime", observedLastRestartTime.Format(time.RFC3339Nano),
+						"observedLastRestartTimeEpoch", observedLastRestartTime.UnixNano(),
+						"desiredLastRestartTime", desiredLastRestartTime.Format(time.RFC3339Nano),
+						"desiredLastRestartTimeEpoch", desiredLastRestartTime.UnixNano())
+					Expect(observedLastRestartTime.After(*initialLastRestartTime)).To(BeTrue())
+					Expect(observedLastRestartTime.Equal(desiredLastRestartTime)).To(BeTrue())
+				}
+			}
+		})
+
+		AfterEach(func() {
+			ctx.AfterEach()
+			ctx = nil
+		})
+
+		When("The VM does not exist", func() {
+			BeforeEach(func() {
+				powerOpBehavior = vmutil.PowerOpBehaviorHard
+				mgdObj.Self.Value = "does-not-exist"
+				initialPowerState = ""
+				expectedErr = errors.New("failed to retrieve properties ServerFaultCode: The object has already been deleted or has not been completely created")
+			})
+			Context("and the current power state is cached in the managed object", func() {
+				BeforeEach(func() {
+					mgdObj.Summary.Runtime.PowerState = types.VirtualMachinePowerStatePoweredOn
+				})
+				Context("and fetchProperties is true", func() {
+					It("a power op should return an error", func() {})
+				})
+				Context("and fetchProperties is false", func() {
+					BeforeEach(func() {
+						fetchProperties = false
+					})
+					It("a power op should return an error", func() {})
+				})
+			})
+			Context("and the current power state is not cached in the managed object", func() {
+				BeforeEach(func() {
+					mgdObj.Summary.Runtime.PowerState = ""
+				})
+				Context("and fetchProperties is true", func() {
+					It("a power op should return an error", func() {})
+				})
+				Context("and fetchProperties is false", func() {
+					BeforeEach(func() {
+						fetchProperties = false
+					})
+					It("a power op should return an error", func() {})
+				})
+			})
+			Context("and the lastRestartTime is cached in the managed object", func() {
+				BeforeEach(func() {
+					mgdObj.Config = &types.VirtualMachineConfigInfo{
+						ExtraConfig: []types.BaseOptionValue{
+							&types.OptionValue{
+								Key:   vmutil.ExtraConfigKeyLastRestartTime,
+								Value: strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
+							},
+						},
+					}
+				})
+				Context("and fetchProperties is true", func() {
+					It("a power op should return an error", func() {})
+				})
+				Context("and fetchProperties is false", func() {
+					BeforeEach(func() {
+						fetchProperties = false
+					})
+					It("a power op should return an error", func() {})
+				})
+			})
+			Context("and the lastRestartTime is not cached in the managed object", func() {
+				BeforeEach(func() {
+					mgdObj.Config = nil
+				})
+				Context("and fetchProperties is true", func() {
+					It("a power op should return an error", func() {})
+				})
+				Context("and fetchProperties is false", func() {
+					BeforeEach(func() {
+						fetchProperties = false
+					})
+					It("a power op should return an error", func() {})
+				})
+			})
+			Context("and the current power state and lastRestartTime are both cached in the managed object", func() {
+				BeforeEach(func() {
+					mgdObj.Summary.Runtime.PowerState = types.VirtualMachinePowerStatePoweredOn
+					mgdObj.Config = &types.VirtualMachineConfigInfo{
+						ExtraConfig: []types.BaseOptionValue{
+							&types.OptionValue{
+								Key:   vmutil.ExtraConfigKeyLastRestartTime,
+								Value: strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
+							},
+						},
+					}
+				})
+				Context("and fetchProperties is true", func() {
+					It("a power op should return an error", func() {})
+				})
+				Context("and fetchProperties is false", func() {
+					BeforeEach(func() {
+						fetchProperties = false
+						expectedErr = nil
+						expectedResult = vmutil.PowerOpResultNone
+					})
+					It("a power op should be a no-op since the current power state cannot be determined", func() {})
+				})
+			})
+			Context("and neither the current power state nor lastRestartTime are not cached in the managed object", func() {
+				BeforeEach(func() {
+					mgdObj.Summary.Runtime.PowerState = ""
+					mgdObj.Config = nil
+				})
+				Context("and fetchProperties is true", func() {
+					It("a power op should return an error", func() {})
+				})
+				Context("and fetchProperties is false", func() {
+					BeforeEach(func() {
+						fetchProperties = false
+					})
+					It("a power op should return an error", func() {})
+				})
+			})
+		})
+
+		When("Restarting a VM", func() {
+			var now time.Time
+
+			BeforeEach(func() {
+				now = time.Now().UTC().Add(-1 * time.Hour)
+				now := now // capture this
+				initialLastRestartTime = &now
+				desiredLastRestartTime = now.Add(1 * time.Minute)
+			})
+			Context("using hard restart", func() {
+				BeforeEach(func() {
+					powerOpBehavior = vmutil.PowerOpBehaviorHard
+					expectedResult = vmutil.PowerOpResultChangedHard
+				})
+
+				It("should restart the VM", func() {})
+
+				When("desired last restart time is older than last restart", func() {
+					BeforeEach(func() {
+						desiredLastRestartTime = now.Add(-1 * time.Minute)
+						expectedResult = vmutil.PowerOpResultNone
+					})
+					It("should not restart the VM", func() {})
+				})
+				When("desired last restart time is in the future", func() {
+					BeforeEach(func() {
+						desiredLastRestartTime = now.Add(10 * time.Hour)
+						expectedResult = vmutil.PowerOpResultNone
+					})
+					It("should not restart the VM", func() {})
+				})
+			})
+			Context("using soft restart", func() {
+				BeforeEach(func() {
+					powerOpBehavior = vmutil.PowerOpBehaviorSoft
+				})
+				Context("with tools not running", func() {
+					BeforeEach(func() {
+						expectedErr = errors.New("failed to soft restart vm ServerFaultCode: ToolsUnavailable")
+					})
+					It("should not restart the VM", func() {})
+				})
+				Context("with tools running", func() {
+					BeforeEach(func() {
+						expectedResult = vmutil.PowerOpResultChangedSoft
+						task, err := obj.Reconfigure(ctx, types.VirtualMachineConfigSpec{
+							ExtraConfig: []types.BaseOptionValue{
+								&types.OptionValue{
+									Key:   "SET.guest.toolsRunningStatus",
+									Value: types.VirtualMachineToolsRunningStatusGuestToolsRunning,
+								},
+							},
+						})
+						Expect(err).ShouldNot(HaveOccurred())
+						Expect(task.Wait(ctx)).To(Succeed())
+					})
+					It("should restart the VM", func() {})
+				})
+			})
+			Context("using try soft restart", func() {
+				BeforeEach(func() {
+					powerOpBehavior = vmutil.PowerOpBehaviorTrySoft
+				})
+				Context("with tools not running", func() {
+					BeforeEach(func() {
+						expectedResult = vmutil.PowerOpResultChangedHard
+					})
+					It("should not restart the VM", func() {})
+				})
+				Context("with tools running", func() {
+					BeforeEach(func() {
+						expectedResult = vmutil.PowerOpResultChangedSoft
+						task, err := obj.Reconfigure(ctx, types.VirtualMachineConfigSpec{
+							ExtraConfig: []types.BaseOptionValue{
+								&types.OptionValue{
+									Key:   "SET.guest.toolsRunningStatus",
+									Value: types.VirtualMachineToolsRunningStatusGuestToolsRunning,
+								},
+							},
+						})
+						Expect(err).ShouldNot(HaveOccurred())
+						Expect(task.Wait(ctx)).To(Succeed())
+					})
+					It("should restart the VM", func() {})
 				})
 			})
 		})

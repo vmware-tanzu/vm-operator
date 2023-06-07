@@ -4,9 +4,9 @@
 package virtualmachine
 
 import (
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -18,15 +18,9 @@ func DeleteVirtualMachine(
 	vcVM *object.VirtualMachine) error {
 
 	if _, err := vmutil.SetAndWaitOnPowerState(
-		vmCtx,
+		logr.NewContext(vmCtx, vmCtx.Logger),
 		vcVM.Client(),
-		mo.VirtualMachine{
-			ManagedEntity: mo.ManagedEntity{
-				ExtensibleManagedObject: mo.ExtensibleManagedObject{
-					Self: vcVM.Reference(),
-				},
-			},
-		},
+		vmutil.ManagedObjectFromObject(vcVM),
 		false,
 		types.VirtualMachinePowerStatePoweredOff,
 		vmutil.ParsePowerOpMode(string(vmCtx.VM.Spec.PowerOffMode))); err != nil {

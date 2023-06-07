@@ -401,6 +401,38 @@ type VirtualMachineSpec struct {
 	// +kubebuilder:default=hard
 	SuspendMode VirtualMachinePowerOpMode `json:"suspendMode,omitempty"`
 
+	// NextRestartTime may be used to restart the VM, in accordance with
+	// RestartMode, by setting the value of this field to "now"
+	// (case-insensitive).
+	//
+	// A mutating webhook changes this value to the current time (UTC), which
+	// the VM controller then uses to determine the VM should be restarted by
+	// comparing the value to the timestamp of the last time the VM was
+	// restarted.
+	//
+	// Please note it is not possible to schedule future restarts using this
+	// field. The only value that users may set is the string "now"
+	// (case-insensitive).
+	//
+	// +optional
+	NextRestartTime string `json:"nextRestartTime,omitempty"`
+
+	// RestartMode describes the desired behavior for restarting a VM when
+	// spec.nextRestartTime is set to "now" (case-insensitive).
+	//
+	// There are three, supported suspend modes: hard, soft, and
+	// trySoft. The first mode, hard, is where vSphere resets the VM without any
+	// interaction inside of the guest. The soft mode requires the VM's guest to
+	// have VM Tools installed and asks the guest to restart the VM. Its
+	// variant, trySoft, first attempts a soft restart, and if that fails or
+	// does not complete within five minutes, the VM is hard reset.
+	//
+	// If omitted, the mode defaults to hard.
+	//
+	// +optional
+	// +kubebuilder:default=hard
+	RestartMode VirtualMachinePowerOpMode `json:"restartMode,omitempty"`
+
 	// Ports is currently unused and can be considered deprecated.
 	// +optional
 	Ports []VirtualMachinePort `json:"ports,omitempty"`
@@ -552,6 +584,10 @@ type VirtualMachineStatus struct {
 	// Please note this field may be empty when the cluster is not zone-aware.
 	// +optional
 	Zone string `json:"zone,omitempty"`
+
+	// LastRestartTime describes the last time the VM was restarted.
+	// +optional
+	LastRestartTime *metav1.Time `json:"lastRestartTime,omitempty"`
 }
 
 func (vm *VirtualMachine) GetConditions() Conditions {

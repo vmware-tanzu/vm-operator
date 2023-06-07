@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/extensions/table"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/mutation"
@@ -25,3 +26,17 @@ func TestWebhook(t *testing.T) {
 var _ = BeforeSuite(suite.BeforeSuite)
 
 var _ = AfterSuite(suite.AfterSuite)
+
+func newInvalidNextRestartTimeTableEntries(description string) []table.TableEntry {
+	return []table.TableEntry{
+		table.Entry(description, "5m"),
+		table.Entry(description, "1s"),
+		table.Entry(description, "2h45m"),
+		table.Entry(description, "1.5h"),
+		table.Entry(description, "2023-06-01T13:00:00Z"),
+		table.Entry(description, "2023-06-01T13:00:00-06:00"),
+		table.Entry(description, "2023-06-01T13:00:00+05:30"),
+		table.Entry(description, "hello"),
+		table.Entry(description, "world"),
+	}
+}

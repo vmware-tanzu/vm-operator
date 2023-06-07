@@ -164,6 +164,16 @@ spec:
                       type: object
                   type: object
                 type: array
+              nextRestartTime:
+                description: "NextRestartTime may be used to restart the VM, in accordance
+                  with RestartMode, by setting the value of this field to \"now\"
+                  (case-insensitive). \n A mutating webhook changes this value to
+                  the current time (UTC), which the VM controller then uses to determine
+                  the VM should be restarted by comparing the value to the timestamp
+                  of the last time the VM was restarted. \n Please note it is not
+                  possible to schedule future restarts using this field. The only
+                  value that users may set is the string \"now\" (case-insensitive)."
+                type: string
               ports:
                 description: Ports is currently unused and can be considered deprecated.
                 items:
@@ -272,6 +282,22 @@ spec:
               resourcePolicyName:
                 description: ResourcePolicyName describes the name of a VirtualMachineSetResourcePolicy
                   to be used when creating the VirtualMachine instance.
+                type: string
+              restartMode:
+                default: hard
+                description: "RestartMode describes the desired behavior for restarting
+                  a VM when spec.nextRestartTime is set to \"now\" (case-insensitive).
+                  \n There are three, supported suspend modes: hard, soft, and trySoft.
+                  The first mode, hard, is where vSphere resets the VM without any
+                  interaction inside of the guest. The soft mode requires the VM's
+                  guest to have VM Tools installed and asks the guest to restart the
+                  VM. Its variant, trySoft, first attempts a soft restart, and if
+                  that fails or does not complete within five minutes, the VM is hard
+                  reset. \n If omitted, the mode defaults to hard."
+                enum:
+                - hard
+                - soft
+                - trySoft
                 type: string
               storageClass:
                 description: StorageClass describes the name of a StorageClass that
@@ -476,6 +502,10 @@ spec:
               instanceUUID:
                 description: InstanceUUID describes the unique instance UUID provided
                   by the underlying infrastructure provider, such as vSphere.
+                type: string
+              lastRestartTime:
+                description: LastRestartTime describes the last time the VM was restarted.
+                format: date-time
                 type: string
               networkInterfaces:
                 description: NetworkInterfaces describes a list of current status

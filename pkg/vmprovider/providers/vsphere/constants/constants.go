@@ -57,6 +57,8 @@ const (
 
 	// MinSupportedHWVersionForPVC is the supported virtual hardware version for persistent volumes.
 	MinSupportedHWVersionForPVC = 15
+	// MinSupportedHWVersionForPCIPassthruDevices is the supported virtual hardware version for NVidia PCI devices.
+	MinSupportedHWVersionForPCIPassthruDevices = 17
 
 	// FirmwareOverrideAnnotation is the annotation key used for firmware override.
 	FirmwareOverrideAnnotation = pkg.VMOperatorKey + "/firmware"

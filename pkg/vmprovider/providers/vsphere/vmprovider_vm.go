@@ -531,7 +531,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 		return nil, err
 	}
 
-	vmImageStatus, clUUID, err := GetVMImageStatusAndContentLibraryUUID(vmCtx, vs.k8sClient)
+	vmImageSpec, vmImageStatus, clUUID, err := GetVMImageAndContentLibraryUUID(vmCtx, vs.k8sClient)
 	if err != nil {
 		return nil, err
 	}
@@ -548,6 +548,7 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 
 	createArgs := &vmCreateArgs{}
 	createArgs.VMClass = vmClass
+	createArgs.VMImageSpec = vmImageSpec
 	createArgs.VMImageStatus = vmImageStatus
 	createArgs.ContentLibraryUUID = clUUID
 	createArgs.VMMetadata = vmMD
@@ -643,6 +644,15 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		createArgs.StorageClassesToIDs,
 		createArgs.VMImageStatus.Firmware,
 		vmClassConfigSpec)
+
+	// Set a hardware version in the create config spec when VMs are created with PVCs/PCI(vGPU and DDPIO) devices
+	// and VMClass config spec has an empty hardware version.
+	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && createArgs.ConfigSpec.Version == "" {
+		if version := HardwareVersionForPVCandPCIDevices(createArgs.VMImageSpec.HardwareVersion,
+			createArgs.ConfigSpec, HasPVC(vmCtx.VM.Spec)); version != 0 {
+			createArgs.ConfigSpec.Version = fmt.Sprintf("vmx-%d", version)
+		}
+	}
 }
 
 func (vs *vSphereVMProvider) vmCreateValidateArgs(
@@ -730,7 +740,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	imageFirmware := ""
 	// Only get VM image when this is the VM first boot.
 	if isVMFirstBoot(vmCtx) {
-		vmImageStatus, _, err := GetVMImageStatusAndContentLibraryUUID(vmCtx, vs.k8sClient)
+		_, vmImageStatus, _, err := GetVMImageAndContentLibraryUUID(vmCtx, vs.k8sClient)
 		if err != nil {
 			return nil, err
 		}

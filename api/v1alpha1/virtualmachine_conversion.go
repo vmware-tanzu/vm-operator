@@ -434,6 +434,8 @@ func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	out.PowerState = convert_v1alpha1_VirtualMachinePowerState_To_v1alpha2_VirtualMachinePowerState(in.PowerState)
 	out.PowerOffMode = convert_v1alpha1_VirtualMachinePowerOpMode_To_v1alpha2_VirtualMachinePowerOpMode(in.PowerOffMode)
 	out.SuspendMode = convert_v1alpha1_VirtualMachinePowerOpMode_To_v1alpha2_VirtualMachinePowerOpMode(in.SuspendMode)
+	out.NextRestartTime = in.NextRestartTime
+	out.RestartMode = convert_v1alpha1_VirtualMachinePowerOpMode_To_v1alpha2_VirtualMachinePowerOpMode(in.RestartMode)
 	out.Bootstrap = convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(in.VmMetadata)
 
 	for i, networkInterface := range in.NetworkInterfaces {
@@ -458,6 +460,8 @@ func Convert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(
 	out.PowerState = convert_v1alpha2_VirtualMachinePowerState_To_v1alpha1_VirtualMachinePowerState(in.PowerState)
 	out.PowerOffMode = convert_v1alpha2_VirtualMachinePowerOpMode_To_v1alpha1_VirtualMachinePowerOpMode(in.PowerOffMode)
 	out.SuspendMode = convert_v1alpha2_VirtualMachinePowerOpMode_To_v1alpha1_VirtualMachinePowerOpMode(in.SuspendMode)
+	out.NextRestartTime = in.NextRestartTime
+	out.RestartMode = convert_v1alpha2_VirtualMachinePowerOpMode_To_v1alpha1_VirtualMachinePowerOpMode(in.RestartMode)
 	out.VmMetadata = convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(in.Bootstrap)
 
 	for _, networkInterfaceSpec := range in.Network.Interfaces {
@@ -498,6 +502,7 @@ func Convert_v1alpha1_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 
 	out.PowerState = convert_v1alpha1_VirtualMachinePowerState_To_v1alpha2_VirtualMachinePowerState(in.PowerState)
 	out.Network = convert_v1alpha1_Network_To_v1alpha2_NetworkStatus(in.VmIp, in.NetworkInterfaces)
+	out.LastRestartTime = in.LastRestartTime
 
 	// WARNING: in.Phase requires manual conversion: does not exist in peer-type
 
@@ -509,6 +514,7 @@ func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 
 	out.PowerState = convert_v1alpha2_VirtualMachinePowerState_To_v1alpha1_VirtualMachinePowerState(in.PowerState)
 	out.VmIp, out.NetworkInterfaces = convert_v1alpha2_NetworkStatus_To_v1alpha1_Network(in.Network)
+	out.LastRestartTime = in.LastRestartTime
 
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type
 	// WARNING: in.Class requires manual conversion: does not exist in peer-type

@@ -6,6 +6,7 @@ package validation_test
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -220,6 +221,7 @@ func unitTestsValidateCreate() {
 		isSysprepFeatureEnabled           bool
 		isSysprepTransportUsed            bool
 		powerState                        vmopv1.VirtualMachinePowerState
+		nextRestartTime                   string
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -368,6 +370,7 @@ func unitTestsValidateCreate() {
 		}
 
 		ctx.vm.Spec.PowerState = args.powerState
+		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 
 		// Named network provider
 		undoNamedNetProvider := initNamedNetworkProviderConfig(
@@ -410,6 +413,8 @@ func unitTestsValidateCreate() {
 	specPath := field.NewPath("spec")
 	netIntPath := specPath.Child("networkInterfaces")
 	volPath := specPath.Child("volumes")
+	nextRestartTimePath := specPath.Child("nextRestartTime")
+	now := time.Now().UTC()
 
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
@@ -491,6 +496,17 @@ func unitTestsValidateCreate() {
 
 		Entry("should disallow creating VM with suspended power state", createArgs{powerState: vmopv1.VirtualMachineSuspended}, false,
 			field.Invalid(specPath.Child("powerState"), vmopv1.VirtualMachineSuspended, "cannot set a new VM's power state to suspended").Error(), nil),
+
+		Entry("should allow creating VM with empty nextRestartTime value", createArgs{}, true, nil, nil),
+		Entry("should disallow creating VM with non-empty, valid nextRestartTime value", createArgs{
+			nextRestartTime: now.Format(time.RFC3339Nano)}, false,
+			field.Invalid(nextRestartTimePath, now.Format(time.RFC3339Nano), "cannot restart VM on create").Error(), nil),
+		Entry("should disallow creating VM with non-empty, valid nextRestartTime value if mutation webhooks were running",
+			createArgs{nextRestartTime: "now"}, false,
+			field.Invalid(nextRestartTimePath, "now", "cannot restart VM on create").Error(), nil),
+		Entry("should disallow creating VM with non-empty, invalid nextRestartTime value",
+			createArgs{nextRestartTime: "hello"}, false,
+			field.Invalid(nextRestartTimePath, "hello", "cannot restart VM on create").Error(), nil),
 	)
 }
 
@@ -516,6 +532,8 @@ func unitTestsValidateUpdate() {
 		oldPowerState                   vmopv1.VirtualMachinePowerState
 		newPowerState                   vmopv1.VirtualMachinePowerState
 		newPowerStateEmptyAllowed       bool
+		nextRestartTime                 string
+		lastRestartTime                 string
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -561,6 +579,9 @@ func unitTestsValidateUpdate() {
 			ctx.vm.Spec.PowerState = args.newPowerState
 		}
 
+		ctx.oldVM.Spec.NextRestartTime = args.lastRestartTime
+		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
+
 		// Named network provider
 		undoNamedNetProvider := initNamedNetworkProviderConfig(
 			ctx,
@@ -600,6 +621,7 @@ func unitTestsValidateUpdate() {
 	msg := "field is immutable"
 	volumesPath := field.NewPath("spec", "volumes")
 	powerStatePath := field.NewPath("spec", "powerState")
+	nextRestartTimePath := field.NewPath("spec", "nextRestartTime")
 
 	DescribeTable("update table", validateUpdate,
 		// Immutable Fields
@@ -637,6 +659,20 @@ func unitTestsValidateUpdate() {
 			nil, nil),
 		Entry("should disallow updating powered off VM to suspended", updateArgs{oldPowerState: vmopv1.VirtualMachinePoweredOff, newPowerState: vmopv1.VirtualMachineSuspended}, false,
 			field.Invalid(powerStatePath, vmopv1.VirtualMachineSuspended, "cannot suspend a VM that is powered off").Error(), nil),
+
+		Entry("should allow updating VM with non-empty, valid nextRestartTime value", updateArgs{
+			nextRestartTime: time.Now().UTC().Format(time.RFC3339Nano)}, true, nil, nil),
+		Entry("should allow updating VM with empty nextRestartTime value if existing value is also empty",
+			updateArgs{nextRestartTime: ""}, true, nil, nil),
+		Entry("should disallow updating VM with empty nextRestartTime value",
+			updateArgs{lastRestartTime: time.Now().UTC().Format(time.RFC3339Nano), nextRestartTime: ""}, false,
+			field.Invalid(nextRestartTimePath, "", "must be formatted as RFC3339Nano").Error(), nil),
+		Entry("should disallow updating VM with non-empty, valid nextRestartTime value if mutation webhooks were running",
+			updateArgs{nextRestartTime: "now"}, false,
+			field.Invalid(nextRestartTimePath, "now", "mutation webhooks are required to restart VM").Error(), nil),
+		Entry("should disallow updating VM with non-empty, invalid nextRestartTime value ",
+			updateArgs{nextRestartTime: "hello"}, false,
+			field.Invalid(nextRestartTimePath, "hello", "must be formatted as RFC3339Nano").Error(), nil),
 	)
 
 	When("the update is performed while object deletion", func() {

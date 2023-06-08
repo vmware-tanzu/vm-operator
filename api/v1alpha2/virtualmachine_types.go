@@ -240,6 +240,38 @@ type VirtualMachineSpec struct {
 	// +kubebuilder:default=TrySoft
 	SuspendMode VirtualMachinePowerOpMode `json:"suspendMode,omitempty"`
 
+	// NextRestartTime may be used to restart the VM, in accordance with
+	// RestartMode, by setting the value of this field to "now"
+	// (case-insensitive).
+	//
+	// A mutating webhook changes this value to the current time (UTC), which
+	// the VM controller then uses to determine the VM should be restarted by
+	// comparing the value to the timestamp of the last time the VM was
+	// restarted.
+	//
+	// Please note it is not possible to schedule future restarts using this
+	// field. The only value that users may set is the string "now"
+	// (case-insensitive).
+	//
+	// +optional
+	NextRestartTime string `json:"nextRestartTime,omitempty"`
+
+	// RestartMode describes the desired behavior for restarting a VM when
+	// spec.nextRestartTime is set to "now" (case-insensitive).
+	//
+	// There are three, supported suspend modes: Hard, Soft, and
+	// TrySoft. The first mode, Hard, is where vSphere resets the VM without any
+	// interaction inside of the guest. The Soft mode requires the VM's guest to
+	// have VM Tools installed and asks the guest to restart the VM. Its
+	// variant, TrySoft, first attempts a soft restart, and if that fails or
+	// does not complete within five minutes, the VM is hard reset.
+	//
+	// If omitted, the mode defaults to TrySoft.
+	//
+	// +optional
+	// +kubebuilder:default=TrySoft
+	RestartMode VirtualMachinePowerOpMode `json:"restartMode,omitempty"`
+
 	// Volumes describes a list of volumes that can be mounted to the VM.
 	//
 	// +optional
@@ -391,6 +423,11 @@ type VirtualMachineStatus struct {
 	//
 	// +optional
 	Zone string `json:"zone,omitempty"`
+
+	// LastRestartTime describes the last time the VM was restarted.
+	//
+	// +optional
+	LastRestartTime *metav1.Time `json:"lastRestartTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true

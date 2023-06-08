@@ -142,7 +142,7 @@ func (vm *VirtualMachine) SetPowerState(
 	ctx context.Context,
 	currentPowerState,
 	desiredPowerState vmopv1.VirtualMachinePowerState,
-	desiredPowerOffMode vmopv1.VirtualMachinePowerOpMode) error {
+	desiredPowerOpMode vmopv1.VirtualMachinePowerOpMode) error {
 
 	_, err := vmutil.SetAndWaitOnPowerState(
 		ctx,
@@ -161,7 +161,7 @@ func (vm *VirtualMachine) SetPowerState(
 		},
 		false,
 		vmutil.ParsePowerState(string(desiredPowerState)),
-		vmutil.ParsePowerOpMode(string(desiredPowerOffMode)))
+		vmutil.ParsePowerOpMode(string(desiredPowerOpMode)))
 
 	return err
 }

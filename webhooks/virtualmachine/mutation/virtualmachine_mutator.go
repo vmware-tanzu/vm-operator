@@ -8,12 +8,15 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -23,6 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 )
@@ -83,6 +87,15 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 			wasMutated = true
 		}
 	case admissionv1.Update:
+		oldVM, err := m.vmFromUnstructured(ctx.OldObj)
+		if err != nil {
+			return admission.Errored(http.StatusInternalServerError, err)
+		}
+		if ok, err := SetNextRestartTime(ctx, m.client, modified, oldVM); err != nil {
+			return admission.Denied(err.Error())
+		} else if ok {
+			wasMutated = true
+		}
 		// Prevent someone from setting the Spec.VmMetadata.SecretName
 		// field to an empty string if the field is already set to a
 		// non-empty string.
@@ -140,6 +153,37 @@ func SetDefaultPowerState(
 		return true
 	}
 	return false
+}
+
+// SetNextRestartTime sets spec.nextRestartTime for a VM if the field's
+// current value is equal to "now" (case-insensitive).
+// Return true if set, otherwise false.
+func SetNextRestartTime(
+	ctx *context.WebhookRequestContext,
+	client client.Client,
+	newVM, oldVM *vmopv1.VirtualMachine) (bool, error) {
+
+	if newVM.Spec.NextRestartTime == "" {
+		newVM.Spec.NextRestartTime = oldVM.Spec.NextRestartTime
+		return oldVM.Spec.NextRestartTime != "", nil
+	}
+	if strings.EqualFold("now", newVM.Spec.NextRestartTime) {
+		if oldVM.Spec.PowerState != vmopv1.VirtualMachinePoweredOn {
+			return false, field.Invalid(
+				field.NewPath("spec", "nextRestartTime"),
+				newVM.Spec.NextRestartTime,
+				"can only restart powered on vm")
+		}
+		newVM.Spec.NextRestartTime = time.Now().UTC().Format(time.RFC3339Nano)
+		return true, nil
+	}
+	if newVM.Spec.NextRestartTime == oldVM.Spec.NextRestartTime {
+		return false, nil
+	}
+	return false, field.Invalid(
+		field.NewPath("spec", "nextRestartTime"),
+		newVM.Spec.NextRestartTime,
+		`may only be set to "now"`)
 }
 
 // AddDefaultNetworkInterface adds default network interface to a VM if the NoNetwork annotation is not set

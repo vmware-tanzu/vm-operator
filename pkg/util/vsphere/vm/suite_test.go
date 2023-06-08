@@ -13,6 +13,7 @@ import (
 
 func vcSimTests() {
 	Describe("Power State", powerStateTests)
+	Describe("Managed Object", managedObjectTests)
 }
 
 var suite = builder.NewTestSuite()

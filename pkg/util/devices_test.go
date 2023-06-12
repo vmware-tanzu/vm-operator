@@ -6,7 +6,6 @@ package util_test
 import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -138,6 +137,29 @@ var _ = Describe("SelectDynamicDirectPathIO", func() {
 			Expect(devOut[0]).To(BeEquivalentTo(newPCIPassthroughDevice("")))
 			Expect(devOut[1].Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughDynamicBackingInfo{}))
 			Expect(devOut[1]).To(BeEquivalentTo(newPCIPassthroughDevice("")))
+		})
+	})
+})
+
+var _ = Describe("SelectVGPU", func() {
+	Context("selecting a vGPU device", func() {
+		It("will return only the selected device type", func() {
+			devOut := util.SelectVGPU(
+				[]vimTypes.BaseVirtualDevice{
+					newPCIPassthroughDevice(""),
+					&vimTypes.VirtualVmxnet3{},
+					newPCIPassthroughDevice("profile1"),
+					&vimTypes.VirtualSriovEthernetCard{},
+					newPCIPassthroughDevice(""),
+					newPCIPassthroughDevice("profile2"),
+				},
+			)
+			Expect(devOut).To(BeAssignableToTypeOf([]*vimTypes.VirtualPCIPassthrough{}))
+			Expect(devOut).To(HaveLen(2))
+			Expect(devOut[0].Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughVmiopBackingInfo{}))
+			Expect(devOut[0]).To(BeEquivalentTo(newPCIPassthroughDevice("profile1")))
+			Expect(devOut[1].Backing).To(BeAssignableToTypeOf(&vimTypes.VirtualPCIPassthroughVmiopBackingInfo{}))
+			Expect(devOut[1]).To(BeEquivalentTo(newPCIPassthroughDevice("profile2")))
 		})
 	})
 })

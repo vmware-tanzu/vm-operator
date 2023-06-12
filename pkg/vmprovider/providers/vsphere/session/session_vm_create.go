@@ -29,6 +29,7 @@ import (
 type VMCreateArgs struct {
 	VMClass             *vmopv1.VirtualMachineClass
 	VMImageStatus       *vmopv1.VirtualMachineImageStatus
+	VMImageSpec         *vmopv1.VirtualMachineImageSpec
 	ResourcePolicy      *vmopv1.VirtualMachineSetResourcePolicy
 	VMMetadata          VMMetadata
 	ContentLibraryUUID  string

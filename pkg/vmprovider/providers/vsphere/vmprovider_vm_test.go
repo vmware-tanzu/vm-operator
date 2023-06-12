@@ -744,6 +744,141 @@ func vmTests() {
 					Expect(dev.Key).ToNot(Equal(int32(-42)))
 				})
 			})
+
+			Context("VM Class Config does not specify a hardware version", func() {
+
+				Context("VM Class has vGPU and/or DDPIO devices", func() {
+					BeforeEach(func() {
+						// Create the ConfigSpec with a GPU and a DDPIO device.
+						configSpec = &types.VirtualMachineConfigSpec{
+							Name: "dummy-VM",
+							DeviceChange: []types.BaseVirtualDeviceConfigSpec{
+								&types.VirtualDeviceConfigSpec{
+									Operation: types.VirtualDeviceConfigSpecOperationAdd,
+									Device: &types.VirtualPCIPassthrough{
+										VirtualDevice: types.VirtualDevice{
+											Backing: &types.VirtualPCIPassthroughVmiopBackingInfo{
+												Vgpu: "profile-from-configspec",
+											},
+										},
+									},
+								},
+								&types.VirtualDeviceConfigSpec{
+									Operation: types.VirtualDeviceConfigSpecOperationAdd,
+									Device: &types.VirtualPCIPassthrough{
+										VirtualDevice: types.VirtualDevice{
+											Backing: &types.VirtualPCIPassthroughDynamicBackingInfo{
+												AllowedDevice: []types.VirtualPCIPassthroughAllowedDevice{
+													{
+														VendorId: 52,
+														DeviceId: 53,
+													},
+												},
+												CustomLabel: "label-from-configspec",
+											},
+										},
+									},
+								},
+							},
+						}
+					})
+
+					It("creates a VM with a hardware version minimum supported for PCI devices", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", constants.MinSupportedHWVersionForPCIPassthruDevices)))
+					})
+				})
+
+				Context("VM Class has vGPU and/or DDPIO devices and VM spec has a PVC", func() {
+					BeforeEach(func() {
+						// Create the ConfigSpec with a GPU and a DDPIO device.
+						configSpec = &types.VirtualMachineConfigSpec{
+							Name: "dummy-VM",
+							DeviceChange: []types.BaseVirtualDeviceConfigSpec{
+								&types.VirtualDeviceConfigSpec{
+									Operation: types.VirtualDeviceConfigSpecOperationAdd,
+									Device: &types.VirtualPCIPassthrough{
+										VirtualDevice: types.VirtualDevice{
+											Backing: &types.VirtualPCIPassthroughVmiopBackingInfo{
+												Vgpu: "profile-from-configspec",
+											},
+										},
+									},
+								},
+								&types.VirtualDeviceConfigSpec{
+									Operation: types.VirtualDeviceConfigSpecOperationAdd,
+									Device: &types.VirtualPCIPassthrough{
+										VirtualDevice: types.VirtualDevice{
+											Backing: &types.VirtualPCIPassthroughDynamicBackingInfo{
+												AllowedDevice: []types.VirtualPCIPassthroughAllowedDevice{
+													{
+														VendorId: 52,
+														DeviceId: 53,
+													},
+												},
+												CustomLabel: "label-from-configspec",
+											},
+										},
+									},
+								},
+							},
+						}
+
+						vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "dummy-vol",
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "pvc-claim-1",
+									},
+								},
+							},
+						}
+
+						vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "dummy-vol",
+								Attached: true,
+							},
+						}
+					})
+
+					It("creates a VM with a hardware version minimum supported for PCI devices", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", constants.MinSupportedHWVersionForPCIPassthruDevices)))
+					})
+				})
+
+				Context("VM spec has a PVC", func() {
+					BeforeEach(func() {
+						vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+							{
+								Name: "dummy-vol",
+								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "pvc-claim-1",
+									},
+								},
+							},
+						}
+
+						vm.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+							{
+								Name:     "dummy-vol",
+								Attached: true,
+							},
+						}
+					})
+
+					It("creates a VM with a hardware version minimum supported for PVCs", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", constants.MinSupportedHWVersionForPVC)))
+					})
+				})
+			})
 		})
 
 		Context("CreateOrUpdate VM", func() {

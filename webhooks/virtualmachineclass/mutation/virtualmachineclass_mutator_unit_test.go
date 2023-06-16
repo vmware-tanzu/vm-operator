@@ -11,6 +11,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass/mutation"
 )
 
 func uniTests() {
@@ -52,6 +53,36 @@ func unitTestsMutating() {
 				ctx.WebhookRequestContext.Obj.SetDeletionTimestamp(&t)
 				response := ctx.Mutate(&ctx.WebhookRequestContext)
 				Expect(response.Allowed).To(BeTrue())
+			})
+		})
+	})
+
+	Describe("SetControllerName", func() {
+		When("an update attempts to set an empty spec.controllerName field to empty", func() {
+			It("should not indicate anything was mutated", func() {
+				oldObj, newObj := ctx.vmClass.DeepCopy(), ctx.vmClass.DeepCopy()
+				oldObj.Spec.ControllerName = ""
+				newObj.Spec.ControllerName = ""
+				Expect(mutation.SetControllerName(newObj, oldObj)).To(BeFalse())
+				Expect(newObj.Spec.ControllerName).To(BeEmpty())
+			})
+		})
+		When("an update attempts to set a non-empty spec.controllerName field to empty", func() {
+			It("should preserve the original value", func() {
+				oldObj, newObj := ctx.vmClass.DeepCopy(), ctx.vmClass.DeepCopy()
+				oldObj.Spec.ControllerName = "hello"
+				newObj.Spec.ControllerName = ""
+				Expect(mutation.SetControllerName(newObj, oldObj)).To(BeTrue())
+				Expect(newObj.Spec.ControllerName).To(Equal("hello"))
+			})
+		})
+		When("an update attempts to set a non-empty spec.controllerName field to a new, non-empty value", func() {
+			It("should not mutate the request", func() {
+				oldObj, newObj := ctx.vmClass.DeepCopy(), ctx.vmClass.DeepCopy()
+				oldObj.Spec.ControllerName = "hello"
+				newObj.Spec.ControllerName = "world"
+				Expect(mutation.SetControllerName(newObj, oldObj)).To(BeFalse())
+				Expect(newObj.Spec.ControllerName).To(Equal("world"))
 			})
 		})
 	})

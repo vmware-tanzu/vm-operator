@@ -154,6 +154,21 @@ type VirtualMachineClassPolicies struct {
 
 // VirtualMachineClassSpec defines the desired state of VirtualMachineClass.
 type VirtualMachineClassSpec struct {
+	// ControllerName describes the name of the controller responsible for
+	// reconciling VirtualMachine resources that are realized from this
+	// VirtualMachineClass.
+	//
+	// When omitted, controllers reconciling VirtualMachine resources determine
+	// the default controller name from the environment variable
+	// DEFAULT_VM_CLASS_CONTROLLER_NAME. If this environment variable is not
+	// defined or empty, it defaults to vmoperator.vmware.com/vsphere.
+	//
+	// Once a non-empty value is assigned to this field, attempts to set this
+	// field to an empty value will be silently ignored.
+	//
+	// +optional
+	ControllerName string `json:"controllerName,omitempty"`
+
 	// Hardware describes the configuration of the VirtualMachineClass
 	// attributes related to virtual hardware. The configuration specified in
 	// this field is used to customize the virtual hardware characteristics of

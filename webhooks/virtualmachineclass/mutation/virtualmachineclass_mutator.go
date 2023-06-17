@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"reflect"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
@@ -53,7 +53,6 @@ type mutator struct {
 	converter runtime.UnstructuredConverter
 }
 
-//nolint
 func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 	vmClass, err := m.vmClassFromUnstructured(ctx.Obj)
 	if err != nil {
@@ -63,6 +62,19 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 	var wasMutated bool
 	original := vmClass
 	modified := original.DeepCopy()
+
+	switch ctx.Op {
+	case admissionv1.Create:
+		// No-op
+	case admissionv1.Update:
+		oldObj, err := m.vmClassFromUnstructured(ctx.OldObj)
+		if err != nil {
+			return admission.Errored(http.StatusInternalServerError, err)
+		}
+		if SetControllerName(modified, oldObj) {
+			wasMutated = true
+		}
+	}
 
 	if !wasMutated {
 		return admission.Allowed("")
@@ -90,4 +102,17 @@ func (m mutator) vmClassFromUnstructured(obj runtime.Unstructured) (*vmopv1.Virt
 		return nil, err
 	}
 	return vmClass, nil
+}
+
+// SetControllerName preserves the original value of spec.controllerName if
+// an attempt is made to set the field with a non-empty value to empty.
+// Return true if the field was preserved, otherwise false.
+func SetControllerName(newObj, oldObj *vmopv1.VirtualMachineClass) bool {
+	if newObj.Spec.ControllerName == "" {
+		if oldObj.Spec.ControllerName != "" {
+			newObj.Spec.ControllerName = oldObj.Spec.ControllerName
+			return true
+		}
+	}
+	return false
 }

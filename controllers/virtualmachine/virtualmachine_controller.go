@@ -31,10 +31,28 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
-const finalizerName = "virtualmachine.vmoperator.vmware.com"
+const (
+	finalizerName = "virtualmachine.vmoperator.vmware.com"
+
+	// vmClassControllerName is the name of the controller specified in a
+	// VirtualMachineClass resource's field spec.controllerName field that
+	// indicates a VM pointing to that VM Class should be reconciled by this
+	// controller.
+	vmClassControllerName = "vmoperator.vmware.com/vsphere"
+)
+
+var (
+	// isDefaultVMClassController is used to configure watches and predicates
+	// for the controller. If a VirtualMachineClass resource's
+	// spec.controllerName field is missing or empty, this controller will
+	// consider that VM Class as long as isDefaultVMClassController is true.
+	isDefaultVMClassController = vmClassControllerName ==
+		lib.GetDefaultVirtualMachineClassControllerName()
+)
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
@@ -76,6 +94,25 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		builder = builder.Watches(&source.Kind{Type: &vmopv1.VirtualMachineClass{}},
 			handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client)))
 	}
+
+	// Filter any VMs that reference a VM Class with a spec.controllerName set
+	// to a non-empty value other than "vmoperator.vmware.com/vsphere". Please
+	// note that a VM will *not* be filtered if the VM Class does not exist. A
+	// VM is also not filtered if the field spec.controllerName is missing or
+	// empty as long as the default VM Class controller is
+	// "vmoperator.vmware.com/vsphere".
+	builder = builder.WithEventFilter(
+		kubeutil.VMForControllerPredicate(
+			r.Client,
+			// These events can be very verbose, so be careful to not log them
+			// at too high of a log level.
+			r.Logger.WithName("VMForControllerPredicate").V(8),
+			vmClassControllerName,
+			kubeutil.VMForControllerPredicateOptions{
+				MatchIfVMClassNotFound:            true,
+				MatchIfControllerNameFieldEmpty:   isDefaultVMClassController,
+				MatchIfControllerNameFieldMissing: isDefaultVMClassController,
+			}))
 
 	return builder.Complete(r)
 }
@@ -148,6 +185,38 @@ func classBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Cl
 		classBinding := o.(*vmopv1.VirtualMachineClassBinding)
 		logger := ctx.Logger.WithValues("name", classBinding.Name, "namespace", classBinding.Namespace)
 
+		// Get the class for the binding in order to check the class's
+		// spec.controllerName field below.
+		var class vmopv1.VirtualMachineClass
+		if err := c.Get(ctx, client.ObjectKey{Name: classBinding.Name}, &class); err != nil {
+			logger.Error(
+				err,
+				"Failed to list VirtualMachines for reconciliation due to failure to get VirtualMachineClass",
+				"className", classBinding.Name)
+			return nil
+		}
+
+		// Only watch resources that reference a VirtualMachineClass with its
+		// field spec.controllerName equal to controllerName or if the field is
+		// empty and isDefaultVMClassController is true.
+		controllerName := class.Spec.ControllerName
+		if controllerName == "" && !isDefaultVMClassController {
+			// Log at a high-level so the logs are not over-run.
+			logger.V(8).Info(
+				"Skipping class with empty controller name & not default VM Class controller",
+				"defaultVMClassController", lib.GetDefaultVirtualMachineClassControllerName(),
+				"expectedControllerName", vmClassControllerName)
+			return nil
+		}
+		if controllerName != vmClassControllerName {
+			// Log at a high-level so the logs are not over-run.
+			logger.V(8).Info(
+				"Skipping class with mismatched controller name",
+				"actualControllerName", controllerName,
+				"expectedControllerName", vmClassControllerName)
+			return nil
+		}
+
 		logger.V(4).Info("Reconciling all VMs referencing a VM class because of a VirtualMachineClassBinding watch")
 
 		// Find all vms that match this vmclassbinding
@@ -181,16 +250,37 @@ func classToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client) f
 		class := o.(*vmopv1.VirtualMachineClass)
 		logger := ctx.Logger.WithValues("name", class.Name, "namespace", class.Namespace)
 
+		// Only watch resources that reference a VirtualMachineClass with its
+		// field spec.controllerName equal to controllerName or if the field is
+		// empty and isDefaultVMClassController is true.
+		controllerName := class.Spec.ControllerName
+		if controllerName == "" && !isDefaultVMClassController {
+			// Log at a high-level so the logs are not over-run.
+			logger.V(8).Info(
+				"Skipping class with empty controller name & not default VM Class controller",
+				"defaultVMClassController", lib.GetDefaultVirtualMachineClassControllerName(),
+				"expectedControllerName", vmClassControllerName)
+			return nil
+		}
+		if controllerName != vmClassControllerName {
+			// Log at a high-level so the logs are not over-run.
+			logger.V(8).Info(
+				"Skipping class with mismatched controller name",
+				"actualControllerName", controllerName,
+				"expectedControllerName", vmClassControllerName)
+			return nil
+		}
+
 		logger.V(4).Info("Reconciling all VMs referencing a VM class because of a VirtualMachineClass watch")
 
-		// Find all vms that match this vmclass
+		// Find all VM resources that reference this VM Class.
 		vmList := &vmopv1.VirtualMachineList{}
 		if err := c.List(ctx, vmList, client.InNamespace(class.Namespace)); err != nil {
 			logger.Error(err, "Failed to list VirtualMachines for reconciliation due to VirtualMachineClass watch")
 			return nil
 		}
 
-		// Populate reconcile requests for vms matching the classbinding reference
+		// Populate reconcile requests for VMs that reference this VM Class.
 		var reconcileRequests []reconcile.Request
 		for _, vm := range vmList.Items {
 			if vm.Spec.ClassName == class.Name {

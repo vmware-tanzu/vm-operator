@@ -67,6 +67,16 @@ spec:
                   discriminator field "_typeName" to preserve type information.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              controllerName:
+                description: "ControllerName describes the name of the controller
+                  responsible for reconciling VirtualMachine resources that are realized
+                  from this VirtualMachineClass. \n When omitted, controllers reconciling
+                  VirtualMachine resources determine the default controller name from
+                  the environment variable DEFAULT_VM_CLASS_CONTROLLER_NAME. If this
+                  environment variable is not defined or empty, it defaults to vmoperator.vmware.com/vsphere.
+                  \n Once a non-empty value is assigned to this field, attempts to
+                  set this field to an empty value will be silently ignored."
+                type: string
               description:
                 description: Description describes the configuration of the VirtualMachineClass
                   which is not related to virtual hardware or infrastructure policy.

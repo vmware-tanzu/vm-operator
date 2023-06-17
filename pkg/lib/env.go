@@ -55,6 +55,14 @@ const (
 	NetworkProviderTypeNamed = "NAMED"
 	NetworkProviderTypeNSXT  = "NSXT"
 	NetworkProviderTypeVDS   = "VSPHERE_NETWORK"
+
+	// DefaultVirtualMachineClassControllerNameEnv is the name of the
+	// environment variable that contains the name of the default value for
+	// the VirtualMachineClass field spec.controllerName.
+	//
+	// If the environment variable is not set or empty it will be treated as
+	// if it contains vmoperator.vmware.com/vsphere.
+	DefaultVirtualMachineClassControllerNameEnv = "DEFAULT_VM_CLASS_CONTROLLER_NAME"
 )
 
 // SetVMOpNamespaceEnv sets the VM Operator pod's namespace in the environment.
@@ -161,4 +169,14 @@ func GetInstanceStorageRequeueDelay() time.Duration {
 	}
 
 	return wait.Jitter(seedDuration, maxFactor)
+}
+
+// GetDefaultVirtualMachineClassControllerName returns the value to use if
+// a VirtualMachineClass resource's spec.controllerName field is empty.
+var GetDefaultVirtualMachineClassControllerName = func() string {
+	v := os.Getenv(DefaultVirtualMachineClassControllerNameEnv)
+	if v == "" {
+		return "vmoperator.vmware.com/vsphere"
+	}
+	return v
 }

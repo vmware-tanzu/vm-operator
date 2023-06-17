@@ -1213,6 +1213,7 @@ func Convert_v1alpha2_VirtualMachineClassResources_To_v1alpha1_VirtualMachineCla
 }
 
 func autoConvert_v1alpha1_VirtualMachineClassSpec_To_v1alpha2_VirtualMachineClassSpec(in *VirtualMachineClassSpec, out *v1alpha2.VirtualMachineClassSpec, s conversion.Scope) error {
+	out.ControllerName = in.ControllerName
 	if err := Convert_v1alpha1_VirtualMachineClassHardware_To_v1alpha2_VirtualMachineClassHardware(&in.Hardware, &out.Hardware, s); err != nil {
 		return err
 	}
@@ -1230,6 +1231,7 @@ func Convert_v1alpha1_VirtualMachineClassSpec_To_v1alpha2_VirtualMachineClassSpe
 }
 
 func autoConvert_v1alpha2_VirtualMachineClassSpec_To_v1alpha1_VirtualMachineClassSpec(in *v1alpha2.VirtualMachineClassSpec, out *VirtualMachineClassSpec, s conversion.Scope) error {
+	out.ControllerName = in.ControllerName
 	if err := Convert_v1alpha2_VirtualMachineClassHardware_To_v1alpha1_VirtualMachineClassHardware(&in.Hardware, &out.Hardware, s); err != nil {
 		return err
 	}
@@ -2030,6 +2032,10 @@ func autoConvert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in *
 	out.ImageName = in.ImageName
 	out.ClassName = in.ClassName
 	out.PowerState = v1alpha2.VirtualMachinePowerState(in.PowerState)
+	out.PowerOffMode = v1alpha2.VirtualMachinePowerOpMode(in.PowerOffMode)
+	out.SuspendMode = v1alpha2.VirtualMachinePowerOpMode(in.SuspendMode)
+	out.NextRestartTime = in.NextRestartTime
+	out.RestartMode = v1alpha2.VirtualMachinePowerOpMode(in.RestartMode)
 	// WARNING: in.Ports requires manual conversion: does not exist in peer-type
 	// WARNING: in.VmMetadata requires manual conversion: does not exist in peer-type
 	out.StorageClass = in.StorageClass
@@ -2058,6 +2064,10 @@ func autoConvert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *
 	// WARNING: in.Bootstrap requires manual conversion: does not exist in peer-type
 	// WARNING: in.Network requires manual conversion: does not exist in peer-type
 	out.PowerState = VirtualMachinePowerState(in.PowerState)
+	out.PowerOffMode = VirtualMachinePowerOpMode(in.PowerOffMode)
+	out.SuspendMode = VirtualMachinePowerOpMode(in.SuspendMode)
+	out.NextRestartTime = in.NextRestartTime
+	out.RestartMode = VirtualMachinePowerOpMode(in.RestartMode)
 	if in.Volumes != nil {
 		in, out := &in.Volumes, &out.Volumes
 		*out = make([]VirtualMachineVolume, len(*in))
@@ -2109,6 +2119,7 @@ func autoConvert_v1alpha1_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 	out.ChangeBlockTracking = (*bool)(unsafe.Pointer(in.ChangeBlockTracking))
 	// WARNING: in.NetworkInterfaces requires manual conversion: does not exist in peer-type
 	out.Zone = in.Zone
+	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
 	return nil
 }
 
@@ -2145,6 +2156,7 @@ func autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	}
 	out.ChangeBlockTracking = (*bool)(unsafe.Pointer(in.ChangeBlockTracking))
 	out.Zone = in.Zone
+	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
 	return nil
 }
 

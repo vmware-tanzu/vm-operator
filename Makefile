@@ -24,6 +24,24 @@ export GO111MODULE := on
 export GOOS ?= $(shell go env GOHOSTOS)
 export GOARCH ?= $(shell go env GOHOSTARCH)
 
+# The directory in which this Makefile is located. Please note this will not
+# behave correctly if the path to any Makefile in the list contains any spaces.
+ROOT_DIR ?= $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+
+# Get the GOPATH, but do not export it. This is used to determine if the project
+# is in the GOPATH and if not, to use Docker for the generate-go-conversions
+# target.
+GOPATH ?= $(shell go env GOPATH)
+PROJECT_SLUG := github.com/vmware-tanzu/vm-operator
+
+# ROOT_DIR_IN_GOPATH is non-empty if ROOT_DIR is in the GOPATH.
+ROOT_DIR_IN_GOPATH := $(findstring $(GOPATH)/src/$(PROJECT_SLUG),$(ROOT_DIR))
+
+# CONVERSION_GEN_FALLBACK_MODE determines how to run the conversion-gen tool if
+# this project is not in the GOPATH at the expected location. Possible values
+# include "symlink" and "docker."
+CONVERSION_GEN_FALLBACK_MODE ?= symlink
+
 endif # ifneq (,$(filter-out $(NON_GO_GOALS),$(MAKECMDGOALS)))
 endif # ifeq (,$(strip $(shell command -v go 2>/dev/null || true)))
 
@@ -91,12 +109,11 @@ BUILD_NUMBER ?= 00000000
 BUILD_COMMIT ?= $(shell git rev-parse --short HEAD)
 export BUILD_VERSION ?= $(shell git describe --always --match "v*" | sed 's/v//')
 
-VMOP_PREFIX = github.com/vmware-tanzu/vm-operator
 BUILDINFO_LDFLAGS = "\
--X $(VMOP_PREFIX)/pkg.BuildVersion=$(BUILD_VERSION) \
--X $(VMOP_PREFIX)/pkg.BuildNumber=$(BUILD_NUMBER) \
--X $(VMOP_PREFIX)/pkg.BuildCommit=$(BUILD_COMMIT) \
--X $(VMOP_PREFIX)/pkg.BuildType=$(BUILD_TYPE) \
+-X $(PROJECT_SLUG)/pkg.BuildVersion=$(BUILD_VERSION) \
+-X $(PROJECT_SLUG)/pkg.BuildNumber=$(BUILD_NUMBER) \
+-X $(PROJECT_SLUG)/pkg.BuildCommit=$(BUILD_COMMIT) \
+-X $(PROJECT_SLUG)/pkg.BuildType=$(BUILD_TYPE) \
 -extldflags -static -w -s "
 
 .PHONY: all
@@ -277,11 +294,118 @@ generate-external-manifests: ## Generate manifests for the external types for te
 		output:none
 
 .PHONY: generate-go-conversions
-generate-go-conversions: $(CONVERSION_GEN) ## Generate conversions go code
+generate-go-conversions: ## Generate conversions go code
+
+ifneq (,$(ROOT_DIR_IN_GOPATH))
+
+# If the project is not cloned in the correct location in the GOPATH then the
+# conversion-gen tool does not work. If ROOT_DIR_IN_GOPATH is non-empty, then
+# the project is in the correct location for conversion-gen to work. Otherwise,
+# there are two fallback modes controlled by CONVERSION_GEN_FALLBACK_MODE.
+
+# When the CONVERSION_GEN_FALLBACK_MODE is symlink, the conversion-gen binary
+# is rebuilt every time due to GNU Make, MTIME values, and symlinks. This ifeq
+# statement ensures that there is not an order-only dependency on CONVERSION_GEN
+# if it already exists.
+ifeq (,$(strip $(wildcard $(CONVERSION_GEN))))
+generate-go-conversions: | $(CONVERSION_GEN)
+endif
+
+generate-go-conversions:
 	$(CONVERSION_GEN) \
 		--input-dirs=./api/v1alpha1 \
 		--output-file-base=zz_generated.conversion \
 		--go-header-file=./hack/boilerplate/boilerplate.generatego.txt
+
+else ifeq (symlink,$(CONVERSION_GEN_FALLBACK_MODE))
+
+# The generate-go-conversions target uses a symlink. Step-by-step, the target:
+#
+# 1. Creates a temporary directory to act as a GOPATH location and stores it
+#    in NEW_GOPATH.
+#
+# 2. Determines the path to this project under the NEW_GOPATH and stores it in
+#    NEW_ROOT_DIR.
+#
+# 3. Creates all of the path components for NEW_ROOT_DIR.
+#
+# 4. Removes the last path component in NEW_ROOT_DIR so it can be recreated as
+#    a symlink in the next step.
+#
+# 5. Creates a symlink from this project to its new location under NEW_GOPATH.
+#
+# 6. Changes directories into NEW_ROOT_DIR.
+#
+# 7. Invokes "make generate-go-conversions" from NEW_ROOT_DIR while sending in
+#    the values of GOPATH and ROOT_DIR to make this Makefile think it is in the
+#    NEW_GOPATH.
+#
+# Because make runs targets in a separate shell, it is not necessary to change
+# back to the original directory.
+generate-go-conversions:
+	NEW_GOPATH="$$(mktemp -d)" && \
+	NEW_ROOT_DIR="$${NEW_GOPATH}/src/$(PROJECT_SLUG)" && \
+	mkdir -p "$${NEW_ROOT_DIR}" && \
+	rm -fr "$${NEW_ROOT_DIR}" && \
+	ln -s "$(ROOT_DIR)" "$${NEW_ROOT_DIR}" && \
+	cd "$${NEW_ROOT_DIR}" && \
+	GOPATH="$${NEW_GOPATH}" ROOT_DIR="$${NEW_ROOT_DIR}" make $@
+
+else ifeq (docker,$(CONVERSION_GEN_FALLBACK_MODE))
+
+ifeq (,$(strip $(shell command -v docker 2>/dev/null || true)))
+$(error Docker is required for generate-go-conversions and not detected in path!)
+endif
+
+# The generate-go-conversions target will use Docker. Step-by-step, the target:
+#
+# 1. GOLANG_IMAGE is set to golang:YOUR_LOCAL_GO_VERSION and is the image used
+#    to run make generate-go-conversions.
+#
+# 2. If using an arm host, the GOLANG_IMAGE is prefixed with arm64v8, which is
+#    the prefix for Golang's Docker images for arm systems.
+#
+# 3. A new, temporary directory is created and its path is stored in
+#    TOOLS_BIN_DIR. More on this later.
+#
+# 4. The docker flag --rm ensures that the container will be removed upon
+#    success or failure, preventing orphaned containers from hanging around.
+#
+# 5. The first -v flag is used to bind mount the project's root directory to
+#    the path /go/src/github.com/vmware-tanzu/vm-operator inside of the
+#    container. This is required for the conversion-gen tool to work correctly.
+#
+# 6. The second -v flag is used to bind mount the temporary directory stored
+#    TOOLS_BIN_DIR to /go/src/github.com/vmware-tanzu/vm-operator/hack/tools/bin
+#    inside the container. This ensures the local host's binaries are not
+#    overwritten case the local host is not Linux. Otherwise the container would
+#    fail to run the binaries because they are the wrong architecture or replace
+#    the binaries with Linux's elf architecture when the localhost uses
+#    something else (ex. macOS is Darwin and uses mach).
+#
+# 7. The -w flag sets the container's working directory to where the project's
+#    sources are bind mounted, /go/src/github.com/vmware-tanzu/vm-operator.
+#
+# 8. The image calculated earlier, GOLANG_IMAGE, is specified.
+#
+# 9. Finally, the command "make generate-go-conversions" is specified as what
+#    the container will run.
+#
+# Once this target completes, it will be as if the generate-go-conversions
+# target was executed locally. Any necessary updates to the generated conversion
+# sources will be found on the local filesystem. Use "git status" to verify the
+# changes.
+generate-go-conversions:
+	GOLANG_IMAGE="golang:$$(go env GOVERSION | cut -c3-)"; \
+	[ "$$(go env GOHOSTARCH)" = "arm64" ] && GOLANG_IMAGE="arm64v8/$${GOLANG_IMAGE}"; \
+	TOOLS_BIN_DIR="$$(mktemp -d)"; \
+	  docker run -it --rm \
+	  -v "$(ROOT_DIR)":/go/src/$(PROJECT_SLUG) \
+	  -v "$${TOOLS_BIN_DIR}":/go/src/$(PROJECT_SLUG)/hack/tools/bin \
+	  -w /go/src/$(PROJECT_SLUG) \
+	  "$${GOLANG_IMAGE}" \
+	  make generate-go-conversions
+endif
 
 .PHONY: generate-api-docs
 generate-api-docs: | $(CRD_REF_DOCS)

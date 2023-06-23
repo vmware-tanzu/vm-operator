@@ -12,6 +12,30 @@ const (
 // Conditions and condition Reasons for the VirtualMachine object.
 
 const (
+	// VirtualMachineMetadataReadyCondition documents the state of the metadata passed to the VirtualMachine.
+	VirtualMachineMetadataReadyCondition ConditionType = "VirtualMachineMetadataReady"
+
+	// VirtualMachineMetadataDuplicatedReason (Severity=Error) documents that the mutually exclusive Secret and ConfigMap are
+	// specified in the VirtualMachineMetadata.
+	//
+	// This validation is performed by the validation webhook, defensively adding the reason.
+	VirtualMachineMetadataDuplicatedReason = "VirtualMachineMetadataDuplicated"
+
+	// VirtualMachineMetadataNotFoundReason (Severity=Error) documents that the Secret or ConfigMap specified in the VirtualMachineSpec
+	// cannot be found.
+	VirtualMachineMetadataNotFoundReason = "VirtualMachineMetadataNotFound"
+
+	// VirtualMachineMetadataFormatInvalidReason (Severity=Error) documents that the format of the supplied metadata is invalid.
+	//
+	// It is used to indicate issues with the formatting of the metadata irrespective of the Transport in use.
+	VirtualMachineMetadataFormatInvalidReason = "VirtualMachineMetadataFormatInvalid"
+
+	// VirtualMachineGuestInfoSizeExceededReason (Severity=Error) documents that the supplied Cloud Init metadata exceeds the
+	// maximum allowed capacity.
+	VirtualMachineGuestInfoSizeExceededReason = "VirtualMachineGuestInfoSizeExceeded"
+)
+
+const (
 	// VirtualMachinePrereqReadyCondition documents that all of a VirtualMachine's prerequisites declared in the spec
 	// (e.g. VirtualMachineClass) are satisfied.
 	VirtualMachinePrereqReadyCondition ConditionType = "VirtualMachinePrereqReady"

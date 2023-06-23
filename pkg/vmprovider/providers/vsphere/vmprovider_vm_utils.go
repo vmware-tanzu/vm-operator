@@ -228,6 +228,13 @@ func GetVMMetadata(
 	// The VM's MetaData ConfigMapName and SecretName are mutually exclusive. Validation webhook checks
 	// this during create/update but double check it here.
 	if metadata.ConfigMapName != "" && metadata.SecretName != "" {
+		conditions.MarkFalse(vmCtx.VM,
+			vmopv1.VirtualMachineMetadataReadyCondition,
+			vmopv1.VirtualMachineMetadataDuplicatedReason,
+			vmopv1.ConditionSeverityError,
+			"Both ConfigMapName %s/%s and SecretName %s/%s are specified",
+			metadata.ConfigMapName, vmCtx.VM.Namespace,
+			metadata.SecretName, vmCtx.VM.Namespace)
 		return vmMD, errors.New("invalid VM Metadata: both ConfigMapName and SecretName are specified")
 	}
 
@@ -235,7 +242,11 @@ func GetVMMetadata(
 		cm := &corev1.ConfigMap{}
 		err := k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: metadata.ConfigMapName, Namespace: vmCtx.VM.Namespace}, cm)
 		if err != nil {
-			// TODO: Condition
+			conditions.MarkFalse(vmCtx.VM,
+				vmopv1.VirtualMachineMetadataReadyCondition,
+				vmopv1.VirtualMachineMetadataNotFoundReason,
+				vmopv1.ConditionSeverityError,
+				"Unable to get metadata ConfigMap %s/%s", metadata.ConfigMapName, vmCtx.VM.Namespace)
 			return vmMD, errors.Wrap(err, "Failed to get VM Metadata ConfigMap")
 		}
 
@@ -245,7 +256,11 @@ func GetVMMetadata(
 		secret := &corev1.Secret{}
 		err := k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: metadata.SecretName, Namespace: vmCtx.VM.Namespace}, secret)
 		if err != nil {
-			// TODO: Condition
+			conditions.MarkFalse(vmCtx.VM,
+				vmopv1.VirtualMachineMetadataReadyCondition,
+				vmopv1.VirtualMachineMetadataNotFoundReason,
+				vmopv1.ConditionSeverityError,
+				"Unable to get metadata Secret %s/%s", metadata.SecretName, vmCtx.VM.Namespace)
 			return vmMD, errors.Wrap(err, "Failed to get VM Metadata Secret")
 		}
 

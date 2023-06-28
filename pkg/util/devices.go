@@ -174,3 +174,13 @@ func isDiskOrDiskController(dev vimTypes.BaseVirtualDevice) bool {
 		return false
 	}
 }
+
+// isNonRDMDisk returns true for all virtual disk devices excluding disks with a raw device mapping backing.
+func isNonRDMDisk(dev vimTypes.BaseVirtualDevice) bool {
+	if dev, ok := dev.(*vimTypes.VirtualDisk); ok {
+		_, hasRDMBacking := dev.Backing.(*vimTypes.VirtualDiskRawDiskMappingVer1BackingInfo)
+		return !hasRDMBacking
+	}
+
+	return false
+}

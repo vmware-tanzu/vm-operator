@@ -18,6 +18,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -214,6 +215,7 @@ var _ = Describe("RemoveDevicesFromConfigSpec", func() {
 })
 
 var _ = Describe("SanitizeVMClassConfigSpec", func() {
+	oldVMClassAsConfigFSSEnabledFunc := lib.IsVMClassAsConfigFSSEnabled
 	var (
 		configSpec *vimTypes.VirtualMachineConfigSpec
 	)
@@ -277,8 +279,28 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 						},
 					},
 				},
+				&vimTypes.VirtualDeviceConfigSpec{
+					Operation: vimTypes.VirtualDeviceConfigSpecOperationAdd,
+					Device: &vimTypes.VirtualDisk{
+						CapacityInBytes: 1024 * 1024,
+						VirtualDevice: vimTypes.VirtualDevice{
+							Key: -32,
+							Backing: &vimTypes.VirtualDiskRawDiskMappingVer1BackingInfo{
+								LunUuid: "dummy-uuid",
+							},
+						},
+					},
+				},
 			},
 		}
+
+		lib.IsVMClassAsConfigFSSEnabled = func() bool {
+			return false
+		}
+	})
+
+	AfterEach(func() {
+		lib.IsVMClassAsConfigFSSEnabled = oldVMClassAsConfigFSSEnabledFunc
 	})
 
 	It("returns expected sanitized ConfigSpec", func() {
@@ -296,6 +318,49 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 		dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
 		_, ok := dSpec.Device.(*vimTypes.VirtualE1000)
 		Expect(ok).To(BeTrue())
+	})
+
+	When("VMClassAsConfig is enabled", func() {
+		BeforeEach(func() {
+			lib.IsVMClassAsConfigFSSEnabled = func() bool {
+				return true
+			}
+		})
+		It("returns expected sanitized ConfigSpec", func() {
+			util.SanitizeVMClassConfigSpec(configSpec)
+
+			Expect(configSpec.Name).To(Equal("dummy-VM"))
+			Expect(configSpec.Annotation).ToNot(BeEmpty())
+			Expect(configSpec.Annotation).To(Equal("test-annotation"))
+			Expect(configSpec.Uuid).To(BeEmpty())
+			Expect(configSpec.InstanceUuid).To(BeEmpty())
+			Expect(configSpec.Files).To(BeNil())
+			Expect(configSpec.VmProfile).To(BeEmpty())
+
+			Expect(configSpec.DeviceChange).To(HaveLen(6))
+			dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+			_, ok := dSpec.Device.(*vimTypes.VirtualSATAController)
+			Expect(ok).To(BeTrue())
+			dSpec = configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
+			_, ok = dSpec.Device.(*vimTypes.VirtualIDEController)
+			Expect(ok).To(BeTrue())
+			dSpec = configSpec.DeviceChange[2].GetVirtualDeviceConfigSpec()
+			_, ok = dSpec.Device.(*vimTypes.VirtualSCSIController)
+			Expect(ok).To(BeTrue())
+			dSpec = configSpec.DeviceChange[3].GetVirtualDeviceConfigSpec()
+			_, ok = dSpec.Device.(*vimTypes.VirtualNVMEController)
+			Expect(ok).To(BeTrue())
+			dSpec = configSpec.DeviceChange[4].GetVirtualDeviceConfigSpec()
+			_, ok = dSpec.Device.(*vimTypes.VirtualE1000)
+			Expect(ok).To(BeTrue())
+			dSpec = configSpec.DeviceChange[5].GetVirtualDeviceConfigSpec()
+			_, ok = dSpec.Device.(*vimTypes.VirtualDisk)
+			Expect(ok).To(BeTrue())
+			dev := dSpec.Device.GetVirtualDevice()
+			backing, ok := dev.Backing.(*vimTypes.VirtualDiskRawDiskMappingVer1BackingInfo)
+			Expect(ok).To(BeTrue())
+			Expect(backing.LunUuid).To(Equal("dummy-uuid"))
+		})
 	})
 })
 

@@ -108,25 +108,31 @@ func (r *vmForVMClassPredicate) Generic(e event.GenericEvent) bool {
 func (r *vmForVMClassPredicate) matches(obj runtime.Object) (bool, error) {
 	obj = obj.DeepCopyObject() // do not mutate the original
 
-	vm, err := r.getVM(obj)
+	object, kind, err := r.getWatchedObj(obj)
 	if err != nil {
 		return false, err
+	}
+
+	// If the object is not VirutalMachine, then pass to the xxxToVMMapperFn
+	// for further processing.
+	if kind != "VirtualMachine" {
+		return true, nil
 	}
 
 	// Get name of the VM Class used by the VM.
 	className, ok, err := unstructured.NestedString(
-		vm.Object, "spec", "className")
+		object.Object, "spec", "className")
 	if err != nil {
 		return false, err
 	}
 	if !ok {
-		return false, fmt.Errorf("spec.className not found for %s", vm)
+		return false, fmt.Errorf("spec.className not found for %s", object)
 	}
 
 	// Get the VM Class referenced by the VM.
 	vmClass, err := r.getVMClass(
-		vm.GroupVersionKind().GroupVersion(),
-		vm.GetNamespace(),
+		object.GroupVersionKind().GroupVersion(),
+		object.GetNamespace(),
 		className)
 	if err != nil {
 		if apierrors.IsNotFound(err) && r.opts.MatchIfVMClassNotFound {
@@ -158,16 +164,14 @@ func (r *vmForVMClassPredicate) matches(obj runtime.Object) (bool, error) {
 	}
 
 	if controllerName != r.controllerName {
-		return false, fmt.Errorf(
-			"spec.controllerName=%q, expected=%q",
-			controllerName, r.controllerName)
+		return false, nil
 	}
 
 	return true, nil
 }
 
-func (r *vmForVMClassPredicate) getVM(
-	inObj runtime.Object) (*unstructured.Unstructured, error) {
+func (r *vmForVMClassPredicate) getWatchedObj(
+	inObj runtime.Object) (*unstructured.Unstructured, string, error) {
 
 	// Controller-runtime does not assign an object's TypeMeta prior to sending
 	// the object into a predicate. In order to ascertain the object's group,
@@ -176,11 +180,11 @@ func (r *vmForVMClassPredicate) getVM(
 	// the provided object.
 	gvks, unversioned, err := r.client.Scheme().ObjectKinds(inObj)
 	if err != nil {
-		return nil, fmt.Errorf(
+		return nil, "", fmt.Errorf(
 			"failed to get group, version, & kinds for object: %w", err)
 	}
 	if unversioned {
-		return nil, errors.New("object is unversioned")
+		return nil, "", errors.New("object is unversioned")
 	}
 
 	// Update the inObj with one of the discovered GVKs. The correct version
@@ -191,15 +195,13 @@ func (r *vmForVMClassPredicate) getVM(
 
 	data, err := runtime.DefaultUnstructuredConverter.ToUnstructured(inObj)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert to unstructured: %w", err)
+		return nil, "", fmt.Errorf("failed to convert to unstructured: %w", err)
 	}
 	outObj := unstructured.Unstructured{Object: data}
 
-	if kind := outObj.GetKind(); kind != "VirtualMachine" {
-		return nil, fmt.Errorf("kind=%q, expected kind=VirtualMachine", kind)
-	}
+	kind := outObj.GetKind()
 
-	return &outObj, nil
+	return &outObj, kind, nil
 }
 
 func (r *vmForVMClassPredicate) getVMClass(

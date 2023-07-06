@@ -29,7 +29,7 @@ const (
 )
 
 // VirtualMachinePowerOpMode represents the various power operation modes when
-// when powering off or suspending a VM.
+// powering off or suspending a VM.
 // +kubebuilder:validation:Enum=hard;soft;trySoft
 type VirtualMachinePowerOpMode string
 

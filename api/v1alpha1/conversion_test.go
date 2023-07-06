@@ -124,7 +124,7 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 			vmStatus.NetworkInterfaces = nil
 
 			// Do not exist in v1a2.
-			vmStatus.Phase = ""
+			vmStatus.Phase = v1alpha1.Unknown
 		},
 		func(vmStatus *nextver.VirtualMachineStatus, c fuzz.Continue) {
 			c.Fuzz(vmStatus)

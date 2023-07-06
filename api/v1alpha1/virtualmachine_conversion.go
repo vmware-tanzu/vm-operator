@@ -10,6 +10,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
@@ -98,6 +99,23 @@ func convert_v1alpha2_VirtualMachinePowerOpMode_To_v1alpha1_VirtualMachinePowerO
 	}
 
 	return VirtualMachinePowerOpMode(in)
+}
+
+func convert_v1alpha2_Conditions_To_v1alpha1_Phase(
+	in []metav1.Condition) VMStatusPhase {
+
+	// In practice, "Created" is the only really important value because some consumers
+	// like CAPI use that as a part of their VM is-ready check.
+	for _, c := range in {
+		if c.Type == v1alpha2.VirtualMachineConditionCreated {
+			if c.Status == metav1.ConditionTrue {
+				return Created
+			}
+			return Creating
+		}
+	}
+
+	return Unknown
 }
 
 func Convert_v1alpha2_VirtualMachineVolume_To_v1alpha1_VirtualMachineVolume(
@@ -513,6 +531,7 @@ func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	in *v1alpha2.VirtualMachineStatus, out *VirtualMachineStatus, s apiconversion.Scope) error {
 
 	out.PowerState = convert_v1alpha2_VirtualMachinePowerState_To_v1alpha1_VirtualMachinePowerState(in.PowerState)
+	out.Phase = convert_v1alpha2_Conditions_To_v1alpha1_Phase(in.Conditions)
 	out.VmIp, out.NetworkInterfaces = convert_v1alpha2_NetworkStatus_To_v1alpha1_Network(in.Network)
 	out.LastRestartTime = in.LastRestartTime
 

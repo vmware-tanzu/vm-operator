@@ -13,7 +13,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
-	imgregv1a1 "github.com/vmware-tanzu/vm-operator/external/image-registry/api/v1alpha1"
+	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 )
 
 // VirtualMachineProviderInterface is a plugable interface for VM Providers.

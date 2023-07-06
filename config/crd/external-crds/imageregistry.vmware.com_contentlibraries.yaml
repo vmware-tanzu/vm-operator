@@ -27,6 +27,9 @@ spec:
     - jsonPath: .spec.writable
       name: Writable
       type: boolean
+    - jsonPath: .spec.allowImport
+      name: AllowImport
+      type: boolean
     - jsonPath: .status.storageBacking.type
       name: StorageType
       type: string
@@ -55,6 +58,7 @@ spec:
             description: ContentLibrarySpec defines the desired state of a ContentLibrary.
             properties:
               allowImport:
+                default: false
                 description: AllowImport flag indicates if users can import OVF/OVA
                   templates from remote HTTPS URLs as new content library items in
                   this library.

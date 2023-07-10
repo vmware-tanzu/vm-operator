@@ -10,6 +10,32 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 )
 
+// TODO: Since this API version replaces the concept of metadata to BootstrapSpec, rename the types once
+// these reasons before using them in Conditions. Keeping the reasons the same for the sake of consistency.
+const (
+	// VirtualMachineMetadataReadyCondition documents the state of the metadata passed to the VirtualMachine.
+	VirtualMachineMetadataReadyCondition = "VirtualMachineMetadataReady"
+
+	// VirtualMachineMetadataDuplicatedReason (Severity=Error) documents that the mutually exclusive Secret and ConfigMap are
+	// specified in the VirtualMachineMetadata.
+	//
+	// This validation is performed by the validation webhook, defensively adding the reason.
+	VirtualMachineMetadataDuplicatedReason = "VirtualMachineMetadataDuplicated"
+
+	// VirtualMachineMetadataNotFoundReason (Severity=Error) documents that the Secret or ConfigMap specified in the VirtualMachineSpec
+	// cannot be found.
+	VirtualMachineMetadataNotFoundReason = "VirtualMachineMetadataNotFound"
+
+	// VirtualMachineMetadataFormatInvalidReason (Severity=Error) documents that the format of the supplied metadata is invalid.
+	//
+	// It is used to indicate issues with the formatting of the metadata irrespective of the Transport in use.
+	VirtualMachineMetadataFormatInvalidReason = "VirtualMachineMetadataFormatInvalid"
+
+	// VirtualMachineGuestInfoSizeExceededReason (Severity=Error) documents that the supplied Cloud Init metadata exceeds the
+	// maximum allowed capacity.
+	VirtualMachineGuestInfoSizeExceededReason = "VirtualMachineGuestInfoSizeExceeded"
+)
+
 const (
 	// VirtualMachineConditionClassReady indicates that a referenced
 	// VirtualMachineClass is ready.

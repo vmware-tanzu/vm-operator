@@ -17,7 +17,6 @@ import (
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -115,16 +114,9 @@ func GetCloudInitMetadata(vm *vmopv1.VirtualMachine,
 	return string(metadataBytes), nil
 }
 
-// ErrWithReason encapsulates the error type as well as a human-readable reason that will be
-// used to set the Reason field on the Condition set on the object.
-type ErrWithReason struct {
-	error
-	conditionReason string
-}
-
 func GetCloudInitPrepCustSpec(
 	cloudInitMetadata string,
-	updateArgs VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, *vimTypes.CustomizationSpec, *ErrWithReason) {
+	updateArgs VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, *vimTypes.CustomizationSpec, error) {
 
 	userdata := updateArgs.VMMetadata.Data["user-data"]
 
@@ -132,10 +124,7 @@ func GetCloudInitPrepCustSpec(
 		// Ensure the data is normalized first to plain-text.
 		plainText, err := util.TryToDecodeBase64Gzip([]byte(userdata))
 		if err != nil {
-			return nil, nil, &ErrWithReason{
-				error:           fmt.Errorf("decoding cloud-init prep userdata failed %v", err),
-				conditionReason: vmopv1.VirtualMachineMetadataFormatInvalidReason,
-			}
+			return nil, nil, fmt.Errorf("decoding cloud-init prep userdata failed %v", err)
 		}
 		userdata = plainText
 	}
@@ -158,26 +147,16 @@ func GetCloudInitPrepCustSpec(
 func GetCloudInitGuestInfoCustSpec(
 	cloudInitMetadata string,
 	config *vimTypes.VirtualMachineConfigInfo,
-	updateArgs VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, *ErrWithReason) {
+	updateArgs VMUpdateArgs) (*vimTypes.VirtualMachineConfigSpec, error) {
 
 	extraConfig := map[string]string{}
 
 	encodedMetadata, err := EncodeGzipBase64(cloudInitMetadata)
 	if err != nil {
-		return nil, &ErrWithReason{
-			error:           fmt.Errorf("encoding cloud-init metadata failed %v", err),
-			conditionReason: vmopv1.VirtualMachineMetadataFormatInvalidReason,
-		}
+		return nil, fmt.Errorf("encoding cloud-init metadata failed %v", err)
 	}
 	extraConfig[constants.CloudInitGuestInfoMetadata] = encodedMetadata
 	extraConfig[constants.CloudInitGuestInfoMetadataEncoding] = "gzip+base64"
-
-	if len(encodedMetadata) > int(constants.CloudInitGuestInfoMaxSize) {
-		return nil, &ErrWithReason{
-			error:           fmt.Errorf("size of cloud-init guest info exceeds the maximum allowed size of %s", constants.CloudInitGuestInfoMaxSize.String()),
-			conditionReason: vmopv1.VirtualMachineGuestInfoSizeExceededReason,
-		}
-	}
 
 	var data string
 	// Check for the 'user-data' key as per official contract and API documentation.
@@ -194,30 +173,16 @@ func GetCloudInitGuestInfoCustSpec(
 		// Ensure the data is normalized first to plain-text.
 		plainText, err := util.TryToDecodeBase64Gzip([]byte(data))
 		if err != nil {
-			return nil, &ErrWithReason{
-				error:           fmt.Errorf("decoding cloud-init userdata failed %v", err),
-				conditionReason: vmopv1.VirtualMachineMetadataFormatInvalidReason,
-			}
+			return nil, fmt.Errorf("decoding cloud-init userdata failed %v", err)
 		}
 
 		encodedUserdata, err := EncodeGzipBase64(plainText)
 		if err != nil {
-			return nil, &ErrWithReason{
-				error:           fmt.Errorf("encoding cloud-init userdata failed %v", err),
-				conditionReason: vmopv1.VirtualMachineMetadataFormatInvalidReason,
-			}
+			return nil, fmt.Errorf("encoding cloud-init userdata failed %v", err)
 		}
 
 		extraConfig[constants.CloudInitGuestInfoUserdata] = encodedUserdata
 		extraConfig[constants.CloudInitGuestInfoUserdataEncoding] = "gzip+base64"
-
-		if len(encodedUserdata) > int(constants.CloudInitGuestInfoMaxSize) ||
-			len(encodedUserdata)+len(encodedMetadata) > int(constants.CloudInitGuestInfoMaxSize) {
-			return nil, &ErrWithReason{
-				error:           fmt.Errorf("size of cloud-init guest info exceeds the maximum allowed size of %s", constants.CloudInitGuestInfoMaxSize.String()),
-				conditionReason: vmopv1.VirtualMachineGuestInfoSizeExceededReason,
-			}
-		}
 	}
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
@@ -280,11 +245,6 @@ func customizeCloudInit(
 
 	cloudInitMetadata, err := GetCloudInitMetadata(vmCtx.VM, netplan, updateArgs.VMMetadata.Data)
 	if err != nil {
-		conditions.MarkFalse(vmCtx.VM,
-			vmopv1.VirtualMachineMetadataReadyCondition,
-			vmopv1.VirtualMachineMetadataFormatInvalidReason,
-			vmopv1.ConditionSeverityError,
-			err.Error())
 		return nil, nil, err
 	}
 
@@ -301,12 +261,6 @@ func customizeCloudInit(
 	}
 
 	if err != nil {
-		errWithReason := err.(ErrWithReason)
-		conditions.MarkFalse(vmCtx.VM,
-			vmopv1.VirtualMachineMetadataReadyCondition,
-			errWithReason.conditionReason,
-			vmopv1.ConditionSeverityError,
-			errWithReason.Error())
 		return nil, nil, err
 	}
 
@@ -353,7 +307,6 @@ func (s *Session) customize(
 	if err != nil {
 		return err
 	}
-	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineMetadataReadyCondition)
 
 	if configSpec != nil {
 		defaultConfigSpec := &vimTypes.VirtualMachineConfigSpec{}

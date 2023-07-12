@@ -7,7 +7,6 @@ import (
 	goctx "context"
 	"encoding/base64"
 	"fmt"
-	"math/rand"
 	"strings"
 
 	. "github.com/onsi/ginkgo"
@@ -403,59 +402,6 @@ var _ = Describe("Cloud-Init Customization", func() {
 			})
 		})
 
-		Context("With cloud init guest info exceeding the maximum size", func() {
-			generateDataFunc := func(length int) string {
-				charset := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-				sb := strings.Builder{}
-				sb.Grow(length)
-				for i := 0; i < length; i++ {
-					sb.WriteByte(charset[rand.Intn(len(charset))]) //nolint:gosec
-				}
-				return sb.String()
-			}
-
-			Context("With cloud init user data exceeding the maximum size", func() {
-				BeforeEach(func() {
-					// Doubling the input to the max allowed size to make sure the compressed and encoded
-					// output is still above the allowed limit.
-					data, err := session.EncodeGzipBase64(generateDataFunc(128 * 1000))
-					Expect(err).ToNot(HaveOccurred())
-					updateArgs.VMMetadata.Data["user-data"] = data
-				})
-				It("will return a limit exceeded error", func() {
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("exceeds the maximum allowed size of 64KiB"))
-				})
-			})
-
-			Context("With cloud init metadata exceeding the maximum size", func() {
-				BeforeEach(func() {
-					// Doubling the input to the max allowed size to make sure the compressed and encoded
-					// output is still above the allowed limit.
-					data, err := session.EncodeGzipBase64(generateDataFunc(128 * 1000))
-					Expect(err).ToNot(HaveOccurred())
-					cloudInitMetadata = data
-				})
-				It("will return a limit exceeded error", func() {
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("exceeds the maximum allowed size of 64KiB"))
-				})
-			})
-
-			Context("With cloud init metadata + userdata exceeding the maximum size", func() {
-				BeforeEach(func() {
-					data, err := session.EncodeGzipBase64(generateDataFunc(64 * 1000))
-					Expect(err).ToNot(HaveOccurred())
-					cloudInitMetadata = data
-					updateArgs.VMMetadata.Data["user-data"] = data
-				})
-				It("will return a limit exceeded error", func() {
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("exceeds the maximum allowed size of 64KiB"))
-				})
-			})
-		})
 	})
 
 	Context("GetCloudInitPrepCustSpec", func() {

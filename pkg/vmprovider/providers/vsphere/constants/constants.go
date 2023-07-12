@@ -4,8 +4,6 @@
 package constants
 
 import (
-	"github.com/alecthomas/units"
-
 	"github.com/vmware-tanzu/vm-operator/pkg"
 )
 
@@ -73,12 +71,6 @@ const (
 	CloudInitGuestInfoMetadataEncoding = "guestinfo.metadata.encoding"
 	CloudInitGuestInfoUserdata         = "guestinfo.userdata"
 	CloudInitGuestInfoUserdataEncoding = "guestinfo.userdata.encoding"
-
-	// CloudInitGuestInfoMaxSize the maximum allowed size for CloudInit metadata.
-	// As defined in the https://github.com/vmware/open-vm-tools/blob/42ce53f39be45b7795a9f1adf892af84629b4a19/open-vm-tools/lib/include/guest_msg_def.h#L100-L104
-	//
-	// The human-readable value for the constant equates to 64 Kibibytes, or 64KiB.
-	CloudInitGuestInfoMaxSize = 64 * units.KiB
 
 	// InstanceStoragePVCNamePrefix prefix of auto-generated PVC names.
 	InstanceStoragePVCNamePrefix = "instance-pvc-"

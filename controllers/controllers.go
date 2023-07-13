@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package controllers
@@ -8,9 +8,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/clustercontentlibraryitem"
-	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentlibraryitem"
-	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/contentsource"
+	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/controllers/infracluster"
 	"github.com/vmware-tanzu/vm-operator/controllers/infraprovider"
 	"github.com/vmware-tanzu/vm-operator/controllers/providerconfigmap"
@@ -19,14 +17,17 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinepublishrequest"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest"
 	"github.com/vmware-tanzu/vm-operator/controllers/volume"
-	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 // AddToManager adds all controllers to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
+	if err := contentlibrary.AddToManager(ctx, mgr); err != nil {
+		return errors.Wrap(err, "failed to initialize ContentLibrary controllers")
+	}
 	if err := infracluster.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize InfraCluster controller")
 	}
@@ -45,26 +46,17 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	if err := virtualmachinesetresourcepolicy.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize VirtualMachineSetResourcePolicy controller")
 	}
+	if err := virtualmachinewebconsolerequest.AddToManager(ctx, mgr); err != nil {
+		return errors.Wrap(err, "failed to initialize VirtualMachineWebConsoleRequest controller")
+	}
 	if err := volume.AddToManager(ctx, mgr); err != nil {
 		return errors.Wrap(err, "failed to initialize Volume controller")
 	}
-	if err := webconsolerequest.AddToManager(ctx, mgr); err != nil {
-		return errors.Wrap(err, "failed to initialize WebConsoleRequest controller")
-	}
 	if lib.IsWCPVMImageRegistryEnabled() {
-		if err := clustercontentlibraryitem.AddToManager(ctx, mgr); err != nil {
-			return errors.Wrap(err, "failed to initialize ClusterContentLibraryItem controller")
-		}
-		if err := contentlibraryitem.AddToManager(ctx, mgr); err != nil {
-			return errors.Wrap(err, "failed to initialize ContentLibraryItem controller")
-		}
 		if err := virtualmachinepublishrequest.AddToManager(ctx, mgr); err != nil {
 			return errors.Wrap(err, "failed to initialize VirtualMachinePublishRequest controller")
 		}
 	} else {
-		if err := contentsource.AddToManager(ctx, mgr); err != nil {
-			return errors.Wrap(err, "failed to initialize ContentSource controller")
-		}
 		// We only update TKG related ContentSource/ContentLibraryProvider/ContentSourceBinding resources
 		// in provider configmap reconcile. These resources will be removed when the FSS is enabled,
 		// add provider configmap controller to the manager only when the FSS is disabled.

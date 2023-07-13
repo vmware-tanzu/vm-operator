@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/webconsolevalidation"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -58,7 +58,7 @@ func serverUnitTests() {
 				wcr := &vmopv1.WebConsoleRequest{}
 				wcr.Namespace = "dummy-namespace"
 				wcr.Labels = map[string]string{
-					webconsolerequest.UUIDLabelKey: "dummy-uuid-1234",
+					v1alpha1.UUIDLabelKey: "dummy-uuid-1234",
 				}
 				initObjects = append(initObjects, wcr)
 			})

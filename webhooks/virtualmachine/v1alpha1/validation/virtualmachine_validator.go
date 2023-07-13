@@ -27,10 +27,10 @@ import (
 
 	"github.com/pkg/errors"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-
-	"github.com/vmware-tanzu/vm-operator/controllers/volume"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
+
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/controllers/volume/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -397,7 +397,7 @@ func (v validator) validateVolumeWithPVC(ctx *context.WebhookRequestContext, vm 
 
 	// Check that the name used for the CnsNodeVmAttachment will be valid. Don't double up errors if name is missing.
 	if vol.Name != "" {
-		errs := validation.NameIsDNSSubdomain(volume.CNSAttachmentNameForVolume(vm, vol.Name), false)
+		errs := validation.NameIsDNSSubdomain(v1alpha1.CNSAttachmentNameForVolume(vm, vol.Name), false)
 		for _, msg := range errs {
 			allErrs = append(allErrs, field.Invalid(volPath.Child("name"), vol.Name, msg))
 		}

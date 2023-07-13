@@ -3,7 +3,7 @@ run:
   skip-files:
    - ".*generated.*\\.go"
    - external/
-   - controllers/virtualmachineservice/utils/
+   - controllers/virtualmachineservice/v1alpha1/utils/
 
 # override defaults
 linters-settings:

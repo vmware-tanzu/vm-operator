@@ -18,7 +18,7 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	clutils "github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/utils"
+	clutils "github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha1/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"

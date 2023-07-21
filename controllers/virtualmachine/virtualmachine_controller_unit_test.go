@@ -13,8 +13,6 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
@@ -27,7 +25,6 @@ import (
 
 func unitTests() {
 	Describe("Invoking Reconcile", unitTestsReconcile)
-	Describe("Invoking Predicate", unitTestsPredicate)
 }
 
 const finalizer = "virtualmachine.vmoperator.vmware.com"
@@ -218,49 +215,4 @@ func expectEvent(ctx *builder.UnitTestContextForController, eventStr string) {
 	EventuallyWithOffset(1, ctx.Events).Should(Receive(&event))
 	eventComponents := strings.Split(event, " ")
 	ExpectWithOffset(1, eventComponents[1]).To(Equal(eventStr))
-}
-
-func unitTestsPredicate() {
-	var (
-		pred        predicate.Predicate
-		updateEvent event.UpdateEvent
-	)
-
-	BeforeEach(func() {
-		pred = predicate.Funcs{
-			UpdateFunc: func(e event.UpdateEvent) bool {
-				return false
-			},
-		}
-		updateEvent = event.UpdateEvent{
-			ObjectOld: generateVirtualMachineClass("old-vm-class"),
-			ObjectNew: generateVirtualMachineClass("new-vm-class"),
-		}
-	})
-
-	It("should filter out the update event", func() {
-		Expect(pred.Update(updateEvent)).To(BeFalse())
-	})
-
-	It("should not filter out other events", func() {
-		createEvent := event.CreateEvent{
-			Object: generateVirtualMachineClass("vm-class"),
-		}
-		Expect(pred.Create(createEvent)).To(BeTrue())
-
-		deleteEvent := event.DeleteEvent{
-			Object: generateVirtualMachineClass("vm-class"),
-		}
-		Expect(pred.Delete(deleteEvent)).To(BeTrue())
-	})
-}
-
-// Generate a VirtualMachineClass object for testing.
-func generateVirtualMachineClass(name string) *vmopv1.VirtualMachineClass {
-	return &vmopv1.VirtualMachineClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: "default",
-		},
-	}
 }

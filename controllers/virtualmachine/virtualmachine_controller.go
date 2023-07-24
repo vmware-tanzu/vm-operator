@@ -15,10 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -89,21 +87,12 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 			handler.EnqueueRequestsFromMapFunc(csBindingToVMMapperFn(ctx, r.Client)))
 	}
 
-	// Predicate functions to determine when a reconcile should be triggered
-	// Used to not watch for VMClass Update event
-	if lib.IsNamespacedVMClassFSSEnabled() {
-		builder = builder.Watches(
-			&source.Kind{Type: &vmopv1.VirtualMachineClass{}},
-			handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client))).
-			WithEventFilter(predicate.Funcs{
-				UpdateFunc: func(e event.UpdateEvent) bool {
-					return false
-				},
-			})
-	} else {
-		builder = builder.Watches(
-			&source.Kind{Type: &vmopv1.VirtualMachineClassBinding{}},
+	if !lib.IsNamespacedVMClassFSSEnabled() {
+		builder = builder.Watches(&source.Kind{Type: &vmopv1.VirtualMachineClassBinding{}},
 			handler.EnqueueRequestsFromMapFunc(classBindingToVMMapperFn(ctx, r.Client)))
+	} else {
+		builder = builder.Watches(&source.Kind{Type: &vmopv1.VirtualMachineClass{}},
+			handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client)))
 	}
 
 	// Filter any VMs that reference a VM Class with a spec.controllerName set

@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -392,6 +393,11 @@ func (r *ReconcileVirtualMachineService) createOrUpdateService(ctx *context.Virt
 		service.Spec.ExternalName = vmService.Spec.ExternalName
 		service.Spec.LoadBalancerIP = vmService.Spec.LoadBalancerIP
 		service.Spec.LoadBalancerSourceRanges = vmService.Spec.LoadBalancerSourceRanges
+		if service.Spec.Type == corev1.ServiceTypeLoadBalancer {
+			service.Spec.AllocateLoadBalancerNodePorts = pointer.Bool(false)
+		} else {
+			service.Spec.AllocateLoadBalancerNodePorts = nil
+		}
 
 		// Parts of the Service.Spec can be updated by k8s after creation, and we need to
 		// preserve those fields.

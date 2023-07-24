@@ -173,6 +173,8 @@ func unitTestsReconcile() {
 				Expect(service.Spec.LoadBalancerIP).To(Equal(loadBalancerIP))
 				Expect(service.Spec.LoadBalancerSourceRanges).To(HaveLen(2))
 				Expect(service.Spec.LoadBalancerSourceRanges).To(ContainElements(lbSourceRanges))
+				Expect(service.Spec.AllocateLoadBalancerNodePorts).ToNot(BeNil())
+				Expect(*service.Spec.AllocateLoadBalancerNodePorts).To(BeFalse())
 			})
 
 			Context("With Expected Spec.Ports", func() {

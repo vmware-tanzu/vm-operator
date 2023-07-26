@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -37,7 +37,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 
 	wcr := builder.DummyWebConsoleRequest("some-namespace", "some-name", "some-vm-name", publicKeyPem)
 	wcr.Labels = map[string]string{
-		webconsolerequest.UUIDLabelKey: "some-uuid",
+		v1alpha1.UUIDLabelKey: "some-uuid",
 	}
 	obj, err := builder.ToUnstructured(wcr)
 	Expect(err).ToNot(HaveOccurred())
@@ -135,7 +135,7 @@ func unitTestsValidateUpdate() {
 		}
 
 		if args.updateUUIDLabel {
-			ctx.wcr.Labels[webconsolerequest.UUIDLabelKey] = "new-uuid"
+			ctx.wcr.Labels[v1alpha1.UUIDLabelKey] = "new-uuid"
 		}
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured((ctx.wcr))

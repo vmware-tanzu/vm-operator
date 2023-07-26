@@ -13,7 +13,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/controllers/webconsolerequest"
+	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
 )
 
 // K8sClient is used to get the webconsolerequest resource from UUID and namespace.
@@ -82,7 +82,7 @@ func HandleWebConsoleValidation(w http.ResponseWriter, r *http.Request) {
 
 func isResourceFound(goCtx context.Context, uuid, namespace string) (bool, error) {
 	labelSelector := ctrlruntime.MatchingLabels{
-		webconsolerequest.UUIDLabelKey: uuid,
+		v1alpha1.UUIDLabelKey: uuid,
 	}
 
 	// TODO: Use an Informer to avoid hitting the API server for every request.

@@ -113,6 +113,10 @@ The data in the above `Secret` is called the Cloud-Init _Cloud Config_. For more
 
 Microsoft originally designed Sysprep as a means to prepare a deployed system for use as a template. It was such a useful tool, that VMware utilized it as the means to customize a VM with a Windows guest.
 
+!!! note "Sysprep State"
+
+    Deploying Windows images that have not completed their previous Sysprep operation could cause the Guest OS customization to fail. Therefore, it is important to ensure that the image is sealed correctly and in a clean state when using Sysprep. For more information on this issue, please refer to [this article](https://kb.vmware.com/s/article/86350).
+
 #### Minimal Config
 
 The following YAML may be used to bootstrap a Windows image with minimal information. For proper network configuration and Guest OS Customization (GOSC) completion, Sysprep unattend data requires a template for providing network info and `RunSynchronousCommand` to record GOSC status. Both components are essential for Windows Vista and later versions.

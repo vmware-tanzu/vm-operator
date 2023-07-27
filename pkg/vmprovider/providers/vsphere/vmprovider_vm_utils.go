@@ -460,7 +460,7 @@ func HardwareVersionForPVCandPCIDevices(imageHWVersion int32, configSpec *types.
 	var configSpecHWVersion int32
 	configSpecDevs := util.DevicesFromConfigSpec(configSpec)
 
-	if len(util.SelectVGPU(configSpecDevs)) > 0 || len(util.SelectDynamicDirectPathIO(configSpecDevs)) > 0 {
+	if len(util.SelectNvidiaVgpu(configSpecDevs)) > 0 || len(util.SelectDynamicDirectPathIO(configSpecDevs)) > 0 {
 		configSpecHWVersion = constants.MinSupportedHWVersionForPCIPassthruDevices
 		if imageHWVersion != 0 && imageHWVersion > constants.MinSupportedHWVersionForPCIPassthruDevices {
 			configSpecHWVersion = imageHWVersion

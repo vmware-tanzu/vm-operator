@@ -102,12 +102,10 @@ func FuzzTestFunc(input FuzzTestFuncInput) func(*testing.T) {
 
 				// Remove data annotation eventually added by ConvertFrom for avoiding data loss in hub-spoke-hub round trips
 				// NOTE: There are use case when we want to skip this operation, e.g. if the spoke object does not have ObjectMeta (e.g. kubeadm types).
-				/* TODO: BMV Not yet for us
 				if !input.SkipSpokeAnnotationCleanup {
 					metaAfter := spokeAfter.(metav1.Object)
-					delete(metaAfter.GetAnnotations(), DataAnnotation)
+					delete(metaAfter.GetAnnotations(), AnnotationKey)
 				}
-				*/
 
 				if input.SpokeAfterMutation != nil {
 					input.SpokeAfterMutation(spokeAfter)

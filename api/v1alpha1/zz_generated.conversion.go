@@ -1440,6 +1440,7 @@ func autoConvert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineIm
 	// WARNING: in.OVFProperties requires manual conversion: does not exist in peer-type
 	// WARNING: in.ProductInfo requires manual conversion: does not exist in peer-type
 	// WARNING: in.ProviderContentVersion requires manual conversion: does not exist in peer-type
+	// WARNING: in.ProviderItemID requires manual conversion: does not exist in peer-type
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]Condition, len(*in))

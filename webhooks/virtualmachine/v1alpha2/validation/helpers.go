@@ -8,10 +8,6 @@ import "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 // This file contains v1a2 related changes in other packages that haven't been
 // committed yet.
 
-func cNSAttachmentNameForVolume(vmName string, volumeName string) string {
-	return vmName + "-" + volumeName
-}
-
 func filterVolumesA2(vm *v1alpha2.VirtualMachine) []v1alpha2.VirtualMachineVolume {
 	var volumes []v1alpha2.VirtualMachineVolume
 	for _, vol := range vm.Spec.Volumes {

@@ -84,15 +84,98 @@ It is possible to update parts of an existing `VirtualMachine` resource. Some fi
 
 ## Resources
 
-Some of a VM's hardware resources are derived, and there are some that may be influenced directly by a user.
-
-// TODO ([github.com/vmware-tanzu/vm-operator#105](https://github.com/vmware-tanzu/vm-operator/issues/105))
+Some of a VM's hardware resources are derived from the policies defined by your infrastructure administrator, others may be influenced directly by a user.
 
 ### CPU and Memory
+CPU and memory of a VM are derived form the `VirtualMachineClass` that is used to create the VM. Specifically, the `memoryMB` and `numCPUs` properties in the `configSpec` field of the `VirtualMachineClass` resource dictate the exact number of virtual CPUs, and the virtual memory that the VM will be created with.
+
+Additionally, your administrator might also define certain policies in your VM class in form of resource [reservations](https://docs.vmware.com/en/VMware-vSphere/7.0/com.vmware.vsphere.resmgmt.doc/GUID-8B88D3D8-E9D9-4C05-A065-B3DE1FFFB401.html) or [limits](https://docs.vmware.com/en/VMware-vSphere/7.0/com.vmware.vsphere.resmgmt.doc/GUID-117972E3-F5D3-4641-9EAC-F9DD2B0761C3.html). These are vSphere constructs which are used to reserve, or set a ceiling on resources consumed by a VM. Users can view these policies by inspecting the `ConfigSpec.cpuAllocation` and `ConfigSpec.memoryAllocation` fields of the VM Class for CPU and memory reservation/limits information respectively.
+
+For an example, consider the following VM Class:
+```
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachineClass
+metadata:
+  name: my-vm-class
+spec:
+  configSpec:
+    _typeName: VirtualMachineConfigSpec
+    cpuAllocation:
+      _typeName: ResourceAllocationInfo
+      limit: 400
+      reservation: 200
+    memoryAllocation:
+      _typeName: ResourceAllocationInfo
+      limit: 2048
+      reservation: 1024
+  hardware:
+    cpus: 2
+    memory: 4Gi
+```
+A VM created with this VM class will have 2 vCPUs, 4 GiB of memory. Additionally, the VM will be created with a guaranteed CPU bandwidth of 200MHz and 1024 MB of memory. The CPU bandwidth of the VM will never be allowed to exceed 400MHz and the memory will not exceed 2GB.
+
+!!! note "Units for CPU reservations/limits are in MHz"
+
+    Please note that the units for CPU are different in hardware and reservations/limits.  Virtual hardware is specified in units of vCPUs, whereas CPU reservations/limits are in MHz.  Memory can be specified in MiB, GiB, whereas memory reservations/limits are always in MB.
 
 ### Networking
+Users can optionally specify a list of network interfaces for their VM in the `spec.NetworkInterfaces` field. Each interface must specify the network type which can be either `nsx-t` or `vsphere-distributed`, depending on the network provider being used. Users can further customize each interface with optional fields such as the Ethernet card type, network name etc. If a VM does not specify any network interface, VM operator creates an interface that is connected to the default network available in the namespace. The IP address of the network interface is handled by the available network provider (configured by the administrator).
+
+#### How are a VM's Network Interfaces Configured?
+VM operator uses the network devices specified in the VM Class to configure the network interfaces specified in the VM spec. If it cannot find sufficient number of devices in the VM class, a set of defaults are used to configure the network interfaces.
+
+As an example, consider the following VM Class that specifies two network devices, each with a different Ethernet card type.
+
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachineClass
+metadata:
+  name: class-with-two-nics
+spec:
+  configSpec:
+    _typeName: VirtualMachineConfigSpec
+    deviceChange:
+    - _typeName: VirtualDeviceConfigSpec
+      device:
+        _typeName: VirtualE1000
+        key: -100
+      operation: add
+    - _typeName: VirtualDeviceConfigSpec
+      device:
+        _typeName: VirtualVmxnet3
+        key: -200
+      operation: add
+  hardware:
+    cpus: 2
+    memory: 4Gi
+```
+
+If the following VM is created using the class defined above:
+```yaml
+apiVersion: vmoperator.vmware.com/v1alpha1
+kind: VirtualMachine
+metadata:
+  name: my-vm
+  namespace: my-namespace
+spec:
+  className: class-with-two-nics
+  imageName: ubuntu-kinetic
+  networkInterfaces:
+  - networkType: nsx-t
+    ethernetCardType: eth1000
+  - networkType: nsx-t
+    etherNetCardType: vmxNet3
+  - networkType: nsx-t
+    ethernetCardType: vmxnet2
+  - networkType: nsx-t
+  powerState: poweredOn
+  storageClass: wcpglobal-storage-profile
+```
+The first two network interfaces of the VM are configured using the VM class. So, even though they specify a card type, they inherit the `VirtualE1000` and `VirtualVmxnet3` types respectively. The third interface is configured using the card type it specifies - `VirtualVmxnet2`. The fourth interface does not specify any type, so the default Ethernet card type of `VirtualVmxnet3` is used.
+
 
 ### Storage
+A VM deployed using VM operator inherits the storage defined in the `VirtualMachineImage`.  However, developers can also provision and manage additional storage dynamically by leveraging [PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes). To do this, a user would create a [PersistentVolumeClaim](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims) resource by picking a `StorageClass` associated with their namespace, along with other properties such as the disk size, mode etc. VM operator then dynamically provisions a first class disks which is exposed to the guest as a block volume. Users can start using the disk after formatting and mounting it at a mountpoint. VM operator also supports resizing these volumes to increase their size.
 
 ## Power States
 

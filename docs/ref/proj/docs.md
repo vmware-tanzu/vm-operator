@@ -110,3 +110,42 @@ The guidelines for writing project documentation are as follows:
     * [Example of a concept](../../concepts/workloads/vm.md)
     * [Example of a tutorial](../../tutorials/deploy-vm/cloudinit.md)
 
+### Preview Changes
+
+Once documentation is written, it is important to see how it looks in order to review it. There are a few ways to preview the VM Operator project documentation:
+
+#### Preview with Pull Request
+
+First, and perhaps the simplest way to preview documentation is by opening a pull request. If any changes are detected under the `./docs` folder, a link is automatically added at the bottom of a pull request's description that points to a temporary, public URL that hosts the documentation from the pull request. For example, at the bottom of the description of pull request that added this section, [vmware-tanzu/vm-operator/pull#190](https://github.com/vmware-tanzu/vm-operator/pull/190), the following was added automatically:
+
+> ----
+> :books: Documentation preview :books:: https://vm-operator--190.org.readthedocs.build/en/190/
+
+This option makes it trivial for pull request reviewers to verify doc updates. Additionally, because the process used to build documentation for a pull request is the same as the one for `main`, this option is a great way to assert that changes to files such as `mkdocs.yml` or `.readthedocs.yaml`, have not broken the ability to build the documentation.
+
+#### Preview Locally
+
+Understandably, some people would like to preview changes prior to opening a pull request. There are two ways to build and preview the documentation locally:
+
+* With Python3
+
+    ```shell
+    make docs-serve-python
+    ```
+
+* With Docker
+
+    ```shell
+    make docs-server-docker
+    ```
+
+Both of the above options have their strengths and weaknesses. Using Python3 is faster, but adds the complexity of knowing how to debug issues with a local Python3 installation if any should arise. The Docker option is more portable, but only if Docker is already installed. After choosing a command and running it:
+
+* The documentation is available at [http://127.0.0.1:8000/vmware-tanzu/vm-operator/](http://127.0.0.1:8000/vmware-tanzu/vm-operator/).
+* The local server will automatically reload if any changes are detected to content under the `./docs` folder. 
+
+!!! note "Docker and `0.0.0.0`"
+
+    If the Docker option is selected to preview the documentation locally, the last line of the output will be `Serving on http://0.0.0.0:8000/vmware-tanzu/vm-operator/`. However, the site is still accessed via [http://127.0.0.1:8000/vmware-tanzu/vm-operator/](http://127.0.0.1:8000/vmware-tanzu/vm-operator/). So what gives with the `0.0.0.0`?
+
+    The IP address `0.0.0.0` instructs the web server to bind the port over which the content is accessed to all, available IP addresses. Normally `mkdocs` just binds the web server port to `127.0.0.1`, but if that was used inside of the container, the web server would not be accessible via the web browser on the system where Docker is running.

@@ -1,0 +1,44 @@
+## Docker image used to build and host the documentation.
+FROM --platform=${BUILDPLATFORM} photon:5.0
+
+
+## --------------------------------------
+## Multi-platform support
+## --------------------------------------
+
+ARG TARGETOS
+ARG TARGETARCH
+
+
+## --------------------------------------
+## Install Python3
+## --------------------------------------
+
+RUN tdnf --assumeyes install python3 python3-pip
+
+
+## --------------------------------------
+## Configure the working directory
+## --------------------------------------
+
+WORKDIR /docs
+
+
+## --------------------------------------
+## Cache the requirements
+## --------------------------------------
+
+COPY ./docs/requirements.txt /docs/
+RUN pip3 install -r /docs/requirements.txt
+
+
+## --------------------------------------
+## Run the web server
+## --------------------------------------
+
+# Expose MkDocs development server port
+EXPOSE 8000
+
+# Start development server by default
+ENTRYPOINT ["mkdocs"]
+CMD ["serve", "--dev-addr=0.0.0.0:8000"]

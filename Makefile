@@ -521,6 +521,18 @@ deploy-local-vcsim: prereqs kustomize-local-vcsim  ## Deploy controller in the c
 
 
 ## --------------------------------------
+## Documentation
+## --------------------------------------
+
+docs-serve-python: ## Serve docs w python
+	pip3 install --user -r ./docs/requirements.txt
+	$$(python3 -m site --user-base)/bin/mkdocs serve
+
+docs-serve-docker: ## Serve docs w docker
+	docker build -f Dockerfile.docs -t $(IMAGE)-docs:$(IMAGE_TAG) .
+	docker run -it --rm -p 8000:8000 -v "$$(pwd)":/docs $(IMAGE)-docs:$(IMAGE_TAG)
+
+## --------------------------------------
 ## Docker
 ## --------------------------------------
 

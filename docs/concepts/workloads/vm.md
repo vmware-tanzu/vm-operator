@@ -12,7 +12,7 @@ The VM Operator `VirtualMachine` API enables the lifecycle-management of a VM on
 
 ## Using VMs
 
-The following is an example of a `VirtualMachine` resource that bootstraps a Photon OS image using [Cloud-Init](cloudinit.readthedocs.io/):
+The following is an example of a `VirtualMachine` resource that bootstraps a Photon OS image using [Cloud-Init](https://cloudinit.readthedocs.io/):
 
 ```yaml title="vm-example.yaml"
 --8<-- "./docs/concepts/workloads/vm-example.yaml"
@@ -68,7 +68,7 @@ A Storage Class defines a VM's storage policy and is required to create a new VM
 kubectl get storageclass
 ```
 
-For more information on Storage Classes, please see the documentation for [`StorageClass`]([./vm-class.md](https://kubernetes.io/docs/concepts/storage/storage-classes/)).
+For more information on Storage Classes, please see the documentation for [`StorageClass`](https://kubernetes.io/docs/concepts/storage/storage-classes/).
 
 
 ## Updating a VM

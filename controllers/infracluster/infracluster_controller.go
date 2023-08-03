@@ -23,15 +23,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 )
 
 const (
 	// VcCredsSecretName is the credential secret that stores the VM operator service provider user credentials.
 	VcCredsSecretName = "wcp-vmop-sa-vc-auth" //nolint:gosec
 )
+
+type infraClusterProvider interface {
+	UpdateVcPNID(ctx goctx.Context, vcPNID, vcPort string) error
+	ResetVcClient(ctx goctx.Context)
+}
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
@@ -41,12 +46,19 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
+	var provider infraClusterProvider
+	if lib.IsVMServiceV1Alpha2FSSEnabled() {
+		provider = ctx.VMProviderA2
+	} else {
+		provider = ctx.VMProvider
+	}
+
 	r := NewReconciler(
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		ctx.Namespace, // Aka lib.GetVmOpNamespaceFromEnv()
-		ctx.VMProvider,
+		provider,
 	)
 
 	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
@@ -122,13 +134,13 @@ func NewReconciler(
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmOpNamespace string,
-	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
+	provider infraClusterProvider) *Reconciler {
 	return &Reconciler{
 		Client:        client,
 		Logger:        logger,
 		Recorder:      recorder,
 		vmOpNamespace: vmOpNamespace,
-		vmProvider:    vmProvider,
+		provider:      provider,
 	}
 }
 
@@ -137,7 +149,7 @@ type Reconciler struct {
 	Logger        logr.Logger
 	Recorder      record.Recorder
 	vmOpNamespace string
-	vmProvider    vmprovider.VirtualMachineProviderInterface
+	provider      infraClusterProvider
 }
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
@@ -161,7 +173,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result
 
 func (r *Reconciler) reconcileVcCreds(ctx goctx.Context, req ctrl.Request) {
 	r.Logger.Info("Reconciling updated VM Operator credentials", "secret", req.NamespacedName)
-	r.vmProvider.ResetVcClient(ctx)
+	r.provider.ResetVcClient(ctx)
 }
 
 func (r *Reconciler) reconcileWcpClusterConfig(ctx goctx.Context, req ctrl.Request) error {
@@ -182,5 +194,5 @@ func (r *Reconciler) reconcileWcpClusterConfig(ctx goctx.Context, req ctrl.Reque
 		return nil
 	}
 
-	return r.vmProvider.UpdateVcPNID(ctx, clusterConfig.VcPNID, clusterConfig.VcPort)
+	return r.provider.UpdateVcPNID(ctx, clusterConfig.VcPNID, clusterConfig.VcPort)
 }

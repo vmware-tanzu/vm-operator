@@ -17,8 +17,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
+
+type infraProvider interface {
+	ComputeCPUMinFrequency(ctx goctx.Context) error
+}
 
 // AddToManager adds this package's controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
@@ -27,10 +31,17 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
 	)
 
+	var provider infraProvider
+	if lib.IsVMServiceV1Alpha2FSSEnabled() {
+		provider = ctx.VMProviderA2
+	} else {
+		provider = ctx.VMProvider
+	}
+
 	r := NewReconciler(
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
-		ctx.VMProvider,
+		provider,
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -58,18 +69,18 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 func NewReconciler(
 	client client.Client,
 	logger logr.Logger,
-	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
+	provider infraProvider) *Reconciler {
 	return &Reconciler{
-		Client:     client,
-		Logger:     logger,
-		VMProvider: vmProvider,
+		Client:   client,
+		Logger:   logger,
+		provider: provider,
 	}
 }
 
 type Reconciler struct {
 	client.Client
-	Logger     logr.Logger
-	VMProvider vmprovider.VirtualMachineProviderInterface
+	Logger   logr.Logger
+	provider infraProvider
 }
 
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
@@ -79,7 +90,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result
 
 	// Update the minimum CPU frequency. This frequency is used to populate the resource allocation
 	// fields in the ConfigSpec for cloning the VM.
-	if err := r.VMProvider.ComputeCPUMinFrequency(ctx); err != nil {
+	if err := r.provider.ComputeCPUMinFrequency(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
 

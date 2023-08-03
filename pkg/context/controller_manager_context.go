@@ -74,6 +74,9 @@ type ControllerManagerContext struct {
 
 	// VMProvider is the controller manager's VM Provider
 	VMProvider vmprovider.VirtualMachineProviderInterface
+
+	// VMProviderA2 is the controller manager's VM Provider for v1alpha2
+	VMProviderA2 vmprovider.VirtualMachineProviderInterfaceA2
 }
 
 // String returns ControllerManagerName.

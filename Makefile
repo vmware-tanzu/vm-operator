@@ -74,7 +74,8 @@ ETCD               := $(TOOLS_BIN_DIR)/etcd
 
 # Allow overriding manifest generation destination directory
 MANIFEST_ROOT     ?= config
-CRD_ROOT          ?= $(MANIFEST_ROOT)/crd/bases
+V1A1_CRD_ROOT     ?= $(MANIFEST_ROOT)/crd/bases/v1a1
+CRD_ROOT          ?= $(MANIFEST_ROOT)/crd/bases/all
 EXTERNAL_CRD_ROOT ?= $(MANIFEST_ROOT)/crd/external-crds
 WEBHOOK_ROOT      ?= $(MANIFEST_ROOT)/webhook
 RBAC_ROOT         ?= $(MANIFEST_ROOT)/rbac
@@ -272,6 +273,11 @@ generate-manifests: | $(CONTROLLER_GEN)
 generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/api/v1alpha1/... \
+		crd:crdVersions=v1 \
+		output:crd:dir=$(V1A1_CRD_ROOT) \
+		output:none
+	$(CONTROLLER_GEN) \
+		paths=github.com/vmware-tanzu/vm-operator/api... \
 		crd:crdVersions=v1 \
 		output:crd:dir=$(CRD_ROOT) \
 		output:none

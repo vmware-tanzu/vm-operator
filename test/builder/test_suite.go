@@ -111,7 +111,6 @@ func getCrdPaths(crdPaths ...string) []string {
 	rootDir := testutil.GetRootDirOrDie()
 
 	return append(crdPaths,
-		filepath.Join(rootDir, "config", "crd", "bases"),
 		filepath.Join(rootDir, "config", "crd", "external-crds"),
 	)
 }
@@ -158,7 +157,16 @@ func NewTestSuiteForControllerWithFSS(addToManagerFn pkgmgr.AddToManagerFunc,
 		initProvidersFn: initProvidersFn,
 		fssMap:          fssMap,
 	}
-	testSuite.init(getCrdPaths())
+
+	var crdPath string
+	rootDir := testutil.GetRootDirOrDie()
+	if enabled, ok := fssMap[lib.VMServiceV1Alpha2FSS]; ok && enabled {
+		crdPath = filepath.Join(rootDir, "config", "crd", "bases", "all")
+	} else {
+		crdPath = filepath.Join(rootDir, "config", "crd", "bases", "v1a1")
+	}
+
+	testSuite.init(getCrdPaths(crdPath))
 
 	return testSuite
 }
@@ -213,7 +221,10 @@ func newTestSuiteForWebhook(
 	}
 	testSuite.certDir = certDir
 
-	testSuite.init(getCrdPaths())
+	rootDir := testutil.GetRootDirOrDie()
+	// TODO: Switch to use v1a2 crds with v1a2FSS enabled
+	crdPath := filepath.Join(rootDir, "config", "crd", "bases", "v1a1")
+	testSuite.init(getCrdPaths(crdPath))
 
 	return testSuite
 }

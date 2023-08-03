@@ -1,20 +1,19 @@
 # This kustomization.yaml is not intended to be run by itself,
 # since it depends on service name and namespace that are out of this kustomize package.
-# It should be run by config/default
 resources:
-- bases/vmoperator.vmware.com_clustervirtualmachineimages.yaml
-- bases/vmoperator.vmware.com_contentsources.yaml
-- bases/vmoperator.vmware.com_contentsourcebindings.yaml
-- bases/vmoperator.vmware.com_contentlibraryproviders.yaml
-- bases/vmoperator.vmware.com_virtualmachines.yaml
-- bases/vmoperator.vmware.com_virtualmachineclasses.yaml
-- bases/vmoperator.vmware.com_virtualmachineclassbindings.yaml
-- bases/vmoperator.vmware.com_virtualmachinesetresourcepolicies.yaml
-- bases/vmoperator.vmware.com_virtualmachineservices.yaml
-- bases/vmoperator.vmware.com_virtualmachineimages.yaml
-- bases/vmoperator.vmware.com_virtualmachinepublishrequests.yaml
-- bases/vmoperator.vmware.com_webconsolerequests.yaml
-#- bases/vmoperator.vmware.com_virtualmachinewebconsolerequests.yaml
+- bases/all/vmoperator.vmware.com_clustervirtualmachineimages.yaml
+- bases/all/vmoperator.vmware.com_contentsources.yaml
+- bases/all/vmoperator.vmware.com_contentsourcebindings.yaml
+- bases/all/vmoperator.vmware.com_contentlibraryproviders.yaml
+- bases/all/vmoperator.vmware.com_virtualmachines.yaml
+- bases/all/vmoperator.vmware.com_virtualmachineclasses.yaml
+- bases/all/vmoperator.vmware.com_virtualmachineclassbindings.yaml
+- bases/all/vmoperator.vmware.com_virtualmachinesetresourcepolicies.yaml
+- bases/all/vmoperator.vmware.com_virtualmachineservices.yaml
+- bases/all/vmoperator.vmware.com_virtualmachineimages.yaml
+- bases/all/vmoperator.vmware.com_virtualmachinepublishrequests.yaml
+- bases/all/vmoperator.vmware.com_webconsolerequests.yaml
+#- bases/all/vmoperator.vmware.com_virtualmachinewebconsolerequests.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

@@ -1,0 +1,20 @@
+# This kustomization.yaml is not intended to be run by itself,
+# since it depends on service name and namespace that are out of this kustomize package.
+resources:
+- vmoperator.vmware.com_clustervirtualmachineimages.yaml
+- vmoperator.vmware.com_contentsources.yaml
+- vmoperator.vmware.com_contentsourcebindings.yaml
+- vmoperator.vmware.com_contentlibraryproviders.yaml
+- vmoperator.vmware.com_virtualmachines.yaml
+- vmoperator.vmware.com_virtualmachineclasses.yaml
+- vmoperator.vmware.com_virtualmachineclassbindings.yaml
+- vmoperator.vmware.com_virtualmachinesetresourcepolicies.yaml
+- vmoperator.vmware.com_virtualmachineservices.yaml
+- vmoperator.vmware.com_virtualmachineimages.yaml
+- vmoperator.vmware.com_virtualmachinepublishrequests.yaml
+- vmoperator.vmware.com_webconsolerequests.yaml
+
+patches:
+  - path: ../../patches/crd_preserveUnknownFields.yaml
+    target:
+      kind: CustomResourceDefinition

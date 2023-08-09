@@ -1,5 +1,18 @@
 # Release Notes
 
+## Version 1.8.3 (2023/08/09)
+
+This release introduces several documentation updates.
+
+### Documentation
+
+* Deploying a VM with the vAppConfig bootstrap provider ([\#175](https://github.com/vmware-tanzu/vm-operator/pull/175))
+* Deploying a VM with the Cloud-Init bootstrap provider ([\#183](https://github.com/vmware-tanzu/vm-operator/pull/183))
+* Information about a VM resources such as CPU, memory, storage ([\#189](https://github.com/vmware-tanzu/vm-operator/pull/189))
+* A call-out to address the incomplete Sysprep state issue ([\#186](https://github.com/vmware-tanzu/vm-operator/pull/186))
+* How to use `kubectl vsphere vm web-console` ([\#196](https://github.com/vmware-tanzu/vm-operator/pull/196))
+
+
 ## Version 1.8.2 (2023/07/28)
 
 This release includes changes related to the upcoming v1alpha2 schema, power state enhancements, support for deploying Windows, and the ability for a `VirtualMachineClass` to contain all of a vSphere VM's hardware and configuration options.

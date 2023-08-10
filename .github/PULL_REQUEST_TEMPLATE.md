@@ -12,7 +12,7 @@ Please add one of the following icons to the title of this PR:
 Some other tips:
 
     1. If this is your first time filing a PR, please read our contributor
-       guidelines for submitting a change at https://vm-operator.readthedocs.io/en/latest/start/contrib/submit-change/.
+       guidelines for submitting a change at https://vm-operator.readthedocs.io/en/stable/start/contrib/submit-change/.
     2. If this PR is unfinished, please prefix the subject with "WIP:".
 
 Finally, before filing the PR, please delete all of the HTML comments.

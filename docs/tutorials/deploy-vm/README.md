@@ -118,7 +118,7 @@ There are a number of methods that may be used to bootstrap a virtual machine's 
 #### Cloud-Init
 
 Cloud-init is the industry standard multi-distribution method for cross-platform cloud instance initialisation.
-Refer to [Deploy a VM With Cloud-Init](https://vm-operator.readthedocs.io/en/latest/tutorials/deploy-vm/cloudinit/) for instructions to use this bootstrap method.
+Refer to [Deploy a VM With Cloud-Init](https://vm-operator.readthedocs.io/en/stable/tutorials/deploy-vm/cloudinit/) for instructions to use this bootstrap method.
 
 #### Sysprep
 
@@ -233,7 +233,7 @@ For more information on Sysprep, please refer to Microsoft's [official documenta
 #### vAppConfig
 
 The vAppConfig bootstrap method is useful for legacy, VM images that rely on bespoke, boot-time processes that leverage vAppConfig properties for customizing a guest.
-Refer to [Deploy a VM with vAppConfig](https://vm-operator.readthedocs.io/en/latest/tutorials/deploy-vm/vappconfig/) for instructions to use this bootstrap method.
+Refer to [Deploy a VM with vAppConfig](https://vm-operator.readthedocs.io/en/stable/tutorials/deploy-vm/vappconfig/) for instructions to use this bootstrap method.
 
 ### Deprecated
 

@@ -362,7 +362,7 @@ To illustrate, the following YAML can be utilized to deploy a VirtualMachine and
     management_gateway: "{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}"
     ```
 
-For more information on vAppConfig, please refer to [tutorial/deploy-vm/vappconfig](https://vm-operator.readthedocs.io/en/latest/tutorials/deploy-vm/vappconfig/).
+For more information on vAppConfig, please refer to [tutorial/deploy-vm/vappconfig](https://vm-operator.readthedocs.io/en/stable/tutorials/deploy-vm/vappconfig/).
 ## Deprecated
 
 The following bootstrap providers are still available, but they are deprecated and are not recommended.

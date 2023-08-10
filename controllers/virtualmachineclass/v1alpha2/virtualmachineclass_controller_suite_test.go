@@ -9,18 +9,18 @@ import (
 	. "github.com/onsi/ginkgo"
 
 	virtualmachineclass "github.com/vmware-tanzu/vm-operator/controllers/virtualmachineclass/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var suite = builder.NewTestSuiteForController(
+var suite = builder.NewTestSuiteForControllerWithFSS(
 	virtualmachineclass.AddToManager,
 	manager.InitializeProvidersNoopFn,
-)
+	map[string]bool{lib.VMServiceV1Alpha2FSS: true})
 
 func TestVirtualMachineClass(t *testing.T) {
-	_ = intgTests
-	suite.Register(t, "VirtualMachineClass controller suite", nil /*intgTests*/, unitTests)
+	suite.Register(t, "VirtualMachineClass controller suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

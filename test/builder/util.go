@@ -4,25 +4,34 @@
 package builder
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"path/filepath"
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
+	"sigs.k8s.io/yaml"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
-	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 const (
@@ -532,4 +541,122 @@ func DummyClusterContentLibrary(name, uuid string) *imgregv1a1.ClusterContentLib
 			UUID: types.UID(uuid),
 		},
 	}
+}
+
+func applyFeatureStateFnsToCRD(
+	crd apiextensionsv1.CustomResourceDefinition,
+	fssMap map[string]bool,
+	fns ...func(apiextensionsv1.CustomResourceDefinition, map[string]bool) apiextensionsv1.CustomResourceDefinition) apiextensionsv1.CustomResourceDefinition {
+
+	for i := range fns {
+		crd = fns[i](crd, fssMap)
+	}
+	return crd
+}
+
+func applyV1Alpha2FSSToCRD(
+	crd apiextensionsv1.CustomResourceDefinition,
+	fssMap map[string]bool) apiextensionsv1.CustomResourceDefinition {
+
+	idxV1a1 := indexOfVersion(crd, "v1alpha1")
+	idxV1a2 := indexOfVersion(crd, "v1alpha2")
+
+	if enabled, ok := fssMap[lib.VMServiceV1Alpha2FSS]; ok && enabled {
+		// Whether the v1a2 version of this CRD is the storage version
+		// depends on existence of the v1a2 version of this CRD.
+		if idxV1a1 >= 0 {
+			crd.Spec.Versions[idxV1a1].Storage = !(idxV1a2 >= 0)
+			crd.Spec.Versions[idxV1a1].Served = true
+		}
+
+		// If there is a v1a2 version of this CRD, it is the storage version.
+		if idxV1a2 >= 0 {
+			crd.Spec.Versions[idxV1a2].Storage = true
+			crd.Spec.Versions[idxV1a2].Served = true
+		}
+	} else if idxV1a1 >= 0 {
+		crd.Spec.Versions[idxV1a1].Storage = true
+		crd.Spec.Versions[idxV1a1].Served = true
+
+		// If there is a v1a2 version of this CRD, remove it.
+		if idxV1a2 >= 0 {
+			copy(crd.Spec.Versions[idxV1a2:], crd.Spec.Versions[idxV1a2+1:])
+			var zeroVal apiextensionsv1.CustomResourceDefinitionVersion
+			crd.Spec.Versions[len(crd.Spec.Versions)-1] = zeroVal
+			crd.Spec.Versions = crd.Spec.Versions[:len(crd.Spec.Versions)-1]
+		}
+	}
+
+	return crd
+}
+
+func indexOfVersion(
+	crd apiextensionsv1.CustomResourceDefinition,
+	version string) int {
+
+	for i := range crd.Spec.Versions {
+		if crd.Spec.Versions[i].Name == version {
+			return i
+		}
+	}
+	return -1
+}
+
+func LoadCRDs(rootFilePath string) ([]*apiextensionsv1.CustomResourceDefinition, error) {
+	// Read the CRD files.
+	files, err := ioutil.ReadDir(rootFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Valid file extensions for CRDs.
+	crdExts := sets.NewString(".json", ".yaml", ".yml")
+
+	var out []*apiextensionsv1.CustomResourceDefinition
+	for i := range files {
+		if !crdExts.Has(filepath.Ext(files[i].Name())) {
+			continue
+		}
+
+		docs, err := readDocuments(filepath.Join(rootFilePath, files[i].Name()))
+		if err != nil {
+			return nil, err
+		}
+
+		for _, d := range docs {
+			var crd apiextensionsv1.CustomResourceDefinition
+			if err = yaml.Unmarshal(d, &crd); err != nil {
+				return nil, err
+			}
+			if crd.Spec.Names.Kind == "" || crd.Spec.Group == "" {
+				continue
+			}
+			out = append(out, &crd)
+		}
+	}
+	return out, nil
+}
+
+// readDocuments reads documents from file
+// copied from https://github.com/kubernetes-sigs/controller-runtime/blob/5bf44d2ffd6201703508e11fbae74fcedc5ce148/pkg/envtest/crd.go#L434-L458
+func readDocuments(fp string) ([][]byte, error) {
+	//nolint:gosec
+	b, err := ioutil.ReadFile(fp)
+	if err != nil {
+		return nil, err
+	}
+	docs := [][]byte{}
+	reader := k8syaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(b)))
+	for {
+		// Read document
+		doc, err := reader.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+		docs = append(docs, doc)
+	}
+	return docs, nil
 }

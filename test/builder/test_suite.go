@@ -28,6 +28,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
@@ -37,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/yaml"
 
+	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/controllers/util/remote"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	ctrlCtx "github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -107,15 +109,6 @@ func (s *TestSuite) GetLogger() logr.Logger {
 	return logf.Log
 }
 
-func getCrdPaths(crdPaths ...string) []string {
-	rootDir := testutil.GetRootDirOrDie()
-
-	return append(crdPaths,
-		filepath.Join(rootDir, "config", "crd", "bases"),
-		filepath.Join(rootDir, "config", "crd", "external-crds"),
-	)
-}
-
 // NewTestSuite returns a new test suite used for unit and/or integration test.
 func NewTestSuite() *TestSuite {
 	return NewTestSuiteForController(
@@ -158,7 +151,7 @@ func NewTestSuiteForControllerWithFSS(addToManagerFn pkgmgr.AddToManagerFunc,
 		initProvidersFn: initProvidersFn,
 		fssMap:          fssMap,
 	}
-	testSuite.init(getCrdPaths())
+	testSuite.init()
 
 	return testSuite
 }
@@ -171,7 +164,19 @@ func NewTestSuiteForValidatingWebhook(
 	newValidatorFn builder.ValidatorFunc,
 	webhookName string) *TestSuite {
 
-	return newTestSuiteForWebhook(addToManagerFn, newValidatorFn, nil, webhookName)
+	return newTestSuiteForWebhook(addToManagerFn, newValidatorFn, nil, webhookName, map[string]bool{})
+}
+
+// NewTestSuiteForValidatingWebhookwithFSS returns a new test suite used for unit and
+// integration testing validating webhooks created using the "pkg/builder"
+// package with FSS set.
+func NewTestSuiteForValidatingWebhookwithFSS(
+	addToManagerFn pkgmgr.AddToManagerFunc,
+	newValidatorFn builder.ValidatorFunc,
+	webhookName string,
+	fssMap map[string]bool) *TestSuite {
+
+	return newTestSuiteForWebhook(addToManagerFn, newValidatorFn, nil, webhookName, fssMap)
 }
 
 // NewTestSuiteForMutatingWebhook returns a new test suite used for unit and
@@ -182,14 +187,27 @@ func NewTestSuiteForMutatingWebhook(
 	newMutatorFn builder.MutatorFunc,
 	webhookName string) *TestSuite {
 
-	return newTestSuiteForWebhook(addToManagerFn, nil, newMutatorFn, webhookName)
+	return newTestSuiteForWebhook(addToManagerFn, nil, newMutatorFn, webhookName, map[string]bool{})
+}
+
+// NewTestSuiteForMutatingWebhookwithFSS returns a new test suite used for unit and
+// integration testing mutating webhooks created using the "pkg/builder"
+// package with FSS set.
+func NewTestSuiteForMutatingWebhookwithFSS(
+	addToManagerFn pkgmgr.AddToManagerFunc,
+	newMutatorFn builder.MutatorFunc,
+	webhookName string,
+	fssMap map[string]bool) *TestSuite {
+
+	return newTestSuiteForWebhook(addToManagerFn, nil, newMutatorFn, webhookName, fssMap)
 }
 
 func newTestSuiteForWebhook(
 	addToManagerFn pkgmgr.AddToManagerFunc,
 	newValidatorFn builder.ValidatorFunc,
 	newMutatorFn builder.MutatorFunc,
-	webhookName string) *TestSuite {
+	webhookName string,
+	fssMap map[string]bool) *TestSuite {
 
 	testSuite := &TestSuite{
 		Context:         context.Background(),
@@ -197,6 +215,7 @@ func newTestSuiteForWebhook(
 		addToManagerFn:  addToManagerFn,
 		initProvidersFn: pkgmgr.InitializeProvidersNoopFn,
 		webhookName:     webhookName,
+		fssMap:          fssMap,
 	}
 
 	if newValidatorFn != nil {
@@ -213,18 +232,28 @@ func newTestSuiteForWebhook(
 	}
 	testSuite.certDir = certDir
 
-	testSuite.init(getCrdPaths())
+	testSuite.init()
 
 	return testSuite
 }
 
-func (s *TestSuite) init(crdPaths []string) {
+func (s *TestSuite) init() {
 	// Initialize the test flags.
 	s.flags = flags
 
+	rootDir := testutil.GetRootDirOrDie()
+
+	crds, err := LoadCRDs(filepath.Join(rootDir, "config", "crd", "bases"))
+	if err != nil {
+		panic(err)
+	}
+
 	if s.flags.IntegrationTestsEnabled {
 		s.envTest = envtest.Environment{
-			CRDDirectoryPaths:     crdPaths,
+			CRDs: s.applyFeatureStatesToCRDs(crds),
+			CRDDirectoryPaths: []string{
+				filepath.Join(rootDir, "config", "crd", "external-crds"),
+			},
 			BinaryAssetsDirectory: filepath.Join(testutil.GetRootDirOrDie(), "hack", "tools", "bin"),
 		}
 	}
@@ -320,12 +349,20 @@ func (s *TestSuite) AfterSuite() {
 func (s *TestSuite) createManager() {
 	var err error
 
-	s.manager, err = pkgmgr.New(pkgmgr.Options{
+	opts := pkgmgr.Options{
 		KubeConfig:          s.config,
 		MetricsAddr:         "0",
 		AddToManager:        s.addToManagerFn,
 		InitializeProviders: s.initProvidersFn,
-	})
+	}
+
+	if enabled, ok := s.fssMap[lib.VMServiceV1Alpha2FSS]; ok && enabled {
+		opts.Scheme = runtime.NewScheme()
+		_ = vmopv1alpha2.AddToScheme(opts.Scheme)
+	}
+
+	s.manager, err = pkgmgr.New(opts)
+
 	Expect(err).NotTo(HaveOccurred())
 	Expect(s.manager).ToNot(BeNil())
 }
@@ -442,6 +479,7 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 				s.UpdateCRDScope(crd, "Cluster")
 			}
 		}
+		// TODO: Include NamespacedVMClass related changes
 	})
 
 	// If one or more webhooks are being tested then go ahead and generate a
@@ -510,6 +548,18 @@ func (s *TestSuite) afterSuiteForIntegrationTesting() {
 	By("tearing down the test environment", func() {
 		Expect(s.envTest.Stop()).To(Succeed())
 	})
+}
+
+func (s *TestSuite) applyFeatureStatesToCRDs(in []*apiextensionsv1.CustomResourceDefinition) []*apiextensionsv1.CustomResourceDefinition {
+	out := make([]*apiextensionsv1.CustomResourceDefinition, 0)
+	for i := range in {
+		crd := applyFeatureStateFnsToCRD(
+			*in[i],
+			s.fssMap,
+			applyV1Alpha2FSSToCRD)
+		out = append(out, &crd)
+	}
+	return out
 }
 
 func (s *TestSuite) GetInstalledCRD(crdName string) *apiextensionsv1.CustomResourceDefinition {

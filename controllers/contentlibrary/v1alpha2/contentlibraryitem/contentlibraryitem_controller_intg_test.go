@@ -90,7 +90,7 @@ func clItemReconcile() {
 
 			imageName, err := utils.GetImageFieldNameFromItem(clItemKey.Name)
 			Expect(err).ToNot(HaveOccurred())
-			vmiKey := client.ObjectKey{Name: imageName}
+			vmiKey := client.ObjectKey{Name: imageName, Namespace: ctx.Namespace}
 
 			By("Finalizer should be added to ContentLibraryItem", func() {
 				waitForContentLibraryItemFinalizer(clItemKey)

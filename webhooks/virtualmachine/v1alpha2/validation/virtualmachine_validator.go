@@ -31,6 +31,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
+	volume "github.com/vmware-tanzu/vm-operator/controllers/volume/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -373,7 +374,7 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 		}
 
 		if vol.Name != "" {
-			errs := validation.NameIsDNSSubdomain(cNSAttachmentNameForVolume(vm.Name, vol.Name), false)
+			errs := validation.NameIsDNSSubdomain(volume.CNSAttachmentNameForVolume(vm.Name, vol.Name), false)
 			for _, msg := range errs {
 				allErrs = append(allErrs, field.Invalid(volPath.Child("name"), vol.Name, msg))
 			}

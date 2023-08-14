@@ -50,7 +50,7 @@ func convert_v1alpha1_VirtualMachineImageOSInfo_To_v1alpha2_VirtualMachineImageO
 	return nil
 }
 
-func convert_v1alpah2_VirtualMachineImage_OVFProperties_To_v1alpha1_VirtualMachineImage_OVFEnv(
+func convert_v1alpha2_VirtualMachineImage_OVFProperties_To_v1alpha1_VirtualMachineImage_OVFEnv(
 	in []v1alpha2.OVFProperty, out *map[string]OvfProperty, s apiconversion.Scope) error {
 
 	if in != nil {
@@ -139,6 +139,7 @@ func convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha2_VirtualMachineImageSta
 	// Some fields of the v1a1 ImageSpec moved into the v1a2 ImageStatus.
 	// conversion-gen doesn't handle that so do those here.
 
+	out.ProviderItemID = in.ImageID
 	if in.HardwareVersion != 0 {
 		out.HardwareVersion = &in.HardwareVersion
 	}
@@ -164,6 +165,7 @@ func convert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageS
 	// Some fields of the v1a1 ImageSpec moved into the v1a2 ImageStatus.
 	// conversion-gen doesn't handle that so do those here.
 
+	out.ImageID = in.ProviderItemID
 	if in.HardwareVersion != nil {
 		out.HardwareVersion = *in.HardwareVersion
 	}
@@ -172,7 +174,7 @@ func convert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageS
 		return err
 	}
 
-	if err := convert_v1alpah2_VirtualMachineImage_OVFProperties_To_v1alpha1_VirtualMachineImage_OVFEnv(in.OVFProperties, &out.OVFEnv, s); err != nil {
+	if err := convert_v1alpha2_VirtualMachineImage_OVFProperties_To_v1alpha1_VirtualMachineImage_OVFEnv(in.OVFProperties, &out.OVFEnv, s); err != nil {
 		return err
 	}
 
@@ -226,13 +228,29 @@ func (dst *VirtualMachineImageList) ConvertFrom(srcRaw conversion.Hub) error {
 // ConvertTo converts this ClusterVirtualMachineImage to the Hub version.
 func (src *ClusterVirtualMachineImage) ConvertTo(dstRaw conversion.Hub) error {
 	dst := dstRaw.(*v1alpha2.ClusterVirtualMachineImage)
-	return Convert_v1alpha1_ClusterVirtualMachineImage_To_v1alpha2_ClusterVirtualMachineImage(src, dst, nil)
+	if err := Convert_v1alpha1_ClusterVirtualMachineImage_To_v1alpha2_ClusterVirtualMachineImage(src, dst, nil); err != nil {
+		return err
+	}
+
+	if err := convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha2_VirtualMachineImageStatus(&src.Spec, &dst.Status, nil); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ConvertFrom converts the hub version to this ClusterVirtualMachineImage.
 func (dst *ClusterVirtualMachineImage) ConvertFrom(srcRaw conversion.Hub) error {
 	src := srcRaw.(*v1alpha2.ClusterVirtualMachineImage)
-	return Convert_v1alpha2_ClusterVirtualMachineImage_To_v1alpha1_ClusterVirtualMachineImage(src, dst, nil)
+	if err := Convert_v1alpha2_ClusterVirtualMachineImage_To_v1alpha1_ClusterVirtualMachineImage(src, dst, nil); err != nil {
+		return err
+	}
+
+	if err := convert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageSpec(&src.Status, &dst.Spec, nil); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ConvertTo converts this ClusterVirtualMachineImageList to the Hub version.

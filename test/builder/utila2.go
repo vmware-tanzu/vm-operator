@@ -172,3 +172,37 @@ func DummyInstanceStorageVirtualMachineVolumesA2() []vmopv1.VirtualMachineVolume
 		},
 	}
 }
+
+func DummyVirtualMachineImageA2(imageName string) *vmopv1.VirtualMachineImage {
+	return &vmopv1.VirtualMachineImage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: imageName,
+		},
+		Status: vmopv1.VirtualMachineImageStatus{
+			Name: imageName,
+			ProductInfo: vmopv1.VirtualMachineImageProductInfo{
+				FullVersion: DummyDistroVersion,
+			},
+			OSInfo: vmopv1.VirtualMachineImageOSInfo{
+				Type: DummyOSType,
+			},
+		},
+	}
+}
+
+func DummyClusterVirtualMachineImageA2(imageName string) *vmopv1.ClusterVirtualMachineImage {
+	return &vmopv1.ClusterVirtualMachineImage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: imageName,
+		},
+		Status: vmopv1.VirtualMachineImageStatus{
+			Name: imageName,
+			ProductInfo: vmopv1.VirtualMachineImageProductInfo{
+				FullVersion: DummyDistroVersion,
+			},
+			OSInfo: vmopv1.VirtualMachineImageOSInfo{
+				Type: DummyOSType,
+			},
+		},
+	}
+}

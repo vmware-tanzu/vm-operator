@@ -59,6 +59,10 @@ type VirtualMachineSetResourcePolicy struct {
 	Status VirtualMachineSetResourcePolicyStatus `json:"status,omitempty"`
 }
 
+func (p *VirtualMachineSetResourcePolicy) NamespacedName() string {
+	return p.Namespace + "/" + p.Name
+}
+
 // +kubebuilder:object:root=true
 
 // VirtualMachineSetResourcePolicyList contains a list of VirtualMachineSetResourcePolicy.

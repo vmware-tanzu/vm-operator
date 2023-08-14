@@ -193,6 +193,12 @@ type VirtualMachineImageStatus struct {
 	// +optional
 	ProviderContentVersion string `json:"providerContentVersion,omitempty"`
 
+	// ProviderItemID describes the ID of the provider item that this image corresponds to.
+	// If the provider of this image is a Content Library, this ID will be that of the
+	// corresponding Content Library item.
+	// +optional
+	ProviderItemID string `json:"providerItemID,omitempty"`
+
 	// Conditions describes the observed conditions for this image.
 	//
 	// +optional
@@ -219,6 +225,14 @@ type VirtualMachineImage struct {
 
 	Spec   VirtualMachineImageSpec   `json:"spec,omitempty"`
 	Status VirtualMachineImageStatus `json:"status,omitempty"`
+}
+
+func (i *VirtualMachineImage) GetConditions() []metav1.Condition {
+	return i.Status.Conditions
+}
+
+func (i *VirtualMachineImage) SetConditions(conditions []metav1.Condition) {
+	i.Status.Conditions = conditions
 }
 
 // +kubebuilder:object:root=true
@@ -248,6 +262,14 @@ type ClusterVirtualMachineImage struct {
 
 	Spec   VirtualMachineImageSpec   `json:"spec,omitempty"`
 	Status VirtualMachineImageStatus `json:"status,omitempty"`
+}
+
+func (i *ClusterVirtualMachineImage) GetConditions() []metav1.Condition {
+	return i.Status.Conditions
+}
+
+func (i *ClusterVirtualMachineImage) SetConditions(conditions []metav1.Condition) {
+	i.Status.Conditions = conditions
 }
 
 // +kubebuilder:object:root=true

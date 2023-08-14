@@ -4,6 +4,7 @@ run:
    - ".*generated.*\\.go"
    - external/
    - controllers/virtualmachineservice/v1alpha1/utils/
+   - controllers/virtualmachineservice/v1alpha2/utils/
 
 # override defaults
 linters-settings:

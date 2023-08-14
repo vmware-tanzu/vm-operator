@@ -136,7 +136,7 @@ func (s *VMProviderA2) GetVirtualMachineHardwareVersion(ctx context.Context, vm 
 	if s.GetVirtualMachineHardwareVersionFn != nil {
 		return s.GetVirtualMachineHardwareVersionFn(ctx, vm)
 	}
-	return 13, nil
+	return 15, nil
 }
 
 func (s *VMProviderA2) CreateOrUpdateVirtualMachineSetResourcePolicy(ctx context.Context, resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) error {

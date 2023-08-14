@@ -54,6 +54,15 @@ func TestFuzzyConversion(t *testing.T) {
 		},
 	}))
 
+	t.Run("for ClusterVirtualMachineImage", utilconversion.FuzzTestFunc(utilconversion.FuzzTestFuncInput{
+		Scheme: scheme,
+		Hub:    &nextver.ClusterVirtualMachineImage{},
+		Spoke:  &v1alpha1.ClusterVirtualMachineImage{},
+		FuzzerFuncs: []fuzzer.FuzzerFuncs{
+			overrideVirtualMachineImageFieldsFuncs,
+		},
+	}))
+
 	t.Run("for VirtualMachinePublishRequest", utilconversion.FuzzTestFunc(utilconversion.FuzzTestFuncInput{
 		Scheme: scheme,
 		Hub:    &nextver.VirtualMachinePublishRequest{},
@@ -179,7 +188,6 @@ func overrideVirtualMachineImageFieldsFuncs(codecs runtimeserializer.CodecFactor
 			// Do not exist in v1a2.
 			imageSpec.Type = ""
 			imageSpec.ImageSourceType = ""
-			imageSpec.ImageID = ""
 			imageSpec.ProviderRef.Namespace = ""
 		},
 		func(imageStatus *v1alpha1.VirtualMachineImageStatus, c fuzz.Continue) {

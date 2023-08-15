@@ -624,16 +624,66 @@ func (r *Reconciler) createCNSAttachment(
 	}
 
 	if err := r.Create(ctx, attachment); err != nil {
-		// An IsAlreadyExists error is not really expected because the only way we'll do a Create()
-		// is if the attachment wasn't returned in the List() done at the start of the reconcile.
-		// The Client cache might have been stale, so ignore the error, but like the comment in the
-		// caller, we might want to perform an Update() in this case too.
-		if !apiErrors.IsAlreadyExists(err) {
-			return errors.Wrap(err, "Error creating CnsNodeVmAttachment")
+		if apiErrors.IsAlreadyExists(err) {
+			return r.createCNSAttachmentButAlreadyExists(ctx, attachmentName)
 		}
+		return errors.Wrap(err, "Cannot create CnsNodeVmAttachment")
 	}
 
 	return nil
+}
+
+// createCNSAttachmentButAlreadyExists tries to handle various conditions when a CnsNodeVmAttachment
+// unexpected already exists. Usually the existing attachment is for a prior VC VM has been deleted
+// from underneath us, and the replacement will have a different BiosUUID. The CnsNodeVmAttachment
+// workflow was from CNS and has been very cumbersome to us to use in practice, with this controller
+// being more complicated than it really should be for us to try to work around all the edge cases.
+// Note that CNS doesn't reevaluate an attachment at all once Status.Attached=true. We could Update
+// it instead - clearing Attached atomically since it doesn't have a Status subresource - but it
+// should not be treating the Status as the SoT.
+func (r *Reconciler) createCNSAttachmentButAlreadyExists(
+	ctx *context.VolumeContextA2,
+	attachmentName string) error {
+
+	attachment := &cnsv1alpha1.CnsNodeVmAttachment{}
+	err := r.Client.Get(ctx, client.ObjectKey{Name: attachmentName, Namespace: ctx.VM.Namespace}, attachment)
+	if err != nil {
+		if apiErrors.IsNotFound(err) {
+			// Create failed but now the attachment does not exist. Most likely the attachment got GC'd.
+			// Return an error to force another reconcile to create it.
+			return errors.Errorf("stale client cache for CnsNodeVmAttachment %s that now does not exist. Force re-reconcile", attachmentName)
+		}
+
+		return err
+	}
+
+	if !metav1.IsControlledBy(attachment, ctx.VM) {
+		// This attachment has our expected name but is not owned by us. Most likely, the owning VM
+		// is in the process of being deleted, and the attachment will be GC after the owner is gone.
+		// We just have to wait it out here: we cannot delete an attachment that isn't ours.
+		return errors.Errorf("CnsNodeVmAttachment %s has a different controlling owner", attachmentName)
+	}
+
+	if attachment.Spec.NodeUUID != ctx.VM.Status.BiosUUID {
+		// We are the owners of this attachment but the BiosUUIDs are different. What's most likely
+		// happened is the VC VM was deleted, and then the VC VM is being recreated, generating a new
+		// BiosUUID. Since this attachment is ours, delete it to let CNS remove the attachment from
+		// the old VM - if it still exists - so that on a later reconcile we re-create the attachment
+		// with our new BiosUUID.
+		// We could check the attachment's DeletionTimestamp to avoid hitting Delete on it again but
+		// this window should be short.
+		if err := r.Client.Delete(ctx, attachment); err != nil {
+			// The attachment may have been GC'd since the Get() above and that's fine.
+			// Return an error to force another reconcile.
+			return errors.Wrap(err, "Failed to delete existing CnsNodeVmAttachment with stale BiosUUID")
+		}
+
+		return errors.Errorf("deleted stale CnsNodeVmAttachment %s with old NodeUUID: %s", attachmentName, attachment.Spec.NodeUUID)
+	}
+
+	// The attachment is ours and has our BiosUUID. The client cache was stale so we didn't see it
+	// in getAttachmentsForVM(). This should be transient. Return an error to force another reconcile.
+	return errors.Errorf("stale client cache for expected CnsNodeVmAttachment %s. Force re-reconcile", attachmentName)
 }
 
 // This is a hack to preserve the prior behavior of including detach(ing) volumes that were

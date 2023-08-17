@@ -26,6 +26,27 @@ webhooks:
     resources:
     - virtualmachines
   sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-mutate-vmoperator-vmware-com-v1alpha2-virtualmachine
+  failurePolicy: Fail
+  name: default.mutating.virtualmachine.v1alpha2.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachines
+  sideEffects: None
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
@@ -179,4 +200,109 @@ webhooks:
     - UPDATE
     resources:
     - webconsolerequests
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-validate-vmoperator-vmware-com-v1alpha2-virtualmachine
+  failurePolicy: Fail
+  name: default.validating.virtualmachine.v1alpha2.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachines
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-validate-vmoperator-vmware-com-v1alpha2-virtualmachineclass
+  failurePolicy: Fail
+  name: default.validating.virtualmachineclass.v1alpha2.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachineclasses
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-validate-vmoperator-vmware-com-v1alpha2-virtualmachinepublishrequest
+  failurePolicy: Fail
+  name: default.validating.virtualmachinepublishrequest.v1alpha2.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachinepublishrequests
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-validate-vmoperator-vmware-com-v1alpha2-virtualmachineservice
+  failurePolicy: Fail
+  name: default.validating.virtualmachineservice.v1alpha2.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachineservices
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /default-validate-vmoperator-vmware-com-v1alpha2-virtualmachinesetresourcepolicy
+  failurePolicy: Fail
+  name: default.validating.virtualmachinesetresourcepolicy.v1alpha2.vmoperator.vmware.com
+  rules:
+  - apiGroups:
+    - vmoperator.vmware.com
+    apiVersions:
+    - v1alpha2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualmachinesetresourcepolicies
   sideEffects: None

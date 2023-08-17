@@ -273,8 +273,6 @@ func (s *Session) customize(
 	config *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs) error {
 
-	TemplateVMMetadata(vmCtx, resVM, updateArgs)
-
 	transport := updateArgs.VMMetadata.Transport
 
 	var configSpec *vimTypes.VirtualMachineConfigSpec
@@ -288,6 +286,7 @@ func (s *Session) customize(
 		configSpec = GetOvfEnvCustSpec(config, updateArgs)
 		custSpec = GetLinuxPrepCustSpec(vmCtx.VM.Name, updateArgs)
 	case vmopv1.VirtualMachineMetadataVAppConfigTransport:
+		TemplateVMMetadata(vmCtx, resVM, updateArgs)
 		configSpec = GetOvfEnvCustSpec(config, updateArgs)
 	case vmopv1.VirtualMachineMetadataExtraConfigTransport:
 		configSpec = GetExtraConfigCustSpec(config, updateArgs)
@@ -297,6 +296,7 @@ func (s *Session) customize(
 		// In reality, the webhook will prevent "Sysprep" from being used unless
 		// the FSS is enabled.
 		if lib.IsWindowsSysprepFSSEnabled() {
+			TemplateVMMetadata(vmCtx, resVM, updateArgs)
 			configSpec = GetOvfEnvCustSpec(config, updateArgs)
 			custSpec, err = GetSysprepCustSpec(vmCtx.VM.Name, updateArgs)
 		}

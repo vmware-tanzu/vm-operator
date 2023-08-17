@@ -149,6 +149,9 @@ nav:
   - Troubleshooting:
     - tutorials/troubleshooting/README.md
     - Get a Console Session: tutorials/troubleshooting/get-console-session.md
+    - VM Deployment: tutorials/troubleshooting/deploy-vm.md
+    - IP Assignment: tutorials/troubleshooting/ip-assignment.md
+    - VM Publish: tutorials/troubleshooting/publish-vm.md
 - Reference:
   - ref/README.md
   - API:

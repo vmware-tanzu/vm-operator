@@ -570,6 +570,82 @@ func unitTestsReconcile() {
 			})
 		})
 
+		When("VM Spec.Volumes has CNS volume with an existing CnsNodeVmAttachment for a different VM", func() {
+
+			When("CnsNodeVmAttachment has OwnerRef of different VM", func() {
+
+				BeforeEach(func() {
+					vmVol = *vmVolumeWithPVC1
+					vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+
+					attachment := cnsAttachmentForVMVolume(vm, vmVol)
+					attachment.ObjectMeta.OwnerReferences[0].UID = "some-other-uuid"
+					attachment.Spec.NodeUUID = "some-other-bios-uuid"
+					attachment.Status.Attached = true
+					attachment.Status.AttachmentMetadata = map[string]string{
+						volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
+					}
+					initObjects = append(initObjects, attachment)
+				})
+
+				It("returns expected error", func() {
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(" has a different controlling owner"))
+
+					By("Expected VM Status.Volumes", func() {
+						Expect(vm.Status.Volumes).To(BeEmpty())
+					})
+
+					By("attachment still exists", func() {
+						Expect(getCNSAttachmentForVolumeName(vm, vmVol.Name)).ToNot(BeNil())
+					})
+				})
+			})
+
+			When("CnsNodeVmAttachment has OwnerRef of this VM but different NodeUUID", func() {
+
+				BeforeEach(func() {
+					vmVol = *vmVolumeWithPVC1
+					vm.Spec.Volumes = append(vm.Spec.Volumes, vmVol)
+
+					attachment := cnsAttachmentForVMVolume(vm, vmVol)
+					attachment.Spec.NodeUUID = "some-old-bios-uuid"
+					attachment.Status.Attached = true
+					attachment.Status.AttachmentMetadata = map[string]string{
+						volume.AttributeFirstClassDiskUUID: dummyDiskUUID,
+					}
+					initObjects = append(initObjects, attachment)
+				})
+
+				It("returns expected error", func() {
+					Expect(getCNSAttachmentForVolumeName(vm, vmVol.Name)).ToNot(BeNil())
+
+					err := reconciler.ReconcileNormal(volCtx)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("deleted stale CnsNodeVmAttachment"))
+
+					By("old attachment was deleted", func() {
+						attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+						Expect(attachment).To(BeNil())
+					})
+
+					By("returns success on next reconcile", func() {
+						err := reconciler.ReconcileNormal(volCtx)
+						Expect(err).ToNot(HaveOccurred())
+
+						By("Expected VM Status.Volumes", func() {
+							Expect(vm.Status.Volumes).To(HaveLen(1))
+
+							attachment := getCNSAttachmentForVolumeName(vm, vmVol.Name)
+							Expect(attachment).ToNot(BeNil())
+							assertVMVolStatusFromAttachment(vmVol, attachment, vm.Status.Volumes[0])
+						})
+					})
+				})
+			})
+		})
+
 		When("VM Spec.Volumes has CNS volume with a SOAP error", func() {
 			awfulErrMsg := `failed to attach cns volume: \"88854b48-2b1c-43f8-8889-de4b5ca2cab5\" to node vm: \"VirtualMachine:vm-42
 [VirtualCenterHost: vc.vmware.com, UUID: 42080725-d6b0-c045-b24e-29c4dadca6f2, Datacenter: Datacenter

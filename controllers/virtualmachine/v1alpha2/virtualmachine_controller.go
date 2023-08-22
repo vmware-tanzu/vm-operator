@@ -12,6 +12,7 @@ import (
 
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -80,20 +81,13 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	)
 
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(controlledType).
-		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles})
-
-	builder = builder.Watches(&source.Kind{Type: &vmopv1.VirtualMachineClass{}},
-		handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client)))
-
-	// Filter any VMs that reference a VM Class with a spec.controllerName set
-	// to a non-empty value other than "vmoperator.vmware.com/vsphere". Please
-	// note that a VM will *not* be filtered if the VM Class does not exist. A
-	// VM is also not filtered if the field spec.controllerName is missing or
-	// empty as long as the default VM Class controller is
-	// "vmoperator.vmware.com/vsphere".
-	builder = builder.WithEventFilter(
-		kubeutil.VMForControllerPredicate(
+		// Filter any VMs that reference a VM Class with a spec.controllerName set
+		// to a non-empty value other than "vmoperator.vmware.com/vsphere". Please
+		// note that a VM will *not* be filtered if the VM Class does not exist. A
+		// VM is also not filtered if the field spec.controllerName is missing or
+		// empty as long as the default VM Class controller is
+		// "vmoperator.vmware.com/vsphere".
+		For(controlledType, ctrlbuilder.WithPredicates(kubeutil.VMForControllerPredicate(
 			r.Client,
 			// These events can be very verbose, so be careful to not log them
 			// at too high of a log level.
@@ -103,7 +97,11 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 				MatchIfVMClassNotFound:            true,
 				MatchIfControllerNameFieldEmpty:   isDefaultVMClassController,
 				MatchIfControllerNameFieldMissing: isDefaultVMClassController,
-			}))
+			}))).
+		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles})
+
+	builder = builder.Watches(&source.Kind{Type: &vmopv1.VirtualMachineClass{}},
+		handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client)))
 
 	return builder.Complete(r)
 }

@@ -51,6 +51,12 @@ if [ "$NODE_COUNT" -eq 1 ]; then
   rm -f "$YAML-e"
 fi
 
+FSS_V1A2=$(yq '.spec.template.spec.containers[]| select(.name == "manager") | .env[] | select(.name == "FSS_WCP_VMSERVICE_V1ALPHA2") | .value' "$YAML")
+if [ "${FSS_V1A2}" = "false" ]; then \
+  yq -i 'del(.spec.versions[] | select(.name == "v1alpha2"))' "$YAML"
+  yq -i 'del(.webhooks[] | select(.name == "*v1alpha2*"))' "$YAML"
+fi;
+
 $KUBECTL apply -f "$YAML"
 
 if [[ -n $DEPLOYMENT_EXISTS ]]; then

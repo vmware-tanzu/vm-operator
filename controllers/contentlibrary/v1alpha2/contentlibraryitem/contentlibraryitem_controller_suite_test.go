@@ -24,12 +24,12 @@ var suite = builder.NewTestSuiteForControllerWithFSS(
 		ctx.VMProviderA2 = intgFakeVMProvider
 		return nil
 	},
-	map[string]bool{lib.VMImageRegistryFSS: true},
-)
+	map[string]bool{
+		lib.VMImageRegistryFSS:   true,
+		lib.VMServiceV1Alpha2FSS: true})
 
 func TestContentLibraryItem(t *testing.T) {
-	_ = intgTests
-	suite.Register(t, "ContentLibraryItem controller suite", nil /*intgTests*/, unitTests)
+	suite.Register(t, "ContentLibraryItem controller suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

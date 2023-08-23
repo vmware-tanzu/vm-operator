@@ -8,19 +8,20 @@ import (
 
 	. "github.com/onsi/ginkgo"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass/v1alpha2/mutation"
 )
 
 // suite is used for unit and integration testing this webhook.
-var suite = builder.NewTestSuiteForMutatingWebhook(
+var suite = builder.NewTestSuiteForMutatingWebhookwithFSS(
 	mutation.AddToManager,
 	mutation.NewMutator,
-	"default.mutating.virtualmachineclass.v1alpha2.vmoperator.vmware.com")
+	"default.mutating.virtualmachineclass.v1alpha2.vmoperator.vmware.com",
+	map[string]bool{lib.VMServiceV1Alpha2FSS: true})
 
 func TestWebhook(t *testing.T) {
-	_ = intgTests
-	suite.Register(t, "Mutating webhook suite", nil /*intgTests*/, uniTests)
+	suite.Register(t, "Mutating webhook suite", intgTests, uniTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

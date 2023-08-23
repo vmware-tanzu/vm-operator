@@ -12,23 +12,24 @@ import (
 
 	virtualmachinesetresourcepolicy "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinesetresourcepolicy/v1alpha2"
 	ctrlContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var intgFakeVMProvider = providerfake.NewVMProviderA2()
 
-var suite = builder.NewTestSuiteForController(
+var suite = builder.NewTestSuiteForControllerWithFSS(
 	virtualmachinesetresourcepolicy.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProviderA2 = intgFakeVMProvider
 		return nil
 	},
-)
+	map[string]bool{lib.VMServiceV1Alpha2FSS: true})
 
 func TestVirtualMachineSetResourcePolicy(t *testing.T) {
-	_ = intgTests
-	suite.Register(t, "VirtualMachineSetResourcePolicy controller suite", nil /*intgTests*/, unitTests)
+
+	suite.Register(t, "VirtualMachineSetResourcePolicy controller suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

@@ -411,6 +411,26 @@ rules:
 - apiGroups:
   - vmoperator.vmware.com
   resources:
+  - virtualmachinewebconsolerequests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
+  - virtualmachinewebconsolerequests/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - vmoperator.vmware.com
+  resources:
   - webconsolerequests
   verbs:
   - create

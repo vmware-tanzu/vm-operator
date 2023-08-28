@@ -24,7 +24,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -563,18 +562,32 @@ func vmUtilTests() {
 			})
 		})
 
+		When("neither ConfigMap nor Secret is specified", func() {
+			BeforeEach(func() {
+				vmCtx.VM.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
+					Transport: vmopv1.VirtualMachineMetadataCloudInitTransport,
+				}
+			})
+			It("returns metadata transport", func() {
+				md, err := vsphere.GetVMMetadata(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(md.Transport).To(Equal(vmopv1.VirtualMachineMetadataCloudInitTransport))
+			})
+		})
+
 		When("VM Metadata is specified via a ConfigMap", func() {
 			BeforeEach(func() {
 				vmCtx.VM.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
 					ConfigMapName: vmMetaDataConfigMap.Name,
-					Transport:     "transport",
+					Transport:     vmopv1.VirtualMachineMetadataCloudInitTransport,
 				}
 			})
 
 			It("return an error when ConfigMap does not exist", func() {
 				md, err := vsphere.GetVMMetadata(vmCtx, k8sClient)
 				Expect(err).To(HaveOccurred())
-				Expect(md).To(Equal(session.VMMetadata{}))
+				Expect(md.Data).To(BeEmpty())
+				Expect(md.Transport).To(Equal(vmopv1.VirtualMachineMetadataCloudInitTransport))
 			})
 
 			When("ConfigMap exists", func() {
@@ -586,6 +599,7 @@ func vmUtilTests() {
 					md, err := vsphere.GetVMMetadata(vmCtx, k8sClient)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(md.Data).To(Equal(vmMetaDataConfigMap.Data))
+					Expect(md.Transport).To(Equal(vmopv1.VirtualMachineMetadataCloudInitTransport))
 				})
 			})
 		})
@@ -594,14 +608,15 @@ func vmUtilTests() {
 			BeforeEach(func() {
 				vmCtx.VM.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
 					SecretName: vmMetaDataSecret.Name,
-					Transport:  "transport",
+					Transport:  vmopv1.VirtualMachineMetadataCloudInitTransport,
 				}
 			})
 
 			It("returns an error when Secret does not exist", func() {
 				md, err := vsphere.GetVMMetadata(vmCtx, k8sClient)
 				Expect(err).To(HaveOccurred())
-				Expect(md).To(Equal(session.VMMetadata{}))
+				Expect(md.Data).To(BeEmpty())
+				Expect(md.Transport).To(Equal(vmopv1.VirtualMachineMetadataCloudInitTransport))
 			})
 
 			When("Secret exists", func() {
@@ -613,6 +628,7 @@ func vmUtilTests() {
 					md, err := vsphere.GetVMMetadata(vmCtx, k8sClient)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(md.Data).ToNot(BeEmpty())
+					Expect(md.Transport).To(Equal(vmopv1.VirtualMachineMetadataCloudInitTransport))
 				})
 			})
 		})

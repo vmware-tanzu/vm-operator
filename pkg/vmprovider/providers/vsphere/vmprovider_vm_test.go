@@ -1494,6 +1494,98 @@ func vmTests() {
 						})
 					})
 				})
+
+				Context("Cloudinint Transport without userdata", func() {
+					var ec map[string]interface{}
+
+					JustBeforeEach(func() {
+						vm.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
+							Transport: vmopv1.VirtualMachineMetadataCloudInitTransport,
+						}
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+						ec = map[string]interface{}{}
+						for _, option := range o.Config.ExtraConfig {
+							if val := option.GetOptionValue(); val != nil {
+								ec[val.Key] = val.Value.(string)
+							}
+						}
+					})
+
+					AfterEach(func() {
+						ec = nil
+					})
+
+					It("Metadata data is included in ExtraConfig", func() {
+						By("Should include default keys and values", func() {
+							Expect(ec).To(HaveKeyWithValue("disk.enableUUID", "TRUE"))
+							Expect(ec).To(HaveKeyWithValue("vmware.tools.gosc.ignoretoolscheck", "TRUE"))
+						})
+
+						By("Should include guestinfo metadata and no guestinfo userdata", func() {
+							Expect(ec).To(HaveKey("guestinfo.metadata"))
+							Expect(ec).To(HaveKey("guestinfo.metadata.encoding"))
+							Expect(ec).ToNot(HaveKey("guestinfo.userdata"))
+						})
+					})
+				})
+
+				Context("Cloudinint Transport with userdata", func() {
+					var ec map[string]interface{}
+
+					JustBeforeEach(func() {
+						configMap := &corev1.ConfigMap{
+							ObjectMeta: metav1.ObjectMeta{
+								GenerateName: "md-configmap-",
+								Namespace:    vm.Namespace,
+							},
+							Data: map[string]string{
+								"user-data": "data",
+							},
+						}
+						Expect(ctx.Client.Create(ctx, configMap)).To(Succeed())
+
+						vm.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
+							ConfigMapName: configMap.Name,
+							Transport:     vmopv1.VirtualMachineMetadataCloudInitTransport,
+						}
+
+						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+						Expect(err).ToNot(HaveOccurred())
+
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+						ec = map[string]interface{}{}
+						for _, option := range o.Config.ExtraConfig {
+							if val := option.GetOptionValue(); val != nil {
+								ec[val.Key] = val.Value.(string)
+							}
+						}
+					})
+
+					AfterEach(func() {
+						ec = nil
+					})
+
+					It("Metadata data is included in ExtraConfig", func() {
+						By("Should include default keys and values", func() {
+							Expect(ec).To(HaveKeyWithValue("disk.enableUUID", "TRUE"))
+							Expect(ec).To(HaveKeyWithValue("vmware.tools.gosc.ignoretoolscheck", "TRUE"))
+						})
+
+						By("Should include guestinfo metadata and userdata", func() {
+							Expect(ec).To(HaveKey("guestinfo.metadata"))
+							Expect(ec).To(HaveKey("guestinfo.metadata.encoding"))
+							Expect(ec).To(HaveKey("guestinfo.userdata"))
+							Expect(ec).To(HaveKey("guestinfo.userdata.encoding"))
+						})
+					})
+				})
 			})
 
 			Context("Network", func() {

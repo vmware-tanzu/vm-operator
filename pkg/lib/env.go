@@ -85,7 +85,11 @@ func GetVMOpNamespaceFromEnv() (string, error) {
 }
 
 var IsNamedNetworkProviderEnabled = func() bool {
-	return os.Getenv(NetworkProviderType) == NetworkProviderTypeNamed
+	return GetNetworkProviderType() == NetworkProviderTypeNamed
+}
+
+func GetNetworkProviderType() string {
+	return os.Getenv(NetworkProviderType)
 }
 
 var IsWcpFaultDomainsFSSEnabled = func() bool {

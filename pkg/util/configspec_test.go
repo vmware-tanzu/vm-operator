@@ -214,6 +214,28 @@ var _ = Describe("RemoveDevicesFromConfigSpec", func() {
 	})
 })
 
+var _ = Describe("AppendNewExtraConfigValues", func() {
+
+	It("only adds new values not already in the ExtraConfig", func() {
+		ec := []vimTypes.BaseOptionValue{
+			&vimTypes.OptionValue{
+				Key:   "key1",
+				Value: "keep-me",
+			},
+		}
+
+		newECMap := map[string]string{
+			"key1": "should-be-ignored",
+			"key2": "add-me",
+		}
+
+		newExtraConfig := util.AppendNewExtraConfigValues(ec, newECMap)
+		Expect(newExtraConfig).To(HaveLen(2))
+		Expect(newExtraConfig).To(ContainElement(&vimTypes.OptionValue{Key: "key1", Value: "keep-me"}))
+		Expect(newExtraConfig).To(ContainElement(&vimTypes.OptionValue{Key: "key2", Value: "add-me"}))
+	})
+})
+
 var _ = Describe("SanitizeVMClassConfigSpec", func() {
 	oldVMClassAsConfigFSSEnabledFunc := lib.IsVMClassAsConfigFSSEnabled
 	var (

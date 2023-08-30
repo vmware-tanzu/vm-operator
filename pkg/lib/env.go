@@ -25,6 +25,7 @@ const (
 	VMImageRegistryFSS            = "FSS_WCP_VM_IMAGE_REGISTRY"
 	NamespacedVMClassFSS          = "FSS_WCP_NAMESPACED_VM_CLASS"
 	WindowsSysprepFSS             = "FSS_WCP_WINDOWS_SYSPREP"
+	VMServiceBackupRestoreFSS     = "FSS_WCP_VMSERVICE_BACKUPRESTORE"
 	MaxCreateVMsOnProviderEnv     = "MAX_CREATE_VMS_ON_PROVIDER"
 	DefaultMaxCreateVMsOnProvider = 80
 
@@ -121,6 +122,10 @@ var IsNamespacedVMClassFSSEnabled = func() bool {
 
 var IsWindowsSysprepFSSEnabled = func() bool {
 	return os.Getenv(WindowsSysprepFSS) == trueString
+}
+
+var IsVMServiceBackupRestoreFSSEnabled = func() bool {
+	return os.Getenv(VMServiceBackupRestoreFSS) == trueString
 }
 
 // MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler

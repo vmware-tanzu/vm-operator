@@ -75,3 +75,9 @@
   value:
     name: FSS_WCP_WINDOWS_SYSPREP
     value: "<FSS_WCP_WINDOWS_SYSPREP_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_WCP_VMSERVICE_BACKUPRESTORE
+    value: "<FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE>"

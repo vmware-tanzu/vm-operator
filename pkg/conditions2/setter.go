@@ -78,13 +78,20 @@ func Set(to Setter, condition *metav1.Condition) {
 func TrueCondition(t string) *metav1.Condition {
 	return &metav1.Condition{
 		Type:   t,
-		Reason: t, // BMV: This is required field in metav1.Conditions. Fixup API later.
 		Status: metav1.ConditionTrue,
+		// This is a non-empty field in metav1.Conditions, when it was not in our v1a1 Conditions. This
+		// really doesn't work with how we've defined our conditions so do something to make things
+		// work for now.
+		Reason: string(metav1.ConditionTrue),
 	}
 }
 
 // FalseCondition returns a condition with Status=False and the given type.
 func FalseCondition(t string, reason string, messageFormat string, messageArgs ...interface{}) *metav1.Condition {
+	if reason == "" {
+		reason = string(metav1.ConditionFalse)
+	}
+
 	return &metav1.Condition{
 		Type:    t,
 		Status:  metav1.ConditionFalse,
@@ -95,6 +102,10 @@ func FalseCondition(t string, reason string, messageFormat string, messageArgs .
 
 // UnknownCondition returns a condition with Status=Unknown and the given type.
 func UnknownCondition(t string, reason string, messageFormat string, messageArgs ...interface{}) *metav1.Condition {
+	if reason == "" {
+		reason = string(metav1.ConditionUnknown)
+	}
+
 	return &metav1.Condition{
 		Type:    t,
 		Status:  metav1.ConditionUnknown,
@@ -124,14 +135,14 @@ func SetSummary(to Setter, options ...MergeOption) {
 	Set(to, summary(to, options...))
 }
 
-// SetMirror creates a new condition by mirroring the the Ready condition from a dependent object;
-// if the Ready condition does not exists in the source object, no target conditions is generated.
+// SetMirror creates a new condition by mirroring the Ready condition from a dependent object;
+// if the Ready condition does not exist in the source object, no target conditions is generated.
 func SetMirror(to Setter, targetCondition string, from Getter, options ...MirrorOptions) {
 	Set(to, mirror(from, targetCondition, options...))
 }
 
-// SetAggregate creates a new condition with the aggregation of all the the Ready condition
-// from a list of dependent objects; if the Ready condition does not exists in one of the source object,
+// SetAggregate creates a new condition with the aggregation of all the Ready condition
+// from a list of dependent objects; if the Ready condition does not exist in one of the source object,
 // the object is excluded from the aggregation; if none of the source object have ready condition,
 // no target conditions is generated.
 func SetAggregate(to Setter, targetCondition string, from []Getter, options ...MergeOption) {

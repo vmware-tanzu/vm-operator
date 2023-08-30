@@ -199,7 +199,7 @@ func TestMarkMethods(t *testing.T) {
 	g.Expect(Get(vm, "conditionFoo")).To(haveSameStateOf(&metav1.Condition{
 		Type:   "conditionFoo",
 		Status: metav1.ConditionTrue,
-		Reason: "conditionFoo",
+		Reason: "True",
 	}))
 
 	// test MarkFalse

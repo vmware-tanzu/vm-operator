@@ -29,6 +29,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
+	vsphere2 "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2"
 )
 
 // Manager is a VM Operator controller manager.
@@ -116,7 +117,12 @@ func New(opts Options) (Manager, error) {
 func InitializeProviders(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
 	vmProviderName := fmt.Sprintf("%s/%s/vmProvider", ctx.Namespace, ctx.Name)
 	recorder := record.New(mgr.GetEventRecorderFor(vmProviderName))
-	ctx.VMProvider = vsphere.NewVSphereVMProviderFromClient(mgr.GetClient(), recorder)
+
+	if lib.IsVMServiceV1Alpha2FSSEnabled() {
+		ctx.VMProviderA2 = vsphere2.NewVSphereVMProviderFromClient(mgr.GetClient(), recorder)
+	} else {
+		ctx.VMProvider = vsphere.NewVSphereVMProviderFromClient(mgr.GetClient(), recorder)
+	}
 	return nil
 }
 

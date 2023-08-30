@@ -155,7 +155,7 @@ func convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(
 			out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{
 				RawCloudConfig: corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
-					Key:                  "guestinfo.userdata",
+					Key:                  "guestinfo.userdata", // TODO: Is this good enough? v1a1 would include everything with the "guestinfo" prefix
 				},
 			}
 		case VirtualMachineMetadataOvfEnvTransport:
@@ -449,6 +449,12 @@ func convert_v1alpha2_NetworkStatus_To_v1alpha1_Network(
 func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	in *VirtualMachineSpec, out *v1alpha2.VirtualMachineSpec, s apiconversion.Scope) error {
 
+	// The generated auto convert will convert the power modes as-is strings which breaks things, so keep
+	// this first.
+	if err := autoConvert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in, out, s); err != nil {
+		return err
+	}
+
 	out.PowerState = convert_v1alpha1_VirtualMachinePowerState_To_v1alpha2_VirtualMachinePowerState(in.PowerState)
 	out.PowerOffMode = convert_v1alpha1_VirtualMachinePowerOpMode_To_v1alpha2_VirtualMachinePowerOpMode(in.PowerOffMode)
 	out.SuspendMode = convert_v1alpha1_VirtualMachinePowerOpMode_To_v1alpha2_VirtualMachinePowerOpMode(in.SuspendMode)
@@ -469,11 +475,15 @@ func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	// Deprecated:
 	// in.Ports
 
-	return autoConvert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in, out, s)
+	return nil
 }
 
 func Convert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(
 	in *v1alpha2.VirtualMachineSpec, out *VirtualMachineSpec, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in, out, s); err != nil {
+		return err
+	}
 
 	out.PowerState = convert_v1alpha2_VirtualMachinePowerState_To_v1alpha1_VirtualMachinePowerState(in.PowerState)
 	out.PowerOffMode = convert_v1alpha2_VirtualMachinePowerOpMode_To_v1alpha1_VirtualMachinePowerOpMode(in.PowerOffMode)
@@ -496,7 +506,7 @@ func Convert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(
 	// Deprecated:
 	// out.Ports
 
-	return autoConvert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in, out, s)
+	return nil
 }
 
 func Convert_v1alpha1_VirtualMachineVolumeStatus_To_v1alpha2_VirtualMachineVolumeStatus(
@@ -518,17 +528,25 @@ func Convert_v1alpha2_VirtualMachineVolumeStatus_To_v1alpha1_VirtualMachineVolum
 func Convert_v1alpha1_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 	in *VirtualMachineStatus, out *v1alpha2.VirtualMachineStatus, s apiconversion.Scope) error {
 
+	if err := autoConvert_v1alpha1_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(in, out, s); err != nil {
+		return err
+	}
+
 	out.PowerState = convert_v1alpha1_VirtualMachinePowerState_To_v1alpha2_VirtualMachinePowerState(in.PowerState)
 	out.Network = convert_v1alpha1_Network_To_v1alpha2_NetworkStatus(in.VmIp, in.NetworkInterfaces)
 	out.LastRestartTime = in.LastRestartTime
 
 	// WARNING: in.Phase requires manual conversion: does not exist in peer-type
 
-	return autoConvert_v1alpha1_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(in, out, s)
+	return nil
 }
 
 func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	in *v1alpha2.VirtualMachineStatus, out *VirtualMachineStatus, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(in, out, s); err != nil {
+		return err
+	}
 
 	out.PowerState = convert_v1alpha2_VirtualMachinePowerState_To_v1alpha1_VirtualMachinePowerState(in.PowerState)
 	out.Phase = convert_v1alpha2_Conditions_To_v1alpha1_Phase(in.Conditions)
@@ -538,7 +556,7 @@ func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type
 	// WARNING: in.Class requires manual conversion: does not exist in peer-type
 
-	return autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(in, out, s)
+	return nil
 }
 
 // ConvertTo converts this VirtualMachine to the Hub version.

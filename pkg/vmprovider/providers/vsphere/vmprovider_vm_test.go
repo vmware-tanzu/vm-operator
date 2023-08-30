@@ -146,6 +146,7 @@ func vmTests() {
 			)
 
 			BeforeEach(func() {
+				testConfig.WithNetworkEnv = builder.NetworkEnvNamed
 				testConfig.WithVMClassAsConfigDaynDate = true
 
 				ethCard = types.VirtualEthernetCard{
@@ -1590,6 +1591,8 @@ func vmTests() {
 
 				Context("Multiple NICs are specified", func() {
 					BeforeEach(func() {
+						testConfig.WithNetworkEnv = builder.NetworkEnvNamed
+
 						vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{
 							{
 								NetworkName:      "VM Network",

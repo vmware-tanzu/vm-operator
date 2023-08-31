@@ -31,3 +31,5 @@ spec:
           value: "false"
         - name: FSS_WCP_WINDOWS_SYSPREP
           value: "false"
+        - name: FSS_WCP_VMSERVICE_BACKUPRESTORE
+          value: "false"

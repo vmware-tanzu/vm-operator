@@ -93,6 +93,15 @@ const (
 	//
 	// The VM will not be reconciled again until this annotation is removed.
 	PauseAnnotation = GroupName + "/pause-reconcile"
+
+	// InstanceIDAnnotation is an annotation that can be applied to set Cloud-Init metadata Instance ID.
+	//
+	// This cannot be set by users. It is for VM Operator to handle corner cases.
+	//
+	// In a corner case where a VM first boot failed to bootstrap with Cloud-Init, VM Operator sets Instance ID
+	// the same with the first boot Instance ID to prevent Cloud-Init from treating this VM as first boot
+	// due to different Instance ID. This annotation is used in upgrade script.
+	InstanceIDAnnotation = GroupName + "/cloud-init-instance-id"
 )
 
 // VirtualMachinePowerState defines a VM's desired and observed power states.

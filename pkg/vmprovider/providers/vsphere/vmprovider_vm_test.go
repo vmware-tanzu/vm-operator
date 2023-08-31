@@ -1498,7 +1498,7 @@ func vmTests() {
 				Context("Cloudinint Transport without userdata", func() {
 					var ec map[string]interface{}
 
-					JustBeforeEach(func() {
+					It("Metadata data is included in ExtraConfig", func() {
 						vm.Spec.VmMetadata = &vmopv1.VirtualMachineMetadata{
 							Transport: vmopv1.VirtualMachineMetadataCloudInitTransport,
 						}
@@ -1514,13 +1514,6 @@ func vmTests() {
 								ec[val.Key] = val.Value.(string)
 							}
 						}
-					})
-
-					AfterEach(func() {
-						ec = nil
-					})
-
-					It("Metadata data is included in ExtraConfig", func() {
 						By("Should include default keys and values", func() {
 							Expect(ec).To(HaveKeyWithValue("disk.enableUUID", "TRUE"))
 							Expect(ec).To(HaveKeyWithValue("vmware.tools.gosc.ignoretoolscheck", "TRUE"))
@@ -1537,7 +1530,7 @@ func vmTests() {
 				Context("Cloudinint Transport with userdata", func() {
 					var ec map[string]interface{}
 
-					JustBeforeEach(func() {
+					It("Metadata data is included in ExtraConfig", func() {
 						configMap := &corev1.ConfigMap{
 							ObjectMeta: metav1.ObjectMeta{
 								GenerateName: "md-configmap-",
@@ -1566,13 +1559,6 @@ func vmTests() {
 								ec[val.Key] = val.Value.(string)
 							}
 						}
-					})
-
-					AfterEach(func() {
-						ec = nil
-					})
-
-					It("Metadata data is included in ExtraConfig", func() {
 						By("Should include default keys and values", func() {
 							Expect(ec).To(HaveKeyWithValue("disk.enableUUID", "TRUE"))
 							Expect(ec).To(HaveKeyWithValue("vmware.tools.gosc.ignoretoolscheck", "TRUE"))

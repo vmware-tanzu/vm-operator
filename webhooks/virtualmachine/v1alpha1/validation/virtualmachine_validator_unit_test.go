@@ -221,6 +221,7 @@ func unitTestsValidateCreate() {
 		isSysprepTransportUsed            bool
 		powerState                        vmopv1.VirtualMachinePowerState
 		nextRestartTime                   string
+		isForbiddenAnnotation             bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -368,6 +369,10 @@ func unitTestsValidateCreate() {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 		}
 
+		if args.isForbiddenAnnotation {
+			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = "some-value"
+		}
+
 		ctx.vm.Spec.PowerState = args.powerState
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 
@@ -414,6 +419,7 @@ func unitTestsValidateCreate() {
 	volPath := specPath.Child("volumes")
 	nextRestartTimePath := specPath.Child("nextRestartTime")
 	now := time.Now().UTC()
+	annotationPath := field.NewPath("metadata", "annotations")
 
 	DescribeTable("create table", validateCreate,
 		Entry("should allow valid", createArgs{}, true, nil, nil),
@@ -506,6 +512,9 @@ func unitTestsValidateCreate() {
 		Entry("should disallow creating VM with non-empty, invalid nextRestartTime value",
 			createArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "cannot restart VM on create").Error(), nil),
+		Entry("should deny cloud-init-instance-id annotation set by SSO user", createArgs{isForbiddenAnnotation: true}, false,
+			field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "adding this annotation is not allowed").Error(), nil),
+		Entry("should allow cloud-init-instance-id annotation set by service user", createArgs{isServiceUser: true, isForbiddenAnnotation: true}, true, nil, nil),
 	)
 }
 
@@ -533,6 +542,7 @@ func unitTestsValidateUpdate() {
 		newPowerStateEmptyAllowed       bool
 		nextRestartTime                 string
 		lastRestartTime                 string
+		isForbiddenAnnotation           bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -581,6 +591,9 @@ func unitTestsValidateUpdate() {
 		ctx.oldVM.Spec.NextRestartTime = args.lastRestartTime
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 
+		if args.isForbiddenAnnotation {
+			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = "some-value"
+		}
 		// Named network provider
 		undoNamedNetProvider := initNamedNetworkProviderConfig(
 			ctx,
@@ -621,6 +634,7 @@ func unitTestsValidateUpdate() {
 	volumesPath := field.NewPath("spec", "volumes")
 	powerStatePath := field.NewPath("spec", "powerState")
 	nextRestartTimePath := field.NewPath("spec", "nextRestartTime")
+	annotationPath := field.NewPath("metadata", "annotations")
 
 	DescribeTable("update table", validateUpdate,
 		// Immutable Fields
@@ -672,6 +686,9 @@ func unitTestsValidateUpdate() {
 		Entry("should disallow updating VM with non-empty, invalid nextRestartTime value ",
 			updateArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "must be formatted as RFC3339Nano").Error(), nil),
+		Entry("should deny cloud-init-instance-id annotation set by SSO user", updateArgs{isForbiddenAnnotation: true}, false,
+			field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "adding this annotation is not allowed").Error(), nil),
+		Entry("should allow cloud-init-instance-id annotation set by service user", updateArgs{isServiceUser: true, isForbiddenAnnotation: true}, true, nil, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

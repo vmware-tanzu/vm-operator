@@ -105,6 +105,12 @@ func GetCloudInitMetadata(vm *vmopv1.VirtualMachine,
 		Network:       netplan,
 		PublicKeys:    data["ssh-public-keys"],
 	}
+	// This is to address a bug when Cloud-Init sans configMap/secret actually got
+	// customized by LinuxPrep. Use annotation as instanceID to avoid
+	// different instanceID triggers CloudInit in brownfield scenario.
+	if value, ok := vm.Annotations[vmopv1.InstanceIDAnnotation]; ok {
+		metadataObj.InstanceID = value
+	}
 
 	metadataBytes, err := yaml.Marshal(metadataObj)
 	if err != nil {

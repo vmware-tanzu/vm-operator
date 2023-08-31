@@ -59,6 +59,7 @@ const (
 	invalidNextRestartTimeOnCreate           = "cannot restart VM on create"
 	invalidNextRestartTimeOnUpdate           = "must be formatted as RFC3339Nano"
 	invalidNextRestartTimeOnUpdateNow        = "mutation webhooks are required to restart VM"
+	settingAnnotationNotAllowed              = "adding this annotation is not allowed"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha2-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha2,name=default.validating.virtualmachine.v1alpha2.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -114,6 +115,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validatePowerStateOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnCreate(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -168,6 +170,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnUpdate(ctx, vm, oldVM)...)
+	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -678,4 +681,20 @@ func (v validator) isNetworkRestrictedForReadinessProbe(ctx *context.WebhookRequ
 	}
 
 	return configMap.Data[isRestrictedNetworkKey] == "true", nil
+}
+
+func (v validator) validateAnnotation(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if ctx.IsPrivilegedAccount || vm.Annotations == nil {
+		return allErrs
+	}
+
+	annotationPath := field.NewPath("metadata", "annotations")
+
+	if _, exists := vm.Annotations[vmopv1.InstanceIDAnnotation]; exists {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), settingAnnotationNotAllowed))
+	}
+
+	return allErrs
 }

@@ -151,7 +151,7 @@ func GetCloudInitGuestInfoCustSpec(
 
 	extraConfig := map[string]string{}
 
-	encodedMetadata, err := EncodeGzipBase64(cloudInitMetadata)
+	encodedMetadata, err := util.EncodeGzipBase64(cloudInitMetadata)
 	if err != nil {
 		return nil, fmt.Errorf("encoding cloud-init metadata failed %v", err)
 	}
@@ -176,7 +176,7 @@ func GetCloudInitGuestInfoCustSpec(
 			return nil, fmt.Errorf("decoding cloud-init userdata failed %v", err)
 		}
 
-		encodedUserdata, err := EncodeGzipBase64(plainText)
+		encodedUserdata, err := util.EncodeGzipBase64(plainText)
 		if err != nil {
 			return nil, fmt.Errorf("encoding cloud-init userdata failed %v", err)
 		}

@@ -24,6 +24,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
@@ -353,7 +354,7 @@ var _ = Describe("Cloud-Init Customization", func() {
 
 		Context("With gzipped, base64-encoded userdata but no encoding specified", func() {
 			BeforeEach(func() {
-				data, err := session.EncodeGzipBase64(cloudInitUserdata)
+				data, err := util.EncodeGzipBase64(cloudInitUserdata)
 				Expect(err).ToNot(HaveOccurred())
 				updateArgs.VMMetadata.Data["user-data"] = data
 			})
@@ -460,7 +461,7 @@ var _ = Describe("Cloud-Init Customization", func() {
 
 		Context("With gzipped, base64-encoded userdata but no encoding specified", func() {
 			BeforeEach(func() {
-				data, err := session.EncodeGzipBase64(cloudInitUserdata)
+				data, err := util.EncodeGzipBase64(cloudInitUserdata)
 				Expect(err).ToNot(HaveOccurred())
 				updateArgs.VMMetadata.Data["user-data"] = data
 			})

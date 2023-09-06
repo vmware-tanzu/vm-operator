@@ -156,7 +156,7 @@ func (vmImage *VirtualMachineImage) SetConditions(conditions Conditions) {
 // +kubebuilder:resource:scope=Cluster,shortName=vmi;vmimage
 // +kubebuilder:storageversion:false
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Image-Name",type="string",JSONPath=".status.imageName"
+// +kubebuilder:printcolumn:name="Human-Readable-Name",type="string",JSONPath=".status.imageName"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
 // +kubebuilder:printcolumn:name="Os-Type",type="string",JSONPath=".spec.osInfo.type"
 // +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"
@@ -196,7 +196,7 @@ func (clusterVirtualMachineImage *ClusterVirtualMachineImage) SetConditions(cond
 // +kubebuilder:resource:scope=Cluster,shortName=cvmi;cvmimage;clustervmi;clustervmimage
 // +kubebuilder:storageversion:false
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Image-Name",type="string",JSONPath=".status.imageName"
+// +kubebuilder:printcolumn:name="Human-Readable-Name",type="string",JSONPath=".status.imageName"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".spec.productInfo.version"
 // +kubebuilder:printcolumn:name="Os-Type",type="string",JSONPath=".spec.osInfo.type"
 // +kubebuilder:printcolumn:name="Format",type="string",JSONPath=".spec.type"

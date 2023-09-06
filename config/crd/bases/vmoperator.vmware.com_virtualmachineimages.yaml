@@ -20,7 +20,7 @@ spec:
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.imageName
-      name: Image-Name
+      name: Human-Readable-Name
       type: string
     - jsonPath: .spec.productInfo.version
       name: Version
@@ -275,7 +275,7 @@ spec:
       status: {}
   - additionalPrinterColumns:
     - jsonPath: .status.name
-      name: Image Name
+      name: Human Readable Name
       type: string
     - jsonPath: .status.productInfo.version
       name: Image Version

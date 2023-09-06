@@ -211,7 +211,7 @@ type VirtualMachineImageStatus struct {
 // +kubebuilder:resource:scope=Cluster,shortName=vmi;vmimage
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Image Name",type="string",JSONPath=".status.name"
+// +kubebuilder:printcolumn:name="Human Readable Name",type="string",JSONPath=".status.name"
 // +kubebuilder:printcolumn:name="Image Version",type="string",JSONPath=".status.productInfo.version"
 // +kubebuilder:printcolumn:name="OS Name",type="string",JSONPath=".status.osInfo.type"
 // +kubebuilder:printcolumn:name="OS Version",type="string",JSONPath=".status.osInfo.version"
@@ -248,7 +248,7 @@ type VirtualMachineImageList struct {
 // +kubebuilder:resource:scope=Cluster,shortName=cvmi;cvmimage;clustervmi;clustervmimage
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Image Name",type="string",JSONPath=".status.name"
+// +kubebuilder:printcolumn:name="Human Readable Name",type="string",JSONPath=".status.name"
 // +kubebuilder:printcolumn:name="Image Version",type="string",JSONPath=".status.productInfo.version"
 // +kubebuilder:printcolumn:name="OS Name",type="string",JSONPath=".status.osInfo.type"
 // +kubebuilder:printcolumn:name="OS Version",type="string",JSONPath=".status.osInfo.version"

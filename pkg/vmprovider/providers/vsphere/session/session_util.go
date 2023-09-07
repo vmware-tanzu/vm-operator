@@ -49,11 +49,8 @@ func MergeExtraConfig(extraConfig []vimTypes.BaseOptionValue, newMap map[string]
 func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppPropertyInfo) *vimTypes.VmConfigSpec {
 	outProps := make([]vimTypes.VAppPropertySpec, 0)
 
+	// Update any vApp properties if they have been specified in VM metadata.
 	for _, vmProp := range vmProps {
-		if vmProp.UserConfigurable == nil || !*vmProp.UserConfigurable {
-			continue
-		}
-
 		inPropValue, found := inProps[vmProp.Id]
 		if !found || vmProp.Value == inPropValue {
 			continue

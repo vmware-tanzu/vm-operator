@@ -474,8 +474,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContext) (reterr
 
 	// Back up this VM if ReconcileNormal succeeds and the FSS is enabled.
 	if lib.IsVMServiceBackupRestoreFSSEnabled() {
-		err := r.VMProvider.BackupVirtualMachine(ctx, ctx.VM)
-		if err != nil {
+		if err := r.VMProvider.BackupVirtualMachine(ctx, ctx.VM); err != nil {
 			ctx.Logger.Error(err, "Failed to backup VirtualMachine")
 			r.Recorder.EmitEvent(ctx.VM, "Backup", err, false)
 			return err

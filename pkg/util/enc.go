@@ -64,6 +64,7 @@ func EncodeGzipBase64(s string) (string, error) {
 	if _, err := zw.Write([]byte(s)); err != nil {
 		return "", err
 	}
+	// Flush before closing to ensure all data is written.
 	if err := zw.Flush(); err != nil {
 		return "", err
 	}

@@ -4,13 +4,12 @@
 package virtualmachine
 
 import (
-	goctx "context"
-
-	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -18,7 +17,9 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
 
-// BackupVirtualMachine backs up the VM's kube data and bootstrap data into the VM's ExtraConfig.
+// BackupVirtualMachine backs up the VM's kube data and bootstrap data into the
+// vSphere VM's ExtraConfig. The status fields will not be backed up, as we expect
+// to recreate and reconcile these resources during the restore process.
 func BackupVirtualMachine(
 	vmCtx context.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -29,7 +30,7 @@ func BackupVirtualMachine(
 		return err
 	}
 
-	vmBootstrapData, err := getEncodedVMBootstrapData(vmCtx.Context, vmCtx.VM, k8sClient)
+	vmBootstrapData, err := getEncodedVMBootstrapData(vmCtx, k8sClient)
 	if err != nil {
 		vmCtx.Logger.Error(err, "Failed to get VM bootstrap data for backup")
 		return err
@@ -59,7 +60,6 @@ func BackupVirtualMachine(
 
 func getEncodedVMKubeData(vm *vmopv1.VirtualMachine) (string, error) {
 	backupVM := vm.DeepCopy()
-	// No need to back up status fields as we expect the VM to be re-created during restore.
 	backupVM.Status = vmopv1.VirtualMachineStatus{}
 	backupYaml, err := yaml.Marshal(backupVM)
 	if err != nil {
@@ -70,20 +70,22 @@ func getEncodedVMKubeData(vm *vmopv1.VirtualMachine) (string, error) {
 }
 
 func getEncodedVMBootstrapData(
-	ctx goctx.Context,
-	vm *vmopv1.VirtualMachine,
+	vmCtx context.VirtualMachineContext,
 	k8sClient ctrlruntime.Client) (string, error) {
-	// Return early if the VM bootstrap data is not set.
-	if vm.Spec.VmMetadata == nil {
+	k8sVM := vmCtx.VM
+	if k8sVM.Spec.VmMetadata == nil {
 		return "", nil
 	}
 
 	var bootstrapObj ctrlruntime.Object
 
-	if cmName := vm.Spec.VmMetadata.ConfigMapName; cmName != "" {
+	if cmName := k8sVM.Spec.VmMetadata.ConfigMapName; cmName != "" {
 		cm := &corev1.ConfigMap{}
-		cmKey := ctrlruntime.ObjectKey{Name: cmName, Namespace: vm.Namespace}
-		if err := k8sClient.Get(ctx, cmKey, cm); err != nil {
+		cmKey := ctrlruntime.ObjectKey{
+			Name:      cmName,
+			Namespace: k8sVM.Namespace,
+		}
+		if err := k8sClient.Get(vmCtx.Context, cmKey, cm); err != nil {
 			return "", err
 		}
 		cm.APIVersion = "v1"
@@ -91,10 +93,13 @@ func getEncodedVMBootstrapData(
 		bootstrapObj = cm
 	}
 
-	if secretName := vm.Spec.VmMetadata.SecretName; secretName != "" {
+	if secretName := k8sVM.Spec.VmMetadata.SecretName; secretName != "" {
 		secret := &corev1.Secret{}
-		secretKey := ctrlruntime.ObjectKey{Name: secretName, Namespace: vm.Namespace}
-		if err := k8sClient.Get(ctx, secretKey, secret); err != nil {
+		secretKey := ctrlruntime.ObjectKey{
+			Name:      secretName,
+			Namespace: k8sVM.Namespace,
+		}
+		if err := k8sClient.Get(vmCtx.Context, secretKey, secret); err != nil {
 			return "", err
 		}
 		secret.APIVersion = "v1"

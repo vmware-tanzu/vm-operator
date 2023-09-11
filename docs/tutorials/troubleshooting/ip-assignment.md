@@ -1,9 +1,9 @@
 # IP Assignment
-This page describes how to troubleshoot when VM was created and powered on but was stuck in the status with no valid IP addresses.
+This page describes how to troubleshoot when VM was created but was stuck in the status with no valid IP addresses.
 
 ## Procedure
-
-### 1. Access your namespace in the Kubernetes environment.
+### 1. Access Your Kubernetes Namespace
+Ensure you are in the correct Kubernetes context. Use the following command to set the context to the desired namespace.
 
 ```console
 $ kubectl config use-context <context-name>
@@ -11,21 +11,41 @@ $ kubectl config use-context <context-name>
 
 See [Get and Use the Supervisor Context](https://docs.vmware.com/en/VMware-vSphere/8.0/vsphere-with-tanzu-services-workloads/GUID-63A1C273-DC75-420B-B7FD-47CB25A50A2C.html#GUID-63A1C273-DC75-420B-B7FD-47CB25A50A2C) if you need help accessing Supervisor clusters.
 
-### 2. Check VM network settings
 
+### 2. Verify VM Network Settings
+Check if the VM's network settings match the underlying networking infrastructure. If you specify an nsx-t network in a vds networking environment (or vice versa), you may encounter an error message. 
+
+Use the following command to check the VM's network settings:
 ```console
 $ kubectl describe vm <vm-name> -n <namespace-name>
+```
 
+The output is similar to the following:
+```console
 Spec:
   Network Interfaces:
     Network Type:  nsx-t
+...
+Events:
+Type     Reason                 Age                  From                                                                                                 Message
+----     ------                 ----                 ----                                                                                                 -------
+Warning  CreateOrUpdateFailure  5s (x16 over 2m24s)  vmware-system-vmop/vmware-system-vmop-controller-manager-5ff5d769d8-6rwqc/virtualmachine-controller  no matches for kind "VirtualNetworkInterface" in version "vmware.com/v1alpha1"
 ```
 
-If it's NSX-T networking, check VirtualNetworkInterface status. We expect Conditions Type to be ready and Ip Addresses return valid addresses.
-**Note** When no 
+**Fix**: Not specify network interface during VM deployment, VM Operator will utilize default networking.
+
+### 3. Check NCP VirtualNetworkInterface Status (NSX-T Networking)
+For NSX-T networking, verify the status of the VirtualNetworkInterface. The expected conditions type should be "Ready," and the IP Addresses should return valid addresses.
+
+**Note** if `vm.spec.networkInterfaces[0].networkName` is empty, then `vnetif_name` should be `<vm_name>-lsp`. Otherwise, `vnetif_name` should be `<network_name>-<vm_name>-lsp`.
+
+Use the following command to check the `VirtualNetworkInterface` status:
 ```console
 $ kubectl describe virtualnetworkinterfaces <vnetif-name> -n <namespace-name>
+```
 
+The output is similar to the following:
+```console
 Status:
   Conditions:
     Status:      True
@@ -39,3 +59,73 @@ Events:
   ----    ------                        ----  ----               -------
   Normal  SuccessfulRealizeNSXResource  25m   nsx-container-ncp  Successfully realized NSX resource for VirtualNetworkInterface
 ```
+
+**Fix** Contact your VI Admin to verify the networking health status.
+
+### 4. Check NetworkInterfacesStatus (VDS Networking)
+For VDS networking, inspect the NetworkInterface status. The conditions type should be "Ready," and the IP Configs should return valid addresses.
+
+Use the following command to check the `NetworkInterface` status:
+```console
+$ kubectl describe networkinterface <vm-name> -n <namespace-name>
+```
+
+The output is similar to the following:
+```console
+Status:
+  Conditions:
+    Last Transition Time:  2023-09-18T19:17:38Z
+    Status:                True
+    Type:                  Ready
+  Ip Configs:
+    Gateway:      192.168.1.1
+    Ip:           192.168.128.42
+    Ip Family:    IPv4
+    Subnet Mask:  255.255.0.0
+  Network ID:     dvportgroup-55
+Events:           <none>
+```
+
+**Fix** Contact your VI Admin to verify the networking health status.
+
+### 5. Bootstrap
+When network interfaces issues are ruled out, we will troubleshoot issues caused by [Bootstrap Providers](https://vm-operator.readthedocs.io/en/stable/concepts/workloads/guest/). Here, we'll explore troubleshooting steps for **CloudInit**, **Sysprep**, and **vAppConfig** issues that may affect network connectivity.
+#### a. CloudInit
+For VM deployed using CloudInit bootstrap, if the VM is powered on but doesn't have a valid IPV4 IP assigned, it usually indicates that the CloudInit failed. Follow the steps below to troubleshoot:
+
+1. Check `GuestCustomization` condition in VM: When `GuestCustomization` condition shows false, it indicates GOSC or CloudInit failure.
+    - *Alternative* - Check Customization Reconfigure Event: In the vCenter UI, verify if the `Customization Reconfigure` event is present in the VM's events. Its absence suggests a CloudInit failure.
+
+2. Inspect VM ExtraConfig Values:
+    - Ensure that ExtraConfig[guestinfo.metadata] contains metadata generated by the vm-operator, including network configurations and hostname.
+    - Confirm that ExtraConfig[guestinfo.userdata] contains the user-supplied cloud-config data.
+
+3. Examine Cloud-Init Logs: Log in to the virtual machine using the web console. Access the VM's filesystem and locate the Cloud-Init logs at `/var/log/cloud-init.log` and `/var/log/cloud-init-output.log`.
+
+#### b. Sysprep
+For VM deployed using Sysprep bootstrap, if the VM is powered on but doesn't have a valid IPV4 IP assigned, it usually indicates that the GOSC failed. Follow the steps below to troubleshoot:
+
+1. Check `GuestCustomization` condition in VM: When `GuestCustomization` condition shows false, it indicates GOSC or Sysprep failure.
+    - *Alternative* - Check Customization Succeeded Event: In the vCenter UI, verify if the `Customization of VM succeeded` event is present in the VM's events. Its absence indicates GOSC or Sysprep failure.
+
+2. Inspect GOSC Status: Log in to the virtual machine using the web console. Check the log file at `C:/Windows/TEMP/vmware-imc/guestcust` (the path may vary based on the Windows version) to confirm GOSC status.
+
+3. Validate Sysprep Answer File: Inside the VM, ensure all templating expressions have been parsed correctly. For example, you should see `<Identifier>{{ V1alpha1_FirstNicMacAddr }}</Identifier>` converted to `<Identifier>00-11-22-33-aa-bb-cc</Identifier>`.
+The Sysprep content file should be located at `C:\sysprep1001\sysprep.xml` inside the VM.
+
+4. Check the GOSC and Sysprep Logs: Examine logs at the following paths within the VM for more details:
+```
+C:/Windows/Panther/setuperr
+C:/Windows/Panther/Unattendgc/setuperr
+C:/Windows/System32/Sysprep/Panther/setuperr
+```
+
+#### c. vAppConfig
+For VM deployed using vAppConfig bootstrap, if the VM is powered on but doesn't have a valid IPV4 IP assigned, it usually indicates that the GOSC or vAppConfig failed. Follow the steps below to troubleshoot:
+
+1. Check `GuestCustomization` condition in VM: When `GuestCustomization` condition shows false, it indicates GOSC or vAppConfig failure.
+    - *Alternative* - Check Customization Succeeded Event: In the vCenter UI, ensure that the `Customization of VM succeeded` event is present in the VM's events. Its absence indicates GOSC or vAppConfig failure.
+
+2. Verify VM `VAppPropertyInfo`: Inspect the `config.vAppConfig.property` of the VM to ensure all templating expressions have been parsed correctly.
+
+3. Inspect Logs: Log in to the virtual machine using the web console. Check the log file `/var/log/vmware-imc/toolsDeployPkg.log` file look for string `Executing Traditional GOSC workflow`.

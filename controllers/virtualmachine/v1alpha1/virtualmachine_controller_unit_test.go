@@ -6,8 +6,8 @@ package v1alpha1_test
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
-	"sync/atomic"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -158,25 +158,13 @@ func unitTestsReconcile() {
 		})
 
 		When("The VM Service Backup and Restore FSS is enabled", func() {
-			var (
-				// This is manipulated atomically to avoid races where the controller
-				// is trying to read this _while_ the tests are updating it.
-				vmServiceBackupRestoreFSS     uint32
-				origVMServiceBackupRestoreFSS uint32
-			)
-
-			// Modify the helper function to return the custom value of the FSS.
-			lib.IsVMServiceBackupRestoreFSSEnabled = func() bool {
-				return atomic.LoadUint32(&vmServiceBackupRestoreFSS) != 0
-			}
 
 			BeforeEach(func() {
-				origVMServiceBackupRestoreFSS = vmServiceBackupRestoreFSS
-				atomic.StoreUint32(&vmServiceBackupRestoreFSS, 1)
+				Expect(os.Setenv(lib.VMServiceBackupRestoreFSS, lib.TrueString)).To(Succeed())
 			})
 
 			AfterEach(func() {
-				atomic.StoreUint32(&vmServiceBackupRestoreFSS, origVMServiceBackupRestoreFSS)
+				Expect(os.Unsetenv(lib.VMServiceBackupRestoreFSS)).To(Succeed())
 			})
 
 			It("Should call backup Virtual Machine if ReconcileNormal succeeds", func() {

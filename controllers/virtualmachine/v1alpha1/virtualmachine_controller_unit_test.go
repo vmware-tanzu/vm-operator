@@ -158,7 +158,6 @@ func unitTestsReconcile() {
 		})
 
 		When("The VM Service Backup and Restore FSS is enabled", func() {
-
 			BeforeEach(func() {
 				Expect(os.Setenv(lib.VMServiceBackupRestoreFSS, lib.TrueString)).To(Succeed())
 			})

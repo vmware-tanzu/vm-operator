@@ -415,7 +415,8 @@ func (np *netOpNetworkProvider) waitForReadyNetworkInterface(
 	netIfKey := types.NamespacedName{Namespace: vmCtx.VM.Namespace, Name: name}
 
 	// TODO: Watch() this type instead.
-	err := wait.PollImmediate(retryInterval, retryTimeout, func() (bool, error) {
+
+	err := wait.PollUntilContextTimeout(vmCtx, retryInterval, retryTimeout, true, func(_ goctx.Context) (bool, error) {
 		instance := &netopv1alpha1.NetworkInterface{}
 		if err := np.k8sClient.Get(vmCtx, netIfKey, instance); err != nil {
 			return false, ctrlruntime.IgnoreNotFound(err)
@@ -637,7 +638,7 @@ func (np *nsxtNetworkProvider) waitForReadyVirtualNetworkInterface(
 	vnetIfKey := types.NamespacedName{Namespace: vmCtx.VM.Namespace, Name: vnetIfName}
 
 	// TODO: Watch() this type instead.
-	err := wait.PollImmediate(retryInterval, retryTimeout, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(vmCtx, retryInterval, retryTimeout, true, func(_ goctx.Context) (bool, error) {
 		instance := &ncpv1alpha1.VirtualNetworkInterface{}
 		if err := np.k8sClient.Get(vmCtx, vnetIfKey, instance); err != nil {
 			return false, ctrlruntime.IgnoreNotFound(err)

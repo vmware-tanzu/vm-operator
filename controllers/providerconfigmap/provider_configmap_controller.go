@@ -82,7 +82,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	}
 	// Add Watches to Namespaces so we can create TKG bindings when new namespaces are created.
 	err = c.Watch(
-		&source.Kind{Type: &corev1.Namespace{}},
+		source.Kind(mgr.GetCache(), &corev1.Namespace{}),
 		handler.EnqueueRequestsFromMapFunc(nsToProviderCMMapperFn(ctx)),
 		nsPrct)
 	if err != nil {
@@ -94,8 +94,8 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 // nsToProviderCMMapperFn returns a mapper function that can be used to queue reconcile request
 // for the provider ConfigMap in response to an event on the Namespace.
-func nsToProviderCMMapperFn(ctx *context.ControllerManagerContext) func(o client.Object) []reconcile.Request {
-	return func(o client.Object) []reconcile.Request {
+func nsToProviderCMMapperFn(ctx *context.ControllerManagerContext) func(_ goctx.Context, o client.Object) []reconcile.Request {
+	return func(_ goctx.Context, o client.Object) []reconcile.Request {
 		logger := ctx.Logger.WithValues("namespaceName", o.GetName())
 
 		logger.V(4).Info("Reconciling provider ConfigMap due to a namespace creation")
@@ -114,7 +114,7 @@ func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod 
 		return err
 	}
 
-	return c.Watch(source.NewKindWithCache(&corev1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
+	return c.Watch(source.Kind(nsCache, &corev1.ConfigMap{}), &handler.EnqueueRequestForObject{},
 		predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
 				return e.Object.GetName() == config.ProviderConfigMapName

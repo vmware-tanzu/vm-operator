@@ -282,7 +282,8 @@ func main() {
 
 	setupLog.Info("setting up webhook server TLS config")
 	webhookServer := mgr.GetWebhookServer()
-	configureWebhookTLS(webhookServer)
+	srv := webhookServer.(*webhook.DefaultServer)
+	configureWebhookTLS(&srv.Options)
 
 	setupLog.Info("adding readiness check to controller manager")
 	if err := mgr.AddReadyzCheck("webhook", webhookServer.StartedChecker()); err != nil {
@@ -298,7 +299,7 @@ func main() {
 	}
 }
 
-func configureWebhookTLS(server *webhook.Server) {
+func configureWebhookTLS(opts *webhook.Options) {
 	tlsCfgFunc := func(cfg *tls.Config) {
 		cfg.MinVersion = tls.VersionTLS12
 		cfg.CipherSuites = []uint16{
@@ -308,8 +309,7 @@ func configureWebhookTLS(server *webhook.Server) {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 		}
 	}
-
-	server.TLSOpts = []func(*tls.Config){
+	opts.TLSOpts = []func(*tls.Config){
 		tlsCfgFunc,
 	}
 }

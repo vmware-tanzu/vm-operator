@@ -23,7 +23,33 @@ import (
 
 func NewFakeClient(objs ...client.Object) client.Client {
 	scheme := NewScheme()
-	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objs...).
+		WithStatusSubresource(KnownObjectTypes()...).
+		Build()
+}
+
+// KnownObjectTypes has the known VM operator types that will be
+// status enabled when initializing the fake client. Add any types
+// here if the fake client needs to patch the Status sub-resource of that
+// resource type.
+func KnownObjectTypes() []client.Object {
+	return []client.Object{
+		&v1alpha1.VirtualMachine{},
+		&v1alpha2.VirtualMachine{},
+		&v1alpha1.VirtualMachineService{},
+		&v1alpha2.VirtualMachineService{},
+		&v1alpha1.VirtualMachineClass{},
+		&v1alpha2.VirtualMachineClass{},
+		&cnsv1alpha1.CnsNodeVmAttachment{},
+		&v1alpha1.VirtualMachinePublishRequest{},
+		&v1alpha2.VirtualMachinePublishRequest{},
+		&v1alpha1.ClusterVirtualMachineImage{},
+		&v1alpha2.ClusterVirtualMachineImage{},
+		&v1alpha1.VirtualMachineImage{},
+		&v1alpha2.VirtualMachineImage{},
+	}
 }
 
 func NewFakeRecorder() (record.Recorder, chan string) {

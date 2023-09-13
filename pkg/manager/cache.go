@@ -16,10 +16,10 @@ import (
 func NewNamespaceCache(mgr ctrlmgr.Manager, resync *time.Duration, namespace string) (cache.Cache, error) {
 	nsCache, err := cache.New(mgr.GetConfig(),
 		cache.Options{
-			Scheme:    mgr.GetScheme(),
-			Mapper:    mgr.GetRESTMapper(),
-			Resync:    resync,
-			Namespace: namespace,
+			Scheme:     mgr.GetScheme(),
+			Mapper:     mgr.GetRESTMapper(),
+			SyncPeriod: resync,
+			Namespaces: []string{namespace},
 		},
 	)
 	if err != nil {

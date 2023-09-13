@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/yaml"
 
 	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -371,9 +372,10 @@ func (s *TestSuite) initializeManager() {
 	// If one or more webhooks are being tested then go ahead and configure the webhook server.
 	if s.isWebhookTest() {
 		By("configuring webhook server", func() {
-			s.manager.GetWebhookServer().Host = "127.0.0.1"
-			s.manager.GetWebhookServer().Port = randomTCPPort()
-			s.manager.GetWebhookServer().CertDir = s.certDir
+			svr := s.manager.GetWebhookServer().(*webhook.DefaultServer)
+			svr.Options.Host = "127.0.0.1"
+			svr.Options.Port = randomTCPPort()
+			svr.Options.CertDir = s.certDir
 		})
 	}
 }
@@ -427,10 +429,12 @@ func (s *TestSuite) postConfigureManager() {
 			// MARSHAL the webhook config back to YAML.
 			if s.mutatorFn != nil {
 				By("installing the mutating webhook(s)")
-				s.webhookYaml = updateMutatingWebhookConfig(mutatingWebhookConfig, s.webhookName, s.manager.GetWebhookServer().Host, s.manager.GetWebhookServer().Port, s.pki.publicKeyPEM)
+				svr := s.manager.GetWebhookServer().(*webhook.DefaultServer)
+				s.webhookYaml = updateMutatingWebhookConfig(mutatingWebhookConfig, s.webhookName, svr.Options.Host, svr.Options.Port, s.pki.publicKeyPEM)
 			} else {
 				By("installing the validating webhook(s)")
-				s.webhookYaml = updateValidatingWebhookConfig(validatingWebhookConfig, s.webhookName, s.manager.GetWebhookServer().Host, s.manager.GetWebhookServer().Port, s.pki.publicKeyPEM)
+				svr := s.manager.GetWebhookServer().(*webhook.DefaultServer)
+				s.webhookYaml = updateValidatingWebhookConfig(validatingWebhookConfig, s.webhookName, svr.Options.Host, svr.Options.Port, s.pki.publicKeyPEM)
 			}
 
 			// ASSERT that eventually the webhook config gets successfully
@@ -443,7 +447,8 @@ func (s *TestSuite) postConfigureManager() {
 		// It can take a few seconds for the webhook server to come online.
 		// This step blocks until the webserver can be successfully accessed.
 		By("waiting for the webhook server to come online", func() {
-			addr := net.JoinHostPort(s.manager.GetWebhookServer().Host, strconv.Itoa(s.manager.GetWebhookServer().Port))
+			svr := s.manager.GetWebhookServer().(*webhook.DefaultServer)
+			addr := net.JoinHostPort(svr.Options.Host, strconv.Itoa(svr.Options.Port))
 			dialer := &net.Dialer{Timeout: time.Second}
 			//nolint:gosec
 			tlsConfig := &tls.Config{InsecureSkipVerify: true}

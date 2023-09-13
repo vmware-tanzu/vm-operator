@@ -66,25 +66,29 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	}
 
 	// Watch for changes to VirtualMachine.
-	err = c.Watch(&source.Kind{Type: &vmopv1.VirtualMachine{}}, &handler.EnqueueRequestForObject{})
+	err = c.Watch(source.Kind(mgr.GetCache(), &vmopv1.VirtualMachine{}), &handler.EnqueueRequestForObject{})
 	if err != nil {
 		return err
 	}
 
 	// Watch for changes for CnsNodeVmAttachment, and enqueue VirtualMachine which is the owner of CnsNodeVmAttachment.
-	err = c.Watch(&source.Kind{Type: &cnsv1alpha1.CnsNodeVmAttachment{}}, &handler.EnqueueRequestForOwner{
-		OwnerType:    &vmopv1.VirtualMachine{},
-		IsController: true,
-	})
+	err = c.Watch(source.Kind(mgr.GetCache(), &cnsv1alpha1.CnsNodeVmAttachment{}),
+		handler.EnqueueRequestForOwner(
+			mgr.GetScheme(),
+			mgr.GetRESTMapper(),
+			&vmopv1.VirtualMachine{},
+			handler.OnlyControllerOwner()))
 	if err != nil {
 		return err
 	}
 
 	// Watch for changes for PersistentVolumeClaim, and enqueue VirtualMachine which is the owner of PersistentVolumeClaim.
-	err = c.Watch(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, &handler.EnqueueRequestForOwner{
-		OwnerType:    &vmopv1.VirtualMachine{},
-		IsController: true,
-	})
+	err = c.Watch(source.Kind(mgr.GetCache(), &corev1.PersistentVolumeClaim{}),
+		handler.EnqueueRequestForOwner(
+			mgr.GetScheme(),
+			mgr.GetRESTMapper(),
+			&vmopv1.VirtualMachine{},
+			handler.OnlyControllerOwner()))
 	if err != nil {
 		return err
 	}

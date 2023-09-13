@@ -19,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -100,7 +99,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 			}))).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles})
 
-	builder = builder.Watches(&source.Kind{Type: &vmopv1.VirtualMachineClass{}},
+	builder = builder.Watches(&vmopv1.VirtualMachineClass{},
 		handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client)))
 
 	return builder.Complete(r)
@@ -109,10 +108,10 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 // classToVMMapperFn returns a mapper function that can be used to queue reconcile request
 // for the VirtualMachines in response to an event on the VirtualMachineClass resource when
 // WCP_Namespaced_VM_Class FSS is enabled.
-func classToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(o client.Object) []reconcile.Request {
+func classToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(_ goctx.Context, o client.Object) []reconcile.Request {
 	// For a given VirtualMachineClass, return reconcile requests
 	// for those VirtualMachines with corresponding VirtualMachinesClasses referenced
-	return func(o client.Object) []reconcile.Request {
+	return func(_ goctx.Context, o client.Object) []reconcile.Request {
 		class := o.(*vmopv1.VirtualMachineClass)
 		logger := ctx.Logger.WithValues("name", class.Name, "namespace", class.Namespace)
 

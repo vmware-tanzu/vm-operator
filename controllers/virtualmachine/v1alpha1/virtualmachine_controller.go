@@ -19,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -100,15 +99,15 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles})
 
 	if !lib.IsWCPVMImageRegistryEnabled() {
-		builder = builder.Watches(&source.Kind{Type: &vmopv1.ContentSourceBinding{}},
+		builder = builder.Watches(&vmopv1.ContentSourceBinding{},
 			handler.EnqueueRequestsFromMapFunc(csBindingToVMMapperFn(ctx, r.Client)))
 	}
 
 	if !lib.IsNamespacedVMClassFSSEnabled() {
-		builder = builder.Watches(&source.Kind{Type: &vmopv1.VirtualMachineClassBinding{}},
+		builder = builder.Watches(&vmopv1.VirtualMachineClassBinding{},
 			handler.EnqueueRequestsFromMapFunc(classBindingToVMMapperFn(ctx, r.Client)))
 	} else {
-		builder = builder.Watches(&source.Kind{Type: &vmopv1.VirtualMachineClass{}},
+		builder = builder.Watches(&vmopv1.VirtualMachineClass{},
 			handler.EnqueueRequestsFromMapFunc(classToVMMapperFn(ctx, r.Client)))
 	}
 
@@ -117,8 +116,8 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 
 // csBindingToVMMapperFn returns a mapper function that can be used to queue reconcile request
 // for the VirtualMachines in response to an event on the ContentSourceBinding resource.
-func csBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Reader) func(o client.Object) []reconcile.Request {
-	return func(o client.Object) []reconcile.Request {
+func csBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Reader) func(_ goctx.Context, o client.Object) []reconcile.Request {
+	return func(_ goctx.Context, o client.Object) []reconcile.Request {
 		binding := o.(*vmopv1.ContentSourceBinding)
 		logger := ctx.Logger.WithValues("name", binding.Name, "namespace", binding.Namespace)
 
@@ -176,10 +175,10 @@ func csBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Reade
 
 // classBindingToVMMapperFn returns a mapper function that can be used to queue reconcile request
 // for the VirtualMachines in response to an event on the VirtualMachineClassBinding resource.
-func classBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(o client.Object) []reconcile.Request {
+func classBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(_ goctx.Context, o client.Object) []reconcile.Request {
 	// For a given VirtualMachineClassBinding, return reconcile requests
 	// for those VirtualMachines with corresponding VirtualMachinesClasses referenced
-	return func(o client.Object) []reconcile.Request {
+	return func(_ goctx.Context, o client.Object) []reconcile.Request {
 		classBinding := o.(*vmopv1.VirtualMachineClassBinding)
 		logger := ctx.Logger.WithValues("name", classBinding.Name, "namespace", classBinding.Namespace)
 
@@ -241,10 +240,10 @@ func classBindingToVMMapperFn(ctx *context.ControllerManagerContext, c client.Cl
 // classToVMMapperFn returns a mapper function that can be used to queue reconcile request
 // for the VirtualMachines in response to an event on the VirtualMachineClass resource when
 // WCP_Namespaced_VM_Class FSS is enabled.
-func classToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(o client.Object) []reconcile.Request {
+func classToVMMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(_ goctx.Context, o client.Object) []reconcile.Request {
 	// For a given VirtualMachineClass, return reconcile requests
 	// for those VirtualMachines with corresponding VirtualMachinesClasses referenced
-	return func(o client.Object) []reconcile.Request {
+	return func(_ goctx.Context, o client.Object) []reconcile.Request {
 		class := o.(*vmopv1.VirtualMachineClass)
 		logger := ctx.Logger.WithValues("name", class.Name, "namespace", class.Namespace)
 

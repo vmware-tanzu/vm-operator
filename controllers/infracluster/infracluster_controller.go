@@ -85,7 +85,7 @@ func addCredSecretWatch(mgr manager.Manager, c controller.Controller, syncPeriod
 		return err
 	}
 
-	return c.Watch(source.NewKindWithCache(&corev1.Secret{}, nsCache), &handler.EnqueueRequestForObject{},
+	return c.Watch(source.Kind(nsCache, &corev1.Secret{}), &handler.EnqueueRequestForObject{},
 		predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
 				return e.Object.GetName() == VcCredsSecretName
@@ -110,7 +110,7 @@ func addWcpClusterCMWatch(mgr manager.Manager, c controller.Controller, syncPeri
 		return err
 	}
 
-	return c.Watch(source.NewKindWithCache(&corev1.ConfigMap{}, nsCache), &handler.EnqueueRequestForObject{},
+	return c.Watch(source.Kind(nsCache, &corev1.ConfigMap{}), &handler.EnqueueRequestForObject{},
 		predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool {
 				return e.Object.GetName() == WcpClusterConfigMapName

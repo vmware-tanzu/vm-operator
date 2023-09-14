@@ -137,15 +137,15 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(ctx goctx.Context, vm *vmopv1
 
 // BackupVirtualMachine backs up the VM data required for restore.
 func (vs *vSphereVMProvider) BackupVirtualMachine(ctx goctx.Context, vm *vmopv1.VirtualMachine) error {
+	client, err := vs.getVcClient(ctx)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get vCenter client for backing up Virtual Machine")
+	}
+
 	vmCtx := context.VirtualMachineContext{
 		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "backupVM")),
 		Logger:  log.WithValues("vmName", vm.NamespacedName()),
 		VM:      vm,
-	}
-
-	client, err := vs.getVcClient(ctx)
-	if err != nil {
-		return errors.Wrapf(err, "failed to get vCenter client for backing up Virtual Machine")
 	}
 
 	vcVM, err := vs.getVM(vmCtx, client, true)
@@ -153,7 +153,12 @@ func (vs *vSphereVMProvider) BackupVirtualMachine(ctx goctx.Context, vm *vmopv1.
 		return errors.Wrapf(err, "failed to get vSphere Virtual Machine for backing up")
 	}
 
-	return virtualmachine.BackupVirtualMachine(vmCtx, vcVM, vs.k8sClient)
+	vmMetadata, err := GetVMMetadata(vmCtx, vs.k8sClient)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get VM metadata for backing up")
+	}
+
+	return virtualmachine.BackupVirtualMachine(vmCtx, vcVM, vmMetadata.Data)
 }
 
 func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(

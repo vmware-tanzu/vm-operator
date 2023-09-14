@@ -232,6 +232,9 @@ func GetVMMetadata(
 		return vmMD, errors.New("invalid VM Metadata: both ConfigMapName and SecretName are specified")
 	}
 
+	// ConfigMap and Secret can be both empty.
+	vmMD.Transport = metadata.Transport
+
 	if metadata.ConfigMapName != "" {
 		cm := &corev1.ConfigMap{}
 		err := k8sClient.Get(vmCtx, ctrlclient.ObjectKey{Name: metadata.ConfigMapName, Namespace: vmCtx.VM.Namespace}, cm)
@@ -239,8 +242,6 @@ func GetVMMetadata(
 			// TODO: Condition
 			return vmMD, errors.Wrap(err, "Failed to get VM Metadata ConfigMap")
 		}
-
-		vmMD.Transport = metadata.Transport
 		vmMD.Data = cm.Data
 	} else if metadata.SecretName != "" {
 		secret := &corev1.Secret{}
@@ -249,8 +250,6 @@ func GetVMMetadata(
 			// TODO: Condition
 			return vmMD, errors.Wrap(err, "Failed to get VM Metadata Secret")
 		}
-
-		vmMD.Transport = metadata.Transport
 		vmMD.Data = make(map[string]string)
 		for k, v := range secret.Data {
 			vmMD.Data[k] = string(v)

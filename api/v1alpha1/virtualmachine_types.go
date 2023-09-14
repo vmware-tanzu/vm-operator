@@ -80,7 +80,7 @@ const (
 
 const (
 	// PauseAnnotation is an annotation that can be applied to any VirtualMachine object to prevent VM Operator from
-	// reconciling the object with the vSphere infrastructure.  VM Operator checks the presence of this annotation to
+	// reconciling the object with the vSphere infrastructure. VM Operator checks the presence of this annotation to
 	// skip the reconcile of a VirtualMachine.
 	//
 	// This can be used when a Virtual Machine needs to be modified out-of-band of VM Operator on the infrastructure
@@ -96,6 +96,15 @@ const (
 	// this annotation to skip adding a default nic. VM Operator won't add default NIC to any existing VMs or new VMs
 	// with VirtualMachineNetworkInterfaces specified. This annotation is not required for such VMs.
 	NoDefaultNicAnnotation = GroupName + "/no-default-nic"
+
+	// InstanceIDAnnotation is an annotation that can be applied to set Cloud-Init metadata Instance ID.
+	//
+	// This cannot be set by users. It is for VM Operator to handle corner cases.
+	//
+	// In a corner case where a VM first boot failed to bootstrap with Cloud-Init, VM Operator sets Instance ID
+	// the same with the first boot Instance ID to prevent Cloud-Init from treating this VM as first boot
+	// due to different Instance ID. This annotation is used in upgrade script.
+	InstanceIDAnnotation = GroupName + "/cloud-init-instance-id"
 )
 
 // VirtualMachinePort is unused and can be considered deprecated.

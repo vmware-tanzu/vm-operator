@@ -38,9 +38,36 @@ const (
 // +kubebuilder:webhook:path=/default-mutate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=true,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,verbs=create;update,versions=v1alpha1,name=default.mutating.virtualmachine.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachine,verbs=get;list
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachine/status,verbs=get
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages/status,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages/status,verbs=get;list;watch
 
 // AddToManager adds the webhook to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+	// Index the VirtualMachineImage and ClusterVirtualMachineImage objects by
+	// status.imageName field to allow efficient querying in ResolveImageName().
+	if err := mgr.GetFieldIndexer().IndexField(
+		ctx,
+		&vmopv1.VirtualMachineImage{},
+		"status.imageName",
+		func(rawObj client.Object) []string {
+			vmi := rawObj.(*vmopv1.VirtualMachineImage)
+			return []string{vmi.Status.ImageName}
+		}); err != nil {
+		return err
+	}
+	if err := mgr.GetFieldIndexer().IndexField(
+		ctx,
+		&vmopv1.ClusterVirtualMachineImage{},
+		"status.imageName",
+		func(rawObj client.Object) []string {
+			cvmi := rawObj.(*vmopv1.ClusterVirtualMachineImage)
+			return []string{cvmi.Status.ImageName}
+		}); err != nil {
+		return err
+	}
+
 	hook, err := builder.NewMutatingWebhook(ctx, mgr, webHookName, NewMutator(mgr.GetClient()))
 	if err != nil {
 		return errors.Wrapf(err, "failed to create mutation webhook")
@@ -83,6 +110,11 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 			wasMutated = true
 		}
 		if SetDefaultPowerState(ctx, m.client, modified) {
+			wasMutated = true
+		}
+		if mutated, err := ResolveImageName(ctx, m.client, modified); err != nil {
+			return admission.Denied(err.Error())
+		} else if mutated {
 			wasMutated = true
 		}
 	case admissionv1.Update:
@@ -152,6 +184,48 @@ func SetDefaultPowerState(
 		return true
 	}
 	return false
+}
+
+// ResolveImageName mutates the vm.spec.imageName if it's not set to a vmi name
+// and there is a single namespace or cluster scope image with that status name.
+func ResolveImageName(
+	ctx *context.WebhookRequestContext,
+	c client.Client,
+	vm *vmopv1.VirtualMachine) (bool, error) {
+	// Return early if the VM image name is empty or already set to a vmi name.
+	imageName := vm.Spec.ImageName
+	if imageName == "" || !lib.IsWCPVMImageRegistryEnabled() ||
+		strings.HasPrefix(imageName, "vmi-") {
+		return false, nil
+	}
+
+	// Check if a single namespace scope image exists by the status name.
+	vmiList := &vmopv1.VirtualMachineImageList{}
+	if err := c.List(ctx, vmiList, client.InNamespace(vm.Namespace),
+		client.MatchingFields{
+			"status.imageName": imageName,
+		},
+	); err != nil {
+		return false, err
+	}
+	if len(vmiList.Items) == 1 {
+		vm.Spec.ImageName = vmiList.Items[0].Name
+		return true, nil
+	}
+
+	// Check if a single cluster scope image exists by the status name.
+	cvmiList := &vmopv1.ClusterVirtualMachineImageList{}
+	if err := c.List(ctx, cvmiList, client.MatchingFields{
+		"status.imageName": imageName,
+	}); err != nil {
+		return false, err
+	}
+	if len(cvmiList.Items) == 1 {
+		vm.Spec.ImageName = cvmiList.Items[0].Name
+		return true, nil
+	}
+
+	return false, errors.Errorf("no single VM image exists for %q", imageName)
 }
 
 // SetNextRestartTime sets spec.nextRestartTime for a VM if the field's

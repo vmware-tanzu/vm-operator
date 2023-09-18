@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session_test
@@ -154,15 +154,6 @@ var _ = Describe("Test Session Utils", func() {
 				Expect(mergedMap["newkey1"]).To(Equal("newvalue1"))
 				Expect(mergedMap["newkey2"]).To(Equal("newvalue2"))
 			})
-		})
-	})
-
-	Context("EncodeGzipBase64", func() {
-		It("Encodes a string correctly", func() {
-			input := "HelloWorld"
-			output, err := session.EncodeGzipBase64(input)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(output).To(Equal("H4sIAAAAAAAA//JIzcnJD88vykkBAAAA//8BAAD//3kMd3cKAAAA"))
 		})
 	})
 })

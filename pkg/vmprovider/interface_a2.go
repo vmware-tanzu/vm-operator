@@ -21,6 +21,7 @@ type VirtualMachineProviderInterfaceA2 interface {
 	DeleteVirtualMachine(ctx context.Context, vm *v1alpha2.VirtualMachine) error
 	PublishVirtualMachine(ctx context.Context, vm *v1alpha2.VirtualMachine,
 		vmPub *v1alpha2.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
+	BackupVirtualMachine(ctx context.Context, vm *v1alpha2.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha2.VirtualMachine) (v1alpha2.GuestHeartbeatStatus, error)
 	GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1alpha2.VirtualMachine, pubKey string) (string, error)
 	GetVirtualMachineHardwareVersion(ctx context.Context, vm *v1alpha2.VirtualMachine) (int32, error)

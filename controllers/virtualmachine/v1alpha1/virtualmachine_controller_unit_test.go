@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1_test
@@ -6,6 +6,7 @@ package v1alpha1_test
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 
 	. "github.com/onsi/ginkgo"
@@ -18,6 +19,7 @@ import (
 
 	virtualmachine "github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/v1alpha1"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -153,6 +155,27 @@ func unitTestsReconcile() {
 
 			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
 			Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeTrue())
+		})
+
+		When("The VM Service Backup and Restore FSS is enabled", func() {
+			BeforeEach(func() {
+				Expect(os.Setenv(lib.VMServiceBackupRestoreFSS, lib.TrueString)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				Expect(os.Unsetenv(lib.VMServiceBackupRestoreFSS)).To(Succeed())
+			})
+
+			It("Should call backup Virtual Machine if ReconcileNormal succeeds", func() {
+				var isBackupVirtualMachineCalled bool
+				fakeVMProvider.BackupVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
+					isBackupVirtualMachineCalled = true
+					return nil
+				}
+
+				Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
+				Expect(isBackupVirtualMachineCalled).Should(BeTrue())
+			})
 		})
 	})
 

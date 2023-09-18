@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package util
@@ -54,4 +54,24 @@ func TryToDecodeBase64Gzip(data []byte) (string, error) {
 	}
 
 	return string(plainText), nil
+}
+
+// EncodeGzipBase64 compresses the input string using gzip and then encodes it
+// using base64.
+func EncodeGzipBase64(s string) (string, error) {
+	var zbuf bytes.Buffer
+	zw := gzip.NewWriter(&zbuf)
+	if _, err := zw.Write([]byte(s)); err != nil {
+		return "", err
+	}
+	// Flush before closing to ensure all data is written.
+	if err := zw.Flush(); err != nil {
+		return "", err
+	}
+	if err := zw.Close(); err != nil {
+		return "", err
+	}
+
+	b64 := base64.StdEncoding.EncodeToString(zbuf.Bytes())
+	return b64, nil
 }

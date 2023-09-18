@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package util_test
@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
+	"io/ioutil"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -153,5 +154,24 @@ var _ = Describe("TryToDecodeBase64Gzip", func() {
 			})
 		})
 	})
+})
 
+var _ = Describe("EncodeGzipBase64", func() {
+	It("Encodes a string correctly", func() {
+		input := "HelloWorld"
+		output, err := util.EncodeGzipBase64(input)
+		Expect(err).NotTo(HaveOccurred())
+		// Decode the base64 output.
+		decoded, err := base64.StdEncoding.DecodeString(output)
+		Expect(err).NotTo(HaveOccurred())
+		// Ungzip the decoded output.
+		reader := bytes.NewReader(decoded)
+		gzipReader, err := gzip.NewReader(reader)
+		Expect(err).NotTo(HaveOccurred())
+		defer Expect(gzipReader.Close()).To(Succeed())
+
+		ungzipped, err := ioutil.ReadAll(gzipReader)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(input).Should(Equal(string(ungzipped)))
+	})
 })

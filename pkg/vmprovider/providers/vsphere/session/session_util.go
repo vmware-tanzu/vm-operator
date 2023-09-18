@@ -1,13 +1,9 @@
-// Copyright (c) 2018-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session
 
 import (
-	"bytes"
-	"compress/gzip"
-	"encoding/base64"
-
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 )
 
@@ -80,21 +76,4 @@ func GetMergedvAppConfigSpec(inProps map[string]string, vmProps []vimTypes.VAppP
 		// a CD-ROM device required to use the ISO transport.
 		OvfEnvironmentTransport: []string{OvfEnvironmentTransportGuestInfo},
 	}
-}
-
-func EncodeGzipBase64(s string) (string, error) {
-	var zbuf bytes.Buffer
-	zw := gzip.NewWriter(&zbuf)
-	if _, err := zw.Write([]byte(s)); err != nil {
-		return "", err
-	}
-	if err := zw.Flush(); err != nil {
-		return "", err
-	}
-	if err := zw.Close(); err != nil {
-		return "", err
-	}
-
-	b64 := base64.StdEncoding.EncodeToString(zbuf.Bytes())
-	return b64, nil
 }

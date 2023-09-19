@@ -16,7 +16,7 @@ import (
 var suite = builder.NewTestSuiteForMutatingWebhook(
 	mutation.AddToManager,
 	mutation.NewMutator,
-	"default.mutating.virtualmachinesetresourcepolicy.vmoperator.vmware.com")
+	"default.mutating.virtualmachinesetresourcepolicy.v1alpha1.vmoperator.vmware.com")
 
 func TestWebhook(t *testing.T) {
 	suite.Register(t, "Mutating webhook suite", intgTests, uniTests)

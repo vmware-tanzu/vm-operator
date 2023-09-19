@@ -14,7 +14,7 @@ webhooks:
       namespace: system
       path: /default-mutate-vmoperator-vmware-com-v1alpha1-virtualmachine
   failurePolicy: Fail
-  name: default.mutating.virtualmachine.vmoperator.vmware.com
+  name: default.mutating.virtualmachine.v1alpha1.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
@@ -84,7 +84,7 @@ webhooks:
       namespace: system
       path: /default-validate-vmoperator-vmware-com-v1alpha1-virtualmachine
   failurePolicy: Fail
-  name: default.validating.virtualmachine.vmoperator.vmware.com
+  name: default.validating.virtualmachine.v1alpha1.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
@@ -105,7 +105,7 @@ webhooks:
       namespace: system
       path: /default-validate-vmoperator-vmware-com-v1alpha1-virtualmachineclass
   failurePolicy: Fail
-  name: default.validating.virtualmachineclass.vmoperator.vmware.com
+  name: default.validating.virtualmachineclass.v1alpha1.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
@@ -126,7 +126,7 @@ webhooks:
       namespace: system
       path: /default-validate-vmoperator-vmware-com-v1alpha1-virtualmachinepublishrequest
   failurePolicy: Fail
-  name: default.validating.virtualmachinepublishrequest.vmoperator.vmware.com
+  name: default.validating.virtualmachinepublishrequest.v1alpha1.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
@@ -147,7 +147,7 @@ webhooks:
       namespace: system
       path: /default-validate-vmoperator-vmware-com-v1alpha1-virtualmachineservice
   failurePolicy: Fail
-  name: default.validating.virtualmachineservice.vmoperator.vmware.com
+  name: default.validating.virtualmachineservice.v1alpha1.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
@@ -168,7 +168,7 @@ webhooks:
       namespace: system
       path: /default-validate-vmoperator-vmware-com-v1alpha1-virtualmachinesetresourcepolicy
   failurePolicy: Fail
-  name: default.validating.virtualmachinesetresourcepolicy.vmoperator.vmware.com
+  name: default.validating.virtualmachinesetresourcepolicy.v1alpha1.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com
@@ -189,7 +189,7 @@ webhooks:
       namespace: system
       path: /default-validate-vmoperator-vmware-com-v1alpha1-webconsolerequest
   failurePolicy: Fail
-  name: default.validating.webconsolerequest.vmoperator.vmware.com
+  name: default.validating.webconsolerequest.v1alpha1.vmoperator.vmware.com
   rules:
   - apiGroups:
     - vmoperator.vmware.com

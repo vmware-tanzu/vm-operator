@@ -31,7 +31,7 @@ const (
 	webHookName = "default"
 )
 
-// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachinesetresourcepolicy,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicies,versions=v1alpha1,name=default.validating.virtualmachinesetresourcepolicy.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
+// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachinesetresourcepolicy,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicies,versions=v1alpha1,name=default.validating.virtualmachinesetresourcepolicy.v1alpha1.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicies,verbs=get;list
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicies/status,verbs=get
 

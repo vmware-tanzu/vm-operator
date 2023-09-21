@@ -129,7 +129,12 @@ func unitTestsReconcile() {
 				Expect(ctx.Client.Status().Update(ctx, obj)).To(Succeed())
 			})
 
-			It("Should not publish VM", func() {
+			// This is relying on incorrect behavior in controller-runtime's fake client
+			// which has been fixed by: https://github.com/kubernetes-sigs/controller-runtime/pull/2259
+			// where a Status would change the entire object and the next Update will
+			// fail due to conflict.  Comment out the test while we figure out a way to
+			// mimic Update failure.
+			XIt("Should not publish VM", func() {
 				_, err := reconciler.ReconcileNormal(vmpubCtx)
 				Expect(err).To(HaveOccurred())
 

@@ -4,6 +4,7 @@
 package network_test
 
 import (
+	goCtx "context"
 	"fmt"
 	"os"
 
@@ -11,7 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	ctrlruntime "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -214,7 +214,7 @@ var _ = Describe("NetworkProvider", func() {
 
 				_, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(wait.ErrWaitTimeout))
+				Expect(err).To(MatchError(goCtx.DeadlineExceeded))
 
 				instance := &netopv1alpha1.NetworkInterface{}
 				err = ctx.Client.Get(ctx, ctrlruntime.ObjectKeyFromObject(netIf), instance)
@@ -244,7 +244,7 @@ var _ = Describe("NetworkProvider", func() {
 
 				It("should return an error", func() {
 					_, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
-					Expect(err).To(MatchError("timed out waiting for the condition"))
+					Expect(err).To(MatchError(goCtx.DeadlineExceeded))
 				})
 			})
 
@@ -352,7 +352,7 @@ var _ = Describe("NetworkProvider", func() {
 					It("should return an error", func() {
 						_, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
 						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("timed out waiting for the condition"))
+						Expect(err).To(MatchError(goCtx.DeadlineExceeded))
 					})
 				})
 
@@ -550,7 +550,7 @@ var _ = Describe("NetworkProvider", func() {
 
 				_, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(wait.ErrWaitTimeout))
+				Expect(err).To(MatchError(goCtx.DeadlineExceeded))
 
 				instance := &ncpv1alpha1.VirtualNetworkInterface{}
 				err = ctx.Client.Get(ctx, ctrlruntime.ObjectKeyFromObject(ncpVif), instance)
@@ -594,7 +594,7 @@ var _ = Describe("NetworkProvider", func() {
 
 				It("should return an error", func() {
 					_, err := np.EnsureNetworkInterface(vmCtx, &vmCtx.VM.Spec.NetworkInterfaces[0])
-					Expect(err).To(MatchError("timed out waiting for the condition"))
+					Expect(err).To(MatchError(goCtx.DeadlineExceeded))
 				})
 			})
 

@@ -24,7 +24,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 
@@ -76,11 +75,11 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
-		Watches(&source.Kind{Type: &corev1.Service{}},
-			&handler.EnqueueRequestForOwner{OwnerType: &vmopv1.VirtualMachineService{}}).
-		Watches(&source.Kind{Type: &corev1.Endpoints{}},
-			&handler.EnqueueRequestForOwner{OwnerType: &vmopv1.VirtualMachineService{}}).
-		Watches(&source.Kind{Type: &vmopv1.VirtualMachine{}},
+		Watches(&corev1.Service{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &vmopv1.VirtualMachineService{})).
+		Watches(&corev1.Endpoints{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &vmopv1.VirtualMachineService{})).
+		Watches(&vmopv1.VirtualMachine{},
 			handler.EnqueueRequestsFromMapFunc(r.virtualMachineToVirtualMachineServiceMapper())).
 		Complete(r)
 }
@@ -274,8 +273,8 @@ func (r *ReconcileVirtualMachineService) reconcileVMService(ctx *context.Virtual
 // VirtualMachineServices that select a given VM via label selectors.
 // TODO: The VM's labels could have been changed so this should also return VirtualMachineServices that the
 // VM is currently an Endpoint for, because otherwise the VM won't be removed in a timely manner.
-func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMapper() func(o client.Object) []reconcile.Request {
-	return func(o client.Object) []reconcile.Request {
+func (r *ReconcileVirtualMachineService) virtualMachineToVirtualMachineServiceMapper() func(_ goctx.Context, o client.Object) []reconcile.Request {
+	return func(_ goctx.Context, o client.Object) []reconcile.Request {
 		vm := o.(*vmopv1.VirtualMachine)
 
 		reconcileRequests, err := r.getVirtualMachineServicesSelectingVirtualMachine(goctx.Background(), vm)

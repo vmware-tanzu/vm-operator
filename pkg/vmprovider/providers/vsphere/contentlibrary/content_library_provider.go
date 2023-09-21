@@ -372,7 +372,7 @@ func (cs *provider) generateDownloadURLForLibraryItem(
 	// Content library api to prepare a file for download guarantees eventual end state of either
 	// ERROR or PREPARED in order to avoid posting too many requests to the api.
 	var fileURL string
-	err = wait.PollImmediateInfinite(cs.retryInterval, func() (bool, error) {
+	err = wait.PollUntilContextCancel(ctx, cs.retryInterval, true, func(_ context.Context) (bool, error) {
 		downloadSessResp, err := cs.libMgr.GetLibraryItemDownloadSession(ctx, sessionID)
 		if err != nil {
 			return false, err

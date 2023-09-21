@@ -21,7 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -84,7 +83,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(controlledType).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
-		Watches(&source.Kind{Type: &vmopv1.VirtualMachineImage{}},
+		Watches(&vmopv1.VirtualMachineImage{},
 			handler.EnqueueRequestsFromMapFunc(vmiToVMPubMapperFn(ctx, r.Client))).
 		Complete(r)
 }
@@ -93,10 +92,10 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 // for the VirtualMachinePublishRequests in response to an event on the VirtualMachineImage resource.
 // Note: Only when WCP_VM_Image_Registry FSS is enabled, this controller will be added to the controller manager.
 // In this case, the VirtualMachineImage is a namespace scoped resource.
-func vmiToVMPubMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(o client.Object) []reconcile.Request {
+func vmiToVMPubMapperFn(ctx *context.ControllerManagerContext, c client.Client) func(_ goctx.Context, o client.Object) []reconcile.Request {
 	// For a given VirtualMachineImage, return reconcile requests
 	// for those VirtualMachinePublishRequests with corresponding VirtualMachinesImage as the target item.
-	return func(o client.Object) []reconcile.Request {
+	return func(_ goctx.Context, o client.Object) []reconcile.Request {
 		vmi := o.(*vmopv1.VirtualMachineImage)
 		logger := ctx.Logger.WithValues("name", vmi.Name, "namespace", vmi.Namespace)
 

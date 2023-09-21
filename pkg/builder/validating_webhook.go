@@ -83,10 +83,7 @@ func NewValidatingWebhook(
 	}
 
 	// Initialize the webhook's decoder.
-	decoder, err := admission.NewDecoder(mgr.GetScheme())
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize decoder")
-	}
+	decoder := admission.NewDecoder(mgr.GetScheme())
 
 	// Create the webhook.
 	return &ValidatingWebhook{

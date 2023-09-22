@@ -217,8 +217,10 @@ rules:
   - clustervirtualmachineimages/status
   verbs:
   - get
+  - list
   - patch
   - update
+  - watch
 - apiGroups:
   - vmoperator.vmware.com
   resources:
@@ -326,8 +328,10 @@ rules:
   - virtualmachineimages/status
   verbs:
   - get
+  - list
   - patch
   - update
+  - watch
 - apiGroups:
   - vmoperator.vmware.com
   resources:

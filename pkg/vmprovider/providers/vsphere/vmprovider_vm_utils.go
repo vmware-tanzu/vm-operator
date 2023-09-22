@@ -349,14 +349,13 @@ func resolveVMImage(
 
 	imageSpec, imageStatus, err := clutils.GetVMImageSpecStatus(vmCtx, k8sClient, imageName, vmCtx.VM.Namespace)
 	if err != nil {
-		imageNotFoundMsg := fmt.Sprintf("Failed to get the VM's image: %s", imageName)
 		conditions.MarkFalse(vmCtx.VM,
 			vmopv1.VirtualMachinePrereqReadyCondition,
 			vmopv1.VirtualMachineImageNotFoundReason,
 			vmopv1.ConditionSeverityError,
-			imageNotFoundMsg,
+			fmt.Sprintf("Failed to get the VM's image: %s", imageName),
 		)
-		return nil, nil, errors.Wrap(err, imageNotFoundMsg)
+		return nil, nil, err
 	}
 
 	// Do not return the VM image status if the current image condition is not satisfied.

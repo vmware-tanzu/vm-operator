@@ -6,7 +6,7 @@ package vsphere_test
 import (
 	goctx "context"
 	"fmt"
-	"sync/atomic"
+	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -56,7 +56,6 @@ func vmUtilTests() {
 	})
 
 	Context("GetVirtualMachineClass", func() {
-		oldNamespacedVMClassFSSEnabledFunc := lib.IsNamespacedVMClassFSSEnabled
 
 		When("WCP_Namespaced_VM_Class FSS is disabled", func() {
 			var (
@@ -68,13 +67,11 @@ func vmUtilTests() {
 				vmClass, vmClassBinding = builder.DummyVirtualMachineClassAndBinding("dummy-vm-class", vmCtx.VM.Namespace)
 				vmCtx.VM.Spec.ClassName = vmClass.Name
 
-				lib.IsNamespacedVMClassFSSEnabled = func() bool {
-					return false
-				}
+				Expect(os.Setenv(lib.NamespacedVMClassFSS, lib.FalseString)).To(Succeed())
 			})
 
 			AfterEach(func() {
-				lib.IsNamespacedVMClassFSSEnabled = oldNamespacedVMClassFSSEnabledFunc
+				Expect(os.Unsetenv(lib.NamespacedVMClassFSS)).To(Succeed())
 			})
 
 			Context("VirtualMachineClass custom resource doesn't exist", func() {
@@ -165,13 +162,11 @@ func vmUtilTests() {
 				vmClass.Namespace = vmCtx.VM.Namespace
 				vmCtx.VM.Spec.ClassName = vmClass.Name
 
-				lib.IsNamespacedVMClassFSSEnabled = func() bool {
-					return true
-				}
+				Expect(os.Setenv(lib.NamespacedVMClassFSS, lib.TrueString)).To(Succeed())
 			})
 
 			AfterEach(func() {
-				lib.IsNamespacedVMClassFSSEnabled = oldNamespacedVMClassFSSEnabledFunc
+				Expect(os.Unsetenv(lib.NamespacedVMClassFSS)).To(Succeed())
 			})
 
 			Context("VirtualMachineClass custom resource doesn't exist", func() {
@@ -233,9 +228,11 @@ func vmUtilTests() {
 
 				vmCtx.VM.Spec.ImageName = vmImage.Name
 
-				lib.IsWCPVMImageRegistryEnabled = func() bool {
-					return false
-				}
+				Expect(os.Setenv(lib.VMImageRegistryFSS, lib.FalseString)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				Expect(os.Unsetenv(lib.VMImageRegistryFSS)).To(Succeed())
 			})
 
 			When("VirtualMachineImage does not exist", func() {
@@ -348,7 +345,6 @@ func vmUtilTests() {
 		})
 
 		When("WCPVMImageRegistry FSS is enabled", func() {
-
 			var (
 				cl             *imgregv1a1.ContentLibrary
 				nsVMImage      *vmopv1.VirtualMachineImage
@@ -371,17 +367,23 @@ func vmUtilTests() {
 					Name: clusterCL.Name,
 				}
 
-				lib.IsWCPVMImageRegistryEnabled = func() bool {
-					return true
-				}
+				Expect(os.Setenv(lib.VMImageRegistryFSS, lib.TrueString)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				Expect(os.Unsetenv(lib.VMImageRegistryFSS)).To(Succeed())
 			})
 
 			When("Neither cluster or namespace scoped VM image exists", func() {
 
+				BeforeEach(func() {
+					vmCtx.VM.Spec.ImageName = "non-existing-image"
+				})
+
 				It("returns error and sets condition", func() {
 					_, _, _, err := vsphere.GetVMImageAndContentLibraryUUID(vmCtx, k8sClient)
 					Expect(err).To(HaveOccurred())
-					expectedErrMsg := fmt.Sprintf("Failed to get the VM's image: %s", vmCtx.VM.Spec.ImageName)
+					expectedErrMsg := fmt.Sprintf("cannot find a namespace or cluster scope VM image for resource name %q", vmCtx.VM.Spec.ImageName)
 					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
 
 					expectedCondition := vmopv1.Conditions{
@@ -389,7 +391,7 @@ func vmUtilTests() {
 							vmopv1.VirtualMachinePrereqReadyCondition,
 							vmopv1.VirtualMachineImageNotFoundReason,
 							vmopv1.ConditionSeverityError,
-							expectedErrMsg),
+							fmt.Sprintf("Failed to get the VM's image: %s", vmCtx.VM.Spec.ImageName)),
 					}
 					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
 				})
@@ -481,7 +483,7 @@ func vmUtilTests() {
 				})
 			})
 
-			When("Namespace scoped VirtualMachineImage exists and ready", func() {
+			When("Namespace scoped VirtualMachineImage is ready and VM specifies an image CR name", func() {
 				BeforeEach(func() {
 					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
 					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
@@ -490,15 +492,18 @@ func vmUtilTests() {
 					vmCtx.VM.Spec.ImageName = nsVMImage.Name
 				})
 
-				It("returns success", func() {
-					_, imageStatus, uuid, err := vsphere.GetVMImageAndContentLibraryUUID(vmCtx, k8sClient)
+				It("returns expected namespace image spec, status, and CL uuid", func() {
+					imageSpec, imageStatus, uuid, err := vsphere.GetVMImageAndContentLibraryUUID(vmCtx, k8sClient)
 					Expect(err).ToNot(HaveOccurred())
+					Expect(imageSpec).ToNot(BeNil())
+					Expect(imageSpec.ImageID).To(Equal(nsVMImage.Spec.ImageID))
 					Expect(imageStatus).ToNot(BeNil())
+					Expect(imageStatus.ImageName).To(Equal(nsVMImage.Status.ImageName))
 					Expect(uuid).To(Equal(string(cl.Spec.UUID)))
 				})
 			})
 
-			When("ClusterVirtualMachineImage exists and ready", func() {
+			When("ClusterVirtualMachineImage is ready and VM specifies an image CR name", func() {
 				BeforeEach(func() {
 					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageProviderReadyCondition)
 					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
@@ -507,10 +512,13 @@ func vmUtilTests() {
 					vmCtx.VM.Spec.ImageName = clusterVMImage.Name
 				})
 
-				It("returns success", func() {
-					_, imageStatus, uuid, err := vsphere.GetVMImageAndContentLibraryUUID(vmCtx, k8sClient)
+				It("returns expected cluster image spec, status, and CL uuid", func() {
+					imageSpec, imageStatus, uuid, err := vsphere.GetVMImageAndContentLibraryUUID(vmCtx, k8sClient)
 					Expect(err).ToNot(HaveOccurred())
+					Expect(imageSpec).ToNot(BeNil())
+					Expect(imageSpec.ImageID).To(Equal(clusterVMImage.Spec.ImageID))
 					Expect(imageStatus).ToNot(BeNil())
+					Expect(imageStatus.ImageName).To(Equal(clusterVMImage.Status.ImageName))
 					Expect(uuid).To(Equal(string(clusterCL.Spec.UUID)))
 				})
 			})
@@ -684,8 +692,7 @@ func vmUtilTests() {
 	Context("AddInstanceStorageVolumes", func() {
 
 		var (
-			vmClass            *vmopv1.VirtualMachineClass
-			instanceStorageFSS uint32
+			vmClass *vmopv1.VirtualMachineClass
 		)
 
 		expectInstanceStorageVolumes := func(
@@ -713,28 +720,29 @@ func vmUtilTests() {
 		}
 
 		BeforeEach(func() {
-			lib.IsInstanceStorageFSSEnabled = func() bool {
-				return atomic.LoadUint32(&instanceStorageFSS) != 0
-			}
-
 			vmClass = builder.DummyVirtualMachineClass()
 		})
 
 		AfterEach(func() {
-			atomic.StoreUint32(&instanceStorageFSS, 0)
+			Expect(os.Unsetenv(lib.InstanceStorageFSS)).To(Succeed())
 		})
 
-		It("Instance Storage FSS is disabled", func() {
-			atomic.StoreUint32(&instanceStorageFSS, 0)
+		When("Instance Storage FSS is disabled", func() {
 
-			err := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(instancestorage.FilterVolumes(vmCtx.VM)).To(BeEmpty())
+			BeforeEach(func() {
+				Expect(os.Setenv(lib.InstanceStorageFSS, lib.FalseString)).To(Succeed())
+			})
+
+			It("VM Class does not contain instance storage volumes", func() {
+				err := vsphere.AddInstanceStorageVolumes(vmCtx, vmClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(instancestorage.FilterVolumes(vmCtx.VM)).To(BeEmpty())
+			})
 		})
 
 		When("InstanceStorage FFS is enabled", func() {
 			BeforeEach(func() {
-				atomic.StoreUint32(&instanceStorageFSS, 1)
+				Expect(os.Setenv(lib.InstanceStorageFSS, lib.TrueString)).To(Succeed())
 			})
 
 			It("VM Class does not contain instance storage volumes", func() {

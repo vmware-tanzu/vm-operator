@@ -170,6 +170,34 @@ func intgTestsMutating() {
 
 		})
 
+		Context("ResolveImageName", func() {
+
+			BeforeEach(func() {
+				Expect(os.Setenv(lib.VMImageRegistryFSS, lib.TrueString)).To(Succeed())
+			})
+
+			AfterEach(func() {
+				Expect(os.Unsetenv(lib.VMImageRegistryFSS)).To(Succeed())
+			})
+
+			When("Creating VirtualMachine", func() {
+
+				When("When VM ImageName is already a vmi resource name", func() {
+
+					BeforeEach(func() {
+						vm.Spec.ImageName = "vmi-123"
+					})
+
+					It("Should not mutate ImageName", func() {
+						Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
+						modified := &vmopv1.VirtualMachine{}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vm), modified)).Should(Succeed())
+						Expect(modified.Spec.ImageName).Should(Equal("vmi-123"))
+					})
+				})
+			})
+		})
+
 		Context("SetNextRestartTime", func() {
 			When("create a VM", func() {
 				When("spec.nextRestartTime is empty", func() {
@@ -268,6 +296,5 @@ func intgTestsMutating() {
 				})
 			})
 		})
-
 	})
 }

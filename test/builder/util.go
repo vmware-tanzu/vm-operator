@@ -12,7 +12,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/google/uuid"
@@ -604,7 +604,7 @@ func indexOfVersion(
 
 func LoadCRDs(rootFilePath string) ([]*apiextensionsv1.CustomResourceDefinition, error) {
 	// Read the CRD files.
-	files, err := ioutil.ReadDir(rootFilePath)
+	files, err := os.ReadDir(rootFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -641,7 +641,7 @@ func LoadCRDs(rootFilePath string) ([]*apiextensionsv1.CustomResourceDefinition,
 // copied from https://github.com/kubernetes-sigs/controller-runtime/blob/5bf44d2ffd6201703508e11fbae74fcedc5ce148/pkg/envtest/crd.go#L434-L458
 func readDocuments(fp string) ([][]byte, error) {
 	//nolint:gosec
-	b, err := ioutil.ReadFile(fp)
+	b, err := os.ReadFile(fp)
 	if err != nil {
 		return nil, err
 	}

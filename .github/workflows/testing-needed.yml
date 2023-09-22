@@ -18,8 +18,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          # The pull_request_target event runs in the context of the BASE of the pull request.
-          # We need to checkout the HEAD of the pull request to be able to check the diff.
+          # The pull_request_target event runs in the context of the PR's BASE.
+          # We need to checkout the PR's HEAD to be able to check the diff.
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - name: Check diff
@@ -33,7 +33,8 @@ jobs:
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # TODO: Add testing-needed-e2e-full label once the pipeline supports running e2e-full tests.
+          # TODO: Add testing-needed-e2e-full label once the internal pipeline
+          # supports running e2e-full tests with the VM-Operator build from PR.
           script: |
             if (${{ steps.check-diff.outputs.lines_of_change > 99 }}) {
               await github.rest.issues.addLabels({
@@ -81,12 +82,14 @@ jobs:
       - name: do-not-merge
         env:
           LABEL_NAMES: ${{ needs.verify-change.outputs.label_names }}
-        # the step will run if one of the labels is present and the corresponding
+        # This step will run if one of the labels is present and the related
         # label indicating testing is done is not present, ex. the label
-        # testing-needed-e2e-fast is present without also testing-done-e2e-fast
+        # testing-needed-e2e-fast is present without also testing-done-e2e-fast.
+        # Additionally, it should never run if testing-done-e2e-full is present.
         if: |
           contains(env.LABEL_NAMES, format('testing-needed-{0}', matrix.test-type)) &&
-          !contains(env.LABEL_NAMES, format('testing-done-{0}', matrix.test-type))
+          !contains(env.LABEL_NAMES, format('testing-done-{0}', matrix.test-type)) &&
+          !contains(env.LABEL_NAMES, 'testing-done-e2e-full')
         run: |
           echo "Pull request is labeled as 'testing-needed-${{ matrix.test-type }}'"
           exit 1

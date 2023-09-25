@@ -455,8 +455,8 @@ github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5/go.mod h1
 github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijbERA=
 github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20230526154708-f67dac7c805f h1:qpQD1XWbDpti3fBxKfQq5YRPmdQkbNS36RynprKJKoc=
 github.com/vmware-tanzu/image-registry-operator-api v0.0.0-20230526154708-f67dac7c805f/go.mod h1:S0HMBgdo3S/0a5hwq+Ya4XZI2aEDtGkSGeojU1cINOg=
-github.com/vmware/govmomi v0.28.1-0.20230918130735-a83ec3f76646 h1:bLvbB/J35Wp4TCRdfHAPTtrQCEvfDOCo65EkzvbZ2cE=
-github.com/vmware/govmomi v0.28.1-0.20230918130735-a83ec3f76646/go.mod h1:JA63Pg0SgQcSjk+LuPzjh3rJdcWBo/ZNCIwbb1qf2/0=
+github.com/vmware/govmomi v0.31.0 h1:+NC7le8yeXj7f4YUC841jgdWsehN7A3ivqLxm79eKyo=
+github.com/vmware/govmomi v0.31.0/go.mod h1:JA63Pg0SgQcSjk+LuPzjh3rJdcWBo/ZNCIwbb1qf2/0=
 github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2/go.mod h1:UETIi67q53MR2AWcXfiuqkDkRtnGDLqkBTpCHuJHxtU=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

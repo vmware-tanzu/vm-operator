@@ -22,7 +22,7 @@ require (
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
-	github.com/vmware/govmomi v0.28.1-0.20230918130735-a83ec3f76646
+	github.com/vmware/govmomi v0.31.0
 	// per the following dependabot alerts:
 	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/24
 	golang.org/x/net v0.13.0 // indirect

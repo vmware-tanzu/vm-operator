@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
-	"io/ioutil"
+	"io"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -170,7 +170,7 @@ var _ = Describe("EncodeGzipBase64", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer Expect(gzipReader.Close()).To(Succeed())
 
-		ungzipped, err := ioutil.ReadAll(gzipReader)
+		ungzipped, err := io.ReadAll(gzipReader)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(input).Should(Equal(string(ungzipped)))
 	})

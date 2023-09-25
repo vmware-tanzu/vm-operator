@@ -4,6 +4,9 @@
 package virtualmachine
 
 import (
+	goctx "context"
+	"encoding/json"
+
 	"sigs.k8s.io/yaml"
 
 	"github.com/vmware/govmomi/object"
@@ -13,11 +16,21 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
-// BackupVirtualMachine backs up the VM's kube data and bootstrap data into the
-// vSphere VM's ExtraConfig. The status fields will not be backed up, as we expect
-// to recreate and reconcile these resources during the restore process.
+type VMDiskData struct {
+	// ID of the virtual disk object (only set for FCDs).
+	VDiskID string
+	// Filename contains the datastore path to the virtual disk.
+	FileName string
+}
+
+// BackupVirtualMachine backs up the required data of a VM into its ExtraConfig.
+// Currently, the following data is backed up:
+// - Kubernetes VirtualMachine object in YAML format (without its .status field).
+// - VM bootstrap data in JSON (if provided).
+// - List of VM disk data in JSON (including FCDs attached to the VM).
 func BackupVirtualMachine(
 	vmCtx context.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
@@ -37,6 +50,12 @@ func BackupVirtualMachine(
 		vmCtx.Logger.Info("No VM bootstrap data is provided for backup")
 	}
 
+	vmDiskData, err := getEncodedVMDiskData(vmCtx, vcVM)
+	if err != nil {
+		vmCtx.Logger.Error(err, "Failed to get encoded VM disk data")
+		return err
+	}
+
 	_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
 		ExtraConfig: []types.BaseOptionValue{
 			&types.OptionValue{
@@ -46,6 +65,10 @@ func BackupVirtualMachine(
 			&types.OptionValue{
 				Key:   constants.BackupVMBootstrapDataExtraConfigKey,
 				Value: vmBootstrapData,
+			},
+			&types.OptionValue{
+				Key:   constants.BackupVMDiskDataExtraConfigKey,
+				Value: vmDiskData,
 			},
 		}})
 	if err != nil {
@@ -72,10 +95,43 @@ func getEncodedVMBootstrapData(bootstrapData map[string]string) (string, error) 
 		return "", nil
 	}
 
-	bootstrapDataYaml, err := yaml.Marshal(bootstrapData)
+	bootstrapDataJSON, err := json.Marshal(bootstrapData)
 	if err != nil {
 		return "", err
 	}
 
-	return util.EncodeGzipBase64(string(bootstrapDataYaml))
+	return util.EncodeGzipBase64(string(bootstrapDataJSON))
+}
+
+func getEncodedVMDiskData(
+	ctx goctx.Context, vcVM *object.VirtualMachine) (string, error) {
+	resVM := res.NewVMFromObject(vcVM)
+	disks, err := resVM.GetVirtualDisks(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	diskData := []VMDiskData{}
+	for _, device := range disks {
+		if disk, ok := device.(*types.VirtualDisk); ok {
+			vmDiskData := VMDiskData{}
+			if disk.VDiskId != nil {
+				vmDiskData.VDiskID = disk.VDiskId.Id
+			}
+			if b, ok := disk.Backing.(*types.VirtualDiskFlatVer2BackingInfo); ok {
+				vmDiskData.FileName = b.FileName
+			}
+			// Only add the disk data if it's not empty.
+			if vmDiskData != (VMDiskData{}) {
+				diskData = append(diskData, vmDiskData)
+			}
+		}
+	}
+
+	diskDataJSON, err := json.Marshal(diskData)
+	if err != nil {
+		return "", err
+	}
+
+	return util.EncodeGzipBase64(string(diskDataJSON))
 }

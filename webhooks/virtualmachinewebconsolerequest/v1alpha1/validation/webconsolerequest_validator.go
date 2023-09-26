@@ -30,7 +30,7 @@ const (
 	webHookName = "default"
 )
 
-// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-webconsolerequest,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=webconsolerequests,versions=v1alpha1,name=default.validating.webconsolerequest.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
+// +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-webconsolerequest,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=webconsolerequests,versions=v1alpha1,name=default.validating.webconsolerequest.v1alpha1.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=webconsolerequests,verbs=get;list
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=webconsolerequests/status,verbs=get
 

@@ -16,7 +16,7 @@ import (
 var suite = builder.NewTestSuiteForMutatingWebhook(
 	mutation.AddToManager,
 	mutation.NewMutator,
-	"default.mutating.virtualmachineclass.vmoperator.vmware.com")
+	"default.mutating.virtualmachineclass.v1alpha1.vmoperator.vmware.com")
 
 func TestWebhook(t *testing.T) {
 	suite.Register(t, "Mutating webhook suite", intgTests, uniTests)

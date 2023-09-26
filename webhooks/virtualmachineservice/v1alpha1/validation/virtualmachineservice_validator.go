@@ -97,7 +97,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}
 
-	return common.BuildValidationResponse(ctx, validationErrs, nil)
+	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
 func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Response {
@@ -124,7 +124,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}
 
-	return common.BuildValidationResponse(ctx, validationErrs, nil)
+	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
 func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vmService *vmopv1.VirtualMachineService) field.ErrorList {

@@ -65,6 +65,8 @@ const (
 	invalidNextRestartTimeOnUpdate            = "must be formatted as RFC3339Nano"
 	invalidNextRestartTimeOnUpdateNow         = "mutation webhooks are required to restart VM"
 	modifyAnnotationNotAllowedForNonAdmin     = "modifying this annotation is not allowed for non-admin users"
+	OVFEnvTransportDeprecated                 = "OvfEnv transport is deprecated. Please use CloudInit or vAppConfig transport instead."
+	ExtraConfigTransportDeprecated            = "ExtraConfig transport is deprecated. Please use CloudInit or vAppConfig transport instead."
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha1,name=default.validating.virtualmachine.v1alpha1.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -107,8 +109,12 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	}
 
 	var fieldErrs field.ErrorList
+	var validationWarnings admission.Warnings
 
-	fieldErrs = append(fieldErrs, v.validateMetadata(ctx, vm)...)
+	warnings, errs := v.validateMetadata(ctx, vm)
+	fieldErrs = append(fieldErrs, errs...)
+	validationWarnings = append(validationWarnings, warnings...)
+
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validateImage(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateClass(ctx, vm)...)
@@ -127,7 +133,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}
 
-	return common.BuildValidationResponse(ctx, validationErrs, nil)
+	return common.BuildValidationResponse(ctx, validationWarnings, validationErrs, nil)
 }
 
 func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Response {
@@ -162,6 +168,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	}
 
 	var fieldErrs field.ErrorList
+	var validationWarnings admission.Warnings
 
 	// Check if an immutable field has been modified.
 	fieldErrs = append(fieldErrs, v.validateImmutableFields(ctx, vm, oldVM)...)
@@ -172,7 +179,10 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 
 	// Validations for allowed updates. Return validation responses here for
 	// conditional updates regardless of whether the update is allowed or not.
-	fieldErrs = append(fieldErrs, v.validateMetadata(ctx, vm)...)
+	warnings, errs := v.validateMetadata(ctx, vm)
+	fieldErrs = append(fieldErrs, errs...)
+	validationWarnings = append(validationWarnings, warnings...)
+
 	fieldErrs = append(fieldErrs, v.validateAvailabilityZone(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNetwork(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateVolumes(ctx, vm)...)
@@ -187,17 +197,30 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}
 
-	return common.BuildValidationResponse(ctx, validationErrs, nil)
+	return common.BuildValidationResponse(ctx, validationWarnings, validationErrs, nil)
 }
 
-func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) (admission.Warnings, field.ErrorList) {
 	var allErrs field.ErrorList
+	var allWarnings admission.Warnings
 
 	if vm.Spec.VmMetadata == nil {
-		return allErrs
+		return allWarnings, allErrs
 	}
 
 	mdPath := field.NewPath("spec", "vmMetadata")
+
+	// OvfEnv transport is marked as deprecated.  Emit a warnings to indicate that to users.
+	if vm.Spec.VmMetadata.Transport == vmopv1.VirtualMachineMetadataOvfEnvTransport {
+		allWarnings = append(allWarnings,
+			fmt.Sprint(OVFEnvTransportDeprecated))
+	}
+
+	// ExtraConfig transport is marked as deprecated.  Emit a warnings to indicate that to users.
+	if vm.Spec.VmMetadata.Transport == vmopv1.VirtualMachineMetadataExtraConfigTransport {
+		allWarnings = append(allWarnings,
+			fmt.Sprint(ExtraConfigTransportDeprecated))
+	}
 
 	if vm.Spec.VmMetadata.ConfigMapName != "" && vm.Spec.VmMetadata.SecretName != "" {
 		allErrs = append(allErrs, field.Invalid(mdPath.Child("configMapName"), vm.Spec.VmMetadata.ConfigMapName,
@@ -213,7 +236,7 @@ func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmop
 		}
 	}
 
-	return allErrs
+	return allWarnings, allErrs
 }
 
 func (v validator) validateImage(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {

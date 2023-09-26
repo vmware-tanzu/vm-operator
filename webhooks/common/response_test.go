@@ -35,7 +35,7 @@ var _ = Describe("Validation Response", func() {
 
 	When("No errors occur", func() {
 		It("Returns allowed", func() {
-			response := common.BuildValidationResponse(ctx, nil, nil)
+			response := common.BuildValidationResponse(ctx, nil, nil, nil)
 			Expect(response.Allowed).To(BeTrue())
 		})
 	})
@@ -43,7 +43,7 @@ var _ = Describe("Validation Response", func() {
 	When("Validation errors occur", func() {
 		It("Returns denied", func() {
 			validationErrs := []string{"this is required"}
-			response := common.BuildValidationResponse(ctx, validationErrs, nil)
+			response := common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 			Expect(response.Allowed).To(BeFalse())
 			Expect(response.Result).ToNot(BeNil())
 			Expect(response.Result.Code).To(Equal(int32(http.StatusUnprocessableEntity)))
@@ -51,10 +51,20 @@ var _ = Describe("Validation Response", func() {
 		})
 	})
 
-	Context("Returns denied for expected well-known errors", func() {
+	When("Validation has warnings", func() {
+		It("Returns allowed, with warnings", func() {
+			validationWarnings := []string{"this is deprecated"}
+			response := common.BuildValidationResponse(ctx, validationWarnings, nil, nil)
+			Expect(response.Allowed).To(BeTrue())
+			Expect(response.Warnings).To(Equal(validationWarnings))
+			Expect(response.Result).ToNot(BeNil())
+			Expect(response.Result.Code).To(Equal(int32(http.StatusOK)))
+		})
+	})
 
+	Context("Returns denied for expected well-known errors", func() {
 		wellKnownError := func(err error, expectedCode int) {
-			response := common.BuildValidationResponse(ctx, nil, err)
+			response := common.BuildValidationResponse(ctx, nil, nil, err)
 			Expect(response.Allowed).To(BeFalse())
 			Expect(response.Result).ToNot(BeNil())
 			Expect(response.Result.Code).To(Equal(int32(expectedCode)))

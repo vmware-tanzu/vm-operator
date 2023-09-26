@@ -78,7 +78,7 @@ func (v validator) For() schema.GroupVersionKind {
 
 func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
 	if isPrivilegedAccountForISPVC(ctx) {
-		return common.BuildValidationResponse(ctx, nil, nil)
+		return common.BuildValidationResponse(ctx, nil, nil, nil)
 	}
 
 	var fieldErrs field.ErrorList
@@ -87,12 +87,12 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 			fmt.Sprintf(operationNotAllowedOnPVC, admissionv1.Create)))
 	}
 
-	return common.BuildValidationResponse(ctx, convertToStringArray(fieldErrs), nil)
+	return common.BuildValidationResponse(ctx, nil, convertToStringArray(fieldErrs), nil)
 }
 
 func (v validator) ValidateDelete(ctx *context.WebhookRequestContext) admission.Response {
 	if isPrivilegedAccountForISPVC(ctx) {
-		return common.BuildValidationResponse(ctx, nil, nil)
+		return common.BuildValidationResponse(ctx, nil, nil, nil)
 	}
 
 	var fieldErrs field.ErrorList
@@ -101,12 +101,12 @@ func (v validator) ValidateDelete(ctx *context.WebhookRequestContext) admission.
 			fmt.Sprintf(operationNotAllowedOnPVC, admissionv1.Delete)))
 	}
 
-	return common.BuildValidationResponse(ctx, convertToStringArray(fieldErrs), nil)
+	return common.BuildValidationResponse(ctx, nil, convertToStringArray(fieldErrs), nil)
 }
 
 func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
 	if isPrivilegedAccountForISPVC(ctx) {
-		return common.BuildValidationResponse(ctx, nil, nil)
+		return common.BuildValidationResponse(ctx, nil, nil, nil)
 	}
 	var fieldErrs field.ErrorList
 	// If instance storage labels already exists for resource, do not allow update resource
@@ -117,7 +117,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 		fieldErrs = append(fieldErrs, field.Forbidden(labelPath, addingISLabelNotAllowed))
 	}
 
-	return common.BuildValidationResponse(ctx, convertToStringArray(fieldErrs), nil)
+	return common.BuildValidationResponse(ctx, nil, convertToStringArray(fieldErrs), nil)
 }
 
 // isInstanceStorageLabelPresent - returns true/false depending on presence of instance storage label.

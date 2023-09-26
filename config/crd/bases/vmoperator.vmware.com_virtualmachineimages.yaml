@@ -19,12 +19,6 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.providerRef.name
-      name: Provider-Name
-      type: string
-    - jsonPath: .status.contentLibraryRef.name
-      name: Content-Library-Name
-      type: string
     - jsonPath: .status.imageName
       name: Image-Name
       type: string

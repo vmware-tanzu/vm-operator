@@ -48,6 +48,7 @@ theme:
   - navigation.path
   - navigation.indexes
   - toc.follow
+  - announce.dismiss
 
 extra_css:
 - www/css/vm-operator.css

@@ -196,10 +196,11 @@ func (cs *provider) RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item
 		_ = downloadedFileContent.Close()
 	}()
 
+	// OVF file is validated during upload, err here can be internet error.
 	envelope, err := ovf.Unmarshal(downloadedFileContent)
 	if err != nil {
 		logger.Error(err, "error parsing the OVF envelope")
-		return nil, nil
+		return nil, err
 	}
 
 	return envelope, nil
@@ -318,10 +319,6 @@ func (cs *provider) VirtualMachineImageResourceForLibrary(ctx context.Context,
 		if ovfEnvelope, err = cs.RetrieveOvfEnvelopeFromLibraryItem(ctx, item); err != nil {
 			logger.Error(err, "error extracting the OVF envelope from the library item", "itemName", item.Name)
 			return nil, err
-		}
-		if ovfEnvelope == nil {
-			logger.Error(err, "no valid OVF envelope found, skipping library item", "itemName", item.Name)
-			return nil, nil
 		}
 	case library.ItemTypeVMTX:
 		// Do not try to populate VMTX types, but resVm.GetOvfProperties() should return an

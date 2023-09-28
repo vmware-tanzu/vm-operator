@@ -98,7 +98,7 @@ func clTests() {
 			})
 		})
 
-		Context("called with an OVF that is invalid", func() {
+		Context("called with an OVF that is invalid because of network connectivity issue", func() {
 			var ovfPath string
 
 			AfterEach(func() {
@@ -107,7 +107,7 @@ func clTests() {
 				}
 			})
 
-			It("does not return error", func() {
+			It("returns error", func() {
 				ovf, err := os.CreateTemp("", "fake-*.ovf")
 				Expect(err).NotTo(HaveOccurred())
 				ovfPath = ovf.Name()
@@ -131,7 +131,7 @@ func clTests() {
 				Expect(libItem2.Name).To(Equal(libItem.Name))
 
 				ovfEnvelope, err := clProvider.RetrieveOvfEnvelopeFromLibraryItem(ctx, libItem2)
-				Expect(err).ToNot(HaveOccurred())
+				Expect(err).To(HaveOccurred())
 				Expect(ovfEnvelope).To(BeNil())
 			})
 		})

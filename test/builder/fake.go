@@ -42,13 +42,15 @@ func KnownObjectTypes() []client.Object {
 		&v1alpha2.VirtualMachineService{},
 		&v1alpha1.VirtualMachineClass{},
 		&v1alpha2.VirtualMachineClass{},
-		&cnsv1alpha1.CnsNodeVmAttachment{},
 		&v1alpha1.VirtualMachinePublishRequest{},
 		&v1alpha2.VirtualMachinePublishRequest{},
 		&v1alpha1.ClusterVirtualMachineImage{},
 		&v1alpha2.ClusterVirtualMachineImage{},
 		&v1alpha1.VirtualMachineImage{},
 		&v1alpha2.VirtualMachineImage{},
+		&cnsv1alpha1.CnsNodeVmAttachment{},
+		&ncpv1alpha1.VirtualNetworkInterface{},
+		&netopv1alpha1.NetworkInterface{},
 	}
 }
 

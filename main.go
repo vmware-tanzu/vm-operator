@@ -18,9 +18,12 @@ import (
 	klog "k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
 
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/controllers"
 	"github.com/vmware-tanzu/vm-operator/pkg"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/webhooks"
 
@@ -265,6 +268,12 @@ func main() {
 			return err
 		}
 
+		if lib.IsVMServiceV1Alpha2FSSEnabled() {
+			if err := addConversionWebhooksToManager(ctx, mgr); err != nil {
+				return err
+			}
+		}
+
 		return webhooks.AddToManager(ctx, mgr)
 	}
 
@@ -294,6 +303,57 @@ func main() {
 		setupLog.Error(err, "problem running controller manager")
 		os.Exit(1)
 	}
+}
+
+// addConversionWebhooksToManager adds the ctrl-runtime managed webhooks. We just use these
+// for version conversion, but they can also do mutation and validation webhook callbacks
+// instead of our separate webhooks.
+func addConversionWebhooksToManager(_ *context.ControllerManagerContext, mgr ctrlmgr.Manager) error {
+	if err := (&v1alpha1.VirtualMachine{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha1.VirtualMachineClass{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha1.VirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha1.ClusterVirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha1.VirtualMachinePublishRequest{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha1.VirtualMachineService{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha1.VirtualMachineSetResourcePolicy{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+
+	if err := (&v1alpha2.VirtualMachine{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha2.VirtualMachineClass{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha2.VirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha2.ClusterVirtualMachineImage{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha2.VirtualMachinePublishRequest{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha2.VirtualMachineService{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+	if err := (&v1alpha2.VirtualMachineSetResourcePolicy{}).SetupWebhookWithManager(mgr); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func configureWebhookTLS(opts *webhook.Options) {

@@ -165,3 +165,26 @@ func RemoveDevicesFromConfigSpec(configSpec *vimTypes.VirtualMachineConfigSpec, 
 	}
 	configSpec.DeviceChange = targetDevChanges
 }
+
+// AppendNewExtraConfigValues add the new extra config values if not already present in the extra config.
+func AppendNewExtraConfigValues(
+	extraConfig []vimTypes.BaseOptionValue,
+	newECMap map[string]string) []vimTypes.BaseOptionValue {
+
+	ecMap := make(map[string]vimTypes.AnyType)
+	for _, opt := range extraConfig {
+		if optValue := opt.GetOptionValue(); optValue != nil {
+			ecMap[optValue.Key] = optValue.Value
+		}
+	}
+
+	// Only add fields that aren't already in the ExtraConfig.
+	var newExtraConfig []vimTypes.BaseOptionValue
+	for k, v := range newECMap {
+		if _, exists := ecMap[k]; !exists {
+			newExtraConfig = append(newExtraConfig, &vimTypes.OptionValue{Key: k, Value: v})
+		}
+	}
+
+	return append(extraConfig, newExtraConfig...)
+}

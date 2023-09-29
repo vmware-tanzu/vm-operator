@@ -125,4 +125,7 @@ const (
 	// BackupVMBootstrapDataExtraConfigKey is the ExtraConfig key to the VM's
 	// bootstrap data object, compressed using gzip and base64-encoded.
 	BackupVMBootstrapDataExtraConfigKey = "vmservice.virtualmachine.bootstrapdata"
+	// BackupVMDiskDataExtraConfigKey is the ExtraConfig key to the VM's disk info
+	// data in JSON, compressed using gzip and base64-encoded.
+	BackupVMDiskDataExtraConfigKey = "vmservice.virtualmachine.diskdata"
 )

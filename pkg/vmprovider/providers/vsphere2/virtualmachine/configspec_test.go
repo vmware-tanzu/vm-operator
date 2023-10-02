@@ -13,6 +13,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -21,6 +22,7 @@ var _ = Describe("CreateConfigSpec", func() {
 	const vmName = "dummy-vm"
 
 	var (
+		vm              *vmopv1.VirtualMachine
 		vmCtx           context.VirtualMachineContextA2
 		vmClassSpec     *vmopv1.VirtualMachineClassSpec
 		vmImageStatus   *vmopv1.VirtualMachineImageStatus
@@ -36,7 +38,7 @@ var _ = Describe("CreateConfigSpec", func() {
 		vmImageStatus = &vmopv1.VirtualMachineImageStatus{Firmware: "efi"}
 		minCPUFreq = 2500
 
-		vm := builder.DummyVirtualMachineA2()
+		vm = builder.DummyVirtualMachineA2()
 		vm.Name = vmName
 		vmCtx = context.VirtualMachineContextA2{
 			Context: goctx.Background(),
@@ -81,6 +83,7 @@ var _ = Describe("CreateConfigSpec", func() {
 						},
 					},
 				},
+				Firmware: "bios",
 			}
 		})
 
@@ -107,6 +110,37 @@ var _ = Describe("CreateConfigSpec", func() {
 			dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
 			_, ok := dSpec.Device.(*vimtypes.VirtualE1000)
 			Expect(ok).To(BeTrue())
+		})
+
+		When("Image firmware is empty", func() {
+			BeforeEach(func() {
+				vmImageStatus = &vmopv1.VirtualMachineImageStatus{}
+			})
+
+			It("config spec has the firmware from the class", func() {
+				Expect(configSpec.Firmware).ToNot(Equal(vmImageStatus.Firmware))
+				Expect(configSpec.Firmware).To(Equal(classConfigSpec.Firmware))
+			})
+		})
+
+		When("vm has a valid firmware override annotation", func() {
+			BeforeEach(func() {
+				vm.Annotations[constants.FirmwareOverrideAnnotation] = "efi"
+			})
+
+			It("config spec has overridden firmware annotation", func() {
+				Expect(configSpec.Firmware).To(Equal(vm.Annotations[constants.FirmwareOverrideAnnotation]))
+			})
+		})
+
+		When("vm has an invalid firmware override annotation", func() {
+			BeforeEach(func() {
+				vm.Annotations[constants.FirmwareOverrideAnnotation] = "foo"
+			})
+
+			It("config spec doesn't have the invalid val", func() {
+				Expect(configSpec.Firmware).ToNot(Equal(vm.Annotations[constants.FirmwareOverrideAnnotation]))
+			})
 		})
 	})
 })

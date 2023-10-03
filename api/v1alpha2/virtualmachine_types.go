@@ -102,6 +102,11 @@ const (
 	// the same with the first boot Instance ID to prevent Cloud-Init from treating this VM as first boot
 	// due to different Instance ID. This annotation is used in upgrade script.
 	InstanceIDAnnotation = GroupName + "/cloud-init-instance-id"
+
+	// FirstBootDoneAnnotation is an annotation that indicates the VM has been
+	// booted at least once. This annotation cannot be set by users and will not
+	// be removed once set until the VM is deleted.
+	FirstBootDoneAnnotation = "virtualmachine." + GroupName + "/first-boot-done"
 )
 
 // VirtualMachinePowerState defines a VM's desired and observed power states.

@@ -32,10 +32,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 )
 
-const (
-	FirstBootDoneAnnotation = "virtualmachine.vmoperator.vmware.com/first-boot-done"
-)
-
 type VMMetadata struct {
 	Data      map[string]string
 	Transport vmopv1.VirtualMachineMetadataTransport
@@ -930,7 +926,7 @@ func (s *Session) UpdateVirtualMachine(
 		if vmCtx.VM.Annotations == nil {
 			vmCtx.VM.Annotations = map[string]string{}
 		}
-		vmCtx.VM.Annotations[FirstBootDoneAnnotation] = "true"
+		vmCtx.VM.Annotations[vmopv1.FirstBootDoneAnnotation] = "true"
 	}
 	return nil
 }

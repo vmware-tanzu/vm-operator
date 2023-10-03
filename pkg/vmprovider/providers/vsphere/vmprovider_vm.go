@@ -41,10 +41,6 @@ type vmCreateArgs = session.VMCreateArgs
 type vmUpdateArgs = session.VMUpdateArgs
 type vmMetadata = session.VMMetadata
 
-const (
-	FirstBootDoneAnnotation = "virtualmachine.vmoperator.vmware.com/first-boot-done"
-)
-
 var (
 	createCountLock       sync.Mutex
 	concurrentCreateCount int
@@ -811,7 +807,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 }
 
 func isVMFirstBoot(vmCtx context.VirtualMachineContext) bool {
-	if _, ok := vmCtx.VM.Annotations[FirstBootDoneAnnotation]; ok {
+	if _, ok := vmCtx.VM.Annotations[vmopv1.FirstBootDoneAnnotation]; ok {
 		return false
 	}
 

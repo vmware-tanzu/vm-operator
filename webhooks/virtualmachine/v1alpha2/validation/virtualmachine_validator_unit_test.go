@@ -6,6 +6,7 @@ package validation_test
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -107,7 +108,7 @@ func unitTestsValidateCreate() {
 		isBootstrapVAppConfigInline       bool
 		powerState                        vmopv1.VirtualMachinePowerState
 		nextRestartTime                   string
-		isForbiddenAnnotation             bool
+		adminOnlyAnnotations              bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -251,8 +252,9 @@ func unitTestsValidateCreate() {
 			}
 		}
 
-		if args.isForbiddenAnnotation {
+		if args.adminOnlyAnnotations {
 			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = "some-value"
+			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = "some-value"
 		}
 
 		ctx.vm.Spec.PowerState = args.powerState
@@ -368,9 +370,13 @@ func unitTestsValidateCreate() {
 		Entry("should disallow creating VM with non-empty, invalid nextRestartTime value",
 			createArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "cannot restart VM on create").Error(), nil),
-		Entry("should deny cloud-init-instance-id annotation set by user", createArgs{isForbiddenAnnotation: true}, false,
-			field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "adding this annotation is not allowed").Error(), nil),
-		Entry("should allow cloud-init-instance-id annotation set by service user", createArgs{isServiceUser: true, isForbiddenAnnotation: true}, true, nil, nil),
+
+		Entry("should disallow creating VM with admin-only annotations set by SSO user", createArgs{adminOnlyAnnotations: true}, false,
+			strings.Join([]string{
+				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+			}, ", "), nil),
+		Entry("should allow creating VM with admin-only annotations set by service user", createArgs{isServiceUser: true, adminOnlyAnnotations: true}, true, nil, nil),
 	)
 }
 
@@ -396,7 +402,9 @@ func unitTestsValidateUpdate() {
 		newPowerStateEmptyAllowed   bool
 		nextRestartTime             string
 		lastRestartTime             string
-		isForbiddenAnnotation       bool
+		addAdminOnlyAnnotations     bool
+		updateAdminOnlyAnnotations  bool
+		removeAdminOnlyAnnotations  bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -450,8 +458,19 @@ func unitTestsValidateUpdate() {
 			ctx.vm.Spec.PowerState = args.newPowerState
 		}
 
-		if args.isForbiddenAnnotation {
+		if args.addAdminOnlyAnnotations {
 			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = "some-value"
+			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = "some-value"
+		}
+		if args.updateAdminOnlyAnnotations {
+			ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = "some-value"
+			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = "some-value"
+			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = "some-other-value"
+			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = "some-other-value"
+		}
+		if args.removeAdminOnlyAnnotations {
+			ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = "some-value"
+			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = "some-value"
 		}
 
 		ctx.oldVM.Spec.NextRestartTime = args.lastRestartTime
@@ -532,9 +551,25 @@ func unitTestsValidateUpdate() {
 		Entry("should disallow updating VM with non-empty, invalid nextRestartTime value ",
 			updateArgs{nextRestartTime: "hello"}, false,
 			field.Invalid(nextRestartTimePath, "hello", "must be formatted as RFC3339Nano").Error(), nil),
-		Entry("should deny cloud-init-instance-id annotation set by user", updateArgs{isForbiddenAnnotation: true}, false,
-			field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "adding this annotation is not allowed").Error(), nil),
-		Entry("should allow cloud-init-instance-id annotation set by service user", updateArgs{isServiceUser: true, isForbiddenAnnotation: true}, true, nil, nil),
+
+		Entry("should disallow adding admin-only annotations by SSO user", updateArgs{addAdminOnlyAnnotations: true}, false,
+			strings.Join([]string{
+				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+			}, ", "), nil),
+		Entry("should disallow updating admin-only annotations by SSO user", updateArgs{updateAdminOnlyAnnotations: true}, false,
+			strings.Join([]string{
+				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+			}, ", "), nil),
+		Entry("should disallow removing admin-only annotations by SSO user", updateArgs{removeAdminOnlyAnnotations: true}, false,
+			strings.Join([]string{
+				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+			}, ", "), nil),
+		Entry("should allow adding admin-only annotations by service user", updateArgs{isServiceUser: true, addAdminOnlyAnnotations: true}, true, nil, nil),
+		Entry("should allow adding admin-only annotations by service user", updateArgs{isServiceUser: true, updateAdminOnlyAnnotations: true}, true, nil, nil),
+		Entry("should allow adding admin-only annotations by service user", updateArgs{isServiceUser: true, removeAdminOnlyAnnotations: true}, true, nil, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

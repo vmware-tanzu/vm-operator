@@ -64,7 +64,7 @@ const (
 	invalidNextRestartTimeOnCreate            = "cannot restart VM on create"
 	invalidNextRestartTimeOnUpdate            = "must be formatted as RFC3339Nano"
 	invalidNextRestartTimeOnUpdateNow         = "mutation webhooks are required to restart VM"
-	settingAnnotationNotAllowed               = "adding this annotation is not allowed"
+	modifyAnnotationNotAllowedForNonAdmin     = "modifying this annotation is not allowed for non-admin users"
 )
 
 // +kubebuilder:webhook:verbs=create;update,path=/default-validate-vmoperator-vmware-com-v1alpha1-virtualmachine,mutating=false,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,versions=v1alpha1,name=default.validating.virtualmachine.v1alpha1.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -120,7 +120,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, nil)...)
 	fieldErrs = append(fieldErrs, v.validatePowerStateOnCreate(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnCreate(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, nil)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -180,7 +180,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnUpdate(ctx, vm, oldVM)...)
-	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm)...)
+	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, oldVM)...)
 
 	validationErrs := make([]string, 0, len(fieldErrs))
 	for _, fieldErr := range fieldErrs {
@@ -742,17 +742,26 @@ func (v validator) isNetworkRestrictedForReadinessProbe(ctx *context.WebhookRequ
 	return configMap.Data[isRestrictedNetworkKey] == "true", nil
 }
 
-func (v validator) validateAnnotation(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateAnnotation(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
-	if ctx.IsPrivilegedAccount || vm.Annotations == nil {
+	if ctx.IsPrivilegedAccount {
 		return allErrs
+	}
+
+	// Use an empty VM if the oldVM is nil to validate a creation request.
+	if oldVM == nil {
+		oldVM = &vmopv1.VirtualMachine{}
 	}
 
 	annotationPath := field.NewPath("metadata", "annotations")
 
-	if _, exists := vm.Annotations[vmopv1.InstanceIDAnnotation]; exists {
-		allErrs = append(allErrs, field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), settingAnnotationNotAllowed))
+	if vm.Annotations[vmopv1.InstanceIDAnnotation] != oldVM.Annotations[vmopv1.InstanceIDAnnotation] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
+	if vm.Annotations[vmopv1.FirstBootDoneAnnotation] != oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
 	return allErrs

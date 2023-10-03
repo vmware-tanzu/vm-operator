@@ -31,10 +31,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/vmlifecycle"
 )
 
-const (
-	FirstBootDoneAnnotation = "virtualmachine.vmoperator.vmware.com/first-boot-done"
-)
-
 // VMUpdateArgs contains the arguments needed to update a VM on VC.
 type VMUpdateArgs struct {
 	VMClass        *vmopv1.VirtualMachineClass
@@ -951,7 +947,7 @@ func (s *Session) UpdateVirtualMachine(
 		if vmCtx.VM.Annotations == nil {
 			vmCtx.VM.Annotations = map[string]string{}
 		}
-		vmCtx.VM.Annotations[FirstBootDoneAnnotation] = "true"
+		vmCtx.VM.Annotations[vmopv1.FirstBootDoneAnnotation] = "true"
 	}
 	return nil
 }

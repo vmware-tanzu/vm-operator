@@ -182,7 +182,7 @@ func intgTestsMutating() {
 
 			When("Creating VirtualMachine", func() {
 
-				When("When VM ImageName is already a vmi resource name", func() {
+				When("VM ImageName is already a vmi resource name", func() {
 
 					BeforeEach(func() {
 						vm.Spec.ImageName = "vmi-123"

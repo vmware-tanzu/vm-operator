@@ -36,6 +36,8 @@ const (
 	updateSuffix            = "-updated"
 	dummyNamespaceImageName = "dummy-namespace-image"
 	dummyClusterImageName   = "dummy-cluster-image"
+	dummyInstanceIDVal      = "dummy-instance-id"
+	dummyFirstBootDoneVal   = "dummy-first-boot-done"
 )
 
 func unitTests() {
@@ -371,8 +373,8 @@ func unitTestsValidateCreate() {
 		}
 
 		if args.adminOnlyAnnotations {
-			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = "some-value"
-			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = "some-value"
+			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 		}
 
 		ctx.vm.Spec.PowerState = args.powerState
@@ -600,18 +602,18 @@ func unitTestsValidateUpdate() {
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 
 		if args.addAdminOnlyAnnotations {
-			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = "some-value"
-			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = "some-value"
+			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 		}
 		if args.updateAdminOnlyAnnotations {
-			ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = "some-value"
-			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = "some-value"
-			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = "some-other-value"
-			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = "some-other-value"
+			ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
+			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
 		}
 		if args.removeAdminOnlyAnnotations {
-			ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = "some-value"
-			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = "some-value"
+			ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
+			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = updateSuffix
 		}
 
 		// Named network provider

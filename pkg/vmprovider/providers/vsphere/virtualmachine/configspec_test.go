@@ -71,6 +71,7 @@ var _ = Describe("CreateConfigSpec", func() {
 						},
 					},
 				},
+				Firmware: "bios",
 			}
 		})
 
@@ -98,6 +99,17 @@ var _ = Describe("CreateConfigSpec", func() {
 			_, ok := dSpec.Device.(*vimtypes.VirtualE1000)
 			Expect(ok).To(BeTrue())
 
+		})
+
+		When("image firmware is empty", func() {
+			BeforeEach(func() {
+				firmware = ""
+			})
+
+			It("config spec has the firmware from the class", func() {
+				Expect(configSpec.Firmware).ToNot(Equal(firmware))
+				Expect(configSpec.Firmware).To(Equal(classConfigSpec.Firmware))
+			})
 		})
 	})
 })

@@ -88,8 +88,12 @@ func CreateConfigSpec(
 		}
 	}
 
-	// Use firmware type from the image if config spec doesn't have it.
-	if configSpec.Firmware == "" && imageFirmware != "" {
+	// Always use the image's firmware type if present.
+	// This is necessary until the vSphere UI can support creating VM Classes with
+	// an empty/nil firmware type. Since VM Classes created via the vSphere UI always have
+	// a default firmware value set (efi), this can cause VM boot failures for unsupported images.
+	if imageFirmware != "" {
+		// TODO: Use image firmware only when the class config spec has an empty firmware type.
 		configSpec.Firmware = imageFirmware
 	}
 

@@ -47,10 +47,14 @@ func CreateConfigSpec(
 		Type:         constants.ManagedByExtensionType,
 	}
 
-	if val, ok := vmCtx.VM.Annotations[constants.FirmwareOverrideAnnotation]; ok {
+	if val, ok := vmCtx.VM.Annotations[constants.FirmwareOverrideAnnotation]; ok && (val == "efi" || val == "bios") {
 		configSpec.Firmware = val
-	} else if configSpec.Firmware == "" && vmImageStatus != nil {
-		// Use firmware type from the image if ConfigSpec doesn't have it.
+	} else if vmImageStatus != nil && vmImageStatus.Firmware != "" {
+		// Use the image's firmware type if present.
+		// This is necessary until the vSphere UI can support creating VM Classes with
+		// an empty/nil firmware type. Since VM Classes created via the vSphere UI always has
+		// a non-empty firmware value set, this can cause VM boot failures.
+		// TODO: Use image firmware only when the class config spec has an empty firmware type.
 		configSpec.Firmware = vmImageStatus.Firmware
 	}
 

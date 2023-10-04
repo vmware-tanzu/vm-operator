@@ -128,4 +128,7 @@ const (
 	// BackupVMDiskDataExtraConfigKey is the ExtraConfig key to the VM's disk info
 	// data in JSON, compressed using gzip and base64-encoded.
 	BackupVMDiskDataExtraConfigKey = "vmservice.virtualmachine.diskdata"
+	// BackupVMInstanceIDExtraConfigKey is the ExtraConfig key to the VM's
+	// Cloud-Init instance ID, compressed using gzip and base64-encoded.
+	BackupVMInstanceIDExtraConfigKey = "vmservice.virtualmachine.instanceid"
 )

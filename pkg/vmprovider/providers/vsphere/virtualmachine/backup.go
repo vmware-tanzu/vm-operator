@@ -35,51 +35,101 @@ func BackupVirtualMachine(
 	vmCtx context.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	bootstrapData map[string]string) error {
-	vmKubeData, err := getEncodedVMKubeData(vmCtx.VM)
+
+	resVM := res.NewVMFromObject(vcVM)
+	moVM, err := resVM.GetProperties(vmCtx, []string{"config", "runtime"})
 	if err != nil {
-		vmCtx.Logger.Error(err, "Failed to get encoded VM kube data")
+		vmCtx.Logger.Error(err, "Failed to get VM properties for backup")
 		return err
+	}
+	curEcMap := util.ExtraConfigToMap(moVM.Config.ExtraConfig)
+
+	var ecToUpdate []types.BaseOptionValue
+
+	vmKubeDataBackup, err := getVMKubeDataBackup(vmCtx.VM, curEcMap)
+	if err != nil {
+		vmCtx.Logger.Error(err, "Failed to get VM kube data for backup")
+		return err
+	}
+	if vmKubeDataBackup == "" {
+		vmCtx.Logger.V(4).Info("Skipping VM kube data backup as unchanged")
+	} else {
+		ecToUpdate = append(ecToUpdate, &types.OptionValue{
+			Key:   constants.BackupVMKubeDataExtraConfigKey,
+			Value: vmKubeDataBackup,
+		})
 	}
 
-	vmBootstrapData, err := getEncodedVMBootstrapData(bootstrapData)
+	instanceIDBackup, err := getInstanceIDBackup(vmCtx.VM, curEcMap)
 	if err != nil {
-		vmCtx.Logger.Error(err, "Failed to get encoded VM bootstrap data")
+		vmCtx.Logger.Error(err, "Failed to get VM instance ID for backup")
 		return err
 	}
-	if len(vmBootstrapData) == 0 {
-		vmCtx.Logger.Info("No VM bootstrap data is provided for backup")
+	if instanceIDBackup == "" {
+		vmCtx.Logger.V(4).Info("Skipping VM instance ID backup as it exists")
+	} else {
+		ecToUpdate = append(ecToUpdate, &types.OptionValue{
+			Key:   constants.BackupVMInstanceIDExtraConfigKey,
+			Value: instanceIDBackup,
+		})
 	}
 
-	vmDiskData, err := getEncodedVMDiskData(vmCtx, vcVM)
+	bootstrapDataBackup, err := getBootstrapDataBackup(bootstrapData, curEcMap)
 	if err != nil {
-		vmCtx.Logger.Error(err, "Failed to get encoded VM disk data")
+		vmCtx.Logger.Error(err, "Failed to get VM bootstrap data for backup")
 		return err
 	}
+	if bootstrapDataBackup == "" {
+		vmCtx.Logger.V(4).Info("Skipping VM bootstrap data backup as unchanged")
+	} else {
+		ecToUpdate = append(ecToUpdate, &types.OptionValue{
+			Key:   constants.BackupVMBootstrapDataExtraConfigKey,
+			Value: bootstrapDataBackup,
+		})
+	}
 
-	_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
-		ExtraConfig: []types.BaseOptionValue{
-			&types.OptionValue{
-				Key:   constants.BackupVMKubeDataExtraConfigKey,
-				Value: vmKubeData,
-			},
-			&types.OptionValue{
-				Key:   constants.BackupVMBootstrapDataExtraConfigKey,
-				Value: vmBootstrapData,
-			},
-			&types.OptionValue{
-				Key:   constants.BackupVMDiskDataExtraConfigKey,
-				Value: vmDiskData,
-			},
-		}})
+	diskDataBackup, err := getDiskDataBackup(vmCtx, resVM, curEcMap)
 	if err != nil {
-		vmCtx.Logger.Error(err, "Failed to reconfigure VM ExtraConfig for backup")
+		vmCtx.Logger.Error(err, "Failed to get VM disk data for backup")
 		return err
+	}
+	if diskDataBackup == "" {
+		vmCtx.Logger.V(4).Info("Skipping VM disk data backup as unchanged")
+	} else {
+		ecToUpdate = append(ecToUpdate, &types.OptionValue{
+			Key:   constants.BackupVMDiskDataExtraConfigKey,
+			Value: diskDataBackup,
+		})
+	}
+
+	if len(ecToUpdate) != 0 {
+		vmCtx.Logger.V(4).Info("Updating VM ExtraConfig with backup data")
+		if _, err := vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
+			ExtraConfig: ecToUpdate,
+		}); err != nil {
+			vmCtx.Logger.Error(err, "Failed to update VM ExtraConfig for backup")
+			return err
+		}
 	}
 
 	return nil
 }
 
-func getEncodedVMKubeData(vm *vmopv1.VirtualMachine) (string, error) {
+func getVMKubeDataBackup(
+	vm *vmopv1.VirtualMachine,
+	ecMap map[string]string) (string, error) {
+	// If the ExtraConfig already contains the latest VM spec, determined by
+	// 'metadata.generation', return an empty string to skip the backup.
+	if ecKubeData, ok := ecMap[constants.BackupVMKubeDataExtraConfigKey]; ok {
+		curBackupVM, err := constructVMObj(ecKubeData)
+		if err != nil {
+			return "", err
+		}
+		if curBackupVM.ObjectMeta.Generation >= vm.ObjectMeta.Generation {
+			return "", nil
+		}
+	}
+
 	backupVM := vm.DeepCopy()
 	backupVM.Status = vmopv1.VirtualMachineStatus{}
 	backupVMYaml, err := yaml.Marshal(backupVM)
@@ -90,22 +140,63 @@ func getEncodedVMKubeData(vm *vmopv1.VirtualMachine) (string, error) {
 	return util.EncodeGzipBase64(string(backupVMYaml))
 }
 
-func getEncodedVMBootstrapData(bootstrapData map[string]string) (string, error) {
-	if len(bootstrapData) == 0 {
+func constructVMObj(ecKubeData string) (vmopv1.VirtualMachine, error) {
+	var vmObj vmopv1.VirtualMachine
+	decodedKubeData, err := util.TryToDecodeBase64Gzip([]byte(ecKubeData))
+	if err != nil {
+		return vmObj, err
+	}
+
+	err = yaml.Unmarshal([]byte(decodedKubeData), &vmObj)
+	return vmObj, err
+}
+
+func getInstanceIDBackup(
+	vm *vmopv1.VirtualMachine,
+	ecMap map[string]string) (string, error) {
+	// Instance ID should not be changed once persisted in VM's ExtraConfig.
+	// Return an empty string to skip the backup if it already exists.
+	if _, ok := ecMap[constants.BackupVMInstanceIDExtraConfigKey]; ok {
 		return "", nil
 	}
 
-	bootstrapDataJSON, err := json.Marshal(bootstrapData)
+	instanceID := vm.Annotations[vmopv1.InstanceIDAnnotation]
+	if instanceID == "" {
+		instanceID = string(vm.UID)
+	}
+
+	return util.EncodeGzipBase64(instanceID)
+}
+
+func getBootstrapDataBackup(
+	bootstrapDataRaw map[string]string,
+	ecMap map[string]string) (string, error) {
+	// No bootstrap data is specified, return an empty string to skip the backup.
+	if len(bootstrapDataRaw) == 0 {
+		return "", nil
+	}
+
+	bootstrapDataJSON, err := json.Marshal(bootstrapDataRaw)
+	if err != nil {
+		return "", err
+	}
+	bootstrapDataBackup, err := util.EncodeGzipBase64(string(bootstrapDataJSON))
 	if err != nil {
 		return "", err
 	}
 
-	return util.EncodeGzipBase64(string(bootstrapDataJSON))
+	// Return an empty string to skip the backup if the data is unchanged.
+	if bootstrapDataBackup == ecMap[constants.BackupVMBootstrapDataExtraConfigKey] {
+		return "", nil
+	}
+
+	return bootstrapDataBackup, nil
 }
 
-func getEncodedVMDiskData(
-	ctx goctx.Context, vcVM *object.VirtualMachine) (string, error) {
-	resVM := res.NewVMFromObject(vcVM)
+func getDiskDataBackup(
+	ctx goctx.Context,
+	resVM *res.VirtualMachine,
+	ecMap map[string]string) (string, error) {
 	disks, err := resVM.GetVirtualDisks(ctx)
 	if err != nil {
 		return "", err
@@ -132,6 +223,15 @@ func getEncodedVMDiskData(
 	if err != nil {
 		return "", err
 	}
+	diskDataBackup, err := util.EncodeGzipBase64(string(diskDataJSON))
+	if err != nil {
+		return "", err
+	}
 
-	return util.EncodeGzipBase64(string(diskDataJSON))
+	// Return an empty string to skip the backup if the data is unchanged.
+	if diskDataBackup == ecMap[constants.BackupVMDiskDataExtraConfigKey] {
+		return "", nil
+	}
+
+	return diskDataBackup, nil
 }

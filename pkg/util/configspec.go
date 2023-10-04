@@ -203,8 +203,8 @@ func ExtraConfigToMap(input []vimTypes.BaseOptionValue) (output map[string]strin
 	return
 }
 
-// MergeExtraConfig adds the key/value to the ExtraConfig if the key is not present, to let to the value be
-// changed by the VM. The existing usage of ExtraConfig is hard to fit in the reconciliation model.
+// MergeExtraConfig adds the key/value to the ExtraConfig if the key is not present.
+// It returns the newly added ExtraConfig.
 func MergeExtraConfig(extraConfig []vimTypes.BaseOptionValue, newMap map[string]string) []vimTypes.BaseOptionValue {
 	merged := make([]vimTypes.BaseOptionValue, 0)
 	ecMap := ExtraConfigToMap(extraConfig)

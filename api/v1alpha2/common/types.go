@@ -70,7 +70,7 @@ type KeyValuePair struct {
 }
 
 // KeyValueOrSecretKeySelectorPair is useful when wanting to realize a map as a
-// list of key/value pairs where each value could also referenced data stored in
+// list of key/value pairs where each value could also reference data stored in
 // a Secret resource.
 type KeyValueOrSecretKeySelectorPair struct {
 	// Key is the key part of the key/value pair.

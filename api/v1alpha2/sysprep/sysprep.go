@@ -49,7 +49,7 @@ type GUIRunOnce struct {
 	// customization.
 	//
 	// +optional
-	Commands []string `json:"commmands,omitempty"`
+	Commands []string `json:"commands,omitempty"`
 }
 
 // GUIUnattended maps to the GuiUnattended key in the sysprep.xml answer file.

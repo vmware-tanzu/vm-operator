@@ -1241,7 +1241,7 @@ spec:
                             description: GUIRunOnce is a representation of the Sysprep
                               GuiRunOnce key.
                             properties:
-                              commmands:
+                              commands:
                                 description: Commands is a list of commands to run
                                   at first user logon, after guest customization.
                                 items:
@@ -1446,8 +1446,8 @@ spec:
                         items:
                           description: KeyValueOrSecretKeySelectorPair is useful when
                             wanting to realize a map as a list of key/value pairs
-                            where each value could also referenced data stored in
-                            a Secret resource.
+                            where each value could also reference data stored in a
+                            Secret resource.
                           properties:
                             key:
                               description: Key is the key part of the key/value pair.

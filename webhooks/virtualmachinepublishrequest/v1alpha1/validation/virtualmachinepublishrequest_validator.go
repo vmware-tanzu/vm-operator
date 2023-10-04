@@ -65,7 +65,7 @@ func (v validator) For() schema.GroupVersionKind {
 
 func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
 	if !lib.IsWCPVMImageRegistryEnabled() {
-		return common.BuildValidationResponse(ctx, []string{"WCP_VM_Image_Registry feature not enabled"}, nil)
+		return common.BuildValidationResponse(ctx, nil, []string{"WCP_VM_Image_Registry feature not enabled"}, nil)
 	}
 
 	vmpub, err := v.vmPublishRequestFromUnstructured(ctx.Obj)
@@ -83,7 +83,7 @@ func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}
 
-	return common.BuildValidationResponse(ctx, validationErrs, nil)
+	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
 func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Response {
@@ -111,7 +111,7 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 		validationErrs = append(validationErrs, fieldErr.Error())
 	}
 
-	return common.BuildValidationResponse(ctx, validationErrs, nil)
+	return common.BuildValidationResponse(ctx, nil, validationErrs, nil)
 }
 
 func (v validator) validateSource(ctx *context.WebhookRequestContext, vmpub *vmopv1.VirtualMachinePublishRequest) field.ErrorList {

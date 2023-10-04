@@ -19,6 +19,7 @@ import (
 // errors returned attempting to validate the ingress data.
 func BuildValidationResponse(
 	ctx *context.WebhookRequestContext,
+	validationWarnings admission.Warnings,
 	validationErrs []string,
 	err error,
 	additionalValidationErrors ...string) (response admission.Response) {
@@ -76,5 +77,5 @@ func BuildValidationResponse(
 		}
 	}
 
-	return admission.Allowed("")
+	return admission.Allowed("").WithWarnings(validationWarnings...)
 }

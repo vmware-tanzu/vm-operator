@@ -30,6 +30,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
+	vmopv1validation "github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/v1alpha1/validation"
 )
 
 const (
@@ -42,7 +43,9 @@ const (
 
 func unitTests() {
 	Describe("Invoking ValidateCreate", unitTestsValidateCreate)
+	Describe("Invoking ValidateCreate for Webhook Warnings", unitTestsValidateCreateWarnings)
 	Describe("Invoking ValidateUpdate", unitTestsValidateUpdate)
+	Describe("Invoking ValidateUpdate for Webhook Warnings", unitTestsValidateUpdateWarnings)
 	Describe("Invoking ValidateDelete", unitTestsValidateDelete)
 }
 
@@ -524,6 +527,100 @@ func unitTestsValidateCreate() {
 			}, ", "), nil),
 		Entry("should allow creating VM with admin-only annotations set by service user", createArgs{isServiceUser: true, adminOnlyAnnotations: true}, true, nil, nil),
 	)
+}
+
+func unitTestsValidateCreateWarnings() {
+	var (
+		ctx *unitValidatingWebhookContext
+	)
+
+	Context("VM Metadata transport deprecation warnings", func() {
+		var err error
+		BeforeEach(func() {
+			ctx = newUnitTestContextForValidatingWebhook(false)
+		})
+
+		When("OvfEnv transport is specified in VM Metadata", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataOvfEnvTransport
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+			})
+			It("the request should succeed, but with a warning", func() {
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(Equal(true))
+				Expect(response.Warnings).To(Equal([]string{vmopv1validation.OVFEnvTransportDeprecated}))
+			})
+		})
+		When("ExtraConfig transport is specified in VM Metadata", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataExtraConfigTransport
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+			})
+			It("the request should succeed, but with a warning", func() {
+				response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(Equal(true))
+
+				Expect(response.Warnings).To(Equal([]string{vmopv1validation.ExtraConfigTransportDeprecated}))
+			})
+		})
+	})
+}
+
+func unitTestsValidateUpdateWarnings() {
+	var (
+		ctx *unitValidatingWebhookContext
+	)
+
+	Context("VM Metadata transport deprecation warnings", func() {
+		var err error
+		BeforeEach(func() {
+			ctx = newUnitTestContextForValidatingWebhook(true)
+		})
+		AfterEach(func() {
+			ctx = nil
+		})
+
+		When("OvfEnv transport is specified in VM Metadata", func() {
+			BeforeEach(func() {
+				// Updates to metadata are only allowed in powered off state.
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
+				ctx.vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataOvfEnvTransport
+
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+				Expect(err).ToNot(HaveOccurred())
+
+			})
+			It("the request should succeed, but with a warning", func() {
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(Equal(true))
+				Expect(response.Warnings).To(Equal([]string{vmopv1validation.OVFEnvTransportDeprecated}))
+			})
+		})
+		When("ExtraConfig transport is specified in VM Metadata", func() {
+			BeforeEach(func() {
+
+				// Updates to metadata are only allowed in powered off state.
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
+				ctx.vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataExtraConfigTransport
+
+				ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+				ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+				Expect(err).ToNot(HaveOccurred())
+
+			})
+			It("the request should succeed, but with a warning", func() {
+				response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+				Expect(response.Allowed).To(Equal(true))
+
+				Expect(response.Warnings).To(Equal([]string{vmopv1validation.ExtraConfigTransportDeprecated}))
+			})
+		})
+	})
 }
 
 func unitTestsValidateUpdate() {

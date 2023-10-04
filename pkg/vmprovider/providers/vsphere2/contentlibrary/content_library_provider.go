@@ -212,10 +212,11 @@ func (cs *provider) RetrieveOvfEnvelopeFromLibraryItem(ctx context.Context, item
 		_ = downloadedFileContent.Close()
 	}()
 
+	// OVF file is validated during upload, err here can be internet error.
 	envelope, err := ovf.Unmarshal(downloadedFileContent)
 	if err != nil {
 		logger.Error(err, "error parsing the OVF envelope")
-		return nil, nil
+		return nil, err
 	}
 
 	return envelope, nil

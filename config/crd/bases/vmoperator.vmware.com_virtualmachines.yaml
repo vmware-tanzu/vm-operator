@@ -1582,11 +1582,10 @@ spec:
                       supports manual IP allocation. \n If the network connection
                       supports manual IP allocation and the Addresses field includes
                       at least one IP4 address, then this field is required. \n Please
-                      note the IP address must include the network prefix length,
-                      ex. 192.168.0.1/24. \n Please note this field is mutually exclusive
-                      with DHCP4. \n Please note if the Interfaces field is non-empty
-                      then this field is ignored and should be specified on the elements
-                      in the Interfaces list."
+                      note this field is mutually exclusive with DHCP4. \n Please
+                      note if the Interfaces field is non-empty then this field is
+                      ignored and should be specified on the elements in the Interfaces
+                      list."
                     type: string
                   gateway6:
                     description: "Gateway6 is the primary IP6 gateway for this VM.
@@ -1594,11 +1593,10 @@ spec:
                       supports manual IP allocation. \n If the network connection
                       supports manual IP allocation and the Addresses field includes
                       at least one IP4 address, then this field is required. \n Please
-                      note the IP address must include the network prefix length,
-                      ex. 2001:db8:101::1/64. \n Please note this field is mutually
-                      exclusive with DHCP6. \n Please note if the Interfaces field
-                      is non-empty then this field is ignored and should be specified
-                      on the elements in the Interfaces list."
+                      note this field is mutually exclusive with DHCP6. \n Please
+                      note if the Interfaces field is non-empty then this field is
+                      ignored and should be specified on the elements in the Interfaces
+                      list."
                     type: string
                   hostName:
                     description: "HostName is the value the guest uses as its host
@@ -1730,10 +1728,10 @@ spec:
                                 format: int32
                                 type: integer
                               to:
-                                description: To is an IP4 address.
+                                description: To is an IP4 or IP6 address.
                                 type: string
                               via:
-                                description: Via is an IP4 address.
+                                description: Via is an IP4 or IP6 address.
                                 type: string
                             required:
                             - metric
@@ -1819,10 +1817,10 @@ spec:
                           format: int32
                           type: integer
                         to:
-                          description: To is an IP4 address.
+                          description: To is an IP4 or IP6 address.
                           type: string
                         via:
-                          description: Via is an IP4 address.
+                          description: Via is an IP4 or IP6 address.
                           type: string
                       required:
                       - metric

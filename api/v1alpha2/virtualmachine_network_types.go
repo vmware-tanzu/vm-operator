@@ -11,10 +11,10 @@ import (
 
 // VirtualMachineNetworkRouteSpec defines a static route for a guest.
 type VirtualMachineNetworkRouteSpec struct {
-	// To is an IP4 address.
+	// To is an IP4 or IP6 address.
 	To string `json:"to"`
 
-	// Via is an IP4 address.
+	// Via is an IP4 or IP6 address.
 	Via string `json:"via"`
 
 	// Metric is the weight/priority of the route.
@@ -275,9 +275,6 @@ type VirtualMachineNetworkSpec struct {
 	// Addresses field includes at least one IP4 address, then this field
 	// is required.
 	//
-	// Please note the IP address must include the network prefix length, ex.
-	// 192.168.0.1/24.
-	//
 	// Please note this field is mutually exclusive with DHCP4.
 	//
 	// Please note if the Interfaces field is non-empty then this field is
@@ -294,9 +291,6 @@ type VirtualMachineNetworkSpec struct {
 	// If the network connection supports manual IP allocation and the
 	// Addresses field includes at least one IP4 address, then this field
 	// is required.
-	//
-	// Please note the IP address must include the network prefix length, ex.
-	// 2001:db8:101::1/64.
 	//
 	// Please note this field is mutually exclusive with DHCP6.
 	//

@@ -1,7 +1,7 @@
 name: ci
 
 env:
-  GO_VERSION: 1.20.0
+  GO_VERSION: 1.21.3
 
 on:
   pull_request:
@@ -85,6 +85,28 @@ jobs:
           hack/tools/bin/golangci-lint
     - name: Lint Go
       run: make lint-go-full
+
+  vulncheck-go:
+    needs:
+    - verify-go-modules
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Install Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        cache-dependency-path: '**/go.sum'
+    - name: Setup the cache for govulncheck
+      uses: actions/cache@v3
+      with:
+        key: govulncheck-${{ runner.os }}-go${{ env.GO_VERSION }}-${{ hashFiles('go.sum', 'hack/tools/go.sum') }}
+        path: |
+          hack/tools/bin/govulncheck
+    - name: Vulncheck Go
+      run: make vulncheck-go
 
   build-manager:
     needs:

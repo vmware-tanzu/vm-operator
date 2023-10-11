@@ -40,6 +40,7 @@ KUBECTL           := $(BIN_DIR)/kubectl
 KIND              := $(BIN_DIR)/kind
 GOCOV             := $(BIN_DIR)/gocov
 GOCOV_XML         := $(BIN_DIR)/gocov-xml
+GOVULNCHECK       := $(BIN_DIR)/govulncheck
 
 ## --------------------------------------
 ## Help
@@ -115,6 +116,11 @@ kube-apiserver: $(KUBE_APISERVER) ## Install kube-apiserver
 kubectl: $(KUBECTL) ## Install kubectl
 $(ETCD) $(KUBE_APISERVER) $(KUBECTL): k8s-envtest  ## Install envtest related binaries
 	@cp -f "$(ENVTEST_DOWNLOAD_DIR)/$(@F)" $(BIN_DIR)
+
+.PHONY: $(GOVULNCHECK)
+govulncheck: $(GOVULNCHECK)  ## Install govulncheck
+$(GOVULNCHECK): go.mod
+	go build -tags=vmop_tools -o $@ golang.org/x/vuln/cmd/govulncheck
 
 .PHONY: $(KIND)
 kind: $(KIND) ## Install kind

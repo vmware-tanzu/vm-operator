@@ -459,7 +459,7 @@ type VirtualMachineStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=vm
-// +kubebuilder:storageversion:false
+// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Class",type="string",priority=1,JSONPath=".status.class.name"
 // +kubebuilder:printcolumn:name="Image",type="string",priority=1,JSONPath=".status.image.name"

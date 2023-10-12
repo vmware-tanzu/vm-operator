@@ -301,3 +301,16 @@ func DummyClusterVirtualMachineImageA2(imageName string) *vmopv1.ClusterVirtualM
 		},
 	}
 }
+
+func DummyVirtualMachineWebConsoleRequest(namespace, wcrName, vmName, pubKey string) *vmopv1.VirtualMachineWebConsoleRequest {
+	return &vmopv1.VirtualMachineWebConsoleRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      wcrName,
+			Namespace: namespace,
+		},
+		Spec: vmopv1.VirtualMachineWebConsoleRequestSpec{
+			Name:      vmName,
+			PublicKey: pubKey,
+		},
+	}
+}

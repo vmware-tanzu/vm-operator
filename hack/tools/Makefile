@@ -10,37 +10,38 @@ SHELL := /usr/bin/env bash
 export GO111MODULE := on
 
 # Versions.
-KUBEBUILDER_VERSION=3.3.0
 K8S_VERSION=1.24.1
-KIND_VERSION=0.11.1
 
-HOST_OS=$(shell go env GOOS)
-HOST_ARCH=$(shell go env GOARCH)
+# Get the information about the platform on which the tools are built/run.
+GOHOSTOS := $(shell go env GOHOSTOS)
+GOHOSTARCH := $(shell go env GOHOSTARCH)
+GOHOSTOSARCH := $(GOHOSTOS)_$(GOHOSTARCH)
+
+# Default the GOOS and GOARCH values to be the same as the platform on which
+# this Makefile is being executed.
+export GOOS := $(GOHOSTOS)
+export GOARCH := $(GOHOSTARCH)
 
 # Directories.
 BIN_DIR := bin
 
-# The SETUP_ENVTEST download directory. setup-envtest will install binaries here,
-# but it is easiest if we copy them to our BIN_DIR.
-ENVTEST_DOWNLOAD_DIR = $(shell $(SETUP_ENVTEST) use -p path $(K8S_VERSION))
-
 # Binaries.
-CRD_REF_DOCS      := $(BIN_DIR)/crd-ref-docs
-CONTROLLER_GEN    := $(BIN_DIR)/controller-gen
-CONVERSION_GEN    := $(BIN_DIR)/conversion-gen
-SETUP_ENVTEST     := $(BIN_DIR)/setup-envtest
-GOLANGCI_LINT     := $(BIN_DIR)/golangci-lint
-KUSTOMIZE         := $(BIN_DIR)/kustomize
-GINKGO            := $(BIN_DIR)/ginkgo
-GOCOVMERGE        := $(BIN_DIR)/gocovmerge
-KUBEBUILDER       := $(BIN_DIR)/kubebuilder
-ETCD              := $(BIN_DIR)/etcd
-KUBE_APISERVER    := $(BIN_DIR)/kube-apiserver
-KUBECTL           := $(BIN_DIR)/kubectl
-KIND              := $(BIN_DIR)/kind
-GOCOV             := $(BIN_DIR)/gocov
-GOCOV_XML         := $(BIN_DIR)/gocov-xml
-GOVULNCHECK       := $(BIN_DIR)/govulncheck
+CRD_REF_DOCS      := $(BIN_DIR)/$(GOHOSTOSARCH)/crd-ref-docs
+CONTROLLER_GEN    := $(BIN_DIR)/$(GOHOSTOSARCH)/controller-gen
+CONVERSION_GEN    := $(BIN_DIR)/$(GOHOSTOSARCH)/conversion-gen
+SETUP_ENVTEST     := $(BIN_DIR)/$(GOHOSTOSARCH)/setup-envtest
+GOLANGCI_LINT     := $(BIN_DIR)/$(GOHOSTOSARCH)/golangci-lint
+KUSTOMIZE         := $(BIN_DIR)/$(GOHOSTOSARCH)/kustomize
+GINKGO            := $(BIN_DIR)/$(GOHOSTOSARCH)/ginkgo
+GOCOVMERGE        := $(BIN_DIR)/$(GOHOSTOSARCH)/gocovmerge
+KUBEBUILDER       := $(BIN_DIR)/$(GOHOSTOSARCH)/kubebuilder
+ETCD              := $(BIN_DIR)/$(GOHOSTOSARCH)/etcd
+KUBE_APISERVER    := $(BIN_DIR)/$(GOHOSTOSARCH)/kube-apiserver
+KUBECTL           := $(BIN_DIR)/$(GOHOSTOSARCH)/kubectl
+KIND              := $(BIN_DIR)/$(GOHOSTOSARCH)/kind
+GOCOV             := $(BIN_DIR)/$(GOHOSTOSARCH)/gocov
+GOCOV_XML         := $(BIN_DIR)/$(GOHOSTOSARCH)/gocov-xml
+GOVULNCHECK       := $(BIN_DIR)/$(GOHOSTOSARCH)/govulncheck
 
 ## --------------------------------------
 ## Help
@@ -53,81 +54,82 @@ help: ## Display this help
 ## Binaries
 ## --------------------------------------
 
-.PHONY: $(CRD_REF_DOCS)
 crd-ref-docs: $(CRD_REF_DOCS) ## Install crd-ref-docs
-$(CRD_REF_DOCS):
-	go build -tags=vmop_tools -o $@ github.com/elastic/crd-ref-docs
+$(CRD_REF_DOCS): go.mod
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) github.com/elastic/crd-ref-docs
 
-.PHONY: $(CONTROLLER_GEN)
 controller-gen: $(CONTROLLER_GEN) ## Install controller-gen
 $(CONTROLLER_GEN): go.mod
-	go build -tags=vmop_tools -o $@ sigs.k8s.io/controller-tools/cmd/controller-gen
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) sigs.k8s.io/controller-tools/cmd/controller-gen
 
-.PHONY: $(CONVERSION_GEN)
 conversion-gen: $(CONVERSION_GEN) ## Install conversion-gen
 $(CONVERSION_GEN): go.mod
-	go build -tags=vmop_tools -o $@ k8s.io/code-generator/cmd/conversion-gen
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) k8s.io/code-generator/cmd/conversion-gen
 
-.PHONY:$(SETUP_ENVTEST)
 setup-envtest: $(SETUP_ENVTEST) ## Install setup-envtest
 $(SETUP_ENVTEST): go.mod
-	go build -tags=vmop_tools -o $@ sigs.k8s.io/controller-runtime/tools/setup-envtest
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) sigs.k8s.io/controller-runtime/tools/setup-envtest
 
-.PHONY: $(GOLANGCI_LINT)
 golangci-lint: $(GOLANGCI_LINT) ## Install golangci-lint
-$(GOLANGCI_LINT):
-	go build -tags=vmop_tools -o $@ github.com/golangci/golangci-lint/cmd/golangci-lint
+$(GOLANGCI_LINT): go.mod
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) github.com/golangci/golangci-lint/cmd/golangci-lint
 
-.PHONY: $(KUSTOMIZE)
 kustomize: $(KUSTOMIZE) ## Install kustomize
-$(KUSTOMIZE):
-	../ensure-kustomize.sh
+$(KUSTOMIZE): go.mod
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) sigs.k8s.io/kustomize/kustomize/v5
 
-.PHONY: $(GINKGO)
 ginkgo: $(GINKGO) ## Install ginkgo
 $(GINKGO): go.mod
-	go build -tags=vmop_tools -o $@ github.com/onsi/ginkgo/ginkgo
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) github.com/onsi/ginkgo/ginkgo
 
-.PHONY: $(GOCOVMERGE)
 gocovmerge: $(GOCOVMERGE) ## Install gocovmerge
 $(GOCOVMERGE): go.mod
-	go build -tags=vmop_tools -o $@ github.com/wadey/gocovmerge
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) github.com/wadey/gocovmerge
 
-.PHONY: $(GOCOV)
 gocov: $(GOCOV) ## Install gocov
 $(GOCOV): go.mod
-	go build -tags=vmop_tools -o $@ github.com/axw/gocov/gocov
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) github.com/axw/gocov/gocov
 
-.PHONY: $(GOCOV_XML)
 gocov-xml: $(GOCOV_XML) ## Install gocov-xml
 $(GOCOV_XML): go.mod
-	go build -tags=vmop_tools -o $@ github.com/AlekSi/gocov-xml
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) github.com/AlekSi/gocov-xml
 
-.PHONY: $(KUBEBUILDER)
 kubebuilder: $(KUBEBUILDER) ## Install kubebuilder
-	curl -sL https://github.com/kubernetes-sigs/kubebuilder/releases/download/v$(KUBEBUILDER_VERSION)/kubebuilder_$(HOST_OS)_$(HOST_ARCH) --output $(KUBEBUILDER) && chmod a+x $(KUBEBUILDER)
+$(KUBEBUILDER): go.mod
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) sigs.k8s.io/kubebuilder/v3/cmd
+
+kind: $(KIND) ## Install kind
+$(KIND): go.mod
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) sigs.k8s.io/kind
+
+govulncheck: $(GOVULNCHECK)  ## Install govulncheck
+$(GOVULNCHECK): go.mod
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) golang.org/x/vuln/cmd/govulncheck
 
 .PHONY: k8s-envtest
 k8s-envtest: $(SETUP_ENVTEST) ## Download envtest binaries
-	$(SETUP_ENVTEST) use --os $(HOST_OS) --arch $(HOST_ARCH) $(K8S_VERSION)
+	$(SETUP_ENVTEST) use --os $(GOHOSTOS) --arch $(GOHOSTARCH) $(K8S_VERSION)
 
 etcd: $(ETCD) ## Install etcd
 kube-apiserver: $(KUBE_APISERVER) ## Install kube-apiserver
 kubectl: $(KUBECTL) ## Install kubectl
 $(ETCD) $(KUBE_APISERVER) $(KUBECTL): k8s-envtest  ## Install envtest related binaries
-	@cp -f "$(ENVTEST_DOWNLOAD_DIR)/$(@F)" $(BIN_DIR)
-
-.PHONY: $(GOVULNCHECK)
-govulncheck: $(GOVULNCHECK)  ## Install govulncheck
-$(GOVULNCHECK): go.mod
-	go build -tags=vmop_tools -o $@ golang.org/x/vuln/cmd/govulncheck
-
-.PHONY: $(KIND)
-kind: $(KIND) ## Install kind
-$(KIND):
 	@mkdir -p $(@D)
-	curl -sL https://github.com/kubernetes-sigs/kind/releases/download/v$(KIND_VERSION)/kind-$(HOST_OS)-$(HOST_ARCH) -o $(@) && \
-	chmod a+x $(@)
+	@cp -f "$$($(SETUP_ENVTEST) use -p path $(K8S_VERSION))/$(@F)" $(@)
+
 
 ## --------------------------------------
 ## Generate

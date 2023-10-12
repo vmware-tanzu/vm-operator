@@ -19,10 +19,15 @@ else # (,$(strip $(shell command -v go 2>/dev/null || true)))
 # Active module mode, as we use go modules to manage dependencies.
 export GO111MODULE := on
 
+# Get the information about the platform on which the tools are built/run.
+GOHOSTOS := $(shell go env GOHOSTOS)
+GOHOSTARCH := $(shell go env GOHOSTARCH)
+GOHOSTOSARCH := $(GOHOSTOS)_$(GOHOSTARCH)
+
 # Default the GOOS and GOARCH values to be the same as the platform on which
 # this Makefile is being executed.
-export GOOS ?= $(shell go env GOHOSTOS)
-export GOARCH ?= $(shell go env GOHOSTARCH)
+export GOOS ?= $(GOHOSTOS)
+export GOARCH ?= $(GOHOSTARCH)
 
 # The directory in which this Makefile is located. Please note this will not
 # behave correctly if the path to any Makefile in the list contains any spaces.
@@ -48,7 +53,7 @@ endif # ifeq (,$(strip $(shell command -v go 2>/dev/null || true)))
 # Directories
 BIN_DIR       := bin
 TOOLS_DIR     := hack/tools
-TOOLS_BIN_DIR := $(TOOLS_DIR)/bin
+TOOLS_BIN_DIR := $(TOOLS_DIR)/bin/$(GOHOSTOSARCH)
 UPGRADE_DIR   := upgrade
 export PATH := $(abspath $(BIN_DIR)):$(abspath $(TOOLS_BIN_DIR)):$(PATH)
 export KUBEBUILDER_ASSETS := $(abspath $(TOOLS_BIN_DIR))
@@ -141,18 +146,18 @@ test-nocover: ## Run Tests (without code coverage)
 	hack/test-unit.sh
 
 .PHONY: test
-test: | $(GOCOVMERGE)
+test: $(GOCOVMERGE)
 test: ## Run tests
 	@rm -f $(COVERAGE_FILE)
 	hack/test-unit.sh $(COVERAGE_FILE)
 
 .PHONY: test-integration
-test-integration: | $(ETCD) $(KUBE_APISERVER)
+test-integration: $(ETCD) $(KUBE_APISERVER)
 test-integration: ## Run integration tests
 	KUBECONFIG=$(KUBECONFIG) hack/test-integration.sh $(INT_COV_FILE)
 
 .PHONY: coverage
-coverage-merge: | $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)
+coverage-merge: $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)
 coverage-merge: ## Merge the coverage from unit and integration tests
 	$(GOCOVMERGE) $(COVERAGE_FILE) $(INT_COV_FILE) >$(FULL_COV_FILE)
 	gocov convert "$(FULL_COV_FILE)" | gocov-xml >"$(FULL_COV_FILE:.out=.xml)"
@@ -196,7 +201,6 @@ TOOLING_BINARIES := $(CRD_REF_DOCS) $(CONTROLLER_GEN) $(CONVERSION_GEN) \
                     $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) $(ETCD) \
                     $(GINKGO) $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML) $(GOVULNCHECK)
 tools: $(TOOLING_BINARIES) ## Build tooling binaries
-.PHONY: $(TOOLING_BINARIES)
 $(TOOLING_BINARIES):
 	make -C $(TOOLS_DIR) $(@F)
 
@@ -212,7 +216,7 @@ lint: ## Run all the lint targets
 
 GOLANGCI_LINT_FLAGS ?= --fast=true
 .PHONY: lint-go
-lint-go: | $(GOLANGCI_LINT)
+lint-go: $(GOLANGCI_LINT)
 lint-go: ## Lint codebase
 	$(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_FLAGS)
 
@@ -262,14 +266,14 @@ generate: ## Generate code
 #	$(MAKE) generate-api-docs
 
 .PHONY: generate-go
-generate-go: | $(CONTROLLER_GEN)
+generate-go: $(CONTROLLER_GEN)
 generate-go: ## Generate deepcopy
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/api/... \
 		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
 
 .PHONY: generate-manifests
-generate-manifests: | $(CONTROLLER_GEN)
+generate-manifests: $(CONTROLLER_GEN)
 generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/api/... \
@@ -288,7 +292,7 @@ generate-manifests: ## Generate manifests e.g. CRD, RBAC etc.
 		rbac:roleName=manager-role
 
 .PHONY: generate-external-manifests
-generate-external-manifests: | $(CONTROLLER_GEN)
+generate-external-manifests: $(CONTROLLER_GEN)
 generate-external-manifests: ## Generate manifests for the external types for testing
 	API_MOD_DIR=$(shell go mod download -json $(IMG_REGISTRY_OP_API_SLUG) | grep '"Dir":' | awk '{print $$2}' | tr -d '",') && \
 	$(CONTROLLER_GEN) \
@@ -312,7 +316,7 @@ ifneq (,$(ROOT_DIR_IN_GOPATH))
 # statement ensures that there is not an order-only dependency on CONVERSION_GEN
 # if it already exists.
 ifeq (,$(strip $(wildcard $(CONVERSION_GEN))))
-generate-go-conversions: | $(CONVERSION_GEN)
+generate-go-conversions: $(CONVERSION_GEN)
 endif
 
 generate-go-conversions:
@@ -412,7 +416,7 @@ generate-go-conversions:
 endif
 
 .PHONY: generate-api-docs
-generate-api-docs: | $(CRD_REF_DOCS)
+generate-api-docs: $(CRD_REF_DOCS)
 generate-api-docs: ## Generate API documentation
 	$(CRD_REF_DOCS) \
 	  --renderer=markdown \
@@ -444,13 +448,13 @@ kustomize-x:
 .PHONY: kustomize-local
 kustomize-local: CONFIG_TYPE=local
 kustomize-local: YAML_OUT=$(LOCAL_YAML)
-kustomize-local: prereqs generate-manifests | $(KUSTOMIZE)
+kustomize-local: prereqs generate-manifests $(KUSTOMIZE)
 kustomize-local: kustomize-x ## Kustomize for local cluster
 
 .PHONY: kustomize-local-vcsim
 kustomize-local-vcsim: CONFIG_TYPE=local-vcsim
 kustomize-local-vcsim: YAML_OUT=$(LOCAL_YAML)
-kustomize-local-vcsim: prereqs generate-manifests | $(KUSTOMIZE)
+kustomize-local-vcsim: prereqs generate-manifests $(KUSTOMIZE)
 kustomize-local-vcsim: kustomize-x ## Kustomize for local-vcsim cluster
 
 

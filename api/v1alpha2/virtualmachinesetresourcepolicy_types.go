@@ -47,7 +47,7 @@ type VSphereClusterModuleStatus struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:storageversion:false
+// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 
 // VirtualMachineSetResourcePolicy is the Schema for the virtualmachinesetresourcepolicies API.

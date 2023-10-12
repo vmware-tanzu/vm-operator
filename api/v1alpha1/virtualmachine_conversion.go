@@ -541,6 +541,88 @@ func Convert_v1alpha1_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 	return nil
 }
 
+func translate_v1alpha2_Conditions_To_v1alpha1_Conditions(conditions []Condition) []Condition {
+	var preReqCond, vmClassCond, vmImageCond, vmSetResourcePolicy, vmBootstrap *Condition
+
+	for i := range conditions {
+		c := &conditions[i]
+
+		switch c.Type {
+		case VirtualMachinePrereqReadyCondition:
+			preReqCond = c
+		case v1alpha2.VirtualMachineConditionClassReady:
+			vmClassCond = c
+		case v1alpha2.VirtualMachineConditionImageReady:
+			vmImageCond = c
+		case v1alpha2.VirtualMachineConditionVMSetResourcePolicyReady:
+			vmSetResourcePolicy = c
+		case v1alpha2.VirtualMachineConditionBootstrapReady:
+			vmBootstrap = c
+		}
+	}
+
+	// Try to replicate how the v1a1 provider would set the singular prereqs condition. The class is checked
+	// first, then the image. Note that the set resource policy and metadata (bootstrap) are not a part of
+	// the v1a1 prereqs, and are optional.
+	if vmClassCond != nil && vmClassCond.Status == corev1.ConditionTrue &&
+		vmImageCond != nil && vmImageCond.Status == corev1.ConditionTrue &&
+		(vmSetResourcePolicy == nil || vmSetResourcePolicy.Status == corev1.ConditionTrue) &&
+		(vmBootstrap == nil || vmBootstrap.Status == corev1.ConditionTrue) {
+
+		p := Condition{
+			Type:   VirtualMachinePrereqReadyCondition,
+			Status: corev1.ConditionTrue,
+		}
+
+		if preReqCond != nil {
+			p.LastTransitionTime = preReqCond.LastTransitionTime
+			*preReqCond = p
+			return conditions
+		}
+
+		p.LastTransitionTime = vmImageCond.LastTransitionTime
+		return append(conditions, p)
+	}
+
+	p := Condition{
+		Type:     VirtualMachinePrereqReadyCondition,
+		Status:   corev1.ConditionFalse,
+		Severity: ConditionSeverityError,
+	}
+
+	if vmClassCond != nil && vmClassCond.Status == corev1.ConditionFalse {
+		p.Reason = VirtualMachineClassNotFoundReason
+		p.Message = vmClassCond.Message
+		p.LastTransitionTime = vmClassCond.LastTransitionTime
+	} else if vmImageCond != nil && vmImageCond.Status == corev1.ConditionFalse {
+		p.Reason = VirtualMachineImageNotFoundReason
+		p.Message = vmImageCond.Message
+		p.LastTransitionTime = vmImageCond.LastTransitionTime
+	}
+
+	if p.Reason != "" {
+		if preReqCond != nil {
+			*preReqCond = p
+			return conditions
+		}
+
+		return append(conditions, p)
+	}
+
+	if vmSetResourcePolicy != nil && vmSetResourcePolicy.Status == corev1.ConditionFalse &&
+		vmBootstrap != nil && vmBootstrap.Status == corev1.ConditionFalse {
+
+		// These are not a part of the v1a1 Prereqs. If either is false, the v1a1 provider would not
+		// update the prereqs condition, but we don't set the condition to true either until all these
+		// conditions are true. Just leave things as is to see how strict we really need to be here.
+		return conditions
+	}
+
+	// TBD: For now, leave the v1a2 conditions if present since those provide more details.
+
+	return conditions
+}
+
 func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	in *v1alpha2.VirtualMachineStatus, out *VirtualMachineStatus, s apiconversion.Scope) error {
 
@@ -552,6 +634,7 @@ func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	out.Phase = convert_v1alpha2_Conditions_To_v1alpha1_Phase(in.Conditions)
 	out.VmIp, out.NetworkInterfaces = convert_v1alpha2_NetworkStatus_To_v1alpha1_Network(in.Network)
 	out.LastRestartTime = in.LastRestartTime
+	out.Conditions = translate_v1alpha2_Conditions_To_v1alpha1_Conditions(out.Conditions)
 
 	// WARNING: in.Image requires manual conversion: does not exist in peer-type
 	// WARNING: in.Class requires manual conversion: does not exist in peer-type

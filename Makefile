@@ -71,6 +71,7 @@ KUBE_APISERVER     := $(TOOLS_BIN_DIR)/kube-apiserver
 KUBEBUILDER        := $(TOOLS_BIN_DIR)/kubebuilder
 KUBECTL            := $(TOOLS_BIN_DIR)/kubectl
 ETCD               := $(TOOLS_BIN_DIR)/etcd
+GOVULNCHECK        := $(TOOLS_BIN_DIR)/govulncheck
 
 # Allow overriding manifest generation destination directory
 MANIFEST_ROOT     ?= config
@@ -193,7 +194,7 @@ web-console-validator: prereqs generate lint-go web-console-validator-only ## Bu
 TOOLING_BINARIES := $(CRD_REF_DOCS) $(CONTROLLER_GEN) $(CONVERSION_GEN) \
                     $(GOLANGCI_LINT) $(KUSTOMIZE) \
                     $(KUBE_APISERVER) $(KUBEBUILDER) $(KUBECTL) $(ETCD) \
-                    $(GINKGO) $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML)
+                    $(GINKGO) $(GOCOVMERGE) $(GOCOV) $(GOCOV_XML) $(GOVULNCHECK)
 tools: $(TOOLING_BINARIES) ## Build tooling binaries
 .PHONY: $(TOOLING_BINARIES)
 $(TOOLING_BINARIES):
@@ -550,6 +551,15 @@ docker-remove: ## Remove the docker image
 		echo "Remove docker container ${IMG}"; \
 		docker rmi ${IMG}; \
 	fi
+
+
+## --------------------------------------
+## Vulnerability Checks
+## --------------------------------------
+
+.PHONY: vulncheck-go
+vulncheck-go: $(GOVULNCHECK)
+	$(GOVULNCHECK) ./...
 
 
 ## --------------------------------------

@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -380,6 +381,271 @@ func unitTestsValidateCreate() {
 			}, ", "), nil),
 		Entry("should allow creating VM with admin-only annotations set by service user", createArgs{isServiceUser: true, adminOnlyAnnotations: true}, true, nil, nil),
 	)
+
+	Context("Network", func() {
+
+		type testParams struct {
+			setup         func(ctx *unitValidatingWebhookContext)
+			validate      func(response admission.Response)
+			expectAllowed bool
+		}
+
+		doTest := func(args testParams) {
+			args.setup(ctx)
+
+			var err error
+			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+			Expect(err).ToNot(HaveOccurred())
+
+			response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+			Expect(response.Allowed).To(Equal(args.expectAllowed))
+
+			if args.validate != nil {
+				args.validate(response)
+			}
+		}
+
+		doValidateWithMsg := func(msgs ...string) func(admission.Response) {
+			return func(response admission.Response) {
+				reasons := strings.Split(string(response.Result.Reason), ", ")
+				for _, m := range msgs {
+					Expect(reasons).To(ContainElement(m))
+				}
+				// This may be overly strict in some cases but catches missed assertions.
+				Expect(reasons).To(HaveLen(len(msgs)))
+			}
+		}
+
+		DescribeTable("network create", doTest,
+			Entry("allow default",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow static",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+							HostName:   "my-vm",
+							DeviceName: "eth0",
+							Addresses: []string{
+								"192.168.1.100/24",
+								"2605:a601:a0ba:720:2ce6:776d:8be4:2496/48",
+							},
+							DHCP4:    false,
+							DHCP6:    false,
+							Gateway4: "192.168.1.1",
+							Gateway6: "2605:a601:a0ba:720:2ce6::1",
+							MTU:      pointer.Int64(9000),
+							Nameservers: []string{
+								"8.8.8.8",
+								"2001:4860:4860::8888",
+							},
+							Routes: []vmopv1.VirtualMachineNetworkRouteSpec{
+								{
+									To:     "10.100.10.1/24",
+									Via:    "10.10.1.1",
+									Metric: 42,
+								},
+								{
+									To:  "fbd6:93e7:bc11:18b2:514f:2b1d:637a:f695/48",
+									Via: "ef71:6ce2:3b91:8349:b2b2:f76c:86ae:915b",
+								},
+							},
+							SearchDomains: []string{"dev.local"},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow dhcp",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+							HostName:   "my-vm",
+							DeviceName: "eth0",
+							DHCP4:      true,
+							DHCP6:      true,
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow mixing static and dhcp",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+							HostName:   "my-vm",
+							DeviceName: "eth0",
+							Addresses: []string{
+								"192.168.1.100/24",
+								"2605:a601:a0ba:720:2ce6:776d:8be4:2496/48",
+							},
+							DHCP4:    true,
+							DHCP6:    true,
+							Gateway4: "192.168.1.1",
+							Gateway6: "2605:a601:a0ba:720:2ce6::1",
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.dhcp4: Invalid value: "192.168.1.100/24": dhcp4 cannot be used with IPv4 addresses in addresses field`,
+						`spec.network.gateway4: Invalid value: "192.168.1.1": gateway4 is mutually exclusive with dhcp4`,
+						`spec.network.dhcp6: Invalid value: "2605:a601:a0ba:720:2ce6:776d:8be4:2496/48": dhcp6 cannot be used with IPv6 addresses in addresses field`,
+						`spec.network.gateway6: Invalid value: "2605:a601:a0ba:720:2ce6::1": gateway6 is mutually exclusive with dhcp6`,
+					),
+				},
+			),
+
+			Entry("validate addresses",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network.Addresses = []string{
+							"1.1.",
+							"1.1.1.1",
+							"not-an-ip",
+							"7936:39e1:d51b:39d2:05f8:1fb2:35cc:1072",
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.addresses[0]: Invalid value: "1.1.": invalid CIDR address: 1.1.`,
+						`spec.network.addresses[1]: Invalid value: "1.1.1.1": invalid CIDR address: 1.1.1.1`,
+						`spec.network.addresses[2]: Invalid value: "not-an-ip": invalid CIDR address: not-an-ip`,
+						`spec.network.addresses[3]: Invalid value: "7936:39e1:d51b:39d2:05f8:1fb2:35cc:1072": invalid CIDR address: 7936:39e1:d51b:39d2:05f8:1fb2:35cc:1072`,
+					),
+				},
+			),
+
+			Entry("validate gateway4",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network.Gateway4 = "7936:39e1:d51b:39d2:05f8:1fb2:35cc:1072"
+					},
+					validate: doValidateWithMsg(
+						`spec.network.gateway4: Invalid value: "7936:39e1:d51b:39d2:05f8:1fb2:35cc:1072": gateway4 must have an IPv4 address in the addresses field`,
+						`spec.network.gateway4: Invalid value: "7936:39e1:d51b:39d2:05f8:1fb2:35cc:1072": must be a valid IPv4 address`,
+					),
+				},
+			),
+
+			Entry("validate gateway6",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network.Gateway6 = "192.168.1.1"
+					},
+					validate: doValidateWithMsg(
+						`spec.network.gateway6: Invalid value: "192.168.1.1": gateway6 must have an IPv6 address in the addresses field`,
+						`spec.network.gateway6: Invalid value: "192.168.1.1": must be a valid IPv6 address`,
+					),
+				},
+			),
+
+			Entry("validate nameservers",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network.Nameservers = []string{
+							"not-an-ip",
+							"192.168.1.1/24",
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.nameservers[0]: Invalid value: "not-an-ip": must be an IPv4 or IPv6 address`,
+						`spec.network.nameservers[1]: Invalid value: "192.168.1.1/24": must be an IPv4 or IPv6 address`,
+					),
+				},
+			),
+
+			Entry("validate routes",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network.Routes = []vmopv1.VirtualMachineNetworkRouteSpec{
+							{
+								To:  "10.100.10.1",
+								Via: "192.168.1",
+							},
+							{
+								To:  "2605:a601:a0ba:720:2ce6::/48",
+								Via: "2463:foobar",
+							},
+							{
+								To:  "192.168.1.1/24",
+								Via: "ef71:6ce2:3b91:8349:b2b2:f76c:86ae:915b",
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.routes[0].to: Invalid value: "10.100.10.1": invalid CIDR address: 10.100.10.1`,
+						`spec.network.routes[0].via: Invalid value: "192.168.1": must be an IPv4 or IPv6 address`,
+						`spec.network.routes[1].via: Invalid value: "2463:foobar": must be an IPv4 or IPv6 address`,
+						`spec.network.routes[2]: Invalid value: "": cannot mix IP address families`,
+					),
+				},
+			),
+
+			Entry("validate interfaces",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+							HostName: "my-vm",
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Addresses: []string{
+										"192.168.1.100/24",
+										"2605:a601:a0ba:720:2ce6:776d:8be4:2496/48",
+									},
+									Gateway4: "192.168.1.1",
+									Gateway6: "2605:a601:a0ba:720:2ce6::1",
+									MTU:      pointer.Int64(9000),
+									Nameservers: []string{
+										"8.8.8.8",
+										"2001:4860:4860::8888",
+									},
+									Routes: []vmopv1.VirtualMachineNetworkRouteSpec{
+										{
+											To:     "10.100.10.1/24",
+											Via:    "10.10.1.1",
+											Metric: 42,
+										},
+										{
+											To:  "fbd6:93e7:bc11:18b2:514f:2b1d:637a:f695/48",
+											Via: "ef71:6ce2:3b91:8349:b2b2:f76c:86ae:915b",
+										},
+									},
+									SearchDomains: []string{"dev.local"},
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow interfaces with default interface",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+							HostName:  "my-vm",
+							Addresses: []string{"192.168.1.10/24"},
+							Gateway4:  "192.168.1.1",
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									DHCP4: true,
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces: Invalid value: "null": interfaces are mutually exclusive with deviceName,network,addresses,dhcp4,dhcp6,gateway4,gateway6,mtu,nameservers,routes,searchDomains fields`,
+					),
+				},
+			),
+		)
+	})
 }
 
 func unitTestsValidateUpdate() {

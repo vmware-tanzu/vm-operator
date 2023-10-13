@@ -314,46 +314,150 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 	networkSpec := &vm.Spec.Network
 	networkPath := field.NewPath("spec", "network")
 
-	var hasIPv4Address, hasIPv6Address bool
-	for i, ipCIDR := range networkSpec.Addresses {
+	defaultNetworkInterface := vmopv1.VirtualMachineNetworkInterfaceSpec{
+		Name:          networkSpec.DeviceName,
+		Addresses:     networkSpec.Addresses,
+		DHCP4:         networkSpec.DHCP4,
+		DHCP6:         networkSpec.DHCP6,
+		Gateway4:      networkSpec.Gateway4,
+		Gateway6:      networkSpec.Gateway6,
+		MTU:           networkSpec.MTU,
+		Nameservers:   networkSpec.Nameservers,
+		Routes:        networkSpec.Routes,
+		SearchDomains: networkSpec.SearchDomains,
+	}
+	if networkSpec.Network != nil {
+		defaultNetworkInterface.Network = *networkSpec.Network
+	}
+	hasDefaultInterface := !equality.Semantic.DeepEqual(defaultNetworkInterface, vmopv1.VirtualMachineNetworkInterfaceSpec{})
+
+	if hasDefaultInterface {
+		if defaultNetworkInterface.Name == "" {
+			defaultNetworkInterface.Name = "eth0"
+		}
+		allErrs = append(allErrs, v.validateNetworkInterfaceSpec(networkPath, defaultNetworkInterface)...)
+	}
+
+	if len(networkSpec.Interfaces) > 0 {
+		p := networkPath.Child("interfaces")
+
+		if hasDefaultInterface {
+			// TODO: Better phrasing of this error message?
+			allErrs = append(allErrs, field.Invalid(p, nil,
+				"interfaces are mutually exclusive with deviceName,network,addresses,dhcp4,dhcp6,gateway4,"+
+					"gateway6,mtu,nameservers,routes,searchDomains fields"))
+		}
+
+		for i, interfaceSpec := range networkSpec.Interfaces {
+			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(p.Index(i), interfaceSpec)...)
+		}
+	}
+
+	return allErrs
+}
+
+func (v validator) validateNetworkInterfaceSpec(
+	interfacePath *field.Path,
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	// TODO: Ensure valid name once we finalize the naming convention for the network interface CRD.
+
+	var ipv4Addrs, ipv6Addrs []string
+	for i, ipCIDR := range interfaceSpec.Addresses {
 		ip, _, err := net.ParseCIDR(ipCIDR)
 		if err != nil {
-			p := networkPath.Child("addresses").Index(i)
+			p := interfacePath.Child("addresses").Index(i)
 			allErrs = append(allErrs, field.Invalid(p, ipCIDR, err.Error()))
 			continue
 		}
 
-		hasIPv4Address = hasIPv4Address || ip.To4() != nil
-		hasIPv6Address = hasIPv6Address || ip.To16() != nil
-	}
-
-	if networkSpec.DHCP4 {
-		if hasIPv4Address {
-			p := networkPath.Child("dhcp4")
-			allErrs = append(allErrs, field.Invalid(p, networkSpec.Addresses,
-				"dhcp4 cannot be used with IP4 addresses in network.addresses field"))
-		}
-
-		if networkSpec.Gateway4 != "" {
-			p := networkPath.Child("gateway4")
-			allErrs = append(allErrs, field.Invalid(p, true, "gateway4 is mutually exclusive with dhcp4"))
+		if ip.To4() != nil {
+			ipv4Addrs = append(ipv4Addrs, ipCIDR)
+		} else {
+			ipv6Addrs = append(ipv6Addrs, ipCIDR)
 		}
 	}
 
-	if networkSpec.DHCP6 {
-		if hasIPv6Address {
-			p := networkPath.Child("dhcp6")
-			allErrs = append(allErrs, field.Invalid(p, networkSpec.Addresses,
-				"dhcp6 cannot be used with IP6 addresses in network.addresses field"))
+	if ipv4 := interfaceSpec.Gateway4; ipv4 != "" {
+		p := interfacePath.Child("gateway4")
+
+		if len(ipv4Addrs) == 0 {
+			allErrs = append(allErrs, field.Invalid(p, ipv4, "gateway4 must have an IPv4 address in the addresses field"))
 		}
 
-		if networkSpec.Gateway6 != "" {
-			p := networkPath.Child("gateway6")
-			allErrs = append(allErrs, field.Invalid(p, true, "gateway6 is mutually exclusive with dhcp6"))
+		if ip := net.ParseIP(ipv4); ip == nil || ip.To4() == nil {
+			allErrs = append(allErrs, field.Invalid(p, ipv4, "must be a valid IPv4 address"))
 		}
 	}
 
-	// TODO: Much more
+	if ipv6 := interfaceSpec.Gateway6; ipv6 != "" {
+		p := interfacePath.Child("gateway6")
+
+		if len(ipv6Addrs) == 0 {
+			allErrs = append(allErrs, field.Invalid(p, ipv6, "gateway6 must have an IPv6 address in the addresses field"))
+		}
+
+		if ip := net.ParseIP(ipv6); ip == nil || ip.To16() == nil || ip.To4() != nil {
+			allErrs = append(allErrs, field.Invalid(p, ipv6, "must be a valid IPv6 address"))
+		}
+	}
+
+	if interfaceSpec.DHCP4 {
+		if len(ipv4Addrs) > 0 {
+			p := interfacePath.Child("dhcp4")
+			allErrs = append(allErrs, field.Invalid(p, strings.Join(ipv4Addrs, ","),
+				"dhcp4 cannot be used with IPv4 addresses in addresses field"))
+		}
+
+		if gw := interfaceSpec.Gateway4; gw != "" {
+			p := interfacePath.Child("gateway4")
+			allErrs = append(allErrs, field.Invalid(p, gw, "gateway4 is mutually exclusive with dhcp4"))
+		}
+	}
+
+	if interfaceSpec.DHCP6 {
+		if len(ipv6Addrs) > 0 {
+			p := interfacePath.Child("dhcp6")
+			allErrs = append(allErrs, field.Invalid(p, strings.Join(ipv6Addrs, ","),
+				"dhcp6 cannot be used with IPv6 addresses in addresses field"))
+		}
+
+		if gw := interfaceSpec.Gateway6; gw != "" {
+			p := interfacePath.Child("gateway6")
+			allErrs = append(allErrs, field.Invalid(p, gw, "gateway6 is mutually exclusive with dhcp6"))
+		}
+	}
+
+	for i, n := range interfaceSpec.Nameservers {
+		if net.ParseIP(n) == nil {
+			allErrs = append(allErrs,
+				field.Invalid(interfacePath.Child("nameservers").Index(i), n, "must be an IPv4 or IPv6 address"))
+		}
+	}
+
+	if len(interfaceSpec.Routes) > 0 {
+		p := interfacePath.Child("routes")
+
+		for i, r := range interfaceSpec.Routes {
+			ip, _, err := net.ParseCIDR(r.To)
+			if err != nil {
+				allErrs = append(allErrs, field.Invalid(p.Index(i).Child("to"), r.To, err.Error()))
+			}
+
+			viaIP := net.ParseIP(r.Via)
+			if viaIP == nil {
+				allErrs = append(allErrs,
+					field.Invalid(p.Index(i).Child("via"), r.Via, "must be an IPv4 or IPv6 address"))
+			}
+
+			if (ip.To4() != nil) != (viaIP.To4() != nil) {
+				allErrs = append(allErrs,
+					field.Invalid(p.Index(i), "", "cannot mix IP address families"))
+			}
+		}
+	}
 
 	return allErrs
 }

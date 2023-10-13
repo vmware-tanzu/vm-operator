@@ -46,7 +46,7 @@ func BackupVirtualMachine(
 
 	var ecToUpdate []types.BaseOptionValue
 
-	vmKubeDataBackup, err := getVMKubeDataBackup(vmCtx.VM, curEcMap)
+	vmKubeDataBackup, err := getDesiredVMKubeDataForBackup(vmCtx.VM, curEcMap)
 	if err != nil {
 		vmCtx.Logger.Error(err, "Failed to get VM kube data for backup")
 		return err
@@ -60,21 +60,21 @@ func BackupVirtualMachine(
 		})
 	}
 
-	instanceIDBackup, err := getInstanceIDBackup(vmCtx.VM, curEcMap)
+	instanceIDBackup, err := getDesiredCloudInitInstanceIDForBackup(vmCtx.VM, curEcMap)
 	if err != nil {
-		vmCtx.Logger.Error(err, "Failed to get VM instance ID for backup")
+		vmCtx.Logger.Error(err, "Failed to get cloud-init instance ID for backup")
 		return err
 	}
 	if instanceIDBackup == "" {
-		vmCtx.Logger.V(4).Info("Skipping VM instance ID backup as it exists")
+		vmCtx.Logger.V(4).Info("Skipping cloud-init instance ID as already stored")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
-			Key:   constants.BackupVMInstanceIDExtraConfigKey,
+			Key:   constants.BackupVMCloudInitInstanceIDExtraConfigKey,
 			Value: instanceIDBackup,
 		})
 	}
 
-	bootstrapDataBackup, err := getBootstrapDataBackup(bootstrapData, curEcMap)
+	bootstrapDataBackup, err := getDesiredBootstrapDataForBackup(bootstrapData, curEcMap)
 	if err != nil {
 		vmCtx.Logger.Error(err, "Failed to get VM bootstrap data for backup")
 		return err
@@ -88,7 +88,7 @@ func BackupVirtualMachine(
 		})
 	}
 
-	diskDataBackup, err := getDiskDataBackup(vmCtx, resVM, curEcMap)
+	diskDataBackup, err := getDesiredDiskDataForBackup(vmCtx, resVM, curEcMap)
 	if err != nil {
 		vmCtx.Logger.Error(err, "Failed to get VM disk data for backup")
 		return err
@@ -103,7 +103,8 @@ func BackupVirtualMachine(
 	}
 
 	if len(ecToUpdate) != 0 {
-		vmCtx.Logger.V(4).Info("Updating VM ExtraConfig with backup data")
+		vmCtx.Logger.Info("Updating VM ExtraConfig with backup data")
+		vmCtx.Logger.V(4).Info("", "ExtraConfig", ecToUpdate)
 		if _, err := vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
 			ExtraConfig: ecToUpdate,
 		}); err != nil {
@@ -115,17 +116,17 @@ func BackupVirtualMachine(
 	return nil
 }
 
-func getVMKubeDataBackup(
+func getDesiredVMKubeDataForBackup(
 	vm *vmopv1.VirtualMachine,
 	ecMap map[string]string) (string, error) {
 	// If the ExtraConfig already contains the latest VM spec, determined by
 	// 'metadata.generation', return an empty string to skip the backup.
 	if ecKubeData, ok := ecMap[constants.BackupVMKubeDataExtraConfigKey]; ok {
-		curBackupVM, err := constructVMObj(ecKubeData)
+		vmFromBackup, err := constructVMObj(ecKubeData)
 		if err != nil {
 			return "", err
 		}
-		if curBackupVM.ObjectMeta.Generation >= vm.ObjectMeta.Generation {
+		if vmFromBackup.ObjectMeta.Generation >= vm.ObjectMeta.Generation {
 			return "", nil
 		}
 	}
@@ -151,12 +152,12 @@ func constructVMObj(ecKubeData string) (vmopv1.VirtualMachine, error) {
 	return vmObj, err
 }
 
-func getInstanceIDBackup(
+func getDesiredCloudInitInstanceIDForBackup(
 	vm *vmopv1.VirtualMachine,
 	ecMap map[string]string) (string, error) {
-	// Instance ID should not be changed once persisted in VM's ExtraConfig.
-	// Return an empty string to skip the backup if it already exists.
-	if _, ok := ecMap[constants.BackupVMInstanceIDExtraConfigKey]; ok {
+	// Cloud-Init instance ID should not be changed once persisted in VM's
+	// ExtraConfig. Return an empty string to skip the backup if it exists.
+	if _, ok := ecMap[constants.BackupVMCloudInitInstanceIDExtraConfigKey]; ok {
 		return "", nil
 	}
 
@@ -168,7 +169,7 @@ func getInstanceIDBackup(
 	return util.EncodeGzipBase64(instanceID)
 }
 
-func getBootstrapDataBackup(
+func getDesiredBootstrapDataForBackup(
 	bootstrapDataRaw map[string]string,
 	ecMap map[string]string) (string, error) {
 	// No bootstrap data is specified, return an empty string to skip the backup.
@@ -193,7 +194,7 @@ func getBootstrapDataBackup(
 	return bootstrapDataBackup, nil
 }
 
-func getDiskDataBackup(
+func getDesiredDiskDataForBackup(
 	ctx goctx.Context,
 	resVM *res.VirtualMachine,
 	ecMap map[string]string) (string, error) {

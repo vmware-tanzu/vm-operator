@@ -148,19 +148,19 @@ func backupTests() {
 		})
 	})
 
-	Context("VM instance ID data", func() {
+	Context("VM cloud-init instance ID data", func() {
 
 		BeforeEach(func() {
 			vmCtx.VM = builder.DummyVirtualMachine()
 		})
 
-		When("VM instance ID already exists in ExtraConfig", func() {
+		When("VM cloud-init instance ID already exists in ExtraConfig", func() {
 
 			BeforeEach(func() {
 				_, err := vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
 					ExtraConfig: []types.BaseOptionValue{
 						&types.OptionValue{
-							Key:   constants.BackupVMInstanceIDExtraConfigKey,
+							Key:   constants.BackupVMCloudInitInstanceIDExtraConfigKey,
 							Value: "ec-instance-id",
 						},
 					},
@@ -171,13 +171,13 @@ func backupTests() {
 				}
 			})
 
-			It("Should skip backing up the instance ID", func() {
+			It("Should skip backing up the cloud-init instance ID", func() {
 				Expect(virtualmachine.BackupVirtualMachine(vmCtx, vcVM, nil)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMInstanceIDExtraConfigKey, "ec-instance-id")
+				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMCloudInitInstanceIDExtraConfigKey, "ec-instance-id")
 			})
 		})
 
-		When("VM instance ID does not exist in ExtraConfig and is set in annotations", func() {
+		When("VM cloud-init instance ID does not exist in ExtraConfig and is set in annotations", func() {
 
 			BeforeEach(func() {
 				vmCtx.VM.Annotations = map[string]string{
@@ -186,22 +186,22 @@ func backupTests() {
 				vmCtx.VM.UID = "vm-uid"
 			})
 
-			It("Should backup the instance ID from annotations", func() {
+			It("Should backup the cloud-init instance ID from annotations", func() {
 				Expect(virtualmachine.BackupVirtualMachine(vmCtx, vcVM, nil)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMInstanceIDExtraConfigKey, "annotation-instance-id")
+				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMCloudInitInstanceIDExtraConfigKey, "annotation-instance-id")
 			})
 		})
 
-		When("VM instance ID does not exist in ExtraConfig and is not set in annotations", func() {
+		When("VM cloud-init instance ID does not exist in ExtraConfig and is not set in annotations", func() {
 
 			BeforeEach(func() {
 				vmCtx.VM.Annotations = nil
 				vmCtx.VM.UID = "vm-uid"
 			})
 
-			It("Should backup the instance ID from annotations", func() {
+			It("Should backup the cloud-init instance ID from annotations", func() {
 				Expect(virtualmachine.BackupVirtualMachine(vmCtx, vcVM, nil)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMInstanceIDExtraConfigKey, "vm-uid")
+				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMCloudInitInstanceIDExtraConfigKey, "vm-uid")
 			})
 		})
 	})

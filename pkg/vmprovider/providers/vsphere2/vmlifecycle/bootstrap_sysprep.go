@@ -24,11 +24,11 @@ func BootstrapSysPrep(
 	bsArgs *BootstrapArgs) (*vimTypes.VirtualMachineConfigSpec, *vimTypes.CustomizationSpec, error) {
 
 	var data string
+	key := "unattend"
 
 	if equality.Semantic.DeepEqual(sysPrepSpec.Sysprep, sysprep.Sysprep{}) {
 		var err error
 
-		key := "unattend"
 		if sysPrepSpec.RawSysprep.Key != "" {
 			key = sysPrepSpec.RawSysprep.Key
 		}
@@ -46,6 +46,10 @@ func BootstrapSysPrep(
 
 	} else {
 		return nil, nil, fmt.Errorf("TODO: inlined Sysprep")
+	}
+
+	if bsArgs.TemplateRenderFn != nil {
+		data = bsArgs.TemplateRenderFn(key, data)
 	}
 
 	nicSettingMap, err := network.GuestOSCustomization(bsArgs.NetworkResults)

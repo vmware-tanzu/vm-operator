@@ -1564,7 +1564,7 @@ spec:
                     description: "DHCP6 indicates whether or not to use DHCP for IP6
                       networking. \n Please note this field is only supported if the
                       network connection supports DHCP. \n Please note this field
-                      is mutually exclusive with IP4 addresses in the Addresses field
+                      is mutually exclusive with IP6 addresses in the Addresses field
                       and the Gateway6 field. \n Please note if the Interfaces field
                       is non-empty then this field is ignored and should be specified
                       on the elements in the Interfaces list."
@@ -1591,7 +1591,7 @@ spec:
                       \n Please note this field is only supported if the network connection
                       supports manual IP allocation. \n If the network connection
                       supports manual IP allocation and the Addresses field includes
-                      at least one IP4 address, then this field is required. \n Please
+                      at least one IP6 address, then this field is required. \n Please
                       note this field is mutually exclusive with DHCP6. \n Please
                       note if the Interfaces field is non-empty then this field is
                       ignored and should be specified on the elements in the Interfaces
@@ -1638,7 +1638,7 @@ spec:
                           description: "DHCP6 indicates whether or not this interface
                             uses DHCP for IP6 networking. \n Please note this field
                             is only supported if the network connection supports DHCP.
-                            \n Please note this field is mutually exclusive with IP4
+                            \n Please note this field is mutually exclusive with IP6
                             addresses in the Addresses field and the Gateway6 field."
                           type: boolean
                         gateway4:
@@ -1656,7 +1656,7 @@ spec:
                             interface. \n Please note this field is only supported
                             if the network connection supports manual IP allocation.
                             \n If the network connection supports manual IP allocation
-                            and the Addresses field includes at least one IP4 address,
+                            and the Addresses field includes at least one IP6 address,
                             then this field is required. \n Please note the IP address
                             must include the network prefix length, ex. 2001:db8:101::1/64.
                             \n Please note this field is mutually exclusive with DHCP6."

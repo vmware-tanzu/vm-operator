@@ -202,10 +202,11 @@ func convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(
 		return nil
 	}
 
+	// TODO: v1a2 only has a Secret bootstrap field so that's what we set in v1a1. If this was created
+	// as v1a1, we need to store the serialized object to know to set either the ConfigMap or Secret field.
 	out := &VirtualMachineMetadata{}
 
 	if cloudInit := in.CloudInit; cloudInit != nil {
-		// TODO: Here we don't know if this was originally a Secret or a ConfigMap.
 		out.SecretName = cloudInit.RawCloudConfig.Name
 
 		switch cloudInit.RawCloudConfig.Key {
@@ -214,6 +215,9 @@ func convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(
 		case "user-data":
 			out.Transport = VirtualMachineMetadataCloudInitTransport
 		}
+	} else if sysprep := in.Sysprep; sysprep != nil {
+		out.SecretName = sysprep.RawSysprep.Name
+		out.Transport = VirtualMachineMetadataSysprepTransport
 	} else if in.VAppConfig != nil {
 		out.SecretName = in.VAppConfig.RawProperties
 

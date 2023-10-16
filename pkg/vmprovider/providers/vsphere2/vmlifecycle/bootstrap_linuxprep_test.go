@@ -22,7 +22,7 @@ import (
 
 var _ = Describe("LinuxPrep Bootstrap", func() {
 	const (
-		macAddr = "43-AB-B4-1B-7E-87"
+		macAddr = "43:AB:B4:1B:7E:87"
 	)
 
 	var (

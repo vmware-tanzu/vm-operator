@@ -80,7 +80,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// Please note this field is only supported if the network connection
 	// supports DHCP.
 	//
-	// Please note this field is mutually exclusive with IP4 addresses in the
+	// Please note this field is mutually exclusive with IP6 addresses in the
 	// Addresses field and the Gateway6 field.
 	//
 	// +optional
@@ -109,7 +109,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// supports manual IP allocation.
 	//
 	// If the network connection supports manual IP allocation and the
-	// Addresses field includes at least one IP4 address, then this field
+	// Addresses field includes at least one IP6 address, then this field
 	// is required.
 	//
 	// Please note the IP address must include the network prefix length, ex.
@@ -257,7 +257,7 @@ type VirtualMachineNetworkSpec struct {
 	// Please note this field is only supported if the network connection
 	// supports DHCP.
 	//
-	// Please note this field is mutually exclusive with IP4 addresses in the
+	// Please note this field is mutually exclusive with IP6 addresses in the
 	// Addresses field and the Gateway6 field.
 	//
 	// Please note if the Interfaces field is non-empty then this field is
@@ -289,7 +289,7 @@ type VirtualMachineNetworkSpec struct {
 	// supports manual IP allocation.
 	//
 	// If the network connection supports manual IP allocation and the
-	// Addresses field includes at least one IP4 address, then this field
+	// Addresses field includes at least one IP6 address, then this field
 	// is required.
 	//
 	// Please note this field is mutually exclusive with DHCP6.

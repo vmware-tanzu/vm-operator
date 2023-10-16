@@ -248,6 +248,10 @@ func unitTestsMutating() {
 	})
 
 	Describe(("ResolveImageName"), func() {
+		const (
+			dupImageStatusName    = "dup-status-name"
+			uniqueImageStatusName = "unique-status-name"
+		)
 
 		BeforeEach(func() {
 			// Replace the client with a fake client that has the index of VM images.
@@ -279,62 +283,77 @@ func unitTestsMutating() {
 			})
 
 			It("Should not mutate ImageName", func() {
-				oldVM := ctx.vm.DeepCopy()
 				mutated, err := mutation.ResolveImageName(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(mutated).To(BeFalse())
-				Expect(ctx.vm.Spec.ImageName).Should(Equal(oldVM.Spec.ImageName))
+				Expect(ctx.vm.Spec.ImageName).Should(Equal("vmi-xxx"))
 			})
 		})
 
 		Context("When VM ImageName is set to a status name matching multiple namespace scope images", func() {
 
 			BeforeEach(func() {
-				dupStatusName := "dup-status-name"
 				vmi1 := builder.DummyVirtualMachineImage("vmi-1")
-				vmi1.Status.ImageName = dupStatusName
+				vmi1.Status.ImageName = dupImageStatusName
 				vmi2 := builder.DummyVirtualMachineImage("vmi-2")
-				vmi2.Status.ImageName = dupStatusName
+				vmi2.Status.ImageName = dupImageStatusName
 				Expect(ctx.Client.Create(ctx, vmi1)).To(Succeed())
 				Expect(ctx.Client.Create(ctx, vmi2)).To(Succeed())
-				ctx.vm.Spec.ImageName = dupStatusName
+				ctx.vm.Spec.ImageName = dupImageStatusName
 			})
 
 			It("Should return an error", func() {
 				_, err := mutation.ResolveImageName(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("no single VM image exists for \"dup-status-name\""))
+				Expect(err.Error()).To(Equal("multiple VM images exist for \"dup-status-name\" in namespace scope"))
 			})
 		})
 
 		Context("When VM ImageName is set to a status name matching multiple cluster scope images", func() {
 
 			BeforeEach(func() {
-				dupStatusName := "dup-status-name"
 				cvmi1 := builder.DummyClusterVirtualMachineImage("cvmi-1")
-				cvmi1.Status.ImageName = dupStatusName
+				cvmi1.Status.ImageName = dupImageStatusName
 				cvmi2 := builder.DummyClusterVirtualMachineImage("cvmi-2")
-				cvmi2.Status.ImageName = dupStatusName
+				cvmi2.Status.ImageName = dupImageStatusName
 				Expect(ctx.Client.Create(ctx, cvmi1)).To(Succeed())
 				Expect(ctx.Client.Create(ctx, cvmi2)).To(Succeed())
-				ctx.vm.Spec.ImageName = dupStatusName
+				ctx.vm.Spec.ImageName = dupImageStatusName
 			})
 
 			It("Should return an error", func() {
 				_, err := mutation.ResolveImageName(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("no single VM image exists for \"dup-status-name\""))
+				Expect(err.Error()).To(Equal("multiple VM images exist for \"dup-status-name\" in cluster scope"))
+			})
+		})
+
+		Context("When VM ImageName is set to a status name matching one namespace and one cluster scope images", func() {
+
+			BeforeEach(func() {
+				vmi := builder.DummyVirtualMachineImage("vmi-123")
+				vmi.Status.ImageName = dupImageStatusName
+				cvmi := builder.DummyClusterVirtualMachineImage("cvmi-123")
+				cvmi.Status.ImageName = dupImageStatusName
+				Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
+				Expect(ctx.Client.Create(ctx, cvmi)).To(Succeed())
+				ctx.vm.Spec.ImageName = dupImageStatusName
+			})
+
+			It("Should return an error", func() {
+				_, err := mutation.ResolveImageName(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("multiple VM images exist for \"dup-status-name\" in namespace and cluster scope"))
 			})
 		})
 
 		Context("When VM ImageName is set to a status name matching a single namespace scope image", func() {
 
 			BeforeEach(func() {
-				uniqueStatusName := "unique-status-name"
 				vmi := builder.DummyVirtualMachineImage("vmi-123")
-				vmi.Status.ImageName = uniqueStatusName
+				vmi.Status.ImageName = uniqueImageStatusName
 				Expect(ctx.Client.Create(ctx, vmi)).To(Succeed())
-				ctx.vm.Spec.ImageName = uniqueStatusName
+				ctx.vm.Spec.ImageName = uniqueImageStatusName
 			})
 
 			It("Should mutate ImageName to the resource name of the namespace scope image", func() {
@@ -348,11 +367,10 @@ func unitTestsMutating() {
 		Context("When VM ImageName is set to a status name matching a single cluster scope image", func() {
 
 			BeforeEach(func() {
-				uniqueStatusName := "unique-status-name"
 				cvmi := builder.DummyClusterVirtualMachineImage("vmi-123")
-				cvmi.Status.ImageName = uniqueStatusName
+				cvmi.Status.ImageName = uniqueImageStatusName
 				Expect(ctx.Client.Create(ctx, cvmi)).To(Succeed())
-				ctx.vm.Spec.ImageName = uniqueStatusName
+				ctx.vm.Spec.ImageName = uniqueImageStatusName
 			})
 
 			It("Should mutate ImageName to the resource name of the cluster scope image", func() {

@@ -4,6 +4,7 @@
 package mutation_test
 
 import (
+	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -14,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -145,6 +147,34 @@ func intgTestsMutating() {
 					},
 					newInvalidNextRestartTimeTableEntries("should return an invalid field error")...,
 				)
+			})
+		})
+	})
+
+	Context("ResolveImageName", func() {
+
+		BeforeEach(func() {
+			Expect(os.Setenv(lib.VMImageRegistryFSS, lib.TrueString)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			Expect(os.Unsetenv(lib.VMImageRegistryFSS)).To(Succeed())
+		})
+
+		When("Creating VirtualMachine", func() {
+
+			When("VM ImageName is already a vmi resource name", func() {
+
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = "vmi-123"
+				})
+
+				It("Should not mutate ImageName", func() {
+					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+					modified := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).Should(Succeed())
+					Expect(modified.Spec.ImageName).Should(Equal("vmi-123"))
+				})
 			})
 		})
 	})

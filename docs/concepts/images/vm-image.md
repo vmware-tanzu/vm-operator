@@ -44,7 +44,7 @@ For example, if `vmi-0a0044d7c690bcbea` refers to an image with a friendly name 
 * There is no other `VirtualMachineImage` in the same namespace with that friendly name.
 * There is no other `ClusterVirtualMachineImage` with the same friendly name.
 
-If the friendly name unambiguously resolves to the distinct, VM image `vmi-0a0044d7c690bcbea`, then a mutation webhook replaces `spec.imageName: photonos-5-x64` with `spec.imageName: vmi-0a0044d7c690bcbea`.
+If the friendly name unambiguously resolves to the distinct, VM image `vmi-0a0044d7c690bcbea`, then a mutation webhook replaces `spec.imageName: photonos-5-x64` with `spec.imageName: vmi-0a0044d7c690bcbea`. If the friendly name resolves to multiple or no VM images, then the mutation webhook denies the request and outputs an error message accordingly.
 
 
 ## Recommended Images

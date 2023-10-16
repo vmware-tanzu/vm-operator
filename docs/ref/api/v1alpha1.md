@@ -457,6 +457,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `Gateway4` _string_ | Gateway4 is the gateway for the IPv4 address family for this device. |
+| `MacAddress` _string_ | MacAddress is the MAC address of the network device. |
 | `IPAddresses` _string array_ | IpAddresses represents one or more IP addresses assigned to the network device in CIDR notation, ex. "192.0.2.1/16". |
 
 ### NetworkInterfaceProviderReference
@@ -676,6 +677,9 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
+| `controllerName` _string_ | ControllerName describes the name of the controller responsible for reconciling VirtualMachine resources that are realized from this VirtualMachineClass. 
+ When omitted, controllers reconciling VirtualMachine resources determine the default controller name from the environment variable DEFAULT_VM_CLASS_CONTROLLER_NAME. If this environment variable is not defined or empty, it defaults to vmoperator.vmware.com/vsphere. 
+ Once a non-empty value is assigned to this field, attempts to set this field to an empty value will be silently ignored. |
 | `hardware` _[VirtualMachineClassHardware](#virtualmachineclasshardware)_ | Hardware describes the configuration of the VirtualMachineClass attributes related to virtual hardware.  The configuration specified in this field is used to customize the virtual hardware characteristics of any VirtualMachine associated with this VirtualMachineClass. |
 | `policies` _[VirtualMachineClassPolicies](#virtualmachineclasspolicies)_ | Policies describes the configuration of the VirtualMachineClass attributes related to virtual infrastructure policy.  The configuration specified in this field is used to customize various policies related to infrastructure resource consumption. |
 | `description` _string_ | Description describes the configuration of the VirtualMachineClass which is not related to virtual hardware or infrastructure policy. This field is used to address remaining specs about this VirtualMachineClass. |
@@ -748,7 +752,7 @@ _Appears in:_
 | `uuid` _string_ | Deprecated |
 | `internalId` _string_ | Deprecated |
 | `powerState` _string_ | Deprecated |
-| `imageName` _string_ | ImageName describes the display name of this VirtualMachineImage. |
+| `imageName` _string_ | ImageName describes the display name of this image. |
 | `imageSupported` _boolean_ | ImageSupported indicates whether the VirtualMachineImage is supported by VMService. A VirtualMachineImage is supported by VMService if the following conditions are true: - VirtualMachineImageV1Alpha1CompatibleCondition |
 | `conditions` _[Condition](#condition) array_ | Conditions describes the current condition information of the VirtualMachineImage object. e.g. if the OS type is supported or image is supported by VMService |
 | `contentLibraryRef` _[TypedLocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#typedlocalobjectreference-v1-core)_ | ContentLibraryRef is a reference to the source ContentLibrary/ClusterContentLibrary resource. |
@@ -891,7 +895,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `name` _string_ | Name is the name of the published object. 
+| `name` _string_ | Name is the display name of the published object. 
  If the spec.target.location.apiVersion equals imageregistry.vmware.com/v1alpha1 and the spec.target.location.kind equals ContentLibrary, then this should be the name that will show up in vCenter Content Library, not the custom resource name in the namespace. 
  If omitted then the controller will use spec.source.name + "-image". |
 | `description` _string_ | Description is the description to assign to the published object. |
@@ -1017,7 +1021,21 @@ _Appears in:_
 | --- | --- |
 | `imageName` _string_ | ImageName describes the name of a VirtualMachineImage that is to be used as the base Operating System image of the desired VirtualMachine instances.  The VirtualMachineImage resources can be introspected to discover identifying attributes that may help users to identify the desired image to use. |
 | `className` _string_ | ClassName describes the name of a VirtualMachineClass that is to be used as the overlaid resource configuration of VirtualMachine.  A VirtualMachineClass is used to further customize the attributes of the VirtualMachine instance.  See VirtualMachineClass for more description. |
-| `powerState` _VirtualMachinePowerState_ | PowerState describes the desired power state of a VirtualMachine.  Valid power states are "poweredOff" and "poweredOn". |
+| `powerState` _VirtualMachinePowerState_ | PowerState describes the desired power state of a VirtualMachine. 
+ Please note this field may be omitted when creating a new VM and will default to "poweredOn." However, once the field is set to a non-empty value, it may no longer be set to an empty value. 
+ Additionally, setting this value to "suspended" is not supported when creating a new VM. The valid values when creating a new VM are "poweredOn" and "poweredOff." An empty value is also allowed on create since this value defaults to "poweredOn" for new VMs. |
+| `powerOffMode` _VirtualMachinePowerOpMode_ | PowerOffMode describes the desired behavior when powering off a VM. 
+ There are three, supported power off modes: hard, soft, and trySoft. The first mode, hard, is the equivalent of a physical system's power cord being ripped from the wall. The soft mode requires the VM's guest to have VM Tools installed and attempts to gracefully shutdown the VM. Its variant, trySoft, first attempts a graceful shutdown, and if that fails or the VM is not in a powered off state after five minutes, the VM is halted. 
+ If omitted, the mode defaults to hard. |
+| `suspendMode` _VirtualMachinePowerOpMode_ | SuspendMode describes the desired behavior when suspending a VM. 
+ There are three, supported suspend modes: hard, soft, and trySoft. The first mode, hard, is where vSphere suspends the VM to disk without any interaction inside of the guest. The soft mode requires the VM's guest to have VM Tools installed and attempts to gracefully suspend the VM. Its variant, trySoft, first attempts a graceful suspend, and if that fails or the VM is not in a put into standby by the guest after five minutes, the VM is suspended. 
+ If omitted, the mode defaults to hard. |
+| `nextRestartTime` _string_ | NextRestartTime may be used to restart the VM, in accordance with RestartMode, by setting the value of this field to "now" (case-insensitive). 
+ A mutating webhook changes this value to the current time (UTC), which the VM controller then uses to determine the VM should be restarted by comparing the value to the timestamp of the last time the VM was restarted. 
+ Please note it is not possible to schedule future restarts using this field. The only value that users may set is the string "now" (case-insensitive). |
+| `restartMode` _VirtualMachinePowerOpMode_ | RestartMode describes the desired behavior for restarting a VM when spec.nextRestartTime is set to "now" (case-insensitive). 
+ There are three, supported suspend modes: hard, soft, and trySoft. The first mode, hard, is where vSphere resets the VM without any interaction inside of the guest. The soft mode requires the VM's guest to have VM Tools installed and asks the guest to restart the VM. Its variant, trySoft, first attempts a soft restart, and if that fails or does not complete within five minutes, the VM is hard reset. 
+ If omitted, the mode defaults to hard. |
 | `ports` _[VirtualMachinePort](#virtualmachineport) array_ | Ports is currently unused and can be considered deprecated. |
 | `vmMetadata` _[VirtualMachineMetadata](#virtualmachinemetadata)_ | VmMetadata describes any optional metadata that should be passed to the Guest OS. |
 | `storageClass` _string_ | StorageClass describes the name of a StorageClass that should be used to configure storage-related attributes of the VirtualMachine instance. |
@@ -1050,6 +1068,7 @@ _Appears in:_
 | `changeBlockTracking` _boolean_ | ChangeBlockTracking describes the CBT enablement status on the VirtualMachine. |
 | `networkInterfaces` _[NetworkInterfaceStatus](#networkinterfacestatus) array_ | NetworkInterfaces describes a list of current status information for each network interface that is desired to be attached to the VirtualMachine. |
 | `zone` _string_ | Zone describes the availability zone where the VirtualMachine has been scheduled. Please note this field may be empty when the cluster is not zone-aware. |
+| `lastRestartTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | LastRestartTime describes the last time the VM was restarted. |
 
 
 ### VirtualMachineVolume

@@ -33,18 +33,18 @@ For example, if the Content Library item's UUID is `e1968c25-dd84-4506-8dc7-9bea
 
 ## Name Resolution
 
-When a `VirtualMachine` resource's field `spec.imageName` is set to a VMI ID, the value is resolved to the `VirtualMachineImage` or `ClusterVirtualMachineImage` with that name. It is also possible to specify images based on their _friendly_ name.
+When a `VirtualMachine` resource's field `spec.imageName` is set to a VMI ID, the value is resolved to the `VirtualMachineImage` or `ClusterVirtualMachineImage` with that name. It is also possible to specify images based on their _display_ name.
 
-!!! warning "Friendly name resolution"
+!!! warning "Display name resolution"
 
-    Please note that while resolving VM images based on their friendly name was merged into VM Operator with [github.com/vmware-tanzu/vm-operator#214](https://github.com/vmware-tanzu/vm-operator/issues/214), the feature is not yet part of a shipping vSphere release.
+    Please note that while resolving VM images based on their display name was merged into VM Operator with [github.com/vmware-tanzu/vm-operator#214](https://github.com/vmware-tanzu/vm-operator/issues/214), the feature is not yet part of a shipping vSphere release.
 
-For example, if `vmi-0a0044d7c690bcbea` refers to an image with a friendly name of `photonos-5-x64`, then a user could also specify that value for `spec.imageName` as long as the following is true:
+For example, if `vmi-0a0044d7c690bcbea` refers to an image with a display name of `photonos-5-x64`, then a user could also specify that value for `spec.imageName` as long as the following is true:
 
-* There is no other `VirtualMachineImage` in the same namespace with that friendly name.
-* There is no other `ClusterVirtualMachineImage` with the same friendly name.
+* There is no other `VirtualMachineImage` in the same namespace with that display name.
+* There is no other `ClusterVirtualMachineImage` with the same display name.
 
-If the friendly name unambiguously resolves to the distinct, VM image `vmi-0a0044d7c690bcbea`, then a mutation webhook replaces `spec.imageName: photonos-5-x64` with `spec.imageName: vmi-0a0044d7c690bcbea`. If the friendly name resolves to multiple or no VM images, then the mutation webhook denies the request and outputs an error message accordingly.
+If the display name unambiguously resolves to the distinct, VM image `vmi-0a0044d7c690bcbea`, then a mutation webhook replaces `spec.imageName: photonos-5-x64` with `spec.imageName: vmi-0a0044d7c690bcbea`. If the display name resolves to multiple or no VM images, then the mutation webhook denies the request and outputs an error message accordingly.
 
 
 ## Recommended Images

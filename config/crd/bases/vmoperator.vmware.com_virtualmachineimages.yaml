@@ -20,7 +20,7 @@ spec:
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.imageName
-      name: Human-Readable-Name
+      name: Display-Name
       type: string
     - jsonPath: .spec.productInfo.version
       name: Version
@@ -251,7 +251,7 @@ spec:
                   eg: bios, efi.'
                 type: string
               imageName:
-                description: ImageName describes the display name of this VirtualMachineImage.
+                description: ImageName describes the display name of this image.
                 type: string
               imageSupported:
                 description: 'ImageSupported indicates whether the VirtualMachineImage
@@ -275,7 +275,7 @@ spec:
       status: {}
   - additionalPrinterColumns:
     - jsonPath: .status.name
-      name: Human Readable Name
+      name: Display Name
       type: string
     - jsonPath: .status.productInfo.version
       name: Image Version
@@ -437,8 +437,7 @@ spec:
                 format: int32
                 type: integer
               name:
-                description: Name describes the observed, "friendly" name for this
-                  image.
+                description: Name describes the display name of this image.
                 type: string
               osInfo:
                 description: "OSInfo describes the observed operating system information

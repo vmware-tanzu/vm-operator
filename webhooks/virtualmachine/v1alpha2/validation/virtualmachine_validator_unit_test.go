@@ -594,6 +594,7 @@ func unitTestsValidateCreate() {
 							HostName: "my-vm",
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
+									Name: "eth1",
 									Addresses: []string{
 										"192.168.1.100/24",
 										"2605:a601:a0ba:720:2ce6:776d:8be4:2496/48",
@@ -634,6 +635,7 @@ func unitTestsValidateCreate() {
 							Gateway4:  "192.168.1.1",
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
+									Name:  "eth1",
 									DHCP4: true,
 								},
 							},
@@ -641,6 +643,36 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.network.interfaces: Invalid value: "null": interfaces are mutually exclusive with deviceName,network,addresses,dhcp4,dhcp6,gateway4,gateway6,mtu,nameservers,routes,searchDomains fields`,
+					),
+				},
+			),
+
+			Entry("disallow creating VM with network interfaces resulting in a non-DNS1123 combined network interface CR name/label (`vmName-networkName-interfaceName`)",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: fmt.Sprintf("%x", make([]byte, validation.DNS1123LabelMaxLength)),
+									Network: common.PartialObjectRef{
+										Name: "dummy-nw",
+									},
+								},
+								{
+									Name: "dummy_If",
+									Network: common.PartialObjectRef{
+										Name: "dummy-nw",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						fmt.Sprintf(`spec.network.interfaces[0].name: Invalid value: "%x": must be no more than 63 characters`, make([]byte, validation.DNS1123LabelMaxLength)),
+						`spec.network.interfaces[1].name: Invalid value: "dummy_If": a lowercase RFC 1123 label must consist of lower case alphanumeric characters or '-'`,
+						`and must start and end with an alphanumeric character (e.g. 'my-name'`,
+						` or '123-abc'`,
+						`regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?')`,
 					),
 				},
 			),

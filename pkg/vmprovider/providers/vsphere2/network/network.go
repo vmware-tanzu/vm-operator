@@ -16,6 +16,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -261,12 +262,23 @@ func createNetOPNetworkInterface(
 
 	// If empty, NetOP will try to select a namespace default.
 	networkName := interfaceSpec.Network.Name
+	netIf := &netopv1alpha1.NetworkInterface{}
+	netIfKey := types.NamespacedName{
+		Namespace: vmCtx.VM.Namespace,
+		Name:      NetOPCRName(vmCtx.VM.Name, networkName, interfaceSpec.Name, true),
+	}
 
-	netIf := &netopv1alpha1.NetworkInterface{
-		ObjectMeta: metav1.ObjectMeta{
+	// check if a networkIf object exists with the older (v1a1) naming convention
+	if err := client.Get(vmCtx, netIfKey, netIf); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, err
+		}
+
+		// if notFound set the netIf to the new v1a2 naming convention
+		netIf.ObjectMeta = metav1.ObjectMeta{
 			Name:      NetOPCRName(vmCtx.VM.Name, networkName, interfaceSpec.Name, false),
 			Namespace: vmCtx.VM.Namespace,
-		},
+		}
 	}
 
 	_, err := controllerutil.CreateOrUpdate(vmCtx, client, netIf, func() error {
@@ -404,12 +416,23 @@ func createNCPNetworkInterface(
 
 	// If empty, NCP will use the namespace default.
 	networkName := interfaceSpec.Network.Name
+	vnetIf := &ncpv1alpha1.VirtualNetworkInterface{}
+	vnetIfKey := types.NamespacedName{
+		Namespace: vmCtx.VM.Namespace,
+		Name:      NCPCRName(vmCtx.VM.Name, networkName, interfaceSpec.Name, true),
+	}
 
-	vnetIf := &ncpv1alpha1.VirtualNetworkInterface{
-		ObjectMeta: metav1.ObjectMeta{
+	// check if a networkIf object exists with the older (v1a1) naming convention
+	if err := client.Get(vmCtx, vnetIfKey, vnetIf); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, err
+		}
+
+		// if notFound set the vnetIf to use the new v1a2 naming convention
+		vnetIf.ObjectMeta = metav1.ObjectMeta{
 			Name:      NCPCRName(vmCtx.VM.Name, networkName, interfaceSpec.Name, false),
 			Namespace: vmCtx.VM.Namespace,
-		},
+		}
 	}
 
 	_, err := controllerutil.CreateOrUpdate(vmCtx, client, vnetIf, func() error {

@@ -134,7 +134,7 @@ type VirtualMachinePublishRequestSource struct {
 // VirtualMachinePublishRequestTargetItem is the item part of a
 // publication request's target.
 type VirtualMachinePublishRequestTargetItem struct {
-	// Name is the name of the published object.
+	// Name is the display name of the published object.
 	//
 	// If the spec.target.location.apiVersion equals
 	// imageregistry.vmware.com/v1alpha1 and the spec.target.location.kind

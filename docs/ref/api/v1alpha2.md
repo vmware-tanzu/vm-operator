@@ -220,6 +220,20 @@ _Appears in:_
 | --- | --- |
 | `size` _Quantity_ |  |
 
+### InstanceVolumeClaimVolumeSource
+
+
+
+InstanceVolumeClaimVolumeSource contains information about the instance storage volume claimed as a PVC.
+
+_Appears in:_
+- [PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)
+
+| Field | Description |
+| --- | --- |
+| `storageClass` _string_ | StorageClass is the name of the Kubernetes StorageClass that provides the backing storage for this instance storage volume. |
+| `size` _Quantity_ | Size is the size of the requested instance storage volume. |
+
 ### LoadBalancerIngress
 
 
@@ -259,6 +273,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `Gateway4` _string_ | Gateway4 is the gateway for the IPv4 address family for this device. |
+| `MacAddress` _string_ | MacAddress is the MAC address of the network device. |
 | `IPAddresses` _string array_ | IpAddresses represents one or more IP addresses assigned to the network device in CIDR notation, ex. "192.0.2.1/16". |
 
 ### NetworkStatus
@@ -289,6 +304,21 @@ _Appears in:_
 | `key` _string_ | Key describes the OVF property's key. |
 | `type` _string_ | Type describes the OVF property's type. |
 | `default` _string_ | Default describes the OVF property's default value. |
+
+### PersistentVolumeClaimVolumeSource
+
+
+
+PersistentVolumeClaimVolumeSource is a composite for the Kubernetes corev1.PersistentVolumeClaimVolumeSource and instance storage options.
+
+_Appears in:_
+- [VirtualMachineVolumeSource](#virtualmachinevolumesource)
+
+| Field | Description |
+| --- | --- |
+| `claimName` _string_ | claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims |
+| `readOnly` _boolean_ | readOnly Will force the ReadOnly setting in VolumeMounts. Default false. |
+| `instanceVolumeClaim` _[InstanceVolumeClaimVolumeSource](#instancevolumeclaimvolumesource)_ | InstanceVolumeClaim is set if the PVC is backed by instance storage. |
 
 ### ResourcePoolSpec
 
@@ -374,7 +404,7 @@ _Appears in:_
 | --- | --- |
 | `bootDiskCapacity` _Quantity_ | BootDiskCapacity is the capacity of the VM's boot disk -- the first disk from the VirtualMachineImage from which the VM was deployed. 
  Please note it is not advised to change this value while the VM is running. Also, resizing the VM's boot disk may require actions inside of the guest to take advantage of the additional capacity. Finally, changing the size of the VM's boot disk, even increasing it, could adversely affect the VM. |
-| `defaultVolumeProvisioningMode` _string_ | DefaultVolumeProvisioningMode specifies the default provisioning mode for persistent volumes managed by this VM. |
+| `defaultVolumeProvisioningMode` _VirtualMachineVolumeProvisioningMode_ | DefaultVolumeProvisioningMode specifies the default provisioning mode for persistent volumes managed by this VM. |
 | `changeBlockTracking` _boolean_ | ChangeBlockTracking is a flag that enables incremental backup support for this VM, a feature utilized by external backup systems such as VMware Data Recovery. |
 
 ### VirtualMachineBootstrapCloudInitSpec
@@ -399,7 +429,7 @@ _Appears in:_
 
 
 
-VirtualMachineBootstrapLinuxPrepSpec
+VirtualMachineBootstrapLinuxPrepSpec describes the LinuxPrep configuration used to bootstrap the VM.
 
 _Appears in:_
 - [VirtualMachineBootstrapSpec](#virtualmachinebootstrapspec)
@@ -463,7 +493,7 @@ _Appears in:_
 
 
 
-VirtualMachineBootstrapVAppConfigSpec
+VirtualMachineBootstrapVAppConfigSpec describes the vApp configuration used to bootstrap the VM.
 
 _Appears in:_
 - [VirtualMachineBootstrapSpec](#virtualmachinebootstrapspec)
@@ -529,6 +559,9 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
+| `controllerName` _string_ | ControllerName describes the name of the controller responsible for reconciling VirtualMachine resources that are realized from this VirtualMachineClass. 
+ When omitted, controllers reconciling VirtualMachine resources determine the default controller name from the environment variable DEFAULT_VM_CLASS_CONTROLLER_NAME. If this environment variable is not defined or empty, it defaults to vmoperator.vmware.com/vsphere. 
+ Once a non-empty value is assigned to this field, attempts to set this field to an empty value will be silently ignored. |
 | `hardware` _[VirtualMachineClassHardware](#virtualmachineclasshardware)_ | Hardware describes the configuration of the VirtualMachineClass attributes related to virtual hardware. The configuration specified in this field is used to customize the virtual hardware characteristics of any VirtualMachine associated with this VirtualMachineClass. |
 | `policies` _[VirtualMachineClassPolicies](#virtualmachineclasspolicies)_ | Policies describes the configuration of the VirtualMachineClass attributes related to virtual infrastructure policy. The configuration specified in this field is used to customize various policies related to infrastructure resource consumption. |
 | `description` _string_ | Description describes the configuration of the VirtualMachineClass which is not related to virtual hardware or infrastructure policy. This field is used to address remaining specs about this VirtualMachineClass. |
@@ -615,7 +648,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `name` _string_ | Name describes the observed, "friendly" name for this image. |
+| `name` _string_ | Name describes the display name of this image. |
 | `capabilities` _string array_ | Capabilities describes the image's observed capabilities. 
  The capabilities are discerned when VM Operator reconciles an image. If the source of an image is an OVF in Content Library, then the capabilities are parsed from the OVF property capabilities.image.vmoperator.vmware.com as a comma-separated list of values. Well-known capabilities include: 
  * cloud-init * nvidia-gpu * sriov-net 
@@ -626,6 +659,8 @@ _Appears in:_
  The OS information is also added to the image resource's labels. Please refer to VirtualMachineImageOSInfo for more information. |
 | `ovfProperties` _[OVFProperty](#ovfproperty) array_ | OVFProperties describes the observed OVF properties defined for this image. |
 | `productInfo` _[VirtualMachineImageProductInfo](#virtualmachineimageproductinfo)_ | ProductInfo describes the observed product information for this image. |
+| `providerContentVersion` _string_ | ProviderContentVersion describes the content version from the provider item that this image corresponds to. If the provider of this image is a Content Library, this will be the version of the corresponding Content Library item. |
+| `providerItemID` _string_ | ProviderItemID describes the ID of the provider item that this image corresponds to. If the provider of this image is a Content Library, this ID will be that of the corresponding Content Library item. |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#condition-v1-meta) array_ | Conditions describes the observed conditions for this image. |
 
 ### VirtualMachineNetworkDHCPOptionsStatus
@@ -713,7 +748,7 @@ _Appears in:_
 
 
 
-VirtualMachineNetworkIPStackStatus describes the observed state of a a VM's IP stack.
+VirtualMachineNetworkIPStackStatus describes the observed state of a VM's IP stack.
 
 _Appears in:_
 - [VirtualMachineNetworkStatus](#virtualmachinenetworkstatus)
@@ -801,12 +836,12 @@ _Appears in:_
 | `mtu` _integer_ | MTU is the Maximum Transmission Unit size in bytes. 
  Please note this feature is available only with the following bootstrap providers: CloudInit. |
 | `nameservers` _string array_ | Nameservers is a list of IP4 and/or IP6 addresses used as DNS nameservers. 
- Please note this feature is available only with the following bootstrap providers: CloudInit, LinuxPrep, and Sysprep. 
+ Please note this feature is available only with the following bootstrap providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep). 
  Please note that Linux allows only three nameservers (https://linux.die.net/man/5/resolv.conf). |
 | `routes` _[VirtualMachineNetworkRouteSpec](#virtualmachinenetworkroutespec) array_ | Routes is a list of optional, static routes. 
  Please note this feature is available only with the following bootstrap providers: CloudInit. |
 | `searchDomains` _string array_ | SearchDomains is a list of search domains used when resolving IP addresses with DNS. 
- Please note this feature is available only with the following bootstrap providers: CloudInit, LinuxPrep, and Sysprep. |
+ Please note this feature is available only with the following bootstrap providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep). |
 
 ### VirtualMachineNetworkInterfaceStatus
 
@@ -836,8 +871,8 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `to` _string_ | To is an IP4 address. |
-| `via` _string_ | Via is an IP4 address. |
+| `to` _string_ | To is an IP4 or IP6 address. |
+| `via` _string_ | Via is an IP4 or IP6 address. |
 | `metric` _integer_ | Metric is the weight/priority of the route. |
 
 
@@ -858,7 +893,7 @@ _Appears in:_
 | `disabled` _boolean_ | Disabled is a flag that indicates whether or not to disable networking for this VM. 
  When set to true, the VM is not configured with a default interface nor any specified from the Interfaces field. |
 | `hostName` _string_ | HostName is the value the guest uses as its host name. If omitted then the name of the VM will be used. 
- Please note this feature is available only with the following bootstrap providers: CloudInit, LinuxPrep, and Sysprep. |
+ Please note this feature is available only with the following bootstrap providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep). |
 | `interfaces` _[VirtualMachineNetworkInterfaceSpec](#virtualmachinenetworkinterfacespec) array_ | Interfaces is the list of network interfaces used by this VM. 
  Please note this field is mutually exclusive with the following fields: DeviceName, Network, Addresses, DHCP4, DHCP6, Gateway4, Gateway6, MTU, Nameservers, Routes, and SearchDomains. |
 | `deviceName` _string_ | DeviceName describes the unique name of this network interface, used to distinguish it from other network interfaces attached to this VM. 
@@ -881,27 +916,25 @@ _Appears in:_
 | `gateway4` _string_ | Gateway4 is the default, IP4 gateway for this VM. 
  Please note this field is only supported if the network connection supports manual IP allocation. 
  If the network connection supports manual IP allocation and the Addresses field includes at least one IP4 address, then this field is required. 
- Please note the IP address must include the network prefix length, ex. 192.168.0.1/24. 
  Please note this field is mutually exclusive with DHCP4. 
  Please note if the Interfaces field is non-empty then this field is ignored and should be specified on the elements in the Interfaces list. |
 | `gateway6` _string_ | Gateway6 is the primary IP6 gateway for this VM. 
  Please note this field is only supported if the network connection supports manual IP allocation. 
  If the network connection supports manual IP allocation and the Addresses field includes at least one IP4 address, then this field is required. 
- Please note the IP address must include the network prefix length, ex. 2001:db8:101::1/64. 
  Please note this field is mutually exclusive with DHCP6. 
  Please note if the Interfaces field is non-empty then this field is ignored and should be specified on the elements in the Interfaces list. |
 | `mtu` _integer_ | MTU is the Maximum Transmission Unit size in bytes. 
  Please note this feature is available only with the following bootstrap providers: CloudInit. 
  Please note if the Interfaces field is non-empty then this field is ignored and should be specified on the elements in the Interfaces list. |
 | `nameservers` _string array_ | Nameservers is a list of IP4 and/or IP6 addresses used as DNS nameservers. 
- Please note this feature is available only with the following bootstrap providers: CloudInit, LinuxPrep, and Sysprep. 
+ Please note this feature is available only with the following bootstrap providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep). 
  Please note that Linux allows only three nameservers (https://linux.die.net/man/5/resolv.conf). 
  Please note if the Interfaces field is non-empty then this field is ignored and should be specified on the elements in the Interfaces list. |
 | `routes` _[VirtualMachineNetworkRouteSpec](#virtualmachinenetworkroutespec) array_ | Routes is a list of optional, static routes. 
  Please note this feature is available only with the following bootstrap providers: CloudInit. 
  Please note if the Interfaces field is non-empty then this field is ignored and should be specified on the elements in the Interfaces list. |
 | `searchDomains` _string array_ | SearchDomains is a list of search domains used when resolving IP addresses with DNS. 
- Please note this feature is available only with the following bootstrap providers: CloudInit, LinuxPrep, and Sysprep. 
+ Please note this feature is available only with the following bootstrap providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep). 
  Please note if the Interfaces field is non-empty then this field is ignored and should be specified on the elements in the Interfaces list. |
 
 ### VirtualMachineNetworkStatus
@@ -917,11 +950,11 @@ _Appears in:_
 | --- | --- |
 | `interfaces` _[VirtualMachineNetworkInterfaceStatus](#virtualmachinenetworkinterfacestatus) array_ | Interfaces describes the status of the VM's network interfaces. |
 | `primaryIP4` _string_ | PrimaryIP4 describes the VM's primary IP4 address. 
- If the bootstrap provider is CloudInit then this value is set to the value of the VM's "guestinfo.local-ipv4" property. Please see https://bit.ly/3A66vZg for more information on how this value is calculated. 
- If the bootstrap provider is anything else then this field is set to the the value of the infrastructure VM's "guest.ipAddress" field. Please see https://bit.ly/3Au0jM4 for more information. |
+ If the bootstrap provider is CloudInit then this value is set to the value of the VM's "guestinfo.local-ipv4" property. Please see https://bit.ly/3NJB534 for more information on how this value is calculated. 
+ If the bootstrap provider is anything else then this field is set to the value of the infrastructure VM's "guest.ipAddress" field. Please see https://bit.ly/3Au0jM4 for more information. |
 | `primaryIP6` _string_ | PrimaryIP6 describes the VM's primary IP6 address. 
- If the bootstrap provider is CloudInit then this value is set to the value of the VM's "guestinfo.local-ipv6" property. Please see https://bit.ly/3A66vZg for more information on how this value is calculated. 
- If the bootstrap provider is anything else then this field is set to the the value of the infrastructure VM's "guest.ipAddress" field. Please see https://bit.ly/3Au0jM4 for more information. |
+ If the bootstrap provider is CloudInit then this value is set to the value of the VM's "guestinfo.local-ipv6" property. Please see https://bit.ly/3NJB534 for more information on how this value is calculated. 
+ If the bootstrap provider is anything else then this field is set to the value of the infrastructure VM's "guest.ipAddress" field. Please see https://bit.ly/3Au0jM4 for more information. |
 | `dhcp` _[VirtualMachineNetworkDHCPStatus](#virtualmachinenetworkdhcpstatus)_ | DHCP describes the VM's observed, client-side, system-wide DHCP options. |
 | `dns` _[VirtualMachineNetworkDNSStatus](#virtualmachinenetworkdnsstatus)_ | DNS describes the VM's observed, client-side DNS configuration. |
 | `ipRoutes` _[VirtualMachineNetworkIPRouteStatus](#virtualmachinenetworkiproutestatus) array_ | IPRoutes contain the VM's routing tables for all address families. |
@@ -1204,7 +1237,21 @@ _Appears in:_
  Please note that defaulting to Sysprep for Windows images only works if the image uses a volume license key, otherwise the image's product ID is required. |
 | `network` _[VirtualMachineNetworkSpec](#virtualmachinenetworkspec)_ | Network describes the desired network configuration for the VM. 
  Please note this value may be omitted entirely and the VM will be assigned a single, virtual network interface that is connected to the Namespace's default network. |
-| `powerState` _VirtualMachinePowerState_ | PowerState describes the desired power state of a VirtualMachine. |
+| `powerState` _VirtualMachinePowerState_ | PowerState describes the desired power state of a VirtualMachine. 
+ Please note this field may be omitted when creating a new VM and will default to "PoweredOn." However, once the field is set to a non-empty value, it may no longer be set to an empty value. 
+ Additionally, setting this value to "Suspended" is not supported when creating a new VM. The valid values when creating a new VM are "PoweredOn" and "PoweredOff." An empty value is also allowed on create since this value defaults to "PoweredOn" for new VMs. |
+| `powerOffMode` _VirtualMachinePowerOpMode_ | PowerOffMode describes the desired behavior when powering off a VM. 
+ There are three, supported power off modes: Hard, Soft, and TrySoft. The first mode, Hard, is the equivalent of a physical system's power cord being ripped from the wall. The Soft mode requires the VM's guest to have VM Tools installed and attempts to gracefully shutdown the VM. Its variant, TrySoft, first attempts a graceful shutdown, and if that fails or the VM is not in a powered off state after five minutes, the VM is halted. 
+ If omitted, the mode defaults to TrySoft. |
+| `suspendMode` _VirtualMachinePowerOpMode_ | SuspendMode describes the desired behavior when suspending a VM. 
+ There are three, supported suspend modes: Hard, Soft, and TrySoft. The first mode, Hard, is where vSphere suspends the VM to disk without any interaction inside of the guest. The Soft mode requires the VM's guest to have VM Tools installed and attempts to gracefully suspend the VM. Its variant, TrySoft, first attempts a graceful suspend, and if that fails or the VM is not in a put into standby by the guest after five minutes, the VM is suspended. 
+ If omitted, the mode defaults to TrySoft. |
+| `nextRestartTime` _string_ | NextRestartTime may be used to restart the VM, in accordance with RestartMode, by setting the value of this field to "now" (case-insensitive). 
+ A mutating webhook changes this value to the current time (UTC), which the VM controller then uses to determine the VM should be restarted by comparing the value to the timestamp of the last time the VM was restarted. 
+ Please note it is not possible to schedule future restarts using this field. The only value that users may set is the string "now" (case-insensitive). |
+| `restartMode` _VirtualMachinePowerOpMode_ | RestartMode describes the desired behavior for restarting a VM when spec.nextRestartTime is set to "now" (case-insensitive). 
+ There are three, supported suspend modes: Hard, Soft, and TrySoft. The first mode, Hard, is where vSphere resets the VM without any interaction inside of the guest. The Soft mode requires the VM's guest to have VM Tools installed and asks the guest to restart the VM. Its variant, TrySoft, first attempts a soft restart, and if that fails or does not complete within five minutes, the VM is hard reset. 
+ If omitted, the mode defaults to TrySoft. |
 | `volumes` _[VirtualMachineVolume](#virtualmachinevolume) array_ | Volumes describes a list of volumes that can be mounted to the VM. |
 | `readinessProbe` _[VirtualMachineReadinessProbeSpec](#virtualmachinereadinessprobespec)_ | ReadinessProbe describes a probe used to determine the VM's ready state. |
 | `readinessGates` _[VirtualMachineReadinessGate](#virtualmachinereadinessgate) array_ | ReadinessGates, if specified, will be evaluated to determine the VM's readiness. 
@@ -1237,6 +1284,7 @@ _Appears in:_
 | `changeBlockTracking` _boolean_ | ChangeBlockTracking describes the CBT enablement status on the VM. |
 | `zone` _string_ | Zone describes the availability zone where the VirtualMachine has been scheduled. 
  Please note this field may be empty when the cluster is not zone-aware. |
+| `lastRestartTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | LastRestartTime describes the last time the VM was restarted. |
 
 
 ### VirtualMachineVolume
@@ -1251,9 +1299,8 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `name` _string_ | Name represents the volume's name. Must be a DNS_LABEL and unique within the VM. |
-| `persistentVolumeClaim` _[PersistentVolumeClaimVolumeSource](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#persistentvolumeclaimvolumesource-v1-core)_ | PersistentVolumeClaim represents a reference to a PersistentVolumeClaim in the same namespace. 
+| `persistentVolumeClaim` _[PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)_ | PersistentVolumeClaim represents a reference to a PersistentVolumeClaim in the same namespace. 
  More information is available at https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims. |
-
 
 ### VirtualMachineVolumeSource
 
@@ -1266,7 +1313,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `persistentVolumeClaim` _[PersistentVolumeClaimVolumeSource](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#persistentvolumeclaimvolumesource-v1-core)_ | PersistentVolumeClaim represents a reference to a PersistentVolumeClaim in the same namespace. 
+| `persistentVolumeClaim` _[PersistentVolumeClaimVolumeSource](#persistentvolumeclaimvolumesource)_ | PersistentVolumeClaim represents a reference to a PersistentVolumeClaim in the same namespace. 
  More information is available at https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims. |
 
 ### VirtualMachineVolumeStatus
@@ -1297,6 +1344,7 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `name` _string_ | Name is the name of a VM in the same Namespace as this web console request. |
+| `publicKey` _string_ | PublicKey is used to encrypt the status.response. This is expected to be a RSA OAEP public key in X.509 PEM format. |
 
 ### VirtualMachineWebConsoleRequestStatus
 
@@ -1309,6 +1357,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
+| `response` _string_ | Response will be the authenticated ticket corresponding to this web console request. |
 | `expiryTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.24/#time-v1-meta)_ | ExpiryTime is the time at which access via this request will expire. |
 | `proxyAddr` _string_ | ProxyAddr describes the host address and optional port used to access the VM's web console. 
  The value could be a DNS entry, IPv4, or IPv6 address, followed by an optional port. For example, valid values include: 

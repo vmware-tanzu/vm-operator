@@ -10,13 +10,13 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
-	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
 type VMDiskData struct {
@@ -35,10 +35,9 @@ func BackupVirtualMachine(
 	vmCtx context.VirtualMachineContext,
 	vcVM *object.VirtualMachine,
 	bootstrapData map[string]string) error {
-
-	resVM := res.NewVMFromObject(vcVM)
-	moVM, err := resVM.GetProperties(vmCtx, []string{"config", "runtime"})
-	if err != nil {
+	var moVM mo.VirtualMachine
+	if err := vcVM.Properties(vmCtx, vcVM.Reference(),
+		[]string{"config.extraConfig"}, &moVM); err != nil {
 		vmCtx.Logger.Error(err, "Failed to get VM properties for backup")
 		return err
 	}
@@ -88,7 +87,7 @@ func BackupVirtualMachine(
 		})
 	}
 
-	diskDataBackup, err := getDesiredDiskDataForBackup(vmCtx, resVM, curEcMap)
+	diskDataBackup, err := getDesiredDiskDataForBackup(vmCtx, vcVM, curEcMap)
 	if err != nil {
 		vmCtx.Logger.Error(err, "Failed to get VM disk data for backup")
 		return err
@@ -196,15 +195,15 @@ func getDesiredBootstrapDataForBackup(
 
 func getDesiredDiskDataForBackup(
 	ctx goctx.Context,
-	resVM *res.VirtualMachine,
+	vcVM *object.VirtualMachine,
 	ecMap map[string]string) (string, error) {
-	disks, err := resVM.GetVirtualDisks(ctx)
+	deviceList, err := vcVM.Device(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	diskData := []VMDiskData{}
-	for _, device := range disks {
+	var diskData []VMDiskData
+	for _, device := range deviceList.SelectByType((*types.VirtualDisk)(nil)) {
 		if disk, ok := device.(*types.VirtualDisk); ok {
 			vmDiskData := VMDiskData{}
 			if disk.VDiskId != nil {

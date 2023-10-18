@@ -131,32 +131,6 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(ctx goctx.Context, vm *vmopv1
 	return itemID, nil
 }
 
-// BackupVirtualMachine backs up the VM data required for restore.
-func (vs *vSphereVMProvider) BackupVirtualMachine(ctx goctx.Context, vm *vmopv1.VirtualMachine) error {
-	client, err := vs.getVcClient(ctx)
-	if err != nil {
-		return errors.Wrapf(err, "failed to get vCenter client for backing up Virtual Machine")
-	}
-
-	vmCtx := context.VirtualMachineContext{
-		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "backupVM")),
-		Logger:  log.WithValues("vmName", vm.NamespacedName()),
-		VM:      vm,
-	}
-
-	vcVM, err := vs.getVM(vmCtx, client, true)
-	if err != nil {
-		return errors.Wrapf(err, "failed to get vSphere Virtual Machine for backing up")
-	}
-
-	vmMetadata, err := GetVMMetadata(vmCtx, vs.k8sClient)
-	if err != nil {
-		return errors.Wrapf(err, "failed to get VM metadata for backing up")
-	}
-
-	return virtualmachine.BackupVirtualMachine(vmCtx, vcVM, vmMetadata.Data)
-}
-
 func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 	ctx goctx.Context,
 	vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
@@ -338,6 +312,18 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 
 		err = ses.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgsFn)
 		if err != nil {
+			return err
+		}
+	}
+
+	// Back up the VM at the end after a successful update.
+	if lib.IsVMServiceBackupRestoreFSSEnabled() {
+		vmCtx.Logger.V(4).Info("Backing up VirtualMachine")
+		data, err := GetVMMetadata(vmCtx, vs.k8sClient)
+		if err != nil {
+			return err
+		}
+		if err := virtualmachine.BackupVirtualMachine(vmCtx, vcVM, data.Data); err != nil {
 			return err
 		}
 	}

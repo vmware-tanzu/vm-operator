@@ -150,7 +150,7 @@ var _ = Describe("Customization via ConfigSpec", func() {
 			It("Updates configSpec.ExtraConfig", func() {
 				Expect(configSpec).ToNot(BeNil())
 				Expect(configSpec.ExtraConfig).To(HaveLen(2))
-				extraConfig := session.ExtraConfigToMap(configSpec.ExtraConfig)
+				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 				Expect(extraConfig["guestinfo.foo"]).To(Equal("bar"))
 				Expect(extraConfig["guestinfo.hello"]).To(Equal("world"))
 			})
@@ -313,7 +313,7 @@ var _ = Describe("Cloud-Init Customization", func() {
 			It("ConfigSpec.ExtraConfig to only have metadata", func() {
 				Expect(configSpec).ToNot(BeNil())
 				Expect(err).ToNot(HaveOccurred())
-				extraConfig := session.ExtraConfigToMap(configSpec.ExtraConfig)
+				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 				Expect(extraConfig).To(HaveLen(2))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
@@ -327,7 +327,7 @@ var _ = Describe("Cloud-Init Customization", func() {
 			It("ConfigSpec.ExtraConfig to have metadata and userdata", func() {
 				Expect(configSpec).ToNot(BeNil())
 				Expect(err).ToNot(HaveOccurred())
-				extraConfig := session.ExtraConfigToMap(configSpec.ExtraConfig)
+				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 				Expect(extraConfig).To(HaveLen(4))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
@@ -343,7 +343,7 @@ var _ = Describe("Cloud-Init Customization", func() {
 			It("ConfigSpec.ExtraConfig to have metadata and userdata", func() {
 				Expect(configSpec).ToNot(BeNil())
 				Expect(err).ToNot(HaveOccurred())
-				extraConfig := session.ExtraConfigToMap(configSpec.ExtraConfig)
+				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 				Expect(extraConfig).To(HaveLen(4))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
@@ -361,7 +361,7 @@ var _ = Describe("Cloud-Init Customization", func() {
 			It("ConfigSpec.ExtraConfig to have metadata and userdata", func() {
 				Expect(configSpec).ToNot(BeNil())
 				Expect(err).ToNot(HaveOccurred())
-				extraConfig := session.ExtraConfigToMap(configSpec.ExtraConfig)
+				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 				Expect(extraConfig).To(HaveLen(4))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
@@ -378,7 +378,7 @@ var _ = Describe("Cloud-Init Customization", func() {
 			It("the 'user-data' key overrides as the ConfigSpec.ExtraConfig userdata ", func() {
 				Expect(configSpec).ToNot(BeNil())
 				Expect(err).ToNot(HaveOccurred())
-				extraConfig := session.ExtraConfigToMap(configSpec.ExtraConfig)
+				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 				Expect(extraConfig).To(HaveLen(4))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
@@ -394,7 +394,7 @@ var _ = Describe("Cloud-Init Customization", func() {
 			It("ConfigSpec.ExtraConfig's userdata will have values from the 'value' key", func() {
 				Expect(configSpec).ToNot(BeNil())
 				Expect(err).ToNot(HaveOccurred())
-				extraConfig := session.ExtraConfigToMap(configSpec.ExtraConfig)
+				extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
 				Expect(extraConfig).To(HaveLen(4))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadata]).To(Equal("H4sIAAAAAAAA/0rOyS9N0c3MyyzRzU0tSUxJLEkEAAAA//8BAAD//wEq0o4TAAAA"))
 				Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))

@@ -320,17 +320,17 @@ func UpdateConfigSpecExtraConfig(
 	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
 		// Merge non intersecting keys from the desired config spec extra config with the class config spec extra config
 		// (ie) class config spec extra config keys takes precedence over the desired config spec extra config keys
-		ecFromClassConfigSpec := ExtraConfigToMap(classConfigSpec.ExtraConfig)
+		ecFromClassConfigSpec := util.ExtraConfigToMap(classConfigSpec.ExtraConfig)
 		mergedExtraConfig := classConfigSpec.ExtraConfig
 		for k, v := range extraConfig {
 			if _, exists := ecFromClassConfigSpec[k]; !exists {
 				mergedExtraConfig = append(mergedExtraConfig, &vimTypes.OptionValue{Key: k, Value: v})
 			}
 		}
-		extraConfig = ExtraConfigToMap(mergedExtraConfig)
+		extraConfig = util.ExtraConfigToMap(mergedExtraConfig)
 	}
 
-	configSpec.ExtraConfig = MergeExtraConfig(config.ExtraConfig, extraConfig)
+	configSpec.ExtraConfig = util.MergeExtraConfig(config.ExtraConfig, extraConfig)
 
 	// Enabling the defer-cloud-init extraConfig key for V1Alpha1Compatible images defers cloud-init from running on first boot
 	// and disables networking configurations by cloud-init. Therefore, only set the extraConfig key to enabled
@@ -341,7 +341,7 @@ func UpdateConfigSpecExtraConfig(
 	// BMV: Is this needed anymore? IMO we shouldn't have bootstrap stuff here. The EC mangling is already hard to follow.
 	emptyBSSpec := vmopv1.VirtualMachineBootstrapSpec{}
 	if vm.Spec.Bootstrap == emptyBSSpec || vm.Spec.Bootstrap.CloudInit == nil {
-		ecMap := ExtraConfigToMap(config.ExtraConfig)
+		ecMap := util.ExtraConfigToMap(config.ExtraConfig)
 		if ecMap[constants.VMOperatorV1Alpha1ExtraConfigKey] == constants.VMOperatorV1Alpha1ConfigReady &&
 			imageV1Alpha1Compatible {
 			// Set VMOperatorV1Alpha1ExtraConfigKey for v1alpha1 VirtualMachineImage compatibility.

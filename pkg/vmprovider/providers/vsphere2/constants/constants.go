@@ -134,4 +134,17 @@ const (
 	V1alpha2SubnetMask = "V1alpha2_SubnetMask"
 	// V1alpha2FormatNameservers is an alias for versioned templating function V1alpha2_FormatNameservers.
 	V1alpha2FormatNameservers = "V1alpha2_FormatNameservers"
+
+	// BackupVMKubeDataExtraConfigKey is the ExtraConfig key to the VirtualMachine
+	// resource's Kubernetes spec data, compressed using gzip and base64-encoded.
+	BackupVMKubeDataExtraConfigKey = "vmservice.virtualmachine.kubedata"
+	// BackupVMBootstrapDataExtraConfigKey is the ExtraConfig key to the VM's
+	// bootstrap data object, compressed using gzip and base64-encoded.
+	BackupVMBootstrapDataExtraConfigKey = "vmservice.virtualmachine.bootstrapdata"
+	// BackupVMDiskDataExtraConfigKey is the ExtraConfig key to the VM's disk info
+	// data in JSON, compressed using gzip and base64-encoded.
+	BackupVMDiskDataExtraConfigKey = "vmservice.virtualmachine.diskdata"
+	// BackupVMInstanceIDExtraConfigKey is the ExtraConfig key to the VM's
+	// Cloud-Init instance ID, compressed using gzip and base64-encoded.
+	BackupVMInstanceIDExtraConfigKey = "vmservice.virtualmachine.instanceid"
 )

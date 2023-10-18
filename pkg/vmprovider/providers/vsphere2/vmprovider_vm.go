@@ -167,12 +167,6 @@ func (vs *vSphereVMProvider) PublishVirtualMachine(
 	return itemID, nil
 }
 
-// BackupVirtualMachine backs up the VM data required for restore.
-func (vs *vSphereVMProvider) BackupVirtualMachine(ctx goctx.Context, vm *vmopv1.VirtualMachine) error {
-	// TODO
-	return nil
-}
-
 func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 	ctx goctx.Context,
 	vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
@@ -360,6 +354,19 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 
 		err = ses.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgsFn)
 		if err != nil {
+			return err
+		}
+	}
+
+	// Back up the VM at the end after a successful update.
+	if lib.IsVMServiceBackupRestoreFSSEnabled() {
+		vmCtx.Logger.V(4).Info("Backing up VirtualMachine")
+		// TODO: Support backing up vAppConfig bootstrap data.
+		data, _, _, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
+		if err != nil {
+			return err
+		}
+		if err := virtualmachine.BackupVirtualMachine(vmCtx, vcVM, data); err != nil {
 			return err
 		}
 	}

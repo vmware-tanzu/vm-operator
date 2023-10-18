@@ -336,15 +336,6 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContextA2) (rete
 	// Add this VM to prober manager if ReconcileNormal succeeds.
 	r.Prober.AddToProberManager(ctx.VM)
 
-	// Back up this VM if ReconcileNormal succeeds and the FSS is enabled.
-	if lib.IsVMServiceBackupRestoreFSSEnabled() {
-		if err := r.VMProvider.BackupVirtualMachine(ctx, ctx.VM); err != nil {
-			ctx.Logger.Error(err, "Failed to backup VirtualMachine")
-			r.Recorder.EmitEvent(ctx.VM, "Backup", err, false)
-			return err
-		}
-	}
-
 	ctx.Logger.Info("Finished Reconciling VirtualMachine")
 	return nil
 }

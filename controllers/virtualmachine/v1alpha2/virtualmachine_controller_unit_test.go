@@ -6,7 +6,6 @@ package v1alpha2_test
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 
 	. "github.com/onsi/ginkgo"
@@ -19,7 +18,6 @@ import (
 
 	virtualmachine "github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/v1alpha2"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober2/fake"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -154,27 +152,6 @@ func unitTestsReconcile() {
 
 			Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
 			Expect(fakeProbeManager.IsAddToProberManagerCalled).Should(BeTrue())
-		})
-
-		When("The VM Service Backup and Restore FSS is enabled", func() {
-			BeforeEach(func() {
-				Expect(os.Setenv(lib.VMServiceBackupRestoreFSS, lib.TrueString)).To(Succeed())
-			})
-
-			AfterEach(func() {
-				Expect(os.Unsetenv(lib.VMServiceBackupRestoreFSS)).To(Succeed())
-			})
-
-			It("Should call backup Virtual Machine if ReconcileNormal succeeds", func() {
-				var isBackupVirtualMachineCalled bool
-				fakeVMProvider.BackupVirtualMachineFn = func(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-					isBackupVirtualMachineCalled = true
-					return nil
-				}
-
-				Expect(reconciler.ReconcileNormal(vmCtx)).Should(Succeed())
-				Expect(isBackupVirtualMachineCalled).Should(BeTrue())
-			})
 		})
 	})
 

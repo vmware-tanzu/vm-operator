@@ -31,7 +31,6 @@ type funcsA2 struct {
 	DeleteVirtualMachineFn         func(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	PublishVirtualMachineFn        func(ctx context.Context, vm *vmopv1.VirtualMachine,
 		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
-	BackupVirtualMachineFn             func(ctx context.Context, vm *vmopv1.VirtualMachine) error
 	GetVirtualMachineGuestHeartbeatFn  func(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
 	GetVirtualMachineWebMKSTicketFn    func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error)
 	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (int32, error)
@@ -111,17 +110,6 @@ func (s *VMProviderA2) PublishVirtualMachine(ctx context.Context, vm *vmopv1.Vir
 
 	s.AddToVMPublishMap(actID, vimTypes.TaskInfoStateSuccess)
 	return "dummy-id", nil
-}
-
-func (s *VMProviderA2) BackupVirtualMachine(ctx context.Context, vm *vmopv1.VirtualMachine) error {
-	s.Lock()
-	defer s.Unlock()
-
-	if s.BackupVirtualMachineFn != nil {
-		return s.BackupVirtualMachineFn(ctx, vm)
-	}
-
-	return nil
 }
 
 func (s *VMProviderA2) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {

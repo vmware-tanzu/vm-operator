@@ -143,9 +143,9 @@ func getGuestNetworkStatus(guestInfo *types.GuestInfo) *vmopv1.VirtualMachineNet
 		}
 	}
 
-	if len(guestInfo.Net) > 0 {
-		status.Interfaces = make([]vmopv1.VirtualMachineNetworkInterfaceStatus, 0, len(guestInfo.Net))
-		for i := range guestInfo.Net {
+	for i := range guestInfo.Net {
+		// Skip pseudo devices.
+		if guestInfo.Net[i].DeviceConfigId != -1 {
 			status.Interfaces = append(status.Interfaces, guestNicInfoToInterfaceStatus(i, &guestInfo.Net[i]))
 		}
 	}
@@ -161,7 +161,6 @@ func guestNicInfoToInterfaceStatus(idx int, guestNicInfo *types.GuestNicInfo) vm
 	status := vmopv1.VirtualMachineNetworkInterfaceStatus{}
 
 	// TODO: What name exactly? The CRD name may be the most useful here but hard to line that up.
-	// BMV: DeviceConfigId will be -1 for our pseudo-y interfaces. Most likely want to just skip those devices.
 	status.Name = fmt.Sprintf("nic-%d-%d", idx, guestNicInfo.DeviceConfigId)
 	status.IP.MACAddr = guestNicInfo.MacAddress
 
@@ -267,9 +266,33 @@ func convertNetIPRouteConfigInfo(routeConfig *types.NetIpRouteConfigInfo) []vmop
 		return nil
 	}
 
-	// TODO: Prob only want to show default routes. Will be very verbose on TKG nodes.
-	out := make([]vmopv1.VirtualMachineNetworkIPRouteStatus, 0, len(routeConfig.IpRoute))
+	// Try to skip routes that are likely not interesting or useful to external users - especially on
+	// TKG nodes - that would otherwise just clutter the Status output.
+	skipRoute := func(ipRoute types.NetIpRouteConfigInfoIpRoute) bool {
+		network, prefix := ipRoute.Network, ipRoute.PrefixLength
+
+		ip := net.ParseIP(network)
+		if ip == nil {
+			return true
+		}
+
+		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return true
+		}
+
+		if ip.To4() != nil {
+			return prefix == 32
+		}
+
+		return ip.To16() == nil || ip.IsInterfaceLocalMulticast() || ip.IsMulticast()
+	}
+
+	out := make([]vmopv1.VirtualMachineNetworkIPRouteStatus, 0, 1)
 	for _, ipRoute := range routeConfig.IpRoute {
+		if skipRoute(ipRoute) {
+			continue
+		}
+
 		out = append(out, vmopv1.VirtualMachineNetworkIPRouteStatus{
 			Gateway: vmopv1.VirtualMachineNetworkIPRouteGatewayStatus{
 				Device:  ipRoute.Gateway.Device,

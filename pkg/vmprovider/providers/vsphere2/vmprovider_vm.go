@@ -364,9 +364,23 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		// TODO: Support backing up vAppConfig bootstrap data.
 		data, _, _, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
 		if err != nil {
+			vmCtx.Logger.Error(err, "Failed to get VM's bootstrap data for backup")
 			return err
 		}
-		if err := virtualmachine.BackupVirtualMachine(vmCtx, vcVM, data); err != nil {
+		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
+		if err != nil {
+			vmCtx.Logger.Error(err, "Failed to get VM's attached PVCs for backup")
+			return err
+		}
+
+		backupOpts := virtualmachine.BackupOptions{
+			VMCtx:         vmCtx,
+			VcVM:          vcVM,
+			BootstrapData: data,
+			DiskUUIDToPVC: diskUUIDToPVC,
+		}
+		if err := virtualmachine.BackupVirtualMachine(backupOpts); err != nil {
+			vmCtx.Logger.Error(err, "Failed to backup VM")
 			return err
 		}
 	}

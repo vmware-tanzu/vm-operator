@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -28,6 +29,13 @@ const (
 	VMServiceBackupRestoreFSS     = "FSS_WCP_VMSERVICE_BACKUPRESTORE"
 	MaxCreateVMsOnProviderEnv     = "MAX_CREATE_VMS_ON_PROVIDER"
 	DefaultMaxCreateVMsOnProvider = 80
+
+	// PrivilegedUsersEnv is the key for the environment variable
+	// containing a set of privileged users. Currently, users pointed by
+	// this env variable (if VM Service Backup/Restore FSS is enabled),
+	// along with kube-admin and system users are allowed to make changes
+	// to certain restricted annotations on a VirtualMachine resource.
+	PrivilegedUsersEnv = "PRIVILEGED_USERS"
 
 	InstanceStoragePVPlacementFailedTTLEnv = "INSTANCE_STORAGE_PV_PLACEMENT_FAILED_TTL"
 	// DefaultInstanceStoragePVPlacementFailedTTL is the default wait time before declaring PV placement failed
@@ -130,6 +138,22 @@ var IsWindowsSysprepFSSEnabled = func() bool {
 
 var IsVMServiceBackupRestoreFSSEnabled = func() bool {
 	return os.Getenv(VMServiceBackupRestoreFSS) == TrueString
+}
+
+// GetPrivilegedUsers returns a set of privileged users specified as comma
+// separated values via the environment variable "PRIVILEGED_USERS".
+func GetPrivilegedUsers() map[string]struct{} {
+	privilegedUsers := make(map[string]struct{})
+
+	parts := strings.Split(strings.TrimSpace(os.Getenv(PrivilegedUsersEnv)), ",")
+	for _, part := range parts {
+		part := strings.TrimSpace(part)
+		if len(part) > 0 {
+			privilegedUsers[part] = struct{}{}
+		}
+	}
+
+	return privilegedUsers
 }
 
 // MaxConcurrentCreateVMsOnProvider returns the percentage of reconciler

@@ -25,6 +25,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
+	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -174,9 +175,10 @@ var errInvalidNetworkProviderTypeNamed = field.Invalid(
 //nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
-		ctx                  *unitValidatingWebhookContext
-		oldFaultDomainsFunc  func() bool
-		oldImageRegistryFunc func() bool
+		ctx                           *unitValidatingWebhookContext
+		oldFaultDomainsFunc           func() bool
+		oldImageRegistryFunc          func() bool
+		oldVMServiceBackupRestoreFunc func() bool
 	)
 
 	const (
@@ -225,6 +227,7 @@ func unitTestsValidateCreate() {
 		powerState                        vmopv1.VirtualMachinePowerState
 		nextRestartTime                   string
 		adminOnlyAnnotations              bool
+		isPrivilegedUser                  bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -377,6 +380,21 @@ func unitTestsValidateCreate() {
 			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
 		}
 
+		if args.isPrivilegedUser {
+			lib.IsVMServiceBackupRestoreFSSEnabled = func() bool {
+				return true
+			}
+
+			fakeWCPUser := "sso:wcp-12345-fake-machineid-67890@vsphere.local"
+			Expect(os.Setenv(lib.PrivilegedUsersEnv, fakeWCPUser)).To(Succeed())
+			defer func() {
+				Expect(os.Unsetenv(lib.PrivilegedUsersEnv)).To(Succeed())
+			}()
+
+			ctx.UserInfo.Username = fakeWCPUser
+			ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
+		}
+
 		ctx.vm.Spec.PowerState = args.powerState
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 
@@ -410,11 +428,13 @@ func unitTestsValidateCreate() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
 		oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
 		oldImageRegistryFunc = lib.IsWCPVMImageRegistryEnabled
+		oldVMServiceBackupRestoreFunc = lib.IsVMServiceBackupRestoreFSSEnabled
 	})
 
 	AfterEach(func() {
 		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
 		lib.IsWCPVMImageRegistryEnabled = oldImageRegistryFunc
+		lib.IsVMServiceBackupRestoreFSSEnabled = oldVMServiceBackupRestoreFunc
 		ctx = nil
 	})
 
@@ -523,12 +543,15 @@ func unitTestsValidateCreate() {
 				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 			}, ", "), nil),
 		Entry("should allow creating VM with admin-only annotations set by service user", createArgs{isServiceUser: true, adminOnlyAnnotations: true}, true, nil, nil),
+
+		Entry("should allow creating VM with admin-only annotations set by WCP user when the Backup/Restore FSS is enabled", createArgs{adminOnlyAnnotations: true, isPrivilegedUser: true}, true, nil, nil),
 	)
 }
 
 func unitTestsValidateUpdate() {
 	var (
-		ctx *unitValidatingWebhookContext
+		ctx                           *unitValidatingWebhookContext
+		oldVMServiceBackupRestoreFunc func() bool
 	)
 
 	type updateArgs struct {
@@ -553,6 +576,7 @@ func unitTestsValidateUpdate() {
 		addAdminOnlyAnnotations         bool
 		updateAdminOnlyAnnotations      bool
 		removeAdminOnlyAnnotations      bool
+		isPrivilegedUser                bool
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -616,6 +640,22 @@ func unitTestsValidateUpdate() {
 			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = updateSuffix
 		}
 
+		if args.isPrivilegedUser {
+			lib.IsVMServiceBackupRestoreFSSEnabled = func() bool {
+				return true
+			}
+
+			privilegedUsersEnvList := "  , foo ,bar , test,  "
+			privilegedUser := "bar"
+			Expect(os.Setenv(lib.PrivilegedUsersEnv, privilegedUsersEnvList)).To(Succeed())
+			defer func() {
+				Expect(os.Unsetenv(lib.PrivilegedUsersEnv)).To(Succeed())
+			}()
+
+			ctx.UserInfo.Username = privilegedUser
+			ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
+		}
+
 		// Named network provider
 		undoNamedNetProvider := initNamedNetworkProviderConfig(
 			ctx,
@@ -646,9 +686,11 @@ func unitTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
+		oldVMServiceBackupRestoreFunc = lib.IsVMServiceBackupRestoreFSSEnabled
 	})
 
 	AfterEach(func() {
+		lib.IsVMServiceBackupRestoreFSSEnabled = oldVMServiceBackupRestoreFunc
 		ctx = nil
 	})
 
@@ -725,8 +767,12 @@ func unitTestsValidateUpdate() {
 				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 			}, ", "), nil),
 		Entry("should allow adding admin-only annotations by service user", updateArgs{isServiceUser: true, addAdminOnlyAnnotations: true}, true, nil, nil),
-		Entry("should allow adding admin-only annotations by service user", updateArgs{isServiceUser: true, updateAdminOnlyAnnotations: true}, true, nil, nil),
-		Entry("should allow adding admin-only annotations by service user", updateArgs{isServiceUser: true, removeAdminOnlyAnnotations: true}, true, nil, nil),
+		Entry("should allow updating admin-only annotations by service user", updateArgs{isServiceUser: true, updateAdminOnlyAnnotations: true}, true, nil, nil),
+		Entry("should allow removing admin-only annotations by service user", updateArgs{isServiceUser: true, removeAdminOnlyAnnotations: true}, true, nil, nil),
+
+		Entry("should allow adding admin-only annotations by privileged users", updateArgs{isPrivilegedUser: true, addAdminOnlyAnnotations: true}, true, nil, nil),
+		Entry("should allow updating admin-only annotations by privileged users", updateArgs{isPrivilegedUser: true, updateAdminOnlyAnnotations: true}, true, nil, nil),
+		Entry("should allow removing admin-only annotations by privileged users", updateArgs{isPrivilegedUser: true, removeAdminOnlyAnnotations: true}, true, nil, nil),
 	)
 
 	When("the update is performed while object deletion", func() {

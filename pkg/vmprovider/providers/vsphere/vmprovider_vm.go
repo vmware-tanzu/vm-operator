@@ -321,9 +321,23 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		vmCtx.Logger.V(4).Info("Backing up VirtualMachine")
 		data, err := GetVMMetadata(vmCtx, vs.k8sClient)
 		if err != nil {
+			vmCtx.Logger.Error(err, "Failed to get VM's metadata for backup")
 			return err
 		}
-		if err := virtualmachine.BackupVirtualMachine(vmCtx, vcVM, data.Data); err != nil {
+		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
+		if err != nil {
+			vmCtx.Logger.Error(err, "Failed to get VM's attached PVCs for backup")
+			return err
+		}
+
+		backupOpts := virtualmachine.BackupOptions{
+			VMCtx:         vmCtx,
+			VcVM:          vcVM,
+			BootstrapData: data.Data,
+			DiskUUIDToPVC: diskUUIDToPVC,
+		}
+		if err := virtualmachine.BackupVirtualMachine(backupOpts); err != nil {
+			vmCtx.Logger.Error(err, "Failed to back up VM")
 			return err
 		}
 	}

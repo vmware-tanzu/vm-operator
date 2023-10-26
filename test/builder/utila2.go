@@ -156,22 +156,13 @@ func DummyVirtualMachineA2() *vmopv1.VirtualMachine {
 					},
 				},
 			},
-			/* TODO: Convert this if/as needed
-			NetworkInterfaces: []vmopv1.VirtualMachineNetworkInterface{
-				{
-					NetworkName: DummyNetworkName,
-					NetworkType: "",
-				},
-				{
-					NetworkName: DummyNetworkName + "-2",
-					NetworkType: "",
+			Network: vmopv1.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth0",
+					},
 				},
 			},
-			VmMetadata: &vmopv1.VirtualMachineMetadata{
-					ConfigMapName: DummyMetadataCMName,
-					Transport:     "ExtraConfig",
-			},
-			*/
 		},
 	}
 }

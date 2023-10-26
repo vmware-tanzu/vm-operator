@@ -314,39 +314,8 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 	networkSpec := &vm.Spec.Network
 	networkPath := field.NewPath("spec", "network")
 
-	defaultNetworkInterface := vmopv1.VirtualMachineNetworkInterfaceSpec{
-		Name:          networkSpec.DeviceName,
-		Addresses:     networkSpec.Addresses,
-		DHCP4:         networkSpec.DHCP4,
-		DHCP6:         networkSpec.DHCP6,
-		Gateway4:      networkSpec.Gateway4,
-		Gateway6:      networkSpec.Gateway6,
-		MTU:           networkSpec.MTU,
-		Nameservers:   networkSpec.Nameservers,
-		Routes:        networkSpec.Routes,
-		SearchDomains: networkSpec.SearchDomains,
-	}
-	if networkSpec.Network != nil {
-		defaultNetworkInterface.Network = *networkSpec.Network
-	}
-	hasDefaultInterface := !equality.Semantic.DeepEqual(defaultNetworkInterface, vmopv1.VirtualMachineNetworkInterfaceSpec{})
-
-	if hasDefaultInterface {
-		if defaultNetworkInterface.Name == "" {
-			defaultNetworkInterface.Name = "eth0"
-		}
-		allErrs = append(allErrs, v.validateNetworkInterfaceSpec(networkPath, defaultNetworkInterface, vm.Name)...)
-	}
-
 	if len(networkSpec.Interfaces) > 0 {
 		p := networkPath.Child("interfaces")
-
-		if hasDefaultInterface {
-			// TODO: Better phrasing of this error message?
-			allErrs = append(allErrs, field.Invalid(p, nil,
-				"interfaces are mutually exclusive with deviceName,network,addresses,dhcp4,dhcp6,gateway4,"+
-					"gateway6,mtu,nameservers,routes,searchDomains fields"))
-		}
 
 		for i, interfaceSpec := range networkSpec.Interfaces {
 			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(p.Index(i), interfaceSpec, vm.Name)...)

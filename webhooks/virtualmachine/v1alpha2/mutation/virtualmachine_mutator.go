@@ -12,6 +12,8 @@ import (
 
 	"github.com/pkg/errors"
 	admissionv1 "k8s.io/api/admission/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -19,14 +21,22 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
+	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
+
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 )
 
 const (
-	webHookName = "default"
+	webHookName          = "default"
+	defaultInterfaceName = "eth0"
+	defaultNamedNetwork  = "VM Network"
 )
 
 // +kubebuilder:webhook:path=/default-mutate-vmoperator-vmware-com-v1alpha2-virtualmachine,mutating=true,failurePolicy=fail,groups=vmoperator.vmware.com,resources=virtualmachines,verbs=create;update,versions=v1alpha2,name=default.mutating.virtualmachine.v1alpha2.vmoperator.vmware.com,sideEffects=None,admissionReviewVersions=v1;v1beta1
@@ -100,6 +110,9 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 
 	switch ctx.Op {
 	case admissionv1.Create:
+		if AddDefaultNetworkInterface(ctx, m.client, modified) {
+			wasMutated = true
+		}
 		if mutated, err := ResolveImageName(ctx, m.client, modified); err != nil {
 			return admission.Denied(err.Error())
 		} else if mutated {
@@ -174,6 +187,70 @@ func SetNextRestartTime(
 		field.NewPath("spec", "nextRestartTime"),
 		newVM.Spec.NextRestartTime,
 		`may only be set to "now"`)
+}
+
+// AddDefaultNetworkInterface adds default network interface to a VM if the NoNetwork annotation is not set
+// and no NetworkInterface is specified.
+// Return true if default NetworkInterface is added, otherwise return false.
+func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client client.Client, vm *vmopv1.VirtualMachine) bool {
+	// Continue to support this ad-hoc v1a1 annotation. I don't think need or want to have this annotation
+	// in v1a2: Disabled mostly already covers it. We could map between the two for version conversion, but
+	// they do mean slightly different things, and kind of complicated to know what to do like if the annotation
+	// is removed.
+	if _, ok := vm.Annotations[v1alpha1.NoDefaultNicAnnotation]; ok {
+		return false
+	}
+
+	if vm.Spec.Network.Disabled || len(vm.Spec.Network.Interfaces) != 0 {
+		return false
+	}
+
+	kind, apiVersion, netName := "", "", ""
+	switch lib.GetNetworkProviderType() {
+	case lib.NetworkProviderTypeNSXT:
+		kind = "VirtualNetwork"
+		apiVersion = ncpv1alpha1.SchemeGroupVersion.String()
+	case lib.NetworkProviderTypeVDS:
+		kind = "Network"
+		apiVersion = netopv1alpha1.SchemeGroupVersion.String()
+	case lib.NetworkProviderTypeNamed:
+		netName, _ = getProviderConfigMap(ctx, client)
+		if netName == "" {
+			netName = defaultNamedNetwork
+		}
+	default:
+		return false
+	}
+
+	vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+		{
+			Name: defaultInterfaceName,
+			Network: common.PartialObjectRef{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       kind,
+					APIVersion: apiVersion,
+				},
+				Name: netName,
+			},
+		},
+	}
+
+	return true
+}
+
+// getProviderConfigMap is used in e2e tests.
+func getProviderConfigMap(ctx *context.WebhookRequestContext, c client.Client) (string, error) {
+	var obj corev1.ConfigMap
+	if err := c.Get(
+		ctx,
+		client.ObjectKey{
+			Name:      config.ProviderConfigMapName,
+			Namespace: ctx.Namespace,
+		},
+		&obj); err != nil {
+		return "", err
+	}
+	return obj.Data["Network"], nil
 }
 
 // ResolveImageName mutates the vm.spec.imageName if it's not set to a vmi name

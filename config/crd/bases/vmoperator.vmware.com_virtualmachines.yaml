@@ -1524,79 +1524,12 @@ spec:
                   the VM will be assigned a single, virtual network interface that
                   is connected to the Namespace's default network."
                 properties:
-                  addresses:
-                    description: "Addresses is an optional list of IP4 or IP6 addresses
-                      to assign to the VM. \n Please note this field is only supported
-                      if the connected network supports manual IP allocation. \n Please
-                      note IP4 and IP6 addresses must include the network prefix length,
-                      ex. 192.168.0.10/24 or 2001:db8:101::a/64. \n Please note this
-                      field may not contain IP4 addresses if DHCP4 is set to true
-                      or IP6 addresses if DHCP6 is set to true. \n Please note if
-                      the Interfaces field is non-empty then this field is ignored
-                      and should be specified on the elements in the Interfaces list."
-                    items:
-                      type: string
-                    type: array
-                  deviceName:
-                    description: "DeviceName describes the unique name of this network
-                      interface, used to distinguish it from other network interfaces
-                      attached to this VM. \n This value is also used to rename the
-                      device inside the guest when the bootstrap provider is CloudInit.
-                      Please note it is up to the user to ensure the provided device
-                      name does not conflict with any other devices inside the guest,
-                      ex. dvd, cdrom, sda, etc. \n Please note if the Interfaces field
-                      is non-empty then this field is ignored and should be specified
-                      on the elements in the Interfaces list. \n If the Interfaces
-                      field is empty and this field is not specified, then the default
-                      interface's name will be eth0."
-                    pattern: ^\w\w+$
-                    type: string
-                  dhcp4:
-                    description: "DHCP4 indicates whether or not to use DHCP for IP4
-                      networking. \n Please note this field is only supported if the
-                      network connection supports DHCP. \n Please note this field
-                      is mutually exclusive with IP4 addresses in the Addresses field
-                      and the Gateway4 field. \n Please note if the Interfaces field
-                      is non-empty then this field is ignored and should be specified
-                      on the elements in the Interfaces list."
-                    type: boolean
-                  dhcp6:
-                    description: "DHCP6 indicates whether or not to use DHCP for IP6
-                      networking. \n Please note this field is only supported if the
-                      network connection supports DHCP. \n Please note this field
-                      is mutually exclusive with IP6 addresses in the Addresses field
-                      and the Gateway6 field. \n Please note if the Interfaces field
-                      is non-empty then this field is ignored and should be specified
-                      on the elements in the Interfaces list."
-                    type: boolean
                   disabled:
                     description: "Disabled is a flag that indicates whether or not
                       to disable networking for this VM. \n When set to true, the
                       VM is not configured with a default interface nor any specified
                       from the Interfaces field."
                     type: boolean
-                  gateway4:
-                    description: "Gateway4 is the default, IP4 gateway for this VM.
-                      \n Please note this field is only supported if the network connection
-                      supports manual IP allocation. \n If the network connection
-                      supports manual IP allocation and the Addresses field includes
-                      at least one IP4 address, then this field is required. \n Please
-                      note this field is mutually exclusive with DHCP4. \n Please
-                      note if the Interfaces field is non-empty then this field is
-                      ignored and should be specified on the elements in the Interfaces
-                      list."
-                    type: string
-                  gateway6:
-                    description: "Gateway6 is the primary IP6 gateway for this VM.
-                      \n Please note this field is only supported if the network connection
-                      supports manual IP allocation. \n If the network connection
-                      supports manual IP allocation and the Addresses field includes
-                      at least one IP6 address, then this field is required. \n Please
-                      note this field is mutually exclusive with DHCP6. \n Please
-                      note if the Interfaces field is non-empty then this field is
-                      ignored and should be specified on the elements in the Interfaces
-                      list."
-                    type: string
                   hostName:
                     description: "HostName is the value the guest uses as its host
                       name. If omitted then the name of the VM will be used. \n Please
@@ -1605,9 +1538,9 @@ spec:
                     type: string
                   interfaces:
                     description: "Interfaces is the list of network interfaces used
-                      by this VM. \n Please note this field is mutually exclusive
-                      with the following fields: DeviceName, Network, Addresses, DHCP4,
-                      DHCP6, Gateway4, Gateway6, MTU, Nameservers, Routes, and SearchDomains."
+                      by this VM. \n If the Interfaces field is empty and the Disabled
+                      field is false, then a default interface with the name eth0
+                      will be created."
                     items:
                       description: VirtualMachineNetworkInterfaceSpec describes the
                         desired state of a VM's network interface.
@@ -1754,89 +1687,6 @@ spec:
                     x-kubernetes-list-map-keys:
                     - name
                     x-kubernetes-list-type: map
-                  mtu:
-                    description: "MTU is the Maximum Transmission Unit size in bytes.
-                      \n Please note this feature is available only with the following
-                      bootstrap providers: CloudInit. \n Please note if the Interfaces
-                      field is non-empty then this field is ignored and should be
-                      specified on the elements in the Interfaces list."
-                    format: int64
-                    type: integer
-                  nameservers:
-                    description: "Nameservers is a list of IP4 and/or IP6 addresses
-                      used as DNS nameservers. \n Please note this feature is available
-                      only with the following bootstrap providers: CloudInit, LinuxPrep,
-                      and Sysprep (except for RawSysprep). \n Please note that Linux
-                      allows only three nameservers (https://linux.die.net/man/5/resolv.conf).
-                      \n Please note if the Interfaces field is non-empty then this
-                      field is ignored and should be specified on the elements in
-                      the Interfaces list."
-                    items:
-                      type: string
-                    type: array
-                  network:
-                    description: "Network is the optional name of the network resource
-                      to which this VM is connected. \n Please note if the Interfaces
-                      field is non-empty then this field is ignored. \n If networking
-                      is not disabled, no interfaces are defined, and this value is
-                      omitted, then the VM will be provided a single virtual network
-                      interface and connected to the Namespace's default network."
-                    properties:
-                      apiVersion:
-                        description: 'APIVersion defines the versioned schema of this
-                          representation of an object. Servers should convert recognized
-                          schemas to the latest internal value, and may reject unrecognized
-                          values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-                        type: string
-                      kind:
-                        description: 'Kind is a string value representing the REST
-                          resource this object represents. Servers may infer this
-                          from the endpoint the client submits requests to. Cannot
-                          be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-                        type: string
-                      name:
-                        description: 'Name refers to a unique resource in the current
-                          namespace. More info: http://kubernetes.io/docs/user-guide/identifiers#names'
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  routes:
-                    description: "Routes is a list of optional, static routes. \n
-                      Please note this feature is available only with the following
-                      bootstrap providers: CloudInit. \n Please note if the Interfaces
-                      field is non-empty then this field is ignored and should be
-                      specified on the elements in the Interfaces list."
-                    items:
-                      description: VirtualMachineNetworkRouteSpec defines a static
-                        route for a guest.
-                      properties:
-                        metric:
-                          description: Metric is the weight/priority of the route.
-                          format: int32
-                          type: integer
-                        to:
-                          description: To is an IP4 or IP6 address.
-                          type: string
-                        via:
-                          description: Via is an IP4 or IP6 address.
-                          type: string
-                      required:
-                      - metric
-                      - to
-                      - via
-                      type: object
-                    type: array
-                  searchDomains:
-                    description: "SearchDomains is a list of search domains used when
-                      resolving IP addresses with DNS. \n Please note this feature
-                      is available only with the following bootstrap providers: CloudInit,
-                      LinuxPrep, and Sysprep (except for RawSysprep). \n Please note
-                      if the Interfaces field is non-empty then this field is ignored
-                      and should be specified on the elements in the Interfaces list."
-                    items:
-                      type: string
-                    type: array
                 type: object
               nextRestartTime:
                 description: "NextRestartTime may be used to restart the VM, in accordance

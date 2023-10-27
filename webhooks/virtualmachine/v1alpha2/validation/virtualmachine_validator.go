@@ -335,7 +335,7 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 		if defaultNetworkInterface.Name == "" {
 			defaultNetworkInterface.Name = "eth0"
 		}
-		allErrs = append(allErrs, v.validateNetworkInterfaceSpec(networkPath, defaultNetworkInterface)...)
+		allErrs = append(allErrs, v.validateNetworkInterfaceSpec(networkPath, defaultNetworkInterface, vm.Name)...)
 	}
 
 	if len(networkSpec.Interfaces) > 0 {
@@ -349,7 +349,7 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 		}
 
 		for i, interfaceSpec := range networkSpec.Interfaces {
-			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(p.Index(i), interfaceSpec)...)
+			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(p.Index(i), interfaceSpec, vm.Name)...)
 		}
 	}
 
@@ -358,11 +358,23 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 
 func (v validator) validateNetworkInterfaceSpec(
 	interfacePath *field.Path,
-	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec) field.ErrorList {
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+	vmName string) field.ErrorList {
 
 	var allErrs field.ErrorList
+	var networkIfCRName string
+	networkName := interfaceSpec.Network.Name
 
-	// TODO: Ensure valid name once we finalize the naming convention for the network interface CRD.
+	// The networkInterface CR name ("vmName-networkName-interfaceName" or "vmName-interfaceName") needs to be a DNS1123 Label
+	if networkName != "" {
+		networkIfCRName = fmt.Sprintf("%s-%s-%s", vmName, networkName, interfaceSpec.Name)
+	} else {
+		networkIfCRName = fmt.Sprintf("%s-%s", vmName, interfaceSpec.Name)
+	}
+
+	for _, msg := range validation.NameIsDNSLabel(networkIfCRName, false) {
+		allErrs = append(allErrs, field.Invalid(interfacePath.Child("name"), interfaceSpec.Name, msg))
+	}
 
 	var ipv4Addrs, ipv6Addrs []string
 	for i, ipCIDR := range interfaceSpec.Addresses {

@@ -35,8 +35,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 		vm             *vmopv1.VirtualMachine
 		interfaceSpecs []vmopv1.VirtualMachineNetworkInterfaceSpec
 
-		results network.NetworkInterfaceResults
-		err     error
+		results     network.NetworkInterfaceResults
+		err         error
+		initObjects []client.Object
 	)
 
 	BeforeEach(func() {
@@ -59,7 +60,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 	})
 
 	JustBeforeEach(func() {
-		ctx = suite.NewTestContextForVCSim(testConfig)
+		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
 
 		results, err = network.CreateAndWaitForNetworkInterfaces(
 			vmCtx,
@@ -73,6 +74,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
+		initObjects = nil
 	})
 
 	Context("Named Network", func() {
@@ -225,6 +227,95 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 				Expect(ipConfig.IsIPv4).To(BeFalse())
 				Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
 			})
+
+			When("v1a1 network interface exists", func() {
+				BeforeEach(func() {
+					netIf := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, true),
+							Namespace: vm.Namespace,
+						},
+						Spec: netopv1alpha1.NetworkInterfaceSpec{
+							NetworkName: networkName,
+							Type:        netopv1alpha1.NetworkInterfaceTypeVMXNet3,
+						},
+					}
+
+					initObjects = append(initObjects, netIf)
+				})
+
+				It("returns success", func() {
+					// Assert test env is what we expect.
+					Expect(ctx.NetworkRef.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
+
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NetOP reconcile", func() {
+						netInterface := &netopv1alpha1.NetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, true),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
+
+						netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+						netInterface.Status.MacAddress = "" // NetOP doesn't set this.
+						netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+							{
+								IP:         "192.168.1.110",
+								IPFamily:   netopv1alpha1.IPv4Protocol,
+								Gateway:    "192.168.1.1",
+								SubnetMask: "255.255.255.0",
+							},
+							{
+								IP:         "fd1a:6c85:79fe:7c98:0000:0000:0000:000f",
+								IPFamily:   netopv1alpha1.IPv6Protocol,
+								Gateway:    "fd1a:6c85:79fe:7c98:0000:0000:0000:0001",
+								SubnetMask: "ffff:ffff:ffff:ff00:0000:0000:0000:0000",
+							},
+						}
+						netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+							{
+								Type:   netopv1alpha1.NetworkInterfaceReady,
+								Status: corev1.ConditionTrue,
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						interfaceSpecs)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.MacAddress).To(BeEmpty())
+					Expect(result.ExternalID).To(BeEmpty())
+					Expect(result.NetworkID).To(Equal(ctx.NetworkRef.Reference().Value))
+					Expect(result.Backing).ToNot(BeNil())
+					Expect(result.Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+					Expect(result.Name).To(Equal(interfaceName))
+
+					Expect(result.IPConfigs).To(HaveLen(2))
+					ipConfig := result.IPConfigs[0]
+					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.110/24"))
+					Expect(ipConfig.IsIPv4).To(BeTrue())
+					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
+					ipConfig = result.IPConfigs[1]
+					Expect(ipConfig.IPCIDR).To(Equal("fd1a:6c85:79fe:7c98::f/56"))
+					Expect(ipConfig.IsIPv4).To(BeFalse())
+					Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
+				})
+			})
 		})
 	})
 
@@ -338,6 +429,109 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 				Expect(results.Results).To(HaveLen(1))
 				Expect(results.Results[0].Backing).ToNot(BeNil())
 				Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+			})
+
+			When("v1a1 NCP network interface exists", func() {
+				BeforeEach(func() {
+					vnetIf := &ncpv1alpha1.VirtualNetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NCPCRName(vm.Name, networkName, interfaceName, true),
+							Namespace: vm.Namespace,
+						},
+						Spec: ncpv1alpha1.VirtualNetworkInterfaceSpec{
+							VirtualNetwork: networkName,
+						},
+					}
+
+					initObjects = append(initObjects, vnetIf)
+				})
+
+				It("returns success", func() {
+					// Assert test env is what we expect.
+					Expect(ctx.NetworkRef.Reference().Type).To(Equal("DistributedVirtualPortgroup"))
+
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+					Expect(results.Results).To(BeEmpty())
+
+					By("simulate successful NCP reconcile", func() {
+						netInterface := &ncpv1alpha1.VirtualNetworkInterface{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      network.NCPCRName(vm.Name, networkName, interfaceName, true),
+								Namespace: vm.Namespace,
+							},
+						}
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+						Expect(netInterface.Spec.VirtualNetwork).To(Equal(networkName))
+
+						netInterface.Status.InterfaceID = interfaceID
+						netInterface.Status.MacAddress = macAddress
+						netInterface.Status.ProviderStatus = &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
+							NsxLogicalSwitchID: builder.NsxTLogicalSwitchUUID,
+						}
+						netInterface.Status.IPAddresses = []ncpv1alpha1.VirtualNetworkInterfaceIP{
+							{
+								IP:         "192.168.1.110",
+								Gateway:    "192.168.1.1",
+								SubnetMask: "255.255.255.0",
+							},
+							{
+								IP:         "fd1a:6c85:79fe:7c98:0000:0000:0000:000f",
+								Gateway:    "fd1a:6c85:79fe:7c98:0000:0000:0000:0001",
+								SubnetMask: "ffff:ffff:ffff:ff00:0000:0000:0000:0000",
+							},
+						}
+						netInterface.Status.Conditions = []ncpv1alpha1.VirtualNetworkCondition{
+							{
+								Type:   "Ready",
+								Status: "True",
+							},
+						}
+						Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+					})
+
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						nil,
+						interfaceSpecs)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(results.Results).To(HaveLen(1))
+					result := results.Results[0]
+					Expect(result.MacAddress).To(Equal(macAddress))
+					Expect(result.ExternalID).To(Equal(interfaceID))
+					Expect(result.NetworkID).To(Equal(builder.NsxTLogicalSwitchUUID))
+					Expect(result.Name).To(Equal(interfaceName))
+
+					Expect(result.IPConfigs).To(HaveLen(2))
+					ipConfig := result.IPConfigs[0]
+					Expect(ipConfig.IPCIDR).To(Equal("192.168.1.110/24"))
+					Expect(ipConfig.IsIPv4).To(BeTrue())
+					Expect(ipConfig.Gateway).To(Equal("192.168.1.1"))
+					ipConfig = result.IPConfigs[1]
+					Expect(ipConfig.IPCIDR).To(Equal("fd1a:6c85:79fe:7c98::f/56"))
+					Expect(ipConfig.IsIPv4).To(BeFalse())
+					Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
+
+					// Without the ClusterMoRef on the first call this will be nil for NSXT.
+					Expect(result.Backing).To(BeNil())
+
+					clusterMoRef := ctx.GetSingleClusterCompute().Reference()
+					results, err = network.CreateAndWaitForNetworkInterfaces(
+						vmCtx,
+						ctx.Client,
+						ctx.VCClient.Client,
+						ctx.Finder,
+						&clusterMoRef,
+						interfaceSpecs)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(results.Results).To(HaveLen(1))
+					Expect(results.Results[0].Backing).ToNot(BeNil())
+					Expect(results.Results[0].Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+				})
 			})
 		})
 	})

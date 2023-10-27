@@ -7,13 +7,126 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
+	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/vmlifecycle"
+	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
+
+var _ = Describe("UpdateStatus", func() {
+
+	var (
+		ctx   *builder.TestContextForVCSim
+		err   error
+		vmCtx context.VirtualMachineContextA2
+		vcVM  *object.VirtualMachine
+		vmMO  *mo.VirtualMachine
+	)
+
+	BeforeEach(func() {
+		ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{WithV1A2: true})
+
+		vm := builder.DummyVirtualMachineA2()
+		vm.Name = "update-status-test"
+
+		vmCtx = context.VirtualMachineContextA2{
+			Context: ctx,
+			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
+			VM:      vm,
+		}
+
+		vcVM, err = ctx.Finder.VirtualMachine(ctx, "DC0_C0_RP0_VM0")
+		Expect(err).ToNot(HaveOccurred())
+
+		vmMO = &mo.VirtualMachine{}
+	})
+
+	AfterEach(func() {
+		ctx.AfterEach()
+		ctx = nil
+	})
+
+	JustBeforeEach(func() {
+		err = vmlifecycle.UpdateStatus(vmCtx, ctx.Client, vcVM, vmMO)
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	Context("Network", func() {
+
+		Context("Interfaces", func() {
+			BeforeEach(func() {
+				vmMO.Guest = &types.GuestInfo{
+					Net: []types.GuestNicInfo{
+						{
+							DeviceConfigId: -1,
+							MacAddress:     "mac-1",
+						},
+						{
+							DeviceConfigId: 4000,
+							MacAddress:     "mac-4000",
+						},
+					},
+				}
+			})
+
+			It("Skips pseudo devices", func() {
+				network := vmCtx.VM.Status.Network
+
+				Expect(network.Interfaces).To(HaveLen(1))
+				Expect(network.Interfaces[0].IP.MACAddr).To(Equal("mac-4000"))
+			})
+		})
+
+		Context("IPRoutes", func() {
+			BeforeEach(func() {
+				vmMO.Guest = &types.GuestInfo{
+					IpStack: []types.GuestStackInfo{
+						{
+							IpRouteConfig: &types.NetIpRouteConfigInfo{
+								IpRoute: []types.NetIpRouteConfigInfoIpRoute{
+									{
+										Network:      "192.168.1.0",
+										PrefixLength: 24,
+									},
+									{
+										Network:      "192.168.1.100",
+										PrefixLength: 32,
+									},
+									{
+										Network:      "fe80::",
+										PrefixLength: 64,
+									},
+									{
+										Network:      "ff00::",
+										PrefixLength: 8,
+									},
+									{
+										Network:      "e9ef:6df5:eb14:42e2:5c09:9982:a9b5:8c2b",
+										PrefixLength: 48,
+									},
+								},
+							},
+						},
+					},
+				}
+			})
+
+			It("Skips IPs", func() {
+				network := vmCtx.VM.Status.Network
+
+				Expect(network.IPRoutes).To(HaveLen(2))
+				Expect(network.IPRoutes[0].NetworkAddress).To(Equal("192.168.1.0/24"))
+				Expect(network.IPRoutes[1].NetworkAddress).To(Equal("e9ef:6df5:eb14:42e2:5c09:9982:a9b5:8c2b/48"))
+			})
+		})
+	})
+})
 
 var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {
 	Context("markVMToolsRunningStatusCondition", func() {

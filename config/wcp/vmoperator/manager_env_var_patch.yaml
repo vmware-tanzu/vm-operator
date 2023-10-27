@@ -81,3 +81,9 @@
   value:
     name: FSS_WCP_VMSERVICE_BACKUPRESTORE
     value: "<FSS_WCP_VMSERVICE_BACKUPRESTORE_VALUE>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: PRIVILEGED_USERS
+    value: "<COMMA_SEPARATED_LIST_OF_USERS>"

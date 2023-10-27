@@ -330,13 +330,13 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 			return err
 		}
 
-		backupOpts := virtualmachine.BackupOptions{
+		backupVMCtx := context.BackupVirtualMachineContext{
 			VMCtx:         vmCtx,
 			VcVM:          vcVM,
 			BootstrapData: data.Data,
 			DiskUUIDToPVC: diskUUIDToPVC,
 		}
-		if err := virtualmachine.BackupVirtualMachine(backupOpts); err != nil {
+		if err := virtualmachine.BackupVirtualMachine(backupVMCtx); err != nil {
 			vmCtx.Logger.Error(err, "Failed to back up VM")
 			return err
 		}

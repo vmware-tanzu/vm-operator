@@ -9,7 +9,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 
-	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 
@@ -18,14 +17,6 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
-
-// BackupOptions contains the options for calling BackupVirtualMachine() func.
-type BackupOptions struct {
-	VMCtx         context.VirtualMachineContext
-	VcVM          *object.VirtualMachine
-	BootstrapData map[string]string
-	DiskUUIDToPVC map[string]corev1.PersistentVolumeClaim
-}
 
 type VMDiskData struct {
 	// Filename contains the datastore path to the virtual disk.
@@ -41,25 +32,25 @@ type VMDiskData struct {
 // - Kubernetes VirtualMachine object in YAML format (without its .status field).
 // - VM bootstrap data in JSON (if provided).
 // - VM disk data in JSON (if created and attached by PVCs).
-func BackupVirtualMachine(opts BackupOptions) error {
+func BackupVirtualMachine(ctx context.BackupVirtualMachineContext) error {
 	var moVM mo.VirtualMachine
-	if err := opts.VcVM.Properties(opts.VMCtx, opts.VcVM.Reference(),
+	if err := ctx.VcVM.Properties(ctx.VMCtx, ctx.VcVM.Reference(),
 		[]string{"config.extraConfig"}, &moVM); err != nil {
-		opts.VMCtx.Logger.Error(err, "Failed to get VM properties for backup")
+		ctx.VMCtx.Logger.Error(err, "Failed to get VM properties for backup")
 		return err
 	}
 	curEcMap := util.ExtraConfigToMap(moVM.Config.ExtraConfig)
 
 	var ecToUpdate []types.BaseOptionValue
 
-	vmKubeDataBackup, err := getDesiredVMKubeDataForBackup(opts.VMCtx.VM, curEcMap)
+	vmKubeDataBackup, err := getDesiredVMKubeDataForBackup(ctx.VMCtx.VM, curEcMap)
 	if err != nil {
-		opts.VMCtx.Logger.Error(err, "Failed to get VM kube data for backup")
+		ctx.VMCtx.Logger.Error(err, "Failed to get VM kube data for backup")
 		return err
 	}
 
 	if vmKubeDataBackup == "" {
-		opts.VMCtx.Logger.V(4).Info("Skipping VM kube data backup as unchanged")
+		ctx.VMCtx.Logger.V(4).Info("Skipping VM kube data backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
 			Key:   constants.BackupVMKubeDataExtraConfigKey,
@@ -67,14 +58,14 @@ func BackupVirtualMachine(opts BackupOptions) error {
 		})
 	}
 
-	instanceIDBackup, err := getDesiredCloudInitInstanceIDForBackup(opts.VMCtx.VM, curEcMap)
+	instanceIDBackup, err := getDesiredCloudInitInstanceIDForBackup(ctx.VMCtx.VM, curEcMap)
 	if err != nil {
-		opts.VMCtx.Logger.Error(err, "Failed to get cloud-init instance ID for backup")
+		ctx.VMCtx.Logger.Error(err, "Failed to get cloud-init instance ID for backup")
 		return err
 	}
 
 	if instanceIDBackup == "" {
-		opts.VMCtx.Logger.V(4).Info("Skipping cloud-init instance ID as already stored")
+		ctx.VMCtx.Logger.V(4).Info("Skipping cloud-init instance ID as already stored")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
 			Key:   constants.BackupVMCloudInitInstanceIDExtraConfigKey,
@@ -82,14 +73,14 @@ func BackupVirtualMachine(opts BackupOptions) error {
 		})
 	}
 
-	bootstrapDataBackup, err := getDesiredBootstrapDataForBackup(opts.BootstrapData, curEcMap)
+	bootstrapDataBackup, err := getDesiredBootstrapDataForBackup(ctx.BootstrapData, curEcMap)
 	if err != nil {
-		opts.VMCtx.Logger.Error(err, "Failed to get VM bootstrap data for backup")
+		ctx.VMCtx.Logger.Error(err, "Failed to get VM bootstrap data for backup")
 		return err
 	}
 
 	if bootstrapDataBackup == "" {
-		opts.VMCtx.Logger.V(4).Info("Skipping VM bootstrap data backup as unchanged")
+		ctx.VMCtx.Logger.V(4).Info("Skipping VM bootstrap data backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
 			Key:   constants.BackupVMBootstrapDataExtraConfigKey,
@@ -97,14 +88,14 @@ func BackupVirtualMachine(opts BackupOptions) error {
 		})
 	}
 
-	diskDataBackup, err := getDesiredDiskDataForBackup(opts, curEcMap)
+	diskDataBackup, err := getDesiredDiskDataForBackup(ctx, curEcMap)
 	if err != nil {
-		opts.VMCtx.Logger.Error(err, "Failed to get VM disk data for backup")
+		ctx.VMCtx.Logger.Error(err, "Failed to get VM disk data for backup")
 		return err
 	}
 
 	if diskDataBackup == "" {
-		opts.VMCtx.Logger.V(4).Info("Skipping VM disk data backup as unchanged")
+		ctx.VMCtx.Logger.V(4).Info("Skipping VM disk data backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
 			Key:   constants.BackupVMDiskDataExtraConfigKey,
@@ -113,12 +104,12 @@ func BackupVirtualMachine(opts BackupOptions) error {
 	}
 
 	if len(ecToUpdate) != 0 {
-		opts.VMCtx.Logger.Info("Updating VM ExtraConfig with backup data")
-		opts.VMCtx.Logger.V(4).Info("", "ExtraConfig", ecToUpdate)
-		if _, err := opts.VcVM.Reconfigure(opts.VMCtx, types.VirtualMachineConfigSpec{
+		ctx.VMCtx.Logger.Info("Updating VM ExtraConfig with backup data")
+		ctx.VMCtx.Logger.V(4).Info("", "ExtraConfig", ecToUpdate)
+		if _, err := ctx.VcVM.Reconfigure(ctx.VMCtx, types.VirtualMachineConfigSpec{
 			ExtraConfig: ecToUpdate,
 		}); err != nil {
-			opts.VMCtx.Logger.Error(err, "Failed to update VM ExtraConfig for backup")
+			ctx.VMCtx.Logger.Error(err, "Failed to update VM ExtraConfig for backup")
 			return err
 		}
 	}
@@ -205,14 +196,14 @@ func getDesiredBootstrapDataForBackup(
 }
 
 func getDesiredDiskDataForBackup(
-	opts BackupOptions,
+	ctx context.BackupVirtualMachineContext,
 	ecMap map[string]string) (string, error) {
 	// Return an empty string to skip backup if no disk uuid to PVC is specified.
-	if len(opts.DiskUUIDToPVC) == 0 {
+	if len(ctx.DiskUUIDToPVC) == 0 {
 		return "", nil
 	}
 
-	deviceList, err := opts.VcVM.Device(opts.VMCtx)
+	deviceList, err := ctx.VcVM.Device(ctx.VMCtx)
 	if err != nil {
 		return "", err
 	}
@@ -221,7 +212,7 @@ func getDesiredDiskDataForBackup(
 	for _, device := range deviceList.SelectByType((*types.VirtualDisk)(nil)) {
 		if disk, ok := device.(*types.VirtualDisk); ok {
 			if b, ok := disk.Backing.(*types.VirtualDiskFlatVer2BackingInfo); ok {
-				if pvc, ok := opts.DiskUUIDToPVC[b.Uuid]; ok {
+				if pvc, ok := ctx.DiskUUIDToPVC[b.Uuid]; ok {
 					diskData = append(diskData, VMDiskData{
 						FileName:    b.FileName,
 						PVCName:     pvc.Name,

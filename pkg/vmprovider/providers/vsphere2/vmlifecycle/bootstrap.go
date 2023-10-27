@@ -63,10 +63,7 @@ func DoBootstrap(
 		return err
 	}
 
-	if vAppConfig != nil {
-		// I think the intention was to only apply this to vAppData. Old code would apply it to entire
-		// Data map but for like SysPrep that data may be base64/gzip'd, and we'd do the template stuff
-		// prior to plain texting it.
+	if sysPrep != nil || vAppConfig != nil {
 		bootstrapArgs.TemplateRenderFn = GetTemplateRenderFunc(vmCtx, bootstrapArgs)
 	}
 

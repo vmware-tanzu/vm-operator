@@ -16,7 +16,7 @@ import (
 
 var _ = Describe("GOSC", func() {
 	const (
-		macAddr1 = "50-8A-80-9D-28-22"
+		macAddr1 = "50:8A:80:9D:28:22"
 
 		ipv4Gateway = "192.168.1.1"
 		ipv4        = "192.168.1.10"

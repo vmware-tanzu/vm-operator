@@ -699,7 +699,7 @@ func (s *Session) customize(
 		// with the actual devices. Old code also made this best effort so do that here too.
 		// I've got a larger change that removes the old session stuff, and improves on all this behavior
 		// but I didn't have the BW to sort out all the changes.
-		if len(updateArgs.NetworkResults.Results) > 1 {
+		if len(updateArgs.NetworkResults.Results) > 0 {
 			mac := updateArgs.NetworkResults.Results[0].MacAddress
 			if mac == "" {
 				ethCards, _ := resVM.GetNetworkDevices(vmCtx)

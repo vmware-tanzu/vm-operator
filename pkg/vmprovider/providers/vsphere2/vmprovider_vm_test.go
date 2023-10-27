@@ -167,7 +167,7 @@ func vmTests() {
 						},
 						ControllerKey: 100,
 					},
-					AddressType: string(types.VirtualEthernetCardMacTypeGenerated),
+					AddressType: string(types.VirtualEthernetCardMacTypeManual),
 					MacAddress:  "00:0c:29:93:d7:27",
 					ResourceAllocation: &types.VirtualEthernetCardResourceAllocation{
 						Reservation: pointer.Int64(42),
@@ -370,7 +370,6 @@ func vmTests() {
 					}
 				})
 
-				// FIXME: Has extra NIC b/c of vcsim DeployOVF bug
 				It("Reconfigures the VM with the NIC specified in ConfigSpec", func() {
 					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
 
@@ -380,17 +379,14 @@ func vmTests() {
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
 					l := devList.SelectByType(&types.VirtualEthernetCard{})
 					Expect(l).To(HaveLen(1))
-					// Expect(l).To(HaveLen(1 + 1))
 
 					dev := l[0].GetVirtualDevice()
-					// dev := l[0+1].GetVirtualDevice()
 					backing, ok := dev.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).Should(BeTrue())
 					_, dvpg := getDVPG(ctx, dvpgName)
 					Expect(backing.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
 
 					ethDevice, ok := l[0].(*types.VirtualE1000)
-					// ethDevice, ok := l[0+1].(*types.VirtualE1000)
 					Expect(ok).To(BeTrue())
 					Expect(ethDevice.AddressType).To(Equal(ethCard.AddressType))
 					Expect(ethDevice.MacAddress).To(Equal(ethCard.MacAddress))
@@ -413,7 +409,6 @@ func vmTests() {
 					configSpec = &types.VirtualMachineConfigSpec{}
 				})
 
-				// FIXME: Has extra NIC b/c of vcsim DeployOVF bug
 				It("Reconfigures the VM with the default NIC settings from provider", func() {
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
@@ -421,10 +416,8 @@ func vmTests() {
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
 					l := devList.SelectByType(&types.VirtualEthernetCard{})
 					Expect(l).To(HaveLen(1))
-					// Expect(l).To(HaveLen(1 + 1))
 
 					dev := l[0].GetVirtualDevice()
-					// dev := l[0+1].GetVirtualDevice()
 					backing, ok := dev.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).Should(BeTrue())
 					_, dvpg := getDVPG(ctx, dvpgName)
@@ -547,7 +540,6 @@ func vmTests() {
 					}
 				})
 
-				// FIXME: Has extra NIC b/c of vcsim DeployOVF bug
 				It("Reconfigures the VM with a NIC, GPU and DDPIO device specified in ConfigSpec", func() {
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
@@ -555,17 +547,14 @@ func vmTests() {
 					devList := object.VirtualDeviceList(o.Config.Hardware.Device)
 					l := devList.SelectByType(&types.VirtualEthernetCard{})
 					Expect(l).To(HaveLen(1))
-					// Expect(l).To(HaveLen(1 + 1))
 
 					dev := l[0].GetVirtualDevice()
-					// dev := l[0+1].GetVirtualDevice()
 					backing, ok := dev.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 					Expect(ok).Should(BeTrue())
 					_, dvpg := getDVPG(ctx, dvpgName)
 					Expect(backing.Port.PortgroupKey).To(Equal(dvpg.Reference().Value))
 
 					ethDevice, ok := l[0].(*types.VirtualE1000)
-					// ethDevice, ok := l[0+1].(*types.VirtualE1000)
 					Expect(ok).To(BeTrue())
 					Expect(ethDevice.AddressType).To(Equal(ethCard.AddressType))
 					Expect(dev.DeviceInfo).To(Equal(ethCard.VirtualDevice.DeviceInfo))

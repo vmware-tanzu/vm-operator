@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -103,14 +104,6 @@ func unitTestsValidateCreate() {
 		isWCPFaultDomainsFSSEnabled       bool
 		isInvalidAvailabilityZone         bool
 		isEmptyAvailabilityZone           bool
-		isBootstrapCloudInit              bool
-		isBootstrapCloudInitInline        bool
-		isBootstrapLinuxPrep              bool
-		isSysprepFeatureEnabled           bool
-		isBootstrapSysPrep                bool
-		isBootstrapSysPrepInline          bool
-		isBootstrapVAppConfig             bool
-		isBootstrapVAppConfigInline       bool
 		powerState                        vmopv1.VirtualMachinePowerState
 		nextRestartTime                   string
 		adminOnlyAnnotations              bool
@@ -219,45 +212,6 @@ func unitTestsValidateCreate() {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 		}
 
-		if args.isBootstrapCloudInit || args.isBootstrapCloudInitInline {
-			ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
-			if args.isBootstrapCloudInit {
-				ctx.vm.Spec.Bootstrap.CloudInit.RawCloudConfig.Key = "cloud-init-key"
-			}
-			if args.isBootstrapCloudInitInline {
-				ctx.vm.Spec.Bootstrap.CloudInit.CloudConfig.Timezone = " dummy-tz"
-			}
-		}
-		if args.isBootstrapLinuxPrep {
-			ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
-		}
-		if args.isSysprepFeatureEnabled {
-			Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
-		}
-		if args.isBootstrapSysPrep || args.isBootstrapSysPrepInline {
-			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
-			ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
-			if args.isBootstrapSysPrep {
-				ctx.vm.Spec.Bootstrap.Sysprep.RawSysprep.Key = "sysprep-key"
-			}
-			if args.isBootstrapSysPrepInline {
-				ctx.vm.Spec.Bootstrap.Sysprep.Sysprep.GUIRunOnce.Commands = []string{"hello"}
-			}
-		}
-		if args.isBootstrapVAppConfig || args.isBootstrapVAppConfigInline {
-			ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
-			if args.isBootstrapVAppConfig {
-				ctx.vm.Spec.Bootstrap.VAppConfig.RawProperties = "some-vapp-prop"
-			}
-			if args.isBootstrapVAppConfigInline {
-				ctx.vm.Spec.Bootstrap.VAppConfig.Properties = []common.KeyValueOrSecretKeySelectorPair{
-					{
-						Key: "key",
-					},
-				}
-			}
-		}
-
 		if args.adminOnlyAnnotations {
 			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = updateSuffix
 			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = updateSuffix
@@ -360,26 +314,6 @@ func unitTestsValidateCreate() {
 		Entry("should deny when VM specifies invalid availability zone, there are no availability zones, and WCP FaultDomains FSS is enabled", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
 		Entry("should deny when there are no availability zones and WCP FaultDomains FSS is enabled", createArgs{isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
 
-		Entry("should allow CloudInit", createArgs{isBootstrapCloudInit: true}, true, nil, nil),
-		Entry("should deny CloudInit with raw and inline", createArgs{isBootstrapCloudInit: true, isBootstrapCloudInitInline: true}, false, "cloudConfig and rawCloudConfig are mutually exclusive", nil),
-		Entry("should deny CloudInit with LinuxPrep", createArgs{isBootstrapCloudInit: true, isBootstrapLinuxPrep: true}, false, "CloudInit may not be used with any other bootstrap provider", nil),
-		Entry("should deny CloudInit with SysPrep", createArgs{isBootstrapCloudInit: true, isBootstrapSysPrep: true}, false, "CloudInit may not be used with any other bootstrap provider", nil),
-		Entry("should deny CloudInit with vApp", createArgs{isBootstrapCloudInit: true, isBootstrapVAppConfig: true}, false, "CloudInit may not be used with any other bootstrap provider", nil),
-
-		Entry("should allow LinuxPrep", createArgs{isBootstrapLinuxPrep: true}, true, nil, nil),
-		Entry("should deny LinuxPrep with CloudInit", createArgs{isBootstrapLinuxPrep: true, isBootstrapCloudInit: true}, false, "LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers", nil),
-		Entry("should deny LinuxPrep with SysPrep", createArgs{isBootstrapLinuxPrep: true, isBootstrapSysPrep: true}, false, "LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers", nil),
-
-		Entry("should allow sysprep when FSS is enabled", createArgs{isSysprepFeatureEnabled: true, isBootstrapSysPrep: true}, true, nil, nil),
-		Entry("should disallow sysprep when FSS is disabled", createArgs{isSysprepFeatureEnabled: false, isBootstrapSysPrep: true}, false,
-			field.Invalid(specPath.Child("bootstrap", "sysprep"), "sysprep", "the sysprep feature is not enabled").Error(), nil),
-		Entry("should deny sysprep with CloudInit", createArgs{isSysprepFeatureEnabled: true, isBootstrapSysPrep: true, isBootstrapCloudInit: true}, false, nil, nil),
-
-		Entry("should allow vApp", createArgs{isBootstrapVAppConfig: true}, true, nil, nil),
-		Entry("should deny with raw and inline", createArgs{isBootstrapVAppConfig: true, isBootstrapVAppConfigInline: true}, false, "properties and rawProperties are mutually exclusive", nil),
-		Entry("should allow vApp with LinuxPrep", createArgs{isBootstrapVAppConfig: true, isBootstrapLinuxPrep: true}, true, nil, nil),
-		Entry("should allow vApp with SysPrep", createArgs{isBootstrapVAppConfig: true, isSysprepFeatureEnabled: true, isBootstrapSysPrep: true}, true, nil, nil),
-
 		Entry("should disallow creating VM with suspended power state", createArgs{powerState: vmopv1.VirtualMachinePowerStateSuspended}, false,
 			field.Invalid(specPath.Child("powerState"), vmopv1.VirtualMachinePowerStateSuspended, "cannot set a new VM's power state to Suspended").Error(), nil),
 
@@ -403,6 +337,182 @@ func unitTestsValidateCreate() {
 
 		Entry("should allow creating VM with admin-only annotations set by WCP user when the Backup/Restore FSS is enabled", createArgs{adminOnlyAnnotations: true, isPrivilegedUser: true}, true, nil, nil),
 	)
+
+	Context("Bootstrap", func() {
+		type testParams struct {
+			setup         func(ctx *unitValidatingWebhookContext)
+			validate      func(response admission.Response)
+			expectAllowed bool
+		}
+
+		doTest := func(args testParams) {
+			args.setup(ctx)
+
+			var err error
+			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+			Expect(err).ToNot(HaveOccurred())
+
+			response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+			Expect(response.Allowed).To(Equal(args.expectAllowed))
+
+			if args.validate != nil {
+				args.validate(response)
+			}
+		}
+
+		doValidateWithMsg := func(msgs ...string) func(admission.Response) {
+			return func(response admission.Response) {
+				reasons := string(response.Result.Reason)
+				for _, m := range msgs {
+					Expect(reasons).To(ContainSubstring(m))
+				}
+			}
+		}
+
+		DescribeTable("bootstrap create", doTest,
+			Entry("allow CloudInit bootstrap",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("allow LinuxPrep bootstrap",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("allow vAppConfig bootstrap",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("allow Sysprep bootstrap when WCP_Windows_Sysprep FSS is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("disallow Sysprep bootstrap when WCP_Windows_Sysprep FSS is disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						Expect(os.Setenv(lib.WindowsSysprepFSS, "false")).To(Succeed())
+						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep: Invalid value: "Sysprep": the Sysprep feature is not enabled`,
+					),
+				},
+			),
+			Entry("disallow CloudInit and LinuxPrep specified at the same time",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+					},
+					validate: doValidateWithMsg("CloudInit may not be used with any other bootstrap provider",
+						"LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers"),
+				},
+			),
+			Entry("disallow CloudInit and Sysprep specified at the same time",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+					},
+					validate: doValidateWithMsg("CloudInit may not be used with any other bootstrap provider"),
+				},
+			),
+			Entry("disallow CloudInit and vAppConfig specified at the same time",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
+					},
+					validate: doValidateWithMsg("CloudInit may not be used with any other bootstrap provider"),
+				},
+			),
+			Entry("disallow LinuxPrep and Sysprep specified at the same time",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+					},
+					validate: doValidateWithMsg("LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers"),
+				},
+			),
+			Entry("allow LinuxPrep and vAppConfig specified at the same time",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("allow Sysprep and vAppConfig specified at the same time when WCP_Windows_Sysprep FSS is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
+					},
+					expectAllowed: true,
+				},
+			),
+			Entry("disallow CloudInit mixing inline CloudConfig and RawCloudConfig",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+							CloudConfig: cloudinit.CloudConfig{
+								Timezone: "dummy-tz",
+							},
+							RawCloudConfig: corev1.SecretKeySelector{
+								Key: "cloud-init-key",
+							},
+						}
+					},
+					validate: doValidateWithMsg("cloudConfig and rawCloudConfig are mutually exclusive"),
+				},
+			),
+			Entry("disallow Sysprep mixing inline Sysprep and RawSysprep when FSS is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep.GUIRunOnce.Commands = []string{"hello"}
+						ctx.vm.Spec.Bootstrap.Sysprep.RawSysprep.Key = "sysprep-key"
+					},
+					validate: doValidateWithMsg("sysprep and rawSysprep are mutually exclusive"),
+				},
+			),
+			Entry("disallow vAppConfig mixing inline Properties and RawProperties",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+							Properties: []common.KeyValueOrSecretKeySelectorPair{
+								{
+									Key: "key",
+								},
+							},
+							RawProperties: "some-vapp-prop",
+						}
+					},
+					validate: doValidateWithMsg("properties and rawProperties are mutually exclusive"),
+				},
+			),
+		)
+	})
 
 	Context("Network", func() {
 
@@ -451,6 +561,31 @@ func unitTestsValidateCreate() {
 			Entry("allow static",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+							HostName: "my-vm",
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									Addresses: []string{
+										"192.168.1.100/24",
+										"2605:a601:a0ba:720:2ce6:776d:8be4:2496/48",
+									},
+									DHCP4:    false,
+									DHCP6:    false,
+									Gateway4: "192.168.1.1",
+									Gateway6: "2605:a601:a0ba:720:2ce6::1",
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow static mtu, nameservers, routes and searchDomains when bootstrap is CloudInit",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
 						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
 							HostName: "my-vm",
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
@@ -579,9 +714,53 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			Entry("validate nameservers",
+			// Please note mtu is available only with the following bootstrap providers: CloudInit
+			Entry("validate mtu when bootstrap doesn't support mtu",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+							HostName: "my-vm",
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									MTU:  pointer.Int64(9000),
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].mtu: Invalid value: 9000: mtu is available only with the following bootstrap providers: CloudInit`,
+					),
+				},
+			),
+
+			Entry("validate mtu when bootstrap supports mtu",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+							HostName: "my-vm",
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+									MTU:  pointer.Int64(9000),
+								},
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			// Please note nameservers is available only with the following bootstrap
+			// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
+			Entry("validate nameservers when bootstrap doesn't support nameservers",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+						ctx.vm.Spec.Bootstrap.Sysprep.RawSysprep.Key = "sysprep-key"
 						ctx.vm.Spec.Network.Interfaces[0].Nameservers = []string{
 							"not-an-ip",
 							"192.168.1.1/24",
@@ -590,13 +769,33 @@ func unitTestsValidateCreate() {
 					validate: doValidateWithMsg(
 						`spec.network.interfaces[0].nameservers[0]: Invalid value: "not-an-ip": must be an IPv4 or IPv6 address`,
 						`spec.network.interfaces[0].nameservers[1]: Invalid value: "192.168.1.1/24": must be an IPv4 or IPv6 address`,
+						`spec.network.interfaces[0].nameservers: Invalid value: "not-an-ip,192.168.1.1/24": nameservers is available only with the following bootstrap providers: CloudInit LinuxPrep and Sysprep (except for RawSysprep)`,
 					),
 				},
 			),
 
-			Entry("validate routes",
+			Entry("validate nameservers when bootstrap supports nameservers",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep.GUIRunOnce.Commands = []string{"hello"}
+						ctx.vm.Spec.Network.Interfaces[0].Nameservers = []string{
+							"8.8.8.8",
+							"2001:4860:4860::8888",
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			// Please note routes is available only with the following bootstrap providers: CloudInit
+			Entry("validate routes when bootstrap doesn't support routes",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep.GUIRunOnce.Commands = []string{"hello"}
 						ctx.vm.Spec.Network.Interfaces[0].Routes = []vmopv1.VirtualMachineNetworkRouteSpec{
 							{
 								To:  "10.100.10.1",
@@ -617,7 +816,52 @@ func unitTestsValidateCreate() {
 						`spec.network.interfaces[0].routes[0].via: Invalid value: "192.168.1": must be an IPv4 or IPv6 address`,
 						`spec.network.interfaces[0].routes[1].via: Invalid value: "2463:foobar": must be an IPv4 or IPv6 address`,
 						`spec.network.interfaces[0].routes[2]: Invalid value: "": cannot mix IP address families`,
+						`spec.network.interfaces[0].routes: Invalid value: "routes": routes is available only with the following bootstrap providers: CloudInit`,
 					),
+				},
+			),
+
+			Entry("validate routes when bootstrap supports routes",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+						ctx.vm.Spec.Network.Interfaces[0].Routes = []vmopv1.VirtualMachineNetworkRouteSpec{
+							{
+								To:     "10.100.10.1/24",
+								Via:    "10.10.1.1",
+								Metric: 42,
+							},
+							{
+								To:  "fbd6:93e7:bc11:18b2:514f:2b1d:637a:f695/48",
+								Via: "ef71:6ce2:3b91:8349:b2b2:f76c:86ae:915b",
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			// Please note this feature is available only with the following bootstrap
+			// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
+			Entry("validate searchDomains when bootstrap doesn't support searchDomains",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
+						ctx.vm.Spec.Network.Interfaces[0].SearchDomains = []string{"dev.local"}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].searchDomains: Invalid value: "dev.local": searchDomains is available only with the following bootstrap providers: CloudInit LinuxPrep and Sysprep (except for RawSysprep)`,
+					),
+				},
+			),
+
+			Entry("validate searchDomains when bootstrap supports searchDomains",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+						ctx.vm.Spec.Network.Interfaces[0].SearchDomains = []string{"dev.local"}
+					},
+					expectAllowed: true,
 				},
 			),
 
@@ -822,7 +1066,7 @@ func unitTestsValidateUpdate() {
 
 		Entry("should allow sysprep when FSS is enabled", updateArgs{isSysprepFeatureEnabled: true, isSysprepTransportUsed: true}, true, nil, nil),
 		Entry("should disallow sysprep when FSS is disabled", updateArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: true}, false,
-			field.Invalid(field.NewPath("spec", "bootstrap", "sysprep"), "sysprep", "the sysprep feature is not enabled").Error(), nil),
+			field.Invalid(field.NewPath("spec", "bootstrap", "sysprep"), "Sysprep", "the Sysprep feature is not enabled").Error(), nil),
 		Entry("should not error if sysprep FSS is disabled when sysprep is not used", updateArgs{isSysprepFeatureEnabled: false, isSysprepTransportUsed: false}, true, nil, nil),
 
 		Entry("should allow updating suspended VM to powered on", updateArgs{oldPowerState: vmopv1.VirtualMachinePowerStateSuspended, newPowerState: vmopv1.VirtualMachinePowerStateOn}, true,

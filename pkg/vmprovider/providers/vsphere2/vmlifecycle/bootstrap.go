@@ -55,7 +55,7 @@ func DoBootstrap(
 	bootstrap := &vmCtx.VM.Spec.Bootstrap
 	cloudInit := bootstrap.CloudInit
 	linuxPrep := bootstrap.LinuxPrep
-	sysPrep := bootstrap.Sysprep
+	sysprep := bootstrap.Sysprep
 	vAppConfig := bootstrap.VAppConfig
 
 	bootstrapArgs, err := getBootstrapArgs(vmCtx, k8sClient, cloudInit != nil, networkResults, bootstrapData)
@@ -63,7 +63,7 @@ func DoBootstrap(
 		return err
 	}
 
-	if sysPrep != nil || vAppConfig != nil {
+	if sysprep != nil || vAppConfig != nil {
 		bootstrapArgs.TemplateRenderFn = GetTemplateRenderFunc(vmCtx, bootstrapArgs)
 	}
 
@@ -75,8 +75,8 @@ func DoBootstrap(
 		configSpec, customSpec, err = BootStrapCloudInit(vmCtx, config, cloudInit, bootstrapArgs)
 	case linuxPrep != nil:
 		configSpec, customSpec, err = BootStrapLinuxPrep(vmCtx, config, linuxPrep, vAppConfig, bootstrapArgs)
-	case sysPrep != nil:
-		configSpec, customSpec, err = BootstrapSysPrep(vmCtx, config, sysPrep, vAppConfig, bootstrapArgs)
+	case sysprep != nil:
+		configSpec, customSpec, err = BootstrapSysPrep(vmCtx, config, sysprep, vAppConfig, bootstrapArgs)
 	case vAppConfig != nil:
 		configSpec, customSpec, err = BootstrapVAppConfig(vmCtx, config, vAppConfig, bootstrapArgs)
 	default:

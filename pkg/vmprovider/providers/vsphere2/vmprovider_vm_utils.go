@@ -153,8 +153,8 @@ func GetVirtualMachineBootstrap(
 
 	if cloudInit := bootstrapSpec.CloudInit; cloudInit != nil {
 		secretName = cloudInit.RawCloudConfig.Name
-	} else if sysPrep := bootstrapSpec.Sysprep; sysPrep != nil {
-		secretName = sysPrep.RawSysprep.Name
+	} else if sysprep := bootstrapSpec.Sysprep; sysprep != nil {
+		secretName = sysprep.RawSysprep.Name
 	}
 
 	if secretName != "" {

@@ -472,3 +472,43 @@ func HardwareVersionForPVCandPCIDevices(imageHWVersion int32, configSpec *types.
 
 	return configSpecHWVersion
 }
+
+// GetAttachedDiskUUIDToPVC returns a map of disk UUID to PVC object for all
+// attached disks by checking the VM's spec and status of volumes.
+func GetAttachedDiskUUIDToPVC(
+	vmCtx context.VirtualMachineContext,
+	k8sClient ctrlclient.Client) (map[string]corev1.PersistentVolumeClaim, error) {
+	if !HasPVC(vmCtx.VM.Spec) {
+		return nil, nil
+	}
+
+	vmVolNameToPVCName := map[string]string{}
+	for _, vol := range vmCtx.VM.Spec.Volumes {
+		if pvc := vol.PersistentVolumeClaim; pvc != nil {
+			vmVolNameToPVCName[vol.Name] = pvc.ClaimName
+		}
+	}
+
+	diskUUIDToPVC := map[string]corev1.PersistentVolumeClaim{}
+	for _, vol := range vmCtx.VM.Status.Volumes {
+		if !vol.Attached || vol.DiskUuid == "" {
+			continue
+		}
+
+		pvcName := vmVolNameToPVCName[vol.Name]
+		// This could happen if the volume was just removed from VM spec but not reconciled yet.
+		if pvcName == "" {
+			continue
+		}
+
+		pvcObj := corev1.PersistentVolumeClaim{}
+		objKey := ctrlclient.ObjectKey{Name: pvcName, Namespace: vmCtx.VM.Namespace}
+		if err := k8sClient.Get(vmCtx, objKey, &pvcObj); err != nil {
+			return nil, err
+		}
+
+		diskUUIDToPVC[vol.DiskUuid] = pvcObj
+	}
+
+	return diskUUIDToPVC, nil
+}

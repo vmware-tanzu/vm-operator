@@ -626,4 +626,73 @@ func vmUtilTests() {
 			Expect(vsphere.HardwareVersionForPVCandPCIDevices(imageHWVersion, configSpec, true)).To(Equal(int32(16)))
 		})
 	})
+
+	Context("GetAttachedDiskUuidToPVC", func() {
+		const (
+			attachedDiskUUID = "dummy-uuid"
+		)
+		var (
+			attachedPVC *corev1.PersistentVolumeClaim
+		)
+
+		BeforeEach(func() {
+			// Create multiple PVCs to verity only the expected one is returned.
+			unusedPVC := builder.DummyPersistentVolumeClaim()
+			unusedPVC.Name = "unused-pvc"
+			unusedPVC.Namespace = vmCtx.VM.Namespace
+			unattachedPVC := builder.DummyPersistentVolumeClaim()
+			unattachedPVC.Name = "unattached-pvc"
+			unattachedPVC.Namespace = vmCtx.VM.Namespace
+			attachedPVC = builder.DummyPersistentVolumeClaim()
+			attachedPVC.Name = "attached-pvc"
+			attachedPVC.Namespace = vmCtx.VM.Namespace
+			initObjects = append(initObjects, unusedPVC, unattachedPVC, attachedPVC)
+
+			vmCtx.VM.Spec.Volumes = []vmopv1.VirtualMachineVolume{
+				{
+					Name: "unattached-vol",
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: unattachedPVC.Name,
+							},
+						},
+					},
+				},
+				{
+					Name: "attached-vol",
+					VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: attachedPVC.Name,
+							},
+						},
+					},
+				},
+			}
+
+			vmCtx.VM.Status.Volumes = []vmopv1.VirtualMachineVolumeStatus{
+				{
+					Name:     "unattached-vol",
+					Attached: false,
+					DiskUUID: "unattached-disk-uuid",
+				},
+				{
+					Name:     "attached-vol",
+					Attached: true,
+					DiskUUID: attachedDiskUUID,
+				},
+			}
+		})
+
+		It("Should return a map of disk uuid to PVCs that are attached to the VM", func() {
+			diskUUIDToPVCMap, err := vsphere.GetAttachedDiskUUIDToPVC(vmCtx, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(diskUUIDToPVCMap).To(HaveLen(1))
+			Expect(diskUUIDToPVCMap).To(HaveKey(attachedDiskUUID))
+			pvc := diskUUIDToPVCMap[attachedDiskUUID]
+			Expect(pvc.Name).To(Equal(attachedPVC.Name))
+			Expect(pvc.Namespace).To(Equal(attachedPVC.Namespace))
+		})
+	})
 }

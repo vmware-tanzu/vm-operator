@@ -6,6 +6,7 @@ package virtualmachine_test
 import (
 	"encoding/json"
 
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 
 	. "github.com/onsi/ginkgo"
@@ -23,6 +24,14 @@ import (
 )
 
 func backupTests() {
+	const (
+		// These are the default values of the vcsim VM that are used to
+		// construct the expected backup data in the following tests.
+		vcSimVMPath       = "DC0_C0_RP0_VM0"
+		vcSimDiskUUID     = "be8d2471-f32e-5c7e-a89b-22cb8e533890"
+		vcSimDiskFileName = "[LocalDS_0] DC0_C0_RP0_VM0/disk1.vmdk"
+	)
+
 	var (
 		ctx   *builder.TestContextForVCSim
 		vcVM  *object.VirtualMachine
@@ -76,7 +85,13 @@ func backupTests() {
 
 			It("Should backup VM kube data YAML with the latest spec", func() {
 				vmCtx.VM.ObjectMeta.Generation = 2
-				Expect(virtualmachine.BackupVirtualMachine(vmCtx, vcVM, nil)).To(Succeed())
+				backupVMCtx := context.BackupVirtualMachineContextA2{
+					VMCtx:         vmCtx,
+					VcVM:          vcVM,
+					BootstrapData: nil,
+					DiskUUIDToPVC: nil,
+				}
+				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
 
 				vmCopy := vmCtx.VM.DeepCopy()
 				vmCopy.Status = vmopv1.VirtualMachineStatus{}
@@ -112,7 +127,13 @@ func backupTests() {
 			It("Should skip backing up VM kube data", func() {
 				// Update the VM to verify its kube data is not backed up in ExtraConfig.
 				vmCtx.VM.Labels = map[string]string{"foo": "bar"}
-				Expect(virtualmachine.BackupVirtualMachine(vmCtx, vcVM, nil)).To(Succeed())
+				backupVMCtx := context.BackupVirtualMachineContextA2{
+					VMCtx:         vmCtx,
+					VcVM:          vcVM,
+					BootstrapData: nil,
+					DiskUUIDToPVC: nil,
+				}
+				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
 				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMKubeDataExtraConfigKey, kubeDataBackup)
 			})
 		})
@@ -122,7 +143,13 @@ func backupTests() {
 
 		It("Should back up bootstrap data as JSON in ExtraConfig", func() {
 			bootstrapDataRaw := map[string]string{"foo": "bar"}
-			Expect(virtualmachine.BackupVirtualMachine(vmCtx, vcVM, bootstrapDataRaw)).To(Succeed())
+			backupVMCtx := context.BackupVirtualMachineContextA2{
+				VMCtx:         vmCtx,
+				VcVM:          vcVM,
+				BootstrapData: bootstrapDataRaw,
+				DiskUUIDToPVC: nil,
+			}
+			Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
 
 			bootstrapDataJSON, err := json.Marshal(bootstrapDataRaw)
 			Expect(err).NotTo(HaveOccurred())
@@ -132,19 +159,47 @@ func backupTests() {
 
 	Context("VM Disk data", func() {
 
-		It("Should backup VM disk data as JSON in ExtraConfig", func() {
-			Expect(virtualmachine.BackupVirtualMachine(vmCtx, vcVM, nil)).To(Succeed())
+		When("VM has no disks that are attached from PVCs", func() {
 
-			// Use the default disk info from the vcSim VM for testing.
-			diskData := []virtualmachine.VMDiskData{
-				{
-					VDiskID:  "",
-					FileName: "[LocalDS_0] DC0_C0_RP0_VM0/disk1.vmdk",
-				},
-			}
-			diskDataJSON, err := json.Marshal(diskData)
-			Expect(err).NotTo(HaveOccurred())
-			verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMDiskDataExtraConfigKey, string(diskDataJSON))
+			It("Should skip backing up VM disk data", func() {
+				backupVMCtx := context.BackupVirtualMachineContextA2{
+					VMCtx:         vmCtx,
+					VcVM:          vcVM,
+					BootstrapData: nil,
+					DiskUUIDToPVC: nil,
+				}
+				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
+				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMDiskDataExtraConfigKey, "")
+			})
+		})
+
+		When("VM has disks that are attached from PVCs", func() {
+
+			It("Should backup VM disk data as JSON in ExtraConfig", func() {
+				dummyPVC := builder.DummyPersistentVolumeClaim()
+				diskUUIDToPVC := map[string]corev1.PersistentVolumeClaim{
+					vcSimDiskUUID: *dummyPVC,
+				}
+
+				backupVMCtx := context.BackupVirtualMachineContextA2{
+					VMCtx:         vmCtx,
+					VcVM:          vcVM,
+					BootstrapData: nil,
+					DiskUUIDToPVC: diskUUIDToPVC,
+				}
+				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
+
+				diskData := []virtualmachine.VMDiskData{
+					{
+						FileName:    vcSimDiskFileName,
+						PVCName:     dummyPVC.Name,
+						AccessModes: dummyPVC.Spec.AccessModes,
+					},
+				}
+				diskDataJSON, err := json.Marshal(diskData)
+				Expect(err).NotTo(HaveOccurred())
+				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMDiskDataExtraConfigKey, string(diskDataJSON))
+			})
 		})
 	})
 
@@ -171,8 +226,14 @@ func backupTests() {
 				}
 			})
 
-			It("Should skip backing up the cloud-init instance ID", func() {
-				Expect(virtualmachine.BackupVirtualMachine(vmCtx, vcVM, nil)).To(Succeed())
+			It("Should not change the cloud-init instance ID in VM's ExtraConfig", func() {
+				backupVMCtx := context.BackupVirtualMachineContextA2{
+					VMCtx:         vmCtx,
+					VcVM:          vcVM,
+					BootstrapData: nil,
+					DiskUUIDToPVC: nil,
+				}
+				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
 				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMCloudInitInstanceIDExtraConfigKey, "ec-instance-id")
 			})
 		})
@@ -187,7 +248,13 @@ func backupTests() {
 			})
 
 			It("Should backup the cloud-init instance ID from annotations", func() {
-				Expect(virtualmachine.BackupVirtualMachine(vmCtx, vcVM, nil)).To(Succeed())
+				backupVMCtx := context.BackupVirtualMachineContextA2{
+					VMCtx:         vmCtx,
+					VcVM:          vcVM,
+					BootstrapData: nil,
+					DiskUUIDToPVC: nil,
+				}
+				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
 				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMCloudInitInstanceIDExtraConfigKey, "annotation-instance-id")
 			})
 		})
@@ -199,9 +266,14 @@ func backupTests() {
 				vmCtx.VM.UID = "vm-uid"
 			})
 
-			It("Should backup the cloud-init instance ID from annotations", func() {
-				Expect(virtualmachine.BackupVirtualMachine(vmCtx, vcVM, nil)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMCloudInitInstanceIDExtraConfigKey, "vm-uid")
+			It("Should backup the cloud-init instance ID from VM K8s resource UID", func() {
+				backupVMCtx := context.BackupVirtualMachineContextA2{
+					VMCtx:         vmCtx,
+					VcVM:          vcVM,
+					BootstrapData: nil,
+					DiskUUIDToPVC: nil,
+				}
+				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
 			})
 		})
 	})
@@ -219,6 +291,12 @@ func verifyBackupDataInExtraConfig(
 	var moVM mo.VirtualMachine
 	Expect(objVM.Properties(ctx, objVM.Reference(), []string{"config.extraConfig"}, &moVM)).To(Succeed())
 	ecMap := util.ExtraConfigToMap(moVM.Config.ExtraConfig)
+
+	// Verify the expected key doesn't exist in ExtraConfig if the expected value is empty.
+	if expectedValDecoded == "" {
+		Expect(ecMap).NotTo(HaveKey(expectedKey))
+		return
+	}
 
 	// Verify the expected key exists in ExtraConfig and the decoded values match.
 	Expect(ecMap).To(HaveKey(expectedKey))

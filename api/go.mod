@@ -56,11 +56,12 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	// per the following dependabot alerts:
 	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/20
 	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/21
+	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/32
+	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/34
+	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/36
 	golang.org/x/net v0.7.0 // indirect
-	// per the following dependabot alerts:
 	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/22
 	golang.org/x/text v0.7.0 // indirect; per
 	gopkg.in/inf.v0 v0.9.1 // indirect

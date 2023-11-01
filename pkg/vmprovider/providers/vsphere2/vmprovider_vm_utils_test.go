@@ -132,7 +132,7 @@ func vmUtilTests() {
 		})
 	})
 
-	Context("GetVMImageStatusAndContentLibraryUUID", func() {
+	Context("GetVirtualMachineImageSpecAndStatus", func() {
 
 		// NOTE: As we currently have it, v1a2 must have this enabled.
 		When("WCPVMImageRegistry FSS is enabled", func() {
@@ -145,9 +145,9 @@ func vmUtilTests() {
 			BeforeEach(func() {
 				nsVMImage = builder.DummyVirtualMachineImageA2("dummy-ns-vm-image")
 				nsVMImage.Namespace = vmCtx.VM.Namespace
-				conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageSyncedCondition) // XXX Until rollup condition
+				conditions.MarkTrue(nsVMImage, vmopv1.ReadyConditionType)
 				clusterVMImage = builder.DummyClusterVirtualMachineImageA2("dummy-cluster-vm-image")
-				conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageSyncedCondition) // XXX Until rollup condition
+				conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
 
 				lib.IsWCPVMImageRegistryEnabled = func() bool {
 					return true
@@ -171,29 +171,61 @@ func vmUtilTests() {
 
 			When("VM image exists but the image is not ready", func() {
 
-				BeforeEach(func() {
-					conditions.MarkFalse(nsVMImage, vmopv1.VirtualMachineImageSyncedCondition, "NotReady", "") // XXX Until rollup condition
-					initObjects = append(initObjects, nsVMImage)
-					vmCtx.VM.Spec.ImageName = nsVMImage.Name
+				const expectedErrMsg = "VirtualMachineImage is not ready"
+
+				Context("VM image has the Ready condition set to False", func() {
+					reason := vmopv1.VirtualMachineImageProviderNotReadyReason
+					errMsg := "Provider item is not in ready condition"
+
+					BeforeEach(func() {
+						conditions.MarkFalse(nsVMImage,
+							vmopv1.ReadyConditionType,
+							reason,
+							errMsg)
+						initObjects = append(initObjects, nsVMImage)
+						vmCtx.VM.Spec.ImageName = nsVMImage.Name
+					})
+
+					It("returns error and sets VM condition with reason and message from the image", func() {
+						_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
+						Expect(err).To(HaveOccurred())
+
+						Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+
+						expectedCondition := []metav1.Condition{
+							*conditions.FalseCondition(
+								vmopv1.VirtualMachineConditionImageReady, reason, errMsg),
+						}
+						Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+					})
 				})
 
-				It("returns error and sets VM condition", func() {
-					_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
-					Expect(err).To(HaveOccurred())
-					expectedErrMsg := "VirtualMachineImage is not ready"
-					Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+				Context("VM image does not have the Ready condition", func() {
+					reason := "NotReady"
 
-					expectedCondition := []metav1.Condition{
-						*conditions.FalseCondition(
-							vmopv1.VirtualMachineConditionImageReady, "NotReady", expectedErrMsg),
-					}
-					Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+					BeforeEach(func() {
+						conditions.Delete(nsVMImage, vmopv1.ReadyConditionType)
+						initObjects = append(initObjects, nsVMImage)
+						vmCtx.VM.Spec.ImageName = nsVMImage.Name
+					})
+
+					It("returns error and sets VM condition with reason and message from the image", func() {
+						_, _, _, err := vsphere.GetVirtualMachineImageSpecAndStatus(vmCtx, k8sClient)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring(expectedErrMsg))
+
+						expectedCondition := []metav1.Condition{
+							*conditions.FalseCondition(
+								vmopv1.VirtualMachineConditionImageReady, reason, expectedErrMsg),
+						}
+						Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
+					})
 				})
+
 			})
 
 			When("Namespace scoped VirtualMachineImage exists and ready", func() {
 				BeforeEach(func() {
-					conditions.MarkTrue(nsVMImage, vmopv1.VirtualMachineImageSyncedCondition) // XXX Until rollup condition
 					initObjects = append(initObjects, nsVMImage)
 					vmCtx.VM.Spec.ImageName = nsVMImage.Name
 				})
@@ -211,7 +243,6 @@ func vmUtilTests() {
 
 			When("ClusterVirtualMachineImage exists and ready", func() {
 				BeforeEach(func() {
-					conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageSyncedCondition) // XXX Until rollup condition
 					initObjects = append(initObjects, clusterVMImage)
 					vmCtx.VM.Spec.ImageName = clusterVMImage.Name
 				})

@@ -510,7 +510,7 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 		clusterVMImage.Spec.ProviderRef.Kind = "ClusterContentLibraryItem"
 		Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
 		clusterVMImage.Status.ProviderItemID = itemID
-		conditions2.MarkTrue(clusterVMImage, v1alpha2.VirtualMachineImageSyncedCondition) // TODO: Until we get rollup Ready condition
+		conditions2.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
 		Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
 
 	} else {
@@ -578,7 +578,7 @@ func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName
 		clusterVMImage.Spec.ProviderRef.Kind = "ClusterContentLibraryItem"
 		Expect(c.Client.Create(c, clusterVMImage)).To(Succeed())
 		clusterVMImage.Status.ProviderItemID = itemID
-		conditions2.MarkTrue(clusterVMImage, v1alpha2.VirtualMachineImageSyncedCondition) // TODO: Until we get rollup Ready condition
+		conditions2.MarkTrue(clusterVMImage, v1alpha2.ReadyConditionType)
 		Expect(c.Client.Status().Update(c, clusterVMImage)).To(Succeed())
 	} else {
 		vmImage := DummyVirtualMachineImage(templateName)

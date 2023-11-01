@@ -46,7 +46,7 @@ func clItemReconcile() {
 			image := &vmopv1.VirtualMachineImage{}
 			g.Expect(ctx.Client.Get(ctx, objKey, image)).To(Succeed())
 
-			readyCond := conditions.Get(image, vmopv1.VirtualMachineImageProviderReadyCondition)
+			readyCond := conditions.Get(image, vmopv1.ReadyConditionType)
 			g.Expect(readyCond).ToNot(BeNil())
 			g.Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 		}).Should(Succeed(), "waiting for VirtualMachineImage to be not ready")
@@ -56,7 +56,7 @@ func clItemReconcile() {
 		Eventually(func(g Gomega) {
 			image := &vmopv1.VirtualMachineImage{}
 			g.Expect(ctx.Client.Get(ctx, objKey, image)).To(Succeed())
-			g.Expect(conditions.IsTrue(image, vmopv1.VirtualMachineImageProviderReadyCondition))
+			g.Expect(conditions.IsTrue(image, vmopv1.ReadyConditionType))
 			// Assert that SyncVirtualMachineImage() has been called too.
 			g.Expect(image.Status.Firmware).To(Equal(firmwareValue))
 		}).Should(Succeed(), "waiting for VirtualMachineImage to be sync'd and ready")

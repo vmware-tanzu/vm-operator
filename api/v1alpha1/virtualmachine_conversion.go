@@ -470,7 +470,6 @@ func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 		networkInterfaceSpec := convert_v1alpha1_NetworkInterface_To_v1alpha2_NetworkInterfaceSpec(i, networkInterface)
 		out.Network.Interfaces = append(out.Network.Interfaces, networkInterfaceSpec)
 	}
-	// TODO: out.Network.Network = ???
 
 	out.ReadinessProbe = convert_v1alpha1_Probe_To_v1alpha2_ReadinessProbeSpec(in.ReadinessProbe)
 	out.Advanced = convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha2_VirtualMachineAdvancedSpec(in.AdvancedOptions)

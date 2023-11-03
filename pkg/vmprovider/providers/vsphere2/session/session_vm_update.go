@@ -571,36 +571,11 @@ func (s *Session) ensureNetworkInterfaces(
 			&vimTypes.VirtualSriovEthernetCard{},
 		)
 	}
+
 	networkSpec := &vmCtx.VM.Spec.Network
 	if networkSpec.Disabled {
 		// No connected networking for this VM.
 		return network2.NetworkInterfaceResults{}, nil
-	}
-
-	interfaces := networkSpec.Interfaces
-	if len(interfaces) == 0 {
-		// VM gets one automatic NIC. Create the default interface from fields in the network spec.
-		defaultInterface := vmopv1.VirtualMachineNetworkInterfaceSpec{
-			Name:          networkSpec.DeviceName,
-			Addresses:     networkSpec.Addresses,
-			DHCP4:         networkSpec.DHCP4,
-			DHCP6:         networkSpec.DHCP6,
-			Gateway4:      networkSpec.Gateway4,
-			Gateway6:      networkSpec.Gateway6,
-			MTU:           networkSpec.MTU,
-			Nameservers:   networkSpec.Nameservers,
-			Routes:        networkSpec.Routes,
-			SearchDomains: networkSpec.SearchDomains,
-		}
-
-		if defaultInterface.Name == "" {
-			defaultInterface.Name = "eth0"
-		}
-		if networkSpec.Network != nil {
-			defaultInterface.Network = *networkSpec.Network
-		}
-
-		interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{defaultInterface}
 	}
 
 	clusterMoRef := s.Cluster.Reference()
@@ -610,7 +585,7 @@ func (s *Session) ensureNetworkInterfaces(
 		s.Client.VimClient(),
 		s.Finder,
 		&clusterMoRef,
-		interfaces)
+		networkSpec.Interfaces)
 	if err != nil {
 		return network2.NetworkInterfaceResults{}, err
 	}

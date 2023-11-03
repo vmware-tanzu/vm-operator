@@ -87,8 +87,8 @@ func vmE2ETests() {
 		vm.Spec.ClassName = vmClass.Name
 		vm.Spec.ImageName = ctx.ContentLibraryImageName
 		vm.Spec.StorageClass = ctx.StorageClassName
-		vm.Spec.Network.Nameservers = []string{"1.1.1.1", "8.8.8.8"}
-		vm.Spec.Network.SearchDomains = []string{"vmware.local"}
+		vm.Spec.Network.Interfaces[0].Nameservers = []string{"1.1.1.1", "8.8.8.8"}
+		vm.Spec.Network.Interfaces[0].SearchDomains = []string{"vmware.local"}
 		vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{
 			RawCloudConfig: corev1.SecretKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{
@@ -119,8 +119,15 @@ func vmE2ETests() {
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvVDS
 
-			vm.Spec.Network.Network = &common.PartialObjectRef{
-				Name: networkName,
+			vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: common.PartialObjectRef{
+							Name: networkName,
+						},
+					},
+				},
 			}
 		})
 
@@ -191,8 +198,15 @@ func vmE2ETests() {
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvNSXT
 
-			vm.Spec.Network.Network = &common.PartialObjectRef{
-				Name: networkName,
+			vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: interfaceName,
+						Network: common.PartialObjectRef{
+							Name: networkName,
+						},
+					},
+				},
 			}
 		})
 

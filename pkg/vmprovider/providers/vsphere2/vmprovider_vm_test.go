@@ -187,7 +187,12 @@ func vmTests() {
 				}
 
 				vm.Spec.Network.Disabled = false
-				vm.Spec.Network.Network = &common.PartialObjectRef{Name: dvpgName}
+				vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name:    "eth0",
+						Network: common.PartialObjectRef{Name: dvpgName},
+					},
+				}
 
 				var err error
 				vcVM, err = createOrUpdateAndGetVcVM(ctx, vm)

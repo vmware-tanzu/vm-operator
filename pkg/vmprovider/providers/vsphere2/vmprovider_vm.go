@@ -808,39 +808,13 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 		return nil
 	}
 
-	interfaces := networkSpec.Interfaces
-	if len(interfaces) == 0 {
-		// VM gets one automatic NIC. Create the default interface from fields in the network spec.
-		defaultInterface := vmopv1.VirtualMachineNetworkInterfaceSpec{
-			Name:          networkSpec.DeviceName,
-			Addresses:     networkSpec.Addresses,
-			DHCP4:         networkSpec.DHCP4,
-			DHCP6:         networkSpec.DHCP6,
-			Gateway4:      networkSpec.Gateway4,
-			Gateway6:      networkSpec.Gateway6,
-			MTU:           networkSpec.MTU,
-			Nameservers:   networkSpec.Nameservers,
-			Routes:        networkSpec.Routes,
-			SearchDomains: networkSpec.SearchDomains,
-		}
-
-		if defaultInterface.Name == "" {
-			defaultInterface.Name = "eth0"
-		}
-		if networkSpec.Network != nil {
-			defaultInterface.Network = *networkSpec.Network
-		}
-
-		interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{defaultInterface}
-	}
-
 	results, err := network.CreateAndWaitForNetworkInterfaces(
 		vmCtx,
 		vs.k8sClient,
 		vcClient.VimClient(),
 		vcClient.Finder(),
 		nil, // Don't know the CCR yet (needed to resolve backings for NSX-T)
-		interfaces)
+		networkSpec.Interfaces)
 	if err != nil {
 		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady, "NotReady", err.Error())
 		return err

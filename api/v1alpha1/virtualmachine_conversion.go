@@ -10,12 +10,18 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+)
+
+const (
+	// Well known device key used for the first disk.
+	bootDiskDeviceKey = 2000
 )
 
 func Convert_v1alpha1_VirtualMachineVolume_To_v1alpha2_VirtualMachineVolume(
@@ -36,7 +42,7 @@ func Convert_v1alpha1_VirtualMachineVolume_To_v1alpha2_VirtualMachineVolume(
 		}
 	}
 
-	// TODO: in.VsphereVolume
+	// NOTE: in.VsphereVolume is dropped in v1a2. See filter_out_VirtualMachineVolumes_VsphereVolumes().
 
 	return autoConvert_v1alpha1_VirtualMachineVolume_To_v1alpha2_VirtualMachineVolume(in, out, s)
 }
@@ -328,8 +334,6 @@ func convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha2_VirtualMachineAd
 	out := v1alpha2.VirtualMachineAdvancedSpec{}
 
 	if in != nil {
-		// out.BootDiskCapacity =
-
 		if opts := in.DefaultVolumeProvisioningOptions; opts != nil {
 			if opts.ThinProvisioned != nil {
 				if *opts.ThinProvisioned {
@@ -348,6 +352,26 @@ func convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha2_VirtualMachineAd
 	}
 
 	return out
+}
+
+func convert_v1alpha1_VsphereVolumes_To_v1alpah2_BootDiskCapacity(volumes []VirtualMachineVolume) resource.Quantity {
+	// The v1a1 VsphereVolume was never a great API as you had to know the DeviceKey upfront; at the time our
+	// API was private - only used by CAPW - and predates the "VM Service" VMs; In v1a2, we only support resizing
+	// the boot disk via an explicit field. As good as we can here, map v1a1 volume into the v1a2 specific field.
+
+	for i := range volumes {
+		vsVol := volumes[i].VsphereVolume
+
+		if vsVol != nil && vsVol.DeviceKey != nil && *vsVol.DeviceKey == bootDiskDeviceKey {
+			// This VsphereVolume has the well-known boot disk device key. Return that capacity if set.
+			if capacity := vsVol.Capacity.StorageEphemeral(); capacity != nil {
+				return *capacity
+			}
+			break
+		}
+	}
+
+	return resource.Quantity{}
 }
 
 func convert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvancedOptions(
@@ -379,6 +403,24 @@ func convert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvan
 	}
 
 	return out
+}
+
+func convert_v1alpha2_BootDiskCapacity_To_v1alpha1_VirtualMachineVolume(capacity resource.Quantity) *VirtualMachineVolume {
+	if capacity.IsZero() {
+		return nil
+	}
+
+	const name = "vmoperator-vm-boot-disk"
+
+	return &VirtualMachineVolume{
+		Name: name,
+		VsphereVolume: &VsphereVolumeSource{
+			Capacity: corev1.ResourceList{
+				corev1.ResourceEphemeralStorage: capacity,
+			},
+			DeviceKey: pointer.Int(bootDiskDeviceKey),
+		},
+	}
 }
 
 func convert_v1alpha1_Network_To_v1alpha2_NetworkStatus(
@@ -450,6 +492,21 @@ func convert_v1alpha2_NetworkStatus_To_v1alpha1_Network(
 	return vmIP, out
 }
 
+// In v1a2 we've dropped the v1a1 VsphereVolumes, and in its place we have a single field for the boot
+// disk size. The Convert_v1alpha1_VirtualMachineVolume_To_v1alpha2_VirtualMachineVolume() stub does not
+// allow us to not return something so filter those volumes - without a PersistentVolumeClaim set - here.
+func filter_out_VirtualMachineVolumes_VsphereVolumes(volumes []v1alpha2.VirtualMachineVolume) []v1alpha2.VirtualMachineVolume {
+	out := make([]v1alpha2.VirtualMachineVolume, 0, len(volumes))
+
+	for _, v := range volumes {
+		if v.PersistentVolumeClaim != nil {
+			out = append(out, v)
+		}
+	}
+
+	return out
+}
+
 func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	in *VirtualMachineSpec, out *v1alpha2.VirtualMachineSpec, s apiconversion.Scope) error {
 
@@ -465,6 +522,7 @@ func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	out.NextRestartTime = in.NextRestartTime
 	out.RestartMode = convert_v1alpha1_VirtualMachinePowerOpMode_To_v1alpha2_VirtualMachinePowerOpMode(in.RestartMode)
 	out.Bootstrap = convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(in.VmMetadata)
+	out.Volumes = filter_out_VirtualMachineVolumes_VsphereVolumes(out.Volumes)
 
 	for i, networkInterface := range in.NetworkInterfaces {
 		networkInterfaceSpec := convert_v1alpha1_NetworkInterface_To_v1alpha2_NetworkInterfaceSpec(i, networkInterface)
@@ -473,6 +531,7 @@ func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 
 	out.ReadinessProbe = convert_v1alpha1_Probe_To_v1alpha2_ReadinessProbeSpec(in.ReadinessProbe)
 	out.Advanced = convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha2_VirtualMachineAdvancedSpec(in.AdvancedOptions)
+	out.Advanced.BootDiskCapacity = convert_v1alpha1_VsphereVolumes_To_v1alpah2_BootDiskCapacity(in.Volumes)
 	out.Reserved.ResourcePolicyName = in.ResourcePolicyName
 
 	// Deprecated:
@@ -503,6 +562,10 @@ func Convert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(
 	out.ReadinessProbe = convert_v1alpha2_ReadinessProbeSpec_To_v1alpha1_Probe(in.ReadinessProbe)
 	out.AdvancedOptions = convert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvancedOptions(in.Advanced)
 	out.ResourcePolicyName = in.Reserved.ResourcePolicyName
+
+	if bootDiskVol := convert_v1alpha2_BootDiskCapacity_To_v1alpha1_VirtualMachineVolume(in.Advanced.BootDiskCapacity); bootDiskVol != nil {
+		out.Volumes = append(out.Volumes, *bootDiskVol)
+	}
 
 	// TODO = in.ReadinessGates
 

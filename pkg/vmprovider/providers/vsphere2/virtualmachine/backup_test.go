@@ -18,7 +18,6 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -75,7 +74,7 @@ func backupTests() {
 				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
 					ExtraConfig: []types.BaseOptionValue{
 						&types.OptionValue{
-							Key:   constants.BackupVMKubeDataExtraConfigKey,
+							Key:   vmopv1.VMBackupKubeDataExtraConfigKey,
 							Value: backupVMYamlEncoded,
 						},
 					},
@@ -97,7 +96,7 @@ func backupTests() {
 				vmCopy.Status = vmopv1.VirtualMachineStatus{}
 				vmCopyYaml, err := yaml.Marshal(vmCopy)
 				Expect(err).NotTo(HaveOccurred())
-				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMKubeDataExtraConfigKey, string(vmCopyYaml))
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupKubeDataExtraConfigKey, string(vmCopyYaml))
 			})
 		})
 
@@ -116,7 +115,7 @@ func backupTests() {
 				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
 					ExtraConfig: []types.BaseOptionValue{
 						&types.OptionValue{
-							Key:   constants.BackupVMKubeDataExtraConfigKey,
+							Key:   vmopv1.VMBackupKubeDataExtraConfigKey,
 							Value: encodedKubeDataBackup,
 						},
 					},
@@ -134,7 +133,7 @@ func backupTests() {
 					DiskUUIDToPVC: nil,
 				}
 				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMKubeDataExtraConfigKey, kubeDataBackup)
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupKubeDataExtraConfigKey, kubeDataBackup)
 			})
 		})
 	})
@@ -153,7 +152,7 @@ func backupTests() {
 
 			bootstrapDataJSON, err := json.Marshal(bootstrapDataRaw)
 			Expect(err).NotTo(HaveOccurred())
-			verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMBootstrapDataExtraConfigKey, string(bootstrapDataJSON))
+			verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupBootstrapDataExtraConfigKey, string(bootstrapDataJSON))
 		})
 	})
 
@@ -169,7 +168,7 @@ func backupTests() {
 					DiskUUIDToPVC: nil,
 				}
 				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMDiskDataExtraConfigKey, "")
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupDiskDataExtraConfigKey, "")
 			})
 		})
 
@@ -198,7 +197,7 @@ func backupTests() {
 				}
 				diskDataJSON, err := json.Marshal(diskData)
 				Expect(err).NotTo(HaveOccurred())
-				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMDiskDataExtraConfigKey, string(diskDataJSON))
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupDiskDataExtraConfigKey, string(diskDataJSON))
 			})
 		})
 	})
@@ -215,7 +214,7 @@ func backupTests() {
 				_, err := vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
 					ExtraConfig: []types.BaseOptionValue{
 						&types.OptionValue{
-							Key:   constants.BackupVMCloudInitInstanceIDExtraConfigKey,
+							Key:   vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey,
 							Value: "ec-instance-id",
 						},
 					},
@@ -234,7 +233,7 @@ func backupTests() {
 					DiskUUIDToPVC: nil,
 				}
 				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMCloudInitInstanceIDExtraConfigKey, "ec-instance-id")
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey, "ec-instance-id")
 			})
 		})
 
@@ -255,7 +254,7 @@ func backupTests() {
 					DiskUUIDToPVC: nil,
 				}
 				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, constants.BackupVMCloudInitInstanceIDExtraConfigKey, "annotation-instance-id")
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey, "annotation-instance-id")
 			})
 		})
 

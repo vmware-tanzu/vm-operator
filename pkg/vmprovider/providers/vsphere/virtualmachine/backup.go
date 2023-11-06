@@ -15,7 +15,6 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
 
 type VMDiskData struct {
@@ -53,7 +52,7 @@ func BackupVirtualMachine(ctx context.BackupVirtualMachineContext) error {
 		ctx.VMCtx.Logger.V(4).Info("Skipping VM kube data backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
-			Key:   constants.BackupVMKubeDataExtraConfigKey,
+			Key:   vmopv1.VMBackupKubeDataExtraConfigKey,
 			Value: vmKubeDataBackup,
 		})
 	}
@@ -68,7 +67,7 @@ func BackupVirtualMachine(ctx context.BackupVirtualMachineContext) error {
 		ctx.VMCtx.Logger.V(4).Info("Skipping cloud-init instance ID as already stored")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
-			Key:   constants.BackupVMCloudInitInstanceIDExtraConfigKey,
+			Key:   vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey,
 			Value: instanceIDBackup,
 		})
 	}
@@ -83,7 +82,7 @@ func BackupVirtualMachine(ctx context.BackupVirtualMachineContext) error {
 		ctx.VMCtx.Logger.V(4).Info("Skipping VM bootstrap data backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
-			Key:   constants.BackupVMBootstrapDataExtraConfigKey,
+			Key:   vmopv1.VMBackupBootstrapDataExtraConfigKey,
 			Value: bootstrapDataBackup,
 		})
 	}
@@ -98,7 +97,7 @@ func BackupVirtualMachine(ctx context.BackupVirtualMachineContext) error {
 		ctx.VMCtx.Logger.V(4).Info("Skipping VM disk data backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
-			Key:   constants.BackupVMDiskDataExtraConfigKey,
+			Key:   vmopv1.VMBackupDiskDataExtraConfigKey,
 			Value: diskDataBackup,
 		})
 	}
@@ -122,7 +121,7 @@ func getDesiredVMKubeDataForBackup(
 	ecMap map[string]string) (string, error) {
 	// If the ExtraConfig already contains the latest VM spec, determined by
 	// 'metadata.generation', return an empty string to skip the backup.
-	if ecKubeData, ok := ecMap[constants.BackupVMKubeDataExtraConfigKey]; ok {
+	if ecKubeData, ok := ecMap[vmopv1.VMBackupKubeDataExtraConfigKey]; ok {
 		vmFromBackup, err := constructVMObj(ecKubeData)
 		if err != nil {
 			return "", err
@@ -158,7 +157,7 @@ func getDesiredCloudInitInstanceIDForBackup(
 	ecMap map[string]string) (string, error) {
 	// Cloud-Init instance ID should not be changed once persisted in VM's
 	// ExtraConfig. Return an empty string to skip the backup if it exists.
-	if _, ok := ecMap[constants.BackupVMCloudInitInstanceIDExtraConfigKey]; ok {
+	if _, ok := ecMap[vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey]; ok {
 		return "", nil
 	}
 
@@ -188,7 +187,7 @@ func getDesiredBootstrapDataForBackup(
 	}
 
 	// Return an empty string to skip the backup if the data is unchanged.
-	if bootstrapDataBackup == ecMap[constants.BackupVMBootstrapDataExtraConfigKey] {
+	if bootstrapDataBackup == ecMap[vmopv1.VMBackupBootstrapDataExtraConfigKey] {
 		return "", nil
 	}
 
@@ -233,7 +232,7 @@ func getDesiredDiskDataForBackup(
 	}
 
 	// Return an empty string to skip the backup if the data is unchanged.
-	if diskDataBackup == ecMap[constants.BackupVMDiskDataExtraConfigKey] {
+	if diskDataBackup == ecMap[vmopv1.VMBackupDiskDataExtraConfigKey] {
 		return "", nil
 	}
 

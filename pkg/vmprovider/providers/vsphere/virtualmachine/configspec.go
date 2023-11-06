@@ -41,8 +41,8 @@ func CreateConfigSpec(
 	configSpec.MemoryMB = MemoryQuantityToMb(vmClassSpec.Hardware.Memory)
 
 	configSpec.ManagedBy = &vimtypes.ManagedByInfo{
-		ExtensionKey: constants.ManagedByExtensionKey,
-		Type:         constants.ManagedByExtensionType,
+		ExtensionKey: vmopv1.ManagedByExtensionKey,
+		Type:         vmopv1.ManagedByExtensionType,
 	}
 
 	// Populate the CPU reservation and limits in the ConfigSpec if VAPI fields specify any.

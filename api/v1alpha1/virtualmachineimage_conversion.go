@@ -4,10 +4,13 @@
 package v1alpha1
 
 import (
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
+
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 )
 
 func Convert_v1alpha1_ContentProviderReference_To_common_LocalObjectRef(
@@ -86,6 +89,95 @@ func convert_v1alpha1_VirtualMachineImage_OVFEnv_To_v1alpha2_VirtualMachineImage
 	return nil
 }
 
+func convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMachineImageStatusConditions(
+	conditions []metav1.Condition) []Condition {
+	var (
+		imageSyncedCondition, imageProviderReadyCondition, securityCompliantCondition *Condition
+		readyCondition                                                                metav1.Condition
+	)
+
+	for i := range conditions {
+		c := conditions[i]
+		if c.Type == v1alpha2.ReadyConditionType {
+			readyCondition = c
+			break
+		}
+	}
+
+	trueCondition := func(conditionType ConditionType) *Condition {
+		return &Condition{
+			Type:   conditionType,
+			Status: corev1.ConditionTrue,
+		}
+	}
+	falseConditionWithReason := func(conditionType ConditionType) *Condition {
+		return &Condition{
+			Type:               conditionType,
+			Status:             corev1.ConditionFalse,
+			Severity:           ConditionSeverityError,
+			LastTransitionTime: readyCondition.LastTransitionTime,
+			Reason:             readyCondition.Reason,
+			Message:            readyCondition.Message,
+		}
+	}
+
+	switch readyCondition.Reason {
+	case v1alpha2.VirtualMachineImageProviderSecurityNotCompliantReason:
+		securityCompliantCondition = falseConditionWithReason(
+			VirtualMachineImageProviderSecurityComplianceCondition)
+	case v1alpha2.VirtualMachineImageProviderNotReadyReason:
+		securityCompliantCondition = trueCondition(VirtualMachineImageProviderSecurityComplianceCondition)
+		imageProviderReadyCondition = falseConditionWithReason(
+			VirtualMachineImageProviderReadyCondition)
+	case v1alpha2.VirtualMachineImageNotSyncedReason:
+		securityCompliantCondition = trueCondition(VirtualMachineImageProviderSecurityComplianceCondition)
+		imageProviderReadyCondition = trueCondition(VirtualMachineImageProviderReadyCondition)
+		imageSyncedCondition = falseConditionWithReason(
+			VirtualMachineImageSyncedCondition)
+	default:
+
+	}
+
+	var v1a1Conditions []Condition
+	if securityCompliantCondition != nil {
+		v1a1Conditions = append(v1a1Conditions, *securityCompliantCondition)
+	}
+	if imageSyncedCondition != nil {
+		v1a1Conditions = append(v1a1Conditions, *imageSyncedCondition)
+	}
+	if imageProviderReadyCondition != nil {
+		v1a1Conditions = append(v1a1Conditions, *imageProviderReadyCondition)
+	}
+
+	return v1a1Conditions
+}
+
+func convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha2_VirtualMachineImageStatusConditions(
+	conditions []Condition) []metav1.Condition {
+	var readyCondition *metav1.Condition
+	for _, condition := range conditions {
+		if condition.Status == corev1.ConditionFalse {
+			readyCondition = &metav1.Condition{
+				Type:               v1alpha2.ReadyConditionType,
+				Status:             metav1.ConditionFalse,
+				LastTransitionTime: condition.LastTransitionTime,
+				Reason:             condition.Reason,
+				Message:            condition.Message,
+			}
+			break
+		}
+	}
+
+	if readyCondition == nil {
+		readyCondition = &metav1.Condition{
+			Type:   v1alpha2.ReadyConditionType,
+			Status: metav1.ConditionTrue,
+		}
+	}
+
+	return []metav1.Condition{*readyCondition}
+}
+
 func Convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha2_VirtualMachineImageSpec(
 	in *VirtualMachineImageSpec, out *v1alpha2.VirtualMachineImageSpec, s apiconversion.Scope) error {
 
@@ -113,11 +205,21 @@ func Convert_v1alpha1_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageS
 	// in.PowerState
 	// in.InternalId
 
-	return autoConvert_v1alpha1_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus(in, out, s)
+	if err := autoConvert_v1alpha1_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus(in, out, s); err != nil {
+		return err
+	}
+
+	out.Conditions = convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha2_VirtualMachineImageStatusConditions(in.Conditions)
+
+	return nil
 }
 
 func Convert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageStatus(
 	in *v1alpha2.VirtualMachineImageStatus, out *VirtualMachineImageStatus, s apiconversion.Scope) error {
+
+	if err := autoConvert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageStatus(in, out, s); err != nil {
+		return err
+	}
 
 	out.ImageName = in.Name
 	out.ContentVersion = in.ProviderContentVersion
@@ -125,12 +227,14 @@ func Convert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageS
 
 	// in.Capabilities
 
+	out.Conditions = convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMachineImageStatusConditions(in.Conditions)
+
 	// Deprecated:
 	out.Uuid = ""
 	out.InternalId = ""
 	out.PowerState = ""
 
-	return autoConvert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageStatus(in, out, s)
+	return nil
 }
 
 func convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha2_VirtualMachineImageStatus(

@@ -233,7 +233,7 @@ func (v validator) validateBootstrap(
 					"sysprep and rawSysprep are mutually exclusive"))
 			}
 		} else {
-			allErrs = append(allErrs, field.Invalid(p, "sysprep", fmt.Sprintf(featureNotEnabled, "sysprep")))
+			allErrs = append(allErrs, field.Invalid(p, "Sysprep", fmt.Sprintf(featureNotEnabled, "Sysprep")))
 		}
 	}
 
@@ -319,6 +319,7 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 
 		for i, interfaceSpec := range networkSpec.Interfaces {
 			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(p.Index(i), interfaceSpec, vm.Name)...)
+			allErrs = append(allErrs, v.validateNetworkSpecWithBootstrap(p.Index(i), interfaceSpec, vm)...)
 		}
 	}
 
@@ -437,6 +438,61 @@ func (v validator) validateNetworkInterfaceSpec(
 				allErrs = append(allErrs,
 					field.Invalid(p.Index(i), "", "cannot mix IP address families"))
 			}
+		}
+	}
+
+	return allErrs
+}
+
+// mtu and routes is available only with CloudInit bootstrap providers.
+// nameservers and searchDomains is available only with the following bootstrap
+// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
+func (v validator) validateNetworkSpecWithBootstrap(
+	interfacePath *field.Path,
+	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+	cloudInit := vm.Spec.Bootstrap.CloudInit
+	linuxPrep := vm.Spec.Bootstrap.LinuxPrep
+	sysPrep := vm.Spec.Bootstrap.Sysprep
+
+	if mtu := interfaceSpec.MTU; mtu != nil && cloudInit == nil {
+		allErrs = append(allErrs, field.Invalid(
+			interfacePath.Child("mtu"),
+			mtu,
+			"mtu is available only with the following bootstrap providers: CloudInit",
+		))
+	}
+
+	if routes := interfaceSpec.Routes; routes != nil && cloudInit == nil {
+		allErrs = append(allErrs, field.Invalid(
+			interfacePath.Child("routes"),
+			// Not exposing routes here in error message
+			"routes",
+			"routes is available only with the following bootstrap providers: CloudInit",
+		))
+	}
+
+	if nameservers := interfaceSpec.Nameservers; nameservers != nil {
+		sysprepNotAllowed := !lib.IsWindowsSysprepFSSEnabled() || sysPrep == nil || !equality.Semantic.DeepEqual(sysPrep.RawSysprep, corev1.SecretKeySelector{})
+		if cloudInit == nil && linuxPrep == nil && sysprepNotAllowed {
+			allErrs = append(allErrs, field.Invalid(
+				interfacePath.Child("nameservers"),
+				strings.Join(nameservers, ","),
+				"nameservers is available only with the following bootstrap providers: CloudInit LinuxPrep and Sysprep (except for RawSysprep)",
+			))
+		}
+	}
+
+	if searchDomains := interfaceSpec.SearchDomains; searchDomains != nil {
+		sysprepNotAllowed := !lib.IsWindowsSysprepFSSEnabled() || sysPrep == nil || !equality.Semantic.DeepEqual(sysPrep.RawSysprep, corev1.SecretKeySelector{})
+		if cloudInit == nil && linuxPrep == nil && sysprepNotAllowed {
+			allErrs = append(allErrs, field.Invalid(
+				interfacePath.Child("searchDomains"),
+				strings.Join(searchDomains, ","),
+				"searchDomains is available only with the following bootstrap providers: CloudInit LinuxPrep and Sysprep (except for RawSysprep)",
+			))
 		}
 	}
 

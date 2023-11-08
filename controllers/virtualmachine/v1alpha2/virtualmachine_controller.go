@@ -328,7 +328,6 @@ func (r *Reconciler) ReconcileNormal(ctx *context.VirtualMachineContextA2) (rete
 	}()
 
 	if err := r.VMProvider.CreateOrUpdateVirtualMachine(ctx, ctx.VM); err != nil {
-		ctx.Logger.Error(err, "Failed to reconcile VirtualMachine")
 		r.Recorder.EmitEvent(ctx.VM, "CreateOrUpdate", err, false)
 		return err
 	}

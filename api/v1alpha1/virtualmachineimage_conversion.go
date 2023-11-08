@@ -155,8 +155,17 @@ func convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMac
 func convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha2_VirtualMachineImageStatusConditions(
 	conditions []Condition) []metav1.Condition {
 	var readyCondition *metav1.Condition
+
+	// Condition types which are folded into the Ready condition in v1alpha2
+	oldConditionTypes := map[ConditionType]struct{}{
+		VirtualMachineImageSyncedCondition:                     {},
+		VirtualMachineImageProviderReadyCondition:              {},
+		VirtualMachineImageProviderSecurityComplianceCondition: {},
+	}
+
 	for _, condition := range conditions {
-		if condition.Status == corev1.ConditionFalse {
+		if _, ok := oldConditionTypes[condition.Type]; ok &&
+			condition.Status == corev1.ConditionFalse {
 			readyCondition = &metav1.Condition{
 				Type:               v1alpha2.ReadyConditionType,
 				Status:             metav1.ConditionFalse,
@@ -195,8 +204,13 @@ func Convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha2_VirtualMachineImageSpe
 func Convert_v1alpha1_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus(
 	in *VirtualMachineImageStatus, out *v1alpha2.VirtualMachineImageStatus, s apiconversion.Scope) error {
 
+	if err := autoConvert_v1alpha1_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus(in, out, s); err != nil {
+		return err
+	}
+
 	out.Name = in.ImageName
 	out.ProviderContentVersion = in.ContentVersion
+	out.Conditions = convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha2_VirtualMachineImageStatusConditions(in.Conditions)
 	// in.ImageSupported
 	// in.ContentLibraryRef
 
@@ -204,12 +218,6 @@ func Convert_v1alpha1_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageS
 	// in.Uuid
 	// in.PowerState
 	// in.InternalId
-
-	if err := autoConvert_v1alpha1_VirtualMachineImageStatus_To_v1alpha2_VirtualMachineImageStatus(in, out, s); err != nil {
-		return err
-	}
-
-	out.Conditions = convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha2_VirtualMachineImageStatusConditions(in.Conditions)
 
 	return nil
 }

@@ -157,9 +157,6 @@ func (r *Reconciler) ReconcileNormal(ctx *context.ContentLibraryItemContextA2) e
 			savedStatus = vmi.Status.DeepCopy()
 		}()
 
-		// Resetting the ready condition to recalculate the latest state.
-		conditions.Delete(vmi, vmopv1.ReadyConditionType)
-
 		if err := r.setUpVMIFromCLItem(ctx); err != nil {
 			ctx.Logger.Error(err, "Failed to set up VirtualMachineImage from ContentLibraryItem")
 			return err
@@ -185,14 +182,16 @@ func (r *Reconciler) ReconcileNormal(ctx *context.ContentLibraryItemContextA2) e
 				"Provider item is not in ready condition",
 			)
 			ctx.Logger.Info("ContentLibraryItem is not ready yet, skipping image content sync")
-		} else {
-			syncErr = r.syncImageContent(ctx)
-			didSync = true
+			return nil
 		}
 
-		if !conditions.Has(vmi, vmopv1.ReadyConditionType) {
+		syncErr = r.syncImageContent(ctx)
+		if syncErr == nil {
+			// In this block, we have confirmed that all the three sub-conditions constituting this
+			// Ready condition are true, hence mark it as true.
 			conditions.MarkTrue(vmi, vmopv1.ReadyConditionType)
 		}
+		didSync = true
 
 		// Do not return syncErr here as we still want to patch the updated fields we get above.
 		return nil

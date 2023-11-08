@@ -5,9 +5,12 @@ package clustercontentlibraryitem_test
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/pointer"
 
 	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,7 +44,7 @@ func cclItemReconcile() {
 		}).Should(Succeed(), "waiting for ClusterContentLibraryItem finalizer")
 	}
 
-	waitForClusterVirtualMachineImageNotReady := func(objKey client.ObjectKey) {
+	waitForClusterVirtualMachineImageNotReadyWithReason := func(objKey client.ObjectKey, reason string) {
 		Eventually(func(g Gomega) {
 			image := &vmopv1.ClusterVirtualMachineImage{}
 			g.Expect(ctx.Client.Get(ctx, objKey, image)).To(Succeed())
@@ -49,6 +52,7 @@ func cclItemReconcile() {
 			readyCond := conditions.Get(image, vmopv1.ReadyConditionType)
 			g.Expect(readyCond).ToNot(BeNil())
 			g.Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(readyCond.Reason).To(Equal(reason))
 		}).Should(Succeed(), "waiting for ClusterVirtualMachineImage to be not ready")
 	}
 
@@ -97,10 +101,53 @@ func cclItemReconcile() {
 			})
 
 			By("ClusterVirtualMachineImage is created but not ready", func() {
-				waitForClusterVirtualMachineImageNotReady(cvmiKey)
+				waitForClusterVirtualMachineImageNotReadyWithReason(cvmiKey,
+					vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason)
+			})
+
+			By("ClusterVirtualMachineImage should have owner refs set", func() {
+				item := &vmopv1.ClusterVirtualMachineImage{}
+				Expect(ctx.Client.Get(ctx, cvmiKey, item)).To(Succeed())
+
+				Expect(item.OwnerReferences).To(HaveLen(1))
+				Expect(item.OwnerReferences[0].Name).To(Equal(origCCLItem.Name))
+				Expect(item.OwnerReferences[0].APIVersion).To(Equal(imgregv1a1.GroupVersion.String()))
+			})
+
+			By("Update ClusterContentLibraryItem's compliance to be False", func() {
+				cclItem := &imgregv1a1.ClusterContentLibraryItem{}
+				Expect(ctx.Client.Get(ctx, cclItemKey, cclItem)).To(Succeed())
+				cclItem.Status = origCCLItem.Status
+				cclItem.Status.SecurityCompliance = pointer.Bool(false)
+				Expect(ctx.Client.Status().Update(ctx, cclItem)).To(Succeed())
+
+				By("sets ClusterVirtualMachineImage status to not Ready", func() {
+					waitForClusterVirtualMachineImageNotReadyWithReason(cvmiKey,
+						vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason)
+				})
 			})
 
 			cclItem := &imgregv1a1.ClusterContentLibraryItem{}
+			By("Update ClusterContentLibraryItem to populate non-Ready Status", func() {
+				Expect(ctx.Client.Get(ctx, cclItemKey, cclItem)).To(Succeed())
+				cclItem.Status = origCCLItem.Status
+				cclItem.Status.Conditions = imgregv1a1.Conditions{
+					imgregv1a1.Condition{
+						Type:               imgregv1a1.ReadyCondition,
+						Status:             corev1.ConditionFalse,
+						LastTransitionTime: metav1.NewTime(time.Now()),
+						Reason:             "blah",
+						Message:            "blah blah",
+					},
+				}
+				Expect(ctx.Client.Status().Update(ctx, cclItem)).To(Succeed())
+			})
+
+			By("sets ClusterVirtualMachineImage status to not Ready", func() {
+				waitForClusterVirtualMachineImageNotReadyWithReason(cvmiKey,
+					vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason)
+			})
+
 			By("Update ClusterContentLibraryItem to populate Status and be Ready", func() {
 				Expect(ctx.Client.Get(ctx, cclItemKey, cclItem)).To(Succeed())
 				cclItem.Status = origCCLItem.Status

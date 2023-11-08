@@ -612,10 +612,10 @@ func (v validator) validateAdvanced(ctx *context.WebhookRequestContext, vm *vmop
 	advancedPath := field.NewPath("spec", "advanced")
 	advanced := &vm.Spec.Advanced
 
-	if diskCap := advanced.BootDiskCapacity; !diskCap.IsZero() {
-		if diskCap.Value()%megaByte.Value() != 0 {
+	if capacity := advanced.BootDiskCapacity; capacity != nil && !capacity.IsZero() {
+		if capacity.Value()%megaByte.Value() != 0 {
 			allErrs = append(allErrs, field.Invalid(advancedPath.Child("bootDiskCapacity"),
-				diskCap.Value(), vSphereVolumeSizeNotMBMultiple))
+				capacity.Value(), vSphereVolumeSizeNotMBMultiple))
 		}
 	}
 

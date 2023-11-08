@@ -422,8 +422,8 @@ func UpdateConfigSpecManagedBy(
 	configSpec *vimTypes.VirtualMachineConfigSpec) {
 	if config.ManagedBy == nil {
 		configSpec.ManagedBy = &vimTypes.ManagedByInfo{
-			ExtensionKey: constants.ManagedByExtensionKey,
-			Type:         constants.ManagedByExtensionType,
+			ExtensionKey: vmopv1.ManagedByExtensionKey,
+			Type:         vmopv1.ManagedByExtensionType,
 		}
 	}
 }

@@ -43,8 +43,8 @@ func CreateConfigSpec(
 	configSpec.NumCPUs = int32(vmClassSpec.Hardware.Cpus)
 	configSpec.MemoryMB = MemoryQuantityToMb(vmClassSpec.Hardware.Memory)
 	configSpec.ManagedBy = &types.ManagedByInfo{
-		ExtensionKey: constants.ManagedByExtensionKey,
-		Type:         constants.ManagedByExtensionType,
+		ExtensionKey: vmopv1.ManagedByExtensionKey,
+		Type:         vmopv1.ManagedByExtensionType,
 	}
 
 	if val, ok := vmCtx.VM.Annotations[constants.FirmwareOverrideAnnotation]; ok && (val == "efi" || val == "bios") {

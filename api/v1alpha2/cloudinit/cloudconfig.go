@@ -130,7 +130,7 @@ type User struct {
 	// please use HashedPasswd instead.
 	//
 	// +optional
-	Passwd *corev1.SecretKeySelector `json:"passwd"`
+	Passwd *corev1.SecretKeySelector `json:"passwd,omitempty"`
 
 	// PrimaryGroup is the primary group for the user.
 	//

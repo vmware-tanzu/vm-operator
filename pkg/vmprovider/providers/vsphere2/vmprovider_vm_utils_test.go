@@ -276,6 +276,7 @@ func vmUtilTests() {
 				vmCtx.VM.Spec.Bootstrap = vmopv1.VirtualMachineBootstrapSpec{
 					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 				}
+				vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig = &corev1.SecretKeySelector{}
 				vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig.Name = dataName
 			})
 
@@ -320,6 +321,7 @@ func vmUtilTests() {
 				vmCtx.VM.Spec.Bootstrap = vmopv1.VirtualMachineBootstrapSpec{
 					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
 				}
+				vmCtx.VM.Spec.Bootstrap.Sysprep.RawSysprep = &corev1.SecretKeySelector{}
 				vmCtx.VM.Spec.Bootstrap.Sysprep.RawSysprep.Name = dataName
 			})
 

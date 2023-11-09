@@ -26,10 +26,11 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -488,12 +489,8 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-							CloudConfig: cloudinit.CloudConfig{
-								Timezone: "dummy-tz",
-							},
-							RawCloudConfig: corev1.SecretKeySelector{
-								Key: "cloud-init-key",
-							},
+							CloudConfig:    &cloudinit.CloudConfig{},
+							RawCloudConfig: &corev1.SecretKeySelector{},
 						}
 					},
 					validate: doValidateWithMsg(
@@ -506,8 +503,8 @@ func unitTestsValidateCreate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
 						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
-						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep.GUIRunOnce.Commands = []string{"hello"}
-						ctx.vm.Spec.Bootstrap.Sysprep.RawSysprep.Key = "sysprep-key"
+						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep = &sysprep.Sysprep{}
+						ctx.vm.Spec.Bootstrap.Sysprep.RawSysprep = &corev1.SecretKeySelector{}
 					},
 					validate: doValidateWithMsg(
 						`spec.bootstrap.sysprep: Invalid value: "sysPrep": sysprep and rawSysprep are mutually exclusive`,
@@ -823,7 +820,7 @@ func unitTestsValidateCreate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
 						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
-						ctx.vm.Spec.Bootstrap.Sysprep.RawSysprep.Key = "sysprep-key"
+						ctx.vm.Spec.Bootstrap.Sysprep.RawSysprep = &corev1.SecretKeySelector{}
 						ctx.vm.Spec.Network.Interfaces[0].Nameservers = []string{
 							"not-an-ip",
 							"192.168.1.1/24",
@@ -842,7 +839,7 @@ func unitTestsValidateCreate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
 						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
-						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep.GUIRunOnce.Commands = []string{"hello"}
+						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep = &sysprep.Sysprep{}
 						ctx.vm.Spec.Network.Interfaces[0].Nameservers = []string{
 							"8.8.8.8",
 							"2001:4860:4860::8888",
@@ -858,7 +855,7 @@ func unitTestsValidateCreate() {
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
 						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
-						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep.GUIRunOnce.Commands = []string{"hello"}
+						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep = &sysprep.Sysprep{}
 						ctx.vm.Spec.Network.Interfaces[0].Routes = []vmopv1.VirtualMachineNetworkRouteSpec{
 							{
 								To:  "10.100.10.1",

@@ -8,10 +8,8 @@ import (
 	"fmt"
 
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-	"k8s.io/apimachinery/pkg/api/equality"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
 )
@@ -26,7 +24,7 @@ func BootstrapSysPrep(
 	var data string
 	key := "unattend"
 
-	if equality.Semantic.DeepEqual(sysPrepSpec.Sysprep, sysprep.Sysprep{}) {
+	if sysPrepSpec.RawSysprep != nil {
 		var err error
 
 		if sysPrepSpec.RawSysprep.Key != "" {
@@ -44,7 +42,7 @@ func BootstrapSysPrep(
 			return nil, nil, fmt.Errorf("decoding Sysprep unattend XML failed: %w", err)
 		}
 
-	} else {
+	} else if sysPrepSpec.Sysprep != nil {
 		return nil, nil, fmt.Errorf("TODO: inlined Sysprep")
 	}
 

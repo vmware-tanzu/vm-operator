@@ -12,9 +12,11 @@ import (
 
 	"github.com/vmware/govmomi/vim25/types"
 	"gopkg.in/yaml.v2"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
@@ -91,15 +93,20 @@ var _ = Describe("CloudInit Bootstrap", func() {
 			)
 		})
 
-		Context("CloudInit Inlined Config", func() {
+		Context("Inlined CloudConfig", func() {
+			BeforeEach(func() {
+				cloudInitSpec.CloudConfig = &cloudinit.CloudConfig{}
+			})
+
 			It("Returns TODO", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("TODO"))
 			})
 		})
 
-		Context("CloudInit Data Config", func() {
+		Context("RawCloudConfig", func() {
 			BeforeEach(func() {
+				cloudInitSpec.RawCloudConfig = &corev1.SecretKeySelector{}
 				cloudInitSpec.RawCloudConfig.Name = "my-data"
 				cloudInitSpec.RawCloudConfig.Key = "my-key"
 				bsArgs.Data[cloudInitSpec.RawCloudConfig.Key] = cloudInitUserdata

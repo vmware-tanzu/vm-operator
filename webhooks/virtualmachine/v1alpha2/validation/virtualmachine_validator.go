@@ -203,7 +203,7 @@ func (v validator) validateBootstrap(
 		hasCloudConfig := !equality.Semantic.DeepEqual(cloudInit.CloudConfig, cloudinit.CloudConfig{})
 		hasRawCloudConfig := !equality.Semantic.DeepEqual(cloudInit.RawCloudConfig, corev1.SecretKeySelector{})
 		if hasCloudConfig && hasRawCloudConfig {
-			allErrs = append(allErrs, field.Invalid(p, cloudInit,
+			allErrs = append(allErrs, field.Invalid(p, "cloudInit",
 				"cloudConfig and rawCloudConfig are mutually exclusive"))
 		}
 	}
@@ -229,7 +229,7 @@ func (v validator) validateBootstrap(
 			hasSysPrep := !equality.Semantic.DeepEqual(sysPrep.Sysprep, sysprep.Sysprep{})
 			hasRawSysPrep := !equality.Semantic.DeepEqual(sysPrep.RawSysprep, corev1.SecretKeySelector{})
 			if hasSysPrep && hasRawSysPrep {
-				allErrs = append(allErrs, field.Invalid(p, sysPrep,
+				allErrs = append(allErrs, field.Invalid(p, "sysPrep",
 					"sysprep and rawSysprep are mutually exclusive"))
 			}
 		} else {
@@ -246,9 +246,21 @@ func (v validator) validateBootstrap(
 		}
 
 		if len(vAppConfig.Properties) != 0 && len(vAppConfig.RawProperties) != 0 {
-			allErrs = append(allErrs, field.TypeInvalid(p, vAppConfig,
+			allErrs = append(allErrs, field.TypeInvalid(p, "vAppConfig",
 				"properties and rawProperties are mutually exclusive"))
 		}
+
+		for _, property := range vAppConfig.Properties {
+			if key := property.Key; key == "" {
+				allErrs = append(allErrs, field.Invalid(p.Child("properties").Child("key"), "key",
+					"key is a required field in vAppConfig Properties"))
+			}
+			if value := property.Value; value.From != nil && value.Value != nil {
+				allErrs = append(allErrs, field.Invalid(p.Child("properties").Child("value"), "value",
+					"from and value is mutually exclusive"))
+			}
+		}
+
 	}
 
 	return allErrs

@@ -1507,10 +1507,10 @@ func vmTests() {
 				})
 
 				Context("Should resize root disk", func() {
-					newSize := resource.MustParse("4242Gi")
-
 					It("Succeeds", func() {
-						vm.Spec.Advanced.BootDiskCapacity = newSize
+						newSize := resource.MustParse("4242Gi")
+
+						vm.Spec.Advanced.BootDiskCapacity = &newSize
 						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 						Expect(err).ToNot(HaveOccurred())

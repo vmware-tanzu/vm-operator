@@ -17,7 +17,7 @@ func updateVirtualDiskDeviceChanges(
 	virtualDisks object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
 	capacity := vmCtx.VM.Spec.Advanced.BootDiskCapacity
-	if capacity.IsZero() {
+	if capacity == nil || capacity.IsZero() {
 		return nil, nil
 	}
 

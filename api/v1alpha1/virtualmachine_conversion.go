@@ -354,7 +354,7 @@ func convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha2_VirtualMachineAd
 	return out
 }
 
-func convert_v1alpha1_VsphereVolumes_To_v1alpah2_BootDiskCapacity(volumes []VirtualMachineVolume) resource.Quantity {
+func convert_v1alpha1_VsphereVolumes_To_v1alpah2_BootDiskCapacity(volumes []VirtualMachineVolume) *resource.Quantity {
 	// The v1a1 VsphereVolume was never a great API as you had to know the DeviceKey upfront; at the time our
 	// API was private - only used by CAPW - and predates the "VM Service" VMs; In v1a2, we only support resizing
 	// the boot disk via an explicit field. As good as we can here, map v1a1 volume into the v1a2 specific field.
@@ -365,13 +365,13 @@ func convert_v1alpha1_VsphereVolumes_To_v1alpah2_BootDiskCapacity(volumes []Virt
 		if vsVol != nil && vsVol.DeviceKey != nil && *vsVol.DeviceKey == bootDiskDeviceKey {
 			// This VsphereVolume has the well-known boot disk device key. Return that capacity if set.
 			if capacity := vsVol.Capacity.StorageEphemeral(); capacity != nil {
-				return *capacity
+				return capacity
 			}
 			break
 		}
 	}
 
-	return resource.Quantity{}
+	return nil
 }
 
 func convert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvancedOptions(
@@ -405,8 +405,8 @@ func convert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvan
 	return out
 }
 
-func convert_v1alpha2_BootDiskCapacity_To_v1alpha1_VirtualMachineVolume(capacity resource.Quantity) *VirtualMachineVolume {
-	if capacity.IsZero() {
+func convert_v1alpha2_BootDiskCapacity_To_v1alpha1_VirtualMachineVolume(capacity *resource.Quantity) *VirtualMachineVolume {
+	if capacity == nil || capacity.IsZero() {
 		return nil
 	}
 
@@ -416,7 +416,7 @@ func convert_v1alpha2_BootDiskCapacity_To_v1alpha1_VirtualMachineVolume(capacity
 		Name: name,
 		VsphereVolume: &VsphereVolumeSource{
 			Capacity: corev1.ResourceList{
-				corev1.ResourceEphemeralStorage: capacity,
+				corev1.ResourceEphemeralStorage: *capacity,
 			},
 			DeviceKey: pointer.Int(bootDiskDeviceKey),
 		},

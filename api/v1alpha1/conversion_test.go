@@ -9,7 +9,6 @@ import (
 	fuzz "github.com/google/gofuzz"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/apitesting/fuzzer"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
@@ -125,7 +124,6 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 
 			vmSpec.ReadinessGates = nil
 			vmSpec.ReadinessProbe.GuestInfo = nil
-			vmSpec.Advanced.BootDiskCapacity = resource.Quantity{}
 		},
 		func(vmStatus *v1alpha1.VirtualMachineStatus, c fuzz.Continue) {
 			c.Fuzz(vmStatus)

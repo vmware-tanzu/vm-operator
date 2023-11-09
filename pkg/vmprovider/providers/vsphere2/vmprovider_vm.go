@@ -945,7 +945,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecChangeBootDiskSize(
 	_ *VMCreateArgs) error {
 
 	capacity := vmCtx.VM.Spec.Advanced.BootDiskCapacity
-	if capacity.IsZero() {
+	if capacity == nil || capacity.IsZero() {
 		return nil
 	}
 

@@ -384,7 +384,7 @@ type VirtualMachineAdvancedSpec struct {
 	// affect the VM.
 	//
 	// +optional
-	BootDiskCapacity resource.Quantity `json:"bootDiskCapacity,omitempty"`
+	BootDiskCapacity *resource.Quantity `json:"bootDiskCapacity,omitempty"`
 
 	// DefaultVolumeProvisioningMode specifies the default provisioning mode for
 	// persistent volumes managed by this VM.

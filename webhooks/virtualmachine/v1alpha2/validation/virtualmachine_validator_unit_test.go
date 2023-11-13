@@ -362,10 +362,12 @@ func unitTestsValidateCreate() {
 
 		doValidateWithMsg := func(msgs ...string) func(admission.Response) {
 			return func(response admission.Response) {
-				reasons := string(response.Result.Reason)
+				reasons := strings.Split(string(response.Result.Reason), ", ")
 				for _, m := range msgs {
-					Expect(reasons).To(ContainSubstring(m))
+					Expect(reasons).To(ContainElement(m))
 				}
+				// This may be overly strict in some cases but catches missed assertions.
+				Expect(reasons).To(HaveLen(len(msgs)))
 			}
 		}
 
@@ -420,17 +422,22 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
 						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
 					},
-					validate: doValidateWithMsg("CloudInit may not be used with any other bootstrap provider",
-						"LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers"),
+					validate: doValidateWithMsg(
+						`spec.bootstrap.cloudInit: Forbidden: CloudInit may not be used with any other bootstrap provider`,
+						`spec.bootstrap.linuxPrep: Forbidden: LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers`),
 				},
 			),
 			Entry("disallow CloudInit and Sysprep specified at the same time",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
 						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
 						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
 					},
-					validate: doValidateWithMsg("CloudInit may not be used with any other bootstrap provider"),
+					validate: doValidateWithMsg(
+						`spec.bootstrap.cloudInit: Forbidden: CloudInit may not be used with any other bootstrap provider`,
+						`spec.bootstrap.sysprep: Forbidden: Sysprep may not be used with either CloudInit or LinuxPrep bootstrap providers`,
+					),
 				},
 			),
 			Entry("disallow CloudInit and vAppConfig specified at the same time",
@@ -439,16 +446,23 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
 						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
 					},
-					validate: doValidateWithMsg("CloudInit may not be used with any other bootstrap provider"),
+					validate: doValidateWithMsg(
+						`spec.bootstrap.cloudInit: Forbidden: CloudInit may not be used with any other bootstrap provider`,
+						`spec.bootstrap.vAppConfig: Forbidden: vAppConfig may not be used in conjunction with CloudInit bootstrap provider`,
+					),
 				},
 			),
 			Entry("disallow LinuxPrep and Sysprep specified at the same time",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
+						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
 						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
 						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
 					},
-					validate: doValidateWithMsg("LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers"),
+					validate: doValidateWithMsg(
+						`spec.bootstrap.linuxPrep: Forbidden: LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers`,
+						`spec.bootstrap.sysprep: Forbidden: Sysprep may not be used with either CloudInit or LinuxPrep bootstrap providers`,
+					),
 				},
 			),
 			Entry("allow LinuxPrep and vAppConfig specified at the same time",
@@ -482,7 +496,9 @@ func unitTestsValidateCreate() {
 							},
 						}
 					},
-					validate: doValidateWithMsg("cloudConfig and rawCloudConfig are mutually exclusive"),
+					validate: doValidateWithMsg(
+						`spec.bootstrap.cloudInit: Invalid value: "cloudInit": cloudConfig and rawCloudConfig are mutually exclusive`,
+					),
 				},
 			),
 			Entry("disallow Sysprep mixing inline Sysprep and RawSysprep when FSS is enabled",
@@ -493,7 +509,9 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep.GUIRunOnce.Commands = []string{"hello"}
 						ctx.vm.Spec.Bootstrap.Sysprep.RawSysprep.Key = "sysprep-key"
 					},
-					validate: doValidateWithMsg("sysprep and rawSysprep are mutually exclusive"),
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep: Invalid value: "sysPrep": sysprep and rawSysprep are mutually exclusive`,
+					),
 				},
 			),
 			Entry("disallow vAppConfig mixing inline Properties and RawProperties",
@@ -508,7 +526,52 @@ func unitTestsValidateCreate() {
 							RawProperties: "some-vapp-prop",
 						}
 					},
-					validate: doValidateWithMsg("properties and rawProperties are mutually exclusive"),
+					validate: doValidateWithMsg(
+						`spec.bootstrap.vAppConfig: Invalid value: "vAppConfig": properties and rawProperties are mutually exclusive`,
+					),
+				},
+			),
+
+			Entry("disallow vAppConfig mixing Properties Value From Secret and direct String pointer",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+							Properties: []common.KeyValueOrSecretKeySelectorPair{
+								{
+									Key: "key",
+									Value: common.ValueOrSecretKeySelector{
+										From: &corev1.SecretKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{Name: "secret-name"},
+											Key:                  "key",
+										},
+										Value: pointer.String("value"),
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.vAppConfig.properties.value: Invalid value: "value": from and value is mutually exclusive`,
+					),
+				},
+			),
+
+			Entry("disallow vAppConfig inline Properties missing Key",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+							Properties: []common.KeyValueOrSecretKeySelectorPair{
+								{
+									Value: common.ValueOrSecretKeySelector{
+										Value: pointer.String("value"),
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.vAppConfig.properties.key: Invalid value: "key": key is a required field in vAppConfig Properties`,
+					),
 				},
 			),
 		)

@@ -440,19 +440,6 @@ func UpdateConfigSpecFirmware(
 	}
 }
 
-// UpdateConfigSpecDeviceGroups sets the desired config spec device groups to reconcile by differencing the
-// current VM config and the class config spec device groups.
-func UpdateConfigSpecDeviceGroups(
-	config *vimTypes.VirtualMachineConfigInfo,
-	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec) {
-
-	if classConfigSpec.DeviceGroups != nil {
-		if config.DeviceGroups == nil || !reflect.DeepEqual(classConfigSpec.DeviceGroups.DeviceGroup, config.DeviceGroups.DeviceGroup) {
-			configSpec.DeviceGroups = classConfigSpec.DeviceGroups
-		}
-	}
-}
-
 // updateConfigSpec overlays the VM Class spec with the provided ConfigSpec to form a desired
 // ConfigSpec that will be used to reconfigure the VM.
 func updateConfigSpec(
@@ -480,7 +467,6 @@ func updateConfigSpec(
 		vmCtx.VM, updateArgs.ExtraConfig, updateArgs.VirtualMachineImageV1Alpha1Compatible)
 	UpdateConfigSpecChangeBlockTracking(config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
-	UpdateConfigSpecDeviceGroups(config, configSpec, updateArgs.ConfigSpec)
 
 	return configSpec
 }

@@ -647,59 +647,6 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 	})
 
-	Context("DeviceGroups", func() {
-		var classConfigSpec *vimTypes.VirtualMachineConfigSpec
-
-		BeforeEach(func() {
-			classConfigSpec = &vimTypes.VirtualMachineConfigSpec{}
-		})
-
-		It("No DeviceGroups set in class config spec", func() {
-			session.UpdateConfigSpecDeviceGroups(config, configSpec, classConfigSpec)
-			Expect(configSpec.DeviceGroups).To(BeNil())
-		})
-
-		It("DeviceGroups set in class config spec", func() {
-			classConfigSpec.DeviceGroups = &vimTypes.VirtualMachineVirtualDeviceGroups{
-				DeviceGroup: []vimTypes.BaseVirtualMachineVirtualDeviceGroupsDeviceGroup{
-					&vimTypes.VirtualMachineVirtualDeviceGroupsDeviceGroup{
-						GroupInstanceKey: int32(400),
-					},
-				},
-			}
-
-			session.UpdateConfigSpecDeviceGroups(config, configSpec, classConfigSpec)
-			Expect(configSpec.DeviceGroups).NotTo(BeNil())
-			Expect(configSpec.DeviceGroups.DeviceGroup).To(HaveLen(1))
-			deviceGroup := configSpec.DeviceGroups.DeviceGroup[0].GetVirtualMachineVirtualDeviceGroupsDeviceGroup()
-			Expect(deviceGroup.GroupInstanceKey).To(Equal(int32(400)))
-		})
-
-		It("configInfo DeviceGroups set with vals different than the class config spec", func() {
-			classConfigSpec.DeviceGroups = &vimTypes.VirtualMachineVirtualDeviceGroups{
-				DeviceGroup: []vimTypes.BaseVirtualMachineVirtualDeviceGroupsDeviceGroup{
-					&vimTypes.VirtualMachineVirtualDeviceGroupsDeviceGroup{
-						GroupInstanceKey: int32(400),
-					},
-				},
-			}
-
-			config.DeviceGroups = &vimTypes.VirtualMachineVirtualDeviceGroups{
-				DeviceGroup: []vimTypes.BaseVirtualMachineVirtualDeviceGroupsDeviceGroup{
-					&vimTypes.VirtualMachineVirtualDeviceGroupsDeviceGroup{
-						GroupInstanceKey: int32(500),
-					},
-				},
-			}
-
-			session.UpdateConfigSpecDeviceGroups(config, configSpec, classConfigSpec)
-			Expect(configSpec.DeviceGroups).NotTo(BeNil())
-			Expect(configSpec.DeviceGroups.DeviceGroup).To(HaveLen(1))
-			deviceGroup := configSpec.DeviceGroups.DeviceGroup[0].GetVirtualMachineVirtualDeviceGroupsDeviceGroup()
-			Expect(deviceGroup.GroupInstanceKey).To(Equal(int32(400)))
-		})
-	})
-
 	Context("Ethernet Card Changes", func() {
 		var expectedList object.VirtualDeviceList
 		var currentList object.VirtualDeviceList

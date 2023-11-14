@@ -159,7 +159,7 @@ func convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(
 		switch in.Transport {
 		case VirtualMachineMetadataExtraConfigTransport:
 			out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{
-				RawCloudConfig: corev1.SecretKeySelector{
+				RawCloudConfig: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
 					Key:                  "guestinfo.userdata", // TODO: Is this good enough? v1a1 would include everything with the "guestinfo" prefix
 				},
@@ -183,14 +183,14 @@ func convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(
 			}
 		case VirtualMachineMetadataCloudInitTransport:
 			out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{
-				RawCloudConfig: corev1.SecretKeySelector{
+				RawCloudConfig: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
 					Key:                  "user-data",
 				},
 			}
 		case VirtualMachineMetadataSysprepTransport:
 			out.Sysprep = &v1alpha2.VirtualMachineBootstrapSysprepSpec{
-				RawSysprep: corev1.SecretKeySelector{
+				RawSysprep: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
 					Key:                  "unattend",
 				},
@@ -213,17 +213,21 @@ func convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(
 	out := &VirtualMachineMetadata{}
 
 	if cloudInit := in.CloudInit; cloudInit != nil {
-		out.SecretName = cloudInit.RawCloudConfig.Name
+		if cloudInit.RawCloudConfig != nil {
+			out.SecretName = cloudInit.RawCloudConfig.Name
 
-		switch cloudInit.RawCloudConfig.Key {
-		case "guestinfo.userdata":
-			out.Transport = VirtualMachineMetadataExtraConfigTransport
-		case "user-data":
-			out.Transport = VirtualMachineMetadataCloudInitTransport
+			switch cloudInit.RawCloudConfig.Key {
+			case "guestinfo.userdata":
+				out.Transport = VirtualMachineMetadataExtraConfigTransport
+			case "user-data":
+				out.Transport = VirtualMachineMetadataCloudInitTransport
+			}
 		}
 	} else if sysprep := in.Sysprep; sysprep != nil {
-		out.SecretName = sysprep.RawSysprep.Name
 		out.Transport = VirtualMachineMetadataSysprepTransport
+		if in.Sysprep.RawSysprep != nil {
+			out.SecretName = sysprep.RawSysprep.Name
+		}
 	} else if in.VAppConfig != nil {
 		out.SecretName = in.VAppConfig.RawProperties
 

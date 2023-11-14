@@ -149,7 +149,7 @@ func intgTestsValidateUpdate() {
 			BeforeEach(func() {
 				ctx.vm.Spec.Bootstrap = vmopv1.VirtualMachineBootstrapSpec{
 					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-						RawCloudConfig: corev1.SecretKeySelector{
+						RawCloudConfig: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{},
 							Key:                  "",
 							Optional:             nil,

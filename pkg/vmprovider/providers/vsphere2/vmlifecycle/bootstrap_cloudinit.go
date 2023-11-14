@@ -48,7 +48,7 @@ func BootStrapCloudInit(
 	}
 
 	var userdata string
-	if cloudInitSpec.RawCloudConfig.Name != "" {
+	if cloudInitSpec.RawCloudConfig != nil {
 		// Check for the 'user-data' key as per official contract and API documentation.
 		// Additionally, to support the cluster bootstrap data supplied by CAPBK's secret,
 		// we check for a 'value' key when 'user-data' is not supplied.
@@ -64,7 +64,7 @@ func BootStrapCloudInit(
 
 		// NOTE: The old code didn't error out if userdata wasn't found, so keep going.
 
-	} else {
+	} else if cloudInitSpec.CloudConfig != nil {
 		return nil, nil, fmt.Errorf("TODO: inlined CloudConfig")
 	}
 

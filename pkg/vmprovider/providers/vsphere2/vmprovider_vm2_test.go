@@ -90,7 +90,7 @@ func vmE2ETests() {
 		vm.Spec.Network.Interfaces[0].Nameservers = []string{"1.1.1.1", "8.8.8.8"}
 		vm.Spec.Network.Interfaces[0].SearchDomains = []string{"vmware.local"}
 		vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-			RawCloudConfig: corev1.SecretKeySelector{
+			RawCloudConfig: &corev1.SecretKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{
 					Name: cloudInitSecret.Name,
 				},

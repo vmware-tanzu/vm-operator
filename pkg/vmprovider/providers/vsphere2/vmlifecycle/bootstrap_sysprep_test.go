@@ -10,11 +10,13 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/vmlifecycle"
@@ -96,19 +98,38 @@ var _ = Describe("SysPrep Bootstrap", func() {
 			)
 		})
 
-		It("should return expected customization spec", func() {
-			Expect(err).ToNot(HaveOccurred())
-			Expect(configSpec).To(BeNil())
+		Context("Inlined Sysprep", func() {
+			BeforeEach(func() {
+				sysPrepSpec.Sysprep = &sysprep.Sysprep{}
+			})
 
-			Expect(custSpec).ToNot(BeNil())
-			Expect(custSpec.GlobalIPSettings.DnsServerList).To(Equal(bsArgs.DNSServers))
-			Expect(custSpec.GlobalIPSettings.DnsSuffixList).To(Equal(bsArgs.SearchSuffixes))
+			It("Returns TODO", func() {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("TODO"))
+			})
+		})
 
-			sysPrepText := custSpec.Identity.(*types.CustomizationSysprepText)
-			Expect(sysPrepText.Value).To(Equal(unattendXML))
+		Context("RawSysPrep", func() {
+			BeforeEach(func() {
+				sysPrepSpec.RawSysprep = &corev1.SecretKeySelector{}
+				sysPrepSpec.RawSysprep.Name = "sysprep-secret"
+				sysPrepSpec.RawSysprep.Key = "unattend"
+			})
 
-			Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetworkResults.Results)))
-			Expect(custSpec.NicSettingMap[0].MacAddress).To(Equal(macAddr))
+			It("should return expected customization spec", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(configSpec).To(BeNil())
+
+				Expect(custSpec).ToNot(BeNil())
+				Expect(custSpec.GlobalIPSettings.DnsServerList).To(Equal(bsArgs.DNSServers))
+				Expect(custSpec.GlobalIPSettings.DnsSuffixList).To(Equal(bsArgs.SearchSuffixes))
+
+				sysPrepText := custSpec.Identity.(*types.CustomizationSysprepText)
+				Expect(sysPrepText.Value).To(Equal(unattendXML))
+
+				Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetworkResults.Results)))
+				Expect(custSpec.NicSettingMap[0].MacAddress).To(Equal(macAddr))
+			})
 		})
 
 		Context("when has vAppConfig", func() {

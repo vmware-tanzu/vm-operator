@@ -147,20 +147,20 @@ func GetVirtualMachineBootstrap(
 	k8sClient ctrlclient.Client) (map[string]string, map[string]string, map[string]map[string]string, error) {
 
 	bootstrapSpec := &vmCtx.VM.Spec.Bootstrap
-	var secretName string
+	var secretSelector *corev1.SecretKeySelector
 	var data, vAppData map[string]string
 	var vAppExData map[string]map[string]string
 
 	if cloudInit := bootstrapSpec.CloudInit; cloudInit != nil {
-		secretName = cloudInit.RawCloudConfig.Name
+		secretSelector = cloudInit.RawCloudConfig
 	} else if sysprep := bootstrapSpec.Sysprep; sysprep != nil {
-		secretName = sysprep.RawSysprep.Name
+		secretSelector = sysprep.RawSysprep
 	}
 
-	if secretName != "" {
+	if secretSelector != nil {
 		var err error
 
-		data, err = getSecretData(vmCtx, secretName, true, k8sClient)
+		data, err = getSecretData(vmCtx, secretSelector.Name, true, k8sClient)
 		if err != nil {
 			reason, msg := errToConditionReasonAndMessage(err)
 			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)

@@ -29,8 +29,6 @@ import (
 	"github.com/pkg/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	volume "github.com/vmware-tanzu/vm-operator/controllers/volume/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -201,9 +199,7 @@ func (v validator) validateBootstrap(
 				"CloudInit may not be used with any other bootstrap provider"))
 		}
 
-		hasCloudConfig := !equality.Semantic.DeepEqual(cloudInit.CloudConfig, cloudinit.CloudConfig{})
-		hasRawCloudConfig := !equality.Semantic.DeepEqual(cloudInit.RawCloudConfig, corev1.SecretKeySelector{})
-		if hasCloudConfig && hasRawCloudConfig {
+		if cloudInit.CloudConfig != nil && cloudInit.RawCloudConfig != nil {
 			allErrs = append(allErrs, field.Invalid(p, "cloudInit",
 				"cloudConfig and rawCloudConfig are mutually exclusive"))
 		}
@@ -227,9 +223,7 @@ func (v validator) validateBootstrap(
 		}
 
 		if lib.IsWindowsSysprepFSSEnabled() {
-			hasSysPrep := !equality.Semantic.DeepEqual(sysPrep.Sysprep, sysprep.Sysprep{})
-			hasRawSysPrep := !equality.Semantic.DeepEqual(sysPrep.RawSysprep, corev1.SecretKeySelector{})
-			if hasSysPrep && hasRawSysPrep {
+			if sysPrep.Sysprep != nil && sysPrep.RawSysprep != nil {
 				allErrs = append(allErrs, field.Invalid(p, "sysPrep",
 					"sysprep and rawSysprep are mutually exclusive"))
 			}
@@ -488,7 +482,7 @@ func (v validator) validateNetworkSpecWithBootstrap(
 	}
 
 	if nameservers := interfaceSpec.Nameservers; nameservers != nil {
-		sysprepNotAllowed := !lib.IsWindowsSysprepFSSEnabled() || sysPrep == nil || !equality.Semantic.DeepEqual(sysPrep.RawSysprep, corev1.SecretKeySelector{})
+		sysprepNotAllowed := !lib.IsWindowsSysprepFSSEnabled() || sysPrep == nil || sysPrep.RawSysprep != nil
 		if cloudInit == nil && linuxPrep == nil && sysprepNotAllowed {
 			allErrs = append(allErrs, field.Invalid(
 				interfacePath.Child("nameservers"),
@@ -499,7 +493,7 @@ func (v validator) validateNetworkSpecWithBootstrap(
 	}
 
 	if searchDomains := interfaceSpec.SearchDomains; searchDomains != nil {
-		sysprepNotAllowed := !lib.IsWindowsSysprepFSSEnabled() || sysPrep == nil || !equality.Semantic.DeepEqual(sysPrep.RawSysprep, corev1.SecretKeySelector{})
+		sysprepNotAllowed := !lib.IsWindowsSysprepFSSEnabled() || sysPrep == nil || sysPrep.RawSysprep != nil
 		if cloudInit == nil && linuxPrep == nil && sysprepNotAllowed {
 			allErrs = append(allErrs, field.Invalid(
 				interfacePath.Child("searchDomains"),

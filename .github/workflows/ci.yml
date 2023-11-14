@@ -1,7 +1,7 @@
 name: ci
 
 env:
-  GO_VERSION: 1.21.3
+  GO_VERSION: 1.21.4
 
 on:
   pull_request:

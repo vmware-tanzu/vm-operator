@@ -126,6 +126,27 @@ var _ = Describe("UpdateStatus", func() {
 			})
 		})
 	})
+
+	Context("Copies values to the VM status", func() {
+		biosUUID, instanceUUID := "f7c371d6-2003-5a48-9859-3bc9a8b0890", "6132d223-1566-5921-bc3b-df91ece09a4d"
+		BeforeEach(func() {
+			vmMO.Summary = types.VirtualMachineSummary{
+				Config: types.VirtualMachineConfigSummary{
+					Uuid:         biosUUID,
+					InstanceUuid: instanceUUID,
+					HwVersion:    "vmx-19",
+				},
+			}
+		})
+
+		It("sets the summary config values in the status", func() {
+			status := vmCtx.VM.Status
+			Expect(status).NotTo(BeNil())
+			Expect(status.BiosUUID).To(Equal(biosUUID))
+			Expect(status.InstanceUUID).To(Equal(instanceUUID))
+			Expect(status.HardwareVersion).To(Equal(int32(19)))
+		})
+	})
 })
 
 var _ = Describe("VirtualMachineTools Status to VM Status Condition", func() {

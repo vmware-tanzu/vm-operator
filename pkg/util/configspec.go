@@ -5,6 +5,7 @@ package util
 
 import (
 	"bytes"
+	"fmt"
 	"reflect"
 
 	"github.com/vmware/govmomi/vim25"
@@ -214,4 +215,21 @@ func MergeExtraConfig(extraConfig []vimTypes.BaseOptionValue, newMap map[string]
 		}
 	}
 	return merged
+}
+
+// EnsureMinHardwareVersionInConfigSpec ensures that the hardware version in the ConfigSpec
+// is at least equal to the passed minimum hardware version value.
+func EnsureMinHardwareVersionInConfigSpec(configSpec *vimTypes.VirtualMachineConfigSpec, minVersion int32) {
+	if minVersion == 0 {
+		return
+	}
+
+	configSpecHwVersion := int32(0)
+	if configSpec.Version != "" {
+		configSpecHwVersion = ParseVirtualHardwareVersion(configSpec.Version)
+	}
+	if minVersion > configSpecHwVersion {
+		configSpecHwVersion = minVersion
+	}
+	configSpec.Version = fmt.Sprintf("vmx-%d", configSpecHwVersion)
 }

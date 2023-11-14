@@ -508,6 +508,44 @@ type VirtualMachineSpec struct {
 
 	// AdvancedOptions describes a set of optional, advanced options for configuring a VirtualMachine
 	AdvancedOptions *VirtualMachineAdvancedOptions `json:"advancedOptions,omitempty"`
+
+	// MinHardwareVersion specifies the desired minimum hardware version
+	// for this VM.
+	//
+	// Usually the VM's hardware version is derived from:
+	// 1. the VirtualMachineClass used to deploy the VM provided by the ClassName field
+	// 2. the datacenter/cluster/host default hardware version
+	// Setting this field will ensure that the hardware version of the VM
+	// is at least set to the specified value. To enforce this, it will override
+	// the value from the VirtualMachineClass.
+	//
+	// This field is never updated to reflect the derived hardware version.
+	// Instead, VirtualMachineStatus.HardwareVersion surfaces
+	// the observed hardware version.
+	//
+	// Please note, setting this field's value to N ensures a VM's hardware
+	// version is equal to or greater than N. For example, if a VM's observed
+	// hardware version is 10 and this field's value is 13, then the VM will be
+	// upgraded to hardware version 13. However, if the observed hardware
+	// version is 17 and this field's value is 13, no change will occur.
+	//
+	// Several features are hardware version dependent, for example:
+	//
+	// * NVMe Controllers        		 >= 14
+	// * Dynamic Direct Path I/O devices >= 17
+	//
+	// Please refer to https://kb.vmware.com/s/article/1003746 for a list of VM
+	// hardware versions.
+	//
+	// It is important to remember that a VM's hardware version may not be
+	// downgraded and upgrading a VM deployed from an image based on an older
+	// hardware version to a more recent one may result in unpredictable
+	// behavior. In other words, please be careful when choosing to upgrade a
+	// VM to a newer hardware version.
+	//
+	// +optional
+	// +kubebuilder:validation:Minimum=13
+	MinHardwareVersion int32 `json:"minHardwareVersion,omitempty"`
 }
 
 // VirtualMachineAdvancedOptions describes a set of optional, advanced options for configuring a VirtualMachine.
@@ -624,6 +662,15 @@ type VirtualMachineStatus struct {
 	// LastRestartTime describes the last time the VM was restarted.
 	// +optional
 	LastRestartTime *metav1.Time `json:"lastRestartTime,omitempty"`
+
+	// HardwareVersion describes the VirtualMachine resource's observed
+	// hardware version.
+	//
+	// Please refer to VirtualMachineSpec.MinHardwareVersion for more
+	// information on the topic of a VM's hardware version.
+	//
+	// +optional
+	HardwareVersion int32 `json:"hardwareVersion,omitempty"`
 }
 
 func (vm *VirtualMachine) GetConditions() Conditions {

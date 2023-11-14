@@ -873,6 +873,8 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		}
 	}
 
+	util.EnsureMinHardwareVersionInConfigSpec(createArgs.ConfigSpec, vmCtx.VM.Spec.MinHardwareVersion)
+
 	err := vs.vmCreateGenConfigSpecExtraConfig(vmCtx, createArgs)
 	if err != nil {
 		return err

@@ -52,14 +52,12 @@ type mutator struct {
 }
 
 func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
-	vmClass, err := m.vmClassFromUnstructured(ctx.Obj)
+	modified, err := m.vmClassFromUnstructured(ctx.Obj)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
 	var wasMutated bool
-	original := vmClass
-	modified := original.DeepCopy()
 
 	switch ctx.Op {
 	case admissionv1.Create:
@@ -78,15 +76,11 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 		return admission.Allowed("")
 	}
 
-	rawOriginal, err := json.Marshal(original)
-	if err != nil {
-		return admission.Errored(http.StatusInternalServerError, err)
-	}
 	rawModified, err := json.Marshal(modified)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
-	return admission.PatchResponseFromRaw(rawOriginal, rawModified)
+	return admission.PatchResponseFromRaw(ctx.RawObj, rawModified)
 }
 
 func (m mutator) For() schema.GroupVersionKind {

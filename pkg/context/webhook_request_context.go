@@ -21,6 +21,9 @@ type WebhookRequestContext struct {
 	// Obj is the resource associated with the webhook request.
 	Obj *unstructured.Unstructured
 
+	// RawObj is the raw object from the webhook request.
+	RawObj []byte
+
 	// OldObj is set only for Update requests.
 	OldObj *unstructured.Unstructured
 

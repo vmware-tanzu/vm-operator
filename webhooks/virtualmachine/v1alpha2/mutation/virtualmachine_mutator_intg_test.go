@@ -52,6 +52,133 @@ func intgTestsMutating() {
 		ctx = nil
 	})
 
+	Describe("mutate", func() {
+		Context("placeholder", func() {
+			AfterEach(func() {
+				Expect(ctx.Client.Delete(ctx, ctx.vm)).To(Succeed())
+			})
+
+			It("should work", func() {
+				err := ctx.Client.Create(ctx, ctx.vm)
+				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+
+		Context("Default network interface", func() {
+			BeforeEach(func() {
+				Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeVDS)).To(Succeed())
+				ctx.vm.Spec.Network.Interfaces = nil
+			})
+
+			AfterEach(func() {
+				Expect(os.Unsetenv(lib.NetworkProviderType)).To(Succeed())
+			})
+
+			When("Creating VirtualMachine", func() {
+				It("Add default network interface if NetworkInterface is empty and no Annotation", func() {
+					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+
+					modified := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+					Expect(modified.Spec.Network.Interfaces).To(HaveLen(1))
+					Expect(modified.Spec.Network.Interfaces[0].Name).To(Equal("eth0"))
+					Expect(modified.Spec.Network.Interfaces[0].Network.Kind).To(Equal("Network"))
+				})
+			})
+		})
+	})
+
+	Context("SetDefaultPowerState", func() {
+		When("Creating VirtualMachine", func() {
+			When("When VM PowerState is empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.PowerState = ""
+				})
+
+				It("Should set PowerState to PoweredOn", func() {
+					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+
+					modified := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+					Expect(modified.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOn))
+				})
+			})
+			When("When VM PowerState is not empty", func() {
+				BeforeEach(func() {
+					ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+				})
+
+				It("Should not mutate PowerState", func() {
+					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+					modified := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+					Expect(modified.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+				})
+			})
+		})
+
+		When("Updating VirtualMachine", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+			})
+
+			// This state is not technically possible in production. However,
+			// it is used to validate that the power state is not auto-set
+			// to poweredOn if empty during an empty. Since the logic for
+			// defaulting to poweredOn only works if empty (and on create),
+			// it's necessary to replicate the empty state here.
+			When("When VM PowerState is empty", func() {
+				It("Should not mutate PowerState", func() {
+					modified := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+					modified.Spec.PowerState = ""
+					Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+					Expect(modified.Spec.PowerState).To(BeEmpty())
+				})
+			})
+
+			When("When VM PowerState is not empty", func() {
+				It("Should not mutate PowerState", func() {
+					modified := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+					modified.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+					Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+					Expect(modified.Spec.PowerState).To(Equal(vmopv1.VirtualMachinePowerStateOff))
+				})
+			})
+		})
+	})
+
+	Context("ResolveImageName", func() {
+
+		BeforeEach(func() {
+			Expect(os.Setenv(lib.VMImageRegistryFSS, lib.TrueString)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			Expect(os.Unsetenv(lib.VMImageRegistryFSS)).To(Succeed())
+		})
+
+		When("Creating VirtualMachine", func() {
+			When("VM ImageName is already a vmi resource name", func() {
+
+				BeforeEach(func() {
+					ctx.vm.Spec.ImageName = "vmi-123"
+				})
+
+				It("Should not mutate ImageName", func() {
+					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+					modified := &vmopv1.VirtualMachine{}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+					Expect(modified.Spec.ImageName).To(Equal("vmi-123"))
+				})
+			})
+		})
+	})
+
 	Context("SetNextRestartTime", func() {
 		When("create a VM", func() {
 			When("spec.nextRestartTime is empty", func() {
@@ -59,8 +186,8 @@ func intgTestsMutating() {
 					ctx.vm.Spec.NextRestartTime = ""
 					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 					modified := &vmopv1.VirtualMachine{}
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).Should(Succeed())
-					Expect(modified.Spec.NextRestartTime).Should(BeEmpty())
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+					Expect(modified.Spec.NextRestartTime).To(BeEmpty())
 				})
 			})
 			When("spec.nextRestartTime is not empty", func() {
@@ -68,8 +195,8 @@ func intgTestsMutating() {
 					ctx.vm.Spec.NextRestartTime = "hello"
 					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
 					modified := &vmopv1.VirtualMachine{}
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).Should(Succeed())
-					Expect(modified.Spec.NextRestartTime).Should(Equal("hello"))
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+					Expect(modified.Spec.NextRestartTime).To(Equal("hello"))
 				})
 			})
 		})
@@ -85,7 +212,7 @@ func intgTestsMutating() {
 			})
 			JustBeforeEach(func() {
 				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
-				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).Should(Succeed())
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
 			})
 			When("spec.nextRestartTime is empty", func() {
 				BeforeEach(func() {
@@ -95,16 +222,16 @@ func intgTestsMutating() {
 					It("should not mutate", func() {
 						modified.Spec.NextRestartTime = ""
 						Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
-						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).Should(Succeed())
-						Expect(modified.Spec.NextRestartTime).Should(BeEmpty())
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+						Expect(modified.Spec.NextRestartTime).To(BeEmpty())
 					})
 				})
 				When("spec.nextRestartTime is now", func() {
 					It("should mutate", func() {
 						modified.Spec.NextRestartTime = "Now"
 						Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
-						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).Should(Succeed())
-						Expect(modified.Spec.NextRestartTime).ShouldNot(BeEmpty())
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+						Expect(modified.Spec.NextRestartTime).ToNot(BeEmpty())
 						_, err := time.Parse(time.RFC3339Nano, modified.Spec.NextRestartTime)
 						Expect(err).ToNot(HaveOccurred())
 					})
@@ -118,16 +245,16 @@ func intgTestsMutating() {
 					It("should mutate to original value", func() {
 						modified.Spec.NextRestartTime = ""
 						Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
-						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).Should(Succeed())
-						Expect(modified.Spec.NextRestartTime).Should(Equal(ctx.vm.Spec.NextRestartTime))
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+						Expect(modified.Spec.NextRestartTime).To(Equal(ctx.vm.Spec.NextRestartTime))
 					})
 				})
 				When("spec.nextRestartTime is now", func() {
 					It("should mutate", func() {
 						modified.Spec.NextRestartTime = "Now"
 						Expect(ctx.Client.Update(ctx, modified)).To(Succeed())
-						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).Should(Succeed())
-						Expect(modified.Spec.NextRestartTime).ShouldNot(BeEmpty())
+						Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).To(Succeed())
+						Expect(modified.Spec.NextRestartTime).ToNot(BeEmpty())
 						nextRestartTime, err := time.Parse(time.RFC3339Nano, modified.Spec.NextRestartTime)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(lastRestartTime.Before(nextRestartTime)).To(BeTrue())
@@ -147,34 +274,6 @@ func intgTestsMutating() {
 					},
 					newInvalidNextRestartTimeTableEntries("should return an invalid field error")...,
 				)
-			})
-		})
-	})
-
-	Context("ResolveImageName", func() {
-
-		BeforeEach(func() {
-			Expect(os.Setenv(lib.VMImageRegistryFSS, lib.TrueString)).To(Succeed())
-		})
-
-		AfterEach(func() {
-			Expect(os.Unsetenv(lib.VMImageRegistryFSS)).To(Succeed())
-		})
-
-		When("Creating VirtualMachine", func() {
-
-			When("VM ImageName is already a vmi resource name", func() {
-
-				BeforeEach(func() {
-					ctx.vm.Spec.ImageName = "vmi-123"
-				})
-
-				It("Should not mutate ImageName", func() {
-					Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
-					modified := &vmopv1.VirtualMachine{}
-					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), modified)).Should(Succeed())
-					Expect(modified.Spec.ImageName).Should(Equal("vmi-123"))
-				})
 			})
 		})
 	})

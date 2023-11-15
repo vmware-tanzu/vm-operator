@@ -99,18 +99,19 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 		return admission.Allowed("")
 	}
 
-	vm, err := m.vmFromUnstructured(ctx.Obj)
+	modified, err := m.vmFromUnstructured(ctx.Obj)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
 	var wasMutated bool
-	original := vm
-	modified := original.DeepCopy()
 
 	switch ctx.Op {
 	case admissionv1.Create:
 		if AddDefaultNetworkInterface(ctx, m.client, modified) {
+			wasMutated = true
+		}
+		if SetDefaultPowerState(ctx, m.client, modified) {
 			wasMutated = true
 		}
 		if mutated, err := ResolveImageName(ctx, m.client, modified); err != nil {
@@ -135,15 +136,12 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 		return admission.Allowed("")
 	}
 
-	rawOriginal, err := json.Marshal(original)
-	if err != nil {
-		return admission.Errored(http.StatusInternalServerError, err)
-	}
 	rawModified, err := json.Marshal(modified)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
-	return admission.PatchResponseFromRaw(rawOriginal, rawModified)
+
+	return admission.PatchResponseFromRaw(ctx.RawObj, rawModified)
 }
 
 func (m mutator) For() schema.GroupVersionKind {
@@ -251,6 +249,20 @@ func getProviderConfigMap(ctx *context.WebhookRequestContext, c client.Client) (
 		return "", err
 	}
 	return obj.Data["Network"], nil
+}
+
+// SetDefaultPowerState sets the default power state for a new VM.
+// Return true if the default power state was set, otherwise false.
+func SetDefaultPowerState(
+	ctx *context.WebhookRequestContext,
+	client client.Client,
+	vm *vmopv1.VirtualMachine) bool {
+
+	if vm.Spec.PowerState == "" {
+		vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
+		return true
+	}
+	return false
 }
 
 // ResolveImageName mutates the vm.spec.imageName if it's not set to a vmi name

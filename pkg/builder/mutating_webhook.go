@@ -142,6 +142,7 @@ func (h *mutatingWebhookHandler) Handle(_ goctx.Context, req admission.Request) 
 		WebhookContext:      h.WebhookContext,
 		Op:                  req.Operation,
 		Obj:                 obj,
+		RawObj:              req.Object.Raw,
 		OldObj:              oldObj,
 		UserInfo:            req.UserInfo,
 		IsPrivilegedAccount: IsPrivilegedAccount(h.WebhookContext, req.UserInfo),

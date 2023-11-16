@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"sync"
 	"testing"
@@ -255,7 +256,7 @@ func (s *TestSuite) init() {
 			CRDDirectoryPaths: []string{
 				filepath.Join(rootDir, "config", "crd", "external-crds"),
 			},
-			BinaryAssetsDirectory: filepath.Join(testutil.GetRootDirOrDie(), "hack", "tools", "bin"),
+			BinaryAssetsDirectory: filepath.Join(testutil.GetRootDirOrDie(), "hack", "tools", "bin", goruntime.GOOS+"_"+goruntime.GOARCH),
 		}
 	}
 }

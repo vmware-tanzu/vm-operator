@@ -41,26 +41,16 @@ var _ = Describe("Test Session Utils", func() {
 				[]vimTypes.VAppPropertyInfo{},
 				nil,
 			),
-			Entry("return nil for non UserConfigurable vm props",
-				map[string]string{
-					"one-id": "one-override-value",
-					"two-id": "two-override-value",
-				},
-				[]vimTypes.VAppPropertyInfo{
-					{Key: 1, Id: "one-id", Value: "one-value"},
-					{Key: 2, Id: "two-id", Value: "two-value", UserConfigurable: &falseVar},
-				},
-				nil,
-			),
-			Entry("return nil for UserConfigurable vm props but no input props",
+			Entry("return nil for vm props but no input props",
 				map[string]string{},
 				[]vimTypes.VAppPropertyInfo{
 					{Key: 1, Id: "one-id", Value: "one-value"},
 					{Key: 2, Id: "two-id", Value: "two-value", UserConfigurable: &trueVar},
+					{Key: 2, Id: "three-id", Value: "three-value", UserConfigurable: &falseVar},
 				},
 				nil,
 			),
-			Entry("return valid vAppConfigSpec for setting mixed UserConfigurable props",
+			Entry("return valid vAppConfigSpec for setting mixed props",
 				map[string]string{
 					"one-id":   "one-override-value",
 					"two-id":   "two-override-value",
@@ -73,7 +63,9 @@ var _ = Describe("Test Session Utils", func() {
 				},
 				&vimTypes.VmConfigSpec{
 					Property: []vimTypes.VAppPropertySpec{
+						{Info: &vimTypes.VAppPropertyInfo{Key: 1, Id: "one-id", Value: "one-override-value"}},
 						{Info: &vimTypes.VAppPropertyInfo{Key: 2, Id: "two-id", Value: "two-override-value"}},
+						{Info: &vimTypes.VAppPropertyInfo{Key: 3, Id: "three-id", Value: "three-override-value"}},
 					},
 				},
 			),

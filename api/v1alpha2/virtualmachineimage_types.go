@@ -164,11 +164,17 @@ type VirtualMachineImageStatus struct {
 	// +optional
 	OSInfo VirtualMachineImageOSInfo `json:"osInfo,omitempty"`
 
-	// OVFProperties describes the observed OVF properties defined for this
+	// OVFProperties describes the observed user configurable OVF properties defined for this
 	// image.
 	//
 	// +optional
 	OVFProperties []OVFProperty `json:"ovfProperties,omitempty"`
+
+	// VMwareSystemProperties describes the observed VMware system properties defined for
+	// this image.
+	//
+	// +optional
+	VMwareSystemProperties []common.KeyValuePair `json:"vmwareSystemProperties,omitempty"`
 
 	// ProductInfo describes the observed product information for this image.
 	// +optional

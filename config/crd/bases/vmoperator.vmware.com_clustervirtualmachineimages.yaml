@@ -456,8 +456,8 @@ spec:
                     type: string
                 type: object
               ovfProperties:
-                description: OVFProperties describes the observed OVF properties defined
-                  for this image.
+                description: OVFProperties describes the observed user configurable
+                  OVF properties defined for this image.
                 items:
                   description: OVFProperty describes an OVF property associated with
                     an image. OVF properties may be used in conjunction with the vAppConfig
@@ -508,6 +508,24 @@ spec:
                   a Content Library, this ID will be that of the corresponding Content
                   Library item.
                 type: string
+              vmwareSystemProperties:
+                description: VMwareSystemProperties describes the observed VMware
+                  system properties defined for this image.
+                items:
+                  description: KeyValuePair is useful when wanting to realize a map
+                    as a list of key/value pairs.
+                  properties:
+                    key:
+                      description: Key is the key part of the key/value pair.
+                      type: string
+                    value:
+                      description: Value is the optional value part of the key/value
+                        pair.
+                      type: string
+                  required:
+                  - key
+                  type: object
+                type: array
             type: object
         type: object
     served: true

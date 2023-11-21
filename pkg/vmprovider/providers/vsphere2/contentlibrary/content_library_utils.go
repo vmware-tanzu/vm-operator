@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 )
 
 var vmxRe = regexp.MustCompile(`vmx-(\d+)`)
@@ -48,19 +49,6 @@ func UpdateVmiWithOvfEnvelope(vmi client.Object, ovfEnvelope ovf.Envelope) {
 
 	if ovfEnvelope.VirtualSystem != nil {
 		initImageStatusFromOVFVirtualSystem(status, ovfEnvelope.VirtualSystem)
-
-		ovfSystemProps := getVmwareSystemPropertiesFromOvf(ovfEnvelope.VirtualSystem)
-		if len(ovfSystemProps) > 0 {
-			annotations := vmi.GetAnnotations()
-			if annotations == nil {
-				annotations = make(map[string]string)
-				vmi.SetAnnotations(annotations)
-			}
-
-			for k, v := range ovfSystemProps {
-				annotations[k] = v
-			}
-		}
 	}
 }
 
@@ -116,6 +104,17 @@ func initImageStatusFromOVFVirtualSystem(
 				}
 				imageStatus.OVFProperties = append(imageStatus.OVFProperties, property)
 			}
+		}
+	}
+
+	ovfSystemProps := getVmwareSystemPropertiesFromOvf(ovfVirtualSystem)
+	if len(ovfSystemProps) > 0 {
+		for k, v := range ovfSystemProps {
+			prop := common.KeyValuePair{
+				Key:   k,
+				Value: v,
+			}
+			imageStatus.VMwareSystemProperties = append(imageStatus.VMwareSystemProperties, prop)
 		}
 	}
 }

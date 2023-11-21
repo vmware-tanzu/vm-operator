@@ -1,18 +1,24 @@
 version: 1
 labels:
   - label: "size/XS"
-    size-below: 10
+    size:
+      below: 10
   - label: "size/S"
-    size-above: 9
-    size-below: 30
+    size:
+      above: 9
+      below: 30
   - label: "size/M"
-    size-above: 29
-    size-below: 100
+    size:
+      above: 29
+      below: 100
   - label: "size/L"
-    size-above: 99
-    size-below: 500
+    size:
+      above: 99
+      below: 500
   - label: "size/XL"
-    size-above: 499
-    size-below: 1000
+    size:
+      above: 499
+      below: 1000
   - label: "size/XXL"
-    size-above: 999
+    size:
+      above: 999

@@ -44,14 +44,21 @@ func UpdateStatus(
 	// TODO: Might set other "prereq" conditions too for version conversion but we'd have to fib a little.
 
 	if vm.Status.Image == nil {
-		// If unset, we don't know if this was a cluster or namespace scoped image at the time.
-		vm.Status.Image = &common.LocalObjectRef{Name: vm.Spec.ImageName}
+		// If unset, we don't know if this was a cluster or namespace scoped image at create time.
+		vm.Status.Image = &common.LocalObjectRef{
+			Name:       vm.Spec.ImageName,
+			APIVersion: vmopv1.SchemeGroupVersion.String(),
+		}
 	}
 	if vm.Status.Class == nil {
-		// We can most likely just assume the other fields of the LocalObjectRef but only fill
-		// in the Name for now. Our handling of this field will be more complicated once we really
-		// support class changes and reconfiguring the VM the fly in response.
-		vm.Status.Class = &common.LocalObjectRef{Name: vm.Spec.ClassName}
+		// In v1a2 we know this will always be the namespace scoped class since v1a2 doesn't have
+		// the bindings. Our handling of this field will be more complicated once we really
+		// support class changes and resizing/reconfiguring the VM the fly in response.
+		vm.Status.Class = &common.LocalObjectRef{
+			Kind:       "VirtualMachineClass",
+			APIVersion: vmopv1.SchemeGroupVersion.String(),
+			Name:       vm.Spec.ClassName,
+		}
 	}
 
 	if vmMO == nil {

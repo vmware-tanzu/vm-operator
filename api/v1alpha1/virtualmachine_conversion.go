@@ -16,6 +16,7 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 
+	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 )
 
@@ -158,42 +159,42 @@ func convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(
 
 		switch in.Transport {
 		case VirtualMachineMetadataExtraConfigTransport:
-			out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{
-				RawCloudConfig: &corev1.SecretKeySelector{
+			out.LinuxPrep = &v1alpha2.VirtualMachineBootstrapLinuxPrepSpec{
+				HardwareClockIsUTC: true,
+			}
+			out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{}
+			if objectName != "" {
+				out.CloudInit.RawCloudConfig = &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
 					Key:                  "guestinfo.userdata", // TODO: Is this good enough? v1a1 would include everything with the "guestinfo" prefix
-				},
+				}
 			}
 		case VirtualMachineMetadataOvfEnvTransport:
-			// TODO: Assume LinuxPrep+VAppConfig for now but can we infer when to use CloudInit here?
-			out.LinuxPrep = &v1alpha2.VirtualMachineBootstrapLinuxPrepSpec{}
+			out.LinuxPrep = &v1alpha2.VirtualMachineBootstrapLinuxPrepSpec{
+				HardwareClockIsUTC: true,
+			}
 			out.VAppConfig = &v1alpha2.VirtualMachineBootstrapVAppConfigSpec{
 				RawProperties: objectName,
 			}
-			/*
-				out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{
-					RawCloudConfig: corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
-					},
-				}
-			*/
 		case VirtualMachineMetadataVAppConfigTransport:
 			out.VAppConfig = &v1alpha2.VirtualMachineBootstrapVAppConfigSpec{
 				RawProperties: objectName,
 			}
 		case VirtualMachineMetadataCloudInitTransport:
-			out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{
-				RawCloudConfig: &corev1.SecretKeySelector{
+			out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{}
+			if objectName != "" {
+				out.CloudInit.RawCloudConfig = &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
 					Key:                  "user-data",
-				},
+				}
 			}
 		case VirtualMachineMetadataSysprepTransport:
-			out.Sysprep = &v1alpha2.VirtualMachineBootstrapSysprepSpec{
-				RawSysprep: &corev1.SecretKeySelector{
+			out.Sysprep = &v1alpha2.VirtualMachineBootstrapSysprepSpec{}
+			if objectName != "" {
+				out.Sysprep.RawSysprep = &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
 					Key:                  "unattend",
-				},
+				}
 			}
 		}
 	}
@@ -222,6 +223,8 @@ func convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(
 			case "user-data":
 				out.Transport = VirtualMachineMetadataCloudInitTransport
 			}
+		} else if cloudInit.CloudConfig != nil {
+			out.Transport = VirtualMachineMetadataCloudInitTransport
 		}
 	} else if sysprep := in.Sysprep; sysprep != nil {
 		out.Transport = VirtualMachineMetadataSysprepTransport
@@ -296,8 +299,6 @@ func convert_v1alpha1_Probe_To_v1alpha2_ReadinessProbeSpec(in *Probe) v1alpha2.V
 				ThresholdStatus: v1alpha2.GuestHeartbeatStatus(in.GuestHeartbeat.ThresholdStatus),
 			}
 		}
-
-		// out.GuestInfo =
 	}
 
 	return out
@@ -326,8 +327,6 @@ func convert_v1alpha2_ReadinessProbeSpec_To_v1alpha1_Probe(in v1alpha2.VirtualMa
 			ThresholdStatus: GuestHeartbeatStatus(in.GuestHeartbeat.ThresholdStatus),
 		}
 	}
-
-	// = in.GuestInfo
 
 	return out
 }
@@ -712,6 +711,87 @@ func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	return nil
 }
 
+func restore_v1alpha2_VirtualMachineBootstrapSpec(
+	dst, src *v1alpha2.VirtualMachine) {
+
+	dstBootstrap := &dst.Spec.Bootstrap
+	srcBootstrap := &src.Spec.Bootstrap
+
+	mergeSecretKeySelector := func(dstSel, srcSel *corev1.SecretKeySelector) *corev1.SecretKeySelector {
+		if dstSel == nil || srcSel == nil {
+			return dstSel
+		}
+
+		// Restore with the new object name in case it was changed.
+		newSel := *srcSel
+		newSel.Name = dstSel.Name
+		return &newSel
+	}
+
+	if dstCloudInit := dstBootstrap.CloudInit; dstCloudInit != nil {
+		if srcCloudInit := srcBootstrap.CloudInit; srcCloudInit != nil {
+			dstCloudInit.CloudConfig = srcCloudInit.CloudConfig
+			dstCloudInit.RawCloudConfig = mergeSecretKeySelector(dstCloudInit.RawCloudConfig, srcCloudInit.RawCloudConfig)
+			dstCloudInit.SSHAuthorizedKeys = srcCloudInit.SSHAuthorizedKeys
+		}
+	}
+
+	if dstLinuxPrep := dstBootstrap.LinuxPrep; dstLinuxPrep != nil {
+		if srcLinuxPrep := srcBootstrap.LinuxPrep; srcLinuxPrep != nil {
+			dstLinuxPrep.HardwareClockIsUTC = srcLinuxPrep.HardwareClockIsUTC
+			dstLinuxPrep.TimeZone = srcLinuxPrep.TimeZone
+		}
+	}
+
+	if dstSysPrep := dstBootstrap.Sysprep; dstSysPrep != nil {
+		if srcSysPrep := srcBootstrap.Sysprep; srcSysPrep != nil {
+			dstSysPrep.Sysprep = srcSysPrep.Sysprep
+			dstSysPrep.RawSysprep = mergeSecretKeySelector(srcSysPrep.RawSysprep, dstSysPrep.RawSysprep)
+		}
+	}
+
+	if dstVAppConfig := dstBootstrap.VAppConfig; dstVAppConfig != nil {
+		if srcVAppConfig := srcBootstrap.VAppConfig; srcVAppConfig != nil {
+			dstVAppConfig.Properties = srcVAppConfig.Properties
+			dstVAppConfig.RawProperties = srcVAppConfig.RawProperties
+		}
+	}
+}
+
+func restore_v1alpha2_VirtualMachineNetwork(
+	dst, src *v1alpha2.VirtualMachine) {
+
+	dstNetwork := &dst.Spec.Network
+	srcNetwork := &src.Spec.Network
+
+	dstNetwork.HostName = srcNetwork.HostName
+	dstNetwork.Disabled = srcNetwork.Disabled
+
+	if len(dstNetwork.Interfaces) == 0 {
+		// No interfaces so nothing to fixup (the interfaces were removed): we ignore the restored interfaces.
+		return
+	}
+
+	// The exceedingly common case is there was and still is just one interface, and for the same
+	// network. With multiple interfaces it gets much harder to line things up. We really just
+	// don't have info in v1a1 so this is a little best effort. The API supports it, but  we really
+	// never supported-supported it yet.
+	//
+	// Do the about the easiest thing and zip the interfaces together, using the network name to
+	// determine if it is the "same" interface. v1a1 could not support multiple interfaces on the
+	// same network, and it probably won't be common place in v1a2, so we could try to refine this
+	// a little more later.
+	for i := range dstNetwork.Interfaces {
+		if i >= len(srcNetwork.Interfaces) {
+			break
+		}
+
+		if dstNetwork.Interfaces[i].Network.Name == srcNetwork.Interfaces[i].Network.Name {
+			dstNetwork.Interfaces[i] = srcNetwork.Interfaces[i]
+		}
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
 	dst := dstRaw.(*v1alpha2.VirtualMachine)
@@ -719,7 +799,17 @@ func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
 		return err
 	}
 
-	// TODO: Manually restore data.
+	// Manually restore data.
+	restored := &v1alpha2.VirtualMachine{}
+	if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
+		return err
+	}
+
+	restore_v1alpha2_VirtualMachineBootstrapSpec(dst, restored)
+	restore_v1alpha2_VirtualMachineNetwork(dst, restored)
+	dst.Spec.ReadinessProbe.GuestInfo = restored.Spec.ReadinessProbe.GuestInfo
+	dst.Spec.ReadinessGates = restored.Spec.ReadinessGates
+
 	return nil
 }
 
@@ -730,8 +820,8 @@ func (dst *VirtualMachine) ConvertFrom(srcRaw conversion.Hub) error {
 		return err
 	}
 
-	// TODO: Preserve Hub data on down-conversion.
-	return nil
+	// Preserve Hub data on down-conversion except for metadata
+	return utilconversion.MarshalData(src, dst)
 }
 
 // ConvertTo converts this VirtualMachineList to the Hub version.

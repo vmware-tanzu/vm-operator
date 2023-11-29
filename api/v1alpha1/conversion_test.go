@@ -92,11 +92,6 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 		func(vmSpec *v1alpha1.VirtualMachineSpec, c fuzz.Continue) {
 			c.Fuzz(vmSpec)
 
-			// TODO: Need to save serialized object to support lossless conversions. As is, these are
-			// 		 too different & complicated to have much fuzzing value.
-			vmSpec.NetworkInterfaces = nil
-			vmSpec.VmMetadata = nil
-
 			for i := range vmSpec.Volumes {
 				// Not present in v1a2.
 				vmSpec.Volumes[i].VsphereVolume = nil
@@ -116,20 +111,10 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 		},
 		func(vmSpec *nextver.VirtualMachineSpec, c fuzz.Continue) {
 			c.Fuzz(vmSpec)
-
-			// TODO: Need to save serialized object to support lossless conversions. As is, these are
-			// 		 too different & complicated to have much fuzzing value.
-			vmSpec.Bootstrap = nextver.VirtualMachineBootstrapSpec{}
-			vmSpec.Network = nextver.VirtualMachineNetworkSpec{}
-
-			vmSpec.ReadinessGates = nil
-			vmSpec.ReadinessProbe.GuestInfo = nil
 		},
 		func(vmStatus *v1alpha1.VirtualMachineStatus, c fuzz.Continue) {
 			c.Fuzz(vmStatus)
 			overrideConditionsSeverity(vmStatus.Conditions)
-
-			vmStatus.NetworkInterfaces = nil
 
 			// Do not exist in v1a2.
 			vmStatus.Phase = v1alpha1.Unknown

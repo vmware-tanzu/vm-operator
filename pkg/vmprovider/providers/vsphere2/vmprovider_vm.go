@@ -306,6 +306,16 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 	}
 
 	vmCtx.VM.Status.UniqueID = moRef.Reference().Value
+	vmCtx.VM.Status.Image = &common.LocalObjectRef{
+		APIVersion: vmopv1.SchemeGroupVersion.String(),
+		Kind:       createArgs.ImageObj.GetObjectKind().GroupVersionKind().Kind,
+		Name:       createArgs.ImageObj.GetName(),
+	}
+	vmCtx.VM.Status.Class = &common.LocalObjectRef{
+		APIVersion: vmopv1.SchemeGroupVersion.String(),
+		Kind:       createArgs.VMClass.Kind,
+		Name:       createArgs.VMClass.Name,
+	}
 	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionCreated)
 
 	return object.NewVirtualMachine(vcClient.VimClient(), *moRef), createArgs, nil

@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmop "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 )
 
 const (
@@ -130,7 +130,7 @@ func summary(from Getter, options ...MergeOption) *metav1.Condition {
 	conditionsInScope := make([]localizedCondition, 0, len(conditions))
 	for i := range conditions {
 		c := conditions[i]
-		if c.Type == vmopv1.ReadyConditionType {
+		if c.Type == vmop.ReadyConditionType {
 			continue
 		}
 
@@ -183,7 +183,7 @@ func summary(from Getter, options ...MergeOption) *metav1.Condition {
 		}
 	}
 
-	return merge(conditionsInScope, vmopv1.ReadyConditionType, mergeOpt)
+	return merge(conditionsInScope, vmop.ReadyConditionType, mergeOpt)
 }
 
 // mirrorOptions allows to set options for the mirror operation.
@@ -214,7 +214,7 @@ func mirror(from Getter, targetCondition string, options ...MirrorOptions) *meta
 		o(mirrorOpt)
 	}
 
-	condition := Get(from, vmopv1.ReadyConditionType)
+	condition := Get(from, vmop.ReadyConditionType)
 
 	if mirrorOpt.fallbackTo != nil && condition == nil {
 		switch *mirrorOpt.fallbackTo {
@@ -238,7 +238,7 @@ func mirror(from Getter, targetCondition string, options ...MirrorOptions) *meta
 func aggregate(from []Getter, targetCondition string, options ...MergeOption) *metav1.Condition {
 	conditionsInScope := make([]localizedCondition, 0, len(from))
 	for i := range from {
-		condition := Get(from[i], vmopv1.ReadyConditionType)
+		condition := Get(from[i], vmop.ReadyConditionType)
 
 		conditionsInScope = append(conditionsInScope, localizedCondition{
 			Condition: condition,

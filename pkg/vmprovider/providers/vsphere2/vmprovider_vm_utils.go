@@ -65,7 +65,7 @@ func GetVirtualMachineImageSpecAndStatus(
 	vmCtx context.VirtualMachineContextA2,
 	k8sClient ctrlclient.Client) (ctrlclient.Object, *vmopv1.VirtualMachineImageSpec, *vmopv1.VirtualMachineImageStatus, error) {
 
-	var obj ctrlclient.Object
+	var obj conditions.Getter
 	var spec *vmopv1.VirtualMachineImageSpec
 	var status *vmopv1.VirtualMachineImageStatus
 
@@ -92,14 +92,16 @@ func GetVirtualMachineImageSpecAndStatus(
 		obj, spec, status = vmImage, &vmImage.Spec, &vmImage.Status
 	}
 
-	// TODO: Fix the image conditions so it just has a single Ready instead of bleeding the CL stuff.
-	if !conditions.IsTrueFromConditions(status.Conditions, vmopv1.VirtualMachineImageSyncedCondition) {
-		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady,
-			"NotReady", "VirtualMachineImage is not ready")
-		return nil, nil, nil, fmt.Errorf("VirtualMachineImage is not ready")
-	}
+	vmiNotReadyMessage := "VirtualMachineImage is not ready"
 
-	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady)
+	conditions.SetMirror(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady, obj,
+		conditions.WithFallbackValue(false,
+			"NotReady",
+			vmiNotReadyMessage),
+	)
+	if conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionImageReady) {
+		return nil, nil, nil, fmt.Errorf(vmiNotReadyMessage)
+	}
 
 	return obj, spec, status, nil
 }

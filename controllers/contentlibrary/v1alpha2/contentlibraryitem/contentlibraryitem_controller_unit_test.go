@@ -118,7 +118,7 @@ func unitTestsReconcile() {
 				Expect(reconciler.ReconcileNormal(clItemCtx)).To(Succeed())
 
 				vmi := getVMI(ctx, clItemCtx)
-				condition := conditions.Get(vmi, vmopv1.VirtualMachineImageProviderReadyCondition)
+				condition := conditions.Get(vmi, vmopv1.ReadyConditionType)
 				Expect(condition).ToNot(BeNil())
 				Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 				Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderNotReadyReason))
@@ -135,7 +135,7 @@ func unitTestsReconcile() {
 				Expect(reconciler.ReconcileNormal(clItemCtx)).To(Succeed())
 
 				vmi := getVMI(ctx, clItemCtx)
-				condition := conditions.Get(vmi, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
+				condition := conditions.Get(vmi, vmopv1.ReadyConditionType)
 				Expect(condition).ToNot(BeNil())
 				Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 				Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason))
@@ -155,7 +155,7 @@ func unitTestsReconcile() {
 				Expect(err).To(MatchError("sync-error"))
 
 				vmi := getVMI(ctx, clItemCtx)
-				condition := conditions.Get(vmi, vmopv1.VirtualMachineImageSyncedCondition)
+				condition := conditions.Get(vmi, vmopv1.ReadyConditionType)
 				Expect(condition).ToNot(BeNil())
 				Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 				Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageNotSyncedReason))
@@ -176,9 +176,6 @@ func unitTestsReconcile() {
 				}
 				Expect(readyCond).ToNot(BeNil())
 				Expect(readyCond.Status).To(Equal(corev1.ConditionTrue))
-
-				// BMV: We don't use this field - only the Condition.
-				// Expect(clItemCtx.CLItem.Status.Ready).To(BeTrue())
 
 				Expect(clItemCtx.CLItem.Status.SecurityCompliance).To(Equal(pointer.Bool(true)))
 			})
@@ -293,8 +290,6 @@ func assertVMImageFromCLItem(
 		Expect(vmi.Status.ProviderItemID).To(BeEquivalentTo(clItem.Spec.UUID))
 		Expect(vmi.Status.ProviderContentVersion).To(Equal(clItem.Status.ContentVersion))
 
-		Expect(conditions.IsTrue(vmi, vmopv1.VirtualMachineImageProviderReadyCondition)).To(BeTrue())
-		Expect(conditions.IsTrue(vmi, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)).To(BeTrue())
-		Expect(conditions.IsTrue(vmi, vmopv1.VirtualMachineImageSyncedCondition)).To(BeTrue())
+		Expect(conditions.IsTrue(vmi, vmopv1.ReadyConditionType)).To(BeTrue())
 	})
 }

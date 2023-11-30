@@ -160,20 +160,37 @@ func (r *Reconciler) ReconcileNormal(ctx *context.ClusterContentLibraryItemConte
 			ctx.Logger.Error(err, "Failed to set up ClusterVirtualMachineImage from ClusterContentLibraryItem")
 			return err
 		}
+		// Update image condition based on the security compliance of the provider item.
+		cclItemSecurityCompliance := ctx.CCLItem.Status.SecurityCompliance
+		if cclItemSecurityCompliance == nil || !*cclItemSecurityCompliance {
+			conditions.MarkFalse(cvmi,
+				vmopv1.ReadyConditionType,
+				vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason,
+				"Provider item is not security compliant",
+			)
+			// Since we want to persist a False condition if the CCL Item is
+			// not security compliant.
+			return nil
+		}
 
 		// Check if the item is ready and skip the image content sync if not.
 		if !utils.IsItemReady(ctx.CCLItem.Status.Conditions) {
 			conditions.MarkFalse(cvmi,
-				vmopv1.VirtualMachineImageProviderReadyCondition,
+				vmopv1.ReadyConditionType,
 				vmopv1.VirtualMachineImageProviderNotReadyReason,
 				"Provider item is not in ready condition",
 			)
 			ctx.Logger.Info("ClusterContentLibraryItem is not ready yet, skipping image content sync")
-		} else {
-			conditions.MarkTrue(cvmi, vmopv1.VirtualMachineImageProviderReadyCondition)
-			syncErr = r.syncImageContent(ctx)
-			didSync = true
+			return nil
 		}
+
+		syncErr = r.syncImageContent(ctx)
+		if syncErr == nil {
+			// In this block, we have confirmed that all the three sub-conditions constituting this
+			// Ready condition are true, hence mark it as true.
+			conditions.MarkTrue(cvmi, vmopv1.ReadyConditionType)
+		}
+		didSync = true
 
 		// Do not return syncErr here as we still want to patch the updated fields we get above.
 		return nil
@@ -241,18 +258,6 @@ func (r *Reconciler) setUpCVMIFromCCLItem(ctx *context.ClusterContentLibraryItem
 	cvmi.Status.Name = cclItem.Status.Name
 	cvmi.Status.ProviderItemID = string(cclItem.Spec.UUID)
 
-	// Update image condition based on the security compliance of the provider item.
-	cclItemSecurityCompliance := ctx.CCLItem.Status.SecurityCompliance
-	if cclItemSecurityCompliance == nil || !*cclItemSecurityCompliance {
-		conditions.MarkFalse(cvmi,
-			vmopv1.VirtualMachineImageProviderSecurityComplianceCondition,
-			vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason,
-			"Provider item is not security compliant",
-		)
-	} else {
-		conditions.MarkTrue(cvmi, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
-	}
-
 	return nil
 }
 
@@ -269,11 +274,10 @@ func (r *Reconciler) syncImageContent(ctx *context.ClusterContentLibraryItemCont
 	err := r.VMProvider.SyncVirtualMachineImage(ctx, cclItem, cvmi)
 	if err != nil {
 		conditions.MarkFalse(cvmi,
-			vmopv1.VirtualMachineImageSyncedCondition,
+			vmopv1.ReadyConditionType,
 			vmopv1.VirtualMachineImageNotSyncedReason,
 			"Failed to sync to the latest content version from provider")
 	} else {
-		conditions.MarkTrue(cvmi, vmopv1.VirtualMachineImageSyncedCondition)
 		cvmi.Status.ProviderContentVersion = latestVersion
 	}
 

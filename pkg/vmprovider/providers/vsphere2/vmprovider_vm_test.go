@@ -113,7 +113,7 @@ func vmTests() {
 				// Use the default VM created by vcsim as the source.
 				clusterVMImage = builder.DummyClusterVirtualMachineImageA2("DC0_C0_RP0_VM0")
 				Expect(ctx.Client.Create(ctx, clusterVMImage)).To(Succeed())
-				conditions.MarkTrue(clusterVMImage, vmopv1.VirtualMachineImageSyncedCondition)
+				conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
 				Expect(ctx.Client.Status().Update(ctx, clusterVMImage)).To(Succeed())
 			}
 

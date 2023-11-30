@@ -31,19 +31,6 @@ const (
 	VirtualMachineImageCapabilityLabel = "capability.image." + GroupName + "/"
 )
 
-// Condition types for VirtualMachineImages.
-const (
-	// VirtualMachineImageSyncedCondition documents that the image is synced with the vSphere content library item
-	// that contains the source of this image's information.
-	VirtualMachineImageSyncedCondition = "VirtualMachineImageSynced"
-
-	// VirtualMachineImageProviderReadyCondition denotes readiness of the VirtualMachineImage provider.
-	VirtualMachineImageProviderReadyCondition = "VirtualMachineImageProviderReady"
-
-	// VirtualMachineImageProviderSecurityComplianceCondition denotes security compliance of the library item provider.
-	VirtualMachineImageProviderSecurityComplianceCondition = "VirtualMachineImageProviderSecurityCompliance"
-)
-
 // Condition reasons for VirtualMachineImages.
 const (
 	// VirtualMachineImageNotSyncedReason documents that the VirtualMachineImage is not synced with

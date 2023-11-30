@@ -119,7 +119,7 @@ func unitTestsReconcile() {
 				Expect(reconciler.ReconcileNormal(cclItemCtx)).To(Succeed())
 
 				cvmi := getClusterVMI(ctx, cclItemCtx.ImageObjName)
-				condition := conditions.Get(cvmi, vmopv1.VirtualMachineImageProviderReadyCondition)
+				condition := conditions.Get(cvmi, vmopv1.ReadyConditionType)
 				Expect(condition).ToNot(BeNil())
 				Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 				Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderNotReadyReason))
@@ -136,10 +136,33 @@ func unitTestsReconcile() {
 				Expect(reconciler.ReconcileNormal(cclItemCtx)).To(Succeed())
 
 				cvmi := getClusterVMI(ctx, cclItemCtx.ImageObjName)
-				condition := conditions.Get(cvmi, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)
+				condition := conditions.Get(cvmi, vmopv1.ReadyConditionType)
 				Expect(condition).ToNot(BeNil())
 				Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 				Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason))
+			})
+
+			When("ClusterContentLibraryItem is Not Ready", func() {
+
+				BeforeEach(func() {
+					cclItem.Status.Conditions = []imgregv1a1.Condition{
+						{
+							Type:   imgregv1a1.ReadyCondition,
+							Status: corev1.ConditionFalse,
+						},
+					}
+				})
+
+				It("should mark the Ready condition as false", func() {
+					Expect(reconciler.ReconcileNormal(cclItemCtx)).To(Succeed())
+
+					cvmi := getClusterVMI(ctx, cclItemCtx.ImageObjName)
+					readyCondition := conditions.Get(cvmi, vmopv1.ReadyConditionType)
+					Expect(readyCondition).ToNot(BeNil())
+					Expect(readyCondition.Status).To(Equal(metav1.ConditionFalse))
+					Expect(readyCondition.Reason).To(Equal(vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason))
+				})
+
 			})
 		})
 
@@ -151,12 +174,12 @@ func unitTestsReconcile() {
 				}
 			})
 
-			It("should mark ClusterVirtualMachineImage condition synced failed", func() {
+			It("should mark ClusterVirtualMachineImage Ready condition as failed", func() {
 				err := reconciler.ReconcileNormal(cclItemCtx)
 				Expect(err).To(MatchError("sync-error"))
 
 				cvmi := getClusterVMI(ctx, cclItemCtx.ImageObjName)
-				condition := conditions.Get(cvmi, vmopv1.VirtualMachineImageSyncedCondition)
+				condition := conditions.Get(cvmi, vmopv1.ReadyConditionType)
 				Expect(condition).ToNot(BeNil())
 				Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 				Expect(condition.Reason).To(Equal(vmopv1.VirtualMachineImageNotSyncedReason))
@@ -177,9 +200,6 @@ func unitTestsReconcile() {
 				}
 				Expect(readyCond).ToNot(BeNil())
 				Expect(readyCond.Status).To(Equal(corev1.ConditionTrue))
-
-				// BMV: We don't use this field - only the Condition.
-				// Expect(cclItemCtx.CCLItem.Status.Ready).To(BeTrue())
 
 				Expect(cclItemCtx.CCLItem.Status.SecurityCompliance).To(Equal(pointer.Bool(true)))
 			})
@@ -292,8 +312,6 @@ func assertCVMImageFromCCLItem(
 		Expect(cvmi.Status.ProviderItemID).To(BeEquivalentTo(cclItem.Spec.UUID))
 		Expect(cvmi.Status.ProviderContentVersion).To(Equal(cclItem.Status.ContentVersion))
 
-		Expect(conditions.IsTrue(cvmi, vmopv1.VirtualMachineImageProviderReadyCondition)).To(BeTrue())
-		Expect(conditions.IsTrue(cvmi, vmopv1.VirtualMachineImageProviderSecurityComplianceCondition)).To(BeTrue())
-		Expect(conditions.IsTrue(cvmi, vmopv1.VirtualMachineImageSyncedCondition)).To(BeTrue())
+		Expect(conditions.IsTrue(cvmi, vmopv1.ReadyConditionType)).To(BeTrue())
 	})
 }

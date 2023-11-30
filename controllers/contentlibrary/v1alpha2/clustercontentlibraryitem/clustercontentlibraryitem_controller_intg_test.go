@@ -145,7 +145,7 @@ func cclItemReconcile() {
 
 			By("sets ClusterVirtualMachineImage status to not Ready", func() {
 				waitForClusterVirtualMachineImageNotReadyWithReason(cvmiKey,
-					vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason)
+					vmopv1.VirtualMachineImageProviderNotReadyReason)
 			})
 
 			By("Update ClusterContentLibraryItem to populate Status and be Ready", func() {

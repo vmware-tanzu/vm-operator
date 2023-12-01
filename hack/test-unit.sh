@@ -19,6 +19,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 COVERAGE_FILE="${1:-}"
 if [ -n "${COVERAGE_FILE}" ]; then
   COVERAGE_FILE_NORACE="${COVERAGE_FILE}.norace"
+  API_COVERAGE_FILE="api.${COVERAGE_FILE}"
 fi
 
 COVER_PKGS=(
@@ -53,8 +54,15 @@ if [ -z "${GITHUB_ACTION:-}" ]; then
   GO_TEST_FLAGS+=("-count=1")
 fi
 
+GO_TEST_FLAGS+=("-race")
+
+# Test flags for api module
+API_TEST_FLAGS=("${GO_TEST_FLAGS[@]}")
+
 # The first argument is the name of the coverage file to use.
 if [ -n "${COVERAGE_FILE}" ]; then
+  API_TEST_FLAGS+=("-coverpkg=github.com/vmware-tanzu/vm-operator/api/..." "-covermode=atomic")
+  API_TEST_FLAGS+=("-coverprofile=${API_COVERAGE_FILE}")
   GO_TEST_FLAGS+=("-coverpkg=${COVER_OPTS}" "-covermode=atomic")
   GO_TEST_FLAGS_NORACE=("${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}")
   GO_TEST_FLAGS+=("-coverprofile=${COVERAGE_FILE}")
@@ -63,7 +71,10 @@ else
   GO_TEST_FLAGS_NORACE=("${GO_TEST_FLAGS[@]+"${GO_TEST_FLAGS[@]}"}")
 fi
 
-GO_TEST_FLAGS+=("-race")
+# Run api unit tests
+# Since api is a different go module
+go test "${API_TEST_FLAGS[@]+"${API_TEST_FLAGS[@]}"}" \
+    github.com/vmware-tanzu/vm-operator/api/...
 
 # Run unit tests
 # go test: -race requires cgo
@@ -89,6 +100,6 @@ go test "${GO_TEST_FLAGS_NORACE[@]+"${GO_TEST_FLAGS_NORACE[@]}"}" \
 if [ -n "${COVERAGE_FILE:-}" ]; then
   TMP_COVERAGE_FILE="$(mktemp)"
   mv "${COVERAGE_FILE}" "${TMP_COVERAGE_FILE}"
-  gocovmerge "${TMP_COVERAGE_FILE}" "${COVERAGE_FILE_NORACE}" >"${COVERAGE_FILE}"
-  rm -f "${TMP_COVERAGE_FILE}" "${COVERAGE_FILE_NORACE}"
+  gocovmerge "${API_COVERAGE_FILE}" "${TMP_COVERAGE_FILE}" "${COVERAGE_FILE_NORACE}" >"${COVERAGE_FILE}"
+  rm -f "${API_COVERAGE_FILE}" "${TMP_COVERAGE_FILE}" "${COVERAGE_FILE_NORACE}"
 fi

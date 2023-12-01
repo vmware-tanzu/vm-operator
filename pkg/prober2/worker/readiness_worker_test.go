@@ -191,8 +191,8 @@ func TestReadinessProbeWorker(t *testing.T) {
 	RunSpecs(t, "VM Readiness Workers")
 }
 
-func getVirtualMachineReadinessTCPProbe(port int) vmopv1.VirtualMachineReadinessProbeSpec {
-	return vmopv1.VirtualMachineReadinessProbeSpec{
+func getVirtualMachineReadinessTCPProbe(port int) *vmopv1.VirtualMachineReadinessProbeSpec {
+	return &vmopv1.VirtualMachineReadinessProbeSpec{
 		TCPSocket: &vmopv1.TCPSocketAction{
 			Port: intstr.FromInt(port),
 		},
@@ -200,8 +200,8 @@ func getVirtualMachineReadinessTCPProbe(port int) vmopv1.VirtualMachineReadiness
 	}
 }
 
-func getVirtualMachineHeartbeatProbe() vmopv1.VirtualMachineReadinessProbeSpec {
-	return vmopv1.VirtualMachineReadinessProbeSpec{
+func getVirtualMachineHeartbeatProbe() *vmopv1.VirtualMachineReadinessProbeSpec {
+	return &vmopv1.VirtualMachineReadinessProbeSpec{
 		GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
 		PeriodSeconds:  1,
 	}

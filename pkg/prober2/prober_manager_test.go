@@ -54,7 +54,7 @@ var _ = Describe("VirtualMachine probes", func() {
 			},
 			Spec: vmopv1.VirtualMachineSpec{
 				ClassName: "dummy-vmclass",
-				ReadinessProbe: vmopv1.VirtualMachineReadinessProbeSpec{
+				ReadinessProbe: &vmopv1.VirtualMachineReadinessProbeSpec{
 					TCPSocket: &vmopv1.TCPSocketAction{
 						Port: intstr.FromInt(10001),
 					},
@@ -106,7 +106,7 @@ var _ = Describe("VirtualMachine probes", func() {
 
 		When("VM doesn't specify a probe", func() {
 			BeforeEach(func() {
-				vm.Spec.ReadinessProbe = vmopv1.VirtualMachineReadinessProbeSpec{}
+				vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{}
 			})
 
 			It("Should return immediately", func() {
@@ -198,7 +198,7 @@ var _ = Describe("VirtualMachine probes", func() {
 		})
 
 		It("Should not add to prober manager if Probe spec is not specified", func() {
-			vm.Spec.ReadinessProbe = vmopv1.VirtualMachineReadinessProbeSpec{}
+			vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{}
 			testManager.AddToProberManager(vm)
 
 			Expect(testManager.readinessQueue.Len()).To(Equal(0))
@@ -234,6 +234,7 @@ var _ = Describe("VirtualMachine probes", func() {
 			})
 
 			It("Should do nothing if VM probe is not updated", func() {
+				newVM.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{}
 				testManager.AddToProberManager(newVM)
 				Expect(testManager.readinessQueue.Len()).To(Equal(0))
 			})
@@ -248,7 +249,7 @@ var _ = Describe("VirtualMachine probes", func() {
 			})
 
 			It("Should remove from the manager if the VM's probe spec is changed to nil", func() {
-				newVM.Spec.ReadinessProbe = vmopv1.VirtualMachineReadinessProbeSpec{}
+				newVM.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{}
 				Expect(fakeClient.Update(ctx, newVM)).To(Succeed())
 
 				testManager.AddToProberManager(newVM)

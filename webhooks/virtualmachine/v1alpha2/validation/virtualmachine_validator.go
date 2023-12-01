@@ -186,10 +186,19 @@ func (v validator) validateBootstrap(
 	var allErrs field.ErrorList
 	bootstrapPath := field.NewPath("spec", "bootstrap")
 
-	cloudInit := vm.Spec.Bootstrap.CloudInit
-	linuxPrep := vm.Spec.Bootstrap.LinuxPrep
-	sysPrep := vm.Spec.Bootstrap.Sysprep
-	vAppConfig := vm.Spec.Bootstrap.VAppConfig
+	var (
+		cloudInit  *vmopv1.VirtualMachineBootstrapCloudInitSpec
+		linuxPrep  *vmopv1.VirtualMachineBootstrapLinuxPrepSpec
+		sysPrep    *vmopv1.VirtualMachineBootstrapSysprepSpec
+		vAppConfig *vmopv1.VirtualMachineBootstrapVAppConfigSpec
+	)
+
+	if vm.Spec.Bootstrap != nil {
+		cloudInit = vm.Spec.Bootstrap.CloudInit
+		linuxPrep = vm.Spec.Bootstrap.LinuxPrep
+		sysPrep = vm.Spec.Bootstrap.Sysprep
+		vAppConfig = vm.Spec.Bootstrap.VAppConfig
+	}
 
 	if cloudInit != nil {
 		p := bootstrapPath.Child("cloudInit")
@@ -318,7 +327,11 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
-	networkSpec := &vm.Spec.Network
+	networkSpec := vm.Spec.Network
+	if networkSpec == nil {
+		return allErrs
+	}
+
 	networkPath := field.NewPath("spec", "network")
 
 	if len(networkSpec.Interfaces) > 0 {
@@ -460,9 +473,18 @@ func (v validator) validateNetworkSpecWithBootstrap(
 	vm *vmopv1.VirtualMachine) field.ErrorList {
 
 	var allErrs field.ErrorList
-	cloudInit := vm.Spec.Bootstrap.CloudInit
-	linuxPrep := vm.Spec.Bootstrap.LinuxPrep
-	sysPrep := vm.Spec.Bootstrap.Sysprep
+
+	var (
+		cloudInit *vmopv1.VirtualMachineBootstrapCloudInitSpec
+		linuxPrep *vmopv1.VirtualMachineBootstrapLinuxPrepSpec
+		sysPrep   *vmopv1.VirtualMachineBootstrapSysprepSpec
+	)
+
+	if vm.Spec.Bootstrap != nil {
+		cloudInit = vm.Spec.Bootstrap.CloudInit
+		linuxPrep = vm.Spec.Bootstrap.LinuxPrep
+		sysPrep = vm.Spec.Bootstrap.Sysprep
+	}
 
 	if mtu := interfaceSpec.MTU; mtu != nil && cloudInit == nil {
 		allErrs = append(allErrs, field.Invalid(
@@ -585,9 +607,13 @@ func (v validator) validateInstanceStorageVolumes(
 
 func (v validator) validateReadinessProbe(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
-	readinessProbePath := field.NewPath("spec", "readinessProbe")
 
-	probe := &vm.Spec.ReadinessProbe
+	probe := vm.Spec.ReadinessProbe
+	if probe == nil {
+		return allErrs
+	}
+
+	readinessProbePath := field.NewPath("spec", "readinessProbe")
 
 	if probe.TCPSocket != nil && probe.GuestHeartbeat != nil {
 		allErrs = append(allErrs, field.Forbidden(readinessProbePath, readinessProbeOnlyOneAction))
@@ -616,8 +642,13 @@ var megaByte = resource.MustParse("1Mi")
 
 func (v validator) validateAdvanced(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
+	advanced := vm.Spec.Advanced
+
+	if advanced == nil {
+		return allErrs
+	}
+
 	advancedPath := field.NewPath("spec", "advanced")
-	advanced := &vm.Spec.Advanced
 
 	if capacity := advanced.BootDiskCapacity; capacity != nil && !capacity.IsZero() {
 		if capacity.Value()%megaByte.Value() != 0 {
@@ -781,7 +812,18 @@ func (v validator) validateImmutableFields(_ *context.WebhookRequestContext, vm,
 	// TODO: More checks.
 
 	// TODO: Allow privilege?
-	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.Reserved.ResourcePolicyName, oldVM.Spec.Reserved.ResourcePolicyName, specPath.Child("reserved", "resourcePolicyName"))...)
+
+	var (
+		oldResourcePolicyName string
+		newResourcePolicyName string
+	)
+	if reserved := oldVM.Spec.Reserved; reserved != nil {
+		oldResourcePolicyName = reserved.ResourcePolicyName
+	}
+	if reserved := vm.Spec.Reserved; reserved != nil {
+		oldResourcePolicyName = reserved.ResourcePolicyName
+	}
+	allErrs = append(allErrs, validation.ValidateImmutableField(newResourcePolicyName, oldResourcePolicyName, specPath.Child("reserved", "resourcePolicyName"))...)
 
 	return allErrs
 }

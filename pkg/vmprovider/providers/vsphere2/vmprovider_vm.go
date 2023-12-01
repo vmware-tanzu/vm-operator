@@ -812,9 +812,8 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
-	networkSpec := &vmCtx.VM.Spec.Network
-	if networkSpec.Disabled {
-		// No connected networking for this VM. Any EthCards will be removed later.
+	networkSpec := vmCtx.VM.Spec.Network
+	if networkSpec == nil || networkSpec.Disabled {
 		return nil
 	}
 

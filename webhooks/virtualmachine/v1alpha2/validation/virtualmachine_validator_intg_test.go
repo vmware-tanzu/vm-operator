@@ -147,7 +147,7 @@ func intgTestsValidateUpdate() {
 
 		When("Bootstrap is updated", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Bootstrap = vmopv1.VirtualMachineBootstrapSpec{
+				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
 						RawCloudConfig: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{},
@@ -168,7 +168,7 @@ func intgTestsValidateUpdate() {
 
 		When("Network is updated", func() {
 			BeforeEach(func() {
-				ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+				ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 					HostName: "my-new-name",
 				}
 			})

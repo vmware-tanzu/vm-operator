@@ -163,7 +163,7 @@ func loadbalancerVM(vmService *vmopv1.VirtualMachineService, vmClassName, vmImag
 			ImageName:  vmImageName,
 			ClassName:  vmClassName,
 			PowerState: vmopv1.VirtualMachinePowerStateOn,
-			Bootstrap: vmopv1.VirtualMachineBootstrapSpec{
+			Bootstrap: &vmopv1.VirtualMachineBootstrapSpec{
 				CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
 					RawCloudConfig: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{Name: metadataCMName(vmService)},

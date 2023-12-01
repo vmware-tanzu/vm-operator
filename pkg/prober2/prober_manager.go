@@ -97,7 +97,7 @@ func (m *manager) AddToProberManager(vm *vmopv1.VirtualMachine) {
 	m.readinessMutex.Lock()
 	defer m.readinessMutex.Unlock()
 
-	if vm.Spec.ReadinessProbe.TCPSocket != nil || vm.Spec.ReadinessProbe.GuestHeartbeat != nil {
+	if vm.Spec.ReadinessProbe != nil && (vm.Spec.ReadinessProbe.TCPSocket != nil || vm.Spec.ReadinessProbe.GuestHeartbeat != nil) {
 		// if the VM is not in the list, or its readiness probe spec has been updated, immediately add it to the queue
 		// otherwise, ignore it.
 		if oldProbe, ok := m.vmReadinessProbeList[vmName]; ok && reflect.DeepEqual(oldProbe, vm.Spec.ReadinessProbe) {
@@ -106,7 +106,7 @@ func (m *manager) AddToProberManager(vm *vmopv1.VirtualMachine) {
 		}
 
 		m.readinessQueue.Add(client.ObjectKey{Name: vm.Name, Namespace: vm.Namespace})
-		m.vmReadinessProbeList[vmName] = vm.Spec.ReadinessProbe
+		m.vmReadinessProbeList[vmName] = *vm.Spec.ReadinessProbe
 	} else {
 		delete(m.vmReadinessProbeList, vmName)
 	}

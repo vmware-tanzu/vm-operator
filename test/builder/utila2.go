@@ -157,7 +157,7 @@ func DummyVirtualMachineA2() *vmopv1.VirtualMachine {
 					},
 				},
 			},
-			Network: vmopv1.VirtualMachineNetworkSpec{
+			Network: &vmopv1.VirtualMachineNetworkSpec{
 				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name: "eth0",

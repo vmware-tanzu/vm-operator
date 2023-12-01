@@ -148,7 +148,12 @@ func GetVirtualMachineBootstrap(
 	vmCtx context.VirtualMachineContextA2,
 	k8sClient ctrlclient.Client) (map[string]string, map[string]string, map[string]map[string]string, error) {
 
-	bootstrapSpec := &vmCtx.VM.Spec.Bootstrap
+	bootstrapSpec := vmCtx.VM.Spec.Bootstrap
+	if bootstrapSpec == nil {
+		conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)
+		return nil, nil, nil, nil
+	}
+
 	var secretSelector *corev1.SecretKeySelector
 	var data, vAppData map[string]string
 	var vAppExData map[string]map[string]string
@@ -219,7 +224,10 @@ func GetVMSetResourcePolicy(
 	vmCtx context.VirtualMachineContextA2,
 	k8sClient ctrlclient.Client) (*vmopv1.VirtualMachineSetResourcePolicy, error) {
 
-	rpName := vmCtx.VM.Spec.Reserved.ResourcePolicyName
+	var rpName string
+	if reserved := vmCtx.VM.Spec.Reserved; reserved != nil {
+		rpName = reserved.ResourcePolicyName
+	}
 	if rpName == "" {
 		conditions.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionVMSetResourcePolicyReady)
 		return nil, nil

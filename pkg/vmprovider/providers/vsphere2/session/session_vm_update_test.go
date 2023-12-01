@@ -299,7 +299,9 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			Context("When VM uses metadata transport types other than CloudInit", func() {
 				BeforeEach(func() {
-					vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+					vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+					}
 				})
 				It("defer cloud-init extra config is enabled", func() {
 					Expect(ecMap).To(HaveKeyWithValue("guestinfo.vmservice.defer-cloud-init", "enabled"))
@@ -308,7 +310,9 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			Context("When VM uses CloudInit metadata transport type", func() {
 				BeforeEach(func() {
-					vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+					vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+					}
 				})
 				It("defer cloud-init extra config is not enabled", func() {
 					Expect(ecMap).ToNot(HaveKeyWithValue("guestinfo.vmservice.defer-cloud-init", "enabled"))
@@ -539,7 +543,18 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		It("configSpec cbt set to true OMG", func() {
 			config.ChangeTrackingEnabled = pointer.Bool(true)
-			vmSpec.Advanced.ChangeBlockTracking = false
+			vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+				ChangeBlockTracking: false,
+			}
+
+			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
+			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
+			Expect(*configSpec.ChangeTrackingEnabled).To(BeFalse())
+		})
+
+		It("configSpec cbt set to true OMG w Advanced set to nil", func() {
+			config.ChangeTrackingEnabled = pointer.Bool(true)
+			vmSpec.Advanced = nil
 
 			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
@@ -548,7 +563,9 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		It("configSpec cbt set to false", func() {
 			config.ChangeTrackingEnabled = pointer.Bool(false)
-			vmSpec.Advanced.ChangeBlockTracking = true
+			vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+				ChangeBlockTracking: true,
+			}
 
 			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
@@ -557,7 +574,9 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		It("configSpec cbt matches", func() {
 			config.ChangeTrackingEnabled = pointer.Bool(true)
-			vmSpec.Advanced.ChangeBlockTracking = true
+			vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+				ChangeBlockTracking: true,
+			}
 
 			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
@@ -565,7 +584,9 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		It("classConfigSpec not nil and is ignored", func() {
 			config.ChangeTrackingEnabled = pointer.Bool(false)
-			vmSpec.Advanced.ChangeBlockTracking = true
+			vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+				ChangeBlockTracking: true,
+			}
 			classConfigSpec = &vimTypes.VirtualMachineConfigSpec{
 				ChangeTrackingEnabled: pointer.Bool(false),
 			}

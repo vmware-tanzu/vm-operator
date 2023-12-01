@@ -512,6 +512,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*Probe)(nil), (*v1alpha2.VirtualMachineReadinessProbeSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha1_Probe_To_v1alpha2_VirtualMachineReadinessProbeSpec(a.(*Probe), b.(*v1alpha2.VirtualMachineReadinessProbeSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*VirtualMachineImageSpec)(nil), (*v1alpha2.VirtualMachineImageSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha2_VirtualMachineImageSpec(a.(*VirtualMachineImageSpec), b.(*v1alpha2.VirtualMachineImageSpec), scope)
 	}); err != nil {
@@ -559,6 +564,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddConversionFunc((*v1alpha2.VirtualMachineImageStatus)(nil), (*VirtualMachineImageStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageStatus(a.(*v1alpha2.VirtualMachineImageStatus), b.(*VirtualMachineImageStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1alpha2.VirtualMachineReadinessProbeSpec)(nil), (*Probe)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1alpha2_VirtualMachineReadinessProbeSpec_To_v1alpha1_Probe(a.(*v1alpha2.VirtualMachineReadinessProbeSpec), b.(*Probe), scope)
 	}); err != nil {
 		return err
 	}
@@ -2053,8 +2063,17 @@ func autoConvert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(in *
 	} else {
 		out.Volumes = nil
 	}
-	// WARNING: in.ReadinessProbe requires manual conversion: inconvertible types (*github.com/vmware-tanzu/vm-operator/api/v1alpha1.Probe vs github.com/vmware-tanzu/vm-operator/api/v1alpha2.VirtualMachineReadinessProbeSpec)
+	if in.ReadinessProbe != nil {
+		in, out := &in.ReadinessProbe, &out.ReadinessProbe
+		*out = new(v1alpha2.VirtualMachineReadinessProbeSpec)
+		if err := Convert_v1alpha1_Probe_To_v1alpha2_VirtualMachineReadinessProbeSpec(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.ReadinessProbe = nil
+	}
 	// WARNING: in.AdvancedOptions requires manual conversion: does not exist in peer-type
+	out.MinHardwareVersion = in.MinHardwareVersion
 	return nil
 }
 
@@ -2080,10 +2099,19 @@ func autoConvert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *
 	} else {
 		out.Volumes = nil
 	}
-	// WARNING: in.ReadinessProbe requires manual conversion: inconvertible types (github.com/vmware-tanzu/vm-operator/api/v1alpha2.VirtualMachineReadinessProbeSpec vs *github.com/vmware-tanzu/vm-operator/api/v1alpha1.Probe)
+	if in.ReadinessProbe != nil {
+		in, out := &in.ReadinessProbe, &out.ReadinessProbe
+		*out = new(Probe)
+		if err := Convert_v1alpha2_VirtualMachineReadinessProbeSpec_To_v1alpha1_Probe(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.ReadinessProbe = nil
+	}
 	// WARNING: in.ReadinessGates requires manual conversion: does not exist in peer-type
 	// WARNING: in.Advanced requires manual conversion: does not exist in peer-type
 	// WARNING: in.Reserved requires manual conversion: does not exist in peer-type
+	out.MinHardwareVersion = in.MinHardwareVersion
 	return nil
 }
 
@@ -2121,6 +2149,7 @@ func autoConvert_v1alpha1_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 	// WARNING: in.NetworkInterfaces requires manual conversion: does not exist in peer-type
 	out.Zone = in.Zone
 	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
+	out.HardwareVersion = in.HardwareVersion
 	return nil
 }
 
@@ -2158,6 +2187,7 @@ func autoConvert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 	out.ChangeBlockTracking = (*bool)(unsafe.Pointer(in.ChangeBlockTracking))
 	out.Zone = in.Zone
 	out.LastRestartTime = (*v1.Time)(unsafe.Pointer(in.LastRestartTime))
+	out.HardwareVersion = in.HardwareVersion
 	return nil
 }
 

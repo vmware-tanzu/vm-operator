@@ -11,6 +11,7 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/vcenter"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -130,6 +131,9 @@ func getVM() {
 	Context("Gets VM with ResourcePolicy by inventory", func() {
 		BeforeEach(func() {
 			resourcePolicy, folder := ctx.CreateVirtualMachineSetResourcePolicyA2("getvm-test", nsInfo)
+			if vmCtx.VM.Spec.Reserved == nil {
+				vmCtx.VM.Spec.Reserved = &v1alpha2.VirtualMachineReservedSpec{}
+			}
 			vmCtx.VM.Spec.Reserved.ResourcePolicyName = resourcePolicy.Name
 
 			vm, err := ctx.Finder.VirtualMachine(ctx, vcVMName)
@@ -147,6 +151,9 @@ func getVM() {
 		})
 
 		It("returns error when ResourcePolicy does not exist", func() {
+			if vmCtx.VM.Spec.Reserved == nil {
+				vmCtx.VM.Spec.Reserved = &v1alpha2.VirtualMachineReservedSpec{}
+			}
 			vmCtx.VM.Spec.Reserved.ResourcePolicyName = "bogus"
 
 			vm, err := vcenter.GetVirtualMachine(vmCtx, ctx.Client, ctx.VCClient.Client, ctx.Datacenter, ctx.Finder)

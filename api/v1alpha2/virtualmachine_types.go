@@ -232,7 +232,7 @@ type VirtualMachineSpec struct {
 	// required.
 	//
 	// +optional
-	Bootstrap VirtualMachineBootstrapSpec `json:"bootstrap,omitempty"`
+	Bootstrap *VirtualMachineBootstrapSpec `json:"bootstrap,omitempty"`
 
 	// Network describes the desired network configuration for the VM.
 	//
@@ -241,7 +241,7 @@ type VirtualMachineSpec struct {
 	// Namespace's default network.
 	//
 	// +optional
-	Network VirtualMachineNetworkSpec `json:"network,omitempty"`
+	Network *VirtualMachineNetworkSpec `json:"network,omitempty"`
 
 	// PowerState describes the desired power state of a VirtualMachine.
 	//
@@ -331,7 +331,7 @@ type VirtualMachineSpec struct {
 	// ReadinessProbe describes a probe used to determine the VM's ready state.
 	//
 	// +optional
-	ReadinessProbe VirtualMachineReadinessProbeSpec `json:"readinessProbe,omitempty"`
+	ReadinessProbe *VirtualMachineReadinessProbeSpec `json:"readinessProbe,omitempty"`
 
 	// ReadinessGates, if specified, will be evaluated to determine the VM's
 	// readiness.
@@ -347,7 +347,7 @@ type VirtualMachineSpec struct {
 
 	// Advanced describes a set of optional, advanced VM configuration options.
 	// +optional
-	Advanced VirtualMachineAdvancedSpec `json:"advanced,omitempty"`
+	Advanced *VirtualMachineAdvancedSpec `json:"advanced,omitempty"`
 
 	// Reserved describes a set of VM configuration options reserved for system
 	// use.
@@ -356,7 +356,7 @@ type VirtualMachineSpec struct {
 	// will result in a validation error.
 	//
 	// +optional
-	Reserved VirtualMachineReservedSpec `json:"reserved,omitempty"`
+	Reserved *VirtualMachineReservedSpec `json:"reserved,omitempty"`
 
 	// MinHardwareVersion specifies the desired minimum hardware version
 	// for this VM.

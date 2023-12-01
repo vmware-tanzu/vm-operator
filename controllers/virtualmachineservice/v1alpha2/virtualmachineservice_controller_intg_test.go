@@ -88,7 +88,7 @@ func intgTests() {
 						},
 						Spec: vmopv1.VirtualMachineSpec{
 							PowerState: vmopv1.VirtualMachinePowerStateOn,
-							ReadinessProbe: vmopv1.VirtualMachineReadinessProbeSpec{
+							ReadinessProbe: &vmopv1.VirtualMachineReadinessProbeSpec{
 								TCPSocket: &vmopv1.TCPSocketAction{},
 							},
 						},
@@ -186,7 +186,7 @@ func intgTests() {
 						},
 						Spec: vmopv1.VirtualMachineSpec{
 							PowerState: vmopv1.VirtualMachinePowerStateOn,
-							ReadinessProbe: vmopv1.VirtualMachineReadinessProbeSpec{
+							ReadinessProbe: &vmopv1.VirtualMachineReadinessProbeSpec{
 								GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
 							},
 						},
@@ -301,7 +301,7 @@ func intgTests() {
 						},
 						Spec: vmopv1.VirtualMachineSpec{
 							PowerState: vmopv1.VirtualMachinePowerStateOn,
-							ReadinessProbe: vmopv1.VirtualMachineReadinessProbeSpec{
+							ReadinessProbe: &vmopv1.VirtualMachineReadinessProbeSpec{
 								TCPSocket: &vmopv1.TCPSocketAction{},
 							},
 						},

@@ -304,7 +304,7 @@ func vmUtilTests() {
 
 		When("Bootstrap via CloudInit", func() {
 			BeforeEach(func() {
-				vmCtx.VM.Spec.Bootstrap = vmopv1.VirtualMachineBootstrapSpec{
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 				}
 				vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig = &corev1.SecretKeySelector{}
@@ -349,7 +349,7 @@ func vmUtilTests() {
 
 		When("Bootstrap via Sysprep", func() {
 			BeforeEach(func() {
-				vmCtx.VM.Spec.Bootstrap = vmopv1.VirtualMachineBootstrapSpec{
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
 				}
 				vmCtx.VM.Spec.Bootstrap.Sysprep.RawSysprep = &corev1.SecretKeySelector{}
@@ -394,7 +394,7 @@ func vmUtilTests() {
 		When("Bootstrap with vAppConfig", func() {
 
 			BeforeEach(func() {
-				vmCtx.VM.Spec.Bootstrap = vmopv1.VirtualMachineBootstrapSpec{
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 					VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
 				}
 				vmCtx.VM.Spec.Bootstrap.VAppConfig.RawProperties = vAppDataName
@@ -466,6 +466,9 @@ func vmUtilTests() {
 		})
 
 		It("returns success when VM does not have SetResourcePolicy", func() {
+			if vmCtx.VM.Spec.Reserved == nil {
+				vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
+			}
 			vmCtx.VM.Spec.Reserved.ResourcePolicyName = ""
 			rp, err := vsphere.GetVMSetResourcePolicy(vmCtx, k8sClient)
 			Expect(err).ToNot(HaveOccurred())
@@ -473,6 +476,9 @@ func vmUtilTests() {
 		})
 
 		It("VM SetResourcePolicy does not exist", func() {
+			if vmCtx.VM.Spec.Reserved == nil {
+				vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
+			}
 			vmCtx.VM.Spec.Reserved.ResourcePolicyName = "bogus"
 			rp, err := vsphere.GetVMSetResourcePolicy(vmCtx, k8sClient)
 			Expect(err).To(HaveOccurred())
@@ -482,6 +488,9 @@ func vmUtilTests() {
 		When("VM SetResourcePolicy exists", func() {
 			BeforeEach(func() {
 				initObjects = append(initObjects, vmResourcePolicy)
+				if vmCtx.VM.Spec.Reserved == nil {
+					vmCtx.VM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
+				}
 				vmCtx.VM.Spec.Reserved.ResourcePolicyName = vmResourcePolicy.Name
 			})
 

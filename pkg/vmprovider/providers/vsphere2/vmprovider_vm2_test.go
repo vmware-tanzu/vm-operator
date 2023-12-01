@@ -89,10 +89,12 @@ func vmE2ETests() {
 		vm.Spec.StorageClass = ctx.StorageClassName
 		vm.Spec.Network.Interfaces[0].Nameservers = []string{"1.1.1.1", "8.8.8.8"}
 		vm.Spec.Network.Interfaces[0].SearchDomains = []string{"vmware.local"}
-		vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-			RawCloudConfig: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: cloudInitSecret.Name,
+		vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+			CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+				RawCloudConfig: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: cloudInitSecret.Name,
+					},
 				},
 			},
 		}
@@ -119,7 +121,7 @@ func vmE2ETests() {
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvVDS
 
-			vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name: interfaceName,
@@ -198,7 +200,7 @@ func vmE2ETests() {
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvNSXT
 
-			vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
 						Name: interfaceName,

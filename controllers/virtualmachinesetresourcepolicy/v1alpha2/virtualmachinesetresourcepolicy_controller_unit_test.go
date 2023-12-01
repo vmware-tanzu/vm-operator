@@ -53,7 +53,7 @@ func unitTestsReconcile() {
 				Namespace: "dummy-ns",
 			},
 			Spec: vmopv1.VirtualMachineSpec{
-				Reserved: vmopv1.VirtualMachineReservedSpec{
+				Reserved: &vmopv1.VirtualMachineReservedSpec{
 					ResourcePolicyName: "dummy-rp",
 				},
 			},

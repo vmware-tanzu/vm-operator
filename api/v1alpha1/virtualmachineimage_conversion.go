@@ -154,6 +154,10 @@ func convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMac
 
 func convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha2_VirtualMachineImageStatusConditions(
 	conditions []Condition) []metav1.Condition {
+	if conditions == nil || len(conditions) == 0 {
+		return []metav1.Condition{}
+	}
+
 	var readyCondition *metav1.Condition
 
 	// Condition types which are folded into the Ready condition in v1alpha2

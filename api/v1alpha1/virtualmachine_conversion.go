@@ -147,65 +147,67 @@ func Convert_v1alpha2_VirtualMachineVolume_To_v1alpha1_VirtualMachineVolume(
 }
 
 func convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(
-	in *VirtualMachineMetadata) v1alpha2.VirtualMachineBootstrapSpec {
+	in *VirtualMachineMetadata) *v1alpha2.VirtualMachineBootstrapSpec {
+
+	if in == nil || apiequality.Semantic.DeepEqual(*in, VirtualMachineMetadata{}) {
+		return nil
+	}
 
 	out := v1alpha2.VirtualMachineBootstrapSpec{}
 
-	if in != nil {
-		objectName := in.SecretName
-		if objectName == "" {
-			objectName = in.ConfigMapName
-		}
+	objectName := in.SecretName
+	if objectName == "" {
+		objectName = in.ConfigMapName
+	}
 
-		switch in.Transport {
-		case VirtualMachineMetadataExtraConfigTransport:
-			out.LinuxPrep = &v1alpha2.VirtualMachineBootstrapLinuxPrepSpec{
-				HardwareClockIsUTC: true,
+	switch in.Transport {
+	case VirtualMachineMetadataExtraConfigTransport:
+		out.LinuxPrep = &v1alpha2.VirtualMachineBootstrapLinuxPrepSpec{
+			HardwareClockIsUTC: true,
+		}
+		out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{}
+		if objectName != "" {
+			out.CloudInit.RawCloudConfig = &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
+				Key:                  "guestinfo.userdata", // TODO: Is this good enough? v1a1 would include everything with the "guestinfo" prefix
 			}
-			out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{}
-			if objectName != "" {
-				out.CloudInit.RawCloudConfig = &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
-					Key:                  "guestinfo.userdata", // TODO: Is this good enough? v1a1 would include everything with the "guestinfo" prefix
-				}
+		}
+	case VirtualMachineMetadataOvfEnvTransport:
+		out.LinuxPrep = &v1alpha2.VirtualMachineBootstrapLinuxPrepSpec{
+			HardwareClockIsUTC: true,
+		}
+		out.VAppConfig = &v1alpha2.VirtualMachineBootstrapVAppConfigSpec{
+			RawProperties: objectName,
+		}
+	case VirtualMachineMetadataVAppConfigTransport:
+		out.VAppConfig = &v1alpha2.VirtualMachineBootstrapVAppConfigSpec{
+			RawProperties: objectName,
+		}
+	case VirtualMachineMetadataCloudInitTransport:
+		out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{}
+		if objectName != "" {
+			out.CloudInit.RawCloudConfig = &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
+				Key:                  "user-data",
 			}
-		case VirtualMachineMetadataOvfEnvTransport:
-			out.LinuxPrep = &v1alpha2.VirtualMachineBootstrapLinuxPrepSpec{
-				HardwareClockIsUTC: true,
-			}
-			out.VAppConfig = &v1alpha2.VirtualMachineBootstrapVAppConfigSpec{
-				RawProperties: objectName,
-			}
-		case VirtualMachineMetadataVAppConfigTransport:
-			out.VAppConfig = &v1alpha2.VirtualMachineBootstrapVAppConfigSpec{
-				RawProperties: objectName,
-			}
-		case VirtualMachineMetadataCloudInitTransport:
-			out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{}
-			if objectName != "" {
-				out.CloudInit.RawCloudConfig = &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
-					Key:                  "user-data",
-				}
-			}
-		case VirtualMachineMetadataSysprepTransport:
-			out.Sysprep = &v1alpha2.VirtualMachineBootstrapSysprepSpec{}
-			if objectName != "" {
-				out.Sysprep.RawSysprep = &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
-					Key:                  "unattend",
-				}
+		}
+	case VirtualMachineMetadataSysprepTransport:
+		out.Sysprep = &v1alpha2.VirtualMachineBootstrapSysprepSpec{}
+		if objectName != "" {
+			out.Sysprep.RawSysprep = &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
+				Key:                  "unattend",
 			}
 		}
 	}
 
-	return out
+	return &out
 }
 
 func convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(
-	in v1alpha2.VirtualMachineBootstrapSpec) *VirtualMachineMetadata {
+	in *v1alpha2.VirtualMachineBootstrapSpec) *VirtualMachineMetadata {
 
-	if apiequality.Semantic.DeepEqual(in, v1alpha2.VirtualMachineBootstrapSpec{}) {
+	if in == nil || apiequality.Semantic.DeepEqual(*in, v1alpha2.VirtualMachineBootstrapSpec{}) {
 		return nil
 	}
 
@@ -280,33 +282,48 @@ func convert_v1alpha2_NetworkInterfaceSpec_To_v1alpha1_NetworkInterface(
 	return out
 }
 
-func convert_v1alpha1_Probe_To_v1alpha2_ReadinessProbeSpec(in *Probe) v1alpha2.VirtualMachineReadinessProbeSpec {
+func Convert_v1alpha1_Probe_To_v1alpha2_VirtualMachineReadinessProbeSpec(in *Probe, out *v1alpha2.VirtualMachineReadinessProbeSpec, s apiconversion.Scope) error {
+	*out = *convert_v1alpha1_Probe_To_v1alpha2_ReadinessProbeSpec(in)
+	return nil
+}
+
+func convert_v1alpha1_Probe_To_v1alpha2_ReadinessProbeSpec(in *Probe) *v1alpha2.VirtualMachineReadinessProbeSpec {
+
+	if in == nil || apiequality.Semantic.DeepEqual(*in, Probe{}) {
+		return nil
+	}
+
 	out := v1alpha2.VirtualMachineReadinessProbeSpec{}
 
-	if in != nil {
-		out.TimeoutSeconds = in.TimeoutSeconds
-		out.PeriodSeconds = in.PeriodSeconds
+	out.TimeoutSeconds = in.TimeoutSeconds
+	out.PeriodSeconds = in.PeriodSeconds
 
-		if in.TCPSocket != nil {
-			out.TCPSocket = &v1alpha2.TCPSocketAction{
-				Port: in.TCPSocket.Port,
-				Host: in.TCPSocket.Host,
-			}
-		}
-
-		if in.GuestHeartbeat != nil {
-			out.GuestHeartbeat = &v1alpha2.GuestHeartbeatAction{
-				ThresholdStatus: v1alpha2.GuestHeartbeatStatus(in.GuestHeartbeat.ThresholdStatus),
-			}
+	if in.TCPSocket != nil {
+		out.TCPSocket = &v1alpha2.TCPSocketAction{
+			Port: in.TCPSocket.Port,
+			Host: in.TCPSocket.Host,
 		}
 	}
 
-	return out
+	if in.GuestHeartbeat != nil {
+		out.GuestHeartbeat = &v1alpha2.GuestHeartbeatAction{
+			ThresholdStatus: v1alpha2.GuestHeartbeatStatus(in.GuestHeartbeat.ThresholdStatus),
+		}
+	}
+
+	// out.GuestInfo =
+
+	return &out
 }
 
-func convert_v1alpha2_ReadinessProbeSpec_To_v1alpha1_Probe(in v1alpha2.VirtualMachineReadinessProbeSpec) *Probe {
+func Convert_v1alpha2_VirtualMachineReadinessProbeSpec_To_v1alpha1_Probe(in *v1alpha2.VirtualMachineReadinessProbeSpec, out *Probe, s apiconversion.Scope) error {
+	*out = *convert_v1alpha2_ReadinessProbeSpec_To_v1alpha1_Probe(in)
+	return nil
+}
 
-	if apiequality.Semantic.DeepEqual(in, v1alpha2.VirtualMachineReadinessProbeSpec{}) {
+func convert_v1alpha2_ReadinessProbeSpec_To_v1alpha1_Probe(in *v1alpha2.VirtualMachineReadinessProbeSpec) *Probe {
+
+	if in == nil || apiequality.Semantic.DeepEqual(*in, v1alpha2.VirtualMachineReadinessProbeSpec{}) {
 		return nil
 	}
 
@@ -332,29 +349,31 @@ func convert_v1alpha2_ReadinessProbeSpec_To_v1alpha1_Probe(in v1alpha2.VirtualMa
 }
 
 func convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha2_VirtualMachineAdvancedSpec(
-	in *VirtualMachineAdvancedOptions) v1alpha2.VirtualMachineAdvancedSpec {
+	in *VirtualMachineAdvancedOptions) *v1alpha2.VirtualMachineAdvancedSpec {
+
+	if in == nil || apiequality.Semantic.DeepEqual(*in, VirtualMachineAdvancedOptions{}) {
+		return nil
+	}
 
 	out := v1alpha2.VirtualMachineAdvancedSpec{}
 
-	if in != nil {
-		if opts := in.DefaultVolumeProvisioningOptions; opts != nil {
-			if opts.ThinProvisioned != nil {
-				if *opts.ThinProvisioned {
-					out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThin
-				} else {
-					out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThick
-				}
-			} else if opts.EagerZeroed != nil && *opts.EagerZeroed {
-				out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThickEagerZero
+	if opts := in.DefaultVolumeProvisioningOptions; opts != nil {
+		if opts.ThinProvisioned != nil {
+			if *opts.ThinProvisioned {
+				out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThin
+			} else {
+				out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThick
 			}
-		}
-
-		if in.ChangeBlockTracking != nil {
-			out.ChangeBlockTracking = *in.ChangeBlockTracking
+		} else if opts.EagerZeroed != nil && *opts.EagerZeroed {
+			out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThickEagerZero
 		}
 	}
 
-	return out
+	if in.ChangeBlockTracking != nil {
+		out.ChangeBlockTracking = *in.ChangeBlockTracking
+	}
+
+	return &out
 }
 
 func convert_v1alpha1_VsphereVolumes_To_v1alpah2_BootDiskCapacity(volumes []VirtualMachineVolume) *resource.Quantity {
@@ -378,7 +397,11 @@ func convert_v1alpha1_VsphereVolumes_To_v1alpah2_BootDiskCapacity(volumes []Virt
 }
 
 func convert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvancedOptions(
-	in v1alpha2.VirtualMachineAdvancedSpec) *VirtualMachineAdvancedOptions {
+	in *v1alpha2.VirtualMachineAdvancedSpec) *VirtualMachineAdvancedOptions {
+
+	if in == nil || apiequality.Semantic.DeepEqual(*in, v1alpha2.VirtualMachineAdvancedSpec{}) {
+		return nil
+	}
 
 	out := &VirtualMachineAdvancedOptions{}
 
@@ -498,13 +521,22 @@ func convert_v1alpha2_NetworkStatus_To_v1alpha1_Network(
 // In v1a2 we've dropped the v1a1 VsphereVolumes, and in its place we have a single field for the boot
 // disk size. The Convert_v1alpha1_VirtualMachineVolume_To_v1alpha2_VirtualMachineVolume() stub does not
 // allow us to not return something so filter those volumes - without a PersistentVolumeClaim set - here.
-func filter_out_VirtualMachineVolumes_VsphereVolumes(volumes []v1alpha2.VirtualMachineVolume) []v1alpha2.VirtualMachineVolume {
-	out := make([]v1alpha2.VirtualMachineVolume, 0, len(volumes))
+func filter_out_VirtualMachineVolumes_VsphereVolumes(in []v1alpha2.VirtualMachineVolume) []v1alpha2.VirtualMachineVolume {
 
-	for _, v := range volumes {
+	if len(in) == 0 {
+		return nil
+	}
+
+	out := make([]v1alpha2.VirtualMachineVolume, 0, len(in))
+
+	for _, v := range in {
 		if v.PersistentVolumeClaim != nil {
 			out = append(out, v)
 		}
+	}
+
+	if len(out) == 0 {
+		return nil
 	}
 
 	return out
@@ -527,15 +559,26 @@ func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	out.Bootstrap = convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(in.VmMetadata)
 	out.Volumes = filter_out_VirtualMachineVolumes_VsphereVolumes(out.Volumes)
 
-	for i, networkInterface := range in.NetworkInterfaces {
-		networkInterfaceSpec := convert_v1alpha1_NetworkInterface_To_v1alpha2_NetworkInterfaceSpec(i, networkInterface)
-		out.Network.Interfaces = append(out.Network.Interfaces, networkInterfaceSpec)
+	if len(in.NetworkInterfaces) > 0 {
+		out.Network = &v1alpha2.VirtualMachineNetworkSpec{}
+		for i, networkInterface := range in.NetworkInterfaces {
+			networkInterfaceSpec := convert_v1alpha1_NetworkInterface_To_v1alpha2_NetworkInterfaceSpec(i, networkInterface)
+			out.Network.Interfaces = append(out.Network.Interfaces, networkInterfaceSpec)
+		}
 	}
 
 	out.ReadinessProbe = convert_v1alpha1_Probe_To_v1alpha2_ReadinessProbeSpec(in.ReadinessProbe)
 	out.Advanced = convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha2_VirtualMachineAdvancedSpec(in.AdvancedOptions)
-	out.Advanced.BootDiskCapacity = convert_v1alpha1_VsphereVolumes_To_v1alpah2_BootDiskCapacity(in.Volumes)
-	out.Reserved.ResourcePolicyName = in.ResourcePolicyName
+	if out.Advanced != nil {
+		out.Advanced.BootDiskCapacity = convert_v1alpha1_VsphereVolumes_To_v1alpah2_BootDiskCapacity(in.Volumes)
+	}
+
+	if in.ResourcePolicyName != "" {
+		if out.Reserved == nil {
+			out.Reserved = &v1alpha2.VirtualMachineReservedSpec{}
+		}
+		out.Reserved.ResourcePolicyName = in.ResourcePolicyName
+	}
 
 	// Deprecated:
 	// in.Ports
@@ -557,17 +600,24 @@ func Convert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(
 	out.RestartMode = convert_v1alpha2_VirtualMachinePowerOpMode_To_v1alpha1_VirtualMachinePowerOpMode(in.RestartMode)
 	out.VmMetadata = convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(in.Bootstrap)
 
-	for _, networkInterfaceSpec := range in.Network.Interfaces {
-		networkInterface := convert_v1alpha2_NetworkInterfaceSpec_To_v1alpha1_NetworkInterface(networkInterfaceSpec)
-		out.NetworkInterfaces = append(out.NetworkInterfaces, networkInterface)
+	if in.Network != nil {
+		for _, networkInterfaceSpec := range in.Network.Interfaces {
+			networkInterface := convert_v1alpha2_NetworkInterfaceSpec_To_v1alpha1_NetworkInterface(networkInterfaceSpec)
+			out.NetworkInterfaces = append(out.NetworkInterfaces, networkInterface)
+		}
 	}
 
 	out.ReadinessProbe = convert_v1alpha2_ReadinessProbeSpec_To_v1alpha1_Probe(in.ReadinessProbe)
 	out.AdvancedOptions = convert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvancedOptions(in.Advanced)
-	out.ResourcePolicyName = in.Reserved.ResourcePolicyName
 
-	if bootDiskVol := convert_v1alpha2_BootDiskCapacity_To_v1alpha1_VirtualMachineVolume(in.Advanced.BootDiskCapacity); bootDiskVol != nil {
-		out.Volumes = append(out.Volumes, *bootDiskVol)
+	if in.Reserved != nil {
+		out.ResourcePolicyName = in.Reserved.ResourcePolicyName
+	}
+
+	if in.Advanced != nil {
+		if bootDiskVol := convert_v1alpha2_BootDiskCapacity_To_v1alpha1_VirtualMachineVolume(in.Advanced.BootDiskCapacity); bootDiskVol != nil {
+			out.Volumes = append(out.Volumes, *bootDiskVol)
+		}
 	}
 
 	// TODO = in.ReadinessGates
@@ -714,8 +764,12 @@ func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 func restore_v1alpha2_VirtualMachineBootstrapSpec(
 	dst, src *v1alpha2.VirtualMachine) {
 
-	dstBootstrap := &dst.Spec.Bootstrap
-	srcBootstrap := &src.Spec.Bootstrap
+	dstBootstrap := dst.Spec.Bootstrap
+	srcBootstrap := src.Spec.Bootstrap
+
+	if dstBootstrap == nil || srcBootstrap == nil {
+		return
+	}
 
 	mergeSecretKeySelector := func(dstSel, srcSel *corev1.SecretKeySelector) *corev1.SecretKeySelector {
 		if dstSel == nil || srcSel == nil {
@@ -761,8 +815,12 @@ func restore_v1alpha2_VirtualMachineBootstrapSpec(
 func restore_v1alpha2_VirtualMachineNetwork(
 	dst, src *v1alpha2.VirtualMachine) {
 
-	dstNetwork := &dst.Spec.Network
-	srcNetwork := &src.Spec.Network
+	dstNetwork := dst.Spec.Network
+	srcNetwork := src.Spec.Network
+
+	if dstNetwork == nil || srcNetwork == nil {
+		return
+	}
 
 	dstNetwork.HostName = srcNetwork.HostName
 	dstNetwork.Disabled = srcNetwork.Disabled
@@ -807,7 +865,13 @@ func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
 
 	restore_v1alpha2_VirtualMachineBootstrapSpec(dst, restored)
 	restore_v1alpha2_VirtualMachineNetwork(dst, restored)
-	dst.Spec.ReadinessProbe.GuestInfo = restored.Spec.ReadinessProbe.GuestInfo
+
+	if restored.Spec.ReadinessProbe != nil {
+		if dst.Spec.ReadinessProbe == nil {
+			dst.Spec.ReadinessProbe = &v1alpha2.VirtualMachineReadinessProbeSpec{}
+		}
+		dst.Spec.ReadinessProbe.GuestInfo = restored.Spec.ReadinessProbe.GuestInfo
+	}
 	dst.Spec.ReadinessGates = restored.Spec.ReadinessGates
 
 	return nil

@@ -110,7 +110,11 @@ func findVMByInventory(
 	}
 
 	// When the VM has a ResourcePolicy, the VM is placed in a child folder under the namespace's folder.
-	if policyName := vmCtx.VM.Spec.Reserved.ResourcePolicyName; policyName != "" {
+	var policyName string
+	if reserved := vmCtx.VM.Spec.Reserved; reserved != nil {
+		policyName = reserved.ResourcePolicyName
+	}
+	if policyName != "" {
 		resourcePolicy := &vmopv1.VirtualMachineSetResourcePolicy{}
 
 		key := ctrlclient.ObjectKey{Name: policyName, Namespace: vmCtx.VM.Namespace}

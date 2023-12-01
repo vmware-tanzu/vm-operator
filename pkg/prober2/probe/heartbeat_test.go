@@ -141,8 +141,8 @@ var _ = Describe("Guest heartbeat probe", func() {
 	})
 })
 
-func getVirtualMachineReadinessHeartbeatProbe() vmopv1.VirtualMachineReadinessProbeSpec {
-	return vmopv1.VirtualMachineReadinessProbeSpec{
+func getVirtualMachineReadinessHeartbeatProbe() *vmopv1.VirtualMachineReadinessProbeSpec {
+	return &vmopv1.VirtualMachineReadinessProbeSpec{
 		GuestHeartbeat: &vmopv1.GuestHeartbeatAction{
 			ThresholdStatus: vmopv1.GreenHeartbeatStatus, // Default.
 		},

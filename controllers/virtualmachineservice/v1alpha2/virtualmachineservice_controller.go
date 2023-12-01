@@ -631,7 +631,7 @@ func (r *ReconcileVirtualMachineService) generateSubsetsForService(
 		// Otherwise, a VM that does not have a ReadinessProbe is implicitly ready.
 		ready := true
 
-		if probe := vm.Spec.ReadinessProbe; probe.TCPSocket != nil || probe.GuestHeartbeat != nil || len(probe.GuestInfo) != 0 {
+		if probe := vm.Spec.ReadinessProbe; probe != nil && (probe.TCPSocket != nil || probe.GuestHeartbeat != nil || len(probe.GuestInfo) != 0) {
 			if condition := conditions.Get(&vm, vmopv1.ReadyConditionType); condition == nil {
 				if vmInSubsetsMap == nil {
 					vmInSubsetsMap = r.getVMsReferencedByServiceEndpoints(ctx, service)

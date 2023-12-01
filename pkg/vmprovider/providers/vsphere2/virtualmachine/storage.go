@@ -18,7 +18,12 @@ func GetDefaultDiskProvisioningType(
 	vcClient *vcclient.Client,
 	storageProfileID string) (string, error) {
 
-	switch vmCtx.VM.Spec.Advanced.DefaultVolumeProvisioningMode {
+	var defaultProvMode vmopv1.VirtualMachineVolumeProvisioningMode
+	if adv := vmCtx.VM.Spec.Advanced; adv != nil {
+		defaultProvMode = adv.DefaultVolumeProvisioningMode
+	}
+
+	switch defaultProvMode {
 	case vmopv1.VirtualMachineVolumeProvisioningModeThin:
 		return string(types.OvfCreateImportSpecParamsDiskProvisioningTypeThin), nil
 	case vmopv1.VirtualMachineVolumeProvisioningModeThick:

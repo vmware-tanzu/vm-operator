@@ -107,8 +107,8 @@ func setupTestServer() (*httptest.Server, string, int) {
 	return s, host, portInt
 }
 
-func getVirtualMachineReadinessTCPProbe(host string, port int) vmopv1.VirtualMachineReadinessProbeSpec {
-	return vmopv1.VirtualMachineReadinessProbeSpec{
+func getVirtualMachineReadinessTCPProbe(host string, port int) *vmopv1.VirtualMachineReadinessProbeSpec {
+	return &vmopv1.VirtualMachineReadinessProbeSpec{
 		TCPSocket: &vmopv1.TCPSocketAction{
 			Host: host,
 			Port: intstr.FromInt(port),

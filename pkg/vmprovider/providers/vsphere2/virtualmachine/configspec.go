@@ -59,6 +59,9 @@ func CreateConfigSpec(
 	}
 
 	// TODO: Otherwise leave as-is? Our ChangeBlockTracking could be better as a *bool.
+	if vmCtx.VM.Spec.Advanced == nil {
+		vmCtx.VM.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+	}
 	if vmCtx.VM.Spec.Advanced.ChangeBlockTracking {
 		configSpec.ChangeTrackingEnabled = pointer.Bool(true)
 	}

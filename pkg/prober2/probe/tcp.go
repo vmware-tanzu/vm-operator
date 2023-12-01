@@ -26,7 +26,7 @@ func NewTCPProber() Probe {
 
 func (pr tcpProber) Probe(ctx *context.ProbeContext) (Result, error) {
 	vm := ctx.VM
-	p := &ctx.VM.Spec.ReadinessProbe
+	p := ctx.VM.Spec.ReadinessProbe
 
 	portProto := corev1.ProtocolTCP
 	portNum, err := findPort(vm, p.TCPSocket.Port, portProto)

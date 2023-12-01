@@ -87,6 +87,9 @@ func vmTests() {
 			vm = builder.DummyBasicVirtualMachineA2("test-vm", "")
 
 			// Reduce diff from old tests: by default don't create an NIC.
+			if vm.Spec.Network == nil {
+				vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
+			}
 			vm.Spec.Network.Disabled = true
 		})
 
@@ -1493,6 +1496,9 @@ func vmTests() {
 
 				Context("VM has thin provisioning", func() {
 					BeforeEach(func() {
+						if vm.Spec.Advanced == nil {
+							vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+						}
 						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VirtualMachineVolumeProvisioningModeThin
 					})
 
@@ -1528,6 +1534,9 @@ func vmTests() {
 
 				XContext("VM has eager zero provisioning", func() {
 					BeforeEach(func() {
+						if vm.Spec.Advanced == nil {
+							vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+						}
 						vm.Spec.Advanced.DefaultVolumeProvisioningMode = vmopv1.VirtualMachineVolumeProvisioningModeThickEagerZero
 					})
 
@@ -1548,6 +1557,9 @@ func vmTests() {
 					It("Succeeds", func() {
 						newSize := resource.MustParse("4242Gi")
 
+						if vm.Spec.Advanced == nil {
+							vm.Spec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{}
+						}
 						vm.Spec.Advanced.BootDiskCapacity = &newSize
 						vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOn
 						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
@@ -1654,6 +1666,9 @@ func vmTests() {
 				Expect(ctx.Client.Create(ctx, resourcePolicy)).To(Succeed())
 
 				vm.Annotations["vsphere-cluster-module-group"] = resourcePolicy.Spec.ClusterModuleGroups[0]
+				if vm.Spec.Reserved == nil {
+					vm.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
+				}
 				vm.Spec.Reserved.ResourcePolicyName = resourcePolicy.Name
 			})
 

@@ -560,9 +560,15 @@ func unitTestsReconcile() {
 
 			Context("When VMs have Readiness Probe", func() {
 				BeforeEach(func() {
-					vm1.Spec.ReadinessProbe.TCPSocket = &vmopv1.TCPSocketAction{}
-					vm2.Spec.ReadinessProbe.TCPSocket = &vmopv1.TCPSocketAction{}
-					vm3.Spec.ReadinessProbe.TCPSocket = &vmopv1.TCPSocketAction{}
+					vm1.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+						TCPSocket: &vmopv1.TCPSocketAction{},
+					}
+					vm2.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+						TCPSocket: &vmopv1.TCPSocketAction{},
+					}
+					vm3.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+						TCPSocket: &vmopv1.TCPSocketAction{},
+					}
 
 					initObjects = append(initObjects, vm1, vm2, vm3)
 				})
@@ -622,9 +628,13 @@ func unitTestsReconcile() {
 			Context("Preserve VMs in Endpoints that have Probe but hasn't run yet", func() {
 				BeforeEach(func() {
 					vm1.UID = "abc"
-					vm1.Spec.ReadinessProbe.TCPSocket = &vmopv1.TCPSocketAction{}
+					vm1.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+						TCPSocket: &vmopv1.TCPSocketAction{},
+					}
 					vm2.UID = "xyz"
-					vm2.Spec.ReadinessProbe.TCPSocket = &vmopv1.TCPSocketAction{}
+					vm2.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
+						TCPSocket: &vmopv1.TCPSocketAction{},
+					}
 					// Initial setup so that the first Reconcile will add the VM.
 					conditions.MarkTrue(vm1, vmopv1.ReadyConditionType)
 					initObjects = append(initObjects, vm1, vm2)

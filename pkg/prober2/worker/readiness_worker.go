@@ -59,7 +59,7 @@ func (w *readinessWorker) GetQueue() workqueue.DelayingInterface {
 
 // CreateProbeContext creates a probe context for readiness probe.
 func (w *readinessWorker) CreateProbeContext(vm *vmopv1.VirtualMachine) (*context.ProbeContext, error) {
-	p := &vm.Spec.ReadinessProbe
+	p := vm.Spec.ReadinessProbe
 
 	if p.TCPSocket == nil && p.GuestHeartbeat == nil && len(p.GuestInfo) == 0 {
 		return nil, nil
@@ -136,7 +136,7 @@ func (w *readinessWorker) getProbe(probeSpec *vmopv1.VirtualMachineReadinessProb
 
 // runProbe runs a specific type of probe based on the VM probe spec.
 func (w *readinessWorker) runProbe(ctx *context.ProbeContext) (probe.Result, error) {
-	if p := w.getProbe(&ctx.VM.Spec.ReadinessProbe); p != nil {
+	if p := w.getProbe(ctx.VM.Spec.ReadinessProbe); p != nil {
 		return p.Probe(ctx)
 	}
 

@@ -167,7 +167,7 @@ func unitTestsValidateCreate() {
 		}
 
 		if args.invalidReadinessProbe {
-			ctx.vm.Spec.ReadinessProbe = vmopv1.VirtualMachineReadinessProbeSpec{
+			ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
 				TCPSocket:      &vmopv1.TCPSocketAction{},
 				GuestHeartbeat: &vmopv1.GuestHeartbeatAction{},
 			}
@@ -189,7 +189,7 @@ func unitTestsValidateCreate() {
 			if !args.isRestrictedNetworkValidProbePort {
 				portValue = 443
 			}
-			ctx.vm.Spec.ReadinessProbe = vmopv1.VirtualMachineReadinessProbeSpec{
+			ctx.vm.Spec.ReadinessProbe = &vmopv1.VirtualMachineReadinessProbeSpec{
 				TCPSocket: &vmopv1.TCPSocketAction{Port: intstr.FromInt(portValue)},
 			}
 		}
@@ -376,7 +376,9 @@ func unitTestsValidateCreate() {
 			Entry("allow CloudInit bootstrap",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
 					},
 					expectAllowed: true,
 				},
@@ -384,7 +386,9 @@ func unitTestsValidateCreate() {
 			Entry("allow LinuxPrep bootstrap",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						}
 					},
 					expectAllowed: true,
 				},
@@ -392,7 +396,9 @@ func unitTestsValidateCreate() {
 			Entry("allow vAppConfig bootstrap",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
+						}
 					},
 					expectAllowed: true,
 				},
@@ -401,7 +407,9 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
-						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+						}
 					},
 					expectAllowed: true,
 				},
@@ -410,7 +418,9 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "false")).To(Succeed())
-						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+						}
 					},
 					validate: doValidateWithMsg(
 						`spec.bootstrap.sysprep: Invalid value: "Sysprep": the Sysprep feature is not enabled`,
@@ -420,8 +430,10 @@ func unitTestsValidateCreate() {
 			Entry("disallow CloudInit and LinuxPrep specified at the same time",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
-						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						}
 					},
 					validate: doValidateWithMsg(
 						`spec.bootstrap.cloudInit: Forbidden: CloudInit may not be used with any other bootstrap provider`,
@@ -432,8 +444,10 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
-						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
-						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+							Sysprep:   &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+						}
 					},
 					validate: doValidateWithMsg(
 						`spec.bootstrap.cloudInit: Forbidden: CloudInit may not be used with any other bootstrap provider`,
@@ -444,8 +458,10 @@ func unitTestsValidateCreate() {
 			Entry("disallow CloudInit and vAppConfig specified at the same time",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
-						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit:  &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
+						}
 					},
 					validate: doValidateWithMsg(
 						`spec.bootstrap.cloudInit: Forbidden: CloudInit may not be used with any other bootstrap provider`,
@@ -457,8 +473,10 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
-						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
-						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+							Sysprep:   &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+						}
 					},
 					validate: doValidateWithMsg(
 						`spec.bootstrap.linuxPrep: Forbidden: LinuxPrep may not be used with either CloudInit or Sysprep bootstrap providers`,
@@ -469,8 +487,10 @@ func unitTestsValidateCreate() {
 			Entry("allow LinuxPrep and vAppConfig specified at the same time",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
-						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep:  &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
+						}
 					},
 					expectAllowed: true,
 				},
@@ -479,8 +499,10 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
-						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
-						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep:    &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
+						}
 					},
 					expectAllowed: true,
 				},
@@ -488,9 +510,11 @@ func unitTestsValidateCreate() {
 			Entry("disallow CloudInit mixing inline CloudConfig and RawCloudConfig",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-							CloudConfig:    &cloudinit.CloudConfig{},
-							RawCloudConfig: &corev1.SecretKeySelector{},
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+								CloudConfig:    &cloudinit.CloudConfig{},
+								RawCloudConfig: &corev1.SecretKeySelector{},
+							},
 						}
 					},
 					validate: doValidateWithMsg(
@@ -502,9 +526,12 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
-						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
-						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep = &sysprep.Sysprep{}
-						ctx.vm.Spec.Bootstrap.Sysprep.RawSysprep = &corev1.SecretKeySelector{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep:    &sysprep.Sysprep{},
+								RawSysprep: &corev1.SecretKeySelector{},
+							},
+						}
 					},
 					validate: doValidateWithMsg(
 						`spec.bootstrap.sysprep: Invalid value: "sysPrep": sysprep and rawSysprep are mutually exclusive`,
@@ -514,13 +541,15 @@ func unitTestsValidateCreate() {
 			Entry("disallow vAppConfig mixing inline Properties and RawProperties",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
-							Properties: []common.KeyValueOrSecretKeySelectorPair{
-								{
-									Key: "key",
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+								Properties: []common.KeyValueOrSecretKeySelectorPair{
+									{
+										Key: "key",
+									},
 								},
+								RawProperties: "some-vapp-prop",
 							},
-							RawProperties: "some-vapp-prop",
 						}
 					},
 					validate: doValidateWithMsg(
@@ -532,16 +561,18 @@ func unitTestsValidateCreate() {
 			Entry("disallow vAppConfig mixing Properties Value From Secret and direct String pointer",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
-							Properties: []common.KeyValueOrSecretKeySelectorPair{
-								{
-									Key: "key",
-									Value: common.ValueOrSecretKeySelector{
-										From: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{Name: "secret-name"},
-											Key:                  "key",
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+								Properties: []common.KeyValueOrSecretKeySelectorPair{
+									{
+										Key: "key",
+										Value: common.ValueOrSecretKeySelector{
+											From: &corev1.SecretKeySelector{
+												LocalObjectReference: corev1.LocalObjectReference{Name: "secret-name"},
+												Key:                  "key",
+											},
+											Value: pointer.String("value"),
 										},
-										Value: pointer.String("value"),
 									},
 								},
 							},
@@ -556,11 +587,13 @@ func unitTestsValidateCreate() {
 			Entry("disallow vAppConfig inline Properties missing Key",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
-							Properties: []common.KeyValueOrSecretKeySelectorPair{
-								{
-									Value: common.ValueOrSecretKeySelector{
-										Value: pointer.String("value"),
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+								Properties: []common.KeyValueOrSecretKeySelectorPair{
+									{
+										Value: common.ValueOrSecretKeySelector{
+											Value: pointer.String("value"),
+										},
 									},
 								},
 							},
@@ -612,7 +645,7 @@ func unitTestsValidateCreate() {
 			Entry("allow default",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
 					},
 					expectAllowed: true,
 				},
@@ -621,7 +654,7 @@ func unitTestsValidateCreate() {
 			Entry("allow static",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							HostName: "my-vm",
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
@@ -645,8 +678,10 @@ func unitTestsValidateCreate() {
 			Entry("allow static mtu, nameservers, routes and searchDomains when bootstrap is CloudInit",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
-						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							HostName: "my-vm",
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
@@ -687,7 +722,7 @@ func unitTestsValidateCreate() {
 			Entry("allow dhcp",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							HostName: "my-vm",
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
@@ -705,7 +740,7 @@ func unitTestsValidateCreate() {
 			Entry("disallow mixing static and dhcp",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							HostName: "my-vm",
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
@@ -778,8 +813,10 @@ func unitTestsValidateCreate() {
 			Entry("validate mtu when bootstrap doesn't support mtu",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
-						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							HostName: "my-vm",
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
@@ -798,8 +835,10 @@ func unitTestsValidateCreate() {
 			Entry("validate mtu when bootstrap supports mtu",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
-						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							HostName: "my-vm",
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
@@ -819,8 +858,11 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
-						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
-						ctx.vm.Spec.Bootstrap.Sysprep.RawSysprep = &corev1.SecretKeySelector{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								RawSysprep: &corev1.SecretKeySelector{},
+							},
+						}
 						ctx.vm.Spec.Network.Interfaces[0].Nameservers = []string{
 							"not-an-ip",
 							"192.168.1.1/24",
@@ -838,8 +880,11 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
-						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
-						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep = &sysprep.Sysprep{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{},
+							},
+						}
 						ctx.vm.Spec.Network.Interfaces[0].Nameservers = []string{
 							"8.8.8.8",
 							"2001:4860:4860::8888",
@@ -854,8 +899,11 @@ func unitTestsValidateCreate() {
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
-						ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
-						ctx.vm.Spec.Bootstrap.Sysprep.Sysprep = &sysprep.Sysprep{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{},
+							},
+						}
 						ctx.vm.Spec.Network.Interfaces[0].Routes = []vmopv1.VirtualMachineNetworkRouteSpec{
 							{
 								To:  "10.100.10.1",
@@ -884,7 +932,9 @@ func unitTestsValidateCreate() {
 			Entry("validate routes when bootstrap supports routes",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.CloudInit = &vmopv1.VirtualMachineBootstrapCloudInitSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
 						ctx.vm.Spec.Network.Interfaces[0].Routes = []vmopv1.VirtualMachineNetworkRouteSpec{
 							{
 								To:     "10.100.10.1/24",
@@ -906,7 +956,9 @@ func unitTestsValidateCreate() {
 			Entry("validate searchDomains when bootstrap doesn't support searchDomains",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.VAppConfig = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
+						}
 						ctx.vm.Spec.Network.Interfaces[0].SearchDomains = []string{"dev.local"}
 					},
 					validate: doValidateWithMsg(
@@ -918,7 +970,9 @@ func unitTestsValidateCreate() {
 			Entry("validate searchDomains when bootstrap supports searchDomains",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Bootstrap.LinuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{}
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						}
 						ctx.vm.Spec.Network.Interfaces[0].SearchDomains = []string{"dev.local"}
 					},
 					expectAllowed: true,
@@ -928,7 +982,7 @@ func unitTestsValidateCreate() {
 			Entry("disallow creating VM with network interfaces resulting in a non-DNS1123 combined network interface CR name/label (`vmName-networkName-interfaceName`)",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						ctx.vm.Spec.Network = vmopv1.VirtualMachineNetworkSpec{
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
 									Name: fmt.Sprintf("%x", make([]byte, validation.DNS1123LabelMaxLength)),
@@ -1002,6 +1056,9 @@ func unitTestsValidateUpdate() {
 			ctx.vm.Spec.StorageClass += updateSuffix
 		}
 		if args.changeResourcePolicy {
+			if ctx.vm.Spec.Reserved == nil {
+				ctx.vm.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
+			}
 			ctx.vm.Spec.Reserved.ResourcePolicyName = updateSuffix
 		}
 		if args.assignZoneName {
@@ -1028,6 +1085,9 @@ func unitTestsValidateUpdate() {
 		}
 		if args.isSysprepTransportUsed {
 			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
+			if ctx.vm.Spec.Bootstrap == nil {
+				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+			}
 			ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
 		}
 

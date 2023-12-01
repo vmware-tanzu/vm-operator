@@ -340,7 +340,7 @@ func UpdateConfigSpecExtraConfig(
 	// it will do nothing and won't cause any issues, but can introduce confusion.
 	// BMV: Is this needed anymore? IMO we shouldn't have bootstrap stuff here. The EC mangling is already hard to follow.
 	emptyBSSpec := vmopv1.VirtualMachineBootstrapSpec{}
-	if vm.Spec.Bootstrap == emptyBSSpec || vm.Spec.Bootstrap.CloudInit == nil {
+	if vm.Spec.Bootstrap == nil || *vm.Spec.Bootstrap == emptyBSSpec || vm.Spec.Bootstrap.CloudInit == nil {
 		ecMap := util.ExtraConfigToMap(config.ExtraConfig)
 		if ecMap[constants.VMOperatorV1Alpha1ExtraConfigKey] == constants.VMOperatorV1Alpha1ConfigReady &&
 			imageV1Alpha1Compatible {
@@ -380,7 +380,7 @@ func UpdateConfigSpecChangeBlockTracking(
 		}
 	}
 
-	if vmSpec.Advanced.ChangeBlockTracking {
+	if adv := vmSpec.Advanced; adv != nil && adv.ChangeBlockTracking {
 		if config.ChangeTrackingEnabled == nil || !*config.ChangeTrackingEnabled {
 			configSpec.ChangeTrackingEnabled = pointer.Bool(true)
 		}
@@ -541,6 +541,11 @@ func (s *Session) ensureNetworkInterfaces(
 	vmCtx context.VirtualMachineContextA2,
 	configSpec *vimTypes.VirtualMachineConfigSpec) (network2.NetworkInterfaceResults, error) {
 
+	networkSpec := vmCtx.VM.Spec.Network
+	if networkSpec == nil || networkSpec.Disabled {
+		return network2.NetworkInterfaceResults{}, nil
+	}
+
 	// This negative device key is the traditional range used for network interfaces.
 	deviceKey := int32(-100)
 
@@ -556,12 +561,6 @@ func (s *Session) ensureNetworkInterfaces(
 			&vimTypes.VirtualVmxnet3Vrdma{},
 			&vimTypes.VirtualSriovEthernetCard{},
 		)
-	}
-
-	networkSpec := &vmCtx.VM.Spec.Network
-	if networkSpec.Disabled {
-		// No connected networking for this VM.
-		return network2.NetworkInterfaceResults{}, nil
 	}
 
 	clusterMoRef := s.Cluster.Reference()

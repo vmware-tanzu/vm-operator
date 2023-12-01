@@ -52,7 +52,11 @@ func DoBootstrap(
 	networkResults network.NetworkInterfaceResults,
 	bootstrapData BootstrapData) error {
 
-	bootstrap := &vmCtx.VM.Spec.Bootstrap
+	bootstrap := vmCtx.VM.Spec.Bootstrap
+	if bootstrap == nil {
+		return nil
+	}
+
 	cloudInit := bootstrap.CloudInit
 	linuxPrep := bootstrap.LinuxPrep
 	sysprep := bootstrap.Sysprep

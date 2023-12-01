@@ -362,8 +362,8 @@ func (v validator) validateNetworkInterfaceSpec(
 		networkIfCRName = fmt.Sprintf("%s-%s", vmName, interfaceSpec.Name)
 	}
 
-	for _, msg := range validation.NameIsDNSLabel(networkIfCRName, false) {
-		allErrs = append(allErrs, field.Invalid(interfacePath.Child("name"), interfaceSpec.Name, msg))
+	for _, msg := range validation.NameIsDNSSubdomain(networkIfCRName, false) {
+		allErrs = append(allErrs, field.Invalid(interfacePath.Child("name"), networkIfCRName, "is the resulting network interface name: "+msg))
 	}
 
 	var ipv4Addrs, ipv6Addrs []string

@@ -4,6 +4,8 @@
 package v1alpha1
 
 import (
+	"strings"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
@@ -301,6 +303,51 @@ func convert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageS
 	return nil
 }
 
+func convert_v1alpha2_VirtualMachineImage_VMwareSystemProperties_To_v1alpha1_VirtualMachineImageAnnotations(
+	in *[]common.KeyValuePair, out *map[string]string) error {
+
+	if in != nil && len(*in) > 0 {
+		if *out == nil {
+			*out = make(map[string]string)
+		}
+
+		for _, pair := range *in {
+			(*out)[pair.Key] = pair.Value
+		}
+	}
+
+	return nil
+}
+
+func convert_v1alpha1_VirtualMachineImageAnnotations_To_v1alpha2_VirtualMachineImage_VMwareSystemProperties(
+	in *map[string]string, dstAnnotations *map[string]string, dstSystemProperties *[]common.KeyValuePair) error {
+	if *in == nil {
+		return nil
+	}
+
+	// copy v1a1 system annotations to v1a2 system properties status field
+	for k, v := range *in {
+		if strings.HasPrefix(k, "vmware-system") {
+			pair := common.KeyValuePair{
+				Key:   k,
+				Value: v,
+			}
+			*dstSystemProperties = append(*dstSystemProperties, pair)
+		}
+	}
+
+	// remove any system annotations in v1a2 object
+	if *dstAnnotations != nil {
+		for k, _ := range *dstAnnotations {
+			if strings.HasPrefix(k, "vmware-system") {
+				delete(*dstAnnotations, k)
+			}
+		}
+	}
+
+	return nil
+}
+
 // ConvertTo converts this VirtualMachineImage to the Hub version.
 func (src *VirtualMachineImage) ConvertTo(dstRaw conversion.Hub) error {
 	dst := dstRaw.(*v1alpha2.VirtualMachineImage)
@@ -309,6 +356,11 @@ func (src *VirtualMachineImage) ConvertTo(dstRaw conversion.Hub) error {
 	}
 
 	if err := convert_v1alpha1_VirtualMachineImageSpec_To_v1alpha2_VirtualMachineImageStatus(&src.Spec, &dst.Status, nil); err != nil {
+		return err
+	}
+
+	if err := convert_v1alpha1_VirtualMachineImageAnnotations_To_v1alpha2_VirtualMachineImage_VMwareSystemProperties(
+		&src.Annotations, &dst.Annotations, &dst.Status.VMwareSystemProperties); err != nil {
 		return err
 	}
 
@@ -323,6 +375,11 @@ func (dst *VirtualMachineImage) ConvertFrom(srcRaw conversion.Hub) error {
 	}
 
 	if err := convert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageSpec(&src.Status, &dst.Spec, nil); err != nil {
+		return err
+	}
+
+	if err := convert_v1alpha2_VirtualMachineImage_VMwareSystemProperties_To_v1alpha1_VirtualMachineImageAnnotations(
+		&src.Status.VMwareSystemProperties, &dst.Annotations); err != nil {
 		return err
 	}
 
@@ -352,6 +409,11 @@ func (src *ClusterVirtualMachineImage) ConvertTo(dstRaw conversion.Hub) error {
 		return err
 	}
 
+	if err := convert_v1alpha1_VirtualMachineImageAnnotations_To_v1alpha2_VirtualMachineImage_VMwareSystemProperties(
+		&src.Annotations, &dst.Annotations, &dst.Status.VMwareSystemProperties); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -363,6 +425,11 @@ func (dst *ClusterVirtualMachineImage) ConvertFrom(srcRaw conversion.Hub) error 
 	}
 
 	if err := convert_v1alpha2_VirtualMachineImageStatus_To_v1alpha1_VirtualMachineImageSpec(&src.Status, &dst.Spec, nil); err != nil {
+		return err
+	}
+
+	if err := convert_v1alpha2_VirtualMachineImage_VMwareSystemProperties_To_v1alpha1_VirtualMachineImageAnnotations(
+		&src.Status.VMwareSystemProperties, &dst.Annotations); err != nil {
 		return err
 	}
 

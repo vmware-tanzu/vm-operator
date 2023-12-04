@@ -861,6 +861,11 @@ func (in *VirtualMachineImageStatus) DeepCopyInto(out *VirtualMachineImageStatus
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.VMwareSystemProperties != nil {
+		in, out := &in.VMwareSystemProperties, &out.VMwareSystemProperties
+		*out = make([]common.KeyValuePair, len(*in))
+		copy(*out, *in)
+	}
 	out.ProductInfo = in.ProductInfo
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions

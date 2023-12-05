@@ -985,7 +985,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
-									Name: fmt.Sprintf("%x", make([]byte, validation.DNS1123LabelMaxLength)),
+									Name: fmt.Sprintf("%x", make([]byte, validation.DNS1123SubdomainMaxLength)),
 									Network: common.PartialObjectRef{
 										Name: "dummy-nw",
 									},
@@ -1000,12 +1000,11 @@ func unitTestsValidateCreate() {
 						}
 					},
 					validate: doValidateWithMsg(
-						fmt.Sprintf(`spec.network.interfaces[0].name: Invalid value: "%x": must be no more than 63 characters`, make([]byte, validation.DNS1123LabelMaxLength)),
-						`spec.network.interfaces[1].name: Invalid value: "dummy_If": a lowercase RFC 1123 label must consist of lower case alphanumeric characters or '-'`,
-						`and must start and end with an alphanumeric character (e.g. 'my-name'`,
-						` or '123-abc'`,
-						`regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?')`,
-					),
+						fmt.Sprintf(`spec.network.interfaces[0].name: Invalid value: "dummy-vm-for-webhook-validation-dummy-nw-%x": is the resulting network interface name: must be no more than 253 characters`, make([]byte, validation.DNS1123SubdomainMaxLength)),
+						`spec.network.interfaces[1].name: Invalid value: "dummy-vm-for-webhook-validation-dummy-nw-dummy_If": is the resulting network interface name: a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters`,
+						`'-' or '.'`,
+						`and must start and end with an alphanumeric character (e.g. 'example.com'`,
+						"regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"),
 				},
 			),
 		)

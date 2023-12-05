@@ -73,6 +73,12 @@ var _ = Describe("UpdateStatus", func() {
 						},
 					},
 				}
+
+				vmCtx.VM.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+					{
+						Name: "eth42",
+					},
+				}
 			})
 
 			It("Skips pseudo devices", func() {
@@ -80,6 +86,7 @@ var _ = Describe("UpdateStatus", func() {
 
 				Expect(network.Interfaces).To(HaveLen(1))
 				Expect(network.Interfaces[0].IP.MACAddr).To(Equal("mac-4000"))
+				Expect(network.Interfaces[0].Name).To(Equal("eth42"))
 			})
 		})
 

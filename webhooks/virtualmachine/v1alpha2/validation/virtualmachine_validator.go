@@ -821,7 +821,7 @@ func (v validator) validateImmutableFields(_ *context.WebhookRequestContext, vm,
 		oldResourcePolicyName = reserved.ResourcePolicyName
 	}
 	if reserved := vm.Spec.Reserved; reserved != nil {
-		oldResourcePolicyName = reserved.ResourcePolicyName
+		newResourcePolicyName = reserved.ResourcePolicyName
 	}
 	allErrs = append(allErrs, validation.ValidateImmutableField(newResourcePolicyName, oldResourcePolicyName, specPath.Child("reserved", "resourcePolicyName"))...)
 

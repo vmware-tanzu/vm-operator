@@ -1041,6 +1041,12 @@ func unitTestsValidateUpdate() {
 	}
 
 	validateUpdate := func(args updateArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
+		// Init immutable fields that aren't set in the dummy VM.
+		if ctx.oldVM.Spec.Reserved == nil {
+			ctx.oldVM.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
+		}
+		ctx.oldVM.Spec.Reserved.ResourcePolicyName = "policy"
+
 		if args.isServiceUser {
 			ctx.IsPrivilegedAccount = true
 		}
@@ -1054,11 +1060,12 @@ func unitTestsValidateUpdate() {
 		if args.changeStorageClass {
 			ctx.vm.Spec.StorageClass += updateSuffix
 		}
+		if ctx.vm.Spec.Reserved == nil {
+			ctx.vm.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
+		}
+		ctx.vm.Spec.Reserved.ResourcePolicyName = "policy"
 		if args.changeResourcePolicy {
-			if ctx.vm.Spec.Reserved == nil {
-				ctx.vm.Spec.Reserved = &vmopv1.VirtualMachineReservedSpec{}
-			}
-			ctx.vm.Spec.Reserved.ResourcePolicyName = updateSuffix
+			ctx.vm.Spec.Reserved.ResourcePolicyName = "policy" + updateSuffix
 		}
 		if args.assignZoneName {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = builder.DummyAvailabilityZoneName

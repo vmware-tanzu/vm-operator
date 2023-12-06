@@ -183,7 +183,7 @@ def on_pull_request(event):
                     "card": {
                         "header": {
                             "title": "Pull request opened by {0}".format(
-                                event.issue.pull_request.login
+                                event.pull_request.user.login
                             ),
                             "imageUrl": "https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png",
                             "imageType": "CIRCLE",

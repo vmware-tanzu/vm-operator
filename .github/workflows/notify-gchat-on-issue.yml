@@ -8,25 +8,27 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
-    - name: Git Details
-      run: |
-        echo "Issue creator: ${{ github.event.issue.user.login }}"
-        echo "Issue title: ${{ github.event.issue.title }}"
-        echo "Issue number: ${{ github.event.issue.number }}"
-        echo "Issue state: ${{ github.event.issue.state }}"
-        echo "Issue url: ${{ github.event.issue.html_url }}"
-        echo "Assigned labels: " ${{ join(github.event.issue.labels.*.name) }}
-        echo "Assignees: " ${{ join(github.event.issue.assignees.*.login) }}
     - name: Google Chat Notification
+      env:
+        GOOGLE_SPACE_URL: ${{ secrets.GOOGLE_SPACE_URL }}
+        GITHUB_THREAD_KEY: ${{ github.event.issue.number }}
+        GITHUB_EVENT_NUMBER: ${{ github.event.issue.number }}
+        GITHUB_EVENT_STATE: ${{ github.event.issue.state }}
+        GITHUB_EVENT_TITLE: ${{ github.event.issue.title }}
+        GITHUB_EVENT_USER: ${{ github.event.issue.user.login }}
+        GITHUB_EVENT_URL: ${{ github.event.issue.html_url }}
+        GITHUB_EVENT_LABELS: ${{ join(github.event.issue.labels.*.name) }}
+        GITHUB_EVENT_ASSIGNEES: ${{ join(github.event.issue.assignees.*.login) }}
       run: |
-        curl --location --request POST '${{ secrets.GOOGLE_SPACE_URL }}' \
+        curl --location --request POST "${GOOGLE_SPACE_URL}&messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD" \
         --header 'Content-Type: application/json' \
         --data-raw '{
+            "thread": {"threadKey": "'"${GITHUB_THREAD_KEY}"'"},
             "cards": [
               {
                 "header": {
                   "title": "Issue Tracker",
-                  "subtitle": "Issue No: #${{ github.event.issue.number }}"
+                  "subtitle": "Issue No: #'"${GITHUB_EVENT_NUMBER}"'"
                 },
                 "sections": [
                   {
@@ -34,31 +36,31 @@ jobs:
                       {
                         "keyValue": {
                           "topLabel": "Creator",
-                          "content": "${{ github.event.issue.user.login }}"
+                          "content": "'"${GITHUB_EVENT_USER}"'"
                         }
                       },
                       {
                         "keyValue": {
                           "topLabel": "Title",
-                          "content": "${{ github.event.issue.title }}"
+                          "content": "'"${GITHUB_EVENT_TITLE}"'"
                         }
                       },
                       {
                         "keyValue": {
                           "topLabel": "State",
-                          "content": "${{ github.event.issue.state }}"
+                          "content": "'"${GITHUB_EVENT_STATE}"'"
                         }
                       },
                       {
                         "keyValue": {
-                          "topLabel": "Assigned Labels",
-                          "content": "- ${{ join(github.event.issue.labels.*.name) }}"
+                          "topLabel": "Labels",
+                          "content": "- '"${GITHUB_EVENT_LABELS}"'"
                         }
                       },
                       {
                         "keyValue": {
                           "topLabel": "Assignees",
-                          "content": "- ${{ join(github.event.issue.assignees.*.login) }}"
+                          "content": "- '"${GITHUB_EVENT_ASSIGNEES}"'"
                         }
                       },
                       {
@@ -68,7 +70,7 @@ jobs:
                               "text": "OPEN ISSUE",
                               "onClick": {
                                 "openLink": {
-                                  "url": "${{ github.event.issue.html_url }}"
+                                  "url": "'"${GITHUB_EVENT_URL}"'"
                                 }
                               }
                             }

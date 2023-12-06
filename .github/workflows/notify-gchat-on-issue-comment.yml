@@ -4,22 +4,24 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
-    - name: Git Details
-      run: |
-        echo "Issue url: ${{ github.event.comment.issue_url }}"
-        echo "Comment id: ${{ github.event.comment.id }}"
-        echo "Comment url: ${{ github.event.comment.html_url }}"
-        echo "Comment user: ${{ github.event.comment.user.login }}"
     - name: Google Chat Notification
+      env:
+        GOOGLE_SPACE_URL: ${{ secrets.GOOGLE_SPACE_URL }}
+        GITHUB_THREAD_KEY: ${{ github.event.issue.number }}
+        GITHUB_EVENT_NUMBER: ${{ github.event.issue.number }}
+        GITHUB_EVENT_TITLE: ${{ github.event.issue.title }}
+        GITHUB_EVENT_USER: ${{ github.event.comment.user.login }}
+        GITHUB_EVENT_URL: ${{ github.event.comment.html_url }}
       run: |
-        curl --location --request POST '${{ secrets.GOOGLE_SPACE_URL }}' \
+        curl --location --request POST "${GOOGLE_SPACE_URL}&messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD" \
         --header 'Content-Type: application/json' \
         --data-raw '{
+            "thread": {"threadKey": "'"${GITHUB_THREAD_KEY}"'"},
             "cards": [
               {
                 "header": {
                   "title": "Issue Comment Tracker",
-                  "subtitle": "Issue No: #${{ github.event.issue.number }}"
+                  "subtitle": "Issue No: #'"${GITHUB_EVENT_NUMBER}"'"
                 },
                 "sections": [
                   {
@@ -27,13 +29,13 @@ jobs:
                       {
                         "keyValue": {
                           "topLabel": "Title",
-                          "content": "${{ github.event.issue.title }}"
+                          "content": "'"${GITHUB_EVENT_TITLE}"'"
                         }
                       },
                       {
                         "keyValue": {
                           "topLabel": "Commenter",
-                          "content": "${{ github.event.comment.user.login }}"
+                          "content": "'"${GITHUB_EVENT_USER}"'"
                         }
                       },
                       {
@@ -43,7 +45,7 @@ jobs:
                               "text": "OPEN COMMENT",
                               "onClick": {
                                 "openLink": {
-                                  "url": "${{ github.event.comment.html_url }}"
+                                  "url": "'"${GITHUB_EVENT_URL}"'"
                                 }
                               }
                             }

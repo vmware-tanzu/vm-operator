@@ -8,20 +8,22 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
-    - name: Git Details
-      run: |
-        echo "PR creator: ${{ github.event.issue.user.login }}"
-        echo "PR title: ${{ github.event.issue.title }}"
-        echo "PR number: ${{ github.event.issue.number }}"
-        echo "PR state: ${{ github.event.issue.state }}"
-        echo "PR url: ${{ github.event.issue.html_url }}"
-        echo "Assigned labels: " ${{ join(github.event.issue.labels.*.name) }}
-        echo "Assignees: " ${{ join(github.event.issue.assignees.*.login) }}
     - name: Google Chat Notification
+      env:
+        GOOGLE_SPACE_URL: ${{ secrets.GOOGLE_SPACE_URL }}
+        GITHUB_THREAD_KEY: ${{ github.event.pull_request.number }}
+        GITHUB_EVENT_NUMBER: ${{ github.event.pull_request.number }}
+        GITHUB_EVENT_STATE: ${{ github.event.issue.state }}
+        GITHUB_EVENT_TITLE: ${{ github.event.pull_request.title }}
+        GITHUB_EVENT_USER: ${{ github.event.pull_request.user.login }}
+        GITHUB_EVENT_URL: ${{ github.event.pull_request.html_url }}
+        GITHUB_EVENT_LABELS: ${{ join(github.event.pull_request.labels.*.name) }}
+        GITHUB_EVENT_ASSIGNEES: ${{ join(github.event.pull_request.assignees.*.login) }}
       run: |
-        curl --location --request POST '${{ secrets.GOOGLE_SPACE_URL }}' \
+        curl --location --request POST "${GOOGLE_SPACE_URL}&messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD" \
         --header 'Content-Type: application/json' \
         --data-raw '{
+            "thread": {"threadKey": "'"${GITHUB_THREAD_KEY}"'"},
             "cards": [
               {
                 "header": {
@@ -34,31 +36,31 @@ jobs:
                       {
                         "keyValue": {
                           "topLabel": "Creator",
-                          "content": "${{ github.event.pull_request.user.login }}"
+                          "content": "'"${GITHUB_EVENT_USER}"'"
                         }
                       },
                       {
                         "keyValue": {
                           "topLabel": "Title",
-                          "content": "${{ github.event.pull_request.title }}"
+                          "content": "'"${GITHUB_EVENT_TITLE}"'"
                         }
                       },
                       {
                         "keyValue": {
                           "topLabel": "State",
-                          "content": "${{ github.event.pull_request.state }}"
+                          "content": "'"${GITHUB_EVENT_STATE}"'"
                         }
                       },
                       {
                         "keyValue": {
-                          "topLabel": "Assigned Labels",
-                          "content": "- ${{ join(github.event.pull_request.labels.*.name) }}"
+                          "topLabel": "Labels",
+                          "content": "- '"${GITHUB_EVENT_LABELS}"'"
                         }
                       },
                       {
                         "keyValue": {
                           "topLabel": "Assignees",
-                          "content": "- ${{ join(github.event.pull_request.assignees.*.login) }}"
+                          "content": "- '"${GITHUB_EVENT_ASSIGNEES}"'"
                         }
                       },
                       {
@@ -68,7 +70,7 @@ jobs:
                               "text": "OPEN PR",
                               "onClick": {
                                 "openLink": {
-                                  "url": "${{ github.event.pull_request.html_url }}"
+                                  "url": "'"${GITHUB_EVENT_URL}"'"
                                 }
                               }
                             }

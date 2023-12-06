@@ -13,7 +13,7 @@ jobs:
         GOOGLE_SPACE_URL: ${{ secrets.GOOGLE_SPACE_URL }}
         GITHUB_THREAD_KEY: ${{ github.event.pull_request.number }}
         GITHUB_EVENT_NUMBER: ${{ github.event.pull_request.number }}
-        GITHUB_EVENT_STATE: ${{ github.event.issue.state }}
+        GITHUB_EVENT_STATE: ${{ github.event.pull_request.state }}
         GITHUB_EVENT_TITLE: ${{ github.event.pull_request.title }}
         GITHUB_EVENT_USER: ${{ github.event.pull_request.user.login }}
         GITHUB_EVENT_URL: ${{ github.event.pull_request.html_url }}

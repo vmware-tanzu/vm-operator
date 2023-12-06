@@ -111,9 +111,6 @@ func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []
 		},
 		func(vmSpec *nextver.VirtualMachineSpec, c fuzz.Continue) {
 			c.Fuzz(vmSpec)
-
-			// TODO: Need to save serialized object to support lossless conversions. As is, these are
-			// 		 too different & complicated to have much fuzzing value.
 		},
 		func(vmStatus *v1alpha1.VirtualMachineStatus, c fuzz.Continue) {
 			c.Fuzz(vmStatus)

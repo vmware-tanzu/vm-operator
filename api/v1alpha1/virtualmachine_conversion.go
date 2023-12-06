@@ -283,7 +283,11 @@ func convert_v1alpha2_NetworkInterfaceSpec_To_v1alpha1_NetworkInterface(
 }
 
 func Convert_v1alpha1_Probe_To_v1alpha2_VirtualMachineReadinessProbeSpec(in *Probe, out *v1alpha2.VirtualMachineReadinessProbeSpec, s apiconversion.Scope) error {
-	*out = *convert_v1alpha1_Probe_To_v1alpha2_ReadinessProbeSpec(in)
+	probeSpec := convert_v1alpha1_Probe_To_v1alpha2_ReadinessProbeSpec(in)
+	if probeSpec != nil {
+		*out = *probeSpec
+	}
+
 	return nil
 }
 
@@ -317,7 +321,11 @@ func convert_v1alpha1_Probe_To_v1alpha2_ReadinessProbeSpec(in *Probe) *v1alpha2.
 }
 
 func Convert_v1alpha2_VirtualMachineReadinessProbeSpec_To_v1alpha1_Probe(in *v1alpha2.VirtualMachineReadinessProbeSpec, out *Probe, s apiconversion.Scope) error {
-	*out = *convert_v1alpha2_ReadinessProbeSpec_To_v1alpha1_Probe(in)
+	probe := convert_v1alpha2_ReadinessProbeSpec_To_v1alpha1_Probe(in)
+	if probe != nil {
+		*out = *probe
+	}
+
 	return nil
 }
 

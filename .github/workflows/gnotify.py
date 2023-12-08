@@ -318,7 +318,7 @@ def main():
         thread_key, reply_option, msg_body = on_issue(github.event)
     elif github.event_name == "issue_comment":
         thread_key, reply_option, msg_body = on_issue_comment(github.event)
-    elif github.event_name == "pull_request":
+    elif github.event_name == "pull_request" or github.event_name == "pull_request_target":
         thread_key, reply_option, msg_body = on_pull_request(github.event)
 
     # Please note this does not work as intended at the moment. Please see

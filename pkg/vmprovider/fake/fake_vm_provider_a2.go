@@ -32,6 +32,7 @@ type funcsA2 struct {
 	PublishVirtualMachineFn        func(ctx context.Context, vm *vmopv1.VirtualMachine,
 		vmPub *vmopv1.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
 	GetVirtualMachineGuestHeartbeatFn  func(ctx context.Context, vm *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error)
+	GetVirtualMachineGuestInfoFn       func(ctx context.Context, vm *vmopv1.VirtualMachine) (map[string]string, error)
 	GetVirtualMachineWebMKSTicketFn    func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error)
 	GetVirtualMachineHardwareVersionFn func(ctx context.Context, vm *vmopv1.VirtualMachine) (int32, error)
 
@@ -119,6 +120,15 @@ func (s *VMProviderA2) GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *
 		return s.GetVirtualMachineGuestHeartbeatFn(ctx, vm)
 	}
 	return "", nil
+}
+
+func (s *VMProviderA2) GetVirtualMachineGuestInfo(ctx context.Context, vm *vmopv1.VirtualMachine) (map[string]string, error) {
+	s.Lock()
+	defer s.Unlock()
+	if s.GetVirtualMachineGuestInfoFn != nil {
+		return s.GetVirtualMachineGuestInfoFn(ctx, vm)
+	}
+	return nil, nil
 }
 
 func (s *VMProviderA2) GetVirtualMachineWebMKSTicket(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {

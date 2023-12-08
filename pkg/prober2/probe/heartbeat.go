@@ -12,12 +12,12 @@ import (
 )
 
 type guestHeartbeatProber struct {
-	prober vmProviderProber
+	prober vmProviderGuestHeartbeatProber
 }
 
-func NewGuestHeartbeatProber(vmProviderProber vmProviderProber) Probe {
+func NewGuestHeartbeatProber(prober vmProviderGuestHeartbeatProber) Probe {
 	return &guestHeartbeatProber{
-		prober: vmProviderProber,
+		prober: prober,
 	}
 }
 

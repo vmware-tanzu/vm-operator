@@ -18,19 +18,19 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/prober2/context"
 )
 
-type fakeVMProviderProber struct {
+type fakeGuestHeartbeatProvider struct {
 	status vmopv1.GuestHeartbeatStatus
 	err    error
 }
 
-func (tp fakeVMProviderProber) GetVirtualMachineGuestHeartbeat(_ goctx.Context, _ *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
+func (tp fakeGuestHeartbeatProvider) GetVirtualMachineGuestHeartbeat(_ goctx.Context, _ *vmopv1.VirtualMachine) (vmopv1.GuestHeartbeatStatus, error) {
 	return tp.status, tp.err
 }
 
 var _ = Describe("Guest heartbeat probe", func() {
 	var (
 		vm                   *vmopv1.VirtualMachine
-		fakeProvider         fakeVMProviderProber
+		fakeProvider         fakeGuestHeartbeatProvider
 		testVMwareToolsProbe Probe
 
 		err error
@@ -49,7 +49,7 @@ var _ = Describe("Guest heartbeat probe", func() {
 			},
 		}
 
-		fakeProvider = fakeVMProviderProber{}
+		fakeProvider = fakeGuestHeartbeatProvider{}
 		testVMwareToolsProbe = NewGuestHeartbeatProber(&fakeProvider)
 	})
 

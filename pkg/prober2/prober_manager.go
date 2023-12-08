@@ -64,7 +64,11 @@ type manager struct {
 }
 
 // NewManger initializes a prober manager.
-func NewManger(client client.Client, record vmoprecord.Recorder, vmProvider vmprovider.VirtualMachineProviderInterfaceA2) Manager {
+func NewManger(
+	client client.Client,
+	record vmoprecord.Recorder,
+	vmProvider vmprovider.VirtualMachineProviderInterfaceA2) Manager {
+
 	probeManager := &manager{
 		client:               client,
 		readinessQueue:       workqueue.NewNamedDelayingQueue(readinessProbeQueueName),
@@ -97,7 +101,8 @@ func (m *manager) AddToProberManager(vm *vmopv1.VirtualMachine) {
 	m.readinessMutex.Lock()
 	defer m.readinessMutex.Unlock()
 
-	if vm.Spec.ReadinessProbe != nil && (vm.Spec.ReadinessProbe.TCPSocket != nil || vm.Spec.ReadinessProbe.GuestHeartbeat != nil) {
+	if vm.Spec.ReadinessProbe != nil &&
+		(vm.Spec.ReadinessProbe.TCPSocket != nil || vm.Spec.ReadinessProbe.GuestHeartbeat != nil || len(vm.Spec.ReadinessProbe.GuestInfo) != 0) {
 		// if the VM is not in the list, or its readiness probe spec has been updated, immediately add it to the queue
 		// otherwise, ignore it.
 		if oldProbe, ok := m.vmReadinessProbeList[vmName]; ok && reflect.DeepEqual(oldProbe, vm.Spec.ReadinessProbe) {

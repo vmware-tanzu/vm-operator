@@ -16,6 +16,7 @@ func vcSimTests() {
 	Describe("Delete", deleteTests)
 	Describe("Publish", publishTests)
 	Describe("Backup", backupTests)
+	Describe("GuestInfo", guestInfoTests)
 }
 
 var suite = builder.NewTestSuite()

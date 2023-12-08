@@ -8,10 +8,10 @@ import (
 
 	"github.com/vmware/govmomi/vapi/library"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 )
 
@@ -22,6 +22,7 @@ type VirtualMachineProviderInterfaceA2 interface {
 	PublishVirtualMachine(ctx context.Context, vm *v1alpha2.VirtualMachine,
 		vmPub *v1alpha2.VirtualMachinePublishRequest, cl *imgregv1a1.ContentLibrary, actID string) (string, error)
 	GetVirtualMachineGuestHeartbeat(ctx context.Context, vm *v1alpha2.VirtualMachine) (v1alpha2.GuestHeartbeatStatus, error)
+	GetVirtualMachineGuestInfo(ctx context.Context, vm *v1alpha2.VirtualMachine) (map[string]string, error)
 	GetVirtualMachineWebMKSTicket(ctx context.Context, vm *v1alpha2.VirtualMachine, pubKey string) (string, error)
 	GetVirtualMachineHardwareVersion(ctx context.Context, vm *v1alpha2.VirtualMachine) (int32, error)
 

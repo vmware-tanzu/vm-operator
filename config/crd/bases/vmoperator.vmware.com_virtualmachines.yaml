@@ -1846,8 +1846,8 @@ spec:
                         that must match the associated value expression.
                       properties:
                         key:
-                          description: "Key is the name of the GuestInfo key. \n Values
-                            are automatically prefixed with \"guestinfo.\" before
+                          description: "Key is the name of the GuestInfo key. \n The
+                            key is automatically prefixed with \"guestinfo.\" before
                             being evaluated. Thus if the key \"guestinfo.mykey\" is
                             provided, it will be evaluated as \"guestinfo.guestinfo.mykey\"."
                           type: string

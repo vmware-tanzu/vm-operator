@@ -15,7 +15,6 @@ import (
 	"github.com/pkg/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
 	patch "github.com/vmware-tanzu/vm-operator/pkg/patch2"
 	"github.com/vmware-tanzu/vm-operator/pkg/prober2/context"
@@ -122,14 +121,19 @@ func (w *readinessWorker) DoProbe(ctx *context.ProbeContext) error {
 
 // getProbe returns a specific type of probe method.
 func (w *readinessWorker) getProbe(probeSpec *vmopv1.VirtualMachineReadinessProbeSpec) probe.Probe {
+	if probeSpec == nil {
+		return nil
+	}
+
 	if probeSpec.TCPSocket != nil {
 		return w.prober.TCPProbe
 	}
 	if probeSpec.GuestHeartbeat != nil {
 		return w.prober.GuestHeartbeat
 	}
-
-	// TODO: probeSpec.GuestInfo
+	if len(probeSpec.GuestInfo) != 0 {
+		return w.prober.GuestInfo
+	}
 
 	return nil
 }

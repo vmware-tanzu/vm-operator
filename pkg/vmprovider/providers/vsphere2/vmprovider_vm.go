@@ -195,6 +195,34 @@ func (vs *vSphereVMProvider) GetVirtualMachineGuestHeartbeat(
 	return status, nil
 }
 
+func (vs *vSphereVMProvider) GetVirtualMachineGuestInfo(
+	ctx goctx.Context,
+	vm *vmopv1.VirtualMachine) (map[string]string, error) {
+
+	vmCtx := context.VirtualMachineContextA2{
+		Context: goctx.WithValue(ctx, types.ID{}, vs.getOpID(vm, "guestInfo")),
+		Logger:  log.WithValues("vmName", vm.NamespacedName()),
+		VM:      vm,
+	}
+
+	client, err := vs.getVcClient(vmCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	vcVM, err := vs.getVM(vmCtx, client, true)
+	if err != nil {
+		return nil, err
+	}
+
+	guestInfo, err := virtualmachine.GetExtraConfigGuestInfo(vmCtx, vcVM)
+	if err != nil {
+		return nil, err
+	}
+
+	return guestInfo, nil
+}
+
 func (vs *vSphereVMProvider) GetVirtualMachineWebMKSTicket(
 	ctx goctx.Context,
 	vm *vmopv1.VirtualMachine,

@@ -104,7 +104,7 @@ type GuestHeartbeatAction struct {
 type GuestInfoAction struct {
 	// Key is the name of the GuestInfo key.
 	//
-	// Values are automatically prefixed with "guestinfo." before being
+	// The key is automatically prefixed with "guestinfo." before being
 	// evaluated. Thus if the key "guestinfo.mykey" is provided, it will be
 	// evaluated as "guestinfo.guestinfo.mykey".
 	Key string `json:"key"`

@@ -321,6 +321,9 @@ type VsphereVolumeSource struct {
 // alive or ready to receive traffic. Only one probe action can be specified.
 type Probe struct {
 	// TCPSocket specifies an action involving a TCP port.
+	//
+	// Deprecated: The TCPSocket action requires network connectivity that is not supported in all environments.
+	// This field will be removed in a later API version.
 	// +optional
 	TCPSocket *TCPSocketAction `json:"tcpSocket,omitempty"`
 

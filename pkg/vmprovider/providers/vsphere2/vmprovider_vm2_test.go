@@ -69,7 +69,6 @@ func vmE2ETests() {
 
 		vmClass.Namespace = nsInfo.Namespace
 		Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
-		vmClass.Status.Ready = true
 		Expect(ctx.Client.Status().Update(ctx, vmClass)).To(Succeed())
 
 		cloudInitSecret := &corev1.Secret{

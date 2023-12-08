@@ -93,41 +93,14 @@ func vmUtilTests() {
 			})
 
 			Context("VirtualMachineClass custom resource exists", func() {
-
-				When("Is not Ready", func() {
-
-					BeforeEach(func() {
-						vmClass.Status.Ready = false
-						initObjects = append(initObjects, vmClass)
-					})
-
-					It("returns an error", func() {
-						_, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
-						Expect(err).To(HaveOccurred())
-						Expect(err.Error()).To(ContainSubstring("VirtualMachineClass is not Ready"))
-
-						expectedCondition := []metav1.Condition{
-							*conditions.FalseCondition(
-								vmopv1.VirtualMachineConditionClassReady,
-								"NotReady",
-								"VirtualMachineClass is not marked as Ready"),
-						}
-						Expect(vmCtx.VM.Status.Conditions).To(conditions.MatchConditions(expectedCondition))
-					})
+				BeforeEach(func() {
+					initObjects = append(initObjects, vmClass)
 				})
 
-				When("Is Ready", func() {
-
-					BeforeEach(func() {
-						vmClass.Status.Ready = true
-						initObjects = append(initObjects, vmClass)
-					})
-
-					It("returns success", func() {
-						class, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(class).ToNot(BeNil())
-					})
+				It("returns success", func() {
+					class, err := vsphere.GetVirtualMachineClass(vmCtx, k8sClient)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(class).ToNot(BeNil())
 				})
 			})
 		})

@@ -101,8 +101,6 @@ func vmTests() {
 		JustBeforeEach(func() {
 			vmClass.Namespace = nsInfo.Namespace
 			Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
-			vmClass.Status.Ready = true
-			Expect(ctx.Client.Status().Update(ctx, vmClass)).To(Succeed())
 
 			clusterVMImage := &vmopv1.ClusterVirtualMachineImage{}
 			if testConfig.WithContentLibrary {

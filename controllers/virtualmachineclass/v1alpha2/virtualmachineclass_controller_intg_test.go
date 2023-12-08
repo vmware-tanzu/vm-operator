@@ -10,7 +10,6 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -64,12 +63,7 @@ func intgTests() {
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
 		})
 
-		It("Is Ready", func() {
-			Eventually(func(g Gomega) {
-				class := &vmopv1.VirtualMachineClass{}
-				g.Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(vmClass), class)).To(Succeed())
-				g.Expect(class.Status.Ready).To(BeTrue())
-			}).Should(Succeed())
+		It("noop", func() {
 		})
 	})
 }

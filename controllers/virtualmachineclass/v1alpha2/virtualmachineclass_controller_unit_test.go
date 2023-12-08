@@ -62,7 +62,6 @@ func unitTestsReconcile() {
 		It("returns success", func() {
 			err := reconciler.ReconcileNormal(vmClassCtx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(vmClassCtx.VMClass.Status.Ready).To(BeTrue())
 		})
 	})
 }

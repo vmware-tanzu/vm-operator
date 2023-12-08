@@ -72,6 +72,26 @@ func unitTestsMutating() {
 
 	Describe("AddDefaultNetworkInterface", func() {
 
+		Context("When VM Network is nil", func() {
+			BeforeEach(func() {
+				ctx.vm.Spec.Network = nil
+			})
+
+			// Just any network is OK here - just checking that we don't NPE.
+			When("VDS network", func() {
+				BeforeEach(func() {
+					Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeVDS)).Should(Succeed())
+				})
+
+				It("Should add default network interface with type vsphere-distributed", func() {
+					Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+					Expect(ctx.vm.Spec.Network.Interfaces).Should(HaveLen(1))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Name).Should(Equal("eth0"))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Kind).Should(Equal("Network"))
+				})
+			})
+		})
+
 		Context("When VM NetworkInterface is empty", func() {
 			BeforeEach(func() {
 				ctx.vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{}

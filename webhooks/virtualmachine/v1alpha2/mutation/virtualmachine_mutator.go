@@ -199,7 +199,7 @@ func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client clien
 		return false
 	}
 
-	if vm.Spec.Network.Disabled || len(vm.Spec.Network.Interfaces) != 0 {
+	if vm.Spec.Network != nil && (vm.Spec.Network.Disabled || len(vm.Spec.Network.Interfaces) != 0) {
 		return false
 	}
 
@@ -218,6 +218,10 @@ func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client clien
 		}
 	default:
 		return false
+	}
+
+	if vm.Spec.Network == nil {
+		vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
 	}
 
 	vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{

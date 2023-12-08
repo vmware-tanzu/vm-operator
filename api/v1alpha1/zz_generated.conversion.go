@@ -2109,7 +2109,6 @@ func autoConvert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(in *
 	} else {
 		out.ReadinessProbe = nil
 	}
-	// WARNING: in.ReadinessGates requires manual conversion: does not exist in peer-type
 	// WARNING: in.Advanced requires manual conversion: does not exist in peer-type
 	// WARNING: in.Reserved requires manual conversion: does not exist in peer-type
 	out.MinHardwareVersion = in.MinHardwareVersion

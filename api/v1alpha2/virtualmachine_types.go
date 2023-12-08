@@ -333,18 +333,6 @@ type VirtualMachineSpec struct {
 	// +optional
 	ReadinessProbe *VirtualMachineReadinessProbeSpec `json:"readinessProbe,omitempty"`
 
-	// ReadinessGates, if specified, will be evaluated to determine the VM's
-	// readiness.
-	//
-	// A VM is ready when its readiness probe, if specified, is true AND all of
-	// the conditions specified by the readiness gates have a status equal to
-	// "True".
-	//
-	// +optional
-	// +listType=map
-	// +listMapKey=conditionType
-	ReadinessGates []VirtualMachineReadinessGate `json:"readinessGates,omitempty"`
-
 	// Advanced describes a set of optional, advanced VM configuration options.
 	// +optional
 	Advanced *VirtualMachineAdvancedSpec `json:"advanced,omitempty"`

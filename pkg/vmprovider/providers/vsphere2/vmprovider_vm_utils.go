@@ -50,12 +50,6 @@ func GetVirtualMachineClass(
 		return nil, err
 	}
 
-	if !vmClass.Status.Ready {
-		conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionClassReady,
-			"NotReady", "VirtualMachineClass is not marked as Ready")
-		return nil, fmt.Errorf("VirtualMachineClass is not Ready")
-	}
-
 	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionClassReady)
 
 	return vmClass, nil

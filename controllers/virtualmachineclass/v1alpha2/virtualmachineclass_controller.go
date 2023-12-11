@@ -103,7 +103,5 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Resu
 }
 
 func (r *Reconciler) ReconcileNormal(vmClassCtx *context.VirtualMachineClassContextA2) error {
-	// Implicitly always ready until we actually check. Don't worry about the conditions for now.
-	vmClassCtx.VMClass.Status.Ready = true
 	return nil
 }

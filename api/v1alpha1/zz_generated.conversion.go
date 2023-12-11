@@ -1268,9 +1268,6 @@ func Convert_v1alpha1_VirtualMachineClassStatus_To_v1alpha2_VirtualMachineClassS
 }
 
 func autoConvert_v1alpha2_VirtualMachineClassStatus_To_v1alpha1_VirtualMachineClassStatus(in *v1alpha2.VirtualMachineClassStatus, out *VirtualMachineClassStatus, s conversion.Scope) error {
-	// WARNING: in.Capabilities requires manual conversion: does not exist in peer-type
-	// WARNING: in.Conditions requires manual conversion: does not exist in peer-type
-	// WARNING: in.Ready requires manual conversion: does not exist in peer-type
 	return nil
 }
 

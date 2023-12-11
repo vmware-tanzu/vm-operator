@@ -12,7 +12,7 @@ import (
 )
 
 func BootstrapVAppConfig(
-	ctx goctx.Context,
+	_ goctx.Context,
 	config *vimTypes.VirtualMachineConfigInfo,
 	vAppConfigSpec *vmopv1.VirtualMachineBootstrapVAppConfigSpec,
 	bsArgs *BootstrapArgs) (*vimTypes.VirtualMachineConfigSpec, *vimTypes.CustomizationSpec, error) {

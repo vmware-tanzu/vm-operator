@@ -1316,7 +1316,7 @@ func vmTests() {
 				})
 
 				It("creates VM in assigned zone", func() {
-					azName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))] //nolint:gosec
+					azName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
 					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = azName
 
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)

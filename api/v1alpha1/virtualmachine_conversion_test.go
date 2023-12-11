@@ -218,13 +218,13 @@ func TestVirtualMachineConversion(t *testing.T) {
 							GUIRunOnce: nextver_sysprep.GUIRunOnce{
 								Commands: []string{"echo", "hello"},
 							},
-							GUIUnattended: nextver_sysprep.GUIUnattended{
+							GUIUnattended: &nextver_sysprep.GUIUnattended{
 								AutoLogon: true,
 							},
-							Identification: nextver_sysprep.Identification{
+							Identification: &nextver_sysprep.Identification{
 								DomainAdmin: "my-admin",
 							},
-							UserData: nextver_sysprep.UserData{
+							UserData: &nextver_sysprep.UserData{
 								FullName: "vmware",
 							},
 						},

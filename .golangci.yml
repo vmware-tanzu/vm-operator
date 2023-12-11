@@ -92,3 +92,6 @@ issues:
     text: ".* `ctx` is unused"
   - path: pkg/vmprovider/providers/vsphere/internal/internal.go
     text: ".*ST1003|don\'t use underscores in Go names.*"
+  - path: _test.go
+    linters:
+    - gosec

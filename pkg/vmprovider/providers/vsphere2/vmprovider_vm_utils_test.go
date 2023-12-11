@@ -9,7 +9,6 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,6 +16,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
@@ -349,7 +349,7 @@ func vmUtilTests() {
 			})
 		})
 
-		When("Bootstrap via Sysprep", func() {
+		When("Bootstrap via RawSysprep", func() {
 			BeforeEach(func() {
 				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
@@ -388,6 +388,200 @@ func vmUtilTests() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(bsData.Data).To(HaveKeyWithValue("foo1", "bar1"))
 						Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+					})
+				})
+			})
+		})
+
+		Context("Bootstrap via inline Sysprep", func() {
+			anotherKey := "some_other_key"
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+				}
+			})
+
+			Context("for UserData", func() {
+				productIDSecretName := "product_id_secret"
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Bootstrap.Sysprep.Sysprep = &sysprep.Sysprep{
+						UserData: &sysprep.UserData{
+							ProductID: &sysprep.ProductIDSecretKeySelector{
+								Name: productIDSecretName,
+								Key:  "product_id",
+							},
+						},
+					}
+				})
+
+				When("secret is present", func() {
+					BeforeEach(func() {
+						initObjects = append(initObjects, &corev1.Secret{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      productIDSecretName,
+								Namespace: vmCtx.VM.Namespace,
+							},
+							Data: map[string][]byte{
+								"product_id": []byte("foo_product_id"),
+							},
+						})
+					})
+
+					It("returns success", func() {
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(bsData.Sysprep.ProductID).To(Equal("foo_product_id"))
+					})
+
+					When("key from selector is not present", func() {
+						BeforeEach(func() {
+							vmCtx.VM.Spec.Bootstrap.Sysprep.Sysprep.UserData.ProductID.Key = anotherKey
+						})
+
+						It("returns an error", func() {
+							_, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+							Expect(err).To(HaveOccurred())
+							Expect(conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+						})
+					})
+				})
+
+				When("secret is not present", func() {
+					It("returns an error", func() {
+						_, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						Expect(err).To(HaveOccurred())
+						Expect(conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+					})
+				})
+
+				When("secret selector is absent", func() {
+
+					BeforeEach(func() {
+						vmCtx.VM.Spec.Bootstrap.Sysprep.Sysprep.UserData.FullName = "foo"
+						vmCtx.VM.Spec.Bootstrap.Sysprep.Sysprep.UserData.ProductID = nil
+					})
+
+					It("does not return an error", func() {
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(bsData.Sysprep.ProductID).To(Equal(""))
+					})
+				})
+			})
+
+			Context("for GUIUnattended", func() {
+				pwdSecretName := "password_secret"
+
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Bootstrap.Sysprep.Sysprep = &sysprep.Sysprep{
+						GUIUnattended: &sysprep.GUIUnattended{
+							AutoLogon: true,
+							Password: &sysprep.PasswordSecretKeySelector{
+								Name: pwdSecretName,
+								Key:  "password",
+							},
+						},
+					}
+				})
+
+				When("secret is present", func() {
+					BeforeEach(func() {
+						initObjects = append(initObjects, &corev1.Secret{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      pwdSecretName,
+								Namespace: vmCtx.VM.Namespace,
+							},
+							Data: map[string][]byte{
+								"password": []byte("foo_bar123"),
+							},
+						})
+					})
+
+					It("returns success", func() {
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(bsData.Sysprep.Password).To(Equal("foo_bar123"))
+					})
+
+					When("key from selector is not present", func() {
+						BeforeEach(func() {
+							vmCtx.VM.Spec.Bootstrap.Sysprep.Sysprep.GUIUnattended.Password.Key = anotherKey
+						})
+
+						It("returns an error", func() {
+							bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+							Expect(err).To(HaveOccurred())
+							Expect(conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+							Expect(bsData.Sysprep).To(BeNil())
+						})
+					})
+				})
+
+				When("secret is not present", func() {
+					It("returns an error", func() {
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						Expect(err).To(HaveOccurred())
+						Expect(conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+						Expect(bsData.Sysprep).To(BeNil())
+					})
+				})
+			})
+
+			Context("for Identification", func() {
+				pwdSecretName := "domain_password_secret"
+
+				BeforeEach(func() {
+					vmCtx.VM.Spec.Bootstrap.Sysprep.Sysprep = &sysprep.Sysprep{
+						Identification: &sysprep.Identification{
+							JoinDomain: "foo",
+							DomainAdminPassword: &sysprep.DomainPasswordSecretKeySelector{
+								Name: pwdSecretName,
+								Key:  "domain_password",
+							},
+						},
+					}
+				})
+
+				When("secret is present", func() {
+					BeforeEach(func() {
+						initObjects = append(initObjects, &corev1.Secret{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      pwdSecretName,
+								Namespace: vmCtx.VM.Namespace,
+							},
+							Data: map[string][]byte{
+								"domain_password": []byte("foo_bar_fizz123"),
+							},
+						})
+					})
+
+					It("returns success", func() {
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(bsData.Sysprep.DomainPassword).To(Equal("foo_bar_fizz123"))
+					})
+
+					When("key from selector is not present", func() {
+						BeforeEach(func() {
+							vmCtx.VM.Spec.Bootstrap.Sysprep.Sysprep.Identification.DomainAdminPassword.Key = anotherKey
+						})
+
+						It("returns an error", func() {
+							bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+							Expect(err).To(HaveOccurred())
+							Expect(conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+							Expect(bsData.Sysprep).To(BeNil())
+						})
+					})
+				})
+
+				When("secret is not present", func() {
+					It("returns an error", func() {
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						Expect(err).To(HaveOccurred())
+						Expect(conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+						Expect(bsData.Sysprep).To(BeNil())
 					})
 				})
 			})

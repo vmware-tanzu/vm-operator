@@ -15,6 +15,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 )
 
@@ -282,7 +283,7 @@ func GetSecretResources(
 
 	for i := range in.Users {
 		if v := in.Users[i].HashedPasswd; v != nil {
-			s, err := getSecretResource(
+			s, err := util.GetSecretResource(
 				ctx,
 				k8sClient,
 				secretNamespace,
@@ -293,7 +294,7 @@ func GetSecretResources(
 			captureSecret(s, v.Name)
 		}
 		if v := in.Users[i].Passwd; v != nil {
-			s, err := getSecretResource(
+			s, err := util.GetSecretResource(
 				ctx,
 				k8sClient,
 				secretNamespace,
@@ -309,7 +310,7 @@ func GetSecretResources(
 		if v := in.WriteFiles[i].Content; len(v) > 0 {
 			var sks common.SecretKeySelector
 			if err := yaml.Unmarshal(v, &sks); err == nil {
-				s, err := getSecretResource(
+				s, err := util.GetSecretResource(
 					ctx,
 					k8sClient,
 					secretNamespace,

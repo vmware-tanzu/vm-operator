@@ -122,10 +122,3 @@ type GuestInfoAction struct {
 	// +optional
 	Value string `json:"value,omitempty"`
 }
-
-// VirtualMachineReadinessGate contains the reference to a VM condition.
-type VirtualMachineReadinessGate struct {
-	// ConditionType refers to a condition in the VM's condition list with
-	// matching type.
-	ConditionType string `json:"conditionType"`
-}

@@ -880,7 +880,6 @@ func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
 		}
 		dst.Spec.ReadinessProbe.GuestInfo = restored.Spec.ReadinessProbe.GuestInfo
 	}
-	dst.Spec.ReadinessGates = restored.Spec.ReadinessGates
 
 	return nil
 }

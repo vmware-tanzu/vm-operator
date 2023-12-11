@@ -1788,26 +1788,6 @@ spec:
                 - PoweredOn
                 - Suspended
                 type: string
-              readinessGates:
-                description: "ReadinessGates, if specified, will be evaluated to determine
-                  the VM's readiness. \n A VM is ready when its readiness probe, if
-                  specified, is true AND all of the conditions specified by the readiness
-                  gates have a status equal to \"True\"."
-                items:
-                  description: VirtualMachineReadinessGate contains the reference
-                    to a VM condition.
-                  properties:
-                    conditionType:
-                      description: ConditionType refers to a condition in the VM's
-                        condition list with matching type.
-                      type: string
-                  required:
-                  - conditionType
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - conditionType
-                x-kubernetes-list-type: map
               readinessProbe:
                 description: ReadinessProbe describes a probe used to determine the
                   VM's ready state.

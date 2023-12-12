@@ -13,7 +13,6 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -281,7 +280,7 @@ func vmUtilTests() {
 				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 				}
-				vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig = &corev1.SecretKeySelector{}
+				vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig = &common.SecretKeySelector{}
 				vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig.Name = dataName
 			})
 
@@ -320,70 +319,6 @@ func vmUtilTests() {
 				})
 			})
 
-			When("Optional is set", func() {
-				Context("Secret does not exist", func() {
-					Context("Optional is true", func() {
-						BeforeEach(func() {
-							vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig.Optional = pointer.Bool(true)
-						})
-
-						It("returns success", func() {
-							data, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
-							Expect(err).ToNot(HaveOccurred())
-							Expect(data).To(BeEmpty())
-							Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
-						})
-					})
-
-					Context("Optional is false", func() {
-						BeforeEach(func() {
-							vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig.Optional = pointer.Bool(false)
-						})
-
-						It("returns error", func() {
-							_, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
-							Expect(err).To(HaveOccurred())
-							Expect(err.Error()).To(Equal(`secrets "dummy-vm-bootstrap-data" not found`))
-							Expect(conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
-						})
-					})
-				})
-
-				Context("Key in Secret does not exist", func() {
-					BeforeEach(func() {
-						initObjects = append(initObjects, bootstrapSecret)
-
-						vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig.Key = "secret-key-that-does-not-exist"
-					})
-
-					Context("Optional is true", func() {
-						BeforeEach(func() {
-							vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig.Optional = pointer.Bool(true)
-						})
-
-						It("returns success", func() {
-							data, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
-							Expect(err).ToNot(HaveOccurred())
-							Expect(data).ToNot(BeEmpty())
-							Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
-						})
-					})
-
-					Context("Optional is false", func() {
-						BeforeEach(func() {
-							vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig.Optional = pointer.Bool(false)
-						})
-
-						It("returns an error", func() {
-							_, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
-							Expect(err).To(HaveOccurred())
-							Expect(err.Error()).To(Equal(`required key "secret-key-that-does-not-exist" not found in Secret dummy-vm-bootstrap-data`))
-							Expect(conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
-						})
-					})
-
-				})
-			})
 		})
 
 		When("Bootstrap via Sysprep", func() {
@@ -391,7 +326,7 @@ func vmUtilTests() {
 				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
 				}
-				vmCtx.VM.Spec.Bootstrap.Sysprep.RawSysprep = &corev1.SecretKeySelector{}
+				vmCtx.VM.Spec.Bootstrap.Sysprep.RawSysprep = &common.SecretKeySelector{}
 				vmCtx.VM.Spec.Bootstrap.Sysprep.RawSysprep.Name = dataName
 			})
 
@@ -463,11 +398,9 @@ func vmUtilTests() {
 					vmCtx.VM.Spec.Bootstrap.VAppConfig.Properties = []common.KeyValueOrSecretKeySelectorPair{
 						{
 							Value: common.ValueOrSecretKeySelector{
-								From: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: vAppDataName,
-									},
-									Key: "foo-vapp",
+								From: &common.SecretKeySelector{
+									Name: vAppDataName,
+									Key:  "foo-vapp",
 								},
 							},
 						},
@@ -479,35 +412,6 @@ func vmUtilTests() {
 						Expect(exData).To(HaveKey(vAppDataName))
 						data := exData[vAppDataName]
 						Expect(data).To(HaveKeyWithValue("foo-vapp", "bar-vapp"))
-					})
-
-					Context("Optional is set", func() {
-						Context("Secret does not exist", func() {
-							BeforeEach(func() {
-								vmCtx.VM.Spec.Bootstrap.VAppConfig.Properties[0].Value.From.Name = "secret-does-exist"
-								vmCtx.VM.Spec.Bootstrap.VAppConfig.Properties[0].Value.From.Optional = pointer.Bool(true)
-							})
-
-							It("returns success when optional is true", func() {
-								_, _, exData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
-								Expect(err).ToNot(HaveOccurred())
-								Expect(exData).To(BeEmpty())
-								Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
-							})
-						})
-
-						Context("Key in Secret does not exist", func() {
-							BeforeEach(func() {
-								vmCtx.VM.Spec.Bootstrap.VAppConfig.Properties[0].Value.From.Key = "bogus-vapp-prop-key"
-								vmCtx.VM.Spec.Bootstrap.VAppConfig.Properties[0].Value.From.Optional = pointer.Bool(true)
-							})
-
-							It("returns error when Optional is false", func() {
-								_, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
-								Expect(err).To(HaveOccurred())
-								Expect(conditions.IsFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
-							})
-						})
 					})
 				})
 			})

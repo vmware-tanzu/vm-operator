@@ -754,23 +754,16 @@ spec:
                                   user already exists.
                                 properties:
                                   key:
-                                    description: The key of the secret to select from.  Must
-                                      be a valid secret key.
+                                    description: Key is the key in the secret that
+                                      specifies the requested data.
                                     type: string
                                   name:
-                                    description: 'Name of the referent. More info:
-                                      https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                      TODO: Add other useful fields. apiVersion, kind,
-                                      uid?'
+                                    description: Name is the name of the secret.
                                     type: string
-                                  optional:
-                                    description: Specify whether the Secret or its
-                                      key must be defined
-                                    type: boolean
                                 required:
                                 - key
+                                - name
                                 type: object
-                                x-kubernetes-map-type: atomic
                               homedir:
                                 description: "Homedir is the optional home directory
                                   for the user. \n Defaults to \"/home/<username>\"
@@ -815,23 +808,16 @@ spec:
                                   please use HashedPasswd instead.
                                 properties:
                                   key:
-                                    description: The key of the secret to select from.  Must
-                                      be a valid secret key.
+                                    description: Key is the key in the secret that
+                                      specifies the requested data.
                                     type: string
                                   name:
-                                    description: 'Name of the referent. More info:
-                                      https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                      TODO: Add other useful fields. apiVersion, kind,
-                                      uid?'
+                                    description: Name is the name of the secret.
                                     type: string
-                                  optional:
-                                    description: Specify whether the Secret or its
-                                      key must be defined
-                                    type: boolean
                                 required:
                                 - key
+                                - name
                                 type: object
-                                x-kubernetes-map-type: atomic
                               primary_group:
                                 description: "PrimaryGroup is the primary group for
                                   the user. \n Defaults to the value of the Name field
@@ -934,23 +920,16 @@ spec:
                                     user already exists.
                                   properties:
                                     key:
-                                      description: The key of the secret to select
-                                        from.  Must be a valid secret key.
+                                      description: Key is the key in the secret that
+                                        specifies the requested data.
                                       type: string
                                     name:
-                                      description: 'Name of the referent. More info:
-                                        https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                        TODO: Add other useful fields. apiVersion,
-                                        kind, uid?'
+                                      description: Name is the name of the secret.
                                       type: string
-                                    optional:
-                                      description: Specify whether the Secret or its
-                                        key must be defined
-                                      type: boolean
                                   required:
                                   - key
+                                  - name
                                   type: object
-                                  x-kubernetes-map-type: atomic
                                 homedir:
                                   description: "Homedir is the optional home directory
                                     for the user. \n Defaults to \"/home/<username>\"
@@ -995,23 +974,16 @@ spec:
                                     user please use HashedPasswd instead.
                                   properties:
                                     key:
-                                      description: The key of the secret to select
-                                        from.  Must be a valid secret key.
+                                      description: Key is the key in the secret that
+                                        specifies the requested data.
                                       type: string
                                     name:
-                                      description: 'Name of the referent. More info:
-                                        https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                        TODO: Add other useful fields. apiVersion,
-                                        kind, uid?'
+                                      description: Name is the name of the secret.
                                       type: string
-                                    optional:
-                                      description: Specify whether the Secret or its
-                                        key must be defined
-                                      type: boolean
                                   required:
                                   - key
+                                  - name
                                   type: object
-                                  x-kubernetes-map-type: atomic
                                 primary_group:
                                   description: "PrimaryGroup is the primary group
                                     for the user. \n Defaults to the value of the
@@ -1107,23 +1079,16 @@ spec:
                                         the Value field."
                                       properties:
                                         key:
-                                          description: The key of the secret to select
-                                            from.  Must be a valid secret key.
+                                          description: Key is the key in the secret
+                                            that specifies the requested data.
                                           type: string
                                         name:
-                                          description: 'Name of the referent. More
-                                            info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                            TODO: Add other useful fields. apiVersion,
-                                            kind, uid?'
+                                          description: Name is the name of the secret.
                                           type: string
-                                        optional:
-                                          description: Specify whether the Secret
-                                            or its key must be defined
-                                          type: boolean
                                       required:
                                       - key
+                                      - name
                                       type: object
-                                      x-kubernetes-map-type: atomic
                                     value:
                                       description: "Value is used to directly specify
                                         a value. \n Please note this field is mutually
@@ -1183,21 +1148,16 @@ spec:
                           \n Please note this field and CloudConfig are mutually exclusive."
                         properties:
                           key:
-                            description: The key of the secret to select from.  Must
-                              be a valid secret key.
+                            description: Key is the key in the secret that specifies
+                              the requested data.
                             type: string
                           name:
-                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            description: Name is the name of the secret.
                             type: string
-                          optional:
-                            description: Specify whether the Secret or its key must
-                              be defined
-                            type: boolean
                         required:
                         - key
+                        - name
                         type: object
-                        x-kubernetes-map-type: atomic
                       sshAuthorizedKeys:
                         description: SSHAuthorizedKeys is a list of public keys that
                           CloudInit will apply to the guest's default user.
@@ -1247,21 +1207,16 @@ spec:
                           \n Please note this field and Sysprep are mutually exclusive."
                         properties:
                           key:
-                            description: The key of the secret to select from.  Must
-                              be a valid secret key.
+                            description: Key is the key in the secret that specifies
+                              the requested data.
                             type: string
                           name:
-                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            description: Name is the name of the secret.
                             type: string
-                          optional:
-                            description: Specify whether the Secret or its key must
-                              be defined
-                            type: boolean
                         required:
                         - key
+                        - name
                         type: object
-                        x-kubernetes-map-type: atomic
                       sysprep:
                         description: "Sysprep is an object representation of a Windows
                           sysprep.xml answer file. \n This field encloses all the
@@ -1316,23 +1271,16 @@ spec:
                                   attempt to decrypt the string."
                                 properties:
                                   key:
-                                    description: The key of the secret to select from.  Must
-                                      be a valid secret key.
+                                    description: Key is the key in the secret that
+                                      specifies the requested data.
                                     type: string
                                   name:
-                                    description: 'Name of the referent. More info:
-                                      https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                      TODO: Add other useful fields. apiVersion, kind,
-                                      uid?'
+                                    description: Name is the name of the secret.
                                     type: string
-                                  optional:
-                                    description: Specify whether the Secret or its
-                                      key must be defined
-                                    type: boolean
                                 required:
                                 - key
+                                - name
                                 type: object
-                                x-kubernetes-map-type: atomic
                               timeZone:
                                 description: "TimeZone is the time zone index for
                                   the virtual machine. \n Please note that numbers
@@ -1358,23 +1306,16 @@ spec:
                                   if the virtual machine is joining a domain.
                                 properties:
                                   key:
-                                    description: The key of the secret to select from.  Must
-                                      be a valid secret key.
+                                    description: Key is the key in the secret that
+                                      specifies the requested data.
                                     type: string
                                   name:
-                                    description: 'Name of the referent. More info:
-                                      https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                      TODO: Add other useful fields. apiVersion, kind,
-                                      uid?'
+                                    description: Name is the name of the secret.
                                     type: string
-                                  optional:
-                                    description: Specify whether the Secret or its
-                                      key must be defined
-                                    type: boolean
                                 required:
                                 - key
+                                - name
                                 type: object
-                                x-kubernetes-map-type: atomic
                               joinDomain:
                                 description: JoinDomain is the domain that the virtual
                                   machine should join. If this value is supplied,
@@ -1429,23 +1370,16 @@ spec:
                                   be set or guest customization will fail."
                                 properties:
                                   key:
-                                    description: The key of the secret to select from.  Must
-                                      be a valid secret key.
+                                    description: Key is the key in the secret that
+                                      specifies the requested data.
                                     type: string
                                   name:
-                                    description: 'Name of the referent. More info:
-                                      https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                      TODO: Add other useful fields. apiVersion, kind,
-                                      uid?'
+                                    description: Name is the name of the secret.
                                     type: string
-                                  optional:
-                                    description: Specify whether the Secret or its
-                                      key must be defined
-                                    type: boolean
                                 required:
                                 - key
+                                - name
                                 type: object
-                                x-kubernetes-map-type: atomic
                             type: object
                         required:
                         - guiUnattended
@@ -1494,23 +1428,16 @@ spec:
                                     is mutually exclusive with the Value field."
                                   properties:
                                     key:
-                                      description: The key of the secret to select
-                                        from.  Must be a valid secret key.
+                                      description: Key is the key in the secret that
+                                        specifies the requested data.
                                       type: string
                                     name:
-                                      description: 'Name of the referent. More info:
-                                        https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                        TODO: Add other useful fields. apiVersion,
-                                        kind, uid?'
+                                      description: Name is the name of the secret.
                                       type: string
-                                    optional:
-                                      description: Specify whether the Secret or its
-                                        key must be defined
-                                      type: boolean
                                   required:
                                   - key
+                                  - name
                                   type: object
-                                  x-kubernetes-map-type: atomic
                                 value:
                                   description: "Value is used to directly specify
                                     a value. \n Please note this field is mutually

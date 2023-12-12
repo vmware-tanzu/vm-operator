@@ -18,6 +18,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 )
 
 const (
@@ -167,9 +168,9 @@ func convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(
 		}
 		out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{}
 		if objectName != "" {
-			out.CloudInit.RawCloudConfig = &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
-				Key:                  "guestinfo.userdata", // TODO: Is this good enough? v1a1 would include everything with the "guestinfo" prefix
+			out.CloudInit.RawCloudConfig = &common.SecretKeySelector{
+				Name: objectName,
+				Key:  "guestinfo.userdata", // TODO: Is this good enough? v1a1 would include everything with the "guestinfo" prefix
 			}
 		}
 	case VirtualMachineMetadataOvfEnvTransport:
@@ -186,17 +187,17 @@ func convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(
 	case VirtualMachineMetadataCloudInitTransport:
 		out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{}
 		if objectName != "" {
-			out.CloudInit.RawCloudConfig = &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
-				Key:                  "user-data",
+			out.CloudInit.RawCloudConfig = &common.SecretKeySelector{
+				Name: objectName,
+				Key:  "user-data",
 			}
 		}
 	case VirtualMachineMetadataSysprepTransport:
 		out.Sysprep = &v1alpha2.VirtualMachineBootstrapSysprepSpec{}
 		if objectName != "" {
-			out.Sysprep.RawSysprep = &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: objectName},
-				Key:                  "unattend",
+			out.Sysprep.RawSysprep = &common.SecretKeySelector{
+				Name: objectName,
+				Key:  "unattend",
 			}
 		}
 	}
@@ -779,7 +780,7 @@ func restore_v1alpha2_VirtualMachineBootstrapSpec(
 		return
 	}
 
-	mergeSecretKeySelector := func(dstSel, srcSel *corev1.SecretKeySelector) *corev1.SecretKeySelector {
+	mergeSecretKeySelector := func(dstSel, srcSel *common.SecretKeySelector) *common.SecretKeySelector {
 		if dstSel == nil || srcSel == nil {
 			return dstSel
 		}

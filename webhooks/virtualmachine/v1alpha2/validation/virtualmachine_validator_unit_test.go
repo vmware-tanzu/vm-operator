@@ -513,7 +513,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
 								CloudConfig:    &cloudinit.CloudConfig{},
-								RawCloudConfig: &corev1.SecretKeySelector{},
+								RawCloudConfig: &common.SecretKeySelector{},
 							},
 						}
 					},
@@ -529,7 +529,7 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep:    &sysprep.Sysprep{},
-								RawSysprep: &corev1.SecretKeySelector{},
+								RawSysprep: &common.SecretKeySelector{},
 							},
 						}
 					},
@@ -567,9 +567,9 @@ func unitTestsValidateCreate() {
 									{
 										Key: "key",
 										Value: common.ValueOrSecretKeySelector{
-											From: &corev1.SecretKeySelector{
-												LocalObjectReference: corev1.LocalObjectReference{Name: "secret-name"},
-												Key:                  "key",
+											From: &common.SecretKeySelector{
+												Name: "secret-name",
+												Key:  "key",
 											},
 											Value: pointer.String("value"),
 										},
@@ -860,7 +860,7 @@ func unitTestsValidateCreate() {
 						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
-								RawSysprep: &corev1.SecretKeySelector{},
+								RawSysprep: &common.SecretKeySelector{},
 							},
 						}
 						ctx.vm.Spec.Network.Interfaces[0].Nameservers = []string{

@@ -6,7 +6,6 @@
 package common
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -41,6 +40,15 @@ type PartialObjectRef struct {
 	Name string `json:"name"`
 }
 
+// SecretKeySelector references data from a Secret resource by a specific key.
+type SecretKeySelector struct {
+	// Name is the name of the secret.
+	Name string `json:"name"`
+
+	// Key is the key in the secret that specifies the requested data.
+	Key string `json:"key"`
+}
+
 // ValueOrSecretKeySelector describes a value from either a SecretKeySelector
 // or value directly in this object.
 type ValueOrSecretKeySelector struct {
@@ -49,7 +57,7 @@ type ValueOrSecretKeySelector struct {
 	// Please note this field is mutually exclusive with the Value field.
 	//
 	// +optional
-	From *corev1.SecretKeySelector `json:"from,omitempty"`
+	From *SecretKeySelector `json:"from,omitempty"`
 
 	// Value is used to directly specify a value.
 	//

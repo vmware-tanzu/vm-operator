@@ -13,6 +13,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
@@ -112,6 +113,60 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 
 				Expect(result.DHCP4).To(BeTrue())
 				Expect(result.DHCP6).To(BeTrue()) // Only enabled if explicitly requested (which it is above).
+			})
+
+			Context("Overrides with provided InterfaceSpec", func() {
+				BeforeEach(func() {
+					interfaceSpecs = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name:    "eth0",
+							Network: common.PartialObjectRef{Name: networkName},
+							Addresses: []string{
+								"172.42.1.100/24",
+								"fd1a:6c85:79fe:7c98:0000:0000:0000:000f/56",
+							},
+							Gateway4:      "172.42.1.1",
+							Gateway6:      "fd1a:6c85:79fe:7c98:0000:0000:0000:0001",
+							MTU:           pointer.Int64(9000),
+							Nameservers:   []string{"9.9.9.9"},
+							SearchDomains: []string{"vmware.com"},
+						},
+					}
+				})
+
+				It("returns success", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(results.Results).To(HaveLen(1))
+
+					result := results.Results[0]
+					By("has expected backing", func() {
+						Expect(result.Backing).ToNot(BeNil())
+						backing, err := result.Backing.EthernetCardBackingInfo(ctx)
+						Expect(err).ToNot(HaveOccurred())
+						backingInfo, ok := backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+						Expect(ok).To(BeTrue())
+						Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
+					})
+
+					Expect(result.DHCP4).To(BeFalse())
+					Expect(result.DHCP6).To(BeFalse())
+
+					By("has expected address", func() {
+						Expect(result.IPConfigs).To(HaveLen(2))
+						ipConfig := result.IPConfigs[0]
+						Expect(ipConfig.IPCIDR).To(Equal("172.42.1.100/24"))
+						Expect(ipConfig.IsIPv4).To(BeTrue())
+						Expect(ipConfig.Gateway).To(Equal("172.42.1.1"))
+						ipConfig = result.IPConfigs[1]
+						Expect(ipConfig.IPCIDR).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:000f/56"))
+						Expect(ipConfig.IsIPv4).To(BeFalse())
+						Expect(ipConfig.Gateway).To(Equal("fd1a:6c85:79fe:7c98:0000:0000:0000:0001"))
+					})
+
+					Expect(result.MTU).To(BeEquivalentTo(9000))
+					Expect(result.Nameservers).To(ConsistOf("9.9.9.9"))
+					Expect(result.SearchDomains).To(ConsistOf("vmware.com"))
+				})
 			})
 		})
 

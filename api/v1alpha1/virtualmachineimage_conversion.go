@@ -93,6 +93,10 @@ func convert_v1alpha1_VirtualMachineImage_OVFEnv_To_v1alpha2_VirtualMachineImage
 
 func convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMachineImageStatusConditions(
 	conditions []metav1.Condition) []Condition {
+	if len(conditions) == 0 {
+		return []Condition{}
+	}
+
 	var (
 		imageSyncedCondition, imageProviderReadyCondition, securityCompliantCondition *Condition
 		readyCondition                                                                metav1.Condition
@@ -108,8 +112,9 @@ func convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMac
 
 	trueCondition := func(conditionType ConditionType) *Condition {
 		return &Condition{
-			Type:   conditionType,
-			Status: corev1.ConditionTrue,
+			Type:               conditionType,
+			Status:             corev1.ConditionTrue,
+			LastTransitionTime: readyCondition.LastTransitionTime,
 		}
 	}
 	falseConditionWithReason := func(conditionType ConditionType) *Condition {
@@ -137,7 +142,9 @@ func convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMac
 		imageSyncedCondition = falseConditionWithReason(
 			VirtualMachineImageSyncedCondition)
 	default:
-
+		securityCompliantCondition = trueCondition(VirtualMachineImageProviderSecurityComplianceCondition)
+		imageProviderReadyCondition = trueCondition(VirtualMachineImageProviderReadyCondition)
+		imageSyncedCondition = trueCondition(VirtualMachineImageSyncedCondition)
 	}
 
 	var v1a1Conditions []Condition
@@ -156,11 +163,16 @@ func convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMac
 
 func convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha2_VirtualMachineImageStatusConditions(
 	conditions []Condition) []metav1.Condition {
-	if conditions == nil || len(conditions) == 0 {
+	if len(conditions) == 0 {
 		return []metav1.Condition{}
 	}
 
-	var readyCondition *metav1.Condition
+	var (
+		readyCondition *metav1.Condition
+		// we calculate the latest transition time to best case set the
+		// latest transition time when the ready condition would be set.
+		latestTransitionTime metav1.Time
+	)
 
 	// Condition types which are folded into the Ready condition in v1alpha2
 	oldConditionTypes := map[ConditionType]struct{}{
@@ -181,12 +193,16 @@ func convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha2_VirtualMac
 			}
 			break
 		}
+		if latestTransitionTime.Before(&condition.LastTransitionTime) {
+			latestTransitionTime = condition.LastTransitionTime
+		}
 	}
 
 	if readyCondition == nil {
 		readyCondition = &metav1.Condition{
-			Type:   v1alpha2.ReadyConditionType,
-			Status: metav1.ConditionTrue,
+			Type:               v1alpha2.ReadyConditionType,
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: latestTransitionTime,
 		}
 	}
 

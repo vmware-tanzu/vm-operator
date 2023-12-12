@@ -34,7 +34,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -595,10 +596,10 @@ func (v validator) validateInstanceStorageVolumes(
 
 	var oldVMInstanceStorageVolumes []vmopv1.VirtualMachineVolume
 	if oldVM != nil {
-		oldVMInstanceStorageVolumes = filterVolumesA2(oldVM)
+		oldVMInstanceStorageVolumes = instancestorage.FilterVolumes(oldVM)
 	}
 
-	if !equality.Semantic.DeepEqual(filterVolumesA2(vm), oldVMInstanceStorageVolumes) {
+	if !equality.Semantic.DeepEqual(instancestorage.FilterVolumes(vm), oldVMInstanceStorageVolumes) {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "volumes"), addingModifyingInstanceVolumesNotAllowed))
 	}
 

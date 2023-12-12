@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -149,11 +150,7 @@ func intgTestsValidateUpdate() {
 			BeforeEach(func() {
 				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-						RawCloudConfig: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{},
-							Key:                  "",
-							Optional:             nil,
-						},
+						RawCloudConfig: &common.SecretKeySelector{},
 					},
 				}
 			})

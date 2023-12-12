@@ -14,6 +14,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -102,27 +103,21 @@ func GetVirtualMachineImageSpecAndStatus(
 
 func getSecretData(
 	vmCtx context.VirtualMachineContextA2,
-	selector *corev1.SecretKeySelector,
-	cmFallback bool,
-	k8sClient ctrlclient.Client) (map[string]string, error) {
+	k8sClient ctrlclient.Client,
+	secretName, secretKey string,
+	configMapFallback bool) (map[string]string, error) {
 
 	var data map[string]string
 
-	key := ctrlclient.ObjectKey{Name: selector.Name, Namespace: vmCtx.VM.Namespace}
+	key := ctrlclient.ObjectKey{Name: secretName, Namespace: vmCtx.VM.Namespace}
 	secret := &corev1.Secret{}
 	if err := k8sClient.Get(vmCtx, key, secret); err != nil {
 		configMap := &corev1.ConfigMap{}
 
-		// If Optional is non-nil, then we know this VM was created as v1a2 since that field does not
-		// exist in v1a1 so don't fall back to a ConfigMap, because v1a2+ is Secret only.
-		if selector.Optional != nil {
-			cmFallback = false
-		}
-
 		// For backwards compat if we cannot find the Secret, fallback to a ConfigMap. In v1a1, either a
 		// Secret and ConfigMap was supported for metadata (bootstrap) as separate fields, but v1a2 only
 		// supports Secrets.
-		if cmFallback && apierrors.IsNotFound(err) {
+		if configMapFallback && apierrors.IsNotFound(err) {
 			// Use the Secret error since the error message isn't misleading.
 			if k8sClient.Get(vmCtx, key, configMap) == nil {
 				err = nil
@@ -130,10 +125,6 @@ func getSecretData(
 		}
 
 		if err != nil {
-			if selector.Optional != nil && *selector.Optional && apierrors.IsNotFound(err) {
-				return nil, nil
-			}
-
 			reason, msg := errToConditionReasonAndMessage(err)
 			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
 			return nil, err
@@ -148,9 +139,9 @@ func getSecretData(
 		}
 	}
 
-	if selector.Key != "" && selector.Optional != nil && !*selector.Optional {
-		if _, ok := data[selector.Key]; !ok {
-			err := fmt.Errorf("required key %q not found in Secret %s", selector.Key, selector.Name)
+	if secretKey != "" {
+		if _, ok := data[secretKey]; !ok {
+			err := fmt.Errorf("required key %q not found in Secret %s", secretKey, secretName)
 			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, "RequiredKeyNotFound", err.Error())
 			return nil, err
 		}
@@ -169,7 +160,7 @@ func GetVirtualMachineBootstrap(
 		return nil, nil, nil, nil
 	}
 
-	var secretSelector *corev1.SecretKeySelector
+	var secretSelector *vmopv1common.SecretKeySelector
 	var data, vAppData map[string]string
 	var vAppExData map[string]map[string]string
 
@@ -181,8 +172,7 @@ func GetVirtualMachineBootstrap(
 
 	if secretSelector != nil {
 		var err error
-
-		data, err = getSecretData(vmCtx, secretSelector, true, k8sClient)
+		data, err = getSecretData(vmCtx, k8sClient, secretSelector.Name, secretSelector.Key, true)
 		if err != nil {
 			reason, msg := errToConditionReasonAndMessage(err)
 			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
@@ -195,14 +185,7 @@ func GetVirtualMachineBootstrap(
 
 		if vApp.RawProperties != "" {
 			var err error
-
-			selector := corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: vApp.RawProperties,
-				},
-			}
-
-			vAppData, err = getSecretData(vmCtx, &selector, true, k8sClient)
+			vAppData, err = getSecretData(vmCtx, k8sClient, vApp.RawProperties, "", true)
 			if err != nil {
 				reason, msg := errToConditionReasonAndMessage(err)
 				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
@@ -219,7 +202,7 @@ func GetVirtualMachineBootstrap(
 				if data, ok := vAppExData[from.Name]; !ok {
 					// Do the easy thing here and carry along each Secret's entire data. We could instead
 					// shoehorn this in the vAppData with a concat key using an invalid k8s name delimiter.
-					fromData, err := getSecretData(vmCtx, from, false, k8sClient)
+					fromData, err := getSecretData(vmCtx, k8sClient, from.Name, from.Key, false)
 					if err != nil {
 						reason, msg := errToConditionReasonAndMessage(err)
 						conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
@@ -230,7 +213,7 @@ func GetVirtualMachineBootstrap(
 						vAppExData = make(map[string]map[string]string)
 					}
 					vAppExData[from.Name] = fromData
-				} else if from.Key != "" && from.Optional != nil && !*from.Optional {
+				} else if from.Key != "" {
 					if _, ok := data[from.Key]; !ok {
 						err := fmt.Errorf("required key %q not found in vApp Properties Secret %s", from.Key, from.Name)
 						conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, "RequiredKeyNotFound", err.Error())

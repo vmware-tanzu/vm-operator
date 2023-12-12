@@ -6,8 +6,6 @@
 package cloudinit
 
 import (
-	corev1 "k8s.io/api/core/v1"
-
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 )
 
@@ -74,7 +72,7 @@ type User struct {
 	// if the specified user already exists.
 	//
 	// +optional
-	HashedPasswd *corev1.SecretKeySelector `json:"hashed_passwd,omitempty"`
+	HashedPasswd *common.SecretKeySelector `json:"hashed_passwd,omitempty"`
 
 	// Homedir is the optional home directory for the user.
 	//
@@ -130,7 +128,7 @@ type User struct {
 	// please use HashedPasswd instead.
 	//
 	// +optional
-	Passwd *corev1.SecretKeySelector `json:"passwd,omitempty"`
+	Passwd *common.SecretKeySelector `json:"passwd,omitempty"`
 
 	// PrimaryGroup is the primary group for the user.
 	//
@@ -244,7 +242,7 @@ type WriteFile struct {
 	// modified.
 	//
 	// +optional
-	Content common.ValueOrSecretKeySelector `json:"content,omitempty"`
+	Content *common.ValueOrSecretKeySelector `json:"content,omitempty"`
 
 	// Defer indicates to defer writing the file until Cloud-Init's "final"
 	// stage, after users are created and packages are installed.

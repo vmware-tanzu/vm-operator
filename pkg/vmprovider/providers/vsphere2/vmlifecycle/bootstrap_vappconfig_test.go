@@ -11,7 +11,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/vim25/types"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/pointer"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -157,10 +156,9 @@ var _ = Describe("VAppConfig Bootstrap", func() {
 						{
 							Key: key,
 							Value: common.ValueOrSecretKeySelector{
-								From: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
-									Key:                  key,
-									Optional:             nil, // TODO: Rethink if we really need this complexity
+								From: &common.SecretKeySelector{
+									Name: secretName,
+									Key:  key,
 								},
 							},
 						},

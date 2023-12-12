@@ -10,7 +10,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/vim25/types"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
@@ -111,7 +110,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 
 		Context("RawSysPrep", func() {
 			BeforeEach(func() {
-				sysPrepSpec.RawSysprep = &corev1.SecretKeySelector{}
+				sysPrepSpec.RawSysprep = &common.SecretKeySelector{}
 				sysPrepSpec.RawSysprep.Name = "sysprep-secret"
 				sysPrepSpec.RawSysprep.Key = "unattend"
 			})

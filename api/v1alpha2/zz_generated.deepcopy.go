@@ -13,8 +13,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
-	"k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -444,8 +443,8 @@ func (in *VirtualMachineBootstrapCloudInitSpec) DeepCopyInto(out *VirtualMachine
 	}
 	if in.RawCloudConfig != nil {
 		in, out := &in.RawCloudConfig, &out.RawCloudConfig
-		*out = new(v1.SecretKeySelector)
-		(*in).DeepCopyInto(*out)
+		*out = new(common.SecretKeySelector)
+		**out = **in
 	}
 	if in.SSHAuthorizedKeys != nil {
 		in, out := &in.SSHAuthorizedKeys, &out.SSHAuthorizedKeys
@@ -524,8 +523,8 @@ func (in *VirtualMachineBootstrapSysprepSpec) DeepCopyInto(out *VirtualMachineBo
 	}
 	if in.RawSysprep != nil {
 		in, out := &in.RawSysprep, &out.RawSysprep
-		*out = new(v1.SecretKeySelector)
-		(*in).DeepCopyInto(*out)
+		*out = new(common.SecretKeySelector)
+		**out = **in
 	}
 }
 
@@ -857,7 +856,7 @@ func (in *VirtualMachineImageStatus) DeepCopyInto(out *VirtualMachineImageStatus
 	out.ProductInfo = in.ProductInfo
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
-		*out = make([]metav1.Condition, len(*in))
+		*out = make([]v1.Condition, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -1322,7 +1321,7 @@ func (in *VirtualMachinePublishRequestStatus) DeepCopyInto(out *VirtualMachinePu
 	in.LastAttemptTime.DeepCopyInto(&out.LastAttemptTime)
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
-		*out = make([]metav1.Condition, len(*in))
+		*out = make([]v1.Condition, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -1732,7 +1731,7 @@ func (in *VirtualMachineStatus) DeepCopyInto(out *VirtualMachineStatus) {
 	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
-		*out = make([]metav1.Condition, len(*in))
+		*out = make([]v1.Condition, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}

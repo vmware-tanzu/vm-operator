@@ -68,6 +68,9 @@ issues:
   # List of regexps of issue texts to exclude, empty list by default.
   exclude-rules:
   - linters:
+    - staticcheck
+    text: "^SA1019: [^.]+.Status.ContentLibraryRef is deprecated"
+  - linters:
     - revive
     text: ".*should have (a package )?comment.*"
   - linters:

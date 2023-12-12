@@ -130,6 +130,11 @@ type VirtualMachineImageStatus struct {
 	Conditions []Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
 	// ContentLibraryRef is a reference to the source ContentLibrary/ClusterContentLibrary resource.
+	//
+	// Deprecated: This field is provider specific but the VirtualMachineImage types are intended to be provider generic.
+	// This field does not exist in later API versions. Instead, the Spec.ProviderRef field should be used to look up the
+	// provider. For images provided by a Content Library, the ProviderRef will point to either a ContentLibraryItem or
+	// ClusterContentLibraryItem that contains a reference to the Content Library.
 	// +optional
 	ContentLibraryRef *corev1.TypedLocalObjectReference `json:"contentLibraryRef,omitempty"`
 

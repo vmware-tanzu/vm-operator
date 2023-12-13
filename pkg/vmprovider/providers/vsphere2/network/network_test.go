@@ -125,10 +125,17 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 								"172.42.1.100/24",
 								"fd1a:6c85:79fe:7c98:0000:0000:0000:000f/56",
 							},
-							Gateway4:      "172.42.1.1",
-							Gateway6:      "fd1a:6c85:79fe:7c98:0000:0000:0000:0001",
-							MTU:           pointer.Int64(9000),
-							Nameservers:   []string{"9.9.9.9"},
+							Gateway4:    "172.42.1.1",
+							Gateway6:    "fd1a:6c85:79fe:7c98:0000:0000:0000:0001",
+							MTU:         pointer.Int64(9000),
+							Nameservers: []string{"9.9.9.9"},
+							Routes: []vmopv1.VirtualMachineNetworkRouteSpec{
+								{
+									To:     "10.10.10.10",
+									Via:    "5.5.5.5",
+									Metric: 42,
+								},
+							},
 							SearchDomains: []string{"vmware.com"},
 						},
 					}
@@ -166,6 +173,10 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 					Expect(result.MTU).To(BeEquivalentTo(9000))
 					Expect(result.Nameservers).To(ConsistOf("9.9.9.9"))
 					Expect(result.SearchDomains).To(ConsistOf("vmware.com"))
+					Expect(result.Routes).To(HaveLen(1))
+					Expect(result.Routes[0].To).To(Equal("10.10.10.10"))
+					Expect(result.Routes[0].Via).To(Equal("5.5.5.5"))
+					Expect(result.Routes[0].Metric).To(BeEquivalentTo(42))
 				})
 			})
 		})

@@ -8,37 +8,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-
-	"github.com/vmware-tanzu/vm-operator/api/utilconversion"
 )
 
 // ConvertTo converts this VirtualMachineClass to the Hub version.
 func (src *VirtualMachineClass) ConvertTo(dstRaw conversion.Hub) error {
 	dst := dstRaw.(*v1alpha2.VirtualMachineClass)
-
-	if err := Convert_v1alpha1_VirtualMachineClass_To_v1alpha2_VirtualMachineClass(src, dst, nil); err != nil {
-		return err
-	}
-
-	// Manually restore data.
-	restored := &v1alpha2.VirtualMachineClass{}
-	if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
-		return err
-	}
-
-	dst.Status = restored.Status
-	return nil
+	return Convert_v1alpha1_VirtualMachineClass_To_v1alpha2_VirtualMachineClass(src, dst, nil)
 }
 
 // ConvertFrom converts the hub version to this VirtualMachineClass.
 func (dst *VirtualMachineClass) ConvertFrom(srcRaw conversion.Hub) error {
 	src := srcRaw.(*v1alpha2.VirtualMachineClass)
-	if err := Convert_v1alpha2_VirtualMachineClass_To_v1alpha1_VirtualMachineClass(src, dst, nil); err != nil {
-		return err
-	}
-
-	// Preserve Hub data on down-conversion except for metadata
-	return utilconversion.MarshalData(src, dst)
+	return Convert_v1alpha2_VirtualMachineClass_To_v1alpha1_VirtualMachineClass(src, dst, nil)
 }
 
 // ConvertTo converts this VirtualMachineClassList to the Hub version.

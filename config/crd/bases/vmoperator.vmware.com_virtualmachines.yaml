@@ -278,7 +278,10 @@ spec:
                     minimum: 1
                     type: integer
                   tcpSocket:
-                    description: TCPSocket specifies an action involving a TCP port.
+                    description: "TCPSocket specifies an action involving a TCP port.
+                      \n Deprecated: The TCPSocket action requires network connectivity
+                      that is not supported in all environments. This field will be
+                      removed in a later API version."
                     properties:
                       host:
                         description: Host is an optional host name to connect to.  Host
@@ -1625,7 +1628,10 @@ spec:
                     minimum: 1
                     type: integer
                   tcpSocket:
-                    description: TCPSocket specifies an action involving a TCP port.
+                    description: "TCPSocket specifies an action involving a TCP port.
+                      \n Deprecated: The TCPSocket action requires network connectivity
+                      that is not supported in all environments. This field will be
+                      removed in a later API version."
                     properties:
                       host:
                         description: Host is an optional host name to connect to.

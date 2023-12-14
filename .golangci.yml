@@ -76,6 +76,9 @@ issues:
   - linters:
     - gosec
     text: "G114: Use of net/http serve function that has no support for setting timeouts"
+  - linters:
+    - staticcheck
+    text: "^SA1019: .*TCPSocket is deprecated"
   # Dot imports for gomega or ginkgo are allowed within test files.
   - path: test/
     text: should not use dot imports

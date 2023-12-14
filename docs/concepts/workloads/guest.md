@@ -346,23 +346,23 @@ To illustrate, the following YAML can be utilized to deploy a VirtualMachine and
       management_gateway: "{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}"
     ```
 
-=== "vAppConfig with supporting template"
+=== "vAppConfig with templated data"
 
     ```yaml
     apiVersion: v1
     kind: Secret
     metadata:
-    name: my-secret
-    namespace: test-ns
+      name: my-secret
+      namespace: test-ns
     stringData:
-    # see more details on below Supporting Template Queries section
-    nameservers: "{{ V1alpha1_FormatNameservers 2 \",\" }}"
-    management_ip: "{{ V1alpha1_FormatIP \"192.168.1.10\" \"255.255.255.0\" }}"
-    hostname: "{{ .V1alpha1.VM.Name }} "  
-    management_gateway: "{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}"
+      nameservers: "{{ V1alpha1_FormatNameservers 2 \",\" }}"
+      management_ip: "{{ V1alpha1_FormatIP \"192.168.1.10\" \"255.255.255.0\" }}"
+      hostname: "{{ .V1alpha1.VM.Name }} "  
+      management_gateway: "{{ (index .V1alpha1.Net.Devices 0).Gateway4 }}"
     ```
 
-For more information on vAppConfig, please refer to [tutorial/deploy-vm/vappconfig](https://vm-operator.readthedocs.io/en/stable/tutorials/deploy-vm/vappconfig/).
+For more information on vAppConfig, please refer to this [tutorial](../../tutorials/deploy-vm/vappconfig.md).
+
 ## Deprecated
 
 The following bootstrap providers are still available, but they are deprecated and are not recommended.

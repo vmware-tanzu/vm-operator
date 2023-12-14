@@ -1,20 +1,13 @@
 # Deploy a VM With Cloud-Init
 
-This page reviews deploying a VM with the bootstrap method Cloud-Init.
-
-## Description
-
-[Cloud-Init](https://cloudinit.readthedocs.io/en/latest/) is widely recognized as the de facto method for bootstrapping modern VM instances on hyperscalers, including VM Service on vSphere with Tanzu.
-
-## Purpose
-As a DevOps user leveraging Cloud-Init, you have the capability to bootstrap the guest within a VM, enabling seamless execution of operations during the boot process. Some tasks you can accomplish include:
-
-* Adding a custom user,
-* Executing commands on boot, and
-* Writing files.
+[Cloud-Init](https://cloudinit.readthedocs.io/en/latest/) is widely recognized as the de facto method for bootstrapping modern workloads on hyperscalers, including VM Service on vSphere.
 
 
 ## Example
+
+The example below illustrates a `VirtualMachine` resource that specifies a Cloud-Init Cloud Config via a `Secret` resource (`my-vm-bootstrap-data`). For more information on the Cloud-Init Cloud Config format, please see the [official documentation](https://cloudinit.readthedocs.io/en/latest/reference/examples.html).
+
+
 === "VirtualMachine"
 
     ``` yaml
@@ -61,6 +54,3 @@ As a DevOps user leveraging Cloud-Init, you have the capability to bootstrap the
             Hello, world.
     ```
 
-The above example shows a `VirtualMachine` resource that specifies user-data using a `Secret` resource (`my-vm-bootstrap-data`), which will be used by `CloudInit` to bootstrap and customize the guest.
-
-The data in the above `Secret` has the Cloud-Init _Cloud Config_. For more information on the Cloud-Init Cloud Config format, please see its [official documentation](https://cloudinit.readthedocs.io/en/latest/reference/examples.html).

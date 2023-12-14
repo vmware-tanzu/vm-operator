@@ -285,7 +285,7 @@ func vmUtilTests() {
 			})
 
 			It("return an error when resources does not exist", func() {
-				_, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+				_, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
 				Expect(err).To(HaveOccurred())
 				Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeFalse())
 			})
@@ -296,9 +296,9 @@ func vmUtilTests() {
 				})
 
 				It("returns success", func() {
-					data, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+					bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(data).To(HaveKeyWithValue("foo", "bar"))
+					Expect(bsData.Data).To(HaveKeyWithValue("foo", "bar"))
 					Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
 				})
 			})
@@ -310,10 +310,10 @@ func vmUtilTests() {
 
 				When("Prefers Secret over ConfigMap", func() {
 					It("returns success", func() {
-						data, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
 						Expect(err).ToNot(HaveOccurred())
 						// Prefer Secret over ConfigMap.
-						Expect(data).To(HaveKeyWithValue("foo1", "bar1"))
+						Expect(bsData.Data).To(HaveKeyWithValue("foo1", "bar1"))
 						Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
 					})
 				})
@@ -331,7 +331,7 @@ func vmUtilTests() {
 			})
 
 			It("return an error when resource does not exist", func() {
-				_, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+				_, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
 				Expect(err).To(HaveOccurred())
 				Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeFalse())
 			})
@@ -342,9 +342,9 @@ func vmUtilTests() {
 				})
 
 				It("returns success", func() {
-					data, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+					bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(data).To(HaveKeyWithValue("foo", "bar"))
+					Expect(bsData.Data).To(HaveKeyWithValue("foo", "bar"))
 					Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
 				})
 			})
@@ -356,9 +356,9 @@ func vmUtilTests() {
 
 				When("Prefers Secret over ConfigMap", func() {
 					It("returns success", func() {
-						data, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(data).To(HaveKeyWithValue("foo1", "bar1"))
+						Expect(bsData.Data).To(HaveKeyWithValue("foo1", "bar1"))
 						Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
 					})
 				})
@@ -375,7 +375,7 @@ func vmUtilTests() {
 			})
 
 			It("return an error when resource does not exist", func() {
-				_, _, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+				_, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
 				Expect(err).To(HaveOccurred())
 				Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeFalse())
 			})
@@ -386,9 +386,9 @@ func vmUtilTests() {
 				})
 
 				It("returns success", func() {
-					_, data, _, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+					bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(data).To(HaveKeyWithValue("foo-vapp", "bar-vapp"))
+					Expect(bsData.VAppData).To(HaveKeyWithValue("foo-vapp", "bar-vapp"))
 					Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
 				})
 			})
@@ -407,10 +407,10 @@ func vmUtilTests() {
 					}
 
 					It("returns success", func() {
-						_, _, exData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+						bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(exData).To(HaveKey(vAppDataName))
-						data := exData[vAppDataName]
+						Expect(bsData.VAppExData).To(HaveKey(vAppDataName))
+						data := bsData.VAppExData[vAppDataName]
 						Expect(data).To(HaveKeyWithValue("foo-vapp", "bar-vapp"))
 					})
 				})

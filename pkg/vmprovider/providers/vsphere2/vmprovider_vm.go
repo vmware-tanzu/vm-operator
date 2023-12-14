@@ -400,7 +400,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	if lib.IsVMServiceBackupRestoreFSSEnabled() {
 		vmCtx.Logger.V(4).Info("Backing up VirtualMachine")
 		// TODO: Support backing up vAppConfig bootstrap data.
-		data, _, _, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
+		bsData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
 		if err != nil {
 			vmCtx.Logger.Error(err, "Failed to get VM's bootstrap data for backup")
 			return err
@@ -414,7 +414,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 		backupVMCtx := context.BackupVirtualMachineContextA2{
 			VMCtx:         vmCtx,
 			VcVM:          vcVM,
-			BootstrapData: data,
+			BootstrapData: bsData.Data,
 			DiskUUIDToPVC: diskUUIDToPVC,
 		}
 		if err := virtualmachine.BackupVirtualMachine(backupVMCtx); err != nil {
@@ -781,14 +781,15 @@ func (vs *vSphereVMProvider) vmCreateGetBootstrap(
 	vmCtx context.VirtualMachineContextA2,
 	createArgs *VMCreateArgs) error {
 
-	data, vAppData, vAppExData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
+	bsData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
 	if err != nil {
 		return err
 	}
 
-	createArgs.BootstrapData.Data = data
-	createArgs.BootstrapData.VAppData = vAppData
-	createArgs.BootstrapData.VAppExData = vAppExData
+	createArgs.BootstrapData.Data = bsData.Data
+	createArgs.BootstrapData.VAppData = bsData.VAppData
+	createArgs.BootstrapData.VAppExData = bsData.VAppExData
+	createArgs.BootstrapData.CloudConfig = bsData.CloudConfig
 
 	return nil
 }
@@ -1112,7 +1113,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		return nil, err
 	}
 
-	data, vAppData, vAppExData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
+	bsData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
 	if err != nil {
 		return nil, err
 	}
@@ -1120,9 +1121,10 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	updateArgs := &vmUpdateArgs{}
 	updateArgs.VMClass = vmClass
 	updateArgs.ResourcePolicy = resourcePolicy
-	updateArgs.BootstrapData.Data = data
-	updateArgs.BootstrapData.VAppData = vAppData
-	updateArgs.BootstrapData.VAppExData = vAppExData
+	updateArgs.BootstrapData.Data = bsData.Data
+	updateArgs.BootstrapData.VAppData = bsData.VAppData
+	updateArgs.BootstrapData.VAppExData = bsData.VAppExData
+	updateArgs.BootstrapData.CloudConfig = bsData.CloudConfig
 
 	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
 		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)

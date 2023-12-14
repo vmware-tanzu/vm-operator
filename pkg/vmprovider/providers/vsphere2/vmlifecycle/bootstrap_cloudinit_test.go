@@ -6,6 +6,7 @@ package vmlifecycle_test
 import (
 	goctx "context"
 	"encoding/base64"
+	"encoding/json"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -15,10 +16,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
+	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
@@ -95,12 +97,111 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 		Context("Inlined CloudConfig", func() {
 			BeforeEach(func() {
-				cloudInitSpec.CloudConfig = &cloudinit.CloudConfig{}
+				bsArgs.CloudConfig = &cloudinit.CloudConfigSecretData{
+					Users: map[string]cloudinit.CloudConfigUserSecretData{
+						"bob.wilson": {
+							HashPasswd: "0123456789",
+						},
+					},
+					WriteFiles: map[string]string{
+						"/hi":    "there",
+						"/hello": "world",
+					},
+				}
+				cloudInitSpec.CloudConfig = &vmopv1cloudinit.CloudConfig{
+					Users: []vmopv1cloudinit.User{
+						{
+							Name: "bob.wilson",
+							HashedPasswd: &common.SecretKeySelector{
+								Name: "my-bootstrap-data",
+								Key:  "cloud-init-user-bob.wilson-hashed_passwd",
+							},
+						},
+					},
+					WriteFiles: []vmopv1cloudinit.WriteFile{
+						{
+							Path:    "/hello",
+							Content: []byte("world"),
+						},
+						{
+							Path:    "/hi",
+							Content: []byte("name: \"my-bootstrap-data\"\nkey: \"cloud-init-files-hi\""),
+						},
+					},
+				}
 			})
 
-			It("Returns TODO", func() {
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("TODO"))
+			Context("With no default user", func() {
+				It("Should return valid data", func() {
+					Expect(custSpec).To(BeNil())
+
+					Expect(configSpec).ToNot(BeNil())
+					Expect(configSpec.VAppConfigRemoved).ToNot(BeNil())
+					Expect(*configSpec.VAppConfigRemoved).To(BeTrue())
+
+					extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+					Expect(extraConfig).To(HaveLen(4))
+					Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata))
+					Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+					act, err := util.TryToDecodeBase64Gzip([]byte(extraConfig[constants.CloudInitGuestInfoUserdata]))
+					Expect(err).ToNot(HaveOccurred())
+					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIAGnpeWUAA1WMSQ6DMAwA73mFxb0LhS74Myg0rhzJjVFslO+3qnrhPMtmVA0DwAE4GlOa12jWEkJ37i/DeL3dH1P35QAlvglh0eXYspiW0Gp2ml9Z6H94anEqjtC0SvpFa3RGODGJ6N5xpko7J4cP2YlRL44AAAA="))
+					Expect(err).ToNot(HaveOccurred())
+					Expect(act).To(Equal(exp))
+					Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+				})
+			})
+
+			Context("With default user", func() {
+				BeforeEach(func() {
+					cloudInitSpec.CloudConfig.AlwaysDefaultUser = true
+				})
+				It("Should return valid data", func() {
+					Expect(custSpec).To(BeNil())
+
+					Expect(configSpec).ToNot(BeNil())
+					Expect(configSpec.VAppConfigRemoved).ToNot(BeNil())
+					Expect(*configSpec.VAppConfigRemoved).To(BeTrue())
+
+					extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+					Expect(extraConfig).To(HaveLen(4))
+					Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata))
+					Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+					act, err := util.TryToDecodeBase64Gzip([]byte(extraConfig[constants.CloudInitGuestInfoUserdata]))
+					Expect(err).ToNot(HaveOccurred())
+					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIAG7peWUAA1WMSwrDMAwF9z6FyD79pH9dJii1ggyqHSwFX78ldJPdwJs3q3E1DAA9RJ5pVd9YyITjuJBZiwjd6Txcrrf74/nqfjtApg8jTGU6tKRWcmg1OY9zUv7X3iU7Z0dopWrcTgu5IByFVcveceHKOyeFLw9FvNqaAAAA"))
+					Expect(err).ToNot(HaveOccurred())
+					Expect(act).To(Equal(exp))
+					Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+				})
+			})
+
+			Context("With runcmds", func() {
+				BeforeEach(func() {
+					cloudInitSpec.CloudConfig.RunCmd = []json.RawMessage{
+						[]byte("ls /"),
+						[]byte(`[ "ls", "-a", "-l", "/" ]`),
+						[]byte("- echo\n- \"hello, world.\""),
+					}
+				})
+				It("Should return valid data", func() {
+					Expect(custSpec).To(BeNil())
+
+					Expect(configSpec).ToNot(BeNil())
+					Expect(configSpec.VAppConfigRemoved).ToNot(BeNil())
+					Expect(*configSpec.VAppConfigRemoved).To(BeTrue())
+
+					extraConfig := util.ExtraConfigToMap(configSpec.ExtraConfig)
+					Expect(extraConfig).To(HaveLen(4))
+					Expect(extraConfig).To(HaveKey(constants.CloudInitGuestInfoMetadata))
+					Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
+					act, err := util.TryToDecodeBase64Gzip([]byte(extraConfig[constants.CloudInitGuestInfoUserdata]))
+					Expect(err).ToNot(HaveOccurred())
+					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIAMX2eWUAA1WOzQ6DIBAG7zzFxnOr/a/lZQzCNpCsYFgMr1+LePA2+XYm2YUxshQAZ7CKLZphVszZSGgu19v98Xy9+0+z3gG8mlDCGMY2O+LgRVy8nswWE0NX4I9FX1HtQBV2BbUNdbJIFE6QQyTTihxdwuHrCOtTOviEPslNKM2skpXQlfDoJIsRD44TP+GGV+HhAAAA"))
+					Expect(err).ToNot(HaveOccurred())
+					Expect(act).To(Equal(exp))
+					Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
+				})
 			})
 		})
 

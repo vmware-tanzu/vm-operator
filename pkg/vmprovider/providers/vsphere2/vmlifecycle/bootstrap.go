@@ -14,6 +14,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
@@ -30,6 +31,8 @@ type BootstrapData struct {
 	Data       map[string]string
 	VAppData   map[string]string
 	VAppExData map[string]map[string]string
+
+	CloudConfig *cloudinit.CloudConfigSecretData
 }
 
 type TemplateRenderFunc func(string, string) string

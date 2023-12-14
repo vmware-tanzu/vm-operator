@@ -13,6 +13,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
@@ -48,24 +49,28 @@ func BootStrapCloudInit(
 	}
 
 	var userdata string
-	if cloudInitSpec.RawCloudConfig != nil {
+	if cooked := cloudInitSpec.CloudConfig; cooked != nil {
+		if bsArgs.CloudConfig == nil {
+			return nil, nil, fmt.Errorf("cloudConfigSecretData is nil")
+		}
+		data, err := cloudinit.MarshalYAML(vmCtx, *cooked, *bsArgs.CloudConfig)
+		if err != nil {
+			return nil, nil, err
+		}
+		userdata = data
+	} else if raw := cloudInitSpec.RawCloudConfig; raw != nil {
 		// Check for the 'user-data' key as per official contract and API documentation.
 		// Additionally, to support the cluster bootstrap data supplied by CAPBK's secret,
 		// we check for a 'value' key when 'user-data' is not supplied.
 		// The 'value' key lookup will eventually be deprecated.
-		for _, k := range []string{cloudInitSpec.RawCloudConfig.Key, "user-data", "value"} {
-			if k != "" {
-				userdata = bsArgs.BootstrapData.Data[k]
-				if userdata != "" {
-					break
-				}
+		for _, key := range []string{raw.Key, "user-data", "value"} {
+			if data := bsArgs.BootstrapData.Data[key]; data != "" {
+				userdata = data
+				break
 			}
 		}
 
 		// NOTE: The old code didn't error out if userdata wasn't found, so keep going.
-
-	} else if cloudInitSpec.CloudConfig != nil {
-		return nil, nil, fmt.Errorf("TODO: inlined CloudConfig")
 	}
 
 	var configSpec *types.VirtualMachineConfigSpec

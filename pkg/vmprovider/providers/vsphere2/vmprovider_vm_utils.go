@@ -14,12 +14,13 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	vmopv1common "github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/vmlifecycle"
 )
 
 // TODO: This mostly just a placeholder until we spend time on something better. Individual types
@@ -152,31 +153,51 @@ func getSecretData(
 
 func GetVirtualMachineBootstrap(
 	vmCtx context.VirtualMachineContextA2,
-	k8sClient ctrlclient.Client) (map[string]string, map[string]string, map[string]map[string]string, error) {
+	k8sClient ctrlclient.Client) (vmlifecycle.BootstrapData, error) {
 
 	bootstrapSpec := vmCtx.VM.Spec.Bootstrap
 	if bootstrapSpec == nil {
 		conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)
-		return nil, nil, nil, nil
+		return vmlifecycle.BootstrapData{}, nil
 	}
 
-	var secretSelector *vmopv1common.SecretKeySelector
 	var data, vAppData map[string]string
 	var vAppExData map[string]map[string]string
+	var cloudConfigSecretData *cloudinit.CloudConfigSecretData
 
-	if cloudInit := bootstrapSpec.CloudInit; cloudInit != nil {
-		secretSelector = cloudInit.RawCloudConfig
-	} else if sysprep := bootstrapSpec.Sysprep; sysprep != nil {
-		secretSelector = sysprep.RawSysprep
-	}
-
-	if secretSelector != nil {
-		var err error
-		data, err = getSecretData(vmCtx, k8sClient, secretSelector.Name, secretSelector.Key, true)
-		if err != nil {
-			reason, msg := errToConditionReasonAndMessage(err)
-			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
-			return nil, nil, nil, err
+	if v := bootstrapSpec.CloudInit; v != nil {
+		if cooked := v.CloudConfig; cooked != nil {
+			out, err := cloudinit.GetCloudConfigSecretData(
+				vmCtx,
+				k8sClient,
+				vmCtx.VM.Namespace,
+				*cooked)
+			if err != nil {
+				reason, msg := errToConditionReasonAndMessage(err)
+				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+				return vmlifecycle.BootstrapData{}, err
+			}
+			cloudConfigSecretData = &out
+		} else if raw := v.RawCloudConfig; raw != nil {
+			var err error
+			data, err = getSecretData(vmCtx, k8sClient, raw.Name, raw.Key, true)
+			if err != nil {
+				reason, msg := errToConditionReasonAndMessage(err)
+				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+				return vmlifecycle.BootstrapData{}, err
+			}
+		}
+	} else if v := bootstrapSpec.Sysprep; v != nil {
+		if cooked := v.Sysprep; cooked != nil {
+			_ = cooked // TODO Add support for in-line sysprep
+		} else if raw := v.RawSysprep; raw != nil {
+			var err error
+			data, err = getSecretData(vmCtx, k8sClient, raw.Name, raw.Key, true)
+			if err != nil {
+				reason, msg := errToConditionReasonAndMessage(err)
+				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+				return vmlifecycle.BootstrapData{}, err
+			}
 		}
 	}
 
@@ -189,7 +210,7 @@ func GetVirtualMachineBootstrap(
 			if err != nil {
 				reason, msg := errToConditionReasonAndMessage(err)
 				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
-				return nil, nil, nil, err
+				return vmlifecycle.BootstrapData{}, err
 			}
 
 		} else {
@@ -206,7 +227,7 @@ func GetVirtualMachineBootstrap(
 					if err != nil {
 						reason, msg := errToConditionReasonAndMessage(err)
 						conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
-						return nil, nil, nil, err
+						return vmlifecycle.BootstrapData{}, err
 					}
 
 					if vAppExData == nil {
@@ -217,7 +238,7 @@ func GetVirtualMachineBootstrap(
 					if _, ok := data[from.Key]; !ok {
 						err := fmt.Errorf("required key %q not found in vApp Properties Secret %s", from.Key, from.Name)
 						conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, "RequiredKeyNotFound", err.Error())
-						return nil, nil, nil, err
+						return vmlifecycle.BootstrapData{}, err
 					}
 				}
 			}
@@ -226,7 +247,12 @@ func GetVirtualMachineBootstrap(
 
 	conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)
 
-	return data, vAppData, vAppExData, nil
+	return vmlifecycle.BootstrapData{
+		Data:        data,
+		VAppData:    vAppData,
+		VAppExData:  vAppExData,
+		CloudConfig: cloudConfigSecretData,
+	}, nil
 }
 
 func GetVMSetResourcePolicy(

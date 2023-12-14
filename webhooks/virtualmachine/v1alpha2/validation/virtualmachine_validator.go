@@ -34,6 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/cloudinit/validate"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
@@ -209,10 +210,14 @@ func (v validator) validateBootstrap(
 				"CloudInit may not be used with any other bootstrap provider"))
 		}
 
-		if cloudInit.CloudConfig != nil && cloudInit.RawCloudConfig != nil {
-			allErrs = append(allErrs, field.Invalid(p, "cloudInit",
-				"cloudConfig and rawCloudConfig are mutually exclusive"))
+		if v := cloudInit.CloudConfig; v != nil {
+			if cloudInit.RawCloudConfig != nil {
+				allErrs = append(allErrs, field.Invalid(p, "cloudInit",
+					"cloudConfig and rawCloudConfig are mutually exclusive"))
+			}
+			allErrs = append(allErrs, cloudinitvalidate.CloudConfig(p, *v)...)
 		}
+
 	}
 
 	if linuxPrep != nil {

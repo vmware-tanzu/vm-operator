@@ -81,8 +81,13 @@ func UpdateStatus(
 	vm.Status.UniqueID = vcVM.Reference().Value
 	vm.Status.BiosUUID = summary.Config.Uuid
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
-	vm.Status.Network = getGuestNetworkStatus(vmMO.Guest)
 	vm.Status.HardwareVersion = util.ParseVirtualHardwareVersion(summary.Config.HwVersion)
+
+	var networkInterfaces []vmopv1.VirtualMachineNetworkInterfaceSpec
+	if vmCtx.VM.Spec.Network != nil {
+		networkInterfaces = vmCtx.VM.Spec.Network.Interfaces
+	}
+	vm.Status.Network = getGuestNetworkStatus(networkInterfaces, vmMO.Guest)
 
 	vm.Status.Host, err = getRuntimeHostHostname(vmCtx, vcVM, summary.Runtime.Host)
 	if err != nil {
@@ -136,7 +141,11 @@ func getRuntimeHostHostname(
 	return "", nil
 }
 
-func getGuestNetworkStatus(guestInfo *types.GuestInfo) *vmopv1.VirtualMachineNetworkStatus {
+func getGuestNetworkStatus(
+	networkInterfaces []vmopv1.VirtualMachineNetworkInterfaceSpec,
+	guestInfo *types.GuestInfo,
+) *vmopv1.VirtualMachineNetworkStatus {
+
 	if guestInfo == nil {
 		return nil
 	}
@@ -159,6 +168,14 @@ func getGuestNetworkStatus(guestInfo *types.GuestInfo) *vmopv1.VirtualMachineNet
 		}
 	}
 
+	// Hack: the exceedingly common case is just one nic - our boostrap effectively only works with one -
+	// so do the best effort here and apply the name in that common case. We have a long ways to go until
+	// we can always line up interfaces in the Spec with what both is observed in the VM hardware config
+	// and what the GuestNicInfo provides.
+	if len(networkInterfaces) == 1 && len(status.Interfaces) == 1 {
+		status.Interfaces[0].Name = networkInterfaces[0].Name
+	}
+
 	if len(guestInfo.IpStack) > 0 {
 		status.VirtualMachineNetworkIPStackStatus = guestIPStackInfoToIPStackStatus(&guestInfo.IpStack[0])
 	}
@@ -169,7 +186,7 @@ func getGuestNetworkStatus(guestInfo *types.GuestInfo) *vmopv1.VirtualMachineNet
 func guestNicInfoToInterfaceStatus(idx int, guestNicInfo *types.GuestNicInfo) vmopv1.VirtualMachineNetworkInterfaceStatus {
 	status := vmopv1.VirtualMachineNetworkInterfaceStatus{}
 
-	// TODO: What name exactly? The CRD name may be the most useful here but hard to line that up.
+	// Try to provide some default, useful name that can otherwise help identify the interface.
 	status.Name = fmt.Sprintf("nic-%d-%d", idx, guestNicInfo.DeviceConfigId)
 	status.IP.MACAddr = guestNicInfo.MacAddress
 

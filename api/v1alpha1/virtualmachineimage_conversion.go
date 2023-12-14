@@ -399,6 +399,12 @@ func (dst *VirtualMachineImage) ConvertFrom(srcRaw conversion.Hub) error {
 		return err
 	}
 
+	if dst.Spec.ProviderRef.Name != "" {
+		// The Namespace isn't a field in the v1a2 LocalObjectRef so backfill the namespace here.
+		// The provider is always in the same namespace.
+		dst.Spec.ProviderRef.Namespace = src.Namespace
+	}
+
 	return nil
 }
 

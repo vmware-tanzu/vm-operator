@@ -27,6 +27,11 @@ type CloudInitMetadata struct {
 	PublicKeys    string          `yaml:"public-keys,omitempty"`
 }
 
+// CloudInitUserDataSecretKeys are the Secret keys that in v1a1 we'd check for the userdata.
+// Specifically, CAPBK uses "value" for its key, while "user-data" is the preferred key nowadays.
+// The 'value' key lookup will eventually be deprecated.
+var CloudInitUserDataSecretKeys = []string{"user-data", "value"}
+
 func BootStrapCloudInit(
 	vmCtx context.VirtualMachineContextA2,
 	config *types.VirtualMachineConfigInfo,
@@ -59,11 +64,8 @@ func BootStrapCloudInit(
 		}
 		userdata = data
 	} else if raw := cloudInitSpec.RawCloudConfig; raw != nil {
-		// Check for the 'user-data' key as per official contract and API documentation.
-		// Additionally, to support the cluster bootstrap data supplied by CAPBK's secret,
-		// we check for a 'value' key when 'user-data' is not supplied.
-		// The 'value' key lookup will eventually be deprecated.
-		for _, key := range []string{raw.Key, "user-data", "value"} {
+		keys := []string{raw.Key}
+		for _, key := range append(keys, CloudInitUserDataSecretKeys...) {
 			if data := bsArgs.BootstrapData.Data[key]; data != "" {
 				userdata = data
 				break

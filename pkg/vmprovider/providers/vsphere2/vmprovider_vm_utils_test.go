@@ -319,6 +319,34 @@ func vmUtilTests() {
 				})
 			})
 
+			When("Secret key fallback for CloudInit", func() {
+				const value = "should-fallback-to-this-key"
+
+				BeforeEach(func() {
+					cloudInitSecret := &corev1.Secret{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      dataName,
+							Namespace: vmCtx.VM.Namespace,
+						},
+						Data: map[string][]byte{
+							"value": []byte(value),
+						},
+					}
+
+					initObjects = append(initObjects, bootstrapCM, cloudInitSecret)
+
+					vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig = &common.SecretKeySelector{}
+					vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig.Name = dataName
+					vmCtx.VM.Spec.Bootstrap.CloudInit.RawCloudConfig.Key = "user-data"
+				})
+
+				It("returns success", func() {
+					bsData, err := vsphere.GetVirtualMachineBootstrap(vmCtx, k8sClient)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(bsData.Data).To(HaveKeyWithValue("value", value))
+					Expect(conditions.IsTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+				})
+			})
 		})
 
 		When("Bootstrap via Sysprep", func() {

@@ -20,7 +20,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
@@ -145,7 +145,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
 					act, err := util.TryToDecodeBase64Gzip([]byte(extraConfig[constants.CloudInitGuestInfoUserdata]))
 					Expect(err).ToNot(HaveOccurred())
-					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIAGnpeWUAA1WMSQ6DMAwA73mFxb0LhS74Myg0rhzJjVFslO+3qnrhPMtmVA0DwAE4GlOa12jWEkJ37i/DeL3dH1P35QAlvglh0eXYspiW0Gp2ml9Z6H94anEqjtC0SvpFa3RGODGJ6N5xpko7J4cP2YlRL44AAAA="))
+					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIALlxe2UAA1XMSw7DIAxF0blXYYVx+v+ymYgEpxA5gMAR2y+qOsn43XeUQqE1sRHSuPiwGFATx832Uwyz/wBshXLRgNijM8WRHZIppVqN3el8ud7uj+fr3bUdMZi1KWMcD9VziQFq9kLD7Jn+QkOFgmisMbP9nZIRp/HoiDnuG3GUadd4+AJhz3mVsAAAAA=="))
 					Expect(err).ToNot(HaveOccurred())
 					Expect(act).To(Equal(exp))
 					Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
@@ -169,7 +169,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
 					act, err := util.TryToDecodeBase64Gzip([]byte(extraConfig[constants.CloudInitGuestInfoUserdata]))
 					Expect(err).ToNot(HaveOccurred())
-					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIAG7peWUAA1WMSwrDMAwF9z6FyD79pH9dJii1ggyqHSwFX78ldJPdwJs3q3E1DAA9RJ5pVd9YyITjuJBZiwjd6Txcrrf74/nqfjtApg8jTGU6tKRWcmg1OY9zUv7X3iU7Z0dopWrcTgu5IByFVcveceHKOyeFLw9FvNqaAAAA"))
+					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIANFxe2UAA1WNSw6EIBBE95yio2vn/3G4jGmlHTAtEGjD9YeY2birpF69alsQWiOjkIbF+QVVO3HYTDcFP7uvUlumlLUC6MDQjBvLni1mS2aImHMxGprL9XZ/PF/v/tPUHsDjWo1jGE/FcQ5eleSEhtkx/W31QMiLhhISm30UUayGsyXmcGTEUqID49QPnrBjF7wAAAA="))
 					Expect(err).ToNot(HaveOccurred())
 					Expect(act).To(Equal(exp))
 					Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))
@@ -197,7 +197,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					Expect(extraConfig[constants.CloudInitGuestInfoMetadataEncoding]).To(Equal("gzip+base64"))
 					act, err := util.TryToDecodeBase64Gzip([]byte(extraConfig[constants.CloudInitGuestInfoUserdata]))
 					Expect(err).ToNot(HaveOccurred())
-					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIAMX2eWUAA1WOzQ6DIBAG7zzFxnOr/a/lZQzCNpCsYFgMr1+LePA2+XYm2YUxshQAZ7CKLZphVszZSGgu19v98Xy9+0+z3gG8mlDCGMY2O+LgRVy8nswWE0NX4I9FX1HtQBV2BbUNdbJIFE6QQyTTihxdwuHrCOtTOviEPslNKM2skpXQlfDoJIsRD44TP+GGV+HhAAAA"))
+					exp, err := util.TryToDecodeBase64Gzip([]byte("H4sIAPZxe2UAA1WOSw6EIBBE95yio9tR5//hMgalHTAtGMBw/WFQF+5eql91qiwh4DSTCMhh1GYUrOzJLrLqrRn0l7HFo/OcAVSghFco21l4HyWH4ny53u6P5+v9KdIdwIgpfelsV0dN3hrmFtNPci2ThybDH7OeUOxAG+wK9spukUIie4JoHcmaRacDtoMm3EalnQFN4KuQO7MIikOTi0cnKHR4cDT7AUt79Z4DAQAA"))
 					Expect(err).ToNot(HaveOccurred())
 					Expect(act).To(Equal(exp))
 					Expect(extraConfig[constants.CloudInitGuestInfoUserdataEncoding]).To(Equal("gzip+base64"))

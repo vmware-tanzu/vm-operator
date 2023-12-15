@@ -16,7 +16,7 @@ import (
 
 	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 )
 
 var _ = Describe("CloudConfig GetCloudConfigSecretData", func() {

@@ -267,10 +267,11 @@ generate: ## Generate code
 
 .PHONY: generate-go
 generate-go: $(CONTROLLER_GEN)
-generate-go: ## Generate deepcopy
+generate-go: ## Generate golang sources
 	$(CONTROLLER_GEN) \
 		paths=github.com/vmware-tanzu/vm-operator/api/... \
 		object:headerFile=./hack/boilerplate/boilerplate.generatego.txt
+	$(MAKE) -C ./pkg/util/cloudinit/schema $@
 
 .PHONY: generate-manifests
 generate-manifests: $(CONTROLLER_GEN)

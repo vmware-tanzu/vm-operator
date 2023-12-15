@@ -5,6 +5,7 @@ package validate_test
 
 import (
 	"encoding/json"
+	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -13,10 +14,10 @@ import (
 
 	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/cloudinit/validate"
+	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 )
 
-var _ = Describe("CloudConfig ValidateCloudConfig", func() {
+var _ = Describe("Validate CloudConfigJSONRawMessage", func() {
 	var (
 		cloudConfig vmopv1cloudinit.CloudConfig
 		errs        field.ErrorList
@@ -57,7 +58,7 @@ var _ = Describe("CloudConfig ValidateCloudConfig", func() {
 	})
 
 	JustBeforeEach(func() {
-		errs = validate.CloudConfig(
+		errs = cloudinitvalidate.CloudConfigJSONRawMessage(
 			field.NewPath("spec").Child("bootstrap").Child("cloudInit"),
 			cloudConfig)
 	})
@@ -88,6 +89,41 @@ var _ = Describe("CloudConfig ValidateCloudConfig", func() {
 					`[spec.bootstrap.cloudInit.cloudConfig.runcmds[1]: Invalid value: "obj:\n  field1: value1": value must be a string or list of strings, ` +
 						`spec.bootstrap.cloudInit.cloudConfig.write_files[/file1]: Invalid value: "[ \"ls\", \"-a\", \"-l\", \"/\" ]": value must be a string, multi-line string, or SecretKeySelector]`))
 			})
+		})
+	})
+})
+
+var _ = Describe("Validate CloudConfigYAML", func() {
+	var (
+		err             error
+		cloudConfigYAML string
+	)
+
+	JustBeforeEach(func() {
+		err = cloudinitvalidate.CloudConfigYAML(cloudConfigYAML)
+	})
+
+	When("The CloudConfig is valid", func() {
+		BeforeEach(func() {
+			data, err := os.ReadFile("./testdata/valid-cloud-config-1.yaml")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(data).ToNot(HaveLen(0))
+			cloudConfigYAML = string(data)
+		})
+		It("Should not return an error", func() {
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	When("The CloudConfig is invalid", func() {
+		BeforeEach(func() {
+			data, err := os.ReadFile("./testdata/invalid-cloud-config-1.yaml")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(data).ToNot(HaveLen(0))
+			cloudConfigYAML = string(data)
+		})
+		It("Should return an error", func() {
+			Expect(err).To(HaveOccurred())
 		})
 	})
 })

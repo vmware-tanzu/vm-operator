@@ -11,6 +11,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	cloudinitschema "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/schema"
 )
 
 const (
@@ -18,9 +19,9 @@ const (
 	invalidWriteFileContent = "value must be a string, multi-line string, or SecretKeySelector"
 )
 
-// CloudConfig returns any errors encountered when validating the raw JSON
-// portions of a CloudConfig.
-func CloudConfig(
+// CloudConfigJSONRawMessage returns any errors encountered when validating the
+// json.RawMessage portions of a CloudConfig.
+func CloudConfigJSONRawMessage(
 	fieldPath *field.Path,
 	in cloudinit.CloudConfig) field.ErrorList {
 
@@ -108,4 +109,29 @@ func validateWriteFiles(
 	}
 
 	return allErrs
+}
+
+// CloudConfigYAML returns an error if the provided CloudConfig YAML is not
+// valid according to the CloudConfig schema.
+//
+// Please note the up-to-date schemas related to Cloud-Init may be found at
+// https://github.com/canonical/cloud-init/tree/main/cloudinit/config/schemas.
+func CloudConfigYAML(in string) error {
+	// The cloudinitschema.UnmarshalCloudconfig function only supports JSON
+	// input, so first we need to convert the CloudConfig YAML to JSON.
+	data := map[string]any{}
+	if err := yaml.Unmarshal([]byte(in), &data); err != nil {
+		return err
+	}
+	out, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	// Validate the JSON CloudConfig.
+	if _, err := cloudinitschema.UnmarshalCloudconfig(out); err != nil {
+		return err
+	}
+
+	return nil
 }

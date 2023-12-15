@@ -20,3 +20,7 @@ func TestCloudInit(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "vSphere Provider Cloud-Init Suite")
 }
+
+func addrOf[T any](t T) *T {
+	return &t
+}

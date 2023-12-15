@@ -95,7 +95,7 @@ func (r *Reconciler) deleteResourcePolicy(ctx *context.VirtualMachineSetResource
 	}
 
 	for _, vm := range vmsInNamespace.Items {
-		if vm.Spec.Reserved.ResourcePolicyName == resourcePolicy.Name {
+		if reserved := vm.Spec.Reserved; reserved != nil && reserved.ResourcePolicyName == resourcePolicy.Name {
 			return fmt.Errorf("failing VirtualMachineSetResourcePolicy deletion since VM: '%s' is referencing it, resourcePolicyName: '%s'",
 				vm.NamespacedName(), resourcePolicy.NamespacedName())
 		}

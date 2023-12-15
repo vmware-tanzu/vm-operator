@@ -42,6 +42,7 @@ KIND              := $(BIN_DIR)/$(GOHOSTOSARCH)/kind
 GOCOV             := $(BIN_DIR)/$(GOHOSTOSARCH)/gocov
 GOCOV_XML         := $(BIN_DIR)/$(GOHOSTOSARCH)/gocov-xml
 GOVULNCHECK       := $(BIN_DIR)/$(GOHOSTOSARCH)/govulncheck
+GOIMPORTS         := $(BIN_DIR)/$(GOHOSTOSARCH)/goimports
 
 ## --------------------------------------
 ## Help
@@ -118,6 +119,11 @@ govulncheck: $(GOVULNCHECK)  ## Install govulncheck
 $(GOVULNCHECK): go.mod
 	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
 	go build -tags=vmop_tools -o $(@) golang.org/x/vuln/cmd/govulncheck
+
+goimports: $(GOIMPORTS)  ## Install goimports
+$(GOIMPORTS): go.mod
+	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
+	go build -tags=vmop_tools -o $(@) golang.org/x/tools/cmd/goimports
 
 .PHONY: k8s-envtest
 k8s-envtest: $(SETUP_ENVTEST) ## Download envtest binaries

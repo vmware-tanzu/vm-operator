@@ -34,7 +34,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
-	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/cloudinit/validate"
+	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
@@ -215,7 +215,7 @@ func (v validator) validateBootstrap(
 				allErrs = append(allErrs, field.Invalid(p, "cloudInit",
 					"cloudConfig and rawCloudConfig are mutually exclusive"))
 			}
-			allErrs = append(allErrs, cloudinitvalidate.CloudConfig(p, *v)...)
+			allErrs = append(allErrs, cloudinitvalidate.CloudConfigJSONRawMessage(p, *v)...)
 		}
 
 	}

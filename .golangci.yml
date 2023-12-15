@@ -5,6 +5,7 @@ run:
    - external/
    - controllers/virtualmachineservice/v1alpha1/utils/
    - controllers/virtualmachineservice/v1alpha2/utils/
+   - pkg/util/cloudinit/schema/
 
 # override defaults
 linters-settings:

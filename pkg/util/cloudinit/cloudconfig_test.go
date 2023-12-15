@@ -16,14 +16,13 @@ import (
 
 	vmopv1cloudinit "github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 )
 
 var _ = Describe("CloudConfig MarshalYAML", func() {
 	var (
 		err                   error
 		data                  string
-		ctx                   context.Context
 		cloudConfig           vmopv1cloudinit.CloudConfig
 		cloudConfigSecretData cloudinit.CloudConfigSecretData
 	)
@@ -31,13 +30,12 @@ var _ = Describe("CloudConfig MarshalYAML", func() {
 	BeforeEach(func() {
 		err = nil
 		data = ""
-		ctx = context.Background()
 		cloudConfig = vmopv1cloudinit.CloudConfig{}
 		cloudConfigSecretData = cloudinit.CloudConfigSecretData{}
 	})
 
 	JustBeforeEach(func() {
-		data, err = cloudinit.MarshalYAML(ctx, cloudConfig, cloudConfigSecretData)
+		data, err = cloudinit.MarshalYAML(cloudConfig, cloudConfigSecretData)
 	})
 
 	When("CloudConfig and CloudConfigSecretData are both empty", func() {
@@ -57,7 +55,7 @@ var _ = Describe("CloudConfig MarshalYAML", func() {
 		})
 		It("Should return user data", func() {
 			Expect(err).ToNot(HaveOccurred())
-			Expect(data).To(Equal("users:\n  - name: bob.wilson\n"))
+			Expect(data).To(Equal("## template: jinja\n#cloud-config\n\nusers:\n  - name: bob.wilson\n"))
 		})
 	})
 
@@ -156,6 +154,118 @@ var _ = Describe("CloudConfig MarshalYAML", func() {
 		It("Should return user data", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(data).To(Equal(cloudConfigWithWithRunCmds))
+		})
+	})
+
+	When("CloudConfig has all possible fields set", func() {
+		BeforeEach(func() {
+			cloudConfig = vmopv1cloudinit.CloudConfig{
+				Users: []vmopv1cloudinit.User{
+					{
+						Name:         "bob.wilson",
+						CreateGroups: addrOf(false),
+						ExpireDate:   addrOf("9999-99-99"),
+						Gecos:        addrOf("gecos"),
+						Groups:       []string{"group1", "group2"},
+						HashedPasswd: &common.SecretKeySelector{
+							Name: "my-bootstrap-data",
+							Key:  "cloud-init-user-bob.wilson-hashed_passwd",
+						},
+						Homedir:           addrOf("/home/bob.wilson"),
+						Inactive:          addrOf(int32(1)),
+						LockPasswd:        addrOf(false),
+						NoCreateHome:      addrOf(false),
+						NoLogInit:         addrOf(false),
+						PrimaryGroup:      addrOf("group1"),
+						SELinuxUser:       addrOf("bob.wilson"),
+						Shell:             addrOf("/bin/bash"),
+						SnapUser:          addrOf("bob.wilson"),
+						SSHAuthorizedKeys: []string{"key1", "key2"},
+						SSHImportID:       []string{"id1", "id2"},
+						SSHRedirectUser:   addrOf(false),
+						Sudo:              addrOf("sudoyou?"),
+						System:            addrOf(false),
+						UID:               addrOf(int64(123)),
+					},
+					{
+						Name:         "rob.wilson",
+						CreateGroups: addrOf(true),
+						ExpireDate:   addrOf("9999-99-99"),
+						Gecos:        addrOf("gecos"),
+						Groups:       []string{"group1", "group2"},
+						Homedir:      addrOf("/home/rob.wilson"),
+						Inactive:     addrOf(int32(10)),
+						LockPasswd:   addrOf(true),
+						NoCreateHome: addrOf(true),
+						NoLogInit:    addrOf(true),
+						Passwd: &common.SecretKeySelector{
+							Name: "my-bootstrap-data",
+							Key:  "cloud-init-user-rob.wilson-passwd",
+						},
+						PrimaryGroup:      addrOf("group1"),
+						SELinuxUser:       addrOf("rob.wilson"),
+						Shell:             addrOf("/bin/bash"),
+						SnapUser:          addrOf("rob.wilson"),
+						SSHAuthorizedKeys: []string{"key1", "key2"},
+						SSHImportID:       []string{"id1", "id2"},
+						SSHRedirectUser:   addrOf(true),
+						Sudo:              addrOf("sudoyou?"),
+						System:            addrOf(true),
+						UID:               addrOf(int64(123)),
+					},
+				},
+				RunCmd: []json.RawMessage{
+					[]byte("ls /"),
+					[]byte(`[ "ls", "-a", "-l", "/" ]`),
+					[]byte("- echo\n- \"hello, world.\""),
+				},
+				WriteFiles: []vmopv1cloudinit.WriteFile{
+					{
+						Path:        "/hello",
+						Content:     []byte("world"),
+						Append:      true,
+						Defer:       true,
+						Encoding:    vmopv1cloudinit.WriteFileEncodingTextPlain,
+						Owner:       "bob.wilson:bob.wilson",
+						Permissions: "0644",
+					},
+					{
+						Path:        "/hi",
+						Content:     []byte("name: \"my-bootstrap-data\"\nkey: \"/hi\""),
+						Append:      false,
+						Defer:       false,
+						Encoding:    vmopv1cloudinit.WriteFileEncodingTextPlain,
+						Owner:       "rob.wilson:rob.wilson",
+						Permissions: "0755",
+					},
+					{
+						Path:        "/doc",
+						Content:     []byte("|\n  a multi-line\n  document"),
+						Append:      true,
+						Defer:       true,
+						Encoding:    vmopv1cloudinit.WriteFileEncodingTextPlain,
+						Owner:       "bob.wilson:bob.wilson",
+						Permissions: "0644",
+					},
+				},
+			}
+			cloudConfigSecretData = cloudinit.CloudConfigSecretData{
+				Users: map[string]cloudinit.CloudConfigUserSecretData{
+					"bob.wilson": {
+						HashPasswd: "0123456789",
+					},
+					"rob.wilson": {
+						Passwd: "password",
+					},
+				},
+				WriteFiles: map[string]string{
+					"/hi": "there",
+				},
+			}
+		})
+		It("Should return user data", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(data).To(Equal(cloudConfigWithAllPossibleValues))
 		})
 	})
 
@@ -315,7 +425,10 @@ var _ = Describe("CloudConfig GetSecretResources", func() {
 	})
 })
 
-const cloudConfigWithNoDefaultUser = `users:
+const cloudConfigWithNoDefaultUser = `## template: jinja
+#cloud-config
+
+users:
   - hashed_passwd: "0123456789"
     name: bob.wilson
 write_files:
@@ -325,7 +438,10 @@ write_files:
     path: /hi
 `
 
-const cloudConfigWithDefaultUser = `users:
+const cloudConfigWithDefaultUser = `## template: jinja
+#cloud-config
+
+users:
   - default
   - hashed_passwd: "0123456789"
     name: bob.wilson
@@ -336,7 +452,10 @@ write_files:
     path: /hi
 `
 
-const cloudConfigWithWithRunCmds = `users:
+const cloudConfigWithWithRunCmds = `## template: jinja
+#cloud-config
+
+users:
   - hashed_passwd: "0123456789"
     name: bob.wilson
 runcmd:
@@ -347,4 +466,94 @@ runcmd:
     - /
   - - echo
     - hello, world.
+`
+
+const cloudConfigWithAllPossibleValues = `## template: jinja
+#cloud-config
+
+users:
+  - create_groups: false
+    expiredate: 9999-99-99
+    gecos: gecos
+    groups:
+      - group1
+      - group2
+    hashed_passwd: "0123456789"
+    homedir: /home/bob.wilson
+    inactive: "1"
+    lock_passwd: false
+    name: bob.wilson
+    no_create_home: false
+    no_log_init: false
+    primary_group: group1
+    selinux_user: bob.wilson
+    shell: /bin/bash
+    snapuser: bob.wilson
+    ssh_authorized_keys:
+      - key1
+      - key2
+    ssh_import_id:
+      - id1
+      - id2
+    ssh_redirect_user: false
+    sudo: sudoyou?
+    system: false
+    uid: 123
+  - create_groups: true
+    expiredate: 9999-99-99
+    gecos: gecos
+    groups:
+      - group1
+      - group2
+    homedir: /home/rob.wilson
+    inactive: "10"
+    lock_passwd: true
+    name: rob.wilson
+    no_create_home: true
+    no_log_init: true
+    passwd: password
+    primary_group: group1
+    selinux_user: rob.wilson
+    shell: /bin/bash
+    snapuser: rob.wilson
+    ssh_authorized_keys:
+      - key1
+      - key2
+    ssh_import_id:
+      - id1
+      - id2
+    ssh_redirect_user: true
+    sudo: sudoyou?
+    system: true
+    uid: 123
+runcmd:
+  - ls /
+  - - ls
+    - -a
+    - -l
+    - /
+  - - echo
+    - hello, world.
+write_files:
+  - append: true
+    content: world
+    defer: true
+    encoding: text/plain
+    owner: bob.wilson:bob.wilson
+    path: /hello
+    permissions: "0644"
+  - content: there
+    encoding: text/plain
+    owner: rob.wilson:rob.wilson
+    path: /hi
+    permissions: "0755"
+  - append: true
+    content: |-
+      a multi-line
+      document
+    defer: true
+    encoding: text/plain
+    owner: bob.wilson:bob.wilson
+    path: /doc
+    permissions: "0644"
 `

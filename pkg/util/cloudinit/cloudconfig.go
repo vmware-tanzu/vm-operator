@@ -7,12 +7,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+
+	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 )
 
 // cloudConfig provides support for marshalling the object to a valid
@@ -45,7 +48,7 @@ type user struct {
 	Groups            []string `json:"groups,omitempty" yaml:"groups,omitempty"`
 	HashedPasswd      string   `json:"hashed_passwd,omitempty" yaml:"hashed_passwd,omitempty"`
 	Homedir           *string  `json:"homedir,omitempty" yaml:"homedir,omitempty"`
-	Inactive          *int32   `json:"inactive,omitempty" yaml:"inactive,omitempty"`
+	Inactive          *string  `json:"inactive,omitempty" yaml:"inactive,omitempty"`
 	LockPasswd        *bool    `json:"lock_passwd,omitempty" yaml:"lock_passwd,omitempty"`
 	Name              string   `json:"name" yaml:"name"`
 	NoCreateHome      *bool    `json:"no_create_home,omitempty" yaml:"no_create_home,omitempty"`
@@ -76,8 +79,9 @@ type writeFile struct {
 
 const emptyYAMLObject = "{}\n"
 
+// MarshalYAML marshals the provided CloudConfig and secret data to a valid,
+// YAML CloudConfig document.
 func MarshalYAML(
-	ctx context.Context,
 	in cloudinit.CloudConfig,
 	secret CloudConfigSecretData) (string, error) {
 
@@ -119,24 +123,53 @@ func MarshalYAML(
 
 	if l := len(in.WriteFiles); l > 0 {
 		out.WriteFiles = make([]writeFile, l)
+
 		for i := range in.WriteFiles {
+
+			// If the content was not derived from a secret, then get it as
+			// a string from the Content field.
+			content := secret.WriteFiles[in.WriteFiles[i].Path]
+			if content == "" {
+				if err := yaml.Unmarshal(
+					in.WriteFiles[i].Content, &content); err != nil {
+
+					return "", err
+				}
+			}
+
 			copyWriteFile(
 				in.WriteFiles[i],
 				&out.WriteFiles[i],
-				secret.WriteFiles[in.WriteFiles[i].Path])
+				content)
 		}
 	}
 
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
+	var w1 bytes.Buffer
+	fmt.Fprintln(&w1, "## template: jinja")
+	fmt.Fprintln(&w1, "#cloud-config")
+	fmt.Fprintln(&w1, "")
+
+	var w2 bytes.Buffer
+	enc := yaml.NewEncoder(&w2)
 	enc.SetIndent(2)
 	if err := enc.Encode(out); err != nil {
 		return "", err
 	}
 
-	data := buf.String()
+	data := w2.String()
 	if data == emptyYAMLObject {
 		return "", nil
+	}
+
+	if _, err := w1.WriteString(data); err != nil {
+		return "", err
+	}
+
+	data = w1.String()
+
+	// Validate the produced CloudConfig YAML using the CloudConfig schema.
+	if err := validate.CloudConfigYAML(data); err != nil {
+		return "", err
 	}
 
 	return data, nil
@@ -158,7 +191,12 @@ func copyUser(
 
 	out.HashedPasswd = secret.HashPasswd
 	out.Homedir = in.Homedir
-	out.Inactive = in.Inactive
+
+	if v := in.Inactive; v != nil {
+		s := strconv.Itoa(int(*v))
+		out.Inactive = &s
+	}
+
 	out.LockPasswd = in.LockPasswd
 	out.Name = in.Name
 	out.NoCreateHome = in.NoCreateHome
@@ -216,10 +254,8 @@ func (ccu *cloudConfigUsers) MarshalYAML() (any, error) {
 
 func (ccu cloudConfigRunCmd) MarshalYAML() (any, error) {
 	if ccu.singleString != "" {
-		fmt.Printf("singleStringVal=%s\n", ccu.singleString)
 		return ccu.singleString, nil
 	} else if len(ccu.listOfStrings) > 0 {
-		fmt.Printf("listOfStrings=%v\n", ccu.listOfStrings)
 		return ccu.listOfStrings, nil
 	}
 	return nil, nil

@@ -13,7 +13,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/cloudinit"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/internal"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
@@ -53,7 +53,7 @@ func BootStrapCloudInit(
 		if bsArgs.CloudConfig == nil {
 			return nil, nil, fmt.Errorf("cloudConfigSecretData is nil")
 		}
-		data, err := cloudinit.MarshalYAML(vmCtx, *cooked, *bsArgs.CloudConfig)
+		data, err := cloudinit.MarshalYAML(*cooked, *bsArgs.CloudConfig)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -4,11 +4,13 @@
 package v1alpha1
 
 import (
+	"encoding/json"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiconversion "k8s.io/apimachinery/pkg/conversion"
+	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -404,6 +406,7 @@ func (dst *VirtualMachineImage) ConvertFrom(srcRaw conversion.Hub) error {
 		// The provider is always in the same namespace.
 		dst.Spec.ProviderRef.Namespace = src.Namespace
 	}
+	dst.Status.ContentLibraryRef = readContentLibRefConversionAnnotation(src)
 
 	return nil
 }
@@ -455,7 +458,17 @@ func (dst *ClusterVirtualMachineImage) ConvertFrom(srcRaw conversion.Hub) error 
 		return err
 	}
 
+	dst.Status.ContentLibraryRef = readContentLibRefConversionAnnotation(src)
+
 	return nil
+}
+
+func readContentLibRefConversionAnnotation(from ctrl.Object) (objRef *corev1.TypedLocalObjectReference) {
+	if data, ok := from.GetAnnotations()[v1alpha2.VMIContentLibRefAnnotation]; ok {
+		objRef = &corev1.TypedLocalObjectReference{}
+		_ = json.Unmarshal([]byte(data), objRef)
+	}
+	return
 }
 
 // ConvertTo converts this ClusterVirtualMachineImageList to the Hub version.

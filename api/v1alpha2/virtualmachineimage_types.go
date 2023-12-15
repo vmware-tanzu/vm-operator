@@ -31,6 +31,12 @@ const (
 	VirtualMachineImageCapabilityLabel = "capability.image." + GroupName + "/"
 )
 
+const (
+	// VMIContentLibRefAnnotation is the key for the annotation that stores the content library
+	// reference for VMI and CVMI down conversion.
+	VMIContentLibRefAnnotation = "vmoperator.vmware.com/conversion-content-lib-ref"
+)
+
 // Condition reasons for VirtualMachineImages.
 const (
 	// VirtualMachineImageNotSyncedReason documents that the VirtualMachineImage is not synced with

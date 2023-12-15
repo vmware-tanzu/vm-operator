@@ -100,11 +100,29 @@ func clItemReconcile() {
 				waitForVirtualMachineImageNotReady(vmiKey)
 			})
 
+			By("VirtualMachineImage should have owner refs set", func() {
+				item := &vmopv1.VirtualMachineImage{}
+				Expect(ctx.Client.Get(ctx, vmiKey, item)).To(Succeed())
+
+				Expect(item.OwnerReferences).To(HaveLen(1))
+				Expect(item.OwnerReferences[0].Name).To(Equal(origCLItem.Name))
+				Expect(item.OwnerReferences[0].APIVersion).To(Equal(imgregv1a1.GroupVersion.String()))
+			})
+
 			clItem := &imgregv1a1.ContentLibraryItem{}
 			By("Update ContentLibraryItem to populate Status and be Ready", func() {
 				Expect(ctx.Client.Get(ctx, clItemKey, clItem)).To(Succeed())
 				clItem.Status = origCLItem.Status
 				Expect(ctx.Client.Status().Update(ctx, clItem)).To(Succeed())
+
+				By("VirtualMachineImage should have conversion annotation set", func() {
+					Eventually(func(g Gomega) {
+						image := &vmopv1.VirtualMachineImage{}
+						g.Expect(ctx.Client.Get(ctx, vmiKey, image)).To(Succeed())
+						g.Expect(len(image.Annotations)).To(BeNumerically(">=", 1))
+						g.Expect(image.Annotations).To(HaveKey(vmopv1.VMIContentLibRefAnnotation))
+					}).Should(Succeed())
+				})
 			})
 
 			By("VirtualMachineImage becomes ready", func() {

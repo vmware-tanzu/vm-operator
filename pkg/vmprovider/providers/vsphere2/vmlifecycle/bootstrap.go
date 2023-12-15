@@ -57,7 +57,8 @@ func DoBootstrap(
 
 	bootstrap := vmCtx.VM.Spec.Bootstrap
 	if bootstrap == nil {
-		return nil
+		// For backwards compat we have to keep going and default to LinuxPrep.
+		bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
 	}
 
 	cloudInit := bootstrap.CloudInit

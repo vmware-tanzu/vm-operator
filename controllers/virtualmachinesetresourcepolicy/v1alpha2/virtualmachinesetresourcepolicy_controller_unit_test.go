@@ -36,7 +36,7 @@ func unitTestsReconcile() {
 
 		resourcePolicyCtx *context.VirtualMachineSetResourcePolicyContextA2
 		resourcePolicy    *vmopv1.VirtualMachineSetResourcePolicy
-		vm                *vmopv1.VirtualMachine
+		vm, vmNoReserved  *vmopv1.VirtualMachine
 	)
 
 	BeforeEach(func() {
@@ -46,6 +46,12 @@ func unitTestsReconcile() {
 				Namespace: "dummy-ns",
 			},
 			Spec: vmopv1.VirtualMachineSetResourcePolicySpec{},
+		}
+		vmNoReserved = &vmopv1.VirtualMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dummy-vm-no-reserved",
+				Namespace: "dummy-ns",
+			},
 		}
 		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
@@ -103,7 +109,7 @@ func unitTestsReconcile() {
 
 		When("One or more VMs are referencing this policy", func() {
 			BeforeEach(func() {
-				initObjects = append(initObjects, vm)
+				initObjects = append(initObjects, vm, vmNoReserved)
 			})
 
 			AfterEach(func() {

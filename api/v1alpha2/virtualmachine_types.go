@@ -117,15 +117,13 @@ const (
 	ManagedByExtensionKey  = "com.vmware.vcenter.wcp"
 	ManagedByExtensionType = "VirtualMachine"
 
-	// VMBackupKubeDataExtraConfigKey is the ExtraConfig key to persist the VM's
-	// Kubernetes resource spec data, compressed using gzip and base64-encoded.
-	VMBackupKubeDataExtraConfigKey = "vmservice.virtualmachine.kubedata"
-	// VMBackupBootstrapDataExtraConfigKey is the ExtraConfig key to persist the
-	// VM's bootstrap data object, compressed using gzip and base64-encoded.
-	VMBackupBootstrapDataExtraConfigKey = "vmservice.virtualmachine.bootstrapdata"
-	// VMBackupDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
-	// attached disk info in JSON, compressed using gzip and base64-encoded.
-	VMBackupDiskDataExtraConfigKey = "vmservice.virtualmachine.diskdata"
+	// VMBackupKubeObjectsYAMLExtraConfigKey is the ExtraConfig key to persist VM
+	// and its relevant Kubernetes resource YAML separated by "---", compressed
+	// using gzip and base64-encoded.
+	VMBackupKubeObjectsYAMLExtraConfigKey = "vmservice.virtualmachine.kube.objects.yaml"
+	// VMBackupPVCDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
+	// PVC disk data in JSON, compressed using gzip and base64-encoded.
+	VMBackupPVCDiskDataExtraConfigKey = "vmservice.virtualmachine.pvc.disk.data"
 	// VMBackupCloudInitInstanceIDExtraConfigKey is the ExtraConfig key to persist
 	// the VM's Cloud-Init instance ID, compressed using gzip and base64-encoded.
 	VMBackupCloudInitInstanceIDExtraConfigKey = "vmservice.virtualmachine.cloudinit.instanceid"

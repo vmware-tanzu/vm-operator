@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
@@ -929,6 +930,278 @@ func vmUtilTests() {
 			pvc := diskUUIDToPVCMap[attachedDiskUUID]
 			Expect(pvc.Name).To(Equal(attachedPVC.Name))
 			Expect(pvc.Namespace).To(Equal(attachedPVC.Namespace))
+		})
+	})
+
+	Context("GetKubeObjectsForBackup", func() {
+
+		When("VM spec has no bootstrap data set", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = nil
+			})
+
+			It("Should return VM object only", func() {
+				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(objects).To(HaveLen(1))
+				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
+			})
+		})
+
+		When("VM spec has bootstrap in CloudConfig referencing a Secret object", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						CloudConfig: &cloudinit.CloudConfig{
+							Users: []cloudinit.User{
+								{
+									HashedPasswd: &common.SecretKeySelector{
+										Name: "dummy-cloud-config-secret",
+									},
+								},
+							},
+						},
+					},
+				}
+				initObjects = append(initObjects, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vmCtx.VM.Namespace,
+						Name:      "dummy-cloud-config-secret",
+					},
+				})
+			})
+
+			It("Should return VM and secret objects", func() {
+				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(objects).To(HaveLen(2))
+				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
+				Expect(objects[1].GetName()).To(Equal("dummy-cloud-config-secret"))
+			})
+		})
+
+		When("VM spec has bootstrap in RawCloudConfig referencing a Secret object", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						RawCloudConfig: &common.SecretKeySelector{
+							Name: "dummy-raw-cloud-secret",
+						},
+					},
+				}
+				initObjects = append(initObjects, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vmCtx.VM.Namespace,
+						Name:      "dummy-raw-cloud-secret",
+					},
+				})
+			})
+
+			It("Should return VM and Secret objects", func() {
+				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(objects).To(HaveLen(2))
+				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
+				Expect(objects[1].GetName()).To(Equal("dummy-raw-cloud-secret"))
+			})
+		})
+
+		When("VM spec has bootstrap in RawCloudConfig referencing a ConfigMap object", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						RawCloudConfig: &common.SecretKeySelector{
+							Name: "dummy-raw-cloud-config-map",
+						},
+					},
+				}
+				initObjects = append(initObjects, &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vmCtx.VM.Namespace,
+						Name:      "dummy-raw-cloud-config-map",
+					},
+				})
+			})
+
+			It("Should return VM and ConfigMap objects", func() {
+				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(objects).To(HaveLen(2))
+				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
+				Expect(objects[1].GetName()).To(Equal("dummy-raw-cloud-config-map"))
+			})
+		})
+
+		When("VM spec has bootstrap in Sysprep referencing a Secret object", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+						Sysprep: &sysprep.Sysprep{
+							UserData: &sysprep.UserData{
+								ProductID: &sysprep.ProductIDSecretKeySelector{
+									Name: "dummy-sysprep-secret",
+								},
+							},
+						},
+					},
+				}
+				initObjects = append(initObjects, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vmCtx.VM.Namespace,
+						Name:      "dummy-sysprep-secret",
+					},
+				})
+			})
+
+			It("Should return VM and Secret objects", func() {
+				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(objects).To(HaveLen(2))
+				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
+				Expect(objects[1].GetName()).To(Equal("dummy-sysprep-secret"))
+			})
+		})
+
+		When("VM spec has bootstrap in RawSysprep referencing a Secret object", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+						RawSysprep: &common.SecretKeySelector{
+							Name: "dummy-raw-sysprep-secret",
+						},
+					},
+				}
+				initObjects = append(initObjects, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vmCtx.VM.Namespace,
+						Name:      "dummy-raw-sysprep-secret",
+					},
+				})
+			})
+
+			It("Should return VM and secret objects", func() {
+				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(objects).To(HaveLen(2))
+				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
+				Expect(objects[1].GetName()).To(Equal("dummy-raw-sysprep-secret"))
+			})
+		})
+
+		When("VM spec has bootstrap in RawSysprep referencing a ConfigMap object", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+						RawSysprep: &common.SecretKeySelector{
+							Name: "dummy-raw-sysprep-config-map",
+						},
+					},
+				}
+				initObjects = append(initObjects, &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vmCtx.VM.Namespace,
+						Name:      "dummy-raw-sysprep-config-map",
+					},
+				})
+			})
+
+			It("Should return VM and ConfigMap objects", func() {
+				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(objects).To(HaveLen(2))
+				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
+				Expect(objects[1].GetName()).To(Equal("dummy-raw-sysprep-config-map"))
+			})
+		})
+
+		When("VM spec has bootstrap in VAppConfig Properties referencing a Secret object", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+						Properties: []common.KeyValueOrSecretKeySelectorPair{
+							{
+								Value: common.ValueOrSecretKeySelector{
+									From: &common.SecretKeySelector{
+										Name: "dummy-vapp-config-property-secret",
+									},
+								},
+							},
+						},
+					},
+				}
+				initObjects = append(initObjects, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vmCtx.VM.Namespace,
+						Name:      "dummy-vapp-config-property-secret",
+					},
+				})
+			})
+
+			It("Should return VM and Secret objects", func() {
+				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(objects).To(HaveLen(2))
+				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
+				Expect(objects[1].GetName()).To(Equal("dummy-vapp-config-property-secret"))
+			})
+		})
+
+		When("VM spec has bootstrap in VAppConfig RawProperties referencing a Secret object", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+						RawProperties: "dummy-raw-vapp-config-secret",
+					},
+				}
+				initObjects = append(initObjects, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vmCtx.VM.Namespace,
+						Name:      "dummy-raw-vapp-config-secret",
+					},
+				})
+			})
+
+			It("Should return VM and Secret objects", func() {
+				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(objects).To(HaveLen(2))
+				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
+				Expect(objects[1].GetName()).To(Equal("dummy-raw-vapp-config-secret"))
+			})
+		})
+
+		When("VM spec has bootstrap in VAppConfig RawProperties referencing a ConfigMap object", func() {
+
+			BeforeEach(func() {
+				vmCtx.VM.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+						RawProperties: "dummy-raw-vapp-config-config-map",
+					},
+				}
+				initObjects = append(initObjects, &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: vmCtx.VM.Namespace,
+						Name:      "dummy-raw-vapp-config-config-map",
+					},
+				})
+			})
+
+			It("Should return VM and Secret objects", func() {
+				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(objects).To(HaveLen(2))
+				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
+				Expect(objects[1].GetName()).To(Equal("dummy-raw-vapp-config-config-map"))
+			})
 		})
 	})
 }

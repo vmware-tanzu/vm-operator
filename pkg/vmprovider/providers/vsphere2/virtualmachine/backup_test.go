@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	. "github.com/onsi/ginkgo"
@@ -56,67 +57,85 @@ func backupTests() {
 		ctx = nil
 	})
 
-	Context("VM Kube data", func() {
+	Context("Backup kube objects YAML", func() {
 		BeforeEach(func() {
-			vmCtx.VM = builder.DummyVirtualMachineA2()
+			vm := builder.DummyVirtualMachineA2()
+			// Set the VM's UID and ResourceVersion to verify if the backup data is up-to-date.
+			vm.UID = "vm-uid-test"
+			vm.ResourceVersion = "0"
+			vmCtx.VM = vm
 		})
 
-		When("VM kube data exists in ExtraConfig but is not up-to-date", func() {
+		When("No kube object is stored in ExtraConfig", func() {
+
+			It("Should backup given kube objects as encoded, gzipped YAML in ExtraConfig", func() {
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx:       vmCtx,
+					VcVM:        vcVM,
+					KubeObjects: []client.Object{vmCtx.VM},
+				}
+
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+				vmYAML, err := yaml.Marshal(vmCtx.VM)
+				Expect(err).NotTo(HaveOccurred())
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey, string(vmYAML))
+			})
+		})
+
+		When("Kube objects data exists in ExtraConfig but is not up-to-date", func() {
 
 			BeforeEach(func() {
 				oldVM := vmCtx.VM.DeepCopy()
-				oldVM.ObjectMeta.Generation = 1
-				oldVMYaml, err := yaml.Marshal(oldVM)
+				oldVM.ObjectMeta.ResourceVersion = "1"
+				oldVMYAML, err := yaml.Marshal(oldVM)
 				Expect(err).NotTo(HaveOccurred())
-				backupVMYamlEncoded, err := util.EncodeGzipBase64(string(oldVMYaml))
+				yamlEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
 				Expect(err).NotTo(HaveOccurred())
 
 				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
 					ExtraConfig: []types.BaseOptionValue{
 						&types.OptionValue{
-							Key:   vmopv1.VMBackupKubeDataExtraConfigKey,
-							Value: backupVMYamlEncoded,
+							Key:   vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey,
+							Value: yamlEncoded,
 						},
 					},
 				})
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("Should backup VM kube data YAML with the latest spec", func() {
-				vmCtx.VM.ObjectMeta.Generation = 2
-				backupVMCtx := context.BackupVirtualMachineContextA2{
-					VMCtx:         vmCtx,
-					VcVM:          vcVM,
-					BootstrapData: nil,
-					DiskUUIDToPVC: nil,
+			It("Should backup kube objects YAML with the latest version", func() {
+				vmCtx.VM.ObjectMeta.ResourceVersion = "2"
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx:       vmCtx,
+					VcVM:        vcVM,
+					KubeObjects: []client.Object{vmCtx.VM},
 				}
-				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
 
-				vmCopy := vmCtx.VM.DeepCopy()
-				vmCopy.Status = vmopv1.VirtualMachineStatus{}
-				vmCopyYaml, err := yaml.Marshal(vmCopy)
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+				newVMYAML, err := yaml.Marshal(vmCtx.VM)
 				Expect(err).NotTo(HaveOccurred())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupKubeDataExtraConfigKey, string(vmCopyYaml))
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey, string(newVMYAML))
 			})
 		})
 
-		When("VM kube data exists in ExtraConfig and is up-to-date", func() {
+		When("Kube objects data exists in ExtraConfig and is up-to-date", func() {
 			var (
-				kubeDataBackup = ""
+				kubeObjectsBackupStr = ""
 			)
 
 			BeforeEach(func() {
-				vmYaml, err := yaml.Marshal(vmCtx.VM)
+				vmCtx.VM.ObjectMeta.ResourceVersion = "3"
+				vmYAML, err := yaml.Marshal(vmCtx.VM)
 				Expect(err).NotTo(HaveOccurred())
-				kubeDataBackup = string(vmYaml)
-				encodedKubeDataBackup, err := util.EncodeGzipBase64(kubeDataBackup)
+				kubeObjectsBackupStr = string(vmYAML)
+				encodedKubeObjectsBackup, err := util.EncodeGzipBase64(kubeObjectsBackupStr)
 				Expect(err).NotTo(HaveOccurred())
 
 				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
 					ExtraConfig: []types.BaseOptionValue{
 						&types.OptionValue{
-							Key:   vmopv1.VMBackupKubeDataExtraConfigKey,
-							Value: encodedKubeDataBackup,
+							Key:   vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey,
+							Value: encodedKubeObjectsBackup,
 						},
 					},
 				})
@@ -126,69 +145,49 @@ func backupTests() {
 			It("Should skip backing up VM kube data", func() {
 				// Update the VM to verify its kube data is not backed up in ExtraConfig.
 				vmCtx.VM.Labels = map[string]string{"foo": "bar"}
-				backupVMCtx := context.BackupVirtualMachineContextA2{
-					VMCtx:         vmCtx,
-					VcVM:          vcVM,
-					BootstrapData: nil,
-					DiskUUIDToPVC: nil,
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx:       vmCtx,
+					VcVM:        vcVM,
+					KubeObjects: []client.Object{vmCtx.VM},
 				}
-				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupKubeDataExtraConfigKey, kubeDataBackup)
+
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey, kubeObjectsBackupStr)
 			})
 		})
 	})
 
-	Context("VM bootstrap data", func() {
-
-		It("Should back up bootstrap data as JSON in ExtraConfig", func() {
-			bootstrapDataRaw := map[string]string{"foo": "bar"}
-			backupVMCtx := context.BackupVirtualMachineContextA2{
-				VMCtx:         vmCtx,
-				VcVM:          vcVM,
-				BootstrapData: bootstrapDataRaw,
-				DiskUUIDToPVC: nil,
-			}
-			Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
-
-			bootstrapDataJSON, err := json.Marshal(bootstrapDataRaw)
-			Expect(err).NotTo(HaveOccurred())
-			verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupBootstrapDataExtraConfigKey, string(bootstrapDataJSON))
-		})
-	})
-
-	Context("VM Disk data", func() {
+	Context("Backup PVC Disk Data", func() {
 
 		When("VM has no disks that are attached from PVCs", func() {
 
-			It("Should skip backing up VM disk data", func() {
-				backupVMCtx := context.BackupVirtualMachineContextA2{
+			It("Should skip backing up PVC disk data", func() {
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
 					VMCtx:         vmCtx,
 					VcVM:          vcVM,
-					BootstrapData: nil,
 					DiskUUIDToPVC: nil,
 				}
-				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupDiskDataExtraConfigKey, "")
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupPVCDiskDataExtraConfigKey, "")
 			})
 		})
 
 		When("VM has disks that are attached from PVCs", func() {
 
-			It("Should backup VM disk data as JSON in ExtraConfig", func() {
+			It("Should backup PVC disk data as JSON in ExtraConfig", func() {
 				dummyPVC := builder.DummyPersistentVolumeClaim()
 				diskUUIDToPVC := map[string]corev1.PersistentVolumeClaim{
 					vcSimDiskUUID: *dummyPVC,
 				}
 
-				backupVMCtx := context.BackupVirtualMachineContextA2{
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
 					VMCtx:         vmCtx,
 					VcVM:          vcVM,
-					BootstrapData: nil,
 					DiskUUIDToPVC: diskUUIDToPVC,
 				}
-				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 
-				diskData := []virtualmachine.VMDiskData{
+				diskData := []virtualmachine.PVCDiskData{
 					{
 						FileName:    vcSimDiskFileName,
 						PVCName:     dummyPVC.Name,
@@ -197,12 +196,12 @@ func backupTests() {
 				}
 				diskDataJSON, err := json.Marshal(diskData)
 				Expect(err).NotTo(HaveOccurred())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupDiskDataExtraConfigKey, string(diskDataJSON))
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupPVCDiskDataExtraConfigKey, string(diskDataJSON))
 			})
 		})
 	})
 
-	Context("VM cloud-init instance ID data", func() {
+	Context("Backup VM cloud-init instance ID data", func() {
 
 		BeforeEach(func() {
 			vmCtx.VM = builder.DummyVirtualMachineA2()
@@ -226,13 +225,11 @@ func backupTests() {
 			})
 
 			It("Should not change the cloud-init instance ID in VM's ExtraConfig", func() {
-				backupVMCtx := context.BackupVirtualMachineContextA2{
-					VMCtx:         vmCtx,
-					VcVM:          vcVM,
-					BootstrapData: nil,
-					DiskUUIDToPVC: nil,
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx: vmCtx,
+					VcVM:  vcVM,
 				}
-				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey, "ec-instance-id")
 			})
 		})
@@ -247,13 +244,11 @@ func backupTests() {
 			})
 
 			It("Should backup the cloud-init instance ID from annotations", func() {
-				backupVMCtx := context.BackupVirtualMachineContextA2{
-					VMCtx:         vmCtx,
-					VcVM:          vcVM,
-					BootstrapData: nil,
-					DiskUUIDToPVC: nil,
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx: vmCtx,
+					VcVM:  vcVM,
 				}
-				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey, "annotation-instance-id")
 			})
 		})
@@ -266,13 +261,11 @@ func backupTests() {
 			})
 
 			It("Should backup the cloud-init instance ID from VM K8s resource UID", func() {
-				backupVMCtx := context.BackupVirtualMachineContextA2{
-					VMCtx:         vmCtx,
-					VcVM:          vcVM,
-					BootstrapData: nil,
-					DiskUUIDToPVC: nil,
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx: vmCtx,
+					VcVM:  vcVM,
 				}
-				Expect(virtualmachine.BackupVirtualMachine(backupVMCtx)).To(Succeed())
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 			})
 		})
 	})

@@ -447,3 +447,96 @@ func GetAttachedDiskUUIDToPVC(
 
 	return diskUUIDToPVC, nil
 }
+
+// GetKubeObjectsForBackup returns a list of Kubernetes client objects that are
+// required for backup, including VM itself and bootstrap referenced objects.
+func GetKubeObjectsForBackup(
+	vmCtx context.VirtualMachineContextA2,
+	k8sClient ctrlclient.Client) ([]ctrlclient.Object, error) {
+	var objects []ctrlclient.Object
+	objects = append(objects, vmCtx.VM)
+
+	// Get bootstrap related objects from CloudInit or Sysprep (mutually exclusive).
+	if bootstrapSpec := vmCtx.VM.Spec.Bootstrap; bootstrapSpec != nil {
+		if v := bootstrapSpec.CloudInit; v != nil {
+			if cooked := v.CloudConfig; cooked != nil {
+				out, err := cloudinit.GetSecretResources(vmCtx, k8sClient, vmCtx.VM.Namespace, *cooked)
+				if err != nil {
+					return nil, err
+				}
+				objects = append(objects, out...)
+			} else if raw := v.RawCloudConfig; raw != nil {
+				obj, err := getSecretOrConfigMapObject(vmCtx, k8sClient, raw.Name, true)
+				if err != nil {
+					return nil, err
+				}
+				objects = append(objects, obj)
+			}
+		} else if v := bootstrapSpec.Sysprep; v != nil {
+			if cooked := v.Sysprep; cooked != nil {
+				out, err := sysprep.GetSecretResources(vmCtx, k8sClient, vmCtx.VM.Namespace, cooked)
+				if err != nil {
+					return nil, err
+				}
+				objects = append(objects, out...)
+			} else if raw := v.RawSysprep; raw != nil {
+				obj, err := getSecretOrConfigMapObject(vmCtx, k8sClient, raw.Name, true)
+				if err != nil {
+					return nil, err
+				}
+				objects = append(objects, obj)
+			}
+		}
+
+		// Get bootstrap related objects from vAppConfig (can be used alongside LinuxPrep/Sysprep).
+		if vApp := bootstrapSpec.VAppConfig; vApp != nil {
+			if cooked := vApp.Properties; cooked != nil {
+				for _, p := range vApp.Properties {
+					if from := p.Value.From; from != nil {
+						// vAppConfig Properties are backed by Secret resources only.
+						obj, err := getSecretOrConfigMapObject(vmCtx, k8sClient, from.Name, false)
+						if err != nil {
+							return nil, err
+						}
+						objects = append(objects, obj)
+					}
+				}
+			} else if raw := vApp.RawProperties; raw != "" {
+				obj, err := getSecretOrConfigMapObject(vmCtx, k8sClient, raw, true)
+				if err != nil {
+					return nil, err
+				}
+				objects = append(objects, obj)
+			}
+		}
+	}
+
+	return objects, nil
+}
+
+func getSecretOrConfigMapObject(
+	vmCtx context.VirtualMachineContextA2,
+	k8sClient ctrlclient.Client,
+	resourceName string,
+	configMapFallback bool) (ctrlclient.Object, error) {
+	key := ctrlclient.ObjectKey{Name: resourceName, Namespace: vmCtx.VM.Namespace}
+	secret := &corev1.Secret{}
+	err := k8sClient.Get(vmCtx, key, secret)
+	if err != nil {
+		configMap := &corev1.ConfigMap{}
+
+		// For backwards compat if we cannot find the Secret, fallback to a ConfigMap. In v1a1, either a
+		// Secret and ConfigMap was supported for metadata (bootstrap) as separate fields, but v1a2 only
+		// supports Secrets.
+		if configMapFallback && apierrors.IsNotFound(err) {
+			// Use the Secret error since the error message isn't misleading.
+			if k8sClient.Get(vmCtx, key, configMap) == nil {
+				err = nil
+			}
+		}
+
+		return configMap, err
+	}
+
+	return secret, err
+}

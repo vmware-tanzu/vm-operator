@@ -399,25 +399,26 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	// Back up the VM at the end after a successful update.
 	if lib.IsVMServiceBackupRestoreFSSEnabled() {
 		vmCtx.Logger.V(4).Info("Backing up VirtualMachine")
-		// TODO: Support backing up vAppConfig bootstrap data.
-		bsData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
+
+		kubeObjects, err := GetKubeObjectsForBackup(vmCtx, vs.k8sClient)
 		if err != nil {
-			vmCtx.Logger.Error(err, "Failed to get VM's bootstrap data for backup")
-			return err
-		}
-		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
-		if err != nil {
-			vmCtx.Logger.Error(err, "Failed to get VM's attached PVCs for backup")
+			vmCtx.Logger.Error(err, "Failed to get kube objects for backup")
 			return err
 		}
 
-		backupVMCtx := context.BackupVirtualMachineContextA2{
+		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
+		if err != nil {
+			vmCtx.Logger.Error(err, "Failed to get disk uuid to PVC for backup")
+			return err
+		}
+
+		backupOpts := virtualmachine.BackupVirtualMachineOptions{
 			VMCtx:         vmCtx,
 			VcVM:          vcVM,
-			BootstrapData: bsData.Data,
+			KubeObjects:   kubeObjects,
 			DiskUUIDToPVC: diskUUIDToPVC,
 		}
-		if err := virtualmachine.BackupVirtualMachine(backupVMCtx); err != nil {
+		if err := virtualmachine.BackupVirtualMachine(backupOpts); err != nil {
 			vmCtx.Logger.Error(err, "Failed to backup VM")
 			return err
 		}

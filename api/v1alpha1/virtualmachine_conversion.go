@@ -225,6 +225,9 @@ func convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(
 				out.Transport = VirtualMachineMetadataExtraConfigTransport
 			case "user-data":
 				out.Transport = VirtualMachineMetadataCloudInitTransport
+			default:
+				// Best approx we can do.
+				out.Transport = VirtualMachineMetadataCloudInitTransport
 			}
 		} else if cloudInit.CloudConfig != nil {
 			out.Transport = VirtualMachineMetadataCloudInitTransport
@@ -358,34 +361,39 @@ func convert_v1alpha2_ReadinessProbeSpec_To_v1alpha1_Probe(in *v1alpha2.VirtualM
 }
 
 func convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha2_VirtualMachineAdvancedSpec(
-	in *VirtualMachineAdvancedOptions) *v1alpha2.VirtualMachineAdvancedSpec {
+	in *VirtualMachineAdvancedOptions, inVolumes []VirtualMachineVolume) *v1alpha2.VirtualMachineAdvancedSpec {
 
-	if in == nil || apiequality.Semantic.DeepEqual(*in, VirtualMachineAdvancedOptions{}) {
+	bootDiskCapacity := convert_v1alpha1_VsphereVolumes_To_v1alpha2_BootDiskCapacity(inVolumes)
+
+	if (in == nil || apiequality.Semantic.DeepEqual(*in, VirtualMachineAdvancedOptions{})) && bootDiskCapacity == nil {
 		return nil
 	}
 
 	out := v1alpha2.VirtualMachineAdvancedSpec{}
+	out.BootDiskCapacity = bootDiskCapacity
 
-	if opts := in.DefaultVolumeProvisioningOptions; opts != nil {
-		if opts.ThinProvisioned != nil {
-			if *opts.ThinProvisioned {
-				out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThin
-			} else {
-				out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThick
+	if in != nil {
+		if opts := in.DefaultVolumeProvisioningOptions; opts != nil {
+			if opts.ThinProvisioned != nil {
+				if *opts.ThinProvisioned {
+					out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThin
+				} else {
+					out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThick
+				}
+			} else if opts.EagerZeroed != nil && *opts.EagerZeroed {
+				out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThickEagerZero
 			}
-		} else if opts.EagerZeroed != nil && *opts.EagerZeroed {
-			out.DefaultVolumeProvisioningMode = v1alpha2.VirtualMachineVolumeProvisioningModeThickEagerZero
 		}
-	}
 
-	if in.ChangeBlockTracking != nil {
-		out.ChangeBlockTracking = *in.ChangeBlockTracking
+		if in.ChangeBlockTracking != nil {
+			out.ChangeBlockTracking = *in.ChangeBlockTracking
+		}
 	}
 
 	return &out
 }
 
-func convert_v1alpha1_VsphereVolumes_To_v1alpah2_BootDiskCapacity(volumes []VirtualMachineVolume) *resource.Quantity {
+func convert_v1alpha1_VsphereVolumes_To_v1alpha2_BootDiskCapacity(volumes []VirtualMachineVolume) *resource.Quantity {
 	// The v1a1 VsphereVolume was never a great API as you had to know the DeviceKey upfront; at the time our
 	// API was private - only used by CAPW - and predates the "VM Service" VMs; In v1a2, we only support resizing
 	// the boot disk via an explicit field. As good as we can here, map v1a1 volume into the v1a2 specific field.
@@ -441,7 +449,7 @@ func convert_v1alpha2_VirtualMachineAdvancedSpec_To_v1alpha1_VirtualMachineAdvan
 }
 
 func convert_v1alpha2_BootDiskCapacity_To_v1alpha1_VirtualMachineVolume(capacity *resource.Quantity) *VirtualMachineVolume {
-	if capacity == nil || capacity.IsZero() {
+	if capacity == nil {
 		return nil
 	}
 
@@ -577,10 +585,7 @@ func Convert_v1alpha1_VirtualMachineSpec_To_v1alpha2_VirtualMachineSpec(
 	}
 
 	out.ReadinessProbe = convert_v1alpha1_Probe_To_v1alpha2_ReadinessProbeSpec(in.ReadinessProbe)
-	out.Advanced = convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha2_VirtualMachineAdvancedSpec(in.AdvancedOptions)
-	if out.Advanced != nil {
-		out.Advanced.BootDiskCapacity = convert_v1alpha1_VsphereVolumes_To_v1alpah2_BootDiskCapacity(in.Volumes)
-	}
+	out.Advanced = convert_v1alpha1_VirtualMachineAdvancedOptions_To_v1alpha2_VirtualMachineAdvancedSpec(in.AdvancedOptions, in.Volumes)
 
 	if in.ResourcePolicyName != "" {
 		if out.Reserved == nil {
@@ -610,6 +615,7 @@ func Convert_v1alpha2_VirtualMachineSpec_To_v1alpha1_VirtualMachineSpec(
 	out.VmMetadata = convert_v1alpha2_BootstrapSpec_To_v1alpha1_VmMetadata(in.Bootstrap)
 
 	if in.Network != nil {
+		out.NetworkInterfaces = make([]VirtualMachineNetworkInterface, 0, len(in.Network.Interfaces))
 		for _, networkInterfaceSpec := range in.Network.Interfaces {
 			networkInterface := convert_v1alpha2_NetworkInterfaceSpec_To_v1alpha1_NetworkInterface(networkInterfaceSpec)
 			out.NetworkInterfaces = append(out.NetworkInterfaces, networkInterface)
@@ -821,15 +827,19 @@ func restore_v1alpha2_VirtualMachineBootstrapSpec(
 	}
 }
 
-func restore_v1alpha2_VirtualMachineNetwork(
+func restore_v1alpha2_VirtualMachineNetworkSpec(
 	dst, src *v1alpha2.VirtualMachine) {
 
-	dstNetwork := dst.Spec.Network
 	srcNetwork := src.Spec.Network
-
-	if dstNetwork == nil || srcNetwork == nil {
+	if srcNetwork == nil || (srcNetwork.HostName == "" && !srcNetwork.Disabled && len(srcNetwork.Interfaces) == 0) {
+		// Nothing to restore.
 		return
 	}
+
+	if dst.Spec.Network == nil {
+		dst.Spec.Network = &v1alpha2.VirtualMachineNetworkSpec{}
+	}
+	dstNetwork := dst.Spec.Network
 
 	dstNetwork.HostName = srcNetwork.HostName
 	dstNetwork.Disabled = srcNetwork.Disabled
@@ -859,6 +869,17 @@ func restore_v1alpha2_VirtualMachineNetwork(
 	}
 }
 
+func restore_v1alpha2_VirtualMachineReadinessProbeSpec(
+	dst, src *v1alpha2.VirtualMachine) {
+
+	if src.Spec.ReadinessProbe != nil {
+		if dst.Spec.ReadinessProbe == nil {
+			dst.Spec.ReadinessProbe = &v1alpha2.VirtualMachineReadinessProbeSpec{}
+		}
+		dst.Spec.ReadinessProbe.GuestInfo = src.Spec.ReadinessProbe.GuestInfo
+	}
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
 	dst := dstRaw.(*v1alpha2.VirtualMachine)
@@ -873,14 +894,10 @@ func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
 	}
 
 	restore_v1alpha2_VirtualMachineBootstrapSpec(dst, restored)
-	restore_v1alpha2_VirtualMachineNetwork(dst, restored)
+	restore_v1alpha2_VirtualMachineNetworkSpec(dst, restored)
+	restore_v1alpha2_VirtualMachineReadinessProbeSpec(dst, restored)
 
-	if restored.Spec.ReadinessProbe != nil {
-		if dst.Spec.ReadinessProbe == nil {
-			dst.Spec.ReadinessProbe = &v1alpha2.VirtualMachineReadinessProbeSpec{}
-		}
-		dst.Spec.ReadinessProbe.GuestInfo = restored.Spec.ReadinessProbe.GuestInfo
-	}
+	dst.Status = restored.Status
 
 	return nil
 }

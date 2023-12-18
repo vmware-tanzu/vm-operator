@@ -85,24 +85,29 @@ func TestFuzzyConversion(t *testing.T) {
 }
 
 func overrideVirtualMachineFieldsFuncs(codecs runtimeserializer.CodecFactory) []interface{} {
-	// TODO: The changes from v1a1 to v1a2 is quite large so several parts of the input objects are
-	// 	     defaulted out until we start to marshall the object in the annotations for down conversions
-	// 	  	 and back.
 	return []interface{}{
 		func(vmSpec *v1alpha1.VirtualMachineSpec, c fuzz.Continue) {
 			c.Fuzz(vmSpec)
 
-			for i := range vmSpec.Volumes {
-				// Not present in v1a2.
-				vmSpec.Volumes[i].VsphereVolume = nil
+			var volumes []v1alpha1.VirtualMachineVolume
+			for _, vol := range vmSpec.Volumes {
+				// vSphere volumes are gone in v1a2 so skip those.
+				if vol.VsphereVolume == nil {
+					volumes = append(volumes, vol)
+				}
 			}
+			vmSpec.Volumes = volumes
 
-			if vmSpec.AdvancedOptions != nil {
-				if provOpts := vmSpec.AdvancedOptions.DefaultVolumeProvisioningOptions; provOpts != nil {
+			if opts := vmSpec.AdvancedOptions; opts != nil {
+				if provOpts := opts.DefaultVolumeProvisioningOptions; provOpts != nil {
 					if provOpts.ThinProvisioned != nil {
 						// Both cannot be set.
 						provOpts.EagerZeroed = nil
 					}
+				}
+
+				if opts.ChangeBlockTracking != nil && !*opts.ChangeBlockTracking {
+					opts.ChangeBlockTracking = nil
 				}
 			}
 
@@ -225,4 +230,8 @@ func overrideConditionsObservedGeneration(conditions []metav1.Condition) {
 	for i := range conditions {
 		conditions[i].ObservedGeneration = 0
 	}
+}
+
+func ptrOf[T any](v T) *T {
+	return &v
 }

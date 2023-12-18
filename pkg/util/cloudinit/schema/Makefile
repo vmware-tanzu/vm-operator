@@ -97,7 +97,7 @@ ifeq (docker,$(QUICKTYPE_METHOD))
 $(CLOUD_CONFIG_GO): build-images-quicktype
 	docker run -it --rm \
 	  -v $$(pwd):/output \
-	  -v $$(pwd)/$(SCHEMA_CLOUD_CONFIG):/schema.json \
+	  -v $$(pwd)/$(SCHEMA_CLOUD_CONFIG):/schema-cloud-config-v1.json \
 	  $(QUICKTYPE_IMAGE)
 	$(GOIMPORTS) -w $@
 else

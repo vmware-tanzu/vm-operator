@@ -228,6 +228,7 @@ func (r *Reconciler) setUpVMIFromCLItem(ctx *context.ContentLibraryItemContext) 
 		APIVersion: clItem.APIVersion,
 		Kind:       clItem.Kind,
 		Name:       clItem.Name,
+		Namespace:  clItem.Namespace,
 	}
 	vmi.Status.ImageName = clItem.Status.Name
 	if clItem.Status.ContentLibraryRef != nil {

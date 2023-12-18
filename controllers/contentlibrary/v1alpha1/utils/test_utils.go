@@ -188,6 +188,7 @@ func GetExpectedVMIFrom(clItem imgregv1a1.ContentLibraryItem,
 				APIVersion: clItem.APIVersion,
 				Kind:       clItem.Kind,
 				Name:       clItem.Name,
+				Namespace:  clItem.Namespace,
 			},
 		},
 		Status: vmopv1.VirtualMachineImageStatus{

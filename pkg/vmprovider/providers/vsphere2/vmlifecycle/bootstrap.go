@@ -124,15 +124,16 @@ func getBootstrapArgs(
 	networkResults network.NetworkInterfaceResults,
 	bootstrapData BootstrapData) (*BootstrapArgs, error) {
 
+	hostname := vmCtx.VM.Name
+	if networkSpec := vmCtx.VM.Spec.Network; networkSpec != nil && networkSpec.HostName != "" {
+		hostname = networkSpec.HostName
+	}
+
 	bootstrapArgs := BootstrapArgs{
 		BootstrapData:  bootstrapData,
 		NetworkResults: networkResults,
-		Hostname:       vmCtx.VM.Spec.Network.HostName,
+		Hostname:       hostname,
 		ComputerName:   vmCtx.VM.Name,
-	}
-
-	if bootstrapArgs.Hostname == "" {
-		bootstrapArgs.Hostname = vmCtx.VM.Name
 	}
 
 	// If the VM is missing DNS info - that is, it did not specify DNS for the interfaces - populate that

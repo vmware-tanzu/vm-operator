@@ -86,14 +86,18 @@ func vmE2ETests() {
 		vm.Spec.ClassName = vmClass.Name
 		vm.Spec.ImageName = ctx.ContentLibraryImageName
 		vm.Spec.StorageClass = ctx.StorageClassName
-		vm.Spec.Network.Interfaces[0].Nameservers = []string{"1.1.1.1", "8.8.8.8"}
-		vm.Spec.Network.Interfaces[0].SearchDomains = []string{"vmware.local"}
-		vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-			CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-				RawCloudConfig: &common.SecretKeySelector{
-					Name: cloudInitSecret.Name,
+		if vm.Spec.Network != nil {
+			vm.Spec.Network.Interfaces[0].Nameservers = []string{"1.1.1.1", "8.8.8.8"}
+			vm.Spec.Network.Interfaces[0].SearchDomains = []string{"vmware.local"}
+		}
+		if vm.Spec.Bootstrap != nil {
+			vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+				CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+					RawCloudConfig: &common.SecretKeySelector{
+						Name: cloudInitSecret.Name,
+					},
 				},
-			},
+			}
 		}
 	})
 
@@ -106,6 +110,30 @@ func vmE2ETests() {
 
 		vm = nil
 		vmClass = nil
+	})
+
+	Context("Nil fields in Spec", func() {
+
+		BeforeEach(func() {
+			testConfig.WithNetworkEnv = builder.NetworkEnvVDS
+
+			vm.Spec.Network = nil
+			vm.Spec.Bootstrap = nil
+			vm.Spec.Advanced = nil
+			vm.Spec.Reserved = nil
+		})
+
+		It("DoIt without an NPE", func() {
+			err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+			vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
+			Expect(vcVM).ToNot(BeNil())
+		})
 	})
 
 	Context("VDS", func() {

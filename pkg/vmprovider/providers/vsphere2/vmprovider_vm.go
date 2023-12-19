@@ -1000,7 +1000,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 	vmCtx context.VirtualMachineContextA2,
 	createArgs *VMCreateArgs) error {
 
-	if vmCtx.VM.Spec.Network.Disabled {
+	if vmCtx.VM.Spec.Network == nil || vmCtx.VM.Spec.Network.Disabled {
 		util.RemoveDevicesFromConfigSpec(createArgs.ConfigSpec, util.IsEthernetCard)
 		return nil
 	}

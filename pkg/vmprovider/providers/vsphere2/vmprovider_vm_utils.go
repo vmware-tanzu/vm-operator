@@ -20,6 +20,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/vmlifecycle"
 )
 
@@ -180,6 +181,7 @@ func GetVirtualMachineBootstrap(
 	var data, vAppData map[string]string
 	var vAppExData map[string]map[string]string
 	var cloudConfigSecretData *cloudinit.CloudConfigSecretData
+	var sysprepSecretData *sysprep.SecretData
 
 	if v := bootstrapSpec.CloudInit; v != nil {
 		if cooked := v.CloudConfig; cooked != nil {
@@ -205,7 +207,17 @@ func GetVirtualMachineBootstrap(
 		}
 	} else if v := bootstrapSpec.Sysprep; v != nil {
 		if cooked := v.Sysprep; cooked != nil {
-			_ = cooked // TODO Add support for in-line sysprep
+			out, err := sysprep.GetSysprepSecretData(
+				vmCtx,
+				k8sClient,
+				vmCtx.VM.Namespace,
+				cooked)
+			if err != nil {
+				reason, msg := errToConditionReasonAndMessage(err)
+				conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady, reason, msg)
+				return vmlifecycle.BootstrapData{}, err
+			}
+			sysprepSecretData = &out
 		} else if raw := v.RawSysprep; raw != nil {
 			var err error
 			data, err = getSecretData(vmCtx, k8sClient, raw.Name, raw.Key, true, false)
@@ -268,6 +280,7 @@ func GetVirtualMachineBootstrap(
 		VAppData:    vAppData,
 		VAppExData:  vAppExData,
 		CloudConfig: cloudConfigSecretData,
+		Sysprep:     sysprepSecretData,
 	}, nil
 }
 

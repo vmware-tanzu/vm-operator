@@ -538,6 +538,47 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+			Entry("disallow Sysprep mixing inline Sysprep identification when FSS is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{
+									Identification: &sysprep.Identification{
+										JoinDomain:    "foo-domain",
+										JoinWorkgroup: "foo-wg",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep.sysprep: Invalid value: "identification": joinDomain and joinWorkgroup are mutually exclusive`,
+						`spec.bootstrap.sysprep.sysprep: Invalid value: "identification": joinDomain requires domainAdmin and domainAdminPassword selector to be set`,
+					),
+				},
+			),
+			Entry("disallow Sysprep mixing inline Sysprep identification when FSS is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{
+									Identification: &sysprep.Identification{
+										JoinWorkgroup: "foo-wg",
+										DomainAdmin:   "admin@os.local",
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep.sysprep: Invalid value: "identification": joinWorkgroup and domainAdmin/domainAdminPassword are mutually exclusive`,
+					),
+				},
+			),
 			Entry("disallow vAppConfig mixing inline Properties and RawProperties",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {

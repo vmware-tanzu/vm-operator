@@ -8,16 +8,16 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
 	"github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
+	vmopv1sysprep "github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/sysprep"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/vmlifecycle"
 )
 
@@ -98,13 +98,100 @@ var _ = Describe("SysPrep Bootstrap", func() {
 		})
 
 		Context("Inlined Sysprep", func() {
+			autoUsers := int32(5)
+			password, domainPassword, productID := "password_foo", "admin_password_foo", "product_id_foo"
+			computerName := "foo-win-vm"
+
 			BeforeEach(func() {
-				sysPrepSpec.Sysprep = &sysprep.Sysprep{}
+				sysPrepSpec.Sysprep = &vmopv1sysprep.Sysprep{
+					GUIUnattended: &vmopv1sysprep.GUIUnattended{
+						AutoLogon:      true,
+						AutoLogonCount: 2,
+						Password: &vmopv1sysprep.PasswordSecretKeySelector{
+							// omitting the name of the secret, since it does not get used
+							// in this function
+							Key: "pwd_key",
+						},
+						TimeZone: 4,
+					},
+					UserData: &vmopv1sysprep.UserData{
+						FullName:  "foo-bar",
+						OrgName:   "foo-org",
+						ProductID: &vmopv1sysprep.ProductIDSecretKeySelector{Key: "product_id_key"},
+					},
+					GUIRunOnce: vmopv1sysprep.GUIRunOnce{
+						Commands: []string{"blah", "boom"},
+					},
+					Identification: &vmopv1sysprep.Identification{
+						DomainAdmin:         "[Foo/Administrator]",
+						JoinDomain:          "foo.local",
+						JoinWorkgroup:       "foo.local.wg",
+						DomainAdminPassword: &vmopv1sysprep.DomainPasswordSecretKeySelector{Key: "admin_pwd_key"},
+					},
+					LicenseFilePrintData: &vmopv1sysprep.LicenseFilePrintData{
+						AutoMode:  vmopv1sysprep.CustomizationLicenseDataModePerServer,
+						AutoUsers: &autoUsers,
+					},
+				}
+
+				// secret data gets populated into the bootstrapArgs
+				bsArgs.Sysprep = &sysprep.SecretData{
+					ProductID:      productID,
+					Password:       password,
+					DomainPassword: domainPassword,
+				}
+				bsArgs.ComputerName = computerName
 			})
 
-			It("Returns TODO", func() {
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("TODO"))
+			It("should return expected customization spec", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(custSpec).ToNot(BeNil())
+
+				sysPrep, ok := custSpec.Identity.(*types.CustomizationSysprep)
+				Expect(ok).To(BeTrue())
+
+				Expect(sysPrep.GuiUnattended.TimeZone).To(Equal(int32(4)))
+				Expect(sysPrep.GuiUnattended.AutoLogonCount).To(Equal(int32(2)))
+				Expect(sysPrep.GuiUnattended.AutoLogon).To(BeTrue())
+				Expect(sysPrep.GuiUnattended.Password.Value).To(Equal(password))
+
+				Expect(sysPrep.UserData.FullName).To(Equal("foo-bar"))
+				Expect(sysPrep.UserData.OrgName).To(Equal("foo-org"))
+				Expect(sysPrep.UserData.ProductId).To(Equal(productID))
+				name, ok := sysPrep.UserData.ComputerName.(*types.CustomizationFixedName)
+				Expect(ok).To(BeTrue())
+				Expect(name.Name).To(Equal(computerName))
+
+				Expect(sysPrep.GuiRunOnce.CommandList).To(HaveLen(2))
+
+				Expect(sysPrep.Identification.DomainAdmin).To(Equal("[Foo/Administrator]"))
+				Expect(sysPrep.Identification.JoinDomain).To(Equal("foo.local"))
+				Expect(sysPrep.Identification.DomainAdminPassword.Value).To(Equal(domainPassword))
+				Expect(sysPrep.Identification.JoinWorkgroup).To(Equal("foo.local.wg"))
+
+				Expect(sysPrep.LicenseFilePrintData.AutoMode).To(Equal(types.CustomizationLicenseDataModePerServer))
+				Expect(sysPrep.LicenseFilePrintData.AutoUsers).To(Equal(autoUsers))
+			})
+
+			When("no section is set", func() {
+
+				BeforeEach(func() {
+					sysPrepSpec.Sysprep = &vmopv1sysprep.Sysprep{}
+
+					bsArgs.Sysprep = nil
+				})
+
+				It("does not set", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(custSpec).ToNot(BeNil())
+
+					sysPrep, ok := custSpec.Identity.(*types.CustomizationSysprep)
+					Expect(ok).To(BeTrue())
+
+					name, ok := sysPrep.UserData.ComputerName.(*types.CustomizationFixedName)
+					Expect(ok).To(BeTrue())
+					Expect(name.Name).To(Equal(computerName))
+				})
 			})
 		})
 

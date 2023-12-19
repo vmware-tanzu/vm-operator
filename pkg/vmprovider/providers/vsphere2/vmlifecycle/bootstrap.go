@@ -19,6 +19,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/resources"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/sysprep"
 )
 
 const (
@@ -33,6 +34,7 @@ type BootstrapData struct {
 	VAppExData map[string]map[string]string
 
 	CloudConfig *cloudinit.CloudConfigSecretData
+	Sysprep     *sysprep.SecretData
 }
 
 type TemplateRenderFunc func(string, string) string
@@ -42,6 +44,7 @@ type BootstrapArgs struct {
 
 	TemplateRenderFn TemplateRenderFunc
 	NetworkResults   network.NetworkInterfaceResults
+	ComputerName     string
 	Hostname         string
 	DNSServers       []string
 	SearchSuffixes   []string
@@ -125,6 +128,7 @@ func getBootstrapArgs(
 		BootstrapData:  bootstrapData,
 		NetworkResults: networkResults,
 		Hostname:       vmCtx.VM.Spec.Network.HostName,
+		ComputerName:   vmCtx.VM.Name,
 	}
 
 	if bootstrapArgs.Hostname == "" {

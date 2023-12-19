@@ -1088,10 +1088,10 @@ spec:
                               Sysprep GUIUnattended key.
                             properties:
                               autoLogon:
-                                description: "AutoLogon determine whether or not the
-                                  machine automatically logs on as Administrator.
-                                  \n Please note if AutoLogin is true, then Password
-                                  must be set or guest customization will fail."
+                                description: "AutoLogon determine whether the machine
+                                  automatically logs on as Administrator. \n Please
+                                  note if AutoLogon is true, then Password must be
+                                  set or guest customization will fail."
                                 type: boolean
                               autoLogonCount:
                                 description: "AutoLogonCount specifies the number
@@ -1101,7 +1101,7 @@ spec:
                                   may want to increase it. This number may be determined
                                   by the list of commands executed by the GuiRunOnce
                                   command. \n Please note this field only matters
-                                  if AutoLogin is true."
+                                  if AutoLogon is true."
                                 format: int32
                                 type: integer
                               password:
@@ -1116,9 +1116,12 @@ spec:
                                   Wizard, then the password is encrypted. Otherwise,
                                   the client should set the plainText attribute to
                                   true, so that the customization process does not
-                                  attempt to decrypt the string."
+                                  attempt to decrypt the string. \n When not explicitly
+                                  specified, the Key field for the selector defaults
+                                  to `password`."
                                 properties:
                                   key:
+                                    default: password
                                     description: Key is the key in the secret that
                                       specifies the requested data.
                                     type: string
@@ -1149,11 +1152,14 @@ spec:
                                   domain.
                                 type: string
                               domainAdminPassword:
-                                description: DomainAdminPassword is the password for
-                                  the domain user account used for authentication
-                                  if the virtual machine is joining a domain.
+                                description: "DomainAdminPassword is the password
+                                  for the domain user account used for authentication
+                                  if the virtual machine is joining a domain. \n When
+                                  not explicitly specified, the Key field for the
+                                  selector defaults to `domain_admin_password`."
                                 properties:
                                   key:
+                                    default: domain_admin_password
                                     description: Key is the key in the secret that
                                       specifies the requested data.
                                     type: string
@@ -1215,9 +1221,12 @@ spec:
                                 description: "ProductID is a valid serial number.
                                   \n Please note unless the VirtualMachineImage was
                                   installed with a volume license key, ProductID must
-                                  be set or guest customization will fail."
+                                  be set or guest customization will fail. \n When
+                                  not explicitly specified, the Key field for the
+                                  selector defaults to `domain_admin_password`."
                                 properties:
                                   key:
+                                    default: product_id
                                     description: Key is the key in the secret that
                                       specifies the requested data.
                                     type: string
@@ -1228,10 +1237,11 @@ spec:
                                 - key
                                 - name
                                 type: object
+                            required:
+                            - fullName
+                            - orgName
                             type: object
                         required:
-                        - guiUnattended
-                        - identification
                         - userData
                         type: object
                     type: object

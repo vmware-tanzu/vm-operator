@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	volume "github.com/vmware-tanzu/vm-operator/controllers/volume/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -242,6 +243,10 @@ func (v validator) validateBootstrap(
 				allErrs = append(allErrs, field.Invalid(p, "sysPrep",
 					"sysprep and rawSysprep are mutually exclusive"))
 			}
+
+			if sysPrep.Sysprep != nil {
+				allErrs = append(allErrs, v.validateInlineSysprep(p, sysPrep.Sysprep)...)
+			}
 		} else {
 			allErrs = append(allErrs, field.Invalid(p, "Sysprep", fmt.Sprintf(featureNotEnabled, "Sysprep")))
 		}
@@ -271,6 +276,43 @@ func (v validator) validateBootstrap(
 			}
 		}
 
+	}
+
+	return allErrs
+}
+
+func (v validator) validateInlineSysprep(p *field.Path, sysprep *sysprep.Sysprep) field.ErrorList {
+	var allErrs field.ErrorList
+
+	s := p.Child("sysprep")
+	if guiUnattended := sysprep.GUIUnattended; guiUnattended != nil {
+		if guiUnattended.AutoLogon && guiUnattended.Password.Name == "" {
+			allErrs = append(allErrs, field.Invalid(s, "guiUnattended",
+				"autoLogon requires password selector to be set"))
+		}
+	}
+
+	if identification := sysprep.Identification; identification != nil {
+		if identification.JoinDomain != "" && identification.JoinWorkgroup != "" {
+			allErrs = append(allErrs, field.Invalid(s, "identification",
+				"joinDomain and joinWorkgroup are mutually exclusive"))
+		}
+
+		if identification.JoinDomain != "" {
+			if identification.DomainAdmin == "" ||
+				identification.DomainAdminPassword == nil ||
+				identification.DomainAdminPassword.Name == "" {
+				allErrs = append(allErrs, field.Invalid(s, "identification",
+					"joinDomain requires domainAdmin and domainAdminPassword selector to be set"))
+			}
+		}
+
+		if identification.JoinWorkgroup != "" {
+			if identification.DomainAdmin != "" || identification.DomainAdminPassword != nil {
+				allErrs = append(allErrs, field.Invalid(s, "identification",
+					"joinWorkgroup and domainAdmin/domainAdminPassword are mutually exclusive"))
+			}
+		}
 	}
 
 	return allErrs

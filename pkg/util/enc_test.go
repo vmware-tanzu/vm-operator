@@ -52,9 +52,9 @@ var _ = Describe("TryToDecodeBase64Gzip", func() {
 	gz := func(data []byte) []byte {
 		var w bytes.Buffer
 		gzw := gzip.NewWriter(&w)
-		//nolint:errcheck,gosec
+		//nolint:errcheck
 		gzw.Write(data)
-		//nolint:errcheck,gosec
+		//nolint:errcheck
 		gzw.Close()
 		return w.Bytes()
 	}

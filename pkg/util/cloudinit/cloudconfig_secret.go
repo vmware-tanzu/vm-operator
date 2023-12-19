@@ -8,11 +8,11 @@ import (
 	"fmt"
 
 	"gopkg.in/yaml.v3"
-	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 // CloudConfigSecretData is used to provide the sensitive data that may have
@@ -93,7 +93,7 @@ func getSecretDataForUser(
 	}
 
 	if v := in.HashedPasswd; v != nil {
-		if err := getSecretData(
+		if err := util.GetSecretData(
 			ctx, k8sClient,
 			secretNamespace, v.Name, v.Key,
 			&out.HashPasswd); err != nil {
@@ -102,7 +102,7 @@ func getSecretDataForUser(
 		}
 	}
 	if v := in.Passwd; v != nil {
-		if err := getSecretData(
+		if err := util.GetSecretData(
 			ctx, k8sClient,
 			secretNamespace, v.Name, v.Key,
 			&out.Passwd); err != nil {
@@ -140,7 +140,7 @@ func getSecretDataForWriteFile(
 		return err
 	}
 
-	if err := getSecretData(
+	if err := util.GetSecretData(
 		ctx,
 		k8sClient,
 		secretNamespace,
@@ -151,37 +151,4 @@ func getSecretDataForWriteFile(
 	}
 
 	return nil
-}
-
-func getSecretData(
-	ctx context.Context,
-	k8sClient ctrlclient.Client,
-	secretNamespace, secretName, secretKey string,
-	out *string) error {
-
-	secret, err := getSecretResource(ctx, k8sClient, secretNamespace, secretName)
-	if err != nil {
-		return err
-	}
-	data := secret.Data[secretKey]
-	if len(data) == 0 {
-		return fmt.Errorf(
-			"no data found for key %q for secret %s/%s",
-			secretKey, secretNamespace, secretName)
-	}
-	*out = string(data)
-	return nil
-}
-
-func getSecretResource(
-	ctx context.Context,
-	k8sClient ctrlclient.Client,
-	secretNamespace, secretName string) (*corev1.Secret, error) {
-
-	var secret corev1.Secret
-	key := ctrlclient.ObjectKey{Name: secretName, Namespace: secretNamespace}
-	if err := k8sClient.Get(ctx, key, &secret); err != nil {
-		return nil, err
-	}
-	return &secret, nil
 }

@@ -798,7 +798,6 @@ data:
   nicMacAddr: "{{ V1alpha1_FirstNicMacAddr }}"
 `
 
-//nolint:gosec
 const testSecretYAML1 = `
 apiVersion: v1
 kind: Secret

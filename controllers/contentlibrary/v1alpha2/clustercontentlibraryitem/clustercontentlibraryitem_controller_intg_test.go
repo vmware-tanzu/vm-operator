@@ -125,6 +125,15 @@ func cclItemReconcile() {
 					waitForClusterVirtualMachineImageNotReadyWithReason(cvmiKey,
 						vmopv1.VirtualMachineImageProviderSecurityNotCompliantReason)
 				})
+
+				By("ClusterVirtualMachineImage should have conversion annotation set", func() {
+					Eventually(func(g Gomega) {
+						image := &vmopv1.ClusterVirtualMachineImage{}
+						g.Expect(ctx.Client.Get(ctx, cvmiKey, image)).To(Succeed())
+						g.Expect(len(image.Annotations)).To(BeNumerically(">=", 1))
+						g.Expect(image.Annotations).To(HaveKey(vmopv1.VMIContentLibRefAnnotation))
+					}).Should(Succeed())
+				})
 			})
 
 			cclItem := &imgregv1a1.ClusterContentLibraryItem{}

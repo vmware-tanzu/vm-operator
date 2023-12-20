@@ -5,10 +5,12 @@ package clustercontentlibraryitem
 
 import (
 	goctx "context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -257,6 +259,33 @@ func (r *Reconciler) setUpCVMIFromCCLItem(ctx *context.ClusterContentLibraryItem
 
 	cvmi.Status.Name = cclItem.Status.Name
 	cvmi.Status.ProviderItemID = string(cclItem.Spec.UUID)
+
+	return addContentLibraryRefToAnnotation(ctx)
+}
+
+// addContentLibraryRefToAnnotation adds the conversion annotation with the content
+// library ref value populated.
+func addContentLibraryRefToAnnotation(ctx *context.ClusterContentLibraryItemContextA2) error {
+	if ctx.CCLItem.Status.ContentLibraryRef == nil {
+		return nil
+	}
+
+	contentLibraryRef := corev1.TypedLocalObjectReference{
+		APIGroup: &imgregv1a1.GroupVersion.Group,
+		Kind:     ctx.CCLItem.Status.ContentLibraryRef.Kind,
+		Name:     ctx.CCLItem.Status.ContentLibraryRef.Name,
+	}
+	data, err := json.Marshal(contentLibraryRef)
+	if err != nil {
+		return err
+	}
+
+	annotations := ctx.CVMI.Annotations
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[vmopv1.VMIContentLibRefAnnotation] = string(data)
+	ctx.CVMI.SetAnnotations(annotations)
 
 	return nil
 }

@@ -4,12 +4,16 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+
+	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 )
 
 // GetImageFieldNameFromItem returns the Image field name in format of "vmi-<uuid>"
@@ -38,4 +42,31 @@ func IsItemReady(itemConditions imgregv1a1.Conditions) bool {
 	}
 
 	return isReady
+}
+
+// AddContentLibraryRefToAnnotation adds the conversion annotation with the content
+// library ref value populated.
+func AddContentLibraryRefToAnnotation(to client.Object, ref *imgregv1a1.NameAndKindRef) error {
+	if ref == nil {
+		return nil
+	}
+
+	contentLibraryRef := corev1.TypedLocalObjectReference{
+		APIGroup: &imgregv1a1.GroupVersion.Group,
+		Kind:     ref.Kind,
+		Name:     ref.Name,
+	}
+	data, err := json.Marshal(contentLibraryRef)
+	if err != nil {
+		return err
+	}
+
+	annotations := to.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[v1alpha2.VMIContentLibRefAnnotation] = string(data)
+	to.SetAnnotations(annotations)
+
+	return nil
 }

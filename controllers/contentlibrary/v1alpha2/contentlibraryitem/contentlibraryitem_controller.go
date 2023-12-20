@@ -5,12 +5,10 @@ package contentlibraryitem
 
 import (
 	goctx "context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -247,34 +245,7 @@ func (r *Reconciler) setUpVMIFromCLItem(ctx *context.ContentLibraryItemContextA2
 	vmi.Status.Name = clItem.Status.Name
 	vmi.Status.ProviderItemID = string(clItem.Spec.UUID)
 
-	return addContentLibraryRefToAnnotation(ctx)
-}
-
-// addContentLibraryRefToAnnotation adds the conversion annotation with the content
-// library ref value populated.
-func addContentLibraryRefToAnnotation(ctx *context.ContentLibraryItemContextA2) error {
-	if ctx.CLItem.Status.ContentLibraryRef == nil {
-		return nil
-	}
-
-	contentLibraryRef := corev1.TypedLocalObjectReference{
-		APIGroup: &imgregv1a1.GroupVersion.Group,
-		Kind:     ctx.CLItem.Status.ContentLibraryRef.Kind,
-		Name:     ctx.CLItem.Status.ContentLibraryRef.Name,
-	}
-	data, err := json.Marshal(contentLibraryRef)
-	if err != nil {
-		return err
-	}
-
-	annotations := ctx.VMI.Annotations
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
-	annotations[vmopv1.VMIContentLibRefAnnotation] = string(data)
-	ctx.VMI.SetAnnotations(annotations)
-
-	return nil
+	return utils.AddContentLibraryRefToAnnotation(vmi, ctx.CLItem.Status.ContentLibraryRef)
 }
 
 // syncImageContent syncs the VirtualMachineImage content from the provider.

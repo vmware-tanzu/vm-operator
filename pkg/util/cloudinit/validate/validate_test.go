@@ -4,7 +4,6 @@
 package validate_test
 
 import (
-	"encoding/json"
 	"os"
 
 	. "github.com/onsi/ginkgo"
@@ -35,23 +34,19 @@ var _ = Describe("Validate CloudConfigJSONRawMessage", func() {
 					},
 				},
 			},
-			RunCmd: []json.RawMessage{
-				[]byte("ls /"),
-				[]byte(`[ "ls", "-a", "-l", "/" ]`),
-				[]byte("- echo\n- \"hello, world.\""),
-			},
+			RunCmd: []byte(`["ls /",["ls","-a","-l","/"],["echo","hello, world."]]`),
 			WriteFiles: []vmopv1cloudinit.WriteFile{
 				{
 					Path:    "/file1",
-					Content: []byte("single-line string"),
+					Content: []byte(`"single-line string"`),
 				},
 				{
 					Path:    "/file2",
-					Content: []byte("|\n  multi-line\n  string"),
+					Content: []byte(`"multi-line\nstring"`),
 				},
 				{
 					Path:    "/file3",
-					Content: []byte("name: \"my-bootstrap-data\"\nkey: \"file3-content\""),
+					Content: []byte(`{"name":"my-bootstrap-data","key":"file3-content"}`),
 				},
 			},
 		}
@@ -69,14 +64,25 @@ var _ = Describe("Validate CloudConfigJSONRawMessage", func() {
 		})
 	})
 
-	When("The CloudConfig's second runcmd is an invalid value", func() {
+	When("The CloudConfig runcmd value is invalid", func() {
 		BeforeEach(func() {
-			cloudConfig.RunCmd[1] = []byte("obj:\n  field1: value1")
+			cloudConfig.RunCmd = []byte(`{"foo":"bar"}`)
 		})
 		It("Should return a single error", func() {
 			Expect(errs).To(HaveLen(1))
 			Expect(errs.ToAggregate().Error()).To(Equal(
-				`spec.bootstrap.cloudInit.cloudConfig.runcmds[1]: Invalid value: "obj:\n  field1: value1": value must be a string or list of strings`))
+				`spec.bootstrap.cloudInit.cloudConfig.runcmds: Invalid value: "{\"foo\":\"bar\"}": value must be a list`))
+		})
+	})
+
+	When("The CloudConfig's second runcmd is an invalid value", func() {
+		BeforeEach(func() {
+			cloudConfig.RunCmd = []byte(`["ls /",{"foo":"bar"},["echo","hello, world."]]`)
+		})
+		It("Should return a single error", func() {
+			Expect(errs).To(HaveLen(1))
+			Expect(errs.ToAggregate().Error()).To(Equal(
+				`spec.bootstrap.cloudInit.cloudConfig.runcmds[1]: Invalid value: "{\"foo\":\"bar\"}": value must be a string or list of strings`))
 		})
 
 		When("The CloudConfig's first file content is an invalid value", func() {
@@ -86,7 +92,7 @@ var _ = Describe("Validate CloudConfigJSONRawMessage", func() {
 			It("Should return two errors", func() {
 				Expect(errs).To(HaveLen(2))
 				Expect(errs.ToAggregate().Error()).To(Equal(
-					`[spec.bootstrap.cloudInit.cloudConfig.runcmds[1]: Invalid value: "obj:\n  field1: value1": value must be a string or list of strings, ` +
+					`[spec.bootstrap.cloudInit.cloudConfig.runcmds[1]: Invalid value: "{\"foo\":\"bar\"}": value must be a string or list of strings, ` +
 						`spec.bootstrap.cloudInit.cloudConfig.write_files[/file1]: Invalid value: "[ \"ls\", \"-a\", \"-l\", \"/\" ]": value must be a string, multi-line string, or SecretKeySelector]`))
 			})
 		})

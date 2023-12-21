@@ -738,13 +738,7 @@ spec:
                               contains the command and its arguments, ex. \n runcmd:
                               - \"ls -al\" \n Format 2 -- a list of the command and
                               its arguments, ex. \n runcmd: - - echo - \"Hello, world.\""
-                            items:
-                              description: RawMessage is a raw encoded JSON value.
-                                It implements Marshaler and Unmarshaler and can be
-                                used to delay JSON decoding or precompute a JSON encoding.
-                              format: byte
-                              type: string
-                            type: array
+                            x-kubernetes-preserve-unknown-fields: true
                           timezone:
                             description: Timezone describes the timezone represented
                               in /usr/share/zoneinfo.
@@ -941,8 +935,7 @@ spec:
                                     with the name of the key that contains the content
                                     for the file, ex. \n content: name: my-bootstrap-secret
                                     key: my-file-content"
-                                  format: byte
-                                  type: string
+                                  x-kubernetes-preserve-unknown-fields: true
                                 defer:
                                   description: Defer indicates to defer writing the
                                     file until Cloud-Init's "final" stage, after users

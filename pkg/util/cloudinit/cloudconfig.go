@@ -6,6 +6,7 @@ package cloudinit
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 
@@ -102,21 +103,28 @@ func MarshalYAML(
 	}
 
 	if l := len(in.RunCmd); l > 0 {
-		out.RunCmd = make([]cloudConfigRunCmd, l)
-		for i := range in.RunCmd {
+		var rawCommands []json.RawMessage
+		if err := json.Unmarshal(in.RunCmd, &rawCommands); err != nil {
+			return "", err
+		}
+
+		out.RunCmd = make([]cloudConfigRunCmd, len(rawCommands))
+		for i := range rawCommands {
 
 			// First try to unmarshal the value into a string. If that does
 			// not work, try unmarshaling the data into a list of strings.
-			if err := yaml.Unmarshal(
-				in.RunCmd[i],
+			if err := json.Unmarshal(
+				rawCommands[i],
 				&out.RunCmd[i].singleString); err != nil {
 
 				out.RunCmd[i].singleString = ""
 
-				if err := yaml.Unmarshal(
-					in.RunCmd[i],
+				if err := json.Unmarshal(
+					rawCommands[i],
 					&out.RunCmd[i].listOfStrings); err != nil {
+
 					return "", err
+
 				}
 			}
 		}
@@ -131,7 +139,7 @@ func MarshalYAML(
 			// a string from the Content field.
 			content := secret.WriteFiles[in.WriteFiles[i].Path]
 			if content == "" {
-				if err := yaml.Unmarshal(
+				if err := json.Unmarshal(
 					in.WriteFiles[i].Content, &content); err != nil {
 
 					return "", err

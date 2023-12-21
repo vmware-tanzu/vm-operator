@@ -25,14 +25,8 @@ func (in *CloudConfig) DeepCopyInto(out *CloudConfig) {
 	}
 	if in.RunCmd != nil {
 		in, out := &in.RunCmd, &out.RunCmd
-		*out = make([]json.RawMessage, len(*in))
-		for i := range *in {
-			if (*in)[i] != nil {
-				in, out := &(*in)[i], &(*out)[i]
-				*out = make(json.RawMessage, len(*in))
-				copy(*out, *in)
-			}
-		}
+		*out = make(json.RawMessage, len(*in))
+		copy(*out, *in)
 	}
 	if in.WriteFiles != nil {
 		in, out := &in.WriteFiles, &out.WriteFiles

@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	invalidRunCmd           = "value must be a string or list of strings"
+	invalidRunCmd           = "value must be a list"
+	invalidRunCmdElement    = "value must be a string or list of strings"
 	invalidWriteFileContent = "value must be a string, multi-line string, or SecretKeySelector"
 )
 
@@ -41,33 +42,48 @@ func CloudConfigJSONRawMessage(
 
 func validateRunCmds(
 	fieldPath *field.Path,
-	in []json.RawMessage) field.ErrorList {
+	in json.RawMessage) field.ErrorList {
+
+	if len(in) == 0 {
+		return nil
+	}
 
 	var allErrs field.ErrorList
 
 	fieldPath = fieldPath.Child("runcmds")
 
-	for i := range in {
+	var rawCommands []json.RawMessage
+	if err := json.Unmarshal(in, &rawCommands); err != nil {
+		allErrs = append(
+			allErrs,
+			field.Invalid(
+				fieldPath,
+				string(in),
+				invalidRunCmd))
+		return allErrs
+	}
+
+	for i := range rawCommands {
 		fieldPath := fieldPath.Index(i)
 
 		// First try to unmarshal the value into a string. If that does
 		// not work, try unmarshaling the data into a list of strings.
 		var singleString string
-		if err := yaml.Unmarshal(
-			in[i],
+		if err := json.Unmarshal(
+			rawCommands[i],
 			&singleString); err != nil {
 
 			var listOfStrings []string
-			if err := yaml.Unmarshal(
-				in[i],
+			if err := json.Unmarshal(
+				rawCommands[i],
 				&listOfStrings); err != nil {
 
 				allErrs = append(
 					allErrs,
 					field.Invalid(
 						fieldPath,
-						string(in[i]),
-						invalidRunCmd))
+						string(rawCommands[i]),
+						invalidRunCmdElement))
 			}
 		}
 	}
@@ -89,12 +105,12 @@ func validateWriteFiles(
 		// First try to unmarshal the value into a string. If that does
 		// not work, try unmarshaling the data into a SecretKeySelector object.
 		var singleString string
-		if err := yaml.Unmarshal(
+		if err := json.Unmarshal(
 			in[i].Content,
 			&singleString); err != nil {
 
 			var sks common.SecretKeySelector
-			if err := yaml.Unmarshal(
+			if err := json.Unmarshal(
 				in[i].Content,
 				&sks); err != nil {
 

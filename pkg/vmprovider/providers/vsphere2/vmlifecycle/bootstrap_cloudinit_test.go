@@ -6,7 +6,6 @@ package vmlifecycle_test
 import (
 	goctx "context"
 	"encoding/base64"
-	"encoding/json"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -121,11 +120,11 @@ var _ = Describe("CloudInit Bootstrap", func() {
 					WriteFiles: []vmopv1cloudinit.WriteFile{
 						{
 							Path:    "/hello",
-							Content: []byte("world"),
+							Content: []byte(`"world"`),
 						},
 						{
 							Path:    "/hi",
-							Content: []byte("name: \"my-bootstrap-data\"\nkey: \"cloud-init-files-hi\""),
+							Content: []byte(`{"name":"my-bootstrap-data","key":"cloud-init-files-hi"}`),
 						},
 					},
 				}
@@ -178,11 +177,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 			Context("With runcmds", func() {
 				BeforeEach(func() {
-					cloudInitSpec.CloudConfig.RunCmd = []json.RawMessage{
-						[]byte("ls /"),
-						[]byte(`[ "ls", "-a", "-l", "/" ]`),
-						[]byte("- echo\n- \"hello, world.\""),
-					}
+					cloudInitSpec.CloudConfig.RunCmd = []byte(`["ls /",["ls","-a","-l","/"],["echo","hello, world."]]`)
 				})
 				It("Should return valid data", func() {
 					Expect(custSpec).To(BeNil())

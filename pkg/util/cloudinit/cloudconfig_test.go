@@ -5,7 +5,6 @@ package cloudinit_test
 
 import (
 	"context"
-	"encoding/json"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -137,11 +136,7 @@ var _ = Describe("CloudConfig MarshalYAML", func() {
 						},
 					},
 				},
-				RunCmd: []json.RawMessage{
-					[]byte("ls /"),
-					[]byte(`[ "ls", "-a", "-l", "/" ]`),
-					[]byte("- echo\n- \"hello, world.\""),
-				},
+				RunCmd: []byte(`["ls /",["ls","-a","-l","/"],["echo","hello, world."]]`),
 			}
 			cloudConfigSecretData = cloudinit.CloudConfigSecretData{
 				Users: map[string]cloudinit.CloudConfigUserSecretData{
@@ -214,15 +209,11 @@ var _ = Describe("CloudConfig MarshalYAML", func() {
 						UID:               addrOf(int64(123)),
 					},
 				},
-				RunCmd: []json.RawMessage{
-					[]byte("ls /"),
-					[]byte(`[ "ls", "-a", "-l", "/" ]`),
-					[]byte("- echo\n- \"hello, world.\""),
-				},
+				RunCmd: []byte(`["ls /",["ls","-a","-l","/"],["echo","hello, world."]]`),
 				WriteFiles: []vmopv1cloudinit.WriteFile{
 					{
 						Path:        "/hello",
-						Content:     []byte("world"),
+						Content:     []byte(`"world"`),
 						Append:      true,
 						Defer:       true,
 						Encoding:    vmopv1cloudinit.WriteFileEncodingTextPlain,
@@ -231,7 +222,7 @@ var _ = Describe("CloudConfig MarshalYAML", func() {
 					},
 					{
 						Path:        "/hi",
-						Content:     []byte("name: \"my-bootstrap-data\"\nkey: \"/hi\""),
+						Content:     []byte(`{"name":"my-bootstrap-data","key":"/hi"}`),
 						Append:      false,
 						Defer:       false,
 						Encoding:    vmopv1cloudinit.WriteFileEncodingTextPlain,
@@ -240,7 +231,7 @@ var _ = Describe("CloudConfig MarshalYAML", func() {
 					},
 					{
 						Path:        "/doc",
-						Content:     []byte("|\n  a multi-line\n  document"),
+						Content:     []byte(`"a multi-line\ndocument"`),
 						Append:      true,
 						Defer:       true,
 						Encoding:    vmopv1cloudinit.WriteFileEncodingTextPlain,

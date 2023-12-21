@@ -5,9 +5,9 @@ package cloudinit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	"gopkg.in/yaml.v3"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/cloudinit"
@@ -127,7 +127,7 @@ func getSecretDataForWriteFile(
 
 	// First try to unmarshal the value into a string. If that does
 	// not work, try unmarshaling the data into a SecretKeySelector.
-	if err := yaml.Unmarshal(
+	if err := json.Unmarshal(
 		in.Content,
 		out); err == nil {
 
@@ -136,7 +136,7 @@ func getSecretDataForWriteFile(
 
 	*out = ""
 	var sks common.SecretKeySelector
-	if err := yaml.Unmarshal(in.Content, &sks); err != nil {
+	if err := json.Unmarshal(in.Content, &sks); err != nil {
 		return err
 	}
 

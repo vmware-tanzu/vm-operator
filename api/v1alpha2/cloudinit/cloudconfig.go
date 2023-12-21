@@ -49,7 +49,9 @@ type CloudConfig struct {
 	//       - "Hello, world."
 	//
 	// +optional
-	RunCmd []json.RawMessage `json:"runcmd,omitempty"`
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	RunCmd json.RawMessage `json:"runcmd,omitempty"`
 
 	// WriteFiles
 	//
@@ -275,6 +277,8 @@ type WriteFile struct {
 	//       key: my-file-content
 	//
 	// +optional
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
 	Content json.RawMessage `json:"content,omitempty"`
 
 	// Defer indicates to defer writing the file until Cloud-Init's "final"

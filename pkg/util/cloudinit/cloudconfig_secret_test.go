@@ -161,7 +161,7 @@ var _ = Describe("CloudConfig GetCloudConfigSecretData", func() {
 		})
 		When("The string is a single line", func() {
 			BeforeEach(func() {
-				cloudConfig.WriteFiles[0].Content = []byte("world")
+				cloudConfig.WriteFiles[0].Content = []byte(`"world"`)
 			})
 			It("Should return valid data", func() {
 				Expect(err).ToNot(HaveOccurred())
@@ -171,7 +171,7 @@ var _ = Describe("CloudConfig GetCloudConfigSecretData", func() {
 		})
 		When("The string is a multi-line value", func() {
 			BeforeEach(func() {
-				cloudConfig.WriteFiles[0].Content = []byte("|\n  world\n  and the universe!")
+				cloudConfig.WriteFiles[0].Content = []byte(`"world\nand the universe!"`)
 			})
 			It("Should return valid data", func() {
 				Expect(err).ToNot(HaveOccurred())
@@ -183,7 +183,7 @@ var _ = Describe("CloudConfig GetCloudConfigSecretData", func() {
 
 	When("CloudConfig has a file that references data from a secret", func() {
 		BeforeEach(func() {
-			cloudConfig.WriteFiles[0].Content = []byte("name: \"my-bootstrap-data\"\nkey: \"file-hello\"")
+			cloudConfig.WriteFiles[0].Content = []byte(`{"name":"my-bootstrap-data","key":"file-hello"}`)
 		})
 		When("The secret does not exist", func() {
 			It("Should return an error", func() {
@@ -275,7 +275,7 @@ var _ = Describe("CloudConfig GetCloudConfigSecretData", func() {
 				WriteFiles: []vmopv1cloudinit.WriteFile{
 					{
 						Path:    "/hello",
-						Content: []byte("name: \"my-bootstrap-files\"\nkey: \"file-hello\""),
+						Content: []byte(`{"name":"my-bootstrap-files","key":"file-hello"}`),
 					},
 				},
 			}

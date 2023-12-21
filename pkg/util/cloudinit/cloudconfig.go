@@ -90,7 +90,7 @@ func MarshalYAML(
 
 	if l := len(in.Users); l > 0 {
 		out.Users = &cloudConfigUsers{
-			defaultUser: in.AlwaysDefaultUser,
+			defaultUser: in.DefaultUserEnabled,
 			users:       make([]user, l),
 		}
 		for i := range in.Users {

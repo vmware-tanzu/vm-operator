@@ -19,13 +19,13 @@ type CloudConfig struct {
 	// +optional
 	Timezone string `json:"timezone,omitempty"`
 
-	// AlwaysDefaultUser may be set to true to ensure even if the Users field
+	// DefaultUserEnabled may be set to true to ensure even if the Users field
 	// is not empty, the default user is still created on systems that have one
 	// defined. By default, Cloud-Init ignores the default user if the
 	// CloudConfig provides one or more non-default users via the Users field.
 	//
 	// +optional
-	AlwaysDefaultUser bool `json:"defaultUser,omitempty"`
+	DefaultUserEnabled bool `json:"defaultUserEnabled,omitempty"`
 
 	// Users allows adding/configuring one or more users on the guest.
 	//

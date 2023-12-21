@@ -116,7 +116,7 @@ var _ = Describe("CloudConfig MarshalYAML", func() {
 		})
 		When("There is a default user", func() {
 			BeforeEach(func() {
-				cloudConfig.AlwaysDefaultUser = true
+				cloudConfig.DefaultUserEnabled = true
 			})
 			It("Should return user data", func() {
 				Expect(err).ToNot(HaveOccurred())

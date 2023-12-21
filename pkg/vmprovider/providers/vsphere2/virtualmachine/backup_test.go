@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
@@ -57,45 +58,158 @@ func backupTests() {
 		ctx = nil
 	})
 
-	Context("Backup kube objects YAML", func() {
+	Context("Backup VM Resource YAML", func() {
 		BeforeEach(func() {
 			vm := builder.DummyVirtualMachineA2()
-			// Set the VM's UID and ResourceVersion to verify if the backup data is up-to-date.
+			// The typeMeta may not be populated when getting the resource from client.
+			// It's required in test for getting the resource version to check if the backup is up-to-date.
+			vm.TypeMeta = metav1.TypeMeta{
+				Kind: "VirtualMachine",
+			}
+			// Set the VM's UID and ResourceVersion to be able to verify if the backup data is up-to-date.
 			vm.UID = "vm-uid-test"
 			vm.ResourceVersion = "0"
 			vmCtx.VM = vm
 		})
 
-		When("No kube object is stored in ExtraConfig", func() {
+		When("No VM resource is stored in ExtraConfig", func() {
 
-			It("Should backup given kube objects as encoded, gzipped YAML in ExtraConfig", func() {
+			It("Should backup the current VM resource YAML in ExtraConfig", func() {
 				backupOpts := virtualmachine.BackupVirtualMachineOptions{
-					VMCtx:       vmCtx,
-					VcVM:        vcVM,
-					KubeObjects: []client.Object{vmCtx.VM},
+					VMCtx: vmCtx,
+					VcVM:  vcVM,
 				}
 
 				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 				vmYAML, err := yaml.Marshal(vmCtx.VM)
 				Expect(err).NotTo(HaveOccurred())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey, string(vmYAML))
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(vmYAML))
 			})
 		})
 
-		When("Kube objects data exists in ExtraConfig but is not up-to-date", func() {
+		When("VM resource exists in ExtraConfig but is not up-to-date", func() {
 
 			BeforeEach(func() {
 				oldVM := vmCtx.VM.DeepCopy()
 				oldVM.ObjectMeta.ResourceVersion = "1"
 				oldVMYAML, err := yaml.Marshal(oldVM)
 				Expect(err).NotTo(HaveOccurred())
-				yamlEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
+				vmYAMLEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
 				Expect(err).NotTo(HaveOccurred())
 
 				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
 					ExtraConfig: []types.BaseOptionValue{
 						&types.OptionValue{
-							Key:   vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey,
+							Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+							Value: vmYAMLEncoded,
+						},
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("Should backup VM resource YAML with the latest version in ExtraConfig", func() {
+				// Update the resourceVersion to simulate a new update of the VM.
+				vmCtx.VM.ObjectMeta.ResourceVersion = "2"
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx: vmCtx,
+					VcVM:  vcVM,
+				}
+
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+				newVMYAML, err := yaml.Marshal(vmCtx.VM)
+				Expect(err).NotTo(HaveOccurred())
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(newVMYAML))
+			})
+		})
+
+		When("VM resource exists in ExtraConfig and is up-to-date", func() {
+			var (
+				vmBackupStr = ""
+			)
+
+			BeforeEach(func() {
+				vmCtx.VM.ObjectMeta.ResourceVersion = "3"
+				vmYAML, err := yaml.Marshal(vmCtx.VM)
+				Expect(err).NotTo(HaveOccurred())
+				vmBackupStr = string(vmYAML)
+				vmYAMLEncoded, err := util.EncodeGzipBase64(vmBackupStr)
+				Expect(err).NotTo(HaveOccurred())
+
+				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
+					ExtraConfig: []types.BaseOptionValue{
+						&types.OptionValue{
+							Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+							Value: vmYAMLEncoded,
+						},
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("Should skip backing up VM resource YAML in ExtraConfig", func() {
+				// Update the VM to verify its resource YAML is not backed up in ExtraConfig.
+				vmCtx.VM.Labels = map[string]string{"foo": "bar"}
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx: vmCtx,
+					VcVM:  vcVM,
+				}
+
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, vmBackupStr)
+			})
+		})
+	})
+
+	Context("Backup Additional Resources YAML", func() {
+		var (
+			secretRes = &corev1.Secret{
+				// The typeMeta may not be populated when getting the resource from client.
+				// It's required in test for getting the resource version to check if the backup is up-to-date.
+				TypeMeta: metav1.TypeMeta{
+					Kind: "Secret",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					UID:             "secret-uid",
+					ResourceVersion: "0",
+					Name:            "vm-secret",
+				},
+			}
+		)
+		BeforeEach(func() {
+			vm := builder.DummyVirtualMachineA2()
+			vmCtx.VM = vm
+		})
+
+		When("No additional resource is stored in ExtraConfig", func() {
+
+			It("Should backup the given additional resources YAML in ExtraConfig", func() {
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx:               vmCtx,
+					VcVM:                vcVM,
+					AdditionalResources: []client.Object{secretRes},
+				}
+
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+				resYAML, err := yaml.Marshal(secretRes)
+				Expect(err).NotTo(HaveOccurred())
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, string(resYAML))
+			})
+		})
+
+		When("Additional resource exists in ExtraConfig but is not up-to-date", func() {
+
+			BeforeEach(func() {
+				oldRes := secretRes.DeepCopy()
+				oldResYAML, err := yaml.Marshal(oldRes)
+				Expect(err).NotTo(HaveOccurred())
+				yamlEncoded, err := util.EncodeGzipBase64(string(oldResYAML))
+				Expect(err).NotTo(HaveOccurred())
+
+				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
+					ExtraConfig: []types.BaseOptionValue{
+						&types.OptionValue{
+							Key:   vmopv1.AdditionalResourcesYAMLExtraConfigKey,
 							Value: yamlEncoded,
 						},
 					},
@@ -103,56 +217,80 @@ func backupTests() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("Should backup kube objects YAML with the latest version", func() {
-				vmCtx.VM.ObjectMeta.ResourceVersion = "2"
+			It("Should backup the given additional resources YAML with the latest version in ExtraConfig", func() {
+				secretRes.ObjectMeta.ResourceVersion = "1"
 				backupOpts := virtualmachine.BackupVirtualMachineOptions{
-					VMCtx:       vmCtx,
-					VcVM:        vcVM,
-					KubeObjects: []client.Object{vmCtx.VM},
+					VMCtx:               vmCtx,
+					VcVM:                vcVM,
+					AdditionalResources: []client.Object{secretRes},
 				}
 
 				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-				newVMYAML, err := yaml.Marshal(vmCtx.VM)
+				newResYAML, err := yaml.Marshal(secretRes)
 				Expect(err).NotTo(HaveOccurred())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey, string(newVMYAML))
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, string(newResYAML))
 			})
 		})
 
-		When("Kube objects data exists in ExtraConfig and is up-to-date", func() {
+		When("Additional resource exists in ExtraConfig and is up-to-date", func() {
 			var (
-				kubeObjectsBackupStr = ""
+				backupStr string
 			)
 
 			BeforeEach(func() {
-				vmCtx.VM.ObjectMeta.ResourceVersion = "3"
-				vmYAML, err := yaml.Marshal(vmCtx.VM)
+				resYAML, err := yaml.Marshal(secretRes)
 				Expect(err).NotTo(HaveOccurred())
-				kubeObjectsBackupStr = string(vmYAML)
-				encodedKubeObjectsBackup, err := util.EncodeGzipBase64(kubeObjectsBackupStr)
+				backupStr = string(resYAML)
+				yamlEncoded, err := util.EncodeGzipBase64(backupStr)
 				Expect(err).NotTo(HaveOccurred())
 
 				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
 					ExtraConfig: []types.BaseOptionValue{
 						&types.OptionValue{
-							Key:   vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey,
-							Value: encodedKubeObjectsBackup,
+							Key:   vmopv1.AdditionalResourcesYAMLExtraConfigKey,
+							Value: yamlEncoded,
 						},
 					},
 				})
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("Should skip backing up VM kube data", func() {
-				// Update the VM to verify its kube data is not backed up in ExtraConfig.
-				vmCtx.VM.Labels = map[string]string{"foo": "bar"}
+			It("Should skip backing up the additional resource YAML in ExtraConfig", func() {
+				// Update the resource without changing its resourceVersion to verify the backup is skipped.
+				secretRes.Labels = map[string]string{"foo": "bar"}
 				backupOpts := virtualmachine.BackupVirtualMachineOptions{
-					VMCtx:       vmCtx,
-					VcVM:        vcVM,
-					KubeObjects: []client.Object{vmCtx.VM},
+					VMCtx:               vmCtx,
+					VcVM:                vcVM,
+					AdditionalResources: []client.Object{secretRes},
 				}
 
 				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey, kubeObjectsBackupStr)
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, backupStr)
+			})
+		})
+
+		When("Multiple additional resources are given", func() {
+
+			It("Should backup the additional resources YAML with '---' separator in ExtraConfig", func() {
+				cmRes := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "vm-configMap",
+					},
+				}
+
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx:               vmCtx,
+					VcVM:                vcVM,
+					AdditionalResources: []client.Object{secretRes, cmRes},
+				}
+
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+				secretResYAML, err := yaml.Marshal(secretRes)
+				Expect(err).NotTo(HaveOccurred())
+				cmResYAML, err := yaml.Marshal(cmRes)
+				Expect(err).NotTo(HaveOccurred())
+				expectedYAML := string(secretResYAML) + "\n---\n" + string(cmResYAML)
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.AdditionalResourcesYAMLExtraConfigKey, expectedYAML)
 			})
 		})
 	})
@@ -168,7 +306,7 @@ func backupTests() {
 					DiskUUIDToPVC: nil,
 				}
 				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupPVCDiskDataExtraConfigKey, "")
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.PVCDiskDataExtraConfigKey, "")
 			})
 		})
 
@@ -196,7 +334,7 @@ func backupTests() {
 				}
 				diskDataJSON, err := json.Marshal(diskData)
 				Expect(err).NotTo(HaveOccurred())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupPVCDiskDataExtraConfigKey, string(diskDataJSON))
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.PVCDiskDataExtraConfigKey, string(diskDataJSON))
 			})
 		})
 	})
@@ -213,7 +351,7 @@ func backupTests() {
 				_, err := vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
 					ExtraConfig: []types.BaseOptionValue{
 						&types.OptionValue{
-							Key:   vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey,
+							Key:   vmopv1.CloudInitInstanceIDExtraConfigKey,
 							Value: "ec-instance-id",
 						},
 					},
@@ -230,7 +368,7 @@ func backupTests() {
 					VcVM:  vcVM,
 				}
 				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey, "ec-instance-id")
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.CloudInitInstanceIDExtraConfigKey, "ec-instance-id")
 			})
 		})
 
@@ -249,7 +387,7 @@ func backupTests() {
 					VcVM:  vcVM,
 				}
 				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey, "annotation-instance-id")
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.CloudInitInstanceIDExtraConfigKey, "annotation-instance-id")
 			})
 		})
 

@@ -109,24 +109,28 @@ const (
 	FirstBootDoneAnnotation = "virtualmachine." + GroupName + "/first-boot-done"
 )
 
-// VirtualMachine backup/restore related constants.
 const (
 	// ManagedByExtensionKey and ManagedByExtensionType represent the ManagedBy
 	// field on the VM. They are used to differentiate VM Service managed VMs
 	// from traditional vSphere VMs.
 	ManagedByExtensionKey  = "com.vmware.vcenter.wcp"
 	ManagedByExtensionType = "VirtualMachine"
+)
 
-	// VMBackupKubeObjectsYAMLExtraConfigKey is the ExtraConfig key to persist VM
-	// and its relevant Kubernetes resource YAML separated by "---", compressed
-	// using gzip and base64-encoded.
-	VMBackupKubeObjectsYAMLExtraConfigKey = "vmservice.virtualmachine.kube.objects.yaml"
-	// VMBackupPVCDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
+// VirtualMachine backup/restore related constants.
+const (
+	// VMResourceYAMLExtraConfigKey is the ExtraConfig key to persist VM
+	// Kubernetes resource YAML, compressed using gzip and base64-encoded.
+	VMResourceYAMLExtraConfigKey = "vmservice.virtualmachine.resource.yaml"
+	// AdditionalResourcesYAMLExtraConfigKey is the ExtraConfig key to persist
+	// VM-relevant Kubernetes resource YAML, compressed using gzip and base64-encoded.
+	AdditionalResourcesYAMLExtraConfigKey = "vmservice.virtualmachine.additional.resources.yaml"
+	// PVCDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
 	// PVC disk data in JSON, compressed using gzip and base64-encoded.
-	VMBackupPVCDiskDataExtraConfigKey = "vmservice.virtualmachine.pvc.disk.data"
-	// VMBackupCloudInitInstanceIDExtraConfigKey is the ExtraConfig key to persist
+	PVCDiskDataExtraConfigKey = "vmservice.virtualmachine.pvc.disk.data"
+	// CloudInitInstanceIDExtraConfigKey is the ExtraConfig key to persist
 	// the VM's Cloud-Init instance ID, compressed using gzip and base64-encoded.
-	VMBackupCloudInitInstanceIDExtraConfigKey = "vmservice.virtualmachine.cloudinit.instanceid"
+	CloudInitInstanceIDExtraConfigKey = "vmservice.virtualmachine.cloudinit.instanceid"
 )
 
 // VirtualMachinePowerState defines a VM's desired and observed power states.

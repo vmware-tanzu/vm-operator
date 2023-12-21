@@ -12,8 +12,10 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/serializer/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
+	k8syaml "sigs.k8s.io/yaml"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
@@ -22,10 +24,10 @@ import (
 
 // BackupVirtualMachineOptions contains the options for BackupVirtualMachine.
 type BackupVirtualMachineOptions struct {
-	VMCtx         context.VirtualMachineContextA2
-	VcVM          *object.VirtualMachine
-	KubeObjects   []client.Object
-	DiskUUIDToPVC map[string]corev1.PersistentVolumeClaim
+	VMCtx               context.VirtualMachineContextA2
+	VcVM                *object.VirtualMachine
+	DiskUUIDToPVC       map[string]corev1.PersistentVolumeClaim
+	AdditionalResources []client.Object
 }
 
 // PVCDiskData contains the data of a disk attached to VM backed by a PVC.
@@ -40,38 +42,61 @@ type PVCDiskData struct {
 
 // BackupVirtualMachine backs up the required data of a VM into its ExtraConfig.
 // Currently, the following data is backed up:
-// - VM relevant Kubernetes objects in YAML separated by "---".
+// - VM Kubernetes resource in YAMl.
+// - Additional VM-relevant Kubernetes resources in YAML, separated by "---".
 // - Cloud-Init instance ID (if not already stored in ExtraConfig).
 // - PVC disk data in JSON format (if DiskUUIDToPVC is not empty).
 func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 	var moVM mo.VirtualMachine
 	if err := opts.VcVM.Properties(opts.VMCtx, opts.VcVM.Reference(),
 		[]string{"config.extraConfig"}, &moVM); err != nil {
-		opts.VMCtx.Logger.Error(err, "Failed to get VM properties for backup")
+		opts.VMCtx.Logger.Error(err, "failed to get VM properties for backup")
 		return err
 	}
 
 	curEcMap := util.ExtraConfigToMap(moVM.Config.ExtraConfig)
 	ecToUpdate := []types.BaseOptionValue{}
 
-	objectsYAML, err := getDesiredKubeObjectsYAMLForBackup(opts.KubeObjects, curEcMap)
+	vmYAML, err := getDesiredResourceYAMLForBackup(
+		[]client.Object{opts.VMCtx.VM},
+		vmopv1.VMResourceYAMLExtraConfigKey,
+		curEcMap,
+	)
 	if err != nil {
-		opts.VMCtx.Logger.Error(err, "Failed to get kube objects yaml for backup")
+		opts.VMCtx.Logger.Error(err, "failed to get VM resource yaml for backup")
+		return err
+	}
+	if vmYAML == "" {
+		opts.VMCtx.Logger.Info("Skipping VM resource yaml backup as unchanged")
+	} else {
+		ecToUpdate = append(ecToUpdate, &types.OptionValue{
+			Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+			Value: vmYAML,
+		})
+	}
+
+	additionalYAML, err := getDesiredResourceYAMLForBackup(
+		opts.AdditionalResources,
+		vmopv1.AdditionalResourcesYAMLExtraConfigKey,
+		curEcMap,
+	)
+	if err != nil {
+		opts.VMCtx.Logger.Error(err, "failed to get additional resources yaml for backup")
 		return err
 	}
 
-	if objectsYAML == "" {
-		opts.VMCtx.Logger.Info("Skipping kube objects yaml backup as unchanged")
+	if additionalYAML == "" {
+		opts.VMCtx.Logger.Info("Skipping additional resources yaml backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
-			Key:   vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey,
-			Value: objectsYAML,
+			Key:   vmopv1.AdditionalResourcesYAMLExtraConfigKey,
+			Value: additionalYAML,
 		})
 	}
 
 	instanceID, err := getDesiredCloudInitInstanceIDForBackup(opts.VMCtx.VM, curEcMap)
 	if err != nil {
-		opts.VMCtx.Logger.Error(err, "Failed to get cloud-init instance ID for backup")
+		opts.VMCtx.Logger.Error(err, "failed to get cloud-init instance ID for backup")
 		return err
 	}
 
@@ -79,14 +104,14 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 		opts.VMCtx.Logger.V(4).Info("Skipping cloud-init instance ID as already stored")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
-			Key:   vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey,
+			Key:   vmopv1.CloudInitInstanceIDExtraConfigKey,
 			Value: instanceID,
 		})
 	}
 
 	pvcDiskData, err := getDesiredPVCDiskDataForBackup(opts, curEcMap)
 	if err != nil {
-		opts.VMCtx.Logger.Error(err, "Failed to get PVC disk data for backup")
+		opts.VMCtx.Logger.Error(err, "failed to get PVC disk data for backup")
 		return err
 	}
 
@@ -94,7 +119,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 		opts.VMCtx.Logger.V(4).Info("Skipping PVC disk data backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
-			Key:   vmopv1.VMBackupPVCDiskDataExtraConfigKey,
+			Key:   vmopv1.PVCDiskDataExtraConfigKey,
 			Value: pvcDiskData,
 		})
 	}
@@ -105,7 +130,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 		if _, err := opts.VcVM.Reconfigure(opts.VMCtx, types.VirtualMachineConfigSpec{
 			ExtraConfig: ecToUpdate,
 		}); err != nil {
-			opts.VMCtx.Logger.Error(err, "Failed to update VM ExtraConfig with latest backup data")
+			opts.VMCtx.Logger.Error(err, "failed to update VM ExtraConfig with latest backup data")
 			return err
 		}
 	}
@@ -113,16 +138,20 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 	return nil
 }
 
-func getDesiredKubeObjectsYAMLForBackup(
-	kubeObjects []client.Object,
+// getDesiredResourceYAMLForBackup returns the encoded and gzipped YAML of the
+// given resources, or an empty string if the data is unchanged in ExtraConfig.
+func getDesiredResourceYAMLForBackup(
+	resources []client.Object,
+	ecKey string,
 	ecMap map[string]string) (string, error) {
-	// Check if the VM's ExtraConfig already contains the latest version of all
-	// objects, determined by each resource UID to resource version mapping.
+	// Check if the given resources are up-to-date with the latest backup.
+	// This is done by comparing the resource versions of each object UID.
 	var isLatestBackup bool
-	if ecKubeData, ok := ecMap[vmopv1.VMBackupKubeObjectsYAMLExtraConfigKey]; ok {
+	if ecKubeData, ok := ecMap[ecKey]; ok {
 		if resourceToVersion := tryGetResourceVersion(ecKubeData); resourceToVersion != nil {
+			fmt.Println("resourceToVersion", resourceToVersion)
 			isLatestBackup = true
-			for _, curObj := range kubeObjects {
+			for _, curObj := range resources {
 				if curObj.GetResourceVersion() != resourceToVersion[string(curObj.GetUID())] {
 					isLatestBackup = false
 					break
@@ -131,54 +160,48 @@ func getDesiredKubeObjectsYAMLForBackup(
 		}
 	}
 
-	// All objects are up-to-date, return an empty string to skip the backup.
+	// All resources are up-to-date, return an empty string to skip the backup.
 	if isLatestBackup {
 		return "", nil
 	}
 
-	// Backup the latest version of all objects with encoded and gzipped YAML.
-	// Use "---" as the separator between objects to allow for easy parsing.
+	// Backup the given resources YAML with encoding and compression.
+	// Use "---" as the separator if more than one resource is passed.
 	marshaledStrs := []string{}
-	for _, obj := range kubeObjects {
-		marshaledYaml, err := yaml.Marshal(obj)
+	for _, res := range resources {
+		marshaledYaml, err := k8syaml.Marshal(res)
 		if err != nil {
-			return "", fmt.Errorf("failed to marshal object %s: %v", obj.GetName(), err)
+			return "", fmt.Errorf("failed to marshal object %q: %v", res.GetName(), err)
 		}
 		marshaledStrs = append(marshaledStrs, string(marshaledYaml))
 	}
 
-	kubeObjectsYAML := strings.Join(marshaledStrs, "---\n")
-	return util.EncodeGzipBase64(kubeObjectsYAML)
+	resourcesYAML := strings.Join(marshaledStrs, "\n---\n")
+	return util.EncodeGzipBase64(resourcesYAML)
 }
 
-func tryGetResourceVersion(ecKubeObjectsYAML string) map[string]string {
-	decoded, err := util.TryToDecodeBase64Gzip([]byte(ecKubeObjectsYAML))
+// tryGetResourceVersion tries to get the resource version of each object in
+// the encoded and gzipped YAML. Returns a map of resource UID to version.
+func tryGetResourceVersion(ecResourcesYAML string) map[string]string {
+	decoded, err := util.TryToDecodeBase64Gzip([]byte(ecResourcesYAML))
 	if err != nil {
 		return nil
 	}
 
 	resourceVersions := map[string]string{}
-	kubeObjectsYAML := strings.Split(decoded, "---\n")
-	for _, objYAML := range kubeObjectsYAML {
-		if objYAML != "" {
-			objYAML = strings.TrimSpace(objYAML)
-			var obj map[string]interface{}
-			if err := yaml.Unmarshal([]byte(objYAML), &obj); err != nil {
+	decUnstructured := yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
+	resourcesYAML := strings.Split(decoded, "---\n")
+	for _, resYAML := range resourcesYAML {
+		fmt.Println("resYAML", resYAML)
+		if resYAML != "" {
+			resYAML = strings.TrimSpace(resYAML)
+			res := &unstructured.Unstructured{}
+			_, _, err := decUnstructured.Decode([]byte(resYAML), nil, res)
+			if err != nil {
+				fmt.Println("err", err)
 				continue
 			}
-			metadata, ok := obj["metadata"].(map[string]interface{})
-			if !ok {
-				continue
-			}
-			uid, ok := metadata["uid"].(string)
-			if !ok {
-				continue
-			}
-			resourceVersion, ok := metadata["resourceVersion"].(string)
-			if !ok {
-				continue
-			}
-			resourceVersions[uid] = resourceVersion
+			resourceVersions[string(res.GetUID())] = res.GetResourceVersion()
 		}
 	}
 
@@ -190,7 +213,7 @@ func getDesiredCloudInitInstanceIDForBackup(
 	ecMap map[string]string) (string, error) {
 	// Cloud-Init instance ID should not be changed once persisted in VM's
 	// ExtraConfig. Return an empty string to skip the backup if it exists.
-	if _, ok := ecMap[vmopv1.VMBackupCloudInitInstanceIDExtraConfigKey]; ok {
+	if _, ok := ecMap[vmopv1.CloudInitInstanceIDExtraConfigKey]; ok {
 		return "", nil
 	}
 
@@ -240,7 +263,7 @@ func getDesiredPVCDiskDataForBackup(
 	}
 
 	// Return an empty string to skip the backup if the data is unchanged.
-	if diskDataBackup == ecMap[vmopv1.VMBackupPVCDiskDataExtraConfigKey] {
+	if diskDataBackup == ecMap[vmopv1.PVCDiskDataExtraConfigKey] {
 		return "", nil
 	}
 

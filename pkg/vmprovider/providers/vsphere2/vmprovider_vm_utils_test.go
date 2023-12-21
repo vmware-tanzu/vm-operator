@@ -933,7 +933,7 @@ func vmUtilTests() {
 		})
 	})
 
-	Context("GetKubeObjectsForBackup", func() {
+	Context("GetAdditionalResourcesForBackup", func() {
 
 		When("VM spec has no bootstrap data set", func() {
 
@@ -941,11 +941,10 @@ func vmUtilTests() {
 				vmCtx.VM.Spec.Bootstrap = nil
 			})
 
-			It("Should return VM object only", func() {
-				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+			It("Should not return any additional resources for backup", func() {
+				resources, err := vsphere.GetAdditionalResourcesForBackup(vmCtx, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(objects).To(HaveLen(1))
-				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
+				Expect(resources).To(BeEmpty())
 			})
 		})
 
@@ -973,12 +972,11 @@ func vmUtilTests() {
 				})
 			})
 
-			It("Should return VM and secret objects", func() {
-				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+			It("Should return the Secret object as additional resource for backup", func() {
+				objects, err := vsphere.GetAdditionalResourcesForBackup(vmCtx, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(objects).To(HaveLen(2))
-				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
-				Expect(objects[1].GetName()).To(Equal("dummy-cloud-config-secret"))
+				Expect(objects).To(HaveLen(1))
+				Expect(objects[0].GetName()).To(Equal("dummy-cloud-config-secret"))
 			})
 		})
 
@@ -1000,12 +998,11 @@ func vmUtilTests() {
 				})
 			})
 
-			It("Should return VM and Secret objects", func() {
-				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+			It("Should return the Secret object as additional resource for backup", func() {
+				objects, err := vsphere.GetAdditionalResourcesForBackup(vmCtx, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(objects).To(HaveLen(2))
-				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
-				Expect(objects[1].GetName()).To(Equal("dummy-raw-cloud-secret"))
+				Expect(objects).To(HaveLen(1))
+				Expect(objects[0].GetName()).To(Equal("dummy-raw-cloud-secret"))
 			})
 		})
 
@@ -1027,12 +1024,11 @@ func vmUtilTests() {
 				})
 			})
 
-			It("Should return VM and ConfigMap objects", func() {
-				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+			It("Should return the ConfigMap object as additional resource for backup", func() {
+				objects, err := vsphere.GetAdditionalResourcesForBackup(vmCtx, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(objects).To(HaveLen(2))
-				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
-				Expect(objects[1].GetName()).To(Equal("dummy-raw-cloud-config-map"))
+				Expect(objects).To(HaveLen(1))
+				Expect(objects[0].GetName()).To(Equal("dummy-raw-cloud-config-map"))
 			})
 		})
 
@@ -1058,12 +1054,11 @@ func vmUtilTests() {
 				})
 			})
 
-			It("Should return VM and Secret objects", func() {
-				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+			It("Should return the Secret object as additional resource for backup", func() {
+				objects, err := vsphere.GetAdditionalResourcesForBackup(vmCtx, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(objects).To(HaveLen(2))
-				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
-				Expect(objects[1].GetName()).To(Equal("dummy-sysprep-secret"))
+				Expect(objects).To(HaveLen(1))
+				Expect(objects[0].GetName()).To(Equal("dummy-sysprep-secret"))
 			})
 		})
 
@@ -1085,12 +1080,11 @@ func vmUtilTests() {
 				})
 			})
 
-			It("Should return VM and secret objects", func() {
-				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+			It("Should return the Secret object as additional resource for backup", func() {
+				objects, err := vsphere.GetAdditionalResourcesForBackup(vmCtx, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(objects).To(HaveLen(2))
-				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
-				Expect(objects[1].GetName()).To(Equal("dummy-raw-sysprep-secret"))
+				Expect(objects).To(HaveLen(1))
+				Expect(objects[0].GetName()).To(Equal("dummy-raw-sysprep-secret"))
 			})
 		})
 
@@ -1112,12 +1106,11 @@ func vmUtilTests() {
 				})
 			})
 
-			It("Should return VM and ConfigMap objects", func() {
-				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+			It("Should return the ConfigMap object as additional resource for backup", func() {
+				objects, err := vsphere.GetAdditionalResourcesForBackup(vmCtx, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(objects).To(HaveLen(2))
-				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
-				Expect(objects[1].GetName()).To(Equal("dummy-raw-sysprep-config-map"))
+				Expect(objects).To(HaveLen(1))
+				Expect(objects[0].GetName()).To(Equal("dummy-raw-sysprep-config-map"))
 			})
 		})
 
@@ -1145,12 +1138,11 @@ func vmUtilTests() {
 				})
 			})
 
-			It("Should return VM and Secret objects", func() {
-				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+			It("Should return the Secret object as additional resource for backup", func() {
+				objects, err := vsphere.GetAdditionalResourcesForBackup(vmCtx, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(objects).To(HaveLen(2))
-				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
-				Expect(objects[1].GetName()).To(Equal("dummy-vapp-config-property-secret"))
+				Expect(objects).To(HaveLen(1))
+				Expect(objects[0].GetName()).To(Equal("dummy-vapp-config-property-secret"))
 			})
 		})
 
@@ -1170,12 +1162,11 @@ func vmUtilTests() {
 				})
 			})
 
-			It("Should return VM and Secret objects", func() {
-				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+			It("Should return the Secret object as additional resource for backup", func() {
+				objects, err := vsphere.GetAdditionalResourcesForBackup(vmCtx, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(objects).To(HaveLen(2))
-				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
-				Expect(objects[1].GetName()).To(Equal("dummy-raw-vapp-config-secret"))
+				Expect(objects).To(HaveLen(1))
+				Expect(objects[0].GetName()).To(Equal("dummy-raw-vapp-config-secret"))
 			})
 		})
 
@@ -1195,12 +1186,11 @@ func vmUtilTests() {
 				})
 			})
 
-			It("Should return VM and Secret objects", func() {
-				objects, err := vsphere.GetKubeObjectsForBackup(vmCtx, k8sClient)
+			It("Should return the Secret object as additional resource for backup", func() {
+				objects, err := vsphere.GetAdditionalResourcesForBackup(vmCtx, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(objects).To(HaveLen(2))
-				Expect(objects[0].GetName()).To(Equal(vmCtx.VM.Name))
-				Expect(objects[1].GetName()).To(Equal("dummy-raw-vapp-config-config-map"))
+				Expect(objects).To(HaveLen(1))
+				Expect(objects[0].GetName()).To(Equal("dummy-raw-vapp-config-config-map"))
 			})
 		})
 	})

@@ -400,26 +400,26 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	if lib.IsVMServiceBackupRestoreFSSEnabled() {
 		vmCtx.Logger.V(4).Info("Backing up VirtualMachine")
 
-		kubeObjects, err := GetKubeObjectsForBackup(vmCtx, vs.k8sClient)
+		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
 		if err != nil {
-			vmCtx.Logger.Error(err, "Failed to get kube objects for backup")
+			vmCtx.Logger.Error(err, "failed to get disk uuid to PVC mapping for backup")
 			return err
 		}
 
-		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
+		additionalResources, err := GetAdditionalResourcesForBackup(vmCtx, vs.k8sClient)
 		if err != nil {
-			vmCtx.Logger.Error(err, "Failed to get disk uuid to PVC for backup")
+			vmCtx.Logger.Error(err, "failed to get additional resources for backup")
 			return err
 		}
 
 		backupOpts := virtualmachine.BackupVirtualMachineOptions{
-			VMCtx:         vmCtx,
-			VcVM:          vcVM,
-			KubeObjects:   kubeObjects,
-			DiskUUIDToPVC: diskUUIDToPVC,
+			VMCtx:               vmCtx,
+			VcVM:                vcVM,
+			DiskUUIDToPVC:       diskUUIDToPVC,
+			AdditionalResources: additionalResources,
 		}
 		if err := virtualmachine.BackupVirtualMachine(backupOpts); err != nil {
-			vmCtx.Logger.Error(err, "Failed to backup VM")
+			vmCtx.Logger.Error(err, "failed to backup VM")
 			return err
 		}
 	}

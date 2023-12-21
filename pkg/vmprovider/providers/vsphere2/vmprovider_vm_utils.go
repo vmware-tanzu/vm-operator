@@ -11,6 +11,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -448,14 +449,12 @@ func GetAttachedDiskUUIDToPVC(
 	return diskUUIDToPVC, nil
 }
 
-// GetKubeObjectsForBackup returns a list of Kubernetes client objects that are
-// required for backup, including VM itself and bootstrap referenced objects.
-func GetKubeObjectsForBackup(
+// GetAdditionalResourcesForBackup returns a list of Kubernetes client objects
+// that are relevant for VM backup (e.g. bootstrap referenced resources).
+func GetAdditionalResourcesForBackup(
 	vmCtx context.VirtualMachineContextA2,
 	k8sClient ctrlclient.Client) ([]ctrlclient.Object, error) {
 	var objects []ctrlclient.Object
-	objects = append(objects, vmCtx.VM)
-
 	// Get bootstrap related objects from CloudInit or Sysprep (mutually exclusive).
 	if bootstrapSpec := vmCtx.VM.Spec.Bootstrap; bootstrapSpec != nil {
 		if v := bootstrapSpec.CloudInit; v != nil {
@@ -524,18 +523,29 @@ func getSecretOrConfigMapObject(
 	err := k8sClient.Get(vmCtx, key, secret)
 	if err != nil {
 		configMap := &corev1.ConfigMap{}
-
 		// For backwards compat if we cannot find the Secret, fallback to a ConfigMap. In v1a1, either a
 		// Secret and ConfigMap was supported for metadata (bootstrap) as separate fields, but v1a2 only
 		// supports Secrets.
 		if configMapFallback && apierrors.IsNotFound(err) {
-			// Use the Secret error since the error message isn't misleading.
 			if k8sClient.Get(vmCtx, key, configMap) == nil {
+				// The typeMeta may not be populated when getting the resource from client.
+				// We need to populate it here so that the resource can be serialized in backup.
+				configMap.TypeMeta = metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				}
 				err = nil
 			}
 		}
 
 		return configMap, err
+	}
+
+	// The typeMeta may not be populated when getting the resource from client.
+	// We need to populate it here so that the resource can be serialized in backup.
+	secret.TypeMeta = metav1.TypeMeta{
+		Kind:       "Secret",
+		APIVersion: "v1",
 	}
 
 	return secret, err

@@ -108,6 +108,7 @@ func GetCloudInitMetadata(vm *vmopv1.VirtualMachine,
 	// This is to address a bug when Cloud-Init sans configMap/secret actually got
 	// customized by LinuxPrep. Use annotation as instanceID to avoid
 	// different instanceID triggers CloudInit in brownfield scenario.
+	// This is also used in B/R to ensure it remains the same after VM restore.
 	if value, ok := vm.Annotations[vmopv1.InstanceIDAnnotation]; ok {
 		metadataObj.InstanceID = value
 	}

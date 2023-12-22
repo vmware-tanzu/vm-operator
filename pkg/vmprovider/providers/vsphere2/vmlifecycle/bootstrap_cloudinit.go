@@ -48,7 +48,13 @@ func BootStrapCloudInit(
 		sshPublicKeys = strings.Join(cloudInitSpec.SSHAuthorizedKeys, "\n")
 	}
 
-	metadata, err := GetCloudInitMetadata(string(vmCtx.VM.UID), bsArgs.Hostname, netPlan, sshPublicKeys)
+	uid := string(vmCtx.VM.UID)
+	// Use the existing instance ID if it is already set on the VM.
+	// This ensures cloud-init uses the same instance ID across B/R.
+	if value, ok := vmCtx.VM.Annotations[vmopv1.InstanceIDAnnotation]; ok {
+		uid = value
+	}
+	metadata, err := GetCloudInitMetadata(uid, bsArgs.Hostname, netPlan, sshPublicKeys)
 	if err != nil {
 		return nil, nil, err
 	}

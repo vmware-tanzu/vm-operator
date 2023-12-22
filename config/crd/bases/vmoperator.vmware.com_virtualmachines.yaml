@@ -723,11 +723,11 @@ spec:
                           CloudConfig, used to bootstrap the VM. \n Please note this
                           field and RawCloudConfig are mutually exclusive."
                         properties:
-                          defaultUser:
-                            description: AlwaysDefaultUser may be set to true to ensure
-                              even if the Users field is not empty, the default user
-                              is still created on systems that have one defined. By
-                              default, Cloud-Init ignores the default user if the
+                          defaultUserEnabled:
+                            description: DefaultUserEnabled may be set to true to
+                              ensure even if the Users field is not empty, the default
+                              user is still created on systems that have one defined.
+                              By default, Cloud-Init ignores the default user if the
                               CloudConfig provides one or more non-default users via
                               the Users field.
                             type: boolean

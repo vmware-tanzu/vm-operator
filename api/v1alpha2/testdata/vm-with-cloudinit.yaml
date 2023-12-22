@@ -16,11 +16,12 @@ spec:
   bootstrap:
     cloudInit: 
       cloudConfig:
+        defaultUserEnabled: true
         users:
-        - default
         - name: akutz
           primary_group: akutz
-          groups: users
+          groups:
+          - users
           ssh_authorized_keys:
           - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj...
         runcmd:

@@ -153,7 +153,7 @@ var _ = Describe("CloudInit Bootstrap", func() {
 
 			Context("With default user", func() {
 				BeforeEach(func() {
-					cloudInitSpec.CloudConfig.AlwaysDefaultUser = true
+					cloudInitSpec.CloudConfig.DefaultUserEnabled = true
 				})
 				It("Should return valid data", func() {
 					Expect(custSpec).To(BeNil())

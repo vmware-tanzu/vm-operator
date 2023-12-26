@@ -16,7 +16,7 @@ jobs:
       label_names: ${{ steps.update-label.outputs.label_names }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           # The pull_request_target event runs in the context of the PR's BASE.
           # We need to checkout the PR's HEAD to be able to check the diff.
@@ -30,7 +30,7 @@ jobs:
           echo "lines_of_change=$loc" >> $GITHUB_OUTPUT
       - name: Update label
         id: update-label
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # TODO: Add testing-needed-e2e-full label once the internal pipeline

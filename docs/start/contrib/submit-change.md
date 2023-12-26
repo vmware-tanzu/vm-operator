@@ -19,6 +19,15 @@ When creating or modifying the project's `README.md` file or any of the document
 
 For example, the below link points to the `Quickstart` page:
 
+<!--
+Please note the following message appears when building the site documentation:
+
+    INFO    -  Doc file 'start/contrib/submit-change.md' contains an absolute link '/start/quick.md', it was left as is. Did you mean '../quick.md'?
+
+The above message may be safely ignored. It is caused by the below, intentional
+error that demonstrates the *incorrect* method for defining links.
+-->
+
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 [/start/quick.md](/start/quick.md)
 

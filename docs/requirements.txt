@@ -1,7 +1,7 @@
 mkdocs >= 1.5.3
-mkdocs-material >= 9.4.2
-pymdown-extensions >= 10.3
-pygments >= 2.16.1
-mkdocs-git-committers-plugin-2 >= 1.2.0
-mkdocs-git-revision-date-localized-plugin >= 1.2.0
+mkdocs-material >= 9.5.3
+pymdown-extensions >= 10.5
+pygments >= 2.17.2
+mkdocs-git-committers-plugin-2 >= 2.2.2
+mkdocs-git-revision-date-localized-plugin >= 1.2.2
 mkdocs-markdownextradata-plugin >= 0.2.5

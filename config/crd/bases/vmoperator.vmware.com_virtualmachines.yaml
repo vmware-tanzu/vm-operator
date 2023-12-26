@@ -632,21 +632,24 @@ spec:
     subresources:
       status: {}
   - additionalPrinterColumns:
-    - jsonPath: .status.class.name
+    - jsonPath: .status.powerState
+      name: Power-State
+      type: string
+    - jsonPath: .spec.className
       name: Class
       priority: 1
       type: string
-    - jsonPath: .status.image.name
+    - jsonPath: .spec.imageName
       name: Image
       priority: 1
-      type: string
-    - jsonPath: .status.powerState
-      name: PowerState
       type: string
     - jsonPath: .status.network.primaryIP4
       name: Primary-IP4
       priority: 1
       type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
     name: v1alpha2
     schema:
       openAPIV3Schema:

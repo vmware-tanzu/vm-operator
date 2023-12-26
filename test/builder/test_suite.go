@@ -50,7 +50,11 @@ import (
 )
 
 const (
-	VMICRDName = "virtualmachineimages.vmoperator.vmware.com"
+	scopeCluster   = "Cluster"
+	scopeNamespace = "Namespaced"
+
+	virtualMachineImageResourceName = "virtualmachineimages.vmoperator.vmware.com"
+	virtualMachineClassResourceName = "virtualmachineclasses.vmoperator.vmware.com"
 )
 
 // Reconciler is a base type for builder's reconcilers.
@@ -476,16 +480,25 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 
 	By("updating CRD scope", func() {
 		if enabled, ok := s.fssMap[lib.VMImageRegistryFSS]; ok {
-			crd := s.GetInstalledCRD(VMICRDName)
+			crd := s.GetInstalledCRD(virtualMachineImageResourceName)
 			Expect(crd).ToNot(BeNil())
 			scope := string(crd.Spec.Scope)
-			if enabled && scope == "Cluster" {
-				s.UpdateCRDScope(crd, "Namespaced")
-			} else if !enabled && scope == "Namespaced" {
-				s.UpdateCRDScope(crd, "Cluster")
+			if enabled && scope == scopeCluster {
+				s.UpdateCRDScope(crd, scopeNamespace)
+			} else if !enabled && scope == scopeNamespace {
+				s.UpdateCRDScope(crd, scopeCluster)
 			}
 		}
-		// TODO: Include NamespacedVMClass related changes
+		if enabled, ok := s.fssMap[lib.NamespacedVMClassFSS]; ok {
+			crd := s.GetInstalledCRD(virtualMachineClassResourceName)
+			Expect(crd).ToNot(BeNil())
+			scope := string(crd.Spec.Scope)
+			if enabled && scope == scopeCluster {
+				s.UpdateCRDScope(crd, scopeNamespace)
+			} else if !enabled && scope == scopeNamespace {
+				s.UpdateCRDScope(crd, scopeCluster)
+			}
+		}
 	})
 
 	// If one or more webhooks are being tested then go ahead and generate a

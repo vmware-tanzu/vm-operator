@@ -13,7 +13,7 @@ jobs:
     steps:
 
     - name: Fetch code coverage results
-      uses: actions/github-script@v6
+      uses: actions/github-script@v7
       id: fetch-code-coverage-results
       with:
         script: |
@@ -48,7 +48,7 @@ jobs:
       run: unzip code-coverage-results.zip
 
     - name: Load pull request ID
-      uses: actions/github-script@v6
+      uses: actions/github-script@v7
       id: load-pull-request-id
       if: steps.fetch-code-coverage-results.outputs.is_pull_request == 'true'
       with:

@@ -530,10 +530,28 @@ deploy-local-vcsim: prereqs kustomize-local-vcsim  ## Deploy controller in the c
 ## Documentation
 ## --------------------------------------
 
+.PHONY: docs-build-python
+docs-build-python: ## Build docs w python
+
+# SKIP_PIP_INSTALL is set to true by the GitHub action that verifies the docs
+# can be built successfully since the GitHub action directly installs the deps.
+ifneq (true,$(SKIP_PIP_INSTALL))
+	pip3 install --user -r ./docs/requirements.txt
+endif
+	$$(python3 -m site --user-base)/bin/mkdocs build --clean --config-file mkdocs.yml
+
+.PHONY: docs-build-docker
+docs-build-docker: ## Build docs w Docker
+	docker build -f Dockerfile.docs -t $(IMAGE)-docs:$(IMAGE_TAG) .
+	docker run -it --rm -v "$$(pwd)":/docs --entrypoint /usr/bin/mkdocs \
+	  $(IMAGE)-docs:$(IMAGE_TAG) build --clean --config-file mkdocs.yml
+
+.PHONY: docs-serve-python
 docs-serve-python: ## Serve docs w python
 	pip3 install --user -r ./docs/requirements.txt
 	$$(python3 -m site --user-base)/bin/mkdocs serve
 
+.PHONY: docs-serve-docker
 docs-serve-docker: ## Serve docs w docker
 	docker build -f Dockerfile.docs -t $(IMAGE)-docs:$(IMAGE_TAG) .
 	docker run -it --rm -p 8000:8000 -v "$$(pwd)":/docs $(IMAGE)-docs:$(IMAGE_TAG)

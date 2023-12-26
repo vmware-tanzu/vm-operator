@@ -1,6 +1,9 @@
 .DS_Store
 .cache
 
+# Mkdocs
+/.site/
+
 # Test output
 cover.out
 cover.out.norace

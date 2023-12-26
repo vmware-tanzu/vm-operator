@@ -530,15 +530,18 @@ deploy-local-vcsim: prereqs kustomize-local-vcsim  ## Deploy controller in the c
 ## Documentation
 ## --------------------------------------
 
+ifeq (,$(strip $(GITHUB_RUN_ID)))
+MKDOCS := $$(python3 -m site --user-base)/bin/mkdocs
+else
+MKDOCS := mkdocs
+endif
+
 .PHONY: docs-build-python
 docs-build-python: ## Build docs w python
-
-# SKIP_PIP_INSTALL is set to true by the GitHub action that verifies the docs
-# can be built successfully since the GitHub action directly installs the deps.
-ifneq (true,$(SKIP_PIP_INSTALL))
+ifeq (,$(strip $(GITHUB_RUN_ID)))
 	pip3 install --user -r ./docs/requirements.txt
 endif
-	$$(python3 -m site --user-base)/bin/mkdocs build --clean --config-file mkdocs.yml
+	$(MKDOCS) build --clean --config-file mkdocs.yml
 
 .PHONY: docs-build-docker
 docs-build-docker: ## Build docs w Docker
@@ -548,8 +551,10 @@ docs-build-docker: ## Build docs w Docker
 
 .PHONY: docs-serve-python
 docs-serve-python: ## Serve docs w python
+ifeq (,$(strip $(GITHUB_RUN_ID)))
 	pip3 install --user -r ./docs/requirements.txt
-	$$(python3 -m site --user-base)/bin/mkdocs serve
+endif
+	$(MKDOCS) serve
 
 .PHONY: docs-serve-docker
 docs-serve-docker: ## Serve docs w docker

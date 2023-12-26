@@ -29,6 +29,24 @@ jobs:
     - name: Lint Shell
       run: make lint-shell
 
+  verify-docs:
+    needs:
+    - lint-markdown
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+    - name: Install Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: 'docs/requirements.txt'
+    - name: Install Doc Requirements
+      run:  pip install -r docs/requirements.txt
+    - name: Verify Docs
+      run: make docs-build-python
+
   verify-go-modules:
     runs-on: ubuntu-latest
     steps:

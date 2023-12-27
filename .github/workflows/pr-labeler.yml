@@ -31,7 +31,7 @@ jobs:
     # - "config/crd/bases/.*"  # generated CRDs
     # - "docs/apis/v*.md"      # generated API documentation,
     #                          # ex. docs/apis/v1alpha1.md
-    - uses: srvaroa/labeler@master
+    - uses: srvaroa/labeler@v1.9.0
       with:
         config_path: .github/configs/labeler.yml
       env:

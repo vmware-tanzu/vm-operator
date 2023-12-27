@@ -149,7 +149,6 @@ func getDesiredResourceYAMLForBackup(
 	var isLatestBackup bool
 	if ecKubeData, ok := ecMap[ecKey]; ok {
 		if resourceToVersion := tryGetResourceVersion(ecKubeData); resourceToVersion != nil {
-			fmt.Println("resourceToVersion", resourceToVersion)
 			isLatestBackup = true
 			for _, curObj := range resources {
 				if curObj.GetResourceVersion() != resourceToVersion[string(curObj.GetUID())] {
@@ -192,13 +191,10 @@ func tryGetResourceVersion(ecResourcesYAML string) map[string]string {
 	decUnstructured := yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
 	resourcesYAML := strings.Split(decoded, "---\n")
 	for _, resYAML := range resourcesYAML {
-		fmt.Println("resYAML", resYAML)
 		if resYAML != "" {
 			resYAML = strings.TrimSpace(resYAML)
 			res := &unstructured.Unstructured{}
-			_, _, err := decUnstructured.Decode([]byte(resYAML), nil, res)
-			if err != nil {
-				fmt.Println("err", err)
+			if _, _, err := decUnstructured.Decode([]byte(resYAML), nil, res); err != nil {
 				continue
 			}
 			resourceVersions[string(res.GetUID())] = res.GetResourceVersion()

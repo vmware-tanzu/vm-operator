@@ -604,7 +604,9 @@ var _ = Describe("Update ConfigSpec", func() {
 					return true
 				}
 				config.ChangeTrackingEnabled = pointer.Bool(false)
-				vmSpec.Advanced.ChangeBlockTracking = true
+				vmSpec.Advanced = &vmopv1.VirtualMachineAdvancedSpec{
+					ChangeBlockTracking: true,
+				}
 			})
 
 			AfterEach(func() {

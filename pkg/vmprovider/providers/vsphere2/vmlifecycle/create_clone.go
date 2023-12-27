@@ -159,7 +159,12 @@ func resizeBootDiskDeviceChange(
 	vmCtx context.VirtualMachineContextA2,
 	virtualDisks object.VirtualDeviceList) []vimtypes.BaseVirtualDeviceConfigSpec {
 
-	capacity := vmCtx.VM.Spec.Advanced.BootDiskCapacity
+	advanced := vmCtx.VM.Spec.Advanced
+	if advanced == nil {
+		return nil
+	}
+
+	capacity := advanced.BootDiskCapacity
 	if capacity == nil || capacity.IsZero() {
 		return nil
 	}

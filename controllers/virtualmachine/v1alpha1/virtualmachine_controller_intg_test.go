@@ -12,7 +12,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	resourcev1 "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -28,10 +31,35 @@ func intgTests() {
 
 		vm    *vmopv1.VirtualMachine
 		vmKey types.NamespacedName
+
+		storageClass  *storagev1.StorageClass
+		resourceQuota *corev1.ResourceQuota
 	)
 
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
+
+		// The validation webhook expects there to be a storage class associated
+		// with the namespace where the VM is located.
+		storageClass = &storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "dummy-storage-class-",
+			},
+			Provisioner: "dummy-provisioner",
+		}
+		Expect(ctx.Client.Create(ctx, storageClass)).To(Succeed())
+		resourceQuota = &corev1.ResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "dummy-resource-quota-",
+				Namespace:    ctx.Namespace,
+			},
+			Spec: corev1.ResourceQuotaSpec{
+				Hard: corev1.ResourceList{
+					corev1.ResourceName(storageClass.Name + ".storageclass.storage.k8s.io/dummy"): resourcev1.MustParse("0"),
+				},
+			},
+		}
+		Expect(ctx.Client.Create(ctx, resourceQuota)).To(Succeed())
 
 		vm = &vmopv1.VirtualMachine{
 			ObjectMeta: metav1.ObjectMeta{
@@ -42,7 +70,7 @@ func intgTests() {
 				ImageName:    "dummy-image",
 				ClassName:    "dummy-class",
 				PowerState:   vmopv1.VirtualMachinePoweredOn,
-				StorageClass: "dummy-storageclass",
+				StorageClass: storageClass.Name,
 				VmMetadata: &vmopv1.VirtualMachineMetadata{
 					Transport:     vmopv1.VirtualMachineMetadataOvfEnvTransport,
 					ConfigMapName: "dummy-configmap",
@@ -53,6 +81,11 @@ func intgTests() {
 	})
 
 	AfterEach(func() {
+		Expect(ctx.Client.Delete(ctx, resourceQuota)).To(Succeed())
+		resourceQuota = nil
+		Expect(ctx.Client.Delete(ctx, storageClass)).To(Succeed())
+		storageClass = nil
+
 		ctx.AfterEach()
 		ctx = nil
 		intgFakeVMProvider.Reset()

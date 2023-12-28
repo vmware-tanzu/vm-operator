@@ -289,7 +289,7 @@ func unitTestsValidateCreate() {
 		Entry("should deny invalid PVC read only", createArgs{invalidPVCReadOnly: true}, false,
 			field.NotSupported(volPath.Index(0).Child("persistentVolumeClaim", "readOnly"), true, []string{"false"}).Error(), nil),
 		Entry("should deny a StorageClass that does not exist", createArgs{notFoundStorageClass: true}, false,
-			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
+			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, "Storage policy is not found").Error(), nil),
 		Entry("should deny a StorageClass that is not associated with the namespace", createArgs{invalidStorageClass: true}, false,
 			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
 		Entry("should allow valid storage class and resource quota", createArgs{validStorageClass: true}, true, nil, nil),

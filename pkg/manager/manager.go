@@ -9,6 +9,7 @@ import (
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
@@ -46,6 +47,7 @@ func New(opts Options) (Manager, error) {
 	opts.defaults()
 
 	_ = clientgoscheme.AddToScheme(opts.Scheme)
+	_ = apiextensionsv1.AddToScheme(opts.Scheme)
 	_ = vmopv1.AddToScheme(opts.Scheme)
 	_ = ncpv1alpha1.AddToScheme(opts.Scheme)
 	_ = cnsv1alpha1.AddToScheme(opts.Scheme)

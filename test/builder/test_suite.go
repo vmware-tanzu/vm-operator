@@ -33,7 +33,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -73,34 +74,63 @@ type TestSuite struct {
 	flags                 testFlags
 	envTest               envtest.Environment
 	config                *rest.Config
-	integrationTestClient client.Client
+	integrationTestClient ctrlclient.Client
+	integrationTest       bool
+	initProvidersFn       pkgmgr.InitializeProvidersFunc
+
+	// Controller manager specific fields.
+	manager             pkgmgr.Manager
+	managerRunning      bool
+	managerRunningMutex sync.Mutex
 
 	// Cancel function that will be called to close the Done channel of the
 	// Context, which will then stop the manager.
 	cancelFuncMutex sync.Mutex
 	cancelFunc      context.CancelFunc
 
-	// Controller specific fields
-	addToManagerFn      pkgmgr.AddToManagerFunc
-	initProvidersFn     pkgmgr.InitializeProvidersFunc
-	integrationTest     bool
-	manager             pkgmgr.Manager
-	managerRunning      bool
-	managerRunningMutex sync.Mutex
+	// Controller specific fields.
+	controllers []pkgmgr.AddToManagerFunc
 
-	// Webhook specific fields
-	webhookName string
-	certDir     string
-	validatorFn builder.ValidatorFunc
-	mutatorFn   builder.MutatorFunc
-	pki         pkiToolchain
-	webhookYaml []byte
+	// Webhook specific fields.
+	webhook testSuiteWebhookConfig
 
+	// Feature state switches.
 	fssMap map[string]bool
 }
 
+type testSuiteWebhookConfig struct {
+	certDir        string
+	pki            pkiToolchain
+	conversionOpts []TestSuiteConversionWebhookOptions
+	conversionName []string
+	mutationOpts   []TestSuiteMutationWebhookOptions
+	mutationYAML   []byte
+	validationOpts []TestSuiteValidationWebhookOptions
+	validationYAML []byte
+}
+
+func (s *TestSuite) isControllerTest() bool {
+	return len(s.controllers) > 0
+}
+
 func (s *TestSuite) isWebhookTest() bool {
-	return s.webhookName != ""
+	return s.isAdmissionWebhookTest() || s.isConversionWebhookTest()
+}
+
+func (s *TestSuite) isAdmissionWebhookTest() bool {
+	return s.isMutationWebhookTest() || s.isValidationWebhookTest()
+}
+
+func (s *TestSuite) isConversionWebhookTest() bool {
+	return len(s.webhook.conversionOpts) > 0
+}
+
+func (s *TestSuite) isMutationWebhookTest() bool {
+	return len(s.webhook.mutationOpts) > 0
+}
+
+func (s *TestSuite) isValidationWebhookTest() bool {
+	return len(s.webhook.validationOpts) > 0
 }
 
 func (s *TestSuite) GetEnvTestConfig() *rest.Config {
@@ -113,46 +143,137 @@ func (s *TestSuite) GetLogger() logr.Logger {
 
 // NewTestSuite returns a new test suite used for unit and/or integration test.
 func NewTestSuite() *TestSuite {
-	return NewTestSuiteForController(
-		pkgmgr.AddToManagerNoopFn,
-		pkgmgr.InitializeProvidersNoopFn,
-	)
+	return NewTestSuiteWithOptions(
+		TestSuiteOptions{
+			InitProviderFn: pkgmgr.InitializeProvidersNoopFn,
+			Controllers:    []pkgmgr.AddToManagerFunc{pkgmgr.AddToManagerNoopFn},
+		})
 }
 
 // NewFunctionalTestSuite returns a new test suite used for functional tests.
 // The functional test starts all the controllers, and creates all the providers
 // so it is a more fully functioning env than an integration test with a single
 // controller running.
-func NewFunctionalTestSuite(addToManagerFunc func(ctx *ctrlCtx.ControllerManagerContext, mgr manager.Manager) error) *TestSuite {
-	return NewTestSuiteForController(
-		addToManagerFunc,
-		pkgmgr.InitializeProviders,
-	)
+func NewFunctionalTestSuite(addToManagerFn pkgmgr.AddToManagerFunc) *TestSuite {
+	return NewTestSuiteWithOptions(
+		TestSuiteOptions{
+			InitProviderFn: pkgmgr.InitializeProviders,
+			Controllers:    []pkgmgr.AddToManagerFunc{addToManagerFn},
+		})
 }
 
-// NewTestSuiteForController returns a new test suite used for controller integration test.
-func NewTestSuiteForController(addToManagerFn pkgmgr.AddToManagerFunc, initProvidersFn pkgmgr.InitializeProvidersFunc) *TestSuite {
-	return NewTestSuiteForControllerWithFSS(addToManagerFn, initProvidersFn, map[string]bool{})
+// NewTestSuiteForController returns a new test suite used for controller
+// integration test.
+func NewTestSuiteForController(
+	addToManagerFn pkgmgr.AddToManagerFunc,
+	initProvidersFn pkgmgr.InitializeProvidersFunc) *TestSuite {
+
+	return NewTestSuiteWithOptions(
+		TestSuiteOptions{
+			InitProviderFn: initProvidersFn,
+			Controllers:    []pkgmgr.AddToManagerFunc{addToManagerFn},
+			FeatureStates:  map[string]bool{},
+		})
 }
 
-// NewTestSuiteForControllerWithFSS returns a new test suite used for controller integration test with FSS set.
-func NewTestSuiteForControllerWithFSS(addToManagerFn pkgmgr.AddToManagerFunc,
-	initProvidersFn pkgmgr.InitializeProvidersFunc, fssMap map[string]bool) *TestSuite {
+// NewTestSuiteForControllerWithFSS returns a new test suite used for controller
+// integration test with FSS set.
+func NewTestSuiteForControllerWithFSS(
+	addToManagerFn pkgmgr.AddToManagerFunc,
+	initProvidersFn pkgmgr.InitializeProvidersFunc,
+	fssMap map[string]bool) *TestSuite {
 
-	if addToManagerFn == nil {
-		panic("addToManagerFn is nil")
+	return NewTestSuiteWithOptions(
+		TestSuiteOptions{
+			InitProviderFn: initProvidersFn,
+			Controllers:    []pkgmgr.AddToManagerFunc{addToManagerFn},
+			FeatureStates:  fssMap,
+		})
+}
+
+type TestSuiteOptions struct {
+	InitProviderFn     pkgmgr.InitializeProvidersFunc
+	FeatureStates      map[string]bool
+	Controllers        []pkgmgr.AddToManagerFunc
+	ValidationWebhooks []TestSuiteValidationWebhookOptions
+	MutationWebhooks   []TestSuiteMutationWebhookOptions
+	ConversionWebhooks []TestSuiteConversionWebhookOptions
+}
+
+type TestSuiteValidationWebhookOptions struct {
+	// Name is the unique ID of the validation webhook, ex.
+	// default.validating.virtualmachine.v1alpha1.vmoperator.vmware.com.
+	Name string
+
+	// AddToManagerFn is the function that adds the webhook to the controller
+	// manager.
+	AddToManagerFn pkgmgr.AddToManagerFunc
+
+	// ValidatorFn is used to unit testing.
+	ValidatorFn builder.ValidatorFunc
+}
+
+type TestSuiteMutationWebhookOptions struct {
+	// Name is the unique ID of the mutation webhook, ex.
+	// default.mutating.virtualmachine.v1alpha1.vmoperator.vmware.com.
+	Name string
+
+	// AddToManagerFn is the function that adds the webhook to the controller
+	// manager.
+	AddToManagerFn pkgmgr.AddToManagerFunc
+
+	// MutatorFn is used to unit testing.
+	MutatorFn builder.MutatorFunc
+}
+
+type TestSuiteConversionWebhookOptions struct {
+	// Name is the resource to which the conversion webhook applies. For
+	// example, the name of the VirtualMachine resource is
+	// virtualmachines.vmoperator.vmware.com.
+	Name string
+
+	// AddToManagerFn is a list of the functions that add the webhook(s) to the
+	// controller manager. There is a distinct function for each version of the
+	// resource specified by Name.
+	AddToManagerFn []func(ctrl.Manager) error
+}
+
+// NewTestSuiteWithOptions returns a new test suite used for controller integration test with FSS set.
+func NewTestSuiteWithOptions(opts TestSuiteOptions) *TestSuite {
+
+	if len(opts.Controllers) == 0 &&
+		len(opts.ValidationWebhooks) == 0 &&
+		len(opts.MutationWebhooks) == 0 &&
+		len(opts.ConversionWebhooks) == 0 {
+
+		panic("there are no addToManager functions")
 	}
-	if initProvidersFn == nil {
+	if opts.InitProviderFn == nil {
 		panic("initProvidersFn is nil")
 	}
 
 	testSuite := &TestSuite{
 		Context:         context.Background(),
 		integrationTest: true,
-		addToManagerFn:  addToManagerFn,
-		initProvidersFn: initProvidersFn,
-		fssMap:          fssMap,
+		controllers:     opts.Controllers,
+		initProvidersFn: opts.InitProviderFn,
+		fssMap:          opts.FeatureStates,
+		webhook: testSuiteWebhookConfig{
+			conversionOpts: opts.ConversionWebhooks,
+			mutationOpts:   opts.MutationWebhooks,
+			validationOpts: opts.ValidationWebhooks,
+		},
 	}
+
+	if testSuite.isWebhookTest() {
+		// Create a temp directory for the certs needed for testing webhooks.
+		certDir, err := os.MkdirTemp(os.TempDir(), "")
+		if err != nil {
+			panic(errors.Wrap(err, "failed to create temp dir for certs"))
+		}
+		testSuite.webhook.certDir = certDir
+	}
+
 	testSuite.init()
 
 	return testSuite
@@ -211,32 +332,31 @@ func newTestSuiteForWebhook(
 	webhookName string,
 	fssMap map[string]bool) *TestSuite {
 
-	testSuite := &TestSuite{
-		Context:         context.Background(),
-		integrationTest: true,
-		addToManagerFn:  addToManagerFn,
-		initProvidersFn: pkgmgr.InitializeProvidersNoopFn,
-		webhookName:     webhookName,
-		fssMap:          fssMap,
+	opts := TestSuiteOptions{
+		InitProviderFn: pkgmgr.InitializeProvidersNoopFn,
+		FeatureStates:  fssMap,
 	}
 
-	if newValidatorFn != nil {
-		testSuite.validatorFn = newValidatorFn
-	}
 	if newMutatorFn != nil {
-		testSuite.mutatorFn = newMutatorFn
+		opts.MutationWebhooks = []TestSuiteMutationWebhookOptions{
+			{
+				Name:           webhookName,
+				MutatorFn:      newMutatorFn,
+				AddToManagerFn: addToManagerFn,
+			},
+		}
+	}
+	if newValidatorFn != nil {
+		opts.ValidationWebhooks = []TestSuiteValidationWebhookOptions{
+			{
+				Name:           webhookName,
+				ValidatorFn:    newValidatorFn,
+				AddToManagerFn: addToManagerFn,
+			},
+		}
 	}
 
-	// Create a temp directory for the certs needed for testing webhooks.
-	certDir, err := os.MkdirTemp(os.TempDir(), "")
-	if err != nil {
-		panic(errors.Wrap(err, "failed to create temp dir for certs"))
-	}
-	testSuite.certDir = certDir
-
-	testSuite.init()
-
-	return testSuite
+	return NewTestSuiteWithOptions(opts)
 }
 
 func (s *TestSuite) init() {
@@ -298,7 +418,7 @@ func (s *TestSuite) Register(t *testing.T, name string, runIntegrationTestsFn, r
 // suite's reconciler.
 //
 // Returns nil if unit testing is disabled.
-func (s *TestSuite) NewUnitTestContextForController(initObjects ...client.Object) *UnitTestContextForController {
+func (s *TestSuite) NewUnitTestContextForController(initObjects ...ctrlclient.Object) *UnitTestContextForController {
 	if s.flags.UnitTestsEnabled {
 		ctx := NewUnitTestContextForController(initObjects)
 		return ctx
@@ -312,10 +432,10 @@ func (s *TestSuite) NewUnitTestContextForController(initObjects ...client.Object
 // Returns nil if unit testing is disabled.
 func (s *TestSuite) NewUnitTestContextForValidatingWebhook(
 	obj, oldObj *unstructured.Unstructured,
-	initObjects ...client.Object) *UnitTestContextForValidatingWebhook {
+	initObjects ...ctrlclient.Object) *UnitTestContextForValidatingWebhook {
 
 	if s.flags.UnitTestsEnabled {
-		ctx := NewUnitTestContextForValidatingWebhook(s.validatorFn, obj, oldObj, initObjects...)
+		ctx := NewUnitTestContextForValidatingWebhook(s.webhook.validationOpts[0].ValidatorFn, obj, oldObj, initObjects...)
 		return ctx
 	}
 	return nil
@@ -327,7 +447,7 @@ func (s *TestSuite) NewUnitTestContextForValidatingWebhook(
 // Returns nil if unit testing is disabled.
 func (s *TestSuite) NewUnitTestContextForMutatingWebhook(obj *unstructured.Unstructured) *UnitTestContextForMutatingWebhook {
 	if s.flags.UnitTestsEnabled {
-		ctx := NewUnitTestContextForMutatingWebhook(s.mutatorFn, obj)
+		ctx := NewUnitTestContextForMutatingWebhook(s.webhook.mutationOpts[0].MutatorFn, obj)
 		return ctx
 	}
 	return nil
@@ -354,8 +474,51 @@ func (s *TestSuite) createManager() {
 	opts := pkgmgr.Options{
 		KubeConfig:          s.config,
 		MetricsAddr:         "0",
-		AddToManager:        s.addToManagerFn,
 		InitializeProviders: s.initProvidersFn,
+		AddToManager: func(
+			ctx *ctrlCtx.ControllerManagerContext,
+			m manager.Manager) error {
+
+			if s.isControllerTest() {
+				By("registering controllers")
+				for i := range s.controllers {
+					if err := s.controllers[i](ctx, m); err != nil {
+						return err
+					}
+				}
+			}
+
+			if s.isConversionWebhookTest() {
+				By("registering conversion webhooks")
+				for i := range s.webhook.conversionOpts {
+					for j := range s.webhook.conversionOpts[i].AddToManagerFn {
+						if err := s.webhook.conversionOpts[i].AddToManagerFn[j](m); err != nil {
+							return err
+						}
+					}
+				}
+			}
+
+			if s.isMutationWebhookTest() {
+				By("registering mutation webhooks")
+				for i := range s.webhook.mutationOpts {
+					if err := s.webhook.mutationOpts[i].AddToManagerFn(ctx, m); err != nil {
+						return err
+					}
+				}
+			}
+
+			if s.isValidationWebhookTest() {
+				By("registering validation webhooks")
+				for i := range s.webhook.validationOpts {
+					if err := s.webhook.validationOpts[i].AddToManagerFn(ctx, m); err != nil {
+						return err
+					}
+				}
+			}
+
+			return nil
+		},
 	}
 
 	if enabled, ok := s.fssMap[lib.VMServiceV1Alpha2FSS]; ok && enabled {
@@ -376,7 +539,7 @@ func (s *TestSuite) initializeManager() {
 			svr := s.manager.GetWebhookServer().(*webhook.DefaultServer)
 			svr.Options.Host = "127.0.0.1"
 			svr.Options.Port = randomTCPPort()
-			svr.Options.CertDir = s.certDir
+			svr.Options.CertDir = s.webhook.certDir
 		})
 	}
 }
@@ -418,32 +581,42 @@ func (s *TestSuite) postConfigureManager() {
 	// webhooks are being tested. Go ahead and install the webhooks and wait
 	// for the webhook server to come online.
 	if s.isWebhookTest() {
-		By("installing the webhook(s)", func() {
-			// ASSERT that the file for validating webhook file exists.
-			validatingWebhookFile := path.Join(testutil.GetRootDirOrDie(), "config", "webhook", "manifests.yaml")
-			Expect(validatingWebhookFile).Should(BeAnExistingFile())
+		svr := s.manager.GetWebhookServer().(*webhook.DefaultServer)
 
-			// UNMARSHAL the contents of the validating webhook file into MutatingWebhookConfiguration and
-			// ValidatingWebhookConfiguration.
-			mutatingWebhookConfig, validatingWebhookConfig := parseWebhookConfig(validatingWebhookFile)
+		if s.isConversionWebhookTest() {
+			updateConversionWebhookConfig(
+				s, s.integrationTestClient,
+				s.webhook.conversionOpts,
+				svr.Options.Host, svr.Options.Port,
+				s.webhook.pki.publicKeyPEM,
+				&s.webhook.conversionName)
+		}
 
-			// MARSHAL the webhook config back to YAML.
-			if s.mutatorFn != nil {
-				By("installing the mutating webhook(s)")
-				svr := s.manager.GetWebhookServer().(*webhook.DefaultServer)
-				s.webhookYaml = updateMutatingWebhookConfig(mutatingWebhookConfig, s.webhookName, svr.Options.Host, svr.Options.Port, s.pki.publicKeyPEM)
-			} else {
-				By("installing the validating webhook(s)")
-				svr := s.manager.GetWebhookServer().(*webhook.DefaultServer)
-				s.webhookYaml = updateValidatingWebhookConfig(validatingWebhookConfig, s.webhookName, svr.Options.Host, svr.Options.Port, s.pki.publicKeyPEM)
-			}
+		if s.isAdmissionWebhookTest() {
+			// ASSERT the admission webhook manifest file exists.
+			admissionWebhookManifestFilePath := path.Join(
+				testutil.GetRootDirOrDie(),
+				"config", "webhook", "manifests.yaml")
+			Expect(admissionWebhookManifestFilePath).Should(BeAnExistingFile())
 
-			// ASSERT that eventually the webhook config gets successfully
-			// applied to the API server.
-			Eventually(func() error {
-				return remote.ApplyYAML(s, s.integrationTestClient, s.webhookYaml)
-			}).Should(Succeed())
-		})
+			// UNMARSHAL the contents of the admission webhook manifest file.
+			mutationWebhookConfig, validationWebhookConfig := parseAdmissionWebhookManifestFile(
+				admissionWebhookManifestFilePath)
+
+			updateMutationWebhookConfig(
+				s, s.integrationTestClient,
+				s.webhook.mutationOpts, mutationWebhookConfig,
+				svr.Options.Host, svr.Options.Port,
+				s.webhook.pki.publicKeyPEM,
+				&s.webhook.mutationYAML)
+
+			updateValidationWebhookConfig(
+				s, s.integrationTestClient,
+				s.webhook.validationOpts, validationWebhookConfig,
+				svr.Options.Host, svr.Options.Port,
+				s.webhook.pki.publicKeyPEM,
+				&s.webhook.validationYAML)
+		}
 
 		// It can take a few seconds for the webhook server to come online.
 		// This step blocks until the webserver can be successfully accessed.
@@ -492,11 +665,13 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 	// PKI toolchain to use with the webhook server.
 	if s.isWebhookTest() {
 		By("generating the pki toolchain", func() {
-			s.pki, err = generatePKIToolchain()
+			s.webhook.pki, err = generatePKIToolchain()
 			Expect(err).ToNot(HaveOccurred())
 			// Write the CA pub key and cert pub and private keys to the cert dir.
-			Expect(os.WriteFile(path.Join(s.certDir, "tls.crt"), s.pki.publicKeyPEM, 0400)).To(Succeed())
-			Expect(os.WriteFile(path.Join(s.certDir, "tls.key"), s.pki.privateKeyPEM, 0400)).To(Succeed())
+			tlsCrtPath := path.Join(s.webhook.certDir, "tls.crt")
+			tlsKeyPath := path.Join(s.webhook.certDir, "tls.key")
+			Expect(os.WriteFile(tlsCrtPath, s.webhook.pki.publicKeyPEM, 0400)).To(Succeed())
+			Expect(os.WriteFile(tlsKeyPath, s.webhook.pki.privateKeyPEM, 0400)).To(Succeed())
 		})
 	}
 
@@ -506,7 +681,7 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 			s.initializeManager()
 		})
 
-		s.integrationTestClient, err = client.New(s.manager.GetConfig(), client.Options{Scheme: s.manager.GetScheme()})
+		s.integrationTestClient, err = ctrlclient.New(s.manager.GetConfig(), ctrlclient.Options{Scheme: s.manager.GetScheme()})
 		Expect(err).NotTo(HaveOccurred())
 
 		By("create pod namespace", func() {
@@ -543,9 +718,41 @@ func (s *TestSuite) afterSuiteForIntegrationTesting() {
 
 			Eventually(s.getManagerRunning).Should(BeFalse())
 
-			if s.webhookYaml != nil {
+			if data := s.webhook.conversionName; len(data) > 0 {
+				By("tearing down conversion webhooks")
+				for i := range data {
+					name := data[i]
+					crd := apiextensionsv1.CustomResourceDefinition{
+						TypeMeta: metav1.TypeMeta{
+							APIVersion: "apiextensions.k8s.io/v1",
+							Kind:       "CustomResourceDefinition",
+						},
+						ObjectMeta: metav1.ObjectMeta{
+							Name: name,
+						},
+					}
+					Expect(s.integrationTestClient.Get(s, ctrlclient.ObjectKey{Name: name}, &crd)).To(Succeed())
+					Expect(crd.Spec.Conversion).ToNot(BeNil())
+					crd.Spec.Conversion = nil
+					Expect(s.integrationTestClient.Update(s, &crd)).To(Succeed())
+					Expect(s.integrationTestClient.Get(s, ctrlclient.ObjectKey{Name: name}, &crd)).To(Succeed())
+					Expect(crd.Spec.Conversion).ToNot(BeNil())
+					Expect(crd.Spec.Conversion.Strategy).To(Equal(apiextensionsv1.NoneConverter))
+					Expect(crd.Spec.Conversion.Webhook).To(BeNil())
+				}
+			}
+
+			if data := s.webhook.mutationYAML; len(data) > 0 {
+				By("tearing down mutation webhooks")
 				Eventually(func() error {
-					return remote.DeleteYAML(s, s.integrationTestClient, s.webhookYaml)
+					return remote.DeleteYAML(s, s.integrationTestClient, data)
+				}).Should(Succeed())
+			}
+
+			if data := s.webhook.validationYAML; len(data) > 0 {
+				By("tearing down validation webhooks")
+				Eventually(func() error {
+					return remote.DeleteYAML(s, s.integrationTestClient, data)
 				}).Should(Succeed())
 			}
 		})
@@ -604,7 +811,7 @@ func (s *TestSuite) UpdateCRDScope(oldCrd *apiextensionsv1.CustomResourceDefinit
 	s.envTest.CRDs = append(s.envTest.CRDs, crds...)
 }
 
-func parseWebhookConfig(path string) (
+func parseAdmissionWebhookManifestFile(path string) (
 	mutatingWebhookConfig admissionregv1.MutatingWebhookConfiguration,
 	validatingWebhookConfig admissionregv1.ValidatingWebhookConfiguration) {
 
@@ -629,44 +836,164 @@ func parseWebhookConfig(path string) (
 	return mutatingWebhookConfig, validatingWebhookConfig
 }
 
-func updateValidatingWebhookConfig(webhookConfig admissionregv1.ValidatingWebhookConfiguration, webhookName, host string, port int, key []byte) []byte {
-	webhookConfigToInstall := webhookConfig.DeepCopy()
-	// ITERATE over all of the defined webhooks and find the webhook
-	// the test suite is testing and update its client config to point
-	// to the test webhook server.
-	//   1. Use the test CA
-	//   2. Use the test webhook endpoint
-	for _, webhook := range webhookConfig.Webhooks {
-		if webhook.Name == webhookName {
-			url := fmt.Sprintf("https://%s:%d%s", host, port, *webhook.ClientConfig.Service.Path)
-			webhook.ClientConfig.CABundle = key
-			webhook.ClientConfig.Service = nil
-			webhook.ClientConfig.URL = &url
-			webhookConfigToInstall.Webhooks = []admissionregv1.ValidatingWebhook{webhook}
-		}
+func updateConversionWebhookConfig(
+	ctx context.Context,
+	client ctrlclient.Client,
+	webhookOption []TestSuiteConversionWebhookOptions,
+	host string,
+	port int,
+	key []byte,
+	addrOfName *[]string) {
+
+	if len(webhookOption) == 0 {
+		return
 	}
-	result, err := yaml.Marshal(webhookConfigToInstall)
-	Expect(err).ShouldNot(HaveOccurred())
-	return result
+
+	By("installing conversion webhooks")
+
+	for _, in := range webhookOption {
+		crd := apiextensionsv1.CustomResourceDefinition{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "apiextensions.k8s.io/v1",
+				Kind:       "CustomResourceDefinition",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: in.Name,
+			},
+		}
+		Expect(client.Get(ctx, ctrlclient.ObjectKey{Name: in.Name}, &crd)).To(Succeed())
+
+		crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
+			Strategy: apiextensionsv1.WebhookConverter,
+			Webhook: &apiextensionsv1.WebhookConversion{
+				ConversionReviewVersions: []string{"v1", "v1beta1"},
+				ClientConfig:             &apiextensionsv1.WebhookClientConfig{},
+			},
+		}
+		updateAPIExtensionWebhookConfig(
+			host, port, "/convert",
+			key, crd.Spec.Conversion.Webhook.ClientConfig)
+
+		Expect(client.Update(ctx, &crd)).To(Succeed())
+
+		*addrOfName = append(*addrOfName, in.Name)
+	}
 }
 
-func updateMutatingWebhookConfig(webhookConfig admissionregv1.MutatingWebhookConfiguration, webhookName, host string, port int, key []byte) []byte {
+func updateMutationWebhookConfig(
+	ctx context.Context,
+	client ctrlclient.Client,
+	webhookOption []TestSuiteMutationWebhookOptions,
+	webhookConfig admissionregv1.MutatingWebhookConfiguration,
+	host string,
+	port int,
+	key []byte,
+	addrOfYAML *[]byte) {
+
+	if len(webhookOption) == 0 {
+		return
+	}
+
+	By("installing mutation webhooks")
+
 	webhookConfigToInstall := webhookConfig.DeepCopy()
-	// ITERATE over all of the defined webhooks and find the webhook
-	// the test suite is testing and update its client config to point
-	// to the test webhook server.
-	//   1. Use the test CA
-	//   2. Use the test webhook endpoint
-	for _, webhook := range webhookConfig.Webhooks {
-		if webhook.Name == webhookName {
-			url := fmt.Sprintf("https://%s:%d%s", host, port, *webhook.ClientConfig.Service.Path)
-			webhook.ClientConfig.CABundle = key
-			webhook.ClientConfig.Service = nil
-			webhook.ClientConfig.URL = &url
-			webhookConfigToInstall.Webhooks = []admissionregv1.MutatingWebhook{webhook}
+	webhookConfigToInstall.Webhooks = nil
+
+	for _, in := range webhookOption {
+		for _, out := range webhookConfig.Webhooks {
+			if in.Name == out.Name {
+				updateAdmissionWebhookConfig(
+					host, port, *out.ClientConfig.Service.Path, key,
+					&out.ClientConfig)
+				webhookConfigToInstall.Webhooks = append(
+					webhookConfigToInstall.Webhooks,
+					out)
+			}
 		}
 	}
-	result, err := yaml.Marshal(webhookConfigToInstall)
+
+	if len(webhookConfigToInstall.Webhooks) == 0 {
+		return
+	}
+
+	By(fmt.Sprintf("installing %d mutation webhooks",
+		len(webhookConfigToInstall.Webhooks)))
+
+	data, err := yaml.Marshal(webhookConfigToInstall)
 	Expect(err).ShouldNot(HaveOccurred())
-	return result
+	*addrOfYAML = data
+
+	// ASSERT that eventually the webhook config gets successfully
+	// applied to the API server.
+	Eventually(func() error {
+		return remote.ApplyYAML(ctx, client, data)
+	}).Should(Succeed())
+}
+
+func updateValidationWebhookConfig(
+	ctx context.Context,
+	client ctrlclient.Client,
+	webhookOption []TestSuiteValidationWebhookOptions,
+	webhookConfig admissionregv1.ValidatingWebhookConfiguration,
+	host string,
+	port int,
+	key []byte,
+	addrOfYAML *[]byte) {
+
+	if len(webhookOption) == 0 {
+		return
+	}
+
+	By("installing validation webhooks")
+
+	webhookConfigToInstall := webhookConfig.DeepCopy()
+	webhookConfigToInstall.Webhooks = nil
+
+	for _, in := range webhookOption {
+		for _, out := range webhookConfig.Webhooks {
+			if in.Name == out.Name {
+				updateAdmissionWebhookConfig(
+					host, port, *out.ClientConfig.Service.Path, key,
+					&out.ClientConfig)
+				webhookConfigToInstall.Webhooks = append(
+					webhookConfigToInstall.Webhooks,
+					out)
+			}
+		}
+	}
+
+	if len(webhookConfigToInstall.Webhooks) == 0 {
+		return
+	}
+
+	By(fmt.Sprintf("installing %d validation webhooks",
+		len(webhookConfigToInstall.Webhooks)))
+
+	data, err := yaml.Marshal(webhookConfigToInstall)
+	Expect(err).ShouldNot(HaveOccurred())
+	*addrOfYAML = data
+
+	// ASSERT that eventually the webhook config gets successfully
+	// applied to the API server.
+	Eventually(func() error {
+		return remote.ApplyYAML(ctx, client, data)
+	}).Should(Succeed())
+}
+
+func updateAdmissionWebhookConfig(
+	host string, port int, path string, key []byte,
+	webhookConfig *admissionregv1.WebhookClientConfig) {
+
+	webhookConfig.CABundle = key
+	webhookConfig.Service = nil
+	webhookConfig.URL = addrOf(fmt.Sprintf("https://%s:%d%s", host, port, path))
+}
+
+func updateAPIExtensionWebhookConfig(
+	host string, port int, path string, key []byte,
+	webhookConfig *apiextensionsv1.WebhookClientConfig) {
+
+	webhookConfig.CABundle = key
+	webhookConfig.Service = nil
+	webhookConfig.URL = addrOf(fmt.Sprintf("https://%s:%d%s", host, port, path))
 }

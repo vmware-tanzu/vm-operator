@@ -67,7 +67,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 		return err
 	}
 	if vmYAML == "" {
-		opts.VMCtx.Logger.Info("Skipping VM resource yaml backup as unchanged")
+		opts.VMCtx.Logger.V(4).Info("Skipping VM resource yaml backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
 			Key:   vmopv1.VMResourceYAMLExtraConfigKey,
@@ -86,7 +86,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 	}
 
 	if additionalYAML == "" {
-		opts.VMCtx.Logger.Info("Skipping additional resources yaml backup as unchanged")
+		opts.VMCtx.Logger.V(4).Info("Skipping additional resources yaml backup as unchanged")
 	} else {
 		ecToUpdate = append(ecToUpdate, &types.OptionValue{
 			Key:   vmopv1.AdditionalResourcesYAMLExtraConfigKey,
@@ -125,8 +125,8 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 	}
 
 	if len(ecToUpdate) != 0 {
-		opts.VMCtx.Logger.Info("Updating VM ExtraConfig with latest backup data")
-		opts.VMCtx.Logger.V(4).Info("", "ExtraConfigToUpdate", ecToUpdate)
+		opts.VMCtx.Logger.Info("Updating VM ExtraConfig with latest backup data",
+			"ExtraConfigToUpdate", ecToUpdate)
 		if _, err := opts.VcVM.Reconfigure(opts.VMCtx, types.VirtualMachineConfigSpec{
 			ExtraConfig: ecToUpdate,
 		}); err != nil {

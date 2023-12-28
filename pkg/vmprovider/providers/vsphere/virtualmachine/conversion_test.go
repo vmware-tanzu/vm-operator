@@ -6,7 +6,7 @@ package virtualmachine_test
 import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"

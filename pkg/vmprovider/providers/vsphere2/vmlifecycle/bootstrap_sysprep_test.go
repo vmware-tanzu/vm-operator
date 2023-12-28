@@ -6,7 +6,7 @@ package vmlifecycle_test
 import (
 	goctx "context"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

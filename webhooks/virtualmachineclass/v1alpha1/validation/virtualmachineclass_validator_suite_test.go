@@ -6,7 +6,7 @@ package validation_test
 import (
 	"testing"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachineclass/v1alpha1/validation"

@@ -6,7 +6,7 @@ package simplelb
 import (
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
 	"github.com/go-logr/logr"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"

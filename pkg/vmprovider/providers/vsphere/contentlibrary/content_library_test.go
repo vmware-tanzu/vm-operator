@@ -9,7 +9,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/vapi/library"

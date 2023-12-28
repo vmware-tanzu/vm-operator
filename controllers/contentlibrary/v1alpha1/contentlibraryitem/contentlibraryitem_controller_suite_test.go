@@ -6,7 +6,7 @@ package contentlibraryitem_test
 import (
 	"testing"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha1/contentlibraryitem"

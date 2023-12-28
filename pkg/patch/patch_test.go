@@ -20,7 +20,7 @@ import (
 	"reflect"
 	"testing"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/google/go-cmp/cmp"
@@ -52,7 +52,7 @@ func intgTests() {
 	})
 
 	Describe("Patch Helper", func() {
-		It("Should patch an unstructured object", func() {
+		Specify("Should patch an unstructured object", func() {
 			obj := &unstructured.Unstructured{
 				Object: map[string]interface{}{
 					"kind":       "VirtualMachine",
@@ -64,7 +64,7 @@ func intgTests() {
 				},
 			}
 
-			Context("adding an owner reference, preserving its status", func() {
+			By("adding an owner reference, preserving its status", func() {
 				obj := obj.DeepCopy()
 
 				By("Creating the unstructured object")

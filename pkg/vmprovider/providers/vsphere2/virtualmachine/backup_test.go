@@ -9,7 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"

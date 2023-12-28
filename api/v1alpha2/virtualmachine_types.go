@@ -518,10 +518,11 @@ type VirtualMachineStatus struct {
 // +kubebuilder:resource:scope=Namespaced,shortName=vm
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Class",type="string",priority=1,JSONPath=".status.class.name"
-// +kubebuilder:printcolumn:name="Image",type="string",priority=1,JSONPath=".status.image.name"
-// +kubebuilder:printcolumn:name="PowerState",type="string",JSONPath=".status.powerState"
+// +kubebuilder:printcolumn:name="Power-State",type="string",JSONPath=".status.powerState"
+// +kubebuilder:printcolumn:name="Class",type="string",priority=1,JSONPath=".spec.className"
+// +kubebuilder:printcolumn:name="Image",type="string",priority=1,JSONPath=".spec.imageName"
 // +kubebuilder:printcolumn:name="Primary-IP4",type="string",priority=1,JSONPath=".status.network.primaryIP4"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // VirtualMachine is the schema for the virtualmachines API and represents the
 // desired state and observed status of a virtualmachines resource.

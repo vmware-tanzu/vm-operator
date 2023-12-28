@@ -189,6 +189,26 @@ func TestVirtualMachineConversion(t *testing.T) {
 		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
 	})
 
+	t.Run("VirtualMachine hub-spoke-hub with CloudInit", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hub := nextver.VirtualMachine{
+			Spec: nextver.VirtualMachineSpec{
+				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
+					CloudInit: &nextver.VirtualMachineBootstrapCloudInitSpec{
+						RawCloudConfig: &nextver_common.SecretKeySelector{
+							Name: "cloudinit-secret",
+							Key:  "my-key",
+						},
+						SSHAuthorizedKeys: []string{"my-ssh-key"},
+					},
+				},
+			},
+		}
+
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
+	})
+
 	t.Run("VirtualMachine hub-spoke-hub with inlined CloudInit", func(t *testing.T) {
 		g := NewWithT(t)
 
@@ -205,6 +225,25 @@ func TestVirtualMachineConversion(t *testing.T) {
 							},
 						},
 						SSHAuthorizedKeys: []string{"my-ssh-key"},
+					},
+				},
+			},
+		}
+
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
+	})
+
+	t.Run("VirtualMachine hub-spoke-hub with Sysprep", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hub := nextver.VirtualMachine{
+			Spec: nextver.VirtualMachineSpec{
+				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
+					Sysprep: &nextver.VirtualMachineBootstrapSysprepSpec{
+						RawSysprep: &nextver_common.SecretKeySelector{
+							Name: "sysprep-secret",
+							Key:  "my-key",
+						},
 					},
 				},
 			},
@@ -270,6 +309,23 @@ func TestVirtualMachineConversion(t *testing.T) {
 		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
 	})
 
+	t.Run("VirtualMachine hub-spoke-hub with LinuxPrep", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hub := nextver.VirtualMachine{
+			Spec: nextver.VirtualMachineSpec{
+				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
+					LinuxPrep: &nextver.VirtualMachineBootstrapLinuxPrepSpec{
+						HardwareClockIsUTC: true,
+						TimeZone:           "my-tz",
+					},
+				},
+			},
+		}
+
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
+	})
+
 	t.Run("VirtualMachine hub-spoke-hub with vAppConfig", func(t *testing.T) {
 		g := NewWithT(t)
 
@@ -297,8 +353,17 @@ func TestVirtualMachineConversion(t *testing.T) {
 	t.Run("VirtualMachine hub-spoke Status", func(t *testing.T) {
 		g := NewWithT(t)
 
+		now := time.Now()
 		hub := nextver.VirtualMachine{
 			Status: nextver.VirtualMachineStatus{
+				Host:       "my-host",
+				PowerState: nextver.VirtualMachinePowerStateOn,
+				Conditions: []metav1.Condition{
+					{
+						Type:   nextver.VirtualMachineConditionCreated,
+						Status: metav1.ConditionTrue,
+					},
+				},
 				Network: &nextver.VirtualMachineNetworkStatus{
 					PrimaryIP4: "192.168.1.10",
 					Interfaces: []nextver.VirtualMachineNetworkInterfaceStatus{
@@ -315,22 +380,120 @@ func TestVirtualMachineConversion(t *testing.T) {
 						},
 					},
 				},
-				Conditions: []metav1.Condition{
+				UniqueID:     "my-unique-id",
+				BiosUUID:     "my-bios-uuid",
+				InstanceUUID: "my-inst-id",
+				Volumes: []nextver.VirtualMachineVolumeStatus{
 					{
-						Type:   nextver.VirtualMachineConditionCreated,
-						Status: metav1.ConditionTrue,
+						Name:     "my-disk",
+						Attached: true,
+						DiskUUID: "my-disk-uuid",
+						Error:    "my-disk-error",
 					},
 				},
+				ChangeBlockTracking: ptrOf(true),
+				Zone:                "my-zone",
+				LastRestartTime:     ptrOf(metav1.NewTime(now)),
+				HardwareVersion:     42,
 			},
 		}
 
 		spoke := &v1alpha1.VirtualMachine{}
 		g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
 
-		g.Expect(spoke.Status.VmIp).To(Equal("192.168.1.10"))
+		g.Expect(spoke.Status.Host).To(Equal(hub.Status.Host))
+		g.Expect(spoke.Status.PowerState).To(Equal(v1alpha1.VirtualMachinePoweredOn))
+		g.Expect(spoke.Status.VmIp).To(Equal(hub.Status.Network.PrimaryIP4))
 		g.Expect(spoke.Status.NetworkInterfaces[0].MacAddress).To(Equal("my-mac"))
 		g.Expect(spoke.Status.NetworkInterfaces[0].IpAddresses).To(Equal([]string{"my-ip"}))
 		g.Expect(spoke.Status.Phase).To(Equal(v1alpha1.Created))
+		g.Expect(spoke.Status.UniqueID).To(Equal(hub.Status.UniqueID))
+		g.Expect(spoke.Status.BiosUUID).To(Equal(hub.Status.BiosUUID))
+		g.Expect(spoke.Status.InstanceUUID).To(Equal(hub.Status.InstanceUUID))
+		g.Expect(spoke.Status.Volumes).To(HaveLen(1))
+		g.Expect(spoke.Status.Volumes[0].Name).To(Equal(hub.Status.Volumes[0].Name))
+		g.Expect(spoke.Status.Volumes[0].Attached).To(Equal(hub.Status.Volumes[0].Attached))
+		g.Expect(spoke.Status.Volumes[0].DiskUuid).To(Equal(hub.Status.Volumes[0].DiskUUID))
+		g.Expect(spoke.Status.Volumes[0].Error).To(Equal(hub.Status.Volumes[0].Error))
+		g.Expect(spoke.Status.ChangeBlockTracking).To(Equal(ptrOf(true)))
+		g.Expect(spoke.Status.Zone).To(Equal(hub.Status.Zone))
+		g.Expect(spoke.Status.LastRestartTime).To(Equal(hub.Status.LastRestartTime))
+		g.Expect(spoke.Status.HardwareVersion).To(Equal(hub.Status.HardwareVersion))
+	})
+
+	t.Run("VirtualMachine spoke-hub Status", func(t *testing.T) {
+		g := NewWithT(t)
+
+		now := time.Now()
+		spoke := v1alpha1.VirtualMachine{
+			Status: v1alpha1.VirtualMachineStatus{
+				Host:       "my-host",
+				PowerState: v1alpha1.VirtualMachinePoweredOff,
+				Phase:      v1alpha1.Created,
+				Conditions: []v1alpha1.Condition{
+					{
+						Type:   "Cond",
+						Status: corev1.ConditionTrue,
+					},
+				},
+				VmIp:         "192.168.1.11",
+				UniqueID:     "my-unique-id",
+				BiosUUID:     "my-bios-uuid",
+				InstanceUUID: "my-inst-id",
+				Volumes: []v1alpha1.VirtualMachineVolumeStatus{
+					{
+						Name:     "my-disk",
+						Attached: true,
+						DiskUuid: "my-disk-uuid",
+						Error:    "my-disk-error",
+					},
+				},
+				ChangeBlockTracking: ptrOf(true),
+				NetworkInterfaces: []v1alpha1.NetworkInterfaceStatus{
+					{
+						Connected:   true,
+						MacAddress:  "my-mac",
+						IpAddresses: []string{"172.42.99.10"},
+					},
+				},
+				Zone:            "my-zone",
+				LastRestartTime: ptrOf(metav1.NewTime(now)),
+				HardwareVersion: 42,
+			},
+		}
+
+		hub := &nextver.VirtualMachine{}
+		g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+
+		g.Expect(hub.Status.Host).To(Equal(spoke.Status.Host))
+		g.Expect(hub.Status.PowerState).To(Equal(nextver.VirtualMachinePowerStateOff))
+		g.Expect(hub.Status.Conditions).To(HaveLen(1))
+		g.Expect(hub.Status.Conditions[0].Type).To(Equal("Cond"))
+		g.Expect(hub.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(hub.Status.Conditions[0].Reason).To(Equal(string(metav1.ConditionTrue)))
+		g.Expect(hub.Status.Network).ToNot(BeNil())
+		g.Expect(hub.Status.Network.PrimaryIP4).To(Equal(spoke.Status.VmIp))
+		g.Expect(hub.Status.Network.Interfaces).To(HaveLen(1))
+		g.Expect(hub.Status.Network.Interfaces[0].IP.MACAddr).To(Equal(spoke.Status.NetworkInterfaces[0].MacAddress))
+		g.Expect(hub.Status.Network.Interfaces[0].IP.Addresses).To(HaveLen(1))
+		g.Expect(hub.Status.Network.Interfaces[0].IP.Addresses[0].Address).To(Equal(spoke.Status.NetworkInterfaces[0].IpAddresses[0]))
+		g.Expect(hub.Status.UniqueID).To(Equal(spoke.Status.UniqueID))
+		g.Expect(hub.Status.BiosUUID).To(Equal(spoke.Status.BiosUUID))
+		g.Expect(hub.Status.InstanceUUID).To(Equal(spoke.Status.InstanceUUID))
+		g.Expect(hub.Status.Volumes).To(HaveLen(1))
+		g.Expect(hub.Status.Volumes[0].Name).To(Equal(spoke.Status.Volumes[0].Name))
+		g.Expect(hub.Status.UniqueID).To(Equal(spoke.Status.UniqueID))
+		g.Expect(hub.Status.BiosUUID).To(Equal(spoke.Status.BiosUUID))
+		g.Expect(hub.Status.InstanceUUID).To(Equal(spoke.Status.InstanceUUID))
+		g.Expect(hub.Status.Volumes).To(HaveLen(1))
+		g.Expect(hub.Status.Volumes[0].Name).To(Equal(spoke.Status.Volumes[0].Name))
+		g.Expect(hub.Status.Volumes[0].Attached).To(Equal(spoke.Status.Volumes[0].Attached))
+		g.Expect(hub.Status.Volumes[0].DiskUUID).To(Equal(spoke.Status.Volumes[0].DiskUuid))
+		g.Expect(hub.Status.Volumes[0].Error).To(Equal(spoke.Status.Volumes[0].Error))
+		g.Expect(hub.Status.ChangeBlockTracking).To(Equal(ptrOf(true)))
+		g.Expect(hub.Status.Zone).To(Equal(spoke.Status.Zone))
+		g.Expect(hub.Status.LastRestartTime).To(Equal(spoke.Status.LastRestartTime))
+		g.Expect(hub.Status.HardwareVersion).To(Equal(spoke.Status.HardwareVersion))
 	})
 
 	t.Run("VirtualMachine hub-spoke Status Conditions", func(t *testing.T) {

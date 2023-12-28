@@ -1124,6 +1124,15 @@ func vmUtilTests() {
 								Value: common.ValueOrSecretKeySelector{
 									From: &common.SecretKeySelector{
 										Name: "dummy-vapp-config-property-secret",
+										Key:  "foo",
+									},
+								},
+							},
+							{
+								Value: common.ValueOrSecretKeySelector{
+									From: &common.SecretKeySelector{
+										Name: "dummy-vapp-config-property-secret",
+										Key:  "bar",
 									},
 								},
 							},

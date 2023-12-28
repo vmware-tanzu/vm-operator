@@ -490,14 +490,20 @@ func GetAdditionalResourcesForBackup(
 		// Get bootstrap related objects from vAppConfig (can be used alongside LinuxPrep/Sysprep).
 		if vApp := bootstrapSpec.VAppConfig; vApp != nil {
 			if cooked := vApp.Properties; cooked != nil {
+				uniqueSecrets := map[string]struct{}{}
 				for _, p := range vApp.Properties {
 					if from := p.Value.From; from != nil {
 						// vAppConfig Properties are backed by Secret resources only.
+						// Only return the secret if it has not already been captured.
+						if _, captured := uniqueSecrets[from.Name]; captured {
+							continue
+						}
 						obj, err := getSecretOrConfigMapObject(vmCtx, k8sClient, from.Name, false)
 						if err != nil {
 							return nil, err
 						}
 						objects = append(objects, obj)
+						uniqueSecrets[from.Name] = struct{}{}
 					}
 				}
 			} else if raw := vApp.RawProperties; raw != "" {

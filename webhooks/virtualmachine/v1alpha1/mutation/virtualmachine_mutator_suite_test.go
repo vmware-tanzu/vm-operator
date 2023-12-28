@@ -6,8 +6,7 @@ package mutation_test
 import (
 	"testing"
 
-	. "github.com/onsi/ginkgo"
-	"github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/ginkgo/v2"
 
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/v1alpha1/mutation"
@@ -27,16 +26,16 @@ var _ = BeforeSuite(suite.BeforeSuite)
 
 var _ = AfterSuite(suite.AfterSuite)
 
-func newInvalidNextRestartTimeTableEntries(description string) []table.TableEntry {
-	return []table.TableEntry{
-		table.Entry(description, "5m"),
-		table.Entry(description, "1s"),
-		table.Entry(description, "2h45m"),
-		table.Entry(description, "1.5h"),
-		table.Entry(description, "2023-06-01T13:00:00Z"),
-		table.Entry(description, "2023-06-01T13:00:00-06:00"),
-		table.Entry(description, "2023-06-01T13:00:00+05:30"),
-		table.Entry(description, "hello"),
-		table.Entry(description, "world"),
+func newInvalidNextRestartTimeTableEntries(description string) []TableEntry {
+	return []TableEntry{
+		Entry(description, "5m"),
+		Entry(description, "1s"),
+		Entry(description, "2h45m"),
+		Entry(description, "1.5h"),
+		Entry(description, "2023-06-01T13:00:00Z"),
+		Entry(description, "2023-06-01T13:00:00-06:00"),
+		Entry(description, "2023-06-01T13:00:00+05:30"),
+		Entry(description, "hello"),
+		Entry(description, "world"),
 	}
 }

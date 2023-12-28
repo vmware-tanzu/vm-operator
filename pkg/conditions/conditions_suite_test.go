@@ -4,7 +4,7 @@
 package conditions
 
 import (
-	_ "github.com/onsi/ginkgo"
+	_ "github.com/onsi/ginkgo/v2"
 )
 
 // This is require so the Gingko flags are added (specifically gingko.noColor)

@@ -7,8 +7,7 @@ import (
 	"os"
 	"time"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -262,17 +261,18 @@ func intgTestsMutating() {
 				})
 				DescribeTable(
 					`spec.nextRestartTime is a non-empty value that is not "now"`,
-					func(nextRestartTime string) {
-						modified.Spec.NextRestartTime = nextRestartTime
-						err := ctx.Client.Update(ctx, modified)
-						Expect(err).To(HaveOccurred())
-						expectedErr := field.Invalid(
-							field.NewPath("spec", "nextRestartTime"),
-							nextRestartTime,
-							`may only be set to "now"`)
-						Expect(err.Error()).To(ContainSubstring(expectedErr.Error()))
-					},
-					newInvalidNextRestartTimeTableEntries("should return an invalid field error")...,
+					append([]any{
+						func(nextRestartTime string) {
+							modified.Spec.NextRestartTime = nextRestartTime
+							err := ctx.Client.Update(ctx, modified)
+							Expect(err).To(HaveOccurred())
+							expectedErr := field.Invalid(
+								field.NewPath("spec", "nextRestartTime"),
+								nextRestartTime,
+								`may only be set to "now"`)
+							Expect(err.Error()).To(ContainSubstring(expectedErr.Error()))
+						}},
+						newInvalidNextRestartTimeTableEntries("should return an invalid field error"))...,
 				)
 			})
 		})

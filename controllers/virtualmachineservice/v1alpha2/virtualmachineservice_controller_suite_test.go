@@ -6,7 +6,7 @@ package v1alpha2_test
 import (
 	"testing"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 
 	virtualmachineservice "github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"

@@ -88,7 +88,7 @@ $(KUSTOMIZE): go.mod
 ginkgo: $(GINKGO) ## Install ginkgo
 $(GINKGO): go.mod
 	GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) \
-	go build -tags=vmop_tools -o $(@) github.com/onsi/ginkgo/ginkgo
+	go build -tags=vmop_tools -o $(@) github.com/onsi/ginkgo/v2/ginkgo
 
 gocovmerge: $(GOCOVMERGE) ## Install gocovmerge
 $(GOCOVMERGE): go.mod

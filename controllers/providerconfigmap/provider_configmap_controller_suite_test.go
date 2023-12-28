@@ -6,7 +6,7 @@ package providerconfigmap_test
 import (
 	"testing"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/providerconfigmap"
 	"github.com/vmware-tanzu/vm-operator/pkg/manager"

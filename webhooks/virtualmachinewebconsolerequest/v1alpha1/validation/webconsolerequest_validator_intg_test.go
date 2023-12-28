@@ -6,7 +6,7 @@ package validation_test
 import (
 	"crypto/rsa"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"

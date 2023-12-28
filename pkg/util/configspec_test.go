@@ -13,7 +13,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/google/go-cmp/cmp"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"

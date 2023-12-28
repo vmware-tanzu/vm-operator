@@ -7,8 +7,7 @@ import (
 	"os"
 	"time"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"gomodules.xyz/jsonpatch/v2"
@@ -471,22 +470,23 @@ func unitTestsMutating() {
 			})
 			DescribeTable(
 				`newVM has spec.nextRestartTime set a non-empty value that is not "now"`,
-				func(nextRestartTime string) {
-					ctx.vm.Spec.NextRestartTime = nextRestartTime
-					ok, err := mutation.SetNextRestartTime(
-						&ctx.WebhookRequestContext,
-						ctx.Client,
-						ctx.vm,
-						oldVM)
-					Expect(ok).To(BeFalse())
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(Equal(field.Invalid(
-						field.NewPath("spec", "nextRestartTime"),
-						nextRestartTime,
-						`may only be set to "now"`).Error()))
-					Expect(ctx.vm.Spec.NextRestartTime).To(Equal(nextRestartTime))
-				},
-				newInvalidNextRestartTimeTableEntries("should return an invalid field error")...,
+				append([]any{
+					func(nextRestartTime string) {
+						ctx.vm.Spec.NextRestartTime = nextRestartTime
+						ok, err := mutation.SetNextRestartTime(
+							&ctx.WebhookRequestContext,
+							ctx.Client,
+							ctx.vm,
+							oldVM)
+						Expect(ok).To(BeFalse())
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(Equal(field.Invalid(
+							field.NewPath("spec", "nextRestartTime"),
+							nextRestartTime,
+							`may only be set to "now"`).Error()))
+						Expect(ctx.vm.Spec.NextRestartTime).To(Equal(nextRestartTime))
+					}},
+					newInvalidNextRestartTimeTableEntries("should return an invalid field error"))...,
 			)
 		})
 
@@ -531,22 +531,23 @@ func unitTestsMutating() {
 			})
 			DescribeTable(
 				`newVM has spec.nextRestartTime set a non-empty value that is not "now"`,
-				func(nextRestartTime string) {
-					ctx.vm.Spec.NextRestartTime = nextRestartTime
-					ok, err := mutation.SetNextRestartTime(
-						&ctx.WebhookRequestContext,
-						ctx.Client,
-						ctx.vm,
-						oldVM)
-					Expect(ok).To(BeFalse())
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(Equal(field.Invalid(
-						field.NewPath("spec", "nextRestartTime"),
-						nextRestartTime,
-						`may only be set to "now"`).Error()))
-					Expect(ctx.vm.Spec.NextRestartTime).To(Equal(nextRestartTime))
-				},
-				newInvalidNextRestartTimeTableEntries("should return an invalid field error")...,
+				append([]any{
+					func(nextRestartTime string) {
+						ctx.vm.Spec.NextRestartTime = nextRestartTime
+						ok, err := mutation.SetNextRestartTime(
+							&ctx.WebhookRequestContext,
+							ctx.Client,
+							ctx.vm,
+							oldVM)
+						Expect(ok).To(BeFalse())
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(Equal(field.Invalid(
+							field.NewPath("spec", "nextRestartTime"),
+							nextRestartTime,
+							`may only be set to "now"`).Error()))
+						Expect(ctx.vm.Spec.NextRestartTime).To(Equal(nextRestartTime))
+					}},
+					newInvalidNextRestartTimeTableEntries("should return an invalid field error"))...,
 			)
 		})
 	})

@@ -142,16 +142,16 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 // given resources, or an empty string if the data is unchanged in ExtraConfig.
 func getDesiredResourceYAMLForBackup(
 	resources []client.Object,
-	ecKey string,
+	ecResourceKey string,
 	ecMap map[string]string) (string, error) {
 	// Check if the given resources are up-to-date with the latest backup.
 	// This is done by comparing the resource versions of each object UID.
 	var isLatestBackup bool
-	if ecKubeData, ok := ecMap[ecKey]; ok {
-		if resourceToVersion := tryGetResourceVersion(ecKubeData); resourceToVersion != nil {
+	if ecResourceData, ok := ecMap[ecResourceKey]; ok {
+		if resourceToVersion := tryGetResourceVersion(ecResourceData); resourceToVersion != nil {
 			isLatestBackup = true
-			for _, curObj := range resources {
-				if curObj.GetResourceVersion() != resourceToVersion[string(curObj.GetUID())] {
+			for _, curRes := range resources {
+				if curRes.GetResourceVersion() != resourceToVersion[string(curRes.GetUID())] {
 					isLatestBackup = false
 					break
 				}
@@ -180,16 +180,16 @@ func getDesiredResourceYAMLForBackup(
 }
 
 // tryGetResourceVersion tries to get the resource version of each object in
-// the encoded and gzipped YAML. Returns a map of resource UID to version.
-func tryGetResourceVersion(ecResourcesYAML string) map[string]string {
-	decoded, err := util.TryToDecodeBase64Gzip([]byte(ecResourcesYAML))
+// the given encoded and gzipped data. Returns a map of resource UID to version.
+func tryGetResourceVersion(ecResourceData string) map[string]string {
+	decoded, err := util.TryToDecodeBase64Gzip([]byte(ecResourceData))
 	if err != nil {
 		return nil
 	}
 
 	resourceVersions := map[string]string{}
 	decUnstructured := yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
-	resourcesYAML := strings.Split(decoded, "---\n")
+	resourcesYAML := strings.Split(decoded, "\n---\n")
 	for _, resYAML := range resourcesYAML {
 		if resYAML != "" {
 			resYAML = strings.TrimSpace(resYAML)

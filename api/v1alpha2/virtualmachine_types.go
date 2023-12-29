@@ -109,26 +109,28 @@ const (
 	FirstBootDoneAnnotation = "virtualmachine." + GroupName + "/first-boot-done"
 )
 
-// VirtualMachine backup/restore related constants.
 const (
 	// ManagedByExtensionKey and ManagedByExtensionType represent the ManagedBy
 	// field on the VM. They are used to differentiate VM Service managed VMs
 	// from traditional vSphere VMs.
 	ManagedByExtensionKey  = "com.vmware.vcenter.wcp"
 	ManagedByExtensionType = "VirtualMachine"
+)
 
-	// VMBackupKubeDataExtraConfigKey is the ExtraConfig key to persist the VM's
-	// Kubernetes resource spec data, compressed using gzip and base64-encoded.
-	VMBackupKubeDataExtraConfigKey = "vmservice.virtualmachine.kubedata"
-	// VMBackupBootstrapDataExtraConfigKey is the ExtraConfig key to persist the
-	// VM's bootstrap data object, compressed using gzip and base64-encoded.
-	VMBackupBootstrapDataExtraConfigKey = "vmservice.virtualmachine.bootstrapdata"
-	// VMBackupDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
-	// attached disk info in JSON, compressed using gzip and base64-encoded.
-	VMBackupDiskDataExtraConfigKey = "vmservice.virtualmachine.diskdata"
-	// VMBackupCloudInitInstanceIDExtraConfigKey is the ExtraConfig key to persist
+// VirtualMachine backup/restore related constants.
+const (
+	// VMResourceYAMLExtraConfigKey is the ExtraConfig key to persist VM
+	// Kubernetes resource YAML, compressed using gzip and base64-encoded.
+	VMResourceYAMLExtraConfigKey = "vmservice.virtualmachine.resource.yaml"
+	// AdditionalResourcesYAMLExtraConfigKey is the ExtraConfig key to persist
+	// VM-relevant Kubernetes resource YAML, compressed using gzip and base64-encoded.
+	AdditionalResourcesYAMLExtraConfigKey = "vmservice.virtualmachine.additional.resources.yaml"
+	// PVCDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
+	// PVC disk data in JSON, compressed using gzip and base64-encoded.
+	PVCDiskDataExtraConfigKey = "vmservice.virtualmachine.pvc.disk.data"
+	// CloudInitInstanceIDExtraConfigKey is the ExtraConfig key to persist
 	// the VM's Cloud-Init instance ID, compressed using gzip and base64-encoded.
-	VMBackupCloudInitInstanceIDExtraConfigKey = "vmservice.virtualmachine.cloudinit.instanceid"
+	CloudInitInstanceIDExtraConfigKey = "vmservice.virtualmachine.cloudinit.instanceid"
 )
 
 // VirtualMachinePowerState defines a VM's desired and observed power states.

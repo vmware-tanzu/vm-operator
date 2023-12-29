@@ -23,16 +23,3 @@ type BackupVirtualMachineContext struct {
 func (c *BackupVirtualMachineContext) String() string {
 	return fmt.Sprintf("Backup %s", c.VMCtx.String())
 }
-
-// BackupVirtualMachineContextA2 is the context used for storing backup data of
-// VM and its related objects.
-type BackupVirtualMachineContextA2 struct {
-	VMCtx         VirtualMachineContextA2
-	VcVM          *object.VirtualMachine
-	BootstrapData map[string]string
-	DiskUUIDToPVC map[string]corev1.PersistentVolumeClaim
-}
-
-func (c *BackupVirtualMachineContextA2) String() string {
-	return fmt.Sprintf("Backup %s", c.VMCtx.String())
-}

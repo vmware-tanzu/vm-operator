@@ -11,6 +11,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -446,4 +447,112 @@ func GetAttachedDiskUUIDToPVC(
 	}
 
 	return diskUUIDToPVC, nil
+}
+
+// GetAdditionalResourcesForBackup returns a list of Kubernetes client objects
+// that are relevant for VM backup (e.g. bootstrap referenced resources).
+func GetAdditionalResourcesForBackup(
+	vmCtx context.VirtualMachineContextA2,
+	k8sClient ctrlclient.Client) ([]ctrlclient.Object, error) {
+	var objects []ctrlclient.Object
+	// Get bootstrap related objects from CloudInit or Sysprep (mutually exclusive).
+	if bootstrapSpec := vmCtx.VM.Spec.Bootstrap; bootstrapSpec != nil {
+		if v := bootstrapSpec.CloudInit; v != nil {
+			if cooked := v.CloudConfig; cooked != nil {
+				out, err := cloudinit.GetSecretResources(vmCtx, k8sClient, vmCtx.VM.Namespace, *cooked)
+				if err != nil {
+					return nil, err
+				}
+				objects = append(objects, out...)
+			} else if raw := v.RawCloudConfig; raw != nil {
+				obj, err := getSecretOrConfigMapObject(vmCtx, k8sClient, raw.Name, true)
+				if err != nil {
+					return nil, err
+				}
+				objects = append(objects, obj)
+			}
+		} else if v := bootstrapSpec.Sysprep; v != nil {
+			if cooked := v.Sysprep; cooked != nil {
+				out, err := sysprep.GetSecretResources(vmCtx, k8sClient, vmCtx.VM.Namespace, cooked)
+				if err != nil {
+					return nil, err
+				}
+				objects = append(objects, out...)
+			} else if raw := v.RawSysprep; raw != nil {
+				obj, err := getSecretOrConfigMapObject(vmCtx, k8sClient, raw.Name, true)
+				if err != nil {
+					return nil, err
+				}
+				objects = append(objects, obj)
+			}
+		}
+
+		// Get bootstrap related objects from vAppConfig (can be used alongside LinuxPrep/Sysprep).
+		if vApp := bootstrapSpec.VAppConfig; vApp != nil {
+			if cooked := vApp.Properties; cooked != nil {
+				uniqueSecrets := map[string]struct{}{}
+				for _, p := range vApp.Properties {
+					if from := p.Value.From; from != nil {
+						// vAppConfig Properties are backed by Secret resources only.
+						// Only return the secret if it has not already been captured.
+						if _, captured := uniqueSecrets[from.Name]; captured {
+							continue
+						}
+						obj, err := getSecretOrConfigMapObject(vmCtx, k8sClient, from.Name, false)
+						if err != nil {
+							return nil, err
+						}
+						objects = append(objects, obj)
+						uniqueSecrets[from.Name] = struct{}{}
+					}
+				}
+			} else if raw := vApp.RawProperties; raw != "" {
+				obj, err := getSecretOrConfigMapObject(vmCtx, k8sClient, raw, true)
+				if err != nil {
+					return nil, err
+				}
+				objects = append(objects, obj)
+			}
+		}
+	}
+
+	return objects, nil
+}
+
+func getSecretOrConfigMapObject(
+	vmCtx context.VirtualMachineContextA2,
+	k8sClient ctrlclient.Client,
+	resourceName string,
+	configMapFallback bool) (ctrlclient.Object, error) {
+	key := ctrlclient.ObjectKey{Name: resourceName, Namespace: vmCtx.VM.Namespace}
+	secret := &corev1.Secret{}
+	err := k8sClient.Get(vmCtx, key, secret)
+	if err != nil {
+		configMap := &corev1.ConfigMap{}
+		// For backwards compat if we cannot find the Secret, fallback to a ConfigMap. In v1a1, either a
+		// Secret and ConfigMap was supported for metadata (bootstrap) as separate fields, but v1a2 only
+		// supports Secrets.
+		if configMapFallback && apierrors.IsNotFound(err) {
+			if k8sClient.Get(vmCtx, key, configMap) == nil {
+				// The typeMeta may not be populated when getting the resource from client.
+				// We need to populate it here so that the resource can be serialized in backup.
+				configMap.TypeMeta = metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				}
+				err = nil
+			}
+		}
+
+		return configMap, err
+	}
+
+	// The typeMeta may not be populated when getting the resource from client.
+	// We need to populate it here so that the resource can be serialized in backup.
+	secret.TypeMeta = metav1.TypeMeta{
+		Kind:       "Secret",
+		APIVersion: "v1",
+	}
+
+	return secret, err
 }

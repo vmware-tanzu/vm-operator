@@ -399,26 +399,27 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	// Back up the VM at the end after a successful update.
 	if lib.IsVMServiceBackupRestoreFSSEnabled() {
 		vmCtx.Logger.V(4).Info("Backing up VirtualMachine")
-		// TODO: Support backing up vAppConfig bootstrap data.
-		bsData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
-		if err != nil {
-			vmCtx.Logger.Error(err, "Failed to get VM's bootstrap data for backup")
-			return err
-		}
+
 		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
 		if err != nil {
-			vmCtx.Logger.Error(err, "Failed to get VM's attached PVCs for backup")
+			vmCtx.Logger.Error(err, "failed to get disk uuid to PVC mapping for backup")
 			return err
 		}
 
-		backupVMCtx := context.BackupVirtualMachineContextA2{
-			VMCtx:         vmCtx,
-			VcVM:          vcVM,
-			BootstrapData: bsData.Data,
-			DiskUUIDToPVC: diskUUIDToPVC,
+		additionalResources, err := GetAdditionalResourcesForBackup(vmCtx, vs.k8sClient)
+		if err != nil {
+			vmCtx.Logger.Error(err, "failed to get additional resources for backup")
+			return err
 		}
-		if err := virtualmachine.BackupVirtualMachine(backupVMCtx); err != nil {
-			vmCtx.Logger.Error(err, "Failed to backup VM")
+
+		backupOpts := virtualmachine.BackupVirtualMachineOptions{
+			VMCtx:               vmCtx,
+			VcVM:                vcVM,
+			DiskUUIDToPVC:       diskUUIDToPVC,
+			AdditionalResources: additionalResources,
+		}
+		if err := virtualmachine.BackupVirtualMachine(backupOpts); err != nil {
+			vmCtx.Logger.Error(err, "failed to backup VM")
 			return err
 		}
 	}

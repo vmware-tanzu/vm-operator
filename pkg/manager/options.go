@@ -37,7 +37,7 @@ var InitializeProvidersNoopFn InitializeProvidersFunc = func(_ *context.Controll
 	return nil
 }
 
-// Options describes the options used to create a new GCM manager.
+// Options describes the options used to create a new manager.
 type Options struct {
 	// LeaderElectionEnabled is a flag that enables leader election.
 	LeaderElectionEnabled bool
@@ -46,8 +46,8 @@ type Options struct {
 	// locking resource when configuring leader election.
 	LeaderElectionID string
 
-	// HealthProbeBindAddress is the TCP address that the controller should bind to
-	// for serving health probes
+	// HealthProbeBindAddress is the TCP address to which the controller should
+	// bind for serving health probes.
 	HealthProbeBindAddress string
 
 	// SyncPeriod is the amount of time to wait between syncing the local

@@ -51,7 +51,7 @@ const (
 	readinessProbeOnlyOneAction               = "only one action can be specified"
 	updatesNotAllowedWhenPowerOn              = "updates to this field is not allowed when VM power is on"
 	storageClassNotAssignedFmt                = "Storage policy is not associated with the namespace %s"
-	storageClassNotFoundFmt                   = "Storage policy is not associated with the namespace %s"
+	storageClassNotFoundFmt                   = "Storage policy is not found"
 	invalidVolumeSpecified                    = "only one of persistentVolumeClaim or vsphereVolume must be specified"
 	vSphereVolumeSizeNotMBMultiple            = "value must be a multiple of MB"
 	eagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning"
@@ -276,8 +276,7 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 
 	sc := &storagev1.StorageClass{}
 	if err := v.client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
-		return append(allErrs, field.Invalid(scPath, scName,
-			fmt.Sprintf(storageClassNotFoundFmt, namespace)))
+		return append(allErrs, field.Invalid(scPath, scName, storageClassNotFoundFmt))
 	}
 
 	resourceQuotas := &corev1.ResourceQuotaList{}

@@ -488,7 +488,7 @@ func unitTestsValidateCreate() {
 			field.Forbidden(field.NewPath("spec", "advancedOptions", "defaultVolumeProvisioningOptions"), "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning").Error(), nil),
 
 		Entry("should deny a storage class that does not exist", createArgs{notFoundStorageClass: true}, false,
-			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
+			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, "Storage policy is not found").Error(), nil),
 		Entry("should deny a storage class that is not associated with the namespace", createArgs{invalidStorageClass: true}, false,
 			field.Invalid(specPath.Child("storageClass"), builder.DummyStorageClassName, fmt.Sprintf("Storage policy is not associated with the namespace %s", "")).Error(), nil),
 		Entry("should allow empty vmMetadata resource Names", createArgs{emptyMetadataResource: true}, true, nil, nil),

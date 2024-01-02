@@ -662,3 +662,7 @@ func readDocuments(fp string) ([][]byte, error) {
 	}
 	return docs, nil
 }
+
+func addrOf[T any](t T) *T {
+	return &t
+}

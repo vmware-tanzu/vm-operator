@@ -8,17 +8,17 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachinepublishrequest/v1alpha2/validation"
 )
 
 // suite is used for unit and integration testing this webhook.
-var suite = builder.NewTestSuiteForValidatingWebhookwithFSS(
+var suite = builder.NewTestSuiteForValidatingWebhookWithContext(
+	pkgconfig.WithConfig(pkgconfig.Config{Features: pkgconfig.FeatureStates{VMOpV1Alpha2: true}}),
 	validation.AddToManager,
 	validation.NewValidator,
-	"default.validating.virtualmachinepublishrequest.v1alpha2.vmoperator.vmware.com",
-	map[string]bool{lib.VMServiceV1Alpha2FSS: true})
+	"default.validating.virtualmachinepublishrequest.v1alpha2.vmoperator.vmware.com")
 
 func TestWebhook(t *testing.T) {
 	suite.Register(t, "Validation webhook suite", intgTests, unitTests)

@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	patch "github.com/vmware-tanzu/vm-operator/pkg/patch2"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -32,6 +33,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	)
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -44,10 +46,12 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder) *Reconciler {
 	return &Reconciler{
+		Context:  ctx,
 		Client:   client,
 		Logger:   logger,
 		Recorder: recorder,
@@ -57,6 +61,7 @@ func NewReconciler(
 // Reconciler reconciles a VirtualMachineClass object.
 type Reconciler struct {
 	client.Client
+	Context  goctx.Context
 	Logger   logr.Logger
 	Recorder record.Recorder
 }
@@ -65,6 +70,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineclasses/status,verbs=get;update;patch
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	vmClass := &vmopv1.VirtualMachineClass{}
 	if err := r.Get(ctx, req.NamespacedName, vmClass); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)

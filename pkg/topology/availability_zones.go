@@ -13,7 +13,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 const (
@@ -159,7 +159,7 @@ func GetAvailabilityZones(
 	ctx context.Context,
 	client ctrlclient.Client) ([]topologyv1.AvailabilityZone, error) {
 
-	if !lib.IsWcpFaultDomainsFSSEnabled() {
+	if !pkgconfig.FromContext(ctx).Features.FaultDomains {
 		defaultAz, err := GetDefaultAvailabilityZone(ctx, client)
 		if err != nil {
 			return nil, err
@@ -189,7 +189,7 @@ func GetAvailabilityZone(
 	client ctrlclient.Client,
 	availabilityZoneName string) (topologyv1.AvailabilityZone, error) {
 
-	if !lib.IsWcpFaultDomainsFSSEnabled() {
+	if !pkgconfig.FromContext(ctx).Features.FaultDomains {
 		if availabilityZoneName == "" || availabilityZoneName == DefaultAvailabilityZoneName {
 			return GetDefaultAvailabilityZone(ctx, client)
 		}
@@ -211,7 +211,7 @@ func GetDefaultAvailabilityZone(
 	ctx context.Context,
 	client ctrlclient.Client) (topologyv1.AvailabilityZone, error) {
 
-	if lib.IsWcpFaultDomainsFSSEnabled() {
+	if pkgconfig.FromContext(ctx).Features.FaultDomains {
 		return topologyv1.AvailabilityZone{}, ErrWcpFaultDomainsFSSIsEnabled
 	}
 

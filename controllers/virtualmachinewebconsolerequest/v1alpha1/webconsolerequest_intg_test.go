@@ -5,7 +5,6 @@ package v1alpha1_test
 
 import (
 	"context"
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -19,7 +18,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -157,11 +156,15 @@ func webConsoleRequestReconcile() {
 
 		When("VM Service v1a2 FSS enabled", func() {
 			BeforeEach(func() {
-				Expect(os.Setenv(lib.VMServiceV1Alpha2FSS, lib.TrueString)).To(Succeed())
+				pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+					config.Features.VMOpV1Alpha2 = true
+				})
 			})
 
 			AfterEach(func() {
-				Expect(os.Unsetenv(lib.VMServiceV1Alpha2FSS)).To(Succeed())
+				pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+					config.Features.VMOpV1Alpha2 = false
+				})
 			})
 
 			It("resource successfully created", func() {

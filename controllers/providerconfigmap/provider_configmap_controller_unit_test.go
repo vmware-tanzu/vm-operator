@@ -45,6 +45,7 @@ func unitTestsCM() {
 		JustBeforeEach(func() {
 			ctx = suite.NewUnitTestContextForController(initObjects...)
 			reconciler = providerconfigmap.NewReconciler(
+				ctx,
 				ctx.Client,
 				ctx.Logger,
 				ctx.VMProvider,

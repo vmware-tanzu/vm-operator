@@ -4,7 +4,6 @@
 package vsphere_test
 
 import (
-	goctx "context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -21,7 +20,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
@@ -63,8 +62,10 @@ func vmE2ETests() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
-		ctx.Context = goctx.WithValue(ctx.Context, context.MaxDeployThreadsContextKey, 1)
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx.Client, ctx.Recorder)
+		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			config.MaxDeployThreadsOnProvider = 1
+		})
+		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
 		nsInfo = ctx.CreateWorkloadNamespace()
 
 		vmClass.Namespace = nsInfo.Namespace

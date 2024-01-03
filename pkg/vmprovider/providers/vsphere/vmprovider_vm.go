@@ -20,8 +20,8 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/client"
@@ -244,14 +244,9 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 		return nil, err
 	}
 
-	// BMV: This is about where we used to do this check but it prb make more sense
-	// to do earlier, as to limit wasted work.
-	maxDeployThreads, ok := vmCtx.Value(context.MaxDeployThreadsContextKey).(int)
-	if !ok {
-		return nil, fmt.Errorf("MaxDeployThreadsContextKey missing from context")
-	}
-
-	allowed, createDeferFn := vs.vmCreateConcurrentAllowed(vmCtx, maxDeployThreads)
+	allowed, createDeferFn := vs.vmCreateConcurrentAllowed(
+		vmCtx,
+		pkgconfig.FromContext(vmCtx).GetMaxDeployThreadsOnProvider())
 	if !allowed {
 		return nil, nil
 	}
@@ -316,7 +311,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	// Back up the VM at the end after a successful update.
-	if lib.IsVMServiceBackupRestoreFSSEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.AutoVADPBackupRestore {
 		vmCtx.Logger.V(4).Info("Backing up VirtualMachine")
 		data, err := GetVMMetadata(vmCtx, vs.k8sClient)
 		if err != nil {
@@ -517,7 +512,7 @@ func (vs *vSphereVMProvider) vmCreateGetArgs(
 		return nil, err
 	}
 
-	if lib.IsInstanceStorageFSSEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.InstanceStorage {
 		// This must be done here so the instance storage volumes are present so the next
 		// step can fetch all the storage profiles.
 		if err := AddInstanceStorageVolumes(vmCtx, createArgs.VMClass); err != nil {
@@ -596,9 +591,9 @@ func (vs *vSphereVMProvider) vmCreateGetPrereqs(
 		createArgs.MinCPUFreq = freq
 	}
 
-	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
 		if cs := createArgs.VMClass.Spec.ConfigSpec; cs != nil {
-			classConfigSpec, err := GetVMClassConfigSpec(cs)
+			classConfigSpec, err := GetVMClassConfigSpec(vmCtx, cs)
 			if err != nil {
 				return nil, err
 			}
@@ -641,7 +636,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	if createArgs.ClassConfigSpec != nil {
 		// With DaynDate FFS, the VM created is based on the VMClass ConfigSpec. Otherwise, the VMClass
 		// ConfigSpec is handled during the post-create Update.
-		if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+		if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
 			t := *createArgs.ClassConfigSpec
 			// Remove the NICs since we don't know the backing yet; they'll be added in the post-create Update.
 			util.RemoveDevicesFromConfigSpec(&t, util.IsEthernetCard)
@@ -668,7 +663,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 
 	// Set a hardware version in the create config spec when VMs are created with PVCs/PCI(vGPU and DDPIO) devices
 	// and VMClass config spec has an empty hardware version.
-	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && createArgs.ConfigSpec.Version == "" {
+	if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate && createArgs.ConfigSpec.Version == "" {
 		if version := HardwareVersionForPVCandPCIDevices(createArgs.VMImageSpec.HardwareVersion,
 			createArgs.ConfigSpec, HasPVC(vmCtx.VM.Spec)); version != 0 {
 			createArgs.ConfigSpec.Version = fmt.Sprintf("vmx-%d", version)
@@ -750,9 +745,9 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 		updateArgs.MinCPUFreq = freq
 	}
 
-	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
 		if cs := updateArgs.VMClass.Spec.ConfigSpec; cs != nil {
-			classConfigSpec, err := GetVMClassConfigSpec(cs)
+			classConfigSpec, err := GetVMClassConfigSpec(vmCtx, cs)
 			if err != nil {
 				return nil, err
 			}

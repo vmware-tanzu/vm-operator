@@ -4,7 +4,7 @@
 package contentlibrary_test
 
 import (
-	"sync/atomic"
+	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -17,7 +17,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/contentlibrary"
 )
@@ -29,15 +29,15 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 	)
 
 	var (
-		// FSS related to UnifiedTKG. This FSS should be manipulated atomically to avoid races between tests and
-		// provider.
-		unifiedTKGFSS uint32
+		ctx context.Context
 	)
 
 	BeforeEach(func() {
-		lib.IsUnifiedTKGFSSEnabled = func() bool {
-			return atomic.LoadUint32(&unifiedTKGFSS) != 0
-		}
+		ctx = pkgconfig.NewContext()
+	})
+
+	AfterEach(func() {
+		ctx = nil
 	})
 
 	Context("Expose ovfEnv properties", func() {
@@ -105,7 +105,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 		})
 
 		JustBeforeEach(func() {
-			image = contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
+			image = contentlibrary.LibItemToVirtualMachineImage(ctx, item, ovfEnvelope)
 		})
 
 		It("returns a VirtualMachineImage with expected annotations and ovfEnv", func() {
@@ -181,7 +181,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 
 		It("with vmtx type", func() {
 			item.Type = "vmtx"
-			image := contentlibrary.LibItemToVirtualMachineImage(item, nil)
+			image := contentlibrary.LibItemToVirtualMachineImage(ctx, item, nil)
 			Expect(image).ToNot(BeNil())
 			Expect(image.Name).Should(Equal("fakeItem"))
 			Expect(image.Annotations).To(HaveKey(constants.VMImageCLVersionAnnotation))
@@ -192,16 +192,10 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 		})
 
 		When("WCP_Unified_TKG FSS is enabled", func() {
-			var (
-				oldUnifiedTKGFSSState uint32
-			)
 			BeforeEach(func() {
-				oldUnifiedTKGFSSState = unifiedTKGFSS
-				atomic.StoreUint32(&unifiedTKGFSS, 1)
-			})
-
-			AfterEach(func() {
-				atomic.StoreUint32(&unifiedTKGFSS, oldUnifiedTKGFSSState)
+				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+					config.Features.UnifiedTKG = true
+				})
 			})
 
 			It("ImageSupported should be set to true when OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig and WCP_Unified_TKG FSS is set ", func() {
@@ -220,7 +214,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 					},
 				}
 
-				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
+				image := contentlibrary.LibItemToVirtualMachineImage(ctx, item, ovfEnvelope)
 				Expect(image).ToNot(BeNil())
 				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
 
@@ -230,16 +224,11 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 		})
 
 		When("WCP_Unified_TKG FSS is not enabled", func() {
-			var (
-				oldUnifiedTKGFSSState uint32
-			)
-			BeforeEach(func() {
-				oldUnifiedTKGFSSState = unifiedTKGFSS
-				atomic.StoreUint32(&unifiedTKGFSS, 0)
-			})
 
-			AfterEach(func() {
-				atomic.StoreUint32(&unifiedTKGFSS, oldUnifiedTKGFSSState)
+			BeforeEach(func() {
+				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+					config.Features.UnifiedTKG = false
+				})
 			})
 
 			It("ImageSupported should be set to true when it is a TKG image and valid OS Type is set and OVF Envelope does not have vsphere.VMOperatorV1Alpha1ExtraConfigKey in extraConfig", func() {
@@ -265,7 +254,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 					},
 				}
 
-				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
+				image := contentlibrary.LibItemToVirtualMachineImage(ctx, item, ovfEnvelope)
 				Expect(image).ToNot(BeNil())
 
 				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
@@ -291,7 +280,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 					},
 				}
 
-				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
+				image := contentlibrary.LibItemToVirtualMachineImage(ctx, item, ovfEnvelope)
 				Expect(image).ToNot(BeNil())
 				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(false)))
 
@@ -320,7 +309,7 @@ var _ = Describe("LibItemToVirtualMachineImage", func() {
 					},
 				}
 
-				image := contentlibrary.LibItemToVirtualMachineImage(item, ovfEnvelope)
+				image := contentlibrary.LibItemToVirtualMachineImage(ctx, item, ovfEnvelope)
 				Expect(image).ToNot(BeNil())
 				Expect(image.Status.ImageSupported).Should(Equal(pointer.Bool(true)))
 				expectedCondition := vmopv1.Conditions{

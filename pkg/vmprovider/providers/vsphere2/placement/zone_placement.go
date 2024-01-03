@@ -14,8 +14,8 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
@@ -32,7 +32,7 @@ type Result struct {
 }
 
 func doesVMNeedPlacement(vmCtx context.VirtualMachineContextA2) (res Result, needZonePlacement, needInstanceStoragePlacement bool) {
-	if lib.IsWcpFaultDomainsFSSEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.FaultDomains {
 		res.ZonePlacement = true
 
 		if zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName != "" {
@@ -44,7 +44,7 @@ func doesVMNeedPlacement(vmCtx context.VirtualMachineContextA2) (res Result, nee
 		}
 	}
 
-	if lib.IsInstanceStorageFSSEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.InstanceStorage {
 		if instancestorage.IsPresent(vmCtx.VM) {
 			res.InstanceStoragePlacement = true
 

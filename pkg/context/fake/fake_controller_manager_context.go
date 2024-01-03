@@ -4,11 +4,10 @@
 package fake
 
 import (
-	goctx "context"
-
 	clientrecord "k8s.io/client-go/tools/record"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
@@ -18,7 +17,7 @@ import (
 // testing reconcilers and webhooks with a fake client.
 func NewControllerManagerContext() *context.ControllerManagerContext {
 	return &context.ControllerManagerContext{
-		Context:                 goctx.Background(),
+		Context:                 pkgconfig.NewContext(),
 		Logger:                  ctrllog.Log.WithName(ControllerManagerName),
 		Namespace:               ControllerManagerNamespace,
 		Name:                    ControllerManagerName,

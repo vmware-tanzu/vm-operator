@@ -185,7 +185,7 @@ func NewClient(ctx context.Context, config *config.VSphereVMProviderConfig) (*Cl
 		finder:           finder,
 		datacenter:       datacenter,
 		restClient:       restClient,
-		contentLibClient: contentlibrary.NewProvider(restClient),
+		contentLibClient: contentlibrary.NewProvider(ctx, restClient),
 		clusterModClient: clustermodules.NewProvider(restClient),
 		sessionManager:   sm,
 		config:           config,

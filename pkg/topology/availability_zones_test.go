@@ -16,7 +16,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -33,13 +33,11 @@ var _ = Describe("Availability Zones", func() {
 		wcpFaultDomainsFssEnabled bool
 		numberOfAvailabilityZones int
 		numberOfNamespaces        int
-		oldFaultDomainsFunc       func() bool
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		ctx = pkgconfig.NewContext()
 		client = builder.NewFakeClient()
-		oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
 	})
 
 	AfterEach(func() {
@@ -48,13 +46,12 @@ var _ = Describe("Availability Zones", func() {
 		wcpFaultDomainsFssEnabled = false
 		numberOfAvailabilityZones = 0
 		numberOfNamespaces = 0
-		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
 	})
 
 	JustBeforeEach(func() {
-		lib.IsWcpFaultDomainsFSSEnabled = func() bool {
-			return wcpFaultDomainsFssEnabled
-		}
+		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			config.Features.FaultDomains = wcpFaultDomainsFssEnabled
+		})
 
 		for i := 0; i < numberOfAvailabilityZones; i++ {
 			obj := &topologyv1.AvailabilityZone{

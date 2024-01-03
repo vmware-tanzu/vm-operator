@@ -62,6 +62,7 @@ func reconcileProviderRef() {
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		reconciler = contentsource.NewReconciler(
+			ctx,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
@@ -193,6 +194,7 @@ func unitTestsCRUDImage() {
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		reconciler = contentsource.NewReconciler(
+			ctx,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,

@@ -4,15 +4,13 @@
 package virtualmachine_test
 
 import (
-	goctx "context"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -135,7 +133,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 		vm := builder.DummyVirtualMachine()
 		vmCtx = context.VirtualMachineContext{
-			Context: goctx.Background(),
+			Context: pkgconfig.NewContext(),
 			Logger:  suite.GetLogger().WithValues("vmName", vm.GetName()),
 			VM:      vm,
 		}
@@ -154,19 +152,15 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 	Context("When InstanceStorage is configured", func() {
 		const storagePolicyID = "storage-id-42"
-		var oldIsInstanceStorageFSSEnabled func() bool
 
 		BeforeEach(func() {
-			oldIsInstanceStorageFSSEnabled = lib.IsInstanceStorageFSSEnabled
-			lib.IsInstanceStorageFSSEnabled = func() bool { return true }
+			pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
+				config.Features.InstanceStorage = true
+			})
 
 			builder.AddDummyInstanceStorageVolume(vmCtx.VM)
 			storageClassesToIDs[builder.DummyStorageClassName] = storagePolicyID
 			classConfigSpec = nil
-		})
-
-		AfterEach(func() {
-			lib.IsInstanceStorageFSSEnabled = oldIsInstanceStorageFSSEnabled
 		})
 
 		It("ConfigSpec contains expected InstanceStorage devices", func() {
@@ -177,15 +171,10 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 	})
 
 	Context("when DaynDate FSS is enabled", func() {
-		var oldDaynDateFSSFn func() bool
-
 		BeforeEach(func() {
-			oldDaynDateFSSFn = lib.IsVMClassAsConfigFSSDaynDateEnabled
-			lib.IsVMClassAsConfigFSSDaynDateEnabled = func() bool { return true }
-		})
-
-		AfterEach(func() {
-			lib.IsVMClassAsConfigFSSDaynDateEnabled = oldDaynDateFSSFn
+			pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
+				config.Features.VMClassAsConfigDayNDate = true
+			})
 		})
 
 		Context("When class config spec is not nil", func() {

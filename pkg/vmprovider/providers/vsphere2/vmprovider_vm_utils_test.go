@@ -4,7 +4,6 @@
 package vsphere_test
 
 import (
-	goctx "context"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -18,8 +17,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -38,7 +37,7 @@ func vmUtilTests() {
 		vm := builder.DummyBasicVirtualMachineA2("test-vm", "dummy-ns")
 
 		vmCtx = context.VirtualMachineContextA2{
-			Context: goctx.WithValue(goctx.Background(), context.MaxDeployThreadsContextKey, 16),
+			Context: pkgconfig.WithConfig(pkgconfig.Config{MaxDeployThreadsOnProvider: 16}),
 			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
 			VM:      vm,
 		}
@@ -54,8 +53,6 @@ func vmUtilTests() {
 	})
 
 	Context("GetVirtualMachineClass", func() {
-		oldNamespacedVMClassFSSEnabledFunc := lib.IsNamespacedVMClassFSSEnabled
-
 		// NOTE: As we currently have it, v1a2 must have this enabled.
 		When("WCP_Namespaced_VM_Class FSS is enabled", func() {
 			var (
@@ -66,14 +63,9 @@ func vmUtilTests() {
 				vmClass = builder.DummyVirtualMachineClass2A2("dummy-vm-class")
 				vmClass.Namespace = vmCtx.VM.Namespace
 				vmCtx.VM.Spec.ClassName = vmClass.Name
-
-				lib.IsNamespacedVMClassFSSEnabled = func() bool {
-					return true
-				}
-			})
-
-			AfterEach(func() {
-				lib.IsNamespacedVMClassFSSEnabled = oldNamespacedVMClassFSSEnabledFunc
+				pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
+					config.Features.NamespacedVMClass = true
+				})
 			})
 
 			Context("VirtualMachineClass custom resource doesn't exist", func() {
@@ -122,9 +114,9 @@ func vmUtilTests() {
 				clusterVMImage = builder.DummyClusterVirtualMachineImageA2("dummy-cluster-vm-image")
 				conditions.MarkTrue(clusterVMImage, vmopv1.ReadyConditionType)
 
-				lib.IsWCPVMImageRegistryEnabled = func() bool {
-					return true
-				}
+				pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
+					config.Features.ImageRegistry = true
+				})
 			})
 
 			When("Neither cluster or namespace scoped VM image exists", func() {

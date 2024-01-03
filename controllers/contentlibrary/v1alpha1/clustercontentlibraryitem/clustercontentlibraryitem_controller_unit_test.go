@@ -52,6 +52,7 @@ func unitTestsReconcile() {
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		reconciler = clustercontentlibraryitem.NewReconciler(
+			ctx,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,

@@ -17,6 +17,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	virtualmachine "github.com/vmware-tanzu/vm-operator/controllers/virtualmachine/v1alpha1"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	proberfake "github.com/vmware-tanzu/vm-operator/pkg/prober/fake"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
@@ -62,16 +63,17 @@ func unitTestsReconcile() {
 
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
+		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			config.MaxDeployThreadsOnProvider = 16
+		})
 		fakeProbeManagerIf := proberfake.NewFakeProberManager()
-
 		reconciler = virtualmachine.NewReconciler(
+			ctx,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
 			ctx.VMProvider,
-			fakeProbeManagerIf,
-			16,
-		)
+			fakeProbeManagerIf)
 		fakeVMProvider = ctx.VMProvider.(*providerfake.VMProvider)
 		fakeProbeManager = fakeProbeManagerIf.(*proberfake.ProberManager)
 

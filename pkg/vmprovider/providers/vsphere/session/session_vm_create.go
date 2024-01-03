@@ -17,8 +17,8 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/placement"
@@ -70,7 +70,7 @@ func (s *Session) deployVMFromCL(
 		deploymentSpec.DefaultDatastoreID = createArgs.DatastoreMoID
 	}
 
-	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && createArgs.ConfigSpec != nil {
+	if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate && createArgs.ConfigSpec != nil {
 		configSpecXML, err := util.MarshalConfigSpecToXML(createArgs.ConfigSpec)
 		if err != nil {
 			return nil, err

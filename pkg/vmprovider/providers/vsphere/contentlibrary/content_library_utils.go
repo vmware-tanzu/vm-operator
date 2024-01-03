@@ -21,7 +21,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
@@ -29,6 +29,7 @@ import (
 // LibItemToVirtualMachineImage converts a given library item and its attributes to return a
 // VirtualMachineImage that represents a k8s-native view of the item.
 func LibItemToVirtualMachineImage(
+	ctx context.Context,
 	item *library.Item,
 	ovfEnvelope *ovf.Envelope) *vmopv1.VirtualMachineImage {
 
@@ -70,7 +71,7 @@ func LibItemToVirtualMachineImage(
 		}
 
 		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
-		image.Status.ImageSupported = pointer.Bool(isImageSupported(image, ovfEnvelope.VirtualSystem, ovfSystemProps))
+		image.Status.ImageSupported = pointer.Bool(isImageSupported(ctx, image, ovfEnvelope.VirtualSystem, ovfSystemProps))
 
 		// Set Status Firmware from the envelope's virtual hardware section
 		if virtualHwSection := ovfEnvelope.VirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
@@ -82,7 +83,7 @@ func LibItemToVirtualMachineImage(
 }
 
 // UpdateVmiWithOvfEnvelope updates the given vmi object with the content of given OVF envelope.
-func UpdateVmiWithOvfEnvelope(vmi client.Object, ovfEnvelope ovf.Envelope) {
+func UpdateVmiWithOvfEnvelope(ctx context.Context, vmi client.Object, ovfEnvelope ovf.Envelope) {
 	var spec *vmopv1.VirtualMachineImageSpec
 	var status *vmopv1.VirtualMachineImageStatus
 	switch vmi := vmi.(type) {
@@ -107,7 +108,7 @@ func UpdateVmiWithOvfEnvelope(vmi client.Object, ovfEnvelope ovf.Envelope) {
 			annotations[k] = v
 		}
 		// Set Status.ImageSupported to combined compatibility of OVF compatibility or WCP_UNIFIED_TKG FSS state.
-		status.ImageSupported = pointer.Bool(isImageSupported(vmi, ovfEnvelope.VirtualSystem, ovfSystemProps))
+		status.ImageSupported = pointer.Bool(isImageSupported(ctx, vmi, ovfEnvelope.VirtualSystem, ovfSystemProps))
 
 		// Set Status Firmware from the envelope's virtual hardware section
 		if virtualHwSection := ovfEnvelope.VirtualSystem.VirtualHardware; len(virtualHwSection) > 0 {
@@ -239,7 +240,12 @@ type ImageConditionWrapper interface {
 // - the WCP_UNIFIED_TKG FSS is enabled
 //
 // Otherwise, the image is marked as unsupported.
-func isImageSupported(image client.Object, ovfVirtualSystem *ovf.VirtualSystem, ovfSystemProps map[string]string) bool {
+func isImageSupported(
+	ctx context.Context,
+	image client.Object,
+	ovfVirtualSystem *ovf.VirtualSystem,
+	ovfSystemProps map[string]string) bool {
+
 	var genericImage ImageConditionWrapper
 	switch image := image.(type) {
 	case *vmopv1.ClusterVirtualMachineImage:
@@ -251,7 +257,7 @@ func isImageSupported(image client.Object, ovfVirtualSystem *ovf.VirtualSystem, 
 	switch {
 	case isOVFV1Alpha1Compatible(ovfVirtualSystem) || isATKGImage(ovfSystemProps):
 		conditions.MarkTrue(genericImage, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)
-	case lib.IsUnifiedTKGFSSEnabled():
+	case pkgconfig.FromContext(ctx).Features.UnifiedTKG:
 		return true
 	default:
 		conditions.MarkFalse(

@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -29,10 +30,11 @@ import (
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
@@ -51,6 +53,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	)
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName("volume"),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -97,11 +100,13 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
+		Context:    ctx,
 		Client:     client,
 		logger:     logger,
 		recorder:   recorder,
@@ -113,6 +118,7 @@ var _ reconcile.Reconciler = &Reconciler{}
 
 type Reconciler struct {
 	client.Client
+	Context    goctx.Context
 	logger     logr.Logger
 	recorder   record.Recorder
 	VMProvider vmprovider.VirtualMachineProviderInterface
@@ -129,6 +135,8 @@ type Reconciler struct {
 // a separate controller to ensure volume attachments are processed promptly, since the VM
 // controller can block for a long time, consuming all of the workers.
 func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	vm := &vmopv1.VirtualMachine{}
 	if err := r.Get(ctx, request.NamespacedName, vm); err != nil {
 		if apiErrors.IsNotFound(err) {
@@ -141,7 +149,7 @@ func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (_ ctrl.
 		Context:                   ctx,
 		Logger:                    ctrl.Log.WithName("Volumes").WithValues("name", vm.NamespacedName()),
 		VM:                        vm,
-		InstanceStorageFSSEnabled: lib.IsInstanceStorageFSSEnabled(),
+		InstanceStorageFSSEnabled: pkgconfig.FromContext(ctx).Features.InstanceStorage,
 	}
 
 	// If the VM has a pause reconcile annotation, it is being restored on vCenter. Return here so our reconcile
@@ -181,7 +189,10 @@ func (r *Reconciler) reconcileResult(ctx *context.VolumeContext) ctrl.Result {
 		// Requeue the request if all instance storage PVCs are not bound.
 		_, pvcsBound := ctx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]
 		if instancestorage.IsConfigured(ctx.VM) && !pvcsBound {
-			return ctrl.Result{RequeueAfter: lib.GetInstanceStorageRequeueDelay()}
+			return ctrl.Result{RequeueAfter: wait.Jitter(
+				pkgconfig.FromContext(ctx).InstanceStorage.SeedRequeueDuration,
+				pkgconfig.FromContext(ctx).InstanceStorage.JitterMaxFactor,
+			)}
 		}
 	}
 
@@ -302,7 +313,7 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(ctx *context.VolumeContext) (b
 			continue
 		}
 
-		if instanceStoragePVCFailed(&pvc) {
+		if instanceStoragePVCFailed(ctx, &pvc) {
 			// This PVC is ours but has failed. This instance storage placement is doomed.
 			failedVolumesMap[pvc.Name] = struct{}{}
 			continue
@@ -332,7 +343,7 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(ctx *context.VolumeContext) (b
 	fullyBound := boundCount == len(isVolumes)
 	if fullyBound {
 		// All of our instance storage volumes are bound. This is our final state.
-		ctx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey] = lib.TrueString
+		ctx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey] = "true"
 	}
 
 	// There are some implicit relationship between these values. Like there should have been
@@ -345,10 +356,10 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(ctx *context.VolumeContext) (b
 	return fullyBound, k8serrors.NewAggregate(append(deleteErrs, createErrs...))
 }
 
-func instanceStoragePVCFailed(pvc *corev1.PersistentVolumeClaim) bool {
+func instanceStoragePVCFailed(ctx goctx.Context, pvc *corev1.PersistentVolumeClaim) bool {
 	errAnn := pvc.Annotations[constants.InstanceStoragePVPlacementErrorAnnotationKey]
 	if strings.HasPrefix(errAnn, constants.InstanceStoragePVPlacementErrorPrefix) &&
-		time.Since(pvc.CreationTimestamp.Time) >= lib.GetInstanceStoragePVPlacementFailedTTL() {
+		time.Since(pvc.CreationTimestamp.Time) >= pkgconfig.FromContext(ctx).InstanceStorage.PVPlacementFailedTTL {
 		// This triggers delete PVCs operation - Delay it by 5m (default) so that the system is
 		// not over loaded with repeated create/delete PVCs.
 		// NOTE: There is no limitation of CSI on the rate of create/delete PVCs. With this delay,
@@ -407,7 +418,7 @@ func (r *Reconciler) createInstanceStoragePVC(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      volume.PersistentVolumeClaim.ClaimName,
 			Namespace: ctx.VM.Namespace,
-			Labels:    map[string]string{constants.InstanceStorageLabelKey: lib.TrueString},
+			Labels:    map[string]string{constants.InstanceStorageLabelKey: "true"},
 			Annotations: map[string]string{
 				constants.KubernetesSelectedNodeAnnotationKey: selectedNode,
 			},
@@ -536,7 +547,7 @@ func (r *Reconciler) processAttachments(
 			continue
 		}
 
-		attachmentName := CNSAttachmentNameForVolume(ctx.VM, volume.Name)
+		attachmentName := util.CNSAttachmentNameForVolume(ctx.VM.Name, volume.Name)
 		if attachment, ok := attachments[attachmentName]; ok {
 			// The attachment for this volume already exists. Note it might make sense to ensure
 			// that the existing attachment matches what we expect (so like do an Update if needed)
@@ -725,7 +736,7 @@ func (r *Reconciler) attachmentsToDelete(
 	for _, volume := range ctx.VM.Spec.Volumes {
 		// Only process CNS volumes here.
 		if volume.PersistentVolumeClaim != nil {
-			attachmentName := CNSAttachmentNameForVolume(ctx.VM, volume.Name)
+			attachmentName := util.CNSAttachmentNameForVolume(ctx.VM.Name, volume.Name)
 			expectedAttachments[attachmentName] = true
 		}
 	}
@@ -761,17 +772,6 @@ func (r *Reconciler) deleteOrphanedAttachments(ctx *context.VolumeContext, attac
 	}
 
 	return k8serrors.NewAggregate(errs)
-}
-
-// CNSAttachmentNameForVolume returns the name of the CnsNodeVmAttachment based on the VM and Volume name.
-// This matches the naming used in previous code but there are situations where
-// we may get a collision between VMs and Volume names. I'm not sure if there is
-// an absolute way to avoid that: the same situation can happen with the claimName.
-// Ideally, we would use GenerateName, but we lack the back-linkage to match
-// Volumes and CnsNodeVmAttachment up.
-// The VM webhook validate that this result will be a valid k8s name.
-func CNSAttachmentNameForVolume(vm *vmopv1.VirtualMachine, volumeName string) string {
-	return vm.Name + "-" + volumeName
 }
 
 // The CSI controller sometimes puts the serialized SOAP error into the CnsNodeVmAttachment

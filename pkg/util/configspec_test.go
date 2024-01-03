@@ -5,6 +5,7 @@ package util_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"os"
 	"reflect"
@@ -18,7 +19,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
@@ -276,12 +277,14 @@ var _ = Describe("AppendNewExtraConfigValues", func() {
 })
 
 var _ = Describe("SanitizeVMClassConfigSpec", func() {
-	oldVMClassAsConfigFSSEnabledFunc := lib.IsVMClassAsConfigFSSEnabled
 	var (
+		ctx        context.Context
 		configSpec *vimTypes.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
+		ctx = pkgconfig.NewContext()
+
 		configSpec = &vimTypes.VirtualMachineConfigSpec{
 			Name:         "dummy-VM",
 			Annotation:   "test-annotation",
@@ -354,18 +357,10 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 				},
 			},
 		}
-
-		lib.IsVMClassAsConfigFSSEnabled = func() bool {
-			return false
-		}
-	})
-
-	AfterEach(func() {
-		lib.IsVMClassAsConfigFSSEnabled = oldVMClassAsConfigFSSEnabledFunc
 	})
 
 	It("returns expected sanitized ConfigSpec", func() {
-		util.SanitizeVMClassConfigSpec(configSpec)
+		util.SanitizeVMClassConfigSpec(ctx, configSpec)
 
 		Expect(configSpec.Name).To(Equal("dummy-VM"))
 		Expect(configSpec.Annotation).ToNot(BeEmpty())
@@ -383,12 +378,12 @@ var _ = Describe("SanitizeVMClassConfigSpec", func() {
 
 	When("VMClassAsConfig is enabled", func() {
 		BeforeEach(func() {
-			lib.IsVMClassAsConfigFSSEnabled = func() bool {
-				return true
-			}
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.VMClassAsConfig = true
+			})
 		})
 		It("returns expected sanitized ConfigSpec", func() {
-			util.SanitizeVMClassConfigSpec(configSpec)
+			util.SanitizeVMClassConfigSpec(ctx, configSpec)
 
 			Expect(configSpec.Name).To(Equal("dummy-VM"))
 			Expect(configSpec.Annotation).ToNot(BeEmpty())

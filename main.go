@@ -10,7 +10,6 @@ import (
 	"net/http/pprof"
 	"os"
 	"path"
-	"strconv"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -22,9 +21,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/controllers"
 	"github.com/vmware-tanzu/vm-operator/pkg"
+	"github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/manager"
+	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
 	"github.com/vmware-tanzu/vm-operator/webhooks"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -36,27 +36,6 @@ import (
 	// +kubebuilder:scaffold:imports
 )
 
-var (
-	defaultProfilerAddr     = ":8073"
-	defaultRateLimiterQPS   = 500
-	defaultRateLimiterBurst = 1000
-
-	defaultSyncPeriod                   = manager.DefaultSyncPeriod
-	defaultMaxConcurrentReconciles      = manager.DefaultMaxConcurrentReconciles
-	defaultLeaderElectionID             = manager.DefaultLeaderElectionID
-	defaultPodNamespace                 = manager.DefaultPodNamespace
-	defaultPodName                      = manager.DefaultPodName
-	defaultPodServiceAccountName        = manager.DefaultPodServiceAccountName
-	defaultWebhookServiceContainerPort  = manager.DefaultWebhookServiceContainerPort
-	defaultWebhookServiceNamespace      = manager.DefaultWebhookServiceNamespace
-	defaultWebhookServiceName           = manager.DefaultWebhookServiceName
-	defaultWebhookSecretNamespace       = manager.DefaultWebhookSecretNamespace
-	defaultWebhookSecretName            = manager.DefaultWebhookSecretName
-	defaultWebhookSecretVolumeMountPath = manager.DefaultWebhookSecretVolumeMountPath
-	defaultWatchNamespace               = manager.DefaultWatchNamespace
-	defaultContainerNode                = manager.DefaultContainerNode
-)
-
 const (
 	// serverKeyName is the name of the server private key.
 	serverKeyName = "tls.key"
@@ -64,54 +43,7 @@ const (
 	serverCertName = "tls.crt"
 )
 
-func init() {
-	if v := os.Getenv("PROFILER_ADDR"); v != "" {
-		defaultProfilerAddr = v
-	}
-	if v, err := strconv.Atoi(os.Getenv("RATE_LIMIT_QPS")); err == nil {
-		defaultRateLimiterQPS = v
-	}
-	if v, err := strconv.Atoi(os.Getenv("RATE_LIMIT_BURST")); err == nil {
-		defaultRateLimiterBurst = v
-	}
-	if v, err := time.ParseDuration(os.Getenv("SYNC_PERIOD")); err == nil {
-		defaultSyncPeriod = v
-	}
-	if v, err := strconv.Atoi(os.Getenv("MAX_CONCURRENT_RECONCILES")); err == nil {
-		defaultMaxConcurrentReconciles = v
-	}
-	if v := os.Getenv("LEADER_ELECTION_ID"); v != "" {
-		defaultLeaderElectionID = v
-	}
-	if v := os.Getenv("POD_NAMESPACE"); v != "" {
-		defaultPodNamespace = v
-	}
-	if v := os.Getenv("POD_NAME"); v != "" {
-		defaultPodName = v
-	}
-	if v := os.Getenv("POD_SERVICE_ACCOUNT_NAME"); v != "" {
-		defaultPodServiceAccountName = v
-	}
-	if v, err := strconv.Atoi(os.Getenv("WEBHOOK_SERVICE_CONTAINER_PORT")); err == nil {
-		defaultWebhookServiceContainerPort = v
-	}
-	if v := os.Getenv("WEBHOOK_SERVICE_NAMESPACE"); v != "" {
-		defaultWebhookServiceNamespace = v
-	}
-	if v := os.Getenv("WEBHOOK_SERVICE_NAME"); v != "" {
-		defaultWebhookServiceName = v
-	}
-	if v := os.Getenv("WEBHOOK_SECRET_NAMESPACE"); v != "" {
-		defaultWebhookSecretNamespace = v
-	}
-	if v := os.Getenv("WEBHOOK_SECRET_NAME"); v != "" {
-		defaultWebhookSecretName = v
-	}
-	if v := os.Getenv("WATCH_NAMESPACE"); v != "" {
-		defaultWatchNamespace = v
-	}
-	defaultContainerNode, _ = strconv.ParseBool(os.Getenv("CONTAINER_NODE"))
-}
+var defaultConfig = config.FromEnv()
 
 func main() {
 	klog.InitFlags(nil)
@@ -123,17 +55,17 @@ func main() {
 
 	profilerAddress := flag.String(
 		"profiler-address",
-		defaultProfilerAddr,
+		defaultConfig.ProfilerAddr,
 		"Bind address to expose the pprof profiler.",
 	)
 	rateLimiterQPS := flag.Int(
 		"rate-limit-requests-per-second",
-		defaultRateLimiterQPS,
+		defaultConfig.RateLimitQPS,
 		"The default number of requests per second to configure the k8s client rate limiter to allow.",
 	)
 	rateLimiterBurst := flag.Int(
 		"rate-limit-max-requests",
-		defaultRateLimiterBurst,
+		defaultConfig.RateLimitBurst,
 		"The default number of maximum burst requests per second to configure the k8s client rate limiter to allow.",
 	)
 
@@ -157,72 +89,72 @@ func main() {
 	flag.StringVar(
 		&managerOpts.LeaderElectionID,
 		"leader-election-id",
-		defaultLeaderElectionID,
+		defaultConfig.LeaderElectionID,
 		"Name of the config map to use as the locking resource when configuring leader election.")
 	flag.StringVar(
 		&managerOpts.WatchNamespace,
 		"watch-namespace",
-		defaultWatchNamespace,
+		defaultConfig.WatchNamespace,
 		"Namespace that the controller watches to reconcile vm operator objects. If unspecified, the controller watches for vm operator objects across all namespaces.")
 	flag.DurationVar(
 		&managerOpts.SyncPeriod,
 		"sync-period",
-		defaultSyncPeriod,
+		defaultConfig.SyncPeriod,
 		"The interval at which objects are synchronized.")
 	flag.IntVar(
 		&managerOpts.MaxConcurrentReconciles,
 		"max-concurrent-reconciles",
-		defaultMaxConcurrentReconciles,
+		defaultConfig.MaxConcurrentReconciles,
 		"The maximum number of allowed, concurrent reconciles.")
 	flag.StringVar(
 		&managerOpts.PodNamespace,
 		"pod-namespace",
-		defaultPodNamespace,
+		defaultConfig.PodNamespace,
 		"The namespace in which the pod running the controller manager is located.")
 	flag.StringVar(
 		&managerOpts.PodName,
 		"pod-name",
-		defaultPodName,
+		defaultConfig.PodName,
 		"The name of the pod running the controller manager.")
 	flag.StringVar(
 		&managerOpts.PodServiceAccountName,
 		"pod-service-account-name",
-		defaultPodServiceAccountName,
+		defaultConfig.PodServiceAccountName,
 		"The service account name of the pod running the controller manager.")
 	flag.IntVar(
 		&managerOpts.WebhookServiceContainerPort,
 		"webhook-service-container-port",
-		defaultWebhookServiceContainerPort,
+		defaultConfig.WebhookServiceContainerPort,
 		"The the port on which the webhook service expects the webhook server to listen for incoming requests.")
 	flag.StringVar(
 		&managerOpts.WebhookServiceNamespace,
 		"webhook-service-namespace",
-		defaultWebhookServiceNamespace,
+		defaultConfig.WebhookServiceNamespace,
 		"The namespace in which the webhook service is located.")
 	flag.StringVar(
 		&managerOpts.WebhookServiceName,
 		"webhook-service-name",
-		defaultWebhookServiceName,
+		defaultConfig.WebhookServiceName,
 		"The name of the webhook service.")
 	flag.StringVar(
 		&managerOpts.WebhookSecretNamespace,
 		"webhook-secret-namespace",
-		defaultWebhookSecretNamespace,
+		defaultConfig.WebhookSecretNamespace,
 		"The namespace in which the webhook secret is located.")
 	flag.StringVar(
 		&managerOpts.WebhookSecretName,
 		"webhook-secret-name",
-		defaultWebhookSecretName,
+		defaultConfig.WebhookSecretName,
 		"The name of the webhook secret.")
 	flag.StringVar(
 		&managerOpts.WebhookSecretVolumeMountPath,
 		"webhook-secret-volume-mount-path",
-		defaultWebhookSecretVolumeMountPath,
+		defaultConfig.WebhookSecretVolumeMountPath,
 		"The filesystem path to which the webhook secret is mounted.")
 	flag.BoolVar(
 		&managerOpts.ContainerNode,
 		"container-node",
-		defaultContainerNode,
+		defaultConfig.ContainerNode,
 		"Should be true if we're running nodes in containers (with vcsim).",
 	)
 
@@ -268,7 +200,7 @@ func main() {
 			return err
 		}
 
-		if lib.IsVMServiceV1Alpha2FSSEnabled() {
+		if defaultConfig.Features.VMOpV1Alpha2 {
 			if err := addConversionWebhooksToManager(ctx, mgr); err != nil {
 				return err
 			}
@@ -278,9 +210,9 @@ func main() {
 	}
 
 	setupLog.Info("creating controller manager")
-	managerOpts.InitializeProviders = manager.InitializeProviders
+	managerOpts.InitializeProviders = pkgmgrinit.InitializeProviders
 	managerOpts.AddToManager = addToManager
-	mgr, err := manager.New(managerOpts)
+	mgr, err := manager.New(config.WithConfig(defaultConfig), managerOpts)
 	if err != nil {
 		setupLog.Error(err, "problem creating controller manager")
 		os.Exit(1)

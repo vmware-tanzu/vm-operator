@@ -21,6 +21,8 @@ linters-settings:
         alias: corev1
       - pkg: github.com/vmware-tanzu/vm-operator/api/v1alpha1
         alias: vmopv1
+      - pkg: "github.com/vmware-tanzu/vm-operator/pkg/config"
+        alias: pkgconfig
 
 linters:
   disable-all: true

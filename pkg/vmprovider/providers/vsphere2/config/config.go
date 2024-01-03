@@ -15,7 +15,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/credentials"
 )
 
@@ -146,11 +146,8 @@ func configMapToProviderCredentials(
 	return credentials.GetProviderCredentials(client, configMap.Namespace, secretName)
 }
 
-func GetDNSInformationFromConfigMap(client ctrlruntime.Client) ([]string, []string, error) {
-	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
-	if err != nil {
-		return nil, nil, err
-	}
+func GetDNSInformationFromConfigMap(ctx context.Context, client ctrlruntime.Client) ([]string, []string, error) {
+	vmopNamespace := pkgconfig.FromContext(ctx).PodNamespace
 
 	configMap := &corev1.ConfigMap{}
 	configMapKey := ctrlruntime.ObjectKey{Name: NetworkConfigMapName, Namespace: vmopNamespace}
@@ -165,7 +162,7 @@ func GetDNSInformationFromConfigMap(client ctrlruntime.Client) ([]string, []stri
 
 	nsStr, ok := configMap.Data[NameserversKey]
 	if !ok {
-		return nil, nil, errors.Wrapf(err, "invalid %v ConfigMap, missing key nameservers", NetworkConfigMapName)
+		return nil, nil, errors.Errorf("invalid %v ConfigMap, missing key nameservers", NetworkConfigMapName)
 	}
 
 	nameservers = strings.Fields(nsStr)
@@ -190,10 +187,7 @@ func getProviderConfigMap(
 	ctx context.Context,
 	client ctrlruntime.Client) (*corev1.ConfigMap, error) {
 
-	vmopNamespace, err := lib.GetVMOpNamespaceFromEnv()
-	if err != nil {
-		return nil, err
-	}
+	vmopNamespace := pkgconfig.FromContext(ctx).PodNamespace
 
 	configMap := &corev1.ConfigMap{}
 	configMapKey := ctrlruntime.ObjectKey{Name: ProviderConfigMapName, Namespace: vmopNamespace}

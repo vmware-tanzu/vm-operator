@@ -6,7 +6,6 @@ package mutation
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"reflect"
 	"strings"
 	"time"
@@ -24,9 +23,9 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	providerConfig "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 )
 
@@ -194,7 +193,7 @@ func ResolveImageName(
 	vm *vmopv1.VirtualMachine) (bool, error) {
 	// Return early if the VM image name is empty or already set to a vmi name.
 	imageName := vm.Spec.ImageName
-	if imageName == "" || !lib.IsWCPVMImageRegistryEnabled() ||
+	if imageName == "" || !pkgconfig.FromContext(ctx).Features.ImageRegistry ||
 		strings.HasPrefix(imageName, "vmi-") {
 		return false, nil
 	}
@@ -289,18 +288,19 @@ func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client clien
 	}
 
 	netName, netType := "", ""
-	switch os.Getenv(lib.NetworkProviderType) {
-	case lib.NetworkProviderTypeNSXT:
+	switch pkgconfig.FromContext(ctx).NetworkProviderType {
+	case pkgconfig.NetworkProviderTypeNSXT:
 		netType = network.NsxtNetworkType
-	case lib.NetworkProviderTypeVDS:
+	case pkgconfig.NetworkProviderTypeVDS:
 		netType = network.VdsNetworkType
-	case lib.NetworkProviderTypeNamed:
+	case pkgconfig.NetworkProviderTypeNamed:
 		if netName, _ = getProviderConfigMap(ctx, client); netName == "" {
 			netName = defaultNamedNetwork
 		}
 	default:
 		return false
 	}
+
 	vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{
 		{
 			NetworkName: netName,
@@ -318,7 +318,7 @@ func getProviderConfigMap(
 	if err := c.Get(
 		ctx,
 		client.ObjectKey{
-			Name:      config.ProviderConfigMapName,
+			Name:      providerConfig.ProviderConfigMapName,
 			Namespace: ctx.Namespace,
 		},
 		&obj); err != nil {

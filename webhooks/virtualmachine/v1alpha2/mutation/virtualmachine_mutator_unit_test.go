@@ -4,7 +4,6 @@
 package mutation_test
 
 import (
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -18,7 +17,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/v1alpha2/mutation"
@@ -53,11 +52,6 @@ func unitTestsMutating() {
 		ctx = newUnitTestContextForMutatingWebhook()
 	})
 
-	AfterEach(func() {
-		Expect(os.Unsetenv(lib.NetworkProviderType)).To(Succeed())
-		ctx = nil
-	})
-
 	Describe("VirtualMachineMutator should admit updates when object is under deletion", func() {
 		Context("when update request comes in while deletion in progress ", func() {
 			It("should admit update operation", func() {
@@ -79,7 +73,9 @@ func unitTestsMutating() {
 			// Just any network is OK here - just checking that we don't NPE.
 			When("VDS network", func() {
 				BeforeEach(func() {
-					Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeVDS)).Should(Succeed())
+					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						config.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+					})
 				})
 
 				It("Should add default network interface with type vsphere-distributed", func() {
@@ -98,7 +94,9 @@ func unitTestsMutating() {
 
 			When("VDS network", func() {
 				BeforeEach(func() {
-					Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeVDS)).Should(Succeed())
+					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						config.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+					})
 				})
 
 				It("Should add default network interface with type vsphere-distributed", func() {
@@ -111,7 +109,9 @@ func unitTestsMutating() {
 
 			When("NSX-T network", func() {
 				BeforeEach(func() {
-					Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNSXT)).Should(Succeed())
+					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						config.NetworkProviderType = pkgconfig.NetworkProviderTypeNSXT
+					})
 				})
 
 				It("Should add default network interface with type NSX-T", func() {
@@ -126,7 +126,9 @@ func unitTestsMutating() {
 				const networkName = "VM Network"
 
 				BeforeEach(func() {
-					Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
+					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						config.NetworkProviderType = pkgconfig.NetworkProviderTypeNamed
+					})
 				})
 
 				It("Should add default network interface with name set in the configMap Network", func() {
@@ -148,7 +150,9 @@ func unitTestsMutating() {
 
 			When("NoNetwork annotation is set", func() {
 				BeforeEach(func() {
-					Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeVDS)).Should(Succeed())
+					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						config.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+					})
 				})
 
 				It("Should not add default network interface", func() {
@@ -162,7 +166,9 @@ func unitTestsMutating() {
 
 		Context("VM NetworkInterface is not empty", func() {
 			BeforeEach(func() {
-				Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeVDS)).Should(Succeed())
+				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+					config.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+				})
 			})
 
 			It("Should not add default network interface", func() {
@@ -224,11 +230,9 @@ func unitTestsMutating() {
 						image := rawObj.(*vmopv1.ClusterVirtualMachineImage)
 						return []string{image.Status.Name}
 					}).Build()
-			Expect(os.Setenv(lib.VMImageRegistryFSS, lib.TrueString)).To(Succeed())
-		})
-
-		AfterEach(func() {
-			Expect(os.Unsetenv(lib.VMImageRegistryFSS)).To(Succeed())
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.ImageRegistry = true
+			})
 		})
 
 		Context("When VM ImageName is set to vmi resource name", func() {

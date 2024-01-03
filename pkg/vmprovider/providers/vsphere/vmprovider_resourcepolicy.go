@@ -145,7 +145,7 @@ func (vs *vSphereVMProvider) doClusterModulesExist(
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (bool, error) {
 
 	for _, moduleSpec := range resourcePolicy.Spec.ClusterModules {
-		_, moduleID := clustermodules.FindClusterModuleUUID(moduleSpec.GroupName, clusterRef, resourcePolicy)
+		_, moduleID := clustermodules.FindClusterModuleUUID(ctx, moduleSpec.GroupName, clusterRef, resourcePolicy)
 		if moduleID == "" {
 			return false, nil
 		}
@@ -173,7 +173,7 @@ func (vs *vSphereVMProvider) createClusterModules(
 	// resort to using the status as the source of truth. This can result in orphaned
 	// modules if, for instance, we fail to update the resource policy k8s object.
 	for _, moduleSpec := range resourcePolicy.Spec.ClusterModules {
-		idx, moduleID := clustermodules.FindClusterModuleUUID(moduleSpec.GroupName, clusterRef, resourcePolicy)
+		idx, moduleID := clustermodules.FindClusterModuleUUID(ctx, moduleSpec.GroupName, clusterRef, resourcePolicy)
 
 		if moduleID != "" {
 			// Verify this cluster module exists on VC for this cluster.

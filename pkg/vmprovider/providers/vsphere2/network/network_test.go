@@ -4,7 +4,6 @@
 package network_test
 
 import (
-	goctx "context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -51,17 +50,17 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 			},
 		}
 
-		vmCtx = context.VirtualMachineContextA2{
-			Context: goctx.Background(),
-			Logger:  suite.GetLogger().WithName("network_test"),
-			VM:      vm,
-		}
-
 		interfaceSpecs = nil
 	})
 
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
+
+		vmCtx = context.VirtualMachineContextA2{
+			Context: ctx,
+			Logger:  suite.GetLogger().WithName("network_test"),
+			VM:      vm,
+		}
 
 		results, err = network.CreateAndWaitForNetworkInterfaces(
 			vmCtx,

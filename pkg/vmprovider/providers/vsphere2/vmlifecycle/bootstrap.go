@@ -155,7 +155,7 @@ func getBootstrapArgs(
 	}
 
 	if missingDNSInfo {
-		nameservers, searchSuffixes, err := config.GetDNSInformationFromConfigMap(k8sClient)
+		nameservers, searchSuffixes, err := config.GetDNSInformationFromConfigMap(vmCtx, k8sClient)
 		if err != nil && ctrl.IgnoreNotFound(err) != nil {
 			// This ConfigMap doesn't exist in certain test envs.
 			return nil, err

@@ -9,15 +9,19 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 
 	virtualmachineservice "github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var suite = builder.NewTestSuiteForControllerWithFSS(
+var suite = builder.NewTestSuiteForControllerWithContext(
+	pkgconfig.UpdateContext(
+		pkgconfig.NewContextWithDefaultConfig(),
+		func(config *pkgconfig.Config) {
+			config.Features.VMOpV1Alpha2 = true
+		}),
 	virtualmachineservice.AddToManager,
-	manager.InitializeProvidersNoopFn,
-	map[string]bool{lib.VMServiceV1Alpha2FSS: true})
+	manager.InitializeProvidersNoopFn)
 
 func TestVirtualMachineService(t *testing.T) {
 

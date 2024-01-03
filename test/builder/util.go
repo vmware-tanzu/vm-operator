@@ -6,6 +6,7 @@ package builder
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -32,7 +33,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 const (
@@ -546,24 +547,24 @@ func DummyClusterContentLibrary(name, uuid string) *imgregv1a1.ClusterContentLib
 }
 
 func applyFeatureStateFnsToCRD(
+	ctx context.Context,
 	crd apiextensionsv1.CustomResourceDefinition,
-	fssMap map[string]bool,
-	fns ...func(apiextensionsv1.CustomResourceDefinition, map[string]bool) apiextensionsv1.CustomResourceDefinition) apiextensionsv1.CustomResourceDefinition {
+	fns ...func(context.Context, apiextensionsv1.CustomResourceDefinition) apiextensionsv1.CustomResourceDefinition) apiextensionsv1.CustomResourceDefinition {
 
 	for i := range fns {
-		crd = fns[i](crd, fssMap)
+		crd = fns[i](ctx, crd)
 	}
 	return crd
 }
 
 func applyV1Alpha2FSSToCRD(
-	crd apiextensionsv1.CustomResourceDefinition,
-	fssMap map[string]bool) apiextensionsv1.CustomResourceDefinition {
+	ctx context.Context,
+	crd apiextensionsv1.CustomResourceDefinition) apiextensionsv1.CustomResourceDefinition {
 
 	idxV1a1 := indexOfVersion(crd, "v1alpha1")
 	idxV1a2 := indexOfVersion(crd, "v1alpha2")
 
-	if enabled, ok := fssMap[lib.VMServiceV1Alpha2FSS]; ok && enabled {
+	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
 		// Whether the v1a2 version of this CRD is the storage version
 		// depends on existence of the v1a2 version of this CRD.
 		if idxV1a1 >= 0 {

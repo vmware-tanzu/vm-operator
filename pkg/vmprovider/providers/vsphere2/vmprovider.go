@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,8 +26,8 @@ import (
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -71,6 +70,7 @@ type vSphereVMProvider struct {
 }
 
 func NewVSphereVMProviderFromClient(
+	ctx goctx.Context,
 	client ctrlruntime.Client,
 	recorder record.Recorder) vmprovider.VirtualMachineProviderInterfaceA2 {
 
@@ -80,7 +80,7 @@ func NewVSphereVMProviderFromClient(
 	return &vSphereVMProvider{
 		k8sClient:         client,
 		eventRecorder:     recorder,
-		globalExtraConfig: getExtraConfig(),
+		globalExtraConfig: getExtraConfig(ctx),
 		ovfCache:          ovfCache,
 		ovfCacheLockPool:  ovfLockPool,
 	}
@@ -109,13 +109,13 @@ func InitOvfCacheAndLockPool(expireAfter, checkExpireInterval time.Duration, max
 	return ovfCache, ovfLockPool
 }
 
-func getExtraConfig() map[string]string {
+func getExtraConfig(ctx goctx.Context) map[string]string {
 	ec := map[string]string{
 		constants.EnableDiskUUIDExtraConfigKey:       constants.ExtraConfigTrue,
 		constants.GOSCIgnoreToolsCheckExtraConfigKey: constants.ExtraConfigTrue,
 	}
 
-	if jsonEC := os.Getenv("JSON_EXTRA_CONFIG"); jsonEC != "" {
+	if jsonEC := pkgconfig.FromContext(ctx).JSONExtraConfig; jsonEC != "" {
 		extraConfig := make(map[string]string)
 
 		if err := json.Unmarshal([]byte(jsonEC), &extraConfig); err != nil {
@@ -351,7 +351,7 @@ func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx goctx.Context) (uint64, 
 		return 0, err
 	}
 
-	if !lib.IsWcpFaultDomainsFSSEnabled() {
+	if !pkgconfig.FromContext(ctx).Features.FaultDomains {
 		ccr, err := vcenter.GetResourcePoolOwnerMoRef(ctx, client.VimClient(), client.Config().ResourcePool)
 		if err != nil {
 			return 0, err

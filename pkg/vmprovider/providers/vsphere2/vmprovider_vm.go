@@ -1,4 +1,4 @@
-// Copyright (c) 2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere
@@ -24,8 +24,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/client"
@@ -313,10 +313,8 @@ func (vs *vSphereVMProvider) createVirtualMachine(
 	// BMV: This is about where we used to do this check but it prb make more sense to do
 	// earlier, as to limit wasted work. Before DoPlacement() is likely the best place so
 	// the window between the placement decision and creating the VM on VC is small(ish).
-	allowed, createDeferFn, err := vs.vmCreateConcurrentAllowed(vmCtx)
-	if err != nil {
-		return nil, nil, err
-	} else if !allowed {
+	allowed, createDeferFn := vs.vmCreateConcurrentAllowed(vmCtx)
+	if !allowed {
 		return nil, nil, nil
 	}
 	defer createDeferFn()
@@ -397,7 +395,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	// Back up the VM at the end after a successful update.
-	if lib.IsVMServiceBackupRestoreFSSEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.AutoVADPBackupRestore {
 		vmCtx.Logger.V(4).Info("Backing up VirtualMachine")
 		// TODO: Support backing up vAppConfig bootstrap data.
 		bsData, err := GetVirtualMachineBootstrap(vmCtx, vs.k8sClient)
@@ -605,17 +603,14 @@ func (vs *vSphereVMProvider) vmCreateIsReady(
 	return nil
 }
 
-func (vs *vSphereVMProvider) vmCreateConcurrentAllowed(vmCtx context.VirtualMachineContextA2) (bool, func(), error) {
-	maxDeployThreads, ok := vmCtx.Value(context.MaxDeployThreadsContextKey).(int)
-	if !ok {
-		return false, nil, fmt.Errorf("MaxDeployThreadsContextKey missing from context")
-	}
+func (vs *vSphereVMProvider) vmCreateConcurrentAllowed(vmCtx context.VirtualMachineContextA2) (bool, func()) {
+	maxDeployThreads := pkgconfig.FromContext(vmCtx).GetMaxDeployThreadsOnProvider()
 
 	createCountLock.Lock()
 	if concurrentCreateCount >= maxDeployThreads {
 		createCountLock.Unlock()
 		vmCtx.Logger.Info("Too many create VirtualMachine already occurring. Re-queueing request")
-		return false, nil, nil
+		return false, nil
 	}
 
 	concurrentCreateCount++
@@ -627,7 +622,7 @@ func (vs *vSphereVMProvider) vmCreateConcurrentAllowed(vmCtx context.VirtualMach
 		createCountLock.Unlock()
 	}
 
-	return true, decrementFn, nil
+	return true, decrementFn
 }
 
 func (vs *vSphereVMProvider) vmCreateGetArgs(
@@ -799,7 +794,7 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 	vcClient *vcclient.Client,
 	createArgs *VMCreateArgs) error {
 
-	if lib.IsInstanceStorageFSSEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.InstanceStorage {
 		// To determine all the storage profiles, we need the class because of the possibility of
 		// InstanceStorage volumes. If we weren't able to get the class earlier, still check & set
 		// the storage condition because instance storage usage is rare, it is helpful to report
@@ -872,8 +867,8 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 	// tired of trying to keep that in sync so we get to live with a frankenstein thing longer.
 
 	var vmClassConfigSpec *types.VirtualMachineConfigSpec
-	if rawConfigSpec := createArgs.VMClass.Spec.ConfigSpec; lib.IsVMClassAsConfigFSSDaynDateEnabled() && len(rawConfigSpec) > 0 {
-		configSpec, err := GetVMClassConfigSpec(rawConfigSpec)
+	if rawConfigSpec := createArgs.VMClass.Spec.ConfigSpec; pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate && len(rawConfigSpec) > 0 {
+		configSpec, err := GetVMClassConfigSpec(vmCtx, rawConfigSpec)
 		if err != nil {
 			return err
 		}
@@ -1135,10 +1130,10 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	}
 
 	var vmClassConfigSpec *types.VirtualMachineConfigSpec
-	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
 		if cs := updateArgs.VMClass.Spec.ConfigSpec; cs != nil {
 			var err error
-			vmClassConfigSpec, err = GetVMClassConfigSpec(cs)
+			vmClassConfigSpec, err = GetVMClassConfigSpec(vmCtx, cs)
 			if err != nil {
 				return nil, err
 			}

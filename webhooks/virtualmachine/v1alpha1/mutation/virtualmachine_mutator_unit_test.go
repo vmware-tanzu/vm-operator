@@ -4,7 +4,6 @@
 package mutation_test
 
 import (
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -21,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/v1alpha1/mutation"
@@ -136,20 +135,14 @@ func unitTestsMutating() {
 
 	Describe("AddDefaultNetworkInterface", func() {
 		BeforeEach(func() {
-			Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeVDS)).Should(Succeed())
-		})
-
-		AfterEach(func() {
-			Expect(os.Unsetenv(lib.NetworkProviderType)).Should(Succeed())
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+			})
 		})
 
 		Context("When VM NetworkInterface is empty", func() {
 			BeforeEach(func() {
 				ctx.vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{}
-			})
-
-			AfterEach(func() {
-				Expect(os.Unsetenv(lib.NetworkProviderType)).To(Succeed())
 			})
 
 			When("VDS network", func() {
@@ -162,8 +155,9 @@ func unitTestsMutating() {
 
 			When("NSX-T network", func() {
 				It("Should add default network interface with type NSX-T", func() {
-					Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNSXT)).Should(Succeed())
-
+					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						config.NetworkProviderType = pkgconfig.NetworkProviderTypeNSXT
+					})
 					Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
 					Expect(ctx.vm.Spec.NetworkInterfaces).Should(HaveLen(1))
 					Expect(ctx.vm.Spec.NetworkInterfaces[0].NetworkType).Should(Equal("nsx-t"))
@@ -175,12 +169,13 @@ func unitTestsMutating() {
 
 				BeforeEach(func() {
 					networkName = "VM Network"
-					Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).Should(Succeed())
+					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						config.NetworkProviderType = pkgconfig.NetworkProviderTypeNamed
+					})
 				})
 
 				AfterEach(func() {
 					networkName = ""
-					Expect(os.Unsetenv(lib.NetworkProviderType)).Should(Succeed())
 				})
 
 				It("Should add default network interface with name set in the configMap Network", func() {
@@ -268,11 +263,9 @@ func unitTestsMutating() {
 						image := rawObj.(*vmopv1.ClusterVirtualMachineImage)
 						return []string{image.Status.ImageName}
 					}).Build()
-			Expect(os.Setenv(lib.VMImageRegistryFSS, lib.TrueString)).To(Succeed())
-		})
-
-		AfterEach(func() {
-			Expect(os.Unsetenv(lib.VMImageRegistryFSS)).To(Succeed())
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.ImageRegistry = true
+			})
 		})
 
 		Context("When VM ImageName is set to vmi resource name", func() {

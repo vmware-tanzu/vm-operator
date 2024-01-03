@@ -9,8 +9,8 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 )
@@ -135,7 +135,7 @@ func CreateConfigSpecForPlacement(
 
 	// With DaynDate FSS, PCI devices are specified via ConfigSpec.  Ignore such devices from the
 	// VM Class Hardware to avoid duplicate devices being added to the placement spec.
-	if !lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+	if !pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
 		for _, dev := range CreatePCIDevicesFromVMClass(vmClassSpec.Hardware.Devices) {
 			configSpec.DeviceChange = append(configSpec.DeviceChange, &vimtypes.VirtualDeviceConfigSpec{
 				Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
@@ -144,7 +144,7 @@ func CreateConfigSpecForPlacement(
 		}
 	}
 
-	if lib.IsInstanceStorageFSSEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.InstanceStorage {
 		isVolumes := instancestorage.FilterVolumes(vmCtx.VM)
 
 		for idx, dev := range CreateInstanceStorageDiskDevices(isVolumes) {

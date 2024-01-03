@@ -9,6 +9,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,7 +48,7 @@ func (ctx *IntegrationTestContext) AfterEach() {
 // with the IntegrationTestContext returned by this function.
 func (s *TestSuite) NewIntegrationTestContext() *IntegrationTestContext {
 	ctx := &IntegrationTestContext{
-		Context:      context.Background(),
+		Context:      pkgconfig.NewContext(),
 		Client:       s.integrationTestClient,
 		PodNamespace: s.manager.GetContext().Namespace,
 	}

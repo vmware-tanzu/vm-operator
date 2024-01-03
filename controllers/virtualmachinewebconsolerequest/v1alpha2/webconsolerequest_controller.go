@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -46,6 +47,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	)
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -59,11 +61,13 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider vmprovider.VirtualMachineProviderInterfaceA2) *Reconciler {
 	return &Reconciler{
+		Context:    ctx,
 		Client:     client,
 		Logger:     logger,
 		Recorder:   recorder,
@@ -74,6 +78,7 @@ func NewReconciler(
 // Reconciler reconciles a WebConsoleRequest object.
 type Reconciler struct {
 	client.Client
+	Context    goctx.Context
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider vmprovider.VirtualMachineProviderInterfaceA2
@@ -86,6 +91,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=services/status,verbs=get
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	webconsolerequest := &vmopv1.VirtualMachineWebConsoleRequest{}
 	err := r.Get(ctx, req.NamespacedName, webconsolerequest)
 	if err != nil {

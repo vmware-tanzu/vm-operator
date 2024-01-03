@@ -5,7 +5,6 @@ package validation_test
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -25,7 +24,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
@@ -59,8 +58,6 @@ type unitValidatingWebhookContext struct {
 func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhookContext {
 
 	// Enable the named network provider by default.
-	Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
-
 	vm := builder.DummyVirtualMachine()
 	vm.Name = "dummy-vm-for-webhook-validation"
 	vm.Namespace = "dummy-vm-namespace-for-webhook-validation"
@@ -85,8 +82,15 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 
 	initObjects := []client.Object{vmImage, vmImage1, zone, nsVMImage, clusterVMImage}
 
+	ctx := *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, initObjects...)
+
+	// Enable the named network provider by default.
+	pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+		config.NetworkProviderType = pkgconfig.NetworkProviderTypeNamed
+	})
+
 	return &unitValidatingWebhookContext{
-		UnitTestContextForValidatingWebhook: *suite.NewUnitTestContextForValidatingWebhook(obj, oldObj, initObjects...),
+		UnitTestContextForValidatingWebhook: ctx,
 		vm:                                  vm,
 		oldVM:                               oldVM,
 		vmImage:                             vmImage,
@@ -121,20 +125,20 @@ func setReadinessProbe(validPortProbe bool) *vmopv1.Probe {
 
 func initNamedNetworkProviderConfig(
 	ctx *unitValidatingWebhookContext,
-	enabled, used bool) func() {
+	enabled, used bool) {
 
 	if !used {
-		return func() {}
+		return
 	}
 
-	oldValue := os.Getenv(lib.NetworkProviderType)
-	deferredFn := func() {
-		Expect(os.Setenv(lib.NetworkProviderType, oldValue)).To(Succeed())
-	}
 	if enabled {
-		Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
+		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			config.NetworkProviderType = pkgconfig.NetworkProviderTypeNamed
+		})
 	} else {
-		Expect(os.Setenv(lib.NetworkProviderType, "")).To(Succeed())
+		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			config.NetworkProviderType = ""
+		})
 	}
 	if used {
 		ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
@@ -145,18 +149,17 @@ func initNamedNetworkProviderConfig(
 			},
 		}
 	}
-	return deferredFn
 }
 
-func initSysprepTestConfig(ctx *unitValidatingWebhookContext, enabled, used bool) func() {
-	oldFSSValue := os.Getenv(lib.WindowsSysprepFSS)
-	deferredFn := func() {
-		Expect(os.Setenv(lib.WindowsSysprepFSS, oldFSSValue)).To(Succeed())
-	}
+func initSysprepTestConfig(ctx *unitValidatingWebhookContext, enabled, used bool) {
 	if enabled {
-		Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			config.Features.WindowsSysprep = true
+		})
 	} else {
-		Expect(os.Setenv(lib.WindowsSysprepFSS, "")).To(Succeed())
+		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			config.Features.WindowsSysprep = false
+		})
 	}
 	if used {
 		if ctx.vm.Spec.VmMetadata == nil {
@@ -165,7 +168,6 @@ func initSysprepTestConfig(ctx *unitValidatingWebhookContext, enabled, used bool
 		ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePoweredOff
 		ctx.vm.Spec.VmMetadata.Transport = vmopv1.VirtualMachineMetadataSysprepTransport
 	}
-	return deferredFn
 }
 
 var errInvalidNetworkProviderTypeNamed = field.Invalid(
@@ -177,10 +179,7 @@ var errInvalidNetworkProviderTypeNamed = field.Invalid(
 //nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
-		ctx                           *unitValidatingWebhookContext
-		oldFaultDomainsFunc           func() bool
-		oldImageRegistryFunc          func() bool
-		oldVMServiceBackupRestoreFunc func() bool
+		ctx *unitValidatingWebhookContext
 	)
 
 	const (
@@ -353,13 +352,12 @@ func unitTestsValidateCreate() {
 			instanceStorageVolume := builder.DummyInstanceStorageVirtualMachineVolumes()
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolume...)
 		}
-		// Please note this prevents the unit tests from running safely in parallel.
-		lib.IsWcpFaultDomainsFSSEnabled = func() bool {
-			return args.isWCPFaultDomainsFSSEnabled
-		}
-		lib.IsWCPVMImageRegistryEnabled = func() bool {
-			return args.isWCPVMImageRegistryEnabled
-		}
+		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			config.Features.FaultDomains = args.isWCPFaultDomainsFSSEnabled
+		})
+		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			config.Features.ImageRegistry = args.isWCPVMImageRegistryEnabled
+		})
 		if args.isNoAvailabilityZones {
 			// Delete the dummy AZ.
 			Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
@@ -371,7 +369,7 @@ func unitTestsValidateCreate() {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
 		} else {
 			zoneName := builder.DummyAvailabilityZoneName
-			if !lib.IsWcpFaultDomainsFSSEnabled() {
+			if !pkgconfig.FromContext(ctx).Features.FaultDomains {
 				zoneName = topology.DefaultAvailabilityZoneName
 			}
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
@@ -383,15 +381,14 @@ func unitTestsValidateCreate() {
 		}
 
 		if args.isPrivilegedUser {
-			lib.IsVMServiceBackupRestoreFSSEnabled = func() bool {
-				return true
-			}
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.AutoVADPBackupRestore = true
+			})
 
 			fakeWCPUser := "sso:wcp-12345-fake-machineid-67890@vsphere.local"
-			Expect(os.Setenv(lib.PrivilegedUsersEnv, fakeWCPUser)).To(Succeed())
-			defer func() {
-				Expect(os.Unsetenv(lib.PrivilegedUsersEnv)).To(Succeed())
-			}()
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.PrivilegedUsers = fakeWCPUser
+			})
 
 			ctx.UserInfo.Username = fakeWCPUser
 			ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
@@ -401,17 +398,15 @@ func unitTestsValidateCreate() {
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 
 		// Named network provider
-		undoNamedNetProvider := initNamedNetworkProviderConfig(
+		initNamedNetworkProviderConfig(
 			ctx,
 			args.isNamedNetworkProviderEnabled,
 			args.isNamedNetworkProviderUsed,
 		)
-		defer undoNamedNetProvider()
 
 		// Sysprep
-		undoSysprepFSS := initSysprepTestConfig(
+		initSysprepTestConfig(
 			ctx, args.isSysprepFeatureEnabled, args.isSysprepTransportUsed)
-		defer undoSysprepFSS()
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
@@ -428,15 +423,9 @@ func unitTestsValidateCreate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
-		oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
-		oldImageRegistryFunc = lib.IsWCPVMImageRegistryEnabled
-		oldVMServiceBackupRestoreFunc = lib.IsVMServiceBackupRestoreFSSEnabled
 	})
 
 	AfterEach(func() {
-		lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
-		lib.IsWCPVMImageRegistryEnabled = oldImageRegistryFunc
-		lib.IsVMServiceBackupRestoreFSSEnabled = oldVMServiceBackupRestoreFunc
 		ctx = nil
 	})
 
@@ -646,8 +635,7 @@ func unitTestsValidateUpdateWarnings() {
 
 func unitTestsValidateUpdate() {
 	var (
-		ctx                           *unitValidatingWebhookContext
-		oldVMServiceBackupRestoreFunc func() bool
+		ctx *unitValidatingWebhookContext
 	)
 
 	type updateArgs struct {
@@ -737,33 +725,30 @@ func unitTestsValidateUpdate() {
 		}
 
 		if args.isPrivilegedUser {
-			lib.IsVMServiceBackupRestoreFSSEnabled = func() bool {
-				return true
-			}
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.AutoVADPBackupRestore = true
+			})
 
 			privilegedUsersEnvList := "  , foo ,bar , test,  "
 			privilegedUser := "bar"
-			Expect(os.Setenv(lib.PrivilegedUsersEnv, privilegedUsersEnvList)).To(Succeed())
-			defer func() {
-				Expect(os.Unsetenv(lib.PrivilegedUsersEnv)).To(Succeed())
-			}()
+
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.PrivilegedUsers = privilegedUsersEnvList
+			})
 
 			ctx.UserInfo.Username = privilegedUser
 			ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 		}
 
 		// Named network provider
-		undoNamedNetProvider := initNamedNetworkProviderConfig(
+		initNamedNetworkProviderConfig(
 			ctx,
 			args.isNamedNetworkProviderEnabled,
-			args.isNamedNetworkProviderUsed,
-		)
-		defer undoNamedNetProvider()
+			args.isNamedNetworkProviderUsed)
 
 		// Sysprep
-		undoSysprepFSS := initSysprepTestConfig(
+		initSysprepTestConfig(
 			ctx, args.isSysprepFeatureEnabled, args.isSysprepTransportUsed)
-		defer undoSysprepFSS()
 
 		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
 		Expect(err).ToNot(HaveOccurred())
@@ -782,11 +767,9 @@ func unitTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
-		oldVMServiceBackupRestoreFunc = lib.IsVMServiceBackupRestoreFSSEnabled
 	})
 
 	AfterEach(func() {
-		lib.IsVMServiceBackupRestoreFSSEnabled = oldVMServiceBackupRestoreFunc
 		ctx = nil
 	})
 

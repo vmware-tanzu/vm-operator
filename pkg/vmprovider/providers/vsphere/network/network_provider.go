@@ -31,8 +31,8 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 )
 
@@ -210,7 +210,7 @@ func (np *networkProvider) EnsureNetworkInterface(vmCtx context.VirtualMachineCo
 	case VdsNetworkType:
 		return np.netOp.EnsureNetworkInterface(vmCtx, vif)
 	case "":
-		if lib.IsNamedNetworkProviderEnabled() {
+		if pkgconfig.FromContext(vmCtx).NetworkProviderType == pkgconfig.NetworkProviderTypeNamed {
 			return np.named.EnsureNetworkInterface(vmCtx, vif)
 		}
 		return nil, ErrNamedNetworkProviderNotSupported

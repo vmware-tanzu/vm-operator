@@ -5,11 +5,9 @@ package vsphere_test
 
 import (
 	"bytes"
-	goctx "context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -27,8 +25,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
-	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
@@ -45,24 +42,23 @@ func vmTests() {
 	)
 
 	var (
-		initObjects            []client.Object
-		testConfig             builder.VCSimTestConfig
-		ctx                    *builder.TestContextForVCSim
-		vmProvider             vmprovider.VirtualMachineProviderInterface
-		nsInfo                 builder.WorkloadNamespaceInfo
-		oldNetworkProviderType string
+		initObjects []client.Object
+		testConfig  builder.VCSimTestConfig
+		ctx         *builder.TestContextForVCSim
+		vmProvider  vmprovider.VirtualMachineProviderInterface
+		nsInfo      builder.WorkloadNamespaceInfo
 	)
 
 	BeforeEach(func() {
 		testConfig = builder.VCSimTestConfig{}
-		oldNetworkProviderType = os.Getenv(lib.NetworkProviderType)
-		Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
 	})
 
 	JustBeforeEach(func() {
 		ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
-		ctx.Context = goctx.WithValue(ctx.Context, context.MaxDeployThreadsContextKey, 16)
-		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx.Client, ctx.Recorder)
+		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			config.MaxDeployThreadsOnProvider = 16
+		})
+		vmProvider = vsphere.NewVSphereVMProviderFromClient(ctx, ctx.Client, ctx.Recorder)
 		nsInfo = ctx.CreateWorkloadNamespace()
 	})
 
@@ -72,7 +68,6 @@ func vmTests() {
 		initObjects = nil
 		vmProvider = nil
 		nsInfo = builder.WorkloadNamespaceInfo{}
-		Expect(os.Setenv(lib.NetworkProviderType, oldNetworkProviderType)).To(Succeed())
 	})
 
 	Context("Create/Update/Delete VirtualMachine", func() {

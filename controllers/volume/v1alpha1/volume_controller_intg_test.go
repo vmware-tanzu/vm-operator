@@ -5,8 +5,6 @@ package v1alpha1_test
 
 import (
 	"fmt"
-	"os"
-	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -23,8 +21,9 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/volume/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -43,16 +42,7 @@ func intgTests() {
 		dummyDiskUUID2        string
 		dummySelectedNode     string
 		dummySelectedNodeMOID string
-
-		// represents the Instance Storage FSS. This should be manipulated atomically to avoid races
-		// where the controller is trying to read this _while_ the tests are updating it.
-		instanceStorageFSS uint32
 	)
-
-	// Modify the helper function to return the custom value of the FSS
-	lib.IsInstanceStorageFSSEnabled = func() bool {
-		return atomic.LoadUint32(&instanceStorageFSS) != 0
-	}
 
 	BeforeEach(func() {
 		ctx = suite.NewIntegrationTestContext()
@@ -109,7 +99,7 @@ func intgTests() {
 	}
 
 	getCnsNodeVMAttachment := func(vm *vmopv1.VirtualMachine, vmVol vmopv1.VirtualMachineVolume) *cnsv1alpha1.CnsNodeVmAttachment {
-		objectKey := client.ObjectKey{Name: v1alpha1.CNSAttachmentNameForVolume(vm, vmVol.Name), Namespace: vm.Namespace}
+		objectKey := client.ObjectKey{Name: util.CNSAttachmentNameForVolume(vm.Name, vmVol.Name), Namespace: vm.Namespace}
 		attachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 		if err := ctx.Client.Get(ctx, objectKey, attachment); err == nil {
 			return attachment
@@ -232,19 +222,14 @@ func intgTests() {
 	}
 
 	Context("Reconcile Instance Storage", func() {
-		var (
-			origInstanceStorageFSSState  uint32
-			origInstanceStorageFailedTTL string
-		)
-
 		BeforeEach(func() {
-			origInstanceStorageFSSState = instanceStorageFSS
-			atomic.StoreUint32(&instanceStorageFSS, 1)
-			origInstanceStorageFailedTTL = os.Getenv(lib.InstanceStoragePVPlacementFailedTTLEnv)
-			Expect(os.Setenv(lib.InstanceStoragePVPlacementFailedTTLEnv, "0s")).To(Succeed())
+			pkgconfig.SetContext(suite, func(in *pkgconfig.Config) {
+				in.Features.InstanceStorage = true
+				in.InstanceStorage.PVPlacementFailedTTL = 0
+			})
 
 			vm.Spec.Volumes = append(vm.Spec.Volumes, builder.DummyInstanceStorageVirtualMachineVolumes()...)
-			vm.Labels = map[string]string{constants.InstanceStorageLabelKey: lib.TrueString}
+			vm.Labels = map[string]string{constants.InstanceStorageLabelKey: "true"}
 			Expect(ctx.Client.Create(ctx, vm)).To(Succeed())
 
 			// This is line is due to a change in controller-runtime's change to
@@ -255,10 +240,12 @@ func intgTests() {
 		})
 
 		AfterEach(func() {
+			pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+				config.Features.InstanceStorage = false
+			})
+
 			err := ctx.Client.Delete(ctx, vm)
 			Expect(err == nil || k8serrors.IsNotFound(err)).To(BeTrue())
-			atomic.StoreUint32(&instanceStorageFSS, origInstanceStorageFSSState)
-			Expect(os.Setenv(lib.InstanceStoragePVPlacementFailedTTLEnv, origInstanceStorageFailedTTL)).To(Succeed())
 		})
 
 		It("Reconcile instance storage PVCs - selected-node annotation not set", func() {

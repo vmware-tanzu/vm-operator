@@ -23,8 +23,9 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	volume "github.com/vmware-tanzu/vm-operator/controllers/volume/v1alpha2"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	volContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -118,6 +119,7 @@ func unitTestsReconcile() {
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		reconciler = volume.NewReconciler(
+			ctx,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
@@ -141,7 +143,7 @@ func unitTestsReconcile() {
 	})
 
 	getCNSAttachmentForVolumeName := func(vm *vmopv1.VirtualMachine, volumeName string) *cnsv1alpha1.CnsNodeVmAttachment {
-		objectKey := client.ObjectKey{Name: volume.CNSAttachmentNameForVolume(vm.Name, volumeName), Namespace: vm.Namespace}
+		objectKey := client.ObjectKey{Name: util.CNSAttachmentNameForVolume(vm.Name, volumeName), Namespace: vm.Namespace}
 		attachment := &cnsv1alpha1.CnsNodeVmAttachment{}
 
 		err := ctx.Client.Get(ctx, objectKey, attachment)
@@ -816,7 +818,7 @@ func cnsAttachmentForVMVolume(
 	t := true
 	return &cnsv1alpha1.CnsNodeVmAttachment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      volume.CNSAttachmentNameForVolume(vm.Name, vmVol.Name),
+			Name:      util.CNSAttachmentNameForVolume(vm.Name, vmVol.Name),
 			Namespace: vm.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				{
@@ -862,7 +864,7 @@ func adjustPVCCreationTimestamp(ctx *volContext.VolumeContextA2, testCtx *builde
 
 	for _, pvc := range pvcList {
 		pvc := pvc
-		pvc.CreationTimestamp = metav1.NewTime(time.Now().Add(-2 * lib.GetInstanceStoragePVPlacementFailedTTL()))
+		pvc.CreationTimestamp = metav1.NewTime(time.Now().Add(-2 * pkgconfig.FromContext(ctx).InstanceStorage.PVPlacementFailedTTL))
 		Expect(testCtx.Client.Update(ctx, &pvc)).To(Succeed())
 	}
 }

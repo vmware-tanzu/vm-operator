@@ -22,8 +22,8 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -48,6 +48,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	)
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -62,12 +63,14 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider vmprovider.VirtualMachineProviderInterface,
 	vmProviderA2 vmprovider.VirtualMachineProviderInterfaceA2) *Reconciler {
 	return &Reconciler{
+		Context:      ctx,
 		Client:       client,
 		Logger:       logger,
 		Recorder:     recorder,
@@ -79,6 +82,7 @@ func NewReconciler(
 // Reconciler reconciles a WebConsoleRequest object.
 type Reconciler struct {
 	client.Client
+	Context      goctx.Context
 	Logger       logr.Logger
 	Recorder     record.Recorder
 	VMProvider   vmprovider.VirtualMachineProviderInterface
@@ -92,6 +96,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=services/status,verbs=get
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	webconsolerequest := &vmopv1.WebConsoleRequest{}
 	err := r.Get(ctx, req.NamespacedName, webconsolerequest)
 	if err != nil {
@@ -172,7 +178,7 @@ func (r *Reconciler) ReconcileNormal(ctx *context.WebConsoleRequestContext) erro
 
 	var ticket string
 	var err error
-	if lib.IsVMServiceV1Alpha2FSSEnabled() {
+	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
 		v1a2VM := &vmopv1alpha2.VirtualMachine{}
 		_ = ctx.VM.ConvertTo(v1a2VM)
 

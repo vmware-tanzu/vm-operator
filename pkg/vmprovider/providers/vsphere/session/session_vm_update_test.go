@@ -6,7 +6,6 @@ package session_test
 import (
 	"context"
 	"fmt"
-	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -22,8 +21,8 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	providercfg "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/virtualmachine"
@@ -31,6 +30,7 @@ import (
 
 var _ = Describe("Mutate update args with DNS information", func() {
 	var (
+		ctx        context.Context
 		err        error
 		labels     map[string]string
 		configMap  *corev1.ConfigMap
@@ -39,7 +39,10 @@ var _ = Describe("Mutate update args with DNS information", func() {
 	)
 
 	BeforeEach(func() {
-		Expect(os.Setenv(lib.VmopNamespaceEnv, "fake")).To(Succeed())
+		ctx = pkgconfig.WithConfig(pkgconfig.Config{
+			PodNamespace: "fake",
+		})
+
 		updateArgs = &session.VMUpdateArgs{}
 		client = fake.NewClientBuilder().Build()
 		configMap = &corev1.ConfigMap{
@@ -47,22 +50,22 @@ var _ = Describe("Mutate update args with DNS information", func() {
 				Kind: "ConfigMap",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      config.NetworkConfigMapName,
+				Name:      providercfg.NetworkConfigMapName,
 				Namespace: "fake",
 			},
 			Data: map[string]string{
-				config.NameserversKey:    "8.8.8.8 1.1.1.1",
-				config.SearchSuffixesKey: "vmware.com example.com",
+				providercfg.NameserversKey:    "8.8.8.8 1.1.1.1",
+				providercfg.SearchSuffixesKey: "vmware.com example.com",
 			},
 		}
 	})
 
 	JustBeforeEach(func() {
 		if configMap != nil {
-			Expect(client.Create(context.Background(), configMap)).To(Succeed())
+			Expect(client.Create(ctx, configMap)).To(Succeed())
 		}
 		err = session.MutateUpdateArgsWithDNSInformation(
-			labels, updateArgs, client)
+			ctx, labels, updateArgs, client)
 	})
 
 	Context("nameservers", func() {
@@ -85,7 +88,7 @@ var _ = Describe("Mutate update args with DNS information", func() {
 				Expect(err.Error()).To(Equal(
 					fmt.Sprintf(
 						`configmaps "%s" not found`,
-						config.NetworkConfigMapName,
+						providercfg.NetworkConfigMapName,
 					)))
 			})
 		})
@@ -178,11 +181,13 @@ var _ = Describe("Mutate update args with DNS information", func() {
 var _ = Describe("Update ConfigSpec", func() {
 
 	var (
+		ctx        context.Context
 		config     *vimTypes.VirtualMachineConfigInfo
 		configSpec *vimTypes.VirtualMachineConfigSpec
 	)
 
 	BeforeEach(func() {
+		ctx = pkgconfig.NewContext()
 		config = &vimTypes.VirtualMachineConfigInfo{}
 		configSpec = &vimTypes.VirtualMachineConfigSpec{}
 	})
@@ -407,6 +412,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 		JustBeforeEach(func() {
 			session.UpdateConfigSpecExtraConfig(
+				ctx,
 				config,
 				configSpec,
 				classConfigSpec,
@@ -587,19 +593,13 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		Context("when VM_Class_as_Config_DaynDate FSS is enabled", func() {
-			var oldVMClassAsConfigDaynDateFunc func() bool
 			const dummyKey = "dummy-key"
 			const dummyVal = "dummy-val"
 
 			BeforeEach(func() {
-				oldVMClassAsConfigDaynDateFunc = lib.IsVMClassAsConfigFSSDaynDateEnabled
-				lib.IsVMClassAsConfigFSSDaynDateEnabled = func() bool {
-					return true
-				}
-			})
-
-			AfterEach(func() {
-				lib.IsVMClassAsConfigFSSDaynDateEnabled = oldVMClassAsConfigDaynDateFunc
+				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+					config.Features.VMClassAsConfigDayNDate = true
+				})
 			})
 
 			Context("classConfigSpec extra config is not nil", func() {
@@ -692,7 +692,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		It("cbt and status cbt unset", func() {
-			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
@@ -700,7 +700,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			config.ChangeTrackingEnabled = pointer.Bool(true)
 			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.Bool(false)
 
-			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeFalse())
 		})
@@ -709,7 +709,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			config.ChangeTrackingEnabled = pointer.Bool(false)
 			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.Bool(true)
 
-			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
 		})
@@ -718,7 +718,7 @@ var _ = Describe("Update ConfigSpec", func() {
 			config.ChangeTrackingEnabled = pointer.Bool(true)
 			vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.Bool(true)
 
-			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 		})
 
@@ -729,24 +729,19 @@ var _ = Describe("Update ConfigSpec", func() {
 				ChangeTrackingEnabled: pointer.Bool(false),
 			}
 
-			session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
+			session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
 			Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 			Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
 		})
 
 		Context("VM_Class_as_Config_DaynDate FSS is enabled", func() {
-			var oldVMClassAsConfigDaynDateFunc func() bool
 			BeforeEach(func() {
-				oldVMClassAsConfigDaynDateFunc = lib.IsVMClassAsConfigFSSDaynDateEnabled
-				lib.IsVMClassAsConfigFSSDaynDateEnabled = func() bool {
-					return true
-				}
+				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+					config.Features.VMClassAsConfigDayNDate = true
+				})
+
 				config.ChangeTrackingEnabled = pointer.Bool(false)
 				vmSpec.AdvancedOptions.ChangeBlockTracking = pointer.Bool(true)
-			})
-
-			AfterEach(func() {
-				lib.IsVMClassAsConfigFSSDaynDateEnabled = oldVMClassAsConfigDaynDateFunc
 			})
 
 			It("classConfigSpec not nil and same as configInfo", func() {
@@ -754,7 +749,7 @@ var _ = Describe("Update ConfigSpec", func() {
 					ChangeTrackingEnabled: pointer.Bool(false),
 				}
 
-				session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
+				session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
 				Expect(configSpec.ChangeTrackingEnabled).To(BeNil())
 			})
 
@@ -763,7 +758,7 @@ var _ = Describe("Update ConfigSpec", func() {
 					ChangeTrackingEnabled: pointer.Bool(true),
 				}
 
-				session.UpdateConfigSpecChangeBlockTracking(config, configSpec, classConfigSpec, vmSpec)
+				session.UpdateConfigSpecChangeBlockTracking(ctx, config, configSpec, classConfigSpec, vmSpec)
 				Expect(configSpec.ChangeTrackingEnabled).ToNot(BeNil())
 				Expect(*configSpec.ChangeTrackingEnabled).To(BeTrue())
 			})
@@ -832,7 +827,7 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		JustBeforeEach(func() {
-			deviceChanges, err = session.UpdateEthCardDeviceChanges(expectedList, currentList)
+			deviceChanges, err = session.UpdateEthCardDeviceChanges(ctx, expectedList, currentList)
 		})
 
 		AfterEach(func() {
@@ -956,18 +951,17 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
-		Context("When WCP_VMClass_as_Config is enabled, Add and remove device when card type is different", func() {
+		Context("When VM_Class_as_Config_DaynDate is enabled, Add and remove device when card type is different", func() {
 			var card1 vimTypes.BaseVirtualDevice
 			var key1 int32 = 100
 			var card2 vimTypes.BaseVirtualDevice
 			var key2 int32 = 200
-			var oldVMClassAsConfigFunc func() bool
 
 			BeforeEach(func() {
-				oldVMClassAsConfigFunc = lib.IsVMClassAsConfigFSSDaynDateEnabled
-				lib.IsVMClassAsConfigFSSDaynDateEnabled = func() bool {
-					return true
-				}
+				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+					config.Features.VMClassAsConfigDayNDate = true
+				})
+
 				card1, err = object.EthernetCardTypes().CreateEthernetCard("vmxnet3", dvpg1)
 				Expect(err).ToNot(HaveOccurred())
 				card1.GetVirtualDevice().Key = key1
@@ -977,10 +971,6 @@ var _ = Describe("Update ConfigSpec", func() {
 				Expect(err).ToNot(HaveOccurred())
 				card2.GetVirtualDevice().Key = key2
 				currentList = append(currentList, card2)
-			})
-
-			AfterEach(func() {
-				lib.IsVMClassAsConfigFSSDaynDateEnabled = oldVMClassAsConfigFunc
 			})
 
 			It("returns remove and add device changes", func() {

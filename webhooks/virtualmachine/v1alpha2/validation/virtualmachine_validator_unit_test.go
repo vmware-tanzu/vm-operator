@@ -5,7 +5,6 @@ package validation_test
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -27,7 +26,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -79,8 +78,7 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 //nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
-		ctx                           *unitValidatingWebhookContext
-		oldVMServiceBackupRestoreFunc func() bool
+		ctx *unitValidatingWebhookContext
 	)
 
 	type createArgs struct {
@@ -194,7 +192,9 @@ func unitTestsValidateCreate() {
 		}
 
 		if args.isWCPFaultDomainsFSSEnabled {
-			Expect(os.Setenv(lib.WcpFaultDomainsFSS, "true")).To(Succeed())
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.FaultDomains = true
+			})
 		}
 		if args.isNoAvailabilityZones {
 			Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
@@ -206,7 +206,7 @@ func unitTestsValidateCreate() {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
 		} else {
 			zoneName := builder.DummyAvailabilityZoneName
-			if !lib.IsWcpFaultDomainsFSSEnabled() {
+			if !pkgconfig.FromContext(ctx).Features.FaultDomains {
 				zoneName = topology.DefaultAvailabilityZoneName
 			}
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
@@ -218,15 +218,14 @@ func unitTestsValidateCreate() {
 		}
 
 		if args.isPrivilegedUser {
-			lib.IsVMServiceBackupRestoreFSSEnabled = func() bool {
-				return true
-			}
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.AutoVADPBackupRestore = true
+			})
 
 			fakeWCPUser := "sso:wcp-12345-fake-machineid-67890@vsphere.local"
-			Expect(os.Setenv(lib.PrivilegedUsersEnv, fakeWCPUser)).To(Succeed())
-			defer func() {
-				Expect(os.Unsetenv(lib.PrivilegedUsersEnv)).To(Succeed())
-			}()
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.PrivilegedUsers = fakeWCPUser
+			})
 
 			ctx.UserInfo.Username = fakeWCPUser
 			ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
@@ -251,13 +250,9 @@ func unitTestsValidateCreate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
-		oldVMServiceBackupRestoreFunc = lib.IsVMServiceBackupRestoreFSSEnabled
 	})
 
 	AfterEach(func() {
-		Expect(os.Unsetenv(lib.WcpFaultDomainsFSS)).To(Succeed())
-		Expect(os.Unsetenv(lib.WindowsSysprepFSS)).To(Succeed())
-		lib.IsVMServiceBackupRestoreFSSEnabled = oldVMServiceBackupRestoreFunc
 		ctx = nil
 	})
 
@@ -405,7 +400,9 @@ func unitTestsValidateCreate() {
 			Entry("allow Sysprep bootstrap when WCP_Windows_Sysprep FSS is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
 						}
@@ -416,7 +413,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow Sysprep bootstrap when WCP_Windows_Sysprep FSS is disabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						Expect(os.Setenv(lib.WindowsSysprepFSS, "false")).To(Succeed())
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = false
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
 						}
@@ -442,7 +441,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow CloudInit and Sysprep specified at the same time",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 							Sysprep:   &vmopv1.VirtualMachineBootstrapSysprepSpec{},
@@ -471,7 +472,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow LinuxPrep and Sysprep specified at the same time",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
 							Sysprep:   &vmopv1.VirtualMachineBootstrapSysprepSpec{},
@@ -497,7 +500,9 @@ func unitTestsValidateCreate() {
 			Entry("allow Sysprep and vAppConfig specified at the same time when WCP_Windows_Sysprep FSS is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep:    &vmopv1.VirtualMachineBootstrapSysprepSpec{},
 							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
@@ -524,7 +529,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow Sysprep mixing inline Sysprep and RawSysprep when FSS is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep:    &sysprep.Sysprep{},
@@ -540,7 +547,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow Sysprep mixing inline Sysprep identification when FSS is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep: &sysprep.Sysprep{
@@ -561,7 +570,9 @@ func unitTestsValidateCreate() {
 			Entry("disallow Sysprep mixing inline Sysprep identification when FSS is enabled",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep: &sysprep.Sysprep{
@@ -897,7 +908,9 @@ func unitTestsValidateCreate() {
 			Entry("validate nameservers when bootstrap doesn't support nameservers",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								RawSysprep: &common.SecretKeySelector{},
@@ -919,7 +932,9 @@ func unitTestsValidateCreate() {
 			Entry("validate nameservers when bootstrap supports nameservers",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep: &sysprep.Sysprep{},
@@ -938,7 +953,9 @@ func unitTestsValidateCreate() {
 			Entry("validate routes when bootstrap doesn't support routes",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
 								Sysprep: &sysprep.Sysprep{},
@@ -1053,8 +1070,7 @@ func unitTestsValidateCreate() {
 
 func unitTestsValidateUpdate() {
 	var (
-		ctx                           *unitValidatingWebhookContext
-		oldVMServiceBackupRestoreFunc func() bool
+		ctx *unitValidatingWebhookContext
 	)
 
 	type updateArgs struct {
@@ -1127,7 +1143,9 @@ func unitTestsValidateUpdate() {
 		}
 
 		if args.isSysprepFeatureEnabled {
-			Expect(os.Setenv(lib.WindowsSysprepFSS, "true")).To(Succeed())
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.WindowsSysprep = true
+			})
 		}
 		if args.isSysprepTransportUsed {
 			ctx.vm.Spec.PowerState = vmopv1.VirtualMachinePowerStateOff
@@ -1160,16 +1178,16 @@ func unitTestsValidateUpdate() {
 		}
 
 		if args.isPrivilegedUser {
-			lib.IsVMServiceBackupRestoreFSSEnabled = func() bool {
-				return true
-			}
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.AutoVADPBackupRestore = true
+			})
 
 			privilegedUsersEnvList := "  , foo ,bar , test,  "
 			privilegedUser := "bar"
-			Expect(os.Setenv(lib.PrivilegedUsersEnv, privilegedUsersEnvList)).To(Succeed())
-			defer func() {
-				Expect(os.Unsetenv(lib.PrivilegedUsersEnv)).To(Succeed())
-			}()
+
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.PrivilegedUsers = privilegedUsersEnvList
+			})
 
 			ctx.UserInfo.Username = privilegedUser
 			ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
@@ -1196,14 +1214,10 @@ func unitTestsValidateUpdate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(true)
-		oldVMServiceBackupRestoreFunc = lib.IsVMServiceBackupRestoreFSSEnabled
 	})
 
 	AfterEach(func() {
 		ctx = nil
-		Expect(os.Unsetenv(lib.WcpFaultDomainsFSS)).To(Succeed())
-		Expect(os.Unsetenv(lib.WindowsSysprepFSS)).To(Succeed())
-		lib.IsVMServiceBackupRestoreFSSEnabled = oldVMServiceBackupRestoreFunc
 	})
 
 	msg := "field is immutable"

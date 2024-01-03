@@ -28,8 +28,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 )
 
@@ -204,14 +204,14 @@ func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client clien
 	}
 
 	kind, apiVersion, netName := "", "", ""
-	switch lib.GetNetworkProviderType() {
-	case lib.NetworkProviderTypeNSXT:
+	switch pkgconfig.FromContext(ctx).NetworkProviderType {
+	case pkgconfig.NetworkProviderTypeNSXT:
 		kind = "VirtualNetwork"
 		apiVersion = ncpv1alpha1.SchemeGroupVersion.String()
-	case lib.NetworkProviderTypeVDS:
+	case pkgconfig.NetworkProviderTypeVDS:
 		kind = "Network"
 		apiVersion = netopv1alpha1.SchemeGroupVersion.String()
-	case lib.NetworkProviderTypeNamed:
+	case pkgconfig.NetworkProviderTypeNamed:
 		netName, _ = getProviderConfigMap(ctx, client)
 		if netName == "" {
 			netName = defaultNamedNetwork
@@ -277,7 +277,7 @@ func ResolveImageName(
 	vm *vmopv1.VirtualMachine) (bool, error) {
 	// Return early if the VM image name is empty or already set to a vmi name.
 	imageName := vm.Spec.ImageName
-	if imageName == "" || !lib.IsWCPVMImageRegistryEnabled() ||
+	if imageName == "" || !pkgconfig.FromContext(ctx).Features.ImageRegistry ||
 		strings.HasPrefix(imageName, "vmi-") {
 		return false, nil
 	}

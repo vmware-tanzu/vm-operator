@@ -4,8 +4,6 @@
 package validation_test
 
 import (
-	"os"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -13,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -28,17 +26,16 @@ type intgValidatingWebhookContext struct {
 	vm             *vmopv1.VirtualMachine
 	vmImage        *vmopv1.VirtualMachineImage
 	clusterVMImage *vmopv1.ClusterVirtualMachineImage
-
-	oldIsWCPVMImageRegistryEnabledFunc func() bool
 }
 
 func newIntgValidatingWebhookContext() *intgValidatingWebhookContext {
-	// Enable the named network provider by default.
-	Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
-
 	ctx := &intgValidatingWebhookContext{
 		IntegrationTestContext: *suite.NewIntegrationTestContext(),
 	}
+
+	pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+		config.NetworkProviderType = pkgconfig.NetworkProviderTypeNamed
+	})
 
 	ctx.vm = builder.DummyVirtualMachine()
 	ctx.vm.Namespace = ctx.Namespace
@@ -64,7 +61,9 @@ func intgTestsValidateCreate() {
 		}
 		if args.clusterImage {
 			ctx.vm.Spec.ImageName = ctx.clusterVMImage.Name
-			lib.IsWCPVMImageRegistryEnabled = func() bool { return true }
+			pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+				config.Features.ImageRegistry = true
+			})
 		}
 
 		err := ctx.Client.Create(ctx, ctx.vm)
@@ -90,14 +89,11 @@ func intgTestsValidateCreate() {
 		Expect(err).ToNot(HaveOccurred())
 		err = ctx.Client.Status().Update(ctx, ctx.clusterVMImage)
 		Expect(err).ToNot(HaveOccurred())
-		// Saving the existing value of lib.IsWCPVMImageRegistryEnabled to restore it later.
-		ctx.oldIsWCPVMImageRegistryEnabledFunc = lib.IsWCPVMImageRegistryEnabled
 	})
 
 	AfterEach(func() {
 		_ = ctx.Client.Delete(ctx, ctx.vmImage)
 		_ = ctx.Client.Delete(ctx, ctx.clusterVMImage)
-		lib.IsWCPVMImageRegistryEnabled = ctx.oldIsWCPVMImageRegistryEnabledFunc
 		ctx = nil
 	})
 

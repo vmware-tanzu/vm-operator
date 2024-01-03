@@ -10,21 +10,25 @@ import (
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha1/contentlibraryitem"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	ctrlContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 var intgFakeVMProvider = providerfake.NewVMProvider()
 
-var suite = builder.NewTestSuiteForControllerWithFSS(
+var suite = builder.NewTestSuiteForControllerWithContext(
+	pkgconfig.UpdateContext(
+		pkgconfig.NewContextWithDefaultConfig(),
+		func(config *pkgconfig.Config) {
+			config.Features.ImageRegistry = true
+		}),
 	contentlibraryitem.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
 		ctx.VMProvider = intgFakeVMProvider
 		return nil
 	},
-	map[string]bool{lib.VMImageRegistryFSS: true},
 )
 
 func TestContentLibraryItem(t *testing.T) {

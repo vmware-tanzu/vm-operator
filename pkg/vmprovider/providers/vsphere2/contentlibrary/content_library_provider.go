@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
@@ -22,7 +21,8 @@ import (
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 type Provider interface {
@@ -45,7 +45,6 @@ type provider struct {
 }
 
 const (
-	EnvContentLibAPIWaitSecs     = "CONTENT_API_WAIT_SECS" // BMV: Investigate if setting this to 1 actually reduces the integration test time.
 	DefaultContentLibAPIWaitSecs = 5
 )
 
@@ -59,9 +58,11 @@ func IsSupportedDeployType(t string) bool {
 	}
 }
 
-func NewProvider(restClient *rest.Client) Provider {
-	waitSeconds, err := strconv.Atoi(os.Getenv(EnvContentLibAPIWaitSecs))
-	if err != nil || waitSeconds < 1 {
+func NewProvider(ctx context.Context, restClient *rest.Client) Provider {
+	var waitSeconds int
+	if w := pkgconfig.FromContext(ctx).ContentAPIWait; w > 0 {
+		waitSeconds = int(w.Seconds())
+	} else {
 		waitSeconds = DefaultContentLibAPIWaitSecs
 	}
 
@@ -79,7 +80,7 @@ func (cs *provider) ListLibraryItems(ctx context.Context, libraryUUID string) ([
 	logger := log.WithValues("libraryUUID", libraryUUID)
 	itemList, err := cs.libMgr.ListLibraryItems(ctx, libraryUUID)
 	if err != nil {
-		if lib.IsNotFoundError(err) {
+		if util.IsNotFoundError(err) {
 			logger.Error(err, "cannot list items from content library that does not exist")
 			return nil, nil
 		}
@@ -92,7 +93,7 @@ func (cs *provider) GetLibraryItems(ctx context.Context, libraryUUID string) ([]
 	logger := log.WithValues("libraryUUID", libraryUUID)
 	itemList, err := cs.libMgr.ListLibraryItems(ctx, libraryUUID)
 	if err != nil {
-		if lib.IsNotFoundError(err) {
+		if util.IsNotFoundError(err) {
 			logger.Error(err, "cannot list items from content library that does not exist")
 			return nil, nil
 		}

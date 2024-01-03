@@ -72,17 +72,6 @@ func vmE2ETests() {
 		Expect(ctx.Client.Create(ctx, vmClass)).To(Succeed())
 		Expect(ctx.Client.Status().Update(ctx, vmClass)).To(Succeed())
 
-		cloudInitSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "my-cloud-init-secret",
-				Namespace: nsInfo.Namespace,
-			},
-			StringData: map[string]string{
-				"user-value": "",
-			},
-		}
-		Expect(ctx.Client.Create(ctx, cloudInitSecret)).To(Succeed())
-
 		vm.Namespace = nsInfo.Namespace
 		vm.Spec.ClassName = vmClass.Name
 		vm.Spec.ImageName = ctx.ContentLibraryImageName
@@ -90,15 +79,6 @@ func vmE2ETests() {
 		if vm.Spec.Network != nil {
 			vm.Spec.Network.Interfaces[0].Nameservers = []string{"1.1.1.1", "8.8.8.8"}
 			vm.Spec.Network.Interfaces[0].SearchDomains = []string{"vmware.local"}
-		}
-		if vm.Spec.Bootstrap != nil {
-			vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-				CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
-					RawCloudConfig: &common.SecretKeySelector{
-						Name: cloudInitSecret.Name,
-					},
-				},
-			}
 		}
 	})
 
@@ -146,7 +126,9 @@ func vmE2ETests() {
 
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvVDS
+		})
 
+		JustBeforeEach(func() {
 			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
@@ -159,59 +141,84 @@ func vmE2ETests() {
 			}
 		})
 
-		It("DoIt", func() {
-			err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+		Context("CloudInit Bootstrap", func() {
 
-			By("simulate successful NetOP reconcile", func() {
-				netInterface := &netopv1alpha1.NetworkInterface{
+			JustBeforeEach(func() {
+				cloudInitSecret := &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
-						Namespace: vm.Namespace,
+						Name:      "my-cloud-init-secret",
+						Namespace: nsInfo.Namespace,
+					},
+					Data: map[string][]byte{
+						"user-value": []byte(""),
 					},
 				}
-				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
-				Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
+				Expect(ctx.Client.Create(ctx, cloudInitSecret)).To(Succeed())
 
-				netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
-				netInterface.Status.MacAddress = "" // NetOP doesn't set this.
-				netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
-					{
-						IP:         "192.168.1.110",
-						IPFamily:   netopv1alpha1.IPv4Protocol,
-						Gateway:    "192.168.1.1",
-						SubnetMask: "255.255.255.0",
+				vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{
+						RawCloudConfig: &common.SecretKeySelector{
+							Name: cloudInitSecret.Name,
+						},
 					},
 				}
-				netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
-					{
-						Type:   netopv1alpha1.NetworkInterfaceReady,
-						Status: corev1.ConditionTrue,
-					},
-				}
-				Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+
 			})
 
-			err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
-			Expect(err).ToNot(HaveOccurred())
+			It("DoIt", func() {
+				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
 
-			Expect(vm.Status.UniqueID).ToNot(BeEmpty())
-			vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
-			var o mo.VirtualMachine
-			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-			devList, err := vcVM.Device(ctx)
-			Expect(err).ToNot(HaveOccurred())
+				By("simulate successful NetOP reconcile", func() {
+					netInterface := &netopv1alpha1.NetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NetOPCRName(vm.Name, networkName, interfaceName, false),
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					Expect(netInterface.Spec.NetworkName).To(Equal(networkName))
 
-			// For now just check the expected Nic backing.
-			By("Has expected NIC backing", func() {
-				l := devList.SelectByType(&types.VirtualEthernetCard{})
-				Expect(l).To(HaveLen(1))
+					netInterface.Status.NetworkID = ctx.NetworkRef.Reference().Value
+					netInterface.Status.MacAddress = "" // NetOP doesn't set this.
+					netInterface.Status.IPConfigs = []netopv1alpha1.IPConfig{
+						{
+							IP:         "192.168.1.110",
+							IPFamily:   netopv1alpha1.IPv4Protocol,
+							Gateway:    "192.168.1.1",
+							SubnetMask: "255.255.255.0",
+						},
+					}
+					netInterface.Status.Conditions = []netopv1alpha1.NetworkInterfaceCondition{
+						{
+							Type:   netopv1alpha1.NetworkInterfaceReady,
+							Status: corev1.ConditionTrue,
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+				})
 
-				dev1 := l[0].GetVirtualDevice()
-				backingInfo, ok := dev1.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
-				Expect(ok).Should(BeTrue())
-				Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
+				err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+				vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				devList, err := vcVM.Device(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				// For now just check the expected Nic backing.
+				By("Has expected NIC backing", func() {
+					l := devList.SelectByType(&types.VirtualEthernetCard{})
+					Expect(l).To(HaveLen(1))
+
+					dev1 := l[0].GetVirtualDevice()
+					backingInfo, ok := dev1.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+					Expect(ok).Should(BeTrue())
+					Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
+				})
 			})
 		})
 	})
@@ -225,7 +232,9 @@ func vmE2ETests() {
 
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvNSXT
+		})
 
+		JustBeforeEach(func() {
 			vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 				Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 					{
@@ -238,60 +247,85 @@ func vmE2ETests() {
 			}
 		})
 
-		It("DoIt", func() {
-			err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+		Context("Sysprep Bootstrap", func() {
 
-			By("simulate successful NCP reconcile", func() {
-				netInterface := &ncpv1alpha1.VirtualNetworkInterface{
+			JustBeforeEach(func() {
+				sysprepSecret := &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      network.NCPCRName(vm.Name, networkName, interfaceName, false),
-						Namespace: vm.Namespace,
+						Name:      "my-sysprep-secret",
+						Namespace: nsInfo.Namespace,
+					},
+					Data: map[string][]byte{
+						"unattend": []byte("foo"),
 					},
 				}
-				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
-				Expect(netInterface.Spec.VirtualNetwork).To(Equal(networkName))
+				Expect(ctx.Client.Create(ctx, sysprepSecret)).To(Succeed())
 
-				netInterface.Status.MacAddress = "01-23-45-67-89-AB-CD-EF"
-				netInterface.Status.ProviderStatus = &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
-					NsxLogicalSwitchID: builder.NsxTLogicalSwitchUUID,
-				}
-				netInterface.Status.IPAddresses = []ncpv1alpha1.VirtualNetworkInterfaceIP{
-					{
-						IP:         "192.168.1.110",
-						Gateway:    "192.168.1.1",
-						SubnetMask: "255.255.255.0",
+				vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+					Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+						RawSysprep: &common.SecretKeySelector{
+							Name: sysprepSecret.Name,
+							Key:  "unattend",
+						},
 					},
 				}
-				netInterface.Status.Conditions = []ncpv1alpha1.VirtualNetworkCondition{
-					{
-						Type:   "Ready",
-						Status: "True",
-					},
-				}
-				Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
 			})
 
-			err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
-			Expect(err).ToNot(HaveOccurred())
+			It("DoIt", func() {
+				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
 
-			Expect(vm.Status.UniqueID).ToNot(BeEmpty())
-			vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
-			var o mo.VirtualMachine
-			Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
-			devList, err := vcVM.Device(ctx)
-			Expect(err).ToNot(HaveOccurred())
+				By("simulate successful NCP reconcile", func() {
+					netInterface := &ncpv1alpha1.VirtualNetworkInterface{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      network.NCPCRName(vm.Name, networkName, interfaceName, false),
+							Namespace: vm.Namespace,
+						},
+					}
+					Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(netInterface), netInterface)).To(Succeed())
+					Expect(netInterface.Spec.VirtualNetwork).To(Equal(networkName))
 
-			// For now just check the expected Nic backing.
-			By("Has expected NIC backing", func() {
-				l := devList.SelectByType(&types.VirtualEthernetCard{})
-				Expect(l).To(HaveLen(1))
+					netInterface.Status.MacAddress = "01-23-45-67-89-AB-CD-EF"
+					netInterface.Status.ProviderStatus = &ncpv1alpha1.VirtualNetworkInterfaceProviderStatus{
+						NsxLogicalSwitchID: builder.NsxTLogicalSwitchUUID,
+					}
+					netInterface.Status.IPAddresses = []ncpv1alpha1.VirtualNetworkInterfaceIP{
+						{
+							IP:         "192.168.1.110",
+							Gateway:    "192.168.1.1",
+							SubnetMask: "255.255.255.0",
+						},
+					}
+					netInterface.Status.Conditions = []ncpv1alpha1.VirtualNetworkCondition{
+						{
+							Type:   "Ready",
+							Status: "True",
+						},
+					}
+					Expect(ctx.Client.Status().Update(ctx, netInterface)).To(Succeed())
+				})
 
-				dev1 := l[0].GetVirtualDevice()
-				backingInfo, ok := dev1.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
-				Expect(ok).Should(BeTrue())
-				Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
+				err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(vm.Status.UniqueID).ToNot(BeEmpty())
+				vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+				devList, err := vcVM.Device(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				// For now just check the expected Nic backing.
+				By("Has expected NIC backing", func() {
+					l := devList.SelectByType(&types.VirtualEthernetCard{})
+					Expect(l).To(HaveLen(1))
+
+					dev1 := l[0].GetVirtualDevice()
+					backingInfo, ok := dev1.Backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
+					Expect(ok).Should(BeTrue())
+					Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
+				})
 			})
 		})
 	})

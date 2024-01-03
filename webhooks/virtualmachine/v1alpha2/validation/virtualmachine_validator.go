@@ -4,6 +4,7 @@
 package validation
 
 import (
+	goctx "context"
 	"fmt"
 	"net"
 	"net/http"
@@ -30,11 +31,11 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/sysprep"
-	volume "github.com/vmware-tanzu/vm-operator/controllers/volume/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	cloudinitvalidate "github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit/validate"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
@@ -238,7 +239,7 @@ func (v validator) validateBootstrap(
 				"Sysprep may not be used with either CloudInit or LinuxPrep bootstrap providers"))
 		}
 
-		if lib.IsWindowsSysprepFSSEnabled() {
+		if pkgconfig.FromContext(ctx).Features.WindowsSysprep {
 			if sysPrep.Sysprep != nil && sysPrep.RawSysprep != nil {
 				allErrs = append(allErrs, field.Invalid(p, "sysPrep",
 					"sysprep and rawSysprep are mutually exclusive"))
@@ -387,7 +388,7 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 
 		for i, interfaceSpec := range networkSpec.Interfaces {
 			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(p.Index(i), interfaceSpec, vm.Name)...)
-			allErrs = append(allErrs, v.validateNetworkSpecWithBootstrap(p.Index(i), interfaceSpec, vm)...)
+			allErrs = append(allErrs, v.validateNetworkSpecWithBootstrap(ctx, p.Index(i), interfaceSpec, vm)...)
 		}
 	}
 
@@ -516,6 +517,7 @@ func (v validator) validateNetworkInterfaceSpec(
 // nameservers and searchDomains is available only with the following bootstrap
 // providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
 func (v validator) validateNetworkSpecWithBootstrap(
+	ctx goctx.Context,
 	interfacePath *field.Path,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
 	vm *vmopv1.VirtualMachine) field.ErrorList {
@@ -550,9 +552,8 @@ func (v validator) validateNetworkSpecWithBootstrap(
 			"routes is available only with the following bootstrap providers: CloudInit",
 		))
 	}
-
 	if nameservers := interfaceSpec.Nameservers; nameservers != nil {
-		sysprepNotAllowed := !lib.IsWindowsSysprepFSSEnabled() || sysPrep == nil || sysPrep.RawSysprep != nil
+		sysprepNotAllowed := !pkgconfig.FromContext(ctx).Features.WindowsSysprep || sysPrep == nil || sysPrep.RawSysprep != nil
 		if cloudInit == nil && linuxPrep == nil && sysprepNotAllowed {
 			allErrs = append(allErrs, field.Invalid(
 				interfacePath.Child("nameservers"),
@@ -563,7 +564,7 @@ func (v validator) validateNetworkSpecWithBootstrap(
 	}
 
 	if searchDomains := interfaceSpec.SearchDomains; searchDomains != nil {
-		sysprepNotAllowed := !lib.IsWindowsSysprepFSSEnabled() || sysPrep == nil || sysPrep.RawSysprep != nil
+		sysprepNotAllowed := !pkgconfig.FromContext(ctx).Features.WindowsSysprep || sysPrep == nil || sysPrep.RawSysprep != nil
 		if cloudInit == nil && linuxPrep == nil && sysprepNotAllowed {
 			allErrs = append(allErrs, field.Invalid(
 				interfacePath.Child("searchDomains"),
@@ -595,7 +596,7 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 		}
 
 		if vol.Name != "" {
-			errs := validation.NameIsDNSSubdomain(volume.CNSAttachmentNameForVolume(vm.Name, vol.Name), false)
+			errs := validation.NameIsDNSSubdomain(util.CNSAttachmentNameForVolume(vm.Name, vol.Name), false)
 			for _, msg := range errs {
 				allErrs = append(allErrs, field.Invalid(volPath.Child("name"), vol.Name, msg))
 			}
@@ -879,7 +880,7 @@ func (v validator) validateImmutableFields(_ *context.WebhookRequestContext, vm,
 func (v validator) validateAvailabilityZone(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
-	if !lib.IsWcpFaultDomainsFSSEnabled() {
+	if !pkgconfig.FromContext(ctx).Features.FaultDomains {
 		return allErrs
 	}
 

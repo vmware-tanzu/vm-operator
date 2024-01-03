@@ -8,8 +8,8 @@ import (
 	"k8s.io/utils/pointer"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
 )
@@ -141,7 +141,7 @@ func CreateConfigSpecForPlacement(
 		},
 	})
 
-	if lib.IsInstanceStorageFSSEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.InstanceStorage {
 		isVolumes := instancestorage.FilterVolumes(vmCtx.VM)
 
 		for idx, dev := range CreateInstanceStorageDiskDevices(isVolumes) {

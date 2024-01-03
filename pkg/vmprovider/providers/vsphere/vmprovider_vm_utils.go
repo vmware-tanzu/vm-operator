@@ -4,6 +4,7 @@
 package vsphere
 
 import (
+	goctx "context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -20,8 +21,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	clutils "github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha1/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
@@ -38,7 +39,7 @@ func GetVirtualMachineClass(
 
 	className := vmCtx.VM.Spec.ClassName
 	key := ctrlclient.ObjectKey{Name: className}
-	if lib.IsNamespacedVMClassFSSEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.NamespacedVMClass {
 		// namespace scoped VM classes
 		key.Namespace = vmCtx.VM.Namespace
 	}
@@ -54,7 +55,7 @@ func GetVirtualMachineClass(
 		return nil, errors.Wrap(err, msg)
 	}
 
-	if lib.IsNamespacedVMClassFSSEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.NamespacedVMClass {
 		// After WCP_Namespaced_VM_Class FSS is enabled, VirtualMachineClass is migrated
 		// from cluster scoped to namespace scoped. VirtualMachineClassBinding CRD will be removed
 		// and doesn't make any sense anymore.
@@ -103,7 +104,7 @@ func GetVMImageAndContentLibraryUUID(
 	k8sClient ctrlclient.Client) (*vmopv1.VirtualMachineImageSpec, *vmopv1.VirtualMachineImageStatus, string, error) {
 
 	imageName := vmCtx.VM.Spec.ImageName
-	if lib.IsWCPVMImageRegistryEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.ImageRegistry {
 		vmImageSpec, vmImageStatus, err := resolveVMImage(vmCtx, k8sClient, imageName)
 		if err != nil {
 			return nil, nil, "", err
@@ -328,7 +329,7 @@ func AddInstanceStorageVolumes(
 	return nil
 }
 
-func GetVMClassConfigSpec(raw json.RawMessage) (*types.VirtualMachineConfigSpec, error) {
+func GetVMClassConfigSpec(ctx goctx.Context, raw json.RawMessage) (*types.VirtualMachineConfigSpec, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
@@ -336,7 +337,7 @@ func GetVMClassConfigSpec(raw json.RawMessage) (*types.VirtualMachineConfigSpec,
 	if err != nil {
 		return nil, err
 	}
-	util.SanitizeVMClassConfigSpec(classConfigSpec)
+	util.SanitizeVMClassConfigSpec(ctx, classConfigSpec)
 	return classConfigSpec, nil
 }
 

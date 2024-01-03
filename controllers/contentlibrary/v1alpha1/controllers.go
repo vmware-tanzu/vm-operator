@@ -10,13 +10,13 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha1/clustercontentlibraryitem"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha1/contentlibraryitem"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha1/contentsource"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 // AddToManager adds the controllers to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
-	if lib.IsWCPVMImageRegistryEnabled() {
+	if pkgconfig.FromContext(ctx).Features.ImageRegistry {
 		if err := clustercontentlibraryitem.AddToManager(ctx, mgr); err != nil {
 			return errors.Wrap(err, "failed to initialize ClusterContentLibraryItem controller")
 		}

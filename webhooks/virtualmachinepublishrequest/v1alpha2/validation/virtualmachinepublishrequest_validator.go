@@ -22,8 +22,8 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/webhooks/common"
 )
 
@@ -65,7 +65,7 @@ func (v validator) For() schema.GroupVersionKind {
 }
 
 func (v validator) ValidateCreate(ctx *context.WebhookRequestContext) admission.Response {
-	if !lib.IsWCPVMImageRegistryEnabled() {
+	if !pkgconfig.FromContext(ctx).Features.ImageRegistry {
 		return common.BuildValidationResponse(ctx, nil, []string{"WCP_VM_Image_Registry feature not enabled"}, nil)
 	}
 

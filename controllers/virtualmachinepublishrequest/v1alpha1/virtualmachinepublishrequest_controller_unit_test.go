@@ -69,6 +69,7 @@ func unitTestsReconcile() {
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		reconciler = virtualmachinepublishrequest.NewReconciler(
+			ctx,
 			ctx.Client,
 			ctx.Client,
 			ctx.Logger,

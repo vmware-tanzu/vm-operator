@@ -4,6 +4,7 @@
 package vsphere
 
 import (
+	goctx "context"
 	"encoding/json"
 	"fmt"
 
@@ -364,12 +365,12 @@ func AddInstanceStorageVolumes(
 	return true
 }
 
-func GetVMClassConfigSpec(raw json.RawMessage) (*types.VirtualMachineConfigSpec, error) {
+func GetVMClassConfigSpec(ctx goctx.Context, raw json.RawMessage) (*types.VirtualMachineConfigSpec, error) {
 	classConfigSpec, err := util.UnmarshalConfigSpecFromJSON(raw)
 	if err != nil {
 		return nil, err
 	}
-	util.SanitizeVMClassConfigSpec(classConfigSpec)
+	util.SanitizeVMClassConfigSpec(ctx, classConfigSpec)
 
 	return classConfigSpec, nil
 }

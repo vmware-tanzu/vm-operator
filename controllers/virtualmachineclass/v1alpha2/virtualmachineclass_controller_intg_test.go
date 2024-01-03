@@ -26,7 +26,8 @@ func intgTests() {
 
 		vmClass = &vmopv1.VirtualMachineClass{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "small",
+				Name:      "small",
+				Namespace: "default",
 			},
 			Spec: vmopv1.VirtualMachineClassSpec{
 				Hardware: vmopv1.VirtualMachineClassHardware{

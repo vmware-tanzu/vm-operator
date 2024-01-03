@@ -4,7 +4,6 @@
 package mutation_test
 
 import (
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -14,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -49,11 +48,15 @@ func intgTestsMutating() {
 		ctx = newIntgMutatingWebhookContext()
 		vm = ctx.vm.DeepCopy()
 		vm.Spec.NetworkInterfaces = []vmopv1.VirtualMachineNetworkInterface{}
-		Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeVDS)).Should(Succeed())
+		pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+			config.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+		})
 	})
 	AfterEach(func() {
+		pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+			config.NetworkProviderType = ""
+		})
 		ctx = nil
-		Expect(os.Unsetenv(lib.NetworkProviderType)).Should(Succeed())
 	})
 
 	Describe("mutate", func() {
@@ -172,11 +175,15 @@ func intgTestsMutating() {
 		Context("ResolveImageName", func() {
 
 			BeforeEach(func() {
-				Expect(os.Setenv(lib.VMImageRegistryFSS, lib.TrueString)).To(Succeed())
+				pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+					config.Features.ImageRegistry = true
+				})
 			})
 
 			AfterEach(func() {
-				Expect(os.Unsetenv(lib.VMImageRegistryFSS)).To(Succeed())
+				pkgconfig.SetContext(suite, func(config *pkgconfig.Config) {
+					config.Features.ImageRegistry = false
+				})
 			})
 
 			When("Creating VirtualMachine", func() {

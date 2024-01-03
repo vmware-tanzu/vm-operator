@@ -27,8 +27,8 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 type NetworkInterfaceResults struct {
@@ -108,7 +108,7 @@ func CreateAndWaitForNetworkInterfaces(
 	clusterMoRef *vimtypes.ManagedObjectReference,
 	interfaces []vmopv1.VirtualMachineNetworkInterfaceSpec) (NetworkInterfaceResults, error) {
 
-	networkType := lib.GetNetworkProviderType()
+	networkType := pkgconfig.FromContext(vmCtx).NetworkProviderType
 	if networkType == "" {
 		return NetworkInterfaceResults{}, fmt.Errorf("no network provider set")
 	}
@@ -122,11 +122,11 @@ func CreateAndWaitForNetworkInterfaces(
 		var err error
 
 		switch networkType {
-		case lib.NetworkProviderTypeVDS:
+		case pkgconfig.NetworkProviderTypeVDS:
 			result, err = createNetOPNetworkInterface(vmCtx, client, vimClient, interfaceSpec)
-		case lib.NetworkProviderTypeNSXT:
+		case pkgconfig.NetworkProviderTypeNSXT:
 			result, err = createNCPNetworkInterface(vmCtx, client, vimClient, clusterMoRef, interfaceSpec)
-		case lib.NetworkProviderTypeNamed:
+		case pkgconfig.NetworkProviderTypeNamed:
 			result, err = createNamedNetworkInterface(vmCtx, finder, interfaceSpec)
 		default:
 			err = fmt.Errorf("unsupported network provider envvar value: %q", networkType)

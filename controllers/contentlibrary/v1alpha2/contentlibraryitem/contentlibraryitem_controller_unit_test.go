@@ -48,6 +48,7 @@ func unitTestsReconcile() {
 		ctx = suite.NewUnitTestContextForController()
 
 		reconciler = contentlibraryitem.NewReconciler(
+			ctx,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,

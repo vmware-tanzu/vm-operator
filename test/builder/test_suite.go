@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2022 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package builder
@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/yaml"
@@ -43,9 +44,10 @@ import (
 	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/controllers/util/remote"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	ctrlCtx "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
+	pkgmgrinit "github.com/vmware-tanzu/vm-operator/pkg/manager/init"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
 )
 
@@ -99,8 +101,6 @@ type TestSuite struct {
 	mutatorFn   builder.MutatorFunc
 	pki         pkiToolchain
 	webhookYaml []byte
-
-	fssMap map[string]bool
 }
 
 func (s *TestSuite) isWebhookTest() bool {
@@ -130,18 +130,21 @@ func NewTestSuite() *TestSuite {
 func NewFunctionalTestSuite(addToManagerFunc func(ctx *ctrlCtx.ControllerManagerContext, mgr manager.Manager) error) *TestSuite {
 	return NewTestSuiteForController(
 		addToManagerFunc,
-		pkgmgr.InitializeProviders,
+		pkgmgrinit.InitializeProviders,
 	)
 }
 
 // NewTestSuiteForController returns a new test suite used for controller integration test.
 func NewTestSuiteForController(addToManagerFn pkgmgr.AddToManagerFunc, initProvidersFn pkgmgr.InitializeProvidersFunc) *TestSuite {
-	return NewTestSuiteForControllerWithFSS(addToManagerFn, initProvidersFn, map[string]bool{})
+	return NewTestSuiteForControllerWithContext(pkgconfig.NewContext(), addToManagerFn, initProvidersFn)
 }
 
-// NewTestSuiteForControllerWithFSS returns a new test suite used for controller integration test with FSS set.
-func NewTestSuiteForControllerWithFSS(addToManagerFn pkgmgr.AddToManagerFunc,
-	initProvidersFn pkgmgr.InitializeProvidersFunc, fssMap map[string]bool) *TestSuite {
+// NewTestSuiteForControllerWithContext returns a new test suite used for
+// controller integration test.
+func NewTestSuiteForControllerWithContext(
+	ctx context.Context,
+	addToManagerFn pkgmgr.AddToManagerFunc,
+	initProvidersFn pkgmgr.InitializeProvidersFunc) *TestSuite {
 
 	if addToManagerFn == nil {
 		panic("addToManagerFn is nil")
@@ -151,11 +154,10 @@ func NewTestSuiteForControllerWithFSS(addToManagerFn pkgmgr.AddToManagerFunc,
 	}
 
 	testSuite := &TestSuite{
-		Context:         context.Background(),
+		Context:         ctx,
 		integrationTest: true,
 		addToManagerFn:  addToManagerFn,
 		initProvidersFn: initProvidersFn,
-		fssMap:          fssMap,
 	}
 	testSuite.init()
 
@@ -170,19 +172,19 @@ func NewTestSuiteForValidatingWebhook(
 	newValidatorFn builder.ValidatorFunc,
 	webhookName string) *TestSuite {
 
-	return newTestSuiteForWebhook(addToManagerFn, newValidatorFn, nil, webhookName, map[string]bool{})
+	return newTestSuiteForWebhook(pkgconfig.NewContext(), addToManagerFn, newValidatorFn, nil, webhookName)
 }
 
-// NewTestSuiteForValidatingWebhookwithFSS returns a new test suite used for unit and
+// NewTestSuiteForValidatingWebhookWithContext returns a new test suite used for unit and
 // integration testing validating webhooks created using the "pkg/builder"
-// package with FSS set.
-func NewTestSuiteForValidatingWebhookwithFSS(
+// package.
+func NewTestSuiteForValidatingWebhookWithContext(
+	ctx context.Context,
 	addToManagerFn pkgmgr.AddToManagerFunc,
 	newValidatorFn builder.ValidatorFunc,
-	webhookName string,
-	fssMap map[string]bool) *TestSuite {
+	webhookName string) *TestSuite {
 
-	return newTestSuiteForWebhook(addToManagerFn, newValidatorFn, nil, webhookName, fssMap)
+	return newTestSuiteForWebhook(ctx, addToManagerFn, newValidatorFn, nil, webhookName)
 }
 
 // NewTestSuiteForMutatingWebhook returns a new test suite used for unit and
@@ -193,35 +195,34 @@ func NewTestSuiteForMutatingWebhook(
 	newMutatorFn builder.MutatorFunc,
 	webhookName string) *TestSuite {
 
-	return newTestSuiteForWebhook(addToManagerFn, nil, newMutatorFn, webhookName, map[string]bool{})
+	return newTestSuiteForWebhook(pkgconfig.NewContext(), addToManagerFn, nil, newMutatorFn, webhookName)
 }
 
-// NewTestSuiteForMutatingWebhookwithFSS returns a new test suite used for unit and
+// NewTestSuiteForMutatingWebhookWithContext returns a new test suite used for unit and
 // integration testing mutating webhooks created using the "pkg/builder"
-// package with FSS set.
-func NewTestSuiteForMutatingWebhookwithFSS(
+// package.
+func NewTestSuiteForMutatingWebhookWithContext(
+	ctx context.Context,
 	addToManagerFn pkgmgr.AddToManagerFunc,
 	newMutatorFn builder.MutatorFunc,
-	webhookName string,
-	fssMap map[string]bool) *TestSuite {
+	webhookName string) *TestSuite {
 
-	return newTestSuiteForWebhook(addToManagerFn, nil, newMutatorFn, webhookName, fssMap)
+	return newTestSuiteForWebhook(ctx, addToManagerFn, nil, newMutatorFn, webhookName)
 }
 
 func newTestSuiteForWebhook(
+	ctx context.Context,
 	addToManagerFn pkgmgr.AddToManagerFunc,
 	newValidatorFn builder.ValidatorFunc,
 	newMutatorFn builder.MutatorFunc,
-	webhookName string,
-	fssMap map[string]bool) *TestSuite {
+	webhookName string) *TestSuite {
 
 	testSuite := &TestSuite{
-		Context:         context.Background(),
+		Context:         ctx,
 		integrationTest: true,
 		addToManagerFn:  addToManagerFn,
 		initProvidersFn: pkgmgr.InitializeProvidersNoopFn,
 		webhookName:     webhookName,
-		fssMap:          fssMap,
 	}
 
 	if newValidatorFn != nil {
@@ -362,12 +363,12 @@ func (s *TestSuite) createManager() {
 		InitializeProviders: s.initProvidersFn,
 	}
 
-	if enabled, ok := s.fssMap[lib.VMServiceV1Alpha2FSS]; ok && enabled {
+	if pkgconfig.FromContext(s).Features.VMOpV1Alpha2 {
 		opts.Scheme = runtime.NewScheme()
 		_ = vmopv1alpha2.AddToScheme(opts.Scheme)
 	}
 
-	s.manager, err = pkgmgr.New(opts)
+	s.manager, err = pkgmgr.New(s, opts)
 
 	Expect(err).NotTo(HaveOccurred())
 	Expect(s.manager).ToNot(BeNil())
@@ -479,7 +480,8 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 	})
 
 	By("updating CRD scope", func() {
-		if enabled, ok := s.fssMap[lib.VMImageRegistryFSS]; ok {
+		By("updating vm image scope", func() {
+			enabled := pkgconfig.FromContext(s).Features.ImageRegistry
 			crd := s.GetInstalledCRD(virtualMachineImageResourceName)
 			Expect(crd).ToNot(BeNil())
 			scope := string(crd.Spec.Scope)
@@ -488,8 +490,9 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 			} else if !enabled && scope == scopeNamespace {
 				s.UpdateCRDScope(crd, scopeCluster)
 			}
-		}
-		if enabled, ok := s.fssMap[lib.NamespacedVMClassFSS]; ok {
+		})
+		By("updating vm class scope", func() {
+			enabled := pkgconfig.FromContext(s).Features.NamespacedVMClass
 			crd := s.GetInstalledCRD(virtualMachineClassResourceName)
 			Expect(crd).ToNot(BeNil())
 			scope := string(crd.Spec.Scope)
@@ -498,7 +501,7 @@ func (s *TestSuite) beforeSuiteForIntegrationTesting() {
 			} else if !enabled && scope == scopeNamespace {
 				s.UpdateCRDScope(crd, scopeCluster)
 			}
-		}
+		})
 	})
 
 	// If one or more webhooks are being tested then go ahead and generate a
@@ -569,12 +572,14 @@ func (s *TestSuite) afterSuiteForIntegrationTesting() {
 	})
 }
 
-func (s *TestSuite) applyFeatureStatesToCRDs(in []*apiextensionsv1.CustomResourceDefinition) []*apiextensionsv1.CustomResourceDefinition {
+func (s *TestSuite) applyFeatureStatesToCRDs(
+	in []*apiextensionsv1.CustomResourceDefinition) []*apiextensionsv1.CustomResourceDefinition {
+
 	out := make([]*apiextensionsv1.CustomResourceDefinition, 0)
 	for i := range in {
 		crd := applyFeatureStateFnsToCRD(
+			s,
 			*in[i],
-			s.fssMap,
 			applyV1Alpha2FSSToCRD)
 		out = append(out, &crd)
 	}

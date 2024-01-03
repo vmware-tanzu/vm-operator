@@ -30,11 +30,11 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	"github.com/vmware-tanzu/vm-operator/controllers/volume/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
@@ -229,7 +229,7 @@ func (v validator) validateMetadata(ctx *context.WebhookRequestContext, vm *vmop
 	}
 
 	// Do not allow the Sysprep transport unless the FSS is enabled.
-	if !lib.IsWindowsSysprepFSSEnabled() {
+	if !pkgconfig.FromContext(ctx).Features.WindowsSysprep {
 		if v := vmopv1.VirtualMachineMetadataSysprepTransport; v == vm.Spec.VmMetadata.Transport {
 			allErrs = append(allErrs,
 				field.Invalid(mdPath.Child("transport"), v,
@@ -312,7 +312,7 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 		case network.VdsNetworkType:
 			// Empty NetworkName is allowed to let net-operator pick the namespace default.
 		case "":
-			if lib.IsNamedNetworkProviderEnabled() {
+			if pkgconfig.FromContext(ctx).NetworkProviderType == pkgconfig.NetworkProviderTypeNamed {
 				// Allowed for testing.
 			} else {
 				// Disallowed in production.
@@ -424,7 +424,7 @@ func (v validator) validateVolumeWithPVC(ctx *context.WebhookRequestContext, vm 
 
 	// Check that the name used for the CnsNodeVmAttachment will be valid. Don't double up errors if name is missing.
 	if vol.Name != "" {
-		errs := validation.NameIsDNSSubdomain(v1alpha1.CNSAttachmentNameForVolume(vm, vol.Name), false)
+		errs := validation.NameIsDNSSubdomain(util.CNSAttachmentNameForVolume(vm.Name, vol.Name), false)
 		for _, msg := range errs {
 			allErrs = append(allErrs, field.Invalid(volPath.Child("name"), vol.Name, msg))
 		}
@@ -724,7 +724,7 @@ func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, v
 func (v validator) validateAvailabilityZone(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
-	if !lib.IsWcpFaultDomainsFSSEnabled() {
+	if !pkgconfig.FromContext(ctx).Features.FaultDomains {
 		return allErrs
 	}
 

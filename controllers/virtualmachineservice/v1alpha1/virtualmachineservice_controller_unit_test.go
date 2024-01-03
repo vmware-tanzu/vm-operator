@@ -101,6 +101,7 @@ func unitTestsReconcile() {
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		reconciler = virtualmachineservice.NewReconciler(
+			ctx,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
@@ -815,6 +816,7 @@ func nsxtLBProviderTestsReconcile() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		lbProvider = providers.NsxtLoadBalancerProvider()
 		reconciler = virtualmachineservice.NewReconciler(
+			ctx,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,

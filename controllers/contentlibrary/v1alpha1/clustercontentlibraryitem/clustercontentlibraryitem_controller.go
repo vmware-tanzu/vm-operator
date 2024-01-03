@@ -24,6 +24,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha1/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -41,6 +42,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	)
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(cclItemTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -56,12 +58,14 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
 
 	return &Reconciler{
+		Context:    ctx,
 		Client:     client,
 		Logger:     logger,
 		Recorder:   recorder,
@@ -74,6 +78,7 @@ func NewReconciler(
 // by creating/updating the corresponding VM-Service's ClusterVirtualMachineImage resource.
 type Reconciler struct {
 	client.Client
+	Context    goctx.Context
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider vmprovider.VirtualMachineProviderInterface
@@ -86,6 +91,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=clustervirtualmachineimages/status,verbs=get;update;patch
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	logger := r.Logger.WithValues("cclItemName", req.Name)
 	logger.Info("Reconciling ClusterContentLibraryItem")
 

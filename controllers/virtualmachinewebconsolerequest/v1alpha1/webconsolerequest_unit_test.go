@@ -5,7 +5,6 @@ package v1alpha1_test
 
 import (
 	"context"
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -18,8 +17,8 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1alpha2 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	vmopContext "github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -78,6 +77,7 @@ func unitTestsReconcile() {
 	JustBeforeEach(func() {
 		ctx = suite.NewUnitTestContextForController(initObjects...)
 		reconciler = webconsolerequest.NewReconciler(
+			ctx,
 			ctx.Client,
 			ctx.Logger,
 			ctx.Recorder,
@@ -146,12 +146,10 @@ func unitTestsReconcile() {
 		})
 
 		When("VM Service v1alpha2 FSS is enabled", func() {
-			BeforeEach(func() {
-				Expect(os.Setenv(lib.VMServiceV1Alpha2FSS, lib.TrueString)).To(Succeed())
-			})
-
-			AfterEach(func() {
-				Expect(os.Unsetenv(lib.VMServiceV1Alpha2FSS)).To(Succeed())
+			JustBeforeEach(func() {
+				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+					config.Features.VMOpV1Alpha2 = true
+				})
 			})
 
 			It("returns success", func() {

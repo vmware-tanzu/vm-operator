@@ -33,6 +33,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -51,6 +52,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	controllerName := "provider-configmap"
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
 		ctx.VMProvider,
@@ -133,10 +135,12 @@ func addConfigMapWatch(mgr manager.Manager, c controller.Controller, syncPeriod 
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
 	vmProvider vmprovider.VirtualMachineProviderInterface) *ConfigMapReconciler {
 	return &ConfigMapReconciler{
+		Context:    ctx,
 		Client:     client,
 		Logger:     logger,
 		vmProvider: vmProvider,
@@ -145,6 +149,7 @@ func NewReconciler(
 
 type ConfigMapReconciler struct {
 	client.Client
+	Context    goctx.Context
 	Logger     logr.Logger
 	vmProvider vmprovider.VirtualMachineProviderInterface
 }
@@ -264,6 +269,8 @@ func (r *ConfigMapReconciler) CreateContentSourceBindings(ctx goctx.Context, clU
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 
 func (r *ConfigMapReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, req.NamespacedName, cm); err != nil {
 		if apiErrors.IsNotFound(err) {

@@ -1,9 +1,7 @@
 // Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package builder is a comment just to silence the linter
-//
-//nolint:goconst
+// Package builder is a comment just to silence the linter.
 package builder
 
 import (
@@ -50,9 +48,10 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions2"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 	"github.com/vmware-tanzu/vm-operator/test/testutil"
+
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 type NetworkEnv string
@@ -326,58 +325,30 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 }
 
 func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
-	Expect(lib.SetVMOpNamespaceEnv(c.PodNamespace)).To(Succeed())
 
-	switch config.WithNetworkEnv {
-	case NetworkEnvVDS:
-		Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeVDS)).To(Succeed())
-	case NetworkEnvNSXT:
-		Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNSXT)).To(Succeed())
-	case NetworkEnvNamed:
-		Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
-	default:
-		Expect(os.Unsetenv(lib.NetworkProviderType)).To(Succeed())
-	}
+	pkgconfig.SetContext(c, func(cc *pkgconfig.Config) {
+		cc.PodNamespace = c.PodNamespace
 
-	v1a2 := "false"
-	if config.WithV1A2 {
-		v1a2 = "true"
-	}
-	Expect(os.Setenv(lib.VMServiceV1Alpha2FSS, v1a2)).To(Succeed())
+		switch config.WithNetworkEnv {
+		case NetworkEnvVDS:
+			cc.NetworkProviderType = pkgconfig.NetworkProviderTypeVDS
+		case NetworkEnvNSXT:
+			cc.NetworkProviderType = pkgconfig.NetworkProviderTypeNSXT
+		case NetworkEnvNamed:
+			cc.NetworkProviderType = pkgconfig.NetworkProviderTypeNamed
+		default:
+			cc.NetworkProviderType = ""
+		}
 
-	if config.WithContentLibrary {
-		Expect(os.Setenv("CONTENT_API_WAIT_SECS", "1")).To(Succeed())
-	}
+		cc.ContentAPIWait = 1 * time.Second
+		cc.JSONExtraConfig = config.WithJSONExtraConfig
 
-	faultDomains := "false"
-	if config.WithFaultDomains {
-		faultDomains = "true"
-	}
-	Expect(os.Setenv(lib.WcpFaultDomainsFSS, faultDomains)).To(Succeed())
-
-	instanceStorage := "false"
-	if config.WithInstanceStorage {
-		instanceStorage = "true"
-	}
-	Expect(os.Setenv(lib.InstanceStorageFSS, instanceStorage)).To(Succeed())
-
-	vmClassAsConfig := "false"
-	if config.WithVMClassAsConfig {
-		vmClassAsConfig = "true"
-	}
-	Expect(os.Setenv(lib.VMClassAsConfigFSS, vmClassAsConfig)).To(Succeed())
-
-	vmClassAsConfigDaynDate := "false"
-	if config.WithVMClassAsConfigDaynDate {
-		vmClassAsConfigDaynDate = "true"
-	}
-	Expect(os.Setenv(lib.VMClassAsConfigDaynDateFSS, vmClassAsConfigDaynDate)).To(Succeed())
-
-	if config.WithJSONExtraConfig != "" {
-		Expect(os.Setenv("JSON_EXTRA_CONFIG", config.WithJSONExtraConfig)).To(Succeed())
-	} else {
-		Expect(os.Unsetenv("JSON_EXTRA_CONFIG")).To(Succeed())
-	}
+		cc.Features.VMOpV1Alpha2 = config.WithV1A2
+		cc.Features.FaultDomains = config.WithFaultDomains
+		cc.Features.InstanceStorage = config.WithInstanceStorage
+		cc.Features.VMClassAsConfig = config.WithVMClassAsConfig
+		cc.Features.VMClassAsConfigDayNDate = config.WithVMClassAsConfigDaynDate
+	})
 }
 
 func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
@@ -500,7 +471,7 @@ func (c *TestContextForVCSim) setupContentLibrary(config VCSimTestConfig) {
 	}
 	c.ContentLibraryImageName = libraryItem.Name
 
-	itemID := createContentLibraryItem(libMgr, libraryItem,
+	itemID := createContentLibraryItem(c, libMgr, libraryItem,
 		path.Join(testutil.GetRootDirOrDie(), "images", "ttylinux-pc_i486-16.1.ovf"))
 
 	// Not the exact right FFS, but it's what we've plumbed and is otherwise implied.
@@ -590,11 +561,10 @@ func (c *TestContextForVCSim) ContentLibraryItemTemplate(srcVMName, templateName
 }
 
 func createContentLibraryItem(
+	ctx goctx.Context,
 	libMgr *library.Manager,
 	libraryItem library.Item,
 	itemPath string) string {
-
-	ctx := goctx.Background()
 
 	itemID, err := libMgr.CreateLibraryItem(ctx, libraryItem)
 	Expect(err).ToNot(HaveOccurred())

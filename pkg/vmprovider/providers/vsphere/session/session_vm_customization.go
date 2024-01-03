@@ -17,8 +17,8 @@ import (
 	apiEquality "k8s.io/apimachinery/pkg/api/equality"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/internal"
@@ -277,7 +277,7 @@ func customizeCloudInit(
 func (s *Session) customize(
 	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine,
-	config *vimTypes.VirtualMachineConfigInfo,
+	configInfo *vimTypes.VirtualMachineConfigInfo,
 	updateArgs VMUpdateArgs) error {
 
 	transport := updateArgs.VMMetadata.Transport
@@ -288,23 +288,23 @@ func (s *Session) customize(
 
 	switch transport {
 	case vmopv1.VirtualMachineMetadataCloudInitTransport:
-		configSpec, custSpec, err = customizeCloudInit(vmCtx, resVM, config, updateArgs)
+		configSpec, custSpec, err = customizeCloudInit(vmCtx, resVM, configInfo, updateArgs)
 	case vmopv1.VirtualMachineMetadataOvfEnvTransport:
-		configSpec = GetOvfEnvCustSpec(config, updateArgs)
+		configSpec = GetOvfEnvCustSpec(configInfo, updateArgs)
 		custSpec = GetLinuxPrepCustSpec(vmCtx.VM.Name, updateArgs)
 	case vmopv1.VirtualMachineMetadataVAppConfigTransport:
 		TemplateVMMetadata(vmCtx, resVM, updateArgs)
-		configSpec = GetOvfEnvCustSpec(config, updateArgs)
+		configSpec = GetOvfEnvCustSpec(configInfo, updateArgs)
 	case vmopv1.VirtualMachineMetadataExtraConfigTransport:
-		configSpec = GetExtraConfigCustSpec(config, updateArgs)
+		configSpec = GetExtraConfigCustSpec(configInfo, updateArgs)
 		custSpec = GetLinuxPrepCustSpec(vmCtx.VM.Name, updateArgs)
 	case vmopv1.VirtualMachineMetadataSysprepTransport:
 		// This is to simply comply with the spirit of the feature switch.
 		// In reality, the webhook will prevent "Sysprep" from being used unless
 		// the FSS is enabled.
-		if lib.IsWindowsSysprepFSSEnabled() {
+		if pkgconfig.FromContext(vmCtx).Features.WindowsSysprep {
 			TemplateVMMetadata(vmCtx, resVM, updateArgs)
-			configSpec = GetOvfEnvCustSpec(config, updateArgs)
+			configSpec = GetOvfEnvCustSpec(configInfo, updateArgs)
 			custSpec, err = GetSysprepCustSpec(vmCtx.VM.Name, updateArgs)
 		}
 	default:
@@ -331,7 +331,7 @@ func (s *Session) customize(
 			vmCtx.Logger.Info("Skipping vsphere customization because of vsphere-customization bypass annotation")
 			return nil
 		}
-		if IsCustomizationPendingExtraConfig(config.ExtraConfig) {
+		if IsCustomizationPendingExtraConfig(configInfo.ExtraConfig) {
 			vmCtx.Logger.Info("Skipping customization because it is already pending")
 			// TODO: We should really determine if the pending customization is stale, clear it
 			// if so, and then re-customize. Otherwise, the Customize call could perpetually fail

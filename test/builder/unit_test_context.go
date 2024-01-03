@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/context/fake"
 )
@@ -27,7 +28,7 @@ type UnitTestContext struct {
 func NewUnitTestContext(initObjects ...client.Object) *UnitTestContext {
 	fakeClient := NewFakeClient(initObjects...)
 	return &UnitTestContext{
-		Context: goctx.Background(),
+		Context: pkgconfig.NewContext(),
 		Client:  fakeClient,
 		Scheme:  fakeClient.Scheme(),
 	}

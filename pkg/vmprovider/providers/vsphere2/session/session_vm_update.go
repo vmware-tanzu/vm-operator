@@ -4,6 +4,7 @@
 package session
 
 import (
+	goctx "context"
 	"fmt"
 	"reflect"
 	"time"
@@ -18,8 +19,8 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/clustermodules"
@@ -49,8 +50,8 @@ type VMUpdateArgs struct {
 	VirtualMachineImageV1Alpha1Compatible bool
 }
 
-func ethCardMatch(newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCard) bool {
-	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+func ethCardMatch(ctx goctx.Context, newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCard) bool {
+	if pkgconfig.FromContext(ctx).Features.VMClassAsConfigDayNDate {
 		if reflect.TypeOf(curBaseEthCard) != reflect.TypeOf(newBaseEthCard) {
 			return false
 		}
@@ -78,6 +79,7 @@ func ethCardMatch(newBaseEthCard, curBaseEthCard vimTypes.BaseVirtualEthernetCar
 }
 
 func UpdateEthCardDeviceChanges(
+	ctx goctx.Context,
 	expectedEthCards object.VirtualDeviceList,
 	currentEthCards object.VirtualDeviceList) ([]vimTypes.BaseVirtualDeviceConfigSpec, error) {
 
@@ -104,7 +106,7 @@ func UpdateEthCardDeviceChanges(
 			// This assumes we don't have multiple NICs in the same backing network. This is kind of, sort
 			// of enforced by the webhook, but we lack a guaranteed way to match up the NICs.
 
-			if !ethCardMatch(expectedNic, nic) {
+			if !ethCardMatch(ctx, expectedNic, nic) {
 				continue
 			}
 
@@ -292,6 +294,7 @@ func UpdateConfigSpecMemoryAllocation(
 }
 
 func UpdateConfigSpecExtraConfig(
+	ctx goctx.Context,
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec,
 	vmClassSpec *vmopv1.VirtualMachineClassSpec,
@@ -317,7 +320,7 @@ func UpdateConfigSpecExtraConfig(
 		extraConfig[constants.MMPowerOffVMExtraConfigKey] = constants.ExtraConfigTrue
 	}
 
-	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+	if pkgconfig.FromContext(ctx).Features.VMClassAsConfigDayNDate {
 		// Merge non intersecting keys from the desired config spec extra config with the class config spec extra config
 		// (ie) class config spec extra config keys takes precedence over the desired config spec extra config keys
 		ecFromClassConfigSpec := util.ExtraConfigToMap(classConfigSpec.ExtraConfig)
@@ -363,6 +366,7 @@ func setMMIOExtraConfig(vm *vmopv1.VirtualMachine, extraConfig map[string]string
 }
 
 func UpdateConfigSpecChangeBlockTracking(
+	ctx goctx.Context,
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec, classConfigSpec *vimTypes.VirtualMachineConfigSpec,
 	vmSpec vmopv1.VirtualMachineSpec) {
@@ -371,7 +375,7 @@ func UpdateConfigSpecChangeBlockTracking(
 	// set overrides the VM spec advanced options cbt.
 	// BMV: I don't think this is correct: the class shouldn't dictate this for backup purposes. There is a
 	// webhook out there that changes this in the VM spec.
-	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && classConfigSpec != nil {
+	if pkgconfig.FromContext(ctx).Features.VMClassAsConfigDayNDate && classConfigSpec != nil {
 		if classConfigSpec.ChangeTrackingEnabled != nil {
 			if !apiEquality.Semantic.DeepEqual(config.ChangeTrackingEnabled, classConfigSpec.ChangeTrackingEnabled) {
 				configSpec.ChangeTrackingEnabled = classConfigSpec.ChangeTrackingEnabled
@@ -450,7 +454,7 @@ func updateConfigSpec(
 	// behavior.  With the FSS enabled, VMs will be _created_ with desired HW spec, and we
 	// will not modify the hardware of the VM post creation.  So, don't populate the
 	// Hardware config and CPU/Memory reservation.
-	if !lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+	if !pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
 		UpdateHardwareConfigSpec(config, configSpec, &vmClassSpec)
 		UpdateConfigSpecCPUAllocation(config, configSpec, &vmClassSpec, updateArgs.MinCPUFreq)
 		UpdateConfigSpecMemoryAllocation(config, configSpec, &vmClassSpec)
@@ -458,9 +462,9 @@ func updateConfigSpec(
 
 	UpdateConfigSpecAnnotation(config, configSpec)
 	UpdateConfigSpecManagedBy(config, configSpec)
-	UpdateConfigSpecExtraConfig(config, configSpec, updateArgs.ConfigSpec, &vmClassSpec,
+	UpdateConfigSpecExtraConfig(vmCtx, config, configSpec, updateArgs.ConfigSpec, &vmClassSpec,
 		vmCtx.VM, updateArgs.ExtraConfig, updateArgs.VirtualMachineImageV1Alpha1Compatible)
-	UpdateConfigSpecChangeBlockTracking(config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
+	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, updateArgs.ConfigSpec, vmCtx.VM.Spec)
 	UpdateConfigSpecFirmware(config, configSpec, vmCtx.VM)
 
 	return configSpec
@@ -489,14 +493,14 @@ func (s *Session) prePowerOnVMConfigSpec(
 		expectedEthCards = append(expectedEthCards, updateArgs.NetworkResults.Results[idx].Device)
 	}
 
-	ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(expectedEthCards, currentEthCards)
+	ethCardDeviceChanges, err := UpdateEthCardDeviceChanges(vmCtx, expectedEthCards, currentEthCards)
 	if err != nil {
 		return nil, err
 	}
 	configSpec.DeviceChange = append(configSpec.DeviceChange, ethCardDeviceChanges...)
 
 	var expectedPCIDevices []vimTypes.BaseVirtualDevice
-	if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
 		if configSpecDevs := util.DevicesFromConfigSpec(updateArgs.ConfigSpec); len(configSpecDevs) > 0 {
 			pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(configSpecDevs)
 			expectedPCIDevices = virtualmachine.CreatePCIDevicesFromConfigSpec(pciPassthruFromConfigSpec)
@@ -550,7 +554,7 @@ func (s *Session) ensureNetworkInterfaces(
 	deviceKey := int32(-100)
 
 	var networkDevices []vimTypes.BaseVirtualDevice
-	if lib.IsVMClassAsConfigFSSDaynDateEnabled() && configSpec != nil {
+	if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate && configSpec != nil {
 		networkDevices = util.SelectDevicesByTypes(
 			util.DevicesFromConfigSpec(configSpec),
 			&vimTypes.VirtualE1000{},
@@ -587,7 +591,7 @@ func (s *Session) ensureNetworkInterfaces(
 			return network2.NetworkInterfaceResults{}, err
 		}
 
-		if lib.IsVMClassAsConfigFSSDaynDateEnabled() {
+		if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate {
 			// If VM Class-as-a-Config is supported, we use the network device from the Class.
 			// If the VM class doesn't specify enough number of network devices, we fall back to default behavior.
 			if idx < len(networkDevices) {
@@ -716,7 +720,7 @@ func (s *Session) poweredOnVMReconfigure(
 	config *vimTypes.VirtualMachineConfigInfo) error {
 
 	configSpec := &vimTypes.VirtualMachineConfigSpec{}
-	UpdateConfigSpecChangeBlockTracking(config, configSpec, nil, vmCtx.VM.Spec)
+	UpdateConfigSpecChangeBlockTracking(vmCtx, config, configSpec, nil, vmCtx.VM.Spec)
 
 	defaultConfigSpec := &vimTypes.VirtualMachineConfigSpec{}
 	if !apiEquality.Semantic.DeepEqual(configSpec, defaultConfigSpec) {
@@ -752,7 +756,7 @@ func (s *Session) attachClusterModule(
 	}
 
 	// Find ClusterModule UUID from the ResourcePolicy.
-	_, moduleUUID := clustermodules.FindClusterModuleUUID(clusterModuleName, s.Cluster.Reference(), resourcePolicy)
+	_, moduleUUID := clustermodules.FindClusterModuleUUID(vmCtx, clusterModuleName, s.Cluster.Reference(), resourcePolicy)
 	if moduleUUID == "" {
 		return fmt.Errorf("ClusterModule %s not found", clusterModuleName)
 	}

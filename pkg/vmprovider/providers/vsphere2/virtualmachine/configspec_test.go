@@ -11,8 +11,8 @@ import (
 	vimtypes "github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/virtualmachine"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -160,7 +160,7 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 		vm := builder.DummyVirtualMachineA2()
 		vmCtx = context.VirtualMachineContextA2{
-			Context: goctx.Background(),
+			Context: pkgconfig.NewContext(),
 			Logger:  suite.GetLogger().WithValues("vmName", vm.GetName()),
 			VM:      vm,
 		}
@@ -218,20 +218,15 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 
 	Context("When InstanceStorage is configured", func() {
 		const storagePolicyID = "storage-id-42"
-		var oldIsInstanceStorageFSSEnabled func() bool
 
 		BeforeEach(func() {
-			oldIsInstanceStorageFSSEnabled = lib.IsInstanceStorageFSSEnabled
-			lib.IsInstanceStorageFSSEnabled = func() bool { return true }
+			pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
+				config.Features.InstanceStorage = true
+			})
 
 			builder.AddDummyInstanceStorageVolumeA2(vmCtx.VM)
 			storageClassesToIDs[builder.DummyStorageClassName] = storagePolicyID
 		})
-
-		AfterEach(func() {
-			lib.IsInstanceStorageFSSEnabled = oldIsInstanceStorageFSSEnabled
-		})
-
 		It("ConfigSpec contains expected InstanceStorage devices", func() {
 			Expect(configSpec.DeviceChange).To(HaveLen(3))
 			assertInstanceStorageDeviceChange(configSpec.DeviceChange[1], 256, storagePolicyID)

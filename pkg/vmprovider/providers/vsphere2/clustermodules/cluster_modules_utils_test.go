@@ -1,16 +1,19 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package clustermodules_test
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/vmware/govmomi/vim25/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/clustermodules"
 )
 
@@ -21,11 +24,14 @@ var _ = Describe("FindClusterModuleUUID", func() {
 	)
 
 	var (
+		ctx                      context.Context
 		resourcePolicy           *vmopv1.VirtualMachineSetResourcePolicy
 		clusterRef1, clusterRef2 types.ManagedObjectReference
 	)
 
 	BeforeEach(func() {
+		ctx = pkgconfig.NewContext()
+
 		resourcePolicy = &vmopv1.VirtualMachineSetResourcePolicy{
 			Spec: vmopv1.VirtualMachineSetResourcePolicySpec{
 				ClusterModuleGroups: []string{groupName1, groupName2},
@@ -36,11 +42,15 @@ var _ = Describe("FindClusterModuleUUID", func() {
 		clusterRef2 = types.ManagedObjectReference{Value: "dummy-cluster2"}
 	})
 
+	AfterEach(func() {
+		ctx = nil
+	})
+
 	Context("FaultDomains FSS is disabled", func() {
 
 		Context("GroupName does not exist", func() {
 			It("Returns expected values", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID("does-not-exist", clusterRef1, resourcePolicy)
+				idx, uuid := clustermodules.FindClusterModuleUUID(ctx, "does-not-exist", clusterRef1, resourcePolicy)
 				Expect(idx).To(Equal(-1))
 				Expect(uuid).To(BeEmpty())
 			})
@@ -62,11 +72,11 @@ var _ = Describe("FindClusterModuleUUID", func() {
 			})
 
 			It("Returns expected entry", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID(groupName1, clusterRef1, resourcePolicy)
+				idx, uuid := clustermodules.FindClusterModuleUUID(ctx, groupName1, clusterRef1, resourcePolicy)
 				Expect(idx).To(Equal(0))
 				Expect(uuid).To(Equal(moduleUUID1))
 
-				idx, uuid = clustermodules.FindClusterModuleUUID(groupName2, clusterRef1, resourcePolicy)
+				idx, uuid = clustermodules.FindClusterModuleUUID(ctx, groupName2, clusterRef1, resourcePolicy)
 				Expect(idx).To(Equal(1))
 				Expect(uuid).To(Equal(moduleUUID2))
 			})
@@ -75,22 +85,15 @@ var _ = Describe("FindClusterModuleUUID", func() {
 	})
 
 	Context("FaultDomains FSS is enabled", func() {
-		var (
-			oldFaultDomainsFunc func() bool
-		)
-
 		BeforeEach(func() {
-			oldFaultDomainsFunc = lib.IsWcpFaultDomainsFSSEnabled
-			lib.IsWcpFaultDomainsFSSEnabled = func() bool { return true }
-		})
-
-		AfterEach(func() {
-			lib.IsWcpFaultDomainsFSSEnabled = oldFaultDomainsFunc
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.FaultDomains = true
+			})
 		})
 
 		Context("GroupName does not exist", func() {
 			It("Returns expected values", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID("does-not-exist", clusterRef1, resourcePolicy)
+				idx, uuid := clustermodules.FindClusterModuleUUID(ctx, "does-not-exist", clusterRef1, resourcePolicy)
 				Expect(idx).To(Equal(-1))
 				Expect(uuid).To(BeEmpty())
 			})
@@ -113,11 +116,11 @@ var _ = Describe("FindClusterModuleUUID", func() {
 			})
 
 			It("Returns expected entry", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID(groupName1, clusterRef1, resourcePolicy)
+				idx, uuid := clustermodules.FindClusterModuleUUID(ctx, groupName1, clusterRef1, resourcePolicy)
 				Expect(idx).To(Equal(0))
 				Expect(uuid).To(Equal(moduleUUID1))
 
-				idx, uuid = clustermodules.FindClusterModuleUUID(groupName2, clusterRef1, resourcePolicy)
+				idx, uuid = clustermodules.FindClusterModuleUUID(ctx, groupName2, clusterRef1, resourcePolicy)
 				Expect(idx).To(Equal(1))
 				Expect(uuid).To(Equal(moduleUUID2))
 			})
@@ -140,11 +143,11 @@ var _ = Describe("FindClusterModuleUUID", func() {
 			})
 
 			It("Returns expected entry", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID(groupName1, clusterRef1, resourcePolicy)
+				idx, uuid := clustermodules.FindClusterModuleUUID(ctx, groupName1, clusterRef1, resourcePolicy)
 				Expect(idx).To(Equal(0))
 				Expect(uuid).To(Equal(moduleUUID1))
 
-				idx, uuid = clustermodules.FindClusterModuleUUID(groupName1, clusterRef2, resourcePolicy)
+				idx, uuid = clustermodules.FindClusterModuleUUID(ctx, groupName1, clusterRef2, resourcePolicy)
 				Expect(idx).To(Equal(1))
 				Expect(uuid).To(Equal(moduleUUID2))
 			})

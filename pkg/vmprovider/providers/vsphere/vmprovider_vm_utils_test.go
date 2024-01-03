@@ -4,9 +4,7 @@
 package vsphere_test
 
 import (
-	goctx "context"
 	"fmt"
-	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -20,8 +18,8 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
@@ -40,7 +38,7 @@ func vmUtilTests() {
 		vm := builder.DummyBasicVirtualMachine("test-vm", "dummy-ns")
 
 		vmCtx = context.VirtualMachineContext{
-			Context: goctx.WithValue(goctx.Background(), context.MaxDeployThreadsContextKey, 16),
+			Context: pkgconfig.WithConfig(pkgconfig.Config{MaxDeployThreadsOnProvider: 16}),
 			Logger:  suite.GetLogger().WithValues("vmName", vm.Name),
 			VM:      vm,
 		}
@@ -66,12 +64,9 @@ func vmUtilTests() {
 			BeforeEach(func() {
 				vmClass, vmClassBinding = builder.DummyVirtualMachineClassAndBinding("dummy-vm-class", vmCtx.VM.Namespace)
 				vmCtx.VM.Spec.ClassName = vmClass.Name
-
-				Expect(os.Setenv(lib.NamespacedVMClassFSS, lib.FalseString)).To(Succeed())
-			})
-
-			AfterEach(func() {
-				Expect(os.Unsetenv(lib.NamespacedVMClassFSS)).To(Succeed())
+				pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
+					config.Features.NamespacedVMClass = false
+				})
 			})
 
 			Context("VirtualMachineClass custom resource doesn't exist", func() {
@@ -162,11 +157,9 @@ func vmUtilTests() {
 				vmClass.Namespace = vmCtx.VM.Namespace
 				vmCtx.VM.Spec.ClassName = vmClass.Name
 
-				Expect(os.Setenv(lib.NamespacedVMClassFSS, lib.TrueString)).To(Succeed())
-			})
-
-			AfterEach(func() {
-				Expect(os.Unsetenv(lib.NamespacedVMClassFSS)).To(Succeed())
+				pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
+					config.Features.NamespacedVMClass = true
+				})
 			})
 
 			Context("VirtualMachineClass custom resource doesn't exist", func() {
@@ -228,11 +221,9 @@ func vmUtilTests() {
 
 				vmCtx.VM.Spec.ImageName = vmImage.Name
 
-				Expect(os.Setenv(lib.VMImageRegistryFSS, lib.FalseString)).To(Succeed())
-			})
-
-			AfterEach(func() {
-				Expect(os.Unsetenv(lib.VMImageRegistryFSS)).To(Succeed())
+				pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
+					config.Features.ImageRegistry = false
+				})
 			})
 
 			When("VirtualMachineImage does not exist", func() {
@@ -367,11 +358,9 @@ func vmUtilTests() {
 					Name: clusterCL.Name,
 				}
 
-				Expect(os.Setenv(lib.VMImageRegistryFSS, lib.TrueString)).To(Succeed())
-			})
-
-			AfterEach(func() {
-				Expect(os.Unsetenv(lib.VMImageRegistryFSS)).To(Succeed())
+				pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
+					config.Features.ImageRegistry = true
+				})
 			})
 
 			When("Neither cluster or namespace scoped VM image exists", func() {
@@ -723,14 +712,12 @@ func vmUtilTests() {
 			vmClass = builder.DummyVirtualMachineClass()
 		})
 
-		AfterEach(func() {
-			Expect(os.Unsetenv(lib.InstanceStorageFSS)).To(Succeed())
-		})
-
 		When("Instance Storage FSS is disabled", func() {
 
 			BeforeEach(func() {
-				Expect(os.Setenv(lib.InstanceStorageFSS, lib.FalseString)).To(Succeed())
+				pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
+					config.Features.InstanceStorage = false
+				})
 			})
 
 			It("VM Class does not contain instance storage volumes", func() {
@@ -742,7 +729,9 @@ func vmUtilTests() {
 
 		When("InstanceStorage FFS is enabled", func() {
 			BeforeEach(func() {
-				Expect(os.Setenv(lib.InstanceStorageFSS, lib.TrueString)).To(Succeed())
+				pkgconfig.SetContext(vmCtx, func(config *pkgconfig.Config) {
+					config.Features.InstanceStorage = true
+				})
 			})
 
 			It("VM Class does not contain instance storage volumes", func() {

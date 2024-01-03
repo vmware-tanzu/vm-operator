@@ -35,7 +35,7 @@ func clTests() {
 
 		JustBeforeEach(func() {
 			ctx = suite.NewTestContextForVCSim(testConfig, initObjects...)
-			clProvider = contentlibrary.NewProvider(ctx.RestClient)
+			clProvider = contentlibrary.NewProvider(ctx, ctx.RestClient)
 		})
 
 		AfterEach(func() {

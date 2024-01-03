@@ -10,7 +10,7 @@ import (
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/types"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 )
 
 type Provider interface {
@@ -49,7 +49,7 @@ func (cm *provider) DeleteModule(ctx context.Context, moduleID string) error {
 	log.Info("Deleting cluster module", "moduleID", moduleID)
 
 	err := cm.manager.DeleteModule(ctx, moduleID)
-	if err != nil && !lib.IsNotFoundError(err) {
+	if err != nil && !util.IsNotFoundError(err) {
 		return err
 	}
 

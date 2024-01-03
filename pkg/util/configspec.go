@@ -5,6 +5,7 @@ package util
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"reflect"
 
@@ -12,7 +13,7 @@ import (
 	vimTypes "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 // MarshalConfigSpecToXML returns a byte slice of the provided ConfigSpec
@@ -132,7 +133,10 @@ func DevicesFromConfigSpec(
 
 // SanitizeVMClassConfigSpec clears fields in the class ConfigSpec that are
 // not allowed or supported.
-func SanitizeVMClassConfigSpec(configSpec *vimTypes.VirtualMachineConfigSpec) {
+func SanitizeVMClassConfigSpec(
+	ctx context.Context,
+	configSpec *vimTypes.VirtualMachineConfigSpec) {
+
 	// These are unique for each VM.
 	configSpec.Uuid = ""
 	configSpec.InstanceUuid = ""
@@ -142,7 +146,7 @@ func SanitizeVMClassConfigSpec(configSpec *vimTypes.VirtualMachineConfigSpec) {
 	// Empty VmProfiles as storage profiles are disk specific
 	configSpec.VmProfile = []vimTypes.BaseVirtualMachineProfileSpec{}
 
-	if lib.IsVMClassAsConfigFSSEnabled() {
+	if pkgconfig.FromContext(ctx).Features.VMClassAsConfig {
 		// Remove all virtual disks except disks with raw device mapping backings.
 		RemoveDevicesFromConfigSpec(configSpec, isNonRDMDisk)
 	} else {

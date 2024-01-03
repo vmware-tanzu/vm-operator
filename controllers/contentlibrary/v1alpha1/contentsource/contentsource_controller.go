@@ -24,6 +24,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -45,6 +46,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	)
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -59,11 +61,13 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
 	return &Reconciler{
+		Context:    ctx,
 		Client:     client,
 		Logger:     logger,
 		Recorder:   recorder,
@@ -75,6 +79,7 @@ func NewReconciler(
 // Reconciler reconciles a ContentSource object.
 type Reconciler struct {
 	client.Client
+	Context    goctx.Context
 	Logger     logr.Logger
 	Recorder   record.Recorder
 	VMProvider vmprovider.VirtualMachineProviderInterface
@@ -441,6 +446,8 @@ func (r *Reconciler) ReconcileDelete(ctx goctx.Context, contentSource *vmopv1.Co
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachineimages/status,verbs=get;update;patch
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, request ctrl.Request) (ctrl.Result, error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	r.Logger.Info("Received reconcile request", "name", request.Name)
 
 	instance := &vmopv1.ContentSource{}

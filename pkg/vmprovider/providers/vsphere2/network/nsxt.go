@@ -7,13 +7,13 @@ import (
 	goctx "context"
 	"fmt"
 
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
-
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 // ResolveBackingPostPlacement fixes up the backings where we did not know the CCR until after
@@ -29,7 +29,7 @@ func ResolveBackingPostPlacement(
 		return false, nil
 	}
 
-	networkType := lib.GetNetworkProviderType()
+	networkType := pkgconfig.FromContext(ctx).NetworkProviderType
 	if networkType == "" {
 		return false, fmt.Errorf("no network provider set")
 	}
@@ -46,7 +46,7 @@ func ResolveBackingPostPlacement(
 		var err error
 
 		switch networkType {
-		case lib.NetworkProviderTypeNSXT:
+		case pkgconfig.NetworkProviderTypeNSXT:
 			backing, err = searchNsxtNetworkReference(ctx, ccr, results.Results[idx].NetworkID)
 			if err != nil {
 				err = fmt.Errorf("post placement NSX-T backing fixup failed: %w", err)

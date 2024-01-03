@@ -31,6 +31,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/metrics"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
@@ -73,6 +74,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	)
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
@@ -128,6 +130,7 @@ func vmiToVMPubMapperFn(ctx *context.ControllerManagerContext, c client.Client) 
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	apiReader client.Reader,
 	logger logr.Logger,
@@ -135,6 +138,7 @@ func NewReconciler(
 	vmProvider vmprovider.VirtualMachineProviderInterface) *Reconciler {
 
 	return &Reconciler{
+		Context:    ctx,
 		Client:     client,
 		apiReader:  apiReader,
 		Logger:     logger,
@@ -147,6 +151,7 @@ func NewReconciler(
 // Reconciler reconciles a VirtualMachinePublishRequest object.
 type Reconciler struct {
 	client.Client
+	Context    goctx.Context
 	apiReader  client.Reader
 	Logger     logr.Logger
 	Recorder   record.Recorder
@@ -195,6 +200,8 @@ func requeueResult(ctx *context.VirtualMachinePublishRequestContext) ctrl.Result
 // +kubebuilder:rbac:groups=imageregistry.vmware.com,resources=contentlibraries/status,verbs=get;
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	vmPublishReq := &vmopv1.VirtualMachinePublishRequest{}
 	// Get the VirtualMachinePublishRequest directly from the API server - bypassing the cache of the
 	// regular client - to avoid potentially stale objects from cache. We rely on the up-to-date Status

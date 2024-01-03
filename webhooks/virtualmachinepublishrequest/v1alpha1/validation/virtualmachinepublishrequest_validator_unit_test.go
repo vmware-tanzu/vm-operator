@@ -15,7 +15,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/controllers/contentlibrary/v1alpha1/utils"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -151,9 +151,9 @@ func unitTestsValidateCreate() {
 
 	BeforeEach(func() {
 		ctx = newUnitTestContextForValidatingWebhook(false)
-		lib.IsWCPVMImageRegistryEnabled = func() bool {
-			return true
-		}
+		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+			config.Features.ImageRegistry = true
+		})
 	})
 
 	AfterEach(func() {

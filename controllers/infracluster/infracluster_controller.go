@@ -22,8 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	pkgmgr "github.com/vmware-tanzu/vm-operator/pkg/manager"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
 )
@@ -47,13 +47,14 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	)
 
 	var provider infraClusterProvider
-	if lib.IsVMServiceV1Alpha2FSSEnabled() {
+	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
 		provider = ctx.VMProviderA2
 	} else {
 		provider = ctx.VMProvider
 	}
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controllerName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -130,12 +131,14 @@ func addWcpClusterCMWatch(mgr manager.Manager, c controller.Controller, syncPeri
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
 	vmOpNamespace string,
 	provider infraClusterProvider) *Reconciler {
 	return &Reconciler{
+		Context:       ctx,
 		Client:        client,
 		Logger:        logger,
 		Recorder:      recorder,
@@ -146,6 +149,7 @@ func NewReconciler(
 
 type Reconciler struct {
 	client.Client
+	Context       goctx.Context
 	Logger        logr.Logger
 	Recorder      record.Recorder
 	vmOpNamespace string
@@ -155,6 +159,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	// This is totally wrong and we should break this controller apart so we're not
 	// watching different types.
 

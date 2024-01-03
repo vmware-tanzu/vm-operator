@@ -6,7 +6,6 @@ package network_test
 import (
 	goCtx "context"
 	"fmt"
-	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -21,8 +20,8 @@ import (
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -93,20 +92,16 @@ var _ = Describe("NetworkProvider", func() {
 	Context("Named Network Provider", func() {
 
 		var (
-			oldNetworkProviderType      string
 			namedNetworkProviderEnabled bool
 		)
 
 		JustBeforeEach(func() {
-			oldNetworkProviderType = os.Getenv(lib.NetworkProviderType)
 			if namedNetworkProviderEnabled {
-				Expect(os.Setenv(lib.NetworkProviderType, lib.NetworkProviderTypeNamed)).To(Succeed())
+				pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+					config.NetworkProviderType = pkgconfig.NetworkProviderTypeNamed
+				})
 			}
 			np = network.NewProvider(ctx.Client, ctx.VCClient.Client, ctx.Finder, nil)
-		})
-
-		AfterEach(func() {
-			Expect(os.Setenv(lib.NetworkProviderType, oldNetworkProviderType)).To(Succeed())
 		})
 
 		Context("Disabled", func() {
@@ -208,7 +203,7 @@ var _ = Describe("NetworkProvider", func() {
 
 		Context("ensure interface", func() {
 
-			// Long test due to poll timeout.
+			// Long test due to poll timeconfig.
 			It("create netop network interface object", func() {
 				Expect(ctx.Client.Delete(ctx, netIf)).To(Succeed())
 
@@ -544,7 +539,7 @@ var _ = Describe("NetworkProvider", func() {
 
 		Context("ensure interface", func() {
 
-			// Long test due to poll timeout.
+			// Long test due to poll timeconfig.
 			It("create ncp virtual network interface object", func() {
 				Expect(ctx.Client.Delete(ctx, ncpVif)).To(Succeed())
 

@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	patch "github.com/vmware-tanzu/vm-operator/pkg/patch2"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
@@ -33,6 +34,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	)
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		ctx.VMProviderA2,
@@ -44,10 +46,12 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
 	vmProvider vmprovider.VirtualMachineProviderInterfaceA2) *Reconciler {
 	return &Reconciler{
+		Context:    ctx,
 		Client:     client,
 		Logger:     logger,
 		VMProvider: vmProvider,
@@ -56,6 +60,7 @@ func NewReconciler(
 
 // Reconciler reconciles a VirtualMachineSetResourcePolicy object.
 type Reconciler struct {
+	Context goctx.Context
 	client.Client
 	Logger     logr.Logger
 	VMProvider vmprovider.VirtualMachineProviderInterfaceA2
@@ -132,6 +137,8 @@ func (r *Reconciler) ReconcileDelete(ctx *context.VirtualMachineSetResourcePolic
 // +kubebuilder:rbac:groups=vmoperator.vmware.com,resources=virtualmachinesetresourcepolicies/status,verbs=get;update;patch
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	rp := &vmopv1.VirtualMachineSetResourcePolicy{}
 	if err := r.Get(ctx, req.NamespacedName, rp); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)

@@ -16,8 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 )
 
 type infraProvider interface {
@@ -32,13 +32,14 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	)
 
 	var provider infraProvider
-	if lib.IsVMServiceV1Alpha2FSSEnabled() {
+	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
 		provider = ctx.VMProviderA2
 	} else {
 		provider = ctx.VMProvider
 	}
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		provider,
@@ -67,10 +68,12 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
 	provider infraProvider) *Reconciler {
 	return &Reconciler{
+		Context:  ctx,
 		Client:   client,
 		Logger:   logger,
 		provider: provider,
@@ -79,6 +82,7 @@ func NewReconciler(
 
 type Reconciler struct {
 	client.Client
+	Context  goctx.Context
 	Logger   logr.Logger
 	provider infraProvider
 }
@@ -86,6 +90,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 
 func (r *Reconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	r.Logger.Info("Received reconcile request", "namespace", req.Namespace, "name", req.Name)
 
 	// Update the minimum CPU frequency. This frequency is used to populate the resource allocation

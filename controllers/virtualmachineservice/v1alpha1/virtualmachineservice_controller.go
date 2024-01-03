@@ -6,7 +6,6 @@ package v1alpha1
 import (
 	goctx "context"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 
@@ -29,6 +28,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/v1alpha1/providers"
 	"github.com/vmware-tanzu/vm-operator/controllers/virtualmachineservice/v1alpha1/utils"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/patch"
 	"github.com/vmware-tanzu/vm-operator/pkg/record"
@@ -51,10 +51,9 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	lbProviderType := os.Getenv("LB_PROVIDER")
+	lbProviderType := pkgconfig.FromContext(ctx).LoadBalancerProvider
 	if lbProviderType == "" {
-		vdsNetwork := os.Getenv("VSPHERE_NETWORKING")
-		if vdsNetwork != "true" {
+		if !pkgconfig.FromContext(ctx).VSphereNetworking {
 			lbProviderType = providers.NSXTLoadBalancer
 		}
 	}
@@ -65,6 +64,7 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 	}
 
 	r := NewReconciler(
+		ctx,
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName(controlledTypeName),
 		record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -84,12 +84,14 @@ func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) er
 }
 
 func NewReconciler(
+	ctx goctx.Context,
 	client client.Client,
 	logger logr.Logger,
 	recorder record.Recorder,
 	lbProvider providers.LoadbalancerProvider,
 ) *ReconcileVirtualMachineService {
 	return &ReconcileVirtualMachineService{
+		Context:              ctx,
 		Client:               client,
 		log:                  logger,
 		recorder:             recorder,
@@ -101,6 +103,7 @@ var _ reconcile.Reconciler = &ReconcileVirtualMachineService{}
 
 // ReconcileVirtualMachineService reconciles a VirtualMachineService object.
 type ReconcileVirtualMachineService struct {
+	Context goctx.Context
 	client.Client
 	log                  logr.Logger
 	recorder             record.Recorder
@@ -116,6 +119,8 @@ type ReconcileVirtualMachineService struct {
 // +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ReconcileVirtualMachineService) Reconcile(ctx goctx.Context, request reconcile.Request) (_ reconcile.Result, reterr error) {
+	ctx = pkgconfig.JoinContext(ctx, r.Context)
+
 	vmService := &vmopv1.VirtualMachineService{}
 	if err := r.Get(ctx, request.NamespacedName, vmService); err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)

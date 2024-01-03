@@ -13,8 +13,8 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
-	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
@@ -146,7 +146,7 @@ func (s *Session) updateVMStatus(
 		vm.Status.ChangeBlockTracking = nil
 	}
 
-	if lib.IsWcpFaultDomainsFSSEnabled() {
+	if pkgconfig.FromContext(vmCtx).Features.FaultDomains {
 		zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
 
 		if zoneName == "" {

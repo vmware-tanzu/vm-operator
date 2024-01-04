@@ -97,6 +97,24 @@ var _ = Describe("Validate CloudConfigJSONRawMessage", func() {
 			})
 		})
 	})
+
+	When("The CloudConfig's first file content is unset", func() {
+		BeforeEach(func() {
+			cloudConfig.WriteFiles[0].Content = nil
+		})
+		It("Should not return any errors", func() {
+			Expect(errs).To(HaveLen(0))
+		})
+	})
+
+	When("The CloudConfig's first file content is empty", func() {
+		BeforeEach(func() {
+			cloudConfig.WriteFiles[0].Content = []byte(``)
+		})
+		It("Should not return any errors", func() {
+			Expect(errs).To(HaveLen(0))
+		})
+	})
 })
 
 var _ = Describe("Validate CloudConfigYAML", func() {

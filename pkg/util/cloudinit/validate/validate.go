@@ -102,23 +102,28 @@ func validateWriteFiles(
 	for i := range in {
 		fieldPath := fieldPath.Key(in[i].Path)
 
+		content := in[i].Content
+		if len(content) == 0 {
+			content = []byte(`""`)
+		}
+
 		// First try to unmarshal the value into a string. If that does
 		// not work, try unmarshaling the data into a SecretKeySelector object.
 		var singleString string
 		if err := json.Unmarshal(
-			in[i].Content,
+			content,
 			&singleString); err != nil {
 
 			var sks common.SecretKeySelector
 			if err := json.Unmarshal(
-				in[i].Content,
+				content,
 				&sks); err != nil {
 
 				allErrs = append(
 					allErrs,
 					field.Invalid(
 						fieldPath,
-						string(in[i].Content),
+						string(content),
 						invalidWriteFileContent))
 			}
 		}

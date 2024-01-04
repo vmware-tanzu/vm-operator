@@ -98,8 +98,13 @@ go test "${GO_TEST_FLAGS_NORACE[@]+"${GO_TEST_FLAGS_NORACE[@]}"}" \
 
 # Merge the race/norace code coverage files.
 if [ -n "${COVERAGE_FILE:-}" ]; then
+  # Removing coverage for generated code
+    TMP_API_COVERAGE_FILE="$(mktemp)"
+    mv "${API_COVERAGE_FILE}" "${TMP_API_COVERAGE_FILE}"
+    cat "${TMP_API_COVERAGE_FILE}" | grep -v "zz_generated*" > "${API_COVERAGE_FILE}"
+
   TMP_COVERAGE_FILE="$(mktemp)"
   mv "${COVERAGE_FILE}" "${TMP_COVERAGE_FILE}"
   gocovmerge "${API_COVERAGE_FILE}" "${TMP_COVERAGE_FILE}" "${COVERAGE_FILE_NORACE}" >"${COVERAGE_FILE}"
-  rm -f "${API_COVERAGE_FILE}" "${TMP_COVERAGE_FILE}" "${COVERAGE_FILE_NORACE}"
+  rm -f "${API_COVERAGE_FILE}" "${TMP_API_COVERAGE_FILE}" "${TMP_COVERAGE_FILE}" "${COVERAGE_FILE_NORACE}"
 fi

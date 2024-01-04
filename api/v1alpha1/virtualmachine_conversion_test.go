@@ -5,6 +5,7 @@ package v1alpha1_test
 
 import (
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -25,9 +26,8 @@ import (
 )
 
 func TestVirtualMachineConversion(t *testing.T) {
-	g := NewWithT(t)
 
-	hubSpokeHub := func(hub conversion.Hub, spoke conversion.Convertible) {
+	hubSpokeHub := func(g *WithT, hub conversion.Hub, spoke conversion.Convertible) {
 		hubBefore := hub.DeepCopyObject().(conversion.Hub)
 
 		// First convert hub to spoke
@@ -41,7 +41,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(apiequality.Semantic.DeepEqual(hubBefore, hubAfter)).To(BeTrue(), cmp.Diff(hubBefore, hubAfter))
 	}
 
-	spokeHubSpoke := func(spoke conversion.Convertible, hub conversion.Hub) {
+	spokeHubSpoke := func(g *WithT, spoke conversion.Convertible, hub conversion.Hub) {
 		spokeBefore := spoke.DeepCopyObject().(conversion.Convertible)
 
 		// First convert spoke to hub
@@ -59,6 +59,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 	}
 
 	t.Run("VirtualMachine hub-spoke-hub", func(t *testing.T) {
+		g := NewWithT(t)
+
 		hub := nextver.VirtualMachine{
 			Spec: nextver.VirtualMachineSpec{
 				ImageName:    "my-name",
@@ -184,10 +186,12 @@ func TestVirtualMachineConversion(t *testing.T) {
 			},
 		}
 
-		hubSpokeHub(&hub, &v1alpha1.VirtualMachine{})
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
 	})
 
 	t.Run("VirtualMachine hub-spoke-hub with inlined CloudInit", func(t *testing.T) {
+		g := NewWithT(t)
+
 		hub := nextver.VirtualMachine{
 			Spec: nextver.VirtualMachineSpec{
 				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
@@ -206,10 +210,12 @@ func TestVirtualMachineConversion(t *testing.T) {
 			},
 		}
 
-		hubSpokeHub(&hub, &v1alpha1.VirtualMachine{})
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
 	})
 
 	t.Run("VirtualMachine hub-spoke-hub with inlined Sysprep", func(t *testing.T) {
+		g := NewWithT(t)
+
 		hub := nextver.VirtualMachine{
 			Spec: nextver.VirtualMachineSpec{
 				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
@@ -233,10 +239,12 @@ func TestVirtualMachineConversion(t *testing.T) {
 			},
 		}
 
-		hubSpokeHub(&hub, &v1alpha1.VirtualMachine{})
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
 	})
 
 	t.Run("VirtualMachine hub-spoke-hub with LinuxPrep and vAppConfig", func(t *testing.T) {
+		g := NewWithT(t)
+
 		hub := nextver.VirtualMachine{
 			Spec: nextver.VirtualMachineSpec{
 				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
@@ -259,10 +267,12 @@ func TestVirtualMachineConversion(t *testing.T) {
 			},
 		}
 
-		hubSpokeHub(&hub, &v1alpha1.VirtualMachine{})
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
 	})
 
 	t.Run("VirtualMachine hub-spoke-hub with vAppConfig", func(t *testing.T) {
+		g := NewWithT(t)
+
 		hub := nextver.VirtualMachine{
 			Spec: nextver.VirtualMachineSpec{
 				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
@@ -281,10 +291,12 @@ func TestVirtualMachineConversion(t *testing.T) {
 			},
 		}
 
-		hubSpokeHub(&hub, &v1alpha1.VirtualMachine{})
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
 	})
 
 	t.Run("VirtualMachine hub-spoke Status", func(t *testing.T) {
+		g := NewWithT(t)
+
 		hub := nextver.VirtualMachine{
 			Status: nextver.VirtualMachineStatus{
 				Network: &nextver.VirtualMachineNetworkStatus{
@@ -321,7 +333,219 @@ func TestVirtualMachineConversion(t *testing.T) {
 		g.Expect(spoke.Status.Phase).To(Equal(v1alpha1.Created))
 	})
 
+	t.Run("VirtualMachine hub-spoke Status Conditions", func(t *testing.T) {
+		loc, err := time.LoadLocation("UTC")
+		NewWithT(t).Expect(err).ToNot(HaveOccurred())
+		now := metav1.Date(2000, time.January, 1, 0, 0, 0, 0, loc)
+
+		vmClassCond := metav1.Condition{
+			Type:               nextver.VirtualMachineConditionClassReady,
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: metav1.NewTime(now.AddDate(1, 0, 0)),
+		}
+		vmImageCond := metav1.Condition{
+			Type:               nextver.VirtualMachineConditionImageReady,
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: metav1.NewTime(now.AddDate(2, 0, 0)),
+		}
+		vmSetRPCond := metav1.Condition{
+			Type:               nextver.VirtualMachineConditionVMSetResourcePolicyReady,
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: metav1.NewTime(now.AddDate(3, 0, 0)),
+		}
+		vmBSCond := metav1.Condition{
+			Type:               nextver.VirtualMachineConditionBootstrapReady,
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: metav1.NewTime(now.AddDate(4, 0, 0)),
+		}
+
+		findCond := func(conditions []v1alpha1.Condition, t v1alpha1.ConditionType) *v1alpha1.Condition {
+			for _, c := range conditions {
+				if c.Type == t {
+					return &c
+				}
+			}
+			return nil
+		}
+
+		t.Run("Prereqs are ready", func(t *testing.T) {
+
+			t.Run("Class and Image Conditions", func(t *testing.T) {
+				g := NewWithT(t)
+
+				hub := nextver.VirtualMachine{}
+				hub.Status.Conditions = []metav1.Condition{vmClassCond, vmImageCond}
+
+				spoke := &v1alpha1.VirtualMachine{}
+				g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+				g.Expect(spoke.Status.Conditions).To(HaveLen(len(hub.Status.Conditions) + 1))
+
+				c := findCond(spoke.Status.Conditions, v1alpha1.VirtualMachinePrereqReadyCondition)
+				g.Expect(c).ToNot(BeNil())
+				g.Expect(c.Status).To(Equal(corev1.ConditionTrue))
+				g.Expect(c.Reason).To(BeEmpty())
+				g.Expect(c.Message).To(BeEmpty())
+				g.Expect(c.LastTransitionTime).To(Equal(vmImageCond.LastTransitionTime))
+			})
+
+			t.Run("All Prereq Conditions", func(t *testing.T) {
+				g := NewWithT(t)
+
+				hub := nextver.VirtualMachine{}
+				hub.Status.Conditions = []metav1.Condition{vmClassCond, vmImageCond, vmSetRPCond, vmBSCond}
+
+				spoke := &v1alpha1.VirtualMachine{}
+				g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+				g.Expect(spoke.Status.Conditions).To(HaveLen(len(hub.Status.Conditions) + 1))
+
+				c := findCond(spoke.Status.Conditions, v1alpha1.VirtualMachinePrereqReadyCondition)
+				g.Expect(c).ToNot(BeNil())
+				g.Expect(c.Status).To(Equal(corev1.ConditionTrue))
+				g.Expect(c.Reason).To(BeEmpty())
+				g.Expect(c.Message).To(BeEmpty())
+				g.Expect(c.LastTransitionTime).To(Equal(vmImageCond.LastTransitionTime))
+			})
+
+			t.Run("Existing PrereqReady is in spoke", func(t *testing.T) {
+				g := NewWithT(t)
+
+				hub := nextver.VirtualMachine{}
+				hub.Status.Conditions = []metav1.Condition{vmClassCond, vmImageCond, vmSetRPCond, vmBSCond}
+
+				spoke := &v1alpha1.VirtualMachine{
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionFalse,
+								Reason:             "should be updated",
+								LastTransitionTime: metav1.NewTime(now.AddDate(1000, 0, 0)),
+							},
+						},
+					},
+				}
+
+				g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+				g.Expect(spoke.Status.Conditions).To(HaveLen(len(hub.Status.Conditions) + 1))
+
+				c := findCond(spoke.Status.Conditions, v1alpha1.VirtualMachinePrereqReadyCondition)
+				g.Expect(c).ToNot(BeNil())
+				g.Expect(c.Status).To(Equal(corev1.ConditionTrue))
+				g.Expect(c.Reason).To(BeEmpty())
+				g.Expect(c.Message).To(BeEmpty())
+				g.Expect(c.LastTransitionTime).To(Equal(vmImageCond.LastTransitionTime))
+			})
+		})
+
+		t.Run("Prereqs are not ready", func(t *testing.T) {
+
+			t.Run("Class not ready", func(t *testing.T) {
+				g := NewWithT(t)
+
+				notReadyC := vmClassCond
+				notReadyC.Status = metav1.ConditionFalse
+				notReadyC.Message = "foobar"
+
+				hub := nextver.VirtualMachine{}
+				hub.Status.Conditions = []metav1.Condition{notReadyC}
+
+				spoke := &v1alpha1.VirtualMachine{}
+				g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+				g.Expect(spoke.Status.Conditions).To(HaveLen(len(hub.Status.Conditions) + 1))
+
+				c := findCond(spoke.Status.Conditions, v1alpha1.VirtualMachinePrereqReadyCondition)
+				g.Expect(c).ToNot(BeNil())
+				g.Expect(c.Status).To(Equal(corev1.ConditionFalse))
+				g.Expect(c.Reason).To(Equal(v1alpha1.VirtualMachineClassNotFoundReason))
+				g.Expect(c.Message).To(Equal("foobar"))
+				g.Expect(c.LastTransitionTime).To(Equal(notReadyC.LastTransitionTime))
+			})
+
+			t.Run("Image not ready", func(t *testing.T) {
+				g := NewWithT(t)
+
+				notReadyC := vmImageCond
+				notReadyC.Status = metav1.ConditionFalse
+				notReadyC.Message = "foobar"
+
+				hub := nextver.VirtualMachine{}
+				hub.Status.Conditions = []metav1.Condition{vmClassCond, notReadyC}
+
+				spoke := &v1alpha1.VirtualMachine{}
+				g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+				g.Expect(spoke.Status.Conditions).To(HaveLen(len(hub.Status.Conditions) + 1))
+
+				c := findCond(spoke.Status.Conditions, v1alpha1.VirtualMachinePrereqReadyCondition)
+				g.Expect(c).ToNot(BeNil())
+				g.Expect(c.Status).To(Equal(corev1.ConditionFalse))
+				g.Expect(c.Reason).To(Equal(v1alpha1.VirtualMachineImageNotFoundReason))
+				g.Expect(c.Message).To(Equal("foobar"))
+				g.Expect(c.LastTransitionTime).To(Equal(notReadyC.LastTransitionTime))
+
+				t.Run("Existing PrereqReady in spoke", func(t *testing.T) {
+					spoke := &v1alpha1.VirtualMachine{
+						Status: v1alpha1.VirtualMachineStatus{
+							Conditions: []v1alpha1.Condition{
+								{
+									Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+									Status:             corev1.ConditionFalse,
+									Reason:             "should be updated",
+									LastTransitionTime: metav1.NewTime(now.AddDate(1000, 0, 0)),
+								},
+							},
+						},
+					}
+
+					g.Expect(spoke.ConvertFrom(&hub)).To(Succeed())
+					g.Expect(spoke.Status.Conditions).To(HaveLen(len(hub.Status.Conditions) + 1))
+
+					c := findCond(spoke.Status.Conditions, v1alpha1.VirtualMachinePrereqReadyCondition)
+					g.Expect(c).ToNot(BeNil())
+					g.Expect(c.Status).To(Equal(corev1.ConditionFalse))
+					g.Expect(c.Reason).To(Equal(v1alpha1.VirtualMachineImageNotFoundReason))
+					g.Expect(c.Message).To(Equal("foobar"))
+					g.Expect(c.LastTransitionTime).To(Equal(notReadyC.LastTransitionTime))
+				})
+			})
+		})
+	})
+
+	t.Run("VirtualMachine spoke-hub Status Conditions", func(t *testing.T) {
+
+		t.Run("Converts Condition", func(t *testing.T) {
+			g := NewWithT(t)
+
+			now := metav1.Now()
+			spoke := v1alpha1.VirtualMachine{
+				Status: v1alpha1.VirtualMachineStatus{
+					Conditions: []v1alpha1.Condition{
+						{
+							Type:               v1alpha1.GuestCustomizationCondition,
+							Status:             corev1.ConditionFalse,
+							LastTransitionTime: now,
+							Reason:             "Reason",
+							Message:            "Message",
+						},
+					},
+				},
+			}
+
+			hub := &nextver.VirtualMachine{}
+			g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+			g.Expect(hub.Status.Conditions).To(HaveLen(1))
+
+			c := hub.Status.Conditions[0]
+			g.Expect(c.Type).To(Equal(nextver.GuestCustomizationCondition))
+			g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(c.LastTransitionTime).To(Equal(now))
+			g.Expect(c.Reason).To(Equal("Reason"))
+			g.Expect(c.Message).To(Equal("Message"))
+		})
+	})
+
 	t.Run("VirtualMachine spoke-hub-spoke with TKG CP", func(t *testing.T) {
+		g := NewWithT(t)
+
 		spoke := v1alpha1.VirtualMachine{
 			Spec: v1alpha1.VirtualMachineSpec{
 				ClassName: "best-effort-small",
@@ -364,10 +588,12 @@ func TestVirtualMachineConversion(t *testing.T) {
 			},
 		}
 
-		spokeHubSpoke(&spoke, &nextver.VirtualMachine{})
+		spokeHubSpoke(g, &spoke, &nextver.VirtualMachine{})
 	})
 
 	t.Run("VirtualMachine spoke-hub-spoke with CloudInit EC", func(t *testing.T) {
+		g := NewWithT(t)
+
 		// This transport is really old and probably never used.
 		spoke := v1alpha1.VirtualMachine{
 			Spec: v1alpha1.VirtualMachineSpec{
@@ -381,6 +607,6 @@ func TestVirtualMachineConversion(t *testing.T) {
 			},
 		}
 
-		spokeHubSpoke(&spoke, &nextver.VirtualMachine{})
+		spokeHubSpoke(g, &spoke, &nextver.VirtualMachine{})
 	})
 }

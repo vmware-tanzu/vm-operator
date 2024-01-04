@@ -668,7 +668,6 @@ func Convert_v1alpha1_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 
 	out.PowerState = convert_v1alpha1_VirtualMachinePowerState_To_v1alpha2_VirtualMachinePowerState(in.PowerState)
 	out.Network = convert_v1alpha1_Network_To_v1alpha2_NetworkStatus(in.VmIp, in.NetworkInterfaces)
-	out.LastRestartTime = in.LastRestartTime
 
 	// WARNING: in.Phase requires manual conversion: does not exist in peer-type
 

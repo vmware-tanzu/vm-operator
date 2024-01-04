@@ -95,8 +95,9 @@ func convert_v1alpha1_VirtualMachineImage_OVFEnv_To_v1alpha2_VirtualMachineImage
 
 func convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMachineImageStatusConditions(
 	conditions []metav1.Condition) []Condition {
+
 	if len(conditions) == 0 {
-		return []Condition{}
+		return nil
 	}
 
 	var (
@@ -132,17 +133,14 @@ func convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMac
 
 	switch readyCondition.Reason {
 	case v1alpha2.VirtualMachineImageProviderSecurityNotCompliantReason:
-		securityCompliantCondition = falseConditionWithReason(
-			VirtualMachineImageProviderSecurityComplianceCondition)
+		securityCompliantCondition = falseConditionWithReason(VirtualMachineImageProviderSecurityComplianceCondition)
 	case v1alpha2.VirtualMachineImageProviderNotReadyReason:
 		securityCompliantCondition = trueCondition(VirtualMachineImageProviderSecurityComplianceCondition)
-		imageProviderReadyCondition = falseConditionWithReason(
-			VirtualMachineImageProviderReadyCondition)
+		imageProviderReadyCondition = falseConditionWithReason(VirtualMachineImageProviderReadyCondition)
 	case v1alpha2.VirtualMachineImageNotSyncedReason:
 		securityCompliantCondition = trueCondition(VirtualMachineImageProviderSecurityComplianceCondition)
 		imageProviderReadyCondition = trueCondition(VirtualMachineImageProviderReadyCondition)
-		imageSyncedCondition = falseConditionWithReason(
-			VirtualMachineImageSyncedCondition)
+		imageSyncedCondition = falseConditionWithReason(VirtualMachineImageSyncedCondition)
 	default:
 		securityCompliantCondition = trueCondition(VirtualMachineImageProviderSecurityComplianceCondition)
 		imageProviderReadyCondition = trueCondition(VirtualMachineImageProviderReadyCondition)
@@ -153,11 +151,11 @@ func convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMac
 	if securityCompliantCondition != nil {
 		v1a1Conditions = append(v1a1Conditions, *securityCompliantCondition)
 	}
-	if imageSyncedCondition != nil {
-		v1a1Conditions = append(v1a1Conditions, *imageSyncedCondition)
-	}
 	if imageProviderReadyCondition != nil {
 		v1a1Conditions = append(v1a1Conditions, *imageProviderReadyCondition)
+	}
+	if imageSyncedCondition != nil {
+		v1a1Conditions = append(v1a1Conditions, *imageSyncedCondition)
 	}
 
 	return v1a1Conditions
@@ -165,13 +163,14 @@ func convert_v1alpha2_VirtualMachineImageStatusConditions_To_v1alpha1_VirtualMac
 
 func convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha2_VirtualMachineImageStatusConditions(
 	conditions []Condition) []metav1.Condition {
+
 	if len(conditions) == 0 {
-		return []metav1.Condition{}
+		return nil
 	}
 
 	var (
 		readyCondition *metav1.Condition
-		// we calculate the latest transition time to best case set the
+		// We calculate the latest transition time to best case set the
 		// latest transition time when the ready condition would be set.
 		latestTransitionTime metav1.Time
 	)
@@ -184,8 +183,7 @@ func convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha2_VirtualMac
 	}
 
 	for _, condition := range conditions {
-		if _, ok := oldConditionTypes[condition.Type]; ok &&
-			condition.Status == corev1.ConditionFalse {
+		if _, ok := oldConditionTypes[condition.Type]; ok && condition.Status == corev1.ConditionFalse {
 			readyCondition = &metav1.Condition{
 				Type:               v1alpha2.ReadyConditionType,
 				Status:             metav1.ConditionFalse,
@@ -206,6 +204,13 @@ func convert_v1alpha1_VirtualMachineImageStatusConditions_To_v1alpha2_VirtualMac
 			Status:             metav1.ConditionTrue,
 			LastTransitionTime: latestTransitionTime,
 		}
+	}
+
+	if readyCondition.Reason == "" {
+		// Reason is a required field in metav1.Condition. This is what
+		// Convert_v1alpha1_Condition_To_v1_Condition() does, but we're
+		// creating our own metav1.Condition here.
+		readyCondition.Reason = string(readyCondition.Status)
 	}
 
 	return []metav1.Condition{*readyCondition}

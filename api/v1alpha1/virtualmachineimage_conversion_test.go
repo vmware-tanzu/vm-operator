@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
 	"github.com/onsi/gomega/gstruct"
 	corev1 "k8s.io/api/core/v1"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
@@ -19,9 +19,9 @@ import (
 )
 
 func TestVirtualMachineImageConversion(t *testing.T) {
-	g := NewWithT(t)
-
 	t.Run("VirtualMachineImage hub-spoke-hub", func(t *testing.T) {
+		g := NewWithT(t)
+
 		hub := &nextver.VirtualMachineImage{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-image",
@@ -43,6 +43,157 @@ func TestVirtualMachineImageConversion(t *testing.T) {
 		g.Expect(spoke.Spec.ProviderRef.Kind).To(Equal("ImageProvider"))
 		g.Expect(spoke.Spec.ProviderRef.Name).To(Equal("my-image"))
 		g.Expect(spoke.Spec.ProviderRef.Namespace).To(Equal("my-namespace"))
+	})
+
+	t.Run("VirtualMachineImage spoke-hub Conditions", func(t *testing.T) {
+		now := metav1.Now()
+		later := metav1.NewTime(now.AddDate(1, 0, 0))
+
+		t.Run("Ready true", func(t *testing.T) {
+			g := NewWithT(t)
+
+			spoke := &v1alpha1.VirtualMachineImage{
+				Status: v1alpha1.VirtualMachineImageStatus{
+					Conditions: []v1alpha1.Condition{
+						{
+							Type:               v1alpha1.VirtualMachineImageSyncedCondition,
+							Status:             corev1.ConditionTrue,
+							LastTransitionTime: now,
+						},
+						{
+							Type:               v1alpha1.VirtualMachineImageProviderReadyCondition,
+							Status:             corev1.ConditionTrue,
+							LastTransitionTime: later,
+						},
+						{
+							Type:               v1alpha1.VirtualMachineImageProviderSecurityComplianceCondition,
+							Status:             corev1.ConditionTrue,
+							LastTransitionTime: now,
+						},
+					},
+				},
+			}
+
+			hub := &nextver.VirtualMachineImage{}
+			g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+
+			g.Expect(hub.Status.Conditions).To(HaveLen(1))
+			c := hub.Status.Conditions[0]
+			g.Expect(c.Type).To(Equal(nextver.ReadyConditionType))
+			g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+			g.Expect(c.LastTransitionTime).To(Equal(later))
+		})
+
+		t.Run("Ready false", func(t *testing.T) {
+			g := NewWithT(t)
+
+			spoke := &v1alpha1.VirtualMachineImage{
+				Status: v1alpha1.VirtualMachineImageStatus{
+					Conditions: []v1alpha1.Condition{
+						{
+							Type:               v1alpha1.VirtualMachineImageSyncedCondition,
+							Status:             corev1.ConditionTrue,
+							LastTransitionTime: now,
+						},
+						{
+							Type:               v1alpha1.VirtualMachineImageProviderReadyCondition,
+							Status:             corev1.ConditionFalse,
+							Reason:             "ProviderNotReady",
+							Message:            "Message",
+							LastTransitionTime: later,
+						},
+						{
+							Type:               v1alpha1.VirtualMachineImageProviderSecurityComplianceCondition,
+							Status:             corev1.ConditionTrue,
+							LastTransitionTime: now,
+						},
+					},
+				},
+			}
+
+			hub := &nextver.VirtualMachineImage{}
+			g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+
+			g.Expect(hub.Status.Conditions).To(HaveLen(1))
+			c := hub.Status.Conditions[0]
+			g.Expect(c.Type).To(Equal(nextver.ReadyConditionType))
+			g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(c.Reason).To(Equal("ProviderNotReady"))
+			g.Expect(c.Message).To(Equal("Message"))
+			g.Expect(c.LastTransitionTime).To(Equal(later))
+		})
+	})
+
+	t.Run("VirtualMachineImage hub-spoke Conditions", func(t *testing.T) {
+		now := metav1.Now()
+
+		t.Run("Ready true", func(t *testing.T) {
+			g := NewWithT(t)
+
+			hub := &nextver.VirtualMachineImage{
+				Status: nextver.VirtualMachineImageStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               nextver.ReadyConditionType,
+							Status:             metav1.ConditionTrue,
+							LastTransitionTime: now,
+						},
+					},
+				},
+			}
+
+			spoke := &v1alpha1.VirtualMachineImage{}
+			g.Expect(spoke.ConvertFrom(hub)).To(Succeed())
+
+			g.Expect(spoke.Status.Conditions).To(HaveLen(3))
+			c := spoke.Status.Conditions[0]
+			g.Expect(c.Type).To(Equal(v1alpha1.VirtualMachineImageProviderSecurityComplianceCondition))
+			g.Expect(c.Status).To(Equal(corev1.ConditionTrue))
+			g.Expect(c.LastTransitionTime).To(Equal(now))
+			c = spoke.Status.Conditions[1]
+			g.Expect(c.Type).To(Equal(v1alpha1.VirtualMachineImageProviderReadyCondition))
+			g.Expect(c.Status).To(Equal(corev1.ConditionTrue))
+			g.Expect(c.LastTransitionTime).To(Equal(now))
+			c = spoke.Status.Conditions[2]
+			g.Expect(c.Type).To(Equal(v1alpha1.VirtualMachineImageSyncedCondition))
+			g.Expect(c.Status).To(Equal(corev1.ConditionTrue))
+			g.Expect(c.LastTransitionTime).To(Equal(now))
+		})
+
+		t.Run("Ready false", func(t *testing.T) {
+			g := NewWithT(t)
+
+			hub := &nextver.VirtualMachineImage{
+				Status: nextver.VirtualMachineImageStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               nextver.ReadyConditionType,
+							Status:             metav1.ConditionFalse,
+							Reason:             nextver.VirtualMachineImageNotSyncedReason,
+							LastTransitionTime: now,
+						},
+					},
+				},
+			}
+
+			spoke := &v1alpha1.VirtualMachineImage{}
+			g.Expect(spoke.ConvertFrom(hub)).To(Succeed())
+
+			g.Expect(spoke.Status.Conditions).To(HaveLen(3))
+			c := spoke.Status.Conditions[0]
+			g.Expect(c.Type).To(Equal(v1alpha1.VirtualMachineImageProviderSecurityComplianceCondition))
+			g.Expect(c.Status).To(Equal(corev1.ConditionTrue))
+			g.Expect(c.LastTransitionTime).To(Equal(now))
+			c = spoke.Status.Conditions[1]
+			g.Expect(c.Type).To(Equal(v1alpha1.VirtualMachineImageProviderReadyCondition))
+			g.Expect(c.Status).To(Equal(corev1.ConditionTrue))
+			g.Expect(c.LastTransitionTime).To(Equal(now))
+			c = spoke.Status.Conditions[2]
+			g.Expect(c.Type).To(Equal(v1alpha1.VirtualMachineImageSyncedCondition))
+			g.Expect(c.Status).To(Equal(corev1.ConditionFalse))
+			g.Expect(c.LastTransitionTime).To(Equal(now))
+		})
 	})
 }
 

@@ -147,3 +147,20 @@ users:
 #     lock_passwd: True
 #     gecos: Ubuntu
 #     groups: [adm, cdrom, dip, lxd, sudo]
+
+write_files:
+  - encoding: b64
+    content: CiMgVGhpcyBmaWxlIGNvbnRyb2xzIHRoZSBzdGF0ZSBvZiBTRUxpbnV4
+    owner: root:root
+    path: /etc/sysconfig/selinux
+    permissions: '0644'
+  - content: |
+      # My new /etc/sysconfig/samba file
+
+      SMBDOPTIONS="-D"
+    path: /etc/sysconfig/samba
+  - path: /tmp/user-content
+    permissions: '0444'
+    content:
+  - path: /bin/arch
+    permissions: '0555'

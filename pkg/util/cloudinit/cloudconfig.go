@@ -139,9 +139,11 @@ func MarshalYAML(
 			// a string from the Content field.
 			content := secret.WriteFiles[in.WriteFiles[i].Path]
 			if content == "" {
-				if err := json.Unmarshal(
-					in.WriteFiles[i].Content, &content); err != nil {
-
+				inContent := in.WriteFiles[i].Content
+				if len(inContent) == 0 {
+					inContent = []byte(`""`)
+				}
+				if err := json.Unmarshal(inContent, &content); err != nil {
 					return "", err
 				}
 			}

@@ -152,6 +152,97 @@ var _ = Describe("CloudConfig MarshalYAML", func() {
 		})
 	})
 
+	When("CloudConfig has WriteFiles", func() {
+		BeforeEach(func() {
+			cloudConfig = vmopv1cloudinit.CloudConfig{
+				Users: []vmopv1cloudinit.User{
+					{
+						Name: "bob.wilson",
+						HashedPasswd: &common.SecretKeySelector{
+							Name: "my-bootstrap-data",
+							Key:  "cloud-init-user-bob.wilson-hashed_passwd",
+						},
+					},
+				},
+				WriteFiles: []vmopv1cloudinit.WriteFile{
+					{
+						Path:    "/hello",
+						Content: []byte(`"world"`),
+					},
+					{
+						Path:    "/hi",
+						Content: []byte(`"there"`),
+					},
+				},
+			}
+			cloudConfigSecretData = cloudinit.CloudConfigSecretData{
+				Users: map[string]cloudinit.CloudConfigUserSecretData{
+					"bob.wilson": {
+						HashPasswd: "0123456789",
+					},
+				},
+			}
+		})
+
+		It("Should return user data", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(data).To(Equal(cloudConfigWithNoDefaultUser))
+		})
+
+		When("Write File content is not present", func() {
+			BeforeEach(func() {
+				cloudConfig.WriteFiles = append(cloudConfig.WriteFiles, vmopv1cloudinit.WriteFile{
+					Path:        "/foo",
+					Append:      true,
+					Defer:       true,
+					Encoding:    vmopv1cloudinit.WriteFileEncodingTextPlain,
+					Permissions: "0644",
+				})
+			})
+
+			It("Should return user data", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(data).To(Equal(cloudConfigWithEmptyFileContent))
+			})
+		})
+
+		When("Write File content is unset", func() {
+			BeforeEach(func() {
+				cloudConfig.WriteFiles = append(cloudConfig.WriteFiles, vmopv1cloudinit.WriteFile{
+					Path:        "/foo",
+					Content:     nil,
+					Append:      true,
+					Defer:       true,
+					Encoding:    vmopv1cloudinit.WriteFileEncodingTextPlain,
+					Permissions: "0644",
+				})
+			})
+
+			It("Should return user data", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(data).To(Equal(cloudConfigWithEmptyFileContent))
+			})
+		})
+
+		When("Write File content is empty", func() {
+			BeforeEach(func() {
+				cloudConfig.WriteFiles = append(cloudConfig.WriteFiles, vmopv1cloudinit.WriteFile{
+					Path:        "/foo",
+					Content:     []byte(``),
+					Append:      true,
+					Defer:       true,
+					Encoding:    vmopv1cloudinit.WriteFileEncodingTextPlain,
+					Permissions: "0644",
+				})
+			})
+
+			It("Should return user data", func() {
+				Expect(err).ToNot(HaveOccurred())
+				Expect(data).To(Equal(cloudConfigWithEmptyFileContent))
+			})
+		})
+	})
+
 	When("CloudConfig has all possible fields set", func() {
 		BeforeEach(func() {
 			cloudConfig = vmopv1cloudinit.CloudConfig{
@@ -457,6 +548,24 @@ runcmd:
     - /
   - - echo
     - hello, world.
+`
+
+const cloudConfigWithEmptyFileContent = `## template: jinja
+#cloud-config
+
+users:
+  - hashed_passwd: "0123456789"
+    name: bob.wilson
+write_files:
+  - content: world
+    path: /hello
+  - content: there
+    path: /hi
+  - append: true
+    defer: true
+    encoding: text/plain
+    path: /foo
+    permissions: "0644"
 `
 
 const cloudConfigWithAllPossibleValues = `## template: jinja

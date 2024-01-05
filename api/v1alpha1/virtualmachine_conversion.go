@@ -676,7 +676,7 @@ func Convert_v1alpha1_VirtualMachineStatus_To_v1alpha2_VirtualMachineStatus(
 }
 
 func translate_v1alpha2_Conditions_To_v1alpha1_Conditions(conditions []Condition) []Condition {
-	var preReqCond, vmClassCond, vmImageCond, vmSetResourcePolicy, vmBootstrap *Condition
+	var preReqCond, vmClassCond, vmImageCond, vmSetResourcePolicyCond, vmBootstrapCond *Condition
 
 	for i := range conditions {
 		c := &conditions[i]
@@ -689,9 +689,9 @@ func translate_v1alpha2_Conditions_To_v1alpha1_Conditions(conditions []Condition
 		case v1alpha2.VirtualMachineConditionImageReady:
 			vmImageCond = c
 		case v1alpha2.VirtualMachineConditionVMSetResourcePolicyReady:
-			vmSetResourcePolicy = c
+			vmSetResourcePolicyCond = c
 		case v1alpha2.VirtualMachineConditionBootstrapReady:
-			vmBootstrap = c
+			vmBootstrapCond = c
 		}
 	}
 
@@ -700,8 +700,8 @@ func translate_v1alpha2_Conditions_To_v1alpha1_Conditions(conditions []Condition
 	// the v1a1 prereqs, and are optional.
 	if vmClassCond != nil && vmClassCond.Status == corev1.ConditionTrue &&
 		vmImageCond != nil && vmImageCond.Status == corev1.ConditionTrue &&
-		(vmSetResourcePolicy == nil || vmSetResourcePolicy.Status == corev1.ConditionTrue) &&
-		(vmBootstrap == nil || vmBootstrap.Status == corev1.ConditionTrue) {
+		(vmSetResourcePolicyCond == nil || vmSetResourcePolicyCond.Status == corev1.ConditionTrue) &&
+		(vmBootstrapCond == nil || vmBootstrapCond.Status == corev1.ConditionTrue) {
 
 		p := Condition{
 			Type:   VirtualMachinePrereqReadyCondition,
@@ -743,8 +743,8 @@ func translate_v1alpha2_Conditions_To_v1alpha1_Conditions(conditions []Condition
 		return append(conditions, p)
 	}
 
-	if vmSetResourcePolicy != nil && vmSetResourcePolicy.Status == corev1.ConditionFalse &&
-		vmBootstrap != nil && vmBootstrap.Status == corev1.ConditionFalse {
+	if vmSetResourcePolicyCond != nil && vmSetResourcePolicyCond.Status == corev1.ConditionFalse &&
+		vmBootstrapCond != nil && vmBootstrapCond.Status == corev1.ConditionFalse {
 
 		// These are not a part of the v1a1 Prereqs. If either is false, the v1a1 provider would not
 		// update the prereqs condition, but we don't set the condition to true either until all these
@@ -892,6 +892,144 @@ func restore_v1alpha2_VirtualMachineReadinessProbeSpec(
 	}
 }
 
+func convert_v1alpha1_PreReqsReadyCondition_to_v1alpha2_Conditions(
+	dst *v1alpha2.VirtualMachine) []metav1.Condition {
+
+	var preReqCond, vmClassCond, vmImageCond, vmSetResourcePolicyCond, vmBootstrapCond *metav1.Condition
+	var preReqCondIdx int
+
+	for i := range dst.Status.Conditions {
+		c := &dst.Status.Conditions[i]
+
+		switch c.Type {
+		case string(VirtualMachinePrereqReadyCondition):
+			preReqCond = c
+			preReqCondIdx = i
+		case v1alpha2.VirtualMachineConditionClassReady:
+			vmClassCond = c
+		case v1alpha2.VirtualMachineConditionImageReady:
+			vmImageCond = c
+		case v1alpha2.VirtualMachineConditionVMSetResourcePolicyReady:
+			vmSetResourcePolicyCond = c
+		case v1alpha2.VirtualMachineConditionBootstrapReady:
+			vmBootstrapCond = c
+		}
+	}
+
+	// If we didn't find the v1a1 PrereqReady condition then there is nothing to do.
+	if preReqCond == nil {
+		return dst.Status.Conditions
+	}
+
+	// Remove the v1a1 PrereqReady condition if not nil
+	dst.Status.Conditions = append(dst.Status.Conditions[:preReqCondIdx], dst.Status.Conditions[preReqCondIdx+1:]...)
+
+	// If any of the v1a2 conditions were already evaluated, v1a1 PrereqReady condition has been removed, so move on.
+	if vmClassCond != nil || vmImageCond != nil || vmSetResourcePolicyCond != nil || vmBootstrapCond != nil {
+		return dst.Status.Conditions
+	}
+
+	var conditions []metav1.Condition
+	// If we don't have any of the new v1a2 conditions, use the v1a1 PrereqReady condition to fill
+	// that in. This means that this was originally a v1a1 VM.
+	if preReqCond.Status == metav1.ConditionTrue {
+		// The class and image are always required fields.
+		conditions = append(conditions, metav1.Condition{
+			Type:               v1alpha2.VirtualMachineConditionClassReady,
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: preReqCond.LastTransitionTime,
+			Reason:             string(metav1.ConditionTrue),
+		})
+		conditions = append(conditions, metav1.Condition{
+			Type:               v1alpha2.VirtualMachineConditionImageReady,
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: preReqCond.LastTransitionTime,
+			Reason:             string(metav1.ConditionTrue),
+		})
+
+		if dst.Spec.Reserved != nil && dst.Spec.Reserved.ResourcePolicyName != "" {
+			conditions = append(conditions, metav1.Condition{
+				Type:               v1alpha2.VirtualMachineConditionVMSetResourcePolicyReady,
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: preReqCond.LastTransitionTime,
+				Reason:             string(metav1.ConditionTrue),
+			})
+		}
+		if dst.Spec.Bootstrap != nil {
+			conditions = append(conditions, metav1.Condition{
+				Type:               v1alpha2.VirtualMachineConditionBootstrapReady,
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: preReqCond.LastTransitionTime,
+				Reason:             string(metav1.ConditionTrue),
+			})
+		}
+
+	} else if preReqCond.Status == metav1.ConditionFalse {
+		// Infer what v1a2 conditions need to be true/false from preReq reason.
+		// Order of evaluation of objects for v1a1 PreReq Condition:
+		// 1. VM Class (which includes VM Class Bindings)
+		// 2. VM Image (which includes ContentSourceBindings and ContentSourceProviders)
+
+		if preReqCond.Reason == VirtualMachineClassNotFoundReason ||
+			preReqCond.Reason == VirtualMachineClassBindingNotFoundReason {
+			conditions = append(conditions, metav1.Condition{
+				Type:               v1alpha2.VirtualMachineConditionClassReady,
+				Status:             metav1.ConditionFalse,
+				LastTransitionTime: preReqCond.LastTransitionTime,
+				Reason:             preReqCond.Reason,
+			})
+			// v1a1 Image preReq hasn't been evaluated yet -- mark unknown
+			conditions = append(conditions, metav1.Condition{
+				Type:               v1alpha2.VirtualMachineConditionImageReady,
+				Status:             metav1.ConditionUnknown,
+				LastTransitionTime: preReqCond.LastTransitionTime,
+				Reason:             string(metav1.ConditionUnknown),
+			})
+		} else if preReqCond.Reason == VirtualMachineImageNotFoundReason ||
+			preReqCond.Reason == VirtualMachineImageNotReadyReason ||
+			preReqCond.Reason == ContentSourceBindingNotFoundReason ||
+			preReqCond.Reason == ContentLibraryProviderNotFoundReason {
+
+			conditions = append(conditions, metav1.Condition{
+				Type:               v1alpha2.VirtualMachineConditionClassReady,
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: preReqCond.LastTransitionTime,
+				Reason:             string(metav1.ConditionTrue),
+			})
+			conditions = append(conditions, metav1.Condition{
+				Type:               v1alpha2.VirtualMachineConditionImageReady,
+				Status:             metav1.ConditionFalse,
+				LastTransitionTime: preReqCond.LastTransitionTime,
+				Reason:             preReqCond.Reason,
+			})
+		}
+
+		// v1a1 setPolicy has not been evaluated when preReq condition is false. Mark unknown in v1a2 when
+		// resourcePolicy is specified in VM Spec.
+		if dst.Spec.Reserved != nil && dst.Spec.Reserved.ResourcePolicyName != "" {
+			conditions = append(conditions, metav1.Condition{
+				Type:               v1alpha2.VirtualMachineConditionVMSetResourcePolicyReady,
+				Status:             metav1.ConditionUnknown,
+				LastTransitionTime: preReqCond.LastTransitionTime,
+				Reason:             string(metav1.ConditionUnknown),
+			})
+		}
+
+		// v1a1 vmMetadata has not been evaluated when preReq condition is false. Mark unknown in v1a2 when
+		// bootstrap is specified in VM Spec.
+		if dst.Spec.Bootstrap != nil {
+			conditions = append(conditions, metav1.Condition{
+				Type:               v1alpha2.VirtualMachineConditionBootstrapReady,
+				Status:             metav1.ConditionUnknown,
+				LastTransitionTime: preReqCond.LastTransitionTime,
+				Reason:             string(metav1.ConditionUnknown),
+			})
+		}
+	}
+
+	return append(dst.Status.Conditions, conditions...)
+}
+
 // ConvertTo converts this VirtualMachine to the Hub version.
 func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
 	dst := dstRaw.(*v1alpha2.VirtualMachine)
@@ -902,6 +1040,9 @@ func (src *VirtualMachine) ConvertTo(dstRaw conversion.Hub) error {
 	// Manually restore data.
 	restored := &v1alpha2.VirtualMachine{}
 	if ok, err := utilconversion.UnmarshalData(src, restored); err != nil || !ok {
+		// If there is no v1a2 object to restore, this was originally a v1a1 VM
+		// Make sure the v1a1 PreReq conditions are translated over to v1a2 correctly
+		dst.Status.Conditions = convert_v1alpha1_PreReqsReadyCondition_to_v1alpha2_Conditions(dst)
 		return err
 	}
 

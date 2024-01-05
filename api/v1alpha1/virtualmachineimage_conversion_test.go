@@ -5,6 +5,7 @@ package v1alpha1_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -19,19 +20,34 @@ import (
 )
 
 func TestVirtualMachineImageConversion(t *testing.T) {
-	t.Run("VirtualMachineImage hub-spoke-hub", func(t *testing.T) {
+	t.Run("VirtualMachineImage hub-spoke", func(t *testing.T) {
 		g := NewWithT(t)
 
 		hub := &nextver.VirtualMachineImage{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-image",
 				Namespace: "my-namespace",
+				Annotations: map[string]string{
+					"fizz": "buzz",
+				},
 			},
 			Spec: nextver.VirtualMachineImageSpec{
 				ProviderRef: nextver_common.LocalObjectRef{
 					APIVersion: "vmware.com/v1",
 					Kind:       "ImageProvider",
 					Name:       "my-image",
+				},
+			},
+			Status: nextver.VirtualMachineImageStatus{
+				VMwareSystemProperties: []nextver_common.KeyValuePair{
+					{
+						Key:   sysAnnotationKey("foo"),
+						Value: "foo-val",
+					},
+					{
+						Key:   sysAnnotationKey("bar"),
+						Value: "bar-val",
+					},
 				},
 			},
 		}
@@ -43,6 +59,39 @@ func TestVirtualMachineImageConversion(t *testing.T) {
 		g.Expect(spoke.Spec.ProviderRef.Kind).To(Equal("ImageProvider"))
 		g.Expect(spoke.Spec.ProviderRef.Name).To(Equal("my-image"))
 		g.Expect(spoke.Spec.ProviderRef.Namespace).To(Equal("my-namespace"))
+
+		g.Expect(spoke.Annotations).To(HaveLen(3))
+		g.Expect(spoke.Annotations).To(HaveKeyWithValue(sysAnnotationKey("foo"), "foo-val"))
+		g.Expect(spoke.Annotations).To(HaveKeyWithValue(sysAnnotationKey("bar"), "bar-val"))
+	})
+
+	t.Run("VirtualMachineImage spoke-hub", func(t *testing.T) {
+		g := NewWithT(t)
+
+		nextVerCVMI := &nextver.ClusterVirtualMachineImage{}
+		spoke := &v1alpha1.ClusterVirtualMachineImage{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "foo",
+				Annotations: map[string]string{
+					sysAnnotationKey("foo"): "foo-val",
+					sysAnnotationKey("bar"): "bar-val",
+					"fizz":                  "buzz",
+				},
+			},
+		}
+
+		g.Expect(spoke.ConvertTo(nextVerCVMI)).To(Succeed())
+		g.Expect(nextVerCVMI.Annotations).To(HaveLen(1))
+
+		props := nextVerCVMI.Status.VMwareSystemProperties
+		g.Expect(props).To(HaveLen(2))
+
+		kvMap := map[string]string{}
+		for _, prop := range props {
+			kvMap[prop.Key] = prop.Value
+		}
+		g.Expect(kvMap).To(HaveKeyWithValue(sysAnnotationKey("foo"), "foo-val"))
+		g.Expect(kvMap).To(HaveKeyWithValue(sysAnnotationKey("bar"), "bar-val"))
 	})
 
 	t.Run("VirtualMachineImage spoke-hub Conditions", func(t *testing.T) {
@@ -269,4 +318,8 @@ func Test_Status_ContentLibraryRef(t *testing.T) {
 			g.Expect(vmiAfter.Status.ContentLibraryRef).To(BeNil())
 		})
 	})
+}
+
+func sysAnnotationKey(item string) string {
+	return fmt.Sprintf("vmware-system-%s", item)
 }

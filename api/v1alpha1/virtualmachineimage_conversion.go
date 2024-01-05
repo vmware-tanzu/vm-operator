@@ -351,11 +351,10 @@ func convert_v1alpha1_VirtualMachineImageAnnotations_To_v1alpha2_VirtualMachineI
 	// copy v1a1 system annotations to v1a2 system properties status field
 	for k, v := range *in {
 		if strings.HasPrefix(k, "vmware-system") {
-			pair := common.KeyValuePair{
+			*dstSystemProperties = append(*dstSystemProperties, common.KeyValuePair{
 				Key:   k,
 				Value: v,
-			}
-			*dstSystemProperties = append(*dstSystemProperties, pair)
+			})
 		}
 	}
 

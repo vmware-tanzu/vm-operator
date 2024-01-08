@@ -163,14 +163,15 @@ func convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec(
 
 	switch in.Transport {
 	case VirtualMachineMetadataExtraConfigTransport:
-		out.LinuxPrep = &v1alpha2.VirtualMachineBootstrapLinuxPrepSpec{
-			HardwareClockIsUTC: true,
-		}
+		// This transport is obsolete. It should be combined with LinuxPrep but in v1a2 we don't
+		// allow CloudInit w/ LinuxPrep.
+		// out.LinuxPrep = &v1alpha2.VirtualMachineBootstrapLinuxPrepSpec{HardwareClockIsUTC: true}
+
 		out.CloudInit = &v1alpha2.VirtualMachineBootstrapCloudInitSpec{}
 		if objectName != "" {
 			out.CloudInit.RawCloudConfig = &common.SecretKeySelector{
 				Name: objectName,
-				Key:  "guestinfo.userdata", // TODO: Is this good enough? v1a1 would include everything with the "guestinfo" prefix
+				Key:  "guestinfo.userdata",
 			}
 		}
 	case VirtualMachineMetadataOvfEnvTransport:
@@ -778,10 +779,22 @@ func Convert_v1alpha2_VirtualMachineStatus_To_v1alpha1_VirtualMachineStatus(
 func restore_v1alpha2_VirtualMachineBootstrapSpec(
 	dst, src *v1alpha2.VirtualMachine) {
 
-	dstBootstrap := dst.Spec.Bootstrap
 	srcBootstrap := src.Spec.Bootstrap
+	if srcBootstrap == nil {
+		// Nothing to restore from.
+		return
+	}
 
-	if dstBootstrap == nil || srcBootstrap == nil {
+	dstBootstrap := dst.Spec.Bootstrap
+	if dstBootstrap == nil {
+		// v1a1 doesn't have a way to represent standalone LinuxPrep. If we didn't do a
+		// conversion in convert_v1alpha1_VmMetadata_To_v1alpha2_BootstrapSpec() but we
+		// saved a LinuxPrep in the conversion annotation, restore that here.
+		if srcBootstrap.LinuxPrep != nil {
+			dst.Spec.Bootstrap = &v1alpha2.VirtualMachineBootstrapSpec{
+				LinuxPrep: srcBootstrap.LinuxPrep,
+			}
+		}
 		return
 	}
 
@@ -814,7 +827,7 @@ func restore_v1alpha2_VirtualMachineBootstrapSpec(
 	if dstSysPrep := dstBootstrap.Sysprep; dstSysPrep != nil {
 		if srcSysPrep := srcBootstrap.Sysprep; srcSysPrep != nil {
 			dstSysPrep.Sysprep = srcSysPrep.Sysprep
-			dstSysPrep.RawSysprep = mergeSecretKeySelector(srcSysPrep.RawSysprep, dstSysPrep.RawSysprep)
+			dstSysPrep.RawSysprep = mergeSecretKeySelector(dstSysPrep.RawSysprep, srcSysPrep.RawSysprep)
 		}
 	}
 

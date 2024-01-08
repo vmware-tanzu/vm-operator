@@ -1,7 +1,8 @@
 FROM node:20 AS build
 WORKDIR /quicktype
 
-RUN npm install --prefix /quicktype quicktype
+COPY package.json package-lock.json* ./
+RUN npm ci --prefix /quicktype quicktype
 
 FROM gcr.io/distroless/nodejs20-debian12
 COPY --from=build /quicktype /quicktype
@@ -9,7 +10,7 @@ COPY --from=build /quicktype /quicktype
 WORKDIR /output
 CMD [ \
     "/quicktype/node_modules/quicktype/dist/index.js", \
-    "--src", "/schema.json", \
+    "--src", "/schema-cloud-config-v1.json", \
     "--src-lang", "schema", \
     "--out", "/output/cloudconfig.go", \
     "--lang", "go", \

@@ -85,7 +85,7 @@ build-images: ## Build the docker images
 
 quicktype: $(QUICKTYPE) ## Install quicktype
 $(QUICKTYPE): package.json
-	npm install --user quicktype
+	npm ci --user quicktype
 
 
 ## --------------------------------------

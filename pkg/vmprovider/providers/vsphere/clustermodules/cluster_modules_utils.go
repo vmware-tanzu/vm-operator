@@ -41,7 +41,6 @@ func ClaimClusterModuleUUID(
 	ctx context.Context,
 	clusterModProvider Provider,
 	groupName string,
-	clusterRef types.ManagedObjectReference,
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (int, string, error) {
 
 	var errs []error
@@ -49,7 +48,7 @@ func ClaimClusterModuleUUID(
 	if pkgconfig.FromContext(ctx).Features.FaultDomains {
 		for i, modStatus := range resourcePolicy.Status.ClusterModules {
 			if modStatus.GroupName == groupName && modStatus.ClusterMoID == "" {
-				exists, err := clusterModProvider.DoesModuleExist(ctx, modStatus.ModuleUuid, clusterRef)
+				exists, err := clusterModProvider.DoesModuleExist(ctx, modStatus.ModuleUuid)
 				if err != nil {
 					errs = append(errs, err)
 				} else if exists {

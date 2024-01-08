@@ -13,7 +13,7 @@ require (
 	github.com/envoyproxy/go-control-plane v0.11.1-0.20230524094728-9239064ad72f
 	github.com/go-logr/logr v1.3.0
 	github.com/google/go-cmp v0.6.0
-	github.com/google/uuid v1.3.1
+	github.com/google/uuid v1.4.0
 	github.com/onsi/ginkgo/v2 v2.13.2
 	github.com/onsi/gomega v1.30.0
 	github.com/pkg/errors v0.9.1
@@ -22,7 +22,7 @@ require (
 	github.com/vmware-tanzu/vm-operator/api v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/ncp v0.0.0-00010101000000-000000000000
 	github.com/vmware-tanzu/vm-operator/external/tanzu-topology v0.0.0-00010101000000-000000000000
-	github.com/vmware/govmomi v0.31.0
+	github.com/vmware/govmomi v0.34.0
 	// * https://github.com/vmware-tanzu/vm-operator/security/dependabot/24
 	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/text v0.13.0

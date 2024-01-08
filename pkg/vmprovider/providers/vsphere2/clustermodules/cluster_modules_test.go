@@ -61,13 +61,13 @@ func cmTests() {
 		})
 
 		It("Create a ClusterModule, verify it exists and delete it", func() {
-			exists, err := cmProvider.DoesModuleExist(ctx, moduleStatus.ModuleUuid, clusterRef)
+			exists, err := cmProvider.DoesModuleExist(ctx, moduleStatus.ModuleUuid)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(exists).To(BeTrue())
 
 			Expect(cmProvider.DeleteModule(ctx, moduleStatus.ModuleUuid)).To(Succeed())
 
-			exists, err = cmProvider.DoesModuleExist(ctx, moduleStatus.ModuleUuid, clusterRef)
+			exists, err = cmProvider.DoesModuleExist(ctx, moduleStatus.ModuleUuid)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(exists).To(BeFalse())
 		})

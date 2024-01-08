@@ -150,7 +150,7 @@ func (vs *vSphereVMProvider) doClusterModulesExist(
 			return false, nil
 		}
 
-		exists, err := clusterModProvider.DoesModuleExist(ctx, moduleID, clusterRef)
+		exists, err := clusterModProvider.DoesModuleExist(ctx, moduleID)
 		if !exists || err != nil {
 			return false, err
 		}
@@ -177,7 +177,7 @@ func (vs *vSphereVMProvider) createClusterModules(
 
 		if moduleID != "" {
 			// Verify this cluster module exists on VC for this cluster.
-			exists, err := clusterModProvider.DoesModuleExist(ctx, moduleID, clusterRef)
+			exists, err := clusterModProvider.DoesModuleExist(ctx, moduleID)
 			if err != nil {
 				errs = append(errs, err)
 				continue
@@ -191,7 +191,7 @@ func (vs *vSphereVMProvider) createClusterModules(
 			// See if there is already a module for this cluster but without the ClusterMoID field
 			// set that we can claim.
 			idx, moduleID, err = clustermodules.ClaimClusterModuleUUID(ctx, clusterModProvider,
-				moduleSpec.GroupName, clusterRef, resourcePolicy)
+				moduleSpec.GroupName, resourcePolicy)
 			if err != nil {
 				errs = append(errs, err)
 				continue

@@ -233,6 +233,51 @@ func TestVirtualMachineConversion(t *testing.T) {
 		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
 	})
 
+	t.Run("VirtualMachine hub-spoke-hub with LinuxPrep", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hub := nextver.VirtualMachine{
+			Spec: nextver.VirtualMachineSpec{
+				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
+					LinuxPrep: &nextver.VirtualMachineBootstrapLinuxPrepSpec{
+						HardwareClockIsUTC: true,
+						TimeZone:           "my-tz",
+					},
+				},
+			},
+		}
+
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
+	})
+
+	t.Run("VirtualMachine hub-spoke-hub with LinuxPrep and vAppConfig", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hub := nextver.VirtualMachine{
+			Spec: nextver.VirtualMachineSpec{
+				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
+					LinuxPrep: &nextver.VirtualMachineBootstrapLinuxPrepSpec{
+						HardwareClockIsUTC: true,
+						TimeZone:           "my-tz",
+					},
+					VAppConfig: &nextver.VirtualMachineBootstrapVAppConfigSpec{
+						Properties: []nextver_common.KeyValueOrSecretKeySelectorPair{
+							{
+								Key: "my-key",
+								Value: nextver_common.ValueOrSecretKeySelector{
+									Value: ptrOf("my-value"),
+								},
+							},
+						},
+						RawProperties: "my-secret",
+					},
+				},
+			},
+		}
+
+		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
+	})
+
 	t.Run("VirtualMachine hub-spoke-hub with Sysprep", func(t *testing.T) {
 		g := NewWithT(t)
 
@@ -281,15 +326,17 @@ func TestVirtualMachineConversion(t *testing.T) {
 		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
 	})
 
-	t.Run("VirtualMachine hub-spoke-hub with LinuxPrep and vAppConfig", func(t *testing.T) {
+	t.Run("VirtualMachine hub-spoke-hub with Sysprep and vAppConfig", func(t *testing.T) {
 		g := NewWithT(t)
 
 		hub := nextver.VirtualMachine{
 			Spec: nextver.VirtualMachineSpec{
 				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
-					LinuxPrep: &nextver.VirtualMachineBootstrapLinuxPrepSpec{
-						HardwareClockIsUTC: true,
-						TimeZone:           "my-tz",
+					Sysprep: &nextver.VirtualMachineBootstrapSysprepSpec{
+						RawSysprep: &nextver_common.SecretKeySelector{
+							Name: "sysprep-secret",
+							Key:  "my-key",
+						},
 					},
 					VAppConfig: &nextver.VirtualMachineBootstrapVAppConfigSpec{
 						Properties: []nextver_common.KeyValueOrSecretKeySelectorPair{
@@ -301,23 +348,6 @@ func TestVirtualMachineConversion(t *testing.T) {
 							},
 						},
 						RawProperties: "my-secret",
-					},
-				},
-			},
-		}
-
-		hubSpokeHub(g, &hub, &v1alpha1.VirtualMachine{})
-	})
-
-	t.Run("VirtualMachine hub-spoke-hub with LinuxPrep", func(t *testing.T) {
-		g := NewWithT(t)
-
-		hub := nextver.VirtualMachine{
-			Spec: nextver.VirtualMachineSpec{
-				Bootstrap: &nextver.VirtualMachineBootstrapSpec{
-					LinuxPrep: &nextver.VirtualMachineBootstrapLinuxPrepSpec{
-						HardwareClockIsUTC: true,
-						TimeZone:           "my-tz",
 					},
 				},
 			},

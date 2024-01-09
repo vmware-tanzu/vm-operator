@@ -12,6 +12,7 @@ const (
 	vmNamespaceLabel     = "vm_namespace"
 	conditionTypeLabel   = "condition_type"
 	conditionReasonLabel = "condition_reason"
+	phaseLabel           = "phase"
 	specLabel            = "spec"
 	statusLabel          = "status"
 

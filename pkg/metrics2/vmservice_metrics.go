@@ -6,12 +6,12 @@ package metrics2
 import (
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	"github.com/prometheus/client_golang/prometheus"
-
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 )
 
@@ -22,6 +22,7 @@ var (
 
 type VMMetrics struct {
 	statusConditionStatus *prometheus.GaugeVec
+	statusPhase           *prometheus.GaugeVec
 	powerState            *prometheus.GaugeVec
 	statusIP              *prometheus.GaugeVec
 }
@@ -35,6 +36,13 @@ func NewVMMetrics() *VMMetrics {
 					Name:      "vm_status_condition_status",
 					Help:      "True/False/Unknown status of a specific condition on a VM resource"},
 				[]string{vmNameLabel, vmNamespaceLabel, conditionTypeLabel, conditionReasonLabel},
+			),
+			statusPhase: prometheus.NewGaugeVec(
+				prometheus.GaugeOpts{
+					Namespace: metricsNamespace,
+					Name:      "vm_status_phase",
+					Help:      "True/False/Unknown status of a creating/created/unknown on a VM resource"},
+				[]string{vmNameLabel, vmNamespaceLabel, phaseLabel},
 			),
 			powerState: prometheus.NewGaugeVec(
 				prometheus.GaugeOpts{
@@ -55,6 +63,7 @@ func NewVMMetrics() *VMMetrics {
 
 		metrics.Registry.MustRegister(
 			vmMetrics.statusConditionStatus,
+			vmMetrics.statusPhase,
 			vmMetrics.powerState,
 			vmMetrics.statusIP,
 		)
@@ -65,6 +74,7 @@ func NewVMMetrics() *VMMetrics {
 
 func (vmm *VMMetrics) RegisterVMCreateOrUpdateMetrics(vmCtx *context.VirtualMachineContextA2) {
 	vmm.registerVMStatusConditions(vmCtx)
+	vmm.registerVMStatusCreationPhase(vmCtx)
 	vmm.registerVMPowerState(vmCtx)
 	vmm.registerVMStatusIP(vmCtx)
 }
@@ -82,6 +92,9 @@ func (vmm *VMMetrics) DeleteMetrics(vmCtx *context.VirtualMachineContextA2) {
 
 	// Delete the 'vm.status.condition' metrics.
 	vmm.statusConditionStatus.DeletePartialMatch(labels)
+
+	// Delete the 'vm.status.phase' metrics.
+	vmm.statusPhase.DeletePartialMatch(labels)
 
 	// Delete the 'vm.spec.powerState' metrics.
 	vmm.powerState.DeletePartialMatch(labels)
@@ -120,6 +133,39 @@ func (vmm *VMMetrics) registerVMStatusConditions(vmCtx *context.VirtualMachineCo
 			return -1
 		}())
 	}
+}
+
+func (vmm *VMMetrics) registerVMStatusCreationPhase(vmCtx *context.VirtualMachineContextA2) {
+	vmCtx.Logger.V(5).Info("Adding metrics for VM status creation phase")
+	vm := vmCtx.VM
+
+	// Delete the previous metrics to address any VM status phase update.
+	labels := prometheus.Labels{
+		vmNameLabel:      vm.Name,
+		vmNamespaceLabel: vm.Namespace,
+	}
+	vmm.statusPhase.DeletePartialMatch(labels)
+
+	var phase string
+	// v1a2 dropped the Phase field. In practice, the only Phase we'd typically see is
+	// Created & Creating so use the created condition to determine that.
+	if c := conditions.Get(vmCtx.VM, vmopv1.VirtualMachineConditionCreated); c != nil {
+		switch c.Status {
+		case metav1.ConditionTrue:
+			phase = "Created"
+		case metav1.ConditionFalse:
+			phase = "Creating"
+		default:
+			phase = "Unknown"
+		}
+	}
+
+	newLabels := prometheus.Labels{
+		vmNameLabel:      vm.Name,
+		vmNamespaceLabel: vm.Namespace,
+		phaseLabel:       phase,
+	}
+	vmm.statusPhase.With(newLabels).Set(1)
 }
 
 func (vmm *VMMetrics) registerVMPowerState(vmCtx *context.VirtualMachineContextA2) {

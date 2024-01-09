@@ -675,6 +675,15 @@ func TestVirtualMachineConversion(t *testing.T) {
 
 	t.Run("VirtualMachine spoke-hub Status Conditions", func(t *testing.T) {
 
+		findCond := func(conditions []metav1.Condition, ConditionType string) *metav1.Condition {
+			for _, c := range conditions {
+				if c.Type == ConditionType {
+					return &c
+				}
+			}
+			return nil
+		}
+
 		t.Run("Converts Condition", func(t *testing.T) {
 			g := NewWithT(t)
 
@@ -703,6 +712,615 @@ func TestVirtualMachineConversion(t *testing.T) {
 			g.Expect(c.LastTransitionTime).To(Equal(now))
 			g.Expect(c.Reason).To(Equal("Reason"))
 			g.Expect(c.Message).To(Equal("Message"))
+		})
+
+		t.Run("Converts PrereqReady Condition", func(t *testing.T) {
+			t.Run("PrereqReady is True with no prior v1a2 conditions", func(t *testing.T) {
+				g := NewWithT(t)
+
+				now := metav1.Now()
+				spoke := v1alpha1.VirtualMachine{
+					Spec: v1alpha1.VirtualMachineSpec{
+						VmMetadata: &v1alpha1.VirtualMachineMetadata{
+							Transport:  v1alpha1.VirtualMachineMetadataCloudInitTransport,
+							SecretName: "my-secret",
+						},
+						ResourcePolicyName: "my-policy",
+					},
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+							},
+						},
+					},
+				}
+
+				hub := &nextver.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+				p := findCond(hub.Status.Conditions, string(v1alpha1.VirtualMachinePrereqReadyCondition))
+				g.Expect(p).To(BeNil())
+
+				g.Expect(hub.Status.Conditions).To(HaveLen(4))
+
+				c := hub.Status.Conditions[0]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionClassReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[1]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionImageReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[2]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionVMSetResourcePolicyReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[3]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionBootstrapReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+			})
+
+			t.Run("PrereqReady is True with no vmMetadata or resource policy set", func(t *testing.T) {
+				g := NewWithT(t)
+
+				now := metav1.Now()
+				spoke := v1alpha1.VirtualMachine{
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+							},
+						},
+					},
+				}
+
+				hub := &nextver.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+				p := findCond(hub.Status.Conditions, string(v1alpha1.VirtualMachinePrereqReadyCondition))
+				g.Expect(p).To(BeNil())
+
+				g.Expect(hub.Status.Conditions).To(HaveLen(2))
+
+				c := hub.Status.Conditions[0]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionClassReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[1]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionImageReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+			})
+
+			t.Run("PrereqReady Condition is False with VMClass not Found reason", func(t *testing.T) {
+				g := NewWithT(t)
+
+				now := metav1.Now()
+				spoke := v1alpha1.VirtualMachine{
+					Spec: v1alpha1.VirtualMachineSpec{
+						VmMetadata: &v1alpha1.VirtualMachineMetadata{
+							Transport:  v1alpha1.VirtualMachineMetadataCloudInitTransport,
+							SecretName: "my-secret",
+						},
+						ResourcePolicyName: "my-policy",
+					},
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionFalse,
+								LastTransitionTime: now,
+								Reason:             v1alpha1.VirtualMachineClassNotFoundReason,
+								Severity:           v1alpha1.ConditionSeverityError,
+							},
+						},
+					},
+				}
+
+				hub := &nextver.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+				p := findCond(hub.Status.Conditions, string(v1alpha1.VirtualMachinePrereqReadyCondition))
+				g.Expect(p).To(BeNil())
+
+				g.Expect(hub.Status.Conditions).To(HaveLen(4))
+
+				c := hub.Status.Conditions[0]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionClassReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(c.Reason).To(Equal(v1alpha1.VirtualMachineClassNotFoundReason))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[1]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionImageReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[2]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionVMSetResourcePolicyReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[3]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionBootstrapReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+			})
+
+			t.Run("PrereqReady is False because VMClass not found, with no vmMetadata or resource policy in spec", func(t *testing.T) {
+				g := NewWithT(t)
+
+				now := metav1.Now()
+				spoke := v1alpha1.VirtualMachine{
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionFalse,
+								LastTransitionTime: now,
+								Reason:             v1alpha1.VirtualMachineClassNotFoundReason,
+								Severity:           v1alpha1.ConditionSeverityError,
+							},
+						},
+					},
+				}
+
+				hub := &nextver.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+				p := findCond(hub.Status.Conditions, string(v1alpha1.VirtualMachinePrereqReadyCondition))
+				g.Expect(p).To(BeNil())
+
+				g.Expect(hub.Status.Conditions).To(HaveLen(2))
+
+				c := hub.Status.Conditions[0]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionClassReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(c.Reason).To(Equal(v1alpha1.VirtualMachineClassNotFoundReason))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[1]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionImageReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+			})
+
+			t.Run("PrereqReady Condition is False with VMClass Binding not Found reason", func(t *testing.T) {
+				g := NewWithT(t)
+
+				now := metav1.Now()
+				spoke := v1alpha1.VirtualMachine{
+					Spec: v1alpha1.VirtualMachineSpec{
+						VmMetadata: &v1alpha1.VirtualMachineMetadata{
+							Transport:  v1alpha1.VirtualMachineMetadataCloudInitTransport,
+							SecretName: "my-secret",
+						},
+						ResourcePolicyName: "my-policy",
+					},
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionFalse,
+								LastTransitionTime: now,
+								Reason:             v1alpha1.VirtualMachineClassBindingNotFoundReason,
+								Severity:           v1alpha1.ConditionSeverityError,
+							},
+						},
+					},
+				}
+
+				hub := &nextver.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+				p := findCond(hub.Status.Conditions, string(v1alpha1.VirtualMachinePrereqReadyCondition))
+				g.Expect(p).To(BeNil())
+
+				g.Expect(hub.Status.Conditions).To(HaveLen(4))
+
+				c := hub.Status.Conditions[0]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionClassReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(c.Reason).To(Equal(v1alpha1.VirtualMachineClassBindingNotFoundReason))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[1]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionImageReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[2]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionVMSetResourcePolicyReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[3]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionBootstrapReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+			})
+
+			t.Run("PrereqReady Condition is False with VMImage not Found reason", func(t *testing.T) {
+				g := NewWithT(t)
+
+				now := metav1.Now()
+				spoke := v1alpha1.VirtualMachine{
+					Spec: v1alpha1.VirtualMachineSpec{
+						VmMetadata: &v1alpha1.VirtualMachineMetadata{
+							Transport:  v1alpha1.VirtualMachineMetadataCloudInitTransport,
+							SecretName: "my-secret",
+						},
+						ResourcePolicyName: "my-policy",
+					},
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionFalse,
+								LastTransitionTime: now,
+								Reason:             v1alpha1.VirtualMachineImageNotFoundReason,
+								Severity:           v1alpha1.ConditionSeverityError,
+							},
+						},
+					},
+				}
+
+				hub := &nextver.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+				p := findCond(hub.Status.Conditions, string(v1alpha1.VirtualMachinePrereqReadyCondition))
+				g.Expect(p).To(BeNil())
+
+				g.Expect(hub.Status.Conditions).To(HaveLen(4))
+
+				c := hub.Status.Conditions[0]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionClassReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[1]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionImageReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(c.Reason).To(Equal(v1alpha1.VirtualMachineImageNotFoundReason))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[2]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionVMSetResourcePolicyReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[3]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionBootstrapReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+			})
+
+			t.Run("PrereqReady Condition is False with VMImage not Ready reason", func(t *testing.T) {
+				g := NewWithT(t)
+
+				now := metav1.Now()
+				spoke := v1alpha1.VirtualMachine{
+					Spec: v1alpha1.VirtualMachineSpec{
+						VmMetadata: &v1alpha1.VirtualMachineMetadata{
+							Transport:  v1alpha1.VirtualMachineMetadataCloudInitTransport,
+							SecretName: "my-secret",
+						},
+						ResourcePolicyName: "my-policy",
+					},
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionFalse,
+								LastTransitionTime: now,
+								Reason:             v1alpha1.VirtualMachineImageNotReadyReason,
+								Severity:           v1alpha1.ConditionSeverityError,
+							},
+						},
+					},
+				}
+
+				hub := &nextver.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+				p := findCond(hub.Status.Conditions, string(v1alpha1.VirtualMachinePrereqReadyCondition))
+				g.Expect(p).To(BeNil())
+
+				g.Expect(hub.Status.Conditions).To(HaveLen(4))
+
+				c := hub.Status.Conditions[0]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionClassReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[1]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionImageReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(c.Reason).To(Equal(v1alpha1.VirtualMachineImageNotReadyReason))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[2]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionVMSetResourcePolicyReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[3]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionBootstrapReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+			})
+
+			t.Run("PrereqReady Condition is False with ContentSourceBinding Found reason", func(t *testing.T) {
+				g := NewWithT(t)
+
+				now := metav1.Now()
+				spoke := v1alpha1.VirtualMachine{
+					Spec: v1alpha1.VirtualMachineSpec{
+						VmMetadata: &v1alpha1.VirtualMachineMetadata{
+							Transport:  v1alpha1.VirtualMachineMetadataCloudInitTransport,
+							SecretName: "my-secret",
+						},
+						ResourcePolicyName: "my-policy",
+					},
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionFalse,
+								LastTransitionTime: now,
+								Reason:             v1alpha1.ContentSourceBindingNotFoundReason,
+								Severity:           v1alpha1.ConditionSeverityError,
+							},
+						},
+					},
+				}
+
+				hub := &nextver.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+				p := findCond(hub.Status.Conditions, string(v1alpha1.VirtualMachinePrereqReadyCondition))
+				g.Expect(p).To(BeNil())
+
+				g.Expect(hub.Status.Conditions).To(HaveLen(4))
+
+				c := hub.Status.Conditions[0]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionClassReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[1]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionImageReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(c.Reason).To(Equal(v1alpha1.ContentSourceBindingNotFoundReason))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[2]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionVMSetResourcePolicyReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[3]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionBootstrapReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+			})
+
+			t.Run("PrereqReady Condition is False with ContentLibraryProvider not found reason", func(t *testing.T) {
+				g := NewWithT(t)
+
+				now := metav1.Now()
+				spoke := v1alpha1.VirtualMachine{
+					Spec: v1alpha1.VirtualMachineSpec{
+						VmMetadata: &v1alpha1.VirtualMachineMetadata{
+							Transport:  v1alpha1.VirtualMachineMetadataCloudInitTransport,
+							SecretName: "my-secret",
+						},
+						ResourcePolicyName: "my-policy",
+					},
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionFalse,
+								LastTransitionTime: now,
+								Reason:             v1alpha1.ContentLibraryProviderNotFoundReason,
+								Severity:           v1alpha1.ConditionSeverityError,
+							},
+						},
+					},
+				}
+
+				hub := &nextver.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+				p := findCond(hub.Status.Conditions, string(v1alpha1.VirtualMachinePrereqReadyCondition))
+				g.Expect(p).To(BeNil())
+
+				g.Expect(hub.Status.Conditions).To(HaveLen(4))
+
+				c := hub.Status.Conditions[0]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionClassReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[1]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionImageReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(c.Reason).To(Equal(v1alpha1.ContentLibraryProviderNotFoundReason))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[2]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionVMSetResourcePolicyReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[3]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionBootstrapReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionUnknown))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionUnknown)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+			})
+
+			t.Run("PrereqReady Condition is True with prior v1a2 conditions", func(t *testing.T) {
+				g := NewWithT(t)
+
+				now := metav1.Now()
+				spoke := v1alpha1.VirtualMachine{
+					Spec: v1alpha1.VirtualMachineSpec{
+						VmMetadata: &v1alpha1.VirtualMachineMetadata{
+							Transport:  v1alpha1.VirtualMachineMetadataCloudInitTransport,
+							SecretName: "my-secret",
+						},
+						ResourcePolicyName: "my-policy",
+					},
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+							},
+							{
+								Type:               nextver.VirtualMachineConditionClassReady,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+								Reason:             string(corev1.ConditionTrue),
+							},
+							{
+								Type:               nextver.VirtualMachineConditionImageReady,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+								Reason:             string(corev1.ConditionTrue),
+							},
+							{
+								Type:               nextver.VirtualMachineConditionVMSetResourcePolicyReady,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+								Reason:             string(corev1.ConditionTrue),
+							},
+						},
+					},
+				}
+
+				hub := &nextver.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+				p := findCond(hub.Status.Conditions, string(v1alpha1.VirtualMachinePrereqReadyCondition))
+				g.Expect(p).To(BeNil())
+
+				g.Expect(hub.Status.Conditions).To(HaveLen(3))
+
+				c := hub.Status.Conditions[0]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionClassReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[1]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionImageReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[2]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionVMSetResourcePolicyReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+			})
+
+			t.Run("PrereqReady Condition is False with prior v1a2 conditions", func(t *testing.T) {
+				g := NewWithT(t)
+
+				now := metav1.Now()
+				spoke := v1alpha1.VirtualMachine{
+					Spec: v1alpha1.VirtualMachineSpec{
+						VmMetadata: &v1alpha1.VirtualMachineMetadata{
+							Transport:  v1alpha1.VirtualMachineMetadataCloudInitTransport,
+							SecretName: "my-secret",
+						},
+						ResourcePolicyName: "my-policy",
+					},
+					Status: v1alpha1.VirtualMachineStatus{
+						Conditions: []v1alpha1.Condition{
+							{
+								Type:               v1alpha1.VirtualMachinePrereqReadyCondition,
+								Status:             corev1.ConditionFalse,
+								LastTransitionTime: now,
+								Reason:             v1alpha1.VirtualMachineClassNotFoundReason,
+								Severity:           v1alpha1.ConditionSeverityError,
+							},
+							{
+								Type:               nextver.VirtualMachineConditionClassReady,
+								Status:             corev1.ConditionFalse,
+								LastTransitionTime: now,
+								Reason:             string(corev1.ConditionFalse),
+							},
+							{
+								Type:               nextver.VirtualMachineConditionImageReady,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+								Reason:             string(corev1.ConditionTrue),
+							},
+							{
+								Type:               nextver.VirtualMachineConditionVMSetResourcePolicyReady,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+								Reason:             string(corev1.ConditionTrue),
+							},
+						},
+					},
+				}
+
+				hub := &nextver.VirtualMachine{}
+				g.Expect(spoke.ConvertTo(hub)).To(Succeed())
+				p := findCond(hub.Status.Conditions, string(v1alpha1.VirtualMachinePrereqReadyCondition))
+				g.Expect(p).To(BeNil())
+
+				g.Expect(hub.Status.Conditions).To(HaveLen(3))
+
+				c := hub.Status.Conditions[0]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionClassReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionFalse)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[1]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionImageReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+
+				c = hub.Status.Conditions[2]
+				g.Expect(c.Type).To(Equal(nextver.VirtualMachineConditionVMSetResourcePolicyReady))
+				g.Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Reason).To(Equal(string(metav1.ConditionTrue)))
+				g.Expect(c.LastTransitionTime).To(Equal(now))
+			})
 		})
 	})
 

@@ -7,12 +7,14 @@ spec:
   className: medium
   imageName: ubuntu-jammy
   network:
-    nameservers:
-    - 1.1.1.1
-    - 8.8.8.8
-    searchDomains:
-    - my.domain.local
-    - my-other.domain.local
+    interfaces:
+    - name: eth0
+      nameservers:
+      - 1.1.1.1
+      - 8.8.8.8
+      searchDomains:
+      - my.domain.local
+      - my-other.domain.local
   bootstrap:
     cloudInit: 
       cloudConfig:

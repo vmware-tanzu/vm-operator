@@ -15,9 +15,7 @@ import (
 // AddToManager adds the controller to the provided manager.
 func AddToManager(ctx *context.ControllerManagerContext, mgr manager.Manager) error {
 	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
-		if err := v1alpha2.AddToManager(ctx, mgr); err != nil {
-			return err
-		}
+		return v1alpha2.AddToManager(ctx, mgr)
 	}
 	return v1alpha1.AddToManager(ctx, mgr)
 }

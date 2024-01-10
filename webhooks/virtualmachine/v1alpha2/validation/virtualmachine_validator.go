@@ -513,9 +513,8 @@ func (v validator) validateNetworkInterfaceSpec(
 	return allErrs
 }
 
-// mtu and routes is available only with CloudInit bootstrap providers.
-// nameservers and searchDomains is available only with the following bootstrap
-// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
+// MTU, routes, and searchDomains are available only with CloudInit.
+// Nameservers is available only with CloudInit, LinuxPrep, and Sysprep.
 func (v validator) validateNetworkSpecWithBootstrap(
 	ctx goctx.Context,
 	interfacePath *field.Path,
@@ -552,24 +551,23 @@ func (v validator) validateNetworkSpecWithBootstrap(
 			"routes is available only with the following bootstrap providers: CloudInit",
 		))
 	}
-	if nameservers := interfaceSpec.Nameservers; nameservers != nil {
-		sysprepNotAllowed := !pkgconfig.FromContext(ctx).Features.WindowsSysprep || sysPrep == nil || sysPrep.RawSysprep != nil
-		if cloudInit == nil && linuxPrep == nil && sysprepNotAllowed {
+
+	if nameservers := interfaceSpec.Nameservers; len(nameservers) > 0 {
+		if cloudInit == nil && linuxPrep == nil && sysPrep == nil {
 			allErrs = append(allErrs, field.Invalid(
 				interfacePath.Child("nameservers"),
 				strings.Join(nameservers, ","),
-				"nameservers is available only with the following bootstrap providers: CloudInit LinuxPrep and Sysprep (except for RawSysprep)",
+				"nameservers is available only with the following bootstrap providers: CloudInit LinuxPrep and Sysprep",
 			))
 		}
 	}
 
-	if searchDomains := interfaceSpec.SearchDomains; searchDomains != nil {
-		sysprepNotAllowed := !pkgconfig.FromContext(ctx).Features.WindowsSysprep || sysPrep == nil || sysPrep.RawSysprep != nil
-		if cloudInit == nil && linuxPrep == nil && sysprepNotAllowed {
+	if searchDomains := interfaceSpec.SearchDomains; len(searchDomains) > 0 {
+		if cloudInit == nil {
 			allErrs = append(allErrs, field.Invalid(
 				interfacePath.Child("searchDomains"),
 				strings.Join(searchDomains, ","),
-				"searchDomains is available only with the following bootstrap providers: CloudInit LinuxPrep and Sysprep (except for RawSysprep)",
+				"searchDomains is available only with the following bootstrap providers: CloudInit",
 			))
 		}
 	}
@@ -608,8 +606,6 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 			allErrs = append(allErrs, v.validateVolumeWithPVC(ctx, vol, volPath)...)
 		}
 	}
-
-	// TODO: InstanceStorage
 
 	return allErrs
 }

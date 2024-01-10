@@ -1455,9 +1455,8 @@ spec:
                           description: "Nameservers is a list of IP4 and/or IP6 addresses
                             used as DNS nameservers. \n Please note this feature is
                             available only with the following bootstrap providers:
-                            CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
-                            \n Please note that Linux allows only three nameservers
-                            (https://linux.die.net/man/5/resolv.conf)."
+                            CloudInit, LinuxPrep, and Sysprep. \n Please note that
+                            Linux allows only three nameservers (https://linux.die.net/man/5/resolv.conf)."
                           items:
                             type: string
                           type: array
@@ -1516,8 +1515,7 @@ spec:
                           description: "SearchDomains is a list of search domains
                             used when resolving IP addresses with DNS. \n Please note
                             this feature is available only with the following bootstrap
-                            providers: CloudInit, LinuxPrep, and Sysprep (except for
-                            RawSysprep)."
+                            providers: CloudInit."
                           items:
                             type: string
                           type: array

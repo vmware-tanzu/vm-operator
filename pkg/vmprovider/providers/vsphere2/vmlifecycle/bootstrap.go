@@ -60,21 +60,26 @@ func DoBootstrap(
 
 	bootstrap := vmCtx.VM.Spec.Bootstrap
 	if bootstrap == nil {
-		// For backwards compat we have to keep going and default to LinuxPrep.
-		bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
+		// V1ALPHA1: We always defaulted to LinuxPrep w/ HwClockUTC=true.
+		bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+			LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{
+				HardwareClockIsUTC: true,
+			},
+		}
 	}
 
 	cloudInit := bootstrap.CloudInit
 	linuxPrep := bootstrap.LinuxPrep
-	sysprep := bootstrap.Sysprep
+	sysPrep := bootstrap.Sysprep
 	vAppConfig := bootstrap.VAppConfig
 
-	bootstrapArgs, err := getBootstrapArgs(vmCtx, k8sClient, cloudInit != nil, networkResults, bootstrapData)
+	isGOSC := linuxPrep != nil || sysPrep != nil
+	bootstrapArgs, err := getBootstrapArgs(vmCtx, k8sClient, cloudInit != nil, isGOSC, networkResults, bootstrapData)
 	if err != nil {
 		return err
 	}
 
-	if sysprep != nil || vAppConfig != nil {
+	if sysPrep != nil || vAppConfig != nil {
 		bootstrapArgs.TemplateRenderFn = GetTemplateRenderFunc(vmCtx, bootstrapArgs)
 	}
 
@@ -86,14 +91,13 @@ func DoBootstrap(
 		configSpec, customSpec, err = BootStrapCloudInit(vmCtx, config, cloudInit, bootstrapArgs)
 	case linuxPrep != nil:
 		configSpec, customSpec, err = BootStrapLinuxPrep(vmCtx, config, linuxPrep, vAppConfig, bootstrapArgs)
-	case sysprep != nil:
-		configSpec, customSpec, err = BootstrapSysPrep(vmCtx, config, sysprep, vAppConfig, bootstrapArgs)
+	case sysPrep != nil:
+		configSpec, customSpec, err = BootstrapSysPrep(vmCtx, config, sysPrep, vAppConfig, bootstrapArgs)
 	case vAppConfig != nil:
 		configSpec, customSpec, err = BootstrapVAppConfig(vmCtx, config, vAppConfig, bootstrapArgs)
 	default:
-		// Old code fell back to LinuxPrep. Is that really appropriate anymore?
-		linuxPrep = &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{HardwareClockIsUTC: true}
-		configSpec, customSpec, err = BootStrapLinuxPrep(vmCtx, config, linuxPrep, nil, bootstrapArgs)
+		vmCtx.Logger.V(6).Info("no bootstrap provider specified")
+		return nil
 	}
 
 	if err != nil {
@@ -120,20 +124,23 @@ func DoBootstrap(
 func getBootstrapArgs(
 	vmCtx context.VirtualMachineContextA2,
 	k8sClient ctrl.Client,
-	isCloudInit bool,
+	isCloudInit, isGOSC bool,
 	networkResults network.NetworkInterfaceResults,
 	bootstrapData BootstrapData) (*BootstrapArgs, error) {
-
-	hostname := vmCtx.VM.Name
-	if networkSpec := vmCtx.VM.Spec.Network; networkSpec != nil && networkSpec.HostName != "" {
-		hostname = networkSpec.HostName
-	}
 
 	bootstrapArgs := BootstrapArgs{
 		BootstrapData:  bootstrapData,
 		NetworkResults: networkResults,
-		Hostname:       hostname,
+		Hostname:       vmCtx.VM.Name,
 		ComputerName:   vmCtx.VM.Name,
+	}
+
+	if networkSpec := vmCtx.VM.Spec.Network; networkSpec != nil {
+		if networkSpec.HostName != "" {
+			bootstrapArgs.Hostname = networkSpec.HostName
+		}
+		bootstrapArgs.DNSServers = networkSpec.Nameservers
+		bootstrapArgs.SearchSuffixes = networkSpec.SearchDomains
 	}
 
 	// If the VM is missing DNS info - that is, it did not specify DNS for the interfaces - populate that
@@ -142,28 +149,40 @@ func getBootstrapArgs(
 	// here. Similarly, we didn't populate SearchDomains for non-TKG VMs so we don't here either. This is
 	// all a little nuts & complicated and probably not correct for every situation.
 	isTKG := hasTKGLabels(vmCtx.VM.Labels)
-	missingDNSInfo := false
+	getDNSInformationFromConfigMap := false
 	for _, r := range networkResults.Results {
 		if r.DHCP4 || r.DHCP6 {
 			continue
 		}
 
-		if len(r.Nameservers) == 0 || (isTKG && len(r.SearchDomains) == 0) {
-			missingDNSInfo = true
+		if len(bootstrapArgs.DNSServers) == 0 && len(r.Nameservers) == 0 {
+			getDNSInformationFromConfigMap = true
+			break
+		}
+
+		// V1ALPHA1: Do not default the global search suffixes for LinuxPrep and Sysprep
+		// to what is in the ConfigMap.
+		if len(r.SearchDomains) == 0 && (isTKG || (!isGOSC && len(bootstrapArgs.SearchSuffixes) == 0)) {
+			getDNSInformationFromConfigMap = true
 			break
 		}
 	}
 
-	if missingDNSInfo {
+	if getDNSInformationFromConfigMap {
 		nameservers, searchSuffixes, err := config.GetDNSInformationFromConfigMap(vmCtx, k8sClient)
 		if err != nil && ctrl.IgnoreNotFound(err) != nil {
 			// This ConfigMap doesn't exist in certain test envs.
 			return nil, err
 		}
 
-		// GOSC will use these for its global config.
-		bootstrapArgs.DNSServers = nameservers
-		bootstrapArgs.SearchSuffixes = searchSuffixes
+		if len(bootstrapArgs.DNSServers) == 0 {
+			// GOSC will this for its global config.
+			bootstrapArgs.DNSServers = nameservers
+		}
+		if !isGOSC && len(bootstrapArgs.SearchSuffixes) == 0 {
+			// See the comment above: we don't apply the global suffixes to GOSC.
+			bootstrapArgs.SearchSuffixes = searchSuffixes
+		}
 
 		if isCloudInit {
 			// Previously we would apply the global DNS config to every interface so do that here too.
@@ -177,6 +196,7 @@ func getBootstrapArgs(
 				if len(r.Nameservers) == 0 {
 					r.Nameservers = nameservers
 				}
+				// V1ALPHA1: Only apply global search domains to TKG VMs.
 				if isTKG && len(r.SearchDomains) == 0 {
 					r.SearchDomains = searchSuffixes
 				}

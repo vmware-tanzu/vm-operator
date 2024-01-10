@@ -14,6 +14,7 @@ func GuestOSCustomization(results NetworkInterfaceResults) ([]vimtypes.Customiza
 
 	for _, r := range results.Results {
 		adapter := vimtypes.CustomizationIPSettings{
+			// Per-adapter is only supported on Windows. Linux only supports the global and ignores this field.
 			DnsServerList: r.Nameservers,
 		}
 

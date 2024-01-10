@@ -132,7 +132,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// nameservers.
 	//
 	// Please note this feature is available only with the following bootstrap
-	// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
+	// providers: CloudInit and Sysprep.
 	//
 	// Please note that Linux allows only three nameservers
 	// (https://linux.die.net/man/5/resolv.conf).
@@ -152,7 +152,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// addresses with DNS.
 	//
 	// Please note this feature is available only with the following bootstrap
-	// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
+	// providers: CloudInit.
 	//
 	// +optional
 	SearchDomains []string `json:"searchDomains,omitempty"`
@@ -177,6 +177,29 @@ type VirtualMachineNetworkSpec struct {
 	//
 	// +optional
 	Disabled bool `json:"disabled,omitempty"`
+
+	// Nameservers is a list of IP4 and/or IP6 addresses used as DNS
+	// nameservers. These are applied globally.
+	//
+	// Please note global nameservers are only available with the following
+	// bootstrap providers: LinuxPrep and Sysprep. The Cloud-Init bootstrap
+	// provider supports per-interface nameservers.
+	//
+	// Please note that Linux allows only three nameservers
+	// (https://linux.die.net/man/5/resolv.conf).
+	//
+	// +optional
+	Nameservers []string `json:"nameservers,omitempty"`
+
+	// SearchDomains is a list of search domains used when resolving IP
+	// addresses with DNS. These are applied globally.
+	//
+	// Please note global search domains are only available with the following
+	// bootstrap providers: LinuxPrep and Sysprep. The Cloud-Init bootstrap
+	// provider supports per-interface search domains.
+	//
+	// +optional
+	SearchDomains []string `json:"searchDomains,omitempty"`
 
 	// Interfaces is the list of network interfaces used by this VM.
 	//

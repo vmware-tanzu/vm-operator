@@ -1449,7 +1449,7 @@ spec:
                             is CloudInit. Please note it is up to the user to ensure
                             the provided device name does not conflict with any other
                             devices inside the guest, ex. dvd, cdrom, sda, etc."
-                          pattern: ^\w\w+$
+                          pattern: ^[a-z0-9]{2,}$
                           type: string
                         nameservers:
                           description: "Nameservers is a list of IP4 and/or IP6 addresses

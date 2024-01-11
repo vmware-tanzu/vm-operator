@@ -612,6 +612,16 @@ func (v validator) validateNetworkInterfaceSpecWithBootstrap(
 		sysPrep = vm.Spec.Bootstrap.Sysprep
 	}
 
+	if deviceName := interfaceSpec.DeviceName; deviceName != "" {
+		if cloudInit == nil {
+			allErrs = append(allErrs, field.Invalid(
+				interfacePath.Child("deviceName"),
+				deviceName,
+				"deviceName is available only with the following bootstrap providers: CloudInit",
+			))
+		}
+	}
+
 	if mtu := interfaceSpec.MTU; mtu != nil {
 		if cloudInit == nil {
 			allErrs = append(allErrs, field.Invalid(

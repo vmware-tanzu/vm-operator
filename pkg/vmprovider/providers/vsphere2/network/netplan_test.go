@@ -15,7 +15,8 @@ import (
 
 var _ = Describe("Netplan", func() {
 	const (
-		ifName        = "eth0"
+		ifName        = "my-interface"
+		devIfName     = "eth42"
 		macAddr1      = "50-8A-80-9D-28-22"
 		macAddr1Norm  = "50:8a:80:9d:28:22"
 		ipv4Gateway   = "192.168.1.1"
@@ -63,6 +64,7 @@ var _ = Describe("Netplan", func() {
 						},
 						MacAddress:    macAddr1,
 						Name:          ifName,
+						DeviceName:    devIfName,
 						DHCP4:         false,
 						DHCP6:         false,
 						MTU:           1500,
@@ -89,7 +91,7 @@ var _ = Describe("Netplan", func() {
 
 				np := netplan.Ethernets[ifName]
 				Expect(np.Match.MacAddress).To(Equal(macAddr1Norm))
-				Expect(np.SetName).To(Equal(ifName))
+				Expect(np.SetName).To(Equal(devIfName))
 				Expect(np.Dhcp4).To(BeFalse())
 				Expect(np.Dhcp6).To(BeFalse())
 				Expect(np.Addresses).To(HaveLen(2))
@@ -113,7 +115,8 @@ var _ = Describe("Netplan", func() {
 				results.Results = []network.NetworkInterfaceResult{
 					{
 						MacAddress:    macAddr1,
-						Name:          "eth0",
+						Name:          ifName,
+						DeviceName:    devIfName,
 						DHCP4:         true,
 						DHCP6:         true,
 						MTU:           9000,
@@ -133,7 +136,7 @@ var _ = Describe("Netplan", func() {
 
 				np := netplan.Ethernets[ifName]
 				Expect(np.Match.MacAddress).To(Equal(macAddr1Norm))
-				Expect(np.SetName).To(Equal(ifName))
+				Expect(np.SetName).To(Equal(devIfName))
 				Expect(np.Dhcp4).To(BeTrue())
 				Expect(np.Dhcp6).To(BeTrue())
 				Expect(np.MTU).To(BeEquivalentTo(9000))

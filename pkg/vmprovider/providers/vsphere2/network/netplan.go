@@ -54,7 +54,7 @@ func NetPlanCustomization(result NetworkInterfaceResults) (*Netplan, error) {
 			Match: NetplanEthernetMatch{
 				MacAddress: NormalizeNetplanMac(r.MacAddress),
 			},
-			SetName: r.Name,
+			SetName: r.DeviceName,
 			MTU:     r.MTU,
 			Nameservers: NetplanEthernetNameserver{
 				Addresses: r.Nameservers,
@@ -90,7 +90,7 @@ func NetPlanCustomization(result NetworkInterfaceResults) (*Netplan, error) {
 			npEth.Routes = append(npEth.Routes, NetplanEthernetRoute(route))
 		}
 
-		netPlan.Ethernets[npEth.SetName] = npEth
+		netPlan.Ethernets[r.Name] = npEth
 	}
 
 	return netPlan, nil

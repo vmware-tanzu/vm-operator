@@ -836,7 +836,7 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			Entry("allow static mtu, nameservers, routes and searchDomains when bootstrap is CloudInit",
+			Entry("allow deviceName, static address, mtu, nameservers, routes and searchDomains when bootstrap is CloudInit",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
@@ -846,7 +846,8 @@ func unitTestsValidateCreate() {
 							HostName: "my-vm",
 							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
 								{
-									Name: "eth0",
+									Name:       "eth0",
+									DeviceName: "mydev42",
 									Addresses: []string{
 										"192.168.1.100/24",
 										"2605:a601:a0ba:720:2ce6:776d:8be4:2496/48",
@@ -877,6 +878,24 @@ func unitTestsValidateCreate() {
 						}
 					},
 					expectAllowed: true,
+				},
+			),
+
+			Entry("disallows deviceName without CloudInit",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:       "eth0",
+									DeviceName: "mydev",
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].deviceName: Invalid value: "mydev": deviceName is available only with the following bootstrap providers: CloudInit`,
+					),
 				},
 			),
 

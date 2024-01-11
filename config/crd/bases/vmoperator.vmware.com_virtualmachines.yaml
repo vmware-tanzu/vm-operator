@@ -1395,6 +1395,14 @@ spec:
                           items:
                             type: string
                           type: array
+                        deviceName:
+                          description: DeviceName is used to rename the device inside
+                            the guest when the bootstrap provider is Cloud-Init. Please
+                            note it is up to the user to ensure the provided device
+                            name does not conflict with any other devices inside the
+                            guest, ex. dvd, cdrom, sda, etc.
+                          pattern: ^\w\w+$
+                          type: string
                         dhcp4:
                           description: "DHCP4 indicates whether or not this interface
                             uses DHCP for IP4 networking. \n Please note this field
@@ -1438,11 +1446,12 @@ spec:
                         name:
                           description: "Name describes the unique name of this network
                             interface, used to distinguish it from other network interfaces
-                            attached to this VM. \n This value is also used to rename
-                            the device inside the guest when the bootstrap provider
-                            is CloudInit. Please note it is up to the user to ensure
-                            the provided device name does not conflict with any other
-                            devices inside the guest, ex. dvd, cdrom, sda, etc."
+                            attached to this VM. \n When the bootstrap provider is
+                            Cloud-Init and DeviceName is not specified, the device
+                            inside the guest will be renamed to this value. Please
+                            note it is up to the user to ensure the provided name
+                            does not conflict with any other devices inside the guest,
+                            ex. dvd, cdrom, sda, etc."
                           pattern: ^[a-z0-9]{2,}$
                           type: string
                         nameservers:

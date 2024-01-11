@@ -82,7 +82,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 					SearchDomains: []string{"foo.local", "bar.local"},
 					Interfaces: []nextver.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name: "vds-interface",
+							Name:       "vds-interface",
+							DeviceName: "eth10",
 							Network: nextver_common.PartialObjectRef{
 								TypeMeta: metav1.TypeMeta{
 									Kind:       "Network",
@@ -92,7 +93,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 							},
 						},
 						{
-							Name: "ncp-interface",
+							Name:       "ncp-interface",
+							DeviceName: "eth20",
 							Network: nextver_common.PartialObjectRef{
 								TypeMeta: metav1.TypeMeta{
 									Kind:       "VirtualNetwork",
@@ -102,7 +104,8 @@ func TestVirtualMachineConversion(t *testing.T) {
 							},
 						},
 						{
-							Name: "my-interface",
+							Name:       "my-interface",
+							DeviceName: "eth30",
 							Network: nextver_common.PartialObjectRef{
 								TypeMeta: metav1.TypeMeta{
 									Kind:       "Network",

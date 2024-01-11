@@ -46,6 +46,7 @@ type NetworkInterfaceResult struct {
 
 	// Fields from the InterfaceSpec used later during customization.
 	Name          string
+	DeviceName    string
 	DHCP4         bool
 	DHCP6         bool
 	MTU           int64
@@ -190,6 +191,11 @@ func applyInterfaceSpecToResult(
 	}
 
 	result.Name = interfaceSpec.Name
+	result.DeviceName = interfaceSpec.DeviceName
+	if result.DeviceName == "" {
+		result.DeviceName = result.Name
+	}
+
 	result.DHCP4 = dhcp4
 	result.DHCP6 = dhcp6
 	result.Nameservers = interfaceSpec.Nameservers

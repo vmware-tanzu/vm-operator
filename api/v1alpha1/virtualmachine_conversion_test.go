@@ -90,6 +90,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								},
 								Name: "primary",
 							},
+							GuestDeviceName: "eth10",
 						},
 						{
 							Name: "ncp-interface",
@@ -100,6 +101,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								},
 								Name: "segment1",
 							},
+							GuestDeviceName: "eth20",
 						},
 						{
 							Name: "nsx-vpc-subnet-interface",
@@ -110,6 +112,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 								},
 								Name: "segment-subnet",
 							},
+							GuestDeviceName: "eth30",
 						},
 						{
 							Name: "nsx-vpc-subnetset-interface",
@@ -130,13 +133,14 @@ func TestVirtualMachineConversion(t *testing.T) {
 								},
 								Name: "secondary",
 							},
-							Addresses:   []string{"1.1.1.11", "2.2.2.22"},
-							DHCP4:       true,
-							DHCP6:       true,
-							Gateway4:    "1.1.1.1",
-							Gateway6:    "2.2.2.2",
-							MTU:         ptrOf[int64](9000),
-							Nameservers: []string{"9.9.9.9"},
+							GuestDeviceName: "eth40",
+							Addresses:       []string{"1.1.1.11", "2.2.2.22"},
+							DHCP4:           true,
+							DHCP6:           true,
+							Gateway4:        "1.1.1.1",
+							Gateway6:        "2.2.2.2",
+							MTU:             ptrOf[int64](9000),
+							Nameservers:     []string{"9.9.9.9"},
 							Routes: []nextver.VirtualMachineNetworkRouteSpec{
 								{
 									To:     "3.3.3.3",

@@ -47,13 +47,14 @@ type NetworkInterfaceResult struct {
 	Device vimtypes.BaseVirtualDevice
 
 	// Fields from the InterfaceSpec used later during customization.
-	Name          string
-	DHCP4         bool
-	DHCP6         bool
-	MTU           int64
-	Nameservers   []string
-	SearchDomains []string
-	Routes        []NetworkInterfaceRoute
+	Name            string
+	GuestDeviceName string
+	DHCP4           bool
+	DHCP6           bool
+	MTU             int64
+	Nameservers     []string
+	SearchDomains   []string
+	Routes          []NetworkInterfaceRoute
 }
 
 type NetworkInterfaceIPConfig struct {
@@ -194,6 +195,11 @@ func applyInterfaceSpecToResult(
 	}
 
 	result.Name = interfaceSpec.Name
+	result.GuestDeviceName = interfaceSpec.GuestDeviceName
+	if result.GuestDeviceName == "" {
+		result.GuestDeviceName = result.Name
+	}
+
 	result.DHCP4 = dhcp4
 	result.DHCP6 = dhcp6
 	result.Nameservers = interfaceSpec.Nameservers

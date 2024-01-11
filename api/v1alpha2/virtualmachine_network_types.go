@@ -27,10 +27,10 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// Name describes the unique name of this network interface, used to
 	// distinguish it from other network interfaces attached to this VM.
 	//
-	// This value is also used to rename the device inside the guest when the
-	// bootstrap provider is CloudInit. Please note it is up to the user to
-	// ensure the provided device name does not conflict with any other devices
-	// inside the guest, ex. dvd, cdrom, sda, etc.
+	// When the bootstrap provider is Cloud-Init and GuestDeviceName is not
+	// specified, the device inside the guest will be renamed to this value.
+	// Please note it is up to the user to ensure the provided name does not
+	// conflict with any other devices inside the guest, ex. dvd, cdrom, sda, etc.
 	//
 	// +kubebuilder:validation:Pattern="^[a-z0-9]{2,}$"
 	Name string `json:"name"`
@@ -43,6 +43,15 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	//
 	// +optional
 	Network common.PartialObjectRef `json:"network,omitempty"`
+
+	// GuestDeviceName is used to rename the device inside the guest when the
+	// bootstrap provider is Cloud-Init. Please note it is up to the user to
+	// ensure the provided device name does not conflict with any other devices
+	// inside the guest, ex. dvd, cdrom, sda, etc.
+	//
+	// +optional
+	// +kubebuilder:validation:Pattern=^\w\w+$
+	GuestDeviceName string `json:"guestDeviceName,omitempty"`
 
 	// Addresses is an optional list of IP4 or IP6 addresses to assign to this
 	// interface.

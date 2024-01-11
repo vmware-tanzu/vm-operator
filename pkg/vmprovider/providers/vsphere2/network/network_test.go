@@ -120,8 +120,9 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 				BeforeEach(func() {
 					interfaceSpecs = []vmopv1.VirtualMachineNetworkInterfaceSpec{
 						{
-							Name:    "eth0",
-							Network: common.PartialObjectRef{Name: networkName},
+							Name:            "my-network-interface",
+							GuestDeviceName: "eth42",
+							Network:         common.PartialObjectRef{Name: networkName},
 							Addresses: []string{
 								"172.42.1.100/24",
 								"fd1a:6c85:79fe:7c98:0000:0000:0000:000f/56",
@@ -154,6 +155,11 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 						backingInfo, ok := backing.(*types.VirtualEthernetCardDistributedVirtualPortBackingInfo)
 						Expect(ok).To(BeTrue())
 						Expect(backingInfo.Port.PortgroupKey).To(Equal(ctx.NetworkRef.Reference().Value))
+					})
+
+					By("has expected names", func() {
+						Expect(result.Name).To(Equal("my-network-interface"))
+						Expect(result.GuestDeviceName).To(Equal("eth42"))
 					})
 
 					Expect(result.DHCP4).To(BeFalse())
@@ -283,6 +289,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 				Expect(result.Backing).ToNot(BeNil())
 				Expect(result.Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
 				Expect(result.Name).To(Equal(interfaceName))
+				Expect(result.GuestDeviceName).To(Equal(interfaceName))
 
 				Expect(result.IPConfigs).To(HaveLen(2))
 				ipConfig := result.IPConfigs[0]
@@ -371,6 +378,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 					Expect(result.Backing).ToNot(BeNil())
 					Expect(result.Backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
 					Expect(result.Name).To(Equal(interfaceName))
+					Expect(result.GuestDeviceName).To(Equal(interfaceName))
 
 					Expect(result.IPConfigs).To(HaveLen(2))
 					ipConfig := result.IPConfigs[0]

@@ -32,7 +32,7 @@ type VirtualMachineNetworkInterfaceSpec struct {
 	// ensure the provided device name does not conflict with any other devices
 	// inside the guest, ex. dvd, cdrom, sda, etc.
 	//
-	// +kubebuilder:validation:Pattern=^\w\w+$
+	// +kubebuilder:validation:Pattern="^[a-z0-9]{2,}$"
 	Name string `json:"name"`
 
 	// Network is the name of the network resource to which this interface is

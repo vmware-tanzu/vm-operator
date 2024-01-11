@@ -44,7 +44,6 @@ type BootstrapArgs struct {
 
 	TemplateRenderFn TemplateRenderFunc
 	NetworkResults   network.NetworkInterfaceResults
-	ComputerName     string
 	Hostname         string
 	DNSServers       []string
 	SearchSuffixes   []string
@@ -132,7 +131,6 @@ func getBootstrapArgs(
 		BootstrapData:  bootstrapData,
 		NetworkResults: networkResults,
 		Hostname:       vmCtx.VM.Name,
-		ComputerName:   vmCtx.VM.Name,
 	}
 
 	if networkSpec := vmCtx.VM.Spec.Network; networkSpec != nil {

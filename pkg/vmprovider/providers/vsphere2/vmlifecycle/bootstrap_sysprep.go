@@ -106,7 +106,7 @@ func convertTo(from *vmopv1sysprep.Sysprep, bsArgs *BootstrapArgs) *vimTypes.Cus
 	sysprepCustomization.UserData = vimTypes.CustomizationUserData{
 		// This is a mandatory field
 		ComputerName: &vimTypes.CustomizationFixedName{
-			Name: bsArgs.ComputerName,
+			Name: bsArgs.Hostname,
 		},
 	}
 	if from.UserData != nil {

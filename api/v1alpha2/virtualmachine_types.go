@@ -224,15 +224,6 @@ type VirtualMachineSpec struct {
 	// Bootstrap describes the desired state of the guest's bootstrap
 	// configuration.
 	//
-	// If omitted, then the bootstrap method is determined based on the guest
-	// identifier from the VirtualMachineImage. If the image's guest OS type is
-	// Windows, then the Sysprep bootstrap method is used; if Linux, the
-	// LinuxPrep method is used.
-	//
-	// Please note that defaulting to Sysprep for Windows images only works if
-	// the image uses a volume license key, otherwise the image's product ID is
-	// required.
-	//
 	// +optional
 	Bootstrap *VirtualMachineBootstrapSpec `json:"bootstrap,omitempty"`
 

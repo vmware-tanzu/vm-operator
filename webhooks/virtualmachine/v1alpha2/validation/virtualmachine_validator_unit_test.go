@@ -702,6 +702,86 @@ func unitTestsValidateCreate() {
 				},
 			),
 
+			Entry("allow disabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Disabled: true,
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow global nameservers and search domains with LinuxPrep",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Nameservers: []string{
+								"8.8.8.8",
+								"2001:4860:4860::8888",
+							},
+							SearchDomains: []string{
+								"foo.bar",
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("allow global nameservers and search domains with Sysprep",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
+
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Nameservers: []string{
+								"8.8.8.8",
+								"2001:4860:4860::8888",
+							},
+							SearchDomains: []string{
+								"dev.local",
+							},
+						}
+					},
+					expectAllowed: true,
+				},
+			),
+
+			Entry("disallow global nameservers and search domains with CloudInit",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
+						}
+						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Nameservers: []string{
+								"not-an-ip",
+								"8.8.8.8",
+								"2001:4860:4860::8888",
+							},
+							SearchDomains: []string{
+								"dev.local",
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.nameservers: Invalid value: "not-an-ip,8.8.8.8,2001:4860:4860::8888": nameservers is available only with the following bootstrap providers: LinuxPrep and Sysprep`,
+						`spec.network.searchDomains: Invalid value: "dev.local": searchDomains is available only with the following bootstrap providers: LinuxPrep and Sysprep`,
+						`spec.network.nameservers[0]: Invalid value: "not-an-ip": must be an IPv4 or IPv6 address`,
+					),
+				},
+			),
+
 			Entry("allow static",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -904,17 +984,12 @@ func unitTestsValidateCreate() {
 			),
 
 			// Please note nameservers is available only with the following bootstrap
-			// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
+			// providers: CloudInit and Sysprep.
 			Entry("validate nameservers when bootstrap doesn't support nameservers",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
-						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-							config.Features.WindowsSysprep = true
-						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
-								RawSysprep: &common.SecretKeySelector{},
-							},
+							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
 						}
 						ctx.vm.Spec.Network.Interfaces[0].Nameservers = []string{
 							"not-an-ip",
@@ -924,21 +999,35 @@ func unitTestsValidateCreate() {
 					validate: doValidateWithMsg(
 						`spec.network.interfaces[0].nameservers[0]: Invalid value: "not-an-ip": must be an IPv4 or IPv6 address`,
 						`spec.network.interfaces[0].nameservers[1]: Invalid value: "192.168.1.1/24": must be an IPv4 or IPv6 address`,
-						`spec.network.interfaces[0].nameservers: Invalid value: "not-an-ip,192.168.1.1/24": nameservers is available only with the following bootstrap providers: CloudInit LinuxPrep and Sysprep (except for RawSysprep)`,
+						`spec.network.interfaces[0].nameservers: Invalid value: "not-an-ip,192.168.1.1/24": nameservers is available only with the following bootstrap providers: CloudInit and Sysprep`,
 					),
 				},
 			),
 
-			Entry("validate nameservers when bootstrap supports nameservers",
+			Entry("disallows nameservers vAppConfig",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
+						}
+						ctx.vm.Spec.Network.Interfaces[0].Nameservers = []string{
+							"192.168.1.1",
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].nameservers: Invalid value: "192.168.1.1": nameservers is available only with the following bootstrap providers: CloudInit and Sysprep`,
+					),
+				},
+			),
+
+			Entry("allows nameservers with Sysprep",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
 							config.Features.WindowsSysprep = true
 						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
-								Sysprep: &sysprep.Sysprep{},
-							},
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
 						}
 						ctx.vm.Spec.Network.Interfaces[0].Nameservers = []string{
 							"8.8.8.8",
@@ -957,9 +1046,7 @@ func unitTestsValidateCreate() {
 							config.Features.WindowsSysprep = true
 						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
-								Sysprep: &sysprep.Sysprep{},
-							},
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
 						}
 						ctx.vm.Spec.Network.Interfaces[0].Routes = []vmopv1.VirtualMachineNetworkRouteSpec{
 							{
@@ -1008,8 +1095,7 @@ func unitTestsValidateCreate() {
 				},
 			),
 
-			// Please note this feature is available only with the following bootstrap
-			// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
+			// Please note this feature is available only with the following bootstrap providers: CloudInit
 			Entry("validate searchDomains when bootstrap doesn't support searchDomains",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
@@ -1019,16 +1105,16 @@ func unitTestsValidateCreate() {
 						ctx.vm.Spec.Network.Interfaces[0].SearchDomains = []string{"dev.local"}
 					},
 					validate: doValidateWithMsg(
-						`spec.network.interfaces[0].searchDomains: Invalid value: "dev.local": searchDomains is available only with the following bootstrap providers: CloudInit LinuxPrep and Sysprep (except for RawSysprep)`,
+						`spec.network.interfaces[0].searchDomains: Invalid value: "dev.local": searchDomains is available only with the following bootstrap providers: CloudInit`,
 					),
 				},
 			),
 
-			Entry("validate searchDomains when bootstrap supports searchDomains",
+			Entry("allows per-interface searchDomains with CloudInit",
 				testParams{
 					setup: func(ctx *unitValidatingWebhookContext) {
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
 						}
 						ctx.vm.Spec.Network.Interfaces[0].SearchDomains = []string{"dev.local"}
 					},

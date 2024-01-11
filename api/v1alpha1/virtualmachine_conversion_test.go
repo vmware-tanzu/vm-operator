@@ -76,8 +76,10 @@ func TestVirtualMachineConversion(t *testing.T) {
 					},
 				},
 				Network: &nextver.VirtualMachineNetworkSpec{
-					HostName: "my-test-vm",
-					Disabled: true,
+					HostName:      "my-test-vm",
+					Disabled:      true,
+					Nameservers:   []string{"10.11.12.13", "9.9.9.9"},
+					SearchDomains: []string{"foo.local", "bar.local"},
 					Interfaces: []nextver.VirtualMachineNetworkInterfaceSpec{
 						{
 							Name: "vds-interface",

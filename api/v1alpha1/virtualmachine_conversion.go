@@ -850,7 +850,7 @@ func restore_v1alpha2_VirtualMachineNetworkSpec(
 	dst, src *v1alpha2.VirtualMachine) {
 
 	srcNetwork := src.Spec.Network
-	if srcNetwork == nil || (srcNetwork.HostName == "" && !srcNetwork.Disabled && len(srcNetwork.Interfaces) == 0) {
+	if srcNetwork == nil || apiequality.Semantic.DeepEqual(*srcNetwork, v1alpha2.VirtualMachineNetworkSpec{}) {
 		// Nothing to restore.
 		return
 	}
@@ -862,6 +862,8 @@ func restore_v1alpha2_VirtualMachineNetworkSpec(
 
 	dstNetwork.HostName = srcNetwork.HostName
 	dstNetwork.Disabled = srcNetwork.Disabled
+	dstNetwork.Nameservers = srcNetwork.Nameservers
+	dstNetwork.SearchDomains = srcNetwork.SearchDomains
 
 	if len(dstNetwork.Interfaces) == 0 {
 		// No interfaces so nothing to fixup (the interfaces were removed): we ignore the restored interfaces.

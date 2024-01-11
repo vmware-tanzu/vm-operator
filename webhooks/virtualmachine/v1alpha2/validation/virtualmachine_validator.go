@@ -383,12 +383,23 @@ func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv
 
 	networkPath := field.NewPath("spec", "network")
 
+	allErrs = append(allErrs, v.validateNetworkSpecWithBootStrap(ctx, vm)...)
+
+	if len(networkSpec.Nameservers) > 0 {
+		for i, n := range networkSpec.Nameservers {
+			if net.ParseIP(n) == nil {
+				allErrs = append(allErrs,
+					field.Invalid(networkPath.Child("nameservers").Index(i), n, "must be an IPv4 or IPv6 address"))
+			}
+		}
+	}
+
 	if len(networkSpec.Interfaces) > 0 {
 		p := networkPath.Child("interfaces")
 
 		for i, interfaceSpec := range networkSpec.Interfaces {
 			allErrs = append(allErrs, v.validateNetworkInterfaceSpec(p.Index(i), interfaceSpec, vm.Name)...)
-			allErrs = append(allErrs, v.validateNetworkSpecWithBootstrap(ctx, p.Index(i), interfaceSpec, vm)...)
+			allErrs = append(allErrs, v.validateNetworkInterfaceSpecWithBootstrap(ctx, p.Index(i), interfaceSpec, vm)...)
 		}
 	}
 
@@ -513,10 +524,53 @@ func (v validator) validateNetworkInterfaceSpec(
 	return allErrs
 }
 
-// mtu and routes is available only with CloudInit bootstrap providers.
-// nameservers and searchDomains is available only with the following bootstrap
-// providers: CloudInit, LinuxPrep, and Sysprep (except for RawSysprep).
-func (v validator) validateNetworkSpecWithBootstrap(
+func (v validator) validateNetworkSpecWithBootStrap(
+	ctx goctx.Context,
+	vm *vmopv1.VirtualMachine) field.ErrorList {
+
+	var allErrs field.ErrorList
+
+	networkSpec := vm.Spec.Network
+	if networkSpec == nil {
+		return allErrs
+	}
+
+	var (
+		linuxPrep *vmopv1.VirtualMachineBootstrapLinuxPrepSpec
+		sysPrep   *vmopv1.VirtualMachineBootstrapSysprepSpec
+	)
+
+	if vm.Spec.Bootstrap != nil {
+		linuxPrep = vm.Spec.Bootstrap.LinuxPrep
+		sysPrep = vm.Spec.Bootstrap.Sysprep
+	}
+
+	if len(networkSpec.Nameservers) > 0 {
+		if linuxPrep == nil && sysPrep == nil {
+			allErrs = append(allErrs, field.Invalid(
+				field.NewPath("spec", "network", "nameservers"),
+				strings.Join(networkSpec.Nameservers, ","),
+				"nameservers is available only with the following bootstrap providers: LinuxPrep and Sysprep",
+			))
+		}
+	}
+
+	if len(networkSpec.SearchDomains) > 0 {
+		if linuxPrep == nil && sysPrep == nil {
+			allErrs = append(allErrs, field.Invalid(
+				field.NewPath("spec", "network", "searchDomains"),
+				strings.Join(networkSpec.SearchDomains, ","),
+				"searchDomains is available only with the following bootstrap providers: LinuxPrep and Sysprep",
+			))
+		}
+	}
+
+	return allErrs
+}
+
+// MTU, routes, and searchDomains are available only with CloudInit.
+// Nameservers is available only with CloudInit and Sysprep.
+func (v validator) validateNetworkInterfaceSpecWithBootstrap(
 	ctx goctx.Context,
 	interfacePath *field.Path,
 	interfaceSpec vmopv1.VirtualMachineNetworkInterfaceSpec,
@@ -526,50 +580,51 @@ func (v validator) validateNetworkSpecWithBootstrap(
 
 	var (
 		cloudInit *vmopv1.VirtualMachineBootstrapCloudInitSpec
-		linuxPrep *vmopv1.VirtualMachineBootstrapLinuxPrepSpec
 		sysPrep   *vmopv1.VirtualMachineBootstrapSysprepSpec
 	)
 
 	if vm.Spec.Bootstrap != nil {
 		cloudInit = vm.Spec.Bootstrap.CloudInit
-		linuxPrep = vm.Spec.Bootstrap.LinuxPrep
 		sysPrep = vm.Spec.Bootstrap.Sysprep
 	}
 
-	if mtu := interfaceSpec.MTU; mtu != nil && cloudInit == nil {
-		allErrs = append(allErrs, field.Invalid(
-			interfacePath.Child("mtu"),
-			mtu,
-			"mtu is available only with the following bootstrap providers: CloudInit",
-		))
-	}
-
-	if routes := interfaceSpec.Routes; routes != nil && cloudInit == nil {
-		allErrs = append(allErrs, field.Invalid(
-			interfacePath.Child("routes"),
-			// Not exposing routes here in error message
-			"routes",
-			"routes is available only with the following bootstrap providers: CloudInit",
-		))
-	}
-	if nameservers := interfaceSpec.Nameservers; nameservers != nil {
-		sysprepNotAllowed := !pkgconfig.FromContext(ctx).Features.WindowsSysprep || sysPrep == nil || sysPrep.RawSysprep != nil
-		if cloudInit == nil && linuxPrep == nil && sysprepNotAllowed {
+	if mtu := interfaceSpec.MTU; mtu != nil {
+		if cloudInit == nil {
 			allErrs = append(allErrs, field.Invalid(
-				interfacePath.Child("nameservers"),
-				strings.Join(nameservers, ","),
-				"nameservers is available only with the following bootstrap providers: CloudInit LinuxPrep and Sysprep (except for RawSysprep)",
+				interfacePath.Child("mtu"),
+				mtu,
+				"mtu is available only with the following bootstrap providers: CloudInit",
 			))
 		}
 	}
 
-	if searchDomains := interfaceSpec.SearchDomains; searchDomains != nil {
-		sysprepNotAllowed := !pkgconfig.FromContext(ctx).Features.WindowsSysprep || sysPrep == nil || sysPrep.RawSysprep != nil
-		if cloudInit == nil && linuxPrep == nil && sysprepNotAllowed {
+	if routes := interfaceSpec.Routes; len(routes) > 0 {
+		if cloudInit == nil {
+			allErrs = append(allErrs, field.Invalid(
+				interfacePath.Child("routes"),
+				// Not exposing routes here in error message
+				"routes",
+				"routes is available only with the following bootstrap providers: CloudInit",
+			))
+		}
+	}
+
+	if nameservers := interfaceSpec.Nameservers; len(nameservers) > 0 {
+		if cloudInit == nil && sysPrep == nil {
+			allErrs = append(allErrs, field.Invalid(
+				interfacePath.Child("nameservers"),
+				strings.Join(nameservers, ","),
+				"nameservers is available only with the following bootstrap providers: CloudInit and Sysprep",
+			))
+		}
+	}
+
+	if searchDomains := interfaceSpec.SearchDomains; len(searchDomains) > 0 {
+		if cloudInit == nil {
 			allErrs = append(allErrs, field.Invalid(
 				interfacePath.Child("searchDomains"),
 				strings.Join(searchDomains, ","),
-				"searchDomains is available only with the following bootstrap providers: CloudInit LinuxPrep and Sysprep (except for RawSysprep)",
+				"searchDomains is available only with the following bootstrap providers: CloudInit",
 			))
 		}
 	}
@@ -608,8 +663,6 @@ func (v validator) validateVolumes(ctx *context.WebhookRequestContext, vm *vmopv
 			allErrs = append(allErrs, v.validateVolumeWithPVC(ctx, vol, volPath)...)
 		}
 	}
-
-	// TODO: InstanceStorage
 
 	return allErrs
 }

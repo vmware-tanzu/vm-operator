@@ -100,7 +100,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 		Context("Inlined Sysprep", func() {
 			autoUsers := int32(5)
 			password, domainPassword, productID := "password_foo", "admin_password_foo", "product_id_foo"
-			computerName := "foo-win-vm"
+			hostName := "foo-win-vm"
 
 			BeforeEach(func() {
 				sysPrepSpec.Sysprep = &vmopv1sysprep.Sysprep{
@@ -140,7 +140,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 					Password:       password,
 					DomainPassword: domainPassword,
 				}
-				bsArgs.ComputerName = computerName
+				bsArgs.Hostname = hostName
 			})
 
 			It("should return expected customization spec", func() {
@@ -160,7 +160,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				Expect(sysPrep.UserData.ProductId).To(Equal(productID))
 				name, ok := sysPrep.UserData.ComputerName.(*types.CustomizationFixedName)
 				Expect(ok).To(BeTrue())
-				Expect(name.Name).To(Equal(computerName))
+				Expect(name.Name).To(Equal(hostName))
 
 				Expect(sysPrep.GuiRunOnce.CommandList).To(HaveLen(2))
 
@@ -190,7 +190,7 @@ var _ = Describe("SysPrep Bootstrap", func() {
 
 					name, ok := sysPrep.UserData.ComputerName.(*types.CustomizationFixedName)
 					Expect(ok).To(BeTrue())
-					Expect(name.Name).To(Equal(computerName))
+					Expect(name.Name).To(Equal(hostName))
 				})
 			})
 		})

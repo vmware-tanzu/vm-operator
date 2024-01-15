@@ -87,3 +87,9 @@
   value:
     name: PRIVILEGED_USERS
     value: "<COMMA_SEPARATED_LIST_OF_USERS>"
+
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: FSS_PODVMONSTRETCHEDSUPERVISOR
+    value: "<FSS_PODVMONSTRETCHEDSUPERVISOR>"

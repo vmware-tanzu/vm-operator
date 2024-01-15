@@ -57,6 +57,7 @@ func FromEnv() Config {
 	setBool(env.FSSNamespacedVMClass, &config.Features.NamespacedVMClass)
 	setBool(env.FSSWindowsSysprep, &config.Features.WindowsSysprep)
 	setBool(env.FSSVMServiceBackupRestore, &config.Features.AutoVADPBackupRestore)
+	setBool(env.FSSPodVMOnStretchedSupervisor, &config.Features.PodVMOnStretchedSupervisor)
 
 	return config
 }

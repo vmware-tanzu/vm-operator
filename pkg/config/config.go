@@ -92,16 +92,17 @@ func (c Config) GetMaxDeployThreadsOnProvider() int {
 }
 
 type FeatureStates struct {
-	AutoVADPBackupRestore   bool // FSS_WCP_VMSERVICE_BACKUPRESTORE
-	FaultDomains            bool // FSS_WCP_FAULTDOMAINS
-	ImageRegistry           bool // FSS_WCP_INSTANCE_STORAGE
-	InstanceStorage         bool // FSS_WCP_INSTANCE_STORAGE
-	NamespacedVMClass       bool // FSS_WCP_NAMESPACED_VM_CLASS
-	WindowsSysprep          bool // FSS_WCP_WINDOWS_SYSPREP
-	UnifiedTKG              bool // FSS_WCP_Unified_TKG
-	VMClassAsConfig         bool // FSS_WCP_VM_CLASS_AS_CONFIG
-	VMClassAsConfigDayNDate bool // FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE
-	VMOpV1Alpha2            bool // FSS_WCP_VMSERVICE_V1ALPHA2
+	AutoVADPBackupRestore      bool // FSS_WCP_VMSERVICE_BACKUPRESTORE
+	FaultDomains               bool // FSS_WCP_FAULTDOMAINS
+	ImageRegistry              bool // FSS_WCP_INSTANCE_STORAGE
+	InstanceStorage            bool // FSS_WCP_INSTANCE_STORAGE
+	NamespacedVMClass          bool // FSS_WCP_NAMESPACED_VM_CLASS
+	WindowsSysprep             bool // FSS_WCP_WINDOWS_SYSPREP
+	UnifiedTKG                 bool // FSS_WCP_Unified_TKG
+	VMClassAsConfig            bool // FSS_WCP_VM_CLASS_AS_CONFIG
+	VMClassAsConfigDayNDate    bool // FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE
+	VMOpV1Alpha2               bool // FSS_WCP_VMSERVICE_V1ALPHA2
+	PodVMOnStretchedSupervisor bool // FSS_PODVMONSTRETCHEDSUPERVISOR
 }
 
 type InstanceStorage struct {

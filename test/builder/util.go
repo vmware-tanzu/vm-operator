@@ -33,6 +33,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
@@ -421,9 +422,13 @@ func DummyResourceQuota(namespace, rlName string) *corev1.ResourceQuota {
 }
 
 func DummyAvailabilityZone() *topologyv1.AvailabilityZone {
+	return DummyNamedAvailabilityZone(DummyAvailabilityZoneName)
+}
+
+func DummyNamedAvailabilityZone(name string) *topologyv1.AvailabilityZone {
 	return &topologyv1.AvailabilityZone{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: DummyAvailabilityZoneName,
+			Name: name,
 		},
 		Spec: topologyv1.AvailabilityZoneSpec{
 			ClusterComputeResourceMoIDs: []string{"cluster"},
@@ -542,6 +547,32 @@ func DummyClusterContentLibrary(name, uuid string) *imgregv1a1.ClusterContentLib
 		},
 		Spec: imgregv1a1.ClusterContentLibrarySpec{
 			UUID: types.UID(uuid),
+		},
+	}
+}
+
+func DummyStoragePolicyQuota(quotaName, quotaNs, className string) *cnsstoragev1.StoragePolicyQuota {
+	return &cnsstoragev1.StoragePolicyQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      quotaName,
+			Namespace: quotaNs,
+		},
+		Spec: cnsstoragev1.StoragePolicyQuotaSpec{StoragePolicyId: "uuid-abcd-1234"},
+		Status: cnsstoragev1.StoragePolicyQuotaStatus{
+			ResourceTypeLevelQuotaStatuses: []cnsstoragev1.ResourceTypeLevelQuotaStatus{
+				{
+					ResourceExtensionName: "volume.cns.vsphere.vmware.com",
+					ResourceTypeSCLevelQuotaStatuses: []cnsstoragev1.SCLevelQuotaStatus{{
+						StorageClassName: className,
+					}},
+				},
+				{
+					ResourceExtensionName: "volume.cns.vsphere.vmware.com",
+					ResourceTypeSCLevelQuotaStatuses: []cnsstoragev1.SCLevelQuotaStatus{{
+						StorageClassName: className + "-abcde",
+					}},
+				},
+			},
 		},
 	}
 }

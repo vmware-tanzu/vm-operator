@@ -28,6 +28,8 @@ import (
 	"github.com/pkg/errors"
 
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
+	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
@@ -52,6 +54,7 @@ const (
 	updatesNotAllowedWhenPowerOn              = "updates to this field is not allowed when VM power is on"
 	storageClassNotAssignedFmt                = "Storage policy is not associated with the namespace %s"
 	storageClassNotFoundFmt                   = "Storage policy is not associated with the namespace %s"
+	storagePolicyQuotaNotFoundFmt             = "StoragePolicyQuota not found in namespace %s: error: %s"
 	invalidVolumeSpecified                    = "only one of persistentVolumeClaim or vsphereVolume must be specified"
 	vSphereVolumeSizeNotMBMultiple            = "value must be a multiple of MB"
 	eagerZeroedAndThinProvisionedNotSupported = "Volume provisioning cannot have EagerZeroed and ThinProvisioning set. Eager zeroing requires thick provisioning"
@@ -274,28 +277,48 @@ func (v validator) validateStorageClass(ctx *context.WebhookRequestContext, vm *
 	scName := vm.Spec.StorageClass
 	namespace := vm.Namespace
 
-	sc := &storagev1.StorageClass{}
-	if err := v.client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
-		return append(allErrs, field.Invalid(scPath, scName,
-			fmt.Sprintf(storageClassNotFoundFmt, namespace)))
+	var zones []topologyv1.AvailabilityZone
+	if pkgconfig.FromContext(ctx).Features.PodVMOnStretchedSupervisor {
+		azs, err := topology.GetAvailabilityZones(ctx, v.client)
+		if err != nil {
+			return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storagePolicyQuotaNotFoundFmt, vm.Namespace, err.Error())))
+		}
+		zones = azs
 	}
 
-	resourceQuotas := &corev1.ResourceQuotaList{}
-	if err := v.client.List(ctx, resourceQuotas, client.InNamespace(namespace)); err != nil {
-		return append(allErrs, field.Invalid(scPath, scName, err.Error()))
-	}
+	if pkgconfig.FromContext(ctx).Features.PodVMOnStretchedSupervisor && len(zones) > 1 {
+		storagePolicyQuota := &cnsstoragev1.StoragePolicyQuota{}
+		if err := v.client.Get(ctx, client.ObjectKey{
+			Namespace: namespace,
+			Name:      util.CNSStoragePolicyQuotaName(scName),
+		}, storagePolicyQuota); err != nil {
+			return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storagePolicyQuotaNotFoundFmt, vm.Namespace, err.Error())))
+		}
+	} else {
+		sc := &storagev1.StorageClass{}
+		if err := v.client.Get(ctx, client.ObjectKey{Name: scName}, sc); err != nil {
+			return append(allErrs, field.Invalid(scPath, scName, fmt.Sprintf(storageClassNotFoundFmt, vm.Namespace)))
+		}
 
-	prefix := scName + storageResourceQuotaStrPattern
-	for _, resourceQuota := range resourceQuotas.Items {
-		for resourceName := range resourceQuota.Spec.Hard {
-			if strings.HasPrefix(resourceName.String(), prefix) {
-				return nil
+		resourceQuotas := &corev1.ResourceQuotaList{}
+		if err := v.client.List(ctx, resourceQuotas, client.InNamespace(namespace)); err != nil {
+			return append(allErrs, field.Invalid(scPath, scName, err.Error()))
+		}
+
+		prefix := scName + storageResourceQuotaStrPattern
+		for _, resourceQuota := range resourceQuotas.Items {
+			for resourceName := range resourceQuota.Spec.Hard {
+				if strings.HasPrefix(resourceName.String(), prefix) {
+					return nil
+				}
 			}
 		}
+
+		return append(allErrs, field.Invalid(scPath, scName,
+			fmt.Sprintf(storageClassNotAssignedFmt, namespace)))
 	}
 
-	return append(allErrs, field.Invalid(scPath, scName,
-		fmt.Sprintf(storageClassNotAssignedFmt, namespace)))
+	return nil
 }
 
 func (v validator) validateNetwork(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {

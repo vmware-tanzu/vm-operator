@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2020-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha1
@@ -112,26 +112,12 @@ const (
 	FirstBootDoneAnnotation = "virtualmachine." + GroupName + "/first-boot-done"
 )
 
-// VirtualMachine backup/restore related constants.
 const (
 	// ManagedByExtensionKey and ManagedByExtensionType represent the ManagedBy
 	// field on the VM. They are used to differentiate VM Service managed VMs
 	// from traditional vSphere VMs.
 	ManagedByExtensionKey  = "com.vmware.vcenter.wcp"
 	ManagedByExtensionType = "VirtualMachine"
-
-	// VMBackupKubeDataExtraConfigKey is the ExtraConfig key to persist the VM's
-	// Kubernetes resource spec data, compressed using gzip and base64-encoded.
-	VMBackupKubeDataExtraConfigKey = "vmservice.virtualmachine.kubedata"
-	// VMBackupBootstrapDataExtraConfigKey is the ExtraConfig key to persist the
-	// VM's bootstrap data object, compressed using gzip and base64-encoded.
-	VMBackupBootstrapDataExtraConfigKey = "vmservice.virtualmachine.bootstrapdata"
-	// VMBackupDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
-	// attached disk info in JSON, compressed using gzip and base64-encoded.
-	VMBackupDiskDataExtraConfigKey = "vmservice.virtualmachine.diskdata"
-	// VMBackupCloudInitInstanceIDExtraConfigKey is the ExtraConfig key to persist
-	// the VM's Cloud-Init instance ID, compressed using gzip and base64-encoded.
-	VMBackupCloudInitInstanceIDExtraConfigKey = "vmservice.virtualmachine.cloudinit.instanceid"
 )
 
 // VirtualMachinePort is unused and can be considered deprecated.

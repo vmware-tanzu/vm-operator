@@ -114,6 +114,14 @@ rules:
   - get
   - list
 - apiGroups:
+  - cns.vmware.com
+  resources:
+  - storagepolicyquota
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - imageregistry.vmware.com
   resources:
   - clustercontentlibraryitems

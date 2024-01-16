@@ -125,7 +125,8 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 	}
 
 	if len(ecToUpdate) != 0 {
-		opts.VMCtx.Logger.Info("Updating VM ExtraConfig with latest backup data")
+		opts.VMCtx.Logger.Info("Updating VM ExtraConfig with latest backup data",
+			"ExtraConfigToUpdate", ecToUpdate)
 		configSpec := &types.VirtualMachineConfigSpec{
 			ExtraConfig: ecToUpdate,
 		}
@@ -134,7 +135,7 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 			return err
 		}
 
-		opts.VMCtx.Logger.Info("Successfully updated VM ExtraConfig with latest backup data", "ExtraConfig", ecToUpdate)
+		opts.VMCtx.Logger.Info("Successfully updated VM ExtraConfig with latest backup data")
 	}
 
 	return nil

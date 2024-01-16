@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine
@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -20,6 +19,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/resources"
 )
 
 // BackupVirtualMachineOptions contains the options for BackupVirtualMachine.
@@ -47,9 +47,9 @@ type PVCDiskData struct {
 // - Cloud-Init instance ID (if not already stored in ExtraConfig).
 // - PVC disk data in JSON format (if DiskUUIDToPVC is not empty).
 func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
-	var moVM mo.VirtualMachine
-	if err := opts.VcVM.Properties(opts.VMCtx, opts.VcVM.Reference(),
-		[]string{"config.extraConfig"}, &moVM); err != nil {
+	resVM := res.NewVMFromObject(opts.VcVM)
+	moVM, err := resVM.GetProperties(opts.VMCtx, []string{"config.extraConfig"})
+	if err != nil {
 		opts.VMCtx.Logger.Error(err, "failed to get VM properties for backup")
 		return err
 	}
@@ -125,14 +125,16 @@ func BackupVirtualMachine(opts BackupVirtualMachineOptions) error {
 	}
 
 	if len(ecToUpdate) != 0 {
-		opts.VMCtx.Logger.Info("Updating VM ExtraConfig with latest backup data",
-			"ExtraConfigToUpdate", ecToUpdate)
-		if _, err := opts.VcVM.Reconfigure(opts.VMCtx, types.VirtualMachineConfigSpec{
+		opts.VMCtx.Logger.Info("Updating VM ExtraConfig with latest backup data")
+		configSpec := &types.VirtualMachineConfigSpec{
 			ExtraConfig: ecToUpdate,
-		}); err != nil {
+		}
+		if err := resVM.Reconfigure(opts.VMCtx, configSpec); err != nil {
 			opts.VMCtx.Logger.Error(err, "failed to update VM ExtraConfig with latest backup data")
 			return err
 		}
+
+		opts.VMCtx.Logger.Info("Successfully updated VM ExtraConfig with latest backup data", "ExtraConfig", ecToUpdate)
 	}
 
 	return nil

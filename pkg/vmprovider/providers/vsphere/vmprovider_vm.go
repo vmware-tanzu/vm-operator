@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere
@@ -306,32 +306,6 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 
 		err = ses.UpdateVirtualMachine(vmCtx, vcVM, getUpdateArgsFn)
 		if err != nil {
-			return err
-		}
-	}
-
-	// Back up the VM at the end after a successful update.
-	if pkgconfig.FromContext(vmCtx).Features.AutoVADPBackupRestore {
-		vmCtx.Logger.V(4).Info("Backing up VirtualMachine")
-		data, err := GetVMMetadata(vmCtx, vs.k8sClient)
-		if err != nil {
-			vmCtx.Logger.Error(err, "Failed to get VM's metadata for backup")
-			return err
-		}
-		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
-		if err != nil {
-			vmCtx.Logger.Error(err, "Failed to get VM's attached PVCs for backup")
-			return err
-		}
-
-		backupVMCtx := context.BackupVirtualMachineContext{
-			VMCtx:         vmCtx,
-			VcVM:          vcVM,
-			BootstrapData: data.Data,
-			DiskUUIDToPVC: diskUUIDToPVC,
-		}
-		if err := virtualmachine.BackupVirtualMachine(backupVMCtx); err != nil {
-			vmCtx.Logger.Error(err, "Failed to back up VM")
 			return err
 		}
 	}

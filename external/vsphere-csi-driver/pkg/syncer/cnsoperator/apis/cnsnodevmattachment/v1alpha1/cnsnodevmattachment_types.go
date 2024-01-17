@@ -18,6 +18,8 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis"
 )
 
 const (
@@ -86,5 +88,5 @@ type CnsNodeVmAttachmentList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&CnsNodeVmAttachment{}, &CnsNodeVmAttachmentList{})
+	apis.SchemeBuilder.Register(&CnsNodeVmAttachment{}, &CnsNodeVmAttachmentList{})
 }

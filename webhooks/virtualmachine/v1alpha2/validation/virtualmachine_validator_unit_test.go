@@ -106,6 +106,9 @@ func unitTestsValidateCreate() {
 		nextRestartTime                   string
 		adminOnlyAnnotations              bool
 		isPrivilegedUser                  bool
+		multipleZones                     bool
+		podVMOnStretchedSupervisor        bool
+		noStoragePolicyQuota              bool
 	}
 
 	validateCreate := func(args createArgs, expectedAllowed bool, expectedReason string, expectedErr error) {
@@ -231,6 +234,25 @@ func unitTestsValidateCreate() {
 			ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 		}
 
+		if args.multipleZones && args.isWCPFaultDomainsFSSEnabled {
+			zone := builder.DummyNamedAvailabilityZone("zone-2")
+			Expect(ctx.Client.Create(ctx, zone)).To(Succeed())
+		}
+
+		if args.podVMOnStretchedSupervisor {
+			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+				config.Features.PodVMOnStretchedSupervisor = true
+			})
+			if !args.noStoragePolicyQuota {
+				storagePolicyQuota := builder.DummyStoragePolicyQuota(
+					builder.DummyStorageClassName+"-storagepolicyquota",
+					ctx.vm.Namespace,
+					builder.DummyStorageClassName,
+				)
+				Expect(ctx.Client.Create(ctx, storagePolicyQuota)).To(Succeed())
+			}
+		}
+
 		ctx.vm.Spec.PowerState = args.powerState
 		ctx.vm.Spec.NextRestartTime = args.nextRestartTime
 
@@ -331,6 +353,14 @@ func unitTestsValidateCreate() {
 		Entry("should allow creating VM with admin-only annotations set by service user", createArgs{isServiceUser: true, adminOnlyAnnotations: true}, true, nil, nil),
 
 		Entry("should allow creating VM with admin-only annotations set by WCP user when the Backup/Restore FSS is enabled", createArgs{adminOnlyAnnotations: true, isPrivilegedUser: true}, true, nil, nil),
+
+		Entry("should allow creating VM, there is 1 availability zone, and PodVMOnSupervisor FSS is disabled", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, podVMOnStretchedSupervisor: false}, true, nil, nil),
+		Entry("should allow creating VM, there is 1 availability zone, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, podVMOnStretchedSupervisor: true}, true, nil, nil),
+		Entry("should allow creating VM, there is 1 availability zone, there is no storage policy quota, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, podVMOnStretchedSupervisor: true, noStoragePolicyQuota: true}, true, nil, nil),
+
+		Entry("should allow creating VM, there are >1 availability zones, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, multipleZones: true, podVMOnStretchedSupervisor: true}, true, nil, nil),
+		Entry("should disallow creating VM, there are >1 availability zones, there is no storage policy quota, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, multipleZones: true, podVMOnStretchedSupervisor: true, noStoragePolicyQuota: true}, false, nil, nil),
+		Entry("should allow creating VM, there are >1 availability zones, and there is no storage policy quota", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, multipleZones: true, noStoragePolicyQuota: true}, true, nil, nil),
 	)
 
 	Context("Bootstrap", func() {

@@ -11,10 +11,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
+	cnsapis "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis"
 	cnsv1alpha1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/cnsnodevmattachment/v1alpha1"
+	cnsstoragev1 "github.com/vmware-tanzu/vm-operator/external/vsphere-csi-driver/pkg/syncer/cnsoperator/apis/storagepolicy/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -49,6 +52,7 @@ func KnownObjectTypes() []client.Object {
 		&v1alpha1.VirtualMachineImage{},
 		&v1alpha2.VirtualMachineImage{},
 		&cnsv1alpha1.CnsNodeVmAttachment{},
+		&cnsstoragev1.StoragePolicyQuota{},
 		&ncpv1alpha1.VirtualNetworkInterface{},
 		&netopv1alpha1.NetworkInterface{},
 	}
@@ -66,7 +70,7 @@ func NewScheme() *runtime.Scheme {
 	_ = v1alpha1.AddToScheme(scheme)
 	_ = v1alpha2.AddToScheme(scheme)
 	_ = ncpv1alpha1.AddToScheme(scheme)
-	_ = cnsv1alpha1.AddToScheme(scheme)
+	_ = cnsapis.AddToScheme(scheme)
 	_ = netopv1alpha1.AddToScheme(scheme)
 	_ = topologyv1.AddToScheme(scheme)
 	_ = imgregv1a1.AddToScheme(scheme)

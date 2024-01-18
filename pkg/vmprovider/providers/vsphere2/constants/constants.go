@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package constants
@@ -32,8 +32,12 @@ const (
 	// EnableDiskUUIDExtraConfigKey Enable UUID ExtraConfig key.
 	EnableDiskUUIDExtraConfigKey = "disk.enableUUID"
 
-	// MMPowerOffVMExtraConfigKey ExtraConfig key to enable DRS to powerOff VMs when underlying host enters into
-	// maintenance mode. This is to ensure the maintenance mode workflow is consistent for VMs with vGPU/DDPIO devices.
+	// MMPowerOffVMExtraConfigKey ExtraConfig key to enable DRS to powerOff VMs
+	// when the underlying host enters into maintenance mode. This is to ensure
+	// the maintenance mode workflow is consistent for VMs with vGPU/DDPIO
+	// devices.
+	// Deprecated: Admins can power off the VMs as they would VMs that are not
+	//             managed by VM Operator.
 	MMPowerOffVMExtraConfigKey = "maintenance.vm.evacuation.poweroff"
 
 	// NetPlanVersion points to the version used for Network config.

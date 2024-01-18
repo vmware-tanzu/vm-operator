@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2018-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session
@@ -25,7 +25,6 @@ import (
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/clustermodules"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
 	network2 "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/resources"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/virtualmachine"
@@ -310,14 +309,7 @@ func UpdateConfigSpecExtraConfig(
 	virtualDevices := vmClassSpec.Hardware.Devices
 	pciPassthruFromConfigSpec := util.SelectVirtualPCIPassthrough(util.DevicesFromConfigSpec(classConfigSpec))
 	if len(virtualDevices.VGPUDevices) > 0 || len(virtualDevices.DynamicDirectPathIODevices) > 0 || len(pciPassthruFromConfigSpec) > 0 {
-		// Add "maintenance.vm.evacuation.poweroff" extraConfig key when GPU devices are present in the VMClass Spec.
-		extraConfig[constants.MMPowerOffVMExtraConfigKey] = constants.ExtraConfigTrue
 		setMMIOExtraConfig(vm, extraConfig)
-	}
-
-	// If VM has InstanceStorage configured, add "maintenance.vm.evacuation.poweroff" to extraConfig
-	if instancestorage.IsPresent(vm) {
-		extraConfig[constants.MMPowerOffVMExtraConfigKey] = constants.ExtraConfigTrue
 	}
 
 	if pkgconfig.FromContext(ctx).Features.VMClassAsConfigDayNDate {
@@ -331,6 +323,16 @@ func UpdateConfigSpecExtraConfig(
 			}
 		}
 		extraConfig = util.ExtraConfigToMap(mergedExtraConfig)
+	}
+
+	// Ensure MMPowerOffVMExtraConfigKey is no longer part of ExtraConfig as
+	// setting it to an empty value removes it.
+	for i := range config.ExtraConfig {
+		if o := config.ExtraConfig[i].GetOptionValue(); o != nil {
+			if o.Key == constants.MMPowerOffVMExtraConfigKey && o.Value != "" {
+				extraConfig[constants.MMPowerOffVMExtraConfigKey] = ""
+			}
+		}
 	}
 
 	configSpec.ExtraConfig = util.MergeExtraConfig(config.ExtraConfig, extraConfig)

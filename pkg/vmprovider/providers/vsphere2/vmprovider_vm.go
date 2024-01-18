@@ -953,10 +953,6 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(
 
 	hasPassthroughDevices := len(util.SelectVirtualPCIPassthrough(util.DevicesFromConfigSpec(createArgs.ConfigSpec))) > 0
 
-	if hasPassthroughDevices || createArgs.HasInstanceStorage {
-		ecMap[constants.MMPowerOffVMExtraConfigKey] = constants.ExtraConfigTrue
-	}
-
 	if hasPassthroughDevices {
 		mmioSize := vmCtx.VM.Annotations[constants.PCIPassthruMMIOOverrideAnnotation]
 		if mmioSize == "" {

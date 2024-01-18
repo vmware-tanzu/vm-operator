@@ -474,12 +474,23 @@ var _ = Describe("MergeExtraConfig", func() {
 		})
 	})
 
-	Context("NewMap with existing key", func() {
+	Context("NewMap with existing key and same value", func() {
 		BeforeEach(func() {
-			newMap["existingkey1"] = "existingkey1"
+			newMap["existingkey1"] = "existingvalue1"
 		})
 		It("Return empty merged", func() {
 			Expect(merged).To(BeEmpty())
+		})
+	})
+
+	Context("NewMap with existing key and new value", func() {
+		BeforeEach(func() {
+			newMap["existingkey1"] = "newvalue1"
+		})
+		It("Return merged map", func() {
+			Expect(merged).To(HaveLen(1))
+			mergedMap := util.ExtraConfigToMap(merged)
+			Expect(mergedMap["existingkey1"]).To(Equal("newvalue1"))
 		})
 	})
 

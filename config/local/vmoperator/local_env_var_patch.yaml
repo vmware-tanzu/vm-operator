@@ -10,7 +10,7 @@ spec:
       - name: manager
         env:
         - name: FSS_WCP_Unified_TKG
-          value: "false"
+          value: "true"
         - name: FSS_WCP_VMSERVICE_V1ALPHA2
           value: "false"
         - name: VSPHERE_NETWORKING
@@ -18,19 +18,19 @@ spec:
         - name: FSS_WCP_FAULTDOMAINS
           value: "true"
         - name: FSS_WCP_INSTANCE_STORAGE
-          value: "false"
+          value: "true"
         - name: FSS_WCP_VM_CLASS_AS_CONFIG
-          value: "false"
+          value: "true"
         - name: FSS_WCP_VM_CLASS_AS_CONFIG_DAYNDATE
-          value: "false"
+          value: "true"
         - name: FSS_WCP_VM_IMAGE_REGISTRY
-          value: "false"
+          value: "true"
         - name: NETWORK_PROVIDER
           value: "NAMED"
         - name: FSS_WCP_NAMESPACED_VM_CLASS
-          value: "false"
+          value: "true"
         - name: FSS_WCP_WINDOWS_SYSPREP
-          value: "false"
+          value: "true"
         - name: FSS_WCP_VMSERVICE_BACKUPRESTORE
           value: "false"
         - name: FSS_PODVMONSTRETCHEDSUPERVISOR

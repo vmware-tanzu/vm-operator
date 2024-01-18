@@ -853,6 +853,7 @@ func vmTests() {
 
 				Context("VM spec has a PVC", func() {
 					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 14
 						vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{
 							{
 								Name: "dummy-vol",
@@ -875,7 +876,126 @@ func vmTests() {
 					It("creates a VM with a hardware version minimum supported for PVCs", func() {
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						// The min version required for PVCs is honored even when the min h/w
+						// version is set to a different value.
+						Expect(o.Config.Version).NotTo(Equal("vmx-14"))
 						Expect(o.Config.Version).To(Equal(fmt.Sprintf("vmx-%d", constants.MinSupportedHWVersionForPVC)))
+					})
+				})
+			})
+
+			Context("VM Class Config specifies a hardware version", func() {
+				BeforeEach(func() {
+					configSpec = &types.VirtualMachineConfigSpec{Version: "vmx-14"}
+				})
+
+				When("The minimum hardware version on the VMSpec is greater than VMClass", func() {
+					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 15
+					})
+
+					It("updates the VM to minimum hardware version from the Spec", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Version).To(Equal("vmx-15"))
+					})
+				})
+
+				When("The minimum hardware version on the VMSpec is less than VMClass", func() {
+					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 13
+					})
+
+					It("uses the hardware version from the VMClass", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+						Expect(o.Config.Version).To(Equal("vmx-14"))
+					})
+				})
+			})
+
+			Context("VMClassAsConfig FSS is Enabled", func() {
+
+				BeforeEach(func() {
+					testConfig.WithVMClassAsConfig = true
+				})
+
+				When("configSpec has disk and disk controllers", func() {
+					BeforeEach(func() {
+						configSpec = &types.VirtualMachineConfigSpec{
+							Name: "dummy-VM",
+							DeviceChange: []types.BaseVirtualDeviceConfigSpec{
+								&types.VirtualDeviceConfigSpec{
+									Operation: types.VirtualDeviceConfigSpecOperationAdd,
+									Device: &types.VirtualSATAController{
+										VirtualController: types.VirtualController{
+											VirtualDevice: types.VirtualDevice{
+												Key: 101,
+											},
+										},
+									},
+								},
+								&types.VirtualDeviceConfigSpec{
+									Operation: types.VirtualDeviceConfigSpecOperationAdd,
+									Device: &types.VirtualSCSIController{
+										VirtualController: types.VirtualController{
+											VirtualDevice: types.VirtualDevice{
+												Key: 103,
+											},
+										},
+									},
+								},
+								&types.VirtualDeviceConfigSpec{
+									Operation: types.VirtualDeviceConfigSpecOperationAdd,
+									Device: &types.VirtualNVMEController{
+										VirtualController: types.VirtualController{
+											VirtualDevice: types.VirtualDevice{
+												Key: 104,
+											},
+										},
+									},
+								},
+								&types.VirtualDeviceConfigSpec{
+									Operation: types.VirtualDeviceConfigSpecOperationAdd,
+									Device: &types.VirtualDisk{
+										CapacityInBytes: 1024,
+										VirtualDevice: types.VirtualDevice{
+											Key: -42,
+											Backing: &types.VirtualDiskFlatVer2BackingInfo{
+												ThinProvisioned: pointer.Bool(true),
+											},
+										},
+									},
+								},
+							},
+						}
+					})
+
+					It("creates a VM with disk controllers", func() {
+						var o mo.VirtualMachine
+						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+						devList := object.VirtualDeviceList(o.Config.Hardware.Device)
+						satacont := devList.SelectByType(&types.VirtualSATAController{})
+						Expect(satacont).To(HaveLen(1))
+						dev := satacont[0].GetVirtualDevice()
+						Expect(dev.Key).To(Equal(int32(101)))
+
+						scsicont := devList.SelectByType(&types.VirtualSCSIController{})
+						Expect(scsicont).To(HaveLen(1))
+						dev = scsicont[0].GetVirtualDevice()
+						Expect(dev.Key).To(Equal(int32(103)))
+
+						nvmecont := devList.SelectByType(&types.VirtualNVMEController{})
+						Expect(nvmecont).To(HaveLen(1))
+						dev = nvmecont[0].GetVirtualDevice()
+						Expect(dev.Key).To(Equal(int32(104)))
+
+						// only preexisting disk should be present on VM -- len: 1
+						disks := devList.SelectByType(&types.VirtualDisk{})
+						Expect(disks).To(HaveLen(1))
+						dev1 := disks[0].GetVirtualDevice()
+						Expect(dev1.Key).ToNot(Equal(int32(-42)))
 					})
 				})
 			})

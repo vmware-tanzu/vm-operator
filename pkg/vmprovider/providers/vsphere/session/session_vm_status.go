@@ -16,6 +16,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/lib"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	res "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/resources"
 )
 
@@ -108,6 +109,7 @@ func (s *Session) updateVMStatus(
 	vm.Status.UniqueID = resVM.MoRef().Value
 	vm.Status.BiosUUID = summary.Config.Uuid
 	vm.Status.InstanceUUID = summary.Config.InstanceUuid
+	vm.Status.HardwareVersion = util.ParseVirtualHardwareVersion(summary.Config.HwVersion)
 
 	if host := summary.Runtime.Host; host != nil {
 		hostSystem := object.NewHostSystem(s.Client.VimClient(), *host)

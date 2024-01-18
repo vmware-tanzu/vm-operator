@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package util
@@ -208,17 +208,28 @@ func ExtraConfigToMap(input []vimTypes.BaseOptionValue) (output map[string]strin
 	return
 }
 
-// MergeExtraConfig adds the key/value to the ExtraConfig if the key is not present.
+// MergeExtraConfig adds the key/value to the ExtraConfig if the key is not
+// present or the new value is different than the existing value.
 // It returns the newly added ExtraConfig.
-func MergeExtraConfig(extraConfig []vimTypes.BaseOptionValue, newMap map[string]string) []vimTypes.BaseOptionValue {
-	merged := make([]vimTypes.BaseOptionValue, 0)
-	ecMap := ExtraConfigToMap(extraConfig)
-	for k, v := range newMap {
-		if _, exists := ecMap[k]; !exists {
-			merged = append(merged, &vimTypes.OptionValue{Key: k, Value: v})
+func MergeExtraConfig(
+	existingExtraConfig []vimTypes.BaseOptionValue,
+	newKeyValuePairs map[string]string) []vimTypes.BaseOptionValue {
+
+	mergedExtraConfig := make([]vimTypes.BaseOptionValue, 0)
+	existingExtraConfigKeyValuePairs := ExtraConfigToMap(existingExtraConfig)
+
+	for nk, nv := range newKeyValuePairs {
+		if ev, ok := existingExtraConfigKeyValuePairs[nk]; !ok || nv != ev {
+			mergedExtraConfig = append(
+				mergedExtraConfig,
+				&vimTypes.OptionValue{
+					Key:   nk,
+					Value: nv,
+				})
 		}
 	}
-	return merged
+
+	return mergedExtraConfig
 }
 
 // EnsureMinHardwareVersionInConfigSpec ensures that the hardware version in the ConfigSpec

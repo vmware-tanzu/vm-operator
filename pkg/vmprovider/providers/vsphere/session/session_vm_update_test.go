@@ -1,4 +1,4 @@
-// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session_test
@@ -480,6 +480,20 @@ var _ = Describe("Update ConfigSpec", func() {
 			})
 		})
 
+		Context("ExtraConfig has a non-empty MM flag", func() {
+			BeforeEach(func() {
+				config.ExtraConfig = append(
+					config.ExtraConfig,
+					&vimTypes.OptionValue{
+						Key:   constants.MMPowerOffVMExtraConfigKey,
+						Value: "true",
+					})
+			})
+			It("Should be set to an empty value", func() {
+				Expect(ecMap).To(HaveKeyWithValue(constants.MMPowerOffVMExtraConfigKey, ""))
+			})
+		})
+
 		Context("ExtraConfig value already exists", func() {
 			BeforeEach(func() {
 				config.ExtraConfig = append(config.ExtraConfig, &vimTypes.OptionValue{Key: "foo", Value: "bar"})
@@ -492,31 +506,9 @@ var _ = Describe("Update ConfigSpec", func() {
 		})
 
 		Context("InstanceStorage related tests", func() {
-
 			Context("When InstanceStorage is NOT configured on VM", func() {
 				It("No Changes", func() {
 					Expect(ecMap).To(BeEmpty())
-				})
-			})
-
-			Context("When InstanceStorage is configured on VM", func() {
-				BeforeEach(func() {
-					vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
-						Name: "pvc-volume-1",
-						PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-								ClaimName: "pvc-volume-1",
-							},
-							InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
-								StorageClass: "dummyStorageClass",
-								Size:         resource.MustParse("256Gi"),
-							},
-						},
-					})
-				})
-
-				It("maintenance mode powerOff extraConfig should be added", func() {
-					Expect(ecMap).To(HaveKeyWithValue(constants.MMPowerOffVMExtraConfigKey, constants.ExtraConfigTrue))
 				})
 			})
 		})
@@ -536,10 +528,6 @@ var _ = Describe("Update ConfigSpec", func() {
 							ProfileName: "test-vgpu-profile",
 						},
 					}}
-				})
-
-				It("maintenance mode powerOff extraConfig should be added", func() {
-					Expect(ecMap).To(HaveKeyWithValue(constants.MMPowerOffVMExtraConfigKey, constants.ExtraConfigTrue))
 				})
 
 				It("PCI passthru MMIO extraConfig should be added", func() {
@@ -568,10 +556,6 @@ var _ = Describe("Update ConfigSpec", func() {
 							CustomLabel: "",
 						},
 					}}
-				})
-
-				It("maintenance mode powerOff extraConfig should be added", func() {
-					Expect(ecMap).To(HaveKeyWithValue(constants.MMPowerOffVMExtraConfigKey, constants.ExtraConfigTrue))
 				})
 
 				It("PCI passthru MMIO extraConfig should be added", func() {
@@ -665,8 +649,7 @@ var _ = Describe("Update ConfigSpec", func() {
 
 					})
 
-					It("extraConfig Map has MMIO and MMPowerOff related keys added", func() {
-						Expect(ecMap).To(HaveKeyWithValue(constants.MMPowerOffVMExtraConfigKey, constants.ExtraConfigTrue))
+					It("extraConfig Map has MMIO keys added", func() {
 						Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOExtraConfigKey, constants.ExtraConfigTrue))
 						Expect(ecMap).To(HaveKeyWithValue(constants.PCIPassthruMMIOSizeExtraConfigKey, constants.PCIPassthruMMIOSizeDefault))
 					})

@@ -200,7 +200,7 @@ func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client clien
 		return false
 	}
 
-	if vm.Spec.Network != nil && (vm.Spec.Network.Disabled || len(vm.Spec.Network.Interfaces) != 0) {
+	if vm.Spec.Network != nil && vm.Spec.Network.Disabled {
 		return false
 	}
 
@@ -224,24 +224,46 @@ func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client clien
 		return false
 	}
 
+	networkRef := common.PartialObjectRef{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       kind,
+			APIVersion: apiVersion,
+		},
+		Name: netName,
+	}
+
 	if vm.Spec.Network == nil {
 		vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{}
 	}
 
-	vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
-		{
-			Name: defaultInterfaceName,
-			Network: common.PartialObjectRef{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       kind,
-					APIVersion: apiVersion,
-				},
-				Name: netName,
+	var updated bool
+	if len(vm.Spec.Network.Interfaces) == 0 {
+		vm.Spec.Network.Interfaces = []vmopv1.VirtualMachineNetworkInterfaceSpec{
+			{
+				Name:    defaultInterfaceName,
+				Network: networkRef,
 			},
-		},
+		}
+		updated = true
+	} else {
+		for i := range vm.Spec.Network.Interfaces {
+			ifaceNetwork := &vm.Spec.Network.Interfaces[i].Network
+
+			if networkRef.Kind != "" && ifaceNetwork.Kind == "" && ifaceNetwork.APIVersion == "" {
+				ifaceNetwork.Kind = networkRef.Kind
+				ifaceNetwork.APIVersion = networkRef.APIVersion
+				updated = true
+			}
+
+			if networkRef.Name != "" && ifaceNetwork.Name == "" {
+				// Named network only.
+				ifaceNetwork.Name = networkRef.Name
+				updated = true
+			}
+		}
 	}
 
-	return true
+	return updated
 }
 
 // getProviderConfigMap is used in e2e tests.

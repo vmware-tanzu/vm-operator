@@ -190,7 +190,7 @@ func GetCloudInitGuestInfoCustSpec(
 	// always setting VAppConfigRemoved isn't correct: should only set it if the VM has vApp data.
 	// As-is we will always Reconfigure the VM.
 	configSpec := &types.VirtualMachineConfigSpec{}
-	configSpec.ExtraConfig = util.AppendNewExtraConfigValues(config.ExtraConfig, extraConfig)
+	configSpec.ExtraConfig = util.MergeExtraConfig(config.ExtraConfig, extraConfig)
 	// Remove the VAppConfig to ensure Cloud-Init inside the guest does not
 	// activate and prefer the OVF datasource over the VMware datasource.
 	configSpec.VAppConfigRemoved = types.NewBool(true) // FIXME

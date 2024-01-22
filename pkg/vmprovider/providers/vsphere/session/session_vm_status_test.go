@@ -1,4 +1,4 @@
-// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session_test
@@ -11,6 +11,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	"github.com/vmware-tanzu/vm-operator/pkg/conditions"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
 )
 
@@ -237,6 +238,316 @@ var _ = Describe("VSphere Customization Status to VM Status Condition", func() {
 					*conditions.FalseCondition(vmopv1.GuestCustomizationCondition, "", vmopv1.ConditionSeverityError, guestInfo.CustomizationInfo.ErrorMsg),
 				}
 				Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+			})
+		})
+	})
+})
+
+var _ = Describe("VSphere Bootstrap Status to VM Status Condition", func() {
+	Context("MarkBootstrapCondition", func() {
+		var (
+			vm         *vmopv1.VirtualMachine
+			configInfo *vimTypes.VirtualMachineConfigInfo
+		)
+
+		BeforeEach(func() {
+			vm = &vmopv1.VirtualMachine{}
+			configInfo = &vimTypes.VirtualMachineConfigInfo{}
+		})
+
+		JustBeforeEach(func() {
+			session.MarkBootstrapCondition(vm, configInfo)
+		})
+
+		Context("unknown condition", func() {
+			When("configInfo unset", func() {
+				BeforeEach(func() {
+					configInfo = nil
+				})
+				It("sets condition unknown", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.UnknownCondition(vmopv1.GuestBootstrapCondition, "NoConfigInfo", ""),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("extraConfig unset", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = nil
+				})
+				It("sets condition unknown", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.UnknownCondition(vmopv1.GuestBootstrapCondition, "NoExtraConfig", ""),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("no bootstrap status", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+					}
+				})
+				It("sets condition unknown", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.UnknownCondition(vmopv1.GuestBootstrapCondition, "NoBootstrapStatus", ""),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+		})
+		Context("successful condition", func() {
+			When("status is 1", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   util.GuestInfoBootstrapCondition,
+							Value: "1",
+						},
+					}
+				})
+				It("sets condition true", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.TrueCondition(vmopv1.GuestBootstrapCondition),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("status is TRUE", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   util.GuestInfoBootstrapCondition,
+							Value: "TRUE",
+						},
+					}
+				})
+				It("sets condition true", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.TrueCondition(vmopv1.GuestBootstrapCondition),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("status is true", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   util.GuestInfoBootstrapCondition,
+							Value: "true",
+						},
+					}
+				})
+				It("sets condition true", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.TrueCondition(vmopv1.GuestBootstrapCondition),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("status is true and there is a reason", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   util.GuestInfoBootstrapCondition,
+							Value: "true,my-reason",
+						},
+					}
+				})
+				It("sets condition true", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.TrueCondition(vmopv1.GuestBootstrapCondition),
+					}
+					expectedConditions[0].Reason = "my-reason"
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("status is true and there is a reason and message", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   util.GuestInfoBootstrapCondition,
+							Value: "true,my-reason,my,comma,delimited,message",
+						},
+					}
+				})
+				It("sets condition true", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.TrueCondition(vmopv1.GuestBootstrapCondition),
+					}
+					expectedConditions[0].Reason = "my-reason"
+					expectedConditions[0].Message = "my,comma,delimited,message"
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+		})
+		Context("failed condition", func() {
+			When("status is 0", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   util.GuestInfoBootstrapCondition,
+							Value: "0",
+						},
+					}
+				})
+				It("sets condition false", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.FalseCondition(
+							vmopv1.GuestBootstrapCondition,
+							"",
+							vmopv1.ConditionSeverityError,
+							""),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("status is FALSE", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   util.GuestInfoBootstrapCondition,
+							Value: "FALSE",
+						},
+					}
+				})
+				It("sets condition false", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.FalseCondition(
+							vmopv1.GuestBootstrapCondition,
+							"",
+							vmopv1.ConditionSeverityError,
+							""),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("status is false", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   util.GuestInfoBootstrapCondition,
+							Value: "false",
+						},
+					}
+				})
+				It("sets condition false", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.FalseCondition(
+							vmopv1.GuestBootstrapCondition,
+							"",
+							vmopv1.ConditionSeverityError,
+							""),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("status is non-truthy", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   util.GuestInfoBootstrapCondition,
+							Value: "not a boolean value",
+						},
+					}
+				})
+				It("sets condition false", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.FalseCondition(
+							vmopv1.GuestBootstrapCondition,
+							"",
+							vmopv1.ConditionSeverityError,
+							""),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("status is false and there is a reason", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   util.GuestInfoBootstrapCondition,
+							Value: "false,my-reason",
+						},
+					}
+				})
+				It("sets condition false", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.FalseCondition(
+							vmopv1.GuestBootstrapCondition,
+							"my-reason",
+							vmopv1.ConditionSeverityError,
+							""),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
+			})
+			When("status is false and there is a reason and message", func() {
+				BeforeEach(func() {
+					configInfo.ExtraConfig = []vimTypes.BaseOptionValue{
+						&vimTypes.OptionValue{
+							Key:   "key1",
+							Value: "val1",
+						},
+						&vimTypes.OptionValue{
+							Key:   util.GuestInfoBootstrapCondition,
+							Value: "false,my-reason,my,comma,delimited,message",
+						},
+					}
+				})
+				It("sets condition false", func() {
+					expectedConditions := []vmopv1.Condition{
+						*conditions.FalseCondition(
+							vmopv1.GuestBootstrapCondition,
+							"my-reason",
+							vmopv1.ConditionSeverityError,
+							"my,comma,delimited,message"),
+					}
+					Expect(vm.Status.Conditions).To(conditions.MatchConditions(expectedConditions))
+				})
 			})
 		})
 	})

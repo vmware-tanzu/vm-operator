@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package v1alpha2
@@ -28,6 +28,12 @@ const (
 	VirtualMachineConditionStorageReady = "VirtualMachineStorageReady"
 
 	VirtualMachineConditionBootstrapReady = "VirtualMachineBootstrapReady"
+)
+
+const (
+	// GuestBootstrapCondition exposes the status of guest bootstrap from within
+	// the guest OS, when available.
+	GuestBootstrapCondition = "GuestBootstrap"
 )
 
 const (

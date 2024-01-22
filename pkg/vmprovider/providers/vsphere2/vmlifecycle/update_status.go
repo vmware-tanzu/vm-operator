@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vmlifecycle
@@ -28,7 +28,12 @@ import (
 var (
 	// The minimum properties needed to be retrieved in order to populate the Status. Callers may
 	// provide a MO with more. This often saves us a second round trip in the common steady state.
-	vmStatusPropertiesSelector = []string{"config.changeTrackingEnabled", "guest", "summary"}
+	vmStatusPropertiesSelector = []string{
+		"config.changeTrackingEnabled",
+		"config.extraConfig",
+		"guest",
+		"summary",
+	}
 )
 
 func UpdateStatus(
@@ -96,6 +101,7 @@ func UpdateStatus(
 
 	MarkVMToolsRunningStatusCondition(vmCtx.VM, vmMO.Guest)
 	MarkCustomizationInfoCondition(vmCtx.VM, vmMO.Guest)
+	MarkBootstrapCondition(vmCtx.VM, vmMO.Config)
 
 	if config := vmMO.Config; config != nil {
 		vm.Status.ChangeBlockTracking = config.ChangeTrackingEnabled
@@ -390,5 +396,39 @@ func MarkCustomizationInfoCondition(vm *vmopv1.VirtualMachine, guestInfo *types.
 			errorMsg = "Unexpected VM Customization status"
 		}
 		conditions.MarkFalse(vm, vmopv1.GuestCustomizationCondition, "Unknown", errorMsg)
+	}
+}
+
+func MarkBootstrapCondition(
+	vm *vmopv1.VirtualMachine,
+	configInfo *types.VirtualMachineConfigInfo) {
+
+	if configInfo == nil {
+		conditions.MarkUnknown(
+			vm, vmopv1.GuestBootstrapCondition, "NoConfigInfo", "")
+		return
+	}
+
+	if len(configInfo.ExtraConfig) == 0 {
+		conditions.MarkUnknown(
+			vm, vmopv1.GuestBootstrapCondition, "NoExtraConfig", "")
+		return
+	}
+
+	status, reason, msg, ok := util.GetBootstrapConditionValues(configInfo)
+	if !ok {
+		conditions.MarkUnknown(
+			vm, vmopv1.GuestBootstrapCondition, "NoBootstrapStatus", "")
+		return
+	}
+	if status {
+		c := conditions.TrueCondition(vmopv1.GuestBootstrapCondition)
+		if reason != "" {
+			c.Reason = reason
+		}
+		c.Message = msg
+		conditions.Set(vm, c)
+	} else {
+		conditions.MarkFalse(vm, vmopv1.GuestBootstrapCondition, reason, msg)
 	}
 }

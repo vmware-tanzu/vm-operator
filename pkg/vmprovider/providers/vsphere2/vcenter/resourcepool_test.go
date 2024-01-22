@@ -58,7 +58,7 @@ func getResourcePoolTests() {
 		It("returns success", func() {
 			ccr, err := vcenter.GetResourcePoolOwnerMoRef(ctx, ctx.VCClient.Client, nsRP.Reference().Value)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ccr).To(Equal(ctx.GetSingleClusterCompute().Reference()))
+			Expect(ccr).To(Equal(ctx.GetFirstClusterFromFirstZone().Reference()))
 		})
 
 		It("returns error when MoID does not exist", func() {

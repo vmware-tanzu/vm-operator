@@ -198,7 +198,7 @@ var _ = Describe("NetworkProvider", func() {
 
 		JustBeforeEach(func() {
 			Expect(ctx.Client.Create(ctx, netIf)).To(Succeed())
-			np = network.NewProvider(ctx.Client, ctx.VCClient.Client, ctx.Finder, ctx.GetSingleClusterCompute())
+			np = network.NewProvider(ctx.Client, ctx.VCClient.Client, ctx.Finder, ctx.GetFirstClusterFromFirstZone())
 		})
 
 		Context("ensure interface", func() {
@@ -534,7 +534,7 @@ var _ = Describe("NetworkProvider", func() {
 
 		JustBeforeEach(func() {
 			Expect(ctx.Client.Create(ctx, ncpVif)).To(Succeed())
-			np = network.NewProvider(ctx.Client, ctx.VCClient.Client, ctx.Finder, ctx.GetSingleClusterCompute())
+			np = network.NewProvider(ctx.Client, ctx.VCClient.Client, ctx.Finder, ctx.GetFirstClusterFromFirstZone())
 		})
 
 		Context("ensure interface", func() {

@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -66,10 +67,7 @@ const (
 
 // VCSimTestConfig configures the vcsim environment.
 type VCSimTestConfig struct {
-	// WithFaultDomains enables the HA WCP_FAULTDOMAINS_FSS.
-	WithFaultDomains bool
-
-	// NumFaultDomains is the number of zones when WithFaultDomains is true.
+	// NumFaultDomains is the number of zones.
 	NumFaultDomains int
 
 	// WithContentLibrary configures a Content Library, populated with one image's
@@ -140,13 +138,11 @@ type TestContextForVCSim struct {
 	tlsServerCertPath string
 	tlsServerKeyPath  string
 
-	folder           *object.Folder
-	datastore        *object.Datastore
-	withFaultDomains bool
-	withV1A2         bool
+	folder    *object.Folder
+	datastore *object.Datastore
+	withV1A2  bool
 
-	singleCCR *object.ClusterComputeResource
-	azCCRs    map[string][]*object.ClusterComputeResource
+	azCCRs map[string][]*object.ClusterComputeResource
 }
 
 type WorkloadNamespaceInfo struct {
@@ -171,7 +167,7 @@ func (s *TestSuite) NewTestContextForVCSim(
 	ctx.setupVCSim(config)
 	ctx.setupContentLibrary(config)
 	ctx.setupK8sConfig(config)
-	ctx.setupAZs(config)
+	ctx.setupAZs()
 
 	return ctx
 }
@@ -183,22 +179,19 @@ func newTestContextForVCSim(
 	fakeRecorder, _ := NewFakeRecorder()
 
 	ctx := &TestContextForVCSim{
-		UnitTestContext:  NewUnitTestContext(initObjects...),
-		PodNamespace:     "vmop-pod-test",
-		Recorder:         fakeRecorder,
-		withFaultDomains: config.WithFaultDomains,
-		withV1A2:         config.WithV1A2,
+		UnitTestContext: NewUnitTestContext(initObjects...),
+		PodNamespace:    "vmop-pod-test",
+		Recorder:        fakeRecorder,
+		withV1A2:        config.WithV1A2,
 	}
 
-	if ctx.withFaultDomains {
-		if config.NumFaultDomains != 0 {
-			ctx.ZoneCount = config.NumFaultDomains
-		} else {
-			ctx.ZoneCount = zoneCount
-		}
-
-		ctx.ClustersPerZone = clustersPerZone
+	if config.NumFaultDomains != 0 {
+		ctx.ZoneCount = config.NumFaultDomains
+	} else {
+		ctx.ZoneCount = zoneCount
 	}
+
+	ctx.ClustersPerZone = clustersPerZone
 
 	return ctx
 }
@@ -237,47 +230,33 @@ func (c *TestContextForVCSim) CreateWorkloadNamespace() WorkloadNamespaceInfo {
 	nsFolder, err := c.folder.CreateFolder(c, ns.Name)
 	Expect(err).ToNot(HaveOccurred())
 
-	if c.withFaultDomains {
-		for _, azName := range c.ZoneNames {
-			nsInfo := topologyv1.NamespaceInfo{
-				FolderMoId: nsFolder.Reference().Value,
-			}
-
-			var nsRPs []*object.ResourcePool
-			for _, ccr := range c.azCCRs[azName] {
-				rp, err := ccr.ResourcePool(c)
-				Expect(err).ToNot(HaveOccurred())
-
-				nsRP, err := rp.Create(c, ns.Name, types.DefaultResourceConfigSpec())
-				Expect(err).ToNot(HaveOccurred())
-
-				nsRPs = append(nsRPs, nsRP)
-			}
-			Expect(nsRPs).To(HaveLen(c.ClustersPerZone))
-			for _, rp := range nsRPs {
-				nsInfo.PoolMoIDs = append(nsInfo.PoolMoIDs, rp.Reference().Value)
-			}
-
-			az := &topologyv1.AvailabilityZone{}
-			Expect(c.Client.Get(c, client.ObjectKey{Name: azName}, az)).To(Succeed())
-			if az.Spec.Namespaces == nil {
-				az.Spec.Namespaces = map[string]topologyv1.NamespaceInfo{}
-			}
-			az.Spec.Namespaces[ns.Name] = nsInfo
-			Expect(c.Client.Update(c, az)).To(Succeed())
+	for _, azName := range c.ZoneNames {
+		nsInfo := topologyv1.NamespaceInfo{
+			FolderMoId: nsFolder.Reference().Value,
 		}
-	} else {
-		rp, err := c.singleCCR.ResourcePool(c)
-		Expect(err).ToNot(HaveOccurred())
 
-		nsRP, err := rp.Create(c, ns.Name, types.DefaultResourceConfigSpec())
-		Expect(err).ToNot(HaveOccurred())
+		var nsRPs []*object.ResourcePool
+		for _, ccr := range c.azCCRs[azName] {
+			rp, err := ccr.ResourcePool(c)
+			Expect(err).ToNot(HaveOccurred())
 
-		ns.Annotations = map[string]string{
-			"vmware-system-vm-folder":     nsFolder.Reference().Value,
-			"vmware-system-resource-pool": nsRP.Reference().Value,
+			nsRP, err := rp.Create(c, ns.Name, types.DefaultResourceConfigSpec())
+			Expect(err).ToNot(HaveOccurred())
+
+			nsRPs = append(nsRPs, nsRP)
 		}
-		Expect(c.Client.Update(c, ns)).To(Succeed())
+		Expect(nsRPs).To(HaveLen(c.ClustersPerZone))
+		for _, rp := range nsRPs {
+			nsInfo.PoolMoIDs = append(nsInfo.PoolMoIDs, rp.Reference().Value)
+		}
+
+		az := &topologyv1.AvailabilityZone{}
+		Expect(c.Client.Get(c, client.ObjectKey{Name: azName}, az)).To(Succeed())
+		if az.Spec.Namespaces == nil {
+			az.Spec.Namespaces = map[string]topologyv1.NamespaceInfo{}
+		}
+		az.Spec.Namespaces[ns.Name] = nsInfo
+		Expect(c.Client.Update(c, az)).To(Succeed())
 	}
 
 	// Not the exact right FFS, but it's what we've plumbed and is otherwise implied.
@@ -344,7 +323,6 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.JSONExtraConfig = config.WithJSONExtraConfig
 
 		cc.Features.VMOpV1Alpha2 = config.WithV1A2
-		cc.Features.FaultDomains = config.WithFaultDomains
 		cc.Features.InstanceStorage = config.WithInstanceStorage
 		cc.Features.VMClassAsConfig = config.WithVMClassAsConfig
 		cc.Features.VMClassAsConfigDayNDate = config.WithVMClassAsConfigDaynDate
@@ -361,10 +339,8 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	// and host each). Setting Model.Host=0 ensures we only have one ResourcePool, making it
 	// easier to pick the ResourcePool without having to look up using a hardcoded path.
 	vcModel.Host = 0
-	if config.WithFaultDomains {
-		vcModel.Cluster = c.ZoneCount * c.ClustersPerZone
-		vcModel.ClusterHost = 2
-	}
+	vcModel.Cluster = c.ZoneCount * c.ClustersPerZone
+	vcModel.ClusterHost = 2
 
 	Expect(vcModel.Create()).To(Succeed())
 
@@ -401,13 +377,6 @@ func (c *TestContextForVCSim) setupVCSim(config VCSimTestConfig) {
 	datastore, err := c.Finder.DefaultDatastore(c)
 	Expect(err).ToNot(HaveOccurred())
 	c.datastore = datastore
-
-	if !config.WithFaultDomains {
-		ccrs, err := c.Finder.ClusterComputeResourceList(c, "*")
-		Expect(err).ToNot(HaveOccurred())
-		Expect(ccrs).To(HaveLen(1))
-		c.singleCCR = ccrs[0]
-	}
 
 	if config.WithInstanceStorage {
 		// Instance storage (because of CSI) apparently needs the hosts' FQDN to be populated.
@@ -636,12 +605,6 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 	data["CAFilePath"] = c.tlsServerCertPath
 	data["InsecureSkipTLSVerify"] = "false"
 
-	if !config.WithFaultDomains {
-		rp, err := c.singleCCR.ResourcePool(c)
-		Expect(err).ToNot(HaveOccurred())
-		data["ResourcePool"] = rp.Reference().Value
-	}
-
 	if config.WithoutStorageClass {
 		// Only used in gce2e (LocalDS_0)
 		data["StorageClassRequired"] = "false"
@@ -695,11 +658,7 @@ func (c *TestContextForVCSim) setupK8sConfig(config VCSimTestConfig) {
 	Expect(c.Client.Create(c, networkCM)).To(Succeed())
 }
 
-func (c *TestContextForVCSim) setupAZs(config VCSimTestConfig) {
-	if !config.WithFaultDomains {
-		return
-	}
-
+func (c *TestContextForVCSim) setupAZs() {
 	ccrs, err := c.Finder.ClusterComputeResourceList(c, "*")
 	Expect(err).ToNot(HaveOccurred())
 	Expect(ccrs).To(HaveLen(c.ZoneCount * c.ClustersPerZone))
@@ -724,16 +683,25 @@ func (c *TestContextForVCSim) setupAZs(config VCSimTestConfig) {
 	}
 }
 
-func (c *TestContextForVCSim) GetSingleClusterCompute() *object.ClusterComputeResource {
-	Expect(c.withFaultDomains).To(BeFalse())
-	Expect(c.singleCCR).ToNot(BeNil())
+func (c *TestContextForVCSim) GetFirstZoneName() string {
+	Expect(len(c.azCCRs)).To(BeNumerically(">", 0))
+	azNames := make([]string, len(c.azCCRs))
+	i := 0
+	for k := range c.azCCRs {
+		azNames[i] = k
+		i++
+	}
+	sort.Strings(azNames)
+	return azNames[0]
+}
 
-	return c.singleCCR
+func (c *TestContextForVCSim) GetFirstClusterFromFirstZone() *object.ClusterComputeResource {
+	ccrs := c.GetAZClusterComputes(c.GetFirstZoneName())
+	Expect(len(ccrs)).To(BeNumerically(">", 0))
+	return ccrs[0]
 }
 
 func (c *TestContextForVCSim) GetAZClusterComputes(azName string) []*object.ClusterComputeResource {
-	Expect(c.withFaultDomains).To(BeTrue())
-
 	ccrs, ok := c.azCCRs[azName]
 	Expect(ok).To(BeTrue())
 	return ccrs
@@ -779,18 +747,12 @@ func (c *TestContextForVCSim) createVirtualMachineSetResourcePolicyCommon(
 
 	var rps []*object.ResourcePool
 
-	if c.withFaultDomains {
-		for _, ccrs := range c.azCCRs {
-			for _, ccr := range ccrs {
-				rp, err := ccr.ResourcePool(c)
-				Expect(err).ToNot(HaveOccurred())
-				rps = append(rps, rp)
-			}
+	for _, ccrs := range c.azCCRs {
+		for _, ccr := range ccrs {
+			rp, err := ccr.ResourcePool(c)
+			Expect(err).ToNot(HaveOccurred())
+			rps = append(rps, rp)
 		}
-	} else {
-		rp, err := c.singleCCR.ResourcePool(c)
-		Expect(err).ToNot(HaveOccurred())
-		rps = append(rps, rp)
 	}
 
 	si := object.NewSearchIndex(c.VCClient.Client)
@@ -825,15 +787,15 @@ func (c *TestContextForVCSim) GetVMFromMoID(moID string) *object.VirtualMachine 
 func (c *TestContextForVCSim) GetResourcePoolForNamespace(namespace, azName, childName string) *object.ResourcePool {
 	var ccr *object.ClusterComputeResource
 
-	if c.withFaultDomains {
-		Expect(azName).ToNot(BeEmpty())
-		Expect(c.ClustersPerZone).To(Equal(1)) // TODO: Deal with Zones w/ multiple CCRs later
-
-		ccrs := c.GetAZClusterComputes(azName)
-		ccr = ccrs[0]
-	} else {
-		ccr = c.GetSingleClusterCompute()
+	if azName == "" {
+		azName = c.GetFirstZoneName()
 	}
+
+	Expect(azName).ToNot(BeEmpty())
+	Expect(c.ClustersPerZone).To(Equal(1)) // TODO: Deal with Zones w/ multiple CCRs later
+
+	ccrs := c.GetAZClusterComputes(azName)
+	ccr = ccrs[0]
 
 	rp, err := ccr.ResourcePool(c)
 	Expect(err).ToNot(HaveOccurred())

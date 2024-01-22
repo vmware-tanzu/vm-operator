@@ -46,111 +46,65 @@ var _ = Describe("FindClusterModuleUUID", func() {
 		ctx = nil
 	})
 
-	Context("FaultDomains FSS is disabled", func() {
-
-		Context("GroupName does not exist", func() {
-			It("Returns expected values", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID(ctx, "does-not-exist", clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(-1))
-				Expect(uuid).To(BeEmpty())
-			})
+	Context("GroupName does not exist", func() {
+		It("Returns expected values", func() {
+			idx, uuid := clustermodules.FindClusterModuleUUID(ctx, "does-not-exist", clusterRef1, resourcePolicy)
+			Expect(idx).To(Equal(-1))
+			Expect(uuid).To(BeEmpty())
 		})
-
-		Context("GroupName exists", func() {
-			BeforeEach(func() {
-				resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules,
-					vmopv1.VSphereClusterModuleStatus{
-						GroupName:  groupName1,
-						ModuleUuid: moduleUUID1,
-					},
-					vmopv1.VSphereClusterModuleStatus{
-						GroupName:   groupName2,
-						ModuleUuid:  moduleUUID2,
-						ClusterMoID: "this should be ignored",
-					},
-				)
-			})
-
-			It("Returns expected entry", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID(ctx, groupName1, clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(0))
-				Expect(uuid).To(Equal(moduleUUID1))
-
-				idx, uuid = clustermodules.FindClusterModuleUUID(ctx, groupName2, clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(1))
-				Expect(uuid).To(Equal(moduleUUID2))
-			})
-		})
-
 	})
 
-	Context("FaultDomains FSS is enabled", func() {
+	Context("GroupName exists", func() {
 		BeforeEach(func() {
-			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-				config.Features.FaultDomains = true
-			})
+			resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules,
+				vmopv1.VSphereClusterModuleStatus{
+					GroupName:   groupName1,
+					ModuleUuid:  moduleUUID1,
+					ClusterMoID: clusterRef1.Value,
+				},
+				vmopv1.VSphereClusterModuleStatus{
+					GroupName:   groupName2,
+					ModuleUuid:  moduleUUID2,
+					ClusterMoID: clusterRef1.Value,
+				},
+			)
 		})
 
-		Context("GroupName does not exist", func() {
-			It("Returns expected values", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID(ctx, "does-not-exist", clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(-1))
-				Expect(uuid).To(BeEmpty())
-			})
+		It("Returns expected entry", func() {
+			idx, uuid := clustermodules.FindClusterModuleUUID(ctx, groupName1, clusterRef1, resourcePolicy)
+			Expect(idx).To(Equal(0))
+			Expect(uuid).To(Equal(moduleUUID1))
+
+			idx, uuid = clustermodules.FindClusterModuleUUID(ctx, groupName2, clusterRef1, resourcePolicy)
+			Expect(idx).To(Equal(1))
+			Expect(uuid).To(Equal(moduleUUID2))
+		})
+	})
+
+	Context("Matches by cluster reference", func() {
+		BeforeEach(func() {
+			resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules,
+				vmopv1.VSphereClusterModuleStatus{
+					GroupName:   groupName1,
+					ModuleUuid:  moduleUUID1,
+					ClusterMoID: clusterRef1.Value,
+				},
+				vmopv1.VSphereClusterModuleStatus{
+					GroupName:   groupName1,
+					ModuleUuid:  moduleUUID2,
+					ClusterMoID: clusterRef2.Value,
+				},
+			)
 		})
 
-		Context("GroupName exists", func() {
-			BeforeEach(func() {
-				resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules,
-					vmopv1.VSphereClusterModuleStatus{
-						GroupName:   groupName1,
-						ModuleUuid:  moduleUUID1,
-						ClusterMoID: clusterRef1.Value,
-					},
-					vmopv1.VSphereClusterModuleStatus{
-						GroupName:   groupName2,
-						ModuleUuid:  moduleUUID2,
-						ClusterMoID: clusterRef1.Value,
-					},
-				)
-			})
+		It("Returns expected entry", func() {
+			idx, uuid := clustermodules.FindClusterModuleUUID(ctx, groupName1, clusterRef1, resourcePolicy)
+			Expect(idx).To(Equal(0))
+			Expect(uuid).To(Equal(moduleUUID1))
 
-			It("Returns expected entry", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID(ctx, groupName1, clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(0))
-				Expect(uuid).To(Equal(moduleUUID1))
-
-				idx, uuid = clustermodules.FindClusterModuleUUID(ctx, groupName2, clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(1))
-				Expect(uuid).To(Equal(moduleUUID2))
-			})
-		})
-
-		Context("Matches by cluster reference", func() {
-			BeforeEach(func() {
-				resourcePolicy.Status.ClusterModules = append(resourcePolicy.Status.ClusterModules,
-					vmopv1.VSphereClusterModuleStatus{
-						GroupName:   groupName1,
-						ModuleUuid:  moduleUUID1,
-						ClusterMoID: clusterRef1.Value,
-					},
-					vmopv1.VSphereClusterModuleStatus{
-						GroupName:   groupName1,
-						ModuleUuid:  moduleUUID2,
-						ClusterMoID: clusterRef2.Value,
-					},
-				)
-			})
-
-			It("Returns expected entry", func() {
-				idx, uuid := clustermodules.FindClusterModuleUUID(ctx, groupName1, clusterRef1, resourcePolicy)
-				Expect(idx).To(Equal(0))
-				Expect(uuid).To(Equal(moduleUUID1))
-
-				idx, uuid = clustermodules.FindClusterModuleUUID(ctx, groupName1, clusterRef2, resourcePolicy)
-				Expect(idx).To(Equal(1))
-				Expect(uuid).To(Equal(moduleUUID2))
-			})
+			idx, uuid = clustermodules.FindClusterModuleUUID(ctx, groupName1, clusterRef2, resourcePolicy)
+			Expect(idx).To(Equal(1))
+			Expect(uuid).To(Equal(moduleUUID2))
 		})
 	})
 })

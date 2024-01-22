@@ -215,7 +215,6 @@ func unitTestsValidateCreate() {
 		isRestrictedNetworkValidProbePort bool
 		isNonRestrictedNetworkEnv         bool
 		isNoAvailabilityZones             bool
-		isWCPFaultDomainsFSSEnabled       bool
 		isInvalidAvailabilityZone         bool
 		isEmptyAvailabilityZone           bool
 		isServiceUser                     bool
@@ -353,9 +352,6 @@ func unitTestsValidateCreate() {
 			ctx.vm.Spec.Volumes = append(ctx.vm.Spec.Volumes, instanceStorageVolume...)
 		}
 		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-			config.Features.FaultDomains = args.isWCPFaultDomainsFSSEnabled
-		})
-		pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
 			config.Features.ImageRegistry = args.isWCPVMImageRegistryEnabled
 		})
 		if args.isNoAvailabilityZones {
@@ -369,9 +365,6 @@ func unitTestsValidateCreate() {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
 		} else {
 			zoneName := builder.DummyAvailabilityZoneName
-			if !pkgconfig.FromContext(ctx).Features.FaultDomains {
-				zoneName = topology.DefaultAvailabilityZoneName
-			}
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 		}
 
@@ -489,20 +482,13 @@ func unitTestsValidateCreate() {
 		Entry("should allow when restricted network env is set in provider config map and TCP port in readiness probe is 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: true}, true, nil, nil),
 		Entry("should allow when restricted network env is not set in provider config map and TCP port in readiness probe is not 6443", createArgs{isNonRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, true, nil, nil),
 
-		Entry("should allow when VM specifies no availability zone, there are availability zones, and WCP FaultDomains FSS is disabled", createArgs{isEmptyAvailabilityZone: true}, true, nil, nil),
-		Entry("should allow when VM specifies no availability zone, there are no availability zones, and WCP FaultDomains FSS is disabled", createArgs{isEmptyAvailabilityZone: true, isNoAvailabilityZones: true}, true, nil, nil),
-		Entry("should allow when VM specifies no availability zone, there are availability zones, and WCP FaultDomains FSS is enabled", createArgs{isEmptyAvailabilityZone: true, isWCPFaultDomainsFSSEnabled: true}, true, nil, nil),
-		Entry("should allow when VM specifies no availability zone, there are no availability zones, and WCP FaultDomains FSS is enabled", createArgs{isEmptyAvailabilityZone: true, isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, true, nil, nil),
+		Entry("should allow when VM specifies no availability zone, there are availability zones", createArgs{isEmptyAvailabilityZone: true}, true, nil, nil),
+		Entry("should allow when VM specifies no availability zone, there are no availability zones", createArgs{isEmptyAvailabilityZone: true, isNoAvailabilityZones: true}, true, nil, nil),
+		Entry("should allow when VM specifies valid availability zone, there are availability zones", createArgs{}, true, nil, nil),
+		Entry("should deny when VM specifies invalid availability zone, there are availability zones", createArgs{isInvalidAvailabilityZone: true}, false, nil, nil),
+		Entry("should deny when VM specifies invalid availability zone, there are no availability zones", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true}, false, nil, nil),
 
-		Entry("should allow when VM specifies valid availability zone, there are availability zones, and WCP FaultDomains FSS is enabled", createArgs{isWCPFaultDomainsFSSEnabled: true}, true, nil, nil),
-		Entry("should allow when VM specifies valid availability zone, there are no availability zones, and WCP FaultDomains FSS is disabled", createArgs{isNoAvailabilityZones: true}, true, nil, nil),
-
-		Entry("should allow when VM specifies invalid availability zone, there are availability zones, and WCP FaultDomains FSS is disabled", createArgs{isInvalidAvailabilityZone: true}, true, nil, nil),
-		Entry("should deny when VM specifies invalid availability zone, there are availability zones, and WCP FaultDomains FSS is enabled", createArgs{isInvalidAvailabilityZone: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
-		Entry("should allow when VM specifies invalid availability zone, there are no availability zones, and WCP FaultDomains FSS is disabled", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true}, true, nil, nil),
-		Entry("should deny when VM specifies invalid availability zone, there are no availability zones, and WCP FaultDomains FSS is enabled", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
-
-		Entry("should deny when there are no availability zones and WCP FaultDomains FSS is enabled", createArgs{isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
+		Entry("should deny when there are no availability zones", createArgs{isNoAvailabilityZones: true}, false, nil, nil),
 		Entry("should deny when there are instance storage volumes and user is SSO user", createArgs{addInstanceStorageVolumes: true}, false,
 			field.Forbidden(volPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),
 		Entry("should allow when there are instance storage volumes and user is service user", createArgs{addInstanceStorageVolumes: true, isServiceUser: true}, true, nil, nil),
@@ -787,7 +773,6 @@ func unitTestsValidateUpdate() {
 		Entry("should deny storageClass change", updateArgs{changeStorageClass: true}, false, msg, nil),
 		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, msg, nil),
 		Entry("should allow initial zone assignment", updateArgs{assignZoneName: true}, true, nil, nil),
-		Entry("should allow zone name change when WCP FaultDomains FSS is disabled", updateArgs{changeZoneName: true}, true, nil, nil),
 		Entry("should deny instance storage volume name change, when user is SSO user", updateArgs{changeInstanceStorageVolumeName: true}, false,
 			field.Forbidden(volumesPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),
 		Entry("should deny adding new instance storage volume, when user is SSO user", updateArgs{addInstanceStorageVolume: true}, false,

@@ -50,7 +50,10 @@ func resourcePolicyTests() {
 		)
 
 		BeforeEach(func() {
-			testConfig = builder.VCSimTestConfig{WithV1A2: true}
+			testConfig = builder.VCSimTestConfig{
+				NumFaultDomains: 3,
+				WithV1A2:        true,
+			}
 		})
 
 		JustBeforeEach(func() {
@@ -85,7 +88,7 @@ func resourcePolicyTests() {
 
 			It("creates expected cluster modules", func() {
 				modules := resourcePolicy.Status.ClusterModules
-				Expect(modules).Should(HaveLen(2))
+				Expect(modules).Should(HaveLen(testConfig.NumFaultDomains * 2))
 				module := modules[0]
 				Expect(module.GroupName).To(Equal(resourcePolicy.Spec.ClusterModuleGroups[0]))
 				Expect(module.ModuleUuid).ToNot(BeEmpty())
@@ -103,18 +106,22 @@ func resourcePolicyTests() {
 				})
 
 				It("successfully able to find the resource policy", func() {
-					exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, "", resourcePolicy)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(exists).To(BeTrue())
+					for _, zoneName := range ctx.ZoneNames {
+						exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, zoneName, resourcePolicy)
+						Expect(err).NotTo(HaveOccurred())
+						Expect(exists).To(BeTrue())
+					}
 				})
 			})
 
 			Context("for an absent resource policy", func() {
 				It("should fail to find the resource policy without any errors", func() {
-					failResPolicy := getVirtualMachineSetResourcePolicy("test-policy", nsInfo.Namespace)
-					exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, "", failResPolicy)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(exists).To(BeFalse())
+					for _, zoneName := range ctx.ZoneNames {
+						failResPolicy := getVirtualMachineSetResourcePolicy("test-policy", nsInfo.Namespace)
+						exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, zoneName, failResPolicy)
+						Expect(err).NotTo(HaveOccurred())
+						Expect(exists).To(BeFalse())
+					}
 				})
 			})
 
@@ -130,7 +137,7 @@ func resourcePolicyTests() {
 			})
 
 			It("creates expected resource pool", func() {
-				rp, err := ctx.GetSingleClusterCompute().ResourcePool(ctx)
+				rp, err := ctx.GetFirstClusterFromFirstZone().ResourcePool(ctx)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Make trip through the Finder to populate InventoryPath.
@@ -149,85 +156,79 @@ func resourcePolicyTests() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 
-			Context("when HA is enabled", func() {
-				BeforeEach(func() {
-					testConfig.WithFaultDomains = true
-				})
+			It("creates expected cluster modules for each cluster", func() {
+				moduleCount := len(resourcePolicy.Spec.ClusterModuleGroups)
+				Expect(moduleCount).To(Equal(2))
 
-				It("creates expected cluster modules for each cluster", func() {
-					moduleCount := len(resourcePolicy.Spec.ClusterModuleGroups)
-					Expect(moduleCount).To(Equal(2))
+				modules := resourcePolicy.Status.ClusterModules
+				zoneNames := ctx.ZoneNames
+				Expect(modules).To(HaveLen(len(zoneNames) * ctx.ClustersPerZone * moduleCount))
 
-					modules := resourcePolicy.Status.ClusterModules
-					zoneNames := ctx.ZoneNames
-					Expect(modules).To(HaveLen(len(zoneNames) * ctx.ClustersPerZone * moduleCount))
+				for zoneIdx, zoneName := range zoneNames {
+					// NOTE: This assumes some ordering but is the easiest way to test.
+					moduleIdx := zoneIdx * ctx.ClustersPerZone * moduleCount
+					modules := modules[moduleIdx : moduleIdx+ctx.ClustersPerZone*moduleCount]
 
-					for zoneIdx, zoneName := range zoneNames {
-						// NOTE: This assumes some ordering but is the easiest way to test.
-						moduleIdx := zoneIdx * ctx.ClustersPerZone * moduleCount
-						modules := modules[moduleIdx : moduleIdx+ctx.ClustersPerZone*moduleCount]
+					ccrs := ctx.GetAZClusterComputes(zoneName)
+					Expect(ccrs).To(HaveLen(ctx.ClustersPerZone))
 
-						ccrs := ctx.GetAZClusterComputes(zoneName)
-						Expect(ccrs).To(HaveLen(ctx.ClustersPerZone))
+					for _, cluster := range ccrs {
+						clusterMoID := cluster.Reference().Value
 
-						for _, cluster := range ccrs {
-							clusterMoID := cluster.Reference().Value
+						module := modules[0]
+						Expect(module.GroupName).To(Equal(resourcePolicy.Spec.ClusterModuleGroups[0]))
+						Expect(module.ModuleUuid).ToNot(BeEmpty())
+						Expect(module.ClusterMoID).To(Equal(clusterMoID))
 
-							module := modules[0]
-							Expect(module.GroupName).To(Equal(resourcePolicy.Spec.ClusterModuleGroups[0]))
-							Expect(module.ModuleUuid).ToNot(BeEmpty())
-							Expect(module.ClusterMoID).To(Equal(clusterMoID))
-
-							module = modules[1]
-							Expect(module.GroupName).To(Equal(resourcePolicy.Spec.ClusterModuleGroups[1]))
-							Expect(module.ModuleUuid).ToNot(BeEmpty())
-							Expect(module.ClusterMoID).To(Equal(clusterMoID))
-						}
+						module = modules[1]
+						Expect(module.GroupName).To(Equal(resourcePolicy.Spec.ClusterModuleGroups[1]))
+						Expect(module.ModuleUuid).ToNot(BeEmpty())
+						Expect(module.ClusterMoID).To(Equal(clusterMoID))
 					}
-				})
+				}
+			})
 
-				It("should claim cluster module without ClusterMoID set", func() {
-					Expect(resourcePolicy.Spec.ClusterModuleGroups).ToNot(BeEmpty())
-					groupName := resourcePolicy.Spec.ClusterModuleGroups[0]
+			It("should claim cluster module without ClusterMoID set", func() {
+				Expect(resourcePolicy.Spec.ClusterModuleGroups).ToNot(BeEmpty())
+				groupName := resourcePolicy.Spec.ClusterModuleGroups[0]
 
-					moduleStatus := resourcePolicy.Status.DeepCopy()
-					Expect(moduleStatus.ClusterModules).ToNot(BeEmpty())
+				moduleStatus := resourcePolicy.Status.DeepCopy()
+				Expect(moduleStatus.ClusterModules).ToNot(BeEmpty())
 
-					for i := range resourcePolicy.Status.ClusterModules {
-						if resourcePolicy.Status.ClusterModules[i].GroupName == groupName {
-							resourcePolicy.Status.ClusterModules[i].ClusterMoID = ""
-						}
+				for i := range resourcePolicy.Status.ClusterModules {
+					if resourcePolicy.Status.ClusterModules[i].GroupName == groupName {
+						resourcePolicy.Status.ClusterModules[i].ClusterMoID = ""
 					}
-					Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
-					Expect(resourcePolicy.Status.ClusterModules).To(Equal(moduleStatus.ClusterModules))
-				})
+				}
+				Expect(vmProvider.CreateOrUpdateVirtualMachineSetResourcePolicy(ctx, resourcePolicy)).To(Succeed())
+				Expect(resourcePolicy.Status.ClusterModules).To(Equal(moduleStatus.ClusterModules))
+			})
 
-				It("successfully able to find the resource policy in each zone", func() {
-					for _, zoneName := range ctx.ZoneNames {
-						exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, zoneName, resourcePolicy)
-						Expect(err).NotTo(HaveOccurred())
-						Expect(exists).To(BeTrue())
+			It("successfully able to find the resource policy in each zone", func() {
+				for _, zoneName := range ctx.ZoneNames {
+					exists, err := vmProvider.IsVirtualMachineSetResourcePolicyReady(ctx, zoneName, resourcePolicy)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(exists).To(BeTrue())
+				}
+			})
+
+			It("creates expected resource pool for each cluster", func() {
+				for _, zoneName := range ctx.ZoneNames {
+					for _, cluster := range ctx.GetAZClusterComputes(zoneName) {
+						rp, err := cluster.ResourcePool(ctx)
+						Expect(err).ToNot(HaveOccurred())
+
+						// Make trip through the Finder to populate InventoryPath.
+						objRef, err := ctx.Finder.ObjectReference(ctx, rp.Reference())
+						Expect(err).ToNot(HaveOccurred())
+						rp, ok := objRef.(*object.ResourcePool)
+						Expect(ok).To(BeTrue())
+
+						inventoryPath := path.Join(rp.InventoryPath, nsInfo.Namespace, resourcePolicy.Spec.ResourcePool.Name)
+						_, err = ctx.Finder.ResourcePool(ctx, inventoryPath)
+						Expect(err).ToNot(HaveOccurred())
 					}
-				})
-
-				It("creates expected resource pool for each cluster", func() {
-					for _, zoneName := range ctx.ZoneNames {
-						for _, cluster := range ctx.GetAZClusterComputes(zoneName) {
-							rp, err := cluster.ResourcePool(ctx)
-							Expect(err).ToNot(HaveOccurred())
-
-							// Make trip through the Finder to populate InventoryPath.
-							objRef, err := ctx.Finder.ObjectReference(ctx, rp.Reference())
-							Expect(err).ToNot(HaveOccurred())
-							rp, ok := objRef.(*object.ResourcePool)
-							Expect(ok).To(BeTrue())
-
-							inventoryPath := path.Join(rp.InventoryPath, nsInfo.Namespace, resourcePolicy.Spec.ResourcePool.Name)
-							_, err = ctx.Finder.ResourcePool(ctx, inventoryPath)
-							Expect(err).ToNot(HaveOccurred())
-						}
-					}
-				})
+				}
 			})
 		})
 	})

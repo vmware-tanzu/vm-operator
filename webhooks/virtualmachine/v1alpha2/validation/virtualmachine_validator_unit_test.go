@@ -99,7 +99,6 @@ func unitTestsValidateCreate() {
 		isRestrictedNetworkValidProbePort bool
 		isNonRestrictedNetworkEnv         bool
 		isNoAvailabilityZones             bool
-		isWCPFaultDomainsFSSEnabled       bool
 		isInvalidAvailabilityZone         bool
 		isEmptyAvailabilityZone           bool
 		powerState                        vmopv1.VirtualMachinePowerState
@@ -193,12 +192,6 @@ func unitTestsValidateCreate() {
 				TCPSocket: &vmopv1.TCPSocketAction{Port: intstr.FromInt(portValue)},
 			}
 		}
-
-		if args.isWCPFaultDomainsFSSEnabled {
-			pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
-				config.Features.FaultDomains = true
-			})
-		}
 		if args.isNoAvailabilityZones {
 			Expect(ctx.Client.Delete(ctx, builder.DummyAvailabilityZone())).To(Succeed())
 		}
@@ -209,9 +202,6 @@ func unitTestsValidateCreate() {
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "invalid"
 		} else {
 			zoneName := builder.DummyAvailabilityZoneName
-			if !pkgconfig.FromContext(ctx).Features.FaultDomains {
-				zoneName = topology.DefaultAvailabilityZoneName
-			}
 			ctx.vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 		}
 
@@ -234,7 +224,7 @@ func unitTestsValidateCreate() {
 			ctx.IsPrivilegedAccount = pkgbuilder.IsPrivilegedAccount(ctx.WebhookContext, ctx.UserInfo)
 		}
 
-		if args.multipleZones && args.isWCPFaultDomainsFSSEnabled {
+		if args.multipleZones {
 			zone := builder.DummyNamedAvailabilityZone("zone-2")
 			Expect(ctx.Client.Create(ctx, zone)).To(Succeed())
 		}
@@ -319,17 +309,12 @@ func unitTestsValidateCreate() {
 		Entry("should allow when restricted network and TCP port in readiness probe is 6443", createArgs{isRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: true}, true, nil, nil),
 		Entry("should allow when not restricted network and TCP port in readiness probe is not 6443", createArgs{isNonRestrictedNetworkEnv: true, isRestrictedNetworkValidProbePort: false}, true, nil, nil),
 
-		Entry("should allow when VM specifies no availability zone, there are availability zones, and WCP FaultDomains FSS is disabled", createArgs{isEmptyAvailabilityZone: true}, true, nil, nil),
-		Entry("should allow when VM specifies no availability zone, there are no availability zones, and WCP FaultDomains FSS is disabled", createArgs{isEmptyAvailabilityZone: true, isNoAvailabilityZones: true}, true, nil, nil),
-		Entry("should allow when VM specifies no availability zone, there are availability zones, and WCP FaultDomains FSS is enabled", createArgs{isEmptyAvailabilityZone: true, isWCPFaultDomainsFSSEnabled: true}, true, nil, nil),
-		Entry("should allow when VM specifies no availability zone, there are no availability zones, and WCP FaultDomains FSS is enabled", createArgs{isEmptyAvailabilityZone: true, isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, true, nil, nil),
-		Entry("should allow when VM specifies valid availability zone, there are availability zones, and WCP FaultDomains FSS is enabled", createArgs{isWCPFaultDomainsFSSEnabled: true}, true, nil, nil),
-		Entry("should allow when VM specifies valid availability zone, there are no availability zones, and WCP FaultDomains FSS is disabled", createArgs{isNoAvailabilityZones: true}, true, nil, nil),
-		Entry("should allow when VM specifies invalid availability zone, there are availability zones, and WCP FaultDomains FSS is disabled", createArgs{isInvalidAvailabilityZone: true}, true, nil, nil),
-		Entry("should deny when VM specifies invalid availability zone, there are availability zones, and WCP FaultDomains FSS is enabled", createArgs{isInvalidAvailabilityZone: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
-		Entry("should allow when VM specifies invalid availability zone, there are no availability zones, and WCP FaultDomains FSS is disabled", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true}, true, nil, nil),
-		Entry("should deny when VM specifies invalid availability zone, there are no availability zones, and WCP FaultDomains FSS is enabled", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
-		Entry("should deny when there are no availability zones and WCP FaultDomains FSS is enabled", createArgs{isNoAvailabilityZones: true, isWCPFaultDomainsFSSEnabled: true}, false, nil, nil),
+		Entry("should allow when VM specifies no availability zone, there are availability zones", createArgs{isEmptyAvailabilityZone: true}, true, nil, nil),
+		Entry("should allow when VM specifies no availability zone, there are no availability zones", createArgs{isEmptyAvailabilityZone: true, isNoAvailabilityZones: true}, true, nil, nil),
+		Entry("should allow when VM specifies valid availability zone, there are availability zones", createArgs{}, true, nil, nil),
+		Entry("should deny when VM specifies invalid availability zone, there are availability zones", createArgs{isInvalidAvailabilityZone: true}, false, nil, nil),
+		Entry("should deny when VM specifies invalid availability zone, there are no availability zones", createArgs{isInvalidAvailabilityZone: true, isNoAvailabilityZones: true}, false, nil, nil),
+		Entry("should deny when there are no availability zones and WCP FaultDomains FSS is enabled", createArgs{isNoAvailabilityZones: true}, false, nil, nil),
 
 		Entry("should disallow creating VM with suspended power state", createArgs{powerState: vmopv1.VirtualMachinePowerStateSuspended}, false,
 			field.Invalid(specPath.Child("powerState"), vmopv1.VirtualMachinePowerStateSuspended, "cannot set a new VM's power state to Suspended").Error(), nil),
@@ -354,13 +339,13 @@ func unitTestsValidateCreate() {
 
 		Entry("should allow creating VM with admin-only annotations set by WCP user when the Backup/Restore FSS is enabled", createArgs{adminOnlyAnnotations: true, isPrivilegedUser: true}, true, nil, nil),
 
-		Entry("should allow creating VM, there is 1 availability zone, and PodVMOnSupervisor FSS is disabled", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, podVMOnStretchedSupervisor: false}, true, nil, nil),
-		Entry("should allow creating VM, there is 1 availability zone, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, podVMOnStretchedSupervisor: true}, true, nil, nil),
-		Entry("should allow creating VM, there is 1 availability zone, there is no storage policy quota, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, podVMOnStretchedSupervisor: true, noStoragePolicyQuota: true}, true, nil, nil),
+		Entry("should allow creating VM, there is 1 availability zone, and PodVMOnSupervisor FSS is disabled", createArgs{validStorageClass: true, podVMOnStretchedSupervisor: false}, true, nil, nil),
+		Entry("should allow creating VM, there is 1 availability zone, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, podVMOnStretchedSupervisor: true}, true, nil, nil),
+		Entry("should allow creating VM, there is 1 availability zone, there is no storage policy quota, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, podVMOnStretchedSupervisor: true, noStoragePolicyQuota: true}, true, nil, nil),
 
-		Entry("should allow creating VM, there are >1 availability zones, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, multipleZones: true, podVMOnStretchedSupervisor: true}, true, nil, nil),
-		Entry("should disallow creating VM, there are >1 availability zones, there is no storage policy quota, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, multipleZones: true, podVMOnStretchedSupervisor: true, noStoragePolicyQuota: true}, false, nil, nil),
-		Entry("should allow creating VM, there are >1 availability zones, and there is no storage policy quota", createArgs{validStorageClass: true, isWCPFaultDomainsFSSEnabled: true, multipleZones: true, noStoragePolicyQuota: true}, true, nil, nil),
+		Entry("should allow creating VM, there are >1 availability zones, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, multipleZones: true, podVMOnStretchedSupervisor: true}, true, nil, nil),
+		Entry("should disallow creating VM, there are >1 availability zones, there is no storage policy quota, and PodVMOnSupervisor FSS is enabled", createArgs{validStorageClass: true, multipleZones: true, podVMOnStretchedSupervisor: true, noStoragePolicyQuota: true}, false, nil, nil),
+		Entry("should allow creating VM, there are >1 availability zones, and there is no storage policy quota", createArgs{validStorageClass: true, multipleZones: true, noStoragePolicyQuota: true}, true, nil, nil),
 	)
 
 	Context("Bootstrap", func() {
@@ -1351,7 +1336,6 @@ func unitTestsValidateUpdate() {
 		Entry("should deny resourcePolicy change", updateArgs{changeResourcePolicy: true}, false, msg, nil),
 
 		Entry("should allow initial zone assignment", updateArgs{assignZoneName: true}, true, nil, nil),
-		Entry("should allow zone name change when WCP FaultDomains FSS is disabled", updateArgs{changeZoneName: true}, true, nil, nil),
 
 		Entry("should deny instance storage volume name change, when user is SSO user", updateArgs{changeInstanceStorageVolume: true}, false,
 			field.Forbidden(volumesPath, "adding or modifying instance storage volume claim(s) is not allowed").Error(), nil),

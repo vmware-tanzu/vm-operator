@@ -15,7 +15,6 @@ func Default() Config {
 		DefaultVMClassControllerName: "vmoperator.vmware.com/vsphere",
 		Features: FeatureStates{
 			AutoVADPBackupRestore:      false,
-			FaultDomains:               true,
 			ImageRegistry:              true,
 			InstanceStorage:            true,
 			NamespacedVMClass:          true,

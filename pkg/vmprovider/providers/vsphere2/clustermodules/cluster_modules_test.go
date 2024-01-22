@@ -33,7 +33,7 @@ func cmTests() {
 			ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{WithV1A2: true})
 			cmProvider = clustermodules.NewProvider(ctx.RestClient)
 
-			clusterRef = ctx.GetSingleClusterCompute().Reference()
+			clusterRef = ctx.GetFirstClusterFromFirstZone().Reference()
 
 			moduleGroup = "controller-group"
 			moduleSpec = &vmopv1.ClusterModuleSpec{

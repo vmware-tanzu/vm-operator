@@ -747,10 +747,6 @@ func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, v
 func (v validator) validateAvailabilityZone(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 
-	if !pkgconfig.FromContext(ctx).Features.FaultDomains {
-		return allErrs
-	}
-
 	zoneLabelPath := field.NewPath("metadata", "labels").Key(topology.KubernetesTopologyZoneLabelKey)
 
 	if oldVM != nil {

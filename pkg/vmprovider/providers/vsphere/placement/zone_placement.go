@@ -32,16 +32,14 @@ type Result struct {
 }
 
 func doesVMNeedPlacement(vmCtx context.VirtualMachineContext) (res Result, needZonePlacement, needInstanceStoragePlacement bool) {
-	if pkgconfig.FromContext(vmCtx).Features.FaultDomains {
-		res.ZonePlacement = true
+	res.ZonePlacement = true
 
-		if zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName != "" {
-			// Zone has already been selected.
-			res.ZoneName = zoneName
-		} else {
-			// VM does not have a zone already assigned so we need to select one.
-			needZonePlacement = true
-		}
+	if zoneName := vmCtx.VM.Labels[topology.KubernetesTopologyZoneLabelKey]; zoneName != "" {
+		// Zone has already been selected.
+		res.ZoneName = zoneName
+	} else {
+		// VM does not have a zone already assigned so we need to select one.
+		needZonePlacement = true
 	}
 
 	if pkgconfig.FromContext(vmCtx).Features.InstanceStorage {

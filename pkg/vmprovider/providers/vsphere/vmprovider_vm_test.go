@@ -999,6 +999,14 @@ func vmTests() {
 
 		Context("CreateOrUpdate VM", func() {
 
+			var zoneName string
+
+			JustBeforeEach(func() {
+				zoneName = ctx.GetFirstZoneName()
+				// Explicitly place the VM into one of the zones that the test context will create.
+				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+			})
+
 			It("Basic VM", func() {
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
@@ -1287,11 +1295,23 @@ func vmTests() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 
-			Context("When fault domains is enabled", func() {
-				BeforeEach(func() {
-					testConfig.WithFaultDomains = true
-				})
+			It("Reverse lookups existing VM into correct zone", func() {
+				_, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
 
+				Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+				Expect(vm.Status.Zone).To(Equal(zoneName))
+				delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+
+				Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
+				Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+				Expect(vm.Status.Zone).To(Equal(zoneName))
+			})
+
+			When("vm has explicit zone", func() {
+				JustBeforeEach(func() {
+					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+				})
 				It("creates VM in placement selected zone", func() {
 					Expect(vm.Labels).ToNot(HaveKey(topology.KubernetesTopologyZoneLabelKey))
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
@@ -1309,21 +1329,21 @@ func vmTests() {
 						Expect(rp.Reference().Value).To(Equal(nsRP.Reference().Value))
 					})
 				})
+			})
 
-				It("creates VM in assigned zone", func() {
-					azName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
-					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = azName
+			It("creates VM in assigned zone", func() {
+				azName := ctx.ZoneNames[rand.Intn(len(ctx.ZoneNames))]
+				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = azName
 
-					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("VM is created in the zone's ResourcePool", func() {
+					rp, err := vcVM.ResourcePool(ctx)
 					Expect(err).ToNot(HaveOccurred())
-
-					By("VM is created in the zone's ResourcePool", func() {
-						rp, err := vcVM.ResourcePool(ctx)
-						Expect(err).ToNot(HaveOccurred())
-						nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, azName, "")
-						Expect(nsRP).ToNot(BeNil())
-						Expect(rp.Reference().Value).To(Equal(nsRP.Reference().Value))
-					})
+					nsRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, azName, "")
+					Expect(nsRP).ToNot(BeNil())
+					Expect(rp.Reference().Value).To(Equal(nsRP.Reference().Value))
 				})
 			})
 
@@ -1818,29 +1838,6 @@ func vmTests() {
 					})
 				})
 			})
-
-			Context("When fault domains is enabled", func() {
-				const zoneName = "az-1"
-
-				BeforeEach(func() {
-					testConfig.WithFaultDomains = true
-					// Explicitly place the VM into one of the zones that the test context will create.
-					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
-				})
-
-				It("Reverse lookups existing VM into correct zone", func() {
-					_, err := createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).ToNot(HaveOccurred())
-
-					Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
-					Expect(vm.Status.Zone).To(Equal(zoneName))
-					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
-
-					Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
-					Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
-					Expect(vm.Status.Zone).To(Equal(zoneName))
-				})
-			})
 		})
 
 		Context("VM SetResourcePolicy", func() {
@@ -1872,7 +1869,10 @@ func vmTests() {
 				By("has expected namespace resource pool", func() {
 					rp, err := vcVM.ResourcePool(ctx)
 					Expect(err).ToNot(HaveOccurred())
-					childRP := ctx.GetResourcePoolForNamespace(nsInfo.Namespace, "", resourcePolicy.Spec.ResourcePool.Name)
+					childRP := ctx.GetResourcePoolForNamespace(
+						nsInfo.Namespace,
+						vm.Labels[topology.KubernetesTopologyZoneLabelKey],
+						resourcePolicy.Spec.ResourcePool.Name)
 					Expect(childRP).ToNot(BeNil())
 					Expect(rp.Reference().Value).To(Equal(childRP.Reference().Value))
 				})
@@ -1882,8 +1882,13 @@ func vmTests() {
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
 
-				members, err := cluster.NewManager(ctx.RestClient).ListModuleMembers(ctx, resourcePolicy.Status.ClusterModules[0].ModuleUuid)
-				Expect(err).ToNot(HaveOccurred())
+				var members []types.ManagedObjectReference
+				for i := range resourcePolicy.Status.ClusterModules {
+					m, err := cluster.NewManager(ctx.RestClient).ListModuleMembers(ctx, resourcePolicy.Status.ClusterModules[i].ModuleUuid)
+					Expect(err).ToNot(HaveOccurred())
+					members = append(m, members...)
+				}
+
 				Expect(members).To(ContainElements(vcVM.Reference()))
 			})
 
@@ -1895,6 +1900,13 @@ func vmTests() {
 		})
 
 		Context("Delete VM", func() {
+			const zoneName = "az-1"
+
+			BeforeEach(func() {
+				// Explicitly place the VM into one of the zones that the test context will create.
+				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+			})
+
 			JustBeforeEach(func() {
 				Expect(vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)).To(Succeed())
 			})
@@ -1931,37 +1943,26 @@ func vmTests() {
 				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
 			})
 
-			Context("When fault domains is enabled", func() {
-				const zoneName = "az-1"
+			It("returns NotFound when VM does not exist", func() {
+				_, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
 
-				BeforeEach(func() {
-					testConfig.WithFaultDomains = true
-					// Explicitly place the VM into one of the zones that the test context will create.
-					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
-				})
+				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+				delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
+				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+			})
 
-				It("returns NotFound when VM does not exist", func() {
-					_, err := createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).ToNot(HaveOccurred())
+			It("Deletes existing VM when zone info is missing", func() {
+				_, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
 
-					Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
-					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
-					Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
-				})
+				uniqueID := vm.Status.UniqueID
+				Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
+				Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
+				delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
 
-				It("Deletes existing VM when zone info is missing", func() {
-					_, err := createOrUpdateAndGetVcVM(ctx, vm)
-					Expect(err).ToNot(HaveOccurred())
-
-					uniqueID := vm.Status.UniqueID
-					Expect(ctx.GetVMFromMoID(uniqueID)).ToNot(BeNil())
-
-					Expect(vm.Labels).To(HaveKeyWithValue(topology.KubernetesTopologyZoneLabelKey, zoneName))
-					delete(vm.Labels, topology.KubernetesTopologyZoneLabelKey)
-
-					Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
-					Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
-				})
+				Expect(vmProvider.DeleteVirtualMachine(ctx, vm)).To(Succeed())
+				Expect(ctx.GetVMFromMoID(uniqueID)).To(BeNil())
 			})
 		})
 

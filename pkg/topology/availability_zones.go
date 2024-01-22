@@ -8,12 +8,9 @@ import (
 	"errors"
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	topologyv1 "github.com/vmware-tanzu/vm-operator/external/tanzu-topology/api/v1alpha1"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 const (
@@ -159,15 +156,6 @@ func GetAvailabilityZones(
 	ctx context.Context,
 	client ctrlclient.Client) ([]topologyv1.AvailabilityZone, error) {
 
-	if !pkgconfig.FromContext(ctx).Features.FaultDomains {
-		defaultAz, err := GetDefaultAvailabilityZone(ctx, client)
-		if err != nil {
-			return nil, err
-		}
-
-		return []topologyv1.AvailabilityZone{defaultAz}, nil
-	}
-
 	availabilityZoneList := &topologyv1.AvailabilityZoneList{}
 	if err := client.List(ctx, availabilityZoneList); err != nil {
 		return nil, err
@@ -189,57 +177,7 @@ func GetAvailabilityZone(
 	client ctrlclient.Client,
 	availabilityZoneName string) (topologyv1.AvailabilityZone, error) {
 
-	if !pkgconfig.FromContext(ctx).Features.FaultDomains {
-		if availabilityZoneName == "" || availabilityZoneName == DefaultAvailabilityZoneName {
-			return GetDefaultAvailabilityZone(ctx, client)
-		}
-		return topologyv1.AvailabilityZone{},
-			fmt.Errorf("FaultDomains FSS is not enabled but requested non-default AZ %s", availabilityZoneName)
-	}
-
 	var availabilityZone topologyv1.AvailabilityZone
 	err := client.Get(ctx, ctrlclient.ObjectKey{Name: availabilityZoneName}, &availabilityZone)
 	return availabilityZone, err
-}
-
-// GetDefaultAvailabilityZone returns the default AvailabilityZone resource
-// by inspecting the available, DevOps Namespace resources and transforming
-// them into AvailabilityZone resources by virtue of the annotations on the
-// Namespace that indicate the managed object IDs of the Namespace's vSphere
-// Resource Pool and Folder objects.
-func GetDefaultAvailabilityZone(
-	ctx context.Context,
-	client ctrlclient.Client) (topologyv1.AvailabilityZone, error) {
-
-	if pkgconfig.FromContext(ctx).Features.FaultDomains {
-		return topologyv1.AvailabilityZone{}, ErrWcpFaultDomainsFSSIsEnabled
-	}
-
-	namespaceList := &corev1.NamespaceList{}
-	if err := client.List(ctx, namespaceList); err != nil {
-		return topologyv1.AvailabilityZone{}, err
-	}
-
-	availabilityZone := topologyv1.AvailabilityZone{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: DefaultAvailabilityZoneName,
-		},
-		Spec: topologyv1.AvailabilityZoneSpec{
-			Namespaces: map[string]topologyv1.NamespaceInfo{},
-		},
-	}
-
-	// Collect all the DevOps namespaces into the AvailabilityZone's Namespaces map.
-	for _, ns := range namespaceList.Items {
-		poolMoID := ns.Annotations[NamespaceRPAnnotationKey]
-		folderMoID := ns.Annotations[NamespaceFolderAnnotationKey]
-		if poolMoID != "" && folderMoID != "" {
-			availabilityZone.Spec.Namespaces[ns.Name] = topologyv1.NamespaceInfo{
-				PoolMoIDs:  []string{poolMoID},
-				FolderMoId: folderMoID,
-			}
-		}
-	}
-
-	return availabilityZone, nil
 }

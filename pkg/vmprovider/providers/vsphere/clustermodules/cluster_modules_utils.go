@@ -10,7 +10,6 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/util/errors"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 )
 
 // FindClusterModuleUUID returns the index in the Status.ClusterModules and UUID of the
@@ -21,12 +20,8 @@ func FindClusterModuleUUID(
 	clusterRef types.ManagedObjectReference,
 	resourcePolicy *vmopv1.VirtualMachineSetResourcePolicy) (int, string) {
 
-	// Prior to the stretched cluster work, the status did not contain the VC cluster the module was
-	// created for, but we still need to return existing modules when the FSS is not enabled.
-	matchCluster := pkgconfig.FromContext(ctx).Features.FaultDomains
-
 	for i, modStatus := range resourcePolicy.Status.ClusterModules {
-		if modStatus.GroupName == groupName && (modStatus.ClusterMoID == clusterRef.Value || !matchCluster) {
+		if modStatus.GroupName == groupName && (modStatus.ClusterMoID == clusterRef.Value) {
 			return i, modStatus.ModuleUuid
 		}
 	}
@@ -46,15 +41,13 @@ func ClaimClusterModuleUUID(
 
 	var errs []error
 
-	if pkgconfig.FromContext(ctx).Features.FaultDomains {
-		for i, modStatus := range resourcePolicy.Status.ClusterModules {
-			if modStatus.GroupName == groupName && modStatus.ClusterMoID == "" {
-				exists, err := clusterModProvider.DoesModuleExist(ctx, modStatus.ModuleUuid, clusterRef)
-				if err != nil {
-					errs = append(errs, err)
-				} else if exists {
-					return i, modStatus.ModuleUuid, nil
-				}
+	for i, modStatus := range resourcePolicy.Status.ClusterModules {
+		if modStatus.GroupName == groupName && modStatus.ClusterMoID == "" {
+			exists, err := clusterModProvider.DoesModuleExist(ctx, modStatus.ModuleUuid, clusterRef)
+			if err != nil {
+				errs = append(errs, err)
+			} else if exists {
+				return i, modStatus.ModuleUuid, nil
 			}
 		}
 	}

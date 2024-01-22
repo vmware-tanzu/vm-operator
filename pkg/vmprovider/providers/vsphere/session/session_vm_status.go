@@ -1,4 +1,4 @@
-// Copyright (c) 2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2021-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package session
@@ -88,13 +88,57 @@ func MarkCustomizationInfoCondition(vm *vmopv1.VirtualMachine, guestInfo *vimTyp
 	}
 }
 
+func MarkBootstrapCondition(
+	vm *vmopv1.VirtualMachine,
+	configInfo *vimTypes.VirtualMachineConfigInfo) {
+
+	if configInfo == nil {
+		conditions.MarkUnknown(
+			vm, vmopv1.GuestBootstrapCondition, "NoConfigInfo", "")
+		return
+	}
+
+	if len(configInfo.ExtraConfig) == 0 {
+		conditions.MarkUnknown(
+			vm, vmopv1.GuestBootstrapCondition, "NoExtraConfig", "")
+		return
+	}
+
+	status, reason, msg, ok := util.GetBootstrapConditionValues(configInfo)
+	if !ok {
+		conditions.MarkUnknown(
+			vm, vmopv1.GuestBootstrapCondition, "NoBootstrapStatus", "")
+		return
+	}
+	if status {
+		c := conditions.TrueCondition(vmopv1.GuestBootstrapCondition)
+		if reason != "" {
+			c.Reason = reason
+		}
+		c.Message = msg
+		conditions.Set(vm, c)
+	} else {
+		conditions.MarkFalse(
+			vm,
+			vmopv1.GuestBootstrapCondition,
+			reason,
+			vmopv1.ConditionSeverityError,
+			msg)
+	}
+}
+
 func (s *Session) updateVMStatus(
 	vmCtx context.VirtualMachineContext,
 	resVM *res.VirtualMachine) error {
 
 	// TODO: We could be smarter about not re-fetching the config: if we didn't do a
 	// reconfigure or power change, the prior config is still entirely valid.
-	moVM, err := resVM.GetProperties(vmCtx, []string{"config.changeTrackingEnabled", "guest", "summary"})
+	moVM, err := resVM.GetProperties(vmCtx, []string{
+		"config.changeTrackingEnabled",
+		"config.extraConfig",
+		"guest",
+		"summary",
+	})
 	if err != nil {
 		// Leave the current Status unchanged.
 		return err
@@ -139,6 +183,7 @@ func (s *Session) updateVMStatus(
 
 	MarkCustomizationInfoCondition(vm, guestInfo)
 	MarkVMToolsRunningStatusCondition(vm, guestInfo)
+	MarkBootstrapCondition(vm, moVM.Config)
 
 	if config := moVM.Config; config != nil {
 		vm.Status.ChangeBlockTracking = config.ChangeTrackingEnabled

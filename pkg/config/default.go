@@ -23,7 +23,7 @@ func Default() Config {
 			UnifiedTKG:                 true,
 			VMClassAsConfig:            true,
 			VMClassAsConfigDayNDate:    true,
-			VMOpV1Alpha2:               false,
+			VMOpV1Alpha2:               true,
 			PodVMOnStretchedSupervisor: false,
 		},
 		InstanceStorage: InstanceStorage{

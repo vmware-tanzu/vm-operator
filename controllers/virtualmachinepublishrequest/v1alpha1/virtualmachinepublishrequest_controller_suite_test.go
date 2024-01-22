@@ -24,6 +24,7 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 		pkgconfig.NewContextWithDefaultConfig(),
 		func(config *pkgconfig.Config) {
 			config.Features.ImageRegistry = true
+			config.Features.VMOpV1Alpha2 = false
 		}),
 	virtualmachinepublishrequest.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {

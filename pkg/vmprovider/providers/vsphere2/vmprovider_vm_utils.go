@@ -176,7 +176,7 @@ func GetVirtualMachineBootstrap(
 
 	bootstrapSpec := vmCtx.VM.Spec.Bootstrap
 	if bootstrapSpec == nil {
-		conditions.MarkTrue(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)
+		conditions.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionBootstrapReady)
 		return vmlifecycle.BootstrapData{}, nil
 	}
 

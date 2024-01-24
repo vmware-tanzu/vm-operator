@@ -839,6 +839,7 @@ func (vs *vSphereVMProvider) vmCreateDoNetworking(
 
 	networkSpec := vmCtx.VM.Spec.Network
 	if networkSpec == nil || networkSpec.Disabled {
+		conditions.Delete(vmCtx.VM, vmopv1.VirtualMachineConditionNetworkReady)
 		return nil
 	}
 

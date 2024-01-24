@@ -20,6 +20,7 @@ import (
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
+	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2"
@@ -169,6 +170,7 @@ func vmE2ETests() {
 				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+				Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
 
 				By("simulate successful NetOP reconcile", func() {
 					netInterface := &netopv1alpha1.NetworkInterface{
@@ -201,6 +203,16 @@ func vmE2ETests() {
 
 				err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
+
+				By("has expected conditions", func() {
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionClassReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionImageReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionStorageReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionPlacementReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
+				})
 
 				Expect(vm.Status.UniqueID).ToNot(BeEmpty())
 				vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)
@@ -275,6 +287,7 @@ func vmE2ETests() {
 				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("network interface is not ready yet"))
+				Expect(conditions.IsFalse(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
 
 				By("simulate successful NCP reconcile", func() {
 					netInterface := &ncpv1alpha1.VirtualNetworkInterface{
@@ -308,6 +321,16 @@ func vmE2ETests() {
 
 				err = vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
+
+				By("has expected conditions", func() {
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionClassReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionImageReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionStorageReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionPlacementReady)).To(BeTrue())
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
+				})
 
 				Expect(vm.Status.UniqueID).ToNot(BeEmpty())
 				vcVM := ctx.GetVMFromMoID(vm.Status.UniqueID)

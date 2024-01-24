@@ -24,7 +24,8 @@ import (
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	patch "github.com/vmware-tanzu/vm-operator/pkg/patch2"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -140,7 +141,7 @@ func intgTests() {
 		vm := getVirtualMachine(objKey)
 		Expect(vm).ToNot(BeNil())
 
-		volumes := volume.FilterVolumesA2(vm)
+		volumes := instancestorage.FilterVolumes(vm)
 		Expect(volumes).ToNot(BeEmpty())
 
 		Eventually(func() bool {
@@ -171,7 +172,7 @@ func intgTests() {
 		vm := getVirtualMachine(objKey)
 		Expect(vm).ToNot(BeNil())
 
-		volumes := volume.FilterVolumesA2(vm)
+		volumes := instancestorage.FilterVolumes(vm)
 		Expect(volumes).ToNot(BeEmpty())
 
 		Eventually(func() bool {
@@ -195,7 +196,7 @@ func intgTests() {
 		vm := getVirtualMachine(objKey)
 		Expect(vm).ToNot(BeNil())
 
-		volumes := volume.FilterVolumesA2(vm)
+		volumes := instancestorage.FilterVolumes(vm)
 		Expect(volumes).ToNot(BeEmpty())
 
 		for _, vol := range volumes {

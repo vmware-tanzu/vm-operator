@@ -176,7 +176,6 @@ func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.
 	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateReadinessProbe(ctx, vm)...)
 	fieldErrs = append(fieldErrs, v.validateAdvanced(ctx, vm)...)
-	fieldErrs = append(fieldErrs, v.validateInstanceStorageVolumes(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateNextRestartTimeOnUpdate(ctx, vm, oldVM)...)
 	fieldErrs = append(fieldErrs, v.validateAnnotation(ctx, vm, oldVM)...)
 

@@ -3,13 +3,22 @@
 
 package config
 
-import "time"
+import (
+	"time"
+
+	"github.com/vmware-tanzu/vm-operator/pkg"
+)
 
 const defaultPrefix = "vmoperator-"
 
 // Default returns a Config object with default values.
 func Default() Config {
 	return Config{
+		BuildCommit:  pkg.BuildCommit,
+		BuildNumber:  pkg.BuildNumber,
+		BuildVersion: pkg.BuildVersion,
+		BuildType:    pkg.BuildType,
+
 		ContainerNode:                false,
 		ContentAPIWait:               1 * time.Second,
 		DefaultVMClassControllerName: "vmoperator.vmware.com/vsphere",

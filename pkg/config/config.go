@@ -15,6 +15,11 @@ import (
 // to prevent the possibility of race conditions when reading/writing data to
 // a Config instance stored in a context.
 type Config struct {
+	BuildCommit  string
+	BuildNumber  string
+	BuildVersion string
+	BuildType    string
+
 	ContainerNode bool
 
 	ContentAPIWait  time.Duration

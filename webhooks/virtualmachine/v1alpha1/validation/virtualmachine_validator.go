@@ -34,6 +34,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -810,6 +811,14 @@ func (v validator) validateAnnotation(ctx *context.WebhookRequestContext, vm, ol
 
 	if vm.Annotations[vmopv1.FirstBootDoneAnnotation] != oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] {
 		allErrs = append(allErrs, field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
+	if vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] != oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
+	}
+
+	if vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] != oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] {
+		allErrs = append(allErrs, field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), modifyAnnotationNotAllowedForNonAdmin))
 	}
 
 	return allErrs

@@ -25,6 +25,7 @@ import (
 
 	pkgbuilder "github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
@@ -33,11 +34,13 @@ import (
 )
 
 const (
-	updateSuffix            = "-updated"
-	dummyNamespaceImageName = "dummy-namespace-image"
-	dummyClusterImageName   = "dummy-cluster-image"
-	dummyInstanceIDVal      = "dummy-instance-id"
-	dummyFirstBootDoneVal   = "dummy-first-boot-done"
+	updateSuffix                   = "-updated"
+	dummyNamespaceImageName        = "dummy-namespace-image"
+	dummyClusterImageName          = "dummy-cluster-image"
+	dummyInstanceIDVal             = "dummy-instance-id"
+	dummyFirstBootDoneVal          = "dummy-first-boot-done"
+	dummyCreatedAtBuildVersionVal  = "dummy-created-at-build-version"
+	dummyCreatedAtSchemaVersionVal = "dummy-created-at-schema-version"
 )
 
 func unitTests() {
@@ -378,6 +381,8 @@ func unitTestsValidateCreate() {
 		if args.adminOnlyAnnotations {
 			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+			ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = updateSuffix
+			ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = updateSuffix
 		}
 
 		if args.isPrivilegedUser {
@@ -532,6 +537,8 @@ func unitTestsValidateCreate() {
 			strings.Join([]string{
 				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 			}, ", "), nil),
 		Entry("should allow creating VM with admin-only annotations set by service user", createArgs{isServiceUser: true, adminOnlyAnnotations: true}, true, nil, nil),
 
@@ -712,16 +719,24 @@ func unitTestsValidateUpdate() {
 		if args.addAdminOnlyAnnotations {
 			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+			ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+			ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
 		}
 		if args.updateAdminOnlyAnnotations {
 			ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
 			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+			ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+			ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
 			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal + updateSuffix
 			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal + updateSuffix
+			ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal + updateSuffix
+			ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal + updateSuffix
 		}
 		if args.removeAdminOnlyAnnotations {
 			ctx.oldVM.Annotations[vmopv1.InstanceIDAnnotation] = dummyInstanceIDVal
-			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = updateSuffix
+			ctx.oldVM.Annotations[vmopv1.FirstBootDoneAnnotation] = dummyFirstBootDoneVal
+			ctx.oldVM.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = dummyCreatedAtBuildVersionVal
+			ctx.oldVM.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = dummyCreatedAtSchemaVersionVal
 		}
 
 		if args.isPrivilegedUser {
@@ -834,16 +849,22 @@ func unitTestsValidateUpdate() {
 			strings.Join([]string{
 				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 			}, ", "), nil),
 		Entry("should disallow updating admin-only annotations by SSO user", updateArgs{updateAdminOnlyAnnotations: true}, false,
 			strings.Join([]string{
 				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 			}, ", "), nil),
 		Entry("should disallow removing admin-only annotations by SSO user", updateArgs{removeAdminOnlyAnnotations: true}, false,
 			strings.Join([]string{
 				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
+				field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 			}, ", "), nil),
 		Entry("should allow adding admin-only annotations by service user", updateArgs{isServiceUser: true, addAdminOnlyAnnotations: true}, true, nil, nil),
 		Entry("should allow updating admin-only annotations by service user", updateArgs{isServiceUser: true, updateAdminOnlyAnnotations: true}, true, nil, nil),

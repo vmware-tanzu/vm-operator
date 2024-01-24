@@ -18,6 +18,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 	"github.com/vmware-tanzu/vm-operator/webhooks/virtualmachine/v1alpha2/mutation"
@@ -501,6 +502,56 @@ func unitTestsMutating() {
 					}},
 					newInvalidNextRestartTimeTableEntries("should return an invalid field error"))...,
 			)
+		})
+	})
+
+	Describe("SetCreatedAtAnnotations", func() {
+		var (
+			vm *vmopv1.VirtualMachine
+		)
+
+		BeforeEach(func() {
+			vm = ctx.vm.DeepCopy()
+		})
+
+		When("vm does not have any annotations", func() {
+			It("should add the created-at annotations", func() {
+				Expect(vm.Annotations).ToNot(HaveKey(constants.CreatedAtBuildVersionAnnotationKey))
+				Expect(vm.Annotations).ToNot(HaveKey(constants.CreatedAtSchemaVersionAnnotationKey))
+				mutation.SetCreatedAtAnnotations(
+					pkgconfig.UpdateContext(ctx, func(config *pkgconfig.Config) {
+						config.BuildVersion = "v1"
+					}), vm)
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
+			})
+		})
+
+		When("vm does have some existing annotations", func() {
+			It("should add the created-at annotations", func() {
+				vm.Annotations = map[string]string{"k1": "v1", "k2": "v2"}
+				mutation.SetCreatedAtAnnotations(
+					pkgconfig.UpdateContext(ctx, func(config *pkgconfig.Config) {
+						config.BuildVersion = "v1"
+					}), vm)
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
+			})
+		})
+
+		When("vm has the created-at annotations", func() {
+			It("should overwrite the created-at annotations", func() {
+				vm.Annotations = map[string]string{
+					constants.CreatedAtBuildVersionAnnotationKey:  "fake-build-version",
+					constants.CreatedAtSchemaVersionAnnotationKey: "fake-schema-version",
+				}
+				mutation.SetCreatedAtAnnotations(
+					pkgconfig.UpdateContext(ctx, func(config *pkgconfig.Config) {
+						config.BuildVersion = "v1"
+					}), vm)
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
+			})
 		})
 	})
 }

@@ -13,7 +13,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
+	"github.com/vmware-tanzu/vm-operator/pkg"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -301,6 +303,42 @@ func intgTestsMutating() {
 							newInvalidNextRestartTimeTableEntries("should return an invalid field error"))...,
 					)
 				})
+			})
+		})
+	})
+
+	Context("SetCreatedAtAnnotations", func() {
+		When("creating a VM", func() {
+			It("should add the created-at annotations", func() {
+				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+				vm := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
+			})
+		})
+
+		When("updating a VM", func() {
+			var oldBuildVersion string
+			BeforeEach(func() {
+				oldBuildVersion = pkg.BuildVersion
+			})
+			AfterEach(func() {
+				pkg.BuildVersion = oldBuildVersion
+			})
+			It("should not update the created-at annotations", func() {
+				Expect(ctx.Client.Create(ctx, ctx.vm)).To(Succeed())
+				vm := &vmopv1.VirtualMachine{}
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
+
+				pkg.BuildVersion = "v2"
+
+				Expect(ctx.Client.Update(ctx, vm)).To(Succeed())
+				Expect(ctx.Client.Get(ctx, client.ObjectKeyFromObject(ctx.vm), vm)).To(Succeed())
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtBuildVersionAnnotationKey, "v1"))
+				Expect(vm.Annotations).To(HaveKeyWithValue(constants.CreatedAtSchemaVersionAnnotationKey, vmopv1.SchemeGroupVersion.Version))
 			})
 		})
 	})

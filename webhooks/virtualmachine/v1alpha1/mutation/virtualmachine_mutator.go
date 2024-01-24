@@ -4,6 +4,7 @@
 package mutation
 
 import (
+	goctx "context"
 	"encoding/json"
 	"net/http"
 	"reflect"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/vmware-tanzu/vm-operator/pkg/builder"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	providerConfig "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/network"
@@ -105,16 +107,13 @@ func (m mutator) Mutate(ctx *context.WebhookRequestContext) admission.Response {
 
 	switch ctx.Op {
 	case admissionv1.Create:
-		if AddDefaultNetworkInterface(ctx, m.client, modified) {
-			wasMutated = true
-		}
-		if SetDefaultPowerState(ctx, m.client, modified) {
-			wasMutated = true
-		}
-		if mutated, err := ResolveImageName(ctx, m.client, modified); err != nil {
+		// SetCreatedAtAnnotations always mutates the VM on create.
+		wasMutated = true
+		SetCreatedAtAnnotations(ctx, modified)
+		AddDefaultNetworkInterface(ctx, m.client, modified)
+		SetDefaultPowerState(ctx, m.client, modified)
+		if _, err := ResolveImageName(ctx, m.client, modified); err != nil {
 			return admission.Denied(err.Error())
-		} else if mutated {
-			wasMutated = true
 		}
 	case admissionv1.Update:
 		oldVM, err := m.vmFromUnstructured(ctx.OldObj)
@@ -325,4 +324,15 @@ func getProviderConfigMap(
 		return "", err
 	}
 	return obj.Data["Network"], nil
+}
+
+func SetCreatedAtAnnotations(ctx goctx.Context, vm *vmopv1.VirtualMachine) {
+	// If this is the first time the VM has been create, then record the
+	// build version and storage schema version into the VM's annotations.
+	// This enables future work to know at what version a VM was "created."
+	if vm.Annotations == nil {
+		vm.Annotations = map[string]string{}
+	}
+	vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = pkgconfig.FromContext(ctx).BuildVersion
+	vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = vmopv1.SchemeGroupVersion.Version
 }

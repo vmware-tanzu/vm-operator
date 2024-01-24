@@ -648,11 +648,6 @@ func (vs *vSphereVMProvider) vmCreateGetArgs(
 		return nil, err
 	}
 
-	err = vs.vmCreateValidateArgs(vmCtx, vcClient, createArgs)
-	if err != nil {
-		return nil, err
-	}
-
 	return createArgs, nil
 }
 
@@ -812,6 +807,33 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		}
 	}
 
+	vmStorageClass := vmCtx.VM.Spec.StorageClass
+	if vmStorageClass == "" {
+		cfg := vcClient.Config()
+
+		// This will be true in WCP.
+		if cfg.StorageClassRequired {
+			err := fmt.Errorf("StorageClass is required but not specified")
+			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "StorageClassRequired", err.Error())
+			return err
+		}
+
+		// Testing only for standalone gce2e.
+		if cfg.Datastore == "" {
+			err := fmt.Errorf("no Datastore provided in configuration")
+			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "DatastoreNotFound", err.Error())
+			return err
+		}
+
+		datastore, err := vcClient.Finder().Datastore(vmCtx, cfg.Datastore)
+		if err != nil {
+			conditions.MarkFalse(vmCtx.VM, vmopv1.VirtualMachineConditionStorageReady, "DatastoreNotFound", err.Error())
+			return fmt.Errorf("failed to find Datastore %s: %w", cfg.Datastore, err)
+		}
+
+		createArgs.DatastoreMoID = datastore.Reference().Value
+	}
+
 	storageClassesToIDs, err := storage.GetVMStoragePoliciesIDs(vmCtx, vs.k8sClient)
 	if err != nil {
 		reason, msg := errToConditionReasonAndMessage(err)
@@ -819,7 +841,7 @@ func (vs *vSphereVMProvider) vmCreateGetStoragePrereqs(
 		return err
 	}
 
-	vmStorageProfileID := storageClassesToIDs[vmCtx.VM.Spec.StorageClass]
+	vmStorageProfileID := storageClassesToIDs[vmStorageClass]
 
 	provisioningType, err := virtualmachine.GetDefaultDiskProvisioningType(vmCtx, vcClient, vmStorageProfileID)
 	if err != nil {
@@ -1038,43 +1060,6 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecZipNetworkInterfaces(
 				Device:    ethCardDev,
 			})
 		}
-	}
-
-	return nil
-}
-
-func (vs *vSphereVMProvider) vmCreateValidateArgs(
-	vmCtx context.VirtualMachineContextA2,
-	vcClient *vcclient.Client,
-	createArgs *VMCreateArgs) error {
-
-	// Some of this would be better done in the validation webhook but have it here for now.
-	cfg := vcClient.Config()
-
-	if cfg.StorageClassRequired {
-		// In WCP this is always required.
-		if vmCtx.VM.Spec.StorageClass == "" {
-			return fmt.Errorf("StorageClass is required but not specified")
-		}
-
-		if createArgs.StorageProfileID == "" {
-			// GetVMStoragePoliciesIDs() would have returned an error if the policy didn't exist, but
-			// ensure the field is set.
-			return fmt.Errorf("no StorageProfile found for StorageClass %s", vmCtx.VM.Spec.StorageClass)
-		}
-
-	} else if vmCtx.VM.Spec.StorageClass == "" {
-		// This is only set in gce2e.
-		if cfg.Datastore == "" {
-			return fmt.Errorf("no Datastore provided in configuration")
-		}
-
-		datastore, err := vcClient.Finder().Datastore(vmCtx, cfg.Datastore)
-		if err != nil {
-			return fmt.Errorf("failed to find Datastore %s: %w", cfg.Datastore, err)
-		}
-
-		createArgs.DatastoreMoID = datastore.Reference().Value
 	}
 
 	return nil

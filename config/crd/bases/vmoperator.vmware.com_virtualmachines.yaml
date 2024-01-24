@@ -1707,10 +1707,7 @@ spec:
                 description: "StorageClass describes the name of a Kubernetes StorageClass
                   resource used to configure this VM's storage-related attributes.
                   \n Please see https://kubernetes.io/docs/concepts/storage/storage-classes/
-                  for more information on Kubernetes storage classes. \n This field
-                  is optional in the cases where there exists a sensible default value,
-                  such as when there is a single StorageClass resource available in
-                  the same Namespace as the VM being deployed."
+                  for more information on Kubernetes storage classes."
                 type: string
               suspendMode:
                 default: TrySoft

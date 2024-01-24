@@ -220,10 +220,6 @@ type VirtualMachineSpec struct {
 	// Please see https://kubernetes.io/docs/concepts/storage/storage-classes/
 	// for more information on Kubernetes storage classes.
 	//
-	// This field is optional in the cases where there exists a sensible
-	// default value, such as when there is a single StorageClass
-	// resource available in the same Namespace as the VM being deployed.
-	//
 	// +optional
 	StorageClass string `json:"storageClass,omitempty"`
 

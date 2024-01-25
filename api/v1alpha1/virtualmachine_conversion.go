@@ -830,10 +830,10 @@ func restore_v1alpha2_VirtualMachineBootstrapSpec(
 			dstSysPrep.RawSysprep = mergeSecretKeySelector(dstSysPrep.RawSysprep, srcSysPrep.RawSysprep)
 
 			// In v1a1 we don't have way to denote Sysprep with vAppConfig. LinuxPrep with vAppConfig works
-			// because that translates to OvfEnvTransport. If we have saved vAppConfig restore that now if
-			// we wouldn't do it right below.
+			// because that translates to OvfEnvTransport. If we have a saved vAppConfig initialize the field
+			// so we'll restore it next.
 			if dstBootstrap.VAppConfig == nil && srcBootstrap.VAppConfig != nil {
-				dstBootstrap.VAppConfig = srcBootstrap.VAppConfig
+				dstBootstrap.VAppConfig = &v1alpha2.VirtualMachineBootstrapVAppConfigSpec{}
 			}
 		}
 	}

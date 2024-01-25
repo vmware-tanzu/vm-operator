@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package validation_test
@@ -221,8 +221,6 @@ func unitTestsValidateCreate() {
 		if args.adminOnlyAnnotations {
 			ctx.vm.Annotations[vmopv1.InstanceIDAnnotation] = updateSuffix
 			ctx.vm.Annotations[vmopv1.FirstBootDoneAnnotation] = updateSuffix
-			ctx.vm.Annotations[constants.CreatedAtBuildVersionAnnotationKey] = updateSuffix
-			ctx.vm.Annotations[constants.CreatedAtSchemaVersionAnnotationKey] = updateSuffix
 		}
 
 		if args.isPrivilegedUser {
@@ -354,8 +352,6 @@ func unitTestsValidateCreate() {
 			strings.Join([]string{
 				field.Forbidden(annotationPath.Child(vmopv1.InstanceIDAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
 				field.Forbidden(annotationPath.Child(vmopv1.FirstBootDoneAnnotation), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(constants.CreatedAtBuildVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
-				field.Forbidden(annotationPath.Child(constants.CreatedAtSchemaVersionAnnotationKey), "modifying this annotation is not allowed for non-admin users").Error(),
 			}, ", "), nil),
 		Entry("should allow creating VM with admin-only annotations set by service user", createArgs{isServiceUser: true, adminOnlyAnnotations: true}, true, nil, nil),
 

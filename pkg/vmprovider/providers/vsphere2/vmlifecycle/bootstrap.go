@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vmlifecycle
@@ -15,6 +15,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util/cloudinit"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/network"
@@ -146,7 +147,7 @@ func getBootstrapArgs(
 	// interface has DNS info, but we would previously set it for every interface so keep doing that
 	// here. Similarly, we didn't populate SearchDomains for non-TKG VMs so we don't here either. This is
 	// all a little nuts & complicated and probably not correct for every situation.
-	isTKG := hasTKGLabels(vmCtx.VM.Labels)
+	isTKG := kubeutil.HasTKGLabels(vmCtx.VM.Labels)
 	getDNSInformationFromConfigMap := false
 	for _, r := range networkResults.Results {
 		if r.DHCP4 || r.DHCP6 {
@@ -203,24 +204,6 @@ func getBootstrapArgs(
 	}
 
 	return &bootstrapArgs, nil
-}
-
-func hasTKGLabels(vmLabels map[string]string) bool {
-	const (
-		// CAPWClusterRoleLabelKey is the key for the label applied to a VM that was
-		// created by CAPW.
-		CAPWClusterRoleLabelKey = "capw.vmware.com/cluster.role" //nolint:gosec
-
-		// CAPVClusterRoleLabelKey is the key for the label applied to a VM that was
-		// created by CAPV.
-		CAPVClusterRoleLabelKey = "capv.vmware.com/cluster.role"
-	)
-
-	_, ok := vmLabels[CAPWClusterRoleLabelKey]
-	if !ok {
-		_, ok = vmLabels[CAPVClusterRoleLabelKey]
-	}
-	return ok
 }
 
 func doReconfigure(

@@ -22,6 +22,7 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	providercfg "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/session"
@@ -103,7 +104,7 @@ var _ = Describe("Mutate update args with DNS information", func() {
 		Context("the CAPW label is present", func() {
 			BeforeEach(func() {
 				labels = map[string]string{
-					session.CAPWClusterRoleLabelKey: "",
+					kubeutil.CAPWClusterRoleLabelKey: "",
 				}
 			})
 			It("the update args will have the search suffixes", func() {
@@ -118,7 +119,7 @@ var _ = Describe("Mutate update args with DNS information", func() {
 		Context("the CAPW label is present w a non-empty value", func() {
 			BeforeEach(func() {
 				labels = map[string]string{
-					session.CAPWClusterRoleLabelKey: "fake",
+					kubeutil.CAPWClusterRoleLabelKey: "fake",
 				}
 			})
 			It("the update args will have the search suffixes", func() {
@@ -133,7 +134,7 @@ var _ = Describe("Mutate update args with DNS information", func() {
 		Context("the CAPV label is present", func() {
 			BeforeEach(func() {
 				labels = map[string]string{
-					session.CAPVClusterRoleLabelKey: "",
+					kubeutil.CAPVClusterRoleLabelKey: "",
 				}
 			})
 			It("the update args will have the search suffixes", func() {
@@ -148,7 +149,7 @@ var _ = Describe("Mutate update args with DNS information", func() {
 		Context("the CAPV label is present w a non-empty value", func() {
 			BeforeEach(func() {
 				labels = map[string]string{
-					session.CAPVClusterRoleLabelKey: "fake",
+					kubeutil.CAPVClusterRoleLabelKey: "fake",
 				}
 			})
 			It("the update args will have the search suffixes", func() {
@@ -163,8 +164,8 @@ var _ = Describe("Mutate update args with DNS information", func() {
 		Context("the CAPW and CAPW labels are present", func() {
 			BeforeEach(func() {
 				labels = map[string]string{
-					session.CAPWClusterRoleLabelKey: "",
-					session.CAPVClusterRoleLabelKey: "",
+					kubeutil.CAPWClusterRoleLabelKey: "",
+					kubeutil.CAPVClusterRoleLabelKey: "",
 				}
 			})
 			It("the update args will have the search suffixes", func() {

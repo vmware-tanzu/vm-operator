@@ -21,7 +21,7 @@ func vcSimTests() {
 
 var suite = builder.NewTestSuite()
 
-func TestClusterModules(t *testing.T) {
+func TestVirtualMachine(t *testing.T) {
 	suite.Register(t, "vSphere Provider VirtualMachine Suite", nil, vcSimTests)
 }
 

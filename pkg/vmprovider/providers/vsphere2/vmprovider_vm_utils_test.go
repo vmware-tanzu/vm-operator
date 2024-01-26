@@ -8,7 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/vmware/govmomi/vim25/types"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -757,102 +757,6 @@ func vmUtilTests() {
 					Expect(isVolumesAfter).To(Equal(isVolumesBefore))
 				})
 			})
-		})
-	})
-
-	Context("HasPVC", func() {
-
-		Context("Spec has no PVC", func() {
-			It("will return false", func() {
-				spec := vmopv1.VirtualMachineSpec{}
-				Expect(vsphere.HasPVC(spec)).To(BeFalse())
-			})
-		})
-
-		Context("Spec has PVCs", func() {
-			It("will return true", func() {
-				spec := vmopv1.VirtualMachineSpec{
-					Volumes: []vmopv1.VirtualMachineVolume{
-						{
-							Name: "dummy-vol",
-							VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-								PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-									PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-										ClaimName: "pvc-claim-1",
-									},
-								},
-							},
-						},
-					},
-				}
-				Expect(vsphere.HasPVC(spec)).To(BeTrue())
-			})
-		})
-	})
-
-	Context("HardwareVersionForPVCandPCIDevices", func() {
-		var (
-			configSpec     *types.VirtualMachineConfigSpec
-			imageHWVersion int32
-		)
-
-		BeforeEach(func() {
-			imageHWVersion = 14
-			configSpec = &types.VirtualMachineConfigSpec{
-				Name: "dummy-VM",
-				DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-					&types.VirtualDeviceConfigSpec{
-						Operation: types.VirtualDeviceConfigSpecOperationAdd,
-						Device: &types.VirtualPCIPassthrough{
-							VirtualDevice: types.VirtualDevice{
-								Backing: &types.VirtualPCIPassthroughVmiopBackingInfo{
-									Vgpu: "profile-from-configspec",
-								},
-							},
-						},
-					},
-					&types.VirtualDeviceConfigSpec{
-						Operation: types.VirtualDeviceConfigSpecOperationAdd,
-						Device: &types.VirtualPCIPassthrough{
-							VirtualDevice: types.VirtualDevice{
-								Backing: &types.VirtualPCIPassthroughDynamicBackingInfo{
-									AllowedDevice: []types.VirtualPCIPassthroughAllowedDevice{
-										{
-											VendorId: 52,
-											DeviceId: 53,
-										},
-									},
-									CustomLabel: "label-from-configspec",
-								},
-							},
-						},
-					},
-				},
-			}
-		})
-
-		It("ConfigSpec has PCI devices and VM spec has PVCs", func() {
-			Expect(vsphere.HardwareVersionForPVCandPCIDevices(imageHWVersion, configSpec, true)).To(Equal(int32(17)))
-		})
-
-		It("ConfigSpec has PCI devices and VM spec has no PVCs", func() {
-			Expect(vsphere.HardwareVersionForPVCandPCIDevices(imageHWVersion, configSpec, false)).To(Equal(int32(17)))
-		})
-
-		It("ConfigSpec has PCI devices, VM spec has PVCs image hardware version is higher than min supported HW version for PCI devices", func() {
-			imageHWVersion = 18
-			Expect(vsphere.HardwareVersionForPVCandPCIDevices(imageHWVersion, configSpec, true)).To(Equal(int32(18)))
-		})
-
-		It("VM spec has PVCs and config spec has no devices", func() {
-			configSpec = &types.VirtualMachineConfigSpec{}
-			Expect(vsphere.HardwareVersionForPVCandPCIDevices(imageHWVersion, configSpec, true)).To(Equal(int32(15)))
-		})
-
-		It("VM spec has PVCs, config spec has no devices and image hardware version is higher than min supported PVC HW version", func() {
-			configSpec = &types.VirtualMachineConfigSpec{}
-			imageHWVersion = 16
-			Expect(vsphere.HardwareVersionForPVCandPCIDevices(imageHWVersion, configSpec, true)).To(Equal(int32(16)))
 		})
 	})
 

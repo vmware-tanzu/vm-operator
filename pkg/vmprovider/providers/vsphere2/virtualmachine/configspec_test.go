@@ -8,7 +8,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	vimtypes "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/pointer"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
@@ -29,7 +32,16 @@ var _ = Describe("CreateConfigSpec", func() {
 		minCPUFreq      uint64
 		configSpec      *vimtypes.VirtualMachineConfigSpec
 		classConfigSpec *vimtypes.VirtualMachineConfigSpec
-		err             error
+		pvcVolume       = vmopv1.VirtualMachineVolume{
+			Name: "vmware",
+			VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
+				PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
+					PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: "my-pvc",
+					},
+				},
+			},
+		}
 	)
 
 	BeforeEach(func() {
@@ -40,6 +52,10 @@ var _ = Describe("CreateConfigSpec", func() {
 
 		vm = builder.DummyVirtualMachineA2()
 		vm.Name = vmName
+		// Explicitly set these in the tests.
+		vm.Spec.Volumes = nil
+		vm.Spec.MinHardwareVersion = 0
+
 		vmCtx = context.VirtualMachineContextA2{
 			Context: goctx.Background(),
 			Logger:  suite.GetLogger().WithValues("vmName", vm.GetName()),
@@ -47,26 +63,60 @@ var _ = Describe("CreateConfigSpec", func() {
 		}
 	})
 
-	It("Basic ConfigSpec assertions", func() {
+	JustBeforeEach(func() {
 		configSpec = virtualmachine.CreateConfigSpec(
 			vmCtx,
-			nil,
+			classConfigSpec,
 			vmClassSpec,
 			vmImageStatus,
 			minCPUFreq)
-
 		Expect(configSpec).ToNot(BeNil())
-		Expect(err).To(BeNil())
-		Expect(configSpec.Name).To(Equal(vmName))
-		Expect(configSpec.Annotation).ToNot(BeEmpty())
-		Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.Hardware.Cpus))
-		Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
-		Expect(configSpec.CpuAllocation).ToNot(BeNil())
-		Expect(configSpec.MemoryAllocation).ToNot(BeNil())
-		Expect(configSpec.Firmware).To(Equal(vmImageStatus.Firmware))
 	})
 
-	Context("Use VM Class ConfigSpec", func() {
+	Context("No VM Class ConfigSpec", func() {
+		BeforeEach(func() {
+			classConfigSpec = nil
+		})
+
+		When("Basic ConfigSpec assertions", func() {
+			It("returns expected config spec", func() {
+				Expect(configSpec).ToNot(BeNil())
+
+				Expect(configSpec.Name).To(Equal(vmName))
+				Expect(configSpec.Version).To(BeEmpty())
+				Expect(configSpec.Annotation).ToNot(BeEmpty())
+				Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.Hardware.Cpus))
+				Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
+				Expect(configSpec.CpuAllocation).ToNot(BeNil())
+				Expect(configSpec.MemoryAllocation).ToNot(BeNil())
+				Expect(configSpec.Firmware).To(Equal(vmImageStatus.Firmware))
+			})
+		})
+
+		When("VM has min version", func() {
+			BeforeEach(func() {
+				vmImageStatus = nil
+				vm.Spec.MinHardwareVersion = 1000
+			})
+
+			It("config spec has expected version", func() {
+				Expect(configSpec.Version).To(Equal("vmx-1000"))
+			})
+		})
+
+		When("VM has PVCs", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{pvcVolume}
+				vm.Spec.MinHardwareVersion = 1
+			})
+
+			It("config spec has expected version for PVCs", func() {
+				Expect(configSpec.Version).To(Equal("vmx-15"))
+			})
+		})
+	})
+
+	Context("VM Class ConfigSpec", func() {
 		BeforeEach(func() {
 			classConfigSpec = &vimtypes.VirtualMachineConfigSpec{
 				Name:       "dont-use-this-dummy-VM",
@@ -87,19 +137,9 @@ var _ = Describe("CreateConfigSpec", func() {
 			}
 		})
 
-		JustBeforeEach(func() {
-			configSpec = virtualmachine.CreateConfigSpec(
-				vmCtx,
-				classConfigSpec,
-				vmClassSpec,
-				vmImageStatus,
-				minCPUFreq)
-			Expect(configSpec).ToNot(BeNil())
-		})
-
 		It("Returns expected config spec", func() {
 			Expect(configSpec.Name).To(Equal(vmName))
-			Expect(configSpec.Annotation).ToNot(BeEmpty())
+			Expect(configSpec.Version).To(BeEmpty())
 			Expect(configSpec.Annotation).To(Equal("test-annotation"))
 			Expect(configSpec.NumCPUs).To(BeEquivalentTo(vmClassSpec.Hardware.Cpus))
 			Expect(configSpec.MemoryMB).To(BeEquivalentTo(4 * 1024))
@@ -123,7 +163,7 @@ var _ = Describe("CreateConfigSpec", func() {
 			})
 		})
 
-		When("vm has a valid firmware override annotation", func() {
+		When("VM has a valid firmware override annotation", func() {
 			BeforeEach(func() {
 				vm.Annotations[constants.FirmwareOverrideAnnotation] = "efi"
 			})
@@ -133,13 +173,142 @@ var _ = Describe("CreateConfigSpec", func() {
 			})
 		})
 
-		When("vm has an invalid firmware override annotation", func() {
+		When("VM has an invalid firmware override annotation", func() {
 			BeforeEach(func() {
 				vm.Annotations[constants.FirmwareOverrideAnnotation] = "foo"
 			})
 
-			It("config spec doesn't have the invalid val", func() {
+			It("config spec doesn't have the invalid value", func() {
 				Expect(configSpec.Firmware).ToNot(Equal(vm.Annotations[constants.FirmwareOverrideAnnotation]))
+			})
+		})
+
+		When("VM Image hardware version is set", func() {
+			BeforeEach(func() {
+				vm.Spec.Volumes = []vmopv1.VirtualMachineVolume{pvcVolume}
+				vmImageStatus.HardwareVersion = pointer.Int32(101)
+			})
+
+			It("config spec has expected version", func() {
+				Expect(configSpec.Version).To(Equal("vmx-101"))
+			})
+		})
+
+		When("VM Class config spec has devices", func() {
+
+			Context("VM Class has vGPU", func() {
+				BeforeEach(func() {
+					classConfigSpec.DeviceChange = append(classConfigSpec.DeviceChange,
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.VirtualPCIPassthrough{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Backing: &vimtypes.VirtualPCIPassthroughVmiopBackingInfo{
+										Vgpu: "profile-from-configspec",
+									},
+								},
+							},
+						},
+					)
+				})
+
+				It("config spec has expected version", func() {
+					Expect(configSpec.Version).To(Equal("vmx-17"))
+				})
+
+				Context("VM MinHardwareVersion is greatest", func() {
+					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 99
+					})
+
+					It("config spec has expected version", func() {
+						Expect(configSpec.Version).To(Equal("vmx-99"))
+					})
+				})
+			})
+
+			Context("VM Class has DDPIO", func() {
+				BeforeEach(func() {
+					classConfigSpec.DeviceChange = append(classConfigSpec.DeviceChange,
+						&vimtypes.VirtualDeviceConfigSpec{
+							Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+							Device: &vimtypes.VirtualPCIPassthrough{
+								VirtualDevice: vimtypes.VirtualDevice{
+									Backing: &vimtypes.VirtualPCIPassthroughDynamicBackingInfo{
+										AllowedDevice: []vimtypes.VirtualPCIPassthroughAllowedDevice{
+											{
+												VendorId: 52,
+												DeviceId: 53,
+											},
+										},
+										CustomLabel: "label-from-configspec",
+									},
+								},
+							},
+						},
+					)
+				})
+
+				It("config spec has expected version", func() {
+					Expect(configSpec.Version).To(Equal("vmx-17"))
+				})
+
+				Context("VM MinHardwareVersion is greatest", func() {
+					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 99
+					})
+
+					It("config spec has expected version", func() {
+						Expect(configSpec.Version).To(Equal("vmx-99"))
+					})
+				})
+			})
+		})
+
+		When("VM Class config spec specifies version", func() {
+			BeforeEach(func() {
+				classConfigSpec.Version = "vmx-100"
+			})
+
+			It("config spec has expected version", func() {
+				Expect(configSpec.Version).To(Equal("vmx-100"))
+			})
+
+			When("VM and/or VM Image have version set", func() {
+				Context("VM and VM Image are less than class", func() {
+					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 98
+						vmImageStatus.HardwareVersion = pointer.Int32(99)
+					})
+
+					It("config spec has expected version", func() {
+						Expect(configSpec.Version).To(Equal("vmx-100"))
+					})
+				})
+
+				Context("VM MinHardwareVersion is greatest", func() {
+					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 101
+						vmImageStatus.HardwareVersion = pointer.Int32(99)
+					})
+
+					It("config spec has expected version", func() {
+						Expect(configSpec.Version).To(Equal("vmx-101"))
+					})
+				})
+
+				Context("VM Image HardwareVersion is greatest", func() {
+					BeforeEach(func() {
+						vm.Spec.MinHardwareVersion = 99
+						vmImageStatus.HardwareVersion = pointer.Int32(101)
+					})
+
+					It("config spec has expected version", func() {
+						// When the ConfigSpec.Version is set the image is ignored so it won't
+						// be the expected value.
+						Expect(configSpec.Version).To(Equal("vmx-100"))
+					})
+				})
 			})
 		})
 	})

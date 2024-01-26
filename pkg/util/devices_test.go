@@ -141,6 +141,75 @@ var _ = Describe("SelectDynamicDirectPathIO", func() {
 	})
 })
 
+var _ = Describe("HasVirtualPCIPassthroughDeviceChange", func() {
+
+	var (
+		devices []vimTypes.BaseVirtualDeviceConfigSpec
+		has     bool
+	)
+
+	JustBeforeEach(func() {
+		has = util.HasVirtualPCIPassthroughDeviceChange(devices)
+	})
+
+	AfterEach(func() {
+		devices = nil
+	})
+
+	Context("empty list", func() {
+		It("return false", func() {
+			Expect(has).To(BeFalse())
+		})
+	})
+
+	Context("non passthrough device", func() {
+		BeforeEach(func() {
+			devices = append(devices, &vimTypes.VirtualDeviceConfigSpec{
+				Device: &vimTypes.VirtualVmxnet3{},
+			})
+		})
+
+		It("returns false", func() {
+			Expect(has).To(BeFalse())
+		})
+	})
+
+	Context("vGPU device", func() {
+		BeforeEach(func() {
+			devices = append(devices,
+				&vimTypes.VirtualDeviceConfigSpec{
+					Device: &vimTypes.VirtualVmxnet3{},
+				},
+				&vimTypes.VirtualDeviceConfigSpec{
+					Device: newPCIPassthroughDevice(""),
+				},
+			)
+		})
+
+		It("returns true", func() {
+			Expect(has).To(BeTrue())
+		})
+	})
+
+	Context("DDPIO device", func() {
+		BeforeEach(func() {
+			devices = append(devices,
+				&vimTypes.VirtualDeviceConfigSpec{
+					Device: &vimTypes.VirtualVmxnet3{},
+				},
+				&vimTypes.VirtualDeviceConfigSpec{
+					Device: newPCIPassthroughDevice("profile1"),
+				},
+			)
+		})
+
+		It("returns true", func() {
+			Expect(has).To(BeTrue())
+		})
+	})
+
+})
+
 var _ = Describe("SelectNvidiaVgpu", func() {
 	Context("selecting Nvidia vGPU devices", func() {
 		It("will return only the selected device type", func() {

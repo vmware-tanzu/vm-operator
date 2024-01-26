@@ -126,13 +126,36 @@ func IsDeviceNvidiaVgpu(dev vimTypes.BaseVirtualDevice) bool {
 }
 
 // IsDeviceDynamicDirectPathIO returns true if the provided device is a
-// dynamic direct path I/O device..
+// dynamic direct path I/O device.
 func IsDeviceDynamicDirectPathIO(dev vimTypes.BaseVirtualDevice) bool {
 	if dev, ok := dev.(*vimTypes.VirtualPCIPassthrough); ok {
 		_, ok := dev.Backing.(*vimTypes.VirtualPCIPassthroughDynamicBackingInfo)
 		return ok
 	}
 	return false
+}
+
+// HasDeviceChangeDeviceByType returns true of one of the device change's dev is that of type T.
+func HasDeviceChangeDeviceByType[T vimTypes.BaseVirtualDevice](
+	deviceChanges []vimTypes.BaseVirtualDeviceConfigSpec,
+) bool {
+	for i := range deviceChanges {
+		if spec := deviceChanges[i].GetVirtualDeviceConfigSpec(); spec != nil {
+			if dev := spec.Device; dev != nil {
+				if _, ok := dev.(T); ok {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// HasVirtualPCIPassthroughDeviceChange returns true if any of the device changes are for a passthrough device.
+func HasVirtualPCIPassthroughDeviceChange(
+	devices []vimTypes.BaseVirtualDeviceConfigSpec,
+) bool {
+	return HasDeviceChangeDeviceByType[*vimTypes.VirtualPCIPassthrough](devices)
 }
 
 // SelectNvidiaVgpu return a slice of Nvidia vGPU devices.
@@ -142,7 +165,7 @@ func SelectNvidiaVgpu(
 	return selectVirtualPCIPassthroughWithVmiopBacking(devices)
 }
 
-// SelectVirtualPCIPassthroughWithVmiopBacking returns a slice of PCI devices with VmiopBacking.
+// selectVirtualPCIPassthroughWithVmiopBacking returns a slice of PCI devices with VmiopBacking.
 func selectVirtualPCIPassthroughWithVmiopBacking(
 	devices []vimTypes.BaseVirtualDevice,
 ) []*vimTypes.VirtualPCIPassthrough {

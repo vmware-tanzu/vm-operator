@@ -398,7 +398,7 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	// Back up the VM at the end after a successful update.
 	// Skip TKG VMs since they are backed up differently than VM Service VMs.
 	if pkgconfig.FromContext(vmCtx).Features.AutoVADPBackupRestore &&
-		!kubeutil.HasTKGLabels(vmCtx.VM.Labels) {
+		!kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
 		vmCtx.Logger.V(4).Info("Backing up VM Service managed VM")
 
 		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)

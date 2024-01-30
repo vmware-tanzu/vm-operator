@@ -702,7 +702,7 @@ func MutateUpdateArgsWithDNSInformation(
 	// node. Please note that this will only be used by guests for VMs created
 	// by TKGs that use Cloud-Init. Guest OS Customization (GOSC) has no means
 	// to set the DNS search suffix.
-	if !kubeutil.HasTKGLabels(vmLabels) {
+	if !kubeutil.HasCAPILabels(vmLabels) {
 		return nil
 	}
 

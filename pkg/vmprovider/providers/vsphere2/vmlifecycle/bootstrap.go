@@ -147,7 +147,7 @@ func getBootstrapArgs(
 	// interface has DNS info, but we would previously set it for every interface so keep doing that
 	// here. Similarly, we didn't populate SearchDomains for non-TKG VMs so we don't here either. This is
 	// all a little nuts & complicated and probably not correct for every situation.
-	isTKG := kubeutil.HasTKGLabels(vmCtx.VM.Labels)
+	isTKG := kubeutil.HasCAPILabels(vmCtx.VM.Labels)
 	getDNSInformationFromConfigMap := false
 	for _, r := range networkResults.Results {
 		if r.DHCP4 || r.DHCP6 {

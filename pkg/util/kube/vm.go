@@ -13,10 +13,11 @@ const (
 	CAPVClusterRoleLabelKey = "capv.vmware.com/cluster.role"
 )
 
-func HasTKGLabels(vmLabels map[string]string) bool {
-	_, ok := vmLabels[CAPWClusterRoleLabelKey]
-	if !ok {
-		_, ok = vmLabels[CAPVClusterRoleLabelKey]
-	}
-	return ok
+// HasCAPILabels returns true if the VM has a label indicating it was created by
+// Cluster API such as CAPW or CAPV.
+func HasCAPILabels(vmLabels map[string]string) bool {
+	_, hasCAPWLabel := vmLabels[CAPWClusterRoleLabelKey]
+	_, hasCAPVLabel := vmLabels[CAPVClusterRoleLabelKey]
+
+	return hasCAPWLabel || hasCAPVLabel
 }

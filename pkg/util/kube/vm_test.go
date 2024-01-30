@@ -12,25 +12,25 @@ import (
 
 var _ = Describe("VM", func() {
 
-	Context("HasTKGLabels", func() {
+	Context("HasCAPILabels", func() {
 
 		It("should return true if the VM has a CAPW label", func() {
 			vmLabels := map[string]string{
 				kubeutil.CAPWClusterRoleLabelKey: "",
 			}
-			Expect(kubeutil.HasTKGLabels(vmLabels)).To(BeTrue())
+			Expect(kubeutil.HasCAPILabels(vmLabels)).To(BeTrue())
 		})
 
 		It("should return true if the VM has a CAPV label", func() {
 			vmLabels := map[string]string{
 				kubeutil.CAPVClusterRoleLabelKey: "",
 			}
-			Expect(kubeutil.HasTKGLabels(vmLabels)).To(BeTrue())
+			Expect(kubeutil.HasCAPILabels(vmLabels)).To(BeTrue())
 		})
 
-		It("should return false if the VM has no TKG related labels", func() {
+		It("should return false if the VM has no Cluster API related labels", func() {
 			vmLabels := map[string]string{}
-			Expect(kubeutil.HasTKGLabels(vmLabels)).To(BeFalse())
+			Expect(kubeutil.HasCAPILabels(vmLabels)).To(BeFalse())
 		})
 	})
 })

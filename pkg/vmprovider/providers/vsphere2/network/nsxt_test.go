@@ -32,7 +32,7 @@ var _ = Describe("ResolveBackingPostPlacement", func() {
 		fixedUp, err = network.ResolveBackingPostPlacement(
 			ctx,
 			ctx.VCClient.Client,
-			ctx.GetSingleClusterCompute().Reference(),
+			ctx.GetFirstClusterFromFirstZone().Reference(),
 			results)
 	})
 

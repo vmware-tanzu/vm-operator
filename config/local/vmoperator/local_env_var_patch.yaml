@@ -15,8 +15,6 @@ spec:
           value: "true"
         - name: VSPHERE_NETWORKING
           value: "false"
-        - name: FSS_WCP_FAULTDOMAINS
-          value: "true"
         - name: FSS_WCP_INSTANCE_STORAGE
           value: "true"
         - name: FSS_WCP_VM_CLASS_AS_CONFIG

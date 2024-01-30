@@ -108,9 +108,6 @@ func vcSimPlacement() {
 	})
 
 	Context("Zone placement", func() {
-		BeforeEach(func() {
-			testConfig.WithFaultDomains = true
-		})
 
 		Context("zone already assigned", func() {
 			zoneName := "in the zone"
@@ -206,12 +203,14 @@ func vcSimPlacement() {
 		BeforeEach(func() {
 			testConfig.WithInstanceStorage = true
 			builder.AddDummyInstanceStorageVolume(vm)
+			testConfig.NumFaultDomains = 1 // Only support for non-HA "HA"
 		})
 
 		When("host already assigned", func() {
 			const hostMoID = "foobar-host-42"
 
 			BeforeEach(func() {
+				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = "my-zone"
 				vm.Annotations[constants.InstanceStorageSelectedNodeMOIDAnnotationKey] = hostMoID
 			})
 
@@ -229,55 +228,39 @@ func vcSimPlacement() {
 			result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
 			Expect(err).ToNot(HaveOccurred())
 
+			Expect(result.ZonePlacement).To(BeTrue())
+			Expect(result.ZoneName).ToNot(BeEmpty())
+
 			Expect(result.InstanceStoragePlacement).To(BeTrue())
 			Expect(result.HostMoRef).ToNot(BeNil())
 			Expect(result.HostMoRef.Value).ToNot(BeEmpty())
+
+			nsRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, "")
+			Expect(nsRP).ToNot(BeNil())
+			Expect(result.PoolMoRef.Value).To(Equal(nsRP.Reference().Value))
 		})
 
-		When("FaultDomains FSS is enabled", func() {
-			BeforeEach(func() {
-				testConfig.WithFaultDomains = true
-				testConfig.NumFaultDomains = 1 // Only support for non-HA "HA"
-			})
-
+		Context("VM is in child RP via ResourcePolicy", func() {
 			It("returns success", func() {
-				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, "")
+				resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
+				Expect(resourcePolicy).ToNot(BeNil())
+				childRPName := resourcePolicy.Spec.ResourcePool.Name
+				Expect(childRPName).ToNot(BeEmpty())
+				vmCtx.VM.Spec.ResourcePolicyName = resourcePolicy.Name
+
+				result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, childRPName)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(result.ZonePlacement).To(BeTrue())
-				Expect(result.ZoneName).ToNot(BeEmpty())
+				Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
 
 				Expect(result.InstanceStoragePlacement).To(BeTrue())
 				Expect(result.HostMoRef).ToNot(BeNil())
 				Expect(result.HostMoRef.Value).ToNot(BeEmpty())
 
-				nsRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, "")
-				Expect(nsRP).ToNot(BeNil())
-				Expect(result.PoolMoRef.Value).To(Equal(nsRP.Reference().Value))
-			})
-
-			Context("VM is in child RP via ResourcePolicy", func() {
-				It("returns success", func() {
-					resourcePolicy, _ := ctx.CreateVirtualMachineSetResourcePolicyA2("my-child-rp", nsInfo)
-					Expect(resourcePolicy).ToNot(BeNil())
-					childRPName := resourcePolicy.Spec.ResourcePool.Name
-					Expect(childRPName).ToNot(BeEmpty())
-					vmCtx.VM.Spec.ResourcePolicyName = resourcePolicy.Name
-
-					result, err := placement.Placement(vmCtx, ctx.Client, ctx.VCClient.Client, configSpec, childRPName)
-					Expect(err).ToNot(HaveOccurred())
-
-					Expect(result.ZonePlacement).To(BeTrue())
-					Expect(result.ZoneName).To(BeElementOf(ctx.ZoneNames))
-
-					Expect(result.InstanceStoragePlacement).To(BeTrue())
-					Expect(result.HostMoRef).ToNot(BeNil())
-					Expect(result.HostMoRef.Value).ToNot(BeEmpty())
-
-					childRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, childRPName)
-					Expect(childRP).ToNot(BeNil())
-					Expect(result.PoolMoRef.Value).To(Equal(childRP.Reference().Value))
-				})
+				childRP := ctx.GetResourcePoolForNamespace(vm.Namespace, result.ZoneName, childRPName)
+				Expect(childRP).ToNot(BeNil())
+				Expect(result.PoolMoRef.Value).To(Equal(childRP.Reference().Value))
 			})
 		})
 	})

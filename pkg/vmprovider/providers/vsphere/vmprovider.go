@@ -393,18 +393,6 @@ func (vs *vSphereVMProvider) computeCPUMinFrequency(ctx goctx.Context) (uint64, 
 		return 0, err
 	}
 
-	if !pkgconfig.FromContext(ctx).Features.FaultDomains {
-		ccr, err := vcenter.GetResourcePoolOwnerMoRef(ctx, client.VimClient(), client.Config().ResourcePool)
-		if err != nil {
-			return 0, err
-		}
-
-		// Only expect 1 AZ in this case.
-		for i := range availabilityZones {
-			availabilityZones[i].Spec.ClusterComputeResourceMoIDs = []string{ccr.Value}
-		}
-	}
-
 	var errs []error
 
 	var minFreq uint64

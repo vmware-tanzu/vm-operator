@@ -47,7 +47,6 @@ func FromEnv() Config {
 	setString(env.WebhookSecretName, &config.WebhookSecretName)
 	setString(env.WebhookSecretNamespace, &config.WebhookSecretNamespace)
 
-	setBool(env.FSSFaultDomains, &config.Features.FaultDomains)
 	setBool(env.FSSVMOpV1Alpha2, &config.Features.VMOpV1Alpha2)
 	setBool(env.FSSInstanceStorage, &config.Features.InstanceStorage)
 	setBool(env.FSSUnifiedTKG, &config.Features.UnifiedTKG)

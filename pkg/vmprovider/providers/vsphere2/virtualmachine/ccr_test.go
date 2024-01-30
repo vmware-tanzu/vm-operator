@@ -37,6 +37,6 @@ func ccrTests() {
 		ccr, err := virtualmachine.GetVMClusterComputeResource(ctx, vcVM)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ccr).ToNot(BeNil())
-		Expect(ccr.Reference()).To(Equal(ctx.GetSingleClusterCompute().Reference()))
+		Expect(ccr.Reference()).To(Equal(ctx.GetFirstClusterFromFirstZone().Reference()))
 	})
 }

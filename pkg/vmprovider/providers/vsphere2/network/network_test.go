@@ -482,7 +482,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 				// Without the ClusterMoRef on the first call this will be nil for NSXT.
 				Expect(result.Backing).To(BeNil())
 
-				clusterMoRef := ctx.GetSingleClusterCompute().Reference()
+				clusterMoRef := ctx.GetFirstClusterFromFirstZone().Reference()
 				results, err = network.CreateAndWaitForNetworkInterfaces(
 					vmCtx,
 					ctx.Client,
@@ -584,7 +584,7 @@ var _ = Describe("CreateAndWaitForNetworkInterfaces", func() {
 					// Without the ClusterMoRef on the first call this will be nil for NSXT.
 					Expect(result.Backing).To(BeNil())
 
-					clusterMoRef := ctx.GetSingleClusterCompute().Reference()
+					clusterMoRef := ctx.GetFirstClusterFromFirstZone().Reference()
 					results, err = network.CreateAndWaitForNetworkInterfaces(
 						vmCtx,
 						ctx.Client,

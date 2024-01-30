@@ -110,10 +110,10 @@ func powerStateTests() {
 
 		BeforeEach(func() {
 			ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
-			mgdObj = vmutil.ManagedObjectFromMoRef(types.ManagedObjectReference{
-				Type:  "VirtualMachine",
-				Value: "vm-44",
-			})
+			vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(vmList)).To(BeNumerically(">", 0))
+			mgdObj = vmutil.ManagedObjectFromMoRef(vmList[0].Reference())
 			simulator.TaskDelay.MethodDelay = map[string]int{}
 			obj = object.NewVirtualMachine(ctx.VCClient.Client, mgdObj.Self)
 			expectedResult = 0                                          // default
@@ -736,10 +736,10 @@ func powerStateTests() {
 
 		BeforeEach(func() {
 			ctx = suite.NewTestContextForVCSim(builder.VCSimTestConfig{})
-			mgdObj = vmutil.ManagedObjectFromMoRef(types.ManagedObjectReference{
-				Type:  "VirtualMachine",
-				Value: "vm-44",
-			})
+			vmList, err := ctx.Finder.VirtualMachineList(ctx, "*")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(vmList)).To(BeNumerically(">", 0))
+			mgdObj = vmutil.ManagedObjectFromMoRef(vmList[0].Reference())
 			simulator.TaskDelay.MethodDelay = map[string]int{}
 			obj = object.NewVirtualMachine(ctx.VCClient.Client, mgdObj.Self)
 			expectedPowerState = types.VirtualMachinePowerStatePoweredOn // default

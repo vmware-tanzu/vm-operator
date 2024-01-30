@@ -39,7 +39,7 @@ func minFreq() {
 
 	Describe("ClusterMinCPUFreq", func() {
 		It("returns min freq of hosts in cluster", func() {
-			cpuFreq, err := vcenter.ClusterMinCPUFreq(ctx, ctx.GetSingleClusterCompute())
+			cpuFreq, err := vcenter.ClusterMinCPUFreq(ctx, ctx.GetFirstClusterFromFirstZone())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cpuFreq).Should(BeEquivalentTo(expectedCPUFreq))
 		})

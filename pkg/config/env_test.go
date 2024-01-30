@@ -86,7 +86,6 @@ var _ = Describe(
 					Expect(os.Setenv("WEBHOOK_SERVICE_NAMESPACE", "122")).To(Succeed())
 					Expect(os.Setenv("WEBHOOK_SECRET_NAME", "123")).To(Succeed())
 					Expect(os.Setenv("WEBHOOK_SECRET_NAMESPACE", "124")).To(Succeed())
-					Expect(os.Setenv("FSS_WCP_FAULTDOMAINS", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_VMSERVICE_V1ALPHA2", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_INSTANCE_STORAGE", "false")).To(Succeed())
 					Expect(os.Setenv("FSS_WCP_Unified_TKG", "false")).To(Succeed())
@@ -130,7 +129,6 @@ var _ = Describe(
 						WebhookSecretNamespace:       "124",
 						WebhookSecretVolumeMountPath: pkgconfig.Default().WebhookSecretVolumeMountPath,
 						Features: pkgconfig.FeatureStates{
-							FaultDomains:            false,
 							VMOpV1Alpha2:            false,
 							InstanceStorage:         false,
 							UnifiedTKG:              false,

@@ -18,7 +18,6 @@ import (
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/api/v1alpha2/common"
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
@@ -109,28 +108,26 @@ func UpdateStatus(
 		vm.Status.ChangeBlockTracking = nil
 	}
 
-	if pkgconfig.FromContext(vmCtx).Features.FaultDomains {
-		zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
-		if zoneName == "" {
-			cluster, err := virtualmachine.GetVMClusterComputeResource(vmCtx, vcVM)
+	zoneName := vm.Labels[topology.KubernetesTopologyZoneLabelKey]
+	if zoneName == "" {
+		cluster, err := virtualmachine.GetVMClusterComputeResource(vmCtx, vcVM)
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			zoneName, err = topology.LookupZoneForClusterMoID(vmCtx, k8sClient, cluster.Reference().Value)
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				zoneName, err = topology.LookupZoneForClusterMoID(vmCtx, k8sClient, cluster.Reference().Value)
-				if err != nil {
-					errs = append(errs, err)
-				} else {
-					if vm.Labels == nil {
-						vm.Labels = map[string]string{}
-					}
-					vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
+				if vm.Labels == nil {
+					vm.Labels = map[string]string{}
 				}
+				vm.Labels[topology.KubernetesTopologyZoneLabelKey] = zoneName
 			}
 		}
+	}
 
-		if zoneName != "" {
-			vm.Status.Zone = zoneName
-		}
+	if zoneName != "" {
+		vm.Status.Zone = zoneName
 	}
 
 	return k8serrors.NewAggregate(errs)

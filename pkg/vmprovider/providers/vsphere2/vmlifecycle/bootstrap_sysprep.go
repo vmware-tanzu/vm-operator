@@ -55,6 +55,8 @@ func BootstrapSysPrep(
 		}
 	} else if sysPrep := sysPrepSpec.Sysprep; sysPrep != nil {
 		identity = convertTo(sysPrep, bsArgs)
+	} else {
+		return nil, nil, fmt.Errorf("no Sysprep data")
 	}
 
 	nicSettingMap, err := network.GuestOSCustomization(bsArgs.NetworkResults)

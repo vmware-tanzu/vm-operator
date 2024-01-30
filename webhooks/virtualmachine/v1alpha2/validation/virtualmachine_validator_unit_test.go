@@ -422,7 +422,9 @@ func unitTestsValidateCreate() {
 							config.Features.WindowsSysprep = true
 						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								RawSysprep: &common.SecretKeySelector{},
+							},
 						}
 					},
 					expectAllowed: true,
@@ -440,6 +442,21 @@ func unitTestsValidateCreate() {
 					},
 					validate: doValidateWithMsg(
 						`spec.bootstrap.sysprep: Invalid value: "Sysprep": the Sysprep feature is not enabled`,
+					),
+				},
+			),
+			Entry("disallow empty Sysprep bootstrap when WCP_Windows_Sysprep FSS is enabled",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep: Invalid value: "sysPrep": either sysprep or rawSysprep must be provided`,
 					),
 				},
 			),
@@ -464,7 +481,9 @@ func unitTestsValidateCreate() {
 						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
-							Sysprep:   &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								RawSysprep: &common.SecretKeySelector{},
+							},
 						}
 					},
 					validate: doValidateWithMsg(
@@ -495,7 +514,9 @@ func unitTestsValidateCreate() {
 						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 							LinuxPrep: &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
-							Sysprep:   &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								RawSysprep: &common.SecretKeySelector{},
+							},
 						}
 					},
 					validate: doValidateWithMsg(
@@ -522,7 +543,9 @@ func unitTestsValidateCreate() {
 							config.Features.WindowsSysprep = true
 						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							Sysprep:    &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								RawSysprep: &common.SecretKeySelector{},
+							},
 							VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
 						}
 					},
@@ -759,7 +782,9 @@ func unitTestsValidateCreate() {
 						})
 
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								RawSysprep: &common.SecretKeySelector{},
+							},
 						}
 						ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 							Nameservers: []string{
@@ -1045,7 +1070,9 @@ func unitTestsValidateCreate() {
 							config.Features.WindowsSysprep = true
 						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								RawSysprep: &common.SecretKeySelector{},
+							},
 						}
 						ctx.vm.Spec.Network.Interfaces[0].Nameservers = []string{
 							"8.8.8.8",
@@ -1064,7 +1091,9 @@ func unitTestsValidateCreate() {
 							config.Features.WindowsSysprep = true
 						})
 						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								RawSysprep: &common.SecretKeySelector{},
+							},
 						}
 						ctx.vm.Spec.Network.Interfaces[0].Routes = []vmopv1.VirtualMachineNetworkRouteSpec{
 							{
@@ -1256,7 +1285,9 @@ func unitTestsValidateUpdate() {
 			if ctx.vm.Spec.Bootstrap == nil {
 				ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{}
 			}
-			ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{}
+			ctx.vm.Spec.Bootstrap.Sysprep = &vmopv1.VirtualMachineBootstrapSysprepSpec{
+				RawSysprep: &common.SecretKeySelector{},
+			}
 		}
 
 		if args.oldPowerState != "" {

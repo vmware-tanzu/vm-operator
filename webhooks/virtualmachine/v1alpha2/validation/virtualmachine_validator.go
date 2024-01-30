@@ -247,6 +247,9 @@ func (v validator) validateBootstrap(
 			if sysPrep.Sysprep != nil && sysPrep.RawSysprep != nil {
 				allErrs = append(allErrs, field.Invalid(p, "sysPrep",
 					"sysprep and rawSysprep are mutually exclusive"))
+			} else if sysPrep.Sysprep == nil && sysPrep.RawSysprep == nil {
+				allErrs = append(allErrs, field.Invalid(p, "sysPrep",
+					"either sysprep or rawSysprep must be provided"))
 			}
 
 			if sysPrep.Sysprep != nil {

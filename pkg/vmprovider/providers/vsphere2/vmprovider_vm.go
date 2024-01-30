@@ -28,6 +28,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vcclient "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/client"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/contentlibrary"
@@ -395,8 +396,10 @@ func (vs *vSphereVMProvider) updateVirtualMachine(
 	}
 
 	// Back up the VM at the end after a successful update.
-	if pkgconfig.FromContext(vmCtx).Features.AutoVADPBackupRestore {
-		vmCtx.Logger.V(4).Info("Backing up VirtualMachine")
+	// Skip TKG VMs since they are backed up differently than VM Service VMs.
+	if pkgconfig.FromContext(vmCtx).Features.AutoVADPBackupRestore &&
+		!kubeutil.HasCAPILabels(vmCtx.VM.Labels) {
+		vmCtx.Logger.V(4).Info("Backing up VM Service managed VM")
 
 		diskUUIDToPVC, err := GetAttachedDiskUUIDToPVC(vmCtx, vs.k8sClient)
 		if err != nil {

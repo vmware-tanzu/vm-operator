@@ -23,6 +23,7 @@ import (
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	vmutil "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/vm"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/clustermodules"
 	providercfg "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/config"
@@ -684,16 +685,6 @@ func (s *Session) prepareVMForPowerOn(
 	return nil
 }
 
-const (
-	// CAPWClusterRoleLabelKey is the key for the label applied to a VM that was
-	// created by CAPW.
-	CAPWClusterRoleLabelKey = "capw.vmware.com/cluster.role" //nolint:gosec
-
-	// CAPVClusterRoleLabelKey is the key for the label applied to a VM that was
-	// created by CAPV.
-	CAPVClusterRoleLabelKey = "capv.vmware.com/cluster.role"
-)
-
 func MutateUpdateArgsWithDNSInformation(
 	ctx goctx.Context,
 	vmLabels map[string]string,
@@ -711,11 +702,7 @@ func MutateUpdateArgsWithDNSInformation(
 	// node. Please note that this will only be used by guests for VMs created
 	// by TKGs that use Cloud-Init. Guest OS Customization (GOSC) has no means
 	// to set the DNS search suffix.
-	_, ok := vmLabels[CAPWClusterRoleLabelKey]
-	if !ok {
-		_, ok = vmLabels[CAPVClusterRoleLabelKey]
-	}
-	if !ok {
+	if !kubeutil.HasCAPILabels(vmLabels) {
 		return nil
 	}
 

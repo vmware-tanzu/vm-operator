@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere_test
@@ -29,6 +29,8 @@ import (
 	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
 	"github.com/vmware-tanzu/vm-operator/pkg/topology"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
+	kubeutil "github.com/vmware-tanzu/vm-operator/pkg/util/kube"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider"
 	vsphere "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
@@ -56,7 +58,11 @@ func vmTests() {
 	)
 
 	BeforeEach(func() {
-		testConfig = builder.VCSimTestConfig{WithV1A2: true}
+		testConfig = builder.VCSimTestConfig{
+			WithV1A2:                  true,
+			WithContentLibrary:        true,
+			WithAutoVADPBackupRestore: true,
+		}
 	})
 
 	JustBeforeEach(func() {
@@ -83,7 +89,6 @@ func vmTests() {
 		)
 
 		BeforeEach(func() {
-			testConfig.WithContentLibrary = true
 			vmClass = builder.DummyVirtualMachineClassA2()
 			vm = builder.DummyBasicVirtualMachineA2("test-vm", "")
 
@@ -1059,7 +1064,33 @@ func vmTests() {
 					Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
 				})
 
+				By("has expected backup ExtraConfig key", func() {
+					Expect(o.Config.ExtraConfig).ToNot(BeNil())
+					ecMap := util.ExtraConfigToMap(o.Config.ExtraConfig)
+					Expect(ecMap).To(HaveKey(vmopv1.VMResourceYAMLExtraConfigKey))
+				})
+
 				// TODO: More assertions!
+			})
+
+			It("TKG VM", func() {
+				if vm.Labels == nil {
+					vm.Labels = make(map[string]string)
+				}
+				vm.Labels[kubeutil.CAPVClusterRoleLabelKey] = ""
+				vm.Labels[kubeutil.CAPWClusterRoleLabelKey] = ""
+
+				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
+				Expect(err).ToNot(HaveOccurred())
+
+				var o mo.VirtualMachine
+				Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+
+				By("does not have any backup ExtraConfig key", func() {
+					Expect(o.Config.ExtraConfig).ToNot(BeNil())
+					ecMap := util.ExtraConfigToMap(o.Config.ExtraConfig)
+					Expect(ecMap).ToNot(HaveKey(vmopv1.VMResourceYAMLExtraConfigKey))
+				})
 			})
 
 			Context("VM Class with PCI passthrough devices", func() {

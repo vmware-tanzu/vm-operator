@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 // Package builder is a comment just to silence the linter.
@@ -102,6 +102,9 @@ type VCSimTestConfig struct {
 
 	// WithNetworkEnv is the network environment type.
 	WithNetworkEnv NetworkEnv
+
+	// WithAutoVADPBackupRestore enables the WCP_VMSERVICE_BACKUPRESTORE FSS.
+	WithAutoVADPBackupRestore bool
 }
 
 type TestContextForVCSim struct {
@@ -326,6 +329,7 @@ func (c *TestContextForVCSim) setupEnv(config VCSimTestConfig) {
 		cc.Features.InstanceStorage = config.WithInstanceStorage
 		cc.Features.VMClassAsConfig = config.WithVMClassAsConfig
 		cc.Features.VMClassAsConfigDayNDate = config.WithVMClassAsConfigDaynDate
+		cc.Features.AutoVADPBackupRestore = config.WithAutoVADPBackupRestore
 	})
 }
 

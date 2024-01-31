@@ -116,7 +116,7 @@ rules:
 - apiGroups:
   - cns.vmware.com
   resources:
-  - storagepolicyquota
+  - storagepolicyquotas
   verbs:
   - get
   - list
@@ -276,19 +276,6 @@ rules:
   - get
   - patch
   - update
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachine
-  verbs:
-  - get
-  - list
-- apiGroups:
-  - vmoperator.vmware.com
-  resources:
-  - virtualmachine/status
-  verbs:
-  - get
 - apiGroups:
   - vmoperator.vmware.com
   resources:

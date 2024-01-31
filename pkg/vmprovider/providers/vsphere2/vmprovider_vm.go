@@ -897,21 +897,6 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpec(
 		createArgs.ImageStatus,
 		minCPUFreq)
 
-	// TODO: This should be in CreateConfigSpec()
-	if createArgs.ConfigSpec.Version == "" {
-		imageVer := int32(0)
-		if createArgs.ImageStatus.HardwareVersion != nil {
-			imageVer = *createArgs.ImageStatus.HardwareVersion
-		}
-
-		version := HardwareVersionForPVCandPCIDevices(imageVer, createArgs.ConfigSpec, HasPVC(vmCtx.VM.Spec))
-		if version != 0 {
-			createArgs.ConfigSpec.Version = fmt.Sprintf("vmx-%d", version)
-		}
-	}
-
-	util.EnsureMinHardwareVersionInConfigSpec(createArgs.ConfigSpec, vmCtx.VM.Spec.MinHardwareVersion)
-
 	err := vs.vmCreateGenConfigSpecExtraConfig(vmCtx, createArgs)
 	if err != nil {
 		return err
@@ -954,9 +939,7 @@ func (vs *vSphereVMProvider) vmCreateGenConfigSpecExtraConfig(
 		ecMap[k] = renderTemplateFn(k, v)
 	}
 
-	hasPassthroughDevices := len(util.SelectVirtualPCIPassthrough(util.DevicesFromConfigSpec(createArgs.ConfigSpec))) > 0
-
-	if hasPassthroughDevices {
+	if util.HasVirtualPCIPassthroughDeviceChange(createArgs.ConfigSpec.DeviceChange) {
 		mmioSize := vmCtx.VM.Annotations[constants.PCIPassthruMMIOOverrideAnnotation]
 		if mmioSize == "" {
 			mmioSize = constants.PCIPassthruMMIOSizeDefault

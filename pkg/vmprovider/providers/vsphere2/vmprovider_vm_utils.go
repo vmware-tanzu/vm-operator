@@ -375,47 +375,13 @@ func GetVMClassConfigSpec(ctx goctx.Context, raw json.RawMessage) (*types.Virtua
 	return classConfigSpec, nil
 }
 
-// HasPVC returns true if the VirtualMachine spec has a Persistent Volume claim.
-func HasPVC(vmSpec vmopv1.VirtualMachineSpec) bool {
-	for _, vol := range vmSpec.Volumes {
-		if vol.PersistentVolumeClaim != nil {
-			return true
-		}
-	}
-	return false
-}
-
-// HardwareVersionForPVCandPCIDevices returns a hardware version for VMs with PVCs and PCI devices(vGPUs/DDPIO devices)
-// The hardware version is determined based on the below criteria: VMs with
-// - Persistent Volume Claim (PVC) get the max(the image hardware version, minimum supported virtual hardware version for persistent volumes)
-// - vGPUs/DDPIO devices get the max(the image hardware version, minimum supported virtual hardware version for PCI devices)
-// - Both vGPU/DDPIO devices and PVCs get the max(the image hardware version, minimum supported virtual hardware version for PCI devices)
-// - none of the above returns 0.
-func HardwareVersionForPVCandPCIDevices(imageHWVersion int32, configSpec *types.VirtualMachineConfigSpec, hasPVC bool) int32 {
-	var configSpecHWVersion int32
-	configSpecDevs := util.DevicesFromConfigSpec(configSpec)
-
-	if len(util.SelectNvidiaVgpu(configSpecDevs)) > 0 || len(util.SelectDynamicDirectPathIO(configSpecDevs)) > 0 {
-		configSpecHWVersion = constants.MinSupportedHWVersionForPCIPassthruDevices
-		if imageHWVersion != 0 && imageHWVersion > constants.MinSupportedHWVersionForPCIPassthruDevices {
-			configSpecHWVersion = imageHWVersion
-		}
-	} else if hasPVC {
-		configSpecHWVersion = constants.MinSupportedHWVersionForPVC
-		if imageHWVersion != 0 && imageHWVersion > constants.MinSupportedHWVersionForPVC {
-			configSpecHWVersion = imageHWVersion
-		}
-	}
-
-	return configSpecHWVersion
-}
-
 // GetAttachedDiskUUIDToPVC returns a map of disk UUID to PVC object for all
 // attached disks by checking the VM's spec and status of volumes.
 func GetAttachedDiskUUIDToPVC(
 	vmCtx context.VirtualMachineContextA2,
 	k8sClient ctrlclient.Client) (map[string]corev1.PersistentVolumeClaim, error) {
-	if !HasPVC(vmCtx.VM.Spec) {
+
+	if len(vmCtx.VM.Spec.Volumes) == 0 {
 		return nil, nil
 	}
 
@@ -424,6 +390,10 @@ func GetAttachedDiskUUIDToPVC(
 		if pvc := vol.PersistentVolumeClaim; pvc != nil {
 			vmVolNameToPVCName[vol.Name] = pvc.ClaimName
 		}
+	}
+
+	if len(vmVolNameToPVCName) == 0 {
+		return nil, nil
 	}
 
 	diskUUIDToPVC := map[string]corev1.PersistentVolumeClaim{}

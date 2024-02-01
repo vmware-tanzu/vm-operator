@@ -41,7 +41,7 @@ var _ = Describe("ResolveBackingPostPlacement", func() {
 		ctx = nil
 	})
 
-	Context("returns success", func() {
+	Context("NSX-T returns success", func() {
 
 		BeforeEach(func() {
 			testConfig.WithNetworkEnv = builder.NetworkEnvNSXT
@@ -50,6 +50,34 @@ var _ = Describe("ResolveBackingPostPlacement", func() {
 				Results: []network.NetworkInterfaceResult{
 					{
 						NetworkID: builder.NsxTLogicalSwitchUUID,
+						Backing:   nil,
+					},
+				},
+			}
+		})
+
+		It("returns success", func() {
+			Expect(err).ToNot(HaveOccurred())
+			Expect(fixedUp).To(BeTrue())
+
+			Expect(results.Results).To(HaveLen(1))
+			By("should populate the backing", func() {
+				backing := results.Results[0].Backing
+				Expect(backing).ToNot(BeNil())
+				Expect(backing.Reference()).To(Equal(ctx.NetworkRef.Reference()))
+			})
+		})
+	})
+
+	Context("VPC returns success", func() {
+
+		BeforeEach(func() {
+			testConfig.WithNetworkEnv = builder.NetworkEnvVPC
+
+			results = &network.NetworkInterfaceResults{
+				Results: []network.NetworkInterfaceResult{
+					{
+						NetworkID: builder.VPCLogicalSwitchUUID,
 						Backing:   nil,
 					},
 				},

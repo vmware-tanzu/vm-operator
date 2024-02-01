@@ -51,6 +51,12 @@ func ResolveBackingPostPlacement(
 			if err != nil {
 				err = fmt.Errorf("post placement NSX-T backing fixup failed: %w", err)
 			}
+		// VPC is an NSX-T construct that is attached to an NSX-T Project.
+		case pkgconfig.NetworkProviderTypeVPC:
+			backing, err = searchNsxtNetworkReference(ctx, ccr, results.Results[idx].NetworkID)
+			if err != nil {
+				err = fmt.Errorf("post placement NSX-T-VPC backing fixup failed: %w", err)
+			}
 		default:
 			err = fmt.Errorf("only NSX-T networks are expected to need post placement backing fixup")
 		}

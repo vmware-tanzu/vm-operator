@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package config
@@ -141,4 +141,5 @@ const (
 	NetworkProviderTypeNamed NetworkProviderType = "NAMED"
 	NetworkProviderTypeNSXT  NetworkProviderType = "NSXT"
 	NetworkProviderTypeVDS   NetworkProviderType = "VSPHERE_NETWORK"
+	NetworkProviderTypeVPC   NetworkProviderType = "NSXT_VPC"
 )

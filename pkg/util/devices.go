@@ -188,12 +188,8 @@ func SelectDynamicDirectPathIO(
 }
 
 func IsEthernetCard(dev vimTypes.BaseVirtualDevice) bool {
-	switch dev.(type) {
-	case *vimTypes.VirtualE1000, *vimTypes.VirtualE1000e, *vimTypes.VirtualPCNet32, *vimTypes.VirtualVmxnet2, *vimTypes.VirtualVmxnet3, *vimTypes.VirtualVmxnet3Vrdma, *vimTypes.VirtualSriovEthernetCard:
-		return true
-	default:
-		return false
-	}
+	_, ok := dev.(vimTypes.BaseVirtualEthernetCard)
+	return ok
 }
 
 func isDiskOrDiskController(dev vimTypes.BaseVirtualDevice) bool {

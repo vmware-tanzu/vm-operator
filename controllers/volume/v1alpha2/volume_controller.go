@@ -188,7 +188,7 @@ func (r *Reconciler) reconcileResult(ctx *context.VolumeContextA2) ctrl.Result {
 	if ctx.InstanceStorageFSSEnabled {
 		// Requeue the request if all instance storage PVCs are not bound.
 		_, pvcsBound := ctx.VM.Annotations[constants.InstanceStoragePVCsBoundAnnotationKey]
-		if IsConfiguredA2(ctx.VM) && !pvcsBound {
+		if instancestorage.IsPresent(ctx.VM) && !pvcsBound {
 			return ctrl.Result{RequeueAfter: wait.Jitter(
 				pkgconfig.FromContext(ctx).InstanceStorage.SeedRequeueDuration,
 				pkgconfig.FromContext(ctx).InstanceStorage.JitterMaxFactor,
@@ -259,7 +259,7 @@ func (r *Reconciler) reconcileInstanceStoragePVCs(ctx *context.VolumeContextA2) 
 
 	// If the VM Spec doesn't have any instance storage volumes, there is nothing for us to do.
 	// We do not support removing - or changing really - this type of volume.
-	isVolumes := FilterVolumesA2(ctx.VM)
+	isVolumes := instancestorage.FilterVolumes(ctx.VM)
 	if len(isVolumes) == 0 {
 		return true, nil
 	}

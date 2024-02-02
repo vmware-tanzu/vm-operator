@@ -27,7 +27,8 @@ import (
 	volContext "github.com/vmware-tanzu/vm-operator/pkg/context"
 	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	providerfake "github.com/vmware-tanzu/vm-operator/pkg/vmprovider/fake"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/instancestorage"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
@@ -873,7 +874,7 @@ func getInstanceStoragePVCs(ctx *volContext.VolumeContextA2, testCtx *builder.Un
 	var errs []error
 	pvcList := make([]corev1.PersistentVolumeClaim, 0)
 
-	volumes := volume.FilterVolumesA2(ctx.VM)
+	volumes := instancestorage.FilterVolumes(ctx.VM)
 	for _, vol := range volumes {
 		objKey := client.ObjectKey{
 			Namespace: ctx.VM.Namespace,

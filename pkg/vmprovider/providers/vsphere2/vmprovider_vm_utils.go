@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere
@@ -12,7 +12,6 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
@@ -434,6 +433,11 @@ func GetAdditionalResourcesForBackup(
 				if err != nil {
 					return nil, err
 				}
+				// GVK is dropped when getting a core K8s resource from client.
+				// Add it in backup so that the resource can be applied successfully during restore.
+				for i := range out {
+					out[i].GetObjectKind().SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Secret"))
+				}
 				objects = append(objects, out...)
 			} else if raw := v.RawCloudConfig; raw != nil {
 				obj, err := getSecretOrConfigMapObject(vmCtx, k8sClient, raw.Name, true)
@@ -447,6 +451,11 @@ func GetAdditionalResourcesForBackup(
 				out, err := sysprep.GetSecretResources(vmCtx, k8sClient, vmCtx.VM.Namespace, cooked)
 				if err != nil {
 					return nil, err
+				}
+				// GVK is dropped when getting a K8s core resource from client.
+				// Add it in backup so that the resource can be applied successfully during restore.
+				for i := range out {
+					out[i].GetObjectKind().SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Secret"))
 				}
 				objects = append(objects, out...)
 			} else if raw := v.RawSysprep; raw != nil {
@@ -505,12 +514,9 @@ func getSecretOrConfigMapObject(
 		// supports Secrets.
 		if configMapFallback && apierrors.IsNotFound(err) {
 			if k8sClient.Get(vmCtx, key, configMap) == nil {
-				// The typeMeta may not be populated when getting the resource from client.
-				// We need to populate it here so that the resource can be serialized in backup.
-				configMap.TypeMeta = metav1.TypeMeta{
-					Kind:       "ConfigMap",
-					APIVersion: "v1",
-				}
+				// GVK is dropped when getting a core K8s resource from client.
+				// Add it in backup so that the resource can be applied successfully during restore.
+				configMap.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
 				err = nil
 			}
 		}
@@ -518,12 +524,9 @@ func getSecretOrConfigMapObject(
 		return configMap, err
 	}
 
-	// The typeMeta may not be populated when getting the resource from client.
-	// We need to populate it here so that the resource can be serialized in backup.
-	secret.TypeMeta = metav1.TypeMeta{
-		Kind:       "Secret",
-		APIVersion: "v1",
-	}
+	// GVK is dropped when getting a core K8s resource from client.
+	// Add it in backup so that the resource can be applied successfully during restore.
+	secret.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Secret"))
 
 	return secret, err
 }

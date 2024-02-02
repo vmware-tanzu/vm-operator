@@ -1,4 +1,4 @@
-// Copyright (c) 2022-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2022-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package vsphere_test
@@ -873,6 +873,7 @@ func vmUtilTests() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(objects).To(HaveLen(1))
 				Expect(objects[0].GetName()).To(Equal("dummy-cloud-config-secret"))
+				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("Secret")))
 			})
 		})
 
@@ -899,6 +900,7 @@ func vmUtilTests() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(objects).To(HaveLen(1))
 				Expect(objects[0].GetName()).To(Equal("dummy-raw-cloud-secret"))
+				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("Secret")))
 			})
 		})
 
@@ -925,6 +927,7 @@ func vmUtilTests() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(objects).To(HaveLen(1))
 				Expect(objects[0].GetName()).To(Equal("dummy-raw-cloud-config-map"))
+				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("ConfigMap")))
 			})
 		})
 
@@ -955,6 +958,7 @@ func vmUtilTests() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(objects).To(HaveLen(1))
 				Expect(objects[0].GetName()).To(Equal("dummy-sysprep-secret"))
+				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("Secret")))
 			})
 		})
 
@@ -981,6 +985,7 @@ func vmUtilTests() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(objects).To(HaveLen(1))
 				Expect(objects[0].GetName()).To(Equal("dummy-raw-sysprep-secret"))
+				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("Secret")))
 			})
 		})
 
@@ -1007,6 +1012,7 @@ func vmUtilTests() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(objects).To(HaveLen(1))
 				Expect(objects[0].GetName()).To(Equal("dummy-raw-sysprep-config-map"))
+				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("ConfigMap")))
 			})
 		})
 
@@ -1048,6 +1054,7 @@ func vmUtilTests() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(objects).To(HaveLen(1))
 				Expect(objects[0].GetName()).To(Equal("dummy-vapp-config-property-secret"))
+				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("Secret")))
 			})
 		})
 
@@ -1072,6 +1079,7 @@ func vmUtilTests() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(objects).To(HaveLen(1))
 				Expect(objects[0].GetName()).To(Equal("dummy-raw-vapp-config-secret"))
+				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("Secret")))
 			})
 		})
 
@@ -1096,6 +1104,7 @@ func vmUtilTests() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(objects).To(HaveLen(1))
 				Expect(objects[0].GetName()).To(Equal("dummy-raw-vapp-config-config-map"))
+				Expect(objects[0].GetObjectKind().GroupVersionKind()).To(Equal(corev1.SchemeGroupVersion.WithKind("ConfigMap")))
 			})
 		})
 	})

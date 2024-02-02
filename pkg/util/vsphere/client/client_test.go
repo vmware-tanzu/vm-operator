@@ -22,11 +22,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/soap"
 
-	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
-	vsphereclient "github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/client"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/config"
-	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/credentials"
+	"github.com/vmware-tanzu/vm-operator/pkg/util/vsphere/client"
 )
 
 const (
@@ -38,8 +34,8 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 
 	Describe("NewClient", func() {
 		var (
-			ctx context.Context
-			cfg *config.VSphereVMProviderConfig
+			ctx    context.Context
+			config client.Config
 
 			model     *simulator.Model
 			server    *simulator.Server
@@ -51,7 +47,7 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 		)
 
 		BeforeEach(func() {
-			ctx = logr.NewContext(pkgconfig.NewContextWithDefaultConfig(), GinkgoLogr)
+			ctx = logr.NewContext(context.Background(), GinkgoLogr)
 			expectedUsername = valid
 			expectedPassword = valid
 			tlsConfig = &tls.Config{}
@@ -87,16 +83,14 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 				serverCertFile = f
 			}
 
-			cfg = &config.VSphereVMProviderConfig{
-				VcPNID: server.URL.Hostname(),
-				VcPort: server.URL.Port(),
-				VcCreds: &credentials.VSphereVMProviderCredentials{
-					Username: expectedPassword,
-					Password: expectedPassword,
-				},
-				CAFilePath:            serverCertFile,
-				InsecureSkipTLSVerify: false,
-				Datacenter:            "datacenter-2",
+			config = client.Config{
+				Host:       server.URL.Hostname(),
+				Port:       server.URL.Port(),
+				Username:   expectedUsername,
+				Password:   expectedPassword,
+				CAFilePath: serverCertFile,
+				Insecure:   false,
+				Datacenter: "datacenter-2",
 			}
 		})
 
@@ -105,12 +99,12 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 			model = nil
 			server = nil
 			serverCertFile = ""
-			cfg = nil
+			config = client.Config{}
 		})
 
 		When("credentials are valid", func() {
 			It("should connect", func() {
-				c, err := client.NewClient(ctx, cfg)
+				c, err := client.NewClient(ctx, config)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(c).ToNot(BeNil())
 			})
@@ -118,11 +112,11 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 
 		When("username and password are invalid", func() {
 			JustBeforeEach(func() {
-				cfg.VcCreds.Username = invalid
-				cfg.VcCreds.Password = invalid
+				config.Username = invalid
+				config.Password = invalid
 			})
 			It("should fail to login", func() {
-				c, err := client.NewClient(ctx, cfg)
+				c, err := client.NewClient(ctx, config)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(HavePrefix("login failed for url"))
 				Expect(c).To(BeNil())
@@ -131,10 +125,10 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 
 		When("username is invalid", func() {
 			JustBeforeEach(func() {
-				cfg.VcCreds.Username = invalid
+				config.Username = invalid
 			})
 			It("should fail to login", func() {
-				c, err := client.NewClient(ctx, cfg)
+				c, err := client.NewClient(ctx, config)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(HavePrefix("login failed for url"))
 				Expect(c).To(BeNil())
@@ -143,10 +137,10 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 
 		When("password is invalid", func() {
 			JustBeforeEach(func() {
-				cfg.VcCreds.Password = invalid
+				config.Password = invalid
 			})
 			It("should fail to login", func() {
-				c, err := client.NewClient(ctx, cfg)
+				c, err := client.NewClient(ctx, config)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(HavePrefix("login failed for url"))
 				Expect(c).To(BeNil())
@@ -155,11 +149,11 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 
 		When("host is invalid", func() {
 			JustBeforeEach(func() {
-				cfg.VcPNID = "test-host"
-				cfg.VcPort = "test-port"
+				config.Host = "test-host"
+				config.Port = "test-port"
 			})
 			Specify("returns failed to parse error", func() {
-				c, err := client.NewClient(ctx, cfg)
+				c, err := client.NewClient(ctx, config)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(invalid))
 				Expect(err.Error()).To(ContainSubstring("port"))
@@ -169,11 +163,11 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 
 			Context("and port", func() {
 				JustBeforeEach(func() {
-					cfg.VcPNID = "test%test"
-					cfg.VcPort = server.URL.Port()
+					config.Host = "test%test"
+					config.Port = server.URL.Port()
 				})
 				Specify("returns failed to parse error", func() {
-					c, err := client.NewClient(ctx, cfg)
+					c, err := client.NewClient(ctx, config)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(HavePrefix("failed to parse"))
 					Expect(c).To(BeNil())
@@ -183,10 +177,10 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 
 		When("ca bundle is invalid", func() {
 			JustBeforeEach(func() {
-				cfg.CAFilePath = "/a/nonexistent/ca-bundle.crt"
+				config.CAFilePath = "/a/nonexistent/ca-bundle.crt"
 			})
 			Specify("returns failed to parse error", func() {
-				c, err := client.NewClient(ctx, cfg)
+				c, err := client.NewClient(ctx, config)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to set root CA"))
 				Expect(c).To(BeNil())
@@ -195,10 +189,10 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 
 		When("client cannot verify the server certificate", func() {
 			JustBeforeEach(func() {
-				cfg.CAFilePath = ""
+				config.CAFilePath = ""
 			})
 			Specify("returns unknown authority error", func() {
-				c, err := client.NewClient(ctx, cfg)
+				c, err := client.NewClient(ctx, config)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("x509: certificate signed by unknown authority"))
 				Expect(c).To(BeNil())
@@ -258,7 +252,7 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 						c.RoundTripper = keepalive.NewHandlerSOAP(
 							c.RoundTripper,
 							keepAliveIdle,
-							vsphereclient.SoapKeepAliveHandlerFn(ctx, c.Client, m, simulator.DefaultLogin))
+							client.SoapKeepAliveHandlerFn(ctx, c.Client, m, simulator.DefaultLogin))
 
 						// Start the handler
 						Expect(m.Login(ctx, simulator.DefaultLogin)).To(Succeed())
@@ -323,7 +317,7 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 							c.RoundTripper = keepalive.NewHandlerSOAP(
 								c.RoundTripper,
 								keepAliveIdle,
-								vsphereclient.SoapKeepAliveHandlerFn(ctx, c.Client, m1, simulator.DefaultLogin))
+								client.SoapKeepAliveHandlerFn(ctx, c.Client, m1, simulator.DefaultLogin))
 
 							// Start the handler
 							Expect(m1.Login(ctx, simulator.DefaultLogin)).To(Succeed())
@@ -375,7 +369,7 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 							c.RoundTripper = keepalive.NewHandlerSOAP(
 								c.RoundTripper,
 								keepAliveIdle,
-								vsphereclient.SoapKeepAliveHandlerFn(ctx, c.Client, m1, nil))
+								client.SoapKeepAliveHandlerFn(ctx, c.Client, m1, nil))
 
 							// Start the handler
 							Expect(m1.Login(ctx, simulator.DefaultLogin)).To(Succeed())
@@ -442,7 +436,7 @@ var _ = Describe("Client", Ordered /* Avoided race for pkg symbol simulator.Sess
 						c.Transport = keepalive.NewHandlerREST(
 							c,
 							keepAliveIdle,
-							vsphereclient.RestKeepAliveHandlerFn(ctx, c, simulator.DefaultLogin))
+							client.RestKeepAliveHandlerFn(ctx, c, simulator.DefaultLogin))
 
 						// Start the handler
 						Expect(c.Login(ctx, simulator.DefaultLogin)).To(Succeed())

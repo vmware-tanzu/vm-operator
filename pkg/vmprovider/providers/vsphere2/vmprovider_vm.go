@@ -789,6 +789,7 @@ func (vs *vSphereVMProvider) vmCreateGetBootstrap(
 	createArgs.BootstrapData.VAppData = bsData.VAppData
 	createArgs.BootstrapData.VAppExData = bsData.VAppExData
 	createArgs.BootstrapData.CloudConfig = bsData.CloudConfig
+	createArgs.BootstrapData.Sysprep = bsData.Sysprep
 
 	return nil
 }
@@ -1103,6 +1104,7 @@ func (vs *vSphereVMProvider) vmUpdateGetArgs(
 	updateArgs.BootstrapData.VAppData = bsData.VAppData
 	updateArgs.BootstrapData.VAppExData = bsData.VAppExData
 	updateArgs.BootstrapData.CloudConfig = bsData.CloudConfig
+	updateArgs.BootstrapData.Sysprep = bsData.Sysprep
 
 	if res := vmClass.Spec.Policies.Resources; !res.Requests.Cpu.IsZero() || !res.Limits.Cpu.IsZero() {
 		freq, err := vs.getOrComputeCPUMinFrequency(vmCtx)

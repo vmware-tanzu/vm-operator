@@ -1014,9 +1014,21 @@ func vmTests() {
 
 					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionClassReady)).To(BeTrue())
 					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionImageReady)).To(BeTrue())
-					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
 					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionStorageReady)).To(BeTrue())
 					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
+
+					By("did not have VMSetResourcePool", func() {
+						Expect(vm.Spec.Reserved).To(BeNil())
+						Expect(conditions.Has(vm, vmopv1.VirtualMachineConditionVMSetResourcePolicyReady)).To(BeFalse())
+					})
+					By("did not have Bootstrap", func() {
+						Expect(vm.Spec.Bootstrap).To(BeNil())
+						Expect(conditions.Has(vm, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeFalse())
+					})
+					By("did not have Network", func() {
+						Expect(vm.Spec.Network.Disabled).To(BeTrue())
+						Expect(conditions.Has(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeFalse())
+					})
 				})
 
 				By("has expected inventory path", func() {
@@ -1182,10 +1194,21 @@ func vmTests() {
 
 						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionClassReady)).To(BeTrue())
 						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionImageReady)).To(BeTrue())
-						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeTrue())
 						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionStorageReady)).To(BeTrue())
-
 						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
+
+						By("did not have VMSetResourcePool", func() {
+							Expect(vm.Spec.Reserved).To(BeNil())
+							Expect(conditions.Has(vm, vmopv1.VirtualMachineConditionVMSetResourcePolicyReady)).To(BeFalse())
+						})
+						By("did not have Bootstrap", func() {
+							Expect(vm.Spec.Bootstrap).To(BeNil())
+							Expect(conditions.Has(vm, vmopv1.VirtualMachineConditionBootstrapReady)).To(BeFalse())
+						})
+						By("did not have Network", func() {
+							Expect(vm.Spec.Network.Disabled).To(BeTrue())
+							Expect(conditions.Has(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeFalse())
+						})
 					})
 
 					By("has expected inventory path", func() {
@@ -1479,6 +1502,8 @@ func vmTests() {
 					vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 					Expect(err).ToNot(HaveOccurred())
 
+					Expect(conditions.Has(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeFalse())
+
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
 
@@ -1507,6 +1532,7 @@ func vmTests() {
 					It("Has expected devices", func() {
 						vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 						Expect(err).ToNot(HaveOccurred())
+						Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionNetworkReady)).To(BeTrue())
 
 						var o mo.VirtualMachine
 						Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
@@ -1706,6 +1732,10 @@ func vmTests() {
 			It("VM is created in child Folder and ResourcePool", func() {
 				vcVM, err := createOrUpdateAndGetVcVM(ctx, vm)
 				Expect(err).ToNot(HaveOccurred())
+
+				By("has expected condition", func() {
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionVMSetResourcePolicyReady)).To(BeTrue())
+				})
 
 				By("has expected inventory path", func() {
 					Expect(vcVM.InventoryPath).To(HaveSuffix(

@@ -413,7 +413,7 @@ func UpdateHardwareConfigSpec(
 func UpdateConfigSpecAnnotation(
 	config *vimTypes.VirtualMachineConfigInfo,
 	configSpec *vimTypes.VirtualMachineConfigSpec) {
-	if config.Annotation != constants.VCVMAnnotation {
+	if config.Annotation == "" {
 		configSpec.Annotation = constants.VCVMAnnotation
 	}
 }

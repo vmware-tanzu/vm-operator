@@ -362,6 +362,18 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 							},
 						},
 					},
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device: &vimtypes.VirtualVmxnet3{
+							VirtualVmxnet: vimtypes.VirtualVmxnet{
+								VirtualEthernetCard: vimtypes.VirtualEthernetCard{
+									VirtualDevice: vimtypes.VirtualDevice{
+										Backing: &vimtypes.VirtualEthernetCardDistributedVirtualPortBackingInfo{},
+									},
+								},
+							},
+						},
+					},
 				},
 			}
 		})
@@ -375,12 +387,15 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			Expect(configSpec.MemoryAllocation).To(Equal(baseConfigSpec.MemoryAllocation))
 			Expect(configSpec.Firmware).To(Equal(baseConfigSpec.Firmware))
 
-			Expect(configSpec.DeviceChange).To(HaveLen(2))
-			dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
-			_, ok := dSpec.Device.(*vimtypes.VirtualPCIPassthrough)
+			Expect(configSpec.DeviceChange).To(HaveLen(3))
+			dSpec0 := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+			_, ok := dSpec0.Device.(*vimtypes.VirtualPCIPassthrough)
 			Expect(ok).To(BeTrue())
 			dSpec1 := configSpec.DeviceChange[1].GetVirtualDeviceConfigSpec()
-			_, ok = dSpec1.Device.(*vimtypes.VirtualDisk)
+			_, ok = dSpec1.Device.(*vimtypes.VirtualVmxnet3)
+			Expect(ok).To(BeTrue())
+			dSpec2 := configSpec.DeviceChange[2].GetVirtualDeviceConfigSpec()
+			_, ok = dSpec2.Device.(*vimtypes.VirtualDisk)
 			Expect(ok).To(BeTrue())
 		})
 	})
@@ -400,6 +415,28 @@ var _ = Describe("CreateConfigSpecForPlacement", func() {
 			Expect(configSpec.DeviceChange).To(HaveLen(3))
 			assertInstanceStorageDeviceChange(configSpec.DeviceChange[1], 256, storagePolicyID)
 			assertInstanceStorageDeviceChange(configSpec.DeviceChange[2], 512, storagePolicyID)
+		})
+	})
+
+	Context("Removes VirtualEthernetCards without a backing", func() {
+		BeforeEach(func() {
+			baseConfigSpec = &vimtypes.VirtualMachineConfigSpec{
+				Name: "dummy-VM",
+				DeviceChange: []vimtypes.BaseVirtualDeviceConfigSpec{
+					&vimtypes.VirtualDeviceConfigSpec{
+						Operation: vimtypes.VirtualDeviceConfigSpecOperationAdd,
+						Device:    &vimtypes.VirtualVmxnet3{},
+					},
+				},
+			}
+		})
+
+		It("Returns expected ConfigSpec DeviceChanges", func() {
+			// Just the dummy disk entry: vmxnet3 device should not be there.
+			Expect(configSpec.DeviceChange).To(HaveLen(1))
+			dSpec := configSpec.DeviceChange[0].GetVirtualDeviceConfigSpec()
+			_, ok := dSpec.Device.(*vimtypes.VirtualDisk)
+			Expect(ok).To(BeTrue())
 		})
 	})
 })

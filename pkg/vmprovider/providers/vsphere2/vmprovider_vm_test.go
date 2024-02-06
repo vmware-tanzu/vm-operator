@@ -221,8 +221,25 @@ func vmTests() {
 
 					var o mo.VirtualMachine
 					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Config.Annotation).To(Equal(constants.VCVMAnnotation))
 					Expect(o.Summary.Config.NumCpu).To(BeEquivalentTo(vmClass.Spec.Hardware.Cpus))
 					Expect(o.Summary.Config.MemorySizeMB).To(BeEquivalentTo(vmClass.Spec.Hardware.Memory.Value() / 1024 / 1024))
+				})
+			})
+
+			Context("ConfigSpec specifies annotation", func() {
+				BeforeEach(func() {
+					configSpec = &types.VirtualMachineConfigSpec{
+						Annotation: "my-annotation",
+					}
+				})
+
+				It("VM has class annotation", func() {
+					Expect(conditions.IsTrue(vm, vmopv1.VirtualMachineConditionCreated)).To(BeTrue())
+
+					var o mo.VirtualMachine
+					Expect(vcVM.Properties(ctx, vcVM.Reference(), nil, &o)).To(Succeed())
+					Expect(o.Config.Annotation).To(Equal("my-annotation"))
 				})
 			})
 

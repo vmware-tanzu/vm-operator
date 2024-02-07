@@ -1,4 +1,4 @@
-// Copyright (c) 2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2023-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package virtualmachine_test
@@ -66,9 +66,6 @@ func backupTests() {
 			vm.TypeMeta = metav1.TypeMeta{
 				Kind: "VirtualMachine",
 			}
-			// Set the VM's UID and ResourceVersion to be able to verify if the backup data is up-to-date.
-			vm.UID = "vm-uid-test"
-			vm.ResourceVersion = "0"
 			vmCtx.VM = vm
 		})
 
@@ -87,11 +84,11 @@ func backupTests() {
 			})
 		})
 
-		When("VM resource exists in ExtraConfig but is not up-to-date", func() {
+		When("VM resource exists in ExtraConfig and gets a spec change", func() {
 
 			BeforeEach(func() {
 				oldVM := vmCtx.VM.DeepCopy()
-				oldVM.ObjectMeta.ResourceVersion = "1"
+				oldVM.ObjectMeta.Generation = 1
 				oldVMYAML, err := yaml.Marshal(oldVM)
 				Expect(err).NotTo(HaveOccurred())
 				vmYAMLEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
@@ -109,8 +106,78 @@ func backupTests() {
 			})
 
 			It("Should backup VM resource YAML with the latest version in ExtraConfig", func() {
-				// Update the resourceVersion to simulate a new update of the VM.
-				vmCtx.VM.ObjectMeta.ResourceVersion = "2"
+				// Update the generation to simulate a new spec update of the VM.
+				vmCtx.VM.ObjectMeta.Generation++
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx: vmCtx,
+					VcVM:  vcVM,
+				}
+
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+				newVMYAML, err := yaml.Marshal(vmCtx.VM)
+				Expect(err).NotTo(HaveOccurred())
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(newVMYAML))
+			})
+		})
+
+		When("VM resource exists in ExtraConfig and gets an annotation change", func() {
+
+			BeforeEach(func() {
+				oldVM := vmCtx.VM.DeepCopy()
+				oldVM.ObjectMeta.Annotations = map[string]string{"foo": "bar"}
+				oldVMYAML, err := yaml.Marshal(oldVM)
+				Expect(err).NotTo(HaveOccurred())
+				vmYAMLEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
+				Expect(err).NotTo(HaveOccurred())
+
+				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
+					ExtraConfig: []types.BaseOptionValue{
+						&types.OptionValue{
+							Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+							Value: vmYAMLEncoded,
+						},
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("Should backup VM resource YAML with the latest version in ExtraConfig", func() {
+				vmCtx.VM.ObjectMeta.Annotations = map[string]string{"foo": "bar", "new-key": "new-val"}
+				backupOpts := virtualmachine.BackupVirtualMachineOptions{
+					VMCtx: vmCtx,
+					VcVM:  vcVM,
+				}
+
+				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
+				newVMYAML, err := yaml.Marshal(vmCtx.VM)
+				Expect(err).NotTo(HaveOccurred())
+				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.VMResourceYAMLExtraConfigKey, string(newVMYAML))
+			})
+		})
+
+		When("VM resource exists in ExtraConfig and gets a label change", func() {
+
+			BeforeEach(func() {
+				oldVM := vmCtx.VM.DeepCopy()
+				oldVM.ObjectMeta.Labels = map[string]string{"foo": "bar"}
+				oldVMYAML, err := yaml.Marshal(oldVM)
+				Expect(err).NotTo(HaveOccurred())
+				vmYAMLEncoded, err := util.EncodeGzipBase64(string(oldVMYAML))
+				Expect(err).NotTo(HaveOccurred())
+
+				_, err = vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
+					ExtraConfig: []types.BaseOptionValue{
+						&types.OptionValue{
+							Key:   vmopv1.VMResourceYAMLExtraConfigKey,
+							Value: vmYAMLEncoded,
+						},
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("Should backup VM resource YAML with the latest version in ExtraConfig", func() {
+				vmCtx.VM.ObjectMeta.Labels = map[string]string{"foo": "bar", "new-key": "new-val"}
 				backupOpts := virtualmachine.BackupVirtualMachineOptions{
 					VMCtx: vmCtx,
 					VcVM:  vcVM,
@@ -129,7 +196,6 @@ func backupTests() {
 			)
 
 			BeforeEach(func() {
-				vmCtx.VM.ObjectMeta.ResourceVersion = "3"
 				vmYAML, err := yaml.Marshal(vmCtx.VM)
 				Expect(err).NotTo(HaveOccurred())
 				vmBackupStr = string(vmYAML)
@@ -148,8 +214,10 @@ func backupTests() {
 			})
 
 			It("Should skip backing up VM resource YAML in ExtraConfig", func() {
-				// Update the VM to verify its resource YAML is not backed up in ExtraConfig.
-				vmCtx.VM.Labels = map[string]string{"foo": "bar"}
+				// Update VM status field to verify its resource YAML is not backed up in ExtraConfig.
+				vmCtx.VM.Status.Conditions = []metav1.Condition{
+					{Type: "New-Condition", Status: "True"},
+				}
 				backupOpts := virtualmachine.BackupVirtualMachineOptions{
 					VMCtx: vmCtx,
 					VcVM:  vcVM,
@@ -335,75 +403,6 @@ func backupTests() {
 				diskDataJSON, err := json.Marshal(diskData)
 				Expect(err).NotTo(HaveOccurred())
 				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.PVCDiskDataExtraConfigKey, string(diskDataJSON))
-			})
-		})
-	})
-
-	Context("Backup VM cloud-init instance ID data", func() {
-
-		BeforeEach(func() {
-			vmCtx.VM = builder.DummyVirtualMachineA2()
-		})
-
-		When("VM cloud-init instance ID already exists in ExtraConfig", func() {
-
-			BeforeEach(func() {
-				_, err := vcVM.Reconfigure(vmCtx, types.VirtualMachineConfigSpec{
-					ExtraConfig: []types.BaseOptionValue{
-						&types.OptionValue{
-							Key:   vmopv1.CloudInitInstanceIDExtraConfigKey,
-							Value: "ec-instance-id",
-						},
-					},
-				})
-				Expect(err).NotTo(HaveOccurred())
-				vmCtx.VM.Annotations = map[string]string{
-					vmopv1.InstanceIDAnnotation: "other-instance-id",
-				}
-			})
-
-			It("Should not change the cloud-init instance ID in VM's ExtraConfig", func() {
-				backupOpts := virtualmachine.BackupVirtualMachineOptions{
-					VMCtx: vmCtx,
-					VcVM:  vcVM,
-				}
-				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.CloudInitInstanceIDExtraConfigKey, "ec-instance-id")
-			})
-		})
-
-		When("VM cloud-init instance ID does not exist in ExtraConfig and is set in annotations", func() {
-
-			BeforeEach(func() {
-				vmCtx.VM.Annotations = map[string]string{
-					vmopv1.InstanceIDAnnotation: "annotation-instance-id",
-				}
-				vmCtx.VM.UID = "vm-uid"
-			})
-
-			It("Should backup the cloud-init instance ID from annotations", func() {
-				backupOpts := virtualmachine.BackupVirtualMachineOptions{
-					VMCtx: vmCtx,
-					VcVM:  vcVM,
-				}
-				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
-				verifyBackupDataInExtraConfig(ctx, vcVM, vmopv1.CloudInitInstanceIDExtraConfigKey, "annotation-instance-id")
-			})
-		})
-
-		When("VM cloud-init instance ID does not exist in ExtraConfig and is not set in annotations", func() {
-
-			BeforeEach(func() {
-				vmCtx.VM.Annotations = nil
-				vmCtx.VM.UID = "vm-uid"
-			})
-
-			It("Should backup the cloud-init instance ID from VM K8s resource UID", func() {
-				backupOpts := virtualmachine.BackupVirtualMachineOptions{
-					VMCtx: vmCtx,
-					VcVM:  vcVM,
-				}
-				Expect(virtualmachine.BackupVirtualMachine(backupOpts)).To(Succeed())
 			})
 		})
 	})

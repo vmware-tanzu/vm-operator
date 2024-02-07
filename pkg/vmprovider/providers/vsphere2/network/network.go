@@ -464,7 +464,7 @@ func ncpNetIfToResult(
 
 	// NSX-T makes the backing determination difficult: NsxLogicalSwitchID must be mapped to an
 	// actual DVPG since that is the backing, but the DVPG can, in some very rare but supported
-	// configurations, vary between CCRs. If we know the CCR - ether the VM already exists, or
+	// configurations, vary between CCRs. If we know the CCR - either the VM already exists, or
 	// (for later work) we might pre-determine CCR w/o placement if there is only one possibility -
 	// get that backing now.
 	// Otherwise, we'll do it post-placement via ResolveNCPBackingPostPlacement() so that we create

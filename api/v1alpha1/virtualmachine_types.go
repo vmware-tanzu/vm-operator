@@ -142,12 +142,12 @@ type NetworkInterfaceProviderReference struct {
 
 // VirtualMachineNetworkInterface defines the properties of a network interface to attach to a VirtualMachine
 // instance.  A VirtualMachineNetworkInterface describes network interface configuration that is used by the
-// VirtualMachine controller when integrating the VirtualMachine into a VirtualNetwork.  Currently, only NSX-T
+// VirtualMachine controller when integrating the VirtualMachine into a VirtualNetwork. Currently, only NSX-T
 // and vSphere Distributed Switch (VDS) type network integrations are supported using this VirtualMachineNetworkInterface
 // structure.
 type VirtualMachineNetworkInterface struct {
-	// NetworkType describes the type of VirtualNetwork that is referenced by the NetworkName.  Currently, the only
-	// supported NetworkTypes are "nsx-t" and "vsphere-distributed".
+	// NetworkType describes the type of VirtualNetwork that is referenced by the NetworkName. Currently, the supported
+	// NetworkTypes are "nsx-t", "nsx-t-subnet", "nsx-t-subnetset" and "vsphere-distributed".
 	// +optional
 	NetworkType string `json:"networkType,omitempty"`
 

@@ -493,7 +493,7 @@ deploy-local-kind: docker-build load-kind ## Deploy controller in the kind clust
 
 .PHONY: load-kind
 load-kind: ## Load the image into the kind cluster
-	kind load docker-image $(IMG) --name $(KIND_CLUSTER_NAME) --loglevel debug
+	kind load docker-image $(IMG) --name $(KIND_CLUSTER_NAME) -v 10
 
 ## --------------------------------------
 ## Development - run

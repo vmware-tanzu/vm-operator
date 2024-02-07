@@ -1,0 +1,10 @@
+# This patch marks "manager" as the default container.  This means `kubectl logs` and
+# `kubectl exec` will pick the "manager" container unless a different container is
+# specified using the --container flag.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+  annotations:
+    kubectl.kubernetes.io/default-container: manager

@@ -12,7 +12,9 @@ CERT_MANAGER_URL="${CERT_MANAGER_URL:?}"
 
 mkdir -p artifacts
 
-./hack/tools/bin/kustomize build \
+# Since we modify the PATH var at the beginning of Makefile, kustomize
+# should always be available.
+kustomize build \
   --load-restrictor LoadRestrictionsNone \
   "${CERT_MANAGER_URL}" \
   >artifacts/cert-manager.yaml

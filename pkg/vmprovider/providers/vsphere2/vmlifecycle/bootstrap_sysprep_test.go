@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	"github.com/vmware/govmomi/vim25/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
@@ -95,6 +96,12 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				vAppConfigSpec,
 				&bsArgs,
 			)
+		})
+
+		Context("No data", func() {
+			It("returns error", func() {
+				Expect(err).To(MatchError("no Sysprep data"))
+			})
 		})
 
 		Context("Inlined Sysprep", func() {
@@ -216,44 +223,44 @@ var _ = Describe("SysPrep Bootstrap", func() {
 				Expect(custSpec.NicSettingMap).To(HaveLen(len(bsArgs.NetworkResults.Results)))
 				Expect(custSpec.NicSettingMap[0].MacAddress).To(Equal(macAddr))
 			})
-		})
 
-		Context("when has vAppConfig", func() {
-			const key, value = "fooKey", "fooValue"
+			Context("when has vAppConfig", func() {
+				const key, value = "fooKey", "fooValue"
 
-			BeforeEach(func() {
-				configInfo.VAppConfig = &types.VmConfigInfo{
-					Property: []types.VAppPropertyInfo{
-						{
-							Id:               key,
-							Value:            "should-change",
-							UserConfigurable: pointer.Bool(true),
+				BeforeEach(func() {
+					configInfo.VAppConfig = &types.VmConfigInfo{
+						Property: []types.VAppPropertyInfo{
+							{
+								Id:               key,
+								Value:            "should-change",
+								UserConfigurable: pointer.Bool(true),
+							},
 						},
-					},
-				}
+					}
 
-				vAppConfigSpec = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
-					Properties: []common.KeyValueOrSecretKeySelectorPair{
-						{
-							Key:   key,
-							Value: common.ValueOrSecretKeySelector{Value: pointer.String(value)},
+					vAppConfigSpec = &vmopv1.VirtualMachineBootstrapVAppConfigSpec{
+						Properties: []common.KeyValueOrSecretKeySelectorPair{
+							{
+								Key:   key,
+								Value: common.ValueOrSecretKeySelector{Value: pointer.String(value)},
+							},
 						},
-					},
-				}
-			})
+					}
+				})
 
-			It("should return expected customization spec", func() {
-				Expect(err).ToNot(HaveOccurred())
-				Expect(custSpec).ToNot(BeNil())
+				It("should return expected customization spec", func() {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(custSpec).ToNot(BeNil())
 
-				Expect(configSpec).ToNot(BeNil())
-				Expect(configSpec.VAppConfig).ToNot(BeNil())
-				vmCs := configSpec.VAppConfig.GetVmConfigSpec()
-				Expect(vmCs).ToNot(BeNil())
-				Expect(vmCs.Property).To(HaveLen(1))
-				Expect(vmCs.Property[0].Info).ToNot(BeNil())
-				Expect(vmCs.Property[0].Info.Id).To(Equal(key))
-				Expect(vmCs.Property[0].Info.Value).To(Equal(value))
+					Expect(configSpec).ToNot(BeNil())
+					Expect(configSpec.VAppConfig).ToNot(BeNil())
+					vmCs := configSpec.VAppConfig.GetVmConfigSpec()
+					Expect(vmCs).ToNot(BeNil())
+					Expect(vmCs.Property).To(HaveLen(1))
+					Expect(vmCs.Property[0].Info).ToNot(BeNil())
+					Expect(vmCs.Property[0].Info.Id).To(Equal(key))
+					Expect(vmCs.Property[0].Info.Value).To(Equal(value))
+				})
 			})
 		})
 	})

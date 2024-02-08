@@ -41,6 +41,23 @@ const (
 	dummyCreatedAtSchemaVersionVal = "dummy-created-at-schema-version"
 )
 
+type testParams struct {
+	setup         func(ctx *unitValidatingWebhookContext)
+	validate      func(response admission.Response)
+	expectAllowed bool
+}
+
+func doValidateWithMsg(msgs ...string) func(admission.Response) {
+	return func(response admission.Response) {
+		reasons := strings.Split(string(response.Result.Reason), ", ")
+		for _, m := range msgs {
+			Expect(reasons).To(ContainElement(m))
+		}
+		// This may be overly strict in some cases but catches missed assertions.
+		Expect(reasons).To(HaveLen(len(msgs)))
+	}
+}
+
 func unitTests() {
 	Describe("Invoking ValidateCreate", unitTestsValidateCreate)
 	Describe("Invoking ValidateUpdate", unitTestsValidateUpdate)
@@ -78,7 +95,6 @@ func newUnitTestContextForValidatingWebhook(isUpdate bool) *unitValidatingWebhoo
 	}
 }
 
-//nolint:gocyclo
 func unitTestsValidateCreate() {
 	var (
 		ctx *unitValidatingWebhookContext
@@ -364,38 +380,22 @@ func unitTestsValidateCreate() {
 		Entry("should allow creating VM, there are >1 availability zones, and there is no storage policy quota", createArgs{validStorageClass: true, multipleZones: true, noStoragePolicyQuota: true}, true, nil, nil),
 	)
 
+	doTest := func(args testParams) {
+		args.setup(ctx)
+
+		var err error
+		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+		Expect(err).ToNot(HaveOccurred())
+
+		response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
+		Expect(response.Allowed).To(Equal(args.expectAllowed))
+
+		if args.validate != nil {
+			args.validate(response)
+		}
+	}
+
 	Context("Bootstrap", func() {
-		type testParams struct {
-			setup         func(ctx *unitValidatingWebhookContext)
-			validate      func(response admission.Response)
-			expectAllowed bool
-		}
-
-		doTest := func(args testParams) {
-			args.setup(ctx)
-
-			var err error
-			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
-			Expect(err).ToNot(HaveOccurred())
-
-			response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-			Expect(response.Allowed).To(Equal(args.expectAllowed))
-
-			if args.validate != nil {
-				args.validate(response)
-			}
-		}
-
-		doValidateWithMsg := func(msgs ...string) func(admission.Response) {
-			return func(response admission.Response) {
-				reasons := strings.Split(string(response.Result.Reason), ", ")
-				for _, m := range msgs {
-					Expect(reasons).To(ContainElement(m))
-				}
-				// This may be overly strict in some cases but catches missed assertions.
-				Expect(reasons).To(HaveLen(len(msgs)))
-			}
-		}
 
 		DescribeTable("bootstrap create", doTest,
 			Entry("allow CloudInit bootstrap",
@@ -736,38 +736,6 @@ func unitTestsValidateCreate() {
 	})
 
 	Context("Network", func() {
-
-		type testParams struct {
-			setup         func(ctx *unitValidatingWebhookContext)
-			validate      func(response admission.Response)
-			expectAllowed bool
-		}
-
-		doTest := func(args testParams) {
-			args.setup(ctx)
-
-			var err error
-			ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
-			Expect(err).ToNot(HaveOccurred())
-
-			response := ctx.ValidateCreate(&ctx.WebhookRequestContext)
-			Expect(response.Allowed).To(Equal(args.expectAllowed))
-
-			if args.validate != nil {
-				args.validate(response)
-			}
-		}
-
-		doValidateWithMsg := func(msgs ...string) func(admission.Response) {
-			return func(response admission.Response) {
-				reasons := strings.Split(string(response.Result.Reason), ", ")
-				for _, m := range msgs {
-					Expect(reasons).To(ContainElement(m))
-				}
-				// This may be overly strict in some cases but catches missed assertions.
-				Expect(reasons).To(HaveLen(len(msgs)))
-			}
-		}
 
 		DescribeTable("network create", doTest,
 			Entry("allow default",
@@ -1496,6 +1464,89 @@ func unitTestsValidateUpdate() {
 		Entry("should allow updating admin-only annotations by privileged users", updateArgs{isPrivilegedUser: true, updateAdminOnlyAnnotations: true}, true, nil, nil),
 		Entry("should allow removing admin-only annotations by privileged users", updateArgs{isPrivilegedUser: true, removeAdminOnlyAnnotations: true}, true, nil, nil),
 	)
+
+	doTest := func(args testParams) {
+		args.setup(ctx)
+
+		var err error
+		ctx.WebhookRequestContext.Obj, err = builder.ToUnstructured(ctx.vm)
+		Expect(err).ToNot(HaveOccurred())
+		ctx.WebhookRequestContext.OldObj, err = builder.ToUnstructured(ctx.oldVM)
+		Expect(err).ToNot(HaveOccurred())
+
+		response := ctx.ValidateUpdate(&ctx.WebhookRequestContext)
+		Expect(response.Allowed).To(Equal(args.expectAllowed))
+
+		if args.validate != nil {
+			args.validate(response)
+		}
+	}
+
+	Context("Network", func() {
+
+		DescribeTable("update network", doTest,
+
+			Entry("disallow changing network interface name",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Network.Interfaces[0].Name = "eth100"
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].name: Forbidden: field is immutable`),
+				},
+			),
+
+			Entry("disallow changing network interface network",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name:    "eth0",
+									Network: common.PartialObjectRef{Name: "my-network"},
+								},
+							},
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Network.Interfaces[0].Network.Name = "my-other-network"
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces[0].network: Forbidden: field is immutable`),
+				},
+			),
+
+			Entry("disallow changing number of network interfaces",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						ctx.oldVM.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
+							Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+								{
+									Name: "eth0",
+								},
+							},
+						}
+
+						ctx.vm = ctx.oldVM.DeepCopy()
+						ctx.vm.Spec.Network.Interfaces = append(ctx.vm.Spec.Network.Interfaces,
+							vmopv1.VirtualMachineNetworkInterfaceSpec{Name: "eth1"})
+
+					},
+					validate: doValidateWithMsg(
+						`spec.network.interfaces: Forbidden: network interfaces cannot be added or removed`),
+				},
+			),
+		)
+	})
 
 	When("the update is performed while object deletion", func() {
 		It("should allow the request", func() {

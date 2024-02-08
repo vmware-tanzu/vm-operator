@@ -190,12 +190,17 @@ func intgTestsValidateUpdate() {
 			BeforeEach(func() {
 				ctx.vm.Spec.Network = &vmopv1.VirtualMachineNetworkSpec{
 					HostName: "my-new-name",
+					Interfaces: []vmopv1.VirtualMachineNetworkInterfaceSpec{
+						{
+							Name: "eth100",
+						},
+					},
 				}
 			})
 
 			It("rejects the request", func() {
-				expectedReason := field.Forbidden(field.NewPath("spec", "network"),
-					"updates to this field is not allowed when VM power is on").Error()
+				expectedReason := field.Forbidden(field.NewPath("spec", "network", "interfaces").Index(0).Child("name"),
+					"field is immutable").Error()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedReason))
 			})

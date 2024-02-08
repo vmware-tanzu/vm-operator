@@ -148,7 +148,6 @@ func (v validator) ValidateDelete(*context.WebhookRequestContext) admission.Resp
 //
 // Following fields can only be changed when the VM is powered off.
 //   - Bootstrap
-//   - Network
 func (v validator) ValidateUpdate(ctx *context.WebhookRequestContext) admission.Response {
 	vm, err := v.vmFromUnstructured(ctx.Obj)
 	if err != nil {
@@ -799,8 +798,8 @@ var megaByte = resource.MustParse("1Mi")
 
 func (v validator) validateAdvanced(ctx *context.WebhookRequestContext, vm *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
-	advanced := vm.Spec.Advanced
 
+	advanced := vm.Spec.Advanced
 	if advanced == nil {
 		return allErrs
 	}
@@ -918,8 +917,7 @@ func (v validator) validatePowerStateOnUpdate(
 		// on. Validate fields that may or may not be mutable while a VM is in
 		// a powered on state.
 		if newPowerState == vmopv1.VirtualMachinePowerStateOn {
-			invalidFields := v.validateUpdatesWhenPoweredOn(ctx, newVM, oldVM)
-			allErrs = append(allErrs, invalidFields...)
+			allErrs = append(allErrs, v.validateUpdatesWhenPoweredOn(ctx, newVM, oldVM)...)
 		}
 
 	case vmopv1.VirtualMachinePowerStateOff:
@@ -949,37 +947,71 @@ func (v validator) validateUpdatesWhenPoweredOn(ctx *context.WebhookRequestConte
 	if !equality.Semantic.DeepEqual(vm.Spec.Bootstrap, oldVM.Spec.Bootstrap) {
 		allErrs = append(allErrs, field.Forbidden(specPath.Child("bootstrap"), updatesNotAllowedWhenPowerOn))
 	}
-	if !equality.Semantic.DeepEqual(vm.Spec.Network, oldVM.Spec.Network) {
-		allErrs = append(allErrs, field.Forbidden(specPath.Child("network"), updatesNotAllowedWhenPowerOn))
-	}
 
 	// TODO: More checks.
 
 	return allErrs
 }
 
-func (v validator) validateImmutableFields(_ *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+func (v validator) validateImmutableFields(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ImageName, oldVM.Spec.ImageName, specPath.Child("imageName"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.ClassName, oldVM.Spec.ClassName, specPath.Child("className"))...)
 	allErrs = append(allErrs, validation.ValidateImmutableField(vm.Spec.StorageClass, oldVM.Spec.StorageClass, specPath.Child("storageClass"))...)
-	// TODO: More checks.
+	allErrs = append(allErrs, v.validateImmutableReserved(ctx, vm, oldVM)...)
+	allErrs = append(allErrs, v.validateImmutableNetwork(ctx, vm, oldVM)...)
 
-	// TODO: Allow privilege?
+	return allErrs
+}
 
-	var (
-		oldResourcePolicyName string
-		newResourcePolicyName string
-	)
-	if reserved := oldVM.Spec.Reserved; reserved != nil {
-		oldResourcePolicyName = reserved.ResourcePolicyName
-	}
+func (v validator) validateImmutableReserved(_ *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	var newResourcePolicyName, oldResourcePolicyName string
 	if reserved := vm.Spec.Reserved; reserved != nil {
 		newResourcePolicyName = reserved.ResourcePolicyName
 	}
-	allErrs = append(allErrs, validation.ValidateImmutableField(newResourcePolicyName, oldResourcePolicyName, specPath.Child("reserved", "resourcePolicyName"))...)
+	if reserved := oldVM.Spec.Reserved; reserved != nil {
+		oldResourcePolicyName = reserved.ResourcePolicyName
+	}
+
+	p := field.NewPath("spec", "reserved")
+	return append(allErrs, validation.ValidateImmutableField(newResourcePolicyName, oldResourcePolicyName, p.Child("resourcePolicyName"))...)
+}
+
+func (v validator) validateImmutableNetwork(ctx *context.WebhookRequestContext, vm, oldVM *vmopv1.VirtualMachine) field.ErrorList {
+	var allErrs field.ErrorList
+
+	oldNetwork := oldVM.Spec.Network
+	newNetwork := vm.Spec.Network
+
+	if oldNetwork == nil && newNetwork == nil {
+		return allErrs
+	}
+
+	p := field.NewPath("spec", "network")
+
+	oldInterfaces := oldVM.Spec.Network.Interfaces
+	newInterfaces := vm.Spec.Network.Interfaces
+
+	if len(oldInterfaces) != len(newInterfaces) {
+		return append(allErrs, field.Forbidden(p.Child("interfaces"), "network interfaces cannot be added or removed"))
+	}
+
+	for i := range newInterfaces {
+		newInterface := &newInterfaces[i]
+		oldInterface := &oldInterfaces[i]
+		pi := p.Child("interfaces").Index(i)
+
+		if newInterface.Name != oldInterface.Name {
+			allErrs = append(allErrs, field.Forbidden(pi.Child("name"), validation.FieldImmutableErrorMsg))
+		}
+		if !reflect.DeepEqual(&newInterface.Network, &oldInterface.Network) {
+			allErrs = append(allErrs, field.Forbidden(pi.Child("network"), validation.FieldImmutableErrorMsg))
+		}
+	}
 
 	return allErrs
 }

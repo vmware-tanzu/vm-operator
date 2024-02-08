@@ -294,7 +294,12 @@ func (v validator) validateInlineSysprep(p *field.Path, sysprep *sysprep.Sysprep
 
 	s := p.Child("sysprep")
 	if guiUnattended := sysprep.GUIUnattended; guiUnattended != nil {
-		if guiUnattended.AutoLogon && guiUnattended.Password.Name == "" {
+		if guiUnattended.AutoLogon && guiUnattended.AutoLogonCount == 0 {
+			allErrs = append(allErrs, field.Invalid(s, "guiUnattended",
+				"autoLogon requires autoLogonCount to be specified"))
+		}
+
+		if guiUnattended.AutoLogon && (guiUnattended.Password == nil || guiUnattended.Password.Name == "") {
 			allErrs = append(allErrs, field.Invalid(s, "guiUnattended",
 				"autoLogon requires password selector to be set"))
 		}

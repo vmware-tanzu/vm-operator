@@ -696,6 +696,29 @@ func unitTestsValidateCreate() {
 					),
 				},
 			),
+
+			Entry("disallow inline sysPrep autoLogon with missing autoLogonCount and password",
+				testParams{
+					setup: func(ctx *unitValidatingWebhookContext) {
+						pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+							config.Features.WindowsSysprep = true
+						})
+						ctx.vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+							Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{
+								Sysprep: &sysprep.Sysprep{
+									GUIUnattended: &sysprep.GUIUnattended{
+										AutoLogon: true,
+									},
+								},
+							},
+						}
+					},
+					validate: doValidateWithMsg(
+						`spec.bootstrap.sysprep.sysprep: Invalid value: "guiUnattended": autoLogon requires autoLogonCount to be specified`,
+						`spec.bootstrap.sysprep.sysprep: Invalid value: "guiUnattended": autoLogon requires password selector to be set`,
+					),
+				},
+			),
 		)
 	})
 

@@ -67,7 +67,7 @@ type GUIUnattended struct {
 	// you may want to increase it. This number may be determined by the list of
 	// commands executed by the GuiRunOnce command.
 	//
-	// Please note this field only matters if AutoLogon is true.
+	// Please note this field must be specified with a non-zero positive integer if AutoLogon is true.
 	//
 	// +optional
 	AutoLogonCount int32 `json:"autoLogonCount,omitempty"`

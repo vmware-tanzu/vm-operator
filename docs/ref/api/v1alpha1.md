@@ -785,7 +785,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `networkType` _string_ | NetworkType describes the type of VirtualNetwork that is referenced by the NetworkName.  Currently, the only supported NetworkTypes are "nsx-t" and "vsphere-distributed". |
+| `networkType` _string_ | NetworkType describes the type of VirtualNetwork that is referenced by the NetworkName.  Currently, the supported NetworkTypes are "nsx-t", "nsx-t-subnet", "nsx-t-subnetset" and "vsphere-distributed". |
 | `networkName` _string_ | NetworkName describes the name of an existing virtual network that this interface should be added to. For "nsx-t" NetworkType, this is the name of a pre-existing NSX-T VirtualNetwork. If unspecified, the default network for the namespace will be used. For "vsphere-distributed" NetworkType, the NetworkName must be specified. |
 | `providerRef` _[NetworkInterfaceProviderReference](#networkinterfaceproviderreference)_ | ProviderRef is reference to a network interface provider object that specifies the network interface configuration. If unset, default configuration is assumed. |
 | `ethernetCardType` _string_ | EthernetCardType describes an optional ethernet card that should be used by the VirtualNetworkInterface (vNIC) associated with this network integration.  The default is "vmxnet3". |

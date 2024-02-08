@@ -265,6 +265,12 @@ func convert_v1alpha1_NetworkInterface_To_v1alpha2_NetworkInterfaceSpec(
 	case "nsx-t":
 		out.Network.TypeMeta.APIVersion = "vmware.com/v1alpha1"
 		out.Network.TypeMeta.Kind = "VirtualNetwork"
+	case "nsx-t-subnet":
+		out.Network.TypeMeta.APIVersion = "nsx.vmware.com/v1alpha1"
+		out.Network.TypeMeta.Kind = "Subnet"
+	case "nsx-t-subnetset":
+		out.Network.TypeMeta.APIVersion = "nsx.vmware.com/v1alpha1"
+		out.Network.TypeMeta.Kind = "SubnetSet"
 	}
 
 	return out
@@ -282,6 +288,10 @@ func convert_v1alpha2_NetworkInterfaceSpec_To_v1alpha1_NetworkInterface(
 		out.NetworkType = "vsphere-distributed"
 	case "VirtualNetwork":
 		out.NetworkType = "nsx-t"
+	case "SubnetSet":
+		out.NetworkType = "nsx-t-subnetset"
+	case "Subnet":
+		out.NetworkType = "nsx-t-subnet"
 	}
 
 	return out

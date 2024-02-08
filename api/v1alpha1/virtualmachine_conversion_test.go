@@ -102,6 +102,26 @@ func TestVirtualMachineConversion(t *testing.T) {
 							},
 						},
 						{
+							Name: "nsx-vpc-subnet-interface",
+							Network: nextver_common.PartialObjectRef{
+								TypeMeta: metav1.TypeMeta{
+									Kind:       "Subnet",
+									APIVersion: "nsx.vmware.com/v1alpha1",
+								},
+								Name: "segment-subnet",
+							},
+						},
+						{
+							Name: "nsx-vpc-subnetset-interface",
+							Network: nextver_common.PartialObjectRef{
+								TypeMeta: metav1.TypeMeta{
+									Kind:       "SubnetSet",
+									APIVersion: "nsx.vmware.com/v1alpha1",
+								},
+								Name: "segment-subnetset",
+							},
+						},
+						{
 							Name: "my-interface",
 							Network: nextver_common.PartialObjectRef{
 								TypeMeta: metav1.TypeMeta{
@@ -1404,7 +1424,7 @@ func TestVirtualMachineConversion(t *testing.T) {
 		spokeHubSpoke(g, &spoke, &nextver.VirtualMachine{})
 	})
 
-	t.Run("VirtualMachine spoke-hub-spoke with CloudInit EC", func(t *testing.T) {
+	t.Run("VirtualMachine spoke-hub-spoke with ExtraConfig", func(t *testing.T) {
 		g := NewWithT(t)
 
 		// This transport is really old and probably never used.

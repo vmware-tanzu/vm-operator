@@ -127,7 +127,7 @@ func getDesiredVMResourceYAMLForBackup(
 	vm *vmopv1.VirtualMachine,
 	ecMap map[string]string) (string, error) {
 	curBackup := ecMap[vmopv1.VMResourceYAMLExtraConfigKey]
-	isUpToDate, err := isBackupVMUpToDate(vm, curBackup)
+	isUpToDate, err := isVMBackupUpToDate(vm, curBackup)
 	if err != nil || isUpToDate {
 		return "", err
 	}
@@ -141,10 +141,10 @@ func getDesiredVMResourceYAMLForBackup(
 	return util.EncodeGzipBase64(string(vmYAML))
 }
 
-// isBackupVMUpToDate returns true if all of the following fields of the VM are
-// up-to-date with the existing VM backup:
+// isVMBackupUpToDate returns true if none of the following fields of the VM are
+// changed compared to the existing backup:
 // - generation (spec changes); annotations; labels.
-func isBackupVMUpToDate(vm *vmopv1.VirtualMachine, backup string) (bool, error) {
+func isVMBackupUpToDate(vm *vmopv1.VirtualMachine, backup string) (bool, error) {
 	if backup == "" {
 		return false, nil
 	}

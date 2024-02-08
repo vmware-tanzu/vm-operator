@@ -61,11 +61,6 @@ func backupTests() {
 	Context("Backup VM Resource YAML", func() {
 		BeforeEach(func() {
 			vm := builder.DummyVirtualMachineA2()
-			// The typeMeta may not be populated when getting the resource from client.
-			// It's required in test for getting the resource version to check if the backup is up-to-date.
-			vm.TypeMeta = metav1.TypeMeta{
-				Kind: "VirtualMachine",
-			}
 			vmCtx.VM = vm
 		})
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package mutation
@@ -21,6 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmgr "sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/nsx.vmware.com/v1alpha1"
 
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
@@ -210,6 +212,9 @@ func AddDefaultNetworkInterface(ctx *context.WebhookRequestContext, client clien
 	case pkgconfig.NetworkProviderTypeVDS:
 		kind = "Network"
 		apiVersion = netopv1alpha1.SchemeGroupVersion.String()
+	case pkgconfig.NetworkProviderTypeVPC:
+		kind = "SubnetSet"
+		apiVersion = vpcv1alpha1.SchemeGroupVersion.String()
 	case pkgconfig.NetworkProviderTypeNamed:
 		netName, _ = getProviderConfigMap(ctx, client)
 		if netName == "" {

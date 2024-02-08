@@ -40,7 +40,10 @@ require (
 	sigs.k8s.io/yaml v1.3.0
 )
 
-require gopkg.in/yaml.v3 v3.0.1
+require (
+	github.com/vmware-tanzu/nsx-operator/pkg/apis v0.1.0
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

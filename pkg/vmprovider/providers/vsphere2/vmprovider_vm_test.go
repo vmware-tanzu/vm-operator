@@ -1417,6 +1417,14 @@ func vmTests() {
 				vm.Spec.StorageClass = ""
 				err := vmProvider.CreateOrUpdateVirtualMachine(ctx, vm)
 				Expect(err).To(MatchError("StorageClass is required but not specified"))
+
+				c := conditions.Get(vm, vmopv1.VirtualMachineConditionStorageReady)
+				Expect(c).ToNot(BeNil())
+				expectedCondition := conditions.FalseCondition(
+					vmopv1.VirtualMachineConditionStorageReady,
+					"StorageClassRequired",
+					"StorageClass is required but not specified")
+				Expect(*c).To(conditions.MatchCondition(*expectedCondition))
 			})
 
 			It("Can be called multiple times", func() {

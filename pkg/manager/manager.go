@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2021 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package manager
@@ -17,6 +17,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
 	imgregv1a1 "github.com/vmware-tanzu/image-registry-operator-api/api/v1alpha1"
+	vpcv1alpha1 "github.com/vmware-tanzu/nsx-operator/pkg/apis/nsx.vmware.com/v1alpha1"
 
 	ncpv1alpha1 "github.com/vmware-tanzu/vm-operator/external/ncp/api/v1alpha1"
 	netopv1alpha1 "github.com/vmware-tanzu/vm-operator/external/net-operator/api/v1alpha1"
@@ -53,6 +54,10 @@ func New(ctx goctx.Context, opts Options) (Manager, error) {
 
 	if pkgconfig.FromContext(ctx).Features.VMOpV1Alpha2 {
 		_ = vmopv1alpha2.AddToScheme(opts.Scheme)
+	}
+
+	if networkType := pkgconfig.FromContext(ctx).NetworkProviderType; networkType == pkgconfig.NetworkProviderTypeVPC {
+		_ = vpcv1alpha1.AddToScheme(opts.Scheme)
 	}
 	// +kubebuilder:scaffold:scheme
 

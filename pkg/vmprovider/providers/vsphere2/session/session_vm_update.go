@@ -557,15 +557,9 @@ func (s *Session) ensureNetworkInterfaces(
 
 	var networkDevices []vimTypes.BaseVirtualDevice
 	if pkgconfig.FromContext(vmCtx).Features.VMClassAsConfigDayNDate && configSpec != nil {
-		networkDevices = util.SelectDevicesByTypes(
+		networkDevices = util.SelectDevices[vimTypes.BaseVirtualDevice](
 			util.DevicesFromConfigSpec(configSpec),
-			&vimTypes.VirtualE1000{},
-			&vimTypes.VirtualE1000e{},
-			&vimTypes.VirtualPCNet32{},
-			&vimTypes.VirtualVmxnet2{},
-			&vimTypes.VirtualVmxnet3{},
-			&vimTypes.VirtualVmxnet3Vrdma{},
-			&vimTypes.VirtualSriovEthernetCard{},
+			util.IsEthernetCard,
 		)
 	}
 

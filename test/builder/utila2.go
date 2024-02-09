@@ -115,6 +115,9 @@ func DummyInstanceStorageVirtualMachineVolumesA2() []vmopv1.VirtualMachineVolume
 
 func DummyBasicVirtualMachineA2(name, namespace string) *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "VirtualMachine",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Namespace:   namespace,
@@ -133,6 +136,9 @@ func DummyBasicVirtualMachineA2(name, namespace string) *vmopv1.VirtualMachine {
 
 func DummyVirtualMachineA2() *vmopv1.VirtualMachine {
 	return &vmopv1.VirtualMachine{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "VirtualMachine",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "test-",
 			Labels:       map[string]string{},

@@ -134,9 +134,6 @@ const (
 	// PVCDiskDataExtraConfigKey is the ExtraConfig key to persist the VM's
 	// PVC disk data in JSON, compressed using gzip and base64-encoded.
 	PVCDiskDataExtraConfigKey = "vmservice.virtualmachine.pvc.disk.data"
-	// CloudInitInstanceIDExtraConfigKey is the ExtraConfig key to persist
-	// the VM's Cloud-Init instance ID, compressed using gzip and base64-encoded.
-	CloudInitInstanceIDExtraConfigKey = "vmservice.virtualmachine.cloudinit.instanceid"
 )
 
 // VirtualMachinePowerState defines a VM's desired and observed power states.

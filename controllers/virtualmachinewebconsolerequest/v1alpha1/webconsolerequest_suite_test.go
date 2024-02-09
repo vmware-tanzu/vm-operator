@@ -17,15 +17,15 @@ import (
 )
 
 var (
-	fakeVMProvider   = providerfake.NewVMProvider()
-	fakeVMProviderA2 = providerfake.NewVMProviderA2()
+	intgFakeVMProvider   = providerfake.NewVMProvider()
+	intgFakeVMProviderA2 = providerfake.NewVMProviderA2()
 )
 
 var suite = builder.NewTestSuiteForController(
 	v1alpha1.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
-		ctx.VMProvider = fakeVMProvider
-		ctx.VMProviderA2 = fakeVMProviderA2
+		ctx.VMProvider = intgFakeVMProvider
+		ctx.VMProviderA2 = intgFakeVMProviderA2
 		return nil
 	},
 )

@@ -17,7 +17,7 @@ import (
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
-var fakeVMProvider = providerfake.NewVMProviderA2()
+var intgFakeVMProvider = providerfake.NewVMProviderA2()
 
 var suite = builder.NewTestSuiteForControllerWithContext(
 	pkgconfig.UpdateContext(
@@ -27,12 +27,12 @@ var suite = builder.NewTestSuiteForControllerWithContext(
 		}),
 	v1alpha2.AddToManager,
 	func(ctx *ctrlContext.ControllerManagerContext, _ ctrlmgr.Manager) error {
-		ctx.VMProviderA2 = fakeVMProvider
+		ctx.VMProviderA2 = intgFakeVMProvider
 		return nil
 	})
 
-func TestWebConsoleRequest(t *testing.T) {
-	suite.Register(t, "WebConsoleRequest controller suite", intgTests, unitTests)
+func TestVirtualMachineWebConsoleRequest(t *testing.T) {
+	suite.Register(t, "VirtualMachineWebConsoleRequest controller suite", intgTests, unitTests)
 }
 
 var _ = BeforeSuite(suite.BeforeSuite)

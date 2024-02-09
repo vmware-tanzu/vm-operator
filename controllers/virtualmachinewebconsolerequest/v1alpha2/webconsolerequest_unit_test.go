@@ -22,14 +22,15 @@ import (
 )
 
 func unitTests() {
-	Describe("Invoking WebConsoleRequest Reconcile", unitTestsReconcile)
+	Describe("Invoking VirtualMachineWebConsoleRequest Reconcile", unitTestsReconcile)
 }
 
 func unitTestsReconcile() {
 
 	var (
-		initObjects []client.Object
-		ctx         *builder.UnitTestContextForController
+		initObjects    []client.Object
+		ctx            *builder.UnitTestContextForController
+		fakeVMProvider *providerfake.VMProviderA2
 
 		reconciler *webconsolerequest.Reconciler
 		wcrCtx     *vmopContext.WebConsoleRequestContextA2
@@ -100,23 +101,26 @@ func unitTestsReconcile() {
 	})
 
 	Context("ReconcileNormal", func() {
+		const ticket = "my-fake-webmksticket"
+
 		BeforeEach(func() {
 			initObjects = append(initObjects, wcr, vm, proxySvc)
 		})
 
-		JustBeforeEach(func() {
-			fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
-				return "some-fake-webmksticket", nil
-			}
-		})
+		When("GetVirtualMachineWebMKSTicket returns success", func() {
 
-		When("NoOp", func() {
+			JustBeforeEach(func() {
+				fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
+					return ticket, nil
+				}
+			})
+
 			It("returns success", func() {
 				err := reconciler.ReconcileNormal(wcrCtx)
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(wcrCtx.WebConsoleRequest.Status.ProxyAddr).To(Equal("dummy-proxy-ip"))
-				Expect(wcrCtx.WebConsoleRequest.Status.Response).ToNot(BeEmpty())
+				Expect(wcrCtx.WebConsoleRequest.Status.Response).To(Equal(ticket))
 				Expect(wcrCtx.WebConsoleRequest.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
 				// Checking the label key only because UID will not be set to a resource during unit test.
 				Expect(wcrCtx.WebConsoleRequest.Labels).To(HaveKey(webconsolerequest.UUIDLabelKey))

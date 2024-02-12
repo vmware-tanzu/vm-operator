@@ -16,15 +16,17 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
-	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha1"
+	webconsolerequest "github.com/vmware-tanzu/vm-operator/controllers/virtualmachinewebconsolerequest/v1alpha2"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
 
 func intgTests() {
-	Describe("Invoking WebConsoleRequest controller tests", webConsoleRequestReconcile)
+	Describe("Invoking VirtualMachineWebConsoleRequest controller tests", webConsoleRequestReconcile)
 }
 
 func webConsoleRequestReconcile() {
+	const ticket = "some-fake-webmksticket"
+
 	var (
 		ctx      *builder.IntegrationTestContext
 		wcr      *vmopv1.VirtualMachineWebConsoleRequest
@@ -82,17 +84,17 @@ func webConsoleRequestReconcile() {
 			},
 		}
 
-		fakeVMProvider.Lock()
-		defer fakeVMProvider.Unlock()
-		fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
-			return "some-fake-webmksticket", nil
+		intgFakeVMProvider.Lock()
+		defer intgFakeVMProvider.Unlock()
+		intgFakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
+			return ticket, nil
 		}
 	})
 
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-		fakeVMProvider.Reset()
+		intgFakeVMProvider.Reset()
 	})
 
 	Context("Reconcile", func() {
@@ -120,15 +122,16 @@ func webConsoleRequestReconcile() {
 		})
 
 		It("resource successfully created", func() {
-			Eventually(func() bool {
-				wcr = getWebConsoleRequest(ctx, types.NamespacedName{Name: wcr.Name, Namespace: wcr.Namespace})
-				if wcr != nil && wcr.Status.Response != "" {
-					return true
-				}
-				return false
-			}).Should(BeTrue(), "waiting for webconsolerequest to be")
+			objKey := types.NamespacedName{Name: wcr.Name, Namespace: wcr.Namespace}
+
+			Eventually(func(g Gomega) {
+				wcr = getWebConsoleRequest(ctx, objKey)
+				g.Expect(wcr).ToNot(BeNil())
+				g.Expect(wcr.Status.Response).ToNot(BeEmpty())
+			}).Should(Succeed(), "waiting response to be set")
+
 			Expect(wcr.Status.ProxyAddr).To(Equal("192.168.0.1"))
-			Expect(wcr.Status.Response).ToNot(BeEmpty())
+			Expect(wcr.Status.Response).To(Equal(ticket))
 			Expect(wcr.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
 			Expect(wcr.Labels).To(HaveKeyWithValue(webconsolerequest.UUIDLabelKey, string(wcr.UID)))
 		})

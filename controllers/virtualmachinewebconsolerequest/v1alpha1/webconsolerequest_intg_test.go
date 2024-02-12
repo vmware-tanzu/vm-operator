@@ -27,6 +27,9 @@ func intgTests() {
 }
 
 func webConsoleRequestReconcile() {
+	const v1a1Ticket = "some-fake-webmksticket"
+	const v1a2Ticket = "some-fake-webmksticket-v1a2"
+
 	var (
 		ctx                *builder.IntegrationTestContext
 		wcr                *vmopv1.WebConsoleRequest
@@ -86,28 +89,26 @@ func webConsoleRequestReconcile() {
 			},
 		}
 
-		fakeVMProvider.Lock()
-		defer fakeVMProvider.Unlock()
-
-		fakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
+		intgFakeVMProvider.Lock()
+		intgFakeVMProvider.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1.VirtualMachine, pubKey string) (string, error) {
 			v1a1ProviderCalled = true
-			return "some-fake-webmksticket", nil
+			return v1a1Ticket, nil
 		}
+		intgFakeVMProvider.Unlock()
 
-		fakeVMProviderA2.Lock()
-		defer fakeVMProviderA2.Unlock()
-
-		fakeVMProviderA2.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1alpha2.VirtualMachine, pubKey string) (string, error) {
+		intgFakeVMProviderA2.Lock()
+		intgFakeVMProviderA2.GetVirtualMachineWebMKSTicketFn = func(ctx context.Context, vm *vmopv1alpha2.VirtualMachine, pubKey string) (string, error) {
 			v1a2ProviderCalled = true
-			return "some-fake-webmksticket-1", nil
+			return v1a2Ticket, nil
 		}
+		intgFakeVMProviderA2.Unlock()
 	})
 
 	AfterEach(func() {
 		ctx.AfterEach()
 		ctx = nil
-		fakeVMProvider.Reset()
-		fakeVMProviderA2.Reset()
+		intgFakeVMProvider.Reset()
+		intgFakeVMProviderA2.Reset()
 		v1a1ProviderCalled = false
 		v1a2ProviderCalled = false
 	})
@@ -140,15 +141,17 @@ func webConsoleRequestReconcile() {
 
 		When("v1a1 provider", func() {
 			It("resource successfully created", func() {
+				objKey := types.NamespacedName{Name: wcr.Name, Namespace: wcr.Namespace}
+
 				Eventually(func(g Gomega) {
-					wcr = getWebConsoleRequest(ctx, types.NamespacedName{Name: wcr.Name, Namespace: wcr.Namespace})
+					wcr = getWebConsoleRequest(ctx, objKey)
 					g.Expect(wcr).ToNot(BeNil())
 					g.Expect(wcr.Status.Response).ToNot(BeEmpty())
-				}).Should(Succeed(), "waiting for webconsolerequest to be")
+				}).Should(Succeed(), "waiting response to be set")
 
 				Expect(v1a1ProviderCalled).Should(BeTrue())
 				Expect(wcr.Status.ProxyAddr).To(Equal("192.168.0.1"))
-				Expect(wcr.Status.Response).ToNot(BeEmpty())
+				Expect(wcr.Status.Response).To(Equal(v1a1Ticket))
 				Expect(wcr.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
 				Expect(wcr.Labels).To(HaveKeyWithValue(webconsolerequest.UUIDLabelKey, string(wcr.UID)))
 			})
@@ -168,15 +171,17 @@ func webConsoleRequestReconcile() {
 			})
 
 			It("resource successfully created", func() {
+				objKey := types.NamespacedName{Name: wcr.Name, Namespace: wcr.Namespace}
+
 				Eventually(func(g Gomega) {
-					wcr = getWebConsoleRequest(ctx, types.NamespacedName{Name: wcr.Name, Namespace: wcr.Namespace})
+					wcr = getWebConsoleRequest(ctx, objKey)
 					g.Expect(wcr).ToNot(BeNil())
 					g.Expect(wcr.Status.Response).ToNot(BeEmpty())
-				}).Should(Succeed(), "waiting for webconsolerequest to be")
+				}).Should(Succeed(), "waiting response to be set")
 
 				Expect(v1a2ProviderCalled).Should(BeTrue())
 				Expect(wcr.Status.ProxyAddr).To(Equal("192.168.0.1"))
-				Expect(wcr.Status.Response).ToNot(BeEmpty())
+				Expect(wcr.Status.Response).To(Equal(v1a2Ticket))
 				Expect(wcr.Status.ExpiryTime.Time).To(BeTemporally("~", time.Now(), webconsolerequest.DefaultExpiryTime))
 				Expect(wcr.Labels).To(HaveKeyWithValue(webconsolerequest.UUIDLabelKey, string(wcr.UID)))
 			})

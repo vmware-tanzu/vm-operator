@@ -86,6 +86,7 @@ var _ = Describe("UpdateStatus", func() {
 				network := vmCtx.VM.Status.Network
 
 				Expect(network.Interfaces).To(HaveLen(1))
+				Expect(network.Interfaces[0].IP).ToNot(BeNil())
 				Expect(network.Interfaces[0].IP.MACAddr).To(Equal("mac-4000"))
 				Expect(network.Interfaces[0].Name).To(Equal("eth42"))
 			})

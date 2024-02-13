@@ -389,7 +389,7 @@ type VirtualMachineNetworkInterfaceIPStatus struct {
 	// options.
 	//
 	// +optional
-	DHCP VirtualMachineNetworkDHCPStatus `json:"dhcp,omitempty"`
+	DHCP *VirtualMachineNetworkDHCPStatus `json:"dhcp,omitempty"`
 
 	// Addresses describes observed IP addresses for this interface.
 	//
@@ -415,12 +415,12 @@ type VirtualMachineNetworkInterfaceStatus struct {
 	// IP describes the observed state of the interface's IP configuration.
 	//
 	// +optional
-	IP VirtualMachineNetworkInterfaceIPStatus `json:"ip,omitempty"`
+	IP *VirtualMachineNetworkInterfaceIPStatus `json:"ip,omitempty"`
 
 	// DNS describes the observed state of the interface's DNS configuration.
 	//
 	// +optional
-	DNS VirtualMachineNetworkDNSStatus `json:"dns,omitempty"`
+	DNS *VirtualMachineNetworkDNSStatus `json:"dns,omitempty"`
 }
 
 // VirtualMachineNetworkIPStackStatus describes the observed state of a
@@ -429,12 +429,12 @@ type VirtualMachineNetworkIPStackStatus struct {
 	// DHCP describes the VM's observed, client-side, system-wide DHCP options.
 	//
 	// +optional
-	DHCP VirtualMachineNetworkDHCPStatus `json:"dhcp,omitempty"`
+	DHCP *VirtualMachineNetworkDHCPStatus `json:"dhcp,omitempty"`
 
 	// DNS describes the VM's observed, client-side DNS configuration.
 	//
 	// +optional
-	DNS VirtualMachineNetworkDNSStatus `json:"dns,omitempty"`
+	DNS *VirtualMachineNetworkDNSStatus `json:"dns,omitempty"`
 
 	// IPRoutes contain the VM's routing tables for all address families.
 	//

@@ -502,7 +502,7 @@ func convert_v1alpha1_Network_To_v1alpha2_NetworkStatus(
 
 	for _, inI := range in {
 		interfaceStatus := v1alpha2.VirtualMachineNetworkInterfaceStatus{
-			IP: v1alpha2.VirtualMachineNetworkInterfaceIPStatus{
+			IP: &v1alpha2.VirtualMachineNetworkInterfaceIPStatus{
 				Addresses: ipAddrsToAddrStatus(inI.IpAddresses),
 				MACAddr:   inI.MacAddress,
 			},
@@ -536,9 +536,11 @@ func convert_v1alpha2_NetworkStatus_To_v1alpha1_Network(
 	out := make([]NetworkInterfaceStatus, 0, len(in.Interfaces))
 	for _, i := range in.Interfaces {
 		interfaceStatus := NetworkInterfaceStatus{
-			Connected:   true,
-			MacAddress:  i.IP.MACAddr,
-			IpAddresses: addrStatusToIPAddrs(i.IP.Addresses),
+			Connected: true,
+		}
+		if i.IP != nil {
+			interfaceStatus.MacAddress = i.IP.MACAddr
+			interfaceStatus.IpAddresses = addrStatusToIPAddrs(i.IP.Addresses)
 		}
 		out = append(out, interfaceStatus)
 	}

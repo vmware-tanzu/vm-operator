@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2023 VMware, Inc. All Rights Reserved.
+// Copyright (c) 2019-2024 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 package mutation_test
@@ -120,6 +120,21 @@ func unitTestsMutating() {
 					Expect(ctx.vm.Spec.Network.Interfaces).Should(HaveLen(1))
 					Expect(ctx.vm.Spec.Network.Interfaces[0].Name).Should(Equal("eth0"))
 					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Kind).Should(Equal("VirtualNetwork"))
+				})
+			})
+
+			When("VPC network", func() {
+				BeforeEach(func() {
+					pkgconfig.SetContext(ctx, func(config *pkgconfig.Config) {
+						config.NetworkProviderType = pkgconfig.NetworkProviderTypeVPC
+					})
+				})
+
+				It("Should add default network interface with type SubnetSet", func() {
+					Expect(mutation.AddDefaultNetworkInterface(&ctx.WebhookRequestContext, ctx.Client, ctx.vm)).To(BeTrue())
+					Expect(ctx.vm.Spec.Network.Interfaces).Should(HaveLen(1))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Name).Should(Equal("eth0"))
+					Expect(ctx.vm.Spec.Network.Interfaces[0].Network.Kind).Should(Equal("SubnetSet"))
 				})
 			})
 

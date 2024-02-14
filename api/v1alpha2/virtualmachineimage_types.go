@@ -37,6 +37,12 @@ const (
 	VMIContentLibRefAnnotation = "vmoperator.vmware.com/conversion-content-lib-ref"
 )
 
+const (
+	// VirtualMachineImageV1Alpha1CompatibleCondition denotes that an image was prepared by
+	// VMware specifically for compatibility with VMService.
+	VirtualMachineImageV1Alpha1CompatibleCondition = "VirtualMachineImageV1Alpha1Compatible"
+)
+
 // Condition reasons for VirtualMachineImages.
 const (
 	// VirtualMachineImageNotSyncedReason documents that the VirtualMachineImage is not synced with

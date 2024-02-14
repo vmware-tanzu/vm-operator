@@ -12,13 +12,13 @@ import (
 
 	"github.com/vmware/govmomi/object"
 	vimTypes "github.com/vmware/govmomi/vim25/types"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
 	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
 	pkgconfig "github.com/vmware-tanzu/vm-operator/pkg/config"
+	"github.com/vmware-tanzu/vm-operator/pkg/util"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/session"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/virtualmachine"
@@ -267,12 +267,7 @@ var _ = Describe("Update ConfigSpec", func() {
 				globalExtraConfig,
 				imageV1Alpha1Compatible)
 
-			ecMap = make(map[string]string)
-			for _, ec := range configSpec.ExtraConfig {
-				if optionValue := ec.GetOptionValue(); optionValue != nil {
-					ecMap[optionValue.Key] = optionValue.Value.(string)
-				}
-			}
+			ecMap = util.ExtraConfigToMap(configSpec.ExtraConfig)
 		})
 
 		Context("Empty input", func() {
@@ -290,36 +285,42 @@ var _ = Describe("Update ConfigSpec", func() {
 				imageV1Alpha1Compatible = true
 			})
 
-			It("Expected configSpec.ExtraConfig", func() {
-				By("VM Image compatible", func() {
-					Expect(ecMap).To(HaveKeyWithValue("guestinfo.vmservice.defer-cloud-init", "enabled"))
+			Context("When VM uses LinuxPrep with vAppConfig bootstrap", func() {
+				BeforeEach(func() {
+					vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
+						LinuxPrep:  &vmopv1.VirtualMachineBootstrapLinuxPrepSpec{},
+						VAppConfig: &vmopv1.VirtualMachineBootstrapVAppConfigSpec{},
+					}
 				})
 
-				By("Global map", func() {
-					Expect(ecMap).To(HaveKeyWithValue("guestinfo.test", "test"))
-					Expect(ecMap).To(HaveKeyWithValue("global", "test"))
+				It("Expected configSpec.ExtraConfig", func() {
+					By("VM Image compatible", func() {
+						Expect(ecMap).To(HaveKeyWithValue(constants.VMOperatorV1Alpha1ExtraConfigKey, constants.VMOperatorV1Alpha1ConfigEnabled))
+					})
+
+					By("Global map", func() {
+						Expect(ecMap).To(HaveKeyWithValue("guestinfo.test", "test"))
+						Expect(ecMap).To(HaveKeyWithValue("global", "test"))
+					})
 				})
 			})
 
-			Context("When VM uses metadata transport types other than CloudInit", func() {
+			Context("When VM uses other bootstrap", func() {
 				BeforeEach(func() {
 					vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
 						Sysprep: &vmopv1.VirtualMachineBootstrapSysprepSpec{},
 					}
 				})
-				It("defer cloud-init extra config is enabled", func() {
-					Expect(ecMap).To(HaveKeyWithValue("guestinfo.vmservice.defer-cloud-init", "enabled"))
-				})
-			})
 
-			Context("When VM uses CloudInit metadata transport type", func() {
-				BeforeEach(func() {
-					vm.Spec.Bootstrap = &vmopv1.VirtualMachineBootstrapSpec{
-						CloudInit: &vmopv1.VirtualMachineBootstrapCloudInitSpec{},
-					}
-				})
-				It("defer cloud-init extra config is not enabled", func() {
-					Expect(ecMap).ToNot(HaveKeyWithValue("guestinfo.vmservice.defer-cloud-init", "enabled"))
+				It("defer cloud-init extra config is still ready", func() {
+					By("Should not include an update to the ExtraConfig field", func() {
+						Expect(ecMap).ToNot(HaveKey(constants.VMOperatorV1Alpha1ExtraConfigKey))
+					})
+
+					By("Global map", func() {
+						Expect(ecMap).To(HaveKeyWithValue("guestinfo.test", "test"))
+						Expect(ecMap).To(HaveKeyWithValue("global", "test"))
+					})
 				})
 			})
 		})
@@ -346,34 +347,6 @@ var _ = Describe("Update ConfigSpec", func() {
 
 			It("No changes", func() {
 				Expect(ecMap).To(BeEmpty())
-			})
-		})
-
-		Context("InstanceStorage related tests", func() {
-
-			Context("When InstanceStorage is NOT configured on VM", func() {
-				It("No Changes", func() {
-					Expect(ecMap).To(BeEmpty())
-				})
-			})
-
-			Context("When InstanceStorage is configured on VM", func() {
-				BeforeEach(func() {
-					vm.Spec.Volumes = append(vm.Spec.Volumes, vmopv1.VirtualMachineVolume{
-						Name: "pvc-volume-1",
-						VirtualMachineVolumeSource: vmopv1.VirtualMachineVolumeSource{
-							PersistentVolumeClaim: &vmopv1.PersistentVolumeClaimVolumeSource{
-								PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "pvc-volume-1",
-								},
-								InstanceVolumeClaim: &vmopv1.InstanceVolumeClaimVolumeSource{
-									StorageClass: "dummyStorageClass",
-									Size:         resource.MustParse("256Gi"),
-								},
-							},
-						},
-					})
-				})
 			})
 		})
 

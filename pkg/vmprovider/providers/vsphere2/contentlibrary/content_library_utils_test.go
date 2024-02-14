@@ -10,7 +10,9 @@ import (
 	"github.com/vmware/govmomi/ovf"
 	"k8s.io/utils/pointer"
 
-	"github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	vmopv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha2"
+	conditions "github.com/vmware-tanzu/vm-operator/pkg/conditions2"
+	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/constants"
 	"github.com/vmware-tanzu/vm-operator/pkg/vmprovider/providers/vsphere2/contentlibrary"
 	"github.com/vmware-tanzu/vm-operator/test/builder"
 )
@@ -44,7 +46,7 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 
 	var (
 		ovfEnvelope ovf.Envelope
-		image       *v1alpha2.VirtualMachineImage
+		image       *vmopv1.VirtualMachineImage
 	)
 
 	BeforeEach(func() {
@@ -145,5 +147,22 @@ var _ = Describe("UpdateVmiWithOvfEnvelope", func() {
 		Expect(image.Status.VMwareSystemProperties).Should(HaveLen(1))
 		Expect(image.Status.VMwareSystemProperties[0].Key).Should(Equal(versionKey))
 		Expect(image.Status.VMwareSystemProperties[0].Value).Should(Equal(versionVal))
+
+		Expect(conditions.Has(image, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)).To(BeFalse())
+	})
+
+	Context("Image is V1Alpha1Compatible", func() {
+		BeforeEach(func() {
+			ovfEnvelope.VirtualSystem.VirtualHardware[0].ExtraConfig = append(ovfEnvelope.VirtualSystem.VirtualHardware[0].ExtraConfig,
+				ovf.Config{
+					Key:   constants.VMOperatorV1Alpha1ExtraConfigKey,
+					Value: constants.VMOperatorV1Alpha1ConfigReady,
+				},
+			)
+		})
+
+		It("V1Alpha1Compatible condition is true", func() {
+			Expect(conditions.IsTrue(image, vmopv1.VirtualMachineImageV1Alpha1CompatibleCondition)).To(BeTrue())
+		})
 	})
 })
